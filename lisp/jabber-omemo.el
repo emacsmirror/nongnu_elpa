@@ -1310,6 +1310,7 @@ Returns non-nil if handled, nil to fall through to plaintext."
 ;;; Disco and PubSub registration
 
 (jabber-disco-advertise-feature jabber-omemo-xmlns)
+(jabber-disco-advertise-feature (concat jabber-omemo-devicelist-node "+notify"))
 
 (with-eval-after-load "jabber-pubsub"
   (push (cons jabber-omemo-devicelist-node

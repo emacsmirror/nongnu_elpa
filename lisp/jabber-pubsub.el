@@ -138,19 +138,21 @@ where ITEMS is the list of child elements (item or retract).")
 
 (defun jabber-pubsub--process-event (jc xml-data)
   "Process incoming PubSub event notifications.
-JC is the Jabber connection.  XML-DATA is the message stanza."
-  (let ((event (jabber-xml-child-with-xmlns xml-data jabber-pubsub-event-xmlns)))
-    (when event
-      (let* ((items-or-purge (or (car (jabber-xml-get-children event 'items))
-                                 (car (jabber-xml-get-children event 'purge))))
-             (node (and items-or-purge
-                        (jabber-xml-get-attribute items-or-purge 'node)))
-             (handler (and node (cdr (assoc node jabber-pubsub-node-handlers)))))
-        (when handler
-          (funcall handler jc
-                   (jabber-xml-get-attribute xml-data 'from)
-                   node
-                   (jabber-xml-node-children items-or-purge)))))))
+JC is the Jabber connection.  XML-DATA is the message stanza.
+Per XEP-0163 s4.3, PEP events MUST come from bare JIDs."
+  (let* ((event (jabber-xml-child-with-xmlns xml-data jabber-pubsub-event-xmlns))
+         (from (and event (jabber-xml-get-attribute xml-data 'from))))
+    (when (and event from)
+      (if (jabber-jid-resource from)
+          (message "PubSub: ignoring event from full JID %s" from)
+        (let* ((items-or-purge (or (car (jabber-xml-get-children event 'items))
+                                   (car (jabber-xml-get-children event 'purge))))
+               (node (and items-or-purge
+                          (jabber-xml-get-attribute items-or-purge 'node)))
+               (handler (and node (cdr (assoc node jabber-pubsub-node-handlers)))))
+          (when handler
+            (funcall handler jc from node
+                     (jabber-xml-node-children items-or-purge))))))))
 
 (with-eval-after-load "jabber-core"
   (jabber-chain-add 'jabber-message-chain #'jabber-pubsub--process-event))

@@ -443,9 +443,47 @@ OPENPGP-EL is the <openpgp> child element."
     (jabber-chat--set-body xml-data
                           (or body-text "[OpenPGP: empty payload]"))))
 
-;;; Disco and hooks
+;;; Disco, PubSub registration, and hooks
 
 (jabber-disco-advertise-feature jabber-openpgp-xmlns)
+(jabber-disco-advertise-feature (concat jabber-openpgp-pubkeys-node "+notify"))
+
+(defun jabber-openpgp--handle-keys-event (jc from _node items)
+  "Handle PubSub event for OpenPGP public key updates.
+JC is the connection, FROM is the sender JID, ITEMS is the list
+of child elements from the event.  Fetches updated key into the
+local GPG keyring."
+  (let* ((item-el (car items))
+         (keys-list (and (listp item-el)
+                         (car (jabber-xml-get-children
+                               item-el 'public-keys-list))))
+         (meta (and keys-list
+                    (car (jabber-xml-get-children
+                          keys-list 'pubkey-metadata))))
+         (fingerprint (and meta
+                           (jabber-xml-get-attribute meta 'v4-fingerprint)))
+         (jid (jabber-jid-user from)))
+    (if (null fingerprint)
+        (message "OpenPGP: key update from %s but no fingerprint in metadata" jid)
+      (message "OpenPGP: %s updated key %s, fetching..." jid fingerprint)
+      (let ((node (concat jabber-openpgp-pubkeys-node ":" fingerprint)))
+        (jabber-pubsub-request
+         jc jid node
+         (lambda (_jc xml-data _closure)
+           (jabber-openpgp--handle-key-response
+            xml-data fingerprint
+            (lambda (key)
+              (if key
+                  (message "OpenPGP: imported updated key for %s" jid)
+                (message "OpenPGP: failed to import key for %s" jid)))))
+         (lambda (_jc _xml-data _closure)
+           (message "OpenPGP: failed to fetch key %s for %s"
+                    fingerprint jid)))))))
+
+(with-eval-after-load "jabber-pubsub"
+  (push (cons jabber-openpgp-pubkeys-node
+              #'jabber-openpgp--handle-keys-event)
+        jabber-pubsub-node-handlers))
 
 (jabber-chat-register-decrypt-handler
  'openpgp
