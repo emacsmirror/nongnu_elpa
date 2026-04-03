@@ -689,30 +689,30 @@ step onto the next item)."
                           (truncate-string-to-width msg-text msg-end msg-start 0 ellipsis))
 
                     (unless (zerop msg-start)
-                      (setq msg-text (concat ellipsis (substring msg-text (length ellipsis)))))))))
-            ;; Single line display logic has been handled.
+                      (setq msg-text
+                            (concat ellipsis (substring msg-text (length ellipsis))))))))))
 
-            ;; Run last so we can ensure it's the last text in the message buffer.
-            ;; Don't log because it's not useful to keep the selection.
-            (let ((message-log-max nil))
-              (message "%s%s" msg-prefix msg-text))
+          ;; Run last so we can ensure it's the last text in the message buffer.
+          ;; Don't log because it's not useful to keep the selection.
+          (let ((message-log-max nil))
+            (message "%s%s" msg-prefix msg-text))
 
-            ;; Set the state for redoing the correction.
-            (setq recomplete--alist
-                  (list
-                   (cons 'buffer-undo-list buffer-undo-list-init)
-                   (cons 'pending-undo-list pending-undo-list-init)
-                   (cons 'point point-init)
-                   (cons 'cycle-index cycle-index)
-                   (cons 'cycle-reverse cycle-reverse)
-                   (cons 'fn-symbol fn-symbol)
-                   (cons 'fn-cache result-fn-cache)
-                   (cons 'is-first-post-command t)
-                   (cons 'msg-text msg-text)))
+          ;; Set the state for redoing the correction.
+          (setq recomplete--alist
+                (list
+                 (cons 'buffer-undo-list buffer-undo-list-init)
+                 (cons 'pending-undo-list pending-undo-list-init)
+                 (cons 'point point-init)
+                 (cons 'cycle-index cycle-index)
+                 (cons 'cycle-reverse cycle-reverse)
+                 (cons 'fn-symbol fn-symbol)
+                 (cons 'fn-cache result-fn-cache)
+                 (cons 'is-first-post-command t)
+                 (cons 'msg-text msg-text)))
 
-            ;; Ensure a local hook, which removes itself on the first non-successive call
-            ;; to a command that doesn't execute `recomplete-with-callback' with `fn-symbol'.
-            (add-hook 'post-command-hook #'recomplete--alist-clear-hook 0 t)))
+          ;; Ensure a local hook, which removes itself on the first non-successive call
+          ;; to a command that doesn't execute `recomplete-with-callback' with `fn-symbol'.
+          (add-hook 'post-command-hook #'recomplete--alist-clear-hook 0 t))
 
         ;; Result, success.
         t)))))

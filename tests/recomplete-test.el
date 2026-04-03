@@ -121,6 +121,50 @@
  "pre completion post"
  (cons 7 8))
 
+;; ---------------------------------------------------------------------------
+;; Test Cycling Utilities
+
+(defmacro simulate-input (&rest keys)
+  "Helper macro to simulate input using KEYS."
+  (declare (indent 0))
+  `(let ((keys-list (list ,@keys)))
+     (dolist (keys keys-list)
+       (let ((minibuffer-message-timeout 0))
+         (execute-kbd-macro keys)))))
+
+(defun buffer-reset-text (initial-buffer-text)
+  "Use INITIAL-BUFFER-TEXT to initialize the buffer with text."
+  (buffer-disable-undo)
+  (erase-buffer)
+  (save-excursion (insert initial-buffer-text))
+  (buffer-enable-undo))
+
+;; ---------------------------------------------------------------------------
+;; Test Cycling
+
+(ert-deftest dabbrev-cycling-single-line-display-nil ()
+  "Dabbrev cycling should work when `recomplete-single-line-display' is nil.
+Without cycling, the second press tries to expand the already-expanded word
+which has no further expansions, causing an error."
+  (let ((buf (generate-new-buffer "recomplete-test")))
+    (switch-to-buffer buf)
+    (buffer-reset-text "unique_alpha unique_beta un")
+    (goto-char (point-max))
+    (let ((recomplete-single-line-display nil)
+          (inhibit-message t))
+      (local-set-key (kbd "M-p") #'recomplete-dabbrev)
+      ;; Press M-p twice to cycle to the second expansion.
+      (simulate-input
+        (kbd "M-p M-p"))
+      ;; With cycling: "un" expands to "unique_beta", then cycles to "unique_alpha".
+      ;; Without cycling (bug): "un" expands to "unique_beta", then a fresh
+      ;; expand of "unique_beta" finds no new expansions and errors.
+      (should
+       (equal
+        "unique_alpha unique_beta unique_alpha"
+        (buffer-substring-no-properties (point-min) (point-max)))))
+    (kill-buffer buf)))
+
 
 (provide 'recomplete-test)
 ;; Local Variables:
