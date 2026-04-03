@@ -2357,11 +2357,12 @@ To disable showing the stats, customize
            (faves (format "%s %s" faves-prop (mastodon-tl--symbol 'favourite)))
            (boosts (format "%s %s" boosts-prop (mastodon-tl--symbol 'boost)))
            (replies (format "%s %s" .replies_count (mastodon-tl--symbol 'reply)))
-           (quotes  (format "%s %s"
-                            (propertize (number-to-string .quotes_count)
-                                        'face 'mastodon-toot-docs-face)
-                            (propertize (mastodon-tl--symbol 'quote)
-                                        'face '(:inherit success :box t))))
+           (quotes  (when .quotes_count
+                      (format "%s %s"
+                              (propertize (number-to-string .quotes_count)
+                                          'face 'mastodon-toot-docs-face)
+                              (propertize (mastodon-tl--symbol 'quote)
+                                          'face '(:inherit success :box t)))))
            (stats (concat
                    (propertize faves
                                'favourited-p (eq t .favourited)
@@ -2381,12 +2382,13 @@ To disable showing the stats, customize
                                'help-echo (format "%s replies" .replies_count)
                                'face 'mastodon-toot-docs-face)
                    (propertize " | " 'face 'mastodon-toot-docs-face)
-                   (propertize quotes
-                               'quotes-field t
-                               'quotes-count .quotes_count
-                               'help-echo (format "%s quotes" .quotes_count)
-                               ;; 'face 'mastodon-toot-docs-face
-                               )))
+                   (when .quotes_count
+                     (propertize quotes
+                                 'quotes-field t
+                                 'quotes-count .quotes_count
+                                 'help-echo (format "%s quotes" .quotes_count)
+                                 ;; 'face 'mastodon-toot-docs-face
+                                 ))))
            (right-spacing
             (propertize " "
                         'display
