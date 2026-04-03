@@ -155,7 +155,8 @@ This variable is set from data in
   (mastodon-tl--property 'item-json))
 
 (defun mastodon-profile--make-author-buffer
-    (account &optional no-reblogs no-replies only-media tag max-id)
+    (account &optional no-reblogs no-replies only-media tag max-id
+             skip-pinned)
   "Take an ACCOUNT json and insert a user account into a new buffer.
 NO-REBLOGS means do not display boosts in statuses.
 NO-REPLIES means to exlude replies.
@@ -164,7 +165,7 @@ TAG is a hashtag to restrict posts to.
 MAX-ID is a flag to include the max_id pagination parameter."
   (mastodon-profile--make-profile-buffer-for
    account "statuses" #'mastodon-tl--timeline no-reblogs nil
-   no-replies only-media tag max-id))
+   no-replies only-media tag max-id skip-pinned))
 
 ;;; PROFILE VIEW COMMANDS
 
@@ -233,16 +234,15 @@ If a PREFIX argument is provided, prompt for a view type and load."
   (interactive)
   (if mastodon-profile--account
       (mastodon-profile--make-author-buffer
-       mastodon-profile--account nil nil :only-media)
+       mastodon-profile--account nil nil :only-media nil nil :skip-pinned)
     (user-error "Not in a mastodon profile")))
 
-(defun mastodon-profile-open-statuses-tagged ()
+(defun mastodon-profile-open-statuses-tagged (&optional tag)
   "Prompt for a hashtag and display a profile with only statuses containing it."
   (interactive)
-  (let ((tag (read-string "Statuses containing tag: ")))
+  (let ((tag (or tag (read-string "Statuses containing tag: "))))
     (if mastodon-profile--account
-        (mastodon-profile--make-author-buffer
-         mastodon-profile--account nil nil nil tag)
+        (mastodon-profile--make-author-buffer mastodon-profile--account nil nil nil tag nil :skip-pinned)
       (user-error "Not in a mastodon profile"))))
 
 (defun mastodon-profile-open-following ()
@@ -810,7 +810,8 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
 
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
-             &optional no-reblogs headers no-replies only-media tag max-id)
+             &optional no-reblogs headers no-replies only-media tag max-id
+             skip-pinned)
   "Display profile of ACCOUNT, using ENDPOINT-TYPE and UPDATE-FUNCTION.
 NO-REBLOGS means do not display boosts in statuses.
 HEADERS means also fetch link headers for pagination.
@@ -892,7 +893,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
             (mastodon-profile--format-fields fields))
           ;; insert counts
           (mastodon-profile--insert-counts .statuses_count
-                                           .followers_count .following_count)
+                           .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
           (mastodon-media--inline-images (point-min) (point))
@@ -913,7 +914,9 @@ MAX-ID is a flag to include the max_id pagination parameter."
       (with-current-buffer buffer
         (let* ((inhibit-read-only t))
           ;; insert pinned toots first
-          (when (and pinned (string= endpoint-type "statuses"))
+          (when (and (not skip-pinned)
+                     pinned
+                     (string= endpoint-type "statuses"))
             (let ((beg (point)))
               (mastodon-profile--insert-statuses-pinned pinned)
               (setq mastodon-tl--update-point (point))
