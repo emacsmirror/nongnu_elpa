@@ -94,6 +94,79 @@ Returns the entries reordered by weighted random selection."
         (setq weight-order (delq next weight-order))))
     (nreverse result)))
 
+(defun jabber-srv--fetch-answers (target)
+  "Perform DNS SRV query for TARGET and return parsed answer records.
+Returns a list of alists, each containing priority, weight, port,
+and target entries.  Returns nil if no records found, or `:dot' if
+the single-dot target (\"service not available\") was returned."
+  (let* ((result (jabber-srv--dns-query target))
+         (answers (mapcar (lambda (a) (cadr (assq 'data a)))
+                          (cadr (assq 'answers result)))))
+    (cond
+     ((null answers) nil)
+     ((and (length= answers 1)
+           (string= (cadr (assq 'target (car answers))) "."))
+      :dot)
+     (t answers))))
+
+(defun jabber-srv--sort-answers (answers)
+  "Sort ANSWERS by priority with weighted randomization per RFC 2782.
+ANSWERS is a list of alists as returned by `jabber-srv--fetch-answers'.
+Returns the entries in connection-attempt order."
+  (let (ordered)
+    (dolist (group (jabber-srv--group-by-priority answers))
+      (setq ordered (nconc ordered
+                           (jabber-srv--weighted-select (cdr group)))))
+    ordered))
+
+(defun jabber-srv--tag-answers (answers directtls-p)
+  "Tag each record in ANSWERS with DIRECTTLS-P flag.
+Adds a (directtls DIRECTTLS-P) entry to each alist so the flag
+survives the priority/weight sort pipeline."
+  (mapcar (lambda (a) (cons (list 'directtls directtls-p) a))
+          answers))
+
+(defun jabber-srv--has-fallback-p (targets server)
+  "Return non-nil if TARGETS already includes SERVER on port 5222 via STARTTLS."
+  (cl-some (lambda (t_)
+             (and (string= (nth 0 t_) server)
+                  (= (nth 1 t_) 5222)
+                  (not (nth 2 t_))))
+           targets))
+
+;;;###autoload
+(defun jabber-srv-lookup-mixed (server)
+  "Query both _xmpps-client and _xmpp-client SRV records for SERVER.
+Merges results by priority and weight per RFC 2782.  Returns a list
+of (HOST PORT DIRECTTLS-P) where DIRECTTLS-P is non-nil for targets
+from _xmpps-client._tcp (XEP-0368 direct TLS).
+
+Always appends SERVER:5222 STARTTLS as a lowest-priority fallback
+unless the SRV results already include it."
+  (let ((xmpps (condition-case nil
+                   (jabber-srv--fetch-answers
+                    (concat "_xmpps-client._tcp." server))
+                 (error nil)))
+        (xmpp (condition-case nil
+                  (jabber-srv--fetch-answers
+                   (concat "_xmpp-client._tcp." server))
+                (error nil))))
+    ;; :dot means "service explicitly unavailable"
+    (when (eq xmpps :dot) (setq xmpps nil))
+    (when (eq xmpp :dot) (setq xmpp nil))
+    (let ((merged (nconc (jabber-srv--tag-answers xmpps t)
+                         (jabber-srv--tag-answers xmpp nil))))
+      (when merged
+        (let ((result (mapcar (lambda (a)
+                                (list (cadr (assq 'target a))
+                                      (cadr (assq 'port a))
+                                      (cadr (assq 'directtls a))))
+                              (jabber-srv--sort-answers merged))))
+          ;; Append domain:5222 STARTTLS fallback if not already present.
+          (unless (jabber-srv--has-fallback-p result server)
+            (setq result (nconc result (list (list server 5222 nil)))))
+          result)))))
+
 ;;;###autoload
 (defun jabber-srv-lookup (target)
   "Perform SRV lookup of TARGET and return connection candidates.
@@ -102,19 +175,11 @@ TARGET is a string of the form \"_Service._Proto.Name\".
 Returns a list of (HOST . PORT) pairs sorted by priority with
 weighted randomization per RFC 2782.  The caller should attempt
 connections in order.  Returns nil if no SRV records were found."
-  (let* ((result (jabber-srv--dns-query target))
-         (answers (mapcar (lambda (a) (cadr (assq 'data a)))
-                          (cadr (assq 'answers result)))))
-    (when (and answers
-              (not (and (length= answers 1)
-                        (string= (cadr (assq 'target (car answers))) "."))))
-      (let (ordered)
-        (dolist (group (jabber-srv--group-by-priority answers))
-          (setq ordered (nconc ordered
-                               (jabber-srv--weighted-select (cdr group)))))
-        (mapcar (lambda (a) (cons (cadr (assq 'target a))
-                                  (cadr (assq 'port a))))
-                ordered)))))
+  (let ((answers (jabber-srv--fetch-answers target)))
+    (when (and answers (not (eq answers :dot)))
+      (mapcar (lambda (a) (cons (cadr (assq 'target a))
+                                (cadr (assq 'port a))))
+              (jabber-srv--sort-answers answers)))))
 
 (provide 'jabber-srv)
 

@@ -72,6 +72,15 @@ of your JID.
 This option has effect only when using native GnuTLS."
   :type '(repeat string))
 
+(defcustom jabber-direct-tls-lookup t
+  "Whether to query _xmpps-client SRV records for direct TLS.
+When non-nil, `jabber-srv-targets' queries both _xmpps-client._tcp
+and _xmpp-client._tcp SRV records per XEP-0368, merging them by
+priority and weight.  Direct TLS targets use TLS-on-connect without
+a STARTTLS upgrade."
+  :type 'boolean
+  :group 'jabber-conn)
+
 (defvar jabber-connect-methods
   '((network jabber-network-connect jabber-network-send)
     (starttls jabber-network-connect jabber-network-send)
@@ -108,17 +117,27 @@ TYPE is a symbol; see `jabber-connection-type'."
     (nth 2 entry)))
 
 (defun jabber-srv-targets (server network-server port)
-  "Find host and port to connect to.
-If NETWORK-SERVER and/or PORT are specified, use them.
-If we can't find SRV records, use standard defaults."
-  ;; If the user has specified a host or a port, obey that.
+  "Find connection targets for SERVER.
+If NETWORK-SERVER and/or PORT are specified, use them (always STARTTLS).
+Otherwise query SRV records; when `jabber-direct-tls-lookup' is non-nil,
+query both _xmpps-client and _xmpp-client per XEP-0368.
+
+Returns a list of (HOST PORT DIRECTTLS-P) where DIRECTTLS-P is
+non-nil for direct TLS targets."
   (if (or network-server port)
-      (list (cons (or network-server server)
-		  (or port 5222)))
+      ;; User override: cannot assume direct TLS without SRV.
+      (list (list (or network-server server)
+		  (or port 5222)
+		  nil))
     (or (condition-case nil
-	    (jabber-srv-lookup (concat "_xmpp-client._tcp." server))
+	    (if jabber-direct-tls-lookup
+		(jabber-srv-lookup-mixed server)
+	      (mapcar (lambda (pair)
+			(list (car pair) (cdr pair) nil))
+		      (jabber-srv-lookup
+		       (concat "_xmpp-client._tcp." server))))
 	  (error nil))
-	(list (cons server 5222)))))
+	(list (list server 5222 nil)))))
 
 ;; Plain TCP/IP connection
 (defun jabber-network-connect (fsm server network-server port)
@@ -127,6 +146,39 @@ Send a message of the form (:connected CONNECTION) to FSM if
 connection succeeds.  Send a message (:connection-failed ERRORS) if
 connection fails."
   (jabber-network-connect-async fsm server network-server port))
+
+(defun jabber-conn--tls-parameters (server)
+  "Build :tls-parameters for direct TLS to SERVER.
+SERVER is the JID domain, used for SNI and certificate verification."
+  (let ((verifyp (not (member server jabber-invalid-certificate-servers))))
+    (cons 'gnutls-x509pki
+          (gnutls-boot-parameters
+           :type 'gnutls-x509pki
+           :hostname server
+           :verify-hostname-error verifyp
+           :verify-error verifyp))))
+
+(defcustom jabber-connection-timeout 30
+  "Seconds to wait for each connection target before trying the next.
+Set to nil to disable the per-target timeout and rely on the OS
+TCP timeout instead."
+  :type '(choice (integer :tag "Seconds")
+		 (const :tag "No timeout" nil))
+  :group 'jabber-conn)
+
+(defun jabber-conn--make-process (host port buffer directtls-p server)
+  "Create a network process connecting to HOST:PORT in BUFFER.
+When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER."
+  (let ((args (list :name "jabber"
+		    :buffer buffer
+		    :host host :service port
+		    :coding 'utf-8
+		    :nowait t)))
+    (when directtls-p
+      (setq args (nconc args
+			(list :tls-parameters
+			      (jabber-conn--tls-parameters server)))))
+    (apply #'make-network-process args)))
 
 (defun jabber-network-connect-async (fsm server network-server port)
   ;; Get all potential targets...
@@ -137,59 +189,79 @@ connection fails."
     (cl-labels
         ((connect
            (target remaining-targets)
-	   (cl-labels ((connection-successful
-		         (c)
-		         ;; This mustn't be `fsm-send-sync', because the FSM
-		         ;; needs to change the sentinel, which cannot be done
-		         ;; from inside the sentinel.
-		         (fsm-send fsm (list :connected c)))
-		       (connection-failed
-		         (c status)
-		         (when (and (> (length status) 0)
-				    (eq (aref status (1- (length status))) ?\n))
-			   (setq status (substring status 0 -1)))
-			 (let ((err
-				(format "Couldn't connect to %s:%s: %s"
-				        (car target) (cdr target) status)))
-			   (message "%s" err)
-			   (push err errors))
-			 (when c (delete-process c))
-			 (if remaining-targets
-			     (progn
-			       (message
-			        "Connecting to %s:%s..."
-			        (caar remaining-targets) (cdar remaining-targets))
-			       (connect (car remaining-targets) (cdr remaining-targets)))
-			   (fsm-send fsm (list :connection-failed (nreverse errors))))))
-	     (condition-case e
-		 (make-network-process
-		  :name "jabber"
-		  :buffer (generate-new-buffer jabber-process-buffer)
-		  :host (car target) :service (cdr target)
-		  :coding 'utf-8
-		  :nowait t
-		  :sentinel
-		  (lambda (connection status)
-		    (cond
-		     ((string-match "^open" status)
-		      (connection-successful connection))
-		     ((string-match "^failed" status)
-		      (connection-failed connection status))
-		     ((string-match "^deleted" status)
-		      ;; This happens when we delete a process in the
-		      ;; "failed" case above.
-		      nil)
-		     (t
-		      (message "Unknown sentinel status `%s'" status)))))
-	       (file-error
-		;; A file-error has the error message in the third list
-		;; element.
-		(connection-failed nil (car (cddr e))))
-	       (error
-		;; Not sure if we ever get anything but file-errors,
-		;; but let's make sure we report them:
-		(connection-failed nil (error-message-string e)))))))
-      (message "Connecting to %s:%s..." (caar targets) (cdar targets))
+	   (let ((host (nth 0 target))
+		 (svc (nth 1 target))
+		 (directtls-p (nth 2 target))
+		 (timeout-timer nil)
+		 (settled nil))
+	     (cl-labels ((cancel-timeout
+			   ()
+			   (when timeout-timer
+			     (cancel-timer timeout-timer)
+			     (setq timeout-timer nil)))
+			 (connection-successful
+			   (c)
+			   (unless settled
+			     (setq settled t)
+			     (cancel-timeout)
+			     ;; This mustn't be `fsm-send-sync', because the FSM
+			     ;; needs to change the sentinel, which cannot be done
+			     ;; from inside the sentinel.
+			     (fsm-send fsm (list :connected c directtls-p))))
+			 (connection-failed
+			   (c status)
+			   (unless settled
+			     (setq settled t)
+			     (cancel-timeout)
+			     (when (and (> (length status) 0)
+					(eq (aref status (1- (length status))) ?\n))
+			       (setq status (substring status 0 -1)))
+			     (let ((err
+				    (format "Couldn't connect to %s:%s: %s"
+					    host svc status)))
+			       (message "%s" err)
+			       (push err errors))
+			     (when c (delete-process c))
+			     (if remaining-targets
+				 (progn
+				   (message
+				    "Connecting to %s:%s..."
+				    (nth 0 (car remaining-targets))
+				    (nth 1 (car remaining-targets)))
+				   (connect (car remaining-targets)
+					    (cdr remaining-targets)))
+			       (fsm-send fsm (list :connection-failed
+						   (nreverse errors)))))))
+	       (condition-case e
+		   (let ((proc (jabber-conn--make-process
+				host svc
+				(generate-new-buffer jabber-process-buffer)
+				directtls-p server)))
+		     (set-process-sentinel
+		      proc
+		      (lambda (connection status)
+			(cond
+			 ((string-match "^open" status)
+			  (connection-successful connection))
+			 ((string-match "^failed" status)
+			  (connection-failed connection status))
+			 ((string-match "^deleted" status)
+			  nil)
+			 (t
+			  (message "Unknown sentinel status `%s'" status)))))
+		     (when jabber-connection-timeout
+		       (setq timeout-timer
+			     (run-at-time
+			      jabber-connection-timeout nil
+			      (lambda ()
+				(connection-failed
+				 proc "connection timed out"))))))
+		 (file-error
+		  (connection-failed nil (car (cddr e))))
+		 (error
+		  (connection-failed nil (error-message-string e))))))))
+      (message "Connecting to %s:%s..."
+	       (nth 0 (car targets)) (nth 1 (car targets)))
       (connect (car targets) (cdr targets)))))
 
 (defun jabber-network-send (connection string)

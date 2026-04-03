@@ -437,9 +437,12 @@ With double prefix argument, specify more connection details."
   (pcase (or (car-safe event) event)
     (:connected
      (let ((connection (cadr event))
-	   ) ;; (registerp (plist-get state-data :registerp))
+	   (directtls-p (caddr event)))
 
        (setq state-data (plist-put state-data :connection connection))
+       ;; Direct TLS (XEP-0368): connection is already encrypted.
+       (when directtls-p
+	 (setq state-data (plist-put state-data :encrypted t)))
 
        (when (processp connection)
 	 ;; TLS connections leave data in the process buffer, which
@@ -535,7 +538,9 @@ With double prefix argument, specify more connection details."
 			      :disconnection-reason
 			      (format "Unexpected stanza %s" stanza))))
 	((and (jabber-xml-get-children stanza 'starttls)
-	      (eq (plist-get state-data :connection-type) 'starttls))
+	      (eq (plist-get state-data :connection-type) 'starttls)
+	      ;; XEP-0368: STARTTLS MUST NOT be used over direct TLS.
+	      (not (plist-get state-data :encrypted)))
 	 (list :starttls state-data))
 	;; XXX: require encryption for registration?
 	((plist-get state-data :registerp)
