@@ -75,6 +75,7 @@
 (autoload 'mastodon-tl-return "mastodon-tl")
 (autoload 'mastodon-tl-jump-to-followed-tag "mastodon-tl")
 (autoload 'mastodon-notifications--update-with-timer "mastodon-notifications")
+(autoload 'mastodon-profile-table-cell-hook-fun "mastodon-profile")
 
 ;; for M-x visibility
 ;; (views.el uses `mastodon-mode-map', so we can't easily require it)
