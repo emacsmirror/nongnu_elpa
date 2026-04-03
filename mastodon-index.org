@@ -108,9 +108,11 @@
 | C-c C-c    | mastodon-profile-account-view-cycle              | Cycle through profile view: toots, toot sans boosts, followers, and following. |
 |            | mastodon-profile-add-account-to-list             | Add account of current profile buffer to a list.                               |
 |            | mastodon-profile-add-private-note-to-account     | Add a private note to an account.                                              |
+|            | mastodon-profile-feature-tag                     | Feature a tag on your profile.                                                 |
 |            | mastodon-profile-fields                          | A transient for setting profile fields.                                        |
 |            | mastodon-profile-fields-update                   | Update current user profile fields.                                            |
 | A          | mastodon-profile-get-toot-author                 | Open profile of author of toot under point.                                    |
+|            | mastodon-profile-load-featured-tag               | Prompt for a featured tag, and load posts containing it.                       |
 |            | mastodon-profile-mode                            | Toggle mastodon profile minor mode.                                            |
 | O          | mastodon-profile-my-profile                      | Show the profile of the currently signed in user.                              |
 |            | mastodon-profile-open-followers                  | Open a profile buffer showing the accounts following the current profile.      |
@@ -120,6 +122,7 @@
 |            | mastodon-profile-open-statuses-no-replies        | Open a profile buffer showing statuses without replies.                        |
 |            | mastodon-profile-open-statuses-only-media        | Open a profile buffer showing only statuses with media.                        |
 | C-c #      | mastodon-profile-open-statuses-tagged            | Prompt for a hashtag and display a profile with only statuses containing it.   |
+|            | mastodon-profile-own-featured-tags               |                                                                                |
 |            | mastodon-profile-remove-from-followers-at-point  | Prompt for a user in the item at point and remove from followers.              |
 |            | mastodon-profile-remove-from-followers-list      | Select a user from your followers and remove from followers.                   |
 |            | mastodon-profile-remove-user-from-followers      | Remove a user from your followers.                                             |
@@ -230,7 +233,7 @@
 | e          | mastodon-toot-edit-toot-at-point                 | Edit the user's toot at point.                                                 |
 |            | mastodon-toot-enable-custom-emoji                | Add `mastodon-instance-url's custom emoji to `emojify'.                        |
 | C-c C-e    | mastodon-toot-insert-emoji                       | Prompt to insert an emoji.                                                     |
-|            | mastodon-toot-jump-to-quoting                    | Prompt for a toot quoting the toot at point and load it.                       |
+| C-,        | mastodon-toot-jump-to-quoting                    | Prompt for a toot quoting the toot at point and load it.                       |
 | .          | mastodon-toot-list-boosters                      | List the boosters of toot at point.                                            |
 | ,          | mastodon-toot-list-favouriters                   | List the favouriters of toot at point.                                         |
 |            | mastodon-toot-mode                               | Minor mode for composing toots.                                                |
