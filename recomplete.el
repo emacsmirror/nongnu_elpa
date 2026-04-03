@@ -276,7 +276,7 @@ Argument FN-CACHE stores the result for reuse."
         (let ((pos-prev (1+ word-beg)))
           (while (null (eql pos-prev word-beg))
             (setq pos-prev word-beg)
-            (when (memq (char-before word-beg) (list ?_ ?-))
+            (when (memq (char-before word-beg) '(?_ ?-))
               (let ((range
                      (save-excursion
                        (goto-char (- word-beg 2))
@@ -287,7 +287,7 @@ Argument FN-CACHE stores the result for reuse."
         (let ((pos-prev (1- word-end)))
           (while (null (eql pos-prev word-end))
             (setq pos-prev word-end)
-            (when (memq (char-after word-end) (list ?_ ?-))
+            (when (memq (char-after word-end) '(?_ ?-))
               (let ((range
                      (save-excursion
                        (goto-char (+ word-end 2))
@@ -364,7 +364,7 @@ Argument FN-CACHE stores the result for reuse."
         (setq word-beg (car word-range))
         (setq word-end (cdr word-range)))
 
-      (let* ((do-kebab-case (memq (char-syntax ?-) (list ?_ ?w)))
+      (let* ((do-kebab-case (memq (char-syntax ?-) '(?_ ?w)))
              (word-init (buffer-substring-no-properties word-beg word-end))
              (word-split
               (mapcar
