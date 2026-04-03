@@ -7,25 +7,21 @@
   <Project>
     <name>jabber.el</name>
 
-    <shortdesc xml:lang="en">jabber.el - an XMPP client for Emacs</shortdesc>
-    <shortdesc xml:lang="el">jabber.el - Μία XMPP εφαρμογή για το Emacs</shortdesc>
+    <shortdesc xml:lang="en">jabber.el - XMPP client for Emacs</shortdesc>
+    <shortdesc xml:lang="el">jabber.el - XMPP  για το Emacs</shortdesc>
     <description xml:lang="en">
       jabber.el is an XMPP client for Emacs.
-      XMPP (also known as 'Jabber') is an IETF-standard federated instant messaging protocol.
     </description>
     <description xml:lang="el">
-      Η jabber.el είναι μία XMPP εφαρμογή για το Emacs.
-      Το XMPP (γνωστό και ως 'Jabber') είναι ένα ομοσπονδιακό πρωτόκολλο άμεσων μηνυμάτων από τον IETF.
+      Τὸ jabber.el εἶναι ἕνα XMPP πρόγραμμα-πελάτης γιά τὸ Ἤμαξ.
     </description>
     <created>2023-09-09</created>
 
-    <homepage rdf:resource="https://codeberg.org/emacs-jabber/emacs-jabber"/>
-    <download-page rdf:resource="https://codeberg.org/emacs-jabber/emacs-jabber#user-content-how-to-install"/>
-    <bug-database rdf:resource="https://codeberg.org/emacs-jabber/emacs-jabber/issues"/>
-    <support-forum rdf:resource="xmpp:emacs@salas.suchat.org?join"/>
+    <homepage rdf:resource="https://thanosapollo.org/projects/jabber/"/>
+    <download-page rdf:resource="https://thanosapollo.org/projects/jabber/#installation"/>
     <developer-forum rdf:resource="xmpp:jabber-el@conference.hmm.st?join"/>
 
-    <license rdf:resource="https://unlicense.org/"/>
+    <license rdf:resource="https://www.gnu.org/licenses/gpl-3.0.html"/>
 
     <programming-language>Emacs Lisp</programming-language>
     <os>Linux</os>
@@ -40,23 +36,14 @@
 
     <repository>
       <GitRepository>
-        <location rdf:resource="https://codeberg.org/emacs-jabber/emacs-jabber"/>
+        <location rdf:resource="https://git.thanosapollo.org/emacs-jabber/"/>
       </GitRepository>
     </repository>
 
     <maintainer>
       <foaf:Person>
-        <foaf:nick>wgreenhouse</foaf:nick>
-      </foaf:Person>
-    </maintainer>
-    <maintainer>
-      <foaf:Person>
-        <foaf:nick>cngimenez</foaf:nick>
-      </foaf:Person>
-    </maintainer>
-    <maintainer>
-      <foaf:Person>
-        <foaf:nick>contrapunctus</foaf:nick>
+        <foaf:name>Thanos Apollo</foaf:name>
+        <foaf:nick>thanosapollo</foaf:nick>
       </foaf:Person>
     </maintainer>
 
