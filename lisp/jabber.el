@@ -93,8 +93,8 @@ The following keys can be present in the alist:
 
   :port is the port to use (default depends on connection type).
 
-  :connection-type is a symbol.  Valid symbols are `starttls',
-  `network' and `ssl'.
+  :connection-type is a symbol.  Valid symbols are `starttls'
+  and `network'.
 
 Only JID is mandatory.  The rest can be guessed at run-time.
 
@@ -104,13 +104,7 @@ Two accounts without any special configuration:
 \((\"foo@example.com\") (\"bar@example.net\"))
 
 One disabled account with a non-standard port:
-\((\"romeo@montague.net\" (:port . 5242) (:disabled . t)))
-
-If you don't have SRV and STARTTLS capabilities in your Emacs,
-configure a Google Talk account like this:
-\((\"username@gmail.com\"
-  (:network-server . \"talk.google.com\")
-  (:connection-type . ssl)))"
+\((\"romeo@montague.net\" (:port . 5242) (:disabled . t)))"
   :type '(repeat
 	  (cons :tag "Account information"
 		(string :tag "JID")
@@ -130,11 +124,8 @@ configure a Google Talk account like this:
 		     (cons :format "%v"
 			   (const :format "" :connection-type)
 			   (choice :tag "Connection type"
-				   ;; XXX: detect whether we have STARTTLS?  option
-				   ;; for enforcing encryption?
 				   (const :tag "STARTTLS" starttls)
-				   (const :tag "Unencrypted" network)
-				   (const :tag "Legacy SSL/TLS" ssl))))))
+				   (const :tag "Unencrypted" network))))))
   :group 'jabber)
 
 (defcustom jabber-default-resource "emacs"

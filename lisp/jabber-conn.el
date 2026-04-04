@@ -40,29 +40,9 @@
 (defgroup jabber-conn nil "Jabber Connection Settings."
   :group 'jabber)
 
-(defun jabber-have-starttls ()
-  "Return non-nil if we can use STARTTLS."
-  (gnutls-available-p))
-
-(defconst jabber-default-connection-type
-  (cond
-   ;; Use STARTTLS if we can...
-   ((jabber-have-starttls)
-    'starttls)
-   ;; ...else default to unencrypted connection.
-   (t
-    'network))
+(defconst jabber-default-connection-type 'starttls
   "Default connection type.
 See `jabber-connect-methods'.")
-
-(defcustom jabber-connection-ssl-program nil
-  "Program used for SSL/TLS connections.
-nil means prefer gnutls but fall back to openssl.
-\='gnutls\=' means use gnutls (through `open-tls-stream').
-\='openssl means use openssl (through `open-ssl-stream')."
-  :type '(choice (const :tag "Prefer gnutls, fall back to openssl" nil)
-		 (const :tag "Use gnutls" gnutls)
-		 (const :tag "Use openssl" openssl)))
 
 (defcustom jabber-invalid-certificate-servers ()
   "Jabber servers for which we accept invalid TLS certificates.
@@ -84,7 +64,6 @@ a STARTTLS upgrade."
 (defvar jabber-connect-methods
   '((network jabber-network-connect jabber-network-send)
     (starttls jabber-network-connect jabber-network-send)
-    (ssl jabber-ssl-connect jabber-ssl-send)
     (virtual jabber-virtual-connect jabber-virtual-send))
   "Alist of connection methods and functions.
 First item is the symbol naming the method.
@@ -268,53 +247,6 @@ When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER."
   "Send a string via a plain TCP/IP connection to the Jabber Server."
   (process-send-string connection string))
 
-;; SSL connection, we use openssl's s_client function for encryption
-;; of the link
-(defun jabber-ssl-connect (fsm server network-server port)
-  "Connect via OpenSSL or GnuTLS to a Jabber Server.
-Send a message of the form (:connected CONNECTION) to FSM if
-connection succeeds.  Send a message (:connection-failed ERRORS) if
-connection fails."
-  (let ((coding-system-for-read 'utf-8)
-	(coding-system-for-write 'utf-8)
-	(connect-function
-	 (cond
-	  ((and (memq jabber-connection-ssl-program '(nil gnutls))
-		(fboundp 'open-tls-stream))
-	   'open-tls-stream)
-	  ((and (memq jabber-connection-ssl-program '(nil openssl))
-		(fboundp 'open-ssl-stream))
-	   'open-ssl-stream)
-	  (t
-	   (error "Neither TLS nor SSL connect functions available"))))
-	error-msg)
-    (let ((process-buffer (generate-new-buffer jabber-process-buffer))
-	  connection)
-      (setq network-server (or network-server server))
-      (setq port (or port 5223))
-      (condition-case e
-	  (setq connection (funcall connect-function
-				    "jabber"
-				    process-buffer
-				    network-server
-				    port))
-	(error
-	 (setq error-msg
-	       (format "Couldn't connect to %s:%d: %s" network-server port
-		       (error-message-string e)))
-	 (message "%s" error-msg)))
-      (unless (or connection jabber-debug-keep-process-buffers)
-	(kill-buffer process-buffer))
-      (if connection
-	  (fsm-send fsm (list :connected connection))
-	(fsm-send fsm (list :connection-failed
-			    (when error-msg (list error-msg))))))))
-
-(defun jabber-ssl-send (connection string)
-  "Send a string via an SSL-encrypted connection to the Jabber Server."
-  ;; It seems we need to send a linefeed afterwards.
-  (process-send-string connection string)
-  (process-send-string connection "\n"))
 
 (defun jabber-starttls-initiate (fsm)
   "Initiate a STARTTLS connection."
