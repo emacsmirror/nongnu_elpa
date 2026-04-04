@@ -58,7 +58,6 @@
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
 (declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
-(declare-function jabber-chat-buffer-refresh "jabber-chatbuffer" ())
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-parse-time "jabber-util" (raw-time))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
@@ -107,6 +106,12 @@ Only used when no previous sync point exists (first sync).
 Set to nil to fetch the entire archive."
   :type '(choice integer (const :tag "Fetch all" nil))
   :group 'jabber)
+
+;;; Hooks
+
+(defvar jabber-mam-sync-complete-functions nil
+  "Hook run after MAM stores messages for one or more peers.
+Each function receives one argument: a list of (PEER . TYPE) pairs.")
 
 ;;; Internal state
 
@@ -395,21 +400,13 @@ TYPE is \"groupchat\" for MUC or \"chat\" for 1:1."
       (force-mode-line-update))))
 
 (defun jabber-mam--redraw-dirty ()
-  "Refresh all chat buffers that received MAM messages during sync.
-Reloads each buffer's ewoc from the database in place.
-Does NOT manage `jabber-chat-mam-syncing'; that flag is controlled
-by per-query completion callbacks registered in the catch-up functions."
+  "Signal that accumulated dirty peers need display refresh.
+Drains `jabber-mam--dirty-peers' and runs
+`jabber-mam-sync-complete-functions'."
   (let ((peers (prog1 jabber-mam--dirty-peers
                  (setq jabber-mam--dirty-peers nil))))
-    (dolist (entry peers)
-      (let* ((peer (car entry))
-             (type (cdr entry))
-             (buffer (if (string= type "groupchat")
-                         (jabber-muc-find-buffer peer)
-                       (jabber-chat-find-buffer peer))))
-        (when (and buffer (buffer-live-p buffer))
-          (with-current-buffer buffer
-            (jabber-chat-buffer-refresh)))))))
+    (when peers
+      (run-hook-with-args 'jabber-mam-sync-complete-functions peers))))
 
 ;;; Shared transaction management
 

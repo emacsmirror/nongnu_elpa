@@ -430,6 +430,8 @@ EWOC-PP is the pretty-printer function for the message EWOC."
         (setq jabber-chat-encryption 'plaintext))))
   (jabber-chat-encryption--update-header))
 
+(declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
+(declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-muc-sender-p "jabber-muc" (jid))
 (declare-function jabber-db-backlog "jabber-db"
                   (account peer &optional count start-time resource msg-type))
@@ -600,6 +602,25 @@ or nil if the message was a duplicate."
       (unless (memq (buffer-local-value 'jabber-buffer-connection buf)
                     jabber-connections)
         (kill-buffer buf)))))
+
+;;; MAM hook listeners
+
+(defvar jabber-mam-sync-complete-functions)  ; jabber-mam.el
+
+(defun jabber-chat--handle-mam-sync-complete (peers)
+  "Refresh chat buffers that received MAM messages.
+PEERS is a list of (PEER . TYPE) pairs."
+  (dolist (entry peers)
+    (let* ((peer (car entry))
+           (type (cdr entry))
+           (buffer (if (string= type "groupchat")
+                       (jabber-muc-find-buffer peer)
+                     (jabber-chat-find-buffer peer))))
+      (when (and buffer (buffer-live-p buffer))
+        (with-current-buffer buffer
+          (jabber-chat-buffer-refresh))))))
+
+(add-hook 'jabber-mam-sync-complete-functions #'jabber-chat--handle-mam-sync-complete)
 
 (with-eval-after-load "jabber-core"
   (add-hook 'jabber-post-disconnect-hook #'jabber-chatbuffer--kill-stale))
