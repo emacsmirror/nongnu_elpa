@@ -57,8 +57,6 @@
 (declare-function jabber-db-last-server-id "jabber-db" (account &optional peer))
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
-(declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
-(declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-parse-time "jabber-util" (raw-time))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
@@ -69,7 +67,6 @@
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
-(defvar jabber-chat-mam-syncing)       ; jabber-chatbuffer.el
 
 ;;; Constants
 
@@ -108,6 +105,12 @@ Set to nil to fetch the entire archive."
   :group 'jabber)
 
 ;;; Hooks
+
+(defvar jabber-mam-peer-syncing-functions nil
+  "Hook run when a peer's MAM sync state changes.
+Each function receives three arguments: PEER (bare JID), TYPE
+\(\"groupchat\" or \"chat\"), and SYNCING-P (non-nil when sync
+starts, nil when it ends).")
 
 (defvar jabber-mam-sync-complete-functions nil
   "Hook run after MAM stores messages for one or more peers.
@@ -388,16 +391,6 @@ TYPE is the message type (\"groupchat\" for MUC)."
   (unless (cl-find peer jabber-mam--dirty-peers :key #'car :test #'string=)
     (push (cons peer type) jabber-mam--dirty-peers)))
 
-(defun jabber-mam--clear-syncing-flag (peer type)
-  "Clear the syncing indicator in PEER's chat buffer.
-TYPE is \"groupchat\" for MUC or \"chat\" for 1:1."
-  (when-let* ((buffer (if (string= type "groupchat")
-                          (jabber-muc-find-buffer peer)
-                        (jabber-chat-find-buffer peer)))
-              ((buffer-live-p buffer)))
-    (with-current-buffer buffer
-      (setq jabber-chat-mam-syncing nil)
-      (force-mode-line-update))))
 
 (defun jabber-mam--redraw-dirty ()
   "Signal that accumulated dirty peers need display refresh.
@@ -597,7 +590,8 @@ Registers a completion callback to clear the syncing indicator."
          (queryid (jabber-mam--make-queryid)))
     (push (cons queryid
                 (lambda ()
-                  (jabber-mam--clear-syncing-flag peer "chat")))
+                  (run-hook-with-args 'jabber-mam-peer-syncing-functions
+                                      peer "chat" nil)))
           jabber-mam--completion-callbacks)
     (if last-id
         (jabber-mam--query jc last-id queryid peer nil nil)
@@ -615,11 +609,7 @@ JC is the Jabber connection.  Called from `jabber-chat-create-buffer'.
 Sets the syncing indicator immediately; clears it when the catch-up
 query completes (or when disco reveals MAM is not supported)."
   (when jabber-mam-enable
-    (when-let* ((buffer (jabber-chat-find-buffer peer))
-                ((buffer-live-p buffer)))
-      (with-current-buffer buffer
-        (setq jabber-chat-mam-syncing t)
-        (force-mode-line-update)))
+    (run-hook-with-args 'jabber-mam-peer-syncing-functions peer "chat" t)
     (jabber-disco-get-info
      jc (jabber-connection-bare-jid jc) nil
      (lambda (jc closure-data result)
@@ -628,7 +618,8 @@ query completes (or when disco reveals MAM is not supported)."
                   (not (eq (car result) 'error))
                   (member jabber-mam-xmlns (cadr result)))
              (jabber-mam--chat-catch-up jc peer)
-           (jabber-mam--clear-syncing-flag peer "chat"))))
+           (run-hook-with-args 'jabber-mam-peer-syncing-functions
+                               peer "chat" nil))))
      (list peer))))
 
 ;;; MUC MAM catch-up
@@ -642,7 +633,8 @@ Registers a completion callback to clear the syncing indicator."
          (queryid (jabber-mam--make-queryid)))
     (push (cons queryid
                 (lambda ()
-                  (jabber-mam--clear-syncing-flag group "groupchat")))
+                  (run-hook-with-args 'jabber-mam-peer-syncing-functions
+                                      group "groupchat" nil)))
           jabber-mam--completion-callbacks)
     (if last-id
         (jabber-mam--query jc last-id queryid nil nil group)
@@ -660,11 +652,8 @@ JC is the Jabber connection.  Called from MUC self-presence handler.
 Sets the syncing indicator immediately; clears it when the catch-up
 query completes (or when disco reveals MAM is not supported)."
   (when jabber-mam-enable
-    (when-let* ((buffer (jabber-muc-find-buffer group))
-                ((buffer-live-p buffer)))
-      (with-current-buffer buffer
-        (setq jabber-chat-mam-syncing t)
-        (force-mode-line-update)))
+    (run-hook-with-args 'jabber-mam-peer-syncing-functions
+                        group "groupchat" t)
     (jabber-disco-get-info
      jc group nil
      (lambda (jc closure-data result)
@@ -673,7 +662,8 @@ query completes (or when disco reveals MAM is not supported)."
                   (not (eq (car result) 'error))
                   (member jabber-mam-xmlns (cadr result)))
              (jabber-mam--muc-catch-up jc group)
-           (jabber-mam--clear-syncing-flag group "groupchat"))))
+           (run-hook-with-args 'jabber-mam-peer-syncing-functions
+                               group "groupchat" nil))))
      (list group))))
 
 (defun jabber-mam--reconcile-sync (queryid)
@@ -745,10 +735,10 @@ the server are deleted.  The buffer is refreshed in place after sync."
       (push (cons queryid
                   (lambda ()
                     (jabber-mam--reconcile-sync queryid)
-                    (jabber-mam--clear-syncing-flag peer type)))
-            jabber-mam--completion-callbacks))
-    (setq jabber-chat-mam-syncing t)
-    (force-mode-line-update)
+                    (run-hook-with-args 'jabber-mam-peer-syncing-functions
+                                        peer type nil)))
+            jabber-mam--completion-callbacks)
+      (run-hook-with-args 'jabber-mam-peer-syncing-functions peer type t))
     (jabber-mam--mark-dirty peer (if group "groupchat" "chat"))
     (message "MAM: syncing last %d messages for %s..." count peer)
     (if muc-p

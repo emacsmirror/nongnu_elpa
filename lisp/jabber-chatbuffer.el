@@ -605,7 +605,22 @@ or nil if the message was a duplicate."
 
 ;;; MAM hook listeners
 
+(defvar jabber-mam-peer-syncing-functions)    ; jabber-mam.el
 (defvar jabber-mam-sync-complete-functions)  ; jabber-mam.el
+
+(defun jabber-chat--handle-mam-peer-syncing (peer type syncing-p)
+  "Update syncing indicator for PEER's chat buffer.
+TYPE is \"groupchat\" or \"chat\".  SYNCING-P is non-nil when
+sync starts, nil when it ends."
+  (when-let* ((buffer (if (string= type "groupchat")
+                          (jabber-muc-find-buffer peer)
+                        (jabber-chat-find-buffer peer)))
+              ((buffer-live-p buffer)))
+    (with-current-buffer buffer
+      (setq jabber-chat-mam-syncing syncing-p)
+      (force-mode-line-update))))
+
+(add-hook 'jabber-mam-peer-syncing-functions #'jabber-chat--handle-mam-peer-syncing)
 
 (defun jabber-chat--handle-mam-sync-complete (peers)
   "Refresh chat buffers that received MAM messages.
