@@ -1339,8 +1339,16 @@ with the created image (or nil) followed by CBARGS."
 (defvar jabber-chat-url-keymap
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'jabber-chat-url-action-at-point)
+    (define-key map "w" #'jabber-chat-copy-url)
     map)
   "Keymap active on inline images and downloadable URLs in chat buffers.")
+
+(defun jabber-chat-copy-url ()
+  "Copy the URL at point to the kill ring and display it."
+  (interactive)
+  (if-let* ((url (get-text-property (point) 'jabber-chat-image-url)))
+      (progn (kill-new url) (message "%s" url))
+    (user-error "No URL at point")))
 
 (defcustom jabber-chat-download-directory nil
   "Default directory for file downloads.
