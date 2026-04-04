@@ -124,10 +124,12 @@ the resulting module.  Signals an error on build failure."
       (message "OMEMO: disabled by jabber-omemo-enable")
     (if (require 'jabber-omemo-core nil t)
         (setq jabber-omemo--available t)
-      (let ((src-dir (expand-file-name
-                      "../src"
-                      (file-name-directory
-                       (or load-file-name buffer-file-name)))))
+      (let* ((this-dir (file-name-directory
+                        (or load-file-name buffer-file-name)))
+             (src-dir (if (file-directory-p
+                           (expand-file-name "src" this-dir))
+                          (expand-file-name "src" this-dir)
+                        (expand-file-name "../src" this-dir))))
         (if (and (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
                  (or noninteractive
                      (yes-or-no-p
