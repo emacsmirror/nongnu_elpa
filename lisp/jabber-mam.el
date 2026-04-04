@@ -58,7 +58,7 @@
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
 (declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
-(declare-function jabber-chat-buffer-refresh "jabber-chatbuffer" (&optional count))
+(declare-function jabber-chat-buffer-refresh "jabber-chatbuffer" ())
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-parse-time "jabber-util" (raw-time))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
@@ -70,7 +70,6 @@
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
-(defvar jabber-backlog-number)          ; jabber-db.el
 (defvar jabber-chat-mam-syncing)       ; jabber-chatbuffer.el
 
 ;;; Constants
@@ -719,22 +718,21 @@ AND retracted_by IS NULL"
           (cl-remove queryid jabber-mam--sync-received
                      :key #'car :test #'string=))))
 
-(defun jabber-mam-sync-buffer (count)
-  "Sync the last COUNT messages from the server archive for this buffer.
+(declare-function jabber-chat-buffer-msg-count "jabber-chatbuffer" ())
+
+(defun jabber-mam-sync-buffer ()
+  "Sync messages from the server archive for this buffer.
+Uses `jabber-chat-buffer-msg-count' for the number of messages.
 Fetches recent messages using RSM backward pagination.  New messages
 are decrypted and stored; existing messages are preserved via dedup.
 Failed-decrypt placeholders are replaced if decryption now succeeds.
 Local messages in the synced time range whose IDs are not found on
 the server are deleted.  The buffer is refreshed in place after sync."
-  (interactive
-   (list (let ((input (read-string
-                       (format "Messages to sync (default %d): "
-                               jabber-backlog-number))))
-           (if (string-empty-p input) jabber-backlog-number
-             (string-to-number input)))))
+  (interactive)
   (unless (memq jabber-buffer-connection jabber-connections)
     (user-error "Not connected"))
   (let* ((jc jabber-buffer-connection)
+         (count (jabber-chat-buffer-msg-count))
          (group (bound-and-true-p jabber-group))
          (peer (or group
                    (jabber-jid-user (bound-and-true-p jabber-chatting-with))))

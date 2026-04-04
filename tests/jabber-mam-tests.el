@@ -385,7 +385,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
   (with-temp-buffer
     (setq-local jabber-buffer-connection 'dead-jc)
     (let ((jabber-connections nil))
-      (should-error (jabber-mam-sync-buffer 30) :type 'user-error))))
+      (should-error (jabber-mam-sync-buffer) :type 'user-error))))
 
 (ert-deftest jabber-mam-test-sync-buffer-1to1-registers-and-queries ()
   "1:1 sync registers reconciliation tracking and queries with before-id=t."
@@ -403,7 +403,8 @@ OUR-NICK is our nickname; every 3rd message is from us."
               (jabber-mam--completion-callbacks nil))
           (setq-local jabber-buffer-connection 'fake-jc)
           (setq-local jabber-chatting-with "friend@example.com")
-          (jabber-mam-sync-buffer 50)
+          (setq-local jabber-chat-buffer-msg-count 50)
+          (jabber-mam-sync-buffer)
           ;; Should have registered sync tracking
           (should jabber-mam--sync-received)
           (let ((data (cdar jabber-mam--sync-received)))
@@ -417,8 +418,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
           (should (equal "friend@example.com" (nth 3 query-args)))
           (should-not (nth 5 query-args))        ; no to (1:1)
           (should (eq t (nth 6 query-args)))     ; before-id = t
-          (should (= 50 (nth 7 query-args))))))) ; max = count
-  )
+          (should (= 50 (nth 7 query-args))))))))
 
 (ert-deftest jabber-mam-test-sync-buffer-muc-registers-and-queries ()
   "MUC sync registers reconciliation tracking and queries with before-id=t."
@@ -434,7 +434,8 @@ OUR-NICK is our nickname; every 3rd message is from us."
               (jabber-mam--completion-callbacks nil))
           (setq-local jabber-buffer-connection 'fake-jc)
           (setq-local jabber-group "room@conference.example.com")
-          (jabber-mam-sync-buffer 25)
+          (setq-local jabber-chat-buffer-msg-count 25)
+          (jabber-mam-sync-buffer)
           ;; Should have registered sync tracking
           (should jabber-mam--sync-received)
           (let ((data (cdar jabber-mam--sync-received)))
@@ -445,8 +446,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
           (should (eq 'fake-jc (nth 0 query-args)))
           (should (equal "room@conference.example.com" (nth 5 query-args)))
           (should (eq t (nth 6 query-args)))     ; before-id = t
-          (should (= 25 (nth 7 query-args))))))) ; max = count
-  )
+          (should (= 25 (nth 7 query-args))))))))
 
 ;;; Group 8b: sync reconciliation
 

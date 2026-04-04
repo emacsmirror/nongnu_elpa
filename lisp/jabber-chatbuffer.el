@@ -69,7 +69,7 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-get-info "jabber-info" (jc to))
 (declare-function jabber-roster-change "jabber-presence" (jc jid name groups))
 (declare-function jabber-roster-delete "jabber-presence" (jc jid))
-(declare-function jabber-mam-sync-buffer "jabber-mam" (count))
+(declare-function jabber-mam-sync-buffer "jabber-mam" ())
 (declare-function jabber-moderation-retract "jabber-moderation" ())
 (declare-function jabber-moderation-retract-by-occupant "jabber-moderation" ())
 (declare-function jabber-chat-reply "jabber-message-reply" ())
@@ -284,37 +284,27 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
 
 (defvar jabber-backlog-number)            ; jabber-db.el
 
-(transient-define-argument jabber-chat:-n ()
-  :description "Message count"
-  :class 'transient-option
-  :shortarg "-n"
-  :argument "-n"
-  :reader #'transient-read-number-N+
-  :always-read t)
+(defvar-local jabber-chat-buffer-msg-count nil
+  "Per-buffer message count for backlog and sync.
+When non-nil, overrides `jabber-backlog-number' for refresh and
+MAM sync in this buffer.  Set via the transient -n argument.")
 
-(defun jabber-chat--transient-msg-count ()
-  "Extract the message count from the current transient's -n argument.
-Return a positive integer, or nil if -n is unset or empty."
-  (let ((val (cl-some (lambda (a)
-                        (and (string-prefix-p "-n" a)
-                             (substring a 2)))
-                      (transient-args transient-current-command))))
-    (and val (not (string-empty-p val))
-         (let ((num (string-to-number val)))
-           (and (> num 0) num)))))
+(defun jabber-chat-buffer-msg-count ()
+  "Return the effective message count for this buffer."
+  (or jabber-chat-buffer-msg-count jabber-backlog-number))
 
-(transient-define-suffix jabber-chat--refresh-suffix ()
-  "Refresh buffer from DB using the -n count from the transient."
-  :transient nil
-  (interactive)
-  (jabber-chat-buffer-refresh (jabber-chat--transient-msg-count)))
-
-(transient-define-suffix jabber-chat--mam-sync-buffer-suffix ()
-  "Sync & redraw using the -n count from the transient."
-  :transient nil
-  (interactive)
-  (jabber-mam-sync-buffer
-   (or (jabber-chat--transient-msg-count) jabber-backlog-number)))
+(transient-define-suffix jabber-chat-set-msg-count (count)
+  "Set the message count for the current chat buffer to COUNT."
+  :transient t
+  :description (lambda ()
+                 (concat "Message count: "
+                         (propertize (number-to-string
+                                     (jabber-chat-buffer-msg-count))
+                                    'face 'transient-value)))
+  (interactive
+   (list (read-number "Message count: " (jabber-chat-buffer-msg-count))))
+  (setq jabber-chat-buffer-msg-count (and (> count 0) count))
+  (message "Buffer message count: %d" (jabber-chat-buffer-msg-count)))
 
 (defun jabber-chat-get-info ()
   "Show version, disco info and ping for the current chat peer."
@@ -346,7 +336,6 @@ Return a positive integer, or nil if -n is unset or empty."
 
 (transient-define-prefix jabber-chat-operations-menu ()
   "Chat buffer operations."
-  :value (lambda () (list (format "-n%d" jabber-backlog-number)))
   [["Encryption"
     ("e" "Encryption..." jabber-chat-encryption-menu)
     ("f" "Fingerprints" jabber-chat-show-fingerprints)]
@@ -365,9 +354,9 @@ Return a positive integer, or nil if -n is unset or empty."
     ("M" "Retract message at point" jabber-moderation-retract)
     ("X" "Retract all by occupant" jabber-moderation-retract-by-occupant)]
    ["Buffer"
-    ("-n" jabber-chat:-n)
-    ("R" "Refresh" jabber-chat--refresh-suffix)
-    ("S" "Sync & refresh" jabber-chat--mam-sync-buffer-suffix)]])
+    ("n" jabber-chat-set-msg-count)
+    ("R" "Refresh" jabber-chat-buffer-refresh)
+    ("S" "Sync & refresh" jabber-mam-sync-buffer)]])
 
 ;; Spell check only what you're currently writing.
 (defun jabber-chat-mode-flyspell-verify ()
@@ -441,8 +430,6 @@ EWOC-PP is the pretty-printer function for the message EWOC."
         (setq jabber-chat-encryption 'plaintext))))
   (jabber-chat-encryption--update-header))
 
-(declare-function jabber-chat-create-buffer "jabber-chat" (jc chat-with))
-(declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
 (declare-function jabber-muc-sender-p "jabber-muc" (jid))
 (declare-function jabber-db-backlog "jabber-db"
                   (account peer &optional count start-time resource msg-type))
@@ -452,30 +439,15 @@ EWOC-PP is the pretty-printer function for the message EWOC."
                   (buffer entries callback &optional generation))
 (declare-function jabber-chat-display-buffer-images "jabber-chat" ())
 
-(defun jabber-chat-buffer-redraw-noselect ()
-  "Kill the current chat buffer and recreate it from the database.
-Returns the new buffer without selecting it."
-  (let ((jc jabber-buffer-connection)
-	(group (bound-and-true-p jabber-group))
-	(chat-with (bound-and-true-p jabber-chatting-with)))
-    (kill-buffer (current-buffer))
-    (if group
-	(jabber-muc-create-buffer jc group)
-      (jabber-chat-create-buffer jc chat-with))))
-
-(defun jabber-chat-buffer-redraw ()
-  "Kill the current chat buffer and recreate it from the database."
-  (interactive)
-  (switch-to-buffer (jabber-chat-buffer-redraw-noselect)))
-
-(defun jabber-chat-buffer-refresh (&optional count)
+(defun jabber-chat-buffer-refresh ()
   "Refresh the current chat buffer from the database without killing it.
 Clears the ewoc and reloads backlog entries in place.  Cancels any
 in-progress chunked insert by bumping the generation counter.
-COUNT overrides `jabber-backlog-number' for this refresh."
+Uses `jabber-chat-buffer-msg-count' for the number of messages."
   (interactive)
   (cl-incf jabber-chat--backlog-generation)
   (let ((generation jabber-chat--backlog-generation)
+        (count (jabber-chat-buffer-msg-count))
         (buffer-undo-list t)
         (inhibit-read-only t)
         (node (ewoc-nth jabber-chat-ewoc 0)))
