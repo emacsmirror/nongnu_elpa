@@ -236,17 +236,12 @@ BODY and ID are passed to each hook function."
                            server-id occupant-id oob-entries
                            encrypted))
 (declare-function jabber-db--extract-occupant-id "jabber-db.el" (xml-data))
-(declare-function jabber-mam-fetch-peer-history "jabber-mam"
-                  (jc peer &optional muc-p callback))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
                   (replace-id new-body new-from muc-p buffer))
-(declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
-(declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
-(declare-function jabber-mam-syncing-p "jabber-mam" ())
 (declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
 (declare-function jabber-chatstates--clear-typing "jabber-chatstates" ())
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
@@ -445,42 +440,26 @@ refresh has started and this insert sequence should abort."
 	  (when callback (funcall callback)))))))
 
 (defun jabber-chat-display-more-backlog (how-many)
-  "Display more context by fetching history from the server.
-Queries MAM for the peer's full archive, stores results in the
-database, then recreates the buffer.  MAM fetches in chunks so
-the UI stays responsive.
+  "Display more messages from local history.
 HOW-MANY is the number of additional messages to show.
 When nil or 0, display all messages."
   (interactive
    (let ((input (read-string "How many more messages (empty for all)? ")))
      (list (if (string-empty-p input) nil
 	     (string-to-number input)))))
-  (when (jabber-mam-syncing-p)
-    (user-error "MAM sync already in progress"))
-  (let* ((jc jabber-buffer-connection)
-	 (group (bound-and-true-p jabber-group))
-	 (chat-with (bound-and-true-p jabber-chatting-with))
-	 (peer (or group chat-with))
-	 (current-count (length (ewoc-collect
+  (let* ((current-count (length (ewoc-collect
 				jabber-chat-ewoc
 				(lambda (data) (not (eq (car data) :rare-time))))))
 	 (target-count (if (or (null how-many) (zerop how-many)) t
 			 (+ current-count how-many))))
-    (message "Fetching history for %s..." peer)
-    (jabber-mam-fetch-peer-history
-     jc peer group
-     (lambda ()
-       (let ((jabber-backlog-days nil)
-	     (jabber-backlog-number target-count))
-	 (when-let* ((buf (if group
-			      (jabber-muc-find-buffer peer)
-			    (jabber-chat-find-buffer peer))))
-	   (kill-buffer buf))
-	 (switch-to-buffer
-	  (if group
-	      (jabber-muc-create-buffer jc peer)
-	    (jabber-chat-create-buffer jc chat-with)))
-	 (message "History loaded for %s" peer))))))
+    (setq jabber-chat-buffer-msg-count target-count)
+    (jabber-chat-buffer-refresh)
+    (let ((new-count (length (ewoc-collect
+			      jabber-chat-ewoc
+			      (lambda (data) (not (eq (car data) :rare-time)))))))
+      (if (> new-count current-count)
+	  (message "Loaded %d messages from local history" new-count)
+	(message "No older messages in local history")))))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-process-chat)
 
