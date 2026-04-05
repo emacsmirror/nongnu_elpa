@@ -50,8 +50,13 @@ autoload:
 	$(EMACS_CMD) -q -Q --batch -L lisp \
 	--eval="(loaddefs-generate \"lisp\" \"lisp/jabber-autoloads.el\")"
 
+PICOMEMO_REPO = https://github.com/mierenhoop/picomemo.git
+PICOMEMO_COMMIT = 7ac189ad2461d99b765abcc28e8439e81a047bc8
+
 src/picomemo/omemo.c:
-	git submodule update --init --recursive
+	git submodule update --init --recursive 2>/dev/null || \
+	(git clone $(PICOMEMO_REPO) src/picomemo && \
+	 git -C src/picomemo checkout $(PICOMEMO_COMMIT))
 
 module: src/picomemo/omemo.c
 ifdef GUIX
