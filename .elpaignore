@@ -1,1 +1,5 @@
 tests
+src/picomemo/.github
+src/picomemo/test
+src/picomemo/example
+src/picomemo/.clang-format
