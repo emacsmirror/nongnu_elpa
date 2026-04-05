@@ -1,0 +1,150 @@
+* Async IMAP Implementation Plan
+
+** Problem Statement
+
+VM's IMAP implementation blocks Emacs during all network operations.
+The core issue is synchronous use of =accept-process-output= in tight loops
+throughout =vm-imap.el=.
+
+** Blocking Points Identified
+
+1. =vm-accept-process-output= (line 460-478) - fundamental blocking primitive
+2. =vm-imap-read-object= (line 2280-2440) - parser loops calling accept-process-output
+3. =open-network-stream= (line 1239-1258) - TCP/TLS connection blocking
+4. =vm-imap-synchronize-folder= (line 3328-3461) - orchestrates all ops synchronously
+5. =vm-imap-retrieve-messages= (line 3463+) - sequential per-message blocking
+
+** Recommended Solution: CPS with Process Filters
+
+*** Why CPS (Continuation-Passing Style)
+
+- No new dependencies (works across all supported Emacs versions)
+- Incremental migration possible (convert one function at a time)
+- Backward compatible (can keep sync versions during transition)
+- Full control over execution flow
+
+*** Core Pattern
+
+**** 1. Process filter replaces accept-process-output
+
+#+begin_src elisp
+(defun vm-imap-async-filter (process output)
+  "Called automatically when data arrives - never blocks"
+  (let ((handler (process-get process 'response-handler)))
+    (when handler
+      (funcall handler output))))
+
+(set-process-filter process #'vm-imap-async-filter)
+#+end_src
+
+**** 2. Commands take callbacks instead of blocking
+
+#+begin_src elisp
+;; OLD (blocks):
+(vm-imap-send-command process "LOGIN user pass")
+(vm-imap-read-ok-response process)  ; BLOCKS
+
+;; NEW (async):
+(vm-imap-send-command-async process "LOGIN user pass"
+  (lambda (response)
+    (if (vm-imap-ok-p response)
+        (continue-with-select ...)
+        (handle-error ...))))
+#+end_src
+
+**** 3. Chain macro for sequential operations
+
+#+begin_src elisp
+(defmacro vm-imap-chain (process &rest ops)
+  "Chain async IMAP operations - reads like sync but doesn't block"
+  ...)
+
+;; Usage:
+(vm-imap-chain process
+  (login user pass → login-result
+    (select "INBOX" → mailbox-info
+      (fetch-new-messages mailbox-info))))
+#+end_src
+
+*** Implementation Details
+
+**** Connection
+Use =make-process= with =:nowait t= for non-blocking connect:
+#+begin_src elisp
+(make-process
+ :name "imap-process"
+ :buffer "*imap*"
+ :host "imap.example.com"
+ :service 993
+ :filter #'vm-imap-async-filter
+ :sentinel #'vm-imap-async-sentinel
+ :nowait t)
+#+end_src
+
+**** Response accumulation
+Process filter must accumulate partial responses until complete line received:
+#+begin_src elisp
+(defun vm-imap-async-filter (process output)
+  (let ((buf (process-get process 'response-buffer)))
+    (setq buf (concat buf output))
+    (when (string-match "\r\n" buf)
+      ;; Complete response - parse and dispatch
+      (let ((response (vm-imap-parse-response buf)))
+        (funcall (process-get process 'handler) response))
+      (setq buf ""))
+    (process-put process 'response-buffer buf)))
+#+end_src
+
+**** Error handling
+Pass both success and error callbacks:
+#+begin_src elisp
+(vm-imap-login-async process user pass
+  :on-success (lambda (result) ...)
+  :on-error (lambda (err) ...)
+  :on-timeout (lambda () ...))
+#+end_src
+
+**** Timeout handling
+Use =run-at-time= to schedule timeout:
+#+begin_src elisp
+(let ((timer (run-at-time vm-imap-server-timeout nil
+              (lambda () (funcall on-timeout)))))
+  ;; Cancel timer when response arrives
+  (process-put process 'timeout-timer timer))
+#+end_src
+
+** Alternative: aio.el (async/await)
+
+If adding dependency is acceptable, cleanest code:
+
+#+begin_src elisp
+(aio-defun vm-imap-session (process user pass mailbox)
+  "Looks synchronous, but never blocks Emacs"
+  (aio-await (vm-imap-login process user pass))
+  (aio-await (vm-imap-select process mailbox))
+  (aio-await (vm-imap-fetch-new process)))
+#+end_src
+
+Requires Emacs 25+ (generators).
+See: https://github.com/skeeto/emacs-aio
+
+** Migration Path
+
+1. Add async process filter infrastructure alongside existing code
+2. Create async wrappers for low-level read functions
+3. Convert =vm-imap-make-session= to async version
+4. Convert =vm-imap-synchronize-folder= to async version
+5. Update all callers to use callback style
+6. Deprecate and eventually remove sync versions
+
+** Existing Examples
+
+- =nnimap.el= (Gnus): Sequence-numbered commands, still somewhat blocking
+- =eimap=: Fully event-driven streaming - elegant but would require complete rewrite
+  https://github.com/corecode/eimap
+
+** References
+
+- Emacs async processes: https://www.gnu.org/software/emacs/manual/html_node/elisp/Asynchronous-Processes.html
+- emacs-aio: https://nullprogram.com/blog/2019/03/10/
+- CPS in Elisp: https://jyp.github.io/posts/elisp-cps.html

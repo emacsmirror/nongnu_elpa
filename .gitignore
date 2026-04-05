@@ -40,3 +40,4 @@ commit.msg
 /lisp/vm-cus-load.el
 
 .emacs.bak/
+.cluade/
