@@ -1,5 +1,19 @@
 #+TITLE: Changelog
 
+* [0.10.3]
+#+date: 2026-04-06
+
+** Fixes
+- OMEMO JIT build finds source path in ELPA installs
+- Picomemo fallback clone for ELPA tarballs (submodule not populated)
+- History import no longer stores empty account string
+- Exclude picomemo test/example files from ELPA tarball
+
+** Internal
+- MAM decoupled from display via hooks
+- Chat backlog loaded from local DB instead of MAM
+- Removed legacy SSL connection method
+
 * [0.10.2]
 #+date: 2026-04-04
 
