@@ -50,10 +50,10 @@ autoload:
 	$(EMACS_CMD) -q -Q --batch -L lisp \
 	--eval="(loaddefs-generate \"lisp\" \"lisp/jabber-autoloads.el\")"
 
-module:
-	@if [ -z "$$(ls -A src/picomemo 2>/dev/null)" ]; then \
-	  git submodule update --init --recursive; \
-	fi
+src/picomemo/omemo.c:
+	git submodule update --init --recursive
+
+module: src/picomemo/omemo.c
 ifdef GUIX
 	guix shell -m manifest.scm -- $(MAKE) -C src
 else
