@@ -541,8 +541,8 @@ and tears down on exit."
       (with-temp-file history-file
         (insert "[\"2024-01-15T10:00:00Z\" \"in\" \"friend@example.com\" \"me\" \"Hi there\"]\n")
         (insert "[\"2024-01-15T10:01:00Z\" \"out\" \"me\" \"friend@example.com\" \"Hey!\"]\n"))
-      (jabber-db-import-history)
-      (let ((rows (jabber-db-query "" "friend@example.com"
+      (jabber-db-import-history "me@example.com")
+      (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
                                    0 (floor (float-time)))))
         (should (= 2 (length rows)))
         (should (string= "Hi there" (plist-get (car rows) :body)))
@@ -559,8 +559,8 @@ and tears down on exit."
                               (file-name-directory jabber-db-path))))
       (with-temp-file jabber-global-history-filename
         (insert "[\"2024-06-01T12:00:00Z\" \"in\" \"alice@example.com\" \"me\" \"Global msg\"]\n"))
-      (jabber-db-import-history)
-      (let ((rows (jabber-db-query "" "alice@example.com"
+      (jabber-db-import-history "me@example.com")
+      (let ((rows (jabber-db-query "me@example.com" "alice@example.com"
                                    0 (floor (float-time)))))
         (should (= 1 (length rows)))
         (should (string= "Global msg" (plist-get (car rows) :body)))))))

@@ -941,11 +941,12 @@ messages are stored in per-user files under the
 `jabber-history-dir' directory."
   :type 'boolean)
 
-(defun jabber-db-import-history ()
+(defun jabber-db-import-history (account)
   "Import message history from flat files into the SQLite database.
+ACCOUNT is the bare JID to associate with imported messages.
 Reads from either the global history file or per-user history
 files, depending on the value of `jabber-use-global-history'."
-  (interactive)
+  (interactive (list (read-string "Account JID: ")))
   (jabber-db-ensure-open)
   (let ((files (if jabber-use-global-history
                    (when (file-readable-p jabber-global-history-filename)
@@ -978,7 +979,7 @@ files, depending on the value of `jabber-use-global-history'."
                                        (float-time
                                         (jabber-parse-time time-str)))))
                       (jabber-db-store-message
-                       "" peer direction "chat" body timestamp)
+                       account peer direction "chat" body timestamp)
                       (cl-incf count))
                   (error (forward-line 1))))))
           (cl-incf file-idx)
