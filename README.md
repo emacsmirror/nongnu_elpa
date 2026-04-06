@@ -1,5 +1,7 @@
 ![build](https://github.com/Anoncheg1/selected-window-contrast/workflows/melpazoid/badge.svg)
 [![MELPA](https://melpa.org/packages/selected-window-contrast-badge.svg)](http://melpa.org/#/selected-window-contrast)
+[![NonGNU-devel ELPA](https://elpa.nongnu.org/nongnu-devel/selected-window-contrast.svg)](https://elpa.nongnu.org/nongnu-devel/selected-window-contrast.html)
+
 ![build-stable](https://github.com/Anoncheg1/selected-window-contrast/workflows/melpazoid-release/badge.svg)
 [![MELPA Stable](https://stable.melpa.org/packages/selected-window-contrast-badge.svg)](https://stable.melpa.org/#/selected-window-contrast)
 [![NonGNU ELPA](https://elpa.nongnu.org/nongnu/selected-window-contrast.svg)](https://elpa.nongnu.org/nongnu/selected-window-contrast.html)
