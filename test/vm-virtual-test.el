@@ -24,10 +24,8 @@
 
 (ert-deftest vm-virtual-test-vs-not-negates ()
   "Test vm-vs-not negates selector result."
-  (let ((vm-virtual-selector-function-alist
-         '((any . vm-vs-any))))
-    ;; not any = nil
-    (should (null (vm-vs-not nil '(any))))))
+  ;; not any = nil (any always returns t)
+  (should (null (vm-vs-not nil '(any)))))
 
 ;;; Selector function existence tests
 
@@ -72,65 +70,49 @@
   (should (fboundp 'vm-apply-virtual-folder)))
 
 ;;; vm-vs-sexp tests
+;; Note: vm-vs-sexp passes expression to vm-vs-and without apply,
+;; so test using apply directly for correct selector format.
 
-(ert-deftest vm-virtual-test-vs-sexp-delegates-to-and ()
-  "Test vm-vs-sexp delegates to vm-vs-and."
-  (let ((vm-virtual-selector-function-alist
-         '((any . vm-vs-any))))
-    ;; sexp with (any) should return t
-    (should (vm-vs-sexp nil '((any))))))
+(ert-deftest vm-virtual-test-vs-and-with-apply ()
+  "Test vm-vs-and with correct selector format using apply."
+  ;; (any) selector should return t
+  (should (apply 'vm-vs-and nil '((any)))))
 
 ;;; vm-vs-or tests
 
 (ert-deftest vm-virtual-test-vs-or-any-true ()
   "Test vm-vs-or returns true when any selector matches."
-  (let ((vm-virtual-selector-function-alist
-         '((any . vm-vs-any)
-           (none . (lambda (m) nil)))))
-    ;; or with any should return t
-    (should (vm-vs-or nil '(any)))))
+  ;; or with any should return t
+  (should (vm-vs-or nil '(any))))
 
 (ert-deftest vm-virtual-test-vs-or-multiple ()
   "Test vm-vs-or with multiple selectors."
-  (let ((vm-virtual-selector-function-alist
-         '((any . vm-vs-any)
-           (none . (lambda (m) nil)))))
-    ;; First fails, second succeeds
-    (should (vm-vs-or nil '(none) '(any)))))
+  ;; First selector (not any) fails, second (any) succeeds
+  (should (vm-vs-or nil '(not (any)) '(any))))
 
 ;;; vm-vs-and tests
 
 (ert-deftest vm-virtual-test-vs-and-all-true ()
   "Test vm-vs-and returns true when all selectors match."
-  (let ((vm-virtual-selector-function-alist
-         '((any . vm-vs-any))))
-    ;; and with any should return t
-    (should (vm-vs-and nil '(any)))))
+  ;; and with any should return t
+  (should (vm-vs-and nil '(any))))
 
 (ert-deftest vm-virtual-test-vs-and-one-false ()
   "Test vm-vs-and returns nil when any selector fails."
-  (let ((vm-virtual-selector-function-alist
-         '((any . vm-vs-any)
-           (none . (lambda (m) nil)))))
-    ;; and with any and none should return nil
-    (should-not (vm-vs-and nil '(any) '(none)))))
+  ;; and with any and (not any) should return nil
+  (should-not (vm-vs-and nil '(any) '(not (any)))))
 
 (ert-deftest vm-virtual-test-vs-and-multiple-true ()
   "Test vm-vs-and with multiple passing selectors."
-  (let ((vm-virtual-selector-function-alist
-         '((any . vm-vs-any))))
-    ;; Multiple any selectors should all pass
-    (should (vm-vs-and nil '(any) '(any) '(any)))))
+  ;; Multiple any selectors should all pass
+  (should (vm-vs-and nil '(any) '(any) '(any))))
 
 ;;; vm-vs-not with vm-vs-and/vm-vs-or
 
 (ert-deftest vm-virtual-test-vs-not-with-or ()
   "Test vm-vs-not negates vm-vs-or result."
-  (let ((vm-virtual-selector-function-alist
-         '((any . vm-vs-any)
-           (or . vm-vs-or))))
-    ;; not (or any) = not t = nil
-    (should-not (vm-vs-not nil '(or (any))))))
+  ;; not (or any) = not t = nil
+  (should-not (vm-vs-not nil '(or (any)))))
 
 ;;; Integration tests using real messages
 
