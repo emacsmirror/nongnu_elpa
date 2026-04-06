@@ -550,6 +550,26 @@ and tears down on exit."
         (should (string= "Hey!" (plist-get (cadr rows) :body)))
         (should (string= "out" (plist-get (cadr rows) :direction)))))))
 
+(ert-deftest jabber-db-test-import-history-strips-resource ()
+  "Imported messages with resource JIDs are stored under the bare JID."
+  (jabber-db-test-with-db
+    (let* ((jabber-use-global-history nil)
+           (jabber-history-dir
+            (expand-file-name "history"
+                              (file-name-directory jabber-db-path)))
+           (history-file
+            (expand-file-name "friend@example.com" jabber-history-dir)))
+      (make-directory jabber-history-dir)
+      (with-temp-file history-file
+        (insert "[\"2024-01-15T10:00:00Z\" \"in\" \"friend@example.com/Work PC\" \"me\" \"From work\"]\n")
+        (insert "[\"2024-01-15T10:01:00Z\" \"out\" \"me\" \"friend@example.com/Work PC\" \"Reply\"]\n"))
+      (jabber-db-import-history "me@example.com")
+      (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
+                                   0 (floor (float-time)))))
+        (should (= 2 (length rows)))
+        (should (string= "From work" (plist-get (car rows) :body)))
+        (should (string= "Reply" (plist-get (cadr rows) :body)))))))
+
 (ert-deftest jabber-db-test-import-global-history ()
   "Importing from a global history file works."
   (jabber-db-test-with-db
