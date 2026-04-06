@@ -78,40 +78,199 @@ Point is positioned at the beginning of the buffer."
      (goto-char (point-min))
      ,@body))
 
-;;; Mock helpers for IMAP testing
+;;; Mock process infrastructure for POP/IMAP testing
+
+(defvar vm-test-mock-process nil
+  "The current mock process object.")
+
+(defvar vm-test-mock-buffer nil
+  "Buffer associated with the mock process.")
 
 (defvar vm-test-mock-responses nil
   "Queue of mock responses to return from mocked network functions.")
 
 (defvar vm-test-mock-commands nil
-  "List of commands sent to mocked network functions.")
+  "List of commands sent to mocked network functions (most recent first).")
 
-(defun vm-test-mock-process-send-string (_process string)
-  "Mock `process-send-string' that records STRING to `vm-test-mock-commands'."
-  (push string vm-test-mock-commands))
+(defvar vm-test-mock-process-status 'open
+  "Status to return for mock process.")
 
-(defun vm-test-mock-accept-process-output (process &optional _timeout _millisec _just-this-one)
-  "Mock `accept-process-output' that injects responses from `vm-test-mock-responses'."
-  (when (and process vm-test-mock-responses)
+(defun vm-test-mock-process-p (obj)
+  "Return t if OBJ is our mock process."
+  (and (consp obj) (eq (car obj) 'vm-mock-process)))
+
+(defun vm-test-mock-open-network-stream (name buffer host service &rest params)
+  "Mock `open-network-stream' that returns a fake process."
+  (ignore name host service params)
+  ;; Use provided buffer or create one
+  (setq vm-test-mock-buffer (or buffer (generate-new-buffer " *mock-net*")))
+  (setq vm-test-mock-process (cons 'vm-mock-process vm-test-mock-buffer))
+  vm-test-mock-process)
+
+(defun vm-test-mock-process-status (process)
+  "Mock `process-status' for our mock process."
+  (cond ((null process) nil)
+        ((vm-test-mock-process-p process) vm-test-mock-process-status)
+        ;; For any other process in test context, assume closed
+        (t nil)))
+
+(defun vm-test-mock-process-buffer (process)
+  "Mock `process-buffer' for our mock process."
+  (cond ((null process) nil)
+        ((vm-test-mock-process-p process) (cdr process))
+        ;; For any other process in test context, return nil
+        (t nil)))
+
+(defun vm-test-mock-buffer-live-p (buffer)
+  "Check if BUFFER is live (works with mock process buffers)."
+  (buffer-live-p buffer))
+
+(defun vm-test-mock-process-send-string (process string)
+  "Mock `process-send-string' that records STRING and injects response."
+  (push string vm-test-mock-commands)
+  ;; After sending a command, inject the next response into the buffer
+  (when vm-test-mock-responses
+    (let ((response (pop vm-test-mock-responses))
+          (buf (cond ((null process) vm-test-mock-buffer)
+                     ((vm-test-mock-process-p process) (cdr process))
+                     (t vm-test-mock-buffer))))
+      (when (and response buf (buffer-live-p buf))
+        (with-current-buffer buf
+          (goto-char (point-max))
+          (insert response))))))
+
+(defun vm-test-mock-accept-process-output (process &optional _seconds _millisec _just-this-one)
+  "Mock `accept-process-output' - data already injected by send-string."
+  (ignore process)
+  ;; If there are still responses queued, inject one
+  ;; This handles cases where accept-process-output is called without send-string
+  (when (and vm-test-mock-responses
+             vm-test-mock-buffer
+             (buffer-live-p vm-test-mock-buffer))
     (let ((response (pop vm-test-mock-responses)))
-      (when (buffer-live-p (process-buffer process))
-        (with-current-buffer (process-buffer process)
+      (when response
+        (with-current-buffer vm-test-mock-buffer
           (goto-char (point-max))
           (insert response)))))
   t)
 
-(defmacro vm-test-with-mock-network (responses &rest body)
-  "Execute BODY with mocked network layer returning RESPONSES.
-RESPONSES is a list of strings to return from accept-process-output.
-Commands sent are recorded in `vm-test-mock-commands'."
+(defun vm-test-mock-delete-process (process)
+  "Mock `delete-process' for mock processes."
+  (when (vm-test-mock-process-p process)
+    (setq vm-test-mock-process-status 'closed)))
+
+(defun vm-test-mock-set-process-sentinel (process sentinel)
+  "Mock `set-process-sentinel' - no-op for all processes in test context."
+  (ignore process sentinel))
+
+(defun vm-test-mock-process-sentinel (process)
+  "Mock `process-sentinel' - returns nil for all processes in test context."
+  (ignore process)
+  nil)
+
+(defun vm-test-mock-processp (obj)
+  "Mock `processp' that returns t for mock processes."
+  (vm-test-mock-process-p obj))
+
+(defmacro vm-test-with-mock-process (responses &rest body)
+  "Execute BODY with a fully mocked network process layer.
+RESPONSES is a list of strings that will be injected as server responses.
+Commands sent are recorded in `vm-test-mock-commands' (most recent first).
+
+The mock process passes all standard process checks:
+- `process-status' returns 'open
+- `process-buffer' returns the associated buffer
+- `process-send-string' records commands and injects responses
+- `accept-process-output' returns t (data already injected)
+
+Example:
+  (vm-test-with-mock-process
+      \\='(\"+OK POP3 ready\\r\\n\"
+        \"+OK\\r\\n\"
+        \"+OK 5 12345\\r\\n\")
+    ;; Test code that makes POP calls
+    (should (member \"STAT\\r\\n\" vm-test-mock-commands)))"
   (declare (indent 1) (debug t))
   `(let ((vm-test-mock-responses (copy-sequence ,responses))
-         (vm-test-mock-commands nil))
-     (cl-letf (((symbol-function 'process-send-string)
+         (vm-test-mock-commands nil)
+         (vm-test-mock-process nil)
+         (vm-test-mock-buffer nil)
+         (vm-test-mock-process-status 'open))
+     (cl-letf (((symbol-function 'open-network-stream)
+                #'vm-test-mock-open-network-stream)
+               ((symbol-function 'processp)
+                #'vm-test-mock-processp)
+               ((symbol-function 'process-status)
+                #'vm-test-mock-process-status)
+               ((symbol-function 'process-buffer)
+                #'vm-test-mock-process-buffer)
+               ((symbol-function 'process-send-string)
                 #'vm-test-mock-process-send-string)
                ((symbol-function 'accept-process-output)
-                #'vm-test-mock-accept-process-output))
-       ,@body)))
+                #'vm-test-mock-accept-process-output)
+               ((symbol-function 'delete-process)
+                #'vm-test-mock-delete-process)
+               ((symbol-function 'set-process-sentinel)
+                #'vm-test-mock-set-process-sentinel)
+               ((symbol-function 'process-sentinel)
+                #'vm-test-mock-process-sentinel))
+       (unwind-protect
+           (progn ,@body)
+         (when (and vm-test-mock-buffer (buffer-live-p vm-test-mock-buffer))
+           (kill-buffer vm-test-mock-buffer))))))
+
+;; Alias for backward compatibility
+(defalias 'vm-test-with-mock-network 'vm-test-with-mock-process)
+
+;;; POP-specific mock helpers
+
+(defmacro vm-test-with-pop-session (responses &rest body)
+  "Execute BODY with a mocked POP session buffer already set up.
+RESPONSES are injected as POP server responses.
+The buffer has `vm-pop-read-point' initialized.
+`vm-test-mock-process' is set to a valid mock process."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-mock-process ,responses
+     (let ((pop-buffer (generate-new-buffer " *mock-pop*")))
+       (unwind-protect
+           (with-current-buffer pop-buffer
+             ;; Create mock process connected to this buffer
+             (setq vm-test-mock-buffer pop-buffer)
+             (setq vm-test-mock-process (cons 'vm-mock-process pop-buffer))
+             (make-local-variable 'vm-pop-read-point)
+             (setq vm-pop-read-point (point-min-marker))
+             ;; Inject greeting
+             (when vm-test-mock-responses
+               (insert (pop vm-test-mock-responses)))
+             (goto-char (point-min))
+             ,@body)
+         (kill-buffer pop-buffer)))))
+
+;;; IMAP-specific mock helpers
+
+(defmacro vm-test-with-imap-session (responses &rest body)
+  "Execute BODY with a mocked IMAP session buffer already set up.
+RESPONSES are injected as IMAP server responses.
+The buffer has IMAP-related variables initialized.
+`vm-test-mock-process' is set to a valid mock process."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-mock-process ,responses
+     (let ((imap-buffer (generate-new-buffer " *mock-imap*")))
+       (unwind-protect
+           (with-current-buffer imap-buffer
+             ;; Create mock process connected to this buffer
+             (setq vm-test-mock-buffer imap-buffer)
+             (setq vm-test-mock-process (cons 'vm-mock-process imap-buffer))
+             (make-local-variable 'vm-imap-read-point)
+             (setq vm-imap-read-point (point-min-marker))
+             (make-local-variable 'vm-imap-session-done)
+             (setq vm-imap-session-done nil)
+             ;; Inject greeting
+             (when vm-test-mock-responses
+               (insert (pop vm-test-mock-responses)))
+             (goto-char (point-min))
+             ,@body)
+         (kill-buffer imap-buffer)))))
 
 ;;; Test skip helpers
 

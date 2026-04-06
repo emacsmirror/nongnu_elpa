@@ -346,6 +346,180 @@
   (should-error (signal 'vm-imap-normal-error '("test error"))
                 :type 'vm-imap-normal-error))
 
+;;; IMAP protocol tests with mock network layer
+
+(ert-deftest vm-imap-test-cleanup-region-crlf ()
+  "Test vm-imap-cleanup-region converts CRLF to LF."
+  (with-temp-buffer
+    (insert "Line1\r\nLine2\r\nLine3\r\n")
+    (vm-imap-cleanup-region (point-min) (point-max))
+    (should (equal (buffer-string) "Line1\nLine2\nLine3\n"))))
+
+(ert-deftest vm-imap-test-cleanup-region-preserves-lf ()
+  "Test vm-imap-cleanup-region preserves LF-only lines."
+  (with-temp-buffer
+    (insert "Line1\nLine2\nLine3\n")
+    (vm-imap-cleanup-region (point-min) (point-max))
+    (should (equal (buffer-string) "Line1\nLine2\nLine3\n"))))
+
+(ert-deftest vm-imap-test-cleanup-region-mixed ()
+  "Test vm-imap-cleanup-region with mixed line endings."
+  (with-temp-buffer
+    (insert "Line1\r\nLine2\nLine3\r\n")
+    (vm-imap-cleanup-region (point-min) (point-max))
+    (should (equal (buffer-string) "Line1\nLine2\nLine3\n"))))
+
+;;; vm-imap-response-matches tests
+
+(ert-deftest vm-imap-test-response-matches-simple-atom ()
+  "Test vm-imap-response-matches with simple atom match."
+  (with-temp-buffer
+    (insert "OK")
+    ;; Response format: list of (type start end) tokens
+    (let ((response `((atom 1 3))))  ; "OK" at positions 1-3
+      (should (vm-imap-response-matches response 'OK)))))
+
+(ert-deftest vm-imap-test-response-matches-multiple-atoms ()
+  "Test vm-imap-response-matches with multiple atoms."
+  (with-temp-buffer
+    (insert "* OK Ready")
+    ;; Response: * at 1-2, OK at 3-5, Ready at 6-11
+    (let ((response `((atom 1 2) (atom 3 5) (atom 6 11))))
+      (should (vm-imap-response-matches response '* 'OK)))))
+
+(ert-deftest vm-imap-test-response-matches-no-match ()
+  "Test vm-imap-response-matches returns nil on no match."
+  (with-temp-buffer
+    (insert "BAD")
+    (let ((response `((atom 1 4))))
+      (should-not (vm-imap-response-matches response 'OK)))))
+
+(ert-deftest vm-imap-test-response-matches-nil-response ()
+  "Test vm-imap-response-matches with nil response."
+  (should-not (vm-imap-response-matches nil 'OK)))
+
+(ert-deftest vm-imap-test-response-matches-vector ()
+  "Test vm-imap-response-matches with vector pattern."
+  (with-temp-buffer
+    (insert "[READ-WRITE]")
+    (let ((response `((vector (atom 2 12)))))  ; [READ-WRITE]
+      (should (vm-imap-response-matches response 'vector)))))
+
+;;; vm-imap-send-command tests with mock
+
+(ert-deftest vm-imap-test-send-command-basic ()
+  "Test vm-imap-send-command sends tagged command."
+  (vm-test-with-imap-session '("* OK ready\r\n")
+    (let ((process vm-test-mock-process))
+      (setq vm-imap-read-point (point-min-marker))
+      (vm-imap-send-command process "NOOP")
+      ;; Should have sent "VM NOOP\r\n"
+      (should (member "VM NOOP\r\n" vm-test-mock-commands)))))
+
+(ert-deftest vm-imap-test-send-command-custom-tag ()
+  "Test vm-imap-send-command with custom tag."
+  (vm-test-with-imap-session '("* OK ready\r\n")
+    (let ((process vm-test-mock-process))
+      (setq vm-imap-read-point (point-min-marker))
+      (vm-imap-send-command process "CAPABILITY" "A001")
+      ;; Should have sent "A001 CAPABILITY\r\n"
+      (should (member "A001 CAPABILITY\r\n" vm-test-mock-commands)))))
+
+(ert-deftest vm-imap-test-send-command-hides-login ()
+  "Test vm-imap-send-command hides LOGIN parameters in buffer."
+  (vm-test-with-imap-session '("* OK ready\r\n")
+    (let ((process vm-test-mock-process))
+      (setq vm-imap-read-point (point-min-marker))
+      (vm-imap-send-command process "LOGIN user password")
+      ;; Command should be sent
+      (should (member "VM LOGIN user password\r\n" vm-test-mock-commands))
+      ;; But buffer should show <omitted>
+      (should (string-match "LOGIN <parameters omitted>" (buffer-string))))))
+
+(ert-deftest vm-imap-test-send-command-no-tag ()
+  "Test vm-imap-send-command with no-tag option."
+  (vm-test-with-imap-session '("* OK ready\r\n")
+    (let ((process vm-test-mock-process))
+      (setq vm-imap-read-point (point-min-marker))
+      (vm-imap-send-command process "DONE" nil t)  ; no-tag = t
+      ;; Should have sent "DONE\r\n" without tag
+      (should (member "DONE\r\n" vm-test-mock-commands)))))
+
+;;; IMAP plist functions tests
+
+(ert-deftest vm-imap-test-plist-get-basic ()
+  "Test vm-imap-plist-get extracts value."
+  (with-temp-buffer
+    (insert "UIDVALIDITY 12345 UIDNEXT 100")
+    ;; Create a plist-like structure with correct positions:
+    ;; "UIDVALIDITY" at 1-12, "12345" at 13-18, "UIDNEXT" at 19-26, "100" at 27-30
+    (let ((plist `((list) (atom 1 12) (atom 13 18) (atom 19 26) (atom 27 30))))
+      (let ((result (vm-imap-plist-get plist "UIDVALIDITY")))
+        ;; Should return the token after UIDVALIDITY (which is (atom 13 18))
+        (should (equal (car result) 'atom))))))
+
+;;; IMAP scan-list-for-flag tests
+
+(ert-deftest vm-imap-test-scan-list-for-flag-found ()
+  "Test vm-imap-scan-list-for-flag finds a flag."
+  (with-temp-buffer
+    (insert "\\Seen \\Answered \\Flagged")
+    ;; Create flag list tokens (first element is skipped by function)
+    ;; \Seen at 1-5 (end 6), \Answered at 7-15 (end 16), \Flagged at 17-24 (end 25)
+    (let ((flags `((list) (atom 1 6) (atom 7 16) (atom 17 25))))
+      (should (vm-imap-scan-list-for-flag flags "\\Seen")))))
+
+(ert-deftest vm-imap-test-scan-list-for-flag-not-found ()
+  "Test vm-imap-scan-list-for-flag returns nil when not found."
+  (with-temp-buffer
+    (insert "\\Seen \\Answered")
+    ;; First element is skipped by function
+    (let ((flags `((list) (atom 1 6) (atom 7 16))))
+      (should-not (vm-imap-scan-list-for-flag flags "\\Deleted")))))
+
+;;; IMAP spec list to host alist tests
+
+(ert-deftest vm-imap-test-spec-list-to-host-alist ()
+  "Test vm-imap-spec-list-to-host-alist creates host-keyed alist."
+  (let ((specs '("imap:host1.com:143:inbox:login:user:pass"
+                 "imap:host1.com:143:archive:login:user:pass"
+                 "imap:host2.com:993:inbox:login:other:pass")))
+    (let ((result (vm-imap-spec-list-to-host-alist specs)))
+      ;; One entry per spec (function doesn't group by host)
+      (should (= (length result) 3))
+      ;; Each entry has host as key
+      (should (assoc "host1.com" result))
+      (should (assoc "host2.com" result)))))
+
+;;; IMAP helper function tests
+
+(ert-deftest vm-imap-test-account-name-for-spec ()
+  "Test vm-imap-account-name-for-spec returns account name from alist."
+  ;; Function requires matching entry in vm-imap-account-alist (host + user)
+  (let ((vm-imap-account-alist
+         '(("imap:mail.example.com:143:*:login:testuser:*" "work-email"))))
+    (should (equal (vm-imap-account-name-for-spec
+                    "imap:mail.example.com:143:inbox:login:testuser:pass")
+                   "work-email"))))
+
+(ert-deftest vm-imap-test-folder-name-for-spec ()
+  "Test vm-imap-folder-name-for-spec extracts mailbox name."
+  ;; Function requires matching entry in vm-imap-account-alist (host + user)
+  (let ((vm-imap-account-alist
+         '(("imap:mail.example.com:143:*:login:user:*" "account"))))
+    (should (equal (vm-imap-folder-name-for-spec
+                    "imap:mail.example.com:143:INBOX:login:user:pass")
+                   "INBOX"))))
+
+(ert-deftest vm-imap-test-folder-name-for-spec-nested ()
+  "Test vm-imap-folder-name-for-spec with nested folder."
+  ;; Function requires matching entry in vm-imap-account-alist (host + user)
+  (let ((vm-imap-account-alist
+         '(("imap:mail.example.com:143:*:login:user:*" "account"))))
+    (should (equal (vm-imap-folder-name-for-spec
+                    "imap:mail.example.com:143:Archive/2024:login:user:pass")
+                   "Archive/2024"))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here
