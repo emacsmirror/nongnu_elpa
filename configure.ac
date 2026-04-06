@@ -253,7 +253,7 @@ AC_INIT([VM],[8.3.3snapshot],[viewmail-info@nongnu.org])
 AC_COPYRIGHT([Copyright (C) 2024-2025 The VM Developers])
 
 AC_CONFIG_SRCDIR([configure.ac])
-AC_CONFIG_FILES([Makefile lisp/Makefile info/Makefile pixmaps/Makefile vm-load.el])
+AC_CONFIG_FILES([Makefile lisp/Makefile info/Makefile pixmaps/Makefile test/Makefile vm-load.el])
 
 # Common system utilities checking:
 AC_PROG_MAKE_SET

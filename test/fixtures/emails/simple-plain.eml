@@ -1,0 +1,9 @@
+From sender@example.com Mon Jan  1 10:00:00 2024
+From: sender@example.com
+To: recipient@example.com
+Subject: Test Message
+Date: Mon, 1 Jan 2024 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=us-ascii
+
+This is a simple plain text message.

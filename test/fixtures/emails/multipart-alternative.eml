@@ -1,0 +1,19 @@
+From sender@example.com Mon Jan  1 10:00:00 2024
+From: sender@example.com
+To: recipient@example.com
+Subject: HTML and Plain Text
+Date: Mon, 1 Jan 2024 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/alternative; boundary="----=_Alt_0"
+
+------=_Alt_0
+Content-Type: text/plain; charset=us-ascii
+
+Plain text version of the message.
+
+------=_Alt_0
+Content-Type: text/html; charset=us-ascii
+
+<html><body><p>HTML version of the message.</p></body></html>
+
+------=_Alt_0--

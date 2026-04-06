@@ -1,0 +1,61 @@
+@SET_MAKE@
+
+##############################################################################
+# VM Test Suite Makefile
+##############################################################################
+
+SHELL = /bin/sh
+EMACS_PROG = @EMACS_PROG@
+srcdir = @srcdir@
+top_srcdir = @top_srcdir@
+
+# Test files
+TEST_INIT = vm-test-init.el
+TEST_RUNNER = run-tests.el
+TEST_FILES = vm-misc-test.el vm-mime-test.el vm-folder-test.el vm-imap-test.el
+
+##############################################################################
+# Test targets
+##############################################################################
+
+.PHONY: test test-verbose test-misc test-mime test-folder test-imap test-interactive clean
+
+# Run all tests in batch mode
+test:
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
+
+# Run tests with verbose output
+test-verbose:
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
+	    --eval '(setq ert-batch-print-level 5)' \
+	    --eval '(setq ert-batch-print-length 10)' \
+	    -l $(srcdir)/$(TEST_RUNNER)
+
+# Run specific test modules
+test-misc:
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
+	    -l $(srcdir)/vm-misc-test.el -f ert-run-tests-batch-and-exit
+
+test-mime:
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
+	    -l $(srcdir)/vm-mime-test.el -f ert-run-tests-batch-and-exit
+
+test-folder:
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
+	    -l $(srcdir)/vm-folder-test.el -f ert-run-tests-batch-and-exit
+
+test-imap:
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
+	    -l $(srcdir)/vm-imap-test.el -f ert-run-tests-batch-and-exit
+
+# Run tests interactively (opens Emacs with ERT buffer)
+test-interactive:
+	$(EMACS_PROG) -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER) \
+	    --eval '(ert t)'
+
+# Clean (nothing to clean for tests currently)
+clean:
+	@echo "Nothing to clean in test directory"
+
+distclean: clean
+	-rm -f Makefile

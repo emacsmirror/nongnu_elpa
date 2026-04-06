@@ -1,0 +1,21 @@
+From sender@example.com Mon Jan  1 10:00:00 2024
+From: sender@example.com
+To: recipient@example.com
+Subject: Test with Attachment
+Date: Mon, 1 Jan 2024 10:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="----=_Part_0"
+
+------=_Part_0
+Content-Type: text/plain; charset=us-ascii
+
+Message body text.
+
+------=_Part_0
+Content-Type: application/octet-stream; name="test.bin"
+Content-Disposition: attachment; filename="test.bin"
+Content-Transfer-Encoding: base64
+
+SGVsbG8gV29ybGQh
+
+------=_Part_0--

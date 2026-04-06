@@ -1,0 +1,2 @@
+* SEARCH 2 84 882
+VM OK SEARCH completed

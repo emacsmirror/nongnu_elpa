@@ -1,0 +1,13 @@
+From test@example.com Mon Jan  1 10:00:00 2024
+Content-Type: multipart/mixed;
+ boundary="boundary"
+
+This is a text message in MIME format.
+This part shouldn't appear in the output.
+
+--boundary
+Content-Type: text/plain
+
+Hello, world! (yet again...)
+
+--boundary--

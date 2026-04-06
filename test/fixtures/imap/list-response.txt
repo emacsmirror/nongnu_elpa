@@ -1,0 +1,8 @@
+* LIST (\HasNoChildren) "/" "INBOX"
+* LIST (\HasChildren) "/" "Archive"
+* LIST (\HasNoChildren) "/" "Archive/2023"
+* LIST (\HasNoChildren) "/" "Archive/2024"
+* LIST (\HasNoChildren \Drafts) "/" "Drafts"
+* LIST (\HasNoChildren \Sent) "/" "Sent"
+* LIST (\HasNoChildren \Trash) "/" "Trash"
+VM OK Success
