@@ -12,17 +12,29 @@ top_srcdir = @top_srcdir@
 # Test files
 TEST_INIT = vm-test-init.el
 TEST_RUNNER = run-tests.el
+COVERAGE_RUNNER = coverage-report.el
 TEST_FILES = vm-misc-test.el vm-mime-test.el vm-folder-test.el vm-imap-test.el
+
+# Coverage collection: set COVERAGE=1 to enable (e.g., make test COVERAGE=1)
+COVERAGE =
 
 ##############################################################################
 # Test targets
 ##############################################################################
 
-.PHONY: test test-verbose test-misc test-mime test-folder test-imap test-interactive clean
+.PHONY: test test-verbose test-misc test-mime test-folder test-imap test-interactive coverage clean
 
-# Run all tests in batch mode
+# Run all tests in batch mode (with optional coverage)
 test:
+ifeq ($(COVERAGE),1)
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(COVERAGE_RUNNER)
+else
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
+endif
+
+# Run tests with coverage collection
+coverage:
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(COVERAGE_RUNNER)
 
 # Run tests with verbose output
 test-verbose:
@@ -53,9 +65,9 @@ test-interactive:
 	$(EMACS_PROG) -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER) \
 	    --eval '(ert t)'
 
-# Clean (nothing to clean for tests currently)
+# Clean test artifacts
 clean:
-	@echo "Nothing to clean in test directory"
+	-rm -f $(srcdir)/coverage-results.txt
 
 distclean: clean
 	-rm -f Makefile

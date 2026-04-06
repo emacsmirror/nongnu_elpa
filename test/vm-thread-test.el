@@ -139,6 +139,156 @@
     (vm-th-set-oldest-date-of sym "2024-01-01")
     (should (equal (vm-th-thread-date-of sym 'oldest-date) "2024-01-01"))))
 
+;;; vm-th-child-messages-of tests
+
+(ert-deftest vm-thread-test-child-messages-of-empty ()
+  "Test vm-th-child-messages-of with no children."
+  (let ((sym (make-symbol "test")))
+    (vm-th-set-children-of sym nil)
+    (should (null (vm-th-child-messages-of sym)))))
+
+;;; vm-th-safe-parent-p tests
+
+(ert-deftest vm-thread-test-safe-parent-p-same-symbol ()
+  "Test vm-th-safe-parent-p rejects same symbol as parent."
+  (let ((sym (make-symbol "test")))
+    (should-not (vm-th-safe-parent-p sym sym))))
+
+(ert-deftest vm-thread-test-safe-parent-p-valid ()
+  "Test vm-th-safe-parent-p accepts valid parent."
+  (let ((child (make-symbol "child"))
+        (parent (make-symbol "parent")))
+    (vm-th-set-parent-of parent nil)  ; parent has no parent
+    (should (vm-th-safe-parent-p child parent))))
+
+;;; vm-th-root tests
+;; Note: vm-th-root traverses parent pointers and requires
+;; symbols to have proper values set. These are complex tests
+;; that need full threading infrastructure.
+
+;;; vm-ts-add-members tests
+
+(ert-deftest vm-thread-test-ts-add-members ()
+  "Test vm-ts-add-members adds to existing members."
+  (let ((sym (make-symbol "subj")))
+    (set sym (make-vector 4 nil))
+    (vm-ts-set-members-of sym '(m1))
+    (vm-ts-add-members sym '(m2 m3))
+    (let ((members (vm-ts-members-of sym)))
+      (should (memq 'm1 members))
+      (should (memq 'm2 members))
+      (should (memq 'm3 members)))))
+
+;;; vm-ts-add-messages tests
+
+(ert-deftest vm-thread-test-ts-add-messages ()
+  "Test vm-ts-add-messages adds to existing messages."
+  (let ((sym (make-symbol "subj")))
+    (set sym (make-vector 4 nil))
+    (vm-ts-set-messages-of sym '(msg1))
+    (vm-ts-add-messages sym '(msg2))
+    (let ((messages (vm-ts-messages-of sym)))
+      (should (memq 'msg1 messages))
+      (should (memq 'msg2 messages)))))
+
+;;; vm-ts-merge tests
+
+(ert-deftest vm-thread-test-ts-merge ()
+  "Test vm-ts-merge merges two subject symbols."
+  (let ((sym1 (make-symbol "subj1"))
+        (sym2 (make-symbol "subj2")))
+    ;; Initialize vectors
+    (set sym1 (make-vector 4 nil))
+    (set sym2 (make-vector 4 nil))
+    ;; Set up data
+    (vm-ts-set-members-of sym1 '(m1))
+    (vm-ts-set-messages-of sym1 '(msg1))
+    (vm-ts-set-members-of sym2 '(m2))
+    (vm-ts-set-messages-of sym2 '(msg2))
+    ;; Merge sym2 into sym1
+    (vm-ts-merge sym1 sym2)
+    ;; sym1 should have all members and messages
+    (let ((members (vm-ts-members-of sym1))
+          (messages (vm-ts-messages-of sym1)))
+      (should (memq 'm1 members))
+      (should (memq 'm2 members))
+      (should (memq 'msg1 messages))
+      (should (memq 'msg2 messages)))))
+
+;;; vm-ts-subject-symbol tests
+;; Note: vm-ts-subject-symbol uses 'oldest-subject property,
+;; not 'subject. The function checks for proper thread setup.
+
+;;; Integration tests with folders
+
+(defconst vm-thread-test-folder
+  "From sender1@example.com Mon Jan  1 00:00:00 2024
+From: sender1@example.com
+To: recipient@example.com
+Subject: Thread Test
+Date: Mon, 01 Jan 2024 10:00:00 +0000
+Message-ID: <thread1@example.com>
+
+First message in thread.
+
+From sender2@example.com Tue Jan  2 00:00:00 2024
+From: sender2@example.com
+To: recipient@example.com
+Subject: Re: Thread Test
+Date: Tue, 02 Jan 2024 11:00:00 +0000
+Message-ID: <thread2@example.com>
+In-Reply-To: <thread1@example.com>
+References: <thread1@example.com>
+
+Reply to first message.
+
+"
+  "Test folder with threading references.")
+
+(ert-deftest vm-thread-test-folder-parse-references ()
+  "Test that References header is parsed correctly."
+  (vm-test-with-folder vm-thread-test-folder
+    (let ((msg2 (nth 1 vm-message-list)))
+      (let ((refs (vm-get-header-contents msg2 "References:")))
+        (should (stringp refs))
+        (should (string-match "thread1@example.com" refs))))))
+
+(ert-deftest vm-thread-test-folder-parse-in-reply-to ()
+  "Test that In-Reply-To header is parsed correctly."
+  (vm-test-with-folder vm-thread-test-folder
+    (let ((msg2 (nth 1 vm-message-list)))
+      (let ((irt (vm-get-header-contents msg2 "In-Reply-To:")))
+        (should (stringp irt))
+        (should (string-match "thread1@example.com" irt))))))
+
+;;; vm-thread-indentation tests
+
+(ert-deftest vm-thread-test-indentation-unset ()
+  "Test vm-thread-indentation returns empty when not threaded."
+  (vm-test-with-folder vm-thread-test-folder
+    (let ((msg (car vm-message-list)))
+      ;; Before threading, indentation should be empty or 0
+      (let ((indent (vm-thread-indentation msg)))
+        (should (or (null indent) (= indent 0)))))))
+
+;;; vm-thread-list tests
+
+(ert-deftest vm-thread-test-thread-list-returns-list ()
+  "Test vm-thread-list returns a list."
+  (vm-test-with-folder vm-thread-test-folder
+    (let ((msg (car vm-message-list)))
+      ;; vm-thread-list auto-generates the list if not set
+      (should (listp (vm-thread-list msg))))))
+
+;;; vm-thread-root-p tests
+
+(ert-deftest vm-thread-test-root-p-unthreaded ()
+  "Test vm-thread-root-p for unthreaded message."
+  (vm-test-with-folder vm-thread-test-folder
+    (let ((msg (car vm-message-list)))
+      ;; For unthreaded messages, should return nil
+      (should (null (vm-thread-root-p msg))))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here

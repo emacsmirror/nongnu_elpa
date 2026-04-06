@@ -165,6 +165,292 @@
   (should (fboundp 'vm-default-chop-full-name))
   (should (fboundp 'vm-su-trim-subject)))
 
+;;; Integration tests using real messages
+
+(defconst vm-summary-test-folder
+  "From sender@example.com Mon Jan  1 00:00:00 2024
+From: John Doe <john@example.com>
+To: recipient@example.com
+Cc: cc@example.com
+Subject: Test Message
+Date: Mon, 01 Jan 2024 10:30:45 +0000
+Message-ID: <msg1@example.com>
+
+This is the message body with some text.
+Second line here.
+
+"
+  "Test folder for summary tests.")
+
+;;; vm-su-from tests
+
+(ert-deftest vm-summary-test-su-from ()
+  "Test vm-su-from extracts sender address."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((from (vm-su-from msg)))
+        (should (stringp from))
+        (should (string-match "john" from))))))
+
+;;; vm-su-decoded-full-name tests
+
+(ert-deftest vm-summary-test-su-decoded-full-name ()
+  "Test vm-su-decoded-full-name extracts full name."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((name (vm-su-decoded-full-name msg)))
+        (should (or (null name) (stringp name)))))))
+
+;;; vm-su-decoded-subject tests
+
+(ert-deftest vm-summary-test-su-decoded-subject ()
+  "Test vm-su-decoded-subject extracts subject."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((subject (vm-su-decoded-subject msg)))
+        (should (stringp subject))
+        (should (string-match "Test Message" subject))))))
+
+;;; vm-su-decoded-to tests
+
+(ert-deftest vm-summary-test-su-decoded-to ()
+  "Test vm-su-decoded-to extracts recipients."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((to (vm-su-decoded-to msg)))
+        (should (stringp to))
+        (should (string-match "recipient" to))))))
+
+;;; vm-su-message-id tests
+
+(ert-deftest vm-summary-test-su-message-id ()
+  "Test vm-su-message-id extracts message ID."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((msg-id (vm-su-message-id msg)))
+        (should (stringp msg-id))
+        (should (string-match "msg1@example.com" msg-id))))))
+
+;;; Date component tests
+
+(ert-deftest vm-summary-test-su-weekday ()
+  "Test vm-su-weekday extracts day of week."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((weekday (vm-su-weekday msg)))
+        (should (stringp weekday))
+        (should (string-match "Mon" weekday))))))
+
+(ert-deftest vm-summary-test-su-monthday ()
+  "Test vm-su-monthday extracts day of month."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((monthday (vm-su-monthday msg)))
+        (should (stringp monthday))
+        (should (string-match "0?1" monthday))))))
+
+(ert-deftest vm-summary-test-su-month ()
+  "Test vm-su-month extracts month."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((month (vm-su-month msg)))
+        (should (stringp month))
+        (should (string-match "Jan" month))))))
+
+(ert-deftest vm-summary-test-su-year ()
+  "Test vm-su-year extracts year."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((year (vm-su-year msg)))
+        (should (stringp year))
+        (should (string-match "2024" year))))))
+
+(ert-deftest vm-summary-test-su-hour ()
+  "Test vm-su-hour extracts time."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((hour (vm-su-hour msg)))
+        (should (stringp hour))
+        (should (string-match "10:30" hour))))))
+
+(ert-deftest vm-summary-test-su-zone ()
+  "Test vm-su-zone extracts timezone."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((zone (vm-su-zone msg)))
+        (should (stringp zone))))))
+
+;;; vm-su-mark tests
+
+(ert-deftest vm-summary-test-su-mark-unmarked ()
+  "Test vm-su-mark returns empty for unmarked message."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (vm-set-mark-of msg nil)
+      (let ((mark (vm-su-mark msg)))
+        (should (stringp mark))
+        (should (string= mark " "))))))
+
+(ert-deftest vm-summary-test-su-mark-marked ()
+  "Test vm-su-mark returns indicator for marked message."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (vm-set-mark-of msg t)
+      (let ((mark (vm-su-mark msg)))
+        (should (stringp mark))
+        (should (not (string= mark " ")))))))
+
+;;; vm-su-line-count tests
+
+(ert-deftest vm-summary-test-su-line-count ()
+  "Test vm-su-line-count returns line count string."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((lines (vm-su-line-count msg)))
+        (should (stringp lines))))))
+
+;;; vm-su-byte-count tests
+
+(ert-deftest vm-summary-test-su-byte-count ()
+  "Test vm-su-byte-count returns byte count string."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((bytes (vm-su-byte-count msg)))
+        (should (stringp bytes))))))
+
+;;; vm-su-attribute-indicators tests
+
+(ert-deftest vm-summary-test-su-attribute-indicators ()
+  "Test vm-su-attribute-indicators returns indicator string."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((indicators (vm-su-attribute-indicators msg)))
+        (should (stringp indicators))))))
+
+(ert-deftest vm-summary-test-su-attribute-indicators-short ()
+  "Test vm-su-attribute-indicators-short returns short indicators."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((indicators (vm-su-attribute-indicators-short msg)))
+        (should (stringp indicators))))))
+
+(ert-deftest vm-summary-test-su-attribute-indicators-long ()
+  "Test vm-su-attribute-indicators-long returns long indicators."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((indicators (vm-su-attribute-indicators-long msg)))
+        (should (stringp indicators))))))
+
+;;; vm-su-labels tests
+
+(ert-deftest vm-summary-test-su-labels-none ()
+  "Test vm-su-labels returns empty string when no labels."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((labels (vm-su-labels msg)))
+        (should (stringp labels))
+        (should (string= labels ""))))))
+
+(ert-deftest vm-summary-test-su-labels-with-labels ()
+  "Test vm-su-labels returns labels when present."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (vm-set-labels-of msg '("important" "work"))
+      (let ((labels (vm-su-labels msg)))
+        (should (stringp labels))))))
+
+;;; vm-su-thread-indent tests
+
+(ert-deftest vm-summary-test-su-thread-indent ()
+  "Test vm-su-thread-indent returns indent string."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((indent (vm-su-thread-indent msg)))
+        (should (stringp indent))))))
+
+;;; vm-su-interesting-from tests
+
+(ert-deftest vm-summary-test-su-interesting-from ()
+  "Test vm-su-interesting-from returns from or to based on context."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((from (vm-su-interesting-from msg)))
+        (should (stringp from))))))
+
+;;; vm-su-size tests
+
+(ert-deftest vm-summary-test-su-size ()
+  "Test vm-su-size returns human-readable size."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((size (vm-su-size msg)))
+        (should (stringp size))))))
+
+;;; vm-su-datestring tests
+
+(ert-deftest vm-summary-test-su-datestring ()
+  "Test vm-su-datestring returns formatted date."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((datestring (vm-su-datestring msg)))
+        (should (stringp datestring))))))
+
+;;; vm-su-month-number tests
+
+(ert-deftest vm-summary-test-su-month-number ()
+  "Test vm-su-month-number returns numeric month."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((month-num (vm-su-month-number msg)))
+        (should (stringp month-num))
+        (should (string-match "0?1" month-num))))))
+
+;;; vm-su-hour-short tests
+
+(ert-deftest vm-summary-test-su-hour-short ()
+  "Test vm-su-hour-short returns short time format."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((hour (vm-su-hour-short msg)))
+        (should (stringp hour))))))
+
+;;; vm-su-decoded-to-names tests
+
+(ert-deftest vm-summary-test-su-decoded-to-names ()
+  "Test vm-su-decoded-to-names extracts recipient names."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((names (vm-su-decoded-to-names msg)))
+        (should (or (null names) (stringp names)))))))
+
+;;; vm-su-decoded-to-cc tests
+
+(ert-deftest vm-summary-test-su-decoded-to-cc ()
+  "Test vm-su-decoded-to-cc extracts To and CC."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((to-cc (vm-su-decoded-to-cc msg)))
+        (should (stringp to-cc))
+        (should (string-match "recipient" to-cc))))))
+
+;;; vm-su-decoded-to-cc-names tests
+
+(ert-deftest vm-summary-test-su-decoded-to-cc-names ()
+  "Test vm-su-decoded-to-cc-names extracts To and CC names."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((names (vm-su-decoded-to-cc-names msg)))
+        (should (or (null names) (stringp names)))))))
+
+;;; vm-su-interesting-full-name tests
+
+(ert-deftest vm-summary-test-su-interesting-full-name ()
+  "Test vm-su-interesting-full-name returns appropriate name."
+  (vm-test-with-folder vm-summary-test-folder
+    (let ((msg (car vm-message-list)))
+      (let ((name (vm-su-interesting-full-name msg)))
+        (should (or (null name) (stringp name)))))))
+
 (provide 'vm-summary-test)
 
 ;;; vm-summary-test.el ends here

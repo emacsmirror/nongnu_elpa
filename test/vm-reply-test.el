@@ -79,6 +79,59 @@
   (should (boundp 'vm-included-text-prefix))
   (should (boundp 'vm-included-text-attribution-format)))
 
+;;; vm-sanitize-buffer-name tests
+
+(ert-deftest vm-reply-test-sanitize-buffer-name-nil ()
+  "Test vm-sanitize-buffer-name with nil input."
+  (let ((vm-drop-buffer-name-chars nil)
+        (vm-buffer-name-limit 80))
+    (should (null (vm-sanitize-buffer-name nil)))))
+
+(ert-deftest vm-reply-test-sanitize-buffer-name-no-changes ()
+  "Test vm-sanitize-buffer-name with clean name."
+  (let ((vm-drop-buffer-name-chars "[^a-zA-Z0-9]")
+        (vm-buffer-name-limit 80))
+    (should (equal (vm-sanitize-buffer-name "CleanName123")
+                   "CleanName123"))))
+
+(ert-deftest vm-reply-test-sanitize-buffer-name-replaces ()
+  "Test vm-sanitize-buffer-name replaces invalid chars."
+  (let ((vm-drop-buffer-name-chars "[<>]")
+        (vm-buffer-name-limit 80))
+    (should (equal (vm-sanitize-buffer-name "Re: <test>")
+                   "Re: _test_"))))
+
+(ert-deftest vm-reply-test-sanitize-buffer-name-truncates ()
+  "Test vm-sanitize-buffer-name truncates long names."
+  (let ((vm-drop-buffer-name-chars nil)
+        (vm-buffer-name-limit 20))
+    (let ((result (vm-sanitize-buffer-name "This is a very long buffer name that exceeds limit")))
+      (should (<= (length result) 20))
+      (should (string-suffix-p "..." result)))))
+
+;;; vm-strip-ignored-addresses tests
+
+(ert-deftest vm-reply-test-strip-ignored-addresses-empty ()
+  "Test vm-strip-ignored-addresses with no ignored addresses."
+  (let ((vm-reply-ignored-addresses nil))
+    (should (equal (vm-strip-ignored-addresses '("user@example.com"))
+                   '("user@example.com")))))
+
+(ert-deftest vm-reply-test-strip-ignored-addresses-removes ()
+  "Test vm-strip-ignored-addresses removes matching addresses."
+  (let ((vm-reply-ignored-addresses '("^noreply@")))
+    (should (equal (vm-strip-ignored-addresses
+                    '("user@example.com" "noreply@example.com"))
+                   '("user@example.com")))))
+
+(ert-deftest vm-reply-test-strip-ignored-addresses-multiple ()
+  "Test vm-strip-ignored-addresses with multiple patterns."
+  (let ((vm-reply-ignored-addresses '("^noreply@" "^bounce@" "@donotreply\\.com$")))
+    (should (equal (vm-strip-ignored-addresses
+                    '("user@example.com" "noreply@foo.com" "bounce@bar.com"
+                      "other@donotreply.com" "valid@other.com"))
+                   '("user@example.com" "valid@other.com")))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

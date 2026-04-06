@@ -165,6 +165,16 @@ Optional MESSAGE explains why the test was skipped."
   ;; Initialize hash table for buffers needing update
   (setq vm-buffers-needing-display-update (make-vector 29 0)))
 
+(defun vm-test-init-message-data (message)
+  "Initialize attributes and cached-data arrays for MESSAGE.
+This is needed because vm-make-message doesn't create these arrays."
+  ;; Initialize attributes array (element 2) if not present
+  (unless (vm-attributes-of message)
+    (vm-set-attributes-of message (make-vector vm-attributes-vector-length nil)))
+  ;; Initialize cached-data array (element 3) if not present
+  (unless (vm-cached-data-of message)
+    (vm-set-cached-data-of message (make-vector vm-cached-data-vector-length nil))))
+
 (defmacro vm-test-with-folder (content &rest body)
   "Execute BODY in a temp buffer set up as a VM folder with CONTENT.
 The buffer is initialized with VM folder variables and messages are parsed.
@@ -188,6 +198,9 @@ Body text
      (goto-char (point-min))
      ;; Parse messages
      (vm-build-message-list)
+     ;; Initialize attributes and cached-data for each message
+     (dolist (msg vm-message-list)
+       (vm-test-init-message-data msg))
      ;; Set message pointer to first message
      (setq vm-message-pointer vm-message-list)
      ,@body))

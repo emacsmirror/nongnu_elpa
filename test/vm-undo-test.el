@@ -55,6 +55,67 @@
   ;; Just verify the function is callable - it needs real messages for output
   (should (fboundp 'vm-undo-describe)))
 
+;;; vm-squeeze-consecutive-undo-boundaries tests
+
+(ert-deftest vm-undo-test-squeeze-removes-consecutive-nils ()
+  "Test that vm-squeeze-consecutive-undo-boundaries removes consecutive nils."
+  (let ((vm-undo-record-list '(nil nil record1 nil nil nil record2 nil)))
+    (vm-squeeze-consecutive-undo-boundaries)
+    ;; Should collapse consecutive nils to single nils
+    (should-not (and (null (car vm-undo-record-list))
+                     (null (cadr vm-undo-record-list))))))
+
+(ert-deftest vm-undo-test-squeeze-empty-list ()
+  "Test vm-squeeze-consecutive-undo-boundaries with nil list."
+  (let ((vm-undo-record-list nil))
+    (vm-squeeze-consecutive-undo-boundaries)
+    (should (null vm-undo-record-list))))
+
+(ert-deftest vm-undo-test-squeeze-only-nils-becomes-nil ()
+  "Test that list of only nils becomes nil."
+  (let ((vm-undo-record-list '(nil)))
+    (vm-squeeze-consecutive-undo-boundaries)
+    (should (null vm-undo-record-list))))
+
+(ert-deftest vm-undo-test-squeeze-preserves-records ()
+  "Test that vm-squeeze preserves actual records."
+  (let ((vm-undo-record-list '(record1 nil record2 nil record3)))
+    (vm-squeeze-consecutive-undo-boundaries)
+    (should (memq 'record1 vm-undo-record-list))
+    (should (memq 'record2 vm-undo-record-list))
+    (should (memq 'record3 vm-undo-record-list))))
+
+;;; vm-undo-record tests
+
+(ert-deftest vm-undo-test-record-adds-to-list ()
+  "Test that vm-undo-record adds sexp to list."
+  (let ((vm-undo-record-list nil))
+    (vm-undo-record '(vm-set-new-flag msg t))
+    (should (equal (car vm-undo-record-list) '(vm-set-new-flag msg t)))))
+
+(ert-deftest vm-undo-test-record-prepends ()
+  "Test that vm-undo-record prepends to existing list."
+  (let ((vm-undo-record-list '(existing-record)))
+    (vm-undo-record 'new-record)
+    (should (eq (car vm-undo-record-list) 'new-record))
+    (should (eq (cadr vm-undo-record-list) 'existing-record))))
+
+;;; vm-undo-boundary tests
+
+(ert-deftest vm-undo-test-boundary-adds-nil ()
+  "Test that vm-undo-boundary adds nil separator."
+  (let ((vm-undo-record-list '(record1)))
+    (vm-undo-boundary)
+    (should (null (car vm-undo-record-list)))
+    (should (eq (cadr vm-undo-record-list) 'record1))))
+
+(ert-deftest vm-undo-test-boundary-no-double-nil ()
+  "Test that vm-undo-boundary doesn't add nil if list starts with nil."
+  (let ((vm-undo-record-list '(nil record1)))
+    (vm-undo-boundary)
+    ;; Should not add another nil
+    (should (equal vm-undo-record-list '(nil record1)))))
+
 (provide 'vm-undo-test)
 
 ;;; vm-undo-test.el ends here

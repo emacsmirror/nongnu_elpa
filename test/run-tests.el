@@ -34,7 +34,9 @@
                      "vm-save-test.el"
                      "vm-undo-test.el"
                      "vm-reply-test.el"
-                     "vm-summary-test.el"))
+                     "vm-summary-test.el"
+                     "vm-accessors-test.el"
+                     "vm-integration-test.el"))
   (let ((full-path (expand-file-name test-file vm-test-runner-dir)))
     (when (file-exists-p full-path)
       (load full-path))))
