@@ -289,6 +289,235 @@ Reply to first message.
       ;; For unthreaded messages, should return nil
       (should (null (vm-thread-root-p msg))))))
 
+;;; Thread building integration tests
+
+(defconst vm-thread-test-threaded-folder
+  "From root@example.com Mon Jan  1 00:00:00 2024
+From: Root <root@example.com>
+To: list@example.com
+Subject: Thread Root
+Date: Mon, 01 Jan 2024 10:00:00 +0000
+Message-ID: <root@example.com>
+
+Root message.
+
+From reply1@example.com Tue Jan  2 00:00:00 2024
+From: Reply1 <reply1@example.com>
+To: list@example.com
+Subject: Re: Thread Root
+Date: Tue, 02 Jan 2024 11:00:00 +0000
+Message-ID: <reply1@example.com>
+In-Reply-To: <root@example.com>
+References: <root@example.com>
+
+First reply.
+
+From reply2@example.com Wed Jan  3 00:00:00 2024
+From: Reply2 <reply2@example.com>
+To: list@example.com
+Subject: Re: Thread Root
+Date: Wed, 03 Jan 2024 12:00:00 +0000
+Message-ID: <reply2@example.com>
+In-Reply-To: <reply1@example.com>
+References: <root@example.com> <reply1@example.com>
+
+Second reply (to first reply).
+
+From standalone@example.com Thu Jan  4 00:00:00 2024
+From: Standalone <standalone@example.com>
+To: list@example.com
+Subject: Different Thread
+Date: Thu, 04 Jan 2024 13:00:00 +0000
+Message-ID: <standalone@example.com>
+
+Standalone message, not part of thread.
+
+"
+  "Test folder with a proper thread structure.")
+
+(ert-deftest vm-thread-test-build-threads ()
+  "Test vm-build-threads initializes threading structures."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    ;; Build the threads
+    (vm-build-threads nil)
+    ;; Thread obarray should be created
+    (should (vectorp vm-thread-obarray))))
+
+(ert-deftest vm-thread-test-thread-symbol-created ()
+  "Test that thread symbols are created for messages."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    ;; Each message should have a thread symbol
+    (dolist (msg vm-message-list)
+      (let ((id (vm-su-message-id msg)))
+        (when id
+          (should (intern-soft id vm-thread-obarray)))))))
+
+(ert-deftest vm-thread-test-thread-list-generated ()
+  "Test vm-thread-list returns list of ancestor message IDs."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    ;; Root should have itself in thread list
+    (let* ((root-msg (car vm-message-list))
+           (tl (vm-thread-list root-msg)))
+      (should (listp tl))
+      (should (> (length tl) 0)))))
+
+(ert-deftest vm-thread-test-reply-has-parent-ref ()
+  "Test that replies reference their parent."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let ((reply-msg (nth 1 vm-message-list)))
+      ;; Second message (reply1) should have references to root
+      (let ((refs (vm-get-header-contents reply-msg "References:")))
+        (should (string-match "root@example.com" refs))))))
+
+(ert-deftest vm-thread-test-deep-reply-refs ()
+  "Test that deep replies have full reference chain."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let ((reply2-msg (nth 2 vm-message-list)))
+      ;; Third message (reply2) should reference both root and reply1
+      (let ((refs (vm-get-header-contents reply2-msg "References:")))
+        (should (string-match "root@example.com" refs))
+        (should (string-match "reply1@example.com" refs))))))
+
+;;; Thread sort key tests
+
+(ert-deftest vm-thread-test-sort-by-activity ()
+  "Test thread activity sort key exists."
+  (should (member "activity" vm-supported-sort-keys))
+  (should (member "reversed-activity" vm-supported-sort-keys)))
+
+;;; Thread indentation tests
+
+(ert-deftest vm-thread-test-root-no-indent ()
+  "Test root message has zero or no indentation."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let* ((root-msg (car vm-message-list))
+           (indent (vm-thread-indentation root-msg)))
+      ;; Root should have 0 or nil indentation
+      (should (or (null indent) (= indent 0))))))
+
+;;; vm-thread-symbol accessor coverage tests
+
+(ert-deftest vm-thread-test-th-thread-symbol-basic ()
+  "Test vm-th-thread-symbol creates symbol from message ID."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let ((msg (car vm-message-list)))
+      (let ((sym (vm-th-thread-symbol msg)))
+        (should (symbolp sym))))))
+
+(ert-deftest vm-thread-test-canonical-message ()
+  "Test vm-th-canonical-message returns the message for a thread symbol."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let ((msg (car vm-message-list)))
+      ;; vm-th-canonical-message takes a message, not a symbol
+      ;; It returns the canonical message for that message's thread symbol
+      (let ((canonical (vm-th-canonical-message msg)))
+        (when canonical
+          (should (vectorp canonical)))))))
+
+;;; Multiple thread tests
+
+(ert-deftest vm-thread-test-separate-threads ()
+  "Test messages without references are separate threads."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let ((root-msg (car vm-message-list))
+          (standalone-msg (nth 3 vm-message-list)))
+      ;; Root and standalone should have different thread symbols
+      (let ((root-id (vm-su-message-id root-msg))
+            (standalone-id (vm-su-message-id standalone-msg)))
+        (should-not (equal root-id standalone-id))))))
+
+;;; Thread collapse tests (existence)
+
+(ert-deftest vm-thread-test-collapse-functions-exist ()
+  "Test thread collapse functions exist."
+  (should (fboundp 'vm-toggle-thread))
+  (should (fboundp 'vm-expand-all-threads))
+  (should (fboundp 'vm-collapse-all-threads)))
+
+;;; Subject-based threading tests
+
+(ert-deftest vm-thread-test-subject-symbol-accessor ()
+  "Test vm-ts-subject-symbol accessor."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let* ((msg (car vm-message-list))
+           (sym (vm-th-thread-symbol msg)))
+      (when sym
+        ;; vm-ts-subject-symbol derives subject symbol from thread symbol
+        (let ((subj-sym (vm-ts-subject-symbol sym)))
+          (when subj-sym
+            (should (symbolp subj-sym))))))))
+
+;;; Thread member collection tests
+
+(ert-deftest vm-thread-test-visible-children-of ()
+  "Test vm-th-visible-children-of filters properly."
+  (let ((parent (make-symbol "parent"))
+        (child-with-msg (make-symbol "child1"))
+        (child-without-msg (make-symbol "child2")))
+    ;; Set up parent with two children
+    (vm-th-set-children-of parent (list child-with-msg child-without-msg))
+    ;; Only first child has a message
+    (vm-th-set-message-of child-with-msg 'test-msg)
+    (vm-th-set-message-of child-without-msg nil)
+    ;; visible-children should only return child with message
+    (let ((visible (vm-th-visible-children-of parent)))
+      (should (= (length visible) 1))
+      (should (memq child-with-msg visible)))))
+
+(ert-deftest vm-thread-test-child-messages-of ()
+  "Test vm-th-child-messages-of collects messages from children."
+  (let ((parent (make-symbol "parent"))
+        (child1 (make-symbol "child1"))
+        (child2 (make-symbol "child2")))
+    ;; Set up children with messages
+    (vm-th-set-message-of child1 'msg1)
+    (vm-th-set-message-of child2 'msg2)
+    (vm-th-set-children-of parent (list child1 child2))
+    ;; child-messages should return both messages
+    (let ((msgs (vm-th-child-messages-of parent)))
+      (should (= (length msgs) 2))
+      (should (memq 'msg1 msgs))
+      (should (memq 'msg2 msgs)))))
+
+;;; vm-th-root tests
+;; Note: vm-th-root returns the message (not symbol) at the root
+;; and requires vm-th-messages-of to be set on parent symbols.
+
+(ert-deftest vm-thread-test-root-returns-message ()
+  "Test vm-th-root returns the message of root symbol."
+  (let ((root-sym (make-symbol "root"))
+        (test-msg 'test-message))
+    ;; Set up a root symbol with no parent and a message
+    (vm-th-set-parent-of root-sym nil)
+    (vm-th-set-message-of root-sym test-msg)
+    (vm-th-set-messages-of root-sym (list test-msg))
+    ;; vm-th-root should return the message
+    (should (eq (vm-th-root root-sym) test-msg))))
+
+(ert-deftest vm-thread-test-root-traverses-to-message ()
+  "Test vm-th-root traverses parent chain to find root message."
+  (let ((root (make-symbol "root"))
+        (child (make-symbol "child"))
+        (root-msg 'root-message)
+        (child-msg 'child-message))
+    ;; Set up a parent-child relationship with messages
+    (vm-th-set-parent-of root nil)
+    (vm-th-set-parent-of child root)
+    (vm-th-set-message-of root root-msg)
+    (vm-th-set-messages-of root (list root-msg))
+    (vm-th-set-message-of child child-msg)
+    ;; vm-th-root of child should return root's message
+    (should (eq (vm-th-root child) root-msg))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here

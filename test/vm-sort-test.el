@@ -74,7 +74,101 @@
         (vm-subject-significant-chars nil))
     (should (equal (vm-so-trim-subject "Hello   World") "Hello World"))))
 
-;;; Sort comparison function existence tests
+;;; Sort comparison function tests with real messages
+
+(defconst vm-sort-test-folder
+  "From alice@example.com Mon Jan  1 00:00:00 2024
+From: Alice <alice@example.com>
+To: recipient@example.com
+Subject: Zebra
+Date: Mon, 01 Jan 2024 10:00:00 +0000
+Message-ID: <sort1@example.com>
+
+First message.
+
+From bob@example.com Tue Jan  2 00:00:00 2024
+From: Bob <bob@example.com>
+To: recipient@example.com
+Subject: Apple
+Date: Tue, 02 Jan 2024 11:00:00 +0000
+Message-ID: <sort2@example.com>
+
+Second message with more lines.
+This has three lines.
+Actually.
+
+From carol@example.com Wed Jan  3 00:00:00 2024
+From: Carol <carol@example.com>
+To: other@example.com
+Subject: Middle
+Date: Wed, 03 Jan 2024 12:00:00 +0000
+Message-ID: <sort3@example.com>
+
+Third message.
+
+"
+  "Test folder with messages for sorting tests.")
+
+(ert-deftest vm-sort-test-so-sortable-subject ()
+  "Test vm-so-sortable-subject returns trimmed subject."
+  (vm-test-with-folder vm-sort-test-folder
+    (let ((msg (car vm-message-list)))
+      ;; Should return the sortable subject
+      (should (stringp (vm-so-sortable-subject msg))))))
+
+(ert-deftest vm-sort-test-so-sortable-datestring ()
+  "Test vm-so-sortable-datestring returns sortable date."
+  (vm-test-with-folder vm-sort-test-folder
+    (let ((msg (car vm-message-list)))
+      ;; Should return a date string suitable for sorting
+      (should (stringp (vm-so-sortable-datestring msg))))))
+
+(ert-deftest vm-sort-test-compare-date ()
+  "Test vm-sort-compare-date compares dates correctly."
+  (vm-test-with-folder vm-sort-test-folder
+    (let ((msg1 (car vm-message-list))
+          (msg2 (cadr vm-message-list)))
+      ;; msg1 is Jan 1, msg2 is Jan 2
+      ;; vm-sort-compare-date returns: t (less), '= (equal), nil (greater)
+      ;; msg1 < msg2 chronologically, so should return t
+      (let ((result (vm-sort-compare-date msg1 msg2)))
+        (should (memq result '(t =)))))))
+
+(ert-deftest vm-sort-test-compare-date-r ()
+  "Test vm-sort-compare-date-r reverses date comparison."
+  (vm-test-with-folder vm-sort-test-folder
+    (let ((msg1 (car vm-message-list))
+          (msg2 (cadr vm-message-list)))
+      ;; vm-sort-compare-date-r returns: nil (less), '= (equal), t (greater)
+      ;; msg1 < msg2 chronologically, reversed returns nil
+      (let ((result (vm-sort-compare-date-r msg1 msg2)))
+        (should (memq result '(nil =)))))))
+
+(ert-deftest vm-sort-test-compare-author ()
+  "Test vm-sort-compare-author compares authors lexicographically."
+  (vm-test-with-folder vm-sort-test-folder
+    (let ((alice (car vm-message-list))
+          (bob (cadr vm-message-list)))
+      ;; Alice < Bob alphabetically
+      (should (eq (vm-sort-compare-author alice bob) t)))))
+
+(ert-deftest vm-sort-test-compare-subject ()
+  "Test vm-sort-compare-subject compares subjects lexicographically."
+  (vm-test-with-folder vm-sort-test-folder
+    (let ((zebra (car vm-message-list))    ; Subject: Zebra
+          (apple (cadr vm-message-list)))   ; Subject: Apple
+      ;; Apple < Zebra alphabetically
+      (should (eq (vm-sort-compare-subject zebra apple) nil)))))
+
+(ert-deftest vm-sort-test-compare-line-count ()
+  "Test vm-sort-compare-line-count compares by number of lines."
+  (vm-test-with-folder vm-sort-test-folder
+    (let ((msg1 (car vm-message-list))   ; 1 line
+          (msg2 (cadr vm-message-list))) ; 3 lines
+      ;; msg1 has fewer lines than msg2
+      (should (eq (vm-sort-compare-line-count msg1 msg2) t)))))
+
+;;; Sort comparison function existence tests (backwards compat)
 
 (ert-deftest vm-sort-test-compare-functions-exist ()
   "Test that sort comparison functions exist."

@@ -232,6 +232,49 @@
     ;; Should return unchanged
     (should (equal result "/home/user/mail"))))
 
+;;; POP cleanup region tests
+
+(ert-deftest vm-pop-test-cleanup-region-crlf ()
+  "Test vm-pop-cleanup-region converts CRLF to LF."
+  (with-temp-buffer
+    (insert "Line1\r\nLine2\r\nLine3\r\n")
+    (vm-pop-cleanup-region (point-min) (point-max))
+    (should (equal (buffer-string) "Line1\nLine2\nLine3\n"))))
+
+(ert-deftest vm-pop-test-cleanup-region-leading-dot ()
+  "Test vm-pop-cleanup-region removes leading dots."
+  (with-temp-buffer
+    (insert "Line1\n..escaped\n.removed\nLine4\n")
+    (vm-pop-cleanup-region (point-min) (point-max))
+    (should (string-match "escaped" (buffer-string)))
+    (should-not (string-match "^\\.removed" (buffer-string)))))
+
+;;; POP response parsing tests
+;; Note: vm-pop-read-stat-response and vm-pop-read-list-response
+;; require a live process connection and cannot be unit tested.
+
+;;; Spec parsing edge cases
+
+(ert-deftest vm-pop-test-parse-spec-with-colons-in-password ()
+  "Test parsing spec with colons in password field."
+  ;; Note: the last field can contain colons
+  (let ((result (vm-pop-parse-spec-to-list
+                 "pop:mail.example.com:110:pass:user:secret:with:colons")))
+    (should (equal (nth 0 result) "pop"))
+    (should (equal (nth 5 result) "secret:with:colons"))))
+
+(ert-deftest vm-pop-test-parse-spec-apop ()
+  "Test parsing a POP spec with APOP auth."
+  (let ((result (vm-pop-parse-spec-to-list
+                 "pop:mail.example.com:110:apop:user:secret")))
+    (should (equal (nth 3 result) "apop"))))
+
+(ert-deftest vm-pop-test-parse-spec-asterisk-password ()
+  "Test parsing spec with asterisk password (prompt for it)."
+  (let ((result (vm-pop-parse-spec-to-list
+                 "pop:mail.example.com:110:pass:user:*")))
+    (should (equal (nth 5 result) "*"))))
+
 (provide 'vm-pop-test)
 
 ;;; vm-pop-test.el ends here
