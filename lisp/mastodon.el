@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <mousebot@disroot.org>
 ;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 2.0.15
+;; Version: 2.0.16
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -75,6 +75,7 @@
 (autoload 'mastodon-tl-return "mastodon-tl")
 (autoload 'mastodon-tl-jump-to-followed-tag "mastodon-tl")
 (autoload 'mastodon-notifications--update-with-timer "mastodon-notifications")
+(autoload 'mastodon-profile-table-cell-hook-fun "mastodon-profile")
 
 ;; for M-x visibility
 ;; (views.el uses `mastodon-mode-map', so we can't easily require it)
@@ -464,7 +465,8 @@ FORCE means to fetch from the server in any case and update
 If USER is non-nil, insert after @ symbol to begin new toot.
 If REPLY-TO-ID is non-nil, attach new toot to a conversation.
 If REPLY-JSON is the json of the toot being replied to.
-QUOTE-ID is the id of a toot being quoted, QUOTE-JSON is its data."
+QUOTE-ID is the id of a toot being quoted, QUOTE-JSON is its data.
+VISIBILITY is the visibility of the toot."
   (interactive)
   (mastodon-toot--compose-buffer user reply-to-id reply-json
                                  nil nil quote-id quote-json visibility))

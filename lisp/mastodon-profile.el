@@ -155,16 +155,18 @@ This variable is set from data in
   (mastodon-tl--property 'item-json))
 
 (defun mastodon-profile--make-author-buffer
-    (account &optional no-reblogs no-replies only-media tag max-id)
+    (account &optional no-reblogs no-replies only-media tag max-id
+             skip-pinned)
   "Take an ACCOUNT json and insert a user account into a new buffer.
 NO-REBLOGS means do not display boosts in statuses.
 NO-REPLIES means to exlude replies.
 ONLY-MEDIA means show only posts containing attachments.
 TAG is a hashtag to restrict posts to.
-MAX-ID is a flag to include the max_id pagination parameter."
+MAX-ID is a flag to include the max_id pagination parameter.
+SKIP-PINNED means don't display pinned toots."
   (mastodon-profile--make-profile-buffer-for
    account "statuses" #'mastodon-tl--timeline no-reblogs nil
-   no-replies only-media tag max-id))
+   no-replies only-media tag max-id skip-pinned))
 
 ;;; PROFILE VIEW COMMANDS
 
@@ -233,16 +235,15 @@ If a PREFIX argument is provided, prompt for a view type and load."
   (interactive)
   (if mastodon-profile--account
       (mastodon-profile--make-author-buffer
-       mastodon-profile--account nil nil :only-media)
+       mastodon-profile--account nil nil :only-media nil nil :skip-pinned)
     (user-error "Not in a mastodon profile")))
 
-(defun mastodon-profile-open-statuses-tagged ()
-  "Prompt for a hashtag and display a profile with only statuses containing it."
+(defun mastodon-profile-open-statuses-tagged (&optional tag)
+  "Prompt for a TAG and display a profile with statuses containing it."
   (interactive)
-  (let ((tag (read-string "Statuses containing tag: ")))
+  (let ((tag (or tag (read-string "Statuses containing tag: "))))
     (if mastodon-profile--account
-        (mastodon-profile--make-author-buffer
-         mastodon-profile--account nil nil nil tag)
+        (mastodon-profile--make-author-buffer mastodon-profile--account nil nil nil tag nil :skip-pinned)
       (user-error "Not in a mastodon profile"))))
 
 (defun mastodon-profile-open-following ()
@@ -810,14 +811,16 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
 
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
-             &optional no-reblogs headers no-replies only-media tag max-id)
+             &optional no-reblogs headers no-replies only-media tag max-id
+             skip-pinned)
   "Display profile of ACCOUNT, using ENDPOINT-TYPE and UPDATE-FUNCTION.
 NO-REBLOGS means do not display boosts in statuses.
 HEADERS means also fetch link headers for pagination.
 NO-REPLIES means to exlude replies.
 ONLY-MEDIA means show only posts containing attachments.
 TAG is a hashtag to restrict posts to.
-MAX-ID is a flag to include the max_id pagination parameter."
+MAX-ID is a flag to include the max_id pagination parameter.
+SKIP-PINNED means don't display pinned toots."
   (let-alist account
     (let* ((max-id-str (when max-id
                          (mastodon-tl--buffer-property 'max-id)))
@@ -892,7 +895,7 @@ MAX-ID is a flag to include the max_id pagination parameter."
             (mastodon-profile--format-fields fields))
           ;; insert counts
           (mastodon-profile--insert-counts .statuses_count
-                                           .followers_count .following_count)
+                           .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
           (mastodon-media--inline-images (point-min) (point))
@@ -913,7 +916,9 @@ MAX-ID is a flag to include the max_id pagination parameter."
       (with-current-buffer buffer
         (let* ((inhibit-read-only t))
           ;; insert pinned toots first
-          (when (and pinned (string= endpoint-type "statuses"))
+          (when (and (not skip-pinned)
+                     pinned
+                     (string= endpoint-type "statuses"))
             (let ((beg (point)))
               (mastodon-profile--insert-statuses-pinned pinned)
               (setq mastodon-tl--update-point (point))
@@ -1232,6 +1237,47 @@ the given account."
         (user-error "Looks like there are no familiar followers for this account")
       (let ((choice (completing-read "Show profile of user: " handles)))
         (mastodon-profile-show-user choice)))))
+
+;;; FEATURED TAGS
+
+(defun mastodon-profile-feature-tag ()
+  "Feature a tag on your profile."
+  (interactive)
+  (let* ((tag (read-string "Feature tag on your profile: "))
+         (endpoint (mastodon-http--api
+                    (format "/tags/%s/feature" tag)))
+         (resp (mastodon-http--post endpoint)))
+    (mastodon-http--triage
+     resp (lambda (_resp)
+            (message "Tag #%s featured!" tag)))))
+
+(defun mastodon-profile--get-featured-tags (id)
+  "Get featured tags for user ID."
+  (let ((endpoint (mastodon-http--api
+                   (format "/accounts/%s/featured_tags" id))))
+    (mastodon-http--get-json endpoint)))
+
+(defun mastodon-profile-load-featured-tag ()
+  "Prompt for a featured tag, and load posts containing it.
+Only works when viewing a user's profile."
+  (interactive)
+  (let* ((data (mastodon-profile--profile-json))
+         (id (alist-get 'id data))
+         (tags (mastodon-profile--get-featured-tags id))
+         (choice (completing-read "View user's featured tag: "
+                                  (mastodon-tl--map-alist 'name tags))))
+    (mastodon-profile-open-statuses-tagged choice)))
+
+(defun mastodon-profile-own-featured-tags ()
+  "Display your own featured tags.
+Load a timeline of your own featured tags with
+`mastodon-profile-load-featured-tag'when viewing your profile."
+  (interactive)
+  ;; GET /api/v1/featured_tags
+  (let* ((endpoint (mastodon-http--api "featured_tags"))
+         (tags (mastodon-http--get-json endpoint)))
+    (message "%S"
+             (mastodon-tl--map-alist 'name tags))))
 
 (provide 'mastodon-profile)
 ;;; mastodon-profile.el ends here
