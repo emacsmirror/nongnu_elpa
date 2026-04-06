@@ -974,7 +974,8 @@ files, depending on the value of `jabber-use-global-history'."
                            (from (aref entry 2))
                            (to (aref entry 3))
                            (body (aref entry 4))
-                           (peer (if (string= from "me") to from))
+                           (peer (jabber-jid-user
+                                  (if (string= from "me") to from)))
                            (timestamp (floor
                                        (float-time
                                         (jabber-parse-time time-str)))))
