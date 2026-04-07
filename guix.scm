@@ -19,8 +19,9 @@
 ;;     whatever is on disk.
 ;;   - `version' is derived from `git describe' at evaluation time.
 ;;
-;; Run `git submodule update --init --recursive' before using this
-;; file so that `src/picomemo' is populated.
+;; Picomemo is fetched as a pinned `native-input' origin (mirroring
+;; upstream), so the submodule does not need to be initialised for
+;; this file to build.
 
 (use-modules (gnu packages)
              (gnu packages emacs)
@@ -29,6 +30,7 @@
              (gnu packages tls)
              (guix build-system emacs)
              (guix gexp)
+             (guix git-download)
              ((guix licenses) #:prefix license:)
              (guix packages)
              (guix utils)
@@ -89,6 +91,14 @@ long as the submodule has been initialised."
           (add-after 'unpack 'build-native-module
             (lambda _
               (invoke "make" "-C" "../src")))
+          (add-before 'build-native-module 'unpack-picomemo
+            (lambda _
+              (copy-recursively
+               #$(this-package-native-input
+                  "emacs-jabber-picomemo")
+               "../src/picomemo")
+              (invoke "chmod" "--recursive" "u+w"
+                      "../src/picomemo")))
           (add-after 'unpack 'fix-test-runner
             (lambda _
               ;; Replace grep -oP (Perl regex) with a
@@ -122,7 +132,17 @@ long as the submodule has been initialised."
                 ((".*mam-syncing-skipped.*dispatch \\(\\)"
                   all)
                  (string-append all skip))))))))
-    (native-inputs (list pkg-config))
+    (native-inputs
+     (list pkg-config
+           (origin
+             (method git-fetch)
+             (uri (git-reference
+                    (url "https://github.com/mierenhoop/picomemo")
+                    (commit "1.1.0")))
+             (file-name "emacs-jabber-picomemo")
+             (sha256
+              (base32
+               "044xd1gn9lpd5yrb3c1lmvqsc1chbkhd3vnh7800hxn23a0hxbzj")))))
     (inputs (list mbedtls))
     (propagated-inputs (list emacs-fsm))
     (home-page "https://thanosapollo.org/projects/jabber/")
@@ -132,9 +152,7 @@ long as the submodule has been initialised."
 \"Jabber\") is an instant messaging system; see @url{https://xmpp.org} for
 more information.  It supports OMEMO end-to-end encryption via picomemo.
 This package definition builds straight from the current git checkout,
-so the installed version always matches the working tree.  Run
-@code{git submodule update --init --recursive} before using this file so
-that the native OMEMO module can be built.")
+so the installed version always matches the working tree.")
     (license (list license:gpl3+       ;gpl2+ elisp, gpl3+ C
                    license:isc))))     ;picomemo
 
