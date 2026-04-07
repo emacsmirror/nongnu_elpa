@@ -31,6 +31,7 @@
 
 ;;; Code:
 
+(require 'ewoc)
 (require 'jabber-disco)
 (require 'jabber-xml)
 

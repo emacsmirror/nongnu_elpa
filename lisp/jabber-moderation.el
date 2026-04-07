@@ -35,6 +35,7 @@
 (require 'jabber-disco)
 (require 'jabber-iq)
 
+(declare-function jabber-chain-add "jabber-core" (chain-var handler &optional depth))
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-jid-resource "jabber-util" (jid))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
