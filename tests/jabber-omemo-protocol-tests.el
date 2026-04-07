@@ -255,5 +255,168 @@ Clears OMEMO in-memory caches and tears down on exit."
                        jc "them@example.com" 999)))
           (should (user-ptrp loaded)))))))
 
+;;; Group 6: Bundle publish-if-needed
+
+(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-nil-published ()
+  "Republish required when no bundle has been published."
+  (let ((local '(:identity-key "ik" :signed-pre-key "spk"
+                 :signed-pre-key-id 1 :pre-keys (1 2 3))))
+    (should (jabber-omemo--bundle-needs-republish-p local nil))))
+
+(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-identity-key-mismatch ()
+  "Republish required when identity key differs."
+  (let* ((pks (cl-loop for i from 1 to 30 collect (cons i "k")))
+         (local `(:identity-key "ik-new" :signed-pre-key "spk"
+                  :signed-pre-key-id 1 :pre-keys ,pks))
+         (published `(:identity-key "ik-old" :signed-pre-key "spk"
+                      :signed-pre-key-id 1 :pre-keys ,pks)))
+    (should (jabber-omemo--bundle-needs-republish-p local published))))
+
+(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-spk-id-mismatch ()
+  "Republish required when signed-pre-key-id differs."
+  (let* ((pks (cl-loop for i from 1 to 30 collect (cons i "k")))
+         (local `(:identity-key "ik" :signed-pre-key "spk"
+                  :signed-pre-key-id 2 :pre-keys ,pks))
+         (published `(:identity-key "ik" :signed-pre-key "spk"
+                      :signed-pre-key-id 1 :pre-keys ,pks)))
+    (should (jabber-omemo--bundle-needs-republish-p local published))))
+
+(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-spk-data-mismatch ()
+  "Republish required when signed-pre-key data differs."
+  (let* ((pks (cl-loop for i from 1 to 30 collect (cons i "k")))
+         (local `(:identity-key "ik" :signed-pre-key "spk-new"
+                  :signed-pre-key-id 1 :pre-keys ,pks))
+         (published `(:identity-key "ik" :signed-pre-key "spk-old"
+                      :signed-pre-key-id 1 :pre-keys ,pks)))
+    (should (jabber-omemo--bundle-needs-republish-p local published))))
+
+(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-prekey-count-low ()
+  "Republish required when published pre-key count is below threshold."
+  (let* ((local-pks (cl-loop for i from 1 to 100 collect (cons i "k")))
+         (published-pks (cl-loop for i from 1 to 5 collect (cons i "k")))
+         (local `(:identity-key "ik" :signed-pre-key "spk"
+                  :signed-pre-key-id 1 :pre-keys ,local-pks))
+         (published `(:identity-key "ik" :signed-pre-key "spk"
+                      :signed-pre-key-id 1 :pre-keys ,published-pks)))
+    (should (jabber-omemo--bundle-needs-republish-p local published))))
+
+(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-up-to-date ()
+  "No republish when published bundle matches local and has enough pre-keys."
+  (let* ((pks (cl-loop for i from 1 to 100 collect (cons i "k")))
+         (local `(:identity-key "ik" :signed-pre-key "spk"
+                  :signed-pre-key-id 1 :pre-keys ,pks))
+         (published `(:identity-key "ik" :signed-pre-key "spk"
+                      :signed-pre-key-id 1 :pre-keys ,pks)))
+    (should-not (jabber-omemo--bundle-needs-republish-p local published))))
+
+(ert-deftest jabber-omemo-protocol-test-publish-bundle-if-needed-skips-when-current ()
+  "publish-bundle-if-needed does NOT publish when fetched bundle matches local."
+  (let ((jabber-omemo--bundle-publishes-in-flight (make-hash-table :test 'equal))
+        (publish-called nil)
+        (persist-called nil)
+        (refill-called nil)
+        (pks (cl-loop for i from 1 to 100 collect (cons i "k"))))
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo--get-device-id)
+               (lambda (_jc) 42))
+              ((symbol-function 'jabber-omemo--get-store)
+               (lambda (_jc) 'fake-store-ptr))
+              ((symbol-function 'jabber-omemo-get-bundle)
+               (lambda (_store)
+                 (list :identity-key "ik" :signed-pre-key "spk"
+                       :signed-pre-key-id 1 :pre-keys pks)))
+              ((symbol-function 'jabber-omemo--fetch-bundle)
+               (lambda (_jc _jid _did callback)
+                 (funcall callback
+                          (list :identity-key "ik" :signed-pre-key "spk"
+                                :signed-pre-key-id 1 :pre-keys pks))))
+              ((symbol-function 'jabber-omemo-refill-pre-keys)
+               (lambda (_store) (setq refill-called t)))
+              ((symbol-function 'jabber-omemo--persist-store)
+               (lambda (_jc) (setq persist-called t)))
+              ((symbol-function 'jabber-omemo--publish-bundle)
+               (lambda (_jc) (setq publish-called t))))
+      (jabber-omemo--publish-bundle-if-needed 'fake-jc)
+      (should-not publish-called)
+      (should-not persist-called)
+      (should-not refill-called)
+      ;; In-flight key cleared after callback runs
+      (should (zerop (hash-table-count
+                      jabber-omemo--bundle-publishes-in-flight))))))
+
+(ert-deftest jabber-omemo-protocol-test-publish-bundle-if-needed-publishes-when-stale ()
+  "publish-bundle-if-needed refills, persists, and publishes when stale."
+  (let ((jabber-omemo--bundle-publishes-in-flight (make-hash-table :test 'equal))
+        (calls nil)
+        (pks (cl-loop for i from 1 to 100 collect (cons i "k"))))
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo--get-device-id)
+               (lambda (_jc) 42))
+              ((symbol-function 'jabber-omemo--get-store)
+               (lambda (_jc) 'fake-store-ptr))
+              ((symbol-function 'jabber-omemo-get-bundle)
+               (lambda (_store)
+                 (list :identity-key "ik-new" :signed-pre-key "spk"
+                       :signed-pre-key-id 1 :pre-keys pks)))
+              ((symbol-function 'jabber-omemo--fetch-bundle)
+               (lambda (_jc _jid _did callback)
+                 (funcall callback
+                          (list :identity-key "ik-old" :signed-pre-key "spk"
+                                :signed-pre-key-id 1 :pre-keys pks))))
+              ((symbol-function 'jabber-omemo-refill-pre-keys)
+               (lambda (store) (push (cons 'refill store) calls)))
+              ((symbol-function 'jabber-omemo--persist-store)
+               (lambda (jc) (push (cons 'persist jc) calls)))
+              ((symbol-function 'jabber-omemo--publish-bundle)
+               (lambda (jc) (push (cons 'publish jc) calls))))
+      (jabber-omemo--publish-bundle-if-needed 'fake-jc)
+      (should (equal (nreverse calls)
+                     '((refill . fake-store-ptr)
+                       (persist . fake-jc)
+                       (publish . fake-jc))))
+      ;; In-flight key cleared after callback runs
+      (should (zerop (hash-table-count
+                      jabber-omemo--bundle-publishes-in-flight))))))
+
+(ert-deftest jabber-omemo-protocol-test-publish-bundle-if-needed-dedup ()
+  "Second concurrent publish-bundle-if-needed call is a no-op while first is in flight."
+  (let ((jabber-omemo--bundle-publishes-in-flight (make-hash-table :test 'equal))
+        (fetch-count 0)
+        ;; Hold the first fetch's callback so we can fire the second
+        ;; call while the first is still in flight.
+        (held-callback nil))
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo--get-device-id)
+               (lambda (_jc) 42))
+              ((symbol-function 'jabber-omemo--get-store)
+               (lambda (_jc) 'fake-store-ptr))
+              ((symbol-function 'jabber-omemo-get-bundle)
+               (lambda (_store) nil))
+              ((symbol-function 'jabber-omemo--fetch-bundle)
+               (lambda (_jc _jid _did callback)
+                 (cl-incf fetch-count)
+                 (setq held-callback callback)))
+              ((symbol-function 'jabber-omemo-refill-pre-keys) #'ignore)
+              ((symbol-function 'jabber-omemo--persist-store) #'ignore)
+              ((symbol-function 'jabber-omemo--publish-bundle) #'ignore))
+      ;; First call: fires fetch, callback held.
+      (jabber-omemo--publish-bundle-if-needed 'fake-jc)
+      (should (= 1 fetch-count))
+      (should (= 1 (hash-table-count
+                    jabber-omemo--bundle-publishes-in-flight)))
+      ;; Second call while first is in flight: should NOT fire fetch.
+      (jabber-omemo--publish-bundle-if-needed 'fake-jc)
+      (should (= 1 fetch-count))
+      ;; Now release the held callback; in-flight slot frees.
+      (funcall held-callback nil)
+      (should (zerop (hash-table-count
+                      jabber-omemo--bundle-publishes-in-flight)))
+      ;; Third call after release: fetch fires again.
+      (jabber-omemo--publish-bundle-if-needed 'fake-jc)
+      (should (= 2 fetch-count)))))
+
 (provide 'jabber-omemo-protocol-tests)
 ;;; jabber-omemo-protocol-tests.el ends here

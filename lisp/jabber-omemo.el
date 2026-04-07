@@ -334,6 +334,16 @@ Returns a string like aesgcm://HOST/PATH#IVHEX_KEYHEX."
 (defvar jabber-omemo--sessions (make-hash-table :test 'equal)
   "Cache of \"account\\0jid\\0device-id\" -> deserialized session user-ptr.")
 
+(defvar jabber-omemo--bundle-publishes-in-flight (make-hash-table :test 'equal)
+  "Set of bundle publish requests currently in flight.
+Keyed by \"BARE-JID:DEVICE-ID\".  Mirrors Dino's
+`active_bundle_requests' to dedup concurrent self-bundle fetches.")
+
+(defconst jabber-omemo--prekey-min-count 30
+  "Minimum number of pre-keys our published bundle should advertise.
+Below this we refill locally and republish.  Matches the refill
+target used by `jabber-omemo-refill-pre-keys'.")
+
 ;;; Internal helpers
 
 (defun jabber-omemo--device-list-key (account jid)
@@ -604,6 +614,8 @@ missing from our device list, re-add and re-publish."
                    our-id)
           (setq ids (cons our-id ids))
           (jabber-omemo--publish-device-list jc ids))))
+    (when (string= bare-jid account)
+      (jabber-omemo--publish-bundle-if-needed jc))
     (puthash (jabber-omemo--device-list-key account bare-jid)
              ids jabber-omemo--device-lists)
     (dolist (id ids)
@@ -716,6 +728,43 @@ On error, calls (funcall CALLBACK nil)."
              (jabber-parse-error
               (jabber-iq-error xml-data)))
        (funcall callback nil)))))
+
+(defun jabber-omemo--bundle-needs-republish-p (local published)
+  "Return non-nil if PUBLISHED bundle is out of date vs LOCAL.
+Both arguments are bundle plists (see `jabber-omemo-get-bundle'
+and `jabber-omemo--parse-bundle-xml').  PUBLISHED may be nil
+when no bundle is published yet."
+  (or (null published)
+      (not (equal (plist-get local :identity-key)
+                  (plist-get published :identity-key)))
+      (not (equal (plist-get local :signed-pre-key-id)
+                  (plist-get published :signed-pre-key-id)))
+      (not (equal (plist-get local :signed-pre-key)
+                  (plist-get published :signed-pre-key)))
+      (< (length (plist-get published :pre-keys))
+         jabber-omemo--prekey-min-count)))
+
+(defun jabber-omemo--publish-bundle-if-needed (jc)
+  "Fetch our published bundle and republish only if out of date.
+Dedups concurrent calls per JC via
+`jabber-omemo--bundle-publishes-in-flight'."
+  (let* ((bare-jid (jabber-connection-bare-jid jc))
+         (device-id (jabber-omemo--get-device-id jc))
+         (key (format "%s:%d" bare-jid device-id)))
+    (unless (gethash key jabber-omemo--bundle-publishes-in-flight)
+      (puthash key t jabber-omemo--bundle-publishes-in-flight)
+      (jabber-omemo--fetch-bundle
+       jc bare-jid device-id
+       (lambda (published)
+         (unwind-protect
+             (let* ((store-ptr (jabber-omemo--get-store jc))
+                    (local (jabber-omemo-get-bundle store-ptr)))
+               (when (jabber-omemo--bundle-needs-republish-p local published)
+                 (message "OMEMO: republishing bundle (out of date)")
+                 (jabber-omemo-refill-pre-keys store-ptr)
+                 (jabber-omemo--persist-store jc)
+                 (jabber-omemo--publish-bundle jc)))
+           (remhash key jabber-omemo--bundle-publishes-in-flight)))))))
 
 ;;; Session establishment
 
@@ -1295,11 +1344,12 @@ Opens a tabulated-list buffer with interactive trust controls."
 (defun jabber-omemo-on-connect (jc)
   "Post-connect hook for OMEMO initialization.
 Loads or creates the store, ensures our device is listed,
-publishes our bundle, and pre-fetches sessions for open chat buffers."
+republishes our bundle if it's out of date, and pre-fetches
+sessions for open chat buffers."
   (jabber-omemo--get-store jc)
   (jabber-omemo--get-device-id jc)
   (jabber-omemo--ensure-device-listed jc)
-  (jabber-omemo--publish-bundle jc)
+  (jabber-omemo--publish-bundle-if-needed jc)
   (jabber-omemo--prefetch-open-chats jc)
   (jabber-omemo-store-delete-old-skipped-keys
    (jabber-connection-bare-jid jc)
@@ -1323,7 +1373,8 @@ publishes our bundle, and pre-fetches sessions for open chat buffers."
   (clrhash jabber-omemo--stores)
   (clrhash jabber-omemo--device-lists)
   (clrhash jabber-omemo--sessions)
-  (clrhash jabber-omemo--reconfigured-nodes))
+  (clrhash jabber-omemo--reconfigured-nodes)
+  (clrhash jabber-omemo--bundle-publishes-in-flight))
 
 ;;; XEP-0454: aesgcm file upload
 
