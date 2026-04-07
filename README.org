@@ -61,6 +61,53 @@ Then add to your init file:
   (require 'jabber)
 #+end_src
 
+** GNU Guix
+
+The repository ships a =guix.scm= that builds straight from the
+current working tree, so you never need to update hashes or pin a
+commit.  Whatever is checked out is what gets installed.
+
+Initialise the optional OMEMO submodule once:
+
+#+begin_src sh
+  git clone https://git.thanosapollo.org/emacs-jabber/
+  cd emacs-jabber
+  git submodule update --init --recursive
+#+end_src
+
+One-shot install into your user profile:
+
+#+begin_src sh
+  guix package -f guix.scm
+#+end_src
+
+A development shell with all build dependencies:
+
+#+begin_src sh
+  guix shell -D -f guix.scm
+#+end_src
+
+To use =emacs-jabber= from a Guix Home configuration, load the
+package definition and reference it from your services:
+
+#+begin_src scheme
+  (use-modules (gnu home)
+               (gnu home services)
+               (gnu home services guix)
+               (gnu services)
+               (guix channels)
+               (guix gexp))
+
+  (define emacs-jabber-git
+    (load "/path/to/emacs-jabber/guix.scm"))
+
+  (home-environment
+   (packages (list emacs-jabber-git)))
+#+end_src
+
+Re-run =guix home reconfigure= after pulling new commits and the
+package will be rebuilt from the updated checkout.
+
 * Configuration
 
 Accounts are configured via =jabber-account-list=.  The simplest form
