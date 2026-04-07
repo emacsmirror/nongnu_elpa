@@ -734,7 +734,16 @@ On error, calls (funcall CALLBACK nil)."
   "Return non-nil if PUBLISHED bundle is out of date vs LOCAL.
 Both arguments are bundle plists (see `jabber-omemo-get-bundle'
 and `jabber-omemo--parse-bundle-xml').  PUBLISHED may be nil
-when no bundle is published yet."
+when no bundle is published yet.
+
+The pre-key drift check assumes the server prunes consumed
+pre-keys from the published bundle per XEP-0384 Section 4.3;
+Prosody, ejabberd, MongooseIM, Tigase and Openfire all do.
+Against a non-compliant server that never prunes, rotation of
+pre-key ids without a size drop will be silently missed.  Dino's
+structural intersection in `stream_module.vala:254-273' catches
+that edge case; matching it would require plumbing the local
+pre-key set into this predicate."
   (or (null published)
       (not (equal (plist-get local :identity-key)
                   (plist-get published :identity-key)))

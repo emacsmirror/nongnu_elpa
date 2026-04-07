@@ -265,7 +265,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 (ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-identity-key-mismatch ()
   "Republish required when identity key differs."
-  (let* ((pks (cl-loop for i from 1 to 30 collect (cons i "k")))
+  (let* ((pks (cl-loop for i from 1 to 100 collect (cons i "k")))
          (local `(:identity-key "ik-new" :signed-pre-key "spk"
                   :signed-pre-key-id 1 :pre-keys ,pks))
          (published `(:identity-key "ik-old" :signed-pre-key "spk"
@@ -274,7 +274,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 (ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-spk-id-mismatch ()
   "Republish required when signed-pre-key-id differs."
-  (let* ((pks (cl-loop for i from 1 to 30 collect (cons i "k")))
+  (let* ((pks (cl-loop for i from 1 to 100 collect (cons i "k")))
          (local `(:identity-key "ik" :signed-pre-key "spk"
                   :signed-pre-key-id 2 :pre-keys ,pks))
          (published `(:identity-key "ik" :signed-pre-key "spk"
@@ -283,7 +283,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 (ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-spk-data-mismatch ()
   "Republish required when signed-pre-key data differs."
-  (let* ((pks (cl-loop for i from 1 to 30 collect (cons i "k")))
+  (let* ((pks (cl-loop for i from 1 to 100 collect (cons i "k")))
          (local `(:identity-key "ik" :signed-pre-key "spk-new"
                   :signed-pre-key-id 1 :pre-keys ,pks))
          (published `(:identity-key "ik" :signed-pre-key "spk-old"
