@@ -279,6 +279,7 @@ not jabber-message-correct--replace-id itself."
                            (type . "groupchat"))
                           (body () "old message")
                           (delay ((xmlns . "urn:xmpp:delay")
+                                  (from . "room@muc.example.com")
                                   (stamp . "2025-01-15T10:30:00Z"))))))
     (should (jabber-muc--history-message-p stanza))))
 
@@ -301,6 +302,7 @@ must not mutate the DB or the ewoc."
                           (replace ((id . "orig-2")
                                     (xmlns . ,jabber-message-correct-xmlns)))
                           (delay ((xmlns . "urn:xmpp:delay")
+                                  (from . "room@muc.example.com")
                                   (stamp . "2025-01-15T10:30:00Z"))))))
     (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_) t))
               ((symbol-function 'jabber-chat--decrypt-if-needed)

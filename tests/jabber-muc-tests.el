@@ -247,20 +247,22 @@ entry with JC=nil."
 ;;; Group 7: jabber-muc--history-message-p
 
 (ert-deftest jabber-test-muc-history-message-p-delay ()
-  "Message with urn:xmpp:delay child is detected as history."
+  "Delay from=room is detected as MUC history per XEP-0045."
   (let ((xml '(message ((from . "room@conference.example.com/nick")
                         (type . "groupchat"))
                (body nil "Old message")
                (delay ((xmlns . "urn:xmpp:delay")
+                       (from . "room@conference.example.com")
                        (stamp . "2023-01-01T00:00:00Z"))))))
     (should (jabber-muc--history-message-p xml))))
 
 (ert-deftest jabber-test-muc-history-message-p-legacy-delay ()
-  "Message with jabber:x:delay child is detected as history."
+  "Legacy jabber:x:delay from=room is detected as MUC history."
   (let ((xml '(message ((from . "room@conference.example.com/nick")
                         (type . "groupchat"))
                (body nil "Old message")
                (x ((xmlns . "jabber:x:delay")
+                   (from . "room@conference.example.com")
                    (stamp . "20230101T00:00:00"))))))
     (should (jabber-muc--history-message-p xml))))
 
@@ -272,11 +274,12 @@ entry with JC=nil."
     (should-not (jabber-muc--history-message-p xml))))
 
 (ert-deftest jabber-test-muc-history-message-p-mixed-children ()
-  "Delay is detected among mixed sibling elements."
+  "Delay from=room among mixed sibling elements is detected."
   (let ((xml '(message ((from . "room@conference.example.com/nick")
                         (type . "groupchat"))
                (body nil "Old message")
                (delay ((xmlns . "urn:xmpp:delay")
+                       (from . "room@conference.example.com")
                        (stamp . "2023-01-01T00:00:00Z")))
                (x ((xmlns . "http://jabber.org/protocol/muc#user"))
                   (status ((code . "100")))))))
