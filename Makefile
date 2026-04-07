@@ -1,5 +1,5 @@
 .PHONY: all build clean install uninstall check test load \
-        do-test do-lint-check-declare do-lint-checkdoc
+        do-test do-test-summary do-lint-check-declare do-lint-checkdoc
 
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
@@ -15,6 +15,9 @@ endif
 # For loop targets (test, per-file linters), enter guix shell once and
 # re-exec make so the inner loop calls plain `emacs` from the profile.
 GUIX_WRAP = $(if $(GUIX_SHELL),$(GUIX_SHELL) $(MAKE) --no-print-directory EMACS_CMD=emacs,$(MAKE) --no-print-directory)
+
+JOBS         ?= $(shell nproc 2>/dev/null || echo 4)
+TEST_RESULTS := .test-results
 
 TESTS ?= tests/jabber-activity-tests.el \
          tests/jabber-bookmarks-tests.el \
@@ -46,6 +49,8 @@ TESTS ?= tests/jabber-activity-tests.el \
          tests/jabber-transient-tests.el \
          tests/jabber-util-tests.el \
          tests/jabber-xml-tests.el
+
+TEST_STAMPS := $(patsubst tests/%.el,$(TEST_RESULTS)/%.stamp,$(TESTS))
 
 all: build
 
@@ -110,32 +115,47 @@ lint-test-compile:
 lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint lint-test-compile
 
 test:
-	@$(GUIX_WRAP) do-test
+	@rm -rf $(TEST_RESULTS)
+	@mkdir -p $(TEST_RESULTS)
+	@$(GUIX_WRAP) -j$(JOBS) -Otarget do-test
 
-do-test:
-	@passed=0; failed=0; total=0; failed_files=""; \
-	for t in $(TESTS); do \
-	  output=$$($(EMACS_CMD) -Q --batch -L lisp -L tests \
-	    -l ert -l $$t -f ert-run-tests-batch-and-exit 2>&1); \
-	  rc=$$?; \
-	  n=$$(echo "$$output" | grep -o 'Ran [0-9]*' | grep -o '[0-9]*'); \
+do-test: do-test-summary
+
+$(TEST_RESULTS)/%.stamp: tests/%.el
+	@output=$$($(EMACS_CMD) -Q --batch -L lisp -L tests \
+	  -l ert -l $< -f ert-run-tests-batch-and-exit 2>&1); \
+	rc=$$?; \
+	n=$$(echo "$$output" | grep -o 'Ran [0-9]*' | grep -o '[0-9]*'); \
+	if [ $$rc -ne 0 ]; then \
+	  printf "\033[31mFAIL\033[0m $< ($$n tests)\n"; \
+	  echo "$$output" | grep '  FAILED'; \
+	  printf "FAIL %s\n" "$$n" > $@; \
+	else \
+	  printf "\033[32m  OK\033[0m $< ($$n tests)\n"; \
+	  printf "OK %s\n" "$$n" > $@; \
+	fi
+
+do-test-summary: $(TEST_STAMPS)
+	@total=0; passed=0; failed=0; failed_files=""; \
+	for f in $(TEST_STAMPS); do \
+	  read status n < $$f; \
 	  total=$$((total + n)); \
-	  if [ $$rc -ne 0 ]; then \
+	  if [ "$$status" = "FAIL" ]; then \
 	    failed=$$((failed + n)); \
-	    failed_files="$$failed_files $$t"; \
-	    printf "\033[31mFAIL\033[0m $$t ($$n tests)\n"; \
-	    echo "$$output" | grep '  FAILED'; \
+	    base=$$(basename $$f .stamp); \
+	    failed_files="$$failed_files tests/$$base.el"; \
 	  else \
 	    passed=$$((passed + n)); \
-	    printf "\033[32m  OK\033[0m $$t ($$n tests)\n"; \
 	  fi; \
 	done; \
 	echo ""; \
 	if [ $$failed -eq 0 ]; then \
 	  printf "\033[32m$$total tests, $$passed passed, 0 failed\033[0m\n"; \
+	  rm -rf $(TEST_RESULTS); \
 	else \
 	  printf "\033[31m$$total tests, $$passed passed, $$failed failed\033[0m\n"; \
 	  for f in $$failed_files; do echo "  $$f"; done; \
+	  printf "\nStamps preserved in $(TEST_RESULTS)/ for debugging.\n"; \
 	fi; \
 	[ $$failed -eq 0 ]
 
@@ -157,6 +177,7 @@ else
 endif
 
 clean: clean-elc clean-module
+	rm -rf $(TEST_RESULTS)
 
 prefix      ?= /usr/local
 datarootdir ?= $(prefix)/share

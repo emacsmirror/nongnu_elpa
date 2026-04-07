@@ -7,5 +7,6 @@ jabber-autoloads.el
 /jabber-pkg.el
 jabber.info
 .worktrees/
+.test-results/
 src/*.so
 lisp/*.so
