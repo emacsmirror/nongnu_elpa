@@ -339,10 +339,11 @@ Returns a string like aesgcm://HOST/PATH#IVHEX_KEYHEX."
 Keyed by \"BARE-JID:DEVICE-ID\".  Mirrors Dino's
 `active_bundle_requests' to dedup concurrent self-bundle fetches.")
 
-(defconst jabber-omemo--prekey-min-count 30
+(defconst jabber-omemo--prekey-min-count 100
   "Minimum number of pre-keys our published bundle should advertise.
-Below this we refill locally and republish.  Matches the refill
-target used by `jabber-omemo-refill-pre-keys'.")
+Below this we refill locally and republish.  Matches picomemo's
+`OMEMO_NUMPREKEYS' refill target and Dino's `NUM_KEYS_TO_PUBLISH',
+so any drift between local and published state triggers a republish.")
 
 ;;; Internal helpers
 
