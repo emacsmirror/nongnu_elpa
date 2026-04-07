@@ -1,13 +1,20 @@
-.PHONY: all build clean install uninstall check test load
+.PHONY: all build clean install uninstall check test load \
+        do-test do-lint-check-declare do-lint-checkdoc
 
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
 ifdef GUIX
-EMACS_CMD = guix shell -m manifest.scm -- emacs
+GUIX_SHELL := guix shell -D -f guix.scm emacs-next emacs-package-lint emacs-relint --
+EMACS_CMD := $(GUIX_SHELL) emacs
 else
-EMACS_CMD = emacs
+GUIX_SHELL :=
+EMACS_CMD := emacs
 endif
 endif
+
+# For loop targets (test, per-file linters), enter guix shell once and
+# re-exec make so the inner loop calls plain `emacs` from the profile.
+GUIX_WRAP = $(if $(GUIX_SHELL),$(GUIX_SHELL) $(MAKE) --no-print-directory EMACS_CMD=emacs,$(MAKE) --no-print-directory)
 
 TESTS ?= tests/jabber-activity-tests.el \
          tests/jabber-bookmarks-tests.el \
@@ -60,7 +67,7 @@ src/picomemo/omemo.c:
 
 module: src/picomemo/omemo.c
 ifdef GUIX
-	guix shell -m manifest.scm -- $(MAKE) -C src
+	guix shell -D -f guix.scm -- $(MAKE) -C src
 else
 	$(MAKE) -C src
 endif
@@ -71,11 +78,17 @@ compile: autoload
 	-f batch-byte-compile lisp/*.el
 
 lint-check-declare:
+	@$(GUIX_WRAP) do-lint-check-declare
+
+do-lint-check-declare:
 	for file in lisp/*.el ; do \
 	$(EMACS_CMD) -q -Q --batch --eval="(check-declare-file \"$$file\")" ; \
 	done
 
 lint-checkdoc:
+	@$(GUIX_WRAP) do-lint-checkdoc
+
+do-lint-checkdoc:
 	for file in lisp/*.el ; do \
 	$(EMACS_CMD) -q -Q --batch --eval="(checkdoc-file \"$$file\")" ; \
 	done
@@ -97,12 +110,15 @@ lint-test-compile:
 lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint lint-test-compile
 
 test:
+	@$(GUIX_WRAP) do-test
+
+do-test:
 	@passed=0; failed=0; total=0; failed_files=""; \
 	for t in $(TESTS); do \
 	  output=$$($(EMACS_CMD) -Q --batch -L lisp -L tests \
 	    -l ert -l $$t -f ert-run-tests-batch-and-exit 2>&1); \
 	  rc=$$?; \
-	  n=$$(echo "$$output" | grep -oP '^Ran \K[0-9]+'); \
+	  n=$$(echo "$$output" | grep -o 'Ran [0-9]*' | grep -o '[0-9]*'); \
 	  total=$$((total + n)); \
 	  if [ $$rc -ne 0 ]; then \
 	    failed=$$((failed + n)); \
@@ -135,7 +151,7 @@ clean-elc:
 
 clean-module:
 ifdef GUIX
-	guix shell -m manifest.scm -- $(MAKE) -C src clean
+	guix shell -D -f guix.scm -- $(MAKE) -C src clean
 else
 	$(MAKE) -C src clean
 endif
