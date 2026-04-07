@@ -1686,11 +1686,17 @@ GROUP on JC, or `:muc-foreign' otherwise."
    (t :muc-foreign)))
 
 (defun jabber-muc--history-message-p (xml-data)
-  "Return non-nil if XML-DATA is a delayed (history) message.
-Checks for a child element with xmlns `urn:xmpp:delay' or
-`jabber:x:delay'."
-  (or (jabber-xml-child-with-xmlns xml-data jabber-delay-xmlns)
-      (jabber-xml-child-with-xmlns xml-data jabber-delay-legacy-xmlns)))
+  "Return non-nil if XML-DATA is a MUC history message per XEP-0045.
+Per XEP-0045 section 7.2.15, a MUC history message has a <delay/>
+element whose `from' attribute is the room JID.  Delay elements with
+other `from' values (bridges, gateways, time corrections) indicate
+live messages with extra metadata, not history."
+  (when-let* ((delay (or (jabber-xml-child-with-xmlns xml-data jabber-delay-xmlns)
+                         (jabber-xml-child-with-xmlns xml-data
+                                                      jabber-delay-legacy-xmlns)))
+              (delay-from (jabber-xml-get-attribute delay 'from))
+              (msg-from (jabber-xml-get-attribute xml-data 'from)))
+    (string= delay-from (jabber-jid-user msg-from))))
 
 (defun jabber-muc--display-message (_jc xml-data group nick type msg-plist)
   "Display a MUC message and conditionally run alert hooks.

@@ -285,6 +285,25 @@ entry with JC=nil."
                   (status ((code . "100")))))))
     (should (jabber-muc--history-message-p xml))))
 
+(ert-deftest jabber-test-muc-history-message-p-bridge-delay ()
+  "Delay from a bridge gateway is not history (Matrix/slidge scenario)."
+  (let ((xml '(message ((from . "!room@matrix.example.com/nick")
+                        (type . "groupchat"))
+               (body nil "Live bridged message")
+               (delay ((xmlns . "urn:xmpp:delay")
+                       (from . "matrix.example.com")
+                       (stamp . "2026-04-06T06:09:55Z"))))))
+    (should-not (jabber-muc--history-message-p xml))))
+
+(ert-deftest jabber-test-muc-history-message-p-delay-no-from ()
+  "Delay without from attribute is not treated as history."
+  (let ((xml '(message ((from . "room@conference.example.com/nick")
+                        (type . "groupchat"))
+               (body nil "Message with anonymous delay")
+               (delay ((xmlns . "urn:xmpp:delay")
+                       (stamp . "2023-01-01T00:00:00Z"))))))
+    (should-not (jabber-muc--history-message-p xml))))
+
 (ert-deftest jabber-test-muc-classify-message-error-priority ()
   "Error classification takes priority over matching local nick."
   (jabber-muc-test-with-rooms
