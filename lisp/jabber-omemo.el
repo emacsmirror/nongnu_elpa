@@ -976,10 +976,6 @@ Signals structured errors that callers can dispatch on:
                      sender-did sender-jid)))
         (when-let* ((hb (jabber-omemo-heartbeat session-ptr store-ptr)))
           (jabber-omemo--send-heartbeat jc sender-jid sender-did hb))
-        (when pre-key-p
-          (jabber-omemo-refill-pre-keys store-ptr)
-          (jabber-omemo--persist-store jc)
-          (jabber-omemo--publish-bundle jc))
         (if payload
             (let* ((plaintext (jabber-omemo-decrypt-message
                                decrypted-key iv payload))
@@ -1007,17 +1003,6 @@ then looks for <encrypted> element."
       (when-let* ((parsed (jabber-omemo--parse-encrypted xml-data)))
         (list :type 'omemo :parsed parsed))))))
 
-(defun jabber-omemo--repair-after-prekey-failure (jc)
-  "Refill our pre-keys and republish our bundle on connection JC.
-Called when a pre-key OMEMO message can't be decrypted, which most
-often means the sender consumed a pre-key we'd already deleted
-locally.  Refilling and republishing makes the next inbound pre-key
-message use a fresh slot, so the failure is self-limiting."
-  (when-let* ((store-ptr (jabber-omemo--get-store jc)))
-    (jabber-omemo-refill-pre-keys store-ptr)
-    (jabber-omemo--persist-store jc)
-    (jabber-omemo--publish-bundle jc)))
-
 (defun jabber-omemo--decrypt-handler (jc xml-data detected)
   "Decrypt OMEMO message.  DETECTED is the plist from detect.
 
@@ -1025,9 +1010,10 @@ Catches structured OMEMO errors:
 - `jabber-omemo-not-for-us': silently return XML-DATA unchanged
   (the stanza is for a different device on the same JID, or a
   heartbeat that doesn't concern us).
-- `jabber-omemo-prekey-failed': self-heal by refilling pre-keys
-  and republishing our bundle, then re-signal so the dispatcher
-  reports the failure to the user.
+- `jabber-omemo-prekey-failed': log and re-signal so the
+  dispatcher reports the failure to the user.  Bundle repair
+  happens via the lifecycle-driven `--publish-bundle-if-needed'
+  trigger, not from the decrypt path.
 Other OMEMO errors propagate unchanged so the dispatcher can
 replace the body with a generic decrypt-failed placeholder."
   (pcase (plist-get detected :type)
@@ -1039,7 +1025,8 @@ replace the body with a generic decrypt-failed placeholder."
           jc xml-data (plist-get detected :parsed))
        (jabber-omemo-not-for-us xml-data)
        (jabber-omemo-prekey-failed
-        (jabber-omemo--repair-after-prekey-failure jc)
+        (message "OMEMO: pre-key decrypt failed: %s"
+                 (error-message-string err))
         (signal (car err) (cdr err)))))
     (_ xml-data)))
 
