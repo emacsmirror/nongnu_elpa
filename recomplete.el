@@ -7,7 +7,7 @@
 
 ;; URL: https://codeberg.org/ideasman42/emacs-recomplete
 ;; Version: 0.2
-;; Package-Requires: ((emacs "29.1"))
+;; Package-Requires: ((emacs "29.1") (with-command-redo "0.1"))
 
 ;;; Commentary:
 
@@ -34,6 +34,8 @@
 ;; TODO: make this lazy load (not everyone needs to use).
 (require 'dabbrev)
 
+(declare-function with-command-redo-fn "with-command-redo")
+
 
 ;; ---------------------------------------------------------------------------
 ;; Compatibility
@@ -43,11 +45,13 @@
     (defmacro incf (place &optional delta)
       "Increment PLACE by DELTA or 1."
       (declare (debug (gv-place &optional form)))
-      (gv-letplace (getter setter) place (funcall setter `(+ ,getter ,(or delta 1)))))
+      (gv-letplace (getter setter) place
+        (funcall setter `(+ ,getter ,(or delta 1)))))
     (defmacro decf (place &optional delta)
       "Decrement PLACE by DELTA or 1."
       (declare (debug (gv-place &optional form)))
-      (gv-letplace (getter setter) place (funcall setter `(- ,getter ,(or delta 1)))))))
+      (gv-letplace (getter setter) place
+        (funcall setter `(- ,getter ,(or delta 1)))))))
 
 
 ;; ---------------------------------------------------------------------------
@@ -60,31 +64,6 @@
 (defcustom recomplete-single-line-display t
   "Display completion options to a single line, centered around the current item."
   :type 'boolean)
-
-
-;; ---------------------------------------------------------------------------
-;; Internal Variables
-
-;; Notes on the use of this variable.
-;;
-;; - This stores the undo state such that we can undo and perform a new action.
-;; - This is set to nil via `recomplete--alist-clear-hook' when incompatible functions run.
-;;
-;; Keys are:
-;; - `buffer-undo-list': The buffer-undo-list before execution.
-;; - `pending-undo-list': The pending-undo-list before execution.
-;; - `point' The point before execution.
-;; - `msg-text' The message text displayed to the user.
-;; - `cycle-index' The position in the list of options to cycle through.
-;; - `cycle-reverse' when t, reverse the cycle direction.
-;; - `fn-symbol' The symbol to identify the type of chain being cycled.
-;; - `fn-cache' Optional cache for the callback to use
-;;   (stored between calls to the same chain, avoids unnecessary recalculation).
-;;   Using this is optional, it can be left nil by callbacks.
-;; - `is-first-post-command' Detect if the `post-command-hook' runs immediately
-;;   after `recomplete-with-callback', so we know not to break the chain in that case.
-(defvar-local recomplete--alist nil
-  "Internal properties for repeated `recomplete' calls.")
 
 
 ;; ---------------------------------------------------------------------------
@@ -172,38 +151,20 @@ see `advice-add' documentation."
       (setq p (mod (1+ p) (length seq)))
       (append (seq-subseq seq p) (seq-subseq seq 0 p))))))
 
-(defun recomplete--undo-next (list)
-  "Get the next undo step in LIST.
-
-Argument LIST is a `buffer-undo-list' compatible list."
-  (declare (important-return-value t))
-  (while (car list)
-    (setq list (cdr list)))
-  (while (and list (null (car list)))
-    (setq list (cdr list)))
-  list)
-
 
 ;; ---------------------------------------------------------------------------
-;; Internal Functions/Macros
+;; Internal Functions
 
-;; Since this stores undo-data, we only want to keep the information between successive calls.
-(defun recomplete--alist-clear-hook ()
-  "Clear internal `recomplete' data after running an incompatible function."
-  (declare (important-return-value nil))
-
-  ;; Should always be true, harmless if it's not.
+(defun recomplete--on-other-command (fn-cache)
+  "Handler for non-modifying external commands during a recomplete chain.
+FN-CACHE is the recomplete adapter's cache.
+Return non-nil to break the chain."
+  (declare (important-return-value t))
   (cond
-   ;; Continue with this chain.
-   ((alist-get 'is-first-post-command recomplete--alist)
-    (setf (alist-get 'is-first-post-command recomplete--alist) nil))
-
-   ;; Reverse direction.
    ((eq this-command 'keyboard-quit)
-
-    ;; Toggle reverse direction.
-    (let ((cycle-reverse (null (alist-get 'cycle-reverse recomplete--alist))))
-
+    ;; Toggle reverse direction, keep chain alive.
+    (let ((cycle-reverse (null (alist-get 'cycle-reverse fn-cache))))
+      (setf (alist-get 'cycle-reverse fn-cache) cycle-reverse)
       ;; Re-display the message.
       (let ((msg-prefix
              (cond
@@ -211,15 +172,71 @@ Argument LIST is a `buffer-undo-list' compatible list."
                "<")
               (t
                ">")))
-            (msg-text (alist-get 'msg-text recomplete--alist)))
-        (message "%s%s" msg-prefix msg-text))
-
-      (setf (alist-get 'cycle-reverse recomplete--alist) cycle-reverse)))
-
-   ;; Break the chain.
+            (msg-text (alist-get 'msg-text fn-cache)))
+        ;; Don't log because it's not useful to keep the selection.
+        (let ((message-log-max nil))
+          (message "%s%s" msg-prefix msg-text))))
+    nil)
    (t
-    (remove-hook 'post-command-hook #'recomplete--alist-clear-hook t)
-    (setq recomplete--alist nil))))
+    t)))
+
+(defun recomplete--format-and-display (result-choices cycle-index cycle-reverse)
+  "Format RESULT-CHOICES with CYCLE-INDEX highlighted and display.
+CYCLE-REVERSE determines the direction prefix.
+Return the formatted message text."
+  (declare (important-return-value t))
+  (let ((msg-prefix
+         (cond
+          (cycle-reverse
+           "<")
+          (t
+           ">")))
+
+        ;; Notes on formatting output:
+        ;; - Use double spaces as a separator even though it uses more room because:
+        ;;   - Words may visually run together without this.
+        ;;   - Some completions may contain spaces.
+        ;; - Formatting ensures text doesn't *move* when the active item changes.
+        (msg-text
+         (string-join (let ((iter-index 0))
+                        (mapcar
+                         (lambda (iter-word)
+                           (prog1 (cond
+                                   ((eq iter-index cycle-index)
+                                    (format "[%s]" (propertize iter-word 'face 'match)))
+                                   (t
+                                    (format " %s " iter-word)))
+                             (incf iter-index)))
+                         result-choices))
+                      "")))
+
+    ;; Single line display.
+    (when recomplete-single-line-display
+      (with-current-buffer (window-buffer (minibuffer-window))
+        (let ((msg-width (string-width msg-text))
+              (display-width (- (window-body-width (minibuffer-window)) (length msg-prefix))))
+          (when (> msg-width display-width)
+            (let ((msg-start nil)
+                  (msg-end nil)
+                  (ellipsis "..."))
+              (let* ((word-beg (next-property-change 0 msg-text))
+                     (word-end (next-property-change word-beg msg-text)))
+                (setq msg-start
+                      (max 0
+                           (min (- (/ (+ word-beg word-end) 2) (/ display-width 2))
+                                (- msg-width display-width))))
+                (setq msg-end (min msg-width (+ msg-start display-width))))
+
+              (setq msg-text (truncate-string-to-width msg-text msg-end msg-start 0 ellipsis))
+
+              (unless (zerop msg-start)
+                (setq msg-text (concat ellipsis (substring msg-text (length ellipsis))))))))))
+
+    ;; Don't log because it's not useful to keep the selection.
+    (let ((message-log-max nil))
+      (message "%s%s" msg-prefix msg-text))
+
+    msg-text))
 
 
 ;; ---------------------------------------------------------------------------
@@ -531,191 +548,74 @@ step onto the next item)."
   ;; Default to 1 (one step forward).
   (setq cycle-offset (or cycle-offset 1))
 
-  ;; While we could support completion without undo,
-  ;; it doesn't seem so common to disable undo?
-  (when (eq buffer-undo-list t)
-    (user-error "(re)complete: undo disabled for this buffer"))
+  (with-command-redo-fn
+   (list :id fn-symbol :on-other-command #'recomplete--on-other-command)
+   (lambda (props) (recomplete--adapter-call fn-symbol cycle-offset cycle-index-init props))))
 
-  (let ((buffer-undo-list-init buffer-undo-list)
-        (pending-undo-list-init pending-undo-list)
-        (cycle-index (or cycle-index-init 0))
-        (cycle-reverse nil)
-        (fn-cache nil)
+(defun recomplete--adapter-call (user-fn-symbol cycle-offset cycle-index-init props)
+  "Adapter bridging `with-command-redo' and recomplete callback protocols.
+USER-FN-SYMBOL is the recomplete callback.
+CYCLE-OFFSET is the cycling step (1 or -1).
+CYCLE-INDEX-INIT is the initial cycle index.
+PROPS is the `with-command-redo' plist; :result and :cache are written via
+`plist-put' before return."
+  (declare (important-return-value t))
+  (let* ((fn-cache (plist-get props :cache))
+         (cycle-reverse (and fn-cache (alist-get 'cycle-reverse fn-cache)))
+         (user-cache (and fn-cache (alist-get 'user-cache fn-cache)))
+         (cycle-index
+          (cond
+           ((null fn-cache)
+            ;; First call.
+            (or cycle-index-init 0))
+           (t
+            ;; Subsequent call: apply offset (possibly reversed) to previous index.
+            (let ((prev-cycle-index (alist-get 'cycle-index fn-cache))
+                  (effective-offset
+                   (cond
+                    (cycle-reverse
+                     (- cycle-offset))
+                    (t
+                     cycle-offset))))
+              (+ effective-offset prev-cycle-index)))))
+         (message-list (list)))
 
-        ;; Initial values if not overwritten by the values in `recomplete--alist'.
-        (point-init (point))
-
-        (message-list (list)))
-
-    ;; Roll-back and cycle through corrections.
-    (let ((alist recomplete--alist))
-
-      ;; Always build a new list on each call, reusing this value
-      ;; after any error could cause unpredictable behavior so set this to nil immediately.
-      (setq recomplete--alist nil)
-
-      ;; Check for the case of consecutive calls which use incompatible `fn-symbol'.
-      ;; This isn't an error, just clear `alist' in this case.
-      ;;
-      ;; While we could check `this-command', this isn't set properly when called indirectly.
-      ;; Simply check if the internal symbol changes.
-      (when (and alist (null (eq fn-symbol (alist-get 'fn-symbol alist))))
-        (setq alist nil))
-
-      ;; We only need to check if `recomplete--alist' is set here,
-      ;; no need to check `last-command' as `recomplete--alist-clear-hook' ensures this variable
-      ;; is cleared when the chain is broken.
-      (when alist
-
-        ;; Update vars from previous state.
-        (setq point-init (alist-get 'point alist))
-        (setq buffer-undo-list-init (alist-get 'buffer-undo-list alist))
-        (setq pending-undo-list-init (alist-get 'pending-undo-list alist))
-        (setq cycle-reverse (alist-get 'cycle-reverse alist))
-        (setq fn-cache (alist-get 'fn-cache alist))
-
-        (when cycle-reverse
-          (setq cycle-offset (- cycle-offset)))
-        (setq cycle-index (+ cycle-offset (cdr (assq 'cycle-index alist))))
-
-        ;; Undo with strict checks so we know _exactly_ what's going on
-        ;; and don't allow some unknown state to be entered.
-        (let ((undo-data (cdr buffer-undo-list)) ; Skip the 'nil' car of the list.
-              (undo-data-init (cdr buffer-undo-list-init)))
-
-
-          ;; It's possible the last action did not add an undo step.
-          ;; This can happen when `recomplete' cycles back to the initial state.
-          ;; While not common it can happen if the complete action compares the state
-          ;; of the current buffer with the contents that replaces it, where no change
-          ;; is found and no undo step is added. In this case, the last undo will be skipped.
-          (unless (eq undo-data-init undo-data)
-            ;; Since setting undo-data could corrupt the buffer if there is an unexpected state,
-            ;; ensure we have exactly one undo step added,
-            ;; so calling undo returns to a known state.
-            ;;
-            ;; While this should never happen, prefer an error message over a corrupt buffer.
-            (unless (eq undo-data-init (recomplete--undo-next undo-data))
-              (user-error "(re)complete: unexpected undo-state before undo, abort!"))
-
-            ;; Roll back the edit, override `this-command' so we have predictable undo behavior.
-            ;; Also so setting it doesn't overwrite the current `this-command'
-            ;; which is checked above as `last-command'.
-            (let ((this-command nil)
-                  ;; We never want to undo in region (unlikely, set just to be safe).
-                  (undo-in-region nil)
-                  ;; The "Undo" message is just noise, don't log it or display it.
-                  (inhibit-message t)
-                  (message-log-max nil))
-
-              (undo-only)
-
-              ;; Ensure a single undo step was rolled back, if not,
-              ;; early exit as we must _never_ set undo data for an unexpected state.
-              (setq undo-data (cdr buffer-undo-list))
-              (unless (eq undo-data-init (recomplete--undo-next (recomplete--undo-next undo-data)))
-                (user-error "(re)complete: unexpected undo-state after undo, abort!")))))
-
-        ;; Roll back the buffer state, checks above assure us this won't cause any problems.
-        (setq buffer-undo-list buffer-undo-list-init)
-        (setq pending-undo-list pending-undo-list-init)
-
-        (goto-char point-init)))
-
-    (pcase-let ((`(,result-choices ,result-fn-cache)
-                 ;; Store messages, only display failure, as we will typically show a word list.
-                 ;; Without storing these in a list we get an unsightly flicker.
+    (pcase-let ((`(,result-choices ,result-user-cache)
                  (recomplete--with-messages-as-list message-list
-                   ;; Needed in case the operation does multiple undo pushes.
-                   (with-undo-amalgamate
-                     (funcall fn-symbol cycle-index fn-cache)))))
-
+                   (funcall user-fn-symbol cycle-index user-cache))))
       (cond
        ((null result-choices)
-        ;; Log the message, since there was failure we might want to know why.
-        (dolist (message-text message-list)
-          (message "%s" message-text))
-        ;; Result, nothing happened!
+        ;; Failure: show captured messages.
+        (dolist (msg message-list)
+          (message "%s" msg))
+        (plist-put props :result nil)
         nil)
 
        (t
-        ;; Set to wrap around.
+        ;; Success: compute cycle index and display.
         (setq cycle-index (mod cycle-index (length result-choices)))
 
-        (let ((msg-prefix
-               (cond
-                (cycle-reverse
-                 "<")
-                (t
-                 ">")))
+        (let ((msg-text (recomplete--format-and-display result-choices cycle-index cycle-reverse)))
 
-              ;; Notes on formatting output:
-              ;; - Use double spaces as a separator even though it uses more room because:
-              ;;   - Words may visually run together without this.
-              ;;   - Some completions may contain spaces.
-              ;; - Formatting ensures text doesn't *move* when the active item changes.
-              (msg-text
-               (string-join (let ((iter-index 0))
-                              (mapcar
-                               (lambda (iter-word)
-                                 (prog1 (cond
-                                         ((eq iter-index cycle-index)
-                                          (format "[%s]" (propertize iter-word 'face 'match)))
-                                         (t
-                                          (format " %s " iter-word)))
-                                   (incf iter-index)))
-                               result-choices))
-                            "")))
-
-          ;; Single line display.
-          (when recomplete-single-line-display
-            (with-current-buffer (window-buffer (minibuffer-window))
-              (let ((msg-width (string-width msg-text))
-                    (display-width
-                     (- (window-body-width (minibuffer-window)) (length msg-prefix))))
-                (when (> msg-width display-width)
-                  (let ((msg-start nil)
-                        (msg-end nil)
-                        (ellipsis "..."))
-                    (let* ((word-beg (next-property-change 0 msg-text))
-                           (word-end (next-property-change word-beg msg-text)))
-                      (setq msg-start
-                            (max 0
-                                 (min (- (/ (+ word-beg word-end) 2) (/ display-width 2))
-                                      (- msg-width display-width))))
-                      (setq msg-end (min msg-width (+ msg-start display-width))))
-
-                    (setq msg-text
-                          (truncate-string-to-width msg-text msg-end msg-start 0 ellipsis))
-
-                    (unless (zerop msg-start)
-                      (setq msg-text
-                            (concat ellipsis (substring msg-text (length ellipsis))))))))))
-
-          ;; Run last so we can ensure it's the last text in the message buffer.
-          ;; Don't log because it's not useful to keep the selection.
-          (let ((message-log-max nil))
-            (message "%s%s" msg-prefix msg-text))
-
-          ;; Set the state for redoing the correction.
-          (setq recomplete--alist
-                (list
-                 (cons 'buffer-undo-list buffer-undo-list-init)
-                 (cons 'pending-undo-list pending-undo-list-init)
-                 (cons 'point point-init)
-                 (cons 'cycle-index cycle-index)
-                 (cons 'cycle-reverse cycle-reverse)
-                 (cons 'fn-symbol fn-symbol)
-                 (cons 'fn-cache result-fn-cache)
-                 (cons 'is-first-post-command t)
-                 (cons 'msg-text msg-text)))
-
-          ;; Ensure a local hook, which removes itself on the first non-successive call
-          ;; to a command that doesn't execute `recomplete-with-callback' with `fn-symbol'.
-          (add-hook 'post-command-hook #'recomplete--alist-clear-hook 0 t))
-
-        ;; Result, success.
-        t)))))
+          ;; Adapter cache, threaded through `with-command-redo' as `:cache'.
+          ;; Keys are:
+          ;; - `cycle-index': position in the choice list (normalized via `mod').
+          ;; - `cycle-reverse': when non-nil, reverse the cycle direction.
+          ;;   Mutated in-place by `recomplete--on-other-command' on `keyboard-quit',
+          ;;   so this entry must always be present.
+          ;; - `msg-text': cached formatted choices, re-displayed by
+          ;;   `recomplete--on-other-command' when the direction toggles.
+          ;; - `user-cache': opaque cache for the user callback (`fn-cache' in
+          ;;   `recomplete-impl-*'), passed through unchanged.
+          (plist-put
+           props
+           :cache
+           (list
+            (cons 'cycle-index cycle-index)
+            (cons 'cycle-reverse cycle-reverse)
+            (cons 'msg-text msg-text)
+            (cons 'user-cache result-user-cache)))
+          t))))))
 
 ;; ISpell.
 ;;;###autoload

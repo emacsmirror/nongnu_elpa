@@ -32,6 +32,8 @@
 
 (setq recomplete-basedir (concat (file-name-directory load-file-name) ".."))
 (add-to-list 'load-path recomplete-basedir)
+(add-to-list 'load-path (concat recomplete-basedir "/../with-command-redo"))
+(require 'with-command-redo)
 (require 'recomplete)
 
 ;; ---------------------------------------------------------------------------
