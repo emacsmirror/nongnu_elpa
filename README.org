@@ -46,33 +46,17 @@ You can install it via =M-x package-install RET jabber=
     :hook (kill-emacs . jabber-disconnect))
 #+end_src
 
-** From source
-
-#+begin_src sh
-  git clone https://git.thanosapollo.org/emacs-jabber/
-  cd emacs-jabber
-  make module   # optional, for OMEMO support
-#+end_src
-
-Then add to your init file:
-
-#+begin_src emacs-lisp
-  (add-to-list 'load-path "/path/to/emacs-jabber/lisp")
-  (require 'jabber)
-#+end_src
-
 ** GNU Guix
 
 The repository ships a =guix.scm= that builds straight from the
 current working tree, so you never need to update hashes or pin a
-commit.  Whatever is checked out is what gets installed.
-
-Initialise the optional OMEMO submodule once:
+commit.  Whatever is checked out is what gets installed.  Picomemo is
+fetched as a pinned input by =guix.scm=, so the optional OMEMO
+submodule does not need to be initialised.
 
 #+begin_src sh
   git clone https://git.thanosapollo.org/emacs-jabber/
   cd emacs-jabber
-  git submodule update --init --recursive
 #+end_src
 
 One-shot install into your user profile:
