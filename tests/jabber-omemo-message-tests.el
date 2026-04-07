@@ -494,5 +494,66 @@ Clears OMEMO in-memory caches and tears down on exit."
           ;; Should be the parent error type, not the prekey-failed subtype.
           (should-not (eq (car err) 'jabber-omemo-prekey-failed)))))))
 
+;;; Group 13: Decrypt handler error recovery
+
+(ert-deftest jabber-omemo-message-test-decrypt-handler-swallows-not-for-us ()
+  "decrypt-handler returns xml-data unchanged when stanza is not for us."
+  (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+             (lambda (&rest _)
+               (signal 'jabber-omemo-not-for-us '(42)))))
+    (let* ((xml-data '(message ((from . "alice@example.com/phone")
+                                 (type . "chat"))
+                                (encrypted nil)))
+           (detected (list :type 'omemo :parsed nil))
+           (result (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)))
+      (should (eq result xml-data)))))
+
+(ert-deftest jabber-omemo-message-test-decrypt-handler-repairs-on-prekey-failure ()
+  "decrypt-handler refills pre-keys and republishes bundle on prekey failure."
+  (let ((repair-called nil))
+    (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+               (lambda (&rest _)
+                 (signal 'jabber-omemo-prekey-failed
+                         (list "alice@example.com" 999 "boom"))))
+              ((symbol-function 'jabber-omemo--repair-after-prekey-failure)
+               (lambda (_jc) (setq repair-called t))))
+      (let ((xml-data '(message ((from . "alice@example.com/phone")
+                                  (type . "chat"))))
+            (detected (list :type 'omemo :parsed nil)))
+        (should-error
+         (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)
+         :type 'jabber-omemo-prekey-failed)
+        (should repair-called)))))
+
+(ert-deftest jabber-omemo-message-test-decrypt-handler-propagates-other-errors ()
+  "decrypt-handler propagates non-recoverable OMEMO errors unchanged."
+  (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+             (lambda (&rest _)
+               (signal 'jabber-omemo-no-session
+                       '("alice@example.com" 999)))))
+    (let ((xml-data '(message ((from . "alice@example.com/phone")
+                                (type . "chat"))))
+          (detected (list :type 'omemo :parsed nil)))
+      (should-error
+       (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)
+       :type 'jabber-omemo-no-session))))
+
+(ert-deftest jabber-omemo-message-test-repair-after-prekey-failure ()
+  "repair-after-prekey-failure calls refill, persist, and publish in order."
+  (let ((calls nil))
+    (cl-letf (((symbol-function 'jabber-omemo--get-store)
+               (lambda (_jc) 'fake-store-ptr))
+              ((symbol-function 'jabber-omemo-refill-pre-keys)
+               (lambda (store) (push (cons 'refill store) calls)))
+              ((symbol-function 'jabber-omemo--persist-store)
+               (lambda (jc) (push (cons 'persist jc) calls)))
+              ((symbol-function 'jabber-omemo--publish-bundle)
+               (lambda (jc) (push (cons 'publish jc) calls))))
+      (jabber-omemo--repair-after-prekey-failure 'fake-jc)
+      (should (equal (nreverse calls)
+                     '((refill . fake-store-ptr)
+                       (persist . fake-jc)
+                       (publish . fake-jc)))))))
+
 (provide 'jabber-omemo-message-tests)
 ;;; jabber-omemo-message-tests.el ends here
