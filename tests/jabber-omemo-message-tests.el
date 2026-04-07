@@ -394,5 +394,105 @@ Clears OMEMO in-memory caches and tears down on exit."
       'fake-jc '((100 . fake-ptr)) '(:key "k" :iv "i" :ciphertext "c"))
      :type 'user-error)))
 
+;;; Group 12: Structured decrypt errors
+
+(ert-deftest jabber-omemo-message-test-decrypt-error-conditions ()
+  "Decrypt error subtypes inherit from `jabber-omemo-error'."
+  (should (memq 'jabber-omemo-error
+                (get 'jabber-omemo-not-for-us 'error-conditions)))
+  (should (memq 'jabber-omemo-error
+                (get 'jabber-omemo-no-session 'error-conditions)))
+  (should (memq 'jabber-omemo-error
+                (get 'jabber-omemo-prekey-failed 'error-conditions))))
+
+(ert-deftest jabber-omemo-message-test-decrypt-stanza-not-for-us ()
+  "decrypt-stanza signals `jabber-omemo-not-for-us' when no key for our device."
+  (let ((jabber-omemo--device-ids (make-hash-table :test 'equal)))
+    (puthash "me@example.com" 42 jabber-omemo--device-ids)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com")))
+      (let ((xml-data '(message ((from . "alice@example.com/phone")
+                                  (type . "chat"))))
+            (parsed (list :sid 12345
+                          :iv (make-string 12 0)
+                          :payload "ciphertext"
+                          ;; Only a key for device 999, not for us (42).
+                          :keys '((999 . (:data "k" :pre-key-p nil))))))
+        (should-error
+         (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed)
+         :type 'jabber-omemo-not-for-us)))))
+
+(ert-deftest jabber-omemo-message-test-decrypt-stanza-no-session ()
+  "decrypt-stanza signals `jabber-omemo-no-session' for non-prekey with no session."
+  (let ((jabber-omemo--device-ids (make-hash-table :test 'equal))
+        (jabber-omemo--stores (make-hash-table :test 'equal))
+        (jabber-omemo--sessions (make-hash-table :test 'equal)))
+    (puthash "me@example.com" 42 jabber-omemo--device-ids)
+    ;; Non-nil store entry to skip the lazy DB load path.
+    (puthash "me@example.com" 'fake-store-ptr jabber-omemo--stores)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo-store-load-session)
+               (lambda (_account _jid _did) nil)))
+      (let ((xml-data '(message ((from . "alice@example.com/phone")
+                                  (type . "chat"))))
+            (parsed (list :sid 999
+                          :iv (make-string 12 0)
+                          :payload "ciphertext"
+                          ;; pre-key-p nil triggers session lookup.
+                          :keys '((42 . (:data "k" :pre-key-p nil))))))
+        (should-error
+         (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed)
+         :type 'jabber-omemo-no-session)))))
+
+(ert-deftest jabber-omemo-message-test-decrypt-stanza-prekey-failed ()
+  "decrypt-stanza re-signals C error as `jabber-omemo-prekey-failed' for prekey."
+  (let ((jabber-omemo--device-ids (make-hash-table :test 'equal))
+        (jabber-omemo--stores (make-hash-table :test 'equal)))
+    (puthash "me@example.com" 42 jabber-omemo--device-ids)
+    (puthash "me@example.com" 'fake-store-ptr jabber-omemo--stores)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo-make-session)
+               (lambda () 'fake-session-ptr))
+              ((symbol-function 'jabber-omemo-decrypt-key)
+               (lambda (&rest _)
+                 (signal 'jabber-omemo-error '("simulated decrypt failure")))))
+      (let ((xml-data '(message ((from . "alice@example.com/phone")
+                                  (type . "chat"))))
+            (parsed (list :sid 999
+                          :iv (make-string 12 0)
+                          :payload "ciphertext"
+                          :keys '((42 . (:data "k" :pre-key-p t))))))
+        (should-error
+         (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed)
+         :type 'jabber-omemo-prekey-failed)))))
+
+(ert-deftest jabber-omemo-message-test-decrypt-stanza-non-prekey-error-propagates ()
+  "decrypt-stanza propagates `jabber-omemo-error' verbatim for non-prekey messages."
+  (let ((jabber-omemo--device-ids (make-hash-table :test 'equal))
+        (jabber-omemo--stores (make-hash-table :test 'equal))
+        (jabber-omemo--sessions (make-hash-table :test 'equal)))
+    (puthash "me@example.com" 42 jabber-omemo--device-ids)
+    (puthash "me@example.com" 'fake-store-ptr jabber-omemo--stores)
+    (puthash (jabber-omemo--session-key "me@example.com" "alice@example.com" 999)
+             'fake-session-ptr jabber-omemo--sessions)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo-decrypt-key)
+               (lambda (&rest _)
+                 (signal 'jabber-omemo-error '("simulated decrypt failure")))))
+      (let ((xml-data '(message ((from . "alice@example.com/phone")
+                                  (type . "chat"))))
+            (parsed (list :sid 999
+                          :iv (make-string 12 0)
+                          :payload "ciphertext"
+                          :keys '((42 . (:data "k" :pre-key-p nil))))))
+        (let ((err (should-error
+                    (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed)
+                    :type 'jabber-omemo-error)))
+          ;; Should be the parent error type, not the prekey-failed subtype.
+          (should-not (eq (car err) 'jabber-omemo-prekey-failed)))))))
+
 (provide 'jabber-omemo-message-tests)
 ;;; jabber-omemo-message-tests.el ends here

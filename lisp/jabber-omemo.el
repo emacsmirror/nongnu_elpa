@@ -160,6 +160,23 @@ the resulting module.  Signals an error on build failure."
 (declare-function jabber-omemo--aesgcm-decrypt "ext:jabber-omemo-core")
 (declare-function jabber-omemo--aesgcm-encrypt "ext:jabber-omemo-core")
 
+;;; Errors
+;;
+;; The C module defines `jabber-omemo-error' as the parent condition
+;; on init.  We redefine it here so subtype declarations work even
+;; when the native module is not available.
+
+(define-error 'jabber-omemo-error "OMEMO error")
+
+(define-error 'jabber-omemo-not-for-us
+  "OMEMO message not encrypted for this device" 'jabber-omemo-error)
+
+(define-error 'jabber-omemo-no-session
+  "No OMEMO session with sender device" 'jabber-omemo-error)
+
+(define-error 'jabber-omemo-prekey-failed
+  "OMEMO pre-key decryption failed" 'jabber-omemo-error)
+
 ;; Public API
 
 (defun jabber-omemo-setup-store ()
@@ -905,7 +922,16 @@ Returns nil if no <encrypted> element."
 
 (defun jabber-omemo--decrypt-stanza (jc xml-data parsed)
   "Decrypt OMEMO message in XML-DATA using PARSED data.
-Returns modified XML-DATA with decrypted body, or nil on failure."
+Returns modified XML-DATA with decrypted body.
+
+Signals structured errors that callers can dispatch on:
+- `jabber-omemo-not-for-us' when the stanza has no key entry for
+  our device (heartbeat or message addressed to a different device).
+- `jabber-omemo-no-session' for a non-prekey message when we have
+  no local session with the sender's device.
+- `jabber-omemo-prekey-failed' when the C decrypt fails on a
+  pre-key message (usually a stale local pre-key).
+- `jabber-omemo-error' (the parent) for all other crypto failures."
   (let* ((our-did (jabber-omemo--get-device-id jc))
          (account (jabber-connection-bare-jid jc))
          (from (jabber-xml-get-attribute xml-data 'from))
@@ -918,7 +944,7 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
            (keys (plist-get parsed :keys))
            (our-key-entry (cl-find our-did keys :key #'car)))
       (unless our-key-entry
-        (user-error "OMEMO message not encrypted for our device %d" our-did))
+        (signal 'jabber-omemo-not-for-us (list our-did)))
       (let* ((key-data (plist-get (cdr our-key-entry) :data))
              (pre-key-p (plist-get (cdr our-key-entry) :pre-key-p))
              (store-ptr (jabber-omemo--get-store jc))
@@ -926,10 +952,18 @@ Returns modified XML-DATA with decrypted body, or nil on failure."
                               (jabber-omemo-make-session)
                             (or (jabber-omemo--get-session
                                  jc sender-jid sender-did)
-                                (user-error "OMEMO: no session for %s device %d"
-                                            sender-jid sender-did))))
-             (decrypted-key (jabber-omemo-decrypt-key
-                             session-ptr store-ptr pre-key-p key-data)))
+                                (signal 'jabber-omemo-no-session
+                                        (list sender-jid sender-did)))))
+             (decrypted-key
+              (condition-case err
+                  (jabber-omemo-decrypt-key
+                   session-ptr store-ptr pre-key-p key-data)
+                (jabber-omemo-error
+                 (if pre-key-p
+                     (signal 'jabber-omemo-prekey-failed
+                             (list sender-jid sender-did
+                                   (error-message-string err)))
+                   (signal (car err) (cdr err)))))))
         (jabber-omemo--save-session jc sender-jid sender-did session-ptr)
         (jabber-omemo--persist-store jc)
         (let ((trust (jabber-omemo-store-load-trust
