@@ -1,7 +1,7 @@
 ;;; buttercup.el --- Behavior-Driven Emacs Lisp Testing -*-lexical-binding:t-*-
 
 ;; Copyright (C) 2015-2017  Jorgen Schaefer <contact@jorgenschaefer.de>
-;; Copyright (C) 2018-2025  Ola Nilsson <ola.nilsson@gmail.com>
+;; Copyright (C) 2018-2026  Ola Nilsson <ola.nilsson@gmail.com>
 
 ;; Version: 1.38
 ;; Author: Jorgen Schaefer <contact@jorgenschaefer.de>
@@ -1289,16 +1289,18 @@ responsibility to ensure ARG is a command."
                 nil))
             (_
              (error "Invalid `spy-on' keyword: `%S'" keyword)))))
-    (unless (buttercup--spy-on-and-call-replacement symbol replacement)
+    (unless (buttercup--spy-on-and-call-replacement symbol replacement orig)
       (error "Spies can only be created in `before-each' or `it'"))))
 
 
-(defun buttercup--spy-on-and-call-replacement (spy fun)
-  "Replace the function in symbol SPY with a spy calling FUN."
-  (let ((orig-function (and (fboundp spy) (symbol-function spy))))
-    (when (buttercup--add-cleanup (lambda ()
+(defun buttercup--spy-on-and-call-replacement (spy fun orig-function)
+  "Replace the function in symbol SPY with a spy calling FUN.
+Register a cleanup function to restore SPY to ORIG-FUNCTION. If the
+cleanup function list is not available, do not set the spy and return
+nil. This means `spy-on' has been called in a non-supported place."
+  (when (buttercup--add-cleanup (lambda ()
                                   (fset spy orig-function)))
-      (fset spy (buttercup--make-spy fun)))))
+    (fset spy (buttercup--make-spy fun))))
 
 (defun buttercup--make-spy (fun)
   "Create a new spy function wrapping FUN and tracking every call to itself."
