@@ -1,7 +1,7 @@
 ;;; buttercup-test.el --- Tests for buttercup.el -*-lexical-binding:t-*-
 
 ;; Copyright (C) 2015-2017 Jorgen Schaefer <contact@jorgenschaefer.de>
-;; Copyright (C) 2017-2025 Ola Nilsson <ola.nilsson@gmail.com>
+;; Copyright (C) 2017-2026 Ola Nilsson <ola.nilsson@gmail.com>
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the GNU General Public License
@@ -1307,7 +1307,7 @@ before it's processed by other functions."
 ;;;;;;;;;
 ;;; Spies
 
-(describe "The Spy"
+(describe "Spies"
   (let (saved-test-function
         saved-test-command
         saved-test-function-throws-on-negative)
@@ -1341,7 +1341,7 @@ before it's processed by other functions."
                 saved-test-function-throws-on-negative)
         (fmakunbound 'test-function-throws-on-negative)))
 
-    (describe "`spy-on' function"
+    (describe "are created by the `spy-on' function which"
       (it "replaces a symbol's function slot"
         (spy-on 'test-function)
         (expect (test-function 1 2) :to-be nil))
@@ -1529,7 +1529,7 @@ before it's processed by other functions."
                 (cons nil
                       "Expected `test-function' to have been called 2 times, but it was called 1 time"))))
 
-    (describe ":and-call-through keyword functionality"
+    (describe "with the :and-call-through keyword"
       (before-each
         (spy-on 'test-function :and-call-through))
 
@@ -1543,7 +1543,7 @@ before it's processed by other functions."
                 :to-equal
                 5)))
 
-    (describe ":and-return-value keyword functionality"
+    (describe "with the :and-return-value keyword"
       (before-each
         (spy-on 'test-function :and-return-value 23))
 
@@ -1597,7 +1597,7 @@ before it's processed by other functions."
 		  (second . 2)
 		  (third . 3)))))
 
-    (describe ":and-call-fake keyword functionality"
+    (describe "with the :and-call-fake keyword"
       (before-each
         (spy-on 'test-function :and-call-fake (lambda (_a _b) 1001)))
 
@@ -1606,16 +1606,16 @@ before it's processed by other functions."
 
         (expect 'test-function :to-have-been-called))
 
-      (it "returns the specified value"
+      (it "calls the replacement function"
         (expect (test-function 2 3)
                 :to-equal
                 1001)))
 
-    (describe ":and-throw-error keyword functionality"
+    (describe "with the :and-throw-error keyword"
       (before-each
         (spy-on 'test-function :and-throw-error 'error))
 
-      (it "throws an error when called"
+      (it "throws the specified error when called"
         (expect (test-function 1 2)
                 :to-throw
                 'error "Stubbed error")))
