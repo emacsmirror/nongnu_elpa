@@ -1,5 +1,16 @@
 #+TITLE: Changelog
 
+* [0.10.4]
+#+date: 2026-04-08
+
+** Fixes
+- OMEMO module install path autodetected for ELPA layout
+  (build no longer fails when ~lisp/~ subdirectory is absent)
+
+** Internal
+- Silenced native-comp warnings in jabber-message-reply and
+  jabber-moderation
+
 * [0.10.3]
 #+date: 2026-04-06
 
