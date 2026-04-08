@@ -14,7 +14,7 @@ MBED_FLAGS ?= $(shell pkg-config --cflags --libs mbedcrypto 2>/dev/null)
 
 SRCS = jabber-omemo-core.c picomemo/omemo.c picomemo/hacl.c
 TARGET = jabber-omemo-core$(SOEXT)
-INSTALL_DIR = ../lisp
+INSTALL_DIR ?= $(if $(wildcard ../lisp),../lisp,..)
 
 all: $(INSTALL_DIR)/$(TARGET)
 
