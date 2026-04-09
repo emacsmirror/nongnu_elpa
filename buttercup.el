@@ -1703,16 +1703,38 @@ Do not change the global value.")
     (funcall buttercup-reporter 'suite-started suite)
     (dolist (f (buttercup-suite-before-all suite))
       (buttercup--update-with-funcall suite f))
-    (dolist (sub (buttercup-suite-children suite))
-      (cond
-       ((buttercup-suite-p sub)
-        (buttercup--run-suite sub))
-       ((buttercup-spec-p sub)
-        (buttercup--run-spec sub))))
+    ;; If before-all marked the suite as pending or failed,
+    ;; propagate to all children and skip running them.
+    (if (memq (buttercup-suite-or-spec-status suite) '(pending failed))
+        (buttercup--propagate-suite-status suite)
+      (dolist (sub (buttercup-suite-children suite))
+        (cond
+         ((buttercup-suite-p sub)
+          (buttercup--run-suite sub))
+         ((buttercup-spec-p sub)
+          (buttercup--run-spec sub)))))
     (dolist (f (buttercup-suite-after-all suite))
       (buttercup--update-with-funcall suite f))
     (buttercup--set-end-time suite)
     (funcall buttercup-reporter 'suite-done suite)))
+
+(defun buttercup--propagate-suite-status (suite)
+  "Propagate the status of SUITE to all its children recursively.
+Each child spec is reported as started and done so reporters can
+display them.  Nested suites are handled recursively."
+  (let ((status (buttercup-suite-or-spec-status suite))
+        (desc (buttercup-suite-or-spec-failure-description suite)))
+    (dolist (sub (buttercup-suite-children suite))
+      (setf (buttercup-suite-or-spec-status sub) status
+            (buttercup-suite-or-spec-failure-description sub) desc)
+      (cond
+       ((buttercup-spec-p sub)
+        (funcall buttercup-reporter 'spec-started sub)
+        (funcall buttercup-reporter 'spec-done sub))
+       ((buttercup-suite-p sub)
+        (funcall buttercup-reporter 'suite-started sub)
+        (buttercup--propagate-suite-status sub)
+        (funcall buttercup-reporter 'suite-done sub))))))
 
 (defun buttercup--run-spec (spec)
   "Run SPEC."
