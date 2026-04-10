@@ -96,9 +96,10 @@ Keys older than this are deleted on connect."
   (error "jabber-omemo requires Emacs compiled with dynamic module support"))
 
 (defvar jabber-omemo-build-command
-  (if (eq system-type 'darwin)
-      "make module CC=clang"
-    "make module")
+  (cond
+    ((eq system-type 'darwin)       "make module CC=clang")
+    ((eq system-type 'berkeley-unix) "gmake module CC=clang")
+    (t                               "make module"))
   "Shell command to build the jabber-omemo-core dynamic module.
 Run from the emacs-jabber project root.")
 
