@@ -22,12 +22,14 @@
 ;; along with this program; if not, write to the Free Software
 ;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
+;;; Commentary:
+;;
+;; Keepalive - send something to the server and see if it answers.
+;; These keepalive functions send a urn:xmpp:ping request to the
+;; server every X minutes, and considers the connection broken if
+;; they get no answer within Y seconds.
 
-;;;; Keepalive - send something to the server and see if it answers
-;;;
-;;; These keepalive functions send a urn:xmpp:ping request to the
-;;; server every X minutes, and considers the connection broken if
-;;; they get no answer within Y seconds.
+;;; Code:
 
 (require 'jabber-ping)
 
