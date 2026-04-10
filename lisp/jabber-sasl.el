@@ -88,7 +88,8 @@ with `jabber-xml-get-chidlren')."
 	   (iq-auth
 	    (fsm-send jc :use-legacy-auth-instead))
 	   (starttls
-	    (message "STARTTLS encryption required, but disabled/non-functional at our end")
+	    (message "%s: no SASL mechanisms offered, server requires STARTTLS which was not negotiated"
+		     (jabber-connection-bare-jid jc))
 	    (fsm-send jc :authentication-failure))
 	   (t
 	    (message "Authentication failure: no suitable SASL mechanism found")
