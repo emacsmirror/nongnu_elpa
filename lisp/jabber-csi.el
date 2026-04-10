@@ -32,6 +32,10 @@
 
 (declare-function jabber-send-sexp-if-connected "jabber-core" (jc sexp))
 
+(defvar jabber-pre-disconnect-hook)
+(defvar jabber-lost-connection-hooks)
+(defvar jabber-post-resume-hooks)
+
 (defconst jabber-csi-xmlns "urn:xmpp:csi:0"
   "XML namespace for XEP-0352 Client State Indication.")
 
@@ -41,10 +45,24 @@
 
 (defcustom jabber-csi-enable t
   "Send CSI active/inactive notifications to the server."
-  :type 'boolean)
+  :type 'boolean
+  :group 'jabber-csi)
 
 (defvar jabber-csi--last-state nil
   "Last CSI state sent: `active', `inactive', or nil.")
+
+(defvar jabber-csi--timer nil
+  "Pending debounce timer for focus changes, or nil.")
+
+(defconst jabber-csi--debounce-delay 0.5
+  "Seconds to wait before sending a CSI state change.
+Coalesces rapid focus oscillations into one stanza.")
+
+(defun jabber-csi--stop-timer ()
+  "Cancel any pending CSI debounce timer."
+  (when (timerp jabber-csi--timer)
+    (cancel-timer jabber-csi--timer)
+    (setq jabber-csi--timer nil)))
 
 (defun jabber-csi--focused-p ()
   "Return non-nil if any Emacs frame has input focus."
@@ -52,6 +70,7 @@
 
 (defun jabber-csi--send-state ()
   "Send CSI active or inactive to all connections."
+  (setq jabber-csi--timer nil)
   (when jabber-csi-enable
     (let ((state (if (jabber-csi--focused-p) 'active 'inactive)))
       (unless (eq state jabber-csi--last-state)
@@ -62,16 +81,28 @@
 
 (defun jabber-csi--focus-changed ()
   "Hook for `after-focus-change-function'.
-Defers to a zero-delay timer to avoid running in a sensitive context."
-  (run-at-time 0 nil #'jabber-csi--send-state))
+Debounces rapid focus changes into a single CSI stanza."
+  (jabber-csi--stop-timer)
+  (setq jabber-csi--timer
+	(run-with-timer jabber-csi--debounce-delay nil
+			#'jabber-csi--send-state)))
 
 (defun jabber-csi--on-connect (_jc)
   "Send current CSI state after connection.
 Added to `jabber-post-connect-hooks'."
+  (jabber-csi--stop-timer)
   (setq jabber-csi--last-state nil)
   (jabber-csi--send-state))
 
+(defun jabber-csi--on-disconnect (&optional _jc)
+  "Cancel pending CSI timer and reset state on disconnect."
+  (jabber-csi--stop-timer)
+  (setq jabber-csi--last-state nil))
+
 (add-hook 'jabber-post-connect-hooks #'jabber-csi--on-connect)
+(add-hook 'jabber-post-resume-hooks #'jabber-csi--on-connect)
+(add-hook 'jabber-pre-disconnect-hook #'jabber-csi--on-disconnect)
+(add-hook 'jabber-lost-connection-hooks #'jabber-csi--on-disconnect)
 (add-function :after after-focus-change-function #'jabber-csi--focus-changed)
 
 (jabber-disco-advertise-feature jabber-csi-xmlns)

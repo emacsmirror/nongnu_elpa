@@ -72,6 +72,7 @@
   "on-connect resets last-state and sends current state."
   (let ((jabber-csi-enable t)
         (jabber-csi--last-state 'active)
+        (jabber-csi--timer nil)
         (jabber-connections '(fake-jc)))
     (cl-letf (((symbol-function 'jabber-csi--focused-p)
                (lambda () t))
@@ -79,6 +80,29 @@
                #'ignore))
       (jabber-csi--on-connect 'fake-jc)
       (should (eq jabber-csi--last-state 'active)))))
+
+;;; Group 3: Debounce
+
+(ert-deftest jabber-csi-test-debounce-coalesces ()
+  "Rapid focus-changed calls produce only one pending timer."
+  (let ((jabber-csi--timer nil))
+    (cl-letf (((symbol-function 'jabber-csi--focused-p)
+               (lambda () t))
+              ((symbol-function 'jabber-send-sexp-if-connected)
+               #'ignore))
+      (jabber-csi--focus-changed)
+      (jabber-csi--focus-changed)
+      (jabber-csi--focus-changed)
+      (should (timerp jabber-csi--timer))
+      (jabber-csi--stop-timer))))
+
+(ert-deftest jabber-csi-test-disconnect-cleanup ()
+  "on-disconnect cancels pending timer and resets state."
+  (let ((jabber-csi--timer (run-with-timer 10 nil #'ignore))
+        (jabber-csi--last-state 'active))
+    (jabber-csi--on-disconnect)
+    (should-not jabber-csi--timer)
+    (should-not jabber-csi--last-state)))
 
 (provide 'jabber-csi-tests)
 
