@@ -34,8 +34,13 @@ If you installed from ELPA, clone the repository and build manually:
   make module
 #+end_src
 
-Then place the resulting =jabber-omemo-core.so= (or =.dylib= on
-macOS) somewhere on your =load-path=.
+Then copy the resulting =jabber-omemo-core.so= (or =.dylib= on
+macOS) into your ELPA package directory, which is already on
+=load-path=:
+
+#+begin_src sh
+  cp lisp/jabber-omemo-core.so ~/.emacs.d/elpa/jabber-VERSION/
+#+end_src
 
 * Installation
 =jabber.el= is available via [[https://elpa.nongnu.org/nongnu/jabber.html][NonGNU ELPA]].
