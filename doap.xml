@@ -565,6 +565,12 @@
 
     <release>
       <Version>
+        <revision>0.10.5</revision>
+        <created>2026-04-10</created>
+      </Version>
+    </release>
+    <release>
+      <Version>
         <revision>0.10.4</revision>
         <created>2026-04-08</created>
       </Version>

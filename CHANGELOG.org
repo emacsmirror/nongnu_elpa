@@ -1,5 +1,25 @@
 #+TITLE: Changelog
 
+* [0.10.5]
+#+date: 2026-04-10
+
+** Fixes
+- OMEMO JIT build prompt now discloses network fetch from github.com
+- OMEMO module no longer auto-fetches in batch mode (Emacs network policy)
+- OMEMO module init hardened: graceful degradation without module
+  support, nil-safe path resolution, single prompt per session
+- Use gmake on BSD for OMEMO module build
+
+** Improved
+- ELPA users guided to clone and build OMEMO module manually
+- README documents OMEMO build for ELPA and package-vc users
+
+** Internal
+- Fixed native-comp warnings (declare-function for jabber-chain-add,
+  jabber-process-ping, ewoc-data, encode-hex-string, auth-source-search)
+- Added make lint-native-comp target
+- Added ;;; Commentary: and ;;; Code: sections to 30 legacy files
+
 * [0.10.4]
 #+date: 2026-04-08
 
