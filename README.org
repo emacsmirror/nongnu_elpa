@@ -20,9 +20,22 @@ See the [[https://xmpp.org/software/jabber-el/][xmpp.org page]] for the full lis
 ** OMEMO encryption (optional)
 
 OMEMO end-to-end encryption requires building a native C module.  You
-need a C compiler, =pkg-config=, and =libmbedtls= (the development
-headers).  On first load, Emacs will prompt to build the module
-automatically.
+need a C compiler, =pkg-config=, and =libmbedtls= (development
+headers).
+
+If you installed from source (=:vc= or =git clone=), Emacs will offer
+to fetch the [[https://github.com/mierenhoop/picomemo][picomemo]] dependency and build the module on first load.
+
+If you installed from ELPA, clone the repository and build manually:
+
+#+begin_src sh
+  git clone https://git.thanosapollo.org/emacs-jabber/
+  cd emacs-jabber
+  make module
+#+end_src
+
+Then place the resulting =jabber-omemo-core.so= (or =.dylib= on
+macOS) somewhere on your =load-path=.
 
 * Installation
 =jabber.el= is available via [[https://elpa.nongnu.org/nongnu/jabber.html][NonGNU ELPA]].
