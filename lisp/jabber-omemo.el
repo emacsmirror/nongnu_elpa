@@ -92,9 +92,6 @@ Keys older than this are deleted on connect."
 (defvar jabber-message-reply--id)       ; jabber-message-reply.el
 (defvar jabber-message-reply--jid)      ; jabber-message-reply.el
 
-(unless module-file-suffix
-  (error "jabber-omemo requires Emacs compiled with dynamic module support"))
-
 (defvar jabber-omemo-build-command
   (cond
     ((eq system-type 'darwin)       "make module CC=clang")
@@ -120,31 +117,35 @@ the resulting module.  Signals an error on build failure."
 (defvar jabber-omemo--available nil
   "Non-nil when the jabber-omemo-core native module is loaded.")
 
-(cl-eval-when (load eval)
-  (if (not jabber-omemo-enable)
-      (message "OMEMO: disabled by jabber-omemo-enable")
-    (if (require 'jabber-omemo-core nil t)
-        (setq jabber-omemo--available t)
-      (let* ((this-dir (file-name-directory
-                        (or load-file-name buffer-file-name)))
-             (src-dir (if (file-directory-p
-                           (expand-file-name "src" this-dir))
-                          (expand-file-name "src" this-dir)
-                        (expand-file-name "../src" this-dir))))
-        (if (and (not noninteractive)
-                 (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
-                 (yes-or-no-p
-                  (concat "jabber-omemo-core module not found.  "
-                          "Fetch picomemo from github.com and build it now? ")))
-            (progn
-              (jabber-omemo--build-module
-               (file-name-directory (directory-file-name src-dir)))
-              (setq jabber-omemo--available t))
-          (message (concat "OMEMO: native module not found, encryption disabled.  "
-                           "Clone https://git.thanosapollo.org/emacs-jabber, "
-                           "run `make module', and place the resulting "
-                           "jabber-omemo-core%s on your `load-path'.")
-                   (or module-file-suffix ".so")))))))
+;; Module availability check.  Runs once at load time; `defvar' above
+;; preserves `jabber-omemo--available' across repeated loads so the
+;; prompt cannot fire more than once per session.
+(unless (or jabber-omemo--available
+            (not jabber-omemo-enable)
+            (not module-file-suffix))
+  (if (require 'jabber-omemo-core nil t)
+      (setq jabber-omemo--available t)
+    (let* ((this-file (or load-file-name buffer-file-name))
+           (this-dir (and this-file (file-name-directory this-file)))
+           (src-candidate (and this-dir (expand-file-name "src" this-dir)))
+           (src-dir (if (and src-candidate (file-directory-p src-candidate))
+                        src-candidate
+                      (and this-dir (expand-file-name "../src" this-dir)))))
+      (if (and (not noninteractive)
+               src-dir
+               (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
+               (yes-or-no-p
+                (concat "jabber-omemo-core module not found.  "
+                        "Fetch picomemo from github.com and build it now? ")))
+          (progn
+            (jabber-omemo--build-module
+             (file-name-directory (directory-file-name src-dir)))
+            (setq jabber-omemo--available t))
+        (message (concat "OMEMO: native module not found, encryption disabled.  "
+                         "Clone https://git.thanosapollo.org/emacs-jabber, "
+                         "run `make module', and place the resulting "
+                         "jabber-omemo-core%s on your `load-path'.")
+                 module-file-suffix)))))
 
 ;; Declare internal C functions from the dynamic module for the byte-compiler.
 ;; "ext:" prefix tells check-declare to skip file verification.
