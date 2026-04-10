@@ -139,10 +139,14 @@ the resulting module.  Signals an error on build failure."
                (yes-or-no-p
                 (concat "jabber-omemo-core module not found.  "
                         "Fetch picomemo from github.com and build it now? ")))
-          (progn
-            (jabber-omemo--build-module
-             (file-name-directory (directory-file-name src-dir)))
-            (setq jabber-omemo--available t))
+          (condition-case err
+              (progn
+                (jabber-omemo--build-module
+                 (file-name-directory (directory-file-name src-dir)))
+                (setq jabber-omemo--available t))
+            (error
+             (setq jabber-omemo--available 'failed)
+             (message "OMEMO: build failed: %s" (error-message-string err))))
         (message (concat "OMEMO: native module not found, encryption disabled.  "
                          "Clone https://git.thanosapollo.org/emacs-jabber, "
                          "run `make module', and place the resulting "
@@ -1445,7 +1449,7 @@ Returns non-nil if handled, nil to fall through to plaintext."
 
 ;;; Disco and PubSub registration
 
-(when jabber-omemo--available
+(when (eq jabber-omemo--available t)
   (jabber-disco-advertise-feature jabber-omemo-xmlns)
   (jabber-disco-advertise-feature (concat jabber-omemo-devicelist-node "+notify"))
 
@@ -1464,7 +1468,7 @@ Returns non-nil if handled, nil to fall through to plaintext."
     (setq jabber-httpupload-send-url-function
           #'jabber-omemo--httpupload-send-url)))
 
-(when jabber-omemo--available
+(when (eq jabber-omemo--available t)
   (jabber-chat-register-decrypt-handler
    'omemo
    :detect  #'jabber-omemo--detect-encrypted

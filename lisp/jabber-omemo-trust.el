@@ -182,7 +182,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
                    (jabber-jid-user jabber-chatting-with)
                  (read-string "JID: "))))
      (list jc jid)))
-  (unless (bound-and-true-p jabber-omemo--available)
+  (unless (eq (bound-and-true-p jabber-omemo--available) t)
     (user-error "OMEMO encryption requires the jabber-omemo-core native module"))
   (let* ((account (jabber-connection-bare-jid jc))
          (peer (jabber-jid-user jid))
@@ -220,7 +220,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
   "Display own OMEMO fingerprints across all devices for JC.
 Fetches the device list and bundles from the server."
   (interactive (list (jabber-read-account)))
-  (unless (bound-and-true-p jabber-omemo--available)
+  (unless (eq (bound-and-true-p jabber-omemo--available) t)
     (user-error "OMEMO encryption requires the jabber-omemo-core native module"))
   (let* ((own-jid (jabber-connection-bare-jid jc))
          (buf-name (format "*OMEMO fingerprints: %s*" own-jid))
