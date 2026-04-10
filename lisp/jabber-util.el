@@ -40,6 +40,7 @@
 
 ;; Global reference declarations
 
+(declare-function auth-source-search "auth-source" (&rest spec))
 (declare-function jabber-chat-with "jabber-chat.el"
                   (jc jid &optional other-window))
 (declare-function jabber-ahc-execute-command "jabber-ahc.el" (jc to node))

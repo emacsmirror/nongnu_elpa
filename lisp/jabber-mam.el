@@ -37,6 +37,8 @@
 
 (eval-when-compile (require 'cl-lib))
 
+(declare-function jabber-chain-add "jabber-core"
+                  (chain-var handler &optional depth))
 (declare-function jabber-connection-bare-jid "jabber-util" (jc))
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-jid-resource "jabber-util" (jid))

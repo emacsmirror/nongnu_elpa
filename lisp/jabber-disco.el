@@ -34,6 +34,8 @@
 
 ;; Global reference declarations
 
+(declare-function jabber-chain-add "jabber-core"
+                  (chain-var handler &optional depth))
 (declare-function jabber-db-caps-store "jabber-db.el"
                   (hash ver identities features))
 (declare-function jabber-db-caps-lookup "jabber-db.el" (hash ver))

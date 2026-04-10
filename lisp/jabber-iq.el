@@ -59,6 +59,8 @@ These fields are available at this moment:
 
 ;; Global reference declarations
 
+(declare-function jabber-chain-add "jabber-core"
+                  (chain-var handler &optional depth))
 (declare-function jabber-send-sexp "jabber-core.el"  (jc sexp))
 (defvar jabber-iq-chain)                ; jabber-core.el
 (defvar jabber-stanzas-xmlns)          ; jabber-xml.el

@@ -41,6 +41,8 @@
   (require 'seq))
 
 ;; Global reference declarations
+(declare-function jabber-chain-add "jabber-core"
+                  (chain-var handler &optional depth))
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
                   (node xmlns))
 (declare-function jabber-xml-get-attribute "jabber-xml.el" (node attribute))

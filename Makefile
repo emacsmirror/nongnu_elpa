@@ -1,5 +1,6 @@
 .PHONY: all build clean install uninstall check test load \
-        do-test do-test-summary do-lint-check-declare do-lint-checkdoc
+        do-test do-test-summary do-lint-check-declare do-lint-checkdoc \
+        do-lint-native-comp
 
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
@@ -111,6 +112,23 @@ lint-relint:
 lint-test-compile:
 	$(EMACS_CMD) -q -Q --batch -L lisp -L tests \
 	-f batch-byte-compile tests/*.el
+
+lint-native-comp: autoload
+	@$(GUIX_WRAP) do-lint-native-comp
+
+do-lint-native-comp:
+	@fails=0; \
+	for file in lisp/*.el ; do \
+	  case "$$file" in *autoloads*) continue;; esac; \
+	  output=$$($(EMACS_CMD) -q -Q --batch -L lisp \
+	    --eval="(native-compile \"$$file\")" 2>&1); \
+	  matched=$$(echo "$$output" | grep "is not known to be defined" || true); \
+	  if [ -n "$$matched" ]; then \
+	    echo "$$matched"; \
+	    fails=1; \
+	  fi; \
+	done; \
+	exit $$fails
 
 lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint lint-test-compile
 

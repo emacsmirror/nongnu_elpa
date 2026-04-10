@@ -32,6 +32,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'hex-util)
 (require 'jabber-omemo-store)
 (require 'jabber-pubsub)
 (require 'jabber-xml)
@@ -59,6 +60,7 @@
 (declare-function jabber-chat-register-decrypt-handler "jabber-chat"
   (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
+(declare-function ewoc-data "ewoc" (node))
 
 (defcustom jabber-omemo-enable t
   "Whether to enable OMEMO encryption support.

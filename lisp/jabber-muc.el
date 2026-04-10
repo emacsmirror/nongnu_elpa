@@ -308,6 +308,8 @@ The format is that of `mode-line-format' and `header-line-format'."
 
 ;; Global reference declarations
 
+(declare-function jabber-chain-add "jabber-core"
+                  (chain-var handler &optional depth))
 (declare-function jabber-presence-children "jabber-presence.el" (jc))
 (declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
 (declare-function jabber-get-version "jabber-version.el" (jc to))
@@ -316,6 +318,8 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (jc jid node callback closure-data &optional force))
 (declare-function jabber-ping-send "jabber-ping.el"
                   (jc to process-func on-success on-error))
+(declare-function jabber-process-ping "jabber-ping.el"
+                  (_jc xml-data))
 (declare-function jabber-parse-conference-bookmark "jabber-bookmarks.el"
                   (node))
 (declare-function jabber-get-bookmarks-from-cache "jabber-bookmarks"
