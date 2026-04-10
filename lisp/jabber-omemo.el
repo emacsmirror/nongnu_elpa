@@ -147,6 +147,7 @@ the resulting module.  Signals an error on build failure."
             (error
              (setq jabber-omemo--available 'failed)
              (message "OMEMO: build failed: %s" (error-message-string err))))
+        (setq jabber-omemo--available 'unavailable)
         (message (concat "OMEMO: native module not found, encryption disabled.  "
                          "Clone https://git.thanosapollo.org/emacs-jabber, "
                          "run `make module', and place the resulting "
