@@ -131,15 +131,20 @@ the resulting module.  Signals an error on build failure."
                            (expand-file-name "src" this-dir))
                           (expand-file-name "src" this-dir)
                         (expand-file-name "../src" this-dir))))
-        (if (and (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
-                 (or noninteractive
-                     (yes-or-no-p
-                      "jabber-omemo-core module not found.  Build it now? ")))
+        (if (and (not noninteractive)
+                 (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
+                 (yes-or-no-p
+                  (concat "jabber-omemo-core module not found.  "
+                          "Fetch picomemo from github.com and build it now? ")))
             (progn
               (jabber-omemo--build-module
                (file-name-directory (directory-file-name src-dir)))
               (setq jabber-omemo--available t))
-          (message "OMEMO: native module not available, encryption disabled"))))))
+          (message (concat "OMEMO: native module not found, encryption disabled.  "
+                           "Clone https://git.thanosapollo.org/emacs-jabber, "
+                           "run `make module', and place the resulting "
+                           "jabber-omemo-core%s on your `load-path'.")
+                   (or module-file-suffix ".so")))))))
 
 ;; Declare internal C functions from the dynamic module for the byte-compiler.
 ;; "ext:" prefix tells check-declare to skip file verification.
