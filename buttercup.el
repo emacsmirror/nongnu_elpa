@@ -1314,12 +1314,11 @@ https://debbugs.gnu.org/cgi/bugreport.cgi?bug=61880"
 Register a cleanup function to restore SPY to ORIG-FUNCTION. If the
 cleanup function list is not available, do not set the spy and return
 nil. This means `spy-on' has been called in a non-supported place."
-  (when (buttercup--add-cleanup
-         (lambda ()
-           (buttercup--without-subr-trampolines
-            (fset spy orig-function))))
+  (let ((replacement (buttercup--make-spy fun)))
     (buttercup--without-subr-trampolines
-     (fset spy (buttercup--make-spy fun)))))
+     (when (buttercup--add-cleanup (lambda ()
+                                     (fset spy orig-function)))
+       (fset spy replacement)))))
 
 (defun buttercup--make-spy (fun)
   "Create a new spy function wrapping FUN and tracking every call to itself."
