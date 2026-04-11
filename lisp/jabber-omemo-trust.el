@@ -372,12 +372,11 @@ data from PubSub and updates the buffer."
 
 (defun jabber-omemo-trust--menu-description ()
   "Return description string for the transient menu."
-  (let ((lines (list (format "Peer: %s  Account: %s"
-			     (propertize jabber-omemo-trust--peer 'face
-					 'jabber-chat-nick-foreign-encrypted)
-                             (propertize jabber-omemo-trust--account 'face
-					 'jabber-chat-nick-encrypted)))))
-    (string-join (nreverse lines) "\n")))
+  (format "Peer: %s  Account: %s"
+          (propertize (or jabber-omemo-trust--peer "?") 'face
+                      'jabber-chat-nick-foreign-encrypted)
+          (propertize (or jabber-omemo-trust--account "?") 'face
+                      'jabber-chat-nick-encrypted)))
 
 (transient-define-prefix jabber-omemo-trust-menu ()
   "OMEMO trust commands."
@@ -387,7 +386,11 @@ data from PubSub and updates the buffer."
     ("d" "Delete" jabber-omemo-trust-delete)
     ("w" "Copy fingerprint" jabber-omemo-trust-copy-fingerprint)
     ("g" "Refresh" revert-buffer)
-    ("G" "Re-fetch from server" jabber-omemo-trust-refresh)]])
+    ("G" "Re-fetch from server" jabber-omemo-trust-refresh)]]
+  (interactive)
+  (unless (derived-mode-p 'jabber-omemo-trust-mode)
+    (user-error "Not in an OMEMO trust buffer; use `jabber-omemo-show-trust' first"))
+  (transient-setup 'jabber-omemo-trust-menu))
 
 ;;; Cleanup on disconnect
 
