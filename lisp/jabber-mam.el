@@ -417,10 +417,10 @@ BEGIN a SQLite transaction when transitioning from 0 to 1."
   "Decrement the MAM transaction ref count.
 COMMIT the SQLite transaction when transitioning from 1 to 0."
   (when (> jabber-mam--tx-depth 0)
-    (cl-decf jabber-mam--tx-depth))
-  (when (zerop jabber-mam--tx-depth)
-    (when-let* ((db (jabber-db-ensure-open)))
-      (sqlite-execute db "COMMIT"))))
+    (cl-decf jabber-mam--tx-depth)
+    (when (zerop jabber-mam--tx-depth)
+      (when-let* ((db (jabber-db-ensure-open)))
+        (sqlite-execute db "COMMIT")))))
 
 ;;; Query and pagination
 
