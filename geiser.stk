@@ -202,10 +202,11 @@
           (map symbol->string
                (module-symbols (current-module)))))
 
-;; used in module-exports...
+;; push! is used in module-exports, but not all versions of STklos
+;; have it.
 (define-syntax push!
   (syntax-rules ()
-    ((push! el lst)
+    ((push! lst el)
      (set! lst (cons el lst)))))
 
 ;; given a module name (either symbol or string), return a list of
@@ -245,20 +246,21 @@
                            (let ((stk-ver (short-version)))
                              (let ((obj (symbol-value name module :geiser-stklos--no-value)))
                                (cond ((procedure? obj)
-                                      (push! (list name) procs))
+                                      (push! procs (list name)))
 
-                                     ;; STklos < 2.0 doesn't have a syntax clas, so we test if the
+                                     ;; STklos < 2.0 doesn't have a syntax class, so we test if the
                                      ;; symbol has no value. For 2.0 on, we can test if it's member of the
                                      ;; syntax class -- which is the same as testing if it's member of the
                                      ;; same class as push!, defined above.
                                      ((or (and (>= (string->number stk-ver) 2)
-                                               (eq? (class-of obj) (class-of push!))) ; well, push! is syntax!
+                                               (eq? (class-of obj)
+                                                    (class-of (in-module SCHEME push!)))) ; well, push! is syntax...
                                           (and (< (string->number stk-ver) 2)
                                              (eq? obj :geiser-stklos--no-value)))
-                                      (push! (list name) syntaxes))
+                                      (push! syntaxes (list name)))
 
                                    (else
-                                    (push! (list name) vars))))))
+                                    (push! vars (list name)))))))
                          exports)
                `(list ("modules") ("procs" . ,procs) ("syntax" . ,syntaxes) ("vars" . ,vars))))))
         (else '())))
