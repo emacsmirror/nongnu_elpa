@@ -1,14 +1,13 @@
-;;; vm-pcrisis.el --- wide-ranging auto-setup for personalities in VM  -*- lexical-binding: t; -*-
+;;; vm-pcrisis.el --- Automatic setup for personalities in VM  -*- lexical-binding: t; -*-
 ;;
-;; This file is an add-on for VM
+;; This file is part of VM
 ;;
 ;; Copyright (C) 1999 Rob Hodges,
 ;; Copyright (C) 2006 Robert Widhopf, Robert P. Goldman
 ;; Copyright (C) 2011-2012 Uday S. Reddy
 ;; Copyright (C) 2024-2025 The VM Developers
 ;;
-;; Package: Personality Crisis for VM
-;; Author: Rob Hodges
+;; Original Author: Rob Hodges (Personality Crisis)
 ;;
 ;;
 ;; This program is free software; you can redistribute it and/or modify
@@ -62,12 +61,13 @@
 ;; -------------------------------------------------------------------
 ;; Variables:
 ;; -------------------------------------------------------------------
-(defconst vmpc-version "0.9.1"
-  "Version of pcrisis.")
 
 (defgroup vmpc nil
-  "Manage personalities and more in VM."
-  :group  'vm-ext)
+  "Automatic setup of rule-based mail personalities in VM.
+Personality rules allow automatic configuration of From addresses,
+signatures, headers, and other mail settings based on the context of
+the message being composed (reply, forward, new mail, etc.)."
+  :group  'vm)
 
 (defcustom vmpc-conditions ()
   "*List of conditions which will be checked by pcrisis."

@@ -40,6 +40,6 @@ commit.msg
 /lisp/vm-cus-load.el
 
 .emacs.bak/
-.claude/
+/.claude/
 
 /test/coverage-results.txt
