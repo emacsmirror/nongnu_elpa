@@ -34,7 +34,7 @@ SOURCES += vm-mouse.el
 SOURCES += vm-page.el
 SOURCES += vm-pcrisis.el
 SOURCES += vm-pgg.el
-SOURCES += vm-pine.el
+SOURCES += vm-postpone.el
 SOURCES += vm-pop.el
 SOURCES += vm-ps-print.el
 SOURCES += vm-reply.el
@@ -187,16 +187,20 @@ custom-load.el: $(SOURCES:%=@srcdir@/%)
 
 ##############################################################################
 install-pkg: all $(INSTALL_FILES)
-	@mkdir -p -m 0755 $(DESTDIR)$(lispdir);               \
-	for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
+	@mkdir -p -m 0755 $(DESTDIR)$(lispdir)
+	@# Remove obsolete vm-pine.el (renamed to vm-postpone.el in 8.4.0)
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
+	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
 	  echo "Installing $$i in $(DESTDIR)$(lispdir)" ;    \
 	  $(INSTALL_DATA) $$i $(DESTDIR)$(lispdir) ;         \
 	done
 	@echo VM ELISP files successfully installed
 
 uninstall-pkg: $(INSTALL_FILES)
+	@# Remove obsolete vm-pine.el (renamed to vm-postpone.el in 8.4.0)
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
 	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
-	  echo "Unnstalling $$i from $(DESTDIR)$(lispdir)" ; \
+	  echo "Uninstalling $$i from $(DESTDIR)$(lispdir)" ; \
 	  $(RM) -f $(DESTDIR)$(lispdir)/$$i ;                  \
 	done
 	-$(RMDIR) $(DESTDIR)$(lispdir)/ 2> /dev/null

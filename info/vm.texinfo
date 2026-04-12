@@ -97,7 +97,6 @@ Add-ons and Customizations:
 
 * Preface to Add-ons::  What are these?
 * Customizations::	Making VM behave the way you might want.
-* Add-ons::		Contributed packages adding functionality to VM.
 
 About VM:
 
@@ -1641,7 +1640,7 @@ would get loaded as a text file by default, and then run @kbd{M-x
 mail-mode}.  VM's mail-mode command keys are not available in this mode.
 The best option is to run @kbd{M-x vm-postpone-message} to save the
 unfinished message composition and then continue it using
-@code{vm-continue-postponed-message}.  @xref{Add-ons, VM-Pine}.
+@code{vm-continue-postponed-message}.  @xref{Postponing Messages}.
 
 @unnumberedsubsec Recovering Sessions
 
@@ -3016,6 +3015,7 @@ headers will be used.
 * Forwarding Messages::    How to forward a message to a third party.
 * Saving copies::          Saving copies of sent mail.
 * Personality Crisis::     Programmable customization of message composition.
+* Postponing Messages::    Saving draft messages for later.
 @end menu
 
 @node Sending Options, Sending @acronym{MIME} Messages, Sending Messages, Sending Messages
@@ -3699,7 +3699,7 @@ avoid saving attachments.  However, the character coding of the sent
 folder should be chosen carefully to allow proper storage of the
 messages.
 
-@node Personality Crisis,, Saving copies, Sending Messages
+@node Personality Crisis, Postponing Messages, Saving copies, Sending Messages
 @section Personality Crisis: Programmable customization of message composition
 @cindex vmpc
 @cindex Personality Crisis
@@ -3964,6 +3964,40 @@ a message:
 
 You can also call @code{vmpc-build-true-conditions-list} interactively
 to test your conditions.
+
+@node Postponing Messages,, Personality Crisis, Sending Messages
+@section Postponing Messages
+@cindex vm-postpone
+@cindex postponing message composition
+Sometimes, you might want to interrupt the composing of a message and
+continue it later.  This is called @dfn{postponing}.
+
+@findex vm-postpone-message
+@kindex C-c C-d
+@vindex vm-postponed-folder
+In a message composition buffer, the command @key{C-c C-d}
+(@code{vm-postpone-message})
+postpones the current composition.  The postponed message is stored in the
+folder specified in @code{vm-postponed-folder}.   (The default is a folder
+called ``postponed'').   When called with a prefix argument,
+@code{vm-postpone-message} will ask you for the folder to save the draft
+to.  You might also save it to your inbox in this way.
+
+@findex vm-continue-postponed-message
+You can continue composing the postponed messages by visiting
+@code{vm-postponed-folder}, selecting a message and running @kbd{M-x
+vm-continue-postponed-message}.  This constructs a new message composition
+buffer by copying the text from the VM Presentation buffer.  It also
+converts any @acronym{MIME} buttons into attachment buttons, which will be encoded as
+valid @acronym{MIME} attachments when the message is sent.  Unfortunately, any
+attachments that are displayed inline in the Presentation buffer will not be
+encoded.  This is a limitation of this feature.
+
+@vindex vm-auto-expunge-postponed-folder
+When you continue composition of a postponed message and send it, its
+previous draft is still retained in the postponed folder. To expunge such
+drafts automatically set @code{vm-auto-expunge-postponed-folder} to @code{t}
+in your VM configuration file.
 
 @node Selecting Messages, Saving Messages, Sending Messages, Top
 @chapter Selecting Messages
@@ -6991,7 +7025,7 @@ Full-blown packages that add new functionality or interface to other
 packages in your environment.
 @end itemize
 
-@node Customizations, Add-ons, Preface to Add-ons, Top
+@node Customizations, History and Administration, Preface to Add-ons, Top
 @chapter Customizations
 Useful ways to customize VM.
 @section Reading messages
@@ -7068,46 +7102,7 @@ putting @code{vm-mime-auto-save-all-attachments} in
 
 (This add-on was provided by Robert Fenk.)
 
-@node Add-ons, History and Administration, Customizations, Top
-@chapter Add-ons
-@section VM-Pine
-@cindex vm-pine
-@cindex postponing message composition
-Sometimes, you might want to interrupt the composing of a message and
-continue it later.  This is called @dfn{postponing}.  The add-on called
-@samp{vm-pine} provides this 
-functionality. 
-
-@findex vm-postpone-composition
-@kindex C-c C-d
-@vindex vm-postponed-folder
-In a message composition buffer, the command @key{C-c C-d}
-(@code{vm-postpone-composition}) 
-postpones the current composition.  The postponed message is stored in the
-folder specified in @code{vm-postponed-folder}.   (The default is a folder
-called ``postponed'').   When called with a prefix argument,
-@code{vm-postpone-composition} will ask you for the folder to save the draft
-to.  You might also save it to your inbox in this way.
-
-@findex vm-continue-postponed-message
-You can continue composing the postponed messages by visiting
-@code{vm-postponed-folder}, selecting a message and running @kbd{M-x
-vm-continue-postponed-message}.  This constructs a new message composition
-buffer by copying the text from the VM Presentation buffer.  It also
-converts any @acronym{MIME} buttons into attachment buttons, which will be encoded as
-valid @acronym{MIME} attachments when the message is sent.  Unfortunately, any
-attachments that are displayed inline in the Presentation buffer will not be
-encoded.  This is a limitation of this package.
-
-@findex vm-auto-expunge-postponed-folder
-When you continue composition of a postponed message and send it, its
-previous draft is still retained in the postponed folder. To expunge such
-drafts automatically set @code{vm-auto-expunge-postponed-folder} to @code{t}
-in your VM configuration file.
-
-(This add-on was provided by Robert Fenk.)
-
-@node History and Administration, Highlights, Add-ons, Top
+@node History and Administration, Highlights, Customizations, Top
 @chapter History and Administration
 
 @cindex Kyle Jones

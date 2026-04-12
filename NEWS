@@ -22,6 +22,16 @@ Status
   Bug reports (email):     viewmail-bugs@nongnu.org
                            (Please use `M-x vm-submit-bug-report' within VM)
 
+VM 8.4.0
+  CHANGES
+  * Generated a test suite using LLM AI.
+  * VM Personality Crisis (vm-pcrisis) has been converted from an add-on to
+    a standard part of VM.
+  * vm-pine has been converted to from an add-on to a standard part of VM.
+    It has been renamed vm-postpone, with compatibility aliases for vm-pine
+    names.
+    
+
 VM 8.3.2 released 2025-12-29
 
   CHANGES

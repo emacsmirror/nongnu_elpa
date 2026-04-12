@@ -1,4 +1,4 @@
-;;; vm-pine.el --- draft handling and other neat functions for VM  -*- lexical-binding: t; -*-
+;;; vm-postpone.el --- draft/postponed message handling for VM  -*- lexical-binding: t; -*-
 ;;
 ;; This file is an add-on for VM
 ;; 
@@ -59,7 +59,7 @@
 ;;  You can also bind it to "C-x m" in order to check for postponed messages
 ;;  when composing a message without starting VM.
 ;;
-;;  (autoload 'vm-continue-what-message-other-window "vm-pine" "" t)
+;;  (autoload 'vm-continue-what-message-other-window "vm-postpone" "" t)
 ;;  (global-set-key "\C-xm" 'vm-continue-what-message-other-window)
 ;;
 ;;
@@ -80,8 +80,7 @@
 ;;  according to the recipients email-address.
 ;;
 ;;; Bug reports and feature requests:
-;; Please send a backtrace and the version number of vm-pine.el!
-;; Feature requests are welcome!
+;; Please report issues at https://gitlab.com/emacs-vm/vm/-/issues
 
 ;;; Code:
 
@@ -122,9 +121,13 @@
 ;;   "VM"
 ;;   :group 'mail)
 
-(defgroup vm-pine nil
-  "Pine inspired extensions to VM."
+(defgroup vm-postpone nil
+  "Postponed message handling and draft support in VM."
   :group  'vm-ext)
+
+;; Backward compatibility alias for the old group name
+(defvaralias 'vm-pine 'vm-postpone)
+(make-obsolete-variable 'vm-pine 'vm-postpone "8.4.0")
 
 ;;-----------------------------------------------------------------------------
 ;;;###autoload
@@ -132,7 +135,7 @@
   "Return the recipient or newsgroup for uninteresting senders.
 If the \"From:\" header contains the user login or full name then
 this function returns the \"To:\" or \"Newsgroups:\" header field with a
-\"To:\" as prefix.
+\"To:\" as prefx.
 
 For example the outgoing message box will now list to whom you sent the
 messages.  Use `vm-fix-summary' to update the summary of a folder! With
@@ -198,7 +201,7 @@ It is a lisp list which currently contains the following items:
  <redistribute references list>
 while the last three are set by `vm-get-persistent-message-ids-for'."
   :type 'string
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;-----------------------------------------------------------------------------
 ;; A Pine-like postponed folder handling
@@ -206,14 +209,14 @@ while the last three are set by `vm-get-persistent-message-ids-for'."
 (defcustom vm-postponed-folder "postponed"
   "The name of the folder where postponed messages are saved."
   :type 'string
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defcustom vm-auto-expunge-postponed-folder nil
   "If non-nil, the postponed-folder is auto-expunged whenever
 postponed messages are continued and sent out."
   :type 'boolean
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defcustom vm-postponed-message-headers '("From:" "Organization:"
@@ -230,7 +233,7 @@ A list of headers that should be kept, when continuing a postponed message.
 The following mime headers should not be kept, since this breaks things:
 Mime-Version, Content-Type, Content-Transfer-Encoding."
   :type '(repeat (string))
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defcustom vm-postponed-message-discard-header-regexp nil
@@ -238,23 +241,23 @@ Mime-Version, Content-Type, Content-Transfer-Encoding."
 A regular expression matching all headers that should be discard when
 when continuing a postponed message."
   :type 'regexp
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defcustom vm-continue-postponed-message-hook nil
   "List of hook functions to be run after continuing a postponed message."
   :type 'hook
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defcustom vm-postpone-message-hook nil
   "List of hook functions to be run before postponing a message."
   :type 'hook
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 (defvar vm-postponed-message-folder-buffer nil
   "Buffer of source folder.
-This is only for internal use of vm-pine.el!!!")
+This is only for internal use of vm-postpone.el.")
 
 ;;-----------------------------------------------------------------------------
 ;; (define-key vm-mode-map "C"      'vm-continue-what-message)
@@ -697,13 +700,13 @@ Optional argument DONT-KILL is positive, then do not kill source message."
   :type '(choice (const :tag "never" nil)
                  (const ask)
                  (const continue))
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 (defcustom vm-zero-drafts-start-compose nil
   "When t and there are no drafts, `vm-continue-what-message' call `vm-mail'."
   :type '(choice (const :tag "do nothing" nil)
                  (const :tag "start new message" t))
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 (defun vm-continue-what-message-composing ()
   "Decide whether to compose a new message or continue a draft.
@@ -835,13 +838,13 @@ If set to nil it will never save them nor it will ask."
   :type '(choice (const ask)
                  (const always)
                  (const :tag "never" nil))
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 (defcustom vm-save-killed-messages-folder
   vm-postponed-folder
   "The name of the folder where killed messages are saved."
   :type 'string
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 (defun vm-add-save-killed-message-hook ()
   (add-hook 'kill-buffer-hook 'vm-save-killed-message-hook nil t))
@@ -874,7 +877,7 @@ If set to nil it will never save them nor it will ask."
   (concat (user-full-name) " <" user-mail-address ">")
   "The address where return receipts should be sent to."
   :type 'string
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defun vm-mail-return-receipt-to ()
@@ -908,7 +911,7 @@ See the variable `vm-mail-return-receipt-to'."
   "Priority: urgent\nImportance: High\nX-Priority: 1"
   "The priority headers."
   :type 'string
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defun vm-mail-priority ()
@@ -939,7 +942,7 @@ See the variable `vm-mail-priority'."
   "Like `vm-auto-folder-alist' but for outgoing messages.
 It should be fed to `vm-mail-select-folder'."
   :type 'list
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defcustom vm-mail-fcc-default
@@ -952,7 +955,7 @@ can control the behavior of vm-mail-fcc and `vm-mail-auto-fcc'.
 You may allow a sophisticated decision for the right folder for your
 outgoing message."
   :type 'list
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defun vm-mail-fcc (&optional arg)
@@ -1078,13 +1081,13 @@ This function is a slightly changed version of `vm-auto-select-folder'."
   "A regexp matching the part of an email address to use as FCC-folder.
 The string enclosed in \"\\\\(\\\\)\" is used as folder name."
   :type 'regexp
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defcustom vm-mail-to-headers '("To:" "CC:" "BCC:")
   "A list of headers for finding the email address to use as FCC-folder."
   :type '(repeat (string))
-  :group 'vm-pine)
+  :group 'vm-postpone)
 
 ;;;###autoload
 (defun vm-mail-to-fcc (&optional arg return-only)
@@ -1121,5 +1124,8 @@ If optional argument RETURN-ONLY is t just returns FCC."
 
 ;;-----------------------------------------------------------------------------
 
+(provide 'vm-postpone)
+;; Backward compatibility
 (provide 'vm-pine)
-;;; vm-pine.el ends here
+
+;;; vm-postpone.el ends here

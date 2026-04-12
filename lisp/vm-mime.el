@@ -7751,7 +7751,7 @@ This is a destructive operation and cannot be undone!"
 	       'vm-nuke-alternative-text/html "8.2.0")
 
 ;;-----------------------------------------------------------------------------
-;; The following functions are taken from vm-pine.el
+;; The following functions are taken from vm-postpone.el
 ;; Copyright (C) Robert Widhopf-Fenk
 ;; Copyright (C) Uday S. Reddy, 2010-2011
 ;; Copyright (C) 2024-2025 The VM Developers
@@ -7759,7 +7759,7 @@ This is a destructive operation and cannot be undone!"
 ;;;###autoload
 (defun vm-mime-convert-to-attachment-buttons ()
   "Replace all mime buttons in the current buffer by attachment buttons."
-  ;; called vm-mime-encode-mime-attachments in vm-pine.el
+  ;; called vm-mime-encode-mime-attachments in vm-postpone.el
   (interactive)
   (cond ((featurep 'xemacs)
          (let ((e-list (vm-extent-list 
@@ -7785,12 +7785,12 @@ This is a destructive operation and cannot be undone!"
          (error "don't know how to MIME encode composition for %s"
                 (emacs-version)))))
 
-;; The function vm-mime-re-fake-attachment-overlays from vm-pine.el is
+;; The function vm-mime-re-fake-attachment-overlays from vm-postpone.el is
 ;; now unused.  USR, 2011-02-14 
 
 (defun vm-mime-replace-by-attachment-button (x)
   "Replace the MIME button specified by extent X by an attachment button."
-  ;; This was called vm-mime-encode-mime-button in vm-pine.el
+  ;; This was called vm-mime-encode-mime-button in vm-postpone.el
   (save-excursion
     (let* ((layout (vm-extent-property x 'vm-mime-layout))
 	   (xstart (vm-extent-start-position x))

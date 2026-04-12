@@ -76,7 +76,7 @@
 (require 'vm-macro)
 (require 'vm-misc)
 (require 'vm-mime)
-(require 'vm-pine)
+(require 'vm-postpone)
 (require 'mail-utils)
 (require 'mail-extr)
 (eval-when-compile (require 'cl-lib))
@@ -348,7 +348,7 @@ See `vm-serial-expand-tokens' for information about valid tokens."
 
 (defcustom vm-serial-fcc  nil
   "*Whether to keep a FCC from the source mail within each serial mail.
-If the function `vm-postpone-message' (from vm-pine) is present it will
+If the function `vm-postpone-message' (from vm-postpone) is present it will
 also save the source message in the specified folder otherwise there is
 no way to save the source message."
   :group 'vm-serial
@@ -888,7 +888,7 @@ questions will bother you!"
             ;; this was the last mail so is there some FCC work to do?
             (if (and fcc (not vm-serial-send-mail-jobs))
                 (if (not (functionp 'vm-postpone-message))
-                    (error "vm-pine.el is needed to save source messages!")
+                    (error "vm-postpone.el is needed to save source messages!")
                   ;; no postponed header for this!!
                   (vm-mail-mode-remove-header "FCC:")
                   (vm-postpone-message fcc vm-serial-send-mail-exit t))
