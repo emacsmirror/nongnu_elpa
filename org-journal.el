@@ -175,16 +175,21 @@ currently to be done manually by calling `org-journal-invalidate-cache'."
 (defcustom org-journal-file-format "%Y%m%d"
   "Format string for journal file names (Default \"YYYYMMDD\").
 
-This pattern MUST include `%Y', `%m' and `%d' when `org-journal-file-type' is
-`daily' or `weekly'. When `org-journal-file-type' is `monthly' this pattern
-MUST at least include `%Y' and `%m', and at least `%Y' when
-`org-journal-file-type' is `yearly'.
+This pattern MUST include enough format specifiers to uniquely identify
+the filename for the date and file type:
+  | org-journal-file-type | pattern MUST include | or MUST include |
+  |-----------------------+----------------------+-----------------|
+  | daily                 | %Y AND %m AND %d     |                 |
+  | weekly                | %Y AND %m AND %d     | %G AND %V       |
+  | monthly               | %Y AND %m            |                 |
+  | yearly                | %Y                   |                 |
 
 Currently supported placeholders are:
 
 %Y is the year as decimal number, including the century.
 %m is the month as a decimal number (range 01 to 12).
 %d is the day as a decimal number (range 01 to 31).
+%G is the ISO 8601 week's year as a decimal number, including the century.
 %V is the ISO 8601 week number as a decimal number (range 01 to 53).
 %a is the locale’s abbreviated name of the day of week, %A the full name.
 %b is the locale's abbreviated name of the month, %B the full name.
@@ -383,6 +388,7 @@ Currently supported placeholders are:
 %Y is the year as decimal number, including the century.
 %m is the month as a decimal number (range 01 to 12).
 %d is the day as a decimal number (range 01 to 31).
+%G is the ISO 8601 week's year as a decimal number, including the century.
 %V is the ISO 8601 week number as a decimal number (range 01 to 53).
 %a is the locale’s abbreviated name of the day of week, %A the full name.
 %b is the locale's abbreviated name of the month, %B the full name.
@@ -446,7 +452,7 @@ buffer not open already, otherwise `nil'.")
   '(("%[aAbB]" . "\\\\(?4:[[:alpha:]]\\\\{3,\\\\}\\\\)")
     ("%d" . "\\\\(?3:[0-9]\\\\{2\\\\}\\\\)")
     ("%m" . "\\\\(?2:[0-9]\\\\{2\\\\}\\\\)")
-    ("%Y" . "\\\\(?1:[0-9]\\\\{4\\\\}\\\\)")
+    ("%[YG]" . "\\\\(?1:[0-9]\\\\{4\\\\}\\\\)")
     ("%V" . "[0-9]\\\\{2\\\\}")))
 
 (defvar org-journal--created-re "^ *:CREATED: +.*$"  "Regex to find created property.")
