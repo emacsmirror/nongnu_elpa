@@ -408,6 +408,21 @@ CATEGORY and FILENAME specify the fixture to load."
                         (looking-at "[ \t]"))))
           (buffer-substring-no-properties start (1- (point))))))))
 
+;;; Test file discovery
+
+(defun vm-test-discover-test-files ()
+  "Return list of test files in `vm-test-dir'.
+Files match pattern vm-*-test.el, excluding vm-test-init.el."
+  (sort (directory-files vm-test-dir nil "^vm-.*-test\\.el$")
+        #'string<))
+
+(defun vm-test-load-all-test-files ()
+  "Load all test files from `vm-test-dir'."
+  (let ((test-files (vm-test-discover-test-files)))
+    (message "Loading %d test files..." (length test-files))
+    (dolist (f test-files)
+      (load (expand-file-name f vm-test-dir)))))
+
 (provide 'vm-test-init)
 
 ;;; vm-test-init.el ends here

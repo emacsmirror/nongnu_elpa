@@ -13,27 +13,19 @@ top_srcdir = @top_srcdir@
 TEST_INIT = vm-test-init.el
 TEST_RUNNER = run-tests.el
 COVERAGE_RUNNER = coverage-report.el
-TEST_FILES = vm-misc-test.el vm-mime-test.el vm-folder-test.el vm-imap-test.el
-
-# Coverage collection: set COVERAGE=1 to enable (e.g., make test COVERAGE=1)
-COVERAGE =
 
 ##############################################################################
 # Test targets
 ##############################################################################
 
-.PHONY: test test-verbose test-misc test-mime test-folder test-imap test-interactive coverage clean
+.PHONY: test test-coverage test-verbose test-one
 
-# Run all tests in batch mode (with optional coverage)
+# Run all tests in batch mode
 test:
-ifeq ($(COVERAGE),1)
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(COVERAGE_RUNNER)
-else
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
-endif
 
 # Run tests with coverage collection
-coverage:
+test-coverage:
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(COVERAGE_RUNNER)
 
 # Run tests with verbose output
@@ -43,27 +35,14 @@ test-verbose:
 	    --eval '(setq ert-batch-print-length 10)' \
 	    -l $(srcdir)/$(TEST_RUNNER)
 
-# Run specific test modules
-test-misc:
+# Run a specific test, must specify testel=vm-sometest.el
+test-one:
+	@if [ "x${testel}" = "x" ] ; then \
+	   echo "Error: must specify testel=vm-sometest.el" >&2 ; \
+	   exit 1 ; \
+	fi
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
-	    -l $(srcdir)/vm-misc-test.el -f ert-run-tests-batch-and-exit
-
-test-mime:
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
-	    -l $(srcdir)/vm-mime-test.el -f ert-run-tests-batch-and-exit
-
-test-folder:
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
-	    -l $(srcdir)/vm-folder-test.el -f ert-run-tests-batch-and-exit
-
-test-imap:
-	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_INIT) \
-	    -l $(srcdir)/vm-imap-test.el -f ert-run-tests-batch-and-exit
-
-# Run tests interactively (opens Emacs with ERT buffer)
-test-interactive:
-	$(EMACS_PROG) -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER) \
-	    --eval '(ert t)'
+	    -l $(srcdir)/${testel} -f ert-run-tests-batch-and-exit
 
 # Clean test artifacts
 clean:

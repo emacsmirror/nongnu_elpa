@@ -1,0 +1,28 @@
+From alice@example.com Mon Jan  1 09:00:00 2024
+From: Alice <alice@example.com>
+To: bob@example.com
+Subject: First message
+Message-ID: <msg001@example.com>
+Date: Mon, 1 Jan 2024 09:00:00 +0000
+
+This is the first message in the folder.
+
+From bob@example.com Mon Jan  1 10:00:00 2024
+From: Bob <bob@example.com>
+To: alice@example.com
+Subject: Re: First message
+Message-ID: <msg002@example.com>
+In-Reply-To: <msg001@example.com>
+References: <msg001@example.com>
+Date: Mon, 1 Jan 2024 10:00:00 +0000
+
+This is a reply to the first message.
+
+From charlie@example.com Mon Jan  1 11:00:00 2024
+From: Charlie <charlie@example.com>
+To: alice@example.com, bob@example.com
+Subject: Different topic
+Message-ID: <msg003@example.com>
+Date: Mon, 1 Jan 2024 11:00:00 +0000
+
+This is an unrelated message.

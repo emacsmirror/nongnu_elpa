@@ -99,17 +99,8 @@
   (message "Setting up coverage tracking...")
   (vm-coverage-setup)
 
-  ;; Load and run tests
-  (let ((test-dir (file-name-directory load-file-name)))
-    (dolist (f '("vm-misc-test.el" "vm-mime-test.el"
-                 "vm-folder-test.el" "vm-imap-test.el"
-                 "vm-pop-test.el" "vm-sort-test.el"
-                 "vm-thread-test.el" "vm-virtual-test.el"
-                 "vm-delete-test.el" "vm-mark-test.el"
-                 "vm-save-test.el" "vm-undo-test.el"
-                 "vm-reply-test.el" "vm-summary-test.el"
-                 "vm-accessors-test.el" "vm-integration-test.el"))
-      (load (expand-file-name f test-dir))))
+  ;; Load and run tests (discovered dynamically)
+  (vm-test-load-all-test-files)
 
   (ert-run-tests-batch t)
   (vm-coverage-report))

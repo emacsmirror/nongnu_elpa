@@ -132,10 +132,13 @@ elisp-lint:
 ##############################################################################
 # testing
 #
-test test-verbose test-misc test-mime test-folder test-imap test-interactive:
+test:
 	$(MAKE) -C test $@
 
-.PHONY: test test-verbose test-misc test-mime test-folder test-imap test-interactive
+test-coverage:
+	$(MAKE) -C test-coverage $@
+
+.PHONY: test test-coverage
 
 ##############################################################################
 # xemacs package (not tested)

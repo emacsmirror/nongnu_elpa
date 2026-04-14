@@ -132,6 +132,152 @@
                       "other@donotreply.com" "valid@other.com"))
                    '("user@example.com" "valid@other.com")))))
 
+;;; vm-add-reply-subject-prefix tests
+;; Note: This function adds text attribution prefix to quoted text in a
+;; composition buffer, NOT "Re:" to the subject line.
+
+(ert-deftest vm-reply-test-add-reply-subject-prefix-function-exists ()
+  "Test vm-add-reply-subject-prefix function exists."
+  (should (fboundp 'vm-add-reply-subject-prefix)))
+
+(ert-deftest vm-reply-test-add-reply-subject-prefix-prefixes-lines ()
+  "Test vm-add-reply-subject-prefix adds prefix to lines."
+  (let ((vm-included-text-prefix "> ")
+        (vm-included-text-attribution-format nil))
+    (with-temp-buffer
+      (insert "To: test@example.com\n")
+      (insert mail-header-separator)
+      (insert "\n")
+      (insert "Line one\n")
+      (insert "Line two\n")
+      (vm-add-reply-subject-prefix nil)
+      (should (string-match "^> Line one" (buffer-string)))
+      (should (string-match "^> Line two" (buffer-string))))))
+
+;;; vm-mail-mode-remove-header tests
+
+(ert-deftest vm-reply-test-mail-mode-remove-header ()
+  "Test vm-mail-mode-remove-header removes header."
+  (with-temp-buffer
+    (insert "To: recipient@example.com\n")
+    (insert "Cc: other@example.com\n")
+    (insert "Subject: Test\n")
+    (insert "\n")
+    (insert "Body\n")
+    (goto-char (point-min))
+    (vm-mail-mode-remove-header "Cc:")
+    (should-not (string-match "Cc:" (buffer-string)))
+    (should (string-match "To:" (buffer-string)))
+    (should (string-match "Subject:" (buffer-string)))))
+
+(ert-deftest vm-reply-test-mail-mode-remove-header-not-present ()
+  "Test vm-mail-mode-remove-header with missing header."
+  (with-temp-buffer
+    (insert "To: recipient@example.com\n")
+    (insert "\n")
+    (insert "Body\n")
+    (goto-char (point-min))
+    ;; Should not error when header doesn't exist
+    (vm-mail-mode-remove-header "Cc:")
+    (should (string-match "To:" (buffer-string)))))
+
+;;; vm-ignored-reply-to tests
+
+(ert-deftest vm-reply-test-ignored-reply-to-nil ()
+  "Test vm-ignored-reply-to with no ignored addresses."
+  (let ((vm-reply-ignored-reply-tos nil))
+    (should-not (vm-ignored-reply-to "user@example.com"))))
+
+(ert-deftest vm-reply-test-ignored-reply-to-matches ()
+  "Test vm-ignored-reply-to matches pattern."
+  (let ((vm-reply-ignored-reply-tos '("^noreply@")))
+    (should (vm-ignored-reply-to "noreply@example.com"))))
+
+(ert-deftest vm-reply-test-ignored-reply-to-no-match ()
+  "Test vm-ignored-reply-to doesn't match valid address."
+  (let ((vm-reply-ignored-reply-tos '("^noreply@")))
+    (should-not (vm-ignored-reply-to "user@example.com"))))
+
+;;; vm-fill-long-lines-in-reply tests
+
+(ert-deftest vm-reply-test-fill-long-lines-exists ()
+  "Test vm-fill-long-lines-in-reply function exists."
+  (should (fboundp 'vm-fill-long-lines-in-reply)))
+
+;;; Composition buffer functions
+
+(ert-deftest vm-reply-test-composition-buffer-functions-exist ()
+  "Test composition buffer management functions exist."
+  (should (fboundp 'vm-update-composition-buffer-name))
+  (should (fboundp 'vm-forget-composition-buffer))
+  (should (fboundp 'vm-new-composition-buffer)))
+
+;;; vm-mail-to-mailto-url tests
+
+(ert-deftest vm-reply-test-mail-to-mailto-url-exists ()
+  "Test vm-mail-to-mailto-url function exists."
+  (should (fboundp 'vm-mail-to-mailto-url)))
+
+;;; Digest functions
+
+(ert-deftest vm-reply-test-digest-functions-exist ()
+  "Test digest-related functions exist."
+  (should (fboundp 'vm-send-digest))
+  (should (fboundp 'vm-send-rfc934-digest))
+  (should (fboundp 'vm-send-rfc1153-digest))
+  (should (fboundp 'vm-send-mime-digest)))
+
+;;; Bounce/resend functions
+
+(ert-deftest vm-reply-test-resend-functions-exist ()
+  "Test resend/bounce functions exist."
+  (should (fboundp 'vm-resend-message))
+  (should (fboundp 'vm-resend-bounced-message))
+  (should (fboundp 'vm-retry-bounced-message)))
+
+;;; Yank functions
+
+(ert-deftest vm-reply-test-yank-functions-exist ()
+  "Test yank functions exist."
+  (should (fboundp 'vm-yank-message))
+  (should (fboundp 'vm-yank-message-other-folder))
+  (should (fboundp 'vm-yank-message-presentation))
+  (should (fboundp 'vm-yank-message-mime))
+  (should (fboundp 'vm-yank-message-text))
+  (should (fboundp 'vm-mail-yank-default)))
+
+;;; Preview composition
+
+(ert-deftest vm-reply-test-preview-composition-exists ()
+  "Test vm-preview-composition exists."
+  (should (fboundp 'vm-preview-composition)))
+
+;;; Mail mode header functions
+
+(ert-deftest vm-reply-test-mail-mode-header-functions-exist ()
+  "Test mail mode header functions exist."
+  (should (fboundp 'vm-mail-mode-insert-message-id-maybe))
+  (should (fboundp 'vm-mail-mode-insert-date-maybe))
+  (should (fboundp 'vm-mail-mode-remove-message-id-maybe))
+  (should (fboundp 'vm-mail-mode-remove-date-maybe))
+  (should (fboundp 'vm-mail-get-header-contents)))
+
+;;; Mail send functions
+
+(ert-deftest vm-reply-test-mail-send-functions-exist ()
+  "Test mail send functions exist."
+  (should (fboundp 'vm-mail-send))
+  (should (fboundp 'vm-mail-send-and-exit))
+  (should (fboundp 'vm-keep-mail-buffer)))
+
+;;; Forward functions
+
+(ert-deftest vm-reply-test-forward-functions-exist ()
+  "Test forward message functions exist."
+  (should (fboundp 'vm-forward-message))
+  (should (fboundp 'vm-forward-message-all-headers))
+  (should (fboundp 'vm-forward-message-plain)))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

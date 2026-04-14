@@ -20,29 +20,8 @@
 ;; Load test infrastructure
 (load (expand-file-name "vm-test-init.el" vm-test-runner-dir))
 
-;; Load all test files
-(dolist (test-file '("vm-misc-test.el"
-                     "vm-mime-test.el"
-                     "vm-folder-test.el"
-                     "vm-imap-test.el"
-                     "vm-pop-test.el"
-                     "vm-sort-test.el"
-                     "vm-thread-test.el"
-                     "vm-virtual-test.el"
-                     "vm-delete-test.el"
-                     "vm-mark-test.el"
-                     "vm-save-test.el"
-                     "vm-undo-test.el"
-                     "vm-reply-test.el"
-                     "vm-summary-test.el"
-                     "vm-accessors-test.el"
-                     "vm-integration-test.el"
-                     "vm-window-test.el"
-                     "vm-pcrisis-test.el"
-                     "vm-postpone-test.el"))
-  (let ((full-path (expand-file-name test-file vm-test-runner-dir)))
-    (when (file-exists-p full-path)
-      (load full-path))))
+;; Load all test files (discovered dynamically)
+(vm-test-load-all-test-files)
 
 ;; Run tests in batch mode
 (when noninteractive

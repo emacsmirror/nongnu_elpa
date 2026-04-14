@@ -1,0 +1,41 @@
+From alice@example.com Mon Jan  1 09:00:00 2024
+From: Alice <alice@example.com>
+To: team@example.com
+Subject: Project kickoff
+Message-ID: <thread-root@example.com>
+Date: Mon, 1 Jan 2024 09:00:00 +0000
+
+Let's discuss the new project.
+
+From bob@example.com Mon Jan  1 09:30:00 2024
+From: Bob <bob@example.com>
+To: team@example.com
+Subject: Re: Project kickoff
+Message-ID: <thread-reply1@example.com>
+In-Reply-To: <thread-root@example.com>
+References: <thread-root@example.com>
+Date: Mon, 1 Jan 2024 09:30:00 +0000
+
+Sounds good! What's the timeline?
+
+From alice@example.com Mon Jan  1 10:00:00 2024
+From: Alice <alice@example.com>
+To: team@example.com
+Subject: Re: Project kickoff
+Message-ID: <thread-reply2@example.com>
+In-Reply-To: <thread-reply1@example.com>
+References: <thread-root@example.com> <thread-reply1@example.com>
+Date: Mon, 1 Jan 2024 10:00:00 +0000
+
+We're looking at 3 weeks.
+
+From charlie@example.com Mon Jan  1 10:30:00 2024
+From: Charlie <charlie@example.com>
+To: team@example.com
+Subject: Re: Project kickoff
+Message-ID: <thread-reply3@example.com>
+In-Reply-To: <thread-root@example.com>
+References: <thread-root@example.com>
+Date: Mon, 1 Jan 2024 10:30:00 +0000
+
+I have some resources that might help.
