@@ -414,6 +414,169 @@
       (should (assq 'markable result))
       (should-not (assq 'request result)))))
 
+;;; Group 8: XEP-0280 Message Carbons
+
+(defun jabber-receipts-tests--received-carbon (inner)
+  "Wrap INNER message in a valid XEP-0280 <received> carbon envelope."
+  `(message ((from . "me@example.com")
+             (to . "me@example.com/emacs")
+             (type . "chat"))
+            (received ((xmlns . "urn:xmpp:carbons:2"))
+                      (forwarded ((xmlns . "urn:xmpp:forward:0"))
+                                 ,inner))))
+
+(defun jabber-receipts-tests--sent-carbon (inner)
+  "Wrap INNER message in a valid XEP-0280 <sent> carbon envelope."
+  `(message ((from . "me@example.com")
+             (to . "me@example.com/emacs")
+             (type . "chat"))
+            (sent ((xmlns . "urn:xmpp:carbons:2"))
+                  (forwarded ((xmlns . "urn:xmpp:forward:0"))
+                             ,inner))))
+
+(ert-deftest jabber-receipts-test-carbon-received-queues-displayed ()
+  "Markable message received as a <received> carbon queues pending-displayed-id."
+  (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
+            ((symbol-function 'jabber-send-sexp-if-connected) #'ignore)
+            ((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_j) "me@example.com"))
+            ((symbol-function 'jabber-chat-get-buffer)
+             (lambda (_from &optional _jc) (buffer-name))))
+    (with-temp-buffer
+      (setq-local jabber-receipts--pending-displayed-id nil)
+      (let ((jabber-chat-send-receipts t)
+            (inner `(message ((from . "them@example.com")
+                              (to . "me@example.com")
+                              (id . "inner-msg-42")
+                              (type . "chat"))
+                             (body nil "hi from phone")
+                             (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
+        (jabber-receipts--handle-message
+         'fake-jc
+         (jabber-receipts-tests--received-carbon inner)))
+      (should (equal "inner-msg-42" jabber-receipts--pending-displayed-id)))))
+
+(ert-deftest jabber-receipts-test-carbon-received-suppresses-xep0184 ()
+  "Carbon-received messages with <request/> do NOT send <received/> reply."
+  (let ((sent-sexp nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (setq sent-sexp sexp)))
+              ((symbol-function 'jabber-db-update-receipt) #'ignore)
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (let ((jabber-chat-send-receipts t)
+            (inner `(message ((from . "them@example.com")
+                              (to . "me@example.com")
+                              (id . "inner-msg-50")
+                              (type . "chat"))
+                             (body nil "hello")
+                             (request ((xmlns . ,jabber-receipts-xmlns))))))
+        (jabber-receipts--handle-message
+         'fake-jc
+         (jabber-receipts-tests--received-carbon inner))))
+    (should-not sent-sexp)))
+
+(ert-deftest jabber-receipts-test-carbon-sent-does-not-queue ()
+  "Our own outgoing message received as a <sent> carbon does not queue a marker."
+  (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
+            ((symbol-function 'jabber-send-sexp-if-connected) #'ignore)
+            ((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_j) "me@example.com"))
+            ((symbol-function 'jabber-chat-get-buffer)
+             (lambda (_from &optional _jc) (buffer-name))))
+    (with-temp-buffer
+      (setq-local jabber-receipts--pending-displayed-id nil)
+      (let ((jabber-chat-send-receipts t)
+            (inner `(message ((from . "me@example.com")
+                              (to . "them@example.com")
+                              (id . "our-msg-99")
+                              (type . "chat"))
+                             (body nil "hi from phone")
+                             (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
+        (jabber-receipts--handle-message
+         'fake-jc
+         (jabber-receipts-tests--sent-carbon inner)))
+      (should-not jabber-receipts--pending-displayed-id))))
+
+(ert-deftest jabber-receipts-test-carbon-forged-ignored ()
+  "Carbon whose outer `from' does not match our bare JID is dropped (CVE-2017-5589)."
+  (let ((sent-sexp nil)
+        (updated nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (setq sent-sexp sexp)))
+              ((symbol-function 'jabber-db-update-receipt)
+               (lambda (&rest _args) (setq updated t)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) (buffer-name))))
+      (with-temp-buffer
+        (setq-local jabber-receipts--pending-displayed-id nil)
+        (let ((jabber-chat-send-receipts t)
+              (inner `(message ((from . "them@example.com")
+                                (to . "me@example.com")
+                                (id . "forged-id")
+                                (type . "chat"))
+                               (body nil "evil")
+                               (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
+          ;; Forged outer from: attacker@evil.com, not our bare JID.
+          (jabber-receipts--handle-message
+           'fake-jc
+           `(message ((from . "attacker@evil.com")
+                      (to . "me@example.com/emacs")
+                      (type . "chat"))
+                     (received ((xmlns . "urn:xmpp:carbons:2"))
+                               (forwarded ((xmlns . "urn:xmpp:forward:0"))
+                                          ,inner)))))
+        (should-not jabber-receipts--pending-displayed-id)))
+    (should-not sent-sexp)
+    (should-not updated)))
+
+(ert-deftest jabber-receipts-test-carbon-received-displayed-marker ()
+  "Peer's <displayed/> delivered via a <received> carbon updates status."
+  (let ((updated-id nil)
+        (updated-col nil))
+    (cl-letf (((symbol-function 'jabber-db-update-receipt)
+               (lambda (_acct _peer id col _ts)
+                 (setq updated-id id updated-col col)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (let ((inner `(message ((from . "them@example.com")
+                              (to . "me@example.com")
+                              (type . "chat"))
+                             (displayed ((xmlns . ,jabber-chat-markers-xmlns)
+                                         (id . "our-msg-33"))))))
+        (jabber-receipts--handle-message
+         'fake-jc
+         (jabber-receipts-tests--received-carbon inner))))
+    (should (equal updated-id "our-msg-33"))
+    (should (equal updated-col "displayed_at"))))
+
+(ert-deftest jabber-receipts-test-carbon-sent-skips-incoming-marker ()
+  "Our own outgoing <displayed/> seen as <sent> carbon does NOT update status.
+Cross-device read-sync is a deferred feature; for now we just don't corrupt
+peer state by treating our own emitted markers as incoming ones."
+  (let ((updated nil))
+    (cl-letf (((symbol-function 'jabber-db-update-receipt)
+               (lambda (&rest _args) (setq updated t)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_j) "me@example.com"))
+              ((symbol-function 'jabber-chat-get-buffer)
+               (lambda (_from &optional _jc) "*test-chat*")))
+      (let ((inner `(message ((from . "me@example.com")
+                              (to . "them@example.com")
+                              (type . "chat"))
+                             (displayed ((xmlns . ,jabber-chat-markers-xmlns)
+                                         (id . "peer-msg-77"))))))
+        (jabber-receipts--handle-message
+         'fake-jc
+         (jabber-receipts-tests--sent-carbon inner))))
+    (should-not updated)))
+
 (provide 'jabber-receipts-tests)
 
 ;;; jabber-receipts-tests.el ends here

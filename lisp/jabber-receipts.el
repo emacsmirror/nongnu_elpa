@@ -42,6 +42,7 @@
 (declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-private-get-buffer "jabber-muc"
                   (group nickname &optional jc))
+(declare-function jabber-chat--extract-carbon "jabber-chat" (xml-data))
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 
 (defgroup jabber-receipts nil
@@ -103,71 +104,112 @@ For regular JIDs, look up the 1:1 chat buffer."
                    (jabber-jid-user from) (jabber-jid-resource from) jc))
     (get-buffer (jabber-chat-get-buffer from jc))))
 
+(defun jabber-receipts--effective-stanza (jc xml-data)
+  "Return (EFFECTIVE-XML . CARBON-TYPE) for XML-DATA on JC.
+CARBON-TYPE is nil (not a carbon), `received', or `sent'.  For carbons,
+EFFECTIVE-XML is the inner forwarded message; for non-carbons it is
+XML-DATA unchanged.  Returns (nil . invalid) for forged carbons whose
+outer from does not match our bare JID (CVE-2017-5589)."
+  (let ((carbon (jabber-chat--extract-carbon xml-data)))
+    (if (not carbon)
+        (cons xml-data nil)
+      (let ((outer-from-bare
+             (jabber-jid-user (jabber-xml-get-attribute xml-data 'from)))
+            (our-bare (jabber-connection-bare-jid jc)))
+        (if (string= outer-from-bare our-bare)
+            (cons (cdr carbon) (car carbon))
+          (warn "Jabber: dropping forged carbon receipts from %s"
+                outer-from-bare)
+          (cons nil 'invalid))))))
+
+(defun jabber-receipts--process-incoming-markers (jc effective from)
+  "Dispatch incoming markers in EFFECTIVE stanza from FROM.
+Handles XEP-0184 <received/>, XEP-0333 <received/> and <displayed/>.
+JC is the connection."
+  ;; XEP-0184: <received xmlns='urn:xmpp:receipts' id='...'/>
+  (when-let* ((received (jabber-xml-child-with-xmlns
+                         effective jabber-receipts-xmlns))
+              ((eq (jabber-xml-node-name received) 'received))
+              (ref-id (jabber-xml-get-attribute received 'id)))
+    (jabber-receipts--update-status jc from ref-id "delivered_at"))
+  ;; XEP-0333: <received xmlns='urn:xmpp:chat-markers:0' id='...'/>
+  ;; Some clients send XEP-0333 received instead of XEP-0184.
+  (when-let* ((marker (jabber-xml-child-with-xmlns
+                       effective jabber-chat-markers-xmlns))
+              ((eq (jabber-xml-node-name marker) 'received))
+              (ref-id (jabber-xml-get-attribute marker 'id)))
+    (jabber-receipts--update-status jc from ref-id "delivered_at"))
+  ;; XEP-0333: <displayed xmlns='urn:xmpp:chat-markers:0' id='...'/>
+  (when-let* ((marker (jabber-xml-child-with-xmlns
+                       effective jabber-chat-markers-xmlns))
+              ((eq (jabber-xml-node-name marker) 'displayed))
+              (ref-id (jabber-xml-get-attribute marker 'id)))
+    (jabber-receipts--update-status jc from ref-id "displayed_at")))
+
+(defun jabber-receipts--maybe-send-receipt (jc effective from carbon-type)
+  "Send XEP-0184 <received/> reply if EFFECTIVE requests it.
+Suppressed for carbons (primary resource owns the receipt) and
+MAM-replayed messages.  JC is the connection, FROM is the sender,
+CARBON-TYPE is nil, `received', or `sent'."
+  (let ((id (jabber-xml-get-attribute effective 'id)))
+    (when (and jabber-chat-send-receipts
+               id
+               (null carbon-type)
+               (not (jabber-xml-get-attribute effective 'jabber-mam--origin))
+               (jabber-xml-get-children effective 'body)
+               (let ((req (jabber-xml-child-with-xmlns
+                           effective jabber-receipts-xmlns)))
+                 (and req (eq (jabber-xml-node-name req) 'request))))
+      (jabber-send-sexp-if-connected
+       jc `(message ((to . ,from) (type . "chat"))
+                    (received ((xmlns . ,jabber-receipts-xmlns)
+                               (id . ,id))))))))
+
+(defun jabber-receipts--track-displayed (jc effective from carbon-type)
+  "Queue or send <displayed/> for the markable message in EFFECTIVE.
+If the chat buffer is visible, send immediately; otherwise queue the
+id for `jabber-receipts--on-window-change' to flush later.
+Skipped for `sent' carbons (we are the sender) and MAM replays.
+JC is the connection, FROM is the sender, CARBON-TYPE is nil,
+`received', or `sent'."
+  (when-let* ((id (jabber-xml-get-attribute effective 'id))
+              ((not (eq carbon-type 'sent)))
+              ((not (jabber-xml-get-attribute effective 'jabber-mam--origin)))
+              ((jabber-xml-get-children effective 'body))
+              ((jabber-xml-child-with-xmlns
+                effective jabber-chat-markers-xmlns)))
+    (when-let* ((buffer (jabber-receipts--find-buffer from jc)))
+      (with-current-buffer buffer
+        (when jabber-chat-send-receipts
+          (if (get-buffer-window buffer 'visible)
+              (progn
+                (jabber-send-sexp-if-connected
+                 jc `(message ((to . ,from) (type . "chat"))
+                              (displayed ((xmlns . ,jabber-chat-markers-xmlns)
+                                          (id . ,id)))))
+                (setq jabber-receipts--pending-displayed-id nil))
+            (setq jabber-receipts--pending-displayed-id id)))))))
+
 (defun jabber-receipts--handle-message (jc xml-data)
   "Process incoming delivery receipts and chat markers in XML-DATA.
-JC is the connection.  Added to `jabber-message-chain'."
-  (let* ((from (jabber-xml-get-attribute xml-data 'from))
-         (type (jabber-xml-get-attribute xml-data 'type))
-         (groupchat-p (equal type "groupchat")))
-    ;; Skip stanzas without a from attribute or groupchat stanzas.
-    ;; MUC markers require XEP-0359 stanza-id matching and per-occupant
-    ;; tracking that we don't yet support; processing them could corrupt
-    ;; 1:1 receipt state via ID collisions.
-    (unless (or (null from) groupchat-p)
-      ;; XEP-0184: <received xmlns='urn:xmpp:receipts' id='...'/>
-      (when-let* ((received (jabber-xml-child-with-xmlns
-                             xml-data jabber-receipts-xmlns))
-                  ((eq (jabber-xml-node-name received) 'received))
-                  (ref-id (jabber-xml-get-attribute received 'id)))
-        (jabber-receipts--update-status jc from ref-id "delivered_at"))
-      ;; XEP-0333: <received xmlns='urn:xmpp:chat-markers:0' id='...'/>
-      ;; Some clients send XEP-0333 received instead of XEP-0184.
-      (when-let* ((marker (jabber-xml-child-with-xmlns
-                           xml-data jabber-chat-markers-xmlns))
-                  ((eq (jabber-xml-node-name marker) 'received))
-                  (ref-id (jabber-xml-get-attribute marker 'id)))
-        (jabber-receipts--update-status jc from ref-id "delivered_at"))
-      ;; XEP-0333: <displayed xmlns='urn:xmpp:chat-markers:0' id='...'/>
-      (when-let* ((marker (jabber-xml-child-with-xmlns
-                           xml-data jabber-chat-markers-xmlns))
-                  ((eq (jabber-xml-node-name marker) 'displayed))
-                  (ref-id (jabber-xml-get-attribute marker 'id)))
-        (jabber-receipts--update-status jc from ref-id "displayed_at")))
-    ;; Send <received/> back if the message requests it.
-    ;; Skip MAM-replayed messages and groupchat (per XEP-0184).
-    (let ((id (jabber-xml-get-attribute xml-data 'id)))
-      (when (and jabber-chat-send-receipts
-                 id
-                 (not groupchat-p)
-                 (not (jabber-xml-get-attribute xml-data 'jabber-mam--origin))
-                 (jabber-xml-get-children xml-data 'body)
-                 (let ((req (jabber-xml-child-with-xmlns
-                             xml-data jabber-receipts-xmlns)))
-                   (and req (eq (jabber-xml-node-name req) 'request))))
-        (jabber-send-sexp-if-connected
-         jc `(message ((to . ,from) (type . "chat"))
-                      (received ((xmlns . ,jabber-receipts-xmlns)
-                                 (id . ,id)))))))
-    ;; Track pending markable message for <displayed/> on visibility.
-    ;; If the buffer is already visible, send <displayed/> immediately.
-    ;; Skip MAM-replayed messages and groupchat.
-    (when-let* ((id (jabber-xml-get-attribute xml-data 'id))
-                ((not groupchat-p))
-                ((not (jabber-xml-get-attribute xml-data 'jabber-mam--origin)))
-                ((jabber-xml-get-children xml-data 'body))
-                ((jabber-xml-child-with-xmlns
-                  xml-data jabber-chat-markers-xmlns)))
-      (when-let* ((buffer (jabber-receipts--find-buffer from jc)))
-        (with-current-buffer buffer
-          (when jabber-chat-send-receipts
-            (if (get-buffer-window buffer 'visible)
-                (progn
-                  (jabber-send-sexp-if-connected
-                   jc `(message ((to . ,from) (type . "chat"))
-                                (displayed ((xmlns . ,jabber-chat-markers-xmlns)
-                                            (id . ,id)))))
-                  (setq jabber-receipts--pending-displayed-id nil))
-              (setq jabber-receipts--pending-displayed-id id))))))))
+JC is the connection.  Added to `jabber-message-chain'.
+Unwraps XEP-0280 Message Carbons before dispatching to sub-handlers."
+  (let* ((eff (jabber-receipts--effective-stanza jc xml-data))
+         (effective (car eff))
+         (carbon-type (cdr eff)))
+    (when (and effective (not (eq carbon-type 'invalid)))
+      (let* ((from (jabber-xml-get-attribute effective 'from))
+             (type (jabber-xml-get-attribute effective 'type))
+             (groupchat-p (equal type "groupchat")))
+        (unless (or (null from) groupchat-p)
+          ;; Incoming markers: skip for `sent' carbons (those carry our
+          ;; own-device outgoing markers, not peer-to-us markers).
+          ;; TODO: cross-device read-sync could use sent-carbon markers
+          ;; to locally mark peer messages as read.
+          (unless (eq carbon-type 'sent)
+            (jabber-receipts--process-incoming-markers jc effective from))
+          (jabber-receipts--maybe-send-receipt jc effective from carbon-type)
+          (jabber-receipts--track-displayed jc effective from carbon-type))))))
 
 (defvar-local jabber-receipts--latest-displayed-ts 0
   "Timestamp of the most recently displayed outgoing message.
