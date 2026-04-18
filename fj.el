@@ -1003,6 +1003,7 @@ PAGE, LIMIT."
   ;; (let ((page (plist-get (fj--get-buffer-spec :viewargs) :page)))
   (fj-list-own-repos '(4)))
 
+;;;###autoload
 (defun fj-list-own-repos (&optional order page limit)
   "List repos for `fj-user'.
 With prefix arg ORDER, prompt for an argument to sort
@@ -1354,6 +1355,7 @@ MILESTONES and LABELS are comma-separated lists."
         (fj-get endpoint params)
       (t (format "%s" (error-message-string err))))))
 
+;;;###autoload
 (defun fj-list-own-pulls (&optional query state
                                     created assigned mentioned)
   "List pulls in repos owned by `fj-user'.
@@ -1363,6 +1365,7 @@ QUERY, STATE, TYPE, CREATED, ASSIGNED, and MENTIONED are all for
   (fj-list-search-items
    query state "pulls" created assigned mentioned fj-user))
 
+;;;###autoload
 (defun fj-list-own-issues (&optional query state
                                      created assigned mentioned)
   "List issues in repos owned by `fj-user'.
@@ -2314,11 +2317,13 @@ Nil if we fail to parse."
                (repo (string-trim-right (nth 3 split) ".git")))
           (list (nth 2 split) repo)))))))
 
+;;;###autoload
 (defun fj-list-issues-+-pulls (repo &optional owner state)
   "List issues and pulls for REPO by OWNER, filtered by STATE."
   (interactive "P")
   (fj-list-items repo owner state "all"))
 
+;;;###autoload
 (defun fj-list-pulls (repo &optional owner state)
   "List pulls for REPO by OWNER, filtered by STATE.
 If we are in a repo, don't assume `fj-user' owns it. In that case we
@@ -2332,6 +2337,7 @@ The default sort value follows `fj-issues-sort-default'."
   (interactive "P")
   (fj-list-items repo owner state "pulls"))
 
+;;;###autoload
 (defun fj-list-issues (&optional repo)
   "List issues for current REPO with default sorting.
 If we are in a repo, don't assume `fj-user' owns it. In that case we
@@ -4701,6 +4707,7 @@ Optionally only get notifs before BEFORE or since SINCE."
   (alist-get 'new
              (fj-get "notifications/new")))
 
+;;;###autoload
 (defun fj-view-notifications (&optional all status-types subject-type
                                         page limit)
   "View notifications for `fj-user'.
