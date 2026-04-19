@@ -120,7 +120,8 @@ rare time printed."
   '((t :inherit font-lock-comment-face :underline t))
   "Face for displaying rare time information.")
 
-(defcustom jabber-chat-encrypted-indicator (propertize "[E]" 'face 'shadow)
+(defcustom jabber-chat-encrypted-indicator
+  (propertize (if (char-displayable-p ?🔒) "🔒" "[E]") 'face 'shadow)
   "String prepended to the timestamp of encrypted messages."
   :type 'string)
 
