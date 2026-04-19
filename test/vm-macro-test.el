@@ -167,6 +167,82 @@
   (should (fboundp 'vm-buffer-type:duplicate))
   (should (fboundp 'vm-buffer-type:set)))
 
+(ert-deftest vm-macro-test-buffer-type-enter-pushes ()
+  "Test vm-buffer-type:enter pushes type onto stack."
+  (let ((vm-buffer-types nil)
+        (vm-buffer-type-debug nil)
+        (vm-buffer-type-trail nil))
+    (vm-buffer-type:enter 'folder)
+    (should (eq (car vm-buffer-types) 'folder))
+    (should (= (length vm-buffer-types) 1))))
+
+(ert-deftest vm-macro-test-buffer-type-enter-multiple ()
+  "Test vm-buffer-type:enter pushes multiple types."
+  (let ((vm-buffer-types nil)
+        (vm-buffer-type-debug nil)
+        (vm-buffer-type-trail nil))
+    (vm-buffer-type:enter 'folder)
+    (vm-buffer-type:enter 'process)
+    (should (eq (car vm-buffer-types) 'process))
+    (should (eq (cadr vm-buffer-types) 'folder))
+    (should (= (length vm-buffer-types) 2))))
+
+(ert-deftest vm-macro-test-buffer-type-exit-pops ()
+  "Test vm-buffer-type:exit pops from stack."
+  (let ((vm-buffer-types '(process folder))
+        (vm-buffer-type-debug nil)
+        (vm-buffer-type-trail nil))
+    (vm-buffer-type:exit)
+    (should (eq (car vm-buffer-types) 'folder))
+    (should (= (length vm-buffer-types) 1))))
+
+(ert-deftest vm-macro-test-buffer-type-exit-to-empty ()
+  "Test vm-buffer-type:exit removes last element."
+  (let ((vm-buffer-types '(folder))
+        (vm-buffer-type-debug nil)
+        (vm-buffer-type-trail nil))
+    (vm-buffer-type:exit)
+    (should (null vm-buffer-types))))
+
+(ert-deftest vm-macro-test-buffer-type-set-modifies ()
+  "Test vm-buffer-type:set modifies current type."
+  (let ((vm-buffer-types '(folder))
+        (vm-buffer-type-debug nil)
+        (vm-buffer-type-trail nil))
+    (vm-buffer-type:set 'process)
+    (should (eq (car vm-buffer-types) 'process))
+    (should (= (length vm-buffer-types) 1))))
+
+(ert-deftest vm-macro-test-buffer-type-set-creates-if-empty ()
+  "Test vm-buffer-type:set creates stack if empty."
+  (let ((vm-buffer-types nil)
+        (vm-buffer-type-debug nil)
+        (vm-buffer-type-trail nil))
+    (vm-buffer-type:set 'folder)
+    (should (eq (car vm-buffer-types) 'folder))
+    (should (= (length vm-buffer-types) 1))))
+
+(ert-deftest vm-macro-test-buffer-type-duplicate ()
+  "Test vm-buffer-type:duplicate duplicates top of stack."
+  (let ((vm-buffer-types '(folder))
+        (vm-buffer-type-debug nil)
+        (vm-buffer-type-trail nil))
+    (vm-buffer-type:duplicate)
+    (should (eq (car vm-buffer-types) 'folder))
+    (should (eq (cadr vm-buffer-types) 'folder))
+    (should (= (length vm-buffer-types) 2))))
+
+(ert-deftest vm-macro-test-buffer-type-debug-trail ()
+  "Test vm-buffer-type:enter/exit records trail when debugging."
+  (let ((vm-buffer-types nil)
+        (vm-buffer-type-debug t)
+        (vm-buffer-type-trail nil))
+    (vm-buffer-type:enter 'folder)
+    (should (member 'folder vm-buffer-type-trail))
+    (should (member 'enter vm-buffer-type-trail))
+    (vm-buffer-type:exit)
+    (should (member 'exit vm-buffer-type-trail))))
+
 ;;; Folder buffer selection macros
 
 (ert-deftest vm-macro-test-select-folder-buffer-exists ()

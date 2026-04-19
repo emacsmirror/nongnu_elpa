@@ -87,7 +87,9 @@
   "Test vm-read-number function signature."
   (let ((arity (func-arity 'vm-read-number)))
     ;; Should accept at least 1 argument (prompt)
-    (should (>= (cdr arity) 1))))
+    ;; cdr arity can be 'many when advice is installed (e.g. coverage)
+    (should (or (eq (cdr arity) 'many)
+                (>= (cdr arity) 1)))))
 
 ;;; vm-keyboard-read-string tests
 
@@ -101,7 +103,9 @@
   "Test vm-read-file-name accepts proper arguments."
   (let ((arity (func-arity 'vm-read-file-name)))
     ;; Should accept arguments like read-file-name
-    (should (>= (cdr arity) 1))))
+    ;; cdr arity can be 'many when advice is installed (e.g. coverage)
+    (should (or (eq (cdr arity) 'many)
+                (>= (cdr arity) 1)))))
 
 ;;; vm-read-folder-name tests
 
@@ -109,7 +113,9 @@
   "Test vm-read-folder-name function signature."
   (let ((arity (func-arity 'vm-read-folder-name)))
     ;; Should be callable
-    (should (>= (cdr arity) 0))))
+    ;; cdr arity can be 'many when advice is installed (e.g. coverage)
+    (should (or (eq (cdr arity) 'many)
+                (>= (cdr arity) 0)))))
 
 ;;; Completion variables
 

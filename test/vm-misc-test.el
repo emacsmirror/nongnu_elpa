@@ -578,6 +578,230 @@
              '(1 2 3) '(a b c))
     (should (equal (reverse result) '((1 a) (2 b) (3 c))))))
 
+;;; vm-buffer-string-no-properties tests
+
+(ert-deftest vm-misc-test-buffer-string-no-properties ()
+  "Test vm-buffer-string-no-properties returns string without properties."
+  (with-temp-buffer
+    (insert "hello world")
+    (put-text-property 1 6 'face 'bold)
+    (let ((result (vm-buffer-string-no-properties)))
+      (should (equal result "hello world"))
+      ;; Should have no text properties
+      (should (null (text-properties-at 0 result))))))
+
+;;; vm-substring-no-properties tests
+
+(ert-deftest vm-misc-test-substring-no-properties ()
+  "Test vm-substring-no-properties returns substring without properties."
+  (let* ((str (propertize "hello world" 'face 'bold))
+         (result (vm-substring-no-properties str 0 5)))
+    (should (equal result "hello"))
+    (should (null (text-properties-at 0 result)))))
+
+;;; vm-char-to-int tests (XEmacs compatibility)
+
+(ert-deftest vm-misc-test-char-to-int-exists ()
+  "Test vm-char-to-int function exists."
+  (should (fboundp 'vm-char-to-int)))
+
+;;; vm-locate-executable-file tests
+
+(ert-deftest vm-misc-test-locate-executable-file-exists ()
+  "Test vm-locate-executable-file function exists."
+  (should (fboundp 'vm-locate-executable-file)))
+
+;;; vm-run-command tests
+
+(ert-deftest vm-misc-test-run-command-exists ()
+  "Test vm-run-command function exists."
+  (should (fboundp 'vm-run-command)))
+
+(ert-deftest vm-misc-test-run-command-on-region-exists ()
+  "Test vm-run-command-on-region function exists."
+  (should (fboundp 'vm-run-command-on-region)))
+
+(ert-deftest vm-misc-test-run-background-command-exists ()
+  "Test vm-run-background-command function exists."
+  (should (fboundp 'vm-run-background-command)))
+
+;;; vm-octal tests
+
+(ert-deftest vm-misc-test-octal-exists ()
+  "Test vm-octal function exists."
+  (should (fboundp 'vm-octal)))
+
+;;; vm-generate-new-buffer tests
+
+(ert-deftest vm-misc-test-generate-new-multibyte-buffer ()
+  "Test vm-generate-new-multibyte-buffer creates buffer."
+  (let ((buf (vm-generate-new-multibyte-buffer "test-multi")))
+    (unwind-protect
+        (progn
+          (should (bufferp buf))
+          (should (string-match "test-multi" (buffer-name buf))))
+      (kill-buffer buf))))
+
+(ert-deftest vm-misc-test-generate-new-unibyte-buffer ()
+  "Test vm-generate-new-unibyte-buffer creates buffer."
+  (let ((buf (vm-generate-new-unibyte-buffer "test-uni")))
+    (unwind-protect
+        (progn
+          (should (bufferp buf))
+          (should (string-match "test-uni" (buffer-name buf))))
+      (kill-buffer buf))))
+
+;;; vm-make-work-buffer tests
+
+(ert-deftest vm-misc-test-make-work-buffer ()
+  "Test vm-make-work-buffer creates temporary buffer."
+  (let ((buf (vm-make-work-buffer)))
+    (unwind-protect
+        (progn
+          (should (bufferp buf))
+          (should (string-match "vm-work" (buffer-name buf))))
+      (kill-buffer buf))))
+
+(ert-deftest vm-misc-test-make-multibyte-work-buffer ()
+  "Test vm-make-multibyte-work-buffer creates temporary buffer."
+  (let ((buf (vm-make-multibyte-work-buffer)))
+    (unwind-protect
+        (progn
+          (should (bufferp buf))
+          (should (string-match "vm-work" (buffer-name buf))))
+      (kill-buffer buf))))
+
+;;; vm-with-string-as-temp-buffer tests
+
+(ert-deftest vm-misc-test-with-string-as-temp-buffer-exists ()
+  "Test vm-with-string-as-temp-buffer function exists."
+  (should (fboundp 'vm-with-string-as-temp-buffer)))
+
+;;; vm-md5-string tests
+
+(ert-deftest vm-misc-test-md5-string ()
+  "Test vm-md5-string returns MD5 hash."
+  (let ((hash (vm-md5-string "hello")))
+    (should (stringp hash))
+    ;; MD5 is 32 hex chars
+    (should (= (length hash) 32))
+    ;; Should be consistent
+    (should (equal hash (vm-md5-string "hello")))))
+
+;;; vm-xor-string tests
+
+(ert-deftest vm-misc-test-xor-string-exists ()
+  "Test vm-xor-string function exists."
+  (should (fboundp 'vm-xor-string)))
+
+;;; vm-insert-region-from-buffer tests
+
+(ert-deftest vm-misc-test-insert-region-from-buffer-full ()
+  "Test vm-insert-region-from-buffer copies entire buffer."
+  (let ((src-buf (generate-new-buffer "src"))
+        (dst-buf (generate-new-buffer "dst")))
+    (unwind-protect
+        (progn
+          (with-current-buffer src-buf
+            (insert "source content"))
+          (with-current-buffer dst-buf
+            (vm-insert-region-from-buffer src-buf))
+          (should (equal (with-current-buffer dst-buf (buffer-string))
+                         "source content")))
+      (kill-buffer src-buf)
+      (kill-buffer dst-buf))))
+
+(ert-deftest vm-misc-test-insert-region-from-buffer-partial ()
+  "Test vm-insert-region-from-buffer copies specified region."
+  (let ((src-buf (generate-new-buffer "src"))
+        (dst-buf (generate-new-buffer "dst")))
+    (unwind-protect
+        (progn
+          (with-current-buffer src-buf
+            (insert "0123456789"))
+          (with-current-buffer dst-buf
+            (vm-insert-region-from-buffer src-buf 4 7))
+          (should (equal (with-current-buffer dst-buf (buffer-string))
+                         "345")))
+      (kill-buffer src-buf)
+      (kill-buffer dst-buf))))
+
+;;; vm-extent/overlay tests
+
+(ert-deftest vm-misc-test-make-extent ()
+  "Test vm-make-extent creates overlay."
+  (with-temp-buffer
+    (insert "hello world")
+    (let ((ext (vm-make-extent 1 6)))
+      (should ext)
+      (should (= (vm-extent-start-position ext) 1))
+      (should (= (vm-extent-end-position ext) 6))
+      (vm-delete-extent ext))))
+
+(ert-deftest vm-misc-test-set-extent-property ()
+  "Test vm-set-extent-property sets property."
+  (with-temp-buffer
+    (insert "hello world")
+    (let ((ext (vm-make-extent 1 6)))
+      (vm-set-extent-property ext 'face 'bold)
+      (should (eq (vm-extent-property ext 'face) 'bold))
+      (vm-delete-extent ext))))
+
+(ert-deftest vm-misc-test-extent-object ()
+  "Test vm-extent-object returns buffer."
+  (with-temp-buffer
+    (insert "hello world")
+    (let ((ext (vm-make-extent 1 6)))
+      (should (eq (vm-extent-object ext) (current-buffer)))
+      (vm-delete-extent ext))))
+
+(ert-deftest vm-misc-test-set-extent-endpoints ()
+  "Test vm-set-extent-endpoints moves overlay."
+  (with-temp-buffer
+    (insert "hello world")
+    (let ((ext (vm-make-extent 1 6)))
+      (vm-set-extent-endpoints ext 7 12)
+      (should (= (vm-extent-start-position ext) 7))
+      (should (= (vm-extent-end-position ext) 12))
+      (vm-delete-extent ext))))
+
+(ert-deftest vm-misc-test-map-extents ()
+  "Test vm-map-extents iterates over extents."
+  (with-temp-buffer
+    (insert "hello world")
+    (let ((ext1 (vm-make-extent 1 6))
+          (ext2 (vm-make-extent 7 12))
+          (count 0))
+      (vm-map-extents (lambda (ext _)
+                        (when (memq ext (list ext1 ext2))
+                          (setq count (1+ count)))))
+      (should (>= count 2))
+      (vm-delete-extent ext1)
+      (vm-delete-extent ext2))))
+
+;;; vm-set-region-face tests
+
+(ert-deftest vm-misc-test-set-region-face ()
+  "Test vm-set-region-face applies face to region."
+  (with-temp-buffer
+    (insert "hello world")
+    (vm-set-region-face 1 6 'bold)
+    ;; Should have created an overlay with face
+    (let ((overlays (overlays-at 3)))
+      (should overlays)
+      (should (eq (overlay-get (car overlays) 'face) 'bold)))))
+
+;;; vm-default-buffer-substring-no-properties tests
+
+(ert-deftest vm-misc-test-default-buffer-substring-no-properties ()
+  "Test vm-default-buffer-substring-no-properties removes properties."
+  (with-temp-buffer
+    (insert (propertize "hello" 'face 'bold))
+    (insert " world")
+    (let ((result (vm-default-buffer-substring-no-properties 1 6)))
+      (should (equal result "hello"))
+      (should (null (text-properties-at 0 result))))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

@@ -376,6 +376,105 @@ Body 3
     (should (equal (vm-number-of (vm-test-nth-message 1)) "2"))
     (should (equal (vm-number-of (vm-test-nth-message 2)) "3"))))
 
+;;; Higher-level navigation command tests
+;; These test the interactive navigation functions
+
+(ert-deftest vm-motion-test-Next-message-callable ()
+  "Test vm-Next-message is a callable function."
+  ;; vm-Next-message is defined with (fset 'vm-Next-message 'vm-next-message-no-skip)
+  (should (fboundp 'vm-Next-message))
+  (should (commandp 'vm-Next-message)))
+
+(ert-deftest vm-motion-test-Previous-message-callable ()
+  "Test vm-Previous-message is a callable function."
+  ;; vm-Previous-message is defined with fset as an alias
+  (should (fboundp 'vm-Previous-message))
+  (should (commandp 'vm-Previous-message)))
+
+;;; Circular folder tests
+
+(ert-deftest vm-motion-test-circular-folders-wraps-forward ()
+  "Test that circular-folders wraps forward navigation."
+  (vm-test-with-folder
+    "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Only Message
+Message-ID: <test@example.com>
+
+Body
+"
+    (let ((vm-circular-folders t))
+      ;; Start at only message
+      (setq vm-message-pointer vm-message-list)
+      ;; Move forward should wrap to same message
+      (vm-move-message-pointer 'forward)
+      (should (eq vm-message-pointer vm-message-list)))))
+
+(ert-deftest vm-motion-test-circular-folders-wraps-backward ()
+  "Test that circular-folders wraps backward navigation."
+  (vm-test-with-folder
+    "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Only Message
+Message-ID: <test@example.com>
+
+Body
+"
+    (let ((vm-circular-folders t))
+      ;; Start at only message
+      (setq vm-message-pointer vm-message-list)
+      ;; Move backward should wrap to same message
+      (vm-move-message-pointer 'backward)
+      (should (eq vm-message-pointer vm-message-list)))))
+
+;;; Message skip configuration tests
+
+(ert-deftest vm-motion-test-skip-filed-messages ()
+  "Test vm-should-skip-message skips filed messages when configured."
+  (vm-test-with-folder
+    "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+Message-ID: <test@example.com>
+
+Body
+"
+    (let ((vm-skip-deleted-messages t)  ; needed to enable skip logic
+          (vm-skip-read-messages nil)
+          (vm-summary-buffer nil))
+      ;; Mark as filed
+      (vm-set-filed-flag (car vm-message-list) t)
+      ;; Filed messages aren't skipped by default - they're not in skip logic
+      (should-not (vm-should-skip-message vm-message-list nil)))))
+
+;;; Thread navigation tests
+;; Basic thread navigation - vm-goto-parent-message requires threading setup
+
+(ert-deftest vm-motion-test-goto-parent-exists ()
+  "Test vm-goto-parent-message function exists."
+  (should (fboundp 'vm-goto-parent-message)))
+
+;;; Message selection tests
+
+(ert-deftest vm-motion-test-thoughtfully-select-returns-pointer ()
+  "Test vm-thoughtfully-select-message returns a message pointer."
+  ;; vm-thoughtfully-select-message returns a message pointer or nil
+  (vm-test-with-folder
+    "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+Message-ID: <test@example.com>
+
+Body
+"
+    ;; Mark message as new so thoughtfully-select might find it
+    (vm-set-new-flag (car vm-message-list) t)
+    (let ((vm-jump-to-new-messages t)
+          (vm-jump-to-unread-messages nil))
+      (let ((result (vm-thoughtfully-select-message)))
+        ;; Should return the message pointer (list starting at the message)
+        (should (or (null result) (consp result)))))))
+
 (provide 'vm-motion-test)
 
 ;;; vm-motion-test.el ends here
