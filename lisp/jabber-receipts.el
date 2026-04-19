@@ -216,9 +216,20 @@ Unwraps XEP-0280 Message Carbons before dispatching to sub-handlers."
 Used to enforce XEP-0333 forward-only rule: displayed markers
 referencing older messages are redundant and MUST be ignored.")
 
+(defun jabber-receipts--status-upgrades-p (current new)
+  "Return non-nil if NEW is a higher status than CURRENT.
+Status progression: :sent < :delivered < :displayed.
+A late-arriving `<received/>' from a second resource must not
+overwrite an earlier `<displayed/>' from another resource."
+  (let ((order '(:sent 0 :delivered 1 :displayed 2)))
+    (< (or (plist-get order current) -1)
+       (or (plist-get order new) -1))))
+
 (defun jabber-receipts--update-status (jc from ref-id column)
   "Update receipt status for message REF-ID from FROM on JC.
-COLUMN is \"delivered_at\" or \"displayed_at\"."
+COLUMN is \"delivered_at\" or \"displayed_at\".
+Never downgrades: a `:delivered' update is ignored if the message
+is already `:displayed'."
   (let ((timestamp (floor (float-time)))
         (account (jabber-connection-bare-jid jc))
         (peer (jabber-jid-user from))
@@ -228,24 +239,27 @@ COLUMN is \"delivered_at\" or \"displayed_at\"."
       (with-current-buffer buffer
         (when-let* ((node (jabber-chat-ewoc-find-by-id ref-id)))
           (let* ((msg (cadr (ewoc-data node)))
+                 (current-status (plist-get msg :status))
                  (msg-ts (plist-get msg :timestamp))
                  (msg-epoch (and msg-ts (floor (float-time msg-ts))))
                  (inhibit-read-only t))
-            ;; XEP-0333: displayed markers for older messages MUST be
-            ;; ignored (forward-only rule).
-            (when (or (not (string= column "displayed_at"))
-                      (not msg-epoch)
-                      (> msg-epoch jabber-receipts--latest-displayed-ts))
-              (plist-put msg :status status)
-              (jabber-chat-ewoc-invalidate node)
-              (jabber-receipts--update-header-line column timestamp)
-              (when (string= column "displayed_at")
-                (when msg-epoch
-                  (setq jabber-receipts--latest-displayed-ts msg-epoch))
-                (jabber-receipts--cascade-displayed node)
-                (when msg-epoch
-                  (jabber-db-cascade-displayed
-                   account peer timestamp msg-epoch))))))))))
+            (when (or (null current-status)
+                      (jabber-receipts--status-upgrades-p current-status status))
+              ;; XEP-0333: displayed markers for older messages MUST be
+              ;; ignored (forward-only rule).
+              (when (or (not (string= column "displayed_at"))
+                        (not msg-epoch)
+                        (> msg-epoch jabber-receipts--latest-displayed-ts))
+                (plist-put msg :status status)
+                (jabber-chat-ewoc-invalidate node)
+                (jabber-receipts--update-header-line column timestamp)
+                (when (string= column "displayed_at")
+                  (when msg-epoch
+                    (setq jabber-receipts--latest-displayed-ts msg-epoch))
+                  (jabber-receipts--cascade-displayed node)
+                  (when msg-epoch
+                    (jabber-db-cascade-displayed
+                     account peer timestamp msg-epoch)))))))))))
 
 (defun jabber-receipts--cascade-displayed (node)
   "Walk backward from NODE, promoting :delivered nodes to :displayed.

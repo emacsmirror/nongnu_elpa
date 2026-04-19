@@ -577,6 +577,43 @@ peer state by treating our own emitted markers as incoming ones."
          (jabber-receipts-tests--sent-carbon inner))))
     (should-not updated)))
 
+;;; Group 9: Status anti-downgrade
+
+(ert-deftest jabber-receipts-test-status-upgrade-sent-to-delivered ()
+  "Status upgrade from :sent to :delivered is allowed."
+  (should (jabber-receipts--status-upgrades-p :sent :delivered)))
+
+(ert-deftest jabber-receipts-test-status-upgrade-delivered-to-displayed ()
+  "Status upgrade from :delivered to :displayed is allowed."
+  (should (jabber-receipts--status-upgrades-p :delivered :displayed)))
+
+(ert-deftest jabber-receipts-test-status-no-downgrade-displayed-to-delivered ()
+  "Status downgrade from :displayed to :delivered is rejected."
+  (should-not (jabber-receipts--status-upgrades-p :displayed :delivered)))
+
+(ert-deftest jabber-receipts-test-status-no-downgrade-same ()
+  "Same status is not an upgrade."
+  (should-not (jabber-receipts--status-upgrades-p :delivered :delivered)))
+
+(ert-deftest jabber-receipts-test-update-status-no-downgrade-ewoc ()
+  "A :delivered update does not overwrite :displayed in the EWOC."
+  (with-temp-buffer
+    (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+           (msg (list :id "msg-99" :status :displayed
+                      :timestamp (encode-time 0 0 10 1 1 2026)))
+           (node (ewoc-enter-last jabber-chat-ewoc (list :local msg))))
+      (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_j) "me@example.com"))
+                ((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from &optional _jc) (buffer-name)))
+                ((symbol-function 'jabber-chat-ewoc-find-by-id)
+                 (lambda (_id) node))
+                ((symbol-function 'jabber-chat-ewoc-invalidate) #'ignore))
+        (jabber-receipts--update-status
+         'fake-jc "them@example.com" "msg-99" "delivered_at"))
+      (should (eq :displayed (plist-get msg :status))))))
+
 (provide 'jabber-receipts-tests)
 
 ;;; jabber-receipts-tests.el ends here
