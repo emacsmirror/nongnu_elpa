@@ -8,6 +8,9 @@ jabber-autoloads.el
 /jabber-pkg.el
 jabber.info
 .worktrees/
+refs/
 .test-results/
 src/*.so
 lisp/*.so
+.ccls-cache
+*.md
