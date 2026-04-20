@@ -186,6 +186,8 @@ load: clean-elc
 
 clean-elc:
 	find . -name '*.elc' -delete
+	find . -name '.#*' -delete
+	find . -name '#*#' -delete
 
 clean-module:
 ifdef GUIX
