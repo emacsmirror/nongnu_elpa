@@ -2444,7 +2444,7 @@ attach, any relative pathnames will be relative to this directory."
   "Directory history to where the attachments should go.")
 
 (defvar vm-mime-yank-attachments nil
-  "*This variable, originally from vm-pine, is deprecated.  It is
+  "*This variable, originally from vm-postpone, is deprecated.  It is
 replaced by `vm-include-mime-attachments'.")
 
 (defvaralias 'vm-mime-yank-attachments 'vm-include-mime-attachments)

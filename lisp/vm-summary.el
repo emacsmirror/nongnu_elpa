@@ -1148,7 +1148,7 @@ of multiple header lines which might match HEADER-NAME-REGEXP.
 	(t
 	 (substring string 0 width))))
 
-(defvar vm-postponed-header)		; defined vm-pine.el
+(defvar vm-postponed-header)		; defined vm-postpone.el
 
 (defun vm-su-postponed-indicator (msg)
   "Given a MESSAGE, ruturns a string indicating whether the

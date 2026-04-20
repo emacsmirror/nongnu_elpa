@@ -1,0 +1,35 @@
+From sender@example.com Mon Jan  1 09:00:00 2024
+From: Sender <sender@example.com>
+To: recipient@example.com
+Subject: Important notice
+Message-ID: <unique1@example.com>
+Date: Mon, 1 Jan 2024 09:00:00 +0000
+
+This is a unique message.
+
+From sender@example.com Mon Jan  1 10:00:00 2024
+From: Sender <sender@example.com>
+To: recipient@example.com
+Subject: Duplicate message
+Message-ID: <duplicate@example.com>
+Date: Mon, 1 Jan 2024 10:00:00 +0000
+
+This is the first copy of a duplicated message.
+
+From sender@example.com Mon Jan  1 11:00:00 2024
+From: Sender <sender@example.com>
+To: recipient@example.com
+Subject: Duplicate message (copy)
+Message-ID: <duplicate@example.com>
+Date: Mon, 1 Jan 2024 11:00:00 +0000
+
+This is a duplicate with the same Message-ID.
+
+From other@example.com Mon Jan  1 12:00:00 2024
+From: Other <other@example.com>
+To: recipient@example.com
+Subject: Another unique message
+Message-ID: <unique2@example.com>
+Date: Mon, 1 Jan 2024 12:00:00 +0000
+
+This is another unique message.

@@ -130,6 +130,17 @@ elisp-lint:
 .PHONY: byte-compile-lint native-compile-lint elint package-lint relint-lint elisp-lint
 
 ##############################################################################
+# testing
+#
+test:
+	$(MAKE) -C test $@
+
+test-coverage:
+	$(MAKE) -C test-coverage $@
+
+.PHONY: test test-coverage
+
+##############################################################################
 # xemacs package (not tested)
 PKGDIR =  $(shell pwd)/,,package/
 PKGINFO = $(PKGDIR)/lisp/vm/_pkg.el

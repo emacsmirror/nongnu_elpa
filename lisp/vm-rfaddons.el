@@ -80,7 +80,7 @@
 (require 'vm-imap)
 (require 'vm-sort)
 (require 'vm-reply)
-(require 'vm-pine)
+(require 'vm-postpone)
 (require 'wid-edit)
 (require 'vm)
 (eval-when-compile (require 'cl-lib))
@@ -1697,7 +1697,7 @@ It saves the decoded message and not the raw message like `vm-save-message'
 ;;;###autoload
 (defun vm-assimilate-outlook-message ()
   "Assimilate a message which has been forwarded by MS Outlook.
-You will need vm-pine.el in order to get this work. (Rob F)"
+You will need vm-postpone.el in order to get this work. (Rob F)"
   (interactive)
   (vm-continue-postponed-message t)
   (let ((pm (point-max)))

@@ -471,7 +471,7 @@ works in all VM buffers."
 (defalias 'vm-set-full-name-of 'vm-set-decoded-full-name-of)
 (defsubst vm-set-decoded-from-of (message author)
   (aset (aref message 3) 8 author))
-(defalias 'vm-from-of 'vm-set-decoded-from-of)
+(defalias 'vm-set-from-of 'vm-set-decoded-from-of)
 (defsubst vm-set-message-id-of (message id)
   (aset (aref message 3) 9 id))
 (defsubst vm-set-line-count-of (message count)
