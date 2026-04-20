@@ -57,6 +57,8 @@ stanza.")
 ;; Global reference declarations
 
 (declare-function jabber-roster--refresh "jabber-roster.el" ())
+(declare-function jabber-roster--choose-account "jabber-roster"
+                  (jid account-at-point))
 (declare-function jabber-roster-update "jabber-roster.el"
                   (jc new-items changed-items deleted-items))
 (declare-function jabber-chat-create-buffer "jabber-chat.el" (jc chat-with))
@@ -634,15 +636,20 @@ JC is the Jabber connection."
 
 (defun jabber-roster-delete-jid-at-point ()
   "Delete JID at point from roster.
-Signal an error if there is no JID at point."
+When the contact exists on multiple accounts, prompt for which
+account to use.  Signal an error if there is no JID at point."
   (interactive)
-  (let ((jid-at-point (get-text-property (point)
-					 'jabber-jid))
-	(account (get-text-property (point) 'jabber-account)))
-    (if (and jid-at-point account
-	     (or jabber-silent-mode (yes-or-no-p (format "Really delete %s from roster? " jid-at-point))))
-	(jabber-roster-delete account jid-at-point)
-      (error "No contact at point"))))
+  (let* ((jid-at-point (get-text-property (point) 'jabber-jid))
+	 (account-at-point (get-text-property (point) 'jabber-account))
+	 (jc (and jid-at-point account-at-point
+		  (jabber-roster--choose-account jid-at-point account-at-point))))
+    (if (and jid-at-point jc
+	     (or jabber-silent-mode
+		 (yes-or-no-p (format "Really delete %s from roster? "
+				      jid-at-point))))
+	(jabber-roster-delete jc jid-at-point)
+      (unless jid-at-point
+	(error "No contact at point")))))
 
 (defun jabber-roster-delete-group-from-jids (jc jids group)
   "Delete group `group' from all JIDs.

@@ -366,8 +366,10 @@ Delete a jid if there is no group at point."
       (jabber-roster-delete-jid-at-point))))
 
 (defun jabber-roster-edit-action-at-point ()
-  "Action for e.  Before try to edit group name.
-Eval `jabber-roster-change' is no group at point."
+  "Edit the roster item or group at point.
+For groups, rename the group.  For contacts, prompt for name and
+groups.  When the contact exists on multiple accounts, prompt for
+which account to use."
   (interactive)
   (let ((group-at-point (get-text-property (point)
 					   'jabber-group))
@@ -382,7 +384,28 @@ Eval `jabber-roster-change' is no group at point."
 	  (jabber-roster-edit-group-from-jids account-at-point
 					      jids-with-group
 					      group-at-point))
-      (call-interactively 'jabber-roster-change))))
+      (let* ((jid-at-point (get-text-property (point) 'jabber-jid))
+	     (jc (jabber-roster--choose-account jid-at-point account-at-point))
+	     (jid (jabber-jid-symbol jid-at-point))
+	     (name (get jid 'name))
+	     (groups (get jid 'groups))
+	     (all-groups
+	      (apply #'append
+		     (mapcar (lambda (j) (get j 'groups))
+			     (plist-get (fsm-get-state-data jc) :roster)))))
+	(jabber-roster-change
+	 jc jid
+	 (jabber-read-with-input-method
+	  (format "Name: (default `%s') " name) nil nil name)
+	 (delete ""
+		 (completing-read-multiple
+		  (format "Groups, comma-separated: (default %s) "
+			  (if groups
+			      (mapconcat #'identity groups ",")
+			    "none"))
+		  all-groups nil nil nil
+		  'jabber-roster-group-history
+		  (mapconcat #'identity groups ",") t)))))))
 
 (defun jabber-roster-roll-group (jc group-name &optional set)
   "Roll up/down group in roster.
