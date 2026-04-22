@@ -2293,6 +2293,14 @@ Otherwise t."
                          (string-prefix-p x (url-host parsed)))
                        fj-non-fj-hosts))))
 
+(defun fj-owner+repo-from-url (url)
+  "Return the owner (or organization) and repository names from URL.
+The return value is a list of two elements.  URL is assumed to be the
+URL of a Forgejo repository."
+  (let ((path (car (url-path-and-query (url-generic-parse-url url)))))
+    (string-split (string-trim-left (string-trim-right path ".git") "/")
+                  "/")))
+
 (defun fj-repo-+-owner-from-git (&optional remote)
   "Return repo and owner of REMOTE from git config.
 Nil if we fail to parse."
@@ -2310,9 +2318,7 @@ Nil if we fail to parse."
        (t ;; ssh (can omit ssh:// prefix)
         ;; “sshuser@domain.com:username/repo.git”
         ;; nb sshuser is not the foregejo user!
-        (let* ((split (split-string remote "[@:/]"))
-               (repo (string-trim-right (nth 3 split) ".git")))
-          (list (nth 2 split) repo)))))))
+        (fj-owner+repo-from-url remote))))))
 
 (defun fj-list-issues-+-pulls (repo &optional owner state)
   "List issues and pulls for REPO by OWNER, filtered by STATE."
