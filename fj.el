@@ -4795,8 +4795,8 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
          " "
          (fj-propertize-link
           (fj-format-tl-title .subject.title nil
-                              (unless unread 'fj-closed-issue-notif-face)
-                              (unless unread 'fj-closed-issue-notif-verbatim-face))
+                            (unless unread 'fj-closed-issue-notif-face)
+                            (unless unread 'fj-closed-issue-notif-verbatim-face))
           'notif number nil :noface)
          "\n"
          (propertize
@@ -4806,6 +4806,10 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
         'fj-owner .repository.owner.login
         'fj-url .subject.html_url
         'fj-notification .id
+        'fj-notif-item-type (intern
+                           (concat ":"
+                                   (downcase .subject.type)))
+        'fj-notif-data notif
         'fj-notif-unread unread
         'fj-byline t) ; for nav
        "\n" fedi-horiz-bar fedi-horiz-bar "\n"))))
@@ -4966,10 +4970,11 @@ After loading, also mark the notification as read."
   (let ((repo (fj--property 'fj-repo))
         (owner (fj--property 'fj-owner))
         (id (fj--property 'fj-notification))
-        (unread (fj--property 'fj-notif-unread)))
+        (unread (fj--property 'fj-notif-unread))
+        (type (fj--property 'fj-notif-item-type)))
     (when unread
       (fj-mark-notification-read id))
-    (fj-item-view repo owner item)))
+    (fj-item-view repo owner item type)))
 
 (defun fj-do-link-action-mouse (event)
   "Do the action of the link at point.
