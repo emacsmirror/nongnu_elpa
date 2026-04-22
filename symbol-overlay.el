@@ -534,15 +534,21 @@ BEG, END and LEN are the beginning, end and length of changed text."
                     (symbol-name keyword-symbol))))
     (string-match-p keyword symbol)))
 
-(defvar go-builtins)
-(defvar go-constants)
-(defvar go-mode-keywords)
 (defun symbol-overlay-ignore-function-go (symbol)
   "Determine whether SYMBOL should be ignored (Go)."
   ;; Remove \_< and \_> so we can string compare with keywords
-  (or (symbol-overlay-match-keyword-list symbol go-builtins)
-      (symbol-overlay-match-keyword-list symbol go-constants)
-      (symbol-overlay-match-keyword-list symbol go-mode-keywords)))
+  (symbol-overlay-match-keyword-list
+   symbol
+   '("any"        "const"       "func"      "map"     "real"
+     "append"     "continue"    "go"        "max"     "recover"
+     "break"      "copy"        "goto"      "min"     "return"
+     "cap"        "default"     "if"        "new"     "select"
+     "case"       "defer"       "imag"      "nil"     "struct"
+     "chan"       "delete"      "import"    "package" "switch"
+     "clear"      "else"        "interface" "panic"   "true"
+     "close"      "fallthrough" "iota"      "print"   "type"
+     "comparable" "false"       "len"       "println" "var"
+     "complex"    "for"         "make"      "range")))
 
 ;; From https://docs.oracle.com/javase/tutorial/java/nutsandbolts/_keywords.html
 (defun symbol-overlay-ignore-function-java (symbol)
