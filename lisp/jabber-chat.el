@@ -1507,7 +1507,16 @@ When the image arrives the URL text is deleted and the image inserted."
 	  ;; We only need to fontify the text written since the last
 	  ;; prompt.  The prompt has a field property, so we can find it
 	  ;; using `field-beginning'.
-	  (goto-address-fontify (field-beginning nil nil limit) end))
+	  (let ((start (field-beginning nil nil limit)))
+	    (goto-address-fontify start end)
+	    ;; Clip overlays that leaked past end.  During ewoc
+	    ;; invalidation the body text abuts the next node with no
+	    ;; separator, so bounds-of-thing-at-point can extend into
+	    ;; the next message.
+	    (dolist (ov (overlays-in start end))
+	      (when (and (overlay-get ov 'goto-address)
+			 (> (overlay-end ov) end))
+		(move-overlay ov (overlay-start ov) end)))))
       (error (message "jabber-chat: goto-address-fontify failed: %s" err)))))
 
 (defun jabber-chat-mark-oob-attachment (msg _who mode)
