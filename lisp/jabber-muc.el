@@ -138,6 +138,15 @@ chat room.  Items are thus never removed.")
 Keys are strings, the bare JID of the room.
 Values are lists of nickname strings.")
 
+(defvar jabber-muc--room-jids (make-hash-table :test #'equal)
+  "Per-room known bare JIDs from affiliation queries.
+Keys are group JID strings.  Values are hash tables mapping
+bare JID strings to affiliation strings.")
+
+(defvar jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal)
+  "Set of rooms known to be non-anonymous.
+Keys are group JID strings, values are t.")
+
 (defvar jabber-group nil
   "The groupchat you are participating in.")
 
@@ -196,6 +205,7 @@ this many seconds, the room is skipped and the next one is tried."
   :group 'jabber-muc)
 
 ;;; MUC status codes (XEP-0045)
+(defconst jabber-muc-status-nonanonymous     "100")
 (defconst jabber-muc-status-self-presence    "110")
 (defconst jabber-muc-status-room-created     "201")
 (defconst jabber-muc-status-nick-modified    "210")
@@ -566,7 +576,9 @@ If JC is given, only remove that connection's entry."
   (unless (jabber-muc-joined-p group)
     (let ((whichparticipants (assoc group jabber-muc-participants)))
       (setq jabber-muc-participants
-	    (delq whichparticipants jabber-muc-participants)))))
+	    (delq whichparticipants jabber-muc-participants)))
+    (remhash group jabber-muc--room-jids)
+    (remhash group jabber-muc--nonanonymous-rooms)))
 
 (defun jabber-muc-connection-closed (bare-jid)
   "Remove MUC data for BARE-JID, saving room list for reconnect.
@@ -592,7 +604,9 @@ entry is removed."
           (unless (jabber-muc-joined-p room)
             (let ((whichparticipants (assoc room jabber-muc-participants)))
               (setq jabber-muc-participants
-                    (delq whichparticipants jabber-muc-participants)))))))
+                    (delq whichparticipants jabber-muc-participants)))
+            (remhash room jabber-muc--room-jids)
+            (remhash room jabber-muc--nonanonymous-rooms)))))
     (setq jabber-muc--rooms-before-disconnect snapshot)))
 
 (defun jabber-muc--self-ping-failed (jc xml-data closure-data)
@@ -1090,12 +1104,15 @@ RESULT is the disco#info result."
         ('not-conference
          (message "%s is not a conference service" (jabber-jid-displayname group))))
       (unless (eq status 'not-conference)
-        (let ((password
-               (when (member "muc_passwordprotected" (plist-get v :features))
-                 (or
-                  (jabber-get-conference-data jc group nil :password)
-                  (read-passwd (format "Password for %s: "
-                                       (jabber-jid-displayname group)))))))
+        (let* ((features (plist-get v :features))
+               (password
+                (when (member "muc_passwordprotected" features)
+                  (or
+                   (jabber-get-conference-data jc group nil :password)
+                   (read-passwd (format "Password for %s: "
+                                        (jabber-jid-displayname group)))))))
+          (when (member "muc_nonanonymous" features)
+            (puthash group t jabber-muc--nonanonymous-rooms))
           (jabber-muc--send-join-presence jc group nickname password popup))))))
 
 (defalias 'jabber-muc-join-2 #'jabber-muc--disco-callback)
@@ -1885,6 +1902,41 @@ NICKNAME is the entering user.  Assumes `jabber-chat-ewoc' is current."
        (list :muc-notice
              (jabber-muc--room-created-message)
              :time (current-time))))))
+
+(defun jabber-muc--query-affiliations (jc group)
+  "Query member, admin, and owner affiliation lists for GROUP.
+Sends three IQ-get requests.  Results are merged into
+`jabber-muc--room-jids' and `jabber-muc-participants'."
+  (dolist (affiliation '("member" "admin" "owner"))
+    (jabber-send-iq jc group "get"
+                    `(query ((xmlns . ,jabber-muc-xmlns-admin))
+                            (item ((affiliation . ,affiliation))))
+                    #'jabber-muc--affiliation-result group
+                    #'jabber-muc--affiliation-error group)))
+
+(defun jabber-muc--affiliation-result (_jc xml-data group)
+  "Handle affiliation list result for GROUP.
+XML-DATA is the IQ result.  GROUP is the room JID."
+  (let* ((query (jabber-iq-query xml-data))
+         (items (jabber-xml-get-children query 'item))
+         (room-jids (or (gethash group jabber-muc--room-jids)
+                        (let ((ht (make-hash-table :test #'equal)))
+                          (puthash group ht jabber-muc--room-jids)
+                          ht))))
+    (dolist (item items)
+      (let ((jid (jabber-xml-get-attribute item 'jid))
+            (affiliation (jabber-xml-get-attribute item 'affiliation))
+            (nick (jabber-xml-get-attribute item 'nick)))
+        (when jid
+          (puthash (jabber-jid-user jid) (or affiliation "member") room-jids)
+          (when nick
+            (jabber-muc-modify-participant
+             group nick (list 'jid jid 'affiliation affiliation))))))))
+
+(defun jabber-muc--affiliation-error (_jc _xml-data _group)
+  "Handle affiliation list query error.
+Silently ignore; the user may lack permissions."
+  nil)
 
 (defun jabber-muc--process-enter (jc group nickname symbol status-codes
                                      x-muc actor reason our-nickname)
