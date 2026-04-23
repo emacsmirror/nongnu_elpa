@@ -920,17 +920,16 @@ obtained from `xml-parse-region'."
 	  (setq xdata x)))
     (if (not xdata)
 	(message "No configuration possible.")
-      (save-window-excursion
-	(jabber-widget-init-buffer (jabber-xml-get-attribute xml-data 'from))
-	(setq jabber-buffer-connection jc)
-	(jabber-widget-render-xdata-form xdata)
-	(widget-create 'push-button :notify #'jabber-muc-submit-config "Submit")
-	(widget-insert "\t")
-	(widget-create 'push-button :notify #'jabber-muc-cancel-config "Cancel")
-	(widget-insert "\n")
-	(widget-setup)
-	(widget-minor-mode 1)
-	(recursive-edit)))))
+      (jabber-widget-init-buffer (jabber-xml-get-attribute xml-data 'from))
+      (setq jabber-buffer-connection jc)
+      (jabber-widget-render-xdata-form xdata)
+      (widget-create 'push-button :notify #'jabber-muc-submit-config "Submit")
+      (widget-insert "\t")
+      (widget-create 'push-button :notify #'jabber-muc-cancel-config "Cancel")
+      (widget-insert "\n")
+      (widget-setup)
+      (widget-minor-mode 1)
+      (pop-to-buffer (current-buffer)))))
 
 (defun jabber-muc-submit-config (&rest _ignore)
   "Submit MUC configuration form."
@@ -940,7 +939,7 @@ obtained from `xml-parse-region'."
 			  ,(jabber-widget-parse-xdata-form))
 		  #'jabber-report-success "MUC configuration"
 		  #'jabber-report-success "MUC configuration")
-  (exit-recursive-edit))
+  (quit-window t))
 
 (defun jabber-muc-cancel-config (&rest _ignore)
   "Cancel MUC configuration form."
@@ -949,7 +948,7 @@ obtained from `xml-parse-region'."
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
 			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
 		  nil nil nil nil)
-  (exit-recursive-edit))
+  (quit-window t))
 
 
 (defun jabber-muc--validate-disco-result (result)
