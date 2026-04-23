@@ -1994,7 +1994,10 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
           (jabber-muc--enter-extra-notices nickname status-codes)
           (when (and (eq jabber-chat-encryption 'omemo)
                      (fboundp 'jabber-omemo--prefetch-muc-sessions))
-            (jabber-omemo--prefetch-muc-sessions jc group)))))))
+            (jabber-omemo--prefetch-muc-sessions jc group))
+          (when (or (member jabber-muc-status-nonanonymous status-codes)
+                    (gethash group jabber-muc--nonanonymous-rooms))
+            (jabber-muc--query-affiliations jc group)))))))
 
 (defun jabber-muc--parse-presence (presence)
   "Extract fields from a MUC PRESENCE stanza.
