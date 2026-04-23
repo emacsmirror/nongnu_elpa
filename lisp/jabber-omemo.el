@@ -42,9 +42,12 @@
 
 (declare-function jabber-connection-bare-jid "jabber-util")
 (declare-function jabber-jid-user "jabber-util")
+(declare-function jabber-jid-resource "jabber-util")
 (declare-function jabber-iq-error "jabber-util")
 (declare-function jabber-parse-error "jabber-util")
 (declare-function jabber-error-condition "jabber-util")
+(declare-function jabber-muc-participant-plist "jabber-muc"
+                  (group nickname))
 (declare-function jabber-disco-advertise-feature "jabber-disco")
 (declare-function jabber-send-iq "jabber-iq")
 (declare-function jabber-send-sexp "jabber-core")
@@ -61,6 +64,8 @@
   (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 (declare-function ewoc-data "ewoc" (node))
+
+(defvar jabber-muc--room-jids)
 
 (defcustom jabber-omemo-enable t
   "Whether to enable OMEMO encryption support.
@@ -993,6 +998,45 @@ Returns nil if no <encrypted> element."
 
 ;;; Receive path
 
+(defun jabber-omemo--match-jid-by-affiliation (group nick)
+  "Try to match NICK in GROUP to a bare JID from affiliation data.
+Finds JIDs in `jabber-muc--room-jids' not yet assigned to any
+participant.  If exactly one unassigned JID exists, return it
+and store the mapping for future lookups."
+  (when-let* ((room-jids (gethash group jabber-muc--room-jids)))
+    (let* ((participants (cdr (assoc group jabber-muc-participants)))
+           (assigned (make-hash-table :test #'equal)))
+      (dolist (entry participants)
+        (when-let* ((jid (plist-get (cdr entry) 'jid)))
+          (puthash (jabber-jid-user jid) t assigned)))
+      (let (candidates)
+        (maphash (lambda (bare-jid _aff)
+                   (unless (gethash bare-jid assigned)
+                     (push bare-jid candidates)))
+                 room-jids)
+        (when (= (length candidates) 1)
+          (let ((jid (car candidates)))
+            (jabber-muc-modify-participant
+             group nick (list 'jid jid))
+            jid))))))
+
+(defun jabber-omemo--resolve-sender-jid (xml-data)
+  "Return the real bare JID of the sender of XML-DATA.
+For 1:1 messages, this is `jabber-jid-user' of the from attribute.
+For MUC messages (type=groupchat), try in order:
+1. Nickname lookup in `jabber-muc-participants'
+2. Match by affiliation between participants and `jabber-muc--room-jids'"
+  (let* ((from (jabber-xml-get-attribute xml-data 'from))
+         (msg-type (jabber-xml-get-attribute xml-data 'type)))
+    (if (not (equal msg-type "groupchat"))
+        (and from (jabber-jid-user from))
+      (let* ((group (jabber-jid-user from))
+             (nick (jabber-jid-resource from))
+             (plist (jabber-muc-participant-plist group nick))
+             (real-jid (plist-get plist 'jid)))
+        (or (and real-jid (jabber-jid-user real-jid))
+            (jabber-omemo--match-jid-by-affiliation group nick))))))
+
 (defun jabber-omemo--decrypt-stanza (jc xml-data parsed)
   "Decrypt OMEMO message in XML-DATA using PARSED data.
 Returns modified XML-DATA with decrypted body.
@@ -1007,10 +1051,9 @@ Signals structured errors that callers can dispatch on:
 - `jabber-omemo-error' (the parent) for all other crypto failures."
   (let* ((our-did (jabber-omemo--get-device-id jc))
          (account (jabber-connection-bare-jid jc))
-         (from (jabber-xml-get-attribute xml-data 'from))
-         (sender-jid (and from (jabber-jid-user from))))
+         (sender-jid (jabber-omemo--resolve-sender-jid xml-data)))
     (if (not sender-jid)
-        (warn "OMEMO: ignoring encrypted message with no 'from' attribute")
+        (error "Sender JID unknown (anonymous room?)")
     (let* ((sender-did (plist-get parsed :sid))
            (iv (plist-get parsed :iv))
            (payload (plist-get parsed :payload))
@@ -1122,17 +1165,19 @@ encrypted key material to send."
 
 ;;; MUC helpers
 
-(defun jabber-omemo--muc-participant-jids (_group participants)
-  "Return deduplicated list of bare JIDs for PARTICIPANTS.
-PARTICIPANTS is the alist from `jabber-muc-participants'.
-Entries without a real JID are excluded."
-  (let (jids)
+(defun jabber-omemo--muc-participant-jids (group participants)
+  "Return deduplicated list of bare JIDs for GROUP.
+Collects JIDs from PARTICIPANTS (the alist from
+`jabber-muc-participants') and from affiliation query results
+in `jabber-muc--room-jids'."
+  (let ((jid-set (make-hash-table :test #'equal)))
     (dolist (entry participants)
       (when-let* ((full-jid (plist-get (cdr entry) 'jid))
                   (bare (jabber-jid-user full-jid)))
-        (unless (member bare jids)
-          (push bare jids))))
-    (nreverse jids)))
+        (puthash bare t jid-set)))
+    (when-let* ((room-jids (gethash group jabber-muc--room-jids)))
+      (maphash (lambda (bare _aff) (puthash bare t jid-set)) room-jids))
+    (hash-table-keys jid-set)))
 
 (defun jabber-omemo--ensure-sessions-multi (jc jids callback)
   "Ensure OMEMO sessions for all JIDS via JC.
