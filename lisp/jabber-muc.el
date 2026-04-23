@@ -1321,7 +1321,8 @@ JC is the Jabber connection."
 
 (defun jabber-muc-invite (jc jid group reason)
   "Invite JID to GROUP, stating REASON.
-Uses XEP-0249 direct invitations.
+Sets JID as a member (needed for members-only rooms) and sends
+a XEP-0249 direct invitation.
 
 JC is the Jabber connection."
   (interactive
@@ -1332,6 +1333,12 @@ JC is the Jabber connection."
           (remq (jabber-jid-symbol jabber-group) (jabber-concat-rosters)))
 	 (jabber-muc-read-completing "To group: ")
 	 (jabber-read-with-input-method "Reason: ")))
+  ;; Grant membership so the invite works in members-only rooms.
+  (jabber-send-iq jc group "set"
+                  `(query ((xmlns . ,jabber-muc-xmlns-admin))
+                          (item ((jid . ,jid)
+                                 (affiliation . "member"))))
+                  nil nil nil nil)
   (jabber-send-sexp
    jc
    `(message ((to . ,jid))
