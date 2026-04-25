@@ -562,7 +562,11 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
   ;; but not at beginning or end, see https://github.com/mastodon/mastodon/issues/6830
   ;; objects may have - in them
   (let* ((uri-parsed (url-generic-parse-url url))
-         (query (url-filename uri-parsed)))
+         (url-filename (url-filename uri-parsed))
+         ;; if URL ends with a slash, remove it:
+         (query (if (string-suffix-p "/" url-filename)
+                    (string-trim-right url-filename "/")
+                  url-filename)))
     (save-match-data
       (or (string-match "^/@[^/]+$" query)
           (string-match "^/@[^/]+/[[:digit:]]+$" query)
