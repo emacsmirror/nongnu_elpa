@@ -5,7 +5,7 @@
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
 ifdef GUIX
-GUIX_SHELL := guix shell -D -f guix.scm emacs-next emacs-package-lint emacs-relint --
+GUIX_SHELL := guix shell --pure -D -f guix.scm emacs-next emacs-package-lint emacs-relint --
 EMACS_CMD := $(GUIX_SHELL) emacs
 else
 GUIX_SHELL :=
