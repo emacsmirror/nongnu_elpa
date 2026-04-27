@@ -257,13 +257,14 @@ send.")
 ;;; REGEXES
 
 (defvar mastodon-toot-handle-regex
-  (rx (group-n 2 ; include domain
-        (group-n 4 ; exclude domain
-          (| (any ?\( "\n" "\t" " ") bol) ; preceding things
-          ?@ ; first @
-          (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" ))) ; username
-        (? ?@ (* (not (any "\n" "\t" " "))))) ; optional domain
-      (| "'" word-boundary))) ; boundary or possessive
+  (rx
+   (| (any ?\( "\n" "\t" " ") bol) ; preceding things
+   (group-n 2 ; include domain
+     (group-n 4 ; exclude domain
+       ?@ ; first @
+       (* (any ?- ?_ ?. "A-Z" "a-z" "0-9" ))) ; username
+     (? ?@ (* (not (any "\n" "\t" " "))))) ; optional domain
+   (| "'" word-boundary))) ; boundary or possessive
 
 (defvar mastodon-toot-tag-regex
   (rx (| (any ?\( "\n" "\t" " ") bol)
