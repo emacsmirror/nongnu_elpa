@@ -200,6 +200,7 @@ TYPE is `function' or `variable'."
     "org-babel-variable-assignments:"
     "org-babel-default-header-args:"
     "pcomplete/"
+    "eshell/"
     "use-package-normalize/"
     "use-package-handler/"
     "use-package-autoloads/"))
