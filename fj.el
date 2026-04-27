@@ -61,10 +61,6 @@
 
 (defvar fj-token nil)
 
-(defvar fj-user nil)
-
-(defvar fj-host "https://codeberg.org")
-
 (defvar fj-extra-repos nil
   ;; list of "owner/repo"
   ;; TODO: (owner . repo)
@@ -144,6 +140,14 @@ etc."
   "Fj.el, a Forgejo client."
   :group 'external
   :prefix "fj-")
+
+(defcustom fj-user (user-login-name)
+  "The username to use at `fj-host'."
+  :type 'string)
+
+(defcustom fj-host "https://codeberg.org"
+  "The forgejo host of the instance to use."
+  :type 'string)
 
 (defcustom fj-token-use-auth-source t
   "Whether to use an auth-source file.
