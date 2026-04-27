@@ -504,9 +504,15 @@ Works in issue view mode or in issues tl."
 (defun fj--repo-owner ()
   "Return repo owner, whatever view we are in.
 If we fail, return `fj-user'."
-  ;; repos search or user repos buffer:
-  (if (eq major-mode #'fj-repo-tl-mode)
-      (fj--get-tl-col 1)
+  (cond
+   ((eq major-mode #'fj-user-repo-tl-mode)
+    (let* ((entry (tabulated-list-get-entry))
+           (url (plist-get (cdr (seq-first entry)) 'fj-url)))
+      (car (fj-owner+repo-from-url url))))
+   ((eq major-mode #'fj-repo-tl-mode)
+    ;; repos search or user repos buffer:
+    (fj--get-tl-col 1))
+   (t
     (or ;; try to fetch owner from item at point's repo data:
      ;; perhaps we are viewing issues from `fj-list-search-items'
      ;; (ie fj-owned-issues-tl-mode)
@@ -514,7 +520,7 @@ If we fail, return `fj-user'."
                      '(repository owner))
      ;; else try buf spec:
      (fj--get-buffer-spec :owner)
-     fj-user))) ;; FIXME: fallback hack
+     fj-user)))) ;; FIXME: fallback hack
 
 (defun fj--repo-name ()
   "Return repo name, whatever view we are in."
@@ -2296,6 +2302,14 @@ Otherwise t."
                          (string-prefix-p x (url-host parsed)))
                        fj-non-fj-hosts))))
 
+(defun fj-owner+repo-from-url (url)
+  "Return the owner (or organization) and repository names from URL.
+The return value is a list of two elements.  URL is assumed to be the
+URL of a Forgejo repository."
+  (let ((path (car (url-path-and-query (url-generic-parse-url url)))))
+    (string-split (string-trim-left (string-trim-right path ".git") "/")
+                  "/")))
+
 (defun fj-repo-+-owner-from-git (&optional remote)
   "Return repo and owner of REMOTE from git config.
 Nil if we fail to parse."
@@ -2313,9 +2327,7 @@ Nil if we fail to parse."
        (t ;; ssh (can omit ssh:// prefix)
         ;; “sshuser@domain.com:username/repo.git”
         ;; nb sshuser is not the foregejo user!
-        (let* ((split (split-string remote "[@:/]"))
-               (repo (string-trim-right (nth 3 split) ".git")))
-          (list (nth 2 split) repo)))))))
+        (fj-owner+repo-from-url remote))))))
 
 ;;;###autoload
 (defun fj-list-issues-+-pulls (repo &optional owner state)
@@ -3794,7 +3806,7 @@ NO-OWNER means don't display owner column (user repos view)."
             (updated-display
              (fedi--relative-time-description updated nil :brief))
             ;; just get first lang:
-            (lang (symbol-to-string
+            (lang (symbol-name
                    (caar (fj-get-languages .name .owner.username)))))
        `(nil ;; TODO: id
          [(,.name face fj-item-face
