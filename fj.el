@@ -6,7 +6,7 @@
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.35
+;; Version: 0.36
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -60,10 +60,6 @@
 ;; ours
 
 (defvar fj-token nil)
-
-(defvar fj-user nil)
-
-(defvar fj-host "https://codeberg.org")
 
 (defvar fj-extra-repos nil
   ;; list of "owner/repo"
@@ -144,6 +140,14 @@ etc."
   "Fj.el, a Forgejo client."
   :group 'external
   :prefix "fj-")
+
+(defcustom fj-user (user-login-name)
+  "The username to use at `fj-host'."
+  :type 'string)
+
+(defcustom fj-host "https://codeberg.org"
+  "The forgejo host of the instance to use."
+  :type 'string)
 
 (defcustom fj-token-use-auth-source t
   "Whether to use an auth-source file.
@@ -504,9 +508,15 @@ Works in issue view mode or in issues tl."
 (defun fj--repo-owner ()
   "Return repo owner, whatever view we are in.
 If we fail, return `fj-user'."
-  ;; repos search or user repos buffer:
-  (if (eq major-mode #'fj-repo-tl-mode)
-      (fj--get-tl-col 1)
+  (cond
+   ((eq major-mode #'fj-user-repo-tl-mode)
+    (let* ((entry (tabulated-list-get-entry))
+           (url (plist-get (cdr (seq-first entry)) 'fj-url)))
+      (car (fj-owner+repo-from-url url))))
+   ((eq major-mode #'fj-repo-tl-mode)
+    ;; repos search or user repos buffer:
+    (fj--get-tl-col 1))
+   (t
     (or ;; try to fetch owner from item at point's repo data:
      ;; perhaps we are viewing issues from `fj-list-search-items'
      ;; (ie fj-owned-issues-tl-mode)
@@ -514,7 +524,7 @@ If we fail, return `fj-user'."
                      '(repository owner))
      ;; else try buf spec:
      (fj--get-buffer-spec :owner)
-     fj-user))) ;; FIXME: fallback hack
+     fj-user)))) ;; FIXME: fallback hack
 
 (defun fj--repo-name ()
   "Return repo name, whatever view we are in."
@@ -2296,6 +2306,14 @@ Otherwise t."
                          (string-prefix-p x (url-host parsed)))
                        fj-non-fj-hosts))))
 
+(defun fj-owner+repo-from-url (url)
+  "Return the owner (or organization) and repository names from URL.
+The return value is a list of two elements.  URL is assumed to be the
+URL of a Forgejo repository."
+  (let ((path (car (url-path-and-query (url-generic-parse-url url)))))
+    (string-split (string-trim-left (string-trim-right path ".git") "/")
+                  "/")))
+
 (defun fj-repo-+-owner-from-git (&optional remote)
   "Return repo and owner of REMOTE from git config.
 Nil if we fail to parse."
@@ -2313,9 +2331,7 @@ Nil if we fail to parse."
        (t ;; ssh (can omit ssh:// prefix)
         ;; “sshuser@domain.com:username/repo.git”
         ;; nb sshuser is not the foregejo user!
-        (let* ((split (split-string remote "[@:/]"))
-               (repo (string-trim-right (nth 3 split) ".git")))
-          (list (nth 2 split) repo)))))))
+        (fj-owner+repo-from-url remote))))))
 
 ;;;###autoload
 (defun fj-list-issues-+-pulls (repo &optional owner state)
