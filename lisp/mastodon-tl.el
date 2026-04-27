@@ -1892,7 +1892,8 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
                            (with-temp-buffer ;; strip quoted toot URL:
                              (insert rendered)
                              (goto-char (point-min))
-                             (kill-line 2)
+                             (delete-line)
+                             (delete-line)
                              (buffer-string))))
          (poll-p (mastodon-tl--field 'poll toot))
          (media-p (mastodon-tl--field 'media_attachments toot)))
