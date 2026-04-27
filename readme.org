@@ -1,5 +1,6 @@
 
-@@html: <a href="https://elpa.nongnu.org/nongnu/fj.html"><img alt="ELPA" src="https://elpa.nongnu.org/nongnu/fj.svg"></a>@@
+@@html: <a href="https://elpa.nongnu.org/nongnu/fj.html"><img alt="ELPA" src="https://elpa.nongnu.org/nongnu/fj.svg"></a> <img src="https://img.shields.io/liberapay/patrons/martianh.svg?logo=liberapay">@@
+
 @@html: <a href="https://liberapay.com/martianh/donate"><img alt="Donate using Liberapay" src="https://liberapay.com/assets/widgets/donate.svg"></a>@@
 
 * fj.el
