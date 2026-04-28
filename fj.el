@@ -714,8 +714,9 @@ the working-directory (for directory-local variables)."
      (when ,sort-key
        (setq tabulated-list-sort-key
              ,(if (eq :unset sort-key) nil sort-key)))
-     (tabulated-list-init-header)
-     (tabulated-list-print)
+     (let ((inhibit-modification-hooks t))
+       (tabulated-list-init-header)
+       (tabulated-list-print))
      ,@body
      ;; other-window maybe?
      ;; message bindings maybe?
@@ -1464,8 +1465,9 @@ all for `fj-issues-search'."
       (setq tabulated-list-entries
             (fj-issue-tl-entries items :repo))
       (fj-owned-issues-tl-mode)
-      (tabulated-list-init-header)
-      (tabulated-list-print)
+      (let ((inhibit-modification-hooks t))
+        (tabulated-list-init-header)
+        (tabulated-list-print))
       (setq fj-buffer-spec
             `( :owner ,owner
                :url ,(concat fj-host "/issues") ;; FIXME: url params
