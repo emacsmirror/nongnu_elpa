@@ -1,5 +1,15 @@
 #+TITLE: Changelog
 
+* [0.10.6]
+#+date: 2026-04-30
+
+** Changed
+- Replaced transient.el with keymap-popup.el for all menus
+- Roster, bookmarks, and OMEMO trust mode maps now double as popup
+  keymaps, eliminating duplicate key definitions
+- Chat operations menu shows context-appropriate entries (1:1 vs MUC)
+- New dependency: keymap-popup (GNU ELPA)
+
 * [0.10.5]
 #+date: 2026-04-10
 
