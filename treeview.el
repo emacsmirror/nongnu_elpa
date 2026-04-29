@@ -1465,39 +1465,53 @@ Simply calls `treeview-search-unmark-node' for each node.  The effect is that
 no nodes are marked as search matches, so the search is cleared."
   (treeview-for-each-node 'treeview-search-unmark-node))
 
+(defun treeview-search-set-point (pos)
+  "Move point to POS in the window of the current buffer (auxiliary function).
+There may be multiple windows displaying the current buffer. This function uses
+the window returned by `get-buffer-window'.  On the other hand, there may be no
+window displaying the current buffer.  In that case, point is moved by
+`goto-char'."
+  (let* ( (window (get-buffer-window)) )
+    (if window (set-window-point window pos) (goto-char pos))))
+
 (defun treeview-search-update (text)
   "Update the search according to the search text TEXT.
 Previous search matches are cleared.  All visible nodes are checked for a match.
-A match exists if, and only if, the node label starts with TEXT.  All matching
+A match exists if, and only if, the node label contains TEXT.  All matching
 nodes are marked as such be setting the corresponding properties.  The first
 matching node at or after point, if exists, becomes the new selected node.  It
 is highlighted specially, and point is moved to it."
-  (let ( (pos (point)) sel-node prev-node )
-    (dolist (node (treeview-search-data-get 'visible-nodes))
-      (treeview-search-unmark-node node)
-      (let ( (label-overlay (treeview-get-node-prop node 'label-overlay)) )
-        (goto-char (overlay-start label-overlay))
-        (when (re-search-forward (concat "\\=" (regexp-quote text)) (overlay-end label-overlay) t)
-          (let* ( (start (match-beginning 0)) ;; actually, this is always (point)
-                  (end (match-end 0))
-                  (overlay (make-overlay start end)) )
-            (overlay-put overlay 'treeview t)
-            (overlay-put overlay 'treeview-node node)
-            (overlay-put overlay 'priority 400)
-            (overlay-put overlay 'face (funcall treeview-get-search-match-face-function node))
-            (treeview-set-node-prop node 'search-overlay overlay)
-            (treeview-set-node-prop node 'search-matched t)
-            (when prev-node
-              (treeview-set-node-prop node 'search-previous-node prev-node)
-              (treeview-set-node-prop prev-node 'search-next-node node))
-            (when (and (not sel-node) (<= pos start))
-              (setq sel-node node))
-            (setq prev-node node) ))))
-    (when sel-node
-      (let ( (overlay (treeview-get-node-prop sel-node 'search-overlay)) )
-        (overlay-put overlay 'face (funcall treeview-get-search-selected-face-function sel-node))
-        (goto-char (overlay-start overlay))
-        (treeview-search-data-set 'selected-node sel-node) ))) )
+  (if (= (length text) 0)
+      (dolist (node (treeview-search-data-get 'visible-nodes))
+        (treeview-search-unmark-node node))
+    (let ( (pos (point)) sel-node first-node prev-node )
+      (dolist (node (treeview-search-data-get 'visible-nodes))
+        (treeview-search-unmark-node node)
+        (let ( (label-overlay (treeview-get-node-prop node 'label-overlay)) )
+          (goto-char (overlay-start label-overlay))
+          (when (search-forward text (overlay-end label-overlay) t)
+            (let* ( (start (match-beginning 0))
+                    (end (match-end 0))
+                    (overlay (make-overlay start end)) )
+              (overlay-put overlay 'treeview t)
+              (overlay-put overlay 'treeview-node node)
+              (overlay-put overlay 'priority 400)
+              (overlay-put overlay 'face (funcall treeview-get-search-match-face-function node))
+              (treeview-set-node-prop node 'search-overlay overlay)
+              (treeview-set-node-prop node 'search-matched t)
+              (unless first-node (setq first-node node))
+              (when prev-node
+                (treeview-set-node-prop node 'search-previous-node prev-node)
+                (treeview-set-node-prop prev-node 'search-next-node node))
+              (when (and (not sel-node) (<= pos start))
+                (setq sel-node node))
+              (setq prev-node node) ))))
+      (unless sel-node (setq sel-node first-node))
+      (when sel-node
+        (let ( (overlay (treeview-get-node-prop sel-node 'search-overlay)) )
+          (overlay-put overlay 'face (funcall treeview-get-search-selected-face-function sel-node))
+          (treeview-search-set-point (overlay-start overlay))
+          (treeview-search-data-set 'selected-node sel-node) )))) )
 
 (defun treeview-search-after-change (&rest _any)
   "Call `treeview-search-update' with the current minibuffer contents as argument.
@@ -1507,9 +1521,8 @@ in the treeview buffer always reflect what the user has typed.  The function is
 executed in the minibuffer, but it calls `treeview-search-update' with the
 treeview buffer as the current buffer."
   (let ( (search-text (minibuffer-contents-no-properties)) )
-    (when (> (length search-text) 0)
-      (with-current-buffer (treeview-search-data-get 'buffer)
-        (treeview-search-update search-text) ))))
+    (with-current-buffer (treeview-search-data-get 'buffer)
+      (treeview-search-update search-text) )) )
 
 (defun treeview-search-to-next-match ()
   "Move point to the next search match.
@@ -1525,7 +1538,7 @@ nothing."
                    (next-overlay (treeview-get-node-prop next-node 'search-overlay)) )
               (overlay-put sel-overlay 'face (funcall treeview-get-search-match-face-function sel-node))
               (overlay-put next-overlay 'face (funcall treeview-get-search-selected-face-function next-node))
-              (goto-char (overlay-start next-overlay))
+              (treeview-search-set-point (overlay-start next-overlay))
               (treeview-search-data-set 'selected-node next-node) )))))) )
 
 (defun treeview-search-to-previous-match ()
@@ -1542,7 +1555,7 @@ match, does nothing."
                    (prev-overlay (treeview-get-node-prop prev-node 'search-overlay)) )
               (overlay-put sel-overlay 'face (funcall treeview-get-search-match-face-function sel-node))
               (overlay-put prev-overlay 'face (funcall treeview-get-search-selected-face-function prev-node))
-              (goto-char (overlay-start prev-overlay))
+              (treeview-search-set-point (overlay-start prev-overlay))
               (treeview-search-data-set 'selected-node prev-node) )))))) )
 
 (defun treeview-search ()
@@ -1568,7 +1581,8 @@ RET ends the search with the current match."
         (minibuffer-with-setup-hook
             #'(lambda ()
                 (add-hook 'after-change-functions 'treeview-search-after-change nil t)
-                (use-local-map keymap))
+                (use-local-map keymap)
+                (setq-local completion-styles '(substring)) )
           (completing-read "Search node: " completions) )
       (treeview-search-clear))
     (let ( (sel-node (treeview-search-data-get 'selected-node)) )
