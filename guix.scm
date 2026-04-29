@@ -70,6 +70,23 @@ long as the submodule has been initialised."
              (string-suffix? ".tar" file)
              (string-suffix? ".tar.gz" file)))))
 
+;; Local definition until emacs-keymap-popup lands in Guix proper.
+(define emacs-keymap-popup
+  (package
+    (name "emacs-keymap-popup")
+    (version "0.2.2")
+    (source (local-file "../keymap-popup"
+                        "emacs-keymap-popup-checkout"
+                        #:recursive? #t
+                        #:select? (lambda (file stat)
+                                    (not (string-contains file "/.git")))))
+    (build-system emacs-build-system)
+    (arguments (list #:tests? #f))
+    (home-page "https://codeberg.org/thanosapollo/emacs-keymap-popup")
+    (synopsis "Popup help for Emacs keymaps")
+    (description "Show popup help for described keymaps.")
+    (license license:gpl3+)))
+
 (define-public emacs-jabber-git
   (package
     (name "emacs-jabber-git")
@@ -144,7 +161,7 @@ long as the submodule has been initialised."
               (base32
                "044xd1gn9lpd5yrb3c1lmvqsc1chbkhd3vnh7800hxn23a0hxbzj")))))
     (inputs (list mbedtls))
-    (propagated-inputs (list emacs-fsm))
+    (propagated-inputs (list emacs-fsm emacs-keymap-popup))
     (home-page "https://thanosapollo.org/projects/jabber/")
     (synopsis "XMPP (Jabber) client for Emacs")
     (description

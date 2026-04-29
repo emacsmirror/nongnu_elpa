@@ -30,7 +30,7 @@
 
 (require 'jabber-private)
 (require 'jabber-pubsub)
-(require 'transient)
+(require 'keymap-popup)
 
 (defconst jabber-bookmarks-xmlns "storage:bookmarks"
   "XEP-0048 bookmarks namespace.")
@@ -95,9 +95,9 @@ result as arguments.  If CONT is nil, return the requested data
 immediately, and return nil if it is not in the cache."
   (if (null cont)
       (let ((cache (jabber-get-bookmarks-from-cache jc)))
-       (if (and cache (listp cache))
-        (jabber-get-conference-data-internal
-         cache conference-jid key)))
+	(if (and cache (listp cache))
+            (jabber-get-conference-data-internal
+             cache conference-jid key)))
     (jabber-get-bookmarks
      jc
      (lambda (jc result)
@@ -425,18 +425,29 @@ CALLBACK is called with JC, XML-DATA, and t on success or nil on failure."
        (funcall callback jc xml-data nil))
      nil)))
 
-;;; Tabulated-list bookmark editor
+;;; Bookmark editor
 
-(defvar jabber-bookmarks-mode-map
-  (let ((map (make-sparse-keymap)))
-    (define-key map "a" #'jabber-bookmarks-add)
-    (define-key map "d" #'jabber-bookmarks-delete)
-    (define-key map "t" #'jabber-bookmarks-toggle-autojoin)
-    (define-key map "e" #'jabber-bookmarks-edit)
-    (define-key map "h" #'jabber-bookmarks-menu)
-    (define-key map "?" #'jabber-bookmarks-menu)
-    map)
-  "Keymap for `jabber-bookmarks-mode'.")
+(keymap-popup-define jabber-bookmarks-edit-map
+  "Edit bookmark at point."
+  :description (lambda () (format "Edit: %s" (or (tabulated-list-get-id) "(none)")))
+  :group "Edit"
+  "a" ("Toggle autojoin" jabber-bookmarks-toggle-autojoin)
+  "n" ("Change nick" jabber-bookmarks-set-nick)
+  "N" ("Change name" jabber-bookmarks-set-name)
+  "p" ("Change password" jabber-bookmarks-set-password))
+
+(keymap-popup-define jabber-bookmarks-mode-map
+  "Bookmarks commands."
+  :parent tabulated-list-mode-map
+  :group "Bookmark"
+  "a" ("Add bookmark" jabber-bookmarks-add)
+  "d" ("Delete bookmark" jabber-bookmarks-delete)
+  "t" ("Toggle autojoin" jabber-bookmarks-toggle-autojoin)
+  "e" ("Edit bookmark" :keymap jabber-bookmarks-edit-map)
+  "g" ("Refresh" revert-buffer))
+
+(keymap-set jabber-bookmarks-mode-map "h" #'jabber-bookmarks-menu)
+(keymap-set jabber-bookmarks-mode-map "?" #'jabber-bookmarks-menu)
 
 (defun jabber-bookmarks--column-format ()
   "Compute `tabulated-list-format' based on window width."
@@ -677,23 +688,15 @@ NICK, if non-nil, is stored in the bookmark."
          (lambda (_jc _xml _closure)
            (message "Failed to set %s for %s" prompt jid)))))))
 
-(transient-define-prefix jabber-bookmarks-edit ()
+(defun jabber-bookmarks-edit ()
   "Edit bookmark at point."
-  [:description
-   (lambda () (format "Edit: %s" (or (tabulated-list-get-id) "(none)")))
-   [("a" "Toggle autojoin" jabber-bookmarks-toggle-autojoin)
-    ("n" "Change nick" jabber-bookmarks-set-nick)
-    ("N" "Change name" jabber-bookmarks-set-name)
-    ("p" "Change password" jabber-bookmarks-set-password)]])
+  (interactive)
+  (keymap-popup jabber-bookmarks-edit-map))
 
-(transient-define-prefix jabber-bookmarks-menu ()
-  "Bookmarks commands."
-  [["Bookmark"
-    ("a" "Add bookmark" jabber-bookmarks-add)
-    ("d" "Delete bookmark" jabber-bookmarks-delete)
-    ("t" "Toggle autojoin" jabber-bookmarks-toggle-autojoin)
-    ("e" "Edit bookmark" jabber-bookmarks-edit)
-    ("g" "Refresh" revert-buffer)]])
+(defun jabber-bookmarks-menu ()
+  "Show bookmarks commands."
+  (interactive)
+  (keymap-popup jabber-bookmarks-mode-map))
 
 ;;; Disconnect cleanup
 

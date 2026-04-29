@@ -37,7 +37,7 @@
 (require 'jabber-carbons)
 (require 'format-spec)
 (require 'ewoc)
-(require 'transient)
+(require 'keymap-popup)
 
 (defgroup jabber-roster nil "roster display options"
   :group 'jabber)
@@ -167,36 +167,46 @@ Trailing newlines are always removed, regardless of this variable."
 (defun jabber-roster-separator ()
   "Return a propertized separator string for the roster buffer."
   (propertize (jabber-separator)
-	       'cursor-intangible t))
+	      'cursor-intangible t))
 
 (defvar jabber-roster-debug nil
   "Debug roster draw.")
 
-(defvar-keymap jabber-roster-mode-map
+(keymap-popup-define jabber-roster-mode-map
+  "Jabber roster commands."
   :parent (make-composed-keymap jabber-common-keymap special-mode-map)
-  "TAB"       #'jabber-go-to-next-roster-item
-  "S-TAB"     #'jabber-go-to-previous-roster-item
-  "M-TAB"     #'jabber-go-to-previous-roster-item
-  "<backtab>" #'jabber-go-to-previous-roster-item
-  "RET"       #'jabber-roster-ret-action-at-point
-  "C-k"       #'jabber-roster-delete-at-point
-  "d"         #'jabber-roster-delete-at-point
-  "D"         #'jabber-roster-delete-at-point
-  "e"         #'jabber-roster-edit-action-at-point
-  "s"         #'jabber-send-subscription-request
-  "q"         #'bury-buffer
-  "i"         #'jabber-get-disco-items
-  "j"         #'jabber-muc-join
-  "I"         #'jabber-get-disco-info
-  "b"         #'jabber-get-browse
-  "v"         #'jabber-get-version
-  "a"         #'jabber-send-presence
-  "g"         #'jabber-roster
-  "h"         #'jabber-roster-menu
-  "o"         #'jabber-roster-toggle-offline-display
-  "H"         #'jabber-roster-menu
-  "?"         #'jabber-roster-menu
-  "f"         #'jabber-omemo-show-fingerprints)
+  :group "Chat"
+  "RET" ("Open chat buffer" jabber-roster-ret-action-at-point)
+  "e"   ("Edit item" jabber-roster-edit-action-at-point)
+  "s"   ("Subscribe" jabber-send-subscription-request)
+  :group "Roster"
+  "d"   ("Delete item" jabber-roster-delete-at-point)
+  "g"   ("Refresh" jabber-roster)
+  "j"   ("Join MUC" jabber-muc-join)
+  "o"   ("Toggle offline" jabber-roster-toggle-offline-display)
+  :group "MUC & Presence"
+  "B"   ("Bookmarks" jabber-edit-bookmarks)
+  "a"   ("Send presence" jabber-send-presence)
+  :group "Discovery"
+  "i"   ("Disco items" jabber-get-disco-items)
+  "I"   ("Disco info" jabber-get-disco-info)
+  "b"   ("Browse" jabber-get-browse)
+  "v"   ("Client version" jabber-get-version)
+  :group "OMEMO"
+  "f"   ("Fingerprints" jabber-omemo-show-fingerprints))
+
+;; Navigation keys (not shown in popup)
+(keymap-set jabber-roster-mode-map "TAB" #'jabber-go-to-next-roster-item)
+(keymap-set jabber-roster-mode-map "S-TAB" #'jabber-go-to-previous-roster-item)
+(keymap-set jabber-roster-mode-map "M-TAB" #'jabber-go-to-previous-roster-item)
+(keymap-set jabber-roster-mode-map "<backtab>" #'jabber-go-to-previous-roster-item)
+;; Aliases
+(keymap-set jabber-roster-mode-map "C-k" #'jabber-roster-delete-at-point)
+(keymap-set jabber-roster-mode-map "D" #'jabber-roster-delete-at-point)
+;; Popup trigger
+(keymap-set jabber-roster-mode-map "h" #'jabber-roster-menu)
+(keymap-set jabber-roster-mode-map "H" #'jabber-roster-menu)
+(keymap-set jabber-roster-mode-map "?" #'jabber-roster-menu)
 
 ;; Global reference declarations
 
@@ -238,27 +248,10 @@ Trailing newlines are always removed, regardless of this variable."
 (defvar jabber-presence-faces)          ; jabber.el
 (defvar jabber-activity-jids)           ; jabber-activity.el
 
-(transient-define-prefix jabber-roster-menu ()
-  "Jabber roster commands."
-  [["Chat"
-    ("RET" "Open chat buffer" jabber-roster-ret-action-at-point)
-    ("e"   "Edit item" jabber-roster-edit-action-at-point)
-    ("s"   "Subscribe" jabber-send-subscription-request)]
-   ["Roster"
-    ("d"   "Delete item" jabber-roster-delete-at-point)
-    ("g"   "Refresh" jabber-roster)
-    ("m"   "Jump to item" imenu)
-    ("o"   "Toggle offline" jabber-roster-toggle-offline-display)]
-   ["MUC & Presence"
-    ("B"   "Bookmarks" jabber-edit-bookmarks)
-    ("a"   "Send presence" jabber-send-presence)]
-   ["Discovery"
-    ("i"   "Disco items" jabber-get-disco-items)
-    ("I"   "Disco info" jabber-get-disco-info)
-    ("b"   "Browse" jabber-get-browse)
-    ("v"   "Client version" jabber-get-version)]
-   ["OMEMO"
-    ("f"   "Fingerprints" jabber-omemo-show-fingerprints)]])
+(defun jabber-roster-menu ()
+  "Show roster commands."
+  (interactive)
+  (keymap-popup jabber-roster-mode-map))
 
 ;;
 
@@ -584,7 +577,7 @@ such.")
 (defun jabber-roster-filter-display (buddies)
   "Filter BUDDIES for items to be displayed in the roster."
   (cl-remove-if-not (lambda (buddy) (or jabber-show-offline-contacts
-				   (get buddy 'connected)))
+					(get buddy 'connected)))
 		    buddies))
 
 (defun jabber-roster-toggle-offline-display ()
@@ -823,7 +816,7 @@ BUDDY is a JID symbol. JC is the Jabber connection."
 	      (insert "\n" (jabber-roster--format-resource buddy resource jc))))))
     (let* ((group-name (or group-name
 			   jabber-roster-default-group-name))
-	    (line (concat "  " group-name)))
+	   (line (concat "  " group-name)))
       (add-text-properties 0
 			   (length line)
 			   (list

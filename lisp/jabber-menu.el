@@ -27,10 +27,8 @@
 
 ;;; Code:
 
-(eval-when-compile (require 'cl-lib))
 (require 'jabber-util)
-(require 'transient)
-(require 'wid-edit)
+(require 'keymap-popup)
 
 ;;;###autoload
 (defvar jabber-menu
@@ -50,42 +48,42 @@
 		  :enable (bound-and-true-p jabber-connections)))
 
     (define-key map
-      [jabber-menu-status jabber-menu-status-chat]
-      `(menu-item
-	"Chatty"
-	,(lambda ()
-	  (interactive)
-	  (jabber-send-presence "chat"
-				(jabber-read-with-input-method "status message: " *jabber-current-status* '*jabber-status-history*)
-				*jabber-current-priority*))
-	:button (:radio . (and (boundp '*jabber-current-show*)
-			       (equal *jabber-current-show* "chat")))))
-    (define-key map
-      [jabber-menu-status jabber-menu-status-dnd]
-      `(menu-item
-	"Do not Disturb"
-	,(lambda ()
-	  (interactive)
-	  (jabber-send-presence "dnd"
-				(jabber-read-with-input-method "status message: " *jabber-current-status* '*jabber-status-history*)
-				*jabber-current-priority*))
-	:button (:radio . (and (boundp '*jabber-current-show*)
-			       (equal *jabber-current-show* "dnd")))))
-    (define-key map
-      [jabber-menu-status jabber-menu-status-xa]
-      '(menu-item "Extended Away" jabber-send-xa-presence
+		[jabber-menu-status jabber-menu-status-chat]
+		`(menu-item
+		  "Chatty"
+		  ,(lambda ()
+		     (interactive)
+		     (jabber-send-presence "chat"
+					   (jabber-read-with-input-method "status message: " *jabber-current-status* '*jabber-status-history*)
+					   *jabber-current-priority*))
 		  :button (:radio . (and (boundp '*jabber-current-show*)
-					 (equal *jabber-current-show* "xa")))))
+					 (equal *jabber-current-show* "chat")))))
     (define-key map
-      [jabber-menu-status jabber-menu-status-away]
-      '(menu-item "Away" jabber-send-away-presence
+		[jabber-menu-status jabber-menu-status-dnd]
+		`(menu-item
+		  "Do not Disturb"
+		  ,(lambda ()
+		     (interactive)
+		     (jabber-send-presence "dnd"
+					   (jabber-read-with-input-method "status message: " *jabber-current-status* '*jabber-status-history*)
+					   *jabber-current-priority*))
 		  :button (:radio . (and (boundp '*jabber-current-show*)
-					 (equal *jabber-current-show* "away")))))
+					 (equal *jabber-current-show* "dnd")))))
     (define-key map
-      [jabber-menu-status jabber-menu-status-online]
-      '(menu-item "Online" jabber-send-default-presence
-		  :button (:radio . (and (boundp '*jabber-current-show*)
-					 (equal *jabber-current-show* "")))))
+		[jabber-menu-status jabber-menu-status-xa]
+		'(menu-item "Extended Away" jabber-send-xa-presence
+			    :button (:radio . (and (boundp '*jabber-current-show*)
+						   (equal *jabber-current-show* "xa")))))
+    (define-key map
+		[jabber-menu-status jabber-menu-status-away]
+		'(menu-item "Away" jabber-send-away-presence
+			    :button (:radio . (and (boundp '*jabber-current-show*)
+						   (equal *jabber-current-show* "away")))))
+    (define-key map
+		[jabber-menu-status jabber-menu-status-online]
+		'(menu-item "Online" jabber-send-default-presence
+			    :button (:radio . (and (boundp '*jabber-current-show*)
+						   (equal *jabber-current-show* "")))))
 
     (define-key-after map
       [separator]
@@ -200,63 +198,88 @@ With prefix argument, remove it."
 (declare-function jabber-ahc-get-list "jabber-ahc.el" (jc to))
 (declare-function jabber-enable-carbons "jabber-carbons.el" (jc))
 
-;;;###autoload
-(transient-define-prefix jabber-chat-menu ()
+(keymap-popup-define jabber-chat-menu-map
   "Jabber chat commands."
-  [["Chat"
-    ("c" "Start chat" jabber-chat-with)
-    ("m" "Compose message" jabber-compose)]])
+  :group "Chat"
+  "c" ("Start chat" jabber-chat-with)
+  "m" ("Compose message" jabber-compose))
 
 ;;;###autoload
-(transient-define-prefix jabber-roster-context-menu ()
+(defun jabber-chat-menu ()
+  "Jabber chat commands."
+  (interactive)
+  (keymap-popup jabber-chat-menu-map))
+
+(keymap-popup-define jabber-roster-context-menu-map
   "Jabber roster commands."
-  [["Roster"
-    ("a" "Add/modify contact" jabber-roster-change)
-    ("s" "Subscribe" jabber-send-subscription-request)
-    ("d" "Delete roster entry" jabber-roster-delete)]])
+  :group "Roster"
+  "a" ("Add/modify contact" jabber-roster-change)
+  "s" ("Subscribe" jabber-send-subscription-request)
+  "d" ("Delete roster entry" jabber-roster-delete))
 
 ;;;###autoload
-(transient-define-prefix jabber-info-menu ()
+(defun jabber-roster-context-menu ()
+  "Jabber roster commands."
+  (interactive)
+  (keymap-popup jabber-roster-context-menu-map))
+
+(keymap-popup-define jabber-info-menu-map
   "Jabber info/discovery commands."
-  [["Discovery"
-    ("I" "Get info" jabber-get-info)
-    ("i" "Disco items" jabber-get-disco-items)
-    ("d" "Disco info" jabber-get-disco-info)
-    ("b" "Browse" jabber-get-browse)
-    ("v" "Client version" jabber-get-version)
-    ("p" "Ping" jabber-ping)
-    ("t" "Request time" jabber-get-time)
-    ("V" "View vCard" jabber-vcard-get)]])
+  :group "Discovery"
+  "I" ("Get info" jabber-get-info)
+  "i" ("Disco items" jabber-get-disco-items)
+  "d" ("Disco info" jabber-get-disco-info)
+  "b" ("Browse" jabber-get-browse)
+  "v" ("Client version" jabber-get-version)
+  "p" ("Ping" jabber-ping)
+  "t" ("Request time" jabber-get-time)
+  "V" ("View vCard" jabber-vcard-get))
 
 ;;;###autoload
-(transient-define-prefix jabber-muc-menu ()
+(defun jabber-info-menu ()
+  "Jabber info/discovery commands."
+  (interactive)
+  (keymap-popup jabber-info-menu-map))
+
+(keymap-popup-define jabber-muc-menu-map
   "Jabber MUC commands."
-  [["Room"
-    ("j" "Join" jabber-muc-join)
-    ("J" "Create room" jabber-muc-create)
-    ("l" "Leave" jabber-muc-leave)
-    ("t" "Set topic" jabber-muc-set-topic)
-    ("c" "Configure" jabber-muc-get-config)]
-   ["Participants"
-    ("n" "Change nick" jabber-muc-nick)
-    ("I" "Get info" jabber-muc-get-info)
-    ("i" "Invite" jabber-muc-invite)
-    ("w" "List participants" jabber-muc-names)
-    ("p" "Private chat" jabber-muc-private)
-    ("v" "Request vcard" jabber-muc-vcard-get)]
-   ["Admin"
-    ("r" "Set role" jabber-muc-set-role)
-    ("a" "Set affiliation" jabber-muc-set-affiliation)]])
+  :group "Room"
+  "j" ("Join" jabber-muc-join)
+  "J" ("Create room" jabber-muc-create)
+  "l" ("Leave" jabber-muc-leave)
+  "t" ("Set topic" jabber-muc-set-topic)
+  "c" ("Configure" jabber-muc-get-config)
+  :group "Participants"
+  "n" ("Change nick" jabber-muc-nick)
+  "I" ("Get info" jabber-muc-get-info)
+  "i" ("Invite" jabber-muc-invite)
+  "w" ("List participants" jabber-muc-names)
+  "p" ("Private chat" jabber-muc-private)
+  "v" ("Request vcard" jabber-muc-vcard-get)
+  :group "Admin"
+  "r" ("Set role" jabber-muc-set-role)
+  "a" ("Set affiliation" jabber-muc-set-affiliation))
 
 ;;;###autoload
-(transient-define-prefix jabber-service-menu ()
+(defun jabber-muc-menu ()
+  "Jabber MUC commands."
+  (interactive)
+  (keymap-popup jabber-muc-menu-map))
+
+(keymap-popup-define jabber-service-menu-map
   "Jabber service commands."
-  [["Services"
-    ("r" "Register" jabber-get-register)
-    ("s" "Search directory" jabber-get-search)
-    ("c" "Execute command" jabber-ahc-execute-command)
-    ("l" "Command list" jabber-ahc-get-list)
-    ("C" "Enable carbons" jabber-enable-carbons)]])
+  :group "Services"
+  "r" ("Register" jabber-get-register)
+  "s" ("Search directory" jabber-get-search)
+  "c" ("Execute command" jabber-ahc-execute-command)
+  "l" ("Command list" jabber-ahc-get-list)
+  "C" ("Enable carbons" jabber-enable-carbons))
+
+;;;###autoload
+(defun jabber-service-menu ()
+  "Jabber service commands."
+  (interactive)
+  (keymap-popup jabber-service-menu-map))
 
 (define-obsolete-function-alias 'jabber-popup-chat-menu #'jabber-chat-menu "29.1")
 (define-obsolete-function-alias 'jabber-popup-roster-menu #'jabber-roster-context-menu "29.1")

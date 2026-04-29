@@ -47,7 +47,7 @@ TESTS ?= tests/jabber-activity-tests.el \
          tests/jabber-roster-tests.el \
          tests/jabber-sm-tests.el \
          tests/jabber-styling-tests.el \
-         tests/jabber-transient-tests.el \
+         tests/jabber-menu-tests.el \
          tests/jabber-util-tests.el \
          tests/jabber-xml-tests.el
 

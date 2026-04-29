@@ -4,7 +4,7 @@
 ;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: comm
 ;; Homepage: https://git.thanosapollo.org/emacs-jabber
-;; Package-Requires: ((emacs "29.1") (fsm "0.2.0"))
+;; Package-Requires: ((emacs "29.1") (fsm "0.2.0") (keymap-popup "0.2"))
 ;; Version: 0.10.5
 
 ;; Copyright (C) 2003, 2004, 2007, 2008 - Magnus Henoch - mange@freemail.hu

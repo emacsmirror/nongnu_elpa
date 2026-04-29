@@ -29,7 +29,7 @@
 
 (require 'cl-lib)
 (require 'jabber-omemo-store)
-(require 'transient)
+(require 'keymap-popup)
 
 (declare-function jabber-omemo--format-fingerprint "jabber-omemo")
 (declare-function jabber-omemo--trust-label "jabber-omemo")
@@ -76,15 +76,19 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
 
 ;;; Mode
 
-(defvar-keymap jabber-omemo-trust-mode-map
-  :doc "Keymap for `jabber-omemo-trust-mode'."
-  "t" #'jabber-omemo-trust-set-verified
-  "u" #'jabber-omemo-trust-set-untrusted
-  "d" #'jabber-omemo-trust-delete
-  "w" #'jabber-omemo-trust-copy-fingerprint
-  "G" #'jabber-omemo-trust-refresh
-  "h" #'jabber-omemo-trust-menu
-  "?" #'jabber-omemo-trust-menu)
+(keymap-popup-define jabber-omemo-trust-mode-map
+  "OMEMO trust commands."
+  :description #'jabber-omemo-trust--menu-description
+  :group "Trust"
+  "t" ("Verify" jabber-omemo-trust-set-verified)
+  "u" ("Untrust" jabber-omemo-trust-set-untrusted)
+  "d" ("Delete" jabber-omemo-trust-delete)
+  "w" ("Copy fingerprint" jabber-omemo-trust-copy-fingerprint)
+  "g" ("Refresh" revert-buffer)
+  "G" ("Re-fetch from server" jabber-omemo-trust-refresh))
+
+(keymap-set jabber-omemo-trust-mode-map "h" #'jabber-omemo-trust-menu)
+(keymap-set jabber-omemo-trust-mode-map "?" #'jabber-omemo-trust-menu)
 
 (defun jabber-omemo--list-format ()
   (let ((list-format `[("Device ID" ,(/ (window-width) 10))
@@ -137,8 +141,8 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
               (did (jabber-omemo--get-device-id jc))
               (ik (plist-get bundle :identity-key)))
     (let* ((entry (jabber-omemo-trust--format-entry
-                    (list :device-id did :identity-key ik
-                          :trust nil :first-seen nil)))
+                   (list :device-id did :identity-key ik
+                         :trust nil :first-seen nil)))
            (cols (cadr entry)))
       (aset cols 0 (propertize (aref cols 0)
                                'face 'jabber-chat-nick-encrypted))
@@ -247,10 +251,10 @@ Fetches the device list and bundles from the server."
                   (jabber-omemo-store-ensure-trust own-jid own-jid did ik)
                   (with-current-buffer buf
                     (let* ((entry (jabber-omemo-trust--format-entry
-                                    (list :device-id did
-                                          :identity-key ik
-                                          :trust nil
-                                          :first-seen nil)))
+                                   (list :device-id did
+                                         :identity-key ik
+                                         :trust nil
+                                         :first-seen nil)))
                            (cols (cadr entry)))
                       (aset cols 0 (propertize (aref cols 0)
                                                'face 'jabber-chat-nick-foreign-encrypted))
@@ -368,29 +372,22 @@ data from PubSub and updates the buffer."
        (jabber-omemo--prefetch-sessions jc peer)))
     (message "Fetching devices for %s..." peer)))
 
-;;; Transient
+;;; Popup menu
 
 (defun jabber-omemo-trust--menu-description ()
-  "Return description string for the transient menu."
+  "Return description string for the popup menu."
   (format "Peer: %s  Account: %s"
           (propertize (or jabber-omemo-trust--peer "?") 'face
                       'jabber-chat-nick-foreign-encrypted)
           (propertize (or jabber-omemo-trust--account "?") 'face
                       'jabber-chat-nick-encrypted)))
 
-(transient-define-prefix jabber-omemo-trust-menu ()
-  "OMEMO trust commands."
-  [:description jabber-omemo-trust--menu-description
-   [("t" "Verify" jabber-omemo-trust-set-verified)
-    ("u" "Untrust" jabber-omemo-trust-set-untrusted)
-    ("d" "Delete" jabber-omemo-trust-delete)
-    ("w" "Copy fingerprint" jabber-omemo-trust-copy-fingerprint)
-    ("g" "Refresh" revert-buffer)
-    ("G" "Re-fetch from server" jabber-omemo-trust-refresh)]]
+(defun jabber-omemo-trust-menu ()
+  "Show OMEMO trust commands."
   (interactive)
   (unless (derived-mode-p 'jabber-omemo-trust-mode)
     (user-error "Not in an OMEMO trust buffer; use `jabber-omemo-show-trust' first"))
-  (transient-setup 'jabber-omemo-trust-menu))
+  (keymap-popup jabber-omemo-trust-mode-map))
 
 ;;; Cleanup on disconnect
 

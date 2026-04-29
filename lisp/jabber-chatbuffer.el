@@ -29,7 +29,7 @@
 (require 'jabber-util)
 (require 'jabber-core)
 (require 'jabber-menu)
-(require 'transient)
+(require 'keymap-popup)
 
 (defvar jabber-point-insert nil
   "Position where the message being composed starts.")
@@ -78,6 +78,7 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-moderation-retract "jabber-moderation" ())
 (declare-function jabber-moderation-retract-by-occupant "jabber-moderation" ())
 (declare-function jabber-chat-reply "jabber-message-reply" ())
+(declare-function jabber-correct-last-message "jabber-message-correct" ())
 (declare-function jabber-chat-cancel-reply "jabber-message-reply" ())
 (declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-jid-resource "jabber-util" (jid))
@@ -272,14 +273,18 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
   (jabber-chat-encryption--update-header)
   (force-mode-line-update))
 
-(transient-define-prefix jabber-chat-encryption-menu ()
+(keymap-popup-define jabber-chat-encryption-menu-map
   "Select encryption for this chat buffer."
-  [:description
-   (lambda () (format "Encryption (current: %s)" jabber-chat-encryption))
-   ("o" "OMEMO" jabber-chat-encryption-set-omemo)
-   ("g" "OpenPGP" jabber-chat-encryption-set-openpgp)
-   ("l" "PGP (legacy)" jabber-chat-encryption-set-openpgp-legacy)
-   ("p" "Plaintext" jabber-chat-encryption-set-plaintext)])
+  :description (lambda () (format "Encryption (current: %s)" jabber-chat-encryption))
+  "o" ("OMEMO" jabber-chat-encryption-set-omemo)
+  "g" ("OpenPGP" jabber-chat-encryption-set-openpgp)
+  "l" ("PGP (legacy)" jabber-chat-encryption-set-openpgp-legacy)
+  "p" ("Plaintext" jabber-chat-encryption-set-plaintext))
+
+(defun jabber-chat-encryption-menu ()
+  "Select encryption for this chat buffer."
+  (interactive)
+  (keymap-popup jabber-chat-encryption-menu-map))
 
 (defun jabber-chat-show-fingerprints ()
   "Display OMEMO fingerprints for the current chat peer."
@@ -292,20 +297,14 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
 (defvar-local jabber-chat-buffer-msg-count nil
   "Per-buffer message count for backlog and sync.
 When non-nil, overrides `jabber-backlog-number' for refresh and
-MAM sync in this buffer.  Set via the transient -n argument.")
+MAM sync in this buffer.  Set via the operations menu.")
 
 (defun jabber-chat-buffer-msg-count ()
   "Return the effective message count for this buffer."
   (or jabber-chat-buffer-msg-count jabber-backlog-number))
 
-(transient-define-suffix jabber-chat-set-msg-count (count)
+(defun jabber-chat-set-msg-count (count)
   "Set the message count for the current chat buffer to COUNT."
-  :transient t
-  :description (lambda ()
-                 (concat "Message count: "
-                         (propertize (number-to-string
-                                     (jabber-chat-buffer-msg-count))
-                                    'face 'transient-value)))
   (interactive
    (list (read-number "Message count: " (jabber-chat-buffer-msg-count))))
   (setq jabber-chat-buffer-msg-count (and (> count 0) count))
@@ -339,29 +338,42 @@ MAM sync in this buffer.  Set via the transient -n argument.")
     (when (yes-or-no-p (format "Remove %s from roster? " jid))
       (jabber-roster-delete jabber-buffer-connection jid))))
 
-(transient-define-prefix jabber-chat-operations-menu ()
+(keymap-popup-define jabber-chat-operations-menu-map
   "Chat buffer operations."
-  [["Encryption"
-    ("e" "Encryption..." jabber-chat-encryption-menu)
-    ("f" "Fingerprints" jabber-chat-show-fingerprints)]
-   ["Files"
-    ("a" "Attach file" jabber-chat-attach-file)]
-   ["Contact"
-    ("I" "Get info" jabber-chat-get-info)
-    ("A" "Add contact" jabber-chat-add-contact)
-    ("D" "Remove contact" jabber-chat-remove-contact)
-    ("B" "Block/unblock user" jabber-blocking-toggle-chat-peer)]
-   ["Messages"
-    ("E" "Edit last message" jabber-correct-last-message)
-    ("r" "Reply to message" jabber-chat-reply)]
-   ["MUC"
-    ("m" "MUC operations..." jabber-muc-menu)
-    ("M" "Retract message at point" jabber-moderation-retract)
-    ("X" "Retract all by occupant" jabber-moderation-retract-by-occupant)]
-   ["Buffer"
-    ("n" jabber-chat-set-msg-count)
-    ("R" "Refresh" jabber-chat-buffer-refresh)
-    ("S" "Sync & refresh" jabber-mam-sync-buffer)]])
+  :group "Encryption"
+  "e" ("Encryption..." :keymap jabber-chat-encryption-menu-map)
+  "f" ("Fingerprints" jabber-chat-show-fingerprints)
+  :group "Files"
+  "a" ("Attach file" jabber-chat-attach-file)
+  :group "Contact"
+  "I" ("Get info" jabber-chat-get-info
+       :if (lambda () (bound-and-true-p jabber-chatting-with)))
+  "A" ("Add contact" jabber-chat-add-contact
+       :if (lambda () (bound-and-true-p jabber-chatting-with)))
+  "D" ("Remove contact" jabber-chat-remove-contact
+       :if (lambda () (bound-and-true-p jabber-chatting-with)))
+  "B" ("Block/unblock user" jabber-blocking-toggle-chat-peer
+       :if (lambda () (bound-and-true-p jabber-chatting-with)))
+  :group "Messages"
+  "E" ("Edit last message" jabber-correct-last-message)
+  "r" ("Reply to message" jabber-chat-reply)
+  :group "MUC"
+  "m" ("MUC operations..." :keymap jabber-muc-menu-map
+       :if (lambda () (bound-and-true-p jabber-group)))
+  "M" ("Retract message at point" jabber-moderation-retract
+       :if (lambda () (bound-and-true-p jabber-group)))
+  "X" ("Retract all by occupant" jabber-moderation-retract-by-occupant
+       :if (lambda () (bound-and-true-p jabber-group)))
+  :group "Buffer"
+  "n" ((lambda () (format "Message count: %s" (jabber-chat-buffer-msg-count)))
+       jabber-chat-set-msg-count :stay-open)
+  "R" ("Refresh" jabber-chat-buffer-refresh)
+  "S" ("Sync & refresh" jabber-mam-sync-buffer))
+
+(defun jabber-chat-operations-menu ()
+  "Chat buffer operations."
+  (interactive)
+  (keymap-popup jabber-chat-operations-menu-map))
 
 ;; Spell check only what you're currently writing.
 (defun jabber-chat-mode-flyspell-verify ()
@@ -476,7 +488,7 @@ Uses `jabber-chat-buffer-msg-count' for the number of messages."
                                 (not resource))
                        "groupchat"))
            (entries (jabber-db-backlog account peer count nil resource
-                                      msg-type)))
+                                       msg-type)))
       (if (null entries)
           (setq jabber-chat-earliest-backlog (float-time))
         (setq jabber-chat-earliest-backlog
