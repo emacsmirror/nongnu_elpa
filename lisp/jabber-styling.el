@@ -27,12 +27,11 @@
 ;; _italic_, ~strikethrough~, `preformatted`, ```code blocks```, and
 ;; > block quotes.
 ;;
-;; Message display area: a body-printer replacement applies styling
-;; after `jabber-chat-normal-body' inserts the text.
+;; Message display area: a post-body printer in `jabber-chat-printers'
+;; applies styling after `jabber-chat-print-body' inserts text.
 ;;
 ;; Composition area: jit-lock provides live styling preview as the
-;; user types, following the same approach as markdown-mode's
-;; font-lock integration.
+;; user types.
 
 ;;; Code:
 
@@ -73,63 +72,87 @@
 (defface jabber-styling-quote '((t :inherit shadow))
   "Face for > block quotes.")
 
+;;; Span regexes
+;;
+;; Each regex matches: DIRECTIVE CONTENT DIRECTIVE
+;; where content starts/ends with non-whitespace and does not contain
+;; the directive char.  Group 1 captures content without delimiters.
+;; The [^D]* quantifier gives lazy semantics naturally since it
+;; cannot consume the closing delimiter.
+
+(defconst jabber-styling--bold-re
+  "\\*\\([^[:space:]*]\\(?:[^*]*[^[:space:]*]\\)?\\)\\*"
+  "Regex for *bold* spans.  Group 1 is content.")
+
+(defconst jabber-styling--italic-re
+  "_\\([^[:space:]_]\\(?:[^_]*[^[:space:]_]\\)?\\)_"
+  "Regex for _italic_ spans.  Group 1 is content.")
+
+(defconst jabber-styling--strike-re
+  "~\\([^[:space:]~]\\(?:[^~]*[^[:space:]~]\\)?\\)~"
+  "Regex for ~strikethrough~ spans.  Group 1 is content.")
+
+(defconst jabber-styling--pre-re
+  "`\\([^[:space:]`]\\(?:[^`]*[^[:space:]`]\\)?\\)`"
+  "Regex for `preformatted` spans.  Group 1 is content.")
+
 ;;; Pure parsing functions
 
-(defun jabber-styling--find-closing (line ch pos len)
-  "Find the closing directive CH in LINE starting after POS.
-LEN is the length of LINE.  Returns the position of the closing
-directive, or nil.  The closing directive must not be preceded by
-whitespace, and there must be at least one char between open and
-close.  Matching is lazy (first valid close wins)."
-  (let ((search (1+ pos)))
-    (catch 'found
-      (while (< search len)
-        (when (and (eq (aref line search) ch)
-                   (> search (1+ pos))
-                   (not (memq (aref line (1- search))
-                              '(?\s ?\t ?\n))))
-          (throw 'found search))
-        (setq search (1+ search)))
-      nil)))
+(defun jabber-styling--valid-opening-p (str pos)
+  "Non-nil if POS in STR is a valid XEP-0393 opening position.
+Opening must be at start, after whitespace, or after another
+opening directive."
+  (or (zerop pos)
+      (memq (aref str (1- pos)) '(?\s ?\t ?\n ?* ?_ ?~ ?`))))
 
-(defun jabber-styling--valid-opening-p (line pos directives)
-  "Check if POS in LINE is a valid opening directive position.
-DIRECTIVES is the alist of directive chars.  Opening must be at
-start, after whitespace, or after another opening directive."
-  (or (= pos 0)
-      (let ((before (aref line (1- pos))))
-        (or (memq before '(?\s ?\t ?\n))
-            (assq before directives)))))
+(defun jabber-styling--in-region-p (pos regions)
+  "Non-nil if POS falls inside any interval in REGIONS.
+REGIONS is a list of (START . END) cons cells."
+  (cl-some (lambda (r) (and (>= pos (car r)) (< pos (cdr r))))
+           regions))
+
+(defun jabber-styling--match-spans (str re face pre-regions)
+  "Match span RE in STR, returning (START END FACE) triples.
+Skips matches whose opening falls inside PRE-REGIONS."
+  (let ((spans nil)
+        (pos 0))
+    (while (string-match re str pos)
+      (let ((beg (match-beginning 0))
+            (end (match-end 0)))
+        (if (and (jabber-styling--valid-opening-p str beg)
+                 (not (jabber-styling--in-region-p beg pre-regions)))
+            (progn
+              (push (list beg end face) spans)
+              (setq pos end))
+          (setq pos (1+ beg)))))
+    (nreverse spans)))
 
 (defun jabber-styling--parse-spans (line)
   "Parse XEP-0393 span directives in LINE.
 Return a list of (START END FACE) triples for styled regions.
-Matching is lazy (left-to-right, first valid close wins).
-Preformatted spans suppress inner directives; other spans may
-contain child spans."
-  (let ((spans nil)
-        (pos 0)
-        (len (length line))
-        (directives '((?* . jabber-styling-bold)
-                      (?_ . jabber-styling-italic)
-                      (?~ . jabber-styling-strike)
-                      (?` . jabber-styling-pre))))
-    (while (< pos len)
-      (let* ((ch (aref line pos))
-             (face (cdr (assq ch directives))))
-        (if (or (not face)
-                (not (jabber-styling--valid-opening-p line pos directives)))
-            (setq pos (1+ pos))
-          ;; Opening must not be followed by whitespace
-          (if (or (>= (1+ pos) len)
-                  (memq (aref line (1+ pos)) '(?\s ?\t ?\n)))
-              (setq pos (1+ pos))
-            (let ((close (jabber-styling--find-closing line ch pos len)))
-              (if (not close)
-                  (setq pos (1+ pos))
-                (push (list pos (1+ close) face) spans)
-                (setq pos (1+ close))))))))
-    (nreverse spans)))
+Preformatted spans are matched first and suppress inner
+directives."
+  (let ((pre-regions nil)
+        (spans nil))
+    ;; First pass: backtick spans (suppress inner directives)
+    (let ((pos 0))
+      (while (string-match jabber-styling--pre-re line pos)
+        (let ((beg (match-beginning 0))
+              (end (match-end 0)))
+          (if (jabber-styling--valid-opening-p line beg)
+              (progn
+                (push (list beg end 'jabber-styling-pre) spans)
+                (push (cons beg end) pre-regions)
+                (setq pos end))
+            (setq pos (1+ beg))))))
+    ;; Second pass: other spans, skipping pre regions
+    (dolist (pair `((,jabber-styling--bold-re . jabber-styling-bold)
+                    (,jabber-styling--italic-re . jabber-styling-italic)
+                    (,jabber-styling--strike-re . jabber-styling-strike)))
+      (setq spans (nconc spans
+                         (jabber-styling--match-spans
+                          line (car pair) (cdr pair) pre-regions))))
+    (sort spans (lambda (a b) (< (car a) (car b))))))
 
 (defun jabber-styling--classify-block (line)
   "Classify LINE as a block type.
@@ -158,23 +181,18 @@ Return a list of (TYPE START END) triples where TYPE is one of
              (line-end (min (1+ nl) len))
              (kind (jabber-styling--classify-block line)))
         (cond
-         ;; Inside a preformatted block: only exact ``` closes it
          (in-pre
           (when (eq kind 'pre-close)
             (push (list 'pre pre-start line-end) blocks)
             (setq in-pre nil)))
-         ;; Opening a preformatted block
          ((memq kind '(pre-open pre-close))
           (setq in-pre t
                 pre-start offset))
-         ;; Block quote line
          ((eq kind 'quote)
           (push (list 'quote offset line-end) blocks))
-         ;; Plain line
          (t
           (push (list 'plain offset line-end) blocks)))
         (setq offset line-end)))
-    ;; Unclosed pre block extends to end
     (when in-pre
       (push (list 'pre pre-start len) blocks))
     (nreverse blocks)))
@@ -212,8 +230,6 @@ Per XEP-0393, the first leading whitespace after > MUST be trimmed."
            (font-lock-prepend-text-property
             bstart bend 'face 'jabber-styling-pre-block))
           ('quote
-           ;; Apply quote face to the whole line, then parse spans
-           ;; in the content after stripping the > prefix
            (font-lock-prepend-text-property
             bstart bend 'face 'jabber-styling-quote)
            (let* ((line (buffer-substring-no-properties bstart bend))
@@ -228,7 +244,7 @@ Per XEP-0393, the first leading whitespace after > MUST be trimmed."
 
 (defconst jabber-styling--all-faces
   '(jabber-styling-bold jabber-styling-italic jabber-styling-strike
-    jabber-styling-pre jabber-styling-pre-block jabber-styling-quote)
+			jabber-styling-pre jabber-styling-pre-block jabber-styling-quote)
   "All faces applied by XEP-0393 styling.")
 
 (defvar jabber-point-insert)            ; jabber-chatbuffer.el
@@ -282,38 +298,22 @@ as the user types."
 
 (add-hook 'jabber-chat-mode-hook #'jabber-styling--setup-buffer)
 
-;;; Body printer integration
+;;; Chat printer integration
 
-(declare-function jabber-chat-normal-body "jabber-chat" (msg who mode))
-
-(defun jabber-styling--body-printer (msg who mode)
-  "Insert body from MSG with XEP-0393 styling applied.
-WHO indicates the sender, MODE is :insert or :printp.
-Delegates to `jabber-chat-normal-body' for insertion, then
-applies styling to the inserted region."
-  (let ((body (plist-get msg :body)))
-    (when body
-      (if (or (not (eq mode :insert))
-              (not jabber-styling-enable)
-              (plist-get msg :unstyled)
-              (string-prefix-p "/me " body))
-          ;; No styling needed: delegate to original printer
-          (jabber-chat-normal-body msg who mode)
-        ;; Insert body via original, then apply styling
-        (let ((start (point)))
-          (jabber-chat-normal-body msg who mode)
-          (jabber-styling--apply-region start (point)))))))
+(defun jabber-styling--post-body (msg _who mode)
+  "Apply XEP-0393 styling to the body from MSG just inserted.
+MODE must be :insert for styling to apply."
+  (when (and (eq mode :insert)
+             jabber-styling-enable
+             (not (plist-get msg :unstyled)))
+    (let ((end (point))
+          (start (field-beginning nil nil
+				  (max (- (point) 10000) (1+ (point-min))))))
+      (jabber-styling--apply-region start end))))
 
 (with-eval-after-load "jabber-chat"
-  (defvar jabber-body-printers)
-  ;; Replace jabber-chat-normal-body with our styling-aware version
-  ;; FIXME: Yuck!
-  (setq jabber-body-printers
-        (mapcar (lambda (fn)
-                  (if (eq fn #'jabber-chat-normal-body)
-                      #'jabber-styling--body-printer
-                    fn))
-                jabber-body-printers)))
+  (defvar jabber-chat-printers)
+  (add-hook 'jabber-chat-printers #'jabber-styling--post-body t))
 
 ;;; Disco
 

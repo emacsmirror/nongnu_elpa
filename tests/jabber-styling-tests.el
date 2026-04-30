@@ -84,14 +84,14 @@
     (should (null spans))))
 
 (ert-deftest jabber-styling-test-span-triple-star ()
-  "*** produces bold with * as content (lazy match, spec ambiguous)."
+  "*** produces no spans (star excluded from content)."
   (let ((spans (jabber-styling--parse-spans "***")))
-    (should (equal '((0 3 jabber-styling-bold)) spans))))
+    (should (null spans))))
 
 (ert-deftest jabber-styling-test-span-quad-star ()
-  "**** produces bold with ** as content (lazy match, spec ambiguous)."
+  "**** produces no spans (star excluded from content)."
   (let ((spans (jabber-styling--parse-spans "****")))
-    (should (equal '((0 3 jabber-styling-bold)) spans))))
+    (should (null spans))))
 
 (ert-deftest jabber-styling-test-span-no-close ()
   "Unclosed span produces no styling."
@@ -289,6 +289,21 @@
     (should (memq 'jabber-styling-bold
                   (let ((f (get-text-property 2 'face)))
                     (if (listp f) f (list f)))))))
+
+;;; Group 7: pre-span suppression and adjacent spans
+
+(ert-deftest jabber-styling-test-pre-suppresses-bold ()
+  "Bold inside a preformatted span is not styled."
+  (let ((spans (jabber-styling--parse-spans "`*not bold*`")))
+    (should (equal 1 (length spans)))
+    (should (eq 'jabber-styling-pre (nth 2 (car spans))))))
+
+(ert-deftest jabber-styling-test-adjacent-spans ()
+  "Adjacent spans separated by directive char are both matched."
+  (let ((spans (jabber-styling--parse-spans "*a*_b_")))
+    (should (equal 2 (length spans)))
+    (should (eq 'jabber-styling-bold (nth 2 (nth 0 spans))))
+    (should (eq 'jabber-styling-italic (nth 2 (nth 1 spans))))))
 
 (provide 'jabber-styling-tests)
 ;;; jabber-styling-tests.el ends here
