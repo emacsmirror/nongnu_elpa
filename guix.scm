@@ -71,21 +71,27 @@ long as the submodule has been initialised."
              (string-suffix? ".tar.gz" file)))))
 
 ;; Local definition until emacs-keymap-popup lands in Guix proper.
-(define emacs-keymap-popup
+(define-public emacs-keymap-popup
   (package
-    (name "emacs-keymap-popup")
-    (version "0.2.2")
-    (source (local-file "../keymap-popup"
-                        "emacs-keymap-popup-checkout"
-                        #:recursive? #t
-                        #:select? (lambda (file stat)
-                                    (not (string-contains file "/.git")))))
-    (build-system emacs-build-system)
-    (arguments (list #:tests? #f))
-    (home-page "https://codeberg.org/thanosapollo/emacs-keymap-popup")
-    (synopsis "Popup help for Emacs keymaps")
-    (description "Show popup help for described keymaps.")
-    (license license:gpl3+)))
+   (name "emacs-keymap-popup")
+   (version "0.2.2")
+   (source (origin
+            (method git-fetch)
+            (uri (git-reference
+                  (url "https://codeberg.org/thanosapollo/emacs-keymap-popup")
+                  (commit version)))
+            (file-name (git-file-name name version))
+            (sha256
+             (base32
+              "16f5lba7m1k7s2y80fkyf9lf4c79lhs4g0xz7y4bxz6r9x70m9zf"))))
+   (build-system emacs-build-system)
+   (arguments (list #:tests? #f))
+   (home-page "https://codeberg.org/thanosapollo/emacs-keymap-popup")
+   (synopsis "Described keymaps with popup help")
+   (description
+    "Produces a real Emacs keymap with embedded descriptions for a popup
+help window.  One definition, two uses.")
+   (license license:gpl3+)))
 
 (define-public emacs-jabber-git
   (package
