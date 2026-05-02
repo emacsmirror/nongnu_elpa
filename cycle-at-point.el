@@ -254,7 +254,8 @@ Argument CYCLE-DATA is the list of cycle definitions to search."
                         (setq arg-words (cons word-orig (cdr arg-words)))
 
                         (unless (string-equal (downcase (car arg-words)) (downcase word-orig))
-                          (error "Internal error: rotated word list does not start with matched word"))))
+                          (error
+                           "Internal error: rotated word list does not start with matched word"))))
 
                     (setq result (cons arg-words (cons beg end)))))))))))
       (incf cycle-data-index))
@@ -324,18 +325,20 @@ when the preset is not found."
             (symbol-name major-mode)))))
   (let ((preset-sym (intern (concat "cycle-at-point-preset-" preset-id))))
     (when (condition-case err
-              (progn
-                (require preset-sym)
-                t)
+              (require preset-sym nil 'noerror)
             (error
-             (unless quiet
-               (message "cycle-at-point: preset %S not found (%S)" preset-id err))
+             (lwarn
+              'cycle-at-point
+              :error "preset %S failed: %s" preset-id (error-message-string err))
              nil))
-      (if (fboundp preset-sym)
-          (funcall preset-sym)
-        (unless quiet
-          (message "cycle-at-point: preset %S loaded but function not defined" preset-id))
-        nil))))
+      (cond
+       ((fboundp preset-sym)
+        (funcall preset-sym))
+       (t
+        (lwarn
+         'cycle-at-point
+         :error "preset %S loaded but did not define function `%S'" preset-id preset-sym)
+        nil)))))
 
 ;;;###autoload
 (defun cycle-at-point (arg)
