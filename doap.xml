@@ -36,7 +36,7 @@
 
     <repository>
       <GitRepository>
-        <location rdf:resource="https://git.thanosapollo.org/emacs-jabber/"/>
+        <location rdf:resource="https://codeberg.org/emacs-jabber/emacs-jabber"/>
       </GitRepository>
     </repository>
 
