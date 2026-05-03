@@ -98,7 +98,10 @@ Called without arguments."
   "c" #'elfeed-kill-link-url-at-point
   "<mouse-2>" #'shr-browse-url
   "A" #'elfeed-show-add-enclosure-to-playlist
-  "P" #'elfeed-show-play-enclosure)
+  "P" #'elfeed-show-play-enclosure
+  "SPC" #'elfeed-show-scroll-up-or-next
+  "S-SPC" #'elfeed-show-scroll-down-or-prev
+  "DEL" #'elfeed-show-scroll-down-or-prev)
 
 (easy-menu-define elfeed-show-mode-menu elfeed-show-mode-map
   "Menu for `elfeed-show-mode'."
@@ -257,6 +260,22 @@ The result depends on the value of `elfeed-show-unique-buffers'."
   "Show the Nth previous item in the `elfeed-search' buffer."
   (interactive "p" elfeed-show-mode)
   (elfeed-show-next (- (or n 1))))
+
+(defun elfeed-show-scroll-up-or-next ()
+  "Scroll-up the current entry or go to the next entry."
+  (interactive)
+  (condition-case nil
+      (scroll-up-command)
+    (error (elfeed-show-next))))
+
+(defun elfeed-show-scroll-down-or-prev ()
+  "Scroll-down the current entry or go to the previous entry."
+  (interactive)
+  (condition-case nil
+      (scroll-down-command)
+    (error
+     (elfeed-show-prev)
+     (with-no-warnings (end-of-buffer)))))
 
 (defun elfeed-show-visit (&optional secondary)
   "Visit the current entry in your browser using `browse-url'.

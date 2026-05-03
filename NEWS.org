@@ -62,6 +62,7 @@
  '(("https://www.debian.org/security/dsa" :fetch-link t linux debian)
    ...))
 #+end_src
+- =elfeed-show-scroll-up/down-or-next/prev=: New scroll commands.
 - =elfeed-show-compose-mail=: Command to compose mail from entry.
 - =elfeed-search-group-by-feed=: New function for =elfeed-search-sort-function=.
 - =elfeed-search-show-entry=: Do not mark entry as read when invoked with prefix
