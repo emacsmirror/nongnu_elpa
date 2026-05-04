@@ -47,7 +47,7 @@
 (declare-function jabber-maybe-print-rare-time "jabber-chat" (node))
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer" (data))
 (declare-function jabber-chat-register-decrypt-handler "jabber-chat"
-  (id &rest props))
+		  (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
@@ -213,14 +213,16 @@ Returns the decrypted string."
      jc nil jabber-openpgp-pubkeys-node fingerprint
      `(public-keys-list ((xmlns . ,jabber-openpgp-xmlns))
                         (pubkey-metadata ((v4-fingerprint . ,fingerprint)
-                                         (date . ,date))))
+                                          (date . ,date))))
      '(("pubsub#persist_items" . "true")
        ("pubsub#access_model" . "open")))))
 
 (defun jabber-openpgp-on-connect (jc)
-  "Post-connect hook: publish key if configured.
+  "Post-connect hook: advertise and publish key if configured.
 Added to `jabber-post-connect-hooks'."
   (when (jabber-openpgp--our-key-safe jc)
+    (jabber-disco-advertise-feature
+     (concat jabber-openpgp-pubkeys-node "+notify"))
     (jabber-openpgp--publish-key jc)
     (jabber-openpgp--publish-metadata jc)))
 
@@ -437,53 +439,53 @@ OPENPGP-EL is the <openpgp> child element."
               (error "OpenPGP: unexpected inner element <%s>" inner-name)))
          (payload (car (jabber-xml-get-children inner-xml 'payload)))
          (inner-body (and payload
-                         (car (jabber-xml-get-children payload 'body))))
+                          (car (jabber-xml-get-children payload 'body))))
          (body-text (and inner-body
                          (car (jabber-xml-node-children inner-body)))))
     (jabber-chat--set-body xml-data
-                          (or body-text "[OpenPGP: empty payload]"))))
+                           (or body-text "[OpenPGP: empty payload]"))))
 
 ;;; Disco, PubSub registration, and hooks
 
 (jabber-disco-advertise-feature jabber-openpgp-xmlns)
-(jabber-disco-advertise-feature (concat jabber-openpgp-pubkeys-node "+notify"))
 
 (defun jabber-openpgp--handle-keys-event (jc from _node items)
   "Handle PubSub event for OpenPGP public key updates.
 JC is the connection, FROM is the sender JID, ITEMS is the list
 of child elements from the event.  Fetches updated key into the
-local GPG keyring."
-  (let* ((item-el (car items))
-         (keys-list (and (listp item-el)
-                         (car (jabber-xml-get-children
-                               item-el 'public-keys-list))))
-         (meta (and keys-list
-                    (car (jabber-xml-get-children
-                          keys-list 'pubkey-metadata))))
-         (fingerprint (and meta
-                           (jabber-xml-get-attribute meta 'v4-fingerprint)))
-         (jid (jabber-jid-user from)))
-    (cond
-     ((null fingerprint)
-      (message "OpenPGP: key update from %s but no fingerprint in metadata" jid))
-     ;; Skip fetch if we already have this key locally.
-     ((car (epg-list-keys (epg-make-context 'OpenPGP) fingerprint))
-      nil)
-     (t
-      (message "OpenPGP: %s updated key %s, fetching..." jid fingerprint)
-      (let ((node (concat jabber-openpgp-pubkeys-node ":" fingerprint)))
-        (jabber-pubsub-request
-         jc jid node
-         (lambda (_jc xml-data _closure)
-           (jabber-openpgp--handle-key-response
-            xml-data fingerprint
-            (lambda (key)
-              (if key
-                  (message "OpenPGP: imported updated key for %s" jid)
-                (message "OpenPGP: failed to import key for %s" jid)))))
-         (lambda (_jc _xml-data _closure)
-           (message "OpenPGP: failed to fetch key %s for %s"
-                    fingerprint jid))))))))
+local GPG keyring.  Bails early if no local key is configured."
+  (when (jabber-openpgp--our-key-safe jc)
+    (let* ((item-el (car items))
+           (keys-list (and (listp item-el)
+                           (car (jabber-xml-get-children
+				 item-el 'public-keys-list))))
+           (meta (and keys-list
+                      (car (jabber-xml-get-children
+                            keys-list 'pubkey-metadata))))
+           (fingerprint (and meta
+                             (jabber-xml-get-attribute meta 'v4-fingerprint)))
+           (jid (jabber-jid-user from)))
+      (cond
+       ((null fingerprint)
+	(message "OpenPGP: key update from %s but no fingerprint in metadata" jid))
+       ;; Skip fetch if we already have this key locally.
+       ((car (epg-list-keys (epg-make-context 'OpenPGP) fingerprint))
+	nil)
+       (t
+	(message "OpenPGP: %s updated key %s, fetching..." jid fingerprint)
+	(let ((node (concat jabber-openpgp-pubkeys-node ":" fingerprint)))
+          (jabber-pubsub-request
+           jc jid node
+           (lambda (_jc xml-data _closure)
+             (jabber-openpgp--handle-key-response
+              xml-data fingerprint
+              (lambda (key)
+		(if key
+                    (message "OpenPGP: imported updated key for %s" jid)
+                  (message "OpenPGP: failed to import key for %s" jid)))))
+           (lambda (_jc _xml-data _closure)
+             (message "OpenPGP: failed to fetch key %s for %s"
+                      fingerprint jid)))))))))
 
 (with-eval-after-load "jabber-pubsub"
   (setf (alist-get jabber-openpgp-pubkeys-node jabber-pubsub-node-handlers
