@@ -515,13 +515,24 @@ Return the region replaced."
 (defun recomplete-with-callback (fn-symbol cycle-offset &optional cycle-index-init)
   "Run FN-SYMBOL, chaining executions for this function.
 
-Argument CYCLE-OFFSET The offset for cycling words,
-1 or -1 for forward/backward.
+Argument CYCLE-OFFSET The number of steps to cycle, positive cycles forward,
+negative backward.  A magnitude of 1 picks the next/previous option; larger
+magnitudes skip that many options.  Values exceeding the number of options
+wrap via modulo.
 
-Optional argument CYCLE-INDEX-INIT The initial index to use,
-defaulting to zero (which makes sense for corrections) you may wish to set
-the value to 1 when the current symbol is included in the list (so as to
-step onto the next item)."
+A negative CYCLE-OFFSET also flips the chain into reverse mode (as if
+`keyboard-quit' had been pressed) so successive default presses continue
+cycling backward without needing the prefix on each one.
+
+Optional argument CYCLE-INDEX-INIT, when non-nil, anchors the cycle at that
+index: a forward arg=1 first press lands on CYCLE-INDEX-INIT, and the cycle
+steps in either direction from there (e.g. arg=-1 lands on
+CYCLE-INDEX-INIT-2 modulo length).  When nil (the default), the cycle is
+bookended - forward enters at index 0, backward at `len-1' - which suits
+choice lists that exclude the original word.
+
+FN-SYMBOL is invoked as (FN-SYMBOL CYCLE-INDEX FN-CACHE) and must return
+a list of (RESULT-CHOICES FN-CACHE)."
   (declare (important-return-value nil))
 
   ;; Default to 1 (one step forward).
@@ -534,29 +545,48 @@ step onto the next item)."
 (defun recomplete--adapter-call (user-fn-symbol cycle-offset cycle-index-init props)
   "Adapter bridging `with-command-redo' and recomplete callback protocols.
 USER-FN-SYMBOL is the recomplete callback.
-CYCLE-OFFSET is the cycling step (1 or -1).
-CYCLE-INDEX-INIT is the initial cycle index.
+CYCLE-OFFSET is the cycling step, positive cycles forward, negative backward.
+A magnitude greater than one cycles by that many steps; values exceeding
+the number of options wrap via modulo.
+CYCLE-INDEX-INIT, when non-nil, anchors the cycle at that index for the
+first call (see `recomplete-with-callback').
 PROPS is the `with-command-redo' plist; :result and :cache are written via
 `plist-put' before return."
   (declare (important-return-value t))
   (let* ((fn-cache (plist-get props :cache))
-         (cycle-reverse (and fn-cache (alist-get 'cycle-reverse fn-cache)))
+         (cycle-reverse-prev (and fn-cache (alist-get 'cycle-reverse fn-cache)))
          (user-cache (and fn-cache (alist-get 'user-cache fn-cache)))
+         ;; Compute the signed step for this press.  A negative CYCLE-OFFSET
+         ;; cycles backward this press regardless of the prior direction;
+         ;; a positive CYCLE-OFFSET (or default) honours the cached reverse
+         ;; state set previously by `keyboard-quit' or a negative prefix.
+         (effective-offset
+          (cond
+           ((< cycle-offset 0)
+            cycle-offset)
+           (cycle-reverse-prev
+            (- cycle-offset))
+           (t
+            cycle-offset)))
+         ;; A negative CYCLE-OFFSET is a sticky "go reverse" signal - like
+         ;; pressing `keyboard-quit' - so subsequent default presses
+         ;; continue cycling backward without needing the prefix again.
+         (cycle-reverse (or (< cycle-offset 0) cycle-reverse-prev))
          (cycle-index
           (cond
-           ((null fn-cache)
-            ;; First call.
-            (or cycle-index-init 0))
+           (fn-cache
+            ;; Subsequent call: step from the previous index.
+            (+ (alist-get 'cycle-index fn-cache) effective-offset))
+           (cycle-index-init
+            ;; First call, anchored: arg=1 lands on CYCLE-INDEX-INIT, the
+            ;; cycle steps from there in either direction.
+            (+ cycle-index-init effective-offset -1))
+           ((> effective-offset 0)
+            ;; First call, bookended forward: enter at index 0.
+            (1- effective-offset))
            (t
-            ;; Subsequent call: apply offset (possibly reversed) to previous index.
-            (let ((prev-cycle-index (alist-get 'cycle-index fn-cache))
-                  (effective-offset
-                   (cond
-                    (cycle-reverse
-                     (- cycle-offset))
-                    (t
-                     cycle-offset))))
-              (+ effective-offset prev-cycle-index)))))
+            ;; First call, bookended backward: enter at `len-1' (-1 mod len).
+            effective-offset)))
          (message-list (list)))
 
     (pcase-let ((`(,result-choices ,result-user-cache)
@@ -571,7 +601,7 @@ PROPS is the `with-command-redo' plist; :result and :cache are written via
         nil)
 
        (t
-        ;; Success: compute cycle index and display.
+        ;; Success: normalize and display.
         (setq cycle-index (mod cycle-index (length result-choices)))
 
         (let ((msg-text (recomplete--format-and-display result-choices cycle-index cycle-reverse)))
@@ -600,7 +630,9 @@ PROPS is the `with-command-redo' plist; :result and :cache are written via
 ;;;###autoload
 (defun recomplete-ispell-word (arg)
   "Run `ispell-word', using the first suggestion, or cycle forward.
-ARG is the offset to cycle, default is 1, -1 to cycle backwards."
+ARG is the number of steps to cycle (default 1).
+Positive cycles forward, negative backward; values exceeding
+the number of options wrap via modulo."
   (declare (important-return-value nil))
   (interactive "*p")
   (recomplete-with-callback 'recomplete-impl-ispell arg))
@@ -609,25 +641,34 @@ ARG is the offset to cycle, default is 1, -1 to cycle backwards."
 ;;;###autoload
 (defun recomplete-case-style (arg)
   "Cycles over common case-styles.
-ARG is the offset to cycle, default is 1, -1 to cycle backwards."
+ARG is the number of steps to cycle (default 1).
+Positive cycles forward, negative backward; values exceeding
+the number of options wrap via modulo."
   (declare (important-return-value nil))
   (interactive "*p")
-  (recomplete-with-callback 'recomplete-impl-case-style arg))
+  ;; Init=0: original sits at `len-1' after rotation, so the cycle is
+  ;; anchored - forward arg=1 lands on the next item (index 0), backward
+  ;; arg=-1 lands on the previous item in the cycle (index `len-2').
+  (recomplete-with-callback 'recomplete-impl-case-style arg 0))
 
 ;; Case Style Cycle Programming Mode.
 ;;;###autoload
 (defun recomplete-case-style-symbol (arg)
   "Cycles over common case-styles.
-ARG is the offset to cycle, default is 1, -1 to cycle backwards."
+ARG is the number of steps to cycle (default 1).
+Positive cycles forward, negative backward; values exceeding
+the number of options wrap via modulo."
   (declare (important-return-value nil))
   (interactive "*p")
-  (recomplete-with-callback 'recomplete-impl-case-style-symbol arg))
+  (recomplete-with-callback 'recomplete-impl-case-style-symbol arg 0))
 
 ;; Abbreviations.
 ;;;###autoload
 (defun recomplete-dabbrev (arg)
   "Run `dabbrev', using the first suggestion, or cycle forward.
-ARG is the offset to cycle, default is 1, -1 to cycle backwards."
+ARG is the number of steps to cycle (default 1).
+Positive cycles forward, negative backward; values exceeding
+the number of options wrap via modulo."
   (declare (important-return-value nil))
   (interactive "*p")
   (recomplete-with-callback 'recomplete-impl-dabbrev arg))

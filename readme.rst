@@ -39,6 +39,9 @@ On successive calls these commands cycle to the next item.
 To cycle in the reverse press ``[keyboard-quit]`` (Ctrl-G),
 which causes the next completion command to reverse the direction.
 
+A numeric prefix argument controls how many steps to cycle in a single press (default 1).
+Negative values cycle backward, and values that exceed the number of options wrap via modulo.
+
 
 Built-In Completions
 --------------------
