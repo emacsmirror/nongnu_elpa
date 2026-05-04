@@ -151,6 +151,51 @@ see `advice-add' documentation."
       (setq p (mod (1+ p) (length seq)))
       (append (seq-subseq seq p) (seq-subseq seq 0 p))))))
 
+(defun recomplete--build-case-style-choices (word-init do-kebab-case)
+  "Build a rotated case-style choice list for WORD-INIT.
+When DO-KEBAB-CASE is non-nil, kebab-case (`-' as separator) is included
+in the cycle alongside snake_case; otherwise only snake_case is used.
+
+The returned list places WORD-INIT at index `len-1' (when present) so
+cycling forward returns to it after a full pass."
+  (declare (important-return-value t))
+  (let ((word-split
+         (mapcar
+          #'downcase
+          ;; `split-string' modified match-data.
+          (save-match-data
+            ;; Setting `case-fold-search' is needed for replace to work properly, see #2.
+            (split-string (string-trim (let ((case-fold-search nil))
+                                         (replace-regexp-in-string
+                                          "\\([[:lower:]]\\)\\([[:upper:]]\\)"
+                                          "\\1_\\2"
+                                          word-init))
+                                       "_")
+                          (cond
+                           (do-kebab-case
+                            "[_\\-]")
+                           (t
+                            "_"))))))
+        (result-choices nil))
+
+    (push (string-join (mapcar #'capitalize word-split) "") result-choices)
+
+    (cond
+     ;; Single word, just add lower-case.
+     ((null (cdr word-split))
+      (push (car word-split) result-choices))
+     ;; Multiple words.
+     (t
+      (dolist (ch
+               (cond
+                (do-kebab-case
+                 (list ?- ?_))
+                (t
+                 (list ?_))))
+        (push (string-join word-split (char-to-string ch)) result-choices))))
+
+    (recomplete--rotate-list-by-elt result-choices word-init)))
+
 
 ;; ---------------------------------------------------------------------------
 ;; Internal Functions
@@ -310,34 +355,8 @@ Argument FN-CACHE stores the result for reuse."
                 (when (and range (eql (car range) (+ word-end 1)))
                   (setq word-end (cdr range))))))))
 
-      (let* ((word-init (buffer-substring-no-properties word-beg word-end))
-             (word-split
-              (mapcar
-               #'downcase
-               ;; `split-string' modified match-data.
-               (save-match-data
-                 ;; Setting `case-fold-search' is needed for replace to work properly, see #2.
-                 (split-string (string-trim (let ((case-fold-search nil))
-                                              (replace-regexp-in-string
-                                               "\\([[:lower:]]\\)\\([[:upper:]]\\)"
-                                               "\\1_\\2"
-                                               word-init))
-                                            "_")
-                               "[_\\-]")))))
-
-        (push (string-join (mapcar #'capitalize word-split) "") result-choices)
-
-        (cond
-         ;; Single word, just add lower-case.
-         ((null (cdr word-split))
-          (push (car word-split) result-choices))
-         ;; Multiple words.
-         (t
-          (dolist (ch (list ?- ?_))
-            (push (string-join word-split (char-to-string ch)) result-choices))))
-
-        ;; Exclude this word from the list of options (if it exists at all).
-        (setq result-choices (recomplete--rotate-list-by-elt result-choices word-init))
+      (let ((word-init (buffer-substring-no-properties word-beg word-end)))
+        (setq result-choices (recomplete--build-case-style-choices word-init t))
         (setq fn-cache (list result-choices word-beg word-end))))
 
     (let ((word-at-index (nth (mod cycle-index (length result-choices)) result-choices)))
@@ -357,6 +376,8 @@ Argument FN-CACHE stores the result for reuse."
 
     (unless result-choices
       (let ((word-range (bounds-of-thing-at-point 'symbol)))
+        (unless word-range
+          (user-error "No symbol under cursor"))
         ;; Contract around separator characters.
         ;; This is done so conventions such as:
         ;; `__some_identifier__' -> `__SomeIdentifier__' or...
@@ -364,59 +385,21 @@ Argument FN-CACHE stores the result for reuse."
         ;; Instead of stripping them, as surrounding separator characters
         ;; would otherwise be stripped and these characters can have a special
         ;; meaning (depending on the language).
-        (when word-range
-          (save-excursion
-            (goto-char (car word-range))
-            (unless (zerop (skip-chars-forward "-_" (cdr word-range)))
-              (setcar word-range (point)))
-            (goto-char (cdr word-range))
-            (unless (zerop (skip-chars-backward "-_" (car word-range)))
-              (setcdr word-range (point))))
-          (when (eql (car word-range) (cdr word-range))
-            (user-error "No symbol under cursor containing non separators")))
-        (unless word-range
-          (user-error "No symbol under cursor"))
+        (save-excursion
+          (goto-char (car word-range))
+          (unless (zerop (skip-chars-forward "-_" (cdr word-range)))
+            (setcar word-range (point)))
+          (goto-char (cdr word-range))
+          (unless (zerop (skip-chars-backward "-_" (car word-range)))
+            (setcdr word-range (point))))
+        (when (eql (car word-range) (cdr word-range))
+          (user-error "No symbol under cursor containing non separators"))
         (setq word-beg (car word-range))
         (setq word-end (cdr word-range)))
 
-      (let* ((do-kebab-case (memq (char-syntax ?-) '(?_ ?w)))
-             (word-init (buffer-substring-no-properties word-beg word-end))
-             (word-split
-              (mapcar
-               #'downcase
-               ;; `split-string' modified match-data.
-               (save-match-data
-                 ;; Setting `case-fold-search' is needed for replace to work properly, see #2.
-                 (split-string (string-trim (let ((case-fold-search nil))
-                                              (replace-regexp-in-string
-                                               "\\([[:lower:]]\\)\\([[:upper:]]\\)"
-                                               "\\1_\\2"
-                                               word-init))
-                                            "_")
-                               (cond
-                                (do-kebab-case
-                                 "[_\\-]")
-                                (t
-                                 "_")))))))
-
-        (push (string-join (mapcar #'capitalize word-split) "") result-choices)
-
-        (cond
-         ;; Single word, just add lower-case.
-         ((null (cdr word-split))
-          (push (car word-split) result-choices))
-         ;; Multiple words.
-         (t
-          (dolist (ch
-                   (cond
-                    (do-kebab-case
-                     (list ?- ?_))
-                    (t
-                     (list ?_))))
-            (push (string-join word-split (char-to-string ch)) result-choices))))
-
-        ;; Exclude this word from the list of options (if it exists at all).
-        (setq result-choices (recomplete--rotate-list-by-elt result-choices word-init))
+      (let ((do-kebab-case (memq (char-syntax ?-) '(?_ ?w)))
+            (word-init (buffer-substring-no-properties word-beg word-end)))
+        (setq result-choices (recomplete--build-case-style-choices word-init do-kebab-case))
         (setq fn-cache (list result-choices word-beg word-end))))
 
     (let ((word-at-index (nth (mod cycle-index (length result-choices)) result-choices)))
@@ -441,14 +424,10 @@ Argument FN-CACHE stores the result for reuse."
           (dabbrev--reset-global-variables)
 
           (let ((word-init (dabbrev--abbrev-at-point)))
-            (setq word-beg
-                  (progn
-                    (search-backward word-init)
-                    (point)))
-            (setq word-end
-                  (progn
-                    (search-forward word-init)
-                    (point)))
+            ;; `dabbrev--abbrev-at-point' returns the text from the abbrev
+            ;; start up to point, so the abbrev ends at point.
+            (setq word-end (point))
+            (setq word-beg (- word-end (length word-init)))
 
             (let ((ignore-case-p (dabbrev--ignore-case-p word-init)))
               (setq result-choices (dabbrev--find-all-expansions word-init ignore-case-p)))
