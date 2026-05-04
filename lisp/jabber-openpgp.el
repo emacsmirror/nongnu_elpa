@@ -86,20 +86,18 @@ searching the keyring for a key with User ID \"xmpp:JID\"."
   "Return the EPG key for JC's account.
 Lookup order:
 1. `jabber-openpgp-key-alist' (per-account fingerprint)
-2. `mml-secure-openpgp-signers' (Gnus/message signing key)
-3. Keyring search for \"xmpp:BARE-JID\" User ID"
+2. Keyring search for \"xmpp:BARE-JID\" User ID
+3. Keyring search for BARE-JID as-is (email-style UID)"
   (let* ((bare-jid (jabber-connection-bare-jid jc))
          (ctx (epg-make-context 'OpenPGP))
-         (fingerprint
-          (or (cdr (assoc bare-jid jabber-openpgp-key-alist))
-              (car (bound-and-true-p mml-secure-openpgp-signers)))))
+         (fingerprint (cdr (assoc bare-jid jabber-openpgp-key-alist))))
     (if fingerprint
         (let ((keys (epg-list-keys ctx fingerprint 'secret)))
           (or (car keys)
               (error "OpenPGP: no secret key for fingerprint %s" fingerprint)))
       (or (car (epg-list-keys ctx (concat "xmpp:" bare-jid) 'secret))
           (car (epg-list-keys ctx bare-jid 'secret))
-          (error "OpenPGP: no key for %s; configure `jabber-openpgp-key-alist' or `mml-secure-openpgp-signers'"
+          (error "OpenPGP: no key for %s; configure `jabber-openpgp-key-alist'"
                  bare-jid)))))
 
 (defun jabber-openpgp--our-key-safe (jc)
