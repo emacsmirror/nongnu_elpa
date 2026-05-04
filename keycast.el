@@ -9,7 +9,7 @@
 ;; Package-Version: 1.4.7
 ;; Package-Requires: (
 ;;     (emacs  "28.1")
-;;     (compat "30.1"))
+;;     (compat "31.0"))
 
 ;; SPDX-License-Identifier: GPL-3.0-or-later
 
@@ -422,7 +422,7 @@ t to show the actual COMMAND, or a symbol to be shown instead."
     (setq keycast--this-command-desc (keycast--format-command cmd))
     (if (or (eq last-command cmd)
             (< keycast--command-repetitions 0))
-        (cl-incf keycast--command-repetitions)
+        (incf keycast--command-repetitions)
       (setq keycast--command-repetitions 0)))
   (when keycast-mode-line-mode
     (keycast--maybe-edit-local-format
