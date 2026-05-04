@@ -132,7 +132,7 @@ do-lint-native-comp:
 
 lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint lint-test-compile
 
-test:
+test: module
 	@rm -rf $(TEST_RESULTS)
 	@mkdir -p $(TEST_RESULTS)
 	@$(GUIX_WRAP) -j$(JOBS) -Otarget do-test
