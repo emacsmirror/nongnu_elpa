@@ -54,6 +54,9 @@
 (require 'elfeed-db)
 (require 'elfeed-search)
 
+(defvar elfeed-web-enabled nil
+  "If true, serve a web interface Elfeed with simple-httpd.")
+
 (defvar elfeed-web-limit 512
   "Maximum number of entries to serve at once.")
 
@@ -207,21 +210,27 @@ The current set of tags for each entry will be returned."
         (with-httpd-buffer proc "application/json"
           (princ (json-encode (ffloor (elfeed-db-last-update)))))))))
 
-(add-hook 'elfeed-db-update-hook 'elfeed-web-update)
+(defun elfeed-web-enabled (request)
+  "Filter REQUEST, check if Elfeed web is disabled."
+  (if (and (not elfeed-web-enabled)
+           (string-prefix-p "/elfeed/" (cadar request)))
+      '(("GET" "/error?status=403" "HTTP/1.1") ("Connection" "close"))
+    request))
 
 ;;;###autoload
 (defun elfeed-web-start ()
   "Start the Elfeed web interface server."
   (interactive)
-  (httpd-start))
+  (httpd-start)
+  (setq elfeed-web-enabled t))
 
 (defun elfeed-web-stop ()
   "Stop the Elfeed web interface server."
   (interactive)
-  (unload-feature 'elfeed-web))
+  (setq elfeed-web-enabled nil))
 
-(message "elfeed-web is loaded and accessible via simple-httpd")
+(add-hook 'elfeed-db-update-hook #'elfeed-web-update)
+(add-hook 'httpd-filter-functions #'elfeed-web-enabled)
 
 (provide 'elfeed-web)
-
 ;;; elfeed-web.el ends here
