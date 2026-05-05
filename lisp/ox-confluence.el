@@ -2,7 +2,20 @@
 
 ;; Copyright (C) 2012-2021 Sébastien Delafond
 
-;; Author: Sébastien Delafond <sdelafond@gmail.com>
+;; Authors: Sébastien Delafond
+;;       Bastien Guerry
+;;       Charles Durst
+;;       Ihor Radchenko
+;;       Ihor Radchenko
+;;       Lungang Fang
+;;       M. P. Ashton
+;;       Marc Ihm
+;;       Nicolas Goaziou
+;;       Paul Schorfheide
+;;       Richard Kim
+;;       Stefan Kangas
+;;       Stephen Mackenzie
+;; Maintainer: none at this point
 ;; Keywords: outlines, confluence, wiki
 
 ;; This file is not part of GNU Emacs.
