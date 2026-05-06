@@ -48,7 +48,9 @@ Clojure/ClojureScript/ClojureCLR development:
 - Reloading a namespace (via `require :reload`/`require :reload-all`)
 - Connecting to socket REPLs
 
-For a more powerful/full-featured solution see [CIDER][].
+For a tool that sits on Clojure's prepl rather than `comint`, but stays in the
+same minimalist spirit, see [Port][].  For a more powerful/full-featured
+solution see [CIDER][].
 
 ### inf-clojure vs CIDER
 
@@ -594,6 +596,7 @@ Distributed under the GNU General Public License; type <kbd>C-h C-c</kbd> to vie
 [circleci]: https://circleci.com/gh/clojure-emacs/inf-clojure
 [circleci-badge]: https://circleci.com/gh/clojure-emacs/inf-clojure.svg?style=svg
 [CIDER]: https://github.com/clojure-emacs/cider
+[Port]: https://github.com/clojure-emacs/port
 [Leiningen]: http://leiningen.org
 [contributors]: https://github.com/clojure-emacs/inf-clojure/contributors
 [melpa]: http://melpa.org
