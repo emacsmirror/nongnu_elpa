@@ -960,7 +960,9 @@ MAX-ID is a flag to include the max_id pagination parameter."
    (let ((json (mastodon-tl--toot-or-base
                 (mastodon-profile--item-json))))
      (mastodon-profile--make-author-buffer
-      (alist-get 'account json)
+      (or (alist-get 'account json)
+          ;; fallback for foll-req notifs (non-toot notifs):
+          json)
       nil nil nil nil max-id))))
 
 (defun mastodon-profile--image-from-account (account img-type)
