@@ -260,10 +260,10 @@ Or expand the region to contain whole lines."
       (while (not (evilnc-pure-comment-p e))
         (setq e (- e 1)))
 
-      (if (< b e) (setq rlt (cons b (1+ e)))))
+      (if (< b e) (setq rlt (cons b e))))
      (t
       ;; multi-line comment
-      (setq rlt (cons b (1+ e)))))
+      (setq rlt (cons b e))))
     rlt))
 
 (defun evilnc-adjusted-comment-end (b e)
