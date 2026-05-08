@@ -370,7 +370,9 @@ SILENT means make a silent request."
   (with-current-buffer resp
     (goto-char (point-min))
     (re-search-forward "^$" nil 'move)
-    (buffer-substring (point) (point-max))))
+    (decode-coding-string
+     (buffer-substring (point) (point-max))
+     'utf-8)))
 
 (defun fj-resp-json (resp)
   "Parse JSON from RESP, a buffer."
