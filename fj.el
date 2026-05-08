@@ -4959,7 +4959,9 @@ Used for hitting RET on a given link."
          (fj-issue-ref-follow item))
         ('notif
          (fj-notif-link-follow item))
-        ('shr (shr-browse-url))
+        ('shr
+         ;; (shr-browse-url))
+         (fj-shr-link-follow item))
         ('more
          (let ((inhibit-read-only t))
            (delete-region
@@ -4968,6 +4970,35 @@ Used for hitting RET on a given link."
            (fj-item-view-more*)))
         (_
          (error "Unknown link type %s" type))))))
+
+(defun fj-shr-link-follow (item)
+  "Load an shr.el link ITEM.
+If it looks like a link to an item, load it."
+  ;; "https://codeberg.org/guix/guix/pulls/7383"
+  ;; we might have a link to user/org, to repo, to item...
+  (let ((parsed (url-generic-parse-url item)))
+    ;; is it a URL we should try to load?:
+    (if (not (equal fj-host (concat "https://"
+                                  (url-host parsed))))
+        (shr-browse-url)
+      (let* ((owner-repo (fj-owner+repo-from-url item))
+             (file-split (split-string
+                          ;; remove leading / to avoid "" in list:
+                          (string-trim-left
+                           (url-filename parsed) "/")
+                          "/"))
+             (last (car (last file-split))))
+        (pcase (length file-split)
+          (1 (fj-user-repos (car owner-repo)))
+          (2
+           (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
+          (3 (if (equal "pulls" last)
+                 (fj-list-pulls (cadr owner-repo) (car owner-repo))
+               (fj-list-issues (cadr owner-repo) (car owner-repo))))
+          (_
+           (fj-item-view
+            (cadr owner-repo) (car owner-repo) last
+            (if (equal "pulls" (nth 2 file-split)) :pull))))))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."
