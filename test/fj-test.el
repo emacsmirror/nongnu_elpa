@@ -1788,3 +1788,22 @@ Mock test of `fj-list-issues-do'."
       (kill-buffer buf))))
 
 ;; TODO: tests for timeline items
+
+(defun make-fj-repo-+-owner-from-git-test (url expected)
+  (should (equal expected
+                 (with-mock
+                  (stub fj-git-config-remote-url => url)
+                  (fj-repo-+-owner-from-git)))))
+
+(ert-deftest fj-test-repo-+-owner-from-git ()
+  "This should succeed whether a fully specified URL with the protocol
+prefix is used or not."
+  (let ((expected '("owner" "repo")))
+    (and (make-fj-repo-+-owner-from-git-test
+          "git@example.org/owner/repo.git" expected)
+         (make-fj-repo-+-owner-from-git-test
+          "git://git@example.org/owner/repo.git" expected)
+         (make-fj-repo-+-owner-from-git-test
+          "http://git@example.org/owner/repo.git" expected)
+         (make-fj-repo-+-owner-from-git-test
+          "ssh://git@example.org/owner/repo.git" expected))))
