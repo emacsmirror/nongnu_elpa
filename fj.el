@@ -4815,8 +4815,10 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
        "\n"
        (propertize
         (concat
-         (propertize (concat "#" number)
-                     'face 'fj-comment-face)
+         (fj-propertize-link
+          (propertize (concat "#" number)
+                      'face 'fj-comment-face)
+          'notif number nil :noface)
          " "
          (fj-propertize-link
           (fj-format-tl-title .subject.title nil
