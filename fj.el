@@ -2314,9 +2314,14 @@ Otherwise t."
   "Return the owner (or organization) and repository names from URL.
 The return value is a list of two elements.  URL is assumed to be the
 URL of a Forgejo repository."
-  (let ((path (car (url-path-and-query (url-generic-parse-url url)))))
-    (string-split (string-trim-left (string-trim-right path ".git") "/")
-                  "/")))
+  (let* ((path (car (url-path-and-query (url-generic-parse-url url))))
+         (components (string-split (string-trim-left
+                                    (string-trim-right path ".git") "/")
+                                   "/")))
+    ;; In case the protocol prefix is missing, e.g. "git@...", the
+    ;; host name appears in the result; pick only the last two
+    ;; components to avoid returning it.
+    (last components 2)))
 
 (defun fj-repo-+-owner-from-git (&optional remote)
   "Return repo and owner of REMOTE from git config.
@@ -2325,17 +2330,7 @@ Nil if we fail to parse."
   ;; docs are unclear on how to distinguish these!
   (let* ((remote (fj-git-config-remote-url remote)))
     (when (fj--forgejo-repo-maybe remote)
-      (cond
-       ((string-prefix-p "http" remote) ;; http(s)
-        (last (split-string remote "/") 2))
-       ;; git protocol: git:// or git@...?
-       ;; can't just be prefix "git" because that matches ssh gitea@...
-       ((string-prefix-p "git://" remote) ;; git maybe
-        nil) ;;  TODO: git protocol
-       (t ;; ssh (can omit ssh:// prefix)
-        ;; “sshuser@domain.com:username/repo.git”
-        ;; nb sshuser is not the foregejo user!
-        (fj-owner+repo-from-url remote))))))
+      (fj-owner+repo-from-url remote))))
 
 ;;;###autoload
 (defun fj-list-issues-+-pulls (repo &optional owner state)
