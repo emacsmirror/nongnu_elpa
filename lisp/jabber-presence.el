@@ -418,8 +418,8 @@ When JC is nil, send for all connections."
            (jabber-read-with-input-method "Status message: " *jabber-current-status*
                                           '*jabber-status-history*)
            (read-string "Priority: " (int-to-string (if *jabber-current-priority*
-                                                         *jabber-current-priority*
-                                                       jabber-default-priority)))
+                                                        *jabber-current-priority*
+                                                      jabber-default-priority)))
            jc)))
 
   (setq *jabber-current-show* show *jabber-current-status* status)
@@ -458,7 +458,7 @@ JC is the Jabber connection."
   `(,(when (> (length *jabber-current-status*) 0)
        `(status () ,*jabber-current-status*))
     ,(when (> (length *jabber-current-show*) 0)
-	 `(show () ,*jabber-current-show*))
+       `(show () ,*jabber-current-show*))
     ,(when *jabber-current-priority*
        `(priority () ,(number-to-string *jabber-current-priority*)))
     ,@(apply #'append (mapcar (lambda (f)
@@ -614,13 +614,13 @@ JC is the Jabber connection."
   ;; XXX: specify account
   (jabber-send-iq jc nil "set"
 		  (list 'query (list (cons 'xmlns jabber-roster-xmlns))
-				(append
-				 (list 'item (append
-				     (list (cons 'jid (symbol-name jid)))
-				     (if (and name (> (length name) 0))
-					 (list (cons 'name name)))))
-				 (mapcar #'(lambda (x) `(group () ,x))
-				      groups)))
+			(append
+			 (list 'item (append
+				      (list (cons 'jid (symbol-name jid)))
+				      (if (and name (> (length name) 0))
+					  (list (cons 'name name)))))
+			 (mapcar #'(lambda (x) `(group () ,x))
+				 groups)))
 		  #'jabber-report-success "Roster item change"
 		  #'jabber-report-success "Roster item change"))
 

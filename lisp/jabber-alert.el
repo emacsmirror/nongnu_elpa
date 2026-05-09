@@ -292,9 +292,9 @@ Examples:
 
 ;; Alert hooks
 (define-jabber-alert echo "Show a message in the echo area"
-  (lambda (text &optional title) (message "%s" (or title text))))
+		     (lambda (text &optional title) (message "%s" (or title text))))
 (define-jabber-alert beep "Beep on event"
-  (lambda (&rest _ignore) (beep)))
+		     (lambda (&rest _ignore) (beep)))
 
 ;; Message alert hooks
 (defcustom jabber-message-alert-same-buffer t
@@ -400,7 +400,7 @@ This function is not called directly, but is the default for
 `jabber-alert-presence-message-function'."
   (cond
    ((equal oldstatus newstatus)
-      nil)
+    nil)
    (t
     (let ((formattedname
 	   (if (> (length (get who 'name)) 0)
@@ -487,13 +487,13 @@ This makes sense only for MUC.
 NAME: the name of the sender."
   (let ((sn (symbol-name name)))
     (let ((func (intern (format "%s-personal" sn))))
-    `(progn
-       (declare-function jabber-muc-looks-like-personal-p "jabber-muc-nick-completion.el"
-                         (message &optional group))
-       (defun ,func (nick group buffer text title)
-         (if (jabber-muc-looks-like-personal-p text group)
-             (,name nick group buffer text title)))
-       (cl-pushnew (quote ,func) (get 'jabber-alert-muc-hooks 'custom-options))))))
+      `(progn
+	 (declare-function jabber-muc-looks-like-personal-p "jabber-muc-nick-completion.el"
+                           (message &optional group))
+	 (defun ,func (nick group buffer text title)
+           (if (jabber-muc-looks-like-personal-p text group)
+               (,name nick group buffer text title)))
+	 (cl-pushnew (quote ,func) (get 'jabber-alert-muc-hooks 'custom-options))))))
 
 (define-personal-jabber-alert jabber-muc-beep)
 (define-personal-jabber-alert jabber-muc-wave)

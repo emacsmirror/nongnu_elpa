@@ -44,7 +44,7 @@
 (declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
 (declare-function jabber-send-iq "jabber-iq"
                   (jc to type query success-callback success-closure-data
-                   error-callback error-closure-data &optional result-id))
+                      error-callback error-closure-data &optional result-id))
 (declare-function jabber-report-success "jabber-util" (_jc xml-data context))
 (declare-function jabber-db-retract-message "jabber-db" (server-id retracted-by &optional reason))
 (declare-function jabber-db-occupant-id-by-server-id "jabber-db" (server-id))
@@ -78,15 +78,15 @@ the original message in the MUC buffer and replace it with a tombstone."
               ;; (bare room JID, no resource).
               ((not (jabber-jid-resource from))))
     (let* ((moderator
-             (or (jabber-xml-get-attribute moderated 'by)
-                 ;; Prosody sends the v0 <apply-to>/<moderated by="...">
-                 ;; with the moderator JID but omits it from the v1
-                 ;; <retract>/<moderated> element.  Fall back to v0.
-                 (when-let* ((apply-to (jabber-xml-child-with-xmlns
-                                        xml-data "urn:xmpp:fasten:0"))
-                             (mod-v0 (car (jabber-xml-get-children
-                                           apply-to 'moderated))))
-                   (jabber-xml-get-attribute mod-v0 'by))))
+            (or (jabber-xml-get-attribute moderated 'by)
+                ;; Prosody sends the v0 <apply-to>/<moderated by="...">
+                ;; with the moderator JID but omits it from the v1
+                ;; <retract>/<moderated> element.  Fall back to v0.
+                (when-let* ((apply-to (jabber-xml-child-with-xmlns
+                                       xml-data "urn:xmpp:fasten:0"))
+                            (mod-v0 (car (jabber-xml-get-children
+                                          apply-to 'moderated))))
+                  (jabber-xml-get-attribute mod-v0 'by))))
            (reason-el (car (jabber-xml-get-children retract 'reason)))
            (reason (car (jabber-xml-node-children reason-el)))
            (buf (jabber-muc-find-buffer room)))

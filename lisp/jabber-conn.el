@@ -255,7 +255,7 @@ When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER."
 (defun jabber-starttls-initiate (fsm)
   "Initiate a STARTTLS connection."
   (jabber-send-sexp fsm
-   `(starttls ((xmlns . ,jabber-tls-xmlns)))))
+		    `(starttls ((xmlns . ,jabber-tls-xmlns)))))
 
 (defun jabber-starttls-process-input (fsm xml-data)
   "Process result of starttls request.

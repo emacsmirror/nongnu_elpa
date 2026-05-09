@@ -122,13 +122,13 @@ obtained from `xml-parse-region'."
                 (car (jabber-xml-get-children
                       query 'tz))))))
     (format "%s has time: %s" from
-           (cond
-            (display display)
-            (utc
-             (concat
-              (format-time-string "%Y-%m-%d %T" (jabber-parse-legacy-time utc))
-              (when tz
-                (concat " " tz))))))))
+            (cond
+             (display display)
+             (utc
+              (concat
+               (format-time-string "%Y-%m-%d %T" (jabber-parse-legacy-time utc))
+               (when tz
+                 (concat " " tz))))))))
 
 ;; the only difference between these two functions is the
 ;; `jabber-read-jid-completing' call.

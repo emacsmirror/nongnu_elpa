@@ -61,7 +61,7 @@
 (declare-function jabber-httpupload--send-url "jabber-httpupload")
 (declare-function jabber-db--outgoing-handler "jabber-db" (body id))
 (declare-function jabber-chat-register-decrypt-handler "jabber-chat"
-  (id &rest props))
+		  (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 (declare-function ewoc-data "ewoc" (node))
 
@@ -101,9 +101,9 @@ Keys older than this are deleted on connect."
 
 (defvar jabber-omemo-build-command
   (cond
-    ((eq system-type 'darwin)       "make module CC=clang")
-    ((eq system-type 'berkeley-unix) "gmake module CC=clang")
-    (t                               "make module"))
+   ((eq system-type 'darwin)       "make module CC=clang")
+   ((eq system-type 'berkeley-unix) "gmake module CC=clang")
+   (t                               "make module"))
   "Shell command to build the jabber-omemo-core dynamic module.
 Run from the emacs-jabber project root.")
 
@@ -188,13 +188,13 @@ the resulting module.  Signals an error on build failure."
 (define-error 'jabber-omemo-error "OMEMO error")
 
 (define-error 'jabber-omemo-not-for-us
-  "OMEMO message not encrypted for this device" 'jabber-omemo-error)
+	      "OMEMO message not encrypted for this device" 'jabber-omemo-error)
 
 (define-error 'jabber-omemo-no-session
-  "No OMEMO session with sender device" 'jabber-omemo-error)
+	      "No OMEMO session with sender device" 'jabber-omemo-error)
 
 (define-error 'jabber-omemo-prekey-failed
-  "OMEMO pre-key decryption failed" 'jabber-omemo-error)
+	      "OMEMO pre-key decryption failed" 'jabber-omemo-error)
 
 ;; Public API
 
@@ -658,15 +658,15 @@ Calls `jabber-omemo-get-bundle' and base64-encodes all keys."
               ((signedPreKeyId . ,(number-to-string spk-id)))
               ,(base64-encode-string spk t))
              (signedPreKeySignature ()
-              ,(base64-encode-string sig t))
+				    ,(base64-encode-string sig t))
              (identityKey ()
-              ,(base64-encode-string ik t))
+			  ,(base64-encode-string ik t))
              (prekeys ()
-              ,@(mapcar (lambda (pk)
-                          `(preKeyPublic
-                            ((preKeyId . ,(number-to-string (car pk))))
-                            ,(base64-encode-string (cdr pk) t)))
-                        pre-keys)))))
+		      ,@(mapcar (lambda (pk)
+				  `(preKeyPublic
+				    ((preKeyId . ,(number-to-string (car pk))))
+				    ,(base64-encode-string (cdr pk) t)))
+				pre-keys)))))
 
 (defun jabber-omemo--parse-bundle-xml (xml)
   "Parse bundle XML into a plist for session initiation.
@@ -1054,50 +1054,50 @@ Signals structured errors that callers can dispatch on:
          (sender-jid (jabber-omemo--resolve-sender-jid xml-data)))
     (if (not sender-jid)
         (error "Sender JID unknown (anonymous room?)")
-    (let* ((sender-did (plist-get parsed :sid))
-           (iv (plist-get parsed :iv))
-           (payload (plist-get parsed :payload))
-           (keys (plist-get parsed :keys))
-           (our-key-entry (cl-find our-did keys :key #'car)))
-      (unless our-key-entry
-        (signal 'jabber-omemo-not-for-us (list our-did)))
-      (let* ((key-data (plist-get (cdr our-key-entry) :data))
-             (pre-key-p (plist-get (cdr our-key-entry) :pre-key-p))
-             (store-ptr (jabber-omemo--get-store jc))
-             (session-ptr (if pre-key-p
-                              (jabber-omemo-make-session)
-                            (or (jabber-omemo--get-session
-                                 jc sender-jid sender-did)
-                                (signal 'jabber-omemo-no-session
-                                        (list sender-jid sender-did)))))
-             (decrypted-key
-              (condition-case err
-                  (jabber-omemo-decrypt-key
-                   session-ptr store-ptr pre-key-p key-data)
-                (jabber-omemo-error
-                 (if pre-key-p
-                     (signal 'jabber-omemo-prekey-failed
-                             (list sender-jid sender-did
-                                   (error-message-string err)))
-                   (signal (car err) (cdr err)))))))
-        (jabber-omemo--save-session jc sender-jid sender-did session-ptr)
-        (jabber-omemo--persist-store jc)
-        (let ((trust (jabber-omemo-store-load-trust
-                      account sender-jid sender-did)))
-          (when (and trust (zerop (plist-get trust :trust)))
-            (jabber-omemo-store-set-trust
-             account sender-jid sender-did 1)
-            (message "%s auto-trusted device %d for %s (TOFU)"
-                     (propertize "OMEMO:" 'face 'warning)
-                     sender-did sender-jid)))
-        (when-let* ((hb (jabber-omemo-heartbeat session-ptr store-ptr)))
-          (jabber-omemo--send-heartbeat jc sender-jid sender-did hb))
-        (if payload
-            (let* ((plaintext (jabber-omemo-decrypt-message
-                               decrypted-key iv payload))
-                   (text (decode-coding-string plaintext 'utf-8)))
-              (jabber-chat--set-body xml-data text))
-          xml-data))))))
+      (let* ((sender-did (plist-get parsed :sid))
+             (iv (plist-get parsed :iv))
+             (payload (plist-get parsed :payload))
+             (keys (plist-get parsed :keys))
+             (our-key-entry (cl-find our-did keys :key #'car)))
+	(unless our-key-entry
+          (signal 'jabber-omemo-not-for-us (list our-did)))
+	(let* ((key-data (plist-get (cdr our-key-entry) :data))
+               (pre-key-p (plist-get (cdr our-key-entry) :pre-key-p))
+               (store-ptr (jabber-omemo--get-store jc))
+               (session-ptr (if pre-key-p
+				(jabber-omemo-make-session)
+                              (or (jabber-omemo--get-session
+                                   jc sender-jid sender-did)
+                                  (signal 'jabber-omemo-no-session
+                                          (list sender-jid sender-did)))))
+               (decrypted-key
+		(condition-case err
+                    (jabber-omemo-decrypt-key
+                     session-ptr store-ptr pre-key-p key-data)
+                  (jabber-omemo-error
+                   (if pre-key-p
+                       (signal 'jabber-omemo-prekey-failed
+                               (list sender-jid sender-did
+                                     (error-message-string err)))
+                     (signal (car err) (cdr err)))))))
+          (jabber-omemo--save-session jc sender-jid sender-did session-ptr)
+          (jabber-omemo--persist-store jc)
+          (let ((trust (jabber-omemo-store-load-trust
+			account sender-jid sender-did)))
+            (when (and trust (zerop (plist-get trust :trust)))
+              (jabber-omemo-store-set-trust
+               account sender-jid sender-did 1)
+              (message "%s auto-trusted device %d for %s (TOFU)"
+                       (propertize "OMEMO:" 'face 'warning)
+                       sender-did sender-jid)))
+          (when-let* ((hb (jabber-omemo-heartbeat session-ptr store-ptr)))
+            (jabber-omemo--send-heartbeat jc sender-jid sender-did hb))
+          (if payload
+              (let* ((plaintext (jabber-omemo-decrypt-message
+				 decrypted-key iv payload))
+                     (text (decode-coding-string plaintext 'utf-8)))
+		(jabber-chat--set-body xml-data text))
+            xml-data))))))
 
 (defvar jabber-omemo--sent-muc-plaintexts (make-hash-table :test #'equal)
   "Cache of recently-sent OMEMO MUC message plaintexts.
@@ -1342,7 +1342,7 @@ envelope."
                extra-elements)))))))))
 
 (defun jabber-omemo--send-encrypted-muc (jc body group all-sessions
-                                             &optional extra-elements)
+                                            &optional extra-elements)
   "Build and send an OMEMO-encrypted MUC stanza.
 JC is the connection.  BODY is the plaintext.  GROUP is the room JID.
 ALL-SESSIONS is a list of (DEVICE-ID . SESSION-PTR) for all

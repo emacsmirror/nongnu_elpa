@@ -217,7 +217,7 @@ These are idempotent responses that should bypass back-pressure."
        (member (jabber-xml-get-attribute sexp 'type) '("result" "error"))))
 
 (defun jabber-sm--should-queue-p (state-data sexp)
-  "Return non-nil if SEXP should be queued instead of sent immediately.
+  "Return non-nil if SEXP should be queued in STATE-DATA.
 True when SM is enabled, SEXP is a countable stanza, back-pressure
 is enabled, and the in-flight count has reached the cap.
 IQ responses (result/error) always bypass the gate."
@@ -284,7 +284,7 @@ server has stopped sending ack responses."
       (plist-put state-data :sm-stall-since nil))))
 
 (defun jabber-sm--recover-stall (jc state-data)
-  "Force recovery from an ack stall on JC.
+  "Force recovery from an ack stall on JC with STATE-DATA.
 Advance the ack counter to the current outbound count, clear the
 outbound queue, and drain pending stanzas.  The drain is capped by
 `jabber-sm-max-in-flight' so at most that many stanzas go out per
@@ -394,7 +394,7 @@ Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
 ;;; Periodic ack request timer
 
 (defun jabber-sm--r-timer-function (jc)
-  "Timer callback: send <r/> and check for ack stall."
+  "Timer callback: send <r/> to JC and check for ack stall."
   (when (memq jc jabber-connections)
     (condition-case nil
         (progn

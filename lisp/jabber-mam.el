@@ -165,7 +165,7 @@ TARGET is a room JID for MUC MAM, or nil for 1:1 MAM.")
           (floor (float-time))))
 
 (defun jabber-mam--build-query (queryid &optional with start after-id max
-                                         before-id)
+                                        before-id)
   "Build a MAM <query> sexp.
 QUERYID is echoed in results for correlation.
 WITH filters by JID, START is an XEP-0082 datetime string.
@@ -205,7 +205,7 @@ an empty <before/> element (meaning \"last page\")."
             ,@(when form-fields
                 (list `(x ((xmlns . "jabber:x:data")
                            (type . "submit"))
-                         ,@form-fields)))
+                          ,@form-fields)))
             ,@(when rsm-children
                 (list `(set ((xmlns . ,jabber-mam-rsm-xmlns))
                             ,@rsm-children))))))
@@ -216,7 +216,7 @@ an empty <before/> element (meaning \"last page\")."
   "Extract MAM result from a <message> stanza.
 Returns (ARCHIVE-ID DELAY-STAMP INNER-MESSAGE) or nil."
   (when-let* ((result-el (jabber-xml-child-with-xmlns
-                           xml-data jabber-mam-xmlns)))
+                          xml-data jabber-mam-xmlns)))
     (let* ((archive-id (jabber-xml-get-attribute result-el 'id))
            (fwd-el (car (jabber-xml-get-children result-el 'forwarded)))
            (delay-el (and fwd-el
@@ -285,14 +285,14 @@ Return (DIRECTION . PEER) where DIRECTION is \"in\" or \"out\"."
   (let* ((our-jid (jabber-connection-bare-jid jc))
          (groupchat-p (string= type "groupchat"))
          (direction (if groupchat-p
-                       (let ((nick (jabber-jid-resource from))
-                             (room (jabber-jid-user from)))
-                         (if (and nick
-                                  (jabber-mam--our-muc-nick-p
-                                   room nick jc))
-                             "out" "in"))
-                     (if (string= (jabber-jid-user from) our-jid)
-                         "out" "in")))
+			(let ((nick (jabber-jid-resource from))
+                              (room (jabber-jid-user from)))
+                          (if (and nick
+                                   (jabber-mam--our-muc-nick-p
+                                    room nick jc))
+                              "out" "in"))
+                      (if (string= (jabber-jid-user from) our-jid)
+                          "out" "in")))
          (peer (if groupchat-p
                    (jabber-jid-user from)
                  (jabber-jid-user
@@ -327,7 +327,7 @@ cannot be determined."
 ARCHIVE-ID and STANZA-ID are recorded as seen.  TS updates the
 min/max timestamp range."
   (when-let* ((sync-data (cdr (assoc qid jabber-mam--sync-received
-                                      #'string=)))
+                                     #'string=)))
               (ids (plist-get sync-data :ids)))
     (when archive-id (puthash archive-id t ids))
     (when stanza-id (puthash stanza-id t ids))
@@ -342,7 +342,7 @@ min/max timestamp range."
   "Handle a MAM result <message> from the message chain.
 JC is the Jabber connection.  XML-DATA is the stanza."
   (when-let* ((result-el (jabber-xml-child-with-xmlns
-                           xml-data jabber-mam-xmlns))
+                          xml-data jabber-mam-xmlns))
               (qid (jabber-xml-get-attribute result-el 'queryid))
               ((jabber-mam--active-query-p qid))
               (parsed (jabber-mam--parse-result xml-data))
@@ -425,7 +425,7 @@ COMMIT the SQLite transaction when transitioning from 1 to 0."
 ;;; Query and pagination
 
 (defun jabber-mam--query (jc &optional after-id queryid with start to
-                                  before-id max)
+                             before-id max)
   "Send a MAM query via JC, paginating from AFTER-ID.
 QUERYID correlates results; generated if nil.
 WITH and START are optional filters.
@@ -477,7 +477,7 @@ CLOSURE is (QUERYID WITH START TO)."
           (cl-remove queryid jabber-mam--syncing
                      :key #'cdr :test #'string=))
     (let ((one-shot-p (assoc queryid jabber-mam--query-targets
-                                   #'string=)))
+                             #'string=)))
       ;; One-shot queries (before-id based) never paginate forward.
       (setq one-shot-p (and one-shot-p
                             (eq (cdr one-shot-p) 'one-shot)))

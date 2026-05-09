@@ -226,14 +226,14 @@ One disabled account with a non-standard port:
 
 ;;;###autoload
 (defconst jabber-presence-faces
- '(("" . jabber-roster-user-online)
-   ("away" . jabber-roster-user-away)
-   ("xa" . jabber-roster-user-xa)
-   ("dnd" . jabber-roster-user-dnd)
-   ("chat" . jabber-roster-user-chatty)
-   ("error" . jabber-roster-user-error)
-   (nil . jabber-roster-user-offline))
- "Mapping from presence types to faces.")
+  '(("" . jabber-roster-user-online)
+    ("away" . jabber-roster-user-away)
+    ("xa" . jabber-roster-user-xa)
+    ("dnd" . jabber-roster-user-dnd)
+    ("chat" . jabber-roster-user-chatty)
+    ("error" . jabber-roster-user-error)
+    (nil . jabber-roster-user-offline))
+  "Mapping from presence types to faces.")
 
 (defconst jabber-presence-strings
   `(("" . ,(propertize "Online" 'face 'jabber-roster-user-online))

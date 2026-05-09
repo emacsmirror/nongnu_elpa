@@ -82,10 +82,10 @@ Note that \":\" or alike not needed (it appended in other string)"
   "Return non-nil if jabber MESSAGE is addresed to me.
 Optional argument GROUP to look."
   (if message (string-match (concat
-		 "^"
-		 (jabber-my-nick group)
-		 (regexp-opt jabber-muc-looks-personaling-symbols))
-		message)
+			     "^"
+			     (jabber-my-nick group)
+			     (regexp-opt jabber-muc-looks-personaling-symbols))
+			    message)
     nil))
 
 (defun jabber-muc-nicknames ()

@@ -56,7 +56,7 @@
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
 (declare-function jabber-chain-add "jabber-core" (chain-var handler &optional depth))
 (declare-function jabber-chat-register-decrypt-handler "jabber-chat"
-  (id &rest props))
+		  (id &rest props))
 (declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
@@ -198,7 +198,7 @@ Caches the result and guards against re-entrant GPG calls."
 JC is the connection.  XML-DATA is the presence stanza.
 Verifies the signature and optionally fetches missing keys."
   (when-let* ((x-el (jabber-xml-child-with-xmlns
-                      xml-data jabber-openpgp-legacy-signed-xmlns))
+                     xml-data jabber-openpgp-legacy-signed-xmlns))
               (stripped (car (jabber-xml-node-children x-el)))
               ((stringp stripped)))
     (let* ((from (jabber-xml-get-attribute xml-data 'from))
@@ -331,7 +331,7 @@ envelope."
 (defun jabber-openpgp-legacy--detect-encrypted (xml-data)
   "Return stripped armor text from <x xmlns='jabber:x:encrypted'>, or nil."
   (when-let* ((x-el (jabber-xml-child-with-xmlns
-                      xml-data jabber-openpgp-legacy-encrypted-xmlns))
+                     xml-data jabber-openpgp-legacy-encrypted-xmlns))
               (stripped (car (jabber-xml-node-children x-el))))
     (and (stringp stripped) stripped)))
 

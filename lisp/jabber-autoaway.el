@@ -165,7 +165,7 @@ Return nil on error."
   ;; Run unidle timer every 10 seconds (if xa specified, timer already running)
   (unless xa
     (setq jabber-autoaway-timer (run-with-timer 10 10
-					      #'jabber-autoaway-maybe-unidle))))
+						#'jabber-autoaway-maybe-unidle))))
 
 (defun jabber-autoaway-maybe-unidle ()
   (let ((idle-time (jabber-autoaway-get-idle-time)))

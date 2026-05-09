@@ -195,9 +195,9 @@ DEFAULTS takes precedence over values specified in the form."
 	    (widget-insert (or label var) ":\n"))
 	(push (cons (cons var type)
 		    (widget-create 'text (or (cdr default-value)
-					      (mapconcat #'(lambda (val)
-							     (car (jabber-xml-node-children val)))
-							 values "\n")
+					     (mapconcat #'(lambda (val)
+							    (car (jabber-xml-node-children val)))
+							values "\n")
 					     "")))
 	      jabber-widget-alist))
 

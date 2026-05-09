@@ -92,8 +92,8 @@ JC is the Jabber connection."
   (let ((to (jabber-xml-get-attribute xml-data 'from))
 	(id (jabber-xml-get-attribute xml-data 'id))
 	(os (format "Emacs %d.%d (%s)"
-	     emacs-major-version emacs-minor-version
-	     system-type)))
+		    emacs-major-version emacs-minor-version
+		    system-type)))
     (jabber-send-iq jc to "result"
 		    `(query ((xmlns . ,jabber-version-xmlns))
 			    (name () "jabber.el")

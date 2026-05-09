@@ -51,28 +51,28 @@ Note that this might interfere with
 `jabber-chat-display-more-backlog': you ask for more history, you
 get it, and then it just gets deleted."
   (interactive)
-    (let* ((buffer-undo-list t)
-           (inhibit-read-only t)
-           (work-ewoc (if ewoc ewoc jabber-chat-ewoc))
-          (delete-before
-           ;; go back one node, to make this function "idempotent"
-           (ewoc-prev
-            work-ewoc
-            (ewoc-locate work-ewoc
-                         (with-current-buffer buffer
-                           (goto-char (point-max))
-                           (forward-line (- jabber-log-lines-to-keep))
-                           (point))))))
-      (while delete-before
-        (let* ((data (ewoc-data delete-before))
-               (msg (and (listp data) (listp (cadr data)) (cadr data)))
-               (id (and msg (plist-get msg :id))))
-          (when (and id jabber-chat--msg-nodes)
-            (remhash id jabber-chat--msg-nodes)))
-        (setq delete-before
-              (prog1
-                  (ewoc-prev work-ewoc delete-before)
-                (ewoc-delete work-ewoc delete-before))))))
+  (let* ((buffer-undo-list t)
+         (inhibit-read-only t)
+         (work-ewoc (if ewoc ewoc jabber-chat-ewoc))
+         (delete-before
+          ;; go back one node, to make this function "idempotent"
+          (ewoc-prev
+           work-ewoc
+           (ewoc-locate work-ewoc
+                        (with-current-buffer buffer
+                          (goto-char (point-max))
+                          (forward-line (- jabber-log-lines-to-keep))
+                          (point))))))
+    (while delete-before
+      (let* ((data (ewoc-data delete-before))
+             (msg (and (listp data) (listp (cadr data)) (cadr data)))
+             (id (and msg (plist-get msg :id))))
+        (when (and id jabber-chat--msg-nodes)
+          (remhash id jabber-chat--msg-nodes)))
+      (setq delete-before
+            (prog1
+                (ewoc-prev work-ewoc delete-before)
+              (ewoc-delete work-ewoc delete-before))))))
 
 (defun jabber-truncate-muc (_nick _group buffer _text _proposed-alert)
   "Clean old history from MUC buffers.

@@ -130,9 +130,9 @@ there are unread messages which otherwise would be lost."
   "Face for MUC (groupchat) activity in the mode line.")
 
 (define-obsolete-face-alias 'jabber-activity-face
-  'jabber-activity-chat-face "30.1")
+			    'jabber-activity-chat-face "30.1")
 (define-obsolete-face-alias 'jabber-activity-personal-face
-  'jabber-activity-mention-face "30.1")
+			    'jabber-activity-mention-face "30.1")
 
 (defvar jabber-activity-jids nil
   "A list of JIDs which have caused activity.")
@@ -259,8 +259,8 @@ A JID is shown when it is not banned and its buffer (if any) is
 not currently visible."
   (let ((buffer (jabber-activity-find-buffer-name jid)))
     (and (not (cl-dolist (entry jabber-activity-banned)
-               (when (string-match entry jid)
-                 (cl-return t))))
+		(when (string-match entry jid)
+                  (cl-return t))))
 	 (or (null buffer)
 	     (not (get-buffer-window buffer 'visible))))))
 
@@ -321,7 +321,7 @@ Recomputes `jabber-activity-mode-string' and
 	   (entries (mapcar #'jabber-activity-lookup-name sorted))
 	   (total (length entries))
 	   (overflow (when (and jabber-activity-shorten-cutoff
-			       (> total jabber-activity-shorten-cutoff))
+				(> total jabber-activity-shorten-cutoff))
 		       (- total jabber-activity-shorten-cutoff)))
 	   (visible (if overflow
 			(seq-take entries jabber-activity-shorten-cutoff)
@@ -398,7 +398,7 @@ when there are unread messages which otherwise would be lost, if
   (if (and jabber-activity-jids
 	   jabber-activity-query-unread)
       (or jabber-silent-mode (yes-or-no-p
-       "You have unread Jabber messages, are you sure you want to quit?"))
+			      "You have unread Jabber messages, are you sure you want to quit?"))
     t))
 
 ;;; Interactive functions

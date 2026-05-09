@@ -305,9 +305,9 @@ ATTRIBUTES must be a list of symbols, as present in XML-DATA."
 	  ;; performance.
 	  (setq prefixes
 		(cons (cons prefix ns-uri)
-			(if (assoc prefix prefixes)
-			    (remove (assoc prefix prefixes) prefixes)
-			  prefixes)))))))
+		      (if (assoc prefix prefixes)
+			  (remove (assoc prefix prefixes) prefixes)
+			prefixes)))))))
   prefixes)
 
 ;;; Shared xmlns constants

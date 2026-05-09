@@ -775,10 +775,10 @@ This function is only concerned with presence stanzas resulting
 in the user entering/staying in the room."
   ;; The keys in the plist are affiliation, role and jid.
   (let ((display-nick (if (plist-get new-plist 'jid)
-                         (concat nickname " <"
-                                 (jabber-jid-user (plist-get new-plist 'jid))
-                                 ">")
-                       nickname)))
+                          (concat nickname " <"
+                                  (jabber-jid-user (plist-get new-plist 'jid))
+                                  ">")
+			nickname)))
     (cond
      ((null old-plist)
       (concat display-nick " enters the room ("
@@ -858,8 +858,8 @@ JC is the Jabber connection."
   (interactive
    (jabber-muc-argument-list
     (list (jabber-muc-read-nickname jabber-group "Nickname: "))))
-    (let ((muc-name (format "%s/%s" group nickname)))
-	(jabber-vcard-get jc muc-name)))
+  (let ((muc-name (format "%s/%s" group nickname)))
+    (jabber-vcard-get jc muc-name)))
 
 ;;;###autoload
 (defun jabber-muc-get-version (jc group nickname)
@@ -1165,9 +1165,9 @@ JC is the Jabber connection."
 			   (plist-get (fsm-get-state-data jc) :username))))
     (if default
         default-nickname
-        (jabber-read-with-input-method (format "Nickname: (default %s) "
-					   default-nickname)
-				   nil nil default-nickname))))
+      (jabber-read-with-input-method (format "Nickname: (default %s) "
+					     default-nickname)
+				     nil nil default-nickname))))
 
 ;;;###autoload
 (defun jabber-muc-nick (jc group nickname)
@@ -1208,9 +1208,9 @@ JC is the Jabber connection."
   "MUC-Names"
   "Major mode for displaying MUC participant lists."
   (setq tabulated-list-format [("Nick" 20 t)
-                                ("Role" 12 t)
-                                ("Affiliation" 12 t)
-                                ("JID" 30 t)])
+                               ("Role" 12 t)
+                               ("Affiliation" 12 t)
+                               ("JID" 30 t)])
   (tabulated-list-init-header))
 
 (defun jabber-muc-names ()
@@ -1219,7 +1219,7 @@ JC is the Jabber connection."
   (let* ((group jabber-group)
          (participants (cdr (assoc group jabber-muc-participants)))
          (buf (get-buffer-create (format "*MUC Participants: %s*"
-                                        (jabber-jid-displayname group)))))
+                                         (jabber-jid-displayname group)))))
     (with-current-buffer buf
       (jabber-muc-names-mode)
       (setq jabber-muc-names--group group)
@@ -1391,8 +1391,8 @@ When MEDIATED-P is non-nil, include a Decline button."
   (insert "\n\n")
   (let ((action (lambda (&rest _ignore) (interactive)
                   (jabber-muc-join jabber-buffer-connection group
-                                  (jabber-muc-read-my-nickname
-                                   jabber-buffer-connection group)))))
+                                   (jabber-muc-read-my-nickname
+                                    jabber-buffer-connection group)))))
     (insert-button "Accept" 'action action))
   (when mediated-p
     (insert "\t")
@@ -1512,7 +1512,7 @@ never responds.  Does nothing if the queue is empty."
       (when (assq jc jabber-muc--autojoin-queue)
         (setq jabber-muc--autojoin-timer
               (run-with-timer jabber-muc-autojoin-timeout nil
-                             #'jabber-muc--autojoin-timeout jc))))))
+                              #'jabber-muc--autojoin-timeout jc))))))
 
 (defun jabber-muc--autojoin-queued-p (jc group)
   "Return non-nil if GROUP is already in the autojoin queue for JC."
@@ -1652,7 +1652,7 @@ JC is the Jabber connection."
 	(type (jabber-xml-get-attribute presence 'type))
 	(muc-marker (cl-find-if
 		     (lambda (x) (equal (jabber-xml-get-attribute x 'xmlns)
-				   jabber-muc-xmlns-user))
+					jabber-muc-xmlns-user))
 		     (jabber-xml-get-children presence 'x))))
     ;; This is MUC presence if it has an MUC-namespaced tag...
     (or muc-marker
@@ -1749,8 +1749,8 @@ messages."
         ;; backlog was already loaded from DB, to avoid duplicates.
         ;; The DB handler stores them; backlog refresh will show them.
         (when (and (or error-p
-                      (cl-some (lambda (f) (funcall f msg-plist type :printp))
-                               printers))
+                       (cl-some (lambda (f) (funcall f msg-plist type :printp))
+				printers))
                    (not (and (jabber-muc--history-message-p xml-data)
                              jabber-chat-earliest-backlog)))
           (jabber-maybe-print-rare-time
@@ -1759,8 +1759,8 @@ messages."
     ;; history messages.
     (unless (jabber-muc--history-message-p xml-data)
       (let ((inhibit-message (and buffer (buffer-live-p buffer)
-                                    (buffer-local-value
-                                     'jabber-chat-mam-syncing buffer))))
+                                  (buffer-local-value
+                                   'jabber-chat-mam-syncing buffer))))
         (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
           (run-hook-with-args hook
                               nick group buffer body-text
@@ -1798,7 +1798,7 @@ JC is the Jabber connection."
           (when reason (concat " - '" reason "'"))))
 
 (defun jabber-muc--process-self-leave (jc group type status-codes
-                                         error-node actor reason)
+                                          error-node actor reason)
   "Handle our own departure from GROUP.
 TYPE is the presence type (\"unavailable\" or \"error\").
 STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
@@ -1846,7 +1846,7 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
       (run-with-timer 0 nil #'jabber-muc--autojoin-next jc))))
 
 (defun jabber-muc--process-other-leave (_jc group nickname status-codes
-                                           item actor reason)
+                                            item actor reason)
   "Handle another participant leaving GROUP.
 NICKNAME is the departing user.  STATUS-CODES, ITEM, ACTOR and REASON
 come from the stanza."
@@ -2008,7 +2008,7 @@ Accesses `jabber-pending-groupchats' to determine our nickname."
 	 (type (jabber-xml-get-attribute presence 'type))
 	 (x-muc (cl-find-if
 		 (lambda (x) (equal (jabber-xml-get-attribute x 'xmlns)
-			       jabber-muc-xmlns-user))
+				    jabber-muc-xmlns-user))
 		 (jabber-xml-get-children presence 'x)))
 	 (group (jabber-jid-user from))
 	 (nickname (jabber-jid-resource from))
@@ -2051,7 +2051,7 @@ Accesses `jabber-pending-groupchats' to determine our nickname."
               (member jabber-muc-status-self-presence status-codes)
               (string= nickname our-nickname))
           (jabber-muc--process-self-leave jc group type status-codes
-                                         error-node actor reason)
+                                          error-node actor reason)
         (jabber-muc--process-other-leave jc group nickname status-codes
                                          item actor reason)))
      (t

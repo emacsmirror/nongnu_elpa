@@ -91,7 +91,7 @@ Tolerates bare function entries from old-style registrations."
 (defvar-local jabber-namespace-prefixes nil
   "XML namespace prefixes used for the current connection.")
 
-(defgroup jabber-core nil "customize core functionality."
+(defgroup jabber-core nil "Customize core functionality."
   :group 'jabber)
 
 (defcustom jabber-post-connect-hooks '(jabber-send-current-presence
@@ -217,7 +217,7 @@ problems."
 (defun jabber-connect-all (&optional arg)
   "Connect to all configured Jabber accounts.
 See `jabber-account-list'.
-If no accounts are configured (or with prefix argument), call `jabber-connect'
+If no accounts are configured (or with prefix ARG), call `jabber-connect'
 interactively.
 With many prefix arguments, one less is passed to `jabber-connect'."
   (interactive "P")
@@ -263,9 +263,10 @@ With many prefix arguments, one less is passed to `jabber-connect'."
 (defun jabber-connect (username server resource &optional
 				registerp password network-server
 				port connection-type)
-  "Connect to the Jabber server and start a Jabber XML stream.
-With prefix argument, register a new account.
-With double prefix argument, specify more connection details."
+  "Connect USERNAME@SERVER/RESOURCE to the Jabber server.
+When REGISTERP is non-nil, register a new account.
+Optional PASSWORD, NETWORK-SERVER, PORT and CONNECTION-TYPE
+override the defaults from `jabber-account-list'."
   (interactive
    (let* ((jid (completing-read "Enter your JID: " jabber-account-list nil nil nil 'jabber-account-history))
 	  (entry (assoc jid jabber-account-list))
@@ -469,7 +470,7 @@ With double prefix argument, specify more connection details."
 		 :defer)))
 
 (defsubst jabber-fsm-handle-sentinel (state-data event)
-  "Handle sentinel event for jabber fsm."
+  "Handle sentinel EVENT, updating STATE-DATA."
   ;; We do the same thing for every state, so avoid code duplication.
   (let* ((string (car (cddr event)))
 	 ;; The event string sometimes (always?) has a trailing
@@ -1025,7 +1026,8 @@ With double prefix argument, specify more connection details."
 				      :disconnection-expected t)))))
 
 (defun jabber-disconnect (&optional arg interactivep)
-  "Disconnect from all Jabber servers. If ARG supplied, disconnect one account."
+  "Disconnect from all Jabber servers.  If ARG supplied, disconnect one account.
+INTERACTIVEP is non-nil when called interactively."
   (interactive "P\np")
   (if arg
       (jabber-disconnect-one (jabber-read-account))
@@ -1078,6 +1080,7 @@ DATA is any sexp."
   "Re-entrance guard for `jabber-pre-filter'.")
 
 (defun jabber-pre-filter (process string fsm)
+  "Append STRING from PROCESS to FSM's parse buffer."
   (with-current-buffer (process-buffer process)
     ;; Append new data
     (goto-char (point-max))
@@ -1088,7 +1091,7 @@ DATA is any sexp."
 	(jabber-filter process fsm)))))
 
 (defun jabber-filter (process fsm)
-  "The filter function for the Jabber process."
+  "Parse complete XML stanzas from PROCESS buffer and dispatch to FSM."
   (with-current-buffer (process-buffer process)
     ;; Start from the beginning
     (goto-char (point-min))
@@ -1168,7 +1171,7 @@ obtained from `xml-parse-region'."
 	   (fsm-debug-output "Error %S while processing %S with function %s" e xml-data f)))))))
 
 (defun jabber-process-stream-error (xml-data state-data)
-  "Process an incoming stream error.
+  "Process an incoming stream error in XML-DATA with STATE-DATA.
 Return nil if XML-DATA is not a stream:error stanza.
 Return an fsm result list if it is."
   (when (and (eq (jabber-xml-node-name xml-data) 'error)

@@ -107,8 +107,8 @@ obtained from `xml-parse-region'."
 	   (or (string= type "get")
 	       (string= type "set")))
       (let* ((which-alist (pcase type
-			     ("get" jabber-iq-get-xmlns-alist)
-			     ("set" jabber-iq-set-xmlns-alist)))
+			    ("get" jabber-iq-get-xmlns-alist)
+			    ("set" jabber-iq-set-xmlns-alist)))
 	     (handler (cdr (assoc (jabber-xml-get-attribute query 'xmlns) which-alist))))
 	(if handler
 	    (condition-case error-var

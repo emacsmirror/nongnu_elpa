@@ -318,7 +318,7 @@ ENCRYPTION is a symbol: `omemo', `plaintext', or `default'."
     (sqlite-execute db "\
 INSERT OR REPLACE INTO chat_settings (account, peer, encryption)
   VALUES (?, ?, ?)"
-      (list account peer (symbol-name encryption)))))
+		    (list account peer (symbol-name encryption)))))
 
 (defun jabber-db-get-chat-encryption (account peer)
   "Load encryption mode for ACCOUNT + PEER.
@@ -327,7 +327,7 @@ Returns a symbol (`omemo', `plaintext'), or nil if not set or `default'."
     (when-let* ((val (caar (sqlite-select db "\
 SELECT encryption FROM chat_settings
   WHERE account = ? AND peer = ?"
-                            (list account peer)))))
+					  (list account peer)))))
       (unless (string= val "default")
         (intern val)))))
 
@@ -502,15 +502,15 @@ Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted."
       (pcase dup-id-col
         ('nil
          (jabber-db--insert-message db account peer resource occupant-id
-                                   direction type body timestamp
-                                   stanza-id server-id encrypted oob-entries))
+                                    direction type body timestamp
+                                    stanza-id server-id encrypted oob-entries))
         ((or 'stanza_id 'server_id)
          (jabber-db--update-duplicate-ids db account peer timestamp body
-                                         stanza-id server-id oob-entries
-                                         dup-id-col))
+                                          stanza-id server-id oob-entries
+                                          dup-id-col))
         ('content
          (jabber-db--upgrade-content-match db account peer timestamp body
-                                          stanza-id server-id))))))
+                                           stanza-id server-id))))))
 
 ;;; Receipt updates
 
@@ -579,8 +579,8 @@ AND server_id IS NOT NULL AND retracted_by IS NULL"
   "Delete all messages for PEER on ACCOUNT."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db
-      "DELETE FROM message WHERE account = ? AND peer = ?"
-      (list account peer))))
+		    "DELETE FROM message WHERE account = ? AND peer = ?"
+		    (list account peer))))
 
 (defun jabber-db-message-sender-by-stanza-id (stanza-id)
   "Return the from-JID of the stored message with STANZA-ID, or nil.
@@ -605,8 +605,8 @@ FROM message WHERE stanza_id = ? LIMIT 1"
 ROW columns match the SELECT in `jabber-db-backlog'.
 The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
   (seq-let (id account peer direction body timestamp resource type
-            encrypted stanza-id delivered-at
-            displayed-at server-id retracted-by retraction-reason edited)
+               encrypted stanza-id delivered-at
+               displayed-at server-id retracted-by retraction-reason edited)
       row
     (let ((from (cond
                  ;; Incoming: peer/resource (or just peer if no resource).
@@ -723,7 +723,7 @@ AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?"))))
 ROW columns: id, stanza_id, server_id, account, peer, resource,
 occupant_id, direction, type, body, timestamp, encrypted."
   (seq-let (id stanza-id server-id account peer resource
-            occupant-id direction type body timestamp encrypted)
+               occupant-id direction type body timestamp encrypted)
       row
     (list :id id
           :stanza-id stanza-id

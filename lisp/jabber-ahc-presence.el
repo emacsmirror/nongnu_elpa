@@ -88,7 +88,7 @@ obtained from `xml-parse-region'."
      ;; process form
      (t
       (let* ((x (car (jabber-xml-get-children query 'x)))
-	;; we assume that the first <x/> is the jabber:x:data one
+	     ;; we assume that the first <x/> is the jabber:x:data one
 	     (fields (jabber-xml-get-children x 'field))
 	     (new-show *jabber-current-show*)
 	     (new-status *jabber-current-status*)

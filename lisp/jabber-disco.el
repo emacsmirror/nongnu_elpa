@@ -371,7 +371,7 @@ Return the concatenated sorted form entries."
   ;; XEP-0115, section 5.1
   (let* ((identities (jabber-xml-get-children query 'identity))
 	 (features (mapcar (lambda (f) (jabber-xml-get-attribute f 'var))
-			    (jabber-xml-get-children query 'feature)))
+			   (jabber-xml-get-children query 'feature)))
 	 (forms (cl-remove-if-not
 		 (lambda (x)
 		   (and (string= (jabber-xml-get-xmlns x) jabber-xdata-xmlns)
@@ -467,8 +467,8 @@ obtained from `xml-parse-region'."
 	 (id (jabber-xml-get-attribute xml-data 'id))
 	 (xmlns (jabber-iq-xmlns xml-data))
 	 (which-alist (cond
-		      ((string= xmlns jabber-disco-xmlns-info) jabber-disco-info-nodes)
-		      ((string= xmlns jabber-disco-xmlns-items) jabber-disco-items-nodes)))
+		       ((string= xmlns jabber-disco-xmlns-info) jabber-disco-info-nodes)
+		       ((string= xmlns jabber-disco-xmlns-items) jabber-disco-items-nodes)))
 	 (node (or
 		(jabber-xml-get-attribute (jabber-iq-query xml-data) 'node)
 		""))
@@ -564,9 +564,9 @@ Return a formatted string with identities and features."
                      (category (jabber-xml-get-attribute x 'category))
                      (type (jabber-xml-get-attribute x 'type)))
                  (insert (propertize (or name
-                                        (concat category
-                                                (when type (concat " (" type ")"))))
-                                    'face 'jabber-title)
+                                         (concat category
+                                                 (when type (concat " (" type ")"))))
+                                     'face 'jabber-title)
                          "\n\n")
                  (when type
                    (insert "Type:\t\t" type "\n"))

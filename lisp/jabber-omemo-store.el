@@ -43,23 +43,23 @@ for the C module which expects unibyte."
   "Upsert serialized OMEMO store BLOB for ACCOUNT."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db
-      "INSERT OR REPLACE INTO omemo_store (account, store_blob) VALUES (?, ?)"
-      (list account blob))))
+		    "INSERT OR REPLACE INTO omemo_store (account, store_blob) VALUES (?, ?)"
+		    (list account blob))))
 
 (defun jabber-omemo-store-load (account)
   "Load serialized OMEMO store blob for ACCOUNT, or nil."
   (when-let* ((db (jabber-db-ensure-open)))
     (jabber-omemo-store--as-unibyte
      (caar (sqlite-select db
-             "SELECT store_blob FROM omemo_store WHERE account = ?"
-             (list account))))))
+			  "SELECT store_blob FROM omemo_store WHERE account = ?"
+			  (list account))))))
 
 (defun jabber-omemo-store-delete (account)
   "Delete OMEMO store for ACCOUNT."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db
-      "DELETE FROM omemo_store WHERE account = ?"
-      (list account))))
+		    "DELETE FROM omemo_store WHERE account = ?"
+		    (list account))))
 
 ;;; Device ID CRUD
 
@@ -67,20 +67,20 @@ for the C module which expects unibyte."
   "Upsert DEVICE-ID for ACCOUNT in the omemo_device_id table."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db
-      "INSERT OR REPLACE INTO omemo_device_id (account, device_id) VALUES (?, ?)"
-      (list account device-id))))
+		    "INSERT OR REPLACE INTO omemo_device_id (account, device_id) VALUES (?, ?)"
+		    (list account device-id))))
 
 (defun jabber-omemo-store-load-device-id (account)
   "Load the device ID for ACCOUNT, or nil if not set."
   (when-let* ((db (jabber-db-ensure-open)))
     (caar (sqlite-select db
-            "SELECT device_id FROM omemo_device_id WHERE account = ?"
-            (list account)))))
+			 "SELECT device_id FROM omemo_device_id WHERE account = ?"
+			 (list account)))))
 
 ;;; Trust CRUD
 
 (defun jabber-omemo-store-save-trust (account jid device-id
-                                      identity-key trust)
+					      identity-key trust)
   "Upsert trust record for ACCOUNT, JID, DEVICE-ID.
 IDENTITY-KEY is a unibyte blob.
 TRUST is 0=undecided, 1=tofu, 2=verified, -1=untrusted.
@@ -91,19 +91,19 @@ Rejects the update if the device already has a different identity key."
                      (caar (sqlite-select db "\
 SELECT identity_key FROM omemo_trust
   WHERE account = ? AND jid = ? AND device_id = ?"
-                                         (list account jid device-id))))))
+                                          (list account jid device-id))))))
       (if (and existing (not (equal existing identity-key)))
           (display-warning 'jabber-omemo
-            (format "SECURITY: device %d for %s changed identity key! Rejecting."
-                    device-id jid)
-            :warning)
+			   (format "SECURITY: device %d for %s changed identity key! Rejecting."
+				   device-id jid)
+			   :warning)
         (let ((now (truncate (float-time))))
           (sqlite-execute db "\
 INSERT INTO omemo_trust (account, jid, device_id, identity_key, trust, first_seen)
   VALUES (?, ?, ?, ?, ?, ?)
   ON CONFLICT (account, jid, device_id)
   DO UPDATE SET trust = excluded.trust"
-            (list account jid device-id identity-key trust now)))))))
+			  (list account jid device-id identity-key trust now)))))))
 
 (defun jabber-omemo-store-ensure-trust (account jid device-id identity-key)
   "Ensure a trust record exists for ACCOUNT, JID, DEVICE-ID.
@@ -116,20 +116,20 @@ Warns if the stored identity key differs from IDENTITY-KEY."
                      (caar (sqlite-select db "\
 SELECT identity_key FROM omemo_trust
   WHERE account = ? AND jid = ? AND device_id = ?"
-                                         (list account jid device-id))))))
+                                          (list account jid device-id))))))
       (cond
        ((and existing (not (equal existing identity-key)))
         (display-warning 'jabber-omemo
-          (format "SECURITY: device %d for %s changed identity key! Rejecting."
-                  device-id jid)
-          :warning))
+			 (format "SECURITY: device %d for %s changed identity key! Rejecting."
+				 device-id jid)
+			 :warning))
        (existing nil)
        (t
         (let ((now (truncate (float-time))))
           (sqlite-execute db "\
 INSERT INTO omemo_trust (account, jid, device_id, identity_key, trust, first_seen)
   VALUES (?, ?, ?, ?, 0, ?)"
-            (list account jid device-id identity-key now))))))))
+			  (list account jid device-id identity-key now))))))))
 
 (defun jabber-omemo-store-load-trust (account jid device-id)
   "Load trust record for ACCOUNT, JID, DEVICE-ID as a plist, or nil.
@@ -138,7 +138,7 @@ Returns (:identity-key BLOB :trust INT :first-seen INT)."
     (when-let* ((row (car (sqlite-select db "\
 SELECT identity_key, trust, first_seen FROM omemo_trust
   WHERE account = ? AND jid = ? AND device_id = ?"
-                           (list account jid device-id)))))
+					 (list account jid device-id)))))
       (list :identity-key (jabber-omemo-store--as-unibyte (nth 0 row))
             :trust (nth 1 row)
             :first-seen (nth 2 row)))))
@@ -149,7 +149,7 @@ SELECT identity_key, trust, first_seen FROM omemo_trust
     (sqlite-execute db "\
 UPDATE omemo_trust SET trust = ?
   WHERE account = ? AND jid = ? AND device_id = ?"
-      (list level account jid device-id))))
+		    (list level account jid device-id))))
 
 (defun jabber-omemo-store-delete-trust (account jid device-id)
   "Delete trust record for ACCOUNT, JID, DEVICE-ID."
@@ -157,7 +157,7 @@ UPDATE omemo_trust SET trust = ?
     (sqlite-execute db "\
 DELETE FROM omemo_trust
   WHERE account = ? AND jid = ? AND device_id = ?"
-      (list account jid device-id))))
+		    (list account jid device-id))))
 
 (defun jabber-omemo-store-all-trust (account jid)
   "List all trust records for ACCOUNT + JID.
@@ -172,12 +172,12 @@ Returns a list of plists (:device-id INT :identity-key BLOB
             (sqlite-select db "\
 SELECT device_id, identity_key, trust, first_seen FROM omemo_trust
   WHERE account = ? AND jid = ?"
-              (list account jid)))))
+			   (list account jid)))))
 
 ;;; Device list CRUD
 
 (defun jabber-omemo-store-save-device (account jid device-id
-                                       &optional active)
+					       &optional active)
   "Upsert device record for ACCOUNT, JID, DEVICE-ID.
 ACTIVE defaults to 1 (true).  Sets last_seen to current time."
   (when-let* ((db (jabber-db-ensure-open)))
@@ -186,7 +186,7 @@ ACTIVE defaults to 1 (true).  Sets last_seen to current time."
       (sqlite-execute db "\
 INSERT OR REPLACE INTO omemo_devices (account, jid, device_id, active, last_seen)
   VALUES (?, ?, ?, ?, ?)"
-        (list account jid device-id act now)))))
+		      (list account jid device-id act now)))))
 
 (defun jabber-omemo-store-load-devices (account jid)
   "Load all device records for ACCOUNT + JID.
@@ -199,7 +199,7 @@ Returns a list of plists (:device-id INT :active BOOL :last-seen INT)."
             (sqlite-select db "\
 SELECT device_id, active, last_seen FROM omemo_devices
   WHERE account = ? AND jid = ?"
-              (list account jid)))))
+			   (list account jid)))))
 
 (defun jabber-omemo-store-set-device-active (account jid device-id active)
   "Mark device DEVICE-ID as ACTIVE (non-nil) or inactive (nil)."
@@ -207,7 +207,7 @@ SELECT device_id, active, last_seen FROM omemo_devices
     (sqlite-execute db "\
 UPDATE omemo_devices SET active = ?
   WHERE account = ? AND jid = ? AND device_id = ?"
-      (list (if active 1 0) account jid device-id))))
+		    (list (if active 1 0) account jid device-id))))
 
 (defun jabber-omemo-store-delete-device (account jid device-id)
   "Remove a device record for ACCOUNT, JID, DEVICE-ID."
@@ -215,7 +215,7 @@ UPDATE omemo_devices SET active = ?
     (sqlite-execute db "\
 DELETE FROM omemo_devices
   WHERE account = ? AND jid = ? AND device_id = ?"
-      (list account jid device-id))))
+		    (list account jid device-id))))
 
 ;;; Session CRUD
 
@@ -225,7 +225,7 @@ DELETE FROM omemo_devices
     (sqlite-execute db "\
 INSERT OR REPLACE INTO omemo_sessions (account, jid, device_id, session_blob)
   VALUES (?, ?, ?, ?)"
-      (list account jid device-id blob))))
+		    (list account jid device-id blob))))
 
 (defun jabber-omemo-store-load-session (account jid device-id)
   "Load session blob for ACCOUNT, JID, DEVICE-ID, or nil."
@@ -234,7 +234,7 @@ INSERT OR REPLACE INTO omemo_sessions (account, jid, device_id, session_blob)
      (caar (sqlite-select db "\
 SELECT session_blob FROM omemo_sessions
   WHERE account = ? AND jid = ? AND device_id = ?"
-             (list account jid device-id))))))
+			  (list account jid device-id))))))
 
 (defun jabber-omemo-store-delete-session (account jid device-id)
   "Delete session for ACCOUNT, JID, DEVICE-ID."
@@ -242,7 +242,7 @@ SELECT session_blob FROM omemo_sessions
     (sqlite-execute db "\
 DELETE FROM omemo_sessions
   WHERE account = ? AND jid = ? AND device_id = ?"
-      (list account jid device-id))))
+		    (list account jid device-id))))
 
 (defun jabber-omemo-store-all-sessions (account jid)
   "List all sessions for ACCOUNT + JID.
@@ -254,12 +254,12 @@ Returns a list of plists (:device-id INT :session-blob BLOB)."
             (sqlite-select db "\
 SELECT device_id, session_blob FROM omemo_sessions
   WHERE account = ? AND jid = ?"
-              (list account jid)))))
+			   (list account jid)))))
 
 ;;; Skipped key CRUD
 
 (defun jabber-omemo-store-save-skipped-key (account jid device-id
-                                            dh-key msg-number msg-key)
+						    dh-key msg-number msg-key)
   "Store a skipped message key for ACCOUNT, JID, DEVICE-ID.
 DH-KEY and MSG-KEY are unibyte blobs.  MSG-NUMBER is an integer."
   (when-let* ((db (jabber-db-ensure-open)))
@@ -268,10 +268,10 @@ DH-KEY and MSG-KEY are unibyte blobs.  MSG-NUMBER is an integer."
 INSERT OR REPLACE INTO omemo_skipped_keys
   (account, jid, device_id, dh_key, message_number, message_key, created_at)
   VALUES (?, ?, ?, ?, ?, ?, ?)"
-        (list account jid device-id dh-key msg-number msg-key now)))))
+		      (list account jid device-id dh-key msg-number msg-key now)))))
 
 (defun jabber-omemo-store-load-skipped-key (account jid device-id
-                                            dh-key msg-number)
+						    dh-key msg-number)
   "Load a skipped message key, or nil."
   (when-let* ((db (jabber-db-ensure-open)))
     (jabber-omemo-store--as-unibyte
@@ -279,17 +279,17 @@ INSERT OR REPLACE INTO omemo_skipped_keys
 SELECT message_key FROM omemo_skipped_keys
   WHERE account = ? AND jid = ? AND device_id = ?
     AND dh_key = ? AND message_number = ?"
-             (list account jid device-id dh-key msg-number))))))
+			  (list account jid device-id dh-key msg-number))))))
 
 (defun jabber-omemo-store-delete-skipped-key (account jid device-id
-                                              dh-key msg-number)
+						      dh-key msg-number)
   "Delete a skipped message key after use."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db "\
 DELETE FROM omemo_skipped_keys
   WHERE account = ? AND jid = ? AND device_id = ?
     AND dh_key = ? AND message_number = ?"
-      (list account jid device-id dh-key msg-number))))
+		    (list account jid device-id dh-key msg-number))))
 
 (defun jabber-omemo-store-delete-old-skipped-keys (account max-age)
   "Delete skipped keys for ACCOUNT older than MAX-AGE seconds."
@@ -298,7 +298,7 @@ DELETE FROM omemo_skipped_keys
       (sqlite-execute db "\
 DELETE FROM omemo_skipped_keys
   WHERE account = ? AND created_at < ?"
-        (list account cutoff)))))
+		      (list account cutoff)))))
 
 (provide 'jabber-omemo-store)
 ;;; jabber-omemo-store.el ends here

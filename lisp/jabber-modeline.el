@@ -132,7 +132,7 @@ Available sections: `presence', `contacts', `activity'."
       (unless (member jabber-activity-count-in-title-format fmt)
 	(if (equal (car-safe fmt) "")
 	    (set var (cons "" (cons jabber-activity-count-in-title-format
-				   (cdr fmt))))
+				    (cdr fmt))))
 	  (set var (list "" jabber-activity-count-in-title-format fmt)))))))
 
 (defun jabber-modeline--remove-from-frame-title ()

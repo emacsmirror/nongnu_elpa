@@ -95,8 +95,8 @@ The top node should be the `vCard' node."
   ;;  (error "Invalid vCard"))
   (let (result)
     (dolist (verbatim-node '(FN NICKNAME BDAY JABBERID MAILER TZ
-				 TITLE ROLE NOTE PRODID REV SORT-STRING
-				 UID URL DESC))
+				TITLE ROLE NOTE PRODID REV SORT-STRING
+				UID URL DESC))
       ;; There should only be one of each of these.  They are
       ;; used verbatim.
       (let ((node (car (jabber-xml-get-children vcard
@@ -185,7 +185,7 @@ The top node should be the `vCard' node."
 			(memq 'X400 types))
 	      (push 'INTERNET types))
 
-    (push (cons types userid) e-mails))))
+	    (push (cons types userid) e-mails))))
 
       (when e-mails
 	(push (cons 'EMAIL e-mails) result)))
@@ -370,7 +370,7 @@ obtained from `xml-parse-region'."
       (when email-addresses
 	(insert "\n")
 	(insert (propertize "E-mail addresses:\n"
-				   'face 'jabber-title))
+			    'face 'jabber-title))
 	(dolist (email email-addresses)
 	  (insert (mapconcat (lambda (type)
 			       (cdr (assq type jabber-vcard-email-types)))
@@ -382,7 +382,7 @@ obtained from `xml-parse-region'."
       (when phone-numbers
 	(insert "\n")
 	(insert (propertize "Phone numbers:\n"
-				   'face 'jabber-title))
+			    'face 'jabber-title))
 	(dolist (number phone-numbers)
 	  (insert (mapconcat (lambda (type)
 			       (cdr (assq type jabber-vcard-phone-types)))
@@ -394,7 +394,7 @@ obtained from `xml-parse-region'."
       (when addresses
 	(insert "\n")
 	(insert (propertize "Addresses:\n"
-				   'face 'jabber-title))
+			    'face 'jabber-title))
 	(dolist (address addresses)
 	  (insert (propertize
 		   (mapconcat (lambda (type)
@@ -537,7 +537,7 @@ obtained from `xml-parse-region'."
 						   ,(concat
 						     "Existing: "
 						     (propertize " "
-									'display (jabber-avatar-image avatar)))
+								 'display (jabber-avatar-image avatar)))
 						   ,(cdr photo))))
 				      (file :must-match t :tag "From file"))
 		:value (cdr photo)))

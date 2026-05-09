@@ -130,7 +130,7 @@ Call REMEMBER with the password.  REMEMBER is expected to return it as well."
       (lambda (_prompt) (funcall remember (jabber-read-password bare-jid))))))
 
 (defun jabber-sasl-process-input (jc xml-data sasl-data)
-"SASL protocol input processing.
+  "SASL protocol input processing.
 
 JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)

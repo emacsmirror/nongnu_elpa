@@ -99,8 +99,8 @@ already tested and the test was successful, do not re-test it."
   "Test if HTTP Upload is supported on the JC connection's server.
 If supported, store the item IRI in `jabber-httpupload-support'."
   (jabber-httpupload-apply-to-items jc
-                   (lambda (jc result)
-                     (jabber-httpupload-test-item-support jc (elt result 1)))))
+				    (lambda (jc result)
+				      (jabber-httpupload-test-item-support jc (elt result 1)))))
 
 (defun jabber-httpupload-test-item-support (jc iri)
   "Test if the IRI Disco item supports HTTP Upload.
@@ -171,8 +171,8 @@ stripped from both names and values per XEP-0363 Section 11."
           jabber-invalid-certificate-servers))
 
 (defun jabber-httpupload-put-file-curl (filepath headers put-url
-                                        callback callback-arg
-                                        &optional ignore-cert-problems)
+						 callback callback-arg
+						 &optional ignore-cert-problems)
   "Upload FILEPATH to PUT-URL via curl with HEADERS.
 When done, call (funcall CALLBACK CALLBACK-ARG).
 IGNORE-CERT-PROBLEMS allows connecting to servers with invalid
@@ -283,7 +283,7 @@ deleted it), the pending state is cleared with no effect."
     (setq jabber-httpupload--pending-url nil)
     (when (string-match-p (regexp-quote url) body)
       (list `(x ((xmlns . ,jabber-oob-xmlns))
-                 (url () ,url))))))
+                (url () ,url))))))
 
 (add-hook 'jabber-chat-send-hooks #'jabber-httpupload--send-hook)
 
@@ -297,16 +297,16 @@ skip the default plaintext send."
   (unless (and jabber-httpupload-send-url-function
                (funcall jabber-httpupload-send-url-function jc jid get-url))
     (if (jabber-muc-joined-p jid)
-      (jabber-send-sexp jc
-        `(message ((to . ,jid) (type . "groupchat"))
-                  (body () ,get-url)
-                  (x ((xmlns . ,jabber-oob-xmlns))
-                     (url () ,get-url))))
-    (with-current-buffer (jabber-chat-create-buffer jc jid)
-      (jabber-chat-send
-       jc get-url
-       (list `(x ((xmlns . ,jabber-oob-xmlns))
-                  (url () ,get-url))))))))
+	(jabber-send-sexp jc
+			  `(message ((to . ,jid) (type . "groupchat"))
+				    (body () ,get-url)
+				    (x ((xmlns . ,jabber-oob-xmlns))
+				       (url () ,get-url))))
+      (with-current-buffer (jabber-chat-create-buffer jc jid)
+	(jabber-chat-send
+	 jc get-url
+	 (list `(x ((xmlns . ,jabber-oob-xmlns))
+                   (url () ,get-url))))))))
 
 ;; Interactive commands
 

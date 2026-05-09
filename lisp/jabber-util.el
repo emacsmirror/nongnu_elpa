@@ -233,13 +233,13 @@ is shown as an annotation.  Both are matchable regardless of mode."
         `(metadata
           (annotation-function
            . ,(lambda (candidate)
-                 (when-let* ((sym (cdr (assoc-string candidate table t))))
-                   (let* ((jid (symbol-name sym))
-                          (name (get sym 'name))
-                          (ann (if use-names jid name)))
-                     (when (and ann (not (string= ann candidate)))
-                       (propertize (concat "  " ann)
-                                   'face 'completions-annotations))))))))
+                (when-let* ((sym (cdr (assoc-string candidate table t))))
+                  (let* ((jid (symbol-name sym))
+                         (name (get sym 'name))
+                         (ann (if use-names jid name)))
+                    (when (and ann (not (string= ann candidate)))
+                      (propertize (concat "  " ann)
+                                  'face 'completions-annotations))))))))
        ;; all-completions: match by candidate or alternate form.
        ((eq action t)
         (let ((matches (all-completions string table pred))
@@ -409,22 +409,22 @@ that has that contact in its roster."
                        (jabber-connection-bare-jid at-point)))
                    completions))
        (let* ((default
-                (or
-		 (and contact-hint
-		      (setq contact-hint (jabber-jid-symbol contact-hint))
-		      (let ((matching
-			     (cl-find-if
-			      (lambda (jc)
-				(memq contact-hint (plist-get (fsm-get-state-data jc) :roster)))
-			      jabber-connections)))
-			(when matching
-			  (jabber-connection-bare-jid matching))))
-                 ;; if the buffer is associated with a connection, use it
-                 (when (and jabber-buffer-connection
-			    (jabber-find-active-connection jabber-buffer-connection))
-                   (jabber-connection-bare-jid jabber-buffer-connection))
-                 ;; else, use the first connection in the list
-                 (caar completions)))
+               (or
+		(and contact-hint
+		     (setq contact-hint (jabber-jid-symbol contact-hint))
+		     (let ((matching
+			    (cl-find-if
+			     (lambda (jc)
+			       (memq contact-hint (plist-get (fsm-get-state-data jc) :roster)))
+			     jabber-connections)))
+		       (when matching
+			 (jabber-connection-bare-jid matching))))
+                ;; if the buffer is associated with a connection, use it
+                (when (and jabber-buffer-connection
+			   (jabber-find-active-connection jabber-buffer-connection))
+                  (jabber-connection-bare-jid jabber-buffer-connection))
+                ;; else, use the first connection in the list
+                (caar completions)))
               (input (completing-read
                       (concat "Select Jabber account (default "
                               default
@@ -648,8 +648,8 @@ See secton 9.3, Stanza Errors, of XMPP Core, and XEP-0086, Legacy Errors."
   (catch 'condition
     (dolist (child (jabber-xml-node-children error-xml))
       (when (string=
-		 (jabber-xml-get-attribute child 'xmlns)
-		 jabber-stanzas-xmlns)
+	     (jabber-xml-get-attribute child 'xmlns)
+	     jabber-stanzas-xmlns)
 	(throw 'condition (jabber-xml-node-name child))))))
 
 (defvar jabber-stream-error-messages

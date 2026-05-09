@@ -102,14 +102,14 @@ obtained from `xml-parse-region'."
 	;; If the registration form obeys XEP-0068, we know
 	;; for sure how to put a default username in it.
 	(jabber-widget-render-xdata-form x
-				  (if (and register-account
-					   (string= (jabber-widget-xdata-formtype x) jabber-register-xmlns))
-				      (list (cons "username" username))
-				    nil))))
+					 (if (and register-account
+						  (string= (jabber-widget-xdata-formtype x) jabber-register-xmlns))
+					     (list (cons "username" username))
+					   nil))))
     (if (not have-xdata)
 	(jabber-widget-render-register-form query
-				     (when register-account
-				       username)))
+					    (when register-account
+					      username)))
 
     (widget-create 'push-button :notify (if (eq type 'register)
 					    #'jabber-submit-register
@@ -158,7 +158,7 @@ obtained from `xml-parse-region'."
    (t
     (jabber-report-success jc xml-data "Account registration")))
   (sit-for 3)
-    (jabber-disconnect-one jc))
+  (jabber-disconnect-one jc))
 
 (defun jabber-remove-register (&rest _ignore)
   "Cancel registration.  See `jabber-process-register-or-search'."

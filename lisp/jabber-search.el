@@ -121,18 +121,18 @@ obtained from `xml-parse-region'."
 	(let ((start-of-line (point))
 	      jid)
 
-	    (dolist (field-cons fields)
-	      (let ((field-plist (cdr field-cons))
-		    (value (if (eq (car field-cons) 'jid)
-			       (setq jid (jabber-xml-get-attribute item 'jid))
-			     (car (jabber-xml-node-children (car (jabber-xml-get-children item (car field-cons))))))))
-		(indent-to (plist-get field-plist 'column) 1)
-		(if value (insert value))))
+	  (dolist (field-cons fields)
+	    (let ((field-plist (cdr field-cons))
+		  (value (if (eq (car field-cons) 'jid)
+			     (setq jid (jabber-xml-get-attribute item 'jid))
+			   (car (jabber-xml-node-children (car (jabber-xml-get-children item (car field-cons))))))))
+	      (indent-to (plist-get field-plist 'column) 1)
+	      (if value (insert value))))
 
-	    (if jid
-		(put-text-property start-of-line (point)
-				   'jabber-jid jid))
-	    (insert "\n"))))))
+	  (if jid
+	      (put-text-property start-of-line (point)
+				 'jabber-jid jid))
+	  (insert "\n"))))))
 
 (provide 'jabber-search)
 

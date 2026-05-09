@@ -62,16 +62,16 @@ These fields are about your account:
 	(:eval
 	 (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
 	   (propertize " "
-			      'display (get buddy 'avatar)))))
+		       'display (get buddy 'avatar)))))
     (:eval (jabber-jid-displayname jabber-chatting-with))
     " " (:eval (let ((buddy (jabber-jid-symbol jabber-chatting-with)))
-		  (propertize
-		   (or
-		    (cdr (assoc (get buddy 'show) jabber-presence-strings))
-		    (get buddy 'show))
-		   'face
-		   (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
-		       'jabber-roster-user-online))))
+		 (propertize
+		  (or
+		   (cdr (assoc (get buddy 'show) jabber-presence-strings))
+		   (get buddy 'show))
+		  'face
+		  (or (cdr (assoc (get buddy 'show) jabber-presence-faces))
+		      'jabber-roster-user-online))))
     " " (:eval (jabber-fix-status (get (jabber-jid-symbol jabber-chatting-with) 'status)))
     " " (:eval jabber-chat-encryption-message)	;see jabber-chatbuffer.el
     (:eval jabber-chat-receipt-message)	;see jabber-receipts.el
@@ -160,12 +160,12 @@ rare time printed."
   "JID of the person you are chatting with.")
 
 (defvar jabber-chat-printers '(jabber-chat-print-subject
-			 jabber-chat-print-body
-			 jabber-chat-print-url
-			 jabber-chat-goto-address
-			 jabber-chat-mark-oob-attachment
-			 jabber-chat-mark-aesgcm-url
-			 jabber-chat--schedule-image-scan)
+			       jabber-chat-print-body
+			       jabber-chat-print-url
+			       jabber-chat-goto-address
+			       jabber-chat-mark-oob-attachment
+			       jabber-chat-mark-aesgcm-url
+			       jabber-chat--schedule-image-scan)
   "List of functions that may be able to print part of a message.
 Each function receives these arguments:
 
@@ -299,10 +299,10 @@ associated face.  Ignore notification if face is `nil'."
   :type '(repeat
           :tag "Patterns"
           (cons :format "%v"
-           (regexp :tag "Regexp")
-           (choice
-            (const :tag "Ignore" nil)
-            (face :tag "Face" :value jabber-muc-presence-dim))))
+		(regexp :tag "Regexp")
+		(choice
+		 (const :tag "Ignore" nil)
+		 (face :tag "Face" :value jabber-muc-presence-dim))))
   :group 'jabber-alerts)
 
 ;;;###autoload
@@ -384,15 +384,15 @@ JC is the Jabber connection."
 	 (direction (plist-get msg-plist :direction))
 	 (msg-type (plist-get msg-plist :msg-type))
 	 (node-type (cond
-		    ((string= msg-type "groupchat")
-		     (let ((nick (jabber-jid-resource (plist-get msg-plist :from))))
-		       (if (or (and nick
-				    (jabber-muc-our-nick-p jabber-group nick))
-			       (string= direction "out"))
-			   :muc-local
-			 :muc-foreign)))
-		    ((string= direction "out") :local)
-		    (t :foreign)))
+		     ((string= msg-type "groupchat")
+		      (let ((nick (jabber-jid-resource (plist-get msg-plist :from))))
+			(if (or (and nick
+				     (jabber-muc-our-nick-p jabber-group nick))
+				(string= direction "out"))
+			    :muc-local
+			  :muc-foreign)))
+		     ((string= direction "out") :local)
+		     (t :foreign)))
 	 (node-data (list node-type msg-plist)))
 
     ;; Insert after existing rare timestamp?
@@ -410,7 +410,7 @@ JC is the Jabber connection."
         (puthash id node jabber-chat--msg-nodes)))))
 
 (defun jabber-chat--insert-backlog-chunked (buffer entries callback
-                                                    &optional generation)
+                                                   &optional generation)
   "Insert ENTRIES into BUFFER's ewoc in chunks to avoid blocking.
 Inserts `jabber-chat-backlog-chunk-size' entries per timer tick.
 Call CALLBACK with no arguments when all entries are inserted.
@@ -452,8 +452,8 @@ When nil or 0, display all messages."
      (list (if (string-empty-p input) nil
 	     (string-to-number input)))))
   (let* ((current-count (length (ewoc-collect
-				jabber-chat-ewoc
-				(lambda (data) (not (eq (car data) :rare-time))))))
+				 jabber-chat-ewoc
+				 (lambda (data) (not (eq (car data) :rare-time))))))
 	 (target-count (if (or (null how-many) (zerop how-many)) t
 			 (+ current-count how-many))))
     (setq jabber-chat-buffer-msg-count target-count)
@@ -519,22 +519,22 @@ Correction stanzas (XEP-0308) are skipped; the correction handler
 updates the original row instead."
   (unless (jabber-message-correct--replace-id xml-data)
     (let* ((from (jabber-xml-get-attribute xml-data 'from))
-         (to (jabber-xml-get-attribute xml-data 'to))
-         (body (car (jabber-xml-node-children
-                     (car (jabber-xml-get-children xml-data 'body)))))
-         (stanza-id (jabber-xml-get-attribute xml-data 'id))
-         (timestamp (jabber-message-timestamp xml-data))
-         (our-jid (jabber-connection-bare-jid jc))
-         (sent-p (string= (jabber-jid-user from) our-jid))
-         (direction (if sent-p "out" "in"))
-         (peer-jid (if sent-p to from))
-         (peer (when peer-jid (jabber-jid-user peer-jid)))
-         (encrypted (or (jabber-xml-child-with-xmlns
-                         xml-data "eu.siacs.conversations.axolotl")
-                        (jabber-xml-child-with-xmlns
-                         xml-data "jabber:x:encrypted")
-                        (jabber-xml-child-with-xmlns
-                         xml-data "urn:xmpp:openpgp:0"))))
+           (to (jabber-xml-get-attribute xml-data 'to))
+           (body (car (jabber-xml-node-children
+                       (car (jabber-xml-get-children xml-data 'body)))))
+           (stanza-id (jabber-xml-get-attribute xml-data 'id))
+           (timestamp (jabber-message-timestamp xml-data))
+           (our-jid (jabber-connection-bare-jid jc))
+           (sent-p (string= (jabber-jid-user from) our-jid))
+           (direction (if sent-p "out" "in"))
+           (peer-jid (if sent-p to from))
+           (peer (when peer-jid (jabber-jid-user peer-jid)))
+           (encrypted (or (jabber-xml-child-with-xmlns
+                           xml-data "eu.siacs.conversations.axolotl")
+                          (jabber-xml-child-with-xmlns
+                           xml-data "jabber:x:encrypted")
+                          (jabber-xml-child-with-xmlns
+                           xml-data "urn:xmpp:openpgp:0"))))
       (when (and peer body)
         (jabber-db-store-message
          our-jid peer direction "chat" body
@@ -612,8 +612,8 @@ body with \"[LABEL: could not decrypt]\" and return XML-DATA."
               (plist-get handler-props :error-label)
               (error-message-string err))
      (jabber-chat--set-body xml-data
-       (format "[%s: could not decrypt]"
-               (plist-get handler-props :error-label)))
+			    (format "[%s: could not decrypt]"
+				    (plist-get handler-props :error-label)))
      xml-data)))
 
 (defvar jabber-chat--crypto-loaded nil
@@ -642,7 +642,7 @@ JC is the Jabber connection."
              finally return xml-data)))
 
 (defun jabber-chat--display-message (_jc _xml-data chat-buffer
-                                    error-p from msg-plist)
+					 error-p from msg-plist)
   "Display an incoming message and run alert hooks.
 Insert an EWOC entry into CHAT-BUFFER for the message described by
 MSG-PLIST, then run `jabber-message-hooks' and
@@ -759,13 +759,13 @@ participants connected through intermittent networks (like mobile
 clients)."
   (interactive "P")
   (when-let* ((patterns (cdr
-                        (assoc-string
-                         (completing-read
-                          "MUC presence treatment: "
-                          (mapcar #'car jabber-muc-decorate-presence-patterns-alist)
-                          nil t nil
-                          'jabber-chat-muc-presence-patterns-history)
-                         jabber-muc-decorate-presence-patterns-alist))))
+                         (assoc-string
+                          (completing-read
+                           "MUC presence treatment: "
+                           (mapcar #'car jabber-muc-decorate-presence-patterns-alist)
+                           nil t nil
+                           'jabber-chat-muc-presence-patterns-history)
+                          jabber-muc-decorate-presence-patterns-alist))))
     (unless (equal patterns jabber-muc-decorate-presence-patterns)
       (if global
           (setq jabber-muc-decorate-presence-patterns patterns)
@@ -1205,8 +1205,8 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
 			       action)
 		       'face 'jabber-chat-nick-system)))
 	  (let ((face (pcase who
-		       ((or :foreign :muc-foreign) 'jabber-chat-text-foreign)
-		       ((or :local :muc-local) 'jabber-chat-text-local))))
+			((or :foreign :muc-foreign) 'jabber-chat-text-foreign)
+			((or :local :muc-local) 'jabber-chat-text-local))))
 	    (insert (propertize body 'face face)))))
       t)))
 
@@ -1270,9 +1270,9 @@ with the created image (or nil) followed by CBARGS."
                     (let* ((encrypted (buffer-substring-no-properties
                                        (point) (point-max)))
                            (plaintext (condition-case nil
-                                         (jabber-omemo-aesgcm-decrypt
-                                          key iv encrypted)
-                                       (error nil))))
+                                          (jabber-omemo-aesgcm-decrypt
+                                           key iv encrypted)
+					(error nil))))
                       (when plaintext
                         (let ((img (create-image plaintext nil t)))
                           (if (null img)
@@ -1540,7 +1540,7 @@ exists when we set our keymap as its parent."
                                       (overlays-in beg end))))
                     (if ov
                         (set-keymap-parent (overlay-get ov 'keymap)
-                                          jabber-chat-url-keymap)
+                                           jabber-chat-url-keymap)
                       (put-text-property beg end 'keymap
                                          jabber-chat-url-keymap))))))))))))
 
@@ -1592,7 +1592,7 @@ With a prefix argument, open buffer in other window.
 Returns the chat buffer.
 JC is the Jabber connection."
   (interactive (let* ((jid
-		      (jabber-read-jid-completing "chat with:"))
+		       (jabber-read-jid-completing "chat with:"))
 		      (account
 		       (jabber-read-account nil jid)))
 		 (list

@@ -57,12 +57,12 @@
   "Build a <publish-options> XML sexp from OPTIONS alist.
 Each element is (VAR . VALUE)."
   `(publish-options ()
-    (x ((xmlns . ,jabber-xdata-xmlns) (type . "submit"))
-       (field ((var . "FORM_TYPE") (type . "hidden"))
-              (value () "http://jabber.org/protocol/pubsub#publish-options"))
-       ,@(mapcar (lambda (opt)
-                   `(field ((var . ,(car opt))) (value () ,(cdr opt))))
-                 options))))
+		    (x ((xmlns . ,jabber-xdata-xmlns) (type . "submit"))
+		       (field ((var . "FORM_TYPE") (type . "hidden"))
+			      (value () "http://jabber.org/protocol/pubsub#publish-options"))
+		       ,@(mapcar (lambda (opt)
+				   `(field ((var . ,(car opt))) (value () ,(cdr opt))))
+				 options))))
 
 ;;; Core operations
 
@@ -73,11 +73,11 @@ ITEM-ID is the item identifier.  OPTIONS, if non-nil, is an alist
 of publish-options (VAR . VALUE).  CALLBACK and ERROR-CALLBACK are
 called as (funcall cb JC XML-DATA CLOSURE-DATA)."
   (let ((query `(pubsub ((xmlns . ,jabber-pubsub-xmlns))
-              (publish ((node . ,node))
-                       (item ((id . ,item-id))
-                             ,payload))
-              ,@(when options
-                  (list (jabber-pubsub--publish-options options))))))
+			(publish ((node . ,node))
+				 (item ((id . ,item-id))
+				       ,payload))
+			,@(when options
+			    (list (jabber-pubsub--publish-options options))))))
     (jabber-send-iq jc jid "set" query
                     callback "pubsub publish"
                     error-callback "pubsub publish")))
@@ -122,13 +122,13 @@ OPTIONS is an alist of (VAR . VALUE) for the node configuration form."
   (jabber-send-iq jc jid "set"
                   `(pubsub ((xmlns . ,jabber-pubsub-owner-xmlns))
                            (configure ((node . ,node))
-                             (x ((xmlns . ,jabber-xdata-xmlns) (type . "submit"))
-                                (field ((var . "FORM_TYPE") (type . "hidden"))
-                                       (value () "http://jabber.org/protocol/pubsub#node_config"))
-                                ,@(mapcar (lambda (opt)
-                                            `(field ((var . ,(car opt)))
-                                                    (value () ,(cdr opt))))
-                                          options))))
+				      (x ((xmlns . ,jabber-xdata-xmlns) (type . "submit"))
+					 (field ((var . "FORM_TYPE") (type . "hidden"))
+						(value () "http://jabber.org/protocol/pubsub#node_config"))
+					 ,@(mapcar (lambda (opt)
+						     `(field ((var . ,(car opt)))
+							     (value () ,(cdr opt))))
+						   options))))
                   callback "pubsub configure-node"
                   error-callback "pubsub configure-node"))
 
