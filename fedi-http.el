@@ -1,7 +1,7 @@
 ;;; fedi-http.el --- HTTP request/response functions  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020-2023 Marty Hiatt and mastodon.el authors
-;; Author: Marty Hiatt <mousebot@disroot.org>
+;; Author: Marty Hiatt <martianh@disroot.org>
 ;; Version: 0.0.2
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
@@ -39,6 +39,7 @@
 (require 'json)
 ;; (require 'request) ; for attachments upload
 (require 'url)
+(require 'url-http)
 (defvar url-http-response-status)
 (defvar url-http-end-of-headers)
 
@@ -70,13 +71,16 @@
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36"
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.6 Safari/605.1.15"
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:103.0) Gecko/20100101 Firefox/103.0")
-  "User-Agents to use for reverso.el requests.
+  "User-Agents to use for requests.
 A random one is picked at package initialization.")
 
 ;;; UTILS
 
 (defun fedi-http--api (endpoint &optional url ver-str no-slash)
   "Return Fedi API URL for ENDPOINT."
+  ;; FIXME: maybe we check first char of ENDPOINT and only add a slash if
+  ;; it doesn't have one? that way we are agnostic, and never add double
+  ;; slashes:
   (concat (or url fedi-instance-url) "/api/"
           (or ver-str fedi-http--api-version)
           (unless no-slash "/") endpoint))
@@ -252,7 +256,7 @@ to returnany error message needed."
                     (with-current-buffer response
                       (url-http-parse-response))
                   (wrong-type-argument
-                   (user-error "Failed to check http response code.")))))
+                   (user-error "Failed to check http response code")))))
     (cond ((and (>= status 200)
                 (<= status 299))
            (funcall success response))

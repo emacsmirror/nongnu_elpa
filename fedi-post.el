@@ -1,7 +1,7 @@
 ;;; fedi-post.el --- Minor mode for posting to fediverse services  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020-2023 Marty Hiatt
-;; Author: Marty Hiatt <mousebot@disroot.org> and mastodon.el authors
+;; Author: Marty Hiatt <martianh@disroot.org> and mastodon.el authors
 ;; Version: 1.0.0
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
@@ -48,6 +48,11 @@
 (autoload 'fedi--find-property-range "fedi")
 (autoload 'org-read-date "org")
 
+(defgroup fedi-post nil
+  "Posting options for fedi.el."
+  :prefix "fedi-post-"
+  :group 'fedi)
+
 (defface fedi-post-docs-face
   `((t :inherit font-lock-comment-face))
   "Face used for documentation in post compose buffer.")
@@ -55,11 +60,6 @@
 (defface fedi-post-success-face
   `((t :inherit success))
   "Face used for some status fields in post compose buffer.")
-
-(defgroup fedi-post nil
-  "Posting options for fedi.el."
-  :prefix "fedi-post-"
-  :group 'fedi)
 
 (defcustom fedi-post--enable-completion t
   "Whether to enable completion of mentions and hashtags.
@@ -677,6 +677,7 @@ BUF-PREFIX is a string to prepend to the buffer name."
         (company-mode-on))
       ;; corfu
       (when (require 'corfu nil :no-error)
+        (declare-function corfu--on "corfu")
         (when autocomplete (setq-local corfu-auto t))
         (corfu--on)))
     ;; after-change:

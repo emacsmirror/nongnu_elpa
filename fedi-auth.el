@@ -1,7 +1,7 @@
 ;;; fedi.el --- Auth utilities -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020-2023 Marty Hiatt
-;; Author: Marty Hiatt <mousebot@disroot.org>
+;; Author: Marty Hiatt <martianh@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
 ;; This file is not part of GNU Emacs.
