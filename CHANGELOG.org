@@ -1,5 +1,15 @@
 #+TITLE: Changelog
 
+* [0.10.7]
+#+date: 2026-05-09
+
+** Fixes
+- SM: Fixed silent message loss on ack stall with watchdog recovery
+- SM: IQ stanzas bypass back-pressure gate
+
+** Improved
+- Keymap-popup menus show dynamic values with faces
+
 * [0.10.6]
 #+date: 2026-04-30
 
