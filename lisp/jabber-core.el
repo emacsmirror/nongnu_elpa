@@ -333,140 +333,140 @@ With double prefix argument, specify more connection details."
 	  jabber-connections)))
 
 (define-state-machine jabber-connection
-  :start ((username server resource registerp password network-server port connection-type)
-	  "Start a Jabber connection."
-	  (let* ((connection-type
-		  (or connection-type jabber-default-connection-type))
-		 (send-function
-		  (jabber-get-send-function connection-type)))
+		      :start ((username server resource registerp password network-server port connection-type)
+			      "Start a Jabber connection."
+			      (let* ((connection-type
+				      (or connection-type jabber-default-connection-type))
+				     (send-function
+				      (jabber-get-send-function connection-type)))
 
-	    (list :connecting
-		  (jabber-sm--reset
-		   (list :send-function send-function
-			 ;; Save the JID we originally connected with.
-			 :original-jid (concat username "@" server)
-			 :username username
-			 :server server
-			 :resource resource
-			 :password password
-			 :registerp registerp
-			 :connection-type connection-type
-			 :encrypted (eq connection-type 'ssl)
-			 :network-server network-server
-			 :port port))))))
+				(list :connecting
+				      (jabber-sm--reset
+				       (list :send-function send-function
+					     ;; Save the JID we originally connected with.
+					     :original-jid (concat username "@" server)
+					     :username username
+					     :server server
+					     :resource resource
+					     :password password
+					     :registerp registerp
+					     :connection-type connection-type
+					     :encrypted (eq connection-type 'ssl)
+					     :network-server network-server
+					     :port port))))))
 
 (define-enter-state jabber-connection nil
-  (fsm state-data)
-  ;; `nil' is the error state.
+		    (fsm state-data)
+		    ;; `nil' is the error state.
 
-  ;; Close the network connection.
-  (let ((connection (plist-get state-data :connection)))
-    (when (processp connection)
-      (let ((process-buffer (process-buffer connection)))
-	(delete-process connection)
-	(when (and (bufferp process-buffer)
-		   (not jabber-debug-keep-process-buffers))
-	  (kill-buffer process-buffer)))))
-  (setq state-data (plist-put state-data :connection nil))
-  ;; Stop SM timer
-  (setq state-data (jabber-sm--stop-r-timer state-data))
+		    ;; Close the network connection.
+		    (let ((connection (plist-get state-data :connection)))
+		      (when (processp connection)
+			(let ((process-buffer (process-buffer connection)))
+			  (delete-process connection)
+			  (when (and (bufferp process-buffer)
+				     (not jabber-debug-keep-process-buffers))
+			    (kill-buffer process-buffer)))))
+		    (setq state-data (plist-put state-data :connection nil))
+		    ;; Stop SM timer
+		    (setq state-data (jabber-sm--stop-r-timer state-data))
 
-  (let ((expected (plist-get state-data :disconnection-expected))
-	(reason (plist-get state-data :disconnection-reason))
-	(ever-session-established (plist-get state-data :ever-session-established))
-	(sm-resumable (and (plist-get state-data :sm-enabled)
-			   (plist-get state-data :sm-id))))
+		    (let ((expected (plist-get state-data :disconnection-expected))
+			  (reason (plist-get state-data :disconnection-reason))
+			  (ever-session-established (plist-get state-data :ever-session-established))
+			  (sm-resumable (and (plist-get state-data :sm-enabled)
+					     (plist-get state-data :sm-id))))
 
-    ;; If SM is active and disconnect is unexpected, preserve SM state
-    ;; for resume attempt.  Skip MUC cleanup since contacts still see
-    ;; us as online during the server's resume window.
-    (if (and sm-resumable (not expected))
-	(setq state-data (plist-put state-data :sm-resuming t))
-      ;; Otherwise clear MUC data and SM state.
-      (jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
-      (setq state-data (jabber-sm--reset state-data)))
+		      ;; If SM is active and disconnect is unexpected, preserve SM state
+		      ;; for resume attempt.  Skip MUC cleanup since contacts still see
+		      ;; us as online during the server's resume window.
+		      (if (and sm-resumable (not expected))
+			  (setq state-data (plist-put state-data :sm-resuming t))
+			;; Otherwise clear MUC data and SM state.
+			(jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
+			(setq state-data (jabber-sm--reset state-data)))
 
-    ;; Remove lost connections from the roster buffer.
-    (jabber-roster--refresh)
+		      ;; Remove lost connections from the roster buffer.
+		      (jabber-roster--refresh)
 
-    (unless expected
-      (run-hook-with-args 'jabber-lost-connection-hooks fsm)
-      (message "%s@%s%s: connection lost: `%s'"
-	       (plist-get state-data :username)
-	       (plist-get state-data :server)
-	       (if (plist-get state-data :resource)
-		   (concat "/" (plist-get state-data :resource))
-		 "")
-	       reason))
+		      (unless expected
+			(run-hook-with-args 'jabber-lost-connection-hooks fsm)
+			(message "%s@%s%s: connection lost: `%s'"
+				 (plist-get state-data :username)
+				 (plist-get state-data :server)
+				 (if (plist-get state-data :resource)
+				     (concat "/" (plist-get state-data :resource))
+				   "")
+				 reason))
 
-    (if (and jabber-auto-reconnect (not expected) ever-session-established)
-	;; Reconnect after a short delay?
-	(list state-data jabber-reconnect-delay)
-      ;; Else the connection is really dead.  Remove it from the list
-      ;; of connections.
-      (setq jabber-connections
-	    (delq fsm jabber-connections))
-      (when jabber-modeline-mode
-        (jabber-mode-line-presence-update))
-      (jabber-roster--refresh)
-      ;; And let the FSM sleep...
-      (list state-data nil))))
+		      (if (and jabber-auto-reconnect (not expected) ever-session-established)
+			  ;; Reconnect after a short delay?
+			  (list state-data jabber-reconnect-delay)
+			;; Else the connection is really dead.  Remove it from the list
+			;; of connections.
+			(setq jabber-connections
+			      (delq fsm jabber-connections))
+			(when jabber-modeline-mode
+			  (jabber-mode-line-presence-update))
+			(jabber-roster--refresh)
+			;; And let the FSM sleep...
+			(list state-data nil))))
 
 (define-state jabber-connection nil
-  (fsm state-data event _callback)
-  ;; In the `nil' state, the connection is dead.  We wait for a
-  ;; :timeout message, meaning to reconnect, or :do-disconnect,
-  ;; meaning to cancel reconnection.
-  (pcase event
-    (:timeout
-     (list :connecting state-data))
-    (:do-disconnect
-     (setq jabber-connections
-	    (delq fsm jabber-connections))
-     (list nil state-data nil))))
+	      (fsm state-data event _callback)
+	      ;; In the `nil' state, the connection is dead.  We wait for a
+	      ;; :timeout message, meaning to reconnect, or :do-disconnect,
+	      ;; meaning to cancel reconnection.
+	      (pcase event
+		(:timeout
+		 (list :connecting state-data))
+		(:do-disconnect
+		 (setq jabber-connections
+		       (delq fsm jabber-connections))
+		 (list nil state-data nil))))
 
 (define-enter-state jabber-connection :connecting
-  (fsm state-data)
-  (let* ((connection-type (plist-get state-data :connection-type))
-	 (connect-function (jabber-get-connect-function connection-type))
-	 (server (plist-get state-data :server))
-	 (network-server (plist-get state-data :network-server))
-	 (port (plist-get state-data :port)))
-    (funcall connect-function fsm server network-server port))
-  (list state-data nil))
+		    (fsm state-data)
+		    (let* ((connection-type (plist-get state-data :connection-type))
+			   (connect-function (jabber-get-connect-function connection-type))
+			   (server (plist-get state-data :server))
+			   (network-server (plist-get state-data :network-server))
+			   (port (plist-get state-data :port)))
+		      (funcall connect-function fsm server network-server port))
+		    (list state-data nil))
 
 (define-state jabber-connection :connecting
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:connected
-     (let ((connection (cadr event))
-	   (directtls-p (caddr event)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:connected
+		 (let ((connection (cadr event))
+		       (directtls-p (caddr event)))
 
-       (setq state-data (plist-put state-data :connection connection))
-       ;; Direct TLS (XEP-0368): connection is already encrypted.
-       (when directtls-p
-	 (setq state-data (plist-put state-data :encrypted t)))
+		   (setq state-data (plist-put state-data :connection connection))
+		   ;; Direct TLS (XEP-0368): connection is already encrypted.
+		   (when directtls-p
+		     (setq state-data (plist-put state-data :encrypted t)))
 
-       (when (processp connection)
-	 ;; TLS connections leave data in the process buffer, which
-	 ;; the XML parser will choke on.
-	 (with-current-buffer (process-buffer connection)
-	   (erase-buffer))
+		   (when (processp connection)
+		     ;; TLS connections leave data in the process buffer, which
+		     ;; the XML parser will choke on.
+		     (with-current-buffer (process-buffer connection)
+		       (erase-buffer))
 
-	 (set-process-filter connection (fsm-make-filter fsm))
-	 (set-process-sentinel connection (fsm-make-sentinel fsm)))
+		     (set-process-filter connection (fsm-make-filter fsm))
+		     (set-process-sentinel connection (fsm-make-sentinel fsm)))
 
-       (list :connected state-data)))
+		   (list :connected state-data)))
 
-    (:connection-failed
-     (message "Jabber connection failed")
-     (plist-put state-data :disconnection-reason
-		(mapconcat #'identity (cadr event) "; "))
-     (list nil state-data))
+		(:connection-failed
+		 (message "Jabber connection failed")
+		 (plist-put state-data :disconnection-reason
+			    (mapconcat #'identity (cadr event) "; "))
+		 (list nil state-data))
 
-    (:do-disconnect
-     ;; We don't have the connection object, so defer the disconnection.
-     :defer)))
+		(:do-disconnect
+		 ;; We don't have the connection object, so defer the disconnection.
+		 :defer)))
 
 (defsubst jabber-fsm-handle-sentinel (state-data event)
   "Handle sentinel event for jabber fsm."
@@ -487,542 +487,542 @@ With double prefix argument, specify more connection details."
     (list nil new-state-data)))
 
 (define-enter-state jabber-connection :connected
-  (fsm state-data)
+		    (fsm state-data)
 
-  (jabber-send-stream-header fsm)
+		    (jabber-send-stream-header fsm)
 
-  ;; Next thing happening is the server sending its own <stream:stream> start tag.
+		    ;; Next thing happening is the server sending its own <stream:stream> start tag.
 
-  (list state-data nil))
+		    (list state-data nil))
 
 (define-state jabber-connection :connected
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :connected state-data)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :connected state-data)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stream-start
-     (let ((session-id (cadr event))
-	   (stream-version (car (cddr event))))
-       (setq state-data
-	     (plist-put state-data :session-id session-id))
-       ;; the stream feature is only sent if the initiating entity has
-       ;; sent 1.0 in the stream header. if sasl is not supported then
-       ;; we don't send 1.0 in the header and therefore we shouldn't wait
-       ;; even if 1.0 is present in the receiving stream.
-       (cond
-	;; Wait for stream features?
-	((and stream-version
-	      (>= (string-to-number stream-version) 1.0)
-	      jabber-use-sasl
-	      (jabber-have-sasl-p))
-	 ;; Stay in same state...
-	 (list :connected state-data))
-	;; Register account?
-	((plist-get state-data :registerp)
-	 ;; XXX: require encryption for registration?
-	 (list :register-account state-data))
-	;; Legacy authentication?
-	(t
-	 (list :legacy-auth state-data)))))
+		(:stream-start
+		 (let ((session-id (cadr event))
+		       (stream-version (car (cddr event))))
+		   (setq state-data
+			 (plist-put state-data :session-id session-id))
+		   ;; the stream feature is only sent if the initiating entity has
+		   ;; sent 1.0 in the stream header. if sasl is not supported then
+		   ;; we don't send 1.0 in the header and therefore we shouldn't wait
+		   ;; even if 1.0 is present in the receiving stream.
+		   (cond
+		    ;; Wait for stream features?
+		    ((and stream-version
+			  (>= (string-to-number stream-version) 1.0)
+			  jabber-use-sasl
+			  (jabber-have-sasl-p))
+		     ;; Stay in same state...
+		     (list :connected state-data))
+		    ;; Register account?
+		    ((plist-get state-data :registerp)
+		     ;; XXX: require encryption for registration?
+		     (list :register-account state-data))
+		    ;; Legacy authentication?
+		    (t
+		     (list :legacy-auth state-data)))))
 
-    (:stanza
-     (let ((stanza (cadr event)))
-       (cond
-	;; At this stage, we only expect a stream:features stanza.
-	((not (eq (jabber-xml-node-name stanza) 'features))
-	 (list nil (plist-put state-data
-			      :disconnection-reason
-			      (format "Unexpected stanza %s" stanza))))
-	((and (jabber-xml-get-children stanza 'starttls)
-	      (eq (plist-get state-data :connection-type) 'starttls)
-	      ;; XEP-0368: STARTTLS MUST NOT be used over direct TLS.
-	      (not (plist-get state-data :encrypted)))
-	 (list :starttls state-data))
-	;; XXX: require encryption for registration?
-	((plist-get state-data :registerp)
-	 ;; We could check for the <register/> element in stream
-	 ;; features, but as a client we would only lose by doing
-	 ;; that.
-	 (list :register-account state-data))
-	(t
-	 (list :sasl-auth (plist-put state-data :stream-features stanza))))))
+		(:stanza
+		 (let ((stanza (cadr event)))
+		   (cond
+		    ;; At this stage, we only expect a stream:features stanza.
+		    ((not (eq (jabber-xml-node-name stanza) 'features))
+		     (list nil (plist-put state-data
+					  :disconnection-reason
+					  (format "Unexpected stanza %s" stanza))))
+		    ((and (jabber-xml-get-children stanza 'starttls)
+			  (eq (plist-get state-data :connection-type) 'starttls)
+			  ;; XEP-0368: STARTTLS MUST NOT be used over direct TLS.
+			  (not (plist-get state-data :encrypted)))
+		     (list :starttls state-data))
+		    ;; XXX: require encryption for registration?
+		    ((plist-get state-data :registerp)
+		     ;; We could check for the <register/> element in stream
+		     ;; features, but as a client we would only lose by doing
+		     ;; that.
+		     (list :register-account state-data))
+		    (t
+		     (list :sasl-auth (plist-put state-data :stream-features stanza))))))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (define-enter-state jabber-connection :starttls
-  (fsm state-data)
-  (jabber-starttls-initiate fsm)
-  (list state-data nil))
+		    (fsm state-data)
+		    (jabber-starttls-initiate fsm)
+		    (list state-data nil))
 
 (define-state jabber-connection :starttls
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :starttls state-data)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :starttls state-data)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stanza
-     (condition-case e
-	 (progn
-	   (jabber-starttls-process-input fsm (cadr event))
-	   ;; Connection is encrypted.  Send a stream tag again.
-	   (list :connected (plist-put state-data :encrypted t)))
-       (error
-	(let* ((msg (concat "STARTTLS negotiation failed: "
-			    (error-message-string e)))
-	       (new-state-data (plist-put state-data :disconnection-reason msg)))
-	  (list nil new-state-data)))))
+		(:stanza
+		 (condition-case e
+		     (progn
+		       (jabber-starttls-process-input fsm (cadr event))
+		       ;; Connection is encrypted.  Send a stream tag again.
+		       (list :connected (plist-put state-data :encrypted t)))
+		   (error
+		    (let* ((msg (concat "STARTTLS negotiation failed: "
+					(error-message-string e)))
+			   (new-state-data (plist-put state-data :disconnection-reason msg)))
+		      (list nil new-state-data)))))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (define-enter-state jabber-connection :register-account
-  (fsm state-data)
-  (jabber-get-register fsm nil)
-  (list state-data nil))
+		    (fsm state-data)
+		    (jabber-get-register fsm nil)
+		    (list state-data nil))
 
 (define-state jabber-connection :register-account
-  (fsm state-data event _callback)
-  ;; The connection will be closed in jabber-register
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :register-account state-data)))
+	      (fsm state-data event _callback)
+	      ;; The connection will be closed in jabber-register
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :register-account state-data)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stanza
-     (or
-      (jabber-process-stream-error (cadr event) state-data)
-      (progn
-	(jabber-process-input fsm (cadr event))
-	(list :register-account state-data))))
+		(:stanza
+		 (or
+		  (jabber-process-stream-error (cadr event) state-data)
+		  (progn
+		    (jabber-process-input fsm (cadr event))
+		    (list :register-account state-data))))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (define-enter-state jabber-connection :legacy-auth
-  (_fsm state-data)
-  (message "jabber: server requires non-SASL auth, which is no longer supported")
-  (list nil (plist-put state-data :disconnection-expected t)))
+		    (_fsm state-data)
+		    (message "jabber: server requires non-SASL auth, which is no longer supported")
+		    (list nil (plist-put state-data :disconnection-expected t)))
 
 (define-state jabber-connection :legacy-auth
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :legacy-auth state-data)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :legacy-auth state-data)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stanza
-     (or
-      (jabber-process-stream-error (cadr event) state-data)
-      (progn
-	(jabber-process-input fsm (cadr event))
-	(list :legacy-auth state-data))))
+		(:stanza
+		 (or
+		  (jabber-process-stream-error (cadr event) state-data)
+		  (progn
+		    (jabber-process-input fsm (cadr event))
+		    (list :legacy-auth state-data))))
 
-    (:authentication-success
-     (jabber-cache-password (jabber-connection-bare-jid fsm) (cdr event))
-     (list :session-established state-data))
+		(:authentication-success
+		 (jabber-cache-password (jabber-connection-bare-jid fsm) (cdr event))
+		 (list :session-established state-data))
 
-    (:authentication-failure
-     (jabber-uncache-password (jabber-connection-bare-jid fsm))
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))
+		(:authentication-failure
+		 (jabber-uncache-password (jabber-connection-bare-jid fsm))
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (define-enter-state jabber-connection :sasl-auth
-  (fsm state-data)
-  (let ((new-state-data
-	 (plist-put state-data
-		    :sasl-data
-		    (jabber-sasl-start-auth
-		     fsm
-		     (plist-get state-data
-				:stream-features)))))
-    (list new-state-data nil)))
+		    (fsm state-data)
+		    (let ((new-state-data
+			   (plist-put state-data
+				      :sasl-data
+				      (jabber-sasl-start-auth
+				       fsm
+				       (plist-get state-data
+						  :stream-features)))))
+		      (list new-state-data nil)))
 
 (define-state jabber-connection :sasl-auth
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :sasl-auth state-data)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :sasl-auth state-data)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stanza
-     (let ((new-sasl-data
-	    (jabber-sasl-process-input
-	     fsm (cadr event)
-	     (plist-get state-data :sasl-data))))
-       (list :sasl-auth (plist-put state-data :sasl-data new-sasl-data))))
+		(:stanza
+		 (let ((new-sasl-data
+			(jabber-sasl-process-input
+			 fsm (cadr event)
+			 (plist-get state-data :sasl-data))))
+		   (list :sasl-auth (plist-put state-data :sasl-data new-sasl-data))))
 
-    (:use-legacy-auth-instead
-     (list :legacy-auth (plist-put state-data :sasl-data nil)))
+		(:use-legacy-auth-instead
+		 (list :legacy-auth (plist-put state-data :sasl-data nil)))
 
-    (:authentication-success
-     (jabber-cache-password (jabber-connection-bare-jid fsm) (cdr event))
-     (list :bind (plist-put state-data :sasl-data nil)))
+		(:authentication-success
+		 (jabber-cache-password (jabber-connection-bare-jid fsm) (cdr event))
+		 (list :bind (plist-put state-data :sasl-data nil)))
 
-    (:authentication-failure
-     (jabber-uncache-password (jabber-connection-bare-jid fsm))
-     ;; jabber-sasl has already displayed a message
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))
+		(:authentication-failure
+		 (jabber-uncache-password (jabber-connection-bare-jid fsm))
+		 ;; jabber-sasl has already displayed a message
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (define-enter-state jabber-connection :bind
-  (fsm state-data)
-  (jabber-send-stream-header fsm)
-  (list state-data nil))
+		    (fsm state-data)
+		    (jabber-send-stream-header fsm)
+		    (list state-data nil))
 
 (define-state jabber-connection :bind
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :bind state-data)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :bind state-data)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stream-start
-     ;; we wait for stream features...
-     (list :bind state-data))
-
-    (:stanza
-     (let ((stanza (cadr event)))
-       (cond
-	((eq (jabber-xml-node-name stanza) 'features)
-	 ;; Record stream features, discarding earlier data:
-	 (setq state-data (plist-put state-data :stream-features stanza))
-	 (cond
-	  ;; SM resume attempt (post-SASL, per XEP-0198 section 5)?
-	  ((and (plist-get state-data :sm-resuming)
-		(jabber-xml-child-with-xmlns stanza jabber-sm-xmlns))
-	   (list :sm-resume state-data))
-	  ;; SM resume was hoped for but server doesn't offer SM here.
-	  ((plist-get state-data :sm-resuming)
-	   (jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
-	   (setq state-data (jabber-sm--reset state-data))
-	   (setq state-data (plist-put state-data :sm-resuming nil))
-	   ;; Fall through to normal bind.
-	   (if (jabber-xml-get-children stanza 'bind)
-	       (let ((handle-bind
-		      (lambda (jc xml-data success)
-			(fsm-send jc (list
-				      (if success :bind-success :bind-failure)
-				      xml-data))))
-		     (resource (plist-get state-data :resource)))
-		 (jabber-send-iq fsm nil "set"
-				 `(bind ((xmlns . ,jabber-bind-xmlns))
-					,@(when resource
-					    `((resource () ,resource))))
-				 handle-bind t
-				 handle-bind nil)
+		(:stream-start
+		 ;; we wait for stream features...
 		 (list :bind state-data))
-	     (message "Server doesn't permit resource binding")
-	     (list nil state-data)))
-	  ;; Normal bind flow.
-	  ((jabber-xml-get-children stanza 'bind)
-	   (let ((handle-bind
-		  (lambda (jc xml-data success)
-		    (fsm-send jc (list
-				  (if success :bind-success :bind-failure)
-				  xml-data))))
-		 (resource (plist-get state-data :resource)))
-	     (jabber-send-iq fsm nil "set"
-			     `(bind ((xmlns . ,jabber-bind-xmlns))
-				    ,@(when resource
-					`((resource () ,resource))))
-			     handle-bind t
-			     handle-bind nil)
-	     (list :bind state-data)))
-	  (t
-	   (message "Server doesn't permit resource binding")
-	   (list nil state-data))))
-	(t
-	 (or
-	  (jabber-process-stream-error (cadr event) state-data)
-	  (progn
-	    (jabber-process-input fsm (cadr event))
-	    (list :bind state-data)))))))
 
-    (:bind-success
-     (let ((jid (jabber-xml-path (cadr event) '(bind jid ""))))
-       ;; Maybe this isn't the JID we asked for.
-       (plist-put state-data :username (jabber-jid-username jid))
-       (plist-put state-data :server (jabber-jid-server jid))
-       (plist-put state-data :resource (jabber-jid-resource jid)))
+		(:stanza
+		 (let ((stanza (cadr event)))
+		   (cond
+		    ((eq (jabber-xml-node-name stanza) 'features)
+		     ;; Record stream features, discarding earlier data:
+		     (setq state-data (plist-put state-data :stream-features stanza))
+		     (cond
+		      ;; SM resume attempt (post-SASL, per XEP-0198 section 5)?
+		      ((and (plist-get state-data :sm-resuming)
+			    (jabber-xml-child-with-xmlns stanza jabber-sm-xmlns))
+		       (list :sm-resume state-data))
+		      ;; SM resume was hoped for but server doesn't offer SM here.
+		      ((plist-get state-data :sm-resuming)
+		       (jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
+		       (setq state-data (jabber-sm--reset state-data))
+		       (setq state-data (plist-put state-data :sm-resuming nil))
+		       ;; Fall through to normal bind.
+		       (if (jabber-xml-get-children stanza 'bind)
+			   (let ((handle-bind
+				  (lambda (jc xml-data success)
+				    (fsm-send jc (list
+						  (if success :bind-success :bind-failure)
+						  xml-data))))
+				 (resource (plist-get state-data :resource)))
+			     (jabber-send-iq fsm nil "set"
+					     `(bind ((xmlns . ,jabber-bind-xmlns))
+						    ,@(when resource
+							`((resource () ,resource))))
+					     handle-bind t
+					     handle-bind nil)
+			     (list :bind state-data))
+			 (message "Server doesn't permit resource binding")
+			 (list nil state-data)))
+		      ;; Normal bind flow.
+		      ((jabber-xml-get-children stanza 'bind)
+		       (let ((handle-bind
+			      (lambda (jc xml-data success)
+				(fsm-send jc (list
+					      (if success :bind-success :bind-failure)
+					      xml-data))))
+			     (resource (plist-get state-data :resource)))
+			 (jabber-send-iq fsm nil "set"
+					 `(bind ((xmlns . ,jabber-bind-xmlns))
+						,@(when resource
+						    `((resource () ,resource))))
+					 handle-bind t
+					 handle-bind nil)
+			 (list :bind state-data)))
+		      (t
+		       (message "Server doesn't permit resource binding")
+		       (list nil state-data))))
+		    (t
+		     (or
+		      (jabber-process-stream-error (cadr event) state-data)
+		      (progn
+			(jabber-process-input fsm (cadr event))
+			(list :bind state-data)))))))
 
-     ;; If the server follows the older RFCs 3920 and 3921, it may
-     ;; offer session initiation here.  If it follows RFCs 6120 and
-     ;; 6121, it might not offer it, and we should just skip it.
-     (if (jabber-xml-get-children (plist-get state-data :stream-features) 'session)
-	 (let ((handle-session
-		(lambda (jc xml-data success)
-		  (fsm-send jc (list
-				(if success :session-success :session-failure)
-				xml-data)))))
-	   (jabber-send-iq fsm nil "set"
-			   `(session ((xmlns . ,jabber-session-xmlns)))
-			   handle-session t
-			   handle-session nil)
-	   (list :bind state-data))
-       ;; Session establishment not offered - assume not necessary.
-       (jabber-sm--maybe-enable-or-establish state-data)))
+		(:bind-success
+		 (let ((jid (jabber-xml-path (cadr event) '(bind jid ""))))
+		   ;; Maybe this isn't the JID we asked for.
+		   (plist-put state-data :username (jabber-jid-username jid))
+		   (plist-put state-data :server (jabber-jid-server jid))
+		   (plist-put state-data :resource (jabber-jid-resource jid)))
 
-    (:session-success
-     ;; We have a session
-     (jabber-sm--maybe-enable-or-establish state-data))
+		 ;; If the server follows the older RFCs 3920 and 3921, it may
+		 ;; offer session initiation here.  If it follows RFCs 6120 and
+		 ;; 6121, it might not offer it, and we should just skip it.
+		 (if (jabber-xml-get-children (plist-get state-data :stream-features) 'session)
+		     (let ((handle-session
+			    (lambda (jc xml-data success)
+			      (fsm-send jc (list
+					    (if success :session-success :session-failure)
+					    xml-data)))))
+		       (jabber-send-iq fsm nil "set"
+				       `(session ((xmlns . ,jabber-session-xmlns)))
+				       handle-session t
+				       handle-session nil)
+		       (list :bind state-data))
+		   ;; Session establishment not offered - assume not necessary.
+		   (jabber-sm--maybe-enable-or-establish state-data)))
 
-    (:bind-failure
-     (message "Resource binding failed: %s"
-	      (jabber-parse-error
-	       (jabber-iq-error (cadr event))))
-     (list nil state-data))
+		(:session-success
+		 ;; We have a session
+		 (jabber-sm--maybe-enable-or-establish state-data))
 
-    (:session-failure
-     (message "Session establishing failed: %s"
-	      (jabber-parse-error
-	       (jabber-iq-error (cadr event))))
-     (list nil state-data))
+		(:bind-failure
+		 (message "Resource binding failed: %s"
+			  (jabber-parse-error
+			   (jabber-iq-error (cadr event))))
+		 (list nil state-data))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:session-failure
+		 (message "Session establishing failed: %s"
+			  (jabber-parse-error
+			   (jabber-iq-error (cadr event))))
+		 (list nil state-data))
+
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (define-enter-state jabber-connection :sm-enable
-  (fsm state-data)
-  (jabber-send-string fsm (jabber-sm--make-enable-xml))
-  (list state-data nil))
+		    (fsm state-data)
+		    (jabber-send-string fsm (jabber-sm--make-enable-xml))
+		    (list state-data nil))
 
 (define-state jabber-connection :sm-enable
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :sm-enable state-data)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :sm-enable state-data)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stanza
-     (let ((stanza (cadr event)))
-       (cond
-	((jabber-sm--enabled-p stanza)
-	 (let ((info (jabber-sm--parse-enabled stanza)))
-	   (setq state-data (jabber-sm--apply-enabled state-data info))
-	   (list :session-established state-data)))
-	((jabber-sm--failed-p stanza)
-	 (message "Stream Management negotiation failed, continuing without SM")
-	 (list :session-established state-data))
-	(t
-	 (or
-	  (jabber-process-stream-error stanza state-data)
-	  (list :sm-enable state-data))))))
+		(:stanza
+		 (let ((stanza (cadr event)))
+		   (cond
+		    ((jabber-sm--enabled-p stanza)
+		     (let ((info (jabber-sm--parse-enabled stanza)))
+		       (setq state-data (jabber-sm--apply-enabled state-data info))
+		       (list :session-established state-data)))
+		    ((jabber-sm--failed-p stanza)
+		     (message "Stream Management negotiation failed, continuing without SM")
+		     (list :session-established state-data))
+		    (t
+		     (or
+		      (jabber-process-stream-error stanza state-data)
+		      (list :sm-enable state-data))))))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (define-enter-state jabber-connection :sm-resume
-  (fsm state-data)
-  (jabber-send-string fsm (jabber-sm--make-resume-xml
-			   (plist-get state-data :sm-inbound-count)
-			   (plist-get state-data :sm-id)))
-  (list state-data nil))
+		    (fsm state-data)
+		    (jabber-send-string fsm (jabber-sm--make-resume-xml
+					     (plist-get state-data :sm-inbound-count)
+					     (plist-get state-data :sm-id)))
+		    (list state-data nil))
 
 (define-state jabber-connection :sm-resume
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :sm-resume state-data)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :sm-resume state-data)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stanza
-     (let ((stanza (cadr event)))
-       (cond
-	((jabber-sm--resumed-p stanza)
-	 (let* ((result (jabber-sm--handle-resumed state-data stanza))
-		(new-state-data (car result))
-		(to-resend (cdr result)))
-	   ;; Resend unacked stanzas (bypass gate to avoid re-queuing).
-	   (dolist (sexp to-resend)
-	     (jabber-send-sexp--immediate fsm sexp))
-	   ;; Drain any stanzas queued before disconnect.
-	   (setq new-state-data
-		 (jabber-sm--drain-pending
-		  fsm new-state-data #'jabber-send-sexp--immediate))
-	   (list :session-established new-state-data)))
-	((jabber-sm--failed-p stanza)
-	 (message "Stream Management resume failed, falling back to auth")
-	 ;; Resume failed: clean up MUC state now, reset SM, do full auth.
-	 (jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
-	 (setq state-data (jabber-sm--reset state-data))
-	 (setq state-data (plist-put state-data :sm-resuming nil))
-	 (list :sasl-auth state-data))
-	(t
-	 (or
-	  (jabber-process-stream-error stanza state-data)
-	  (list :sm-resume state-data))))))
+		(:stanza
+		 (let ((stanza (cadr event)))
+		   (cond
+		    ((jabber-sm--resumed-p stanza)
+		     (let* ((result (jabber-sm--handle-resumed state-data stanza))
+			    (new-state-data (car result))
+			    (to-resend (cdr result)))
+		       ;; Resend unacked stanzas (bypass gate to avoid re-queuing).
+		       (dolist (sexp to-resend)
+			 (jabber-send-sexp--immediate fsm sexp))
+		       ;; Drain any stanzas queued before disconnect.
+		       (setq new-state-data
+			     (jabber-sm--drain-pending
+			      fsm new-state-data #'jabber-send-sexp--immediate))
+		       (list :session-established new-state-data)))
+		    ((jabber-sm--failed-p stanza)
+		     (message "Stream Management resume failed, falling back to auth")
+		     ;; Resume failed: clean up MUC state now, reset SM, do full auth.
+		     (jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
+		     (setq state-data (jabber-sm--reset state-data))
+		     (setq state-data (plist-put state-data :sm-resuming nil))
+		     (list :sasl-auth state-data))
+		    (t
+		     (or
+		      (jabber-process-stream-error stanza state-data)
+		      (list :sm-resume state-data))))))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (defvar jabber-pending-presence-timeout 0.5
   "Wait this long before doing presence packet batch processing.")
 
 (define-enter-state jabber-connection :session-established
-  (fsm state-data)
-  (if (plist-get state-data :sm-resumed)
-      ;; On SM resume, the session was never lost; skip roster fetch
-      ;; and bookmark prefetch.  Run resume-specific hooks (MAM
-      ;; catchup, keepalive restart) since SM replay only covers a
-      ;; finite window of unacked stanzas.
-      (progn
-	(when (plist-get state-data :sm-enabled)
-	  (setq state-data (jabber-sm--start-r-timer fsm state-data)))
-	(setq state-data (plist-put state-data :sm-resumed nil))
-	(run-hook-with-args 'jabber-post-resume-hooks fsm))
-    ;; Normal connect: fetch roster (which triggers post-connect hooks
-    ;; from the roster callback) and prefetch bookmarks.
-    (jabber-send-iq fsm nil
-		    "get"
-		    `(query ((xmlns . ,jabber-roster-xmlns)))
-		    #'jabber-process-roster 'initial
-		    #'jabber-initial-roster-failure nil)
-    (jabber-get-bookmarks fsm #'ignore))
-  (list (plist-put state-data :ever-session-established t) nil))
+		    (fsm state-data)
+		    (if (plist-get state-data :sm-resumed)
+			;; On SM resume, the session was never lost; skip roster fetch
+			;; and bookmark prefetch.  Run resume-specific hooks (MAM
+			;; catchup, keepalive restart) since SM replay only covers a
+			;; finite window of unacked stanzas.
+			(progn
+			  (when (plist-get state-data :sm-enabled)
+			    (setq state-data (jabber-sm--start-r-timer fsm state-data)))
+			  (setq state-data (plist-put state-data :sm-resumed nil))
+			  (run-hook-with-args 'jabber-post-resume-hooks fsm))
+		      ;; Normal connect: fetch roster (which triggers post-connect hooks
+		      ;; from the roster callback) and prefetch bookmarks.
+		      (jabber-send-iq fsm nil
+				      "get"
+				      `(query ((xmlns . ,jabber-roster-xmlns)))
+				      #'jabber-process-roster 'initial
+				      #'jabber-initial-roster-failure nil)
+		      (jabber-get-bookmarks fsm #'ignore))
+		    (list (plist-put state-data :ever-session-established t) nil))
 
 (define-state jabber-connection :session-established
-  (fsm state-data event _callback)
-  (pcase (or (car-safe event) event)
-    (:filter
-     (let ((process (cadr event))
-	   (string (car (cddr event))))
-       (jabber-pre-filter process string fsm)
-       (list :session-established state-data :keep)))
+	      (fsm state-data event _callback)
+	      (pcase (or (car-safe event) event)
+		(:filter
+		 (let ((process (cadr event))
+		       (string (car (cddr event))))
+		   (jabber-pre-filter process string fsm)
+		   (list :session-established state-data :keep)))
 
-    (:sentinel
-     (jabber-fsm-handle-sentinel state-data event))
+		(:sentinel
+		 (jabber-fsm-handle-sentinel state-data event))
 
-    (:stanza
-     (let ((stanza (cadr event)))
-       (cond
-	((jabber-sm--r-p stanza)
-	 (jabber-sm--send-ack fsm state-data)
-	 (list :session-established state-data :keep))
-	((jabber-sm--a-p stanza)
-	 (setq state-data (jabber-sm--process-ack state-data stanza))
-	 (setq state-data (jabber-sm--drain-pending
-			   fsm state-data #'jabber-send-sexp--immediate))
-	 (list :session-established state-data :keep))
-	(t
-	 ;; Only message/presence/iq stanzas reach here; <r/>/<a/> are
-	 ;; SM control elements and must not be counted (XEP-0198 §4).
-	 (setq state-data (jabber-sm--count-inbound fsm state-data stanza))
-	 (or
-	  (jabber-process-stream-error stanza state-data)
-	  (progn
-	    (jabber-process-input fsm stanza)
-	    (list :session-established state-data :keep)))))))
+		(:stanza
+		 (let ((stanza (cadr event)))
+		   (cond
+		    ((jabber-sm--r-p stanza)
+		     (jabber-sm--send-ack fsm state-data)
+		     (list :session-established state-data :keep))
+		    ((jabber-sm--a-p stanza)
+		     (setq state-data (jabber-sm--process-ack state-data stanza))
+		     (setq state-data (jabber-sm--drain-pending
+				       fsm state-data #'jabber-send-sexp--immediate))
+		     (list :session-established state-data :keep))
+		    (t
+		     ;; Only message/presence/iq stanzas reach here; <r/>/<a/> are
+		     ;; SM control elements and must not be counted (XEP-0198 §4).
+		     (setq state-data (jabber-sm--count-inbound fsm state-data stanza))
+		     (or
+		      (jabber-process-stream-error stanza state-data)
+		      (progn
+			(jabber-process-input fsm stanza)
+			(list :session-established state-data :keep)))))))
 
-    (:roster-update
-     ;; Batch up roster updates
-     (let* ((jid-symbol-to-update (cdr event))
-	    (pending-updates (plist-get state-data :roster-pending-updates)))
-       ;; If there are pending updates, there is a timer running
-       ;; already; just add the new symbol and wait.
-       (if pending-updates
-	   (progn
-	     (unless (memq jid-symbol-to-update pending-updates)
-	       (nconc pending-updates (list jid-symbol-to-update)))
-	     (list :session-established state-data :keep))
-	 ;; Otherwise, we need to create the list and start the timer.
-	 (setq state-data
-	       (plist-put state-data
-			  :roster-pending-updates
-			  (list jid-symbol-to-update)))
-	 (list :session-established state-data jabber-pending-presence-timeout))))
+		(:roster-update
+		 ;; Batch up roster updates
+		 (let* ((jid-symbol-to-update (cdr event))
+			(pending-updates (plist-get state-data :roster-pending-updates)))
+		   ;; If there are pending updates, there is a timer running
+		   ;; already; just add the new symbol and wait.
+		   (if pending-updates
+		       (progn
+			 (unless (memq jid-symbol-to-update pending-updates)
+			   (nconc pending-updates (list jid-symbol-to-update)))
+			 (list :session-established state-data :keep))
+		     ;; Otherwise, we need to create the list and start the timer.
+		     (setq state-data
+			   (plist-put state-data
+				      :roster-pending-updates
+				      (list jid-symbol-to-update)))
+		     (list :session-established state-data jabber-pending-presence-timeout))))
 
-    (:timeout
-     ;; Update roster
-     (let ((pending-updates (plist-get state-data :roster-pending-updates)))
-       (setq state-data (plist-put state-data :roster-pending-updates nil))
-       (jabber-roster-update fsm nil pending-updates nil)
-       (list :session-established state-data)))
+		(:timeout
+		 ;; Update roster
+		 (let ((pending-updates (plist-get state-data :roster-pending-updates)))
+		   (setq state-data (plist-put state-data :roster-pending-updates nil))
+		   (jabber-roster-update fsm nil pending-updates nil)
+		   (list :session-established state-data)))
 
-    (:send-if-connected
-     ;; This is the only state in which we respond to such messages.
-     ;; This is to make sure we don't send anything inappropriate
-     ;; during authentication etc.
-     (jabber-send-sexp fsm (cdr event))
-     (list :session-established state-data :keep))
+		(:send-if-connected
+		 ;; This is the only state in which we respond to such messages.
+		 ;; This is to make sure we don't send anything inappropriate
+		 ;; during authentication etc.
+		 (jabber-send-sexp fsm (cdr event))
+		 (list :session-established state-data :keep))
 
-    (:connection-dead
-     ;; Connection process vanished without a proper FSM transition
-     ;; (e.g. race between stream error and sentinel).  Reconnect.
-     (unless (plist-get state-data :disconnection-reason)
-       (setq state-data (plist-put state-data :disconnection-reason
-				   "Connection process lost")))
-     (list nil state-data))
+		(:connection-dead
+		 ;; Connection process vanished without a proper FSM transition
+		 ;; (e.g. race between stream error and sentinel).  Reconnect.
+		 (unless (plist-get state-data :disconnection-reason)
+		   (setq state-data (plist-put state-data :disconnection-reason
+					       "Connection process lost")))
+		 (list nil state-data))
 
-    (:do-disconnect
-     (jabber-send-string fsm "</stream:stream>")
-     (list nil (plist-put state-data
-			  :disconnection-expected t)))))
+		(:do-disconnect
+		 (jabber-send-string fsm "</stream:stream>")
+		 (list nil (plist-put state-data
+				      :disconnection-expected t)))))
 
 (defun jabber-disconnect (&optional arg interactivep)
   "Disconnect from all Jabber servers. If ARG supplied, disconnect one account."
@@ -1072,7 +1072,7 @@ FSM is the connection that is sending/receiving.
 DIRECTION is a string, either \"sending\" or \"receive\".
 DATA is any sexp."
   (when jabber-debug-log-xml
-      (jabber-process-console fsm direction data)))
+    (jabber-process-console fsm direction data)))
 
 (defvar jabber-core--filtering nil
   "Re-entrance guard for `jabber-pre-filter'.")
@@ -1218,7 +1218,11 @@ When SM back-pressure is active and the in-flight limit is reached,
 queue the stanza for later delivery instead of sending immediately."
   (let ((state-data (fsm-get-state-data jc)))
     (if (jabber-sm--should-queue-p state-data sexp)
-        (jabber-sm--enqueue-pending state-data sexp)
+        (progn
+          (jabber-sm--enqueue-pending state-data sexp)
+          (when (eq (jabber-xml-node-name sexp) 'message)
+            (message "SM: message queued (waiting for server ack, %d pending)"
+                     (length (plist-get state-data :sm-pending-queue)))))
       (jabber-send-sexp--immediate jc sexp))))
 
 (defun jabber-send-sexp-if-connected (jc sexp)

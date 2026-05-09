@@ -46,6 +46,8 @@
 (declare-function jabber-xml-get-children "jabber-xml.el" (node child-name))
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el" (node xmlns))
 (declare-function jabber-sexp2xml "jabber-xml.el" (sexp))
+(declare-function jabber-send-sexp--immediate "jabber-core"
+                  (jc sexp))
 (defvar jabber-debug-log-xml)
 (defvar jabber-connections)
 
@@ -77,6 +79,14 @@ queued and drained as the server acknowledges previous ones.
 Set to nil to disable back-pressure (send everything immediately)."
   :type '(choice (integer :tag "Max unacked stanzas")
                  (const :tag "No limit" nil)))
+
+(defcustom jabber-sm-stall-timeout 90
+  "Seconds before declaring an SM ack stall and forcing recovery.
+When the server has not acknowledged outbound stanzas for this
+many seconds while the pending queue is non-empty, force-advance
+the ack counter and drain queued stanzas."
+  :type 'integer
+  :group 'jabber-sm)
 
 ;;; Counter arithmetic (handles 2^32 wraparound per XEP-0198 section 5)
 
@@ -128,16 +138,17 @@ Uses forward-distance heuristic: if delta(B,A) < 2^31, A <= B."
 
 (defconst jabber-sm--initial-keys
   '(:sm-enabled nil
-    :sm-id nil
-    :sm-resume-max nil
-    :sm-outbound-count 0
-    :sm-inbound-count 0
-    :sm-outbound-queue nil
-    :sm-pending-queue nil
-    :sm-last-acked 0
-    :sm-resuming nil
-    :sm-resumed nil
-    :sm-r-timer nil)
+		:sm-id nil
+		:sm-resume-max nil
+		:sm-outbound-count 0
+		:sm-inbound-count 0
+		:sm-outbound-queue nil
+		:sm-pending-queue nil
+		:sm-last-acked 0
+		:sm-resuming nil
+		:sm-resumed nil
+		:sm-r-timer nil
+		:sm-stall-since nil)
   "Initial SM keys for the FSM state-data plist.")
 
 (defun jabber-sm--reset (state-data)
@@ -199,15 +210,23 @@ Return updated STATE-DATA."
   (jabber-sm--counter-delta (plist-get state-data :sm-outbound-count)
                             (plist-get state-data :sm-last-acked)))
 
+(defun jabber-sm--iq-response-p (sexp)
+  "Return non-nil if SEXP is an IQ result or error.
+These are idempotent responses that should bypass back-pressure."
+  (and (eq (jabber-xml-node-name sexp) 'iq)
+       (member (jabber-xml-get-attribute sexp 'type) '("result" "error"))))
+
 (defun jabber-sm--should-queue-p (state-data sexp)
   "Return non-nil if SEXP should be queued instead of sent immediately.
 True when SM is enabled, SEXP is a countable stanza, back-pressure
-is enabled, and the in-flight count has reached the cap."
+is enabled, and the in-flight count has reached the cap.
+IQ responses (result/error) always bypass the gate."
   (and jabber-sm-max-in-flight
        (plist-get state-data :sm-enabled)
        (jabber-sm--stanza-p sexp)
+       (not (jabber-sm--iq-response-p sexp))
        (>= (jabber-sm--in-flight-count state-data)
-            jabber-sm-max-in-flight)))
+           jabber-sm-max-in-flight)))
 
 (defun jabber-sm--stanza-priority (sexp)
   "Return priority for SEXP: 0 for message, 1 for iq, 2 for presence."
@@ -244,6 +263,41 @@ Return updated STATE-DATA."
         (setq state-data (jabber-sm--count-outbound state-data sexp))))
     (plist-put state-data :sm-pending-queue queue)))
 
+;;; Stall detection and recovery
+
+(defun jabber-sm--check-stall (jc)
+  "Check for ack stall on JC and recover if timed out.
+Called from the periodic r-timer.  Detects when the back-pressure
+gate is full and the pending queue is non-empty, indicating the
+server has stopped sending ack responses."
+  (let ((state-data (fsm-get-state-data jc)))
+    (if (and jabber-sm-max-in-flight
+             (plist-get state-data :sm-pending-queue)
+             (>= (jabber-sm--in-flight-count state-data)
+                 jabber-sm-max-in-flight))
+        (let ((stall-since (plist-get state-data :sm-stall-since)))
+          (if stall-since
+              (when (>= (- (float-time) stall-since)
+                        jabber-sm-stall-timeout)
+                (jabber-sm--recover-stall jc state-data))
+            (plist-put state-data :sm-stall-since (float-time))))
+      (plist-put state-data :sm-stall-since nil))))
+
+(defun jabber-sm--recover-stall (jc state-data)
+  "Force recovery from an ack stall on JC.
+Advance the ack counter to the current outbound count, clear the
+outbound queue, and drain pending stanzas.  The drain is capped by
+`jabber-sm-max-in-flight' so at most that many stanzas go out per
+recovery cycle."
+  (let ((pending-len (length (plist-get state-data :sm-pending-queue))))
+    (message "SM: ack stall detected, recovering (%d stanzas pending)"
+             pending-len)
+    (plist-put state-data :sm-last-acked
+               (plist-get state-data :sm-outbound-count))
+    (plist-put state-data :sm-outbound-queue nil)
+    (plist-put state-data :sm-stall-since nil)
+    (jabber-sm--drain-pending jc state-data #'jabber-send-sexp--immediate)))
+
 ;;; Ack send/receive
 
 (defun jabber-sm--make-ack-xml (h)
@@ -271,16 +325,21 @@ Return updated STATE-DATA."
 
 (defun jabber-sm--process-ack (state-data stanza)
   "Process an incoming <a/> ack STANZA, pruning the outbound queue.
+Only advance `:sm-last-acked' forward -- ignore stale acks whose h
+is at or behind the current value (can happen after stall recovery).
 Return updated STATE-DATA."
   (let* ((h (string-to-number (or (jabber-xml-get-attribute stanza 'h) "0")))
          (sent (plist-get state-data :sm-outbound-count))
+         (last-acked (plist-get state-data :sm-last-acked))
          (queue (plist-get state-data :sm-outbound-queue))
          (pruned (jabber-sm--prune-queue queue h)))
     (when (not (jabber-sm--counter-<= h sent))
       (message "SM warning: server acked more stanzas than sent (h=%d, sent=%d)"
                h sent))
-    (setq state-data (plist-put state-data :sm-last-acked h))
-    (setq state-data (plist-put state-data :sm-outbound-queue pruned))
+    (when (not (jabber-sm--counter-<= h last-acked))
+      (setq state-data (plist-put state-data :sm-last-acked h))
+      (setq state-data (plist-put state-data :sm-outbound-queue pruned))
+      (plist-put state-data :sm-stall-since nil))
     state-data))
 
 ;;; Enable/resume XML generation
@@ -335,10 +394,12 @@ Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
 ;;; Periodic ack request timer
 
 (defun jabber-sm--r-timer-function (jc)
-  "Timer callback: send <r/> if JC is still connected."
+  "Timer callback: send <r/> and check for ack stall."
   (when (memq jc jabber-connections)
     (condition-case nil
-        (jabber-sm--request-ack jc)
+        (progn
+          (jabber-sm--request-ack jc)
+          (jabber-sm--check-stall jc))
       (error nil))))
 
 (defun jabber-sm--start-r-timer (jc state-data)
