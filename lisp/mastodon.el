@@ -4,9 +4,9 @@
 ;; Copyright (C) 2020-2022 Marty Hiatt
 ;; Copyright (C) 2021 Abhiseck Paira <abhiseckpaira@disroot.org>
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <mousebot@disroot.org>
-;; Maintainer: Marty Hiatt <mousebot@disroot.org>
-;; Version: 2.0.16
+;;         Marty Hiatt <martianh@disroot.org>
+;; Maintainer: Marty Hiatt <martianh@disroot.org>
+;; Version: 2.0.17
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -562,7 +562,11 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
   ;; but not at beginning or end, see https://github.com/mastodon/mastodon/issues/6830
   ;; objects may have - in them
   (let* ((uri-parsed (url-generic-parse-url url))
-         (query (url-filename uri-parsed)))
+         (url-filename (url-filename uri-parsed))
+         ;; if URL ends with a slash, remove it:
+         (query (if (string-suffix-p "/" url-filename)
+                    (string-trim-right url-filename "/")
+                  url-filename)))
     (save-match-data
       (or (string-match "^/@[^/]+$" query)
           (string-match "^/@[^/]+/[[:digit:]]+$" query)

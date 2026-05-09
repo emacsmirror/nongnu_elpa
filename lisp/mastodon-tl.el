@@ -3,8 +3,8 @@
 ;; Copyright (C) 2017-2019 Johnson Denen
 ;; Copyright (C) 2020-2024 Marty Hiatt
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <mousebot@disroot.org>
-;; Maintainer: Marty Hiatt <mousebot@disroot.org>
+;;         Marty Hiatt <martianh@disroot.org>
+;; Maintainer: Marty Hiatt <martianh@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -1892,7 +1892,8 @@ Runs `mastodon-tl--render-text' and fetches poll or media."
                            (with-temp-buffer ;; strip quoted toot URL:
                              (insert rendered)
                              (goto-char (point-min))
-                             (kill-line 2)
+                             (delete-line)
+                             (delete-line)
                              (buffer-string))))
          (poll-p (mastodon-tl--field 'poll toot))
          (media-p (mastodon-tl--field 'media_attachments toot)))

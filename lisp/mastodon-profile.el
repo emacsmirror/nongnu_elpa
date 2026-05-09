@@ -3,8 +3,8 @@
 ;; Copyright (C) 2017-2019 Johnson Denen
 ;; Copyright (C) 2020-2024 Marty Hiatt
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <mousebot@disroot.org>
-;; Maintainer: Marty Hiatt <mousebot@disroot.org>
+;;         Marty Hiatt <martianh@disroot.org>
+;; Maintainer: Marty Hiatt <martianh@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
@@ -960,7 +960,9 @@ MAX-ID is a flag to include the max_id pagination parameter."
    (let ((json (mastodon-tl--toot-or-base
                 (mastodon-profile--item-json))))
      (mastodon-profile--make-author-buffer
-      (alist-get 'account json)
+      (or (alist-get 'account json)
+          ;; fallback for foll-req notifs (non-toot notifs):
+          json)
       nil nil nil nil max-id))))
 
 (defun mastodon-profile--image-from-account (account img-type)

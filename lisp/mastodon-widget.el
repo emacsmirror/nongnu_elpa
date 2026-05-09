@@ -1,8 +1,8 @@
 ;;; mastodon-widget.el --- Widget utilities -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2020-2024 Marty Hiatt
-;; Author: Marty Hiatt <mousebot@disroot.org>
-;; Maintainer: Marty Hiatt <mousebot@disroot.org>
+;; Author: Marty Hiatt <martianh@disroot.org>
+;; Maintainer: Marty Hiatt <martianh@disroot.org>
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
 ;; This file is not part of GNU Emacs.
