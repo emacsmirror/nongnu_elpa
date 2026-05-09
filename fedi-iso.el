@@ -1,7 +1,7 @@
 ;;; fedi-iso.el --- ISO language code lists for fedi.el  -*- lexical-binding: t -*-
 
 ;; Copyright (C) 2022 Marty Hiatt
-;; Author: Marty Hiatt <mousebot@disroot.org>
+;; Author: Marty Hiatt <martianh@disroot.org>
 ;; Version: 1.0.0
 ;; Homepage: https://codeberg.org/martianh/fedi.el
 
