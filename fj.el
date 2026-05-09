@@ -1,12 +1,12 @@
 ;;; fj.el --- Client for Forgejo instances -*- lexical-binding: t; -*-
 
-;; Author: Marty Hiatt <mousebot@disroot.org>
-;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
+;; Author: Marty Hiatt <martianh@disroot.org>
+;; Copyright (C) 2023 Marty Hiatt <martianh@disroot.org>
 ;;
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
-;; Version: 0.36
+;; Version: 0.37
 ;; Separator: -
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -370,7 +370,9 @@ SILENT means make a silent request."
   (with-current-buffer resp
     (goto-char (point-min))
     (re-search-forward "^$" nil 'move)
-    (buffer-substring (point) (point-max))))
+    (decode-coding-string
+     (buffer-substring (point) (point-max))
+     'utf-8)))
 
 (defun fj-resp-json (resp)
   "Parse JSON from RESP, a buffer."
@@ -714,8 +716,9 @@ the working-directory (for directory-local variables)."
      (when ,sort-key
        (setq tabulated-list-sort-key
              ,(if (eq :unset sort-key) nil sort-key)))
-     (tabulated-list-init-header)
-     (tabulated-list-print)
+     (let ((inhibit-modification-hooks t))
+       (tabulated-list-init-header)
+       (tabulated-list-print))
      ,@body
      ;; other-window maybe?
      ;; message bindings maybe?
@@ -1464,8 +1467,9 @@ all for `fj-issues-search'."
       (setq tabulated-list-entries
             (fj-issue-tl-entries items :repo))
       (fj-owned-issues-tl-mode)
-      (tabulated-list-init-header)
-      (tabulated-list-print)
+      (let ((inhibit-modification-hooks t))
+        (tabulated-list-init-header)
+        (tabulated-list-print))
       (setq fj-buffer-spec
             `( :owner ,owner
                :url ,(concat fj-host "/issues") ;; FIXME: url params
@@ -2310,9 +2314,14 @@ Otherwise t."
   "Return the owner (or organization) and repository names from URL.
 The return value is a list of two elements.  URL is assumed to be the
 URL of a Forgejo repository."
-  (let ((path (car (url-path-and-query (url-generic-parse-url url)))))
-    (string-split (string-trim-left (string-trim-right path ".git") "/")
-                  "/")))
+  (let* ((path (car (url-path-and-query (url-generic-parse-url url))))
+         (components (string-split (string-trim-left
+                                    (string-trim-right path ".git") "/")
+                                   "/")))
+    ;; In case the protocol prefix is missing, e.g. "git@...", the
+    ;; host name appears in the result; pick only the last two
+    ;; components to avoid returning it.
+    (last components 2)))
 
 (defun fj-repo-+-owner-from-git (&optional remote)
   "Return repo and owner of REMOTE from git config.
@@ -2321,17 +2330,7 @@ Nil if we fail to parse."
   ;; docs are unclear on how to distinguish these!
   (let* ((remote (fj-git-config-remote-url remote)))
     (when (fj--forgejo-repo-maybe remote)
-      (cond
-       ((string-prefix-p "http" remote) ;; http(s)
-        (last (split-string remote "/") 2))
-       ;; git protocol: git:// or git@...?
-       ;; can't just be prefix "git" because that matches ssh gitea@...
-       ((string-prefix-p "git://" remote) ;; git maybe
-        nil) ;;  TODO: git protocol
-       (t ;; ssh (can omit ssh:// prefix)
-        ;; “sshuser@domain.com:username/repo.git”
-        ;; nb sshuser is not the foregejo user!
-        (fj-owner+repo-from-url remote))))))
+      (fj-owner+repo-from-url remote))))
 
 ;;;###autoload
 (defun fj-list-issues-+-pulls (repo &optional owner state)
@@ -4813,8 +4812,10 @@ Subject types are \"issues\" \"pulls\" \"commits\" and \"repository\"."
        "\n"
        (propertize
         (concat
-         (propertize (concat "#" number)
-                     'face 'fj-comment-face)
+         (fj-propertize-link
+          (propertize (concat "#" number)
+                      'face 'fj-comment-face)
+          'notif number nil :noface)
          " "
          (fj-propertize-link
           (fj-format-tl-title .subject.title nil
@@ -4955,7 +4956,9 @@ Used for hitting RET on a given link."
          (fj-issue-ref-follow item))
         ('notif
          (fj-notif-link-follow item))
-        ('shr (shr-browse-url))
+        ('shr
+         ;; (shr-browse-url))
+         (fj-shr-link-follow item))
         ('more
          (let ((inhibit-read-only t))
            (delete-region
@@ -4964,6 +4967,35 @@ Used for hitting RET on a given link."
            (fj-item-view-more*)))
         (_
          (error "Unknown link type %s" type))))))
+
+(defun fj-shr-link-follow (item)
+  "Load an shr.el link ITEM.
+If it looks like a link to an item, load it."
+  ;; "https://codeberg.org/guix/guix/pulls/7383"
+  ;; we might have a link to user/org, to repo, to item...
+  (let ((parsed (url-generic-parse-url item)))
+    ;; is it a URL we should try to load?:
+    (if (not (equal fj-host (concat "https://"
+                                  (url-host parsed))))
+        (shr-browse-url)
+      (let* ((owner-repo (fj-owner+repo-from-url item))
+             (file-split (split-string
+                          ;; remove leading / to avoid "" in list:
+                          (string-trim-left
+                           (url-filename parsed) "/")
+                          "/"))
+             (last (car (last file-split))))
+        (pcase (length file-split)
+          (1 (fj-user-repos (car owner-repo)))
+          (2
+           (fj-list-items (cadr owner-repo) (car owner-repo) nil "issues"))
+          (3 (if (equal "pulls" last)
+                 (fj-list-pulls (cadr owner-repo) (car owner-repo))
+               (fj-list-issues (cadr owner-repo) (car owner-repo))))
+          (_
+           (fj-item-view
+            (cadr owner-repo) (car owner-repo) last
+            (if (equal "pulls" (nth 2 file-split)) :pull))))))))
 
 (defun fj-repo-tag-follow (item)
   "Follow link to ITEM, a repo tag."

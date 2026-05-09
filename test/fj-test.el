@@ -501,7 +501,7 @@
       (login_name . "")
       (source_id . 0)
       (full_name . "")
-      (email . "mousebot@disroot.org")
+      (email . "martianh@disroot.org")
       (avatar_url . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
       (html_url . "https://codeberg.org/martianh")
       (language . "en-US")
@@ -554,7 +554,7 @@
       (login_name . "")
       (source_id . 0)
       (full_name . "")
-      (email . "mousebot@disroot.org")
+      (email . "martianh@disroot.org")
       (avatar_url . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
       (html_url . "https://codeberg.org/martianh")
       (language . "en-US")
@@ -622,7 +622,7 @@ repo view could include:
       (login_name . "")
       (source_id . 0)
       (full_name . "")
-      (email . "mousebot@disroot.org")
+      (email . "martianh@disroot.org")
       (avatar_url . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
       (html_url . "https://codeberg.org/martianh")
       (language . "en-US")
@@ -677,7 +677,7 @@ repo view could include:
       (login_name . "")
       (source_id . 0)
       (full_name . "")
-      (email . "mousebot@disroot.org")
+      (email . "martianh@disroot.org")
       (avatar_url . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
       (html_url . "https://codeberg.org/martianh")
       (language . "en-US")
@@ -730,7 +730,7 @@ repo view could include:
       (login_name . "")
       (source_id . 0)
       (full_name . "")
-      (email . "mousebot@disroot.org")
+      (email . "martianh@disroot.org")
       (avatar_url . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
       (html_url . "https://codeberg.org/martianh")
       (language . "en-US")
@@ -1266,7 +1266,7 @@ the webUI only completes names in the issue.")
        (html_url . "https://codeberg.org/martianh/fj.el/issues/164")
        (number . 164)
        (user (id . 36599) (login . "martianh") (login_name . "")
-             (source_id . 0) (full_name . "") (email . "mousebot@disroot.org")
+             (source_id . 0) (full_name . "") (email . "martianh@disroot.org")
              (avatar_url
               . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
              (html_url . "https://codeberg.org/martianh") (language . "en-US")
@@ -1305,7 +1305,7 @@ the webUI only completes names in the issue.")
        (html_url . "https://codeberg.org/martianh/fj.el/issues/164")
        (number . 164)
        (user (id . 36599) (login . "martianh") (login_name . "")
-             (source_id . 0) (full_name . "") (email . "mousebot@disroot.org")
+             (source_id . 0) (full_name . "") (email . "martianh@disroot.org")
              (avatar_url
               . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
              (html_url . "https://codeberg.org/martianh") (language . "en-US")
@@ -1482,7 +1482,7 @@ the webUI only completes names in the issue.")
 (defvar fj-test-reactions
   ;; (fj-get-comment-reactions "2320940" "fj.el" "martianh")
   '(((user (id . 36599) (login . "martianh") (login_name . "")
-           (source_id . 0) (full_name . "") (email . "mousebot@disroot.org")
+           (source_id . 0) (full_name . "") (email . "martianh@disroot.org")
            (avatar_url
             . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
            (html_url . "https://codeberg.org/martianh") (language . "en-US")
@@ -1499,7 +1499,7 @@ the webUI only completes names in the issue.")
            (username . "martianh"))
      (content . "hooray") (created_at . "2024-12-19T10:25:02+01:00"))
     ((user (id . 36599) (login . "martianh") (login_name . "")
-           (source_id . 0) (full_name . "") (email . "mousebot@disroot.org")
+           (source_id . 0) (full_name . "") (email . "martianh@disroot.org")
            (avatar_url
             . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
            (html_url . "https://codeberg.org/martianh") (language . "en-US")
@@ -1516,7 +1516,7 @@ the webUI only completes names in the issue.")
            (username . "martianh"))
      (content . "eyes") (created_at . "2024-12-19T10:28:38+01:00"))
     ((user (id . 36599) (login . "martianh") (login_name . "")
-           (source_id . 0) (full_name . "") (email . "mousebot@disroot.org")
+           (source_id . 0) (full_name . "") (email . "martianh@disroot.org")
            (avatar_url
             . "https://codeberg.org/avatars/f2bfe793b009b03283e12089adfdc5ae7cd215f5435f2d3734c44cad831c84e6")
            (html_url . "https://codeberg.org/martianh") (language . "en-US")
@@ -1788,3 +1788,22 @@ Mock test of `fj-list-issues-do'."
       (kill-buffer buf))))
 
 ;; TODO: tests for timeline items
+
+(defun make-fj-repo-+-owner-from-git-test (url expected)
+  (should (equal expected
+                 (with-mock
+                  (stub fj-git-config-remote-url => url)
+                  (fj-repo-+-owner-from-git)))))
+
+(ert-deftest fj-test-repo-+-owner-from-git ()
+  "This should succeed whether a fully specified URL with the protocol
+prefix is used or not."
+  (let ((expected '("owner" "repo")))
+    (and (make-fj-repo-+-owner-from-git-test
+          "git@example.org/owner/repo.git" expected)
+         (make-fj-repo-+-owner-from-git-test
+          "git://git@example.org/owner/repo.git" expected)
+         (make-fj-repo-+-owner-from-git-test
+          "http://git@example.org/owner/repo.git" expected)
+         (make-fj-repo-+-owner-from-git-test
+          "ssh://git@example.org/owner/repo.git" expected))))

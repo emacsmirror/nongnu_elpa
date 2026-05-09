@@ -1,7 +1,7 @@
 ;;; fj-transient-repo.el --- Transients for fj.el -*- lexical-binding: t; -*-
 
-;; Author: Marty Hiatt <mousebot@disroot.org>
-;; Copyright (C) 2024 Marty Hiatt <mousebot@disroot.org>
+;; Author: Marty Hiatt <martianh@disroot.org>
+;; Copyright (C) 2024 Marty Hiatt <martianh@disroot.org>
 ;;
 ;; Keywords: git, convenience
 ;; URL: https://codeberg.org/martianh/fj.el
