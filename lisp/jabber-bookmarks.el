@@ -429,7 +429,10 @@ CALLBACK is called with JC, XML-DATA, and t on success or nil on failure."
 
 (keymap-popup-define jabber-bookmarks-edit-map
   "Edit bookmark at point."
-  :description (lambda () (format "Edit: %s" (or (tabulated-list-get-id) "(none)")))
+  :description (lambda ()
+		 (format "Edit: %s"
+			 (propertize (or (tabulated-list-get-id) "(none)")
+				     'face 'font-lock-constant-face)))
   :group "Edit"
   "a" ("Toggle autojoin" jabber-bookmarks-toggle-autojoin)
   "n" ("Change nick" jabber-bookmarks-set-nick)

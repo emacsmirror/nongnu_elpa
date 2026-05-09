@@ -275,7 +275,12 @@ Works for both 1:1 chat (`jabber-chatting-with') and MUC (`jabber-group')."
 
 (keymap-popup-define jabber-chat-encryption-menu-map
   "Select encryption for this chat buffer."
-  :description (lambda () (format "Encryption (current: %s)" jabber-chat-encryption))
+  :description (lambda ()
+		 (format "Encryption (current: %s)"
+			 (propertize (symbol-name jabber-chat-encryption)
+				     'face (pcase jabber-chat-encryption
+					     ('plaintext 'shadow)
+					     (_ 'success)))))
   "o" ("OMEMO" jabber-chat-encryption-set-omemo)
   "g" ("OpenPGP" jabber-chat-encryption-set-openpgp)
   "l" ("PGP (legacy)" jabber-chat-encryption-set-openpgp-legacy)
@@ -302,13 +307,6 @@ MAM sync in this buffer.  Set via the operations menu.")
 (defun jabber-chat-buffer-msg-count ()
   "Return the effective message count for this buffer."
   (or jabber-chat-buffer-msg-count jabber-backlog-number))
-
-(defun jabber-chat-set-msg-count (count)
-  "Set the message count for the current chat buffer to COUNT."
-  (interactive
-   (list (read-number "Message count: " (jabber-chat-buffer-msg-count))))
-  (setq jabber-chat-buffer-msg-count (and (> count 0) count))
-  (message "Buffer message count: %d" (jabber-chat-buffer-msg-count)))
 
 (defun jabber-chat-get-info ()
   "Show version, disco info and ping for the current chat peer."
@@ -339,9 +337,16 @@ MAM sync in this buffer.  Set via the operations menu.")
       (jabber-roster-delete jabber-buffer-connection jid))))
 
 (keymap-popup-define jabber-chat-operations-menu-map
-  "Chat buffer operations."
+  :description (lambda ()
+		 (let ((peer (or (bound-and-true-p jabber-group)
+				 (bound-and-true-p jabber-chatting-with))))
+		   (if peer
+		       (format "Operations for %s"
+			       (propertize peer 'face
+					   'font-lock-constant-face))
+		     "Chat operations")))
   :group "Encryption"
-  "e" ("Encryption..." :keymap jabber-chat-encryption-menu-map)
+  "e" ("Encryption" :keymap jabber-chat-encryption-menu-map)
   "f" ("Fingerprints" jabber-chat-show-fingerprints)
   :group "Files"
   "a" ("Attach file" jabber-chat-attach-file)
@@ -358,17 +363,29 @@ MAM sync in this buffer.  Set via the operations menu.")
   "E" ("Edit last message" jabber-correct-last-message)
   "r" ("Reply to message" jabber-chat-reply)
   :group "MUC"
-  "m" ("MUC operations..." :keymap jabber-muc-menu-map
+  "m" ("MUC operations" :keymap jabber-muc-menu-map
        :if (lambda () (bound-and-true-p jabber-group)))
   "M" ("Retract message at point" jabber-moderation-retract
        :if (lambda () (bound-and-true-p jabber-group)))
   "X" ("Retract all by occupant" jabber-moderation-retract-by-occupant
        :if (lambda () (bound-and-true-p jabber-group)))
   :group "Buffer"
-  "n" ((lambda () (format "Message count: %s" (jabber-chat-buffer-msg-count)))
+  "n" ((lambda ()
+	 (format "Message count: %s"
+		 (propertize (number-to-string
+			      (jabber-chat-buffer-msg-count))
+			     'face 'keymap-popup-value)))
        jabber-chat-set-msg-count :stay-open)
   "R" ("Refresh" jabber-chat-buffer-refresh)
   "S" ("Sync & refresh" jabber-mam-sync-buffer))
+
+(defun jabber-chat-set-msg-count (count)
+  "Set the message count for the current chat buffer to COUNT."
+  (interactive
+   (list (read-number "Message count: " (jabber-chat-buffer-msg-count))))
+  (setq jabber-chat-buffer-msg-count (and (> count 0) count))
+  (message "Buffer message count: %d" (jabber-chat-buffer-msg-count))
+  (keymap-popup jabber-chat-operations-menu-map))
 
 (defun jabber-chat-operations-menu ()
   "Chat buffer operations."
