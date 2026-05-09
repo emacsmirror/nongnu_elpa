@@ -2,7 +2,7 @@
 
 ;; Copyright (C) 2024  martian hiatus
 
-;; Author: martian hiatus <mousebot@disroot.org>
+;; Author: martian hiatus <martianh@disroot.org>
 ;; Keywords: convenience
 
 ;; This program is free software; you can redistribute it and/or modify

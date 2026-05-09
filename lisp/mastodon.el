@@ -4,8 +4,8 @@
 ;; Copyright (C) 2020-2022 Marty Hiatt
 ;; Copyright (C) 2021 Abhiseck Paira <abhiseckpaira@disroot.org>
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
-;;         Marty Hiatt <mousebot@disroot.org>
-;; Maintainer: Marty Hiatt <mousebot@disroot.org>
+;;         Marty Hiatt <martianh@disroot.org>
+;; Maintainer: Marty Hiatt <martianh@disroot.org>
 ;; Version: 2.0.16
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
