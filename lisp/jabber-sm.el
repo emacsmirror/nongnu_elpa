@@ -210,21 +210,16 @@ Return updated STATE-DATA."
   (jabber-sm--counter-delta (plist-get state-data :sm-outbound-count)
                             (plist-get state-data :sm-last-acked)))
 
-(defun jabber-sm--iq-response-p (sexp)
-  "Return non-nil if SEXP is an IQ result or error.
-These are idempotent responses that should bypass back-pressure."
-  (and (eq (jabber-xml-node-name sexp) 'iq)
-       (member (jabber-xml-get-attribute sexp 'type) '("result" "error"))))
-
 (defun jabber-sm--should-queue-p (state-data sexp)
   "Return non-nil if SEXP should be queued in STATE-DATA.
 True when SM is enabled, SEXP is a countable stanza, back-pressure
 is enabled, and the in-flight count has reached the cap.
-IQ responses (result/error) always bypass the gate."
+IQ stanzas always bypass the gate since they have their own
+timeout handling and are useless when stale."
   (and jabber-sm-max-in-flight
        (plist-get state-data :sm-enabled)
        (jabber-sm--stanza-p sexp)
-       (not (jabber-sm--iq-response-p sexp))
+       (not (eq (jabber-xml-node-name sexp) 'iq))
        (>= (jabber-sm--in-flight-count state-data)
            jabber-sm-max-in-flight)))
 
