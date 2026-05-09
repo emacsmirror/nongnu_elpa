@@ -1,7 +1,7 @@
 ;;; fj.el --- Client for Forgejo instances -*- lexical-binding: t; -*-
 
-;; Author: Marty Hiatt <mousebot@disroot.org>
-;; Copyright (C) 2023 Marty Hiatt <mousebot@disroot.org>
+;; Author: Marty Hiatt <martianh@disroot.org>
+;; Copyright (C) 2023 Marty Hiatt <martianh@disroot.org>
 ;;
 ;; Package-Requires: ((emacs "29.1") (fedi "0.2") (tp "0.8") (transient "0.10.0") (magit "4.3.8"))
 ;; Keywords: git, convenience
