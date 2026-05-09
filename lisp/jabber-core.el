@@ -238,7 +238,9 @@ With many prefix arguments, one less is passed to `jabber-connect'."
 		 arg))))
 	  (call-interactively 'jabber-connect))
       ;; Only connect those accounts that are not yet connected.
-      (let ((already-connected (mapcar #'jabber-connection-original-jid jabber-connections))
+      (let ((already-connected
+	     (mapcar #'jabber-connection-original-jid
+		     jabber-connections))
 	    (connected-one nil))
 	(dolist (account accounts)
 	  (unless (member (jabber-jid-user (car account)) already-connected)
@@ -268,7 +270,8 @@ When REGISTERP is non-nil, register a new account.
 Optional PASSWORD, NETWORK-SERVER, PORT and CONNECTION-TYPE
 override the defaults from `jabber-account-list'."
   (interactive
-   (let* ((jid (completing-read "Enter your JID: " jabber-account-list nil nil nil 'jabber-account-history))
+   (let* ((jid (completing-read "Enter your JID: " jabber-account-list
+				nil nil nil 'jabber-account-history))
 	  (entry (assoc jid jabber-account-list))
 	  (alist (cdr entry))
 	  password network-server port connection-type registerp)
@@ -334,7 +337,9 @@ override the defaults from `jabber-account-list'."
 	  jabber-connections)))
 
 (define-state-machine jabber-connection
-		      :start ((username server resource registerp password network-server port connection-type)
+		      :start ((username server resource
+					registerp password
+					network-server port connection-type)
 			      "Start a Jabber connection."
 			      (let* ((connection-type
 				      (or connection-type jabber-default-connection-type))
