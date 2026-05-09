@@ -395,6 +395,7 @@ OBJ is the object whose args are being checked."
           ;; get from self? (works if suffix initialized, but useless, as
           ;; we need no just val but also key to check server val):
           ;; (oref obj value))
+          ;; (oref transient--prefix scope)) ;; get from scope (broken)
           ;; our variable (works, server value rather than current prefix
           ;; state):
           tp-transient-settings)
