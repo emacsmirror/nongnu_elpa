@@ -75,6 +75,7 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-roster-change "jabber-presence" (jc jid name groups))
 (declare-function jabber-roster-delete "jabber-presence" (jc jid))
 (declare-function jabber-mam-sync-buffer "jabber-mam" ())
+(declare-function jabber-muc-menu "jabber-muc" ())
 (declare-function jabber-moderation-retract "jabber-moderation" ())
 (declare-function jabber-moderation-retract-by-occupant "jabber-moderation" ())
 (declare-function jabber-chat-reply "jabber-message-reply" ())
@@ -395,13 +396,14 @@ MAM sync in this buffer.  Set via the operations menu.")
   (insert "\n"))
 
 (defvar-keymap jabber-chat-mode-map
-  :parent jabber-common-keymap
   "RET"     #'jabber-chat-buffer-send
   "S-<return>"   #'jabber-chat-newline
   "TAB"     #'completion-at-point
+  "<backtab>" #'backward-button
   "C-c C-a" #'jabber-chat-attach-file
   "C-c C-o" #'jabber-chat-operations-menu
   "C-c C-e" #'jabber-chat-encryption-menu
+  "C-c C-m" #'jabber-muc-menu
   "C-c C-r" #'jabber-chat-reply
   "C-c C-k" #'jabber-chat-cancel-reply)
 
