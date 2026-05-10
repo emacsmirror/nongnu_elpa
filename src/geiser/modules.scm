@@ -1,6 +1,6 @@
 ;;; modules.scm -- module metadata
 
-;; Copyright (C) 2009, 2010, 2011, 2018 Jose Antonio Ortega Ruiz
+;; Copyright (C) 2009, 2010, 2011, 2018, 2026 Jose Antonio Ortega Ruiz
 
 ;; This program is free software; you can redistribute it and/or
 ;; modify it under the terms of the Modified BSD License. You should
@@ -80,8 +80,9 @@
 
 (define (module-path module-name)
   (and (module-name? module-name)
-       (or ((@@ (ice-9 session) module-filename) module-name)
-           (module-filename (resolve-module module-name #f)))))
+       (let ((file (or ((@@ (ice-9 session) module-filename) module-name)
+                       (module-filename (resolve-module module-name #f)))))
+         (and (string? file) (%search-load-path file)))))
 
 (define (submodules mod)
   (hash-map->list (lambda (k v) v) (module-submodules mod)))
