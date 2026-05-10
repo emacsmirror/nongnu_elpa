@@ -39,8 +39,6 @@
 
 (eval-when-compile (require 'cl-lib))
 
-(declare-function jabber-chain-add "jabber-core"
-                  (chain-var handler &optional depth))
 (declare-function jabber-send-iq "jabber-iq"
                   (jc to type query success-callback success-closure-data
                       error-callback error-closure-data &optional result-id))
@@ -50,7 +48,6 @@
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
 
-(defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el

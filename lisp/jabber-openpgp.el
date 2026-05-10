@@ -39,7 +39,6 @@
 (eval-when-compile (require 'pcase))
 
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
-(declare-function jabber-send-sexp "jabber-core" (jc sexp))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el

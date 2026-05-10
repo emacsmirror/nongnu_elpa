@@ -46,9 +46,7 @@
 (declare-function jabber-openpgp--our-key "jabber-openpgp" (jc))
 (declare-function jabber-openpgp--our-key-safe "jabber-openpgp" (jc))
 (declare-function jabber-openpgp--recipient-key "jabber-openpgp" (jid))
-(declare-function jabber-send-sexp "jabber-core" (jc sexp))
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
-(declare-function jabber-chain-add "jabber-core" (chain-var handler &optional depth))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el
@@ -58,7 +56,6 @@
 (defvar jabber-muc-participants)        ; jabber-muc.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-presence-element-functions) ; jabber-presence.el
-(defvar jabber-presence-chain)          ; jabber-core.el
 (defvar *jabber-current-status*)        ; jabber.el
 (defvar jabber-jid-obarray)             ; jabber-util.el
 

@@ -35,10 +35,7 @@
 
 ;; Global reference declarations
 
-(declare-function jabber-chain-add "jabber-core"
-                  (chain-var handler &optional depth))
 
-(defvar jabber-message-chain)           ; jabber-core.el
 
 ;;; xmlns constants
 

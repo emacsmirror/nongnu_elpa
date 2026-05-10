@@ -32,7 +32,6 @@
 
 ;; Global reference declarations
 
-(defvar jabber-connections)                ; jabber-core.el
 
 (defconst jabber-ping-xmlns "urn:xmpp:ping"
   "XML namespace for XEP-0199 XMPP Ping.")

@@ -39,17 +39,13 @@
 (require 'cl-lib)
 
 (declare-function fsm-get-state-data "fsm" (fsm))
-(declare-function jabber-send-string "jabber-core.el" (jc string))
 (declare-function jabber-xml-node-name "jabber-xml.el" (node))
 (declare-function jabber-xml-get-attribute "jabber-xml.el" (node attribute))
 (declare-function jabber-xml-get-xmlns "jabber-xml.el" (node))
 (declare-function jabber-xml-get-children "jabber-xml.el" (node child-name))
 (declare-function jabber-xml-child-with-xmlns "jabber-xml.el" (node xmlns))
 (declare-function jabber-sexp2xml "jabber-xml.el" (sexp))
-(declare-function jabber-send-sexp--immediate "jabber-core"
-                  (jc sexp))
 (defvar jabber-debug-log-xml)
-(defvar jabber-connections)
 
 (defconst jabber-sm-xmlns "urn:xmpp:sm:3"
   "XEP-0198 Stream Management namespace (version 3).")

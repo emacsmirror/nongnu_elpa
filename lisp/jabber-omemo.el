@@ -47,7 +47,6 @@
                   (group nickname))
 (declare-function jabber-disco-advertise-feature "jabber-disco")
 (declare-function jabber-send-iq "jabber-iq")
-(declare-function jabber-send-sexp "jabber-core" (jc sexp))
 (declare-function jabber-httpupload--upload "jabber-httpupload")
 (declare-function jabber-httpupload--send-url "jabber-httpupload")
 

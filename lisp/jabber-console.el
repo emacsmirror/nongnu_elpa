@@ -70,7 +70,6 @@ what kind of chat buffer is being created.")
 
 ;; Global reference declarations
 
-(declare-function jabber-send-string "jabber-core.el" (jc string))
 (declare-function jabber-chat-buffer-send "jabber-chatbuffer.el"  ())
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 

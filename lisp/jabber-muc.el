@@ -320,9 +320,6 @@ The format is that of `mode-line-format' and `header-line-format'."
 
 ;; Global reference declarations
 
-(declare-function jabber-chain-add "jabber-core"
-                  (chain-var handler &optional depth))
-(declare-function jabber-send-sexp "jabber-core.el" (jc sexp))
 (declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body &optional extra-elements))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
 (declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo" (jc group))
@@ -335,7 +332,6 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-message-correct--apply "jabber-message-correct"
                   (replace-id new-body new-from muc-p buffer))
 (defvar jabber-silent-mode)             ; jabber.el
-(defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-alert-muc-function)      ; jabber-alert.el
 (defvar jabber-body-printers)           ; jabber-chat.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
@@ -347,7 +343,6 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-chat--backlog-generation) ; jabber-chatbuffer.el
 (defvar jabber-chat-printers)           ; jabber-chat.el
 (defvar jabber-chat-time-format)        ; jabber-chat.el
-(defvar jabber-connections)             ; jabber-core.el
 (defvar jabber-post-disconnect-hook)   ; jabber-core.el
 (defvar jabber-send-function)           ; jabber-console.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el

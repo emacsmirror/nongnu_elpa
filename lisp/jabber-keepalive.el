@@ -60,12 +60,10 @@
 
 ;; Global reference declarations
 
-(declare-function jabber-send-string "jabber-core.el" (jc string))
 (declare-function jabber-disconnect-one "jabber-core.el"
                   (jc &optional dont-redisplay interactivep))
 (declare-function fsm-get-state-data "fsm" (fsm))
 (declare-function fsm-send "fsm" (fsm event &optional callback))
-(defvar jabber-connections)             ; jabber-core.el
 
 ;;
 

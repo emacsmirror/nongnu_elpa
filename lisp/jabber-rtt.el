@@ -37,7 +37,6 @@
 (declare-function jabber-chat-ewoc-enter "jabber-chatbuffer.el" (data))
 (declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
 (declare-function jabber-chat-ewoc-delete "jabber-chatbuffer" (node))
-(defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el

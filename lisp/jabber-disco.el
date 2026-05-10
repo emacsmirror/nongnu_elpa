@@ -34,14 +34,10 @@
 
 ;; Global reference declarations
 
-(declare-function jabber-chain-add "jabber-core"
-                  (chain-var handler &optional depth))
 (declare-function jabber-db-caps-store "jabber-db.el"
                   (hash ver identities features))
 (declare-function jabber-db-caps-lookup "jabber-db.el" (hash ver))
 
-(defvar jabber-presence-chain)          ; jabber-core.el
-(defvar jabber-connections)             ; jabber-core.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 (defconst jabber-disco-xmlns-info "http://jabber.org/protocol/disco#info"

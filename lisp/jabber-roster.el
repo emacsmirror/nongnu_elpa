@@ -151,7 +151,6 @@ Trailing newlines are always removed, regardless of this variable."
 (declare-function jabber-send-xa-presence "jabber-presence.el" (&optional status jc))
 (declare-function jabber-activity-switch-to "jabber-activity.el" (&optional jid-param))
 
-(defvar jabber-connections)             ; jabber-core.el
 (defvar *jabber-current-show*)          ; jabber.el
 (defvar jabber-presence-strings)        ; jabber.el
 (defvar jabber-activity-jids)           ; jabber-activity.el

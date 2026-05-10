@@ -30,7 +30,6 @@
 (require 'jabber-core)
 (require 'jabber-disco)
 
-(declare-function jabber-send-sexp-if-connected "jabber-core" (jc sexp))
 
 (defvar jabber-pre-disconnect-hook)
 (defvar jabber-lost-connection-hooks)

@@ -618,7 +618,6 @@ or nil if the message was a duplicate."
 
 ;;; Cleanup on disconnect
 
-(defvar jabber-connections)             ; jabber-core.el
 
 (defun jabber-chatbuffer--kill-stale ()
   "Kill chat buffers whose connection is no longer active."

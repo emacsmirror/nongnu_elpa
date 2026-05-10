@@ -36,7 +36,6 @@
 (require 'jabber-disco)
 (require 'jabber-iq)
 
-(declare-function jabber-chain-add "jabber-core" (chain-var handler &optional depth))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
@@ -48,7 +47,6 @@
 (declare-function jabber-db-occupant-id-by-server-id "jabber-db" (server-id))
 (declare-function jabber-db-server-ids-by-occupant-id "jabber-db" (account peer occupant-id))
 
-(defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)              ; jabber-chatbuffer.el
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el

@@ -49,7 +49,6 @@
 
 ;; Global reference declarations
 
-(declare-function jabber-send-sexp "jabber-core.el" (jc sexp))
 (defvar jabber-tls-xmlns)              ; jabber-conn.el
 (defvar jabber-silent-mode)             ; jabber.el
 

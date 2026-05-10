@@ -45,7 +45,6 @@
 
 ;; Global reference declarations
 
-(defvar *jabber-roster*)                ; jabber-core.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 ;;
