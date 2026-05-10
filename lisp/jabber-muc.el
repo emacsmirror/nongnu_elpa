@@ -30,15 +30,13 @@
 
 (require 'cl-lib)
 (require 'keymap-popup)
-
+(require 'ewoc)
 (require 'jabber-widget)
 (require 'jabber-disco)
-
-;; we need jabber-bookmarks for jabber-muc-autojoin (via
-;; jabber-get-bookmarks and jabber-parse-conference-bookmark):
 (require 'jabber-bookmarks)
-
-(require 'ewoc)
+(require 'jabber-chat)
+(require 'jabber-db)
+(require 'jabber-presence)
 
 (defconst jabber-muc-xmlns "http://jabber.org/protocol/muc"
   "XEP-0045 MUC namespace.")
@@ -324,62 +322,14 @@ The format is that of `mode-line-format' and `header-line-format'."
 
 (declare-function jabber-chain-add "jabber-core"
                   (chain-var handler &optional depth))
-(declare-function jabber-presence-children "jabber-presence.el" (jc))
-(declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
-(declare-function jabber-get-version "jabber-version.el" (jc to))
-(declare-function jabber-get-disco-info "jabber-disco.el" (jc to &optional node))
-(declare-function jabber-disco-get-items "jabber-disco.el"
-                  (jc jid node callback closure-data &optional force))
-(declare-function jabber-ping-send "jabber-ping.el"
-                  (jc to process-func on-success on-error))
-(declare-function jabber-process-ping "jabber-ping.el"
-                  (_jc xml-data))
-(declare-function jabber-parse-conference-bookmark "jabber-bookmarks.el"
-                  (node))
-(declare-function jabber-get-bookmarks-from-cache "jabber-bookmarks"
-                  (jc))
-(declare-function jabber-send-sexp "jabber-core.el"  (jc sexp))
-(declare-function jabber-chat--run-send-hooks "jabber-chat.el"
-                  (stanza body id))
-(declare-function jabber-chat-send "jabber-chat.el"
-                  (jc body &optional extra-elements))
-(declare-function jabber-send-message "jabber-chat.el"
-                  (jc to subject body type))
-(declare-function jabber-maybe-print-rare-time "jabber-chat.el" (node))
-(declare-function jabber-chat-pp "jabber-chat.el" (data))
-(declare-function jabber-chat-mode "jabber-chatbuffer.el" ())
-(declare-function jabber-chat-mode-setup "jabber-chatbuffer.el" (jc ewoc-pp))
-(declare-function jabber-chat-ewoc-enter "jabber-chatbuffer.el" (data))
-(declare-function jabber-chatbuffer--registry-put "jabber-chatbuffer" (type key))
-(declare-function jabber-chatbuffer--registry-get "jabber-chatbuffer" (type key))
-(declare-function jabber-chat-insert-backlog-entry "jabber-chat.el" (msg-plist))
-(declare-function jabber-chat--insert-backlog-chunked "jabber-chat.el"
-                  (buffer entries callback &optional generation))
-(declare-function jabber-chat-display-buffer-images "jabber-chat.el" ())
-(declare-function jabber-chat--msg-plist-from-stanza "jabber-chat.el"
-                  (xml-data &optional delayed))
-(declare-function jabber-chat--insert-prompt "jabber-chat.el"
-                  (timestamp nick face &optional plaintext-face encrypted))
-(declare-function jabber-chat--format-time "jabber-chat.el"
-                  (timestamp delayed))
+(declare-function jabber-send-sexp "jabber-core.el" (jc sexp))
 (declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body &optional extra-elements))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
 (declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo" (jc group))
 (declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body &optional extra-elements))
 (declare-function jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy.el" (jc body &optional extra-elements))
-(declare-function jabber-chat--decrypt-if-needed "jabber-chat.el" (jc xml-data))
-(declare-function jabber-db-last-timestamp "jabber-db.el"
-                  (account peer))
-(declare-function jabber-db-get-chat-encryption "jabber-db.el"
-                  (account peer))
-(declare-function jabber-chat-encryption--update-header "jabber-chatbuffer.el"
-                  ())
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
-(declare-function jabber-bookmarks-auto-add-maybe "jabber-bookmarks.el"
-                  (jc jid nick))
-(declare-function jabber-db-backlog "jabber-db.el"
-                  (account peer &optional count start-time resource msg-type))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
