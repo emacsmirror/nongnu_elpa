@@ -31,7 +31,6 @@
 (require 'jabber-iq)
 (require 'jabber-alert)
 (require 'jabber-util)
-(require 'jabber-menu)
 (require 'ewoc)
 
 (defconst jabber-presence-show-alist
@@ -56,9 +55,6 @@ stanza.")
 
 ;; Global reference declarations
 
-(declare-function jabber-roster--refresh "jabber-roster.el" ())
-(declare-function jabber-roster--choose-account "jabber-roster"
-                  (jid account-at-point))
 (declare-function jabber-roster-update "jabber-roster.el"
                   (jc new-items changed-items deleted-items))
 (declare-function jabber-chat-create-buffer "jabber-chat.el" (jc chat-with))
@@ -449,7 +445,6 @@ When JC is nil, send for all connections."
 	     room-jc `(presence ((to . ,(concat room "/" nick)))
 				,@subelements)))))))
 
-  (jabber-roster--refresh)
   (run-hooks 'jabber-presence-sent-hooks))
 
 (defun jabber-presence-children (jc)
@@ -634,50 +629,6 @@ JC is the Jabber connection."
 		  #'jabber-report-success "Roster item removal"
 		  #'jabber-report-success "Roster item removal"))
 
-(defun jabber-roster-delete-jid-at-point ()
-  "Delete JID at point from roster.
-When the contact exists on multiple accounts, prompt for which
-account to use.  Signal an error if there is no JID at point."
-  (interactive)
-  (let* ((jid-at-point (get-text-property (point) 'jabber-jid))
-	 (account-at-point (get-text-property (point) 'jabber-account))
-	 (jc (and jid-at-point account-at-point
-		  (jabber-roster--choose-account jid-at-point account-at-point))))
-    (if (and jid-at-point jc
-	     (or jabber-silent-mode
-		 (yes-or-no-p (format "Really delete %s from roster? "
-				      jid-at-point))))
-	(jabber-roster-delete jc jid-at-point)
-      (unless jid-at-point
-	(error "No contact at point")))))
-
-(defun jabber-roster-delete-group-from-jids (jc jids group)
-  "Delete group `group' from all JIDs.
-JC is the Jabber connection."
-  (interactive)
-  (dolist (jid jids)
-    (jabber-roster-change
-     jc jid (get jid 'name)
-     (cl-remove-if-not (lambda (g) (not (string= g group)))
-		       (get jid 'groups)))))
-
-(defun jabber-roster-edit-group-from-jids (jc jids group)
-  "Edit group `group' from all JIDs.
-JC is the Jabber connection."
-  (interactive)
-  (let ((new-group
-	 (jabber-read-with-input-method
-	  (format "New group: (default `%s') " group) nil nil group)))
-    (dolist (jid jids)
-      (jabber-roster-change
-       jc jid (get jid 'name)
-       (cl-remove-duplicates
-	(mapcar
-	 (lambda (g) (if (string= g group)
-			 new-group
-		       g))
-	 (get jid 'groups))
-	:test #'string=)))))
 
 
 (provide 'jabber-presence)

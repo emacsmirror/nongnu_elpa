@@ -240,7 +240,6 @@ files."
 (declare-function jabber-muc-our-nick-p "jabber-muc.el" (group nick))
 (defvar jabber-presence-strings)        ; jabber.el
 (defvar jabber-xml-data)                ; jabber.el
-(defvar jabber-roster-buffer)           ; jabber-core.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 
 ;;
@@ -443,15 +442,6 @@ This function is not called directly, but can be used as the value for
       (unless (equal sound-file "")
 	(funcall jabber-play-sound-file sound-file)))))
 
-(defun jabber-presence-display (_who _oldstatus _newstatus _statustext proposed-alert)
-  "Display the roster buffer."
-  (when proposed-alert
-    (display-buffer jabber-roster-buffer)))
-
-(defun jabber-presence-switch (_who _oldstatus _newstatus _statustext proposed-alert)
-  "Switch to the roster buffer."
-  (when proposed-alert
-    (switch-to-buffer jabber-roster-buffer)))
 
 ;;; Info alert hooks
 

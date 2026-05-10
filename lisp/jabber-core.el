@@ -154,9 +154,6 @@ password is accessible via auth-source or cached in memory."
   "Seconds to wait before reconnecting."
   :type 'integer)
 
-(defcustom jabber-roster-buffer "*-jabber-roster-*"
-  "The name of the roster buffer."
-  :type 'string)
 
 (defcustom jabber-use-sasl t
   "If non-nil, use SASL if possible.
@@ -188,7 +185,6 @@ problems."
 (declare-function jabber-muc-connection-closed "jabber-muc.el" (bare-jid))
 (declare-function jabber-roster-update "jabber-roster.el"
                   (jc new-items changed-items deleted-items))
-(declare-function jabber-roster--refresh "jabber-roster.el" ())
 (declare-function jabber-process-roster "jabber-presence.el"
                   (jc xml-data closure-data))
 (declare-function jabber-initial-roster-failure "jabber-presence.el"
@@ -392,9 +388,6 @@ override the defaults from `jabber-account-list'."
 			(jabber-muc-connection-closed (jabber-connection-bare-jid fsm))
 			(setq state-data (jabber-sm--reset state-data)))
 
-		      ;; Remove lost connections from the roster buffer.
-		      (jabber-roster--refresh)
-
 		      (unless expected
 			(run-hook-with-args 'jabber-lost-connection-hooks fsm)
 			(message "%s@%s%s: connection lost: `%s'"
@@ -414,7 +407,6 @@ override the defaults from `jabber-account-list'."
 			      (delq fsm jabber-connections))
 			(when jabber-modeline-mode
 			  (jabber-mode-line-presence-update))
-			(jabber-roster--refresh)
 			;; And let the FSM sleep...
 			(list state-data nil))))
 
@@ -1058,17 +1050,11 @@ JC is the Jabber connection."
   (when interactivep
     (message "Disconnected from %s"
 	     (jabber-connection-jid jc)))
-  (unless dont-redisplay
-    (jabber-roster--refresh)))
+  (ignore dont-redisplay))
 
 (defun jabber-disconnected ()
   "Re-initialise jabber package variables.
 Call this function after disconnection."
-  (when (get-buffer jabber-roster-buffer)
-    (with-current-buffer (get-buffer jabber-roster-buffer)
-      (let ((inhibit-read-only t))
-	(erase-buffer))))
-
   (jabber-clear-roster)
   (run-hooks 'jabber-post-disconnect-hook))
 
