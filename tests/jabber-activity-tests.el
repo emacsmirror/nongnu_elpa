@@ -3,41 +3,7 @@
 ;;; Code:
 
 (require 'ert)
-(require 'cl-lib)
-
-;; Stub out dependencies so we can load jabber-activity in isolation.
-(unless (featurep 'jabber-core)
-  (provide 'jabber-core)
-  (defvar *jabber-roster* nil)
-  (defvar jabber-jid-obarray (make-vector 127 0)))
-
-(unless (featurep 'jabber-util)
-  (provide 'jabber-util)
-  (defun jabber-jid-displayname (jid) jid)
-  (defun jabber-jid-user (jid) jid)
-  (defun jabber-jid-username (jid)
-    (when (string-match "\\`\\([^@]+\\)@" jid)
-      (match-string 1 jid)))
-  (defun jabber-jid-resource (jid)
-    (when (string-match "/\\(.+\\)\\'" jid)
-      (match-string 1 jid))))
-
-;; Stub MUC functions referenced by declare-function.
-(unless (fboundp 'jabber-muc-sender-p)
-  (defun jabber-muc-sender-p (_jid) nil))
-(unless (fboundp 'jabber-muc-find-buffer)
-  (defun jabber-muc-find-buffer (_group) nil))
-(unless (fboundp 'jabber-chat-find-buffer)
-  (defun jabber-chat-find-buffer (_jid) nil))
-(unless (fboundp 'jabber-muc-private-find-buffer)
-  (defun jabber-muc-private-find-buffer (_group _nick) nil))
-(unless (fboundp 'jabber-muc-joined-p)
-  (defun jabber-muc-joined-p (_group) nil))
-(unless (fboundp 'jabber-muc-looks-like-personal-p)
-  (defun jabber-muc-looks-like-personal-p (_msg &optional _group) nil))
-
-(load (expand-file-name "../lisp/jabber-activity.el"
-       (file-name-directory (or load-file-name buffer-file-name))))
+(require 'jabber-activity)
 
 ;; Declare dynamically-bound variables used in let-bindings below.
 (defvar jabber-activity-jids)
