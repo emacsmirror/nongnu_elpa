@@ -33,15 +33,9 @@
 (require 'jabber-util)
 (require 'jabber-core)
 (require 'jabber-chat)
+(require 'jabber-muc)
 (require 'jabber-db)
 (require 'jabber-disco)
-
-(declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
-(declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
-(declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
-(declare-function jabber-muc-private-get-buffer "jabber-muc"
-                  (group nickname &optional jc))
-(declare-function jabber-chat--extract-carbon "jabber-chat" (xml-data))
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 
 (defgroup jabber-receipts nil

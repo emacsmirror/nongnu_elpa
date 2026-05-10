@@ -28,15 +28,9 @@
 (eval-when-compile (require 'cl-lib))
 (require 'jabber-disco)
 (require 'jabber-core)
+(require 'jabber-chat)
+(require 'jabber-muc)
 (require 'ewoc)
-
-;; Global reference declarations
-
-(declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
-(declare-function jabber-muc-message-p "jabber-muc.el"(message))
-(declare-function jabber-chat-ewoc-enter "jabber-chatbuffer.el" (data))
-(declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
-(declare-function jabber-chat-ewoc-delete "jabber-chatbuffer" (node))
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el

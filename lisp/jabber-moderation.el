@@ -35,17 +35,8 @@
 (require 'jabber-xml)
 (require 'jabber-disco)
 (require 'jabber-iq)
-
-(declare-function jabber-muc-find-buffer "jabber-muc" (group))
-(declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
-(declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
-(declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
-(declare-function jabber-send-iq "jabber-iq"
-                  (jc to type query success-callback success-closure-data
-                      error-callback error-closure-data &optional result-id))
-(declare-function jabber-db-retract-message "jabber-db" (server-id retracted-by &optional reason))
-(declare-function jabber-db-occupant-id-by-server-id "jabber-db" (server-id))
-(declare-function jabber-db-server-ids-by-occupant-id "jabber-db" (account peer occupant-id))
+(require 'jabber-muc)
+(require 'jabber-db)
 
 (defvar jabber-chat-ewoc)              ; jabber-chatbuffer.el
 (defvar jabber-group)                   ; jabber-muc.el

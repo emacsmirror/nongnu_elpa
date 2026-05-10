@@ -123,32 +123,8 @@ Trailing newlines are always removed, regardless of this variable."
 
 ;;; Declarations
 
-(declare-function jabber-omemo-show-fingerprints "jabber-omemo-trust.el"
-                  (jc))
-(declare-function jabber-muc-join "jabber-muc.el"
-                  (jc group nickname &optional popup))
-(declare-function jabber-chat-with "jabber-chat.el"
-                  (jc jid &optional other-window))
-(declare-function jabber-get-disco-items "jabber-disco.el" (jc to &optional node))
-(declare-function jabber-get-disco-info "jabber-disco.el"
-                  (jc to &optional node))
-(declare-function jabber-send-presence "jabber-presence.el"
-                  (show status priority &optional jc))
-(declare-function jabber-muc-switch-to "jabber-muc.el" (group))
-(declare-function jabber-send-subscription-request "jabber-presence.el" (jc to &optional request))
-(declare-function jabber-roster-change "jabber-presence.el" (jc jid name groups))
-(declare-function jabber-roster-delete "jabber-presence.el" (jc jid))
-(declare-function jabber-edit-bookmarks "jabber-bookmarks.el" (jc))
-(declare-function jabber-muc-active-rooms "jabber-muc.el" ())
 (declare-function jabber-get-info "jabber-info.el" (jc to))
 (declare-function jabber-blocking-block-jid "jabber-blocking.el" (jc jid))
-(declare-function jabber-connect-all "jabber-core.el" (&optional arg))
-(declare-function jabber-disconnect "jabber-core.el" (&optional arg interactivep))
-(declare-function jabber-get-browse "jabber-browse.el" (jc to))
-(declare-function jabber-get-version "jabber-version.el" (jc to))
-(declare-function jabber-send-default-presence "jabber-presence.el" (&optional jc))
-(declare-function jabber-send-away-presence "jabber-presence.el" (&optional status jc))
-(declare-function jabber-send-xa-presence "jabber-presence.el" (&optional status jc))
 (declare-function jabber-activity-switch-to "jabber-activity.el" (&optional jid-param))
 
 (defvar *jabber-current-show*)          ; jabber.el

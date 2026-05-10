@@ -37,13 +37,10 @@
 (require 'jabber-xml)
 (require 'jabber-util)
 (require 'jabber-chatbuffer)
+(require 'jabber-chat)
+(require 'jabber-muc)
 (require 'jabber-db)
-
-(declare-function jabber-chat-send "jabber-chat" (jc body &optional extra-elements))
-(declare-function jabber-muc-send "jabber-muc" (jc body &optional extra-elements))
-(declare-function jabber-muc-find-buffer "jabber-muc" (group))
-(declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
-(declare-function jabber-db-message-sender-by-stanza-id "jabber-db" (stanza-id))
+(require 'jabber-disco)
 
 (defconst jabber-message-correct-xmlns "urn:xmpp:message-correct:0"
   "XML namespace for XEP-0308 Last Message Correction.")
