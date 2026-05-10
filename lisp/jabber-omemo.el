@@ -40,24 +40,16 @@
 (require 'jabber-hints)
 (require 'jabber-eme)
 (require 'jabber-omemo-trust)
+(require 'jabber-chat)
+(require 'jabber-db)
+
 (declare-function jabber-muc-participant-plist "jabber-muc"
                   (group nickname))
 (declare-function jabber-disco-advertise-feature "jabber-disco")
 (declare-function jabber-send-iq "jabber-iq")
-(declare-function jabber-send-sexp "jabber-core")
-(declare-function jabber-chat--run-send-hooks "jabber-chat"
-                  (stanza body id))
-(declare-function jabber-chat--msg-plist-from-stanza "jabber-chat")
-(declare-function jabber-maybe-print-rare-time "jabber-chat")
-(declare-function jabber-chat-ewoc-enter "jabber-chatbuffer")
-(declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
+(declare-function jabber-send-sexp "jabber-core" (jc sexp))
 (declare-function jabber-httpupload--upload "jabber-httpupload")
 (declare-function jabber-httpupload--send-url "jabber-httpupload")
-(declare-function jabber-db--outgoing-handler "jabber-db" (body id))
-(declare-function jabber-chat-register-decrypt-handler "jabber-chat"
-		  (id &rest props))
-(declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
-(declare-function ewoc-data "ewoc" (node))
 
 (defvar jabber-muc--room-jids)
 

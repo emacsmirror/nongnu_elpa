@@ -28,6 +28,7 @@
 
 (require 'jabber-util)
 (require 'jabber-core)
+(require 'jabber-db)
 (require 'keymap-popup)
 
 (defvar jabber-point-insert nil
@@ -79,12 +80,6 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-chat-reply "jabber-message-reply" ())
 (declare-function jabber-correct-last-message "jabber-message-correct" ())
 (declare-function jabber-chat-cancel-reply "jabber-message-reply" ())
-(declare-function jabber-jid-user "jabber-util" (jid))
-(declare-function jabber-jid-resource "jabber-util" (jid))
-(declare-function jabber-db-set-chat-encryption "jabber-db"
-                  (account peer encryption))
-(declare-function jabber-db-get-chat-encryption "jabber-db"
-                  (account peer))
 
 ;;
 
@@ -464,8 +459,7 @@ EWOC-PP is the pretty-printer function for the message EWOC."
 (declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-muc-sender-p "jabber-muc" (jid))
-(declare-function jabber-db-backlog "jabber-db"
-                  (account peer &optional count start-time resource msg-type))
+(declare-function jabber-chat-find-buffer "jabber-chat" (chat-with))
 (declare-function jabber-chat-insert-backlog-entry "jabber-chat"
                   (msg-plist))
 (declare-function jabber-chat--insert-backlog-chunked "jabber-chat"

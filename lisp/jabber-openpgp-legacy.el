@@ -39,6 +39,7 @@
 (require 'jabber-util)
 (require 'jabber-xml)
 (require 'jabber-hints)
+(require 'jabber-chat)
 
 (eval-when-compile (require 'cl-lib))
 
@@ -46,17 +47,8 @@
 (declare-function jabber-openpgp--our-key-safe "jabber-openpgp" (jc))
 (declare-function jabber-openpgp--recipient-key "jabber-openpgp" (jid))
 (declare-function jabber-send-sexp "jabber-core" (jc sexp))
-(declare-function jabber-chat--run-send-hooks "jabber-chat"
-                  (stanza body id))
-(declare-function jabber-chat--msg-plist-from-stanza "jabber-chat"
-                  (xml-data &optional delayed))
-(declare-function jabber-maybe-print-rare-time "jabber-chat" (node))
-(declare-function jabber-chat-ewoc-enter "jabber-chatbuffer" (data))
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
 (declare-function jabber-chain-add "jabber-core" (chain-var handler &optional depth))
-(declare-function jabber-chat-register-decrypt-handler "jabber-chat"
-		  (id &rest props))
-(declare-function jabber-chat--set-body "jabber-chat" (xml-data text))
 
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-group)                   ; jabber-muc.el

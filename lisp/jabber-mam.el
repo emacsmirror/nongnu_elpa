@@ -34,36 +34,21 @@
 
 (require 'jabber-xml)
 (require 'jabber-util)
+(require 'jabber-db)
+(require 'jabber-chat)
 
 (eval-when-compile (require 'cl-lib))
 
 (declare-function jabber-chain-add "jabber-core"
                   (chain-var handler &optional depth))
-(declare-function jabber-connection-bare-jid "jabber-util" (jc))
-(declare-function jabber-jid-user "jabber-util" (jid))
-(declare-function jabber-jid-resource "jabber-util" (jid))
 (declare-function jabber-send-iq "jabber-iq"
                   (jc to type query success-callback success-closure-data
                       error-callback error-closure-data &optional result-id))
-(declare-function jabber-iq-query "jabber-util" (xml-data))
 (declare-function jabber-disco-get-info "jabber-disco"
                   (jc jid node callback closure-data &optional force))
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
-(declare-function jabber-db-store-message "jabber-db"
-                  (account peer direction type body timestamp
-                           &optional resource stanza-id
-                           server-id occupant-id oob-entries
-                           encrypted))
-(declare-function jabber-db--extract-occupant-id "jabber-db" (xml-data))
-(declare-function jabber-db--extract-oob-entries "jabber-db" (xml-data))
-(declare-function jabber-db-last-server-id "jabber-db" (account &optional peer))
-(declare-function jabber-db-ensure-open "jabber-db" ())
-(declare-function jabber-chat--decrypt-if-needed "jabber-chat" (jc xml-data))
-(declare-function jabber-parse-time "jabber-util" (raw-time))
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
-(declare-function jabber-db-correct-message "jabber-db" (stanza-id new-body))
-(declare-function jabber-sexp2xml "jabber-xml" (sexp))
 
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
@@ -707,7 +692,6 @@ AND retracted_by IS NULL"
           (cl-remove queryid jabber-mam--sync-received
                      :key #'car :test #'string=))))
 
-(declare-function jabber-chat-buffer-msg-count "jabber-chatbuffer" ())
 
 (defun jabber-mam-sync-buffer ()
   "Sync messages from the server archive for this buffer.
