@@ -29,6 +29,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'jabber-util)
 (require 'ewoc)
 (require 'jabber-core)
 (require 'jabber-chat)
@@ -36,7 +37,6 @@
 (require 'jabber-disco)
 (require 'jabber-xml)
 
-(declare-function jabber-jid-displayname "jabber-util" (jid))
 
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el

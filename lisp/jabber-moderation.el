@@ -31,13 +31,12 @@
 ;;; Code:
 
 (require 'ewoc)
+(require 'jabber-util)
 (require 'jabber-xml)
 (require 'jabber-disco)
 (require 'jabber-iq)
 
 (declare-function jabber-chain-add "jabber-core" (chain-var handler &optional depth))
-(declare-function jabber-jid-user "jabber-util" (jid))
-(declare-function jabber-jid-resource "jabber-util" (jid))
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
@@ -45,11 +44,9 @@
 (declare-function jabber-send-iq "jabber-iq"
                   (jc to type query success-callback success-closure-data
                       error-callback error-closure-data &optional result-id))
-(declare-function jabber-report-success "jabber-util" (_jc xml-data context))
 (declare-function jabber-db-retract-message "jabber-db" (server-id retracted-by &optional reason))
 (declare-function jabber-db-occupant-id-by-server-id "jabber-db" (server-id))
 (declare-function jabber-db-server-ids-by-occupant-id "jabber-db" (account peer occupant-id))
-(declare-function jabber-connection-bare-jid "jabber-util" (jc))
 
 (defvar jabber-message-chain)           ; jabber-core.el
 (defvar jabber-chat-ewoc)              ; jabber-chatbuffer.el

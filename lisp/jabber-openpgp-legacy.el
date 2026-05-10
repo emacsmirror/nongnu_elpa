@@ -36,6 +36,7 @@
 ;;; Code:
 
 (require 'epg)
+(require 'jabber-util)
 (require 'jabber-xml)
 (require 'jabber-hints)
 
@@ -44,8 +45,6 @@
 (declare-function jabber-openpgp--our-key "jabber-openpgp" (jc))
 (declare-function jabber-openpgp--our-key-safe "jabber-openpgp" (jc))
 (declare-function jabber-openpgp--recipient-key "jabber-openpgp" (jid))
-(declare-function jabber-connection-bare-jid "jabber-util" (jc))
-(declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-send-sexp "jabber-core" (jc sexp))
 (declare-function jabber-chat--run-send-hooks "jabber-chat"
                   (stanza body id))

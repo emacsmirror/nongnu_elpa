@@ -28,6 +28,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'jabber-util)
 (require 'jabber-omemo-store)
 (require 'keymap-popup)
 
@@ -46,9 +47,6 @@
                   (account jid))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo"
                   (jc jid))
-(declare-function jabber-connection-bare-jid "jabber-util")
-(declare-function jabber-jid-user "jabber-util")
-(declare-function jabber-read-account "jabber-util")
 
 (defvar jabber-chatting-with)
 (defvar jabber-buffer-connection)

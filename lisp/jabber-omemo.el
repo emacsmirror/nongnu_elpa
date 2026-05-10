@@ -33,19 +33,13 @@
 
 (require 'cl-lib)
 (require 'hex-util)
+(require 'jabber-util)
 (require 'jabber-omemo-store)
 (require 'jabber-pubsub)
 (require 'jabber-xml)
 (require 'jabber-hints)
 (require 'jabber-eme)
 (require 'jabber-omemo-trust)
-
-(declare-function jabber-connection-bare-jid "jabber-util")
-(declare-function jabber-jid-user "jabber-util")
-(declare-function jabber-jid-resource "jabber-util")
-(declare-function jabber-iq-error "jabber-util")
-(declare-function jabber-parse-error "jabber-util")
-(declare-function jabber-error-condition "jabber-util")
 (declare-function jabber-muc-participant-plist "jabber-muc"
                   (group nickname))
 (declare-function jabber-disco-advertise-feature "jabber-disco")

@@ -28,6 +28,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'jabber-util)
 (require 'epg)
 (require 'jabber-pubsub)
 (require 'jabber-xml)
@@ -36,8 +37,6 @@
 
 (eval-when-compile (require 'pcase))
 
-(declare-function jabber-connection-bare-jid "jabber-util" (jc))
-(declare-function jabber-jid-user "jabber-util" (jid))
 (declare-function jabber-disco-advertise-feature "jabber-disco" (feature))
 (declare-function jabber-send-sexp "jabber-core" (jc sexp))
 (declare-function jabber-chat--run-send-hooks "jabber-chat"

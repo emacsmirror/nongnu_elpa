@@ -30,6 +30,7 @@
 ;;; Code:
 
 (require 'jabber-xml)
+(require 'jabber-util)
 (require 'jabber-core)
 (require 'jabber-chat)
 (require 'jabber-db)
@@ -37,8 +38,6 @@
 
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
 (declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
-(declare-function jabber-jid-user "jabber-util" (jid))
-(declare-function jabber-jid-resource "jabber-util" (jid))
 (declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-private-get-buffer "jabber-muc"
                   (group nickname &optional jc))

@@ -30,6 +30,7 @@
 (eval-when-compile (require 'jabber-alert))
 
 (require 'notifications)
+(require 'jabber-util)
 
 (defcustom jabber-notifications-icon "emacs"
   "Icon to be used on the notification pop-up.
@@ -74,7 +75,6 @@ nil disables MUC notifications entirely."
 (declare-function jabber-muc-looks-like-personal-p "jabber-muc-nick-completion.el"
                   (message &optional group))
 (declare-function jabber-avatar-find-cached "jabber-avatar.el" (sha1-sum))
-(declare-function jabber-jid-symbol "jabber-util.el" (jid))
 (declare-function jabber-escape-xml "jabber-xml.el" (string))
 
 ;;

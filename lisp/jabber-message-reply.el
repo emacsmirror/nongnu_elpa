@@ -32,13 +32,10 @@
 ;;; Code:
 
 (require 'ewoc)
+(require 'jabber-util)
 (require 'jabber-disco)
 (require 'jabber-xml)
 
-(declare-function jabber-jid-displayname "jabber-util" (jid))
-(declare-function jabber-jid-username "jabber-util" (jid))
-(declare-function jabber-jid-user "jabber-util" (jid))
-(declare-function jabber-jid-resource "jabber-util" (jid))
 
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chat-send-hooks)         ; jabber-chat.el
