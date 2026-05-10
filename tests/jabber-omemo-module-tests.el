@@ -3,6 +3,10 @@
 (require 'ert)
 (require 'jabber-omemo-core)
 
+;; The C module signals `jabber-omemo-error' but doesn't register it
+;; with `define-error'.  ERT's :type matching needs the hierarchy.
+(define-error 'jabber-omemo-error "OMEMO error")
+
 ;;; Group 1: Module loading
 
 (ert-deftest jabber-omemo-module-test-provides-feature ()
