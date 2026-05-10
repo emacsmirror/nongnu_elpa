@@ -1,31 +1,37 @@
-;;; jabber-omemo-store-tests.el --- Tests for jabber-omemo-store  -*- lexical-binding: t; -*-
+;;; jabber-test-omemo-store.el --- Tests for jabber-omemo-store  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; OMEMO state persistence in SQLite.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-omemo-store)
 
 ;;; Test infrastructure
 
-(defmacro jabber-omemo-store-test-with-db (&rest body)
+(defmacro jabber-test-omemo-store-with-db (&rest body)
   "Run BODY with a fresh temp SQLite database for OMEMO tests.
 Binds `jabber-db-path' to a temp file and tears down on exit."
   (declare (indent 0) (debug t))
-  `(let* ((jabber-omemo-store-test--dir (make-temp-file "jabber-omemo-test" t))
+  `(let* ((jabber-test-omemo-store--dir (make-temp-file "jabber-omemo-test" t))
           (jabber-db-path (expand-file-name "test.sqlite"
-                                            jabber-omemo-store-test--dir))
+                                            jabber-test-omemo-store--dir))
           (jabber-db--connection nil))
      (unwind-protect
          (progn
            (jabber-db-ensure-open)
            ,@body)
        (jabber-db-close)
-       (when (file-directory-p jabber-omemo-store-test--dir)
-         (delete-directory jabber-omemo-store-test--dir t)))))
+       (when (file-directory-p jabber-test-omemo-store--dir)
+         (delete-directory jabber-test-omemo-store--dir t)))))
 
 ;;; Group 1: Schema creation
 
-(ert-deftest jabber-omemo-store-test-schema-creates-tables ()
+(ert-deftest jabber-test-omemo-store-schema-creates-tables ()
   "Migration v2 creates all 5 OMEMO tables."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((tables (mapcar #'car
                           (sqlite-select jabber-db--connection
                             "SELECT name FROM sqlite_master
@@ -36,47 +42,47 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
       (should (member "omemo_skipped_keys" tables))
       (should (member "omemo_devices" tables)))))
 
-(ert-deftest jabber-omemo-store-test-schema-idempotent ()
+(ert-deftest jabber-test-omemo-store-schema-idempotent ()
   "Calling schema init twice does not error."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (jabber-db--init-schema jabber-db--connection)
     (should t)))
 
 ;;; Group 2: Store blob CRUD
 
-(ert-deftest jabber-omemo-store-test-save-load-roundtrip ()
+(ert-deftest jabber-test-omemo-store-save-load-roundtrip ()
   "Save + load round-trips a unibyte blob."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((blob (unibyte-string 7 42 0 1 127 200 255)))
       (jabber-omemo-store-save "me@example.com" blob)
       (should (equal blob (jabber-omemo-store-load "me@example.com"))))))
 
-(ert-deftest jabber-omemo-store-test-load-unknown-account ()
+(ert-deftest jabber-test-omemo-store-load-unknown-account ()
   "Load returns nil for unknown account."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (should (null (jabber-omemo-store-load "nobody@example.com")))))
 
-(ert-deftest jabber-omemo-store-test-save-upsert ()
+(ert-deftest jabber-test-omemo-store-save-upsert ()
   "Save overwrites existing blob (upsert)."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((blob1 (encode-coding-string "first" 'raw-text))
           (blob2 (encode-coding-string "second" 'raw-text)))
       (jabber-omemo-store-save "me@example.com" blob1)
       (jabber-omemo-store-save "me@example.com" blob2)
       (should (equal blob2 (jabber-omemo-store-load "me@example.com"))))))
 
-(ert-deftest jabber-omemo-store-test-delete ()
+(ert-deftest jabber-test-omemo-store-delete ()
   "Delete removes the store record."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (jabber-omemo-store-save "me@example.com" (encode-coding-string "data" 'raw-text))
     (jabber-omemo-store-delete "me@example.com")
     (should (null (jabber-omemo-store-load "me@example.com")))))
 
 ;;; Group 3: Trust CRUD
 
-(ert-deftest jabber-omemo-store-test-trust-save-load-roundtrip ()
+(ert-deftest jabber-test-omemo-store-trust-save-load-roundtrip ()
   "save-trust + load-trust round-trips."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((key (encode-coding-string "identity-key-bytes" 'raw-text)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
                                      12345 key 1)
@@ -87,15 +93,15 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
         (should (= 1 (plist-get rec :trust)))
         (should (integerp (plist-get rec :first-seen)))))))
 
-(ert-deftest jabber-omemo-store-test-trust-load-unknown ()
+(ert-deftest jabber-test-omemo-store-trust-load-unknown ()
   "load-trust returns nil for unknown device."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (should (null (jabber-omemo-store-load-trust "me@example.com"
                                                  "alice@example.com" 99999)))))
 
-(ert-deftest jabber-omemo-store-test-set-trust-updates-level ()
+(ert-deftest jabber-test-omemo-store-set-trust-updates-level ()
   "set-trust updates level without changing identity-key or first-seen."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((key (encode-coding-string "key-data" 'raw-text)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
                                      100 key 0)
@@ -110,9 +116,9 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
           (should (= (plist-get orig :first-seen)
                      (plist-get updated :first-seen))))))))
 
-(ert-deftest jabber-omemo-store-test-all-trust-multiple ()
+(ert-deftest jabber-test-omemo-store-all-trust-multiple ()
   "all-trust returns multiple devices for same JID."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((key1 (encode-coding-string "key1" 'raw-text))
           (key2 (encode-coding-string "key2" 'raw-text)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
@@ -125,9 +131,9 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
         (should (cl-find 100 all :key (lambda (p) (plist-get p :device-id))))
         (should (cl-find 200 all :key (lambda (p) (plist-get p :device-id))))))))
 
-(ert-deftest jabber-omemo-store-test-trust-levels ()
+(ert-deftest jabber-test-omemo-store-trust-levels ()
   "Trust levels: 0 (undecided), 1 (tofu), 2 (verified), -1 (untrusted)."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((key (encode-coding-string "k" 'raw-text)))
       (dolist (level '(0 1 2 -1))
         (jabber-omemo-store-save-trust "me@example.com" "peer@example.com"
@@ -138,9 +144,9 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
                                                    (+ 1000 level))))
           (should (= level (plist-get rec :trust))))))))
 
-(ert-deftest jabber-omemo-store-test-trust-upsert-preserves-first-seen ()
+(ert-deftest jabber-test-omemo-store-trust-upsert-preserves-first-seen ()
   "Upserting trust preserves the original first_seen."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((key (encode-coding-string "key-data" 'raw-text)))
       (jabber-omemo-store-save-trust "me@example.com" "alice@example.com"
                                      100 key 0)
@@ -159,9 +165,9 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 
 ;;; Group 4: Device list CRUD
 
-(ert-deftest jabber-omemo-store-test-device-save-load-roundtrip ()
+(ert-deftest jabber-test-omemo-store-device-save-load-roundtrip ()
   "save-device + load-devices round-trips."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (jabber-omemo-store-save-device "me@example.com" "alice@example.com" 42)
     (let ((devs (jabber-omemo-store-load-devices "me@example.com"
                                                   "alice@example.com")))
@@ -171,15 +177,15 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
         (should (eq t (plist-get d :active)))
         (should (integerp (plist-get d :last-seen)))))))
 
-(ert-deftest jabber-omemo-store-test-device-load-unknown ()
+(ert-deftest jabber-test-omemo-store-device-load-unknown ()
   "load-devices returns empty list for unknown JID."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (should (null (jabber-omemo-store-load-devices "me@example.com"
                                                     "nobody@example.com")))))
 
-(ert-deftest jabber-omemo-store-test-device-set-active ()
+(ert-deftest jabber-test-omemo-store-device-set-active ()
   "set-device-active toggles the flag."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (jabber-omemo-store-save-device "me@example.com" "alice@example.com" 42)
     (jabber-omemo-store-set-device-active "me@example.com" "alice@example.com"
                                           42 nil)
@@ -192,17 +198,17 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
                                                     "alice@example.com"))))
       (should (eq t (plist-get d :active))))))
 
-(ert-deftest jabber-omemo-store-test-device-delete ()
+(ert-deftest jabber-test-omemo-store-device-delete ()
   "delete-device removes the record."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (jabber-omemo-store-save-device "me@example.com" "alice@example.com" 42)
     (jabber-omemo-store-delete-device "me@example.com" "alice@example.com" 42)
     (should (null (jabber-omemo-store-load-devices "me@example.com"
                                                     "alice@example.com")))))
 
-(ert-deftest jabber-omemo-store-test-device-last-seen ()
+(ert-deftest jabber-test-omemo-store-device-last-seen ()
   "last-seen is set on save."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (jabber-omemo-store-save-device "me@example.com" "alice@example.com" 42)
     (let* ((d (car (jabber-omemo-store-load-devices "me@example.com"
                                                      "alice@example.com")))
@@ -212,24 +218,24 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 
 ;;; Group 5: Session CRUD
 
-(ert-deftest jabber-omemo-store-test-session-save-load-roundtrip ()
+(ert-deftest jabber-test-omemo-store-session-save-load-roundtrip ()
   "save-session + load-session round-trips."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((blob (encode-coding-string "session-data\x00\x01" 'raw-text)))
       (jabber-omemo-store-save-session "me@example.com" "alice@example.com"
                                        42 blob)
       (should (equal blob (jabber-omemo-store-load-session
                            "me@example.com" "alice@example.com" 42))))))
 
-(ert-deftest jabber-omemo-store-test-session-load-unknown ()
+(ert-deftest jabber-test-omemo-store-session-load-unknown ()
   "load-session returns nil for unknown."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (should (null (jabber-omemo-store-load-session "me@example.com"
                                                     "alice@example.com" 99)))))
 
-(ert-deftest jabber-omemo-store-test-session-delete ()
+(ert-deftest jabber-test-omemo-store-session-delete ()
   "delete-session removes the session."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((blob (encode-coding-string "session" 'raw-text)))
       (jabber-omemo-store-save-session "me@example.com" "alice@example.com"
                                        42 blob)
@@ -237,9 +243,9 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
       (should (null (jabber-omemo-store-load-session
                      "me@example.com" "alice@example.com" 42))))))
 
-(ert-deftest jabber-omemo-store-test-session-all ()
+(ert-deftest jabber-test-omemo-store-session-all ()
   "all-sessions lists all devices for a peer."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((b1 (encode-coding-string "s1" 'raw-text))
           (b2 (encode-coding-string "s2" 'raw-text)))
       (jabber-omemo-store-save-session "me@example.com" "alice@example.com"
@@ -254,9 +260,9 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
 
 ;;; Group 6: Skipped key CRUD
 
-(ert-deftest jabber-omemo-store-test-skipped-key-save-load-roundtrip ()
+(ert-deftest jabber-test-omemo-store-skipped-key-save-load-roundtrip ()
   "save + load round-trips a skipped key."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((dh (encode-coding-string "dh-key-data" 'raw-text))
           (mk (encode-coding-string "msg-key-data" 'raw-text)))
       (jabber-omemo-store-save-skipped-key "me@example.com" "alice@example.com"
@@ -264,16 +270,16 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
       (should (equal mk (jabber-omemo-store-load-skipped-key
                          "me@example.com" "alice@example.com" 42 dh 7))))))
 
-(ert-deftest jabber-omemo-store-test-skipped-key-load-unknown ()
+(ert-deftest jabber-test-omemo-store-skipped-key-load-unknown ()
   "load returns nil for unknown skipped key."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (should (null (jabber-omemo-store-load-skipped-key
                    "me@example.com" "alice@example.com" 42
                    (encode-coding-string "x" 'raw-text) 0)))))
 
-(ert-deftest jabber-omemo-store-test-skipped-key-delete ()
+(ert-deftest jabber-test-omemo-store-skipped-key-delete ()
   "delete removes a skipped key after use."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((dh (encode-coding-string "dh" 'raw-text))
           (mk (encode-coding-string "mk" 'raw-text)))
       (jabber-omemo-store-save-skipped-key "me@example.com" "alice@example.com"
@@ -283,9 +289,9 @@ Binds `jabber-db-path' to a temp file and tears down on exit."
       (should (null (jabber-omemo-store-load-skipped-key
                      "me@example.com" "alice@example.com" 42 dh 7))))))
 
-(ert-deftest jabber-omemo-store-test-skipped-key-delete-old ()
+(ert-deftest jabber-test-omemo-store-skipped-key-delete-old ()
   "delete-old-skipped-keys removes by age."
-  (jabber-omemo-store-test-with-db
+  (jabber-test-omemo-store-with-db
     (let ((dh (encode-coding-string "dh" 'raw-text))
           (mk (encode-coding-string "mk" 'raw-text))
           (now (truncate (float-time))))
@@ -306,6 +312,6 @@ INSERT INTO omemo_skipped_keys
       (should (jabber-omemo-store-load-skipped-key
                "me@example.com" "alice@example.com" 42 dh 2)))))
 
-(provide 'jabber-omemo-store-tests)
+(provide 'jabber-test-omemo-store)
 
-;;; jabber-omemo-store-tests.el ends here
+;;; jabber-test-omemo-store.el ends here

@@ -1,4 +1,10 @@
-;;; jabber-bookmarks-tests.el --- Tests for jabber-bookmarks  -*- lexical-binding: t; -*-
+;;; jabber-test-bookmarks.el --- Tests for jabber-bookmarks  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0048/XEP-0402 bookmark storage and retrieval.
+
+;;; Code:
 
 (require 'ert)
 
@@ -13,7 +19,7 @@
 
 ;;; Group 1: Parse XEP-0402 items
 
-(ert-deftest jabber-bookmarks2-test-parse-full ()
+(ert-deftest jabber-test-bookmarks-parse-full ()
   "Parse conference item with all fields."
   (let* ((item '(item ((id . "room@conference.example.com"))
                        (conference ((xmlns . "urn:xmpp:bookmarks:1")
@@ -28,7 +34,7 @@
     (should (string= (plist-get result :nick) "MyNick"))
     (should (string= (plist-get result :password) "secret"))))
 
-(ert-deftest jabber-bookmarks2-test-parse-minimal ()
+(ert-deftest jabber-test-bookmarks-parse-minimal ()
   "Parse conference item with only JID (no name, nick, password)."
   (let* ((item '(item ((id . "room@conference.example.com"))
                        (conference ((xmlns . "urn:xmpp:bookmarks:1")))))
@@ -39,7 +45,7 @@
     (should-not (plist-get result :nick))
     (should-not (plist-get result :password))))
 
-(ert-deftest jabber-bookmarks2-test-parse-autojoin-variants ()
+(ert-deftest jabber-test-bookmarks-parse-autojoin-variants ()
   "Parse autojoin attribute: \"true\", \"1\", and absent."
   (let ((make-item (lambda (val)
                      `(item ((id . "r@c.example.com"))
@@ -58,7 +64,7 @@
                             (funcall make-item "false"))
                            :autojoin))))
 
-(ert-deftest jabber-bookmarks2-test-parse-no-conference ()
+(ert-deftest jabber-test-bookmarks-parse-no-conference ()
   "Return nil when item has no <conference> child."
   (let ((item '(item ((id . "room@conference.example.com"))
                       (something-else ()))))
@@ -66,7 +72,7 @@
 
 ;;; Group 2: Build conference XML
 
-(ert-deftest jabber-bookmarks2-test-build-full ()
+(ert-deftest jabber-test-bookmarks-build-full ()
   "Build conference element with all fields."
   (let ((elem (jabber-bookmarks2--build-conference
                '(:jid "room@c.example.com"
@@ -85,7 +91,7 @@
       (should pw)
       (should (string= (car (jabber-xml-node-children pw)) "pw")))))
 
-(ert-deftest jabber-bookmarks2-test-build-minimal ()
+(ert-deftest jabber-test-bookmarks-build-minimal ()
   "Build conference element with JID only."
   (let ((elem (jabber-bookmarks2--build-conference
                '(:jid "room@c.example.com"))))
@@ -97,13 +103,13 @@
     (should-not (jabber-xml-get-children elem 'nick))
     (should-not (jabber-xml-get-children elem 'password))))
 
-(ert-deftest jabber-bookmarks2-test-build-autojoin-false ()
+(ert-deftest jabber-test-bookmarks-build-autojoin-false ()
   "Autojoin nil omits the attribute entirely."
   (let ((elem (jabber-bookmarks2--build-conference
                '(:jid "r@c.example.com" :autojoin nil))))
     (should-not (assq 'autojoin (cadr elem)))))
 
-(ert-deftest jabber-bookmarks2-test-roundtrip ()
+(ert-deftest jabber-test-bookmarks-roundtrip ()
   "Build then parse returns equivalent plist."
   (let* ((original '(:jid "room@c.example.com"
                      :name "Room" :autojoin t :nick "Me" :password "pw"))
@@ -158,7 +164,7 @@
   (let ((data (get jc :state-data)))
     (concat (plist-get data :username) "@" (plist-get data :server))))
 
-(ert-deftest jabber-bookmarks2-test-handle-fetch ()
+(ert-deftest jabber-test-bookmarks-handle-fetch ()
   "PubSub response is parsed into plists and cached."
   (let ((jabber-bookmarks (make-hash-table :test 'equal))
         (jc (jabber-bookmarks-test--fake-jc))
@@ -189,7 +195,7 @@
       (should (listp cached))
       (should (= 2 (length cached))))))
 
-(ert-deftest jabber-bookmarks2-test-handle-fetch-empty ()
+(ert-deftest jabber-test-bookmarks-handle-fetch-empty ()
   "Empty PubSub response caches t."
   (let ((jabber-bookmarks (make-hash-table :test 'equal))
         (jc (jabber-bookmarks-test--fake-jc))
@@ -279,7 +285,7 @@
                         jabber-bookmarks-test--iq-calls))))
        ,@body)))
 
-(ert-deftest jabber-bookmarks2-test-publish-iq ()
+(ert-deftest jabber-test-bookmarks-publish-iq ()
   "Publish sends correct PubSub IQ with publish-options."
   (jabber-bookmarks-test-with-mock-iq
    (jabber-bookmarks2--publish
@@ -299,7 +305,7 @@
      (let ((pub-opts (cl-find 'publish-options (cddr query) :key #'car)))
        (should pub-opts)))))
 
-(ert-deftest jabber-bookmarks2-test-retract-iq ()
+(ert-deftest jabber-test-bookmarks-retract-iq ()
   "Retract sends correct PubSub IQ with notify."
   (jabber-bookmarks-test-with-mock-iq
    (jabber-bookmarks2--retract 'fake-jc "room@c.example.com")
@@ -378,7 +384,7 @@
 
 ;;; Group 7: Event handler (live sync)
 
-(ert-deftest jabber-bookmarks2-test-event-item-autojoin ()
+(ert-deftest jabber-test-bookmarks-event-item-autojoin ()
   "New item with autojoin=true updates cache and joins."
   (let ((jabber-bookmarks (make-hash-table :test 'equal))
         (joined nil))
@@ -403,7 +409,7 @@
       (should (= 1 (length cached)))
       (should (string= (plist-get (car cached) :jid) "room@c.example.com")))))
 
-(ert-deftest jabber-bookmarks2-test-event-item-no-autojoin-leaves ()
+(ert-deftest jabber-test-bookmarks-event-item-no-autojoin-leaves ()
   "Item without autojoin leaves if currently joined."
   (let ((jabber-bookmarks (make-hash-table :test 'equal))
         (left nil))
@@ -424,7 +430,7 @@
                (conference ((xmlns . ,jabber-bookmarks2-xmlns)))))))
     (should (member "room@c.example.com" left))))
 
-(ert-deftest jabber-bookmarks2-test-event-retract ()
+(ert-deftest jabber-test-bookmarks-event-retract ()
   "Retract removes from cache and leaves."
   (let ((jabber-bookmarks (make-hash-table :test 'equal))
         (left nil))
@@ -446,7 +452,7 @@
     ;; Cache should be t (empty)
     (should (eq t (gethash "user@example.com" jabber-bookmarks)))))
 
-(ert-deftest jabber-bookmarks2-test-event-already-joined-skips ()
+(ert-deftest jabber-test-bookmarks-event-already-joined-skips ()
   "Item with autojoin for already-joined room does not re-join."
   (let ((jabber-bookmarks (make-hash-table :test 'equal))
         (join-count 0))
@@ -464,7 +470,7 @@
                             (autojoin . "true")))))))
     (should (= 0 join-count))))
 
-(ert-deftest jabber-bookmarks2-test-event-retract-not-joined-skips ()
+(ert-deftest jabber-test-bookmarks-event-retract-not-joined-skips ()
   "Retract for not-joined room only updates cache."
   (let ((jabber-bookmarks (make-hash-table :test 'equal))
         (leave-count 0))
@@ -485,7 +491,7 @@
 
 ;;; Group 8: Cache management
 
-(ert-deftest jabber-bookmarks2-test-update-cache-new ()
+(ert-deftest jabber-test-bookmarks-update-cache-new ()
   "Update cache adds a new bookmark."
   (let ((jabber-bookmarks (make-hash-table :test 'equal)))
     (puthash "user@example.com" t jabber-bookmarks)
@@ -497,7 +503,7 @@
       (should (= 1 (length cached)))
       (should (string= (plist-get (car cached) :jid) "room@c.example.com")))))
 
-(ert-deftest jabber-bookmarks2-test-update-cache-replace ()
+(ert-deftest jabber-test-bookmarks-update-cache-replace ()
   "Update cache replaces existing entry with same JID."
   (let ((jabber-bookmarks (make-hash-table :test 'equal)))
     (puthash "user@example.com"
@@ -511,7 +517,7 @@
       (should (= 1 (length cached)))
       (should (string= (plist-get (car cached) :name) "New")))))
 
-(ert-deftest jabber-bookmarks2-test-remove-from-cache ()
+(ert-deftest jabber-test-bookmarks-remove-from-cache ()
   "Remove from cache drops the entry."
   (let ((jabber-bookmarks (make-hash-table :test 'equal)))
     (puthash "user@example.com"
@@ -524,7 +530,7 @@
       (should (= 1 (length cached)))
       (should (string= (plist-get (car cached) :jid) "room2@c.example.com")))))
 
-(ert-deftest jabber-bookmarks2-test-remove-last-caches-t ()
+(ert-deftest jabber-test-bookmarks-remove-last-caches-t ()
   "Removing the last bookmark caches t."
   (let ((jabber-bookmarks (make-hash-table :test 'equal)))
     (puthash "user@example.com"
@@ -679,6 +685,6 @@
     (should legacy-called)
     (should-not pubsub-called)))
 
-(provide 'jabber-bookmarks-tests)
+(provide 'jabber-test-bookmarks)
 
-;;; jabber-bookmarks-tests.el ends here
+;;; jabber-test-bookmarks.el ends here

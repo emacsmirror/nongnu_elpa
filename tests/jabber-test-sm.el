@@ -1,4 +1,10 @@
-;;; jabber-sm-tests.el --- Tests for jabber-sm  -*- lexical-binding: t; -*-
+;;; jabber-test-sm.el --- Tests for jabber-sm  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0198 Stream Management.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-xml)
@@ -6,21 +12,21 @@
 
 ;;; Counter arithmetic
 
-(ert-deftest jabber-sm-test-inc-counter ()
+(ert-deftest jabber-test-sm-inc-counter ()
   "Incrementing a counter adds one."
   (should (= (jabber-sm--inc-counter 0) 1))
   (should (= (jabber-sm--inc-counter 41) 42)))
 
-(ert-deftest jabber-sm-test-inc-counter-wraps ()
+(ert-deftest jabber-test-sm-inc-counter-wraps ()
   "Counter wraps at 2^32."
   (should (= (jabber-sm--inc-counter (1- (expt 2 32))) 0)))
 
-(ert-deftest jabber-sm-test-counter-delta ()
+(ert-deftest jabber-test-sm-counter-delta ()
   "Forward distance between counters."
   (should (= (jabber-sm--counter-delta 5 3) 2))
   (should (= (jabber-sm--counter-delta 0 (1- (expt 2 32))) 1)))
 
-(ert-deftest jabber-sm-test-counter-<= ()
+(ert-deftest jabber-test-sm-counter-<= ()
   "Counter comparison with wraparound."
   (should (jabber-sm--counter-<= 3 5))
   (should (jabber-sm--counter-<= 3 3))
@@ -30,35 +36,35 @@
 
 ;;; Predicates
 
-(ert-deftest jabber-sm-test-r-p ()
+(ert-deftest jabber-test-sm-r-p ()
   "Detect SM <r/> element."
   (should (jabber-sm--r-p '(r ((xmlns . "urn:xmpp:sm:3")))))
   (should-not (jabber-sm--r-p '(r ((xmlns . "wrong")))))
   (should-not (jabber-sm--r-p '(a ((xmlns . "urn:xmpp:sm:3"))))))
 
-(ert-deftest jabber-sm-test-a-p ()
+(ert-deftest jabber-test-sm-a-p ()
   "Detect SM <a/> element."
   (should (jabber-sm--a-p '(a ((xmlns . "urn:xmpp:sm:3") (h . "5")))))
   (should-not (jabber-sm--a-p '(r ((xmlns . "urn:xmpp:sm:3"))))))
 
-(ert-deftest jabber-sm-test-enabled-p ()
+(ert-deftest jabber-test-sm-enabled-p ()
   "Detect SM <enabled/> element."
   (should (jabber-sm--enabled-p
            '(enabled ((xmlns . "urn:xmpp:sm:3") (id . "abc") (resume . "true"))))))
 
-(ert-deftest jabber-sm-test-resumed-p ()
+(ert-deftest jabber-test-sm-resumed-p ()
   "Detect SM <resumed/> element."
   (should (jabber-sm--resumed-p
            '(resumed ((xmlns . "urn:xmpp:sm:3") (h . "5") (previd . "abc"))))))
 
-(ert-deftest jabber-sm-test-failed-p ()
+(ert-deftest jabber-test-sm-failed-p ()
   "Detect SM <failed/> element."
   (should (jabber-sm--failed-p
            '(failed ((xmlns . "urn:xmpp:sm:3"))))))
 
 ;;; State-data reset
 
-(ert-deftest jabber-sm-test-reset ()
+(ert-deftest jabber-test-sm-reset ()
   "Reset clears all SM keys to defaults."
   (let* ((sd (list :username "test" :sm-enabled t :sm-outbound-count 42))
          (result (jabber-sm--reset sd)))
@@ -71,7 +77,7 @@
 
 ;;; Features check
 
-(ert-deftest jabber-sm-test-features-have-sm ()
+(ert-deftest jabber-test-sm-features-have-sm ()
   "Detect SM in stream features."
   (let ((sd (list :stream-features
                   '(features ((xmlns . "http://etherx.jabber.org/streams"))
@@ -79,20 +85,20 @@
                              (sm ((xmlns . "urn:xmpp:sm:3")))))))
     (should (jabber-sm--features-have-sm-p sd))))
 
-(ert-deftest jabber-sm-test-features-no-sm ()
+(ert-deftest jabber-test-sm-features-no-sm ()
   "No SM in stream features."
   (let ((sd (list :stream-features
                   '(features ((xmlns . "http://etherx.jabber.org/streams"))
                              (bind ((xmlns . "urn:ietf:params:xml:ns:xmpp-bind")))))))
     (should-not (jabber-sm--features-have-sm-p sd))))
 
-(ert-deftest jabber-sm-test-features-nil ()
+(ert-deftest jabber-test-sm-features-nil ()
   "Nil stream features."
   (should-not (jabber-sm--features-have-sm-p '(:stream-features nil))))
 
 ;;; Stanza counting
 
-(ert-deftest jabber-sm-test-count-outbound-message ()
+(ert-deftest jabber-test-sm-count-outbound-message ()
   "Outbound message increments counter and queues."
   (let* ((sd (list :sm-enabled t :sm-outbound-count 0 :sm-outbound-queue nil))
          (msg '(message ((to . "bob@example.com")) (body () "hi")))
@@ -101,14 +107,14 @@
     (should (= (length (plist-get result :sm-outbound-queue)) 1))
     (should (equal (cdar (plist-get result :sm-outbound-queue)) msg))))
 
-(ert-deftest jabber-sm-test-count-outbound-iq ()
+(ert-deftest jabber-test-sm-count-outbound-iq ()
   "Outbound iq increments counter."
   (let* ((sd (list :sm-enabled t :sm-outbound-count 5 :sm-outbound-queue nil))
          (iq '(iq ((type . "get") (id . "1")) (query ((xmlns . "test")))))
          (result (jabber-sm--count-outbound sd iq)))
     (should (= (plist-get result :sm-outbound-count) 6))))
 
-(ert-deftest jabber-sm-test-count-outbound-disabled ()
+(ert-deftest jabber-test-sm-count-outbound-disabled ()
   "No counting when SM is disabled."
   (let* ((sd (list :sm-enabled nil :sm-outbound-count 0 :sm-outbound-queue nil))
          (msg '(message ((to . "bob@example.com")) (body () "hi")))
@@ -116,28 +122,28 @@
     (should (= (plist-get result :sm-outbound-count) 0))
     (should (null (plist-get result :sm-outbound-queue)))))
 
-(ert-deftest jabber-sm-test-count-outbound-non-stanza ()
+(ert-deftest jabber-test-sm-count-outbound-non-stanza ()
   "SM elements are not counted."
   (let* ((sd (list :sm-enabled t :sm-outbound-count 0 :sm-outbound-queue nil))
          (r '(r ((xmlns . "urn:xmpp:sm:3"))))
          (result (jabber-sm--count-outbound sd r)))
     (should (= (plist-get result :sm-outbound-count) 0))))
 
-(ert-deftest jabber-sm-test-count-inbound ()
+(ert-deftest jabber-test-sm-count-inbound ()
   "Inbound stanza increments counter."
   (let* ((sd (list :sm-enabled t :sm-inbound-count 0))
          (msg '(message ((from . "bob@example.com")) (body () "hi")))
          (result (jabber-sm--count-inbound nil sd msg)))
     (should (= (plist-get result :sm-inbound-count) 1))))
 
-(ert-deftest jabber-sm-test-count-inbound-disabled ()
+(ert-deftest jabber-test-sm-count-inbound-disabled ()
   "No counting when SM is disabled."
   (let* ((sd (list :sm-enabled nil :sm-inbound-count 0))
          (msg '(message ((from . "bob@example.com")) (body () "hi")))
          (result (jabber-sm--count-inbound nil sd msg)))
     (should (= (plist-get result :sm-inbound-count) 0))))
 
-(ert-deftest jabber-sm-test-proactive-ack ()
+(ert-deftest jabber-test-sm-proactive-ack ()
   "Proactive ack is sent when inbound counter hits the interval."
   (let* ((jabber-sm-ack-interval 3)
          (sd (list :sm-enabled t :sm-inbound-count 2))
@@ -148,7 +154,7 @@
       (jabber-sm--count-inbound 'fake-jc sd msg))
     (should ack-sent)))
 
-(ert-deftest jabber-sm-test-proactive-ack-not-at-interval ()
+(ert-deftest jabber-test-sm-proactive-ack-not-at-interval ()
   "No proactive ack when counter is not at the interval boundary."
   (let* ((jabber-sm-ack-interval 3)
          (sd (list :sm-enabled t :sm-inbound-count 0))
@@ -159,7 +165,7 @@
       (jabber-sm--count-inbound 'fake-jc sd msg))
     (should-not ack-sent)))
 
-(ert-deftest jabber-sm-test-proactive-ack-disabled ()
+(ert-deftest jabber-test-sm-proactive-ack-disabled ()
   "No proactive ack when jabber-sm-ack-interval is nil."
   (let* ((jabber-sm-ack-interval nil)
          (sd (list :sm-enabled t :sm-inbound-count 2))
@@ -172,18 +178,18 @@
 
 ;;; Queue pruning and ack processing
 
-(ert-deftest jabber-sm-test-prune-queue ()
+(ert-deftest jabber-test-sm-prune-queue ()
   "Prune removes entries with count <= h."
   (let* ((queue (list (cons 1 'a) (cons 2 'b) (cons 3 'c) (cons 4 'd)))
          (result (jabber-sm--prune-queue queue 2)))
     (should (= (length result) 2))
     (should (= (caar result) 3))))
 
-(ert-deftest jabber-sm-test-prune-queue-empty ()
+(ert-deftest jabber-test-sm-prune-queue-empty ()
   "Prune on empty queue returns empty."
   (should (null (jabber-sm--prune-queue nil 5))))
 
-(ert-deftest jabber-sm-test-process-ack ()
+(ert-deftest jabber-test-sm-process-ack ()
   "Processing <a/> prunes queue and updates last-acked."
   (let* ((sd (list :sm-enabled t
                    :sm-outbound-count 3
@@ -197,7 +203,7 @@
 
 ;;; FSM routing helper
 
-(ert-deftest jabber-sm-test-maybe-enable-with-sm ()
+(ert-deftest jabber-test-sm-maybe-enable-with-sm ()
   "Route to :sm-enable when SM is available."
   (let ((jabber-sm-enable t)
         (sd (list :stream-features
@@ -206,7 +212,7 @@
     (should (eq (car (jabber-sm--maybe-enable-or-establish sd))
                 :sm-enable))))
 
-(ert-deftest jabber-sm-test-maybe-enable-without-sm ()
+(ert-deftest jabber-test-sm-maybe-enable-without-sm ()
   "Route to :session-established when SM is not in features."
   (let ((jabber-sm-enable t)
         (sd (list :stream-features
@@ -214,7 +220,7 @@
     (should (eq (car (jabber-sm--maybe-enable-or-establish sd))
                 :session-established))))
 
-(ert-deftest jabber-sm-test-maybe-enable-disabled ()
+(ert-deftest jabber-test-sm-maybe-enable-disabled ()
   "Route to :session-established when SM is disabled by user."
   (let ((jabber-sm-enable nil)
         (sd (list :stream-features
@@ -225,18 +231,18 @@
 
 ;;; Enable/resume XML generation
 
-(ert-deftest jabber-sm-test-make-enable-xml ()
+(ert-deftest jabber-test-sm-make-enable-xml ()
   "Enable XML matches expected format."
   (should (string-match-p "enable" (jabber-sm--make-enable-xml)))
   (should (string-match-p "resume='true'" (jabber-sm--make-enable-xml))))
 
-(ert-deftest jabber-sm-test-make-resume-xml ()
+(ert-deftest jabber-test-sm-make-resume-xml ()
   "Resume XML includes h and previd."
   (let ((xml (jabber-sm--make-resume-xml 42 "session-123")))
     (should (string-match-p "h='42'" xml))
     (should (string-match-p "previd='session-123'" xml))))
 
-(ert-deftest jabber-sm-test-parse-enabled ()
+(ert-deftest jabber-test-sm-parse-enabled ()
   "Parse <enabled/> stanza with resume=true."
   (let ((info (jabber-sm--parse-enabled
                '(enabled ((xmlns . "urn:xmpp:sm:3")
@@ -247,7 +253,7 @@
     (should (plist-get info :resume))
     (should (= (plist-get info :max) 300))))
 
-(ert-deftest jabber-sm-test-parse-enabled-resume-1 ()
+(ert-deftest jabber-test-sm-parse-enabled-resume-1 ()
   "Parse <enabled/> stanza with resume=1."
   (let ((info (jabber-sm--parse-enabled
                '(enabled ((xmlns . "urn:xmpp:sm:3")
@@ -255,7 +261,7 @@
                           (resume . "1"))))))
     (should (plist-get info :resume))))
 
-(ert-deftest jabber-sm-test-parse-enabled-no-resume ()
+(ert-deftest jabber-test-sm-parse-enabled-no-resume ()
   "Parse <enabled/> stanza without resume attribute."
   (let ((info (jabber-sm--parse-enabled
                '(enabled ((xmlns . "urn:xmpp:sm:3")
@@ -264,7 +270,7 @@
     (should-not (plist-get info :resume))
     (should-not (plist-get info :max))))
 
-(ert-deftest jabber-sm-test-apply-enabled-with-resume ()
+(ert-deftest jabber-test-sm-apply-enabled-with-resume ()
   "Apply enabled info with resume granted."
   (let* ((sd (list :sm-enabled nil :sm-id nil :sm-resume-max nil))
          (info (list :id "abc" :resume '("true") :max 300))
@@ -273,7 +279,7 @@
     (should (equal (plist-get result :sm-id) "abc"))
     (should (= (plist-get result :sm-resume-max) 300))))
 
-(ert-deftest jabber-sm-test-apply-enabled-no-resume ()
+(ert-deftest jabber-test-sm-apply-enabled-no-resume ()
   "Apply enabled info without resume: sm-id stays nil."
   (let* ((sd (list :sm-enabled nil :sm-id nil :sm-resume-max nil))
          (info (list :id "abc" :resume nil :max nil))
@@ -283,7 +289,7 @@
 
 ;;; Resume handling
 
-(ert-deftest jabber-sm-test-handle-resumed ()
+(ert-deftest jabber-test-sm-handle-resumed ()
   "Handle <resumed/> prunes queue and returns stanzas to resend."
   (let* ((msg-a '(message ((to . "a@x")) (body () "a")))
          (msg-b '(message ((to . "b@x")) (body () "b")))
@@ -308,7 +314,7 @@
     (should (equal (car (cdr result)) msg-b))
     (should (equal (cadr (cdr result)) msg-c))))
 
-(ert-deftest jabber-sm-test-handle-resumed-all-acked ()
+(ert-deftest jabber-test-sm-handle-resumed-all-acked ()
   "All stanzas acked means nothing to resend."
   (let* ((sd (list :sm-enabled t
                    :sm-outbound-queue (list (cons 1 'a) (cons 2 'b))
@@ -319,7 +325,7 @@
          (result (jabber-sm--handle-resumed sd resumed)))
     (should (null (cdr result)))))
 
-(ert-deftest jabber-sm-test-handle-resumed-counter-reset ()
+(ert-deftest jabber-test-sm-handle-resumed-counter-reset ()
   "Outbound counter resets to server h, preventing drift on resend."
   (let* ((msg-a '(message ((to . "a@x")) (body () "a")))
          (msg-b '(message ((to . "b@x")) (body () "b")))
@@ -349,17 +355,17 @@
 
 ;;; Ack XML generation
 
-(ert-deftest jabber-sm-test-make-ack-xml ()
+(ert-deftest jabber-test-sm-make-ack-xml ()
   "Ack XML includes h value."
   (should (string-match-p "h='7'" (jabber-sm--make-ack-xml 7))))
 
-(ert-deftest jabber-sm-test-make-request-xml ()
+(ert-deftest jabber-test-sm-make-request-xml ()
   "Request XML is well-formed."
   (should (string-match-p "<r xmlns=" (jabber-sm--make-request-xml))))
 
 ;;; Queue operations across 2^32 boundary
 
-(ert-deftest jabber-sm-test-prune-queue-wraparound ()
+(ert-deftest jabber-test-sm-prune-queue-wraparound ()
   "Prune works when counters span the 2^32 wraparound."
   (let* ((near-max (- (expt 2 32) 1))
          (queue (list (cons near-max 'a) (cons 0 'b) (cons 1 'c)))
@@ -370,7 +376,7 @@
 
 ;;; h-count validation
 
-(ert-deftest jabber-sm-test-process-ack-h-too-high ()
+(ert-deftest jabber-test-sm-process-ack-h-too-high ()
   "Warning when server acks more stanzas than sent."
   (let* ((sd (list :sm-enabled t
                    :sm-outbound-count 3
@@ -386,58 +392,58 @@
 
 ;;; Back-pressure
 
-(ert-deftest jabber-sm-test-in-flight-count-normal ()
+(ert-deftest jabber-test-sm-in-flight-count-normal ()
   "In-flight count is delta between outbound and last-acked."
   (let ((sd (list :sm-outbound-count 7 :sm-last-acked 3)))
     (should (= (jabber-sm--in-flight-count sd) 4))))
 
-(ert-deftest jabber-sm-test-in-flight-count-zero ()
+(ert-deftest jabber-test-sm-in-flight-count-zero ()
   "In-flight count is zero when fully acked."
   (let ((sd (list :sm-outbound-count 5 :sm-last-acked 5)))
     (should (= (jabber-sm--in-flight-count sd) 0))))
 
-(ert-deftest jabber-sm-test-in-flight-count-wraparound ()
+(ert-deftest jabber-test-sm-in-flight-count-wraparound ()
   "In-flight count handles 2^32 wraparound."
   (let ((sd (list :sm-outbound-count 2
                   :sm-last-acked (- (expt 2 32) 3))))
     (should (= (jabber-sm--in-flight-count sd) 5))))
 
-(ert-deftest jabber-sm-test-should-queue-p-at-limit ()
+(ert-deftest jabber-test-sm-should-queue-p-at-limit ()
   "Should queue when in-flight equals the cap."
   (let ((jabber-sm-max-in-flight 3)
         (sd (list :sm-enabled t :sm-outbound-count 5 :sm-last-acked 2)))
     (should (jabber-sm--should-queue-p
              sd '(message ((to . "a@b")) (body () "hi"))))))
 
-(ert-deftest jabber-sm-test-should-queue-p-below-limit ()
+(ert-deftest jabber-test-sm-should-queue-p-below-limit ()
   "Should not queue when in-flight is below the cap."
   (let ((jabber-sm-max-in-flight 10)
         (sd (list :sm-enabled t :sm-outbound-count 5 :sm-last-acked 2)))
     (should-not (jabber-sm--should-queue-p
                  sd '(message ((to . "a@b")) (body () "hi"))))))
 
-(ert-deftest jabber-sm-test-should-queue-p-disabled ()
+(ert-deftest jabber-test-sm-should-queue-p-disabled ()
   "Should not queue when back-pressure is disabled."
   (let ((jabber-sm-max-in-flight nil)
         (sd (list :sm-enabled t :sm-outbound-count 100 :sm-last-acked 0)))
     (should-not (jabber-sm--should-queue-p
                  sd '(message ((to . "a@b")) (body () "hi"))))))
 
-(ert-deftest jabber-sm-test-should-queue-p-sm-off ()
+(ert-deftest jabber-test-sm-should-queue-p-sm-off ()
   "Should not queue when SM is not enabled."
   (let ((jabber-sm-max-in-flight 3)
         (sd (list :sm-enabled nil :sm-outbound-count 5 :sm-last-acked 0)))
     (should-not (jabber-sm--should-queue-p
                  sd '(message ((to . "a@b")) (body () "hi"))))))
 
-(ert-deftest jabber-sm-test-should-queue-p-non-stanza ()
+(ert-deftest jabber-test-sm-should-queue-p-non-stanza ()
   "Should not queue non-countable elements."
   (let ((jabber-sm-max-in-flight 3)
         (sd (list :sm-enabled t :sm-outbound-count 5 :sm-last-acked 2)))
     (should-not (jabber-sm--should-queue-p
                  sd '(r ((xmlns . "urn:xmpp:sm:3")))))))
 
-(ert-deftest jabber-sm-test-enqueue-pending ()
+(ert-deftest jabber-test-sm-enqueue-pending ()
   "Enqueue appends to pending queue as (priority . sexp) pairs."
   (let* ((sd (list :sm-pending-queue nil))
          (msg1 '(message ((to . "a@b")) (body () "1")))
@@ -451,7 +457,7 @@
     (should (= (caar (plist-get sd :sm-pending-queue)) 0))
     (should (= (caadr (plist-get sd :sm-pending-queue)) 0))))
 
-(ert-deftest jabber-sm-test-drain-pending-partial ()
+(ert-deftest jabber-test-sm-drain-pending-partial ()
   "Drain sends stanzas up to the cap, leaving the rest queued."
   (let* ((jabber-sm-max-in-flight 2)
          (msg1 '(message ((to . "a@b")) (body () "1")))
@@ -477,7 +483,7 @@
     ;; Outbound count incremented for sent stanzas
     (should (= (plist-get sd :sm-outbound-count) 2))))
 
-(ert-deftest jabber-sm-test-drain-pending-empty ()
+(ert-deftest jabber-test-sm-drain-pending-empty ()
   "Drain with empty queue is a no-op."
   (let* ((jabber-sm-max-in-flight 10)
          (sd (list :sm-enabled t
@@ -492,7 +498,7 @@
     (should (null sent))
     (should (null (plist-get sd :sm-pending-queue)))))
 
-(ert-deftest jabber-sm-test-reset-clears-pending-queue ()
+(ert-deftest jabber-test-sm-reset-clears-pending-queue ()
   "Reset clears the pending queue."
   (let* ((sd (list :sm-enabled t :sm-pending-queue '((0 . a) (1 . b) (2 . c))))
          (result (jabber-sm--reset sd)))
@@ -500,19 +506,19 @@
 
 ;;; Priority queue
 
-(ert-deftest jabber-sm-test-stanza-priority-message ()
+(ert-deftest jabber-test-sm-stanza-priority-message ()
   "Messages have priority 0."
   (should (= (jabber-sm--stanza-priority '(message ((to . "a@b")) (body () "hi"))) 0)))
 
-(ert-deftest jabber-sm-test-stanza-priority-iq ()
+(ert-deftest jabber-test-sm-stanza-priority-iq ()
   "IQs have priority 1."
   (should (= (jabber-sm--stanza-priority '(iq ((type . "get") (id . "1")))) 1)))
 
-(ert-deftest jabber-sm-test-stanza-priority-presence ()
+(ert-deftest jabber-test-sm-stanza-priority-presence ()
   "Presence has priority 2."
   (should (= (jabber-sm--stanza-priority '(presence ((to . "room@muc/nick")))) 2)))
 
-(ert-deftest jabber-sm-test-drain-pending-priority-order ()
+(ert-deftest jabber-test-sm-drain-pending-priority-order ()
   "Drain sends messages before presence, preserving FIFO within class."
   (let* ((jabber-sm-max-in-flight nil)
          (pres1 '(presence ((to . "r1@muc/nick"))))
@@ -549,7 +555,7 @@
     (should (equal (nth 3 sent) pres1))
     (should (equal (nth 4 sent) pres2))))
 
-(ert-deftest jabber-sm-test-drain-pending-priority-partial ()
+(ert-deftest jabber-test-sm-drain-pending-priority-partial ()
   "With a cap, messages drain first even if presence was enqueued first."
   (let* ((jabber-sm-max-in-flight 2)
          (pres1 '(presence ((to . "r1@muc/nick"))))
@@ -576,6 +582,6 @@
     (should (= (length (plist-get sd :sm-pending-queue)) 1))
     (should (equal (cdar (plist-get sd :sm-pending-queue)) pres2))))
 
-(provide 'jabber-sm-tests)
+(provide 'jabber-test-sm)
 
-;;; jabber-sm-tests.el ends here
+;;; jabber-test-sm.el ends here

@@ -1,4 +1,10 @@
-;;; jabber-muc-tests.el --- Tests for jabber-muc  -*- lexical-binding: t; -*-
+;;; jabber-test-muc.el --- Tests for jabber-muc  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; Multi-user chat rooms.
+
+;;; Code:
 
 (require 'ert)
 
@@ -13,7 +19,7 @@
 (require 'jabber-chatbuffer)
 (require 'jabber-muc)
 
-(defmacro jabber-muc-test-with-rooms (rooms &rest body)
+(defmacro jabber-test-muc-with-rooms (rooms &rest body)
   "Run BODY with ROOMS as active groupchats.
 ROOMS is an alist of (group . nickname).  Each room gets a single
 entry with JC=nil."
@@ -66,26 +72,26 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-sender-p-full-jid ()
   "Full JID from active groupchat is a MUC sender."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (should (jabber-muc-sender-p "room@conference.example.com/othernick"))))
 
 (ert-deftest jabber-test-muc-sender-p-bare-jid ()
   "Bare JID (no resource) is not a MUC sender."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (should-not (jabber-muc-sender-p "room@conference.example.com"))))
 
 (ert-deftest jabber-test-muc-sender-p-not-active ()
   "JID not in active groupchats is not a MUC sender."
-  (jabber-muc-test-with-rooms nil
+  (jabber-test-muc-with-rooms nil
     (should-not (jabber-muc-sender-p "room@conference.example.com/nick"))))
 
 ;;; Group 3: jabber-muc-private-message-p
 
 (ert-deftest jabber-test-muc-private-message-p-private ()
   "Private message from MUC participant returns non-nil."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (let ((msg '(message ((from . "room@conference.example.com/othernick")
                           (type . "chat"))
@@ -94,7 +100,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-private-message-p-groupchat ()
   "Groupchat type message is not a private message."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (let ((msg '(message ((from . "room@conference.example.com/nick")
                           (type . "groupchat"))
@@ -203,7 +209,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-classify-message-error ()
   "Stanza with error child is classified as :muc-error."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (let ((xml '(message ((from . "room@conference.example.com/othernick")
                           (type . "groupchat"))
@@ -214,7 +220,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-classify-message-local ()
   "Message from our own nick is classified as :muc-local."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (let ((xml '(message ((from . "room@conference.example.com/mynick")
                           (type . "groupchat"))
@@ -225,7 +231,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-classify-message-foreign ()
   "Message from another nick is classified as :muc-foreign."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (let ((xml '(message ((from . "room@conference.example.com/othernick")
                           (type . "groupchat"))
@@ -306,7 +312,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-classify-message-error-priority ()
   "Error classification takes priority over matching local nick."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (let ((xml '(message ((from . "room@conference.example.com/mynick")
                           (type . "groupchat"))
@@ -317,7 +323,7 @@ entry with JC=nil."
 
 (ert-deftest jabber-test-muc-classify-message-nil-nick ()
   "Nil nick (bare JID) classifies as :muc-foreign, not crash."
-  (jabber-muc-test-with-rooms
+  (jabber-test-muc-with-rooms
       '(("room@conference.example.com" . "mynick"))
     (let ((xml '(message ((from . "room@conference.example.com")
                           (type . "groupchat"))
@@ -912,5 +918,5 @@ entry with JC=nil."
        nil nil "me"))
     (should timer-scheduled)))
 
-(provide 'jabber-muc-tests)
-;;; jabber-muc-tests.el ends here
+(provide 'jabber-test-muc)
+;;; jabber-test-muc.el ends here

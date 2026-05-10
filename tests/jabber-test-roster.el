@@ -1,4 +1,10 @@
-;;; jabber-roster-tests.el --- Tests for jabber-roster  -*- lexical-binding: t; -*-
+;;; jabber-test-roster.el --- Tests for jabber-roster  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; Roster display and contact sorting.
+
+;;; Code:
 
 (require 'ert)
 
@@ -88,22 +94,22 @@
 
 ;;; Group 4: jabber-fix-status
 
-(ert-deftest jabber-test-fix-status-trailing-newlines ()
+(ert-deftest jabber-test-roster-fix-status-trailing-newlines ()
   "Trailing newlines are removed."
   (let ((jabber-remove-newlines nil))
     (should (string= (jabber-fix-status "Hello\n\n") "Hello"))))
 
-(ert-deftest jabber-test-fix-status-internal-newlines-removed ()
+(ert-deftest jabber-test-roster-fix-status-internal-newlines-removed ()
   "Internal newlines removed when jabber-remove-newlines is t."
   (let ((jabber-remove-newlines t))
     (should (string= (jabber-fix-status "line1\nline2") "line1 line2"))))
 
-(ert-deftest jabber-test-fix-status-internal-newlines-kept ()
+(ert-deftest jabber-test-roster-fix-status-internal-newlines-kept ()
   "Internal newlines kept when jabber-remove-newlines is nil."
   (let ((jabber-remove-newlines nil))
     (should (string= (jabber-fix-status "line1\nline2") "line1\nline2"))))
 
-(ert-deftest jabber-test-fix-status-nil ()
+(ert-deftest jabber-test-roster-fix-status-nil ()
   "Nil input returns nil."
   (should (null (jabber-fix-status nil))))
 
@@ -129,5 +135,5 @@
                (inherit (plist-get attrs :inherit)))
           (should (eq inherit expected-parent)))))))
 
-(provide 'jabber-roster-tests)
-;;; jabber-roster-tests.el ends here
+(provide 'jabber-test-roster)
+;;; jabber-test-roster.el ends here

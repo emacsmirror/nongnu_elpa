@@ -1,4 +1,10 @@
-;;; jabber-chatbuffer-tests.el --- Tests for ewoc hash table API  -*- lexical-binding: t; -*-
+;;; jabber-test-chatbuffer.el --- Tests for jabber-chatbuffer  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; Shared chat buffer infrastructure (ewoc, message nodes).
+
+;;; Code:
 
 (require 'ert)
 (require 'ewoc)
@@ -12,7 +18,7 @@
 
 ;;; Test helpers
 
-(defmacro jabber-chatbuffer-test-with-ewoc (&rest body)
+(defmacro jabber-test-chatbuffer-with-ewoc (&rest body)
   "Set up a temp buffer with a chat ewoc and hash table, then run BODY."
   (declare (indent 0) (debug t))
   `(with-temp-buffer
@@ -22,33 +28,33 @@
 
 ;;; Group 1: jabber-chat-ewoc-enter
 
-(ert-deftest jabber-chat-test-ewoc-enter-registers-id ()
+(ert-deftest jabber-test-chatbuffer-ewoc-enter-registers-id ()
   "Inserting a message with :id registers it in the hash table."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (let* ((msg (list :id "msg-001" :body "hello" :timestamp (current-time)))
            (node (jabber-chat-ewoc-enter (list :local msg))))
       (should node)
       (should (eq node (gethash "msg-001" jabber-chat--msg-nodes))))))
 
-(ert-deftest jabber-chat-test-ewoc-enter-skips-nil-id ()
+(ert-deftest jabber-test-chatbuffer-ewoc-enter-skips-nil-id ()
   "Inserting a message without :id does not pollute the hash table."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (let* ((msg (list :body "notice text" :timestamp (current-time)))
            (node (jabber-chat-ewoc-enter (list :notice msg))))
       (should node)
       (should (zerop (hash-table-count jabber-chat--msg-nodes))))))
 
-(ert-deftest jabber-chat-test-ewoc-enter-notice-string ()
+(ert-deftest jabber-test-chatbuffer-ewoc-enter-notice-string ()
   "Inserting a notice with string body does not error."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (let ((node (jabber-chat-ewoc-enter (list :notice "Someone joined"
                                               :time (current-time)))))
       (should node)
       (should (zerop (hash-table-count jabber-chat--msg-nodes))))))
 
-(ert-deftest jabber-chat-test-ewoc-enter-multiple-ids ()
+(ert-deftest jabber-test-chatbuffer-ewoc-enter-multiple-ids ()
   "Multiple messages with distinct IDs are all registered."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (dotimes (i 5)
       (let ((msg (list :id (format "msg-%03d" i) :body "x"
                        :timestamp (current-time))))
@@ -58,28 +64,28 @@
 
 ;;; Group 2: jabber-chat-ewoc-find-by-id
 
-(ert-deftest jabber-chat-test-find-by-id-returns-node ()
+(ert-deftest jabber-test-chatbuffer-find-by-id-returns-node ()
   "Looking up a registered ID returns the correct ewoc node."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (let* ((msg (list :id "find-me" :body "test" :timestamp (current-time)))
            (node (jabber-chat-ewoc-enter (list :foreign msg))))
       (should (eq node (jabber-chat-ewoc-find-by-id "find-me"))))))
 
-(ert-deftest jabber-chat-test-find-by-id-returns-nil-for-missing ()
+(ert-deftest jabber-test-chatbuffer-find-by-id-returns-nil-for-missing ()
   "Looking up a nonexistent ID returns nil."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (should-not (jabber-chat-ewoc-find-by-id "no-such-id"))))
 
-(ert-deftest jabber-chat-test-find-by-id-nil-safe ()
+(ert-deftest jabber-test-chatbuffer-find-by-id-nil-safe ()
   "Looking up nil returns nil without error."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (should-not (jabber-chat-ewoc-find-by-id nil))))
 
 ;;; Group 3: In-place status update
 
-(ert-deftest jabber-chat-test-status-update-in-place ()
+(ert-deftest jabber-test-chatbuffer-status-update-in-place ()
   "Mutating :status on the shared plist is visible through the ewoc node."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (let* ((msg (list :id "msg-upd" :body "hi" :status :sent
                       :timestamp (current-time)))
            (node (jabber-chat-ewoc-enter (list :local msg))))
@@ -88,9 +94,9 @@
       ;; The ewoc node shares the same plist object
       (should (eq :delivered (plist-get (cadr (ewoc-data node)) :status))))))
 
-(ert-deftest jabber-chat-test-status-update-via-lookup ()
+(ert-deftest jabber-test-chatbuffer-status-update-via-lookup ()
   "Status update via find-by-id + plist-put works end-to-end."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (let ((msg (list :id "msg-e2e" :body "test" :status :sent
                      :timestamp (current-time))))
       (jabber-chat-ewoc-enter (list :local msg))
@@ -102,9 +108,9 @@
 
 ;;; Group 4: Hash table cleanup
 
-(ert-deftest jabber-chat-test-hash-cleanup-on-clear ()
+(ert-deftest jabber-test-chatbuffer-hash-cleanup-on-clear ()
   "Clearing the hash table via clrhash removes all entries."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (dotimes (i 3)
       (let ((msg (list :id (format "clr-%d" i) :body "x"
                        :timestamp (current-time))))
@@ -115,9 +121,9 @@
     (clrhash jabber-chat--msg-nodes)
     (should (zerop (hash-table-count jabber-chat--msg-nodes)))))
 
-(ert-deftest jabber-chat-test-hash-remhash-on-delete ()
+(ert-deftest jabber-test-chatbuffer-hash-remhash-on-delete ()
   "Removing an entry via remhash drops that ID from the table."
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (let ((msg (list :id "del-me" :body "x" :timestamp (current-time))))
       (jabber-chat-ewoc-enter (list :local msg)))
     (should (gethash "del-me" jabber-chat--msg-nodes))
@@ -126,7 +132,7 @@
 
 ;;; Group 5: DB backlog includes stanza ID
 
-(ert-deftest jabber-db-test-backlog-includes-stanza-id ()
+(ert-deftest jabber-test-chatbuffer-backlog-includes-stanza-id ()
   "Backlog entries from DB include :id from stanza_id column."
   (skip-unless (fboundp 'sqlite-open))
   (let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
@@ -151,7 +157,7 @@
       (when (file-directory-p jabber-db-test--dir)
         (delete-directory jabber-db-test--dir t)))))
 
-(ert-deftest jabber-db-test-backlog-status-from-receipts ()
+(ert-deftest jabber-test-chatbuffer-backlog-status-from-receipts ()
   "Backlog entries derive :status from delivered_at/displayed_at."
   (skip-unless (fboundp 'sqlite-open))
   (let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
@@ -192,7 +198,7 @@
 
 ;;; Group 6: :id in message plist from stanza
 
-(ert-deftest jabber-chat-test-build-msg-plist-includes-id ()
+(ert-deftest jabber-test-chatbuffer-build-msg-plist-includes-id ()
   "jabber-chat--build-msg-plist extracts the stanza id attribute."
   (let* ((stanza '(message ((from . "alice@example.com")
                             (id . "emacs-msg-42")
@@ -201,7 +207,7 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should (equal "emacs-msg-42" (plist-get plist :id)))))
 
-(ert-deftest jabber-chat-test-build-msg-plist-nil-id ()
+(ert-deftest jabber-test-chatbuffer-build-msg-plist-nil-id ()
   "jabber-chat--build-msg-plist returns nil :id when stanza has none."
   (let* ((stanza '(message ((from . "alice@example.com")
                             (type . "chat"))
@@ -211,7 +217,9 @@
 
 ;;; Group 7: OMEMO anonymous-room warning
 
-(ert-deftest jabber-chatbuffer-test-omemo-warns-anonymous-room ()
+(require 'jabber-omemo)
+
+(ert-deftest jabber-test-chatbuffer-omemo-warns-anonymous-room ()
   "Enabling OMEMO in a room with no visible JIDs emits a warning."
   (let ((messages nil)
         (jabber-muc-participants nil))
@@ -230,7 +238,7 @@
         (jabber-chat-encryption-set-omemo)
         (should (cl-some (lambda (m) (string-match-p "anonymous" m)) messages))))))
 
-(ert-deftest jabber-chatbuffer-test-omemo-no-warning-when-jids-visible ()
+(ert-deftest jabber-test-chatbuffer-omemo-no-warning-when-jids-visible ()
   "No warning when participant JIDs are available."
   (let ((messages nil)
         (jabber-muc-participants nil))
@@ -251,7 +259,7 @@
 
 ;;; Group 8: Buffer lookup registry
 
-(ert-deftest jabber-chatbuffer-test-registry-chat-find ()
+(ert-deftest jabber-test-chatbuffer-registry-chat-find ()
   "Register a temp buffer as a chat buffer; registry-get returns it."
   (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
     (with-temp-buffer
@@ -260,7 +268,7 @@
       (should (eq (current-buffer)
                   (jabber-chatbuffer--registry-get 'chat "alice@example.com"))))))
 
-(ert-deftest jabber-chatbuffer-test-registry-kill-removes-entry ()
+(ert-deftest jabber-test-chatbuffer-registry-kill-removes-entry ()
   "Killing the buffer removes its registry entry."
   (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
     (let ((buf (generate-new-buffer " *test-chat-registry*")))
@@ -272,7 +280,7 @@
       ;; The kill-buffer-hook removed it; get now returns nil.
       (should-not (jabber-chatbuffer--registry-get 'chat "bob@example.com")))))
 
-(ert-deftest jabber-chatbuffer-test-registry-no-collision ()
+(ert-deftest jabber-test-chatbuffer-registry-no-collision ()
   "MUC and chat buffers with the same bare JID do not collide."
   (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
     (let ((chat-buf (generate-new-buffer " *test-chat*"))
@@ -292,7 +300,7 @@
         (kill-buffer chat-buf)
         (kill-buffer muc-buf)))))
 
-(ert-deftest jabber-chatbuffer-test-registry-muc-private ()
+(ert-deftest jabber-test-chatbuffer-registry-muc-private ()
   "MUC-private lookup by group+nick returns correct buffer."
   (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
     (let ((buf (generate-new-buffer " *test-muc-private*")))
@@ -307,7 +315,7 @@
                          'muc-private "room@conf.example.com/alice"))))
         (kill-buffer buf)))))
 
-(ert-deftest jabber-chatbuffer-test-registry-kill-full-jid-removes-bare-key ()
+(ert-deftest jabber-test-chatbuffer-registry-kill-full-jid-removes-bare-key ()
   "kill-buffer-hook cleans up bare-JID key when chatting-with is a full JID."
   (let ((jabber-chatbuffer--registry (make-hash-table :test #'equal)))
     (let ((buf (generate-new-buffer " *test-chat-full-jid*")))
@@ -324,7 +332,7 @@
 
 ;;; Group 9: OMEMO immediate display status transitions
 
-(defmacro jabber-chatbuffer-test-with-rendering-ewoc (&rest body)
+(defmacro jabber-test-chatbuffer-with-rendering-ewoc (&rest body)
   "Set up a temp buffer with a rendering chat ewoc, then run BODY.
 Uses `jabber-chat-pp' so status indicators are actually rendered."
   (declare (indent 0) (debug t))
@@ -338,9 +346,9 @@ Uses `jabber-chat-pp' so status indicators are actually rendered."
                   (lambda (_msg _ts _delayed _/me-p) (insert "me: "))))
          ,@body))))
 
-(ert-deftest jabber-chat-test-sending-status-renders-warning-dot ()
+(ert-deftest jabber-test-chatbuffer-sending-status-renders-warning-dot ()
   "A message with :sending status renders a warning-face dot."
-  (jabber-chatbuffer-test-with-rendering-ewoc
+  (jabber-test-chatbuffer-with-rendering-ewoc
     (let* ((msg (list :id "omemo-001" :body "secret"
                       :status :sending :timestamp (current-time)))
            (node (jabber-chat-ewoc-enter (list :local msg))))
@@ -349,9 +357,9 @@ Uses `jabber-chat-pp' so status indicators are actually rendered."
       (should (search-forward "\u00b7" nil t))
       (should (eq 'warning (get-text-property (1- (point)) 'face))))))
 
-(ert-deftest jabber-chat-test-status-sending-to-sent ()
+(ert-deftest jabber-test-chatbuffer-status-sending-to-sent ()
   "Status :sending -> :sent updates the indicator face."
-  (jabber-chatbuffer-test-with-rendering-ewoc
+  (jabber-test-chatbuffer-with-rendering-ewoc
     (let* ((msg (list :id "omemo-002" :body "hello"
                       :status :sending :timestamp (current-time)))
            (node (jabber-chat-ewoc-enter (list :local msg))))
@@ -361,9 +369,9 @@ Uses `jabber-chat-pp' so status indicators are actually rendered."
       (should (search-forward "\u00b7" nil t))
       (should (eq 'shadow (get-text-property (1- (point)) 'face))))))
 
-(ert-deftest jabber-chat-test-status-sending-to-undelivered ()
+(ert-deftest jabber-test-chatbuffer-status-sending-to-undelivered ()
   "Status :sending -> :undelivered shows error-face X."
-  (jabber-chatbuffer-test-with-rendering-ewoc
+  (jabber-test-chatbuffer-with-rendering-ewoc
     (let* ((msg (list :id "omemo-003" :body "fail"
                       :status :sending :timestamp (current-time)))
            (node (jabber-chat-ewoc-enter (list :local msg))))
@@ -373,10 +381,10 @@ Uses `jabber-chat-pp' so status indicators are actually rendered."
       (should (search-forward "\u2717" nil t))
       (should (eq 'error (get-text-property (1- (point)) 'face))))))
 
-(ert-deftest jabber-chat-test-send-failed-restores-body ()
+(ert-deftest jabber-test-chatbuffer-send-failed-restores-body ()
   "jabber-omemo--send-failed restores body text to buffer input area."
   (require 'jabber-omemo)
-  (jabber-chatbuffer-test-with-ewoc
+  (jabber-test-chatbuffer-with-ewoc
     (let* ((jabber-point-insert (point-marker))
            (msg (list :id "omemo-004" :body "restore me"
                       :status :sending :timestamp (current-time)))
@@ -390,7 +398,7 @@ Uses `jabber-chat-pp' so status indicators are actually rendered."
 
 ;;; Group 10: jabber-chat-mode-setup ewoc idempotency
 
-(ert-deftest jabber-chatbuffer-test-mode-setup-preserves-ewoc-on-repeat ()
+(ert-deftest jabber-test-chatbuffer-mode-setup-preserves-ewoc-on-repeat ()
   "Calling jabber-chat-mode-setup twice preserves the existing ewoc.
 The `make-local-variable' pattern for jabber-chat-ewoc and
 jabber-point-insert is critical: on reconnection the function is called
@@ -428,7 +436,7 @@ again, and the ewoc created on the first call must survive."
           ;; The message inserted before the second call is still there
           (should (gethash "persist-me" jabber-chat--msg-nodes)))))))
 
-(ert-deftest jabber-chatbuffer-test-mode-setup-creates-ewoc-on-first-call ()
+(ert-deftest jabber-test-chatbuffer-mode-setup-creates-ewoc-on-first-call ()
   "First call to jabber-chat-mode-setup creates a new ewoc and marker."
   (with-temp-buffer
     (let ((jabber-chat-ewoc nil)
@@ -450,7 +458,7 @@ again, and the ewoc created on the first call must survive."
         (should (markerp jabber-point-insert))
         (should (hash-table-p jabber-chat--msg-nodes))))))
 
-(ert-deftest jabber-chatbuffer-test-mode-setup-updates-connection ()
+(ert-deftest jabber-test-chatbuffer-mode-setup-updates-connection ()
   "Second call to jabber-chat-mode-setup updates jabber-buffer-connection."
   (with-temp-buffer
     (let ((jabber-chat-ewoc nil)
@@ -472,6 +480,6 @@ again, and the ewoc created on the first call must survive."
         (jabber-chat-mode-setup 'jc-new #'ignore)
         (should (eq 'jc-new jabber-buffer-connection))))))
 
-(provide 'jabber-chatbuffer-tests)
+(provide 'jabber-test-chatbuffer)
 
-;;; jabber-chatbuffer-tests.el ends here
+;;; jabber-test-chatbuffer.el ends here

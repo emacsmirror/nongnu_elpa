@@ -1,18 +1,24 @@
-;;; jabber-csi-tests.el --- Tests for jabber-csi  -*- lexical-binding: t; -*-
+;;; jabber-test-csi.el --- Tests for jabber-csi  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0352 Client State Indication.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-csi)
 
 ;;; Group 1: State detection
 
-(ert-deftest jabber-csi-test-focused-p-returns-bool ()
+(ert-deftest jabber-test-csi-focused-p-returns-bool ()
   "focused-p returns non-nil or nil without error."
   (should (or (jabber-csi--focused-p)
               (not (jabber-csi--focused-p)))))
 
 ;;; Group 2: Send logic
 
-(ert-deftest jabber-csi-test-send-active-when-focused ()
+(ert-deftest jabber-test-csi-send-active-when-focused ()
   "Sends active element when focused."
   (let ((sent nil)
         (jabber-csi-enable t)
@@ -27,7 +33,7 @@
       (should (eq (car sent) 'active))
       (should (eq jabber-csi--last-state 'active)))))
 
-(ert-deftest jabber-csi-test-send-inactive-when-unfocused ()
+(ert-deftest jabber-test-csi-send-inactive-when-unfocused ()
   "Sends inactive element when unfocused."
   (let ((sent nil)
         (jabber-csi-enable t)
@@ -42,7 +48,7 @@
       (should (eq (car sent) 'inactive))
       (should (eq jabber-csi--last-state 'inactive)))))
 
-(ert-deftest jabber-csi-test-no-duplicate-send ()
+(ert-deftest jabber-test-csi-no-duplicate-send ()
   "Does not resend the same state."
   (let ((send-count 0)
         (jabber-csi-enable t)
@@ -55,7 +61,7 @@
       (jabber-csi--send-state)
       (should (= send-count 0)))))
 
-(ert-deftest jabber-csi-test-disabled-sends-nothing ()
+(ert-deftest jabber-test-csi-disabled-sends-nothing ()
   "Sends nothing when jabber-csi-enable is nil."
   (let ((sent nil)
         (jabber-csi-enable nil)
@@ -68,7 +74,7 @@
       (jabber-csi--send-state)
       (should-not sent))))
 
-(ert-deftest jabber-csi-test-on-connect-resets-state ()
+(ert-deftest jabber-test-csi-on-connect-resets-state ()
   "on-connect resets last-state and sends current state."
   (let ((jabber-csi-enable t)
         (jabber-csi--last-state 'active)
@@ -83,7 +89,7 @@
 
 ;;; Group 3: Debounce
 
-(ert-deftest jabber-csi-test-debounce-coalesces ()
+(ert-deftest jabber-test-csi-debounce-coalesces ()
   "Rapid focus-changed calls produce only one pending timer."
   (let ((jabber-csi--timer nil))
     (cl-letf (((symbol-function 'jabber-csi--focused-p)
@@ -96,7 +102,7 @@
       (should (timerp jabber-csi--timer))
       (jabber-csi--stop-timer))))
 
-(ert-deftest jabber-csi-test-disconnect-cleanup ()
+(ert-deftest jabber-test-csi-disconnect-cleanup ()
   "on-disconnect cancels pending timer and resets state."
   (let ((jabber-csi--timer (run-with-timer 10 nil #'ignore))
         (jabber-csi--last-state 'active))
@@ -104,6 +110,6 @@
     (should-not jabber-csi--timer)
     (should-not jabber-csi--last-state)))
 
-(provide 'jabber-csi-tests)
+(provide 'jabber-test-csi)
 
-;;; jabber-csi-tests.el ends here
+;;; jabber-test-csi.el ends here

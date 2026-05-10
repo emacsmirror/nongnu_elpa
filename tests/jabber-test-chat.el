@@ -1,4 +1,10 @@
-;;; jabber-chat-tests.el --- Tests for jabber-chat  -*- lexical-binding: t; -*-
+;;; jabber-test-chat.el --- Tests for jabber-chat  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; One-to-one chat message parsing and display.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-chat)
@@ -9,7 +15,7 @@
 
 ;;; Group 1: jabber-chat--msg-plist-from-stanza
 
-(ert-deftest jabber-chat-test-plist-from-stanza-basic ()
+(ert-deftest jabber-test-chat-plist-from-stanza-basic ()
   "Basic chat message produces correct plist keys."
   (let* ((stanza '(message ((from . "alice@example.com/res")
                             (type . "chat"))
@@ -23,7 +29,7 @@
     (should-not (plist-get plist :error-text))
     (should (plist-get plist :timestamp))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-nil-body ()
+(ert-deftest jabber-test-chat-plist-from-stanza-nil-body ()
   "Message with no body produces nil :body."
   (let* ((stanza '(message ((from . "alice@example.com"))
                            (subject () "Topic")))
@@ -31,7 +37,7 @@
     (should-not (plist-get plist :body))
     (should (string= "Topic" (plist-get plist :subject)))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-muc ()
+(ert-deftest jabber-test-chat-plist-from-stanza-muc ()
   "MUC message has room JID with nick as resource."
   (let* ((stanza '(message ((from . "room@conf.example.com/Alice")
                             (type . "groupchat"))
@@ -40,7 +46,7 @@
     (should (string= "room@conf.example.com/Alice" (plist-get plist :from)))
     (should (string= "Hi room" (plist-get plist :body)))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-delay ()
+(ert-deftest jabber-test-chat-plist-from-stanza-delay ()
   "Message with XEP-0203 delay element is marked delayed."
   (let* ((stanza '(message ((from . "alice@example.com"))
                            (body () "Old message")
@@ -50,14 +56,14 @@
     (should (plist-get plist :delayed))
     (should (string= "Old message" (plist-get plist :body)))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-forced-delay ()
+(ert-deftest jabber-test-chat-plist-from-stanza-forced-delay ()
   "Passing DELAYED arg forces :delayed to non-nil."
   (let* ((stanza '(message ((from . "alice@example.com"))
                            (body () "Backlog")))
          (plist (jabber-chat--msg-plist-from-stanza stanza t)))
     (should (plist-get plist :delayed))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-oob ()
+(ert-deftest jabber-test-chat-plist-from-stanza-oob ()
   "OOB URL and description are extracted."
   (let* ((stanza '(message ((from . "alice@example.com"))
                            (body () "Check this")
@@ -68,7 +74,7 @@
     (should (string= "https://example.com/file.png" (plist-get plist :oob-url)))
     (should (string= "A picture" (plist-get plist :oob-desc)))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-error ()
+(ert-deftest jabber-test-chat-plist-from-stanza-error ()
   "Error node is parsed into :error-text."
   (let* ((stanza '(message ((from . "alice@example.com")
                             (type . "error"))
@@ -79,7 +85,7 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should (stringp (plist-get plist :error-text)))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-oob-no-url ()
+(ert-deftest jabber-test-chat-plist-from-stanza-oob-no-url ()
   "OOB element with no url child yields nil :oob-url."
   (let* ((stanza '(message ((from . "alice@example.com"))
                            (body () "Check this")
@@ -87,7 +93,7 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should-not (plist-get plist :oob-url))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-invite ()
+(ert-deftest jabber-test-chat-plist-from-stanza-invite ()
   "MUC invitation preserves raw XML in :xml-data."
   (let* ((stanza '(message ((from . "room@conf.example.com"))
                            (x ((xmlns . "http://jabber.org/protocol/muc#user"))
@@ -97,7 +103,7 @@
     (should (plist-get plist :xml-data))
     (should (eq stanza (plist-get plist :xml-data)))))
 
-(ert-deftest jabber-chat-test-plist-from-stanza-no-invite-no-xml ()
+(ert-deftest jabber-test-chat-plist-from-stanza-no-invite-no-xml ()
   "Non-invitation message does not include :xml-data."
   (let* ((stanza '(message ((from . "alice@example.com"))
                            (body () "Normal message")))
@@ -106,39 +112,39 @@
 
 ;;; Group 2: jabber-chat--oob-field
 
-(ert-deftest jabber-chat-test-oob-field-url ()
+(ert-deftest jabber-test-chat-oob-field-url ()
   "Extract URL from OOB node."
   (let ((oob '(x ((xmlns . "jabber:x:oob"))
                   (url () "https://example.com/file.png"))))
     (should (string= (jabber-chat--oob-field oob 'url)
                      "https://example.com/file.png"))))
 
-(ert-deftest jabber-chat-test-oob-field-missing-child ()
+(ert-deftest jabber-test-chat-oob-field-missing-child ()
   "Return nil when OOB child element is absent."
   (let ((oob '(x ((xmlns . "jabber:x:oob"))
                   (url () "https://example.com/file.png"))))
     (should-not (jabber-chat--oob-field oob 'desc))))
 
-(ert-deftest jabber-chat-test-oob-field-nil-node ()
+(ert-deftest jabber-test-chat-oob-field-nil-node ()
   "Return nil when OOB node is nil."
   (should-not (jabber-chat--oob-field nil 'url)))
 
 ;;; Group 3: jabber-chat--has-muc-invite-p
 
-(ert-deftest jabber-chat-test-has-muc-invite-positive ()
+(ert-deftest jabber-test-chat-has-muc-invite-positive ()
   "Detect MUC invitation in stanza."
   (let ((stanza '(message ((from . "room@conf.example.com"))
                   (x ((xmlns . "http://jabber.org/protocol/muc#user"))
                      (invite ((from . "alice@example.com")))))))
     (should (jabber-chat--has-muc-invite-p stanza))))
 
-(ert-deftest jabber-chat-test-has-muc-invite-negative ()
+(ert-deftest jabber-test-chat-has-muc-invite-negative ()
   "Return nil for stanza without MUC invitation."
   (let ((stanza '(message ((from . "alice@example.com"))
                   (body () "Hello"))))
     (should-not (jabber-chat--has-muc-invite-p stanza))))
 
-(ert-deftest jabber-chat-test-has-muc-invite-muc-user-no-invite ()
+(ert-deftest jabber-test-chat-has-muc-invite-muc-user-no-invite ()
   "Return nil when muc#user element exists but has no invite child."
   (let ((stanza '(message ((from . "room@conf.example.com"))
                   (x ((xmlns . "http://jabber.org/protocol/muc#user"))
@@ -147,38 +153,38 @@
 
 ;;; Group 4: jabber-chat-entry-time
 
-(ert-deftest jabber-chat-test-entry-time-plist ()
+(ert-deftest jabber-test-chat-entry-time-plist ()
   "Entry time from a msg-plist entry."
   (let* ((ts (encode-time '(0 30 14 15 1 2025 nil nil 0)))
          (entry (list :foreign (list :from "alice" :timestamp ts))))
     (should (equal ts (jabber-chat-entry-time entry)))))
 
-(ert-deftest jabber-chat-test-entry-time-rare-time ()
+(ert-deftest jabber-test-chat-entry-time-rare-time ()
   "Entry time from a :rare-time entry."
   (let* ((ts (encode-time '(0 0 12 10 3 2025 nil nil 0)))
          (entry (list :rare-time ts)))
     (should (equal ts (jabber-chat-entry-time entry)))))
 
-(ert-deftest jabber-chat-test-entry-time-string-notice ()
+(ert-deftest jabber-test-chat-entry-time-string-notice ()
   "Entry time from a string :muc-notice with :time in cddr."
   (let* ((ts (current-time))
          (entry (list :muc-notice "user enters the room" :time ts)))
     (should (equal ts (jabber-chat-entry-time entry)))))
 
-(ert-deftest jabber-chat-test-entry-time-string-no-time ()
+(ert-deftest jabber-test-chat-entry-time-string-no-time ()
   "String entry without :time returns nil."
   (let ((entry (list :notice "some notice")))
     (should-not (jabber-chat-entry-time entry))))
 
 ;;; Group 5: jabber-chat--decrypt-if-needed
 
-(ert-deftest jabber-chat-test-decrypt-if-needed-returns-xml-unchanged ()
+(ert-deftest jabber-test-chat-decrypt-if-needed-returns-xml-unchanged ()
   "No-op decryption returns xml-data unchanged."
   (let ((xml '(message ((from . "alice@example.com") (type . "chat"))
                        (body () "Hello!"))))
     (should (eq xml (jabber-chat--decrypt-if-needed nil xml)))))
 
-(ert-deftest jabber-chat-test-decrypt-if-needed-preserves-complex-stanza ()
+(ert-deftest jabber-test-chat-decrypt-if-needed-preserves-complex-stanza ()
   "No-op decryption preserves a stanza with nested elements."
   (let ((xml '(message ((from . "bob@example.com"))
                        (body () "Encrypted?")
@@ -188,7 +194,7 @@
 
 ;;; Group 6: jabber-chat--set-body
 
-(ert-deftest jabber-chat-test-set-body-replaces-existing ()
+(ert-deftest jabber-test-chat-set-body-replaces-existing ()
   "set-body replaces existing <body> text."
   (let ((xml '(message ((from . "alice@example.com"))
                        (body () "old text"))))
@@ -197,7 +203,7 @@
                       (car (jabber-xml-node-children
                             (car (jabber-xml-get-children xml 'body))))))))
 
-(ert-deftest jabber-chat-test-set-body-creates-missing ()
+(ert-deftest jabber-test-chat-set-body-creates-missing ()
   "set-body appends <body> when none exists."
   (let ((xml '(message ((from . "alice@example.com")))))
     (jabber-chat--set-body xml "created")
@@ -208,7 +214,7 @@
 
 ;;; Group 7: decrypt handler dispatch
 
-(ert-deftest jabber-chat-test-register-decrypt-handler-adds-entry ()
+(ert-deftest jabber-test-chat-register-decrypt-handler-adds-entry ()
   "Register a handler, assert it appears in the alist."
   (let ((jabber-chat-decrypt-handlers nil)
         (jabber-chat--sorted-decrypt-handlers-cache nil))
@@ -217,7 +223,7 @@
      :priority 10 :error-label "Test")
     (should (assq 'test-handler jabber-chat-decrypt-handlers))))
 
-(ert-deftest jabber-chat-test-unregister-decrypt-handler-removes-entry ()
+(ert-deftest jabber-test-chat-unregister-decrypt-handler-removes-entry ()
   "Register then unregister, assert the alist is empty."
   (let ((jabber-chat-decrypt-handlers nil)
         (jabber-chat--sorted-decrypt-handlers-cache nil))
@@ -227,7 +233,7 @@
     (jabber-chat-unregister-decrypt-handler 'test-handler)
     (should-not jabber-chat-decrypt-handlers)))
 
-(ert-deftest jabber-chat-test-register-decrypt-handler-replaces-existing ()
+(ert-deftest jabber-test-chat-register-decrypt-handler-replaces-existing ()
   "Register a handler twice, assert only one entry with new priority."
   (let ((jabber-chat-decrypt-handlers nil)
         (jabber-chat--sorted-decrypt-handlers-cache nil))
@@ -242,7 +248,7 @@
                                          jabber-chat-decrypt-handlers))
                               :priority)))))
 
-(ert-deftest jabber-chat-test-decrypt-dispatches-to-matching-handler ()
+(ert-deftest jabber-test-chat-decrypt-dispatches-to-matching-handler ()
   "Handler whose :detect matches gets its :decrypt called."
   (let ((jabber-chat-decrypt-handlers nil)
         (jabber-chat--sorted-decrypt-handlers-cache nil)
@@ -259,7 +265,7 @@
       (jabber-chat--decrypt-if-needed nil xml)
       (should called))))
 
-(ert-deftest jabber-chat-test-decrypt-skips-non-matching-handler ()
+(ert-deftest jabber-test-chat-decrypt-skips-non-matching-handler ()
   "Handler whose :detect returns nil leaves xml-data unchanged."
   (let ((jabber-chat-decrypt-handlers nil)
         (jabber-chat--sorted-decrypt-handlers-cache nil)
@@ -274,7 +280,7 @@
                          (body () "hello"))))
       (should (eq xml (jabber-chat--decrypt-if-needed nil xml))))))
 
-(ert-deftest jabber-chat-test-decrypt-priority-order ()
+(ert-deftest jabber-test-chat-decrypt-priority-order ()
   "Lower-priority handler runs first when both match."
   (let ((jabber-chat-decrypt-handlers nil)
         (jabber-chat--sorted-decrypt-handlers-cache nil)
@@ -297,7 +303,7 @@
       (jabber-chat--decrypt-if-needed nil xml)
       (should (= 10 winner)))))
 
-(ert-deftest jabber-chat-test-decrypt-error-replaces-body ()
+(ert-deftest jabber-test-chat-decrypt-error-replaces-body ()
   "Handler that signals error gets body replaced with error label."
   (let ((jabber-chat-decrypt-handlers nil)
         (jabber-chat--sorted-decrypt-handlers-cache nil)
@@ -315,7 +321,7 @@
                         (car (jabber-xml-node-children
                               (car (jabber-xml-get-children xml 'body)))))))))
 
-(ert-deftest jabber-chat-test-decrypt-no-handlers-returns-unchanged ()
+(ert-deftest jabber-test-chat-decrypt-no-handlers-returns-unchanged ()
   "With empty handler alist, xml-data passes through."
   (let ((jabber-chat-decrypt-handlers nil)
         (jabber-chat--sorted-decrypt-handlers-cache nil)
@@ -324,7 +330,7 @@
                          (body () "hello"))))
       (should (eq xml (jabber-chat--decrypt-if-needed nil xml))))))
 
-(ert-deftest jabber-chat-test-decrypt-skips-nil-from ()
+(ert-deftest jabber-test-chat-decrypt-skips-nil-from ()
   "Stanza with no from attribute bypasses decrypt dispatch entirely."
   (let ((jabber-chat--crypto-loaded t)
         (called nil))
@@ -342,7 +348,7 @@
 
 ;;; Group 8: jabber-chat-goto-address error handling
 
-(ert-deftest jabber-chat-test-goto-address-logs-error-on-failure ()
+(ert-deftest jabber-test-chat-goto-address-logs-error-on-failure ()
   "goto-address error is logged via message, not silently swallowed."
   (let ((logged-messages nil))
     (cl-letf (((symbol-function 'goto-address-fontify)
@@ -358,14 +364,14 @@
                    (string-match-p "goto-address-fontify failed" m))
                  logged-messages))))))
 
-(ert-deftest jabber-chat-test-goto-address-succeeds-normally ()
+(ert-deftest jabber-test-chat-goto-address-succeeds-normally ()
   "goto-address runs without error when fontify succeeds."
   (with-temp-buffer
     (insert "Visit https://example.com today")
     ;; Should not signal an error
     (jabber-chat-goto-address nil nil :insert)))
 
-(ert-deftest jabber-chat-test-goto-address-skips-non-insert-mode ()
+(ert-deftest jabber-test-chat-goto-address-skips-non-insert-mode ()
   "goto-address does nothing when mode is not :insert."
   (let ((called nil))
     (cl-letf (((symbol-function 'goto-address-fontify)
@@ -377,12 +383,12 @@
 
 ;;; Group 9: jabber-chat-muc-presence-patterns-history variable
 
-(ert-deftest jabber-chat-test-muc-presence-patterns-history-exists ()
+(ert-deftest jabber-test-chat-muc-presence-patterns-history-exists ()
   "The correctly-named history variable exists and is nil by default."
   (should (boundp 'jabber-chat-muc-presence-patterns-history))
   ;; The old typo should not exist
   (should-not (boundp 'jaber-chat-much-presence-patterns-history)))
 
-(provide 'jabber-chat-tests)
+(provide 'jabber-test-chat)
 
-;;; jabber-chat-tests.el ends here
+;;; jabber-test-chat.el ends here

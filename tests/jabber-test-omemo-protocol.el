@@ -1,4 +1,10 @@
-;;; jabber-omemo-protocol-tests.el --- ERT tests for OMEMO protocol logic  -*- lexical-binding: t; -*-
+;;; jabber-test-omemo-protocol.el --- Tests for jabber-omemo-protocol  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; OMEMO protocol session management.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-chat)
@@ -6,14 +12,14 @@
 
 ;;; Test infrastructure
 
-(defmacro jabber-omemo-protocol-test-with-db (&rest body)
+(defmacro jabber-test-omemo-protocol-with-db (&rest body)
   "Run BODY with a fresh temp SQLite database.
 Clears OMEMO in-memory caches and tears down on exit."
   (declare (indent 0) (debug t))
-  `(let* ((jabber-omemo-protocol-test--dir
+  `(let* ((jabber-test-omemo-protocol--dir
            (make-temp-file "jabber-omemo-proto-test" t))
           (jabber-db-path (expand-file-name "test.sqlite"
-                                            jabber-omemo-protocol-test--dir))
+                                            jabber-test-omemo-protocol--dir))
           (jabber-db--connection nil)
           (jabber-omemo--device-ids (make-hash-table :test 'equal))
           (jabber-omemo--stores (make-hash-table :test 'equal))
@@ -24,12 +30,12 @@ Clears OMEMO in-memory caches and tears down on exit."
            (jabber-db-ensure-open)
            ,@body)
        (jabber-db-close)
-       (when (file-directory-p jabber-omemo-protocol-test--dir)
-         (delete-directory jabber-omemo-protocol-test--dir t)))))
+       (when (file-directory-p jabber-test-omemo-protocol--dir)
+         (delete-directory jabber-test-omemo-protocol--dir t)))))
 
 ;;; Group 1: Device list XML
 
-(ert-deftest jabber-omemo-protocol-test-parse-device-list ()
+(ert-deftest jabber-test-omemo-protocol-parse-device-list ()
   "parse-device-list extracts device IDs from XML items."
   (let ((items '((item ((id . "current"))
                        (list ((xmlns . "eu.siacs.conversations.axolotl"))
@@ -39,17 +45,17 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should (equal '(123 456 789)
                    (jabber-omemo--parse-device-list items)))))
 
-(ert-deftest jabber-omemo-protocol-test-parse-device-list-empty ()
+(ert-deftest jabber-test-omemo-protocol-parse-device-list-empty ()
   "parse-device-list handles empty device list."
   (let ((items '((item ((id . "current"))
                        (list ((xmlns . "eu.siacs.conversations.axolotl")))))))
     (should (equal '() (jabber-omemo--parse-device-list items)))))
 
-(ert-deftest jabber-omemo-protocol-test-parse-device-list-no-items ()
+(ert-deftest jabber-test-omemo-protocol-parse-device-list-no-items ()
   "parse-device-list returns nil for no items."
   (should (equal '() (jabber-omemo--parse-device-list nil))))
 
-(ert-deftest jabber-omemo-protocol-test-build-device-list-xml ()
+(ert-deftest jabber-test-omemo-protocol-build-device-list-xml ()
   "build-device-list-xml produces correct sexp."
   (let ((xml (jabber-omemo--build-device-list-xml '(100 200))))
     (should (eq 'list (car xml)))
@@ -60,7 +66,7 @@ Clears OMEMO in-memory caches and tears down on exit."
       (should (string= "100" (cdr (assq 'id (cadr (nth 0 devices))))))
       (should (string= "200" (cdr (assq 'id (cadr (nth 1 devices)))))))))
 
-(ert-deftest jabber-omemo-protocol-test-build-parse-device-list-roundtrip ()
+(ert-deftest jabber-test-omemo-protocol-build-parse-device-list-roundtrip ()
   "Building then parsing a device list round-trips the IDs."
   (let* ((ids '(111 222 333))
          (xml (jabber-omemo--build-device-list-xml ids))
@@ -70,9 +76,9 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 2: Bundle XML
 
-(ert-deftest jabber-omemo-protocol-test-build-bundle-xml ()
+(ert-deftest jabber-test-omemo-protocol-build-bundle-xml ()
   "build-bundle-xml produces valid sexp with base64 keys."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (let* ((blob (jabber-omemo-setup-store))
            (store-ptr (jabber-omemo-deserialize-store blob))
            (xml (jabber-omemo--build-bundle-xml store-ptr)))
@@ -90,9 +96,9 @@ Clears OMEMO in-memory caches and tears down on exit."
         (should (jabber-xml-get-attribute spk 'signedPreKeyId))
         (should (> (length (jabber-xml-get-children pks 'preKeyPublic)) 0))))))
 
-(ert-deftest jabber-omemo-protocol-test-parse-bundle-xml ()
+(ert-deftest jabber-test-omemo-protocol-parse-bundle-xml ()
   "parse-bundle-xml returns correct plist keys."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (let* ((blob (jabber-omemo-setup-store))
            (store-ptr (jabber-omemo-deserialize-store blob))
            (xml (jabber-omemo--build-bundle-xml store-ptr))
@@ -103,9 +109,9 @@ Clears OMEMO in-memory caches and tears down on exit."
       (should (integerp (plist-get parsed :signed-pre-key-id)))
       (should (listp (plist-get parsed :pre-keys))))))
 
-(ert-deftest jabber-omemo-protocol-test-bundle-xml-roundtrip ()
+(ert-deftest jabber-test-omemo-protocol-bundle-xml-roundtrip ()
   "parse-bundle-xml round-trips with build-bundle-xml."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (let* ((blob (jabber-omemo-setup-store))
            (store-ptr (jabber-omemo-deserialize-store blob))
            (bundle (jabber-omemo-get-bundle store-ptr))
@@ -122,9 +128,9 @@ Clears OMEMO in-memory caches and tears down on exit."
       (should (= (length (plist-get bundle :pre-keys))
                  (length (plist-get parsed :pre-keys)))))))
 
-(ert-deftest jabber-omemo-protocol-test-parsed-bundle-key-lengths ()
+(ert-deftest jabber-test-omemo-protocol-parsed-bundle-key-lengths ()
   "Parsed bundle keys have correct byte lengths."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (let* ((blob (jabber-omemo-setup-store))
            (store-ptr (jabber-omemo-deserialize-store blob))
            (xml (jabber-omemo--build-bundle-xml store-ptr))
@@ -137,38 +143,38 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 3: Device ID persistence
 
-(ert-deftest jabber-omemo-protocol-test-device-id-roundtrip ()
+(ert-deftest jabber-test-omemo-protocol-device-id-roundtrip ()
   "save and load device ID round-trips."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (jabber-omemo-store-save-device-id "me@example.com" 42)
     (should (= 42 (jabber-omemo-store-load-device-id "me@example.com")))))
 
-(ert-deftest jabber-omemo-protocol-test-device-id-unknown ()
+(ert-deftest jabber-test-omemo-protocol-device-id-unknown ()
   "load returns nil for unknown account."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (should (null (jabber-omemo-store-load-device-id "nobody@example.com")))))
 
-(ert-deftest jabber-omemo-protocol-test-device-id-upsert ()
+(ert-deftest jabber-test-omemo-protocol-device-id-upsert ()
   "save overwrites existing device ID."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (jabber-omemo-store-save-device-id "me@example.com" 1)
     (jabber-omemo-store-save-device-id "me@example.com" 2)
     (should (= 2 (jabber-omemo-store-load-device-id "me@example.com")))))
 
 ;;; Group 4: Store cache
 
-(ert-deftest jabber-omemo-protocol-test-get-store-creates-new ()
+(ert-deftest jabber-test-omemo-protocol-get-store-creates-new ()
   "get-store creates new store on first call."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (let ((jc (list :bare-jid "me@example.com")))
       (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                  (lambda (_jc) "me@example.com")))
         (let ((ptr (jabber-omemo--get-store jc)))
           (should (user-ptrp ptr)))))))
 
-(ert-deftest jabber-omemo-protocol-test-get-store-cached ()
+(ert-deftest jabber-test-omemo-protocol-get-store-cached ()
   "get-store returns cached ptr on second call."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (let ((jc (list :bare-jid "me@example.com")))
       (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                  (lambda (_jc) "me@example.com")))
@@ -176,9 +182,9 @@ Clears OMEMO in-memory caches and tears down on exit."
               (ptr2 (jabber-omemo--get-store jc)))
           (should (eq ptr1 ptr2)))))))
 
-(ert-deftest jabber-omemo-protocol-test-get-store-from-db ()
+(ert-deftest jabber-test-omemo-protocol-get-store-from-db ()
   "get-store loads from DB on cold start."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com")))
       (let ((jc (list :bare-jid "me@example.com")))
@@ -193,9 +199,9 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 5: Session establishment (integration)
 
-(ert-deftest jabber-omemo-protocol-test-establish-session ()
+(ert-deftest jabber-test-omemo-protocol-establish-session ()
   "establish-session creates and persists a session."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com")))
       (let* ((jc (list :bare-jid "me@example.com"))
@@ -211,9 +217,9 @@ Clears OMEMO in-memory caches and tears down on exit."
         (should (eq session (jabber-omemo--get-session
                              jc "them@example.com" 999)))))))
 
-(ert-deftest jabber-omemo-protocol-test-establish-session-trust ()
+(ert-deftest jabber-test-omemo-protocol-establish-session-trust ()
   "establish-session stores trust record."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com")))
       (let* ((jc (list :bare-jid "me@example.com"))
@@ -228,18 +234,18 @@ Clears OMEMO in-memory caches and tears down on exit."
           (should trust)
           (should (= 0 (plist-get trust :trust))))))))
 
-(ert-deftest jabber-omemo-protocol-test-get-session-unknown ()
+(ert-deftest jabber-test-omemo-protocol-get-session-unknown ()
   "get-session returns nil for unknown device."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com")))
       (let ((jc (list :bare-jid "me@example.com")))
         (should (null (jabber-omemo--get-session
                        jc "them@example.com" 999)))))))
 
-(ert-deftest jabber-omemo-protocol-test-get-session-from-db ()
+(ert-deftest jabber-test-omemo-protocol-get-session-from-db ()
   "get-session loads from DB when not cached."
-  (jabber-omemo-protocol-test-with-db
+  (jabber-test-omemo-protocol-with-db
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com")))
       (let* ((jc (list :bare-jid "me@example.com"))
@@ -257,13 +263,13 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 6: Bundle publish-if-needed
 
-(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-nil-published ()
+(ert-deftest jabber-test-omemo-protocol-bundle-needs-republish-nil-published ()
   "Republish required when no bundle has been published."
   (let ((local '(:identity-key "ik" :signed-pre-key "spk"
                  :signed-pre-key-id 1 :pre-keys (1 2 3))))
     (should (jabber-omemo--bundle-needs-republish-p local nil))))
 
-(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-identity-key-mismatch ()
+(ert-deftest jabber-test-omemo-protocol-bundle-needs-republish-identity-key-mismatch ()
   "Republish required when identity key differs."
   (let* ((pks (cl-loop for i from 1 to 100 collect (cons i "k")))
          (local `(:identity-key "ik-new" :signed-pre-key "spk"
@@ -272,7 +278,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                       :signed-pre-key-id 1 :pre-keys ,pks)))
     (should (jabber-omemo--bundle-needs-republish-p local published))))
 
-(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-spk-id-mismatch ()
+(ert-deftest jabber-test-omemo-protocol-bundle-needs-republish-spk-id-mismatch ()
   "Republish required when signed-pre-key-id differs."
   (let* ((pks (cl-loop for i from 1 to 100 collect (cons i "k")))
          (local `(:identity-key "ik" :signed-pre-key "spk"
@@ -281,7 +287,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                       :signed-pre-key-id 1 :pre-keys ,pks)))
     (should (jabber-omemo--bundle-needs-republish-p local published))))
 
-(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-spk-data-mismatch ()
+(ert-deftest jabber-test-omemo-protocol-bundle-needs-republish-spk-data-mismatch ()
   "Republish required when signed-pre-key data differs."
   (let* ((pks (cl-loop for i from 1 to 100 collect (cons i "k")))
          (local `(:identity-key "ik" :signed-pre-key "spk-new"
@@ -290,7 +296,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                       :signed-pre-key-id 1 :pre-keys ,pks)))
     (should (jabber-omemo--bundle-needs-republish-p local published))))
 
-(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-prekey-count-low ()
+(ert-deftest jabber-test-omemo-protocol-bundle-needs-republish-prekey-count-low ()
   "Republish required when published pre-key count is below threshold."
   (let* ((local-pks (cl-loop for i from 1 to 100 collect (cons i "k")))
          (published-pks (cl-loop for i from 1 to 5 collect (cons i "k")))
@@ -300,7 +306,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                       :signed-pre-key-id 1 :pre-keys ,published-pks)))
     (should (jabber-omemo--bundle-needs-republish-p local published))))
 
-(ert-deftest jabber-omemo-protocol-test-bundle-needs-republish-up-to-date ()
+(ert-deftest jabber-test-omemo-protocol-bundle-needs-republish-up-to-date ()
   "No republish when published bundle matches local and has enough pre-keys."
   (let* ((pks (cl-loop for i from 1 to 100 collect (cons i "k")))
          (local `(:identity-key "ik" :signed-pre-key "spk"
@@ -309,7 +315,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                       :signed-pre-key-id 1 :pre-keys ,pks)))
     (should-not (jabber-omemo--bundle-needs-republish-p local published))))
 
-(ert-deftest jabber-omemo-protocol-test-publish-bundle-if-needed-skips-when-current ()
+(ert-deftest jabber-test-omemo-protocol-publish-bundle-if-needed-skips-when-current ()
   "publish-bundle-if-needed does NOT publish when fetched bundle matches local."
   (let ((jabber-omemo--bundle-publishes-in-flight (make-hash-table :test 'equal))
         (publish-called nil)
@@ -345,7 +351,7 @@ Clears OMEMO in-memory caches and tears down on exit."
       (should (zerop (hash-table-count
                       jabber-omemo--bundle-publishes-in-flight))))))
 
-(ert-deftest jabber-omemo-protocol-test-publish-bundle-if-needed-publishes-when-stale ()
+(ert-deftest jabber-test-omemo-protocol-publish-bundle-if-needed-publishes-when-stale ()
   "publish-bundle-if-needed refills, persists, and publishes when stale."
   (let ((jabber-omemo--bundle-publishes-in-flight (make-hash-table :test 'equal))
         (calls nil)
@@ -380,7 +386,7 @@ Clears OMEMO in-memory caches and tears down on exit."
       (should (zerop (hash-table-count
                       jabber-omemo--bundle-publishes-in-flight))))))
 
-(ert-deftest jabber-omemo-protocol-test-publish-bundle-if-needed-dedup ()
+(ert-deftest jabber-test-omemo-protocol-publish-bundle-if-needed-dedup ()
   "Second concurrent publish-bundle-if-needed call is a no-op while first is in flight."
   (let ((jabber-omemo--bundle-publishes-in-flight (make-hash-table :test 'equal))
         (fetch-count 0)
@@ -418,5 +424,5 @@ Clears OMEMO in-memory caches and tears down on exit."
       (jabber-omemo--publish-bundle-if-needed 'fake-jc)
       (should (= 2 fetch-count)))))
 
-(provide 'jabber-omemo-protocol-tests)
-;;; jabber-omemo-protocol-tests.el ends here
+(provide 'jabber-test-omemo-protocol)
+;;; jabber-test-omemo-protocol.el ends here

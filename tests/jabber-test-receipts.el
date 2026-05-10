@@ -1,4 +1,10 @@
-;;; jabber-receipts-tests.el --- Tests for jabber-receipts  -*- lexical-binding: t; -*-
+;;; jabber-test-receipts.el --- Tests for jabber-receipts  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0184 Delivery Receipts and XEP-0333 Chat Markers.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-receipts)
@@ -6,13 +12,13 @@
 
 ;;; Group 1: Send hook
 
-(ert-deftest jabber-receipts-test-send-hook-adds-elements ()
+(ert-deftest jabber-test-receipts-send-hook-adds-elements ()
   "Send hook appends request and markable elements."
   (let ((result (jabber-receipts--send-hook "hello" "msg-001")))
     (should (assq 'request result))
     (should (assq 'markable result))))
 
-(ert-deftest jabber-receipts-test-send-hook-correct-xmlns ()
+(ert-deftest jabber-test-receipts-send-hook-correct-xmlns ()
   "Send hook elements have correct xmlns attributes."
   (let* ((result (jabber-receipts--send-hook "test" "id-1"))
          (request (assq 'request result))
@@ -24,7 +30,7 @@
 
 ;;; Group 2: Incoming receipt handling
 
-(ert-deftest jabber-receipts-test-handle-xep0184-received ()
+(ert-deftest jabber-test-receipts-handle-xep0184-received ()
   "Incoming XEP-0184 received stanza updates delivered_at in DB."
   (let ((updated-id nil)
         (updated-col nil))
@@ -43,7 +49,7 @@
     (should (equal updated-id "msg-001"))
     (should (equal updated-col "delivered_at"))))
 
-(ert-deftest jabber-receipts-test-handle-xep0333-displayed ()
+(ert-deftest jabber-test-receipts-handle-xep0333-displayed ()
   "Incoming XEP-0333 displayed stanza updates displayed_at in DB."
   (let ((updated-id nil)
         (updated-col nil))
@@ -62,7 +68,7 @@
     (should (equal updated-id "msg-002"))
     (should (equal updated-col "displayed_at"))))
 
-(ert-deftest jabber-receipts-test-handle-ignores-non-receipt ()
+(ert-deftest jabber-test-receipts-handle-ignores-non-receipt ()
   "Messages without receipt elements are ignored."
   (let ((updated nil))
     (cl-letf (((symbol-function 'jabber-db-update-receipt)
@@ -77,7 +83,7 @@
 
 ;;; Group 3: Sending receipts back
 
-(ert-deftest jabber-receipts-test-send-received-on-request ()
+(ert-deftest jabber-test-receipts-send-received-on-request ()
   "Incoming message with <request/> triggers <received/> response."
   (let ((sent-sexp nil))
     (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
@@ -99,7 +105,7 @@
     (let ((children (cddr sent-sexp)))
       (should (assq 'received children)))))
 
-(ert-deftest jabber-receipts-test-no-received-when-disabled ()
+(ert-deftest jabber-test-receipts-no-received-when-disabled ()
   "No <received/> sent when jabber-chat-send-receipts is nil."
   (let ((sent-sexp nil))
     (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
@@ -117,7 +123,7 @@
                    (request ((xmlns . "urn:xmpp:receipts")))))))
     (should-not sent-sexp)))
 
-(ert-deftest jabber-receipts-test-no-received-without-request ()
+(ert-deftest jabber-test-receipts-no-received-without-request ()
   "No <received/> sent for messages without <request/> element."
   (let ((sent-sexp nil))
     (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
@@ -134,7 +140,7 @@
                    (body nil "hello")))))
     (should-not sent-sexp)))
 
-(ert-deftest jabber-receipts-test-no-received-for-markable-only ()
+(ert-deftest jabber-test-receipts-no-received-for-markable-only ()
   "No <received/> sent for messages with only <markable/> but no <request/>."
   (let ((sent-sexp nil))
     (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
@@ -152,7 +158,7 @@
                    (markable ((xmlns . ,jabber-chat-markers-xmlns)))))))
     (should-not sent-sexp)))
 
-(ert-deftest jabber-receipts-test-markable-sets-pending-id ()
+(ert-deftest jabber-test-receipts-markable-sets-pending-id ()
   "Incoming markable message sets pending displayed ID."
   (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
             ((symbol-function 'jabber-send-sexp-if-connected) #'ignore)
@@ -172,7 +178,7 @@
 
 ;;; Group 4: Header-line update
 
-(ert-deftest jabber-receipts-test-header-line-delivered ()
+(ert-deftest jabber-test-receipts-header-line-delivered ()
   "Header-line shows delivered with correct face."
   (with-temp-buffer
     (setq-local jabber-chat-receipt-message "")
@@ -181,7 +187,7 @@
     (should (eq 'jabber-chat-delivered
                 (get-text-property 0 'face jabber-chat-receipt-message)))))
 
-(ert-deftest jabber-receipts-test-header-line-seen ()
+(ert-deftest jabber-test-receipts-header-line-seen ()
   "Header-line shows seen with correct face."
   (with-temp-buffer
     (setq-local jabber-chat-receipt-message "")
@@ -190,7 +196,7 @@
     (should (eq 'jabber-chat-seen
                 (get-text-property 0 'face jabber-chat-receipt-message)))))
 
-(ert-deftest jabber-receipts-test-header-line-no-downgrade ()
+(ert-deftest jabber-test-receipts-header-line-no-downgrade ()
   "Header-line does not downgrade from seen to delivered."
   (with-temp-buffer
     (setq-local jabber-chat-receipt-message "")
@@ -203,7 +209,7 @@
 
 ;;; Group 5: EWOC cascade
 
-(ert-deftest jabber-receipts-test-ewoc-cascade-promotes-delivered ()
+(ert-deftest jabber-test-receipts-ewoc-cascade-promotes-delivered ()
   "Cascade promotes all prior :delivered nodes to :displayed."
   (with-temp-buffer
     (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
@@ -218,7 +224,7 @@
       (should (eq :displayed (plist-get (cadr m1) :status)))
       (should (eq :displayed (plist-get (cadr m2) :status))))))
 
-(ert-deftest jabber-receipts-test-ewoc-cascade-stops-at-displayed ()
+(ert-deftest jabber-test-receipts-ewoc-cascade-stops-at-displayed ()
   "Cascade stops walking when it hits an already-displayed node."
   (with-temp-buffer
     (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
@@ -239,7 +245,7 @@
       ;; m1 NOT promoted (before the already-displayed m2)
       (should (eq :delivered (plist-get (cadr m1) :status))))))
 
-(ert-deftest jabber-receipts-test-ewoc-cascade-skips-foreign ()
+(ert-deftest jabber-test-receipts-ewoc-cascade-skips-foreign ()
   "Cascade skips :foreign nodes and only promotes :local ones."
   (with-temp-buffer
     (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
@@ -255,7 +261,7 @@
       ;; foreign node untouched
       (should-not (plist-get (cadr m2) :status)))))
 
-(ert-deftest jabber-receipts-test-ewoc-cascade-skips-sent ()
+(ert-deftest jabber-test-receipts-ewoc-cascade-skips-sent ()
   "Cascade does not promote :sent nodes (not yet delivered)."
   (with-temp-buffer
     (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
@@ -273,7 +279,7 @@
 
 ;;; Group 6: DB cascade
 
-(ert-deftest jabber-receipts-test-db-cascade-marks-all-delivered ()
+(ert-deftest jabber-test-receipts-db-cascade-marks-all-delivered ()
   "DB cascade marks all delivered outgoing messages as displayed."
   (let* ((dir (make-temp-file "jabber-receipts-test" t))
          (jabber-db-path (expand-file-name "test.sqlite" dir))
@@ -314,7 +320,7 @@
       (when (file-directory-p dir)
         (delete-directory dir t)))))
 
-(ert-deftest jabber-receipts-test-db-cascade-skips-undelivered ()
+(ert-deftest jabber-test-receipts-db-cascade-skips-undelivered ()
   "DB cascade skips messages without delivered_at."
   (let* ((dir (make-temp-file "jabber-receipts-test" t))
          (jabber-db-path (expand-file-name "test.sqlite" dir))
@@ -355,7 +361,7 @@
 
 ;;; Group 7: MUC guards and edge cases
 
-(ert-deftest jabber-receipts-test-groupchat-skips-receipt-processing ()
+(ert-deftest jabber-test-receipts-groupchat-skips-receipt-processing ()
   "Groupchat messages do not trigger receipt updates."
   (let ((updated nil))
     (cl-letf (((symbol-function 'jabber-db-update-receipt)
@@ -370,7 +376,7 @@
                             (id . "msg-001"))))))
     (should-not updated)))
 
-(ert-deftest jabber-receipts-test-nil-type-does-not-crash ()
+(ert-deftest jabber-test-receipts-nil-type-does-not-crash ()
   "Messages without type attribute do not crash."
   (let ((updated-id nil))
     (cl-letf (((symbol-function 'jabber-db-update-receipt)
@@ -387,7 +393,7 @@
                             (id . "msg-nil-type"))))))
     (should (equal updated-id "msg-nil-type"))))
 
-(ert-deftest jabber-receipts-test-xep0333-received-marker ()
+(ert-deftest jabber-test-receipts-xep0333-received-marker ()
   "XEP-0333 <received/> marker updates delivered_at."
   (let ((updated-id nil)
         (updated-col nil))
@@ -406,7 +412,7 @@
     (should (equal updated-id "msg-333"))
     (should (equal updated-col "delivered_at"))))
 
-(ert-deftest jabber-receipts-test-send-hook-muc-no-request ()
+(ert-deftest jabber-test-receipts-send-hook-muc-no-request ()
   "Send hook in MUC groupchat adds markable but no request."
   (with-temp-buffer
     (setq-local jabber-group "room@conference.example.com")
@@ -434,7 +440,7 @@
                   (forwarded ((xmlns . "urn:xmpp:forward:0"))
                              ,inner))))
 
-(ert-deftest jabber-receipts-test-carbon-received-queues-displayed ()
+(ert-deftest jabber-test-receipts-carbon-received-queues-displayed ()
   "Markable message received as a <received> carbon queues pending-displayed-id."
   (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
             ((symbol-function 'jabber-send-sexp-if-connected) #'ignore)
@@ -456,7 +462,7 @@
          (jabber-receipts-tests--received-carbon inner)))
       (should (equal "inner-msg-42" jabber-receipts--pending-displayed-id)))))
 
-(ert-deftest jabber-receipts-test-carbon-received-suppresses-xep0184 ()
+(ert-deftest jabber-test-receipts-carbon-received-suppresses-xep0184 ()
   "Carbon-received messages with <request/> do NOT send <received/> reply."
   (let ((sent-sexp nil))
     (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
@@ -478,7 +484,7 @@
          (jabber-receipts-tests--received-carbon inner))))
     (should-not sent-sexp)))
 
-(ert-deftest jabber-receipts-test-carbon-sent-does-not-queue ()
+(ert-deftest jabber-test-receipts-carbon-sent-does-not-queue ()
   "Our own outgoing message received as a <sent> carbon does not queue a marker."
   (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
             ((symbol-function 'jabber-send-sexp-if-connected) #'ignore)
@@ -500,7 +506,7 @@
          (jabber-receipts-tests--sent-carbon inner)))
       (should-not jabber-receipts--pending-displayed-id))))
 
-(ert-deftest jabber-receipts-test-carbon-forged-ignored ()
+(ert-deftest jabber-test-receipts-carbon-forged-ignored ()
   "Carbon whose outer `from' does not match our bare JID is dropped (CVE-2017-5589)."
   (let ((sent-sexp nil)
         (updated nil))
@@ -534,7 +540,7 @@
     (should-not sent-sexp)
     (should-not updated)))
 
-(ert-deftest jabber-receipts-test-carbon-received-displayed-marker ()
+(ert-deftest jabber-test-receipts-carbon-received-displayed-marker ()
   "Peer's <displayed/> delivered via a <received> carbon updates status."
   (let ((updated-id nil)
         (updated-col nil))
@@ -556,7 +562,7 @@
     (should (equal updated-id "our-msg-33"))
     (should (equal updated-col "displayed_at"))))
 
-(ert-deftest jabber-receipts-test-carbon-sent-skips-incoming-marker ()
+(ert-deftest jabber-test-receipts-carbon-sent-skips-incoming-marker ()
   "Our own outgoing <displayed/> seen as <sent> carbon does NOT update status.
 Cross-device read-sync is a deferred feature; for now we just don't corrupt
 peer state by treating our own emitted markers as incoming ones."
@@ -579,23 +585,23 @@ peer state by treating our own emitted markers as incoming ones."
 
 ;;; Group 9: Status anti-downgrade
 
-(ert-deftest jabber-receipts-test-status-upgrade-sent-to-delivered ()
+(ert-deftest jabber-test-receipts-status-upgrade-sent-to-delivered ()
   "Status upgrade from :sent to :delivered is allowed."
   (should (jabber-receipts--status-upgrades-p :sent :delivered)))
 
-(ert-deftest jabber-receipts-test-status-upgrade-delivered-to-displayed ()
+(ert-deftest jabber-test-receipts-status-upgrade-delivered-to-displayed ()
   "Status upgrade from :delivered to :displayed is allowed."
   (should (jabber-receipts--status-upgrades-p :delivered :displayed)))
 
-(ert-deftest jabber-receipts-test-status-no-downgrade-displayed-to-delivered ()
+(ert-deftest jabber-test-receipts-status-no-downgrade-displayed-to-delivered ()
   "Status downgrade from :displayed to :delivered is rejected."
   (should-not (jabber-receipts--status-upgrades-p :displayed :delivered)))
 
-(ert-deftest jabber-receipts-test-status-no-downgrade-same ()
+(ert-deftest jabber-test-receipts-status-no-downgrade-same ()
   "Same status is not an upgrade."
   (should-not (jabber-receipts--status-upgrades-p :delivered :delivered)))
 
-(ert-deftest jabber-receipts-test-update-status-no-downgrade-ewoc ()
+(ert-deftest jabber-test-receipts-update-status-no-downgrade-ewoc ()
   "A :delivered update does not overwrite :displayed in the EWOC."
   (with-temp-buffer
     (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
@@ -614,6 +620,6 @@ peer state by treating our own emitted markers as incoming ones."
          'fake-jc "them@example.com" "msg-99" "delivered_at"))
       (should (eq :displayed (plist-get msg :status))))))
 
-(provide 'jabber-receipts-tests)
+(provide 'jabber-test-receipts)
 
-;;; jabber-receipts-tests.el ends here
+;;; jabber-test-receipts.el ends here

@@ -1,4 +1,10 @@
-;;; jabber-omemo-trust-tests.el --- Tests for OMEMO trust UI  -*- lexical-binding: t; -*-
+;;; jabber-test-omemo-trust.el --- Tests for jabber-omemo-trust  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; OMEMO trust management.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-omemo-store)
@@ -34,54 +40,54 @@
 
 ;;; Group 1: trust label mapping
 
-(ert-deftest jabber-omemo-trust-test-label-undecided ()
+(ert-deftest jabber-test-omemo-trust-label-undecided ()
   "Trust level 0 maps to undecided."
   (should (string= "undecided" (jabber-omemo--trust-label 0))))
 
-(ert-deftest jabber-omemo-trust-test-label-tofu ()
+(ert-deftest jabber-test-omemo-trust-label-tofu ()
   "Trust level 1 maps to TOFU."
   (should (string= "TOFU" (jabber-omemo--trust-label 1))))
 
-(ert-deftest jabber-omemo-trust-test-label-verified ()
+(ert-deftest jabber-test-omemo-trust-label-verified ()
   "Trust level 2 maps to verified."
   (should (string= "verified" (jabber-omemo--trust-label 2))))
 
-(ert-deftest jabber-omemo-trust-test-label-untrusted ()
+(ert-deftest jabber-test-omemo-trust-label-untrusted ()
   "Trust level -1 maps to UNTRUSTED."
   (should (string= "UNTRUSTED" (jabber-omemo--trust-label -1))))
 
-(ert-deftest jabber-omemo-trust-test-label-unknown ()
+(ert-deftest jabber-test-omemo-trust-label-unknown ()
   "Unknown trust level shows the number."
   (should (string= "unknown(99)" (jabber-omemo--trust-label 99))))
 
 ;;; Group 2: fingerprint formatting
 
-(ert-deftest jabber-omemo-trust-test-format-fingerprint ()
+(ert-deftest jabber-test-omemo-trust-format-fingerprint ()
   "Fingerprint formats as space-separated uppercase hex pairs."
   (let ((key (unibyte-string #xDE #xAD #xBE #xEF)))
     (should (string= "DE AD BE EF"
                       (jabber-omemo--format-fingerprint key)))))
 
-(ert-deftest jabber-omemo-trust-test-format-fingerprint-empty ()
+(ert-deftest jabber-test-omemo-trust-format-fingerprint-empty ()
   "Empty key produces empty string."
   (should (string= "" (jabber-omemo--format-fingerprint ""))))
 
 ;;; Group 3: key type stripping
 
-(ert-deftest jabber-omemo-trust-test-strip-key-type ()
+(ert-deftest jabber-test-omemo-trust-strip-key-type ()
   "Strip 0x05 prefix from identity key."
   (let ((key (unibyte-string #x05 #xAB #xCD)))
     (should (equal (unibyte-string #xAB #xCD)
                    (jabber-omemo-trust--strip-key-type key)))))
 
-(ert-deftest jabber-omemo-trust-test-strip-key-type-no-prefix ()
+(ert-deftest jabber-test-omemo-trust-strip-key-type-no-prefix ()
   "Leave key unchanged when no 0x05 prefix."
   (let ((key (unibyte-string #xAB #xCD)))
     (should (equal key (jabber-omemo-trust--strip-key-type key)))))
 
 ;;; Group 4: entries function
 
-(ert-deftest jabber-omemo-trust-test-entries-shape ()
+(ert-deftest jabber-test-omemo-trust-entries-shape ()
   "Entries returns list of (ID VECTOR) from trust records."
   (cl-letf (((symbol-function 'jabber-omemo-store-all-trust)
              (lambda (_acct _jid)
@@ -111,7 +117,7 @@
           (should (string= "verified" (aref (cadr entry) 1)))
           (should (string= "" (aref (cadr entry) 3))))))))
 
-(ert-deftest jabber-omemo-trust-test-entries-empty ()
+(ert-deftest jabber-test-omemo-trust-entries-empty ()
   "Entries returns nil for no trust records."
   (cl-letf (((symbol-function 'jabber-omemo-store-all-trust)
              (lambda (_acct _jid) nil)))
@@ -121,7 +127,7 @@
 
 ;;; Group 5: column format
 
-(ert-deftest jabber-omemo-trust-test-column-format ()
+(ert-deftest jabber-test-omemo-trust-column-format ()
   "Mode sets a 4-column tabulated-list-format."
   (with-temp-buffer
     (jabber-omemo-trust-mode)
@@ -131,5 +137,5 @@
     (should (string= "Fingerprint" (car (aref tabulated-list-format 2))))
     (should (string= "First Seen" (car (aref tabulated-list-format 3))))))
 
-(provide 'jabber-omemo-trust-tests)
-;;; jabber-omemo-trust-tests.el ends here
+(provide 'jabber-test-omemo-trust)
+;;; jabber-test-omemo-trust.el ends here

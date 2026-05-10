@@ -1,12 +1,17 @@
-;;; jabber-modeline-tests.el --- Tests for jabber-modeline debounce  -*- lexical-binding: t; -*-
+;;; jabber-test-modeline.el --- Tests for jabber-modeline  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; Mode-line display and debounce logic.
+
+;;; Code:
 
 (require 'ert)
-(load (expand-file-name "../lisp/jabber-modeline.el"
-                        (file-name-directory (or load-file-name buffer-file-name))))
+(require 'jabber-modeline)
 
 ;;; Group 1: jabber-mode-line-count-contacts debounce
 
-(ert-deftest jabber-modeline-test-debounce-coalesces-calls ()
+(ert-deftest jabber-test-modeline-debounce-coalesces-calls ()
   "Rapid calls to jabber-mode-line-count-contacts leave exactly one pending timer."
   (let ((jabber-mode-line--recount-timer nil))
     (cl-letf (((symbol-function 'run-with-timer)
@@ -23,7 +28,7 @@
         ;; Each new call replaced the previous.
         (should-not (eq first jabber-mode-line--recount-timer))))))
 
-(ert-deftest jabber-modeline-test-debounce-timer-fires-and-clears ()
+(ert-deftest jabber-test-modeline-debounce-timer-fires-and-clears ()
   "When the debounce timer fires, jabber-mode-line--recount-timer is set to nil."
   (let ((jabber-mode-line--recount-timer nil)
         (jabber-connections nil)
@@ -33,7 +38,7 @@
       (jabber-mode-line--do-count-contacts)
       (should (null jabber-mode-line--recount-timer)))))
 
-(ert-deftest jabber-modeline-test-on-disconnect-cancels-timer ()
+(ert-deftest jabber-test-modeline-on-disconnect-cancels-timer ()
   "jabber-modeline--on-disconnect cancels a pending timer and leaves it nil."
   (let ((jabber-mode-line--recount-timer (list 'mock-timer))
         (jabber-connections nil)
@@ -50,6 +55,6 @@
       (jabber-modeline--on-disconnect)
       (should (null jabber-mode-line--recount-timer)))))
 
-(provide 'jabber-modeline-tests)
+(provide 'jabber-test-modeline)
 
-;;; jabber-modeline-tests.el ends here
+;;; jabber-test-modeline.el ends here

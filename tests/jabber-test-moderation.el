@@ -1,4 +1,10 @@
-;;; jabber-moderation-tests.el --- Tests for XEP-0425 moderation  -*- lexical-binding: t; -*-
+;;; jabber-test-moderation.el --- Tests for jabber-moderation  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0424/XEP-0425 Message Retraction and Moderation.
+
+;;; Code:
 
 (require 'ert)
 (require 'ewoc)
@@ -9,7 +15,7 @@
 
 ;;; Test helpers
 
-(defmacro jabber-moderation-test-with-ewoc (&rest body)
+(defmacro jabber-test-moderation-with-ewoc (&rest body)
   "Set up a temp buffer with a chat ewoc and hash table, then run BODY."
   (declare (indent 0) (debug t))
   `(with-temp-buffer
@@ -19,18 +25,18 @@
 
 ;;; Group 1: server-id indexing
 
-(ert-deftest jabber-moderation-test-server-id-indexed ()
+(ert-deftest jabber-test-moderation-server-id-indexed ()
   "Ewoc hash stores and retrieves by :server-id."
-  (jabber-moderation-test-with-ewoc
+  (jabber-test-moderation-with-ewoc
     (let* ((msg (list :id "client-1" :server-id "server-abc"
                       :body "hello" :timestamp (current-time)))
            (node (jabber-chat-ewoc-enter (list :muc-foreign msg))))
       (should (eq node (jabber-chat-ewoc-find-by-id "client-1")))
       (should (eq node (jabber-chat-ewoc-find-by-id "server-abc"))))))
 
-(ert-deftest jabber-moderation-test-server-id-nil-no-index ()
+(ert-deftest jabber-test-moderation-server-id-nil-no-index ()
   "A nil :server-id does not pollute the hash table."
-  (jabber-moderation-test-with-ewoc
+  (jabber-test-moderation-with-ewoc
     (let ((msg (list :id "client-2" :body "x" :timestamp (current-time))))
       (jabber-chat-ewoc-enter (list :muc-foreign msg)))
     (should (= 1 (hash-table-count jabber-chat--msg-nodes)))
@@ -38,9 +44,9 @@
 
 ;;; Group 2: retraction handling
 
-(ert-deftest jabber-moderation-test-retract-updates-ewoc ()
+(ert-deftest jabber-test-moderation-retract-updates-ewoc ()
   "Retraction stanza sets :retracted on the original message."
-  (jabber-moderation-test-with-ewoc
+  (jabber-test-moderation-with-ewoc
     ;; Insert a message with a server-id
     (let ((msg (list :id "msg-1" :server-id "stanza-id-1"
                      :from "room@muc.example.com/alice"
@@ -74,9 +80,9 @@
 
 ;;; Group 3: stanza-id source validation
 
-(ert-deftest jabber-moderation-test-rejects-client-id ()
+(ert-deftest jabber-test-moderation-rejects-client-id ()
   "Retraction targeting a client message-id (not server stanza-id) is ignored."
-  (jabber-moderation-test-with-ewoc
+  (jabber-test-moderation-with-ewoc
     (let ((msg (list :id "client-id-1" :server-id "server-stanza-id-1"
                      :body "hello" :timestamp (current-time))))
       (jabber-chat-ewoc-enter (list :muc-foreign msg)))
@@ -102,9 +108,9 @@
 ;;; Group 4: sender validation
 
 
-(ert-deftest jabber-moderation-test-validates-sender ()
+(ert-deftest jabber-test-moderation-validates-sender ()
   "Retraction from a participant (not MUC service) is ignored."
-  (jabber-moderation-test-with-ewoc
+  (jabber-test-moderation-with-ewoc
     (let ((msg (list :id "msg-2" :server-id "stanza-id-2"
                      :from "room@muc.example.com/alice"
                      :body "hello" :timestamp (current-time))))
@@ -123,7 +129,7 @@
            (msg (cadr (ewoc-data node))))
       (should-not (plist-get msg :retracted)))))
 
-(ert-deftest jabber-moderation-test-non-groupchat-ignored ()
+(ert-deftest jabber-test-moderation-non-groupchat-ignored ()
   "Retraction in a non-groupchat message is ignored."
   (let ((retract-xml
          '(message ((from . "room@muc.example.com")
@@ -136,9 +142,9 @@
 
 ;;; Group 5: missing message
 
-(ert-deftest jabber-moderation-test-missing-message-ignored ()
+(ert-deftest jabber-test-moderation-missing-message-ignored ()
   "Retraction for unknown stanza-id doesn't error."
-  (jabber-moderation-test-with-ewoc
+  (jabber-test-moderation-with-ewoc
     (let ((buf (current-buffer)))
       (cl-letf (((symbol-function 'jabber-muc-find-buffer)
                  (lambda (_group) buf))
@@ -156,7 +162,7 @@
 
 ;;; Group 6: tombstone rendering
 
-(ert-deftest jabber-moderation-test-tombstone-rendering ()
+(ert-deftest jabber-test-moderation-tombstone-rendering ()
   "Tombstone text is inserted for retracted messages."
   (with-temp-buffer
     (let ((msg (list :body "spam" :retracted t
@@ -167,7 +173,7 @@
                "Message retracted by: admin reason: spam"
                (buffer-string))))))
 
-(ert-deftest jabber-moderation-test-tombstone-no-reason ()
+(ert-deftest jabber-test-moderation-tombstone-no-reason ()
   "Tombstone without reason omits the reason part."
   (with-temp-buffer
     (let ((msg (list :body "x" :retracted t
@@ -179,7 +185,7 @@
 
 ;;; Group 7: build-msg-plist extracts server-id
 
-(ert-deftest jabber-moderation-test-plist-extracts-server-id ()
+(ert-deftest jabber-test-moderation-plist-extracts-server-id ()
   "jabber-chat--build-msg-plist extracts :server-id from stanza-id element."
   (let* ((stanza '(message ((from . "room@muc.example.com/alice")
                             (id . "client-id")
@@ -191,7 +197,7 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should (equal "server-id-42" (plist-get plist :server-id)))))
 
-(ert-deftest jabber-moderation-test-plist-nil-server-id ()
+(ert-deftest jabber-test-moderation-plist-nil-server-id ()
   "jabber-chat--build-msg-plist returns nil :server-id when absent."
   (let* ((stanza '(message ((from . "room@muc.example.com/alice")
                             (type . "groupchat"))
@@ -201,9 +207,9 @@
 
 ;;; Group 8: retract command
 
-(ert-deftest jabber-moderation-test-retract-sends-iq ()
+(ert-deftest jabber-test-moderation-retract-sends-iq ()
   "jabber-moderation-retract sends correct IQ XML."
-  (jabber-moderation-test-with-ewoc
+  (jabber-test-moderation-with-ewoc
     (setq-local jabber-group "room@muc.example.com")
     (setq-local jabber-buffer-connection 'fake-jc)
     (let* ((msg (list :id "msg-r1" :server-id "sid-retract"
@@ -237,9 +243,9 @@
           (should (eq 'reason (car reason)))
           (should (equal "test reason" (nth 2 reason))))))))
 
-(ert-deftest jabber-moderation-test-retract-errors-without-server-id ()
+(ert-deftest jabber-test-moderation-retract-errors-without-server-id ()
   "jabber-moderation-retract signals error when no server-id."
-  (jabber-moderation-test-with-ewoc
+  (jabber-test-moderation-with-ewoc
     (setq-local jabber-group "room@muc.example.com")
     (setq-local jabber-buffer-connection 'fake-jc)
     (let ((msg (list :id "msg-r2" :body "hello" :timestamp (current-time))))
@@ -247,11 +253,11 @@
       (goto-char (point-min))
       (should-error (jabber-moderation-retract) :type 'user-error))))
 
-(ert-deftest jabber-moderation-test-retract-errors-outside-muc ()
+(ert-deftest jabber-test-moderation-retract-errors-outside-muc ()
   "jabber-moderation-retract signals error outside MUC buffer."
   (with-temp-buffer
     (should-error (jabber-moderation-retract) :type 'user-error)))
 
-(provide 'jabber-moderation-tests)
+(provide 'jabber-test-moderation)
 
-;;; jabber-moderation-tests.el ends here
+;;; jabber-test-moderation.el ends here

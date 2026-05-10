@@ -1,4 +1,10 @@
-;;; jabber-mam-tests.el --- Tests for jabber-mam  -*- lexical-binding: t; -*-
+;;; jabber-test-mam.el --- Tests for jabber-mam  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0313 Message Archive Management.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-db)
@@ -10,24 +16,24 @@
 
 ;;; Test infrastructure
 
-(defmacro jabber-mam-test-with-db (&rest body)
+(defmacro jabber-test-mam-with-db (&rest body)
   "Run BODY with a fresh temp SQLite database."
   (declare (indent 0) (debug t))
-  `(let* ((jabber-mam-test--dir (make-temp-file "jabber-mam-test" t))
-          (jabber-db-path (expand-file-name "test.sqlite" jabber-mam-test--dir))
+  `(let* ((jabber-test-mam--dir (make-temp-file "jabber-mam-test" t))
+          (jabber-db-path (expand-file-name "test.sqlite" jabber-test-mam--dir))
           (jabber-db--connection nil))
      (unwind-protect
          (progn
            (jabber-db-ensure-open)
            ,@body)
        (jabber-db-close)
-       (when (file-directory-p jabber-mam-test--dir)
-         (delete-directory jabber-mam-test--dir t)))))
+       (when (file-directory-p jabber-test-mam--dir)
+         (delete-directory jabber-test-mam--dir t)))))
 
-(defvar jabber-mam-test-queryid "test-query"
+(defvar jabber-test-mam-queryid "test-query"
   "Default query ID used in test MAM stanzas.")
 
-(defun jabber-mam-test--make-message (index &optional peer type)
+(defun jabber-test-mam--make-message (index &optional peer type)
   "Build a fake MAM result <message> stanza for message INDEX.
 PEER defaults to \"friend@example.com\".
 TYPE defaults to \"chat\"."
@@ -48,7 +54,7 @@ TYPE defaults to \"chat\"."
     ;; Outer <message> with MAM <result> wrapping forwarded content
     `(message ((from . "me@example.com"))
               (result ((xmlns . ,jabber-mam-xmlns)
-                       (queryid . ,jabber-mam-test-queryid)
+                       (queryid . ,jabber-test-mam-queryid)
                        (id . ,archive-id))
                       (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
                                  (delay ((xmlns . ,jabber-mam-delay-xmlns)
@@ -59,7 +65,7 @@ TYPE defaults to \"chat\"."
                                            (id . ,stanza-id))
                                           (body () ,(format "Message %d" index))))))))
 
-(defun jabber-mam-test--make-fin (last-id &optional complete)
+(defun jabber-test-mam--make-fin (last-id &optional complete)
   "Build a fake <fin> IQ result with LAST-ID.
 When COMPLETE is non-nil, mark the archive as fully consumed."
   `(iq ((type . "result"))
@@ -69,9 +75,9 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
                  (first () "first-id")
                  (last () ,last-id)))))
 
-(defun jabber-mam-test--make-fake-jc (account)
+(defun jabber-test-mam--make-fake-jc (account)
   "Create a fake connection symbol for ACCOUNT."
-  (let ((jc (gensym "jabber-mam-test-jc-"))
+  (let ((jc (gensym "jabber-test-mam-jc-"))
         (parts (split-string account "@")))
     (put jc :state-data (list :username (nth 0 parts)
                               :server (nth 1 parts)))
@@ -79,18 +85,18 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
 
 ;;; Group 1: Large sync
 
-(ert-deftest jabber-mam-test-large-sync ()
+(ert-deftest jabber-test-mam-large-sync ()
   "3650 messages (10 years, 1/day) are stored and deduped correctly."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (count 3650)
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-muc-participants nil)
            (start-time (float-time)))
       ;; Feed all messages through the process function inside a transaction
       (jabber-db-with-transaction
         (dotimes (i count)
-          (let ((xml (jabber-mam-test--make-message i)))
+          (let ((xml (jabber-test-mam--make-message i)))
             (jabber-mam--process-message jc xml))))
       ;; Verify all stored
       (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
@@ -103,23 +109,23 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
 
 ;;; Group 2: Dedup on re-sync
 
-(ert-deftest jabber-mam-test-dedup-resync ()
+(ert-deftest jabber-test-mam-dedup-resync ()
   "Running 3650 messages twice yields exactly 3650 rows."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (count 3650)
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-muc-participants nil))
       ;; First pass
       (jabber-db-with-transaction
         (dotimes (i count)
           (jabber-mam--process-message
-           jc (jabber-mam-test--make-message i))))
+           jc (jabber-test-mam--make-message i))))
       ;; Second pass (re-sync)
       (jabber-db-with-transaction
         (dotimes (i count)
           (jabber-mam--process-message
-           jc (jabber-mam-test--make-message i))))
+           jc (jabber-test-mam--make-message i))))
       ;; Still exactly count rows
       (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
                                    0 (+ 1700000000 (* count 86400))
@@ -128,19 +134,19 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
 
 ;;; Group 3: Transaction batching performance
 
-(ert-deftest jabber-mam-test-transaction-batching ()
+(ert-deftest jabber-test-mam-transaction-batching ()
   "Batched inserts inside a transaction are faster than unbatched."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (batch-count 500)
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-muc-participants nil))
       ;; Batched: all in one transaction
       (let ((t1 (float-time)))
         (jabber-db-with-transaction
           (dotimes (i batch-count)
             (jabber-mam--process-message
-             jc (jabber-mam-test--make-message i))))
+             jc (jabber-test-mam--make-message i))))
         (let ((batched-time (- (float-time) t1)))
           ;; Verify they all stored
           (let ((rows (jabber-db-query "me@example.com" "friend@example.com"
@@ -152,9 +158,9 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
 
 ;;; Group 4: Parse helpers
 
-(ert-deftest jabber-mam-test-parse-result ()
+(ert-deftest jabber-test-mam-parse-result ()
   "jabber-mam--parse-result extracts archive-id, stamp, and inner message."
-  (let* ((xml (jabber-mam-test--make-message 42))
+  (let* ((xml (jabber-test-mam--make-message 42))
          (parsed (jabber-mam--parse-result xml)))
     (should parsed)
     (should (string= "archive-000042" (nth 0 parsed)))
@@ -164,7 +170,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
                      (car (jabber-xml-node-children
                            (car (jabber-xml-get-children (nth 2 parsed) 'body))))))))
 
-(ert-deftest jabber-mam-test-build-query-before-id-empty ()
+(ert-deftest jabber-test-mam-build-query-before-id-empty ()
   "build-query with before-id=t emits an empty <before/> element."
   (let ((query (jabber-mam--build-query "q1" "peer@example.com" nil nil 30 t)))
     ;; Should have RSM set with max and before
@@ -179,7 +185,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
       (should max-el)
       (should (string= "30" (car (jabber-xml-node-children max-el)))))))
 
-(ert-deftest jabber-mam-test-build-query-before-id-string ()
+(ert-deftest jabber-test-mam-build-query-before-id-string ()
   "build-query with before-id as a string emits <before>ID</before>."
   (let ((query (jabber-mam--build-query "q2" nil nil nil 10 "some-id")))
     (let* ((set-el (cl-find 'set (jabber-xml-node-children query)
@@ -188,28 +194,28 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
       (should before-el)
       (should (string= "some-id" (car (jabber-xml-node-children before-el)))))))
 
-(ert-deftest jabber-mam-test-parse-fin-incomplete ()
+(ert-deftest jabber-test-mam-parse-fin-incomplete ()
   "jabber-mam--parse-fin returns :complete nil when not complete."
-  (let* ((xml (jabber-mam-test--make-fin "last-123"))
+  (let* ((xml (jabber-test-mam--make-fin "last-123"))
          (fin (jabber-mam--parse-fin xml)))
     (should-not (plist-get fin :complete))
     (should (string= "last-123" (plist-get fin :last)))))
 
-(ert-deftest jabber-mam-test-parse-fin-complete ()
+(ert-deftest jabber-test-mam-parse-fin-complete ()
   "jabber-mam--parse-fin returns :complete t when archive is exhausted."
-  (let* ((xml (jabber-mam-test--make-fin "last-456" t))
+  (let* ((xml (jabber-test-mam--make-fin "last-456" t))
          (fin (jabber-mam--parse-fin xml)))
     (should (plist-get fin :complete))
     (should (string= "last-456" (plist-get fin :last)))))
 
 ;;; Group 5: Transaction ref-count lifecycle
 
-(ert-deftest jabber-mam-test-tx-depth-single-query ()
+(ert-deftest jabber-test-mam-tx-depth-single-query ()
   "Single query cycle: depth goes 0 -> 1 -> 0, transaction commits."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--tx-depth 0)
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-mam--dirty-peers nil)
            (jabber-muc-participants nil))
       ;; Simulate what jabber-mam--query does to the transaction
@@ -220,7 +226,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
       (cl-incf jabber-mam--tx-depth)
       (should (= 1 jabber-mam--tx-depth))
       ;; Insert a message inside the open transaction
-      (jabber-mam--process-message jc (jabber-mam-test--make-message 0))
+      (jabber-mam--process-message jc (jabber-test-mam--make-message 0))
       ;; Simulate what jabber-mam--handle-fin does
       (when (> jabber-mam--tx-depth 0)
         (cl-decf jabber-mam--tx-depth))
@@ -233,12 +239,12 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
                                    0 (+ 1700000000 86400) -1)))
         (should (= 1 (length rows)))))))
 
-(ert-deftest jabber-mam-test-tx-depth-concurrent-queries ()
+(ert-deftest jabber-test-mam-tx-depth-concurrent-queries ()
   "Concurrent queries share one transaction: depth 0 -> 1 -> 2 -> 1 -> 0."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--tx-depth 0)
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)
                                       (cons jc "muc-query")))
            (jabber-mam--dirty-peers nil)
            (jabber-muc--rooms (make-hash-table :test 'equal))
@@ -254,9 +260,9 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
       (cl-incf jabber-mam--tx-depth)
       (should (= 2 jabber-mam--tx-depth))
       ;; Insert messages from both "queries"
-      (jabber-mam--process-message jc (jabber-mam-test--make-message 0))
+      (jabber-mam--process-message jc (jabber-test-mam--make-message 0))
       (jabber-mam--process-message
-       jc (jabber-mam-test--make-muc-message 1 "room@conference.example.com" "mynick"))
+       jc (jabber-test-mam--make-muc-message 1 "room@conference.example.com" "mynick"))
       ;; First query finishes
       (when (> jabber-mam--tx-depth 0)
         (cl-decf jabber-mam--tx-depth))
@@ -278,7 +284,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
         (should (= 1 (length chat-rows)))
         (should (= 1 (length muc-rows)))))))
 
-(ert-deftest jabber-mam-test-tx-depth-guard-negative ()
+(ert-deftest jabber-test-mam-tx-depth-guard-negative ()
   "Decrementing at depth 0 does not go negative."
   (let ((jabber-mam--tx-depth 0))
     (when (> jabber-mam--tx-depth 0)
@@ -291,7 +297,7 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
 
 ;;; Group 6: MUC messages
 
-(defun jabber-mam-test--make-muc-message (index room our-nick)
+(defun jabber-test-mam--make-muc-message (index room our-nick)
   "Build a fake MAM MUC result for message INDEX in ROOM.
 OUR-NICK is our nickname; every 3rd message is from us."
   (let* ((archive-id (format "muc-archive-%06d" index))
@@ -317,10 +323,10 @@ OUR-NICK is our nickname; every 3rd message is from us."
 
 (defvar jabber-muc--rooms)              ; jabber-muc.el
 
-(ert-deftest jabber-mam-test-muc-message-storage ()
+(ert-deftest jabber-test-mam-muc-message-storage ()
   "MUC messages from MAM are stored with correct peer and type."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (room "room@conference.example.com")
            (jabber-mam--syncing (list (cons jc "muc-query")))
            (jabber-muc--rooms (make-hash-table :test 'equal))
@@ -329,17 +335,17 @@ OUR-NICK is our nickname; every 3rd message is from us."
       (jabber-db-with-transaction
         (dotimes (i 10)
           (jabber-mam--process-message
-           jc (jabber-mam-test--make-muc-message i room "mynick"))))
+           jc (jabber-test-mam--make-muc-message i room "mynick"))))
       (let ((rows (jabber-db-query "me@example.com" room
                                    0 (+ 1700000000 (* 10 86400)) -1)))
         (should (= 10 (length rows)))
         (should (string= "groupchat" (plist-get (car rows) :type)))
         (should (string= room (plist-get (car rows) :peer)))))))
 
-(ert-deftest jabber-mam-test-muc-direction-detection ()
+(ert-deftest jabber-test-mam-muc-direction-detection ()
   "MUC MAM detects outgoing messages by matching our nickname."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (room "room@conference.example.com")
            (jabber-mam--syncing (list (cons jc "muc-query")))
            (jabber-muc--rooms (make-hash-table :test 'equal))
@@ -348,9 +354,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
       (puthash room (list (cons jc "mynick")) jabber-muc--rooms)
       (jabber-db-with-transaction
         (jabber-mam--process-message
-         jc (jabber-mam-test--make-muc-message 0 room "mynick"))  ; from us (idx%3=0)
+         jc (jabber-test-mam--make-muc-message 0 room "mynick"))  ; from us (idx%3=0)
         (jabber-mam--process-message
-         jc (jabber-mam-test--make-muc-message 1 room "mynick"))) ; from other (idx%3=1)
+         jc (jabber-test-mam--make-muc-message 1 room "mynick"))) ; from other (idx%3=1)
       (let ((rows (jabber-db-query "me@example.com" room
                                    0 (+ 1700000000 (* 2 86400)) -1)))
         (should (= 2 (length rows)))
@@ -359,7 +365,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
 
 ;;; Group 7: Dirty peer tracking
 
-(ert-deftest jabber-mam-test-mark-dirty-dedup ()
+(ert-deftest jabber-test-mam-mark-dirty-dedup ()
   "jabber-mam--mark-dirty does not add the same peer twice."
   (let ((jabber-mam--dirty-peers nil))
     (jabber-mam--mark-dirty "peer@example.com" "chat")
@@ -369,7 +375,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
     (should (equal '("peer@example.com" . "chat")
                    (car jabber-mam--dirty-peers)))))
 
-(ert-deftest jabber-mam-test-dirty-peers-reset-on-new-sync ()
+(ert-deftest jabber-test-mam-dirty-peers-reset-on-new-sync ()
   "Starting a new sync cycle resets the dirty peer list."
   (let ((jabber-mam--dirty-peers '(("room@muc.example.com" . "groupchat")))
         (jabber-mam--tx-depth 0))
@@ -380,14 +386,14 @@ OUR-NICK is our nickname; every 3rd message is from us."
 
 ;;; Group 8: jabber-mam-sync-buffer
 
-(ert-deftest jabber-mam-test-sync-buffer-not-connected ()
+(ert-deftest jabber-test-mam-sync-buffer-not-connected ()
   "Signal user-error when not connected."
   (with-temp-buffer
     (setq-local jabber-buffer-connection 'dead-jc)
     (let ((jabber-connections nil))
       (should-error (jabber-mam-sync-buffer) :type 'user-error))))
 
-(ert-deftest jabber-mam-test-sync-buffer-1to1-registers-and-queries ()
+(ert-deftest jabber-test-mam-sync-buffer-1to1-registers-and-queries ()
   "1:1 sync registers reconciliation tracking and queries with before-id=t."
   (let ((query-args nil))
     (cl-letf (((symbol-function 'jabber-mam--query)
@@ -420,7 +426,7 @@ OUR-NICK is our nickname; every 3rd message is from us."
           (should (eq t (nth 6 query-args)))     ; before-id = t
           (should (= 50 (nth 7 query-args))))))))
 
-(ert-deftest jabber-mam-test-sync-buffer-muc-registers-and-queries ()
+(ert-deftest jabber-test-mam-sync-buffer-muc-registers-and-queries ()
   "MUC sync registers reconciliation tracking and queries with before-id=t."
   (let ((query-args nil))
     (cl-letf (((symbol-function 'jabber-mam--query)
@@ -450,9 +456,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
 
 ;;; Group 8b: sync reconciliation
 
-(ert-deftest jabber-mam-test-reconcile-deletes-orphan-messages ()
+(ert-deftest jabber-test-mam-reconcile-deletes-orphan-messages ()
   "Reconciliation deletes local messages whose IDs are not in the remote set."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (let ((db (jabber-db-ensure-open))
           (account "me@example.com")
           (peer "friend@example.com"))
@@ -483,9 +489,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
         ;; Tracking entry should be cleaned up
         (should-not jabber-mam--sync-received)))))
 
-(ert-deftest jabber-mam-test-reconcile-keeps-messages-without-ids ()
+(ert-deftest jabber-test-mam-reconcile-keeps-messages-without-ids ()
   "Reconciliation keeps local messages that have no stanza_id or server_id."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (let ((db (jabber-db-ensure-open))
           (account "me@example.com")
           (peer "friend@example.com"))
@@ -512,9 +518,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
                      "SELECT count(*) FROM message WHERE account = ? AND peer = ?"
                      (list account peer)))))))))
 
-(ert-deftest jabber-mam-test-reconcile-noop-when-empty ()
+(ert-deftest jabber-test-mam-reconcile-noop-when-empty ()
   "Reconciliation is a no-op when no messages were received."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (let ((db (jabber-db-ensure-open))
           (account "me@example.com")
           (peer "friend@example.com"))
@@ -535,9 +541,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
         ;; Tracking cleaned up
         (should-not jabber-mam--sync-received)))))
 
-(ert-deftest jabber-mam-test-reconcile-uses-stanza-id-too ()
+(ert-deftest jabber-test-mam-reconcile-uses-stanza-id-too ()
   "Reconciliation matches on stanza_id when server_id is absent."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (let ((db (jabber-db-ensure-open))
           (account "me@example.com")
           (peer "friend@example.com"))
@@ -559,23 +565,23 @@ OUR-NICK is our nickname; every 3rd message is from us."
         (should (caar (sqlite-select db
                   "SELECT 1 FROM message WHERE stanza_id = 'st-1'")))))))
 
-(ert-deftest jabber-mam-test-process-message-tracks-ids ()
+(ert-deftest jabber-test-mam-process-message-tracks-ids ()
   "process-message accumulates IDs and timestamps for sync tracking."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (ids (make-hash-table :test #'equal))
            (jabber-mam--sync-received
-            (list (cons jabber-mam-test-queryid
+            (list (cons jabber-test-mam-queryid
                         (list :ids ids
                               :min-ts nil :max-ts nil
                               :account "me@example.com"
                               :peer "friend@example.com"))))
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-mam--tx-depth 1)
            (jabber-muc-participants nil))
       ;; Process two messages
-      (jabber-mam--process-message jc (jabber-mam-test--make-message 0))
-      (jabber-mam--process-message jc (jabber-mam-test--make-message 5))
+      (jabber-mam--process-message jc (jabber-test-mam--make-message 0))
+      (jabber-mam--process-message jc (jabber-test-mam--make-message 5))
       ;; Check that IDs were tracked
       (let ((data (cdr (car jabber-mam--sync-received))))
         (should (gethash "archive-000000" (plist-get data :ids)))
@@ -590,9 +596,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
 ;;; Group 9: disconnect cleanup
 
 
-(ert-deftest jabber-mam-test-cleanup-all-commits-transaction ()
+(ert-deftest jabber-test-mam-cleanup-all-commits-transaction ()
   "cleanup-all commits open transaction and resets state."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (sqlite-execute (jabber-db-ensure-open) "BEGIN")
     (let ((jabber-mam--tx-depth 2)
           (jabber-mam--syncing '((jc1 . "q1") (jc2 . "q2")))
@@ -609,9 +615,9 @@ VALUES ('a','b','in','chat','test',1)")
       (should (caar (sqlite-select (jabber-db-ensure-open)
                                    "SELECT 1 FROM message WHERE body='test'"))))))
 
-(ert-deftest jabber-mam-test-cleanup-connection-scoped ()
+(ert-deftest jabber-test-mam-cleanup-connection-scoped ()
   "cleanup-connection only removes entries for the given connection."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (sqlite-execute (jabber-db-ensure-open) "BEGIN")
     (let ((jabber-mam--tx-depth 2)
           (jabber-mam--syncing '((jc1 . "q1") (jc2 . "q2")))
@@ -622,9 +628,9 @@ VALUES ('a','b','in','chat','test',1)")
       (should (equal '((jc2 . "q2")) jabber-mam--syncing))
       (should-not jabber-mam--completion-callbacks))))
 
-(ert-deftest jabber-mam-test-cleanup-triggers-redisplay ()
+(ert-deftest jabber-test-mam-cleanup-triggers-redisplay ()
   "cleanup-all redraws dirty buffers."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (let ((jabber-mam--tx-depth 1)
           (jabber-mam--syncing '((jc1 . "q1")))
           (jabber-mam--completion-callbacks nil)
@@ -636,7 +642,7 @@ VALUES ('a','b','in','chat','test',1)")
         ;; Dirty peers list should be drained after cleanup.
         (should (null jabber-mam--dirty-peers))))))
 
-(ert-deftest jabber-mam-test-cleanup-all-noop-when-idle ()
+(ert-deftest jabber-test-mam-cleanup-all-noop-when-idle ()
   "cleanup-all is safe to call with no active queries."
   (let ((jabber-mam--tx-depth 0)
         (jabber-mam--syncing nil)
@@ -647,28 +653,28 @@ VALUES ('a','b','in','chat','test',1)")
 
 ;;; Group 10: stanza mutation guard
 
-(ert-deftest jabber-mam-test-body-stanza-stripped ()
+(ert-deftest jabber-test-mam-body-stanza-stripped ()
   "Body-bearing MAM result has children stripped after processing."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
-           (stanza (jabber-mam-test--make-message 1)))
+           (stanza (jabber-test-mam--make-message 1)))
       (jabber-mam--process-message jc stanza)
       (should-not (cddr stanza)))))
 
-(ert-deftest jabber-mam-test-bodyless-stanza-unwrapped ()
+(ert-deftest jabber-test-mam-bodyless-stanza-unwrapped ()
   "Bodyless MAM result is unwrapped with original sender and MAM marker."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            ;; Receipt stanza: no body, just a <received/> element
            (stanza `(message ((from . "me@example.com"))
                              (result ((xmlns . ,jabber-mam-xmlns)
-                                      (queryid . ,jabber-mam-test-queryid)
+                                      (queryid . ,jabber-test-mam-queryid)
                                       (id . "archive-001"))
                                      (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
                                                 (delay ((xmlns . ,jabber-mam-delay-xmlns)
@@ -689,10 +695,10 @@ VALUES ('a','b','in','chat','test',1)")
 
 ;;; Group 9: query ID validation
 
-(ert-deftest jabber-mam-test-unknown-queryid-rejected ()
+(ert-deftest jabber-test-mam-unknown-queryid-rejected ()
   "MAM result with unknown queryid is not processed."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (list (cons jc "known-query")))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
@@ -715,10 +721,10 @@ VALUES ('a','b','in','chat','test',1)")
       (should-not (caar (sqlite-select (jabber-db-ensure-open)
                                        "SELECT 1 FROM message WHERE stanza_id='s1'"))))))
 
-(ert-deftest jabber-mam-test-known-queryid-accepted ()
+(ert-deftest jabber-test-mam-known-queryid-accepted ()
   "MAM result with known queryid is processed normally."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--syncing (list (cons jc "known-query")))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
@@ -741,11 +747,11 @@ VALUES ('a','b','in','chat','test',1)")
 
 ;;; Group 10: error handler callback transfer
 
-(ert-deftest jabber-mam-test-error-callback-transferred ()
+(ert-deftest jabber-test-mam-error-callback-transferred ()
   "item-not-found fallback transfers callback to new query."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (sqlite-execute (jabber-db-ensure-open) "BEGIN")
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (jabber-mam--tx-depth 1)
            (jabber-mam--syncing (list (cons jc "old-q")))
            (jabber-mam--dirty-peers nil)
@@ -776,18 +782,18 @@ VALUES ('a','b','in','chat','test',1)")
 
 ;;; Group 11: sender JID validation
 
-(ert-deftest jabber-mam-test-rejects-foreign-sender ()
+(ert-deftest jabber-test-mam-rejects-foreign-sender ()
   "MAM result from a server other than ours is rejected."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            (jabber-muc--rooms (make-hash-table :test 'equal))
            ;; Outer from is evil.com, not our bare JID
            (stanza `(message ((from . "evil.com"))
                              (result ((xmlns . ,jabber-mam-xmlns)
-                                      (queryid . ,jabber-mam-test-queryid)
+                                      (queryid . ,jabber-test-mam-queryid)
                                       (id . "arch-evil"))
                                      (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
                                                 (delay ((xmlns . ,jabber-mam-delay-xmlns)
@@ -803,24 +809,24 @@ VALUES ('a','b','in','chat','test',1)")
       (should-not (caar (sqlite-select (jabber-db-ensure-open)
                                        "SELECT 1 FROM message WHERE stanza_id='forged-1'"))))))
 
-(ert-deftest jabber-mam-test-accepts-own-jid-sender ()
+(ert-deftest jabber-test-mam-accepts-own-jid-sender ()
   "MAM result from our own bare JID is accepted."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
-           (jabber-mam--syncing (list (cons jc jabber-mam-test-queryid)))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            ;; Normal 1:1 MAM result with from=our bare JID
-           (stanza (jabber-mam-test--make-message 5)))
+           (stanza (jabber-test-mam--make-message 5)))
       (jabber-mam--process-message jc stanza)
       ;; Message should be stored
       (should (caar (sqlite-select (jabber-db-ensure-open)
                                    "SELECT 1 FROM message WHERE stanza_id='stanza-000005'"))))))
 
-(ert-deftest jabber-mam-test-accepts-joined-muc-sender ()
+(ert-deftest jabber-test-mam-accepts-joined-muc-sender ()
   "MAM result from a joined MUC room is accepted."
-  (jabber-mam-test-with-db
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (room "room@conference.example.com")
            (jabber-mam--syncing (list (cons jc "muc-query")))
            (jabber-mam--tx-depth 1)
@@ -848,11 +854,11 @@ VALUES ('a','b','in','chat','test',1)")
 
 ;;; Group 12: MUC query cancellation
 
-(ert-deftest jabber-mam-test-cancel-muc-query ()
+(ert-deftest jabber-test-mam-cancel-muc-query ()
   "Cancelling a MUC MAM query removes it from active state."
-  (jabber-mam-test-with-db
+  (jabber-test-mam-with-db
     (sqlite-execute (jabber-db-ensure-open) "BEGIN")
-    (let* ((jc (jabber-mam-test--make-fake-jc "me@example.com"))
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (room "room@conference.example.com")
            (jabber-mam--tx-depth 1)
            (jabber-mam--syncing (list (cons jc "muc-q1")))
@@ -866,7 +872,7 @@ VALUES ('a','b','in','chat','test',1)")
       (should-not jabber-mam--query-targets)
       (should-not jabber-mam--completion-callbacks))))
 
-(ert-deftest jabber-mam-test-cancel-muc-query-noop-for-unknown ()
+(ert-deftest jabber-test-mam-cancel-muc-query-noop-for-unknown ()
   "Cancelling a room with no active query is a no-op."
   (let ((jabber-mam--tx-depth 1)
         (jabber-mam--syncing (list (cons 'jc "q1")))
@@ -877,6 +883,6 @@ VALUES ('a','b','in','chat','test',1)")
     (should (= 1 jabber-mam--tx-depth))
     (should jabber-mam--syncing)))
 
-(provide 'jabber-mam-tests)
+(provide 'jabber-test-mam)
 
-;;; jabber-mam-tests.el ends here
+;;; jabber-test-mam.el ends here

@@ -1,4 +1,10 @@
-;;; jabber-carbons-tests.el --- Tests for XEP-0280 carbon handling  -*- lexical-binding: t; -*-
+;;; jabber-test-carbons.el --- Tests for jabber-carbons  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0280 Message Carbons processing.
+
+;;; Code:
 
 ;; Copyright (C) 2026 - Thanos Apollo
 
@@ -30,7 +36,7 @@
 
 ;;; Test helpers
 
-(defun jabber-carbons-test--make-carbon (type from inner-from inner-to
+(defun jabber-test-carbons--make-carbon (type from inner-from inner-to
                                               &optional id body)
   "Build a carbon-wrapped message stanza.
 TYPE is `sent' or `received'.  FROM is the outer stanza's from.
@@ -47,7 +53,7 @@ Optional BODY overrides the default \"Hello\"."
                                 (message ,inner-attrs
                                          (body nil ,(or body "Hello"))))))))
 
-(defun jabber-carbons-test--make-plain-message (from to)
+(defun jabber-test-carbons--make-plain-message (from to)
   "Build a plain (non-carbon) message stanza."
   `(message ((from . ,from) (to . ,to) (type . "chat"))
             (body nil "Hello")))
@@ -56,7 +62,7 @@ Optional BODY overrides the default \"Hello\"."
 
 (ert-deftest jabber-chat-test-extract-carbon-sent ()
   "Extract-carbon returns (sent . msg) for a sent carbon."
-  (let* ((stanza (jabber-carbons-test--make-carbon
+  (let* ((stanza (jabber-test-carbons--make-carbon
                   'sent "me@example.com" "me@example.com/phone"
                   "friend@example.com"))
          (result (jabber-chat--extract-carbon stanza)))
@@ -67,7 +73,7 @@ Optional BODY overrides the default \"Hello\"."
 
 (ert-deftest jabber-chat-test-extract-carbon-received ()
   "Extract-carbon returns (received . msg) for a received carbon."
-  (let* ((stanza (jabber-carbons-test--make-carbon
+  (let* ((stanza (jabber-test-carbons--make-carbon
                   'received "me@example.com" "friend@example.com"
                   "me@example.com/phone"))
          (result (jabber-chat--extract-carbon stanza)))
@@ -78,7 +84,7 @@ Optional BODY overrides the default \"Hello\"."
 
 (ert-deftest jabber-chat-test-extract-carbon-plain ()
   "Extract-carbon returns nil for a plain message."
-  (let* ((stanza (jabber-carbons-test--make-plain-message
+  (let* ((stanza (jabber-test-carbons--make-plain-message
                   "friend@example.com" "me@example.com"))
          (result (jabber-chat--extract-carbon stanza)))
     (should-not result)))
@@ -87,7 +93,7 @@ Optional BODY overrides the default \"Hello\"."
 
 (ert-deftest jabber-chat-test-unwrap-carbon-rejects-forged ()
   "Unwrap-carbon drops carbon framing when outer from doesn't match our JID."
-  (let* ((stanza (jabber-carbons-test--make-carbon
+  (let* ((stanza (jabber-test-carbons--make-carbon
                   'sent "evil@attacker.com" "evil@attacker.com/phone"
                   "victim@example.com")))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -99,7 +105,7 @@ Optional BODY overrides the default \"Hello\"."
 
 (ert-deftest jabber-chat-test-unwrap-carbon-valid-sent ()
   "Unwrap-carbon returns inner message and buffer for valid sent carbon."
-  (let* ((stanza (jabber-carbons-test--make-carbon
+  (let* ((stanza (jabber-test-carbons--make-carbon
                   'sent "me@example.com" "me@example.com/phone"
                   "friend@example.com"))
          (test-buffer (generate-new-buffer " *test-carbon*")))
@@ -116,7 +122,7 @@ Optional BODY overrides the default \"Hello\"."
 
 (ert-deftest jabber-chat-test-unwrap-carbon-valid-received ()
   "Unwrap-carbon returns inner message with no buffer for valid received carbon."
-  (let* ((stanza (jabber-carbons-test--make-carbon
+  (let* ((stanza (jabber-test-carbons--make-carbon
                   'received "me@example.com" "friend@example.com"
                   "me@example.com/phone")))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -135,12 +141,12 @@ Optional BODY overrides the default \"Hello\"."
 (declare-function jabber-db-ensure-open "jabber-db" ())
 (declare-function jabber-db-close "jabber-db" ())
 
-(defmacro jabber-carbons-test-with-db (&rest body)
+(defmacro jabber-test-carbons-with-db (&rest body)
   "Run BODY with a fresh temp SQLite database."
   (declare (indent 0) (debug t))
-  `(let* ((jabber-carbons-test--dir (make-temp-file "jabber-carbons-test" t))
+  `(let* ((jabber-test-carbons--dir (make-temp-file "jabber-carbons-test" t))
           (jabber-db-path (expand-file-name "test.sqlite"
-                                            jabber-carbons-test--dir))
+                                            jabber-test-carbons--dir))
           (jabber-db--connection nil)
           (jabber-backlog-days 3.0)
           (jabber-backlog-number 10))
@@ -149,13 +155,13 @@ Optional BODY overrides the default \"Hello\"."
            (jabber-db-ensure-open)
            ,@body)
        (jabber-db-close)
-       (when (file-directory-p jabber-carbons-test--dir)
-         (delete-directory jabber-carbons-test--dir t)))))
+       (when (file-directory-p jabber-test-carbons--dir)
+         (delete-directory jabber-test-carbons--dir t)))))
 
 (ert-deftest jabber-chat-test-store-carbon-sent ()
   "Sent carbon is stored with direction=out and peer=recipient."
-  (jabber-carbons-test-with-db
-    (let ((xml-data (jabber-carbons-test--make-carbon
+  (jabber-test-carbons-with-db
+    (let ((xml-data (jabber-test-carbons--make-carbon
                      'sent "me@example.com" "me@example.com/phone"
                      "friend@example.com" "msg-001" "Hi from phone")))
       (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -175,8 +181,8 @@ Optional BODY overrides the default \"Hello\"."
 
 (ert-deftest jabber-chat-test-store-carbon-received ()
   "Received carbon is stored with direction=in and peer=sender."
-  (jabber-carbons-test-with-db
-    (let ((xml-data (jabber-carbons-test--make-carbon
+  (jabber-test-carbons-with-db
+    (let ((xml-data (jabber-test-carbons--make-carbon
                      'received "me@example.com" "friend@example.com/laptop"
                      "me@example.com/emacs" "msg-002" "Hi from laptop")))
       (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -194,8 +200,8 @@ Optional BODY overrides the default \"Hello\"."
 
 (ert-deftest jabber-chat-test-store-carbon-dedup ()
   "Duplicate carbon with same stanza-id is not stored twice."
-  (jabber-carbons-test-with-db
-    (let ((xml-data (jabber-carbons-test--make-carbon
+  (jabber-test-carbons-with-db
+    (let ((xml-data (jabber-test-carbons--make-carbon
                      'sent "me@example.com" "me@example.com/phone"
                      "friend@example.com" "msg-dup" "Hello")))
       (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -211,6 +217,6 @@ Optional BODY overrides the default \"Hello\"."
                               "SELECT COUNT(*) FROM message"))))
             (should (= 1 count))))))))
 
-(provide 'jabber-carbons-tests)
+(provide 'jabber-test-carbons)
 
-;;; jabber-carbons-tests.el ends here
+;;; jabber-test-carbons.el ends here

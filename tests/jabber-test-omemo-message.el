@@ -1,4 +1,10 @@
-;;; jabber-omemo-message-tests.el --- ERT tests for OMEMO message encrypt/decrypt  -*- lexical-binding: t; -*-
+;;; jabber-test-omemo-message.el --- Tests for jabber-omemo-message  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; OMEMO message encryption and decryption.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-chat)
@@ -6,14 +12,14 @@
 
 ;;; Test infrastructure
 
-(defmacro jabber-omemo-message-test-with-db (&rest body)
+(defmacro jabber-test-omemo-message-with-db (&rest body)
   "Run BODY with a fresh temp SQLite database.
 Clears OMEMO in-memory caches and tears down on exit."
   (declare (indent 0) (debug t))
-  `(let* ((jabber-omemo-message-test--dir
+  `(let* ((jabber-test-omemo-message--dir
            (make-temp-file "jabber-omemo-msg-test" t))
           (jabber-db-path (expand-file-name "test.sqlite"
-                                            jabber-omemo-message-test--dir))
+                                            jabber-test-omemo-message--dir))
           (jabber-db--connection nil)
           (jabber-omemo--device-ids (make-hash-table :test 'equal))
           (jabber-omemo--stores (make-hash-table :test 'equal))
@@ -24,19 +30,19 @@ Clears OMEMO in-memory caches and tears down on exit."
            (jabber-db-ensure-open)
            ,@body)
        (jabber-db-close)
-       (when (file-directory-p jabber-omemo-message-test--dir)
-         (delete-directory jabber-omemo-message-test--dir t)))))
+       (when (file-directory-p jabber-test-omemo-message--dir)
+         (delete-directory jabber-test-omemo-message--dir t)))))
 
 ;;; Group 1: Fallback body
 
-(ert-deftest jabber-omemo-message-test-fallback-body ()
+(ert-deftest jabber-test-omemo-message-fallback-body ()
   "Fallback body constant is a non-empty string."
   (should (stringp jabber-omemo-fallback-body))
   (should (> (length jabber-omemo-fallback-body) 0)))
 
 ;;; Group 2: Parse encrypted XML
 
-(ert-deftest jabber-omemo-message-test-parse-encrypted-basic ()
+(ert-deftest jabber-test-omemo-message-parse-encrypted-basic ()
   "parse-encrypted extracts sid, iv, payload, and keys from XML."
   (let* ((xml-data
           `(message ((from . "alice@example.com/phone")
@@ -65,14 +71,14 @@ Clears OMEMO in-memory caches and tears down on exit."
       (should (= 11111 (car (nth 1 keys))))
       (should-not (plist-get (cdr (nth 1 keys)) :pre-key-p)))))
 
-(ert-deftest jabber-omemo-message-test-parse-encrypted-no-element ()
+(ert-deftest jabber-test-omemo-message-parse-encrypted-no-element ()
   "parse-encrypted returns nil when no <encrypted> element."
   (let ((xml-data '(message ((from . "alice@example.com")
                              (type . "chat"))
                             (body () "hello"))))
     (should-not (jabber-omemo--parse-encrypted xml-data))))
 
-(ert-deftest jabber-omemo-message-test-parse-encrypted-no-payload ()
+(ert-deftest jabber-test-omemo-message-parse-encrypted-no-payload ()
   "parse-encrypted handles heartbeat messages (no payload)."
   (let* ((xml-data
           `(message ((from . "alice@example.com/phone")
@@ -90,9 +96,9 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 3: Build encrypted XML
 
-(ert-deftest jabber-omemo-message-test-build-encrypted-structure ()
+(ert-deftest jabber-test-omemo-message-build-encrypted-structure ()
   "build-encrypted-xml produces correct sexp structure."
-  (jabber-omemo-message-test-with-db
+  (jabber-test-omemo-message-with-db
     (let* ((store-blob-a (jabber-omemo-setup-store))
            (store-ptr-a (jabber-omemo-deserialize-store store-blob-a))
            (store-blob-b (jabber-omemo-setup-store))
@@ -143,7 +149,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 4: detect-encrypted
 
-(ert-deftest jabber-omemo-message-test-detect-encrypted-returns-parsed ()
+(ert-deftest jabber-test-omemo-message-detect-encrypted-returns-parsed ()
   "detect-encrypted returns (:type omemo :parsed ...) for OMEMO stanza."
   (let* ((xml-data
           `(message ((from . "alice@example.com/phone")
@@ -161,14 +167,14 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should (plist-get result :parsed))
     (should (= 12345 (plist-get (plist-get result :parsed) :sid)))))
 
-(ert-deftest jabber-omemo-message-test-detect-encrypted-returns-nil-for-plain ()
+(ert-deftest jabber-test-omemo-message-detect-encrypted-returns-nil-for-plain ()
   "detect-encrypted returns nil for plain stanza."
   (let ((xml-data '(message ((from . "alice@example.com")
                              (type . "chat"))
                             (body () "hello plain"))))
     (should-not (jabber-omemo--detect-encrypted xml-data))))
 
-(ert-deftest jabber-omemo-message-test-detect-encrypted-muc-echo ()
+(ert-deftest jabber-test-omemo-message-detect-encrypted-muc-echo ()
   "detect-encrypted returns muc-echo plist and consumes cache."
   (let ((jabber-omemo--sent-muc-plaintexts (make-hash-table :test #'equal)))
     (puthash "msg-001" "secret text" jabber-omemo--sent-muc-plaintexts)
@@ -185,7 +191,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 5: Trust label formatting
 
-(ert-deftest jabber-omemo-message-test-trust-labels ()
+(ert-deftest jabber-test-omemo-message-trust-labels ()
   "Trust labels map correctly."
   (should (string= "undecided" (jabber-omemo--trust-label 0)))
   (should (string= "TOFU" (jabber-omemo--trust-label 1)))
@@ -194,7 +200,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 6: Fingerprint formatting
 
-(ert-deftest jabber-omemo-message-test-format-fingerprint ()
+(ert-deftest jabber-test-omemo-message-format-fingerprint ()
   "format-fingerprint produces space-separated hex."
   (let ((key (unibyte-string #xDE #xAD #xBE #xEF)))
     (should (string= "DE AD BE EF"
@@ -202,9 +208,9 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 7: Full encrypt/decrypt round-trip
 
-(ert-deftest jabber-omemo-message-test-encrypt-decrypt-roundtrip ()
+(ert-deftest jabber-test-omemo-message-encrypt-decrypt-roundtrip ()
   "Encrypt and decrypt a message round-trips the plaintext."
-  (jabber-omemo-message-test-with-db
+  (jabber-test-omemo-message-with-db
     (let* ((store-blob-a (jabber-omemo-setup-store))
            (store-ptr-a (jabber-omemo-deserialize-store store-blob-a))
            (store-blob-b (jabber-omemo-setup-store))
@@ -244,7 +250,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 8: aesgcm URL construction
 
-(ert-deftest jabber-omemo-message-test-build-aesgcm-url ()
+(ert-deftest jabber-test-omemo-message-build-aesgcm-url ()
   "Build aesgcm:// URL from HTTPS URL, IV, and key."
   (let* ((iv (decode-hex-string "8c3d050e9386ec173861778f"))
          (key (decode-hex-string "68e9af38a97aaf82faa4063b4d0878a61261534410c8a84331eaac851759f587"))
@@ -252,7 +258,7 @@ Clears OMEMO in-memory caches and tears down on exit."
                "https://download.example.org/file.jpg" iv key)))
     (should (string= url "aesgcm://download.example.org/file.jpg#8c3d050e9386ec173861778f68e9af38a97aaf82faa4063b4d0878a61261534410c8a84331eaac851759f587"))))
 
-(ert-deftest jabber-omemo-message-test-aesgcm-url-round-trip ()
+(ert-deftest jabber-test-omemo-message-aesgcm-url-round-trip ()
   "Build URL then parse it back, recovering same IV and key."
   (let* ((enc (jabber-omemo-aesgcm-encrypt (make-string 100 ?x)))
          (iv (plist-get enc :iv))
@@ -263,7 +269,7 @@ Clears OMEMO in-memory caches and tears down on exit."
     (should (string= key (plist-get parsed :key)))
     (should (string= "https://host/f.jpg" (plist-get parsed :https-url)))))
 
-(ert-deftest jabber-omemo-message-test-aesgcm-file-round-trip ()
+(ert-deftest jabber-test-omemo-message-aesgcm-file-round-trip ()
   "Encrypt file contents, build URL, parse URL, decrypt, compare."
   (let* ((original "This is test file content with UTF-8: café")
          (plaintext (encode-coding-string original 'utf-8))
@@ -284,7 +290,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 9: aesgcm upload integration
 
-(ert-deftest jabber-omemo-message-test-build-aesgcm-url-rejects-non-https ()
+(ert-deftest jabber-test-omemo-message-build-aesgcm-url-rejects-non-https ()
   "build-aesgcm-url signals error when given a non-https URL."
   (let* ((iv (decode-hex-string "8c3d050e9386ec173861778f"))
          (key (decode-hex-string "68e9af38a97aaf82faa4063b4d0878a61261534410c8a84331eaac851759f587")))
@@ -292,12 +298,12 @@ Clears OMEMO in-memory caches and tears down on exit."
                    "aesgcm://host/path#oldfrag" iv key)
                   :type 'error)))
 
-(ert-deftest jabber-omemo-message-test-httpupload-transform-nil-without-omemo ()
+(ert-deftest jabber-test-omemo-message-httpupload-transform-nil-without-omemo ()
   "Transform returns nil when encryption is not OMEMO."
   (let ((jabber-chat-encryption 'plaintext))
     (should-not (jabber-omemo--httpupload-transform "/tmp/test.png" #'identity))))
 
-(ert-deftest jabber-omemo-message-test-httpupload-transform-encrypts-with-omemo ()
+(ert-deftest jabber-test-omemo-message-httpupload-transform-encrypts-with-omemo ()
   "Transform returns (filepath . callback) when OMEMO is active."
   (let* ((tmp (make-temp-file "omemo-test-" nil ".txt"))
          (jabber-chat-encryption 'omemo)
@@ -313,7 +319,7 @@ Clears OMEMO in-memory caches and tears down on exit."
       (when (and result (stringp (car result)))
         (ignore-errors (delete-file (car result)))))))
 
-(ert-deftest jabber-omemo-message-test-httpupload-send-url-handles-aesgcm ()
+(ert-deftest jabber-test-omemo-message-httpupload-send-url-handles-aesgcm ()
   "Send-url override returns non-nil for aesgcm:// URLs."
   (cl-letf (((symbol-function 'jabber-omemo--ensure-sessions)
              (lambda (_jc _jid callback) (funcall callback nil)))
@@ -327,7 +333,7 @@ Clears OMEMO in-memory caches and tears down on exit."
              'fake-jc "alice@example.com"
              "aesgcm://host/file#abc123"))))
 
-(ert-deftest jabber-omemo-message-test-httpupload-send-url-skips-https ()
+(ert-deftest jabber-test-omemo-message-httpupload-send-url-skips-https ()
   "Send-url override returns nil for https:// URLs."
   (should-not (jabber-omemo--httpupload-send-url
                'fake-jc "alice@example.com"
@@ -335,7 +341,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 10: Trust filtering
 
-(ert-deftest jabber-omemo-message-test-trusted-sessions-excludes-untrusted ()
+(ert-deftest jabber-test-omemo-message-trusted-sessions-excludes-untrusted ()
   "trusted-sessions drops devices with trust = -1."
   (let ((sessions '((100 . fake-ptr-100) (200 . fake-ptr-200) (300 . fake-ptr-300))))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -355,7 +361,7 @@ Clears OMEMO in-memory caches and tears down on exit."
         (should-not (assq 200 result))
         (should (assq 300 result))))))
 
-(ert-deftest jabber-omemo-message-test-trusted-sessions-keeps-undecided ()
+(ert-deftest jabber-test-omemo-message-trusted-sessions-keeps-undecided ()
   "trusted-sessions keeps devices with trust = 0 (undecided)."
   (let ((sessions '((100 . fake-ptr-100))))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -368,7 +374,7 @@ Clears OMEMO in-memory caches and tears down on exit."
       (let ((result (jabber-omemo--trusted-sessions 'fake-jc sessions)))
         (should (= 1 (length result)))))))
 
-(ert-deftest jabber-omemo-message-test-trusted-sessions-keeps-no-trust-record ()
+(ert-deftest jabber-test-omemo-message-trusted-sessions-keeps-no-trust-record ()
   "trusted-sessions keeps devices with no trust record."
   (let ((sessions '((100 . fake-ptr-100))))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -380,7 +386,7 @@ Clears OMEMO in-memory caches and tears down on exit."
       (let ((result (jabber-omemo--trusted-sessions 'fake-jc sessions)))
         (should (= 1 (length result)))))))
 
-(ert-deftest jabber-omemo-message-test-build-encrypted-rejects-all-untrusted ()
+(ert-deftest jabber-test-omemo-message-build-encrypted-rejects-all-untrusted ()
   "build-encrypted-xml signals error when all devices are untrusted."
   (cl-letf (((symbol-function 'jabber-connection-bare-jid)
              (lambda (_jc) "me@example.com"))
@@ -396,7 +402,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 12: Structured decrypt errors
 
-(ert-deftest jabber-omemo-message-test-decrypt-error-conditions ()
+(ert-deftest jabber-test-omemo-message-decrypt-error-conditions ()
   "Decrypt error subtypes inherit from `jabber-omemo-error'."
   (should (memq 'jabber-omemo-error
                 (get 'jabber-omemo-not-for-us 'error-conditions)))
@@ -405,7 +411,7 @@ Clears OMEMO in-memory caches and tears down on exit."
   (should (memq 'jabber-omemo-error
                 (get 'jabber-omemo-prekey-failed 'error-conditions))))
 
-(ert-deftest jabber-omemo-message-test-decrypt-stanza-not-for-us ()
+(ert-deftest jabber-test-omemo-message-decrypt-stanza-not-for-us ()
   "decrypt-stanza signals `jabber-omemo-not-for-us' when no key for our device."
   (let ((jabber-omemo--device-ids (make-hash-table :test 'equal)))
     (puthash "me@example.com" 42 jabber-omemo--device-ids)
@@ -422,7 +428,7 @@ Clears OMEMO in-memory caches and tears down on exit."
          (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed)
          :type 'jabber-omemo-not-for-us)))))
 
-(ert-deftest jabber-omemo-message-test-decrypt-stanza-no-session ()
+(ert-deftest jabber-test-omemo-message-decrypt-stanza-no-session ()
   "decrypt-stanza signals `jabber-omemo-no-session' for non-prekey with no session."
   (let ((jabber-omemo--device-ids (make-hash-table :test 'equal))
         (jabber-omemo--stores (make-hash-table :test 'equal))
@@ -445,7 +451,7 @@ Clears OMEMO in-memory caches and tears down on exit."
          (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed)
          :type 'jabber-omemo-no-session)))))
 
-(ert-deftest jabber-omemo-message-test-decrypt-stanza-prekey-failed ()
+(ert-deftest jabber-test-omemo-message-decrypt-stanza-prekey-failed ()
   "decrypt-stanza re-signals C error as `jabber-omemo-prekey-failed' for prekey."
   (let ((jabber-omemo--device-ids (make-hash-table :test 'equal))
         (jabber-omemo--stores (make-hash-table :test 'equal)))
@@ -468,7 +474,7 @@ Clears OMEMO in-memory caches and tears down on exit."
          (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed)
          :type 'jabber-omemo-prekey-failed)))))
 
-(ert-deftest jabber-omemo-message-test-decrypt-stanza-non-prekey-error-propagates ()
+(ert-deftest jabber-test-omemo-message-decrypt-stanza-non-prekey-error-propagates ()
   "decrypt-stanza propagates `jabber-omemo-error' verbatim for non-prekey messages."
   (let ((jabber-omemo--device-ids (make-hash-table :test 'equal))
         (jabber-omemo--stores (make-hash-table :test 'equal))
@@ -496,7 +502,7 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 ;;; Group 13: Decrypt handler error recovery
 
-(ert-deftest jabber-omemo-message-test-decrypt-handler-swallows-not-for-us ()
+(ert-deftest jabber-test-omemo-message-decrypt-handler-swallows-not-for-us ()
   "decrypt-handler returns xml-data unchanged when stanza is not for us."
   (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
              (lambda (&rest _)
@@ -508,7 +514,7 @@ Clears OMEMO in-memory caches and tears down on exit."
            (result (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)))
       (should (eq result xml-data)))))
 
-(ert-deftest jabber-omemo-message-test-decrypt-handler-no-publish-on-prekey-failure ()
+(ert-deftest jabber-test-omemo-message-decrypt-handler-no-publish-on-prekey-failure ()
   "decrypt-handler does NOT republish bundle on prekey failure (Dino-style)."
   (let ((publish-called nil))
     (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
@@ -527,7 +533,7 @@ Clears OMEMO in-memory caches and tears down on exit."
          :type 'jabber-omemo-prekey-failed)
         (should-not publish-called)))))
 
-(ert-deftest jabber-omemo-message-test-decrypt-handler-propagates-other-errors ()
+(ert-deftest jabber-test-omemo-message-decrypt-handler-propagates-other-errors ()
   "decrypt-handler propagates non-recoverable OMEMO errors unchanged."
   (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
              (lambda (&rest _)
@@ -540,9 +546,9 @@ Clears OMEMO in-memory caches and tears down on exit."
        (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)
        :type 'jabber-omemo-no-session))))
 
-(ert-deftest jabber-omemo-message-test-decrypt-stanza-no-publish-on-prekey-success ()
+(ert-deftest jabber-test-omemo-message-decrypt-stanza-no-publish-on-prekey-success ()
   "decrypt-stanza does NOT republish bundle on successful prekey decrypt."
-  (jabber-omemo-message-test-with-db
+  (jabber-test-omemo-message-with-db
     (let* ((store-blob-a (jabber-omemo-setup-store))
            (store-ptr-a (jabber-omemo-deserialize-store store-blob-a))
            (store-blob-b (jabber-omemo-setup-store))
@@ -593,5 +599,5 @@ Clears OMEMO in-memory caches and tears down on exit."
             (jabber-omemo--decrypt-stanza 'fake-jc xml-data parsed)
             (should-not publish-called)))))))
 
-(provide 'jabber-omemo-message-tests)
-;;; jabber-omemo-message-tests.el ends here
+(provide 'jabber-test-omemo-message)
+;;; jabber-test-omemo-message.el ends here

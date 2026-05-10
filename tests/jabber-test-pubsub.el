@@ -1,4 +1,10 @@
-;;; jabber-pubsub-tests.el --- Tests for jabber-pubsub  -*- lexical-binding: t; -*-
+;;; jabber-test-pubsub.el --- Tests for jabber-pubsub  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0060 Publish-Subscribe.
+
+;;; Code:
 
 (require 'ert)
 
@@ -13,7 +19,7 @@
 
 ;;; Group 1: publish-options helper
 
-(ert-deftest jabber-pubsub-test-publish-options-single ()
+(ert-deftest jabber-test-pubsub-publish-options-single ()
   "Single option produces correct XML structure."
   (let ((result (jabber-pubsub--publish-options
                  '(("pubsub#access_model" . "open")))))
@@ -31,7 +37,7 @@
       (should (string= (cdr (assq 'var (cadr (nth 1 fields))))
                         "pubsub#access_model")))))
 
-(ert-deftest jabber-pubsub-test-publish-options-multiple ()
+(ert-deftest jabber-test-pubsub-publish-options-multiple ()
   "Multiple options produce multiple fields."
   (let ((result (jabber-pubsub--publish-options
                  '(("pubsub#access_model" . "open")
@@ -43,7 +49,7 @@
       ;; FORM_TYPE + two options = 3 fields
       (should (= (length fields) 3)))))
 
-(ert-deftest jabber-pubsub-test-publish-options-form-type ()
+(ert-deftest jabber-test-pubsub-publish-options-form-type ()
   "FORM_TYPE hidden field value is pubsub#publish-options."
   (let* ((result (jabber-pubsub--publish-options '(("foo" . "bar"))))
          (x (nth 2 result))
@@ -54,7 +60,7 @@
 
 ;;; Group 2: event handler dispatch
 
-(ert-deftest jabber-pubsub-test-dispatch-matching-node ()
+(ert-deftest jabber-test-pubsub-dispatch-matching-node ()
   "Dispatches to registered handler for matching node."
   (let ((jabber-pubsub-node-handlers nil)
         (called-with nil))
@@ -72,7 +78,7 @@
     (should (string= (nth 0 called-with) "alice@example.com"))
     (should (string= (nth 1 called-with) "urn:xmpp:omemo:2:bundles"))))
 
-(ert-deftest jabber-pubsub-test-dispatch-no-event ()
+(ert-deftest jabber-test-pubsub-dispatch-no-event ()
   "Ignores messages without <event> element."
   (let ((jabber-pubsub-node-handlers
          (list (cons "some-node" (lambda (&rest _) (error "Should not be called")))))
@@ -83,7 +89,7 @@
                (body () "hello")))
     (should-not result)))
 
-(ert-deftest jabber-pubsub-test-dispatch-wrong-xmlns ()
+(ert-deftest jabber-test-pubsub-dispatch-wrong-xmlns ()
   "Ignores events with wrong xmlns."
   (let ((jabber-pubsub-node-handlers
          (list (cons "some-node" (lambda (&rest _) (error "Should not be called"))))))
@@ -94,7 +100,7 @@
                       (items ((node . "some-node"))
                              (item ((id . "1")) (data () "x"))))))))
 
-(ert-deftest jabber-pubsub-test-dispatch-unregistered-node ()
+(ert-deftest jabber-test-pubsub-dispatch-unregistered-node ()
   "Ignores events with unregistered node."
   (let ((jabber-pubsub-node-handlers nil))
     ;; Should not error
@@ -105,7 +111,7 @@
                       (items ((node . "unknown:node"))
                              (item ((id . "1")) (data () "x"))))))))
 
-(ert-deftest jabber-pubsub-test-dispatch-purge ()
+(ert-deftest jabber-test-pubsub-dispatch-purge ()
   "Handles <purge> events."
   (let ((jabber-pubsub-node-handlers nil)
         (called-with nil))
@@ -123,24 +129,24 @@
 
 ;;; Group 3: IQ XML structure
 
-(defvar jabber-pubsub-test--captured-args nil
+(defvar jabber-test-pubsub--captured-args nil
   "Captured arguments from mocked `jabber-send-iq'.")
 
-(defmacro jabber-pubsub-test-with-mock-iq (&rest body)
+(defmacro jabber-test-pubsub-with-mock-iq (&rest body)
   "Execute BODY with `jabber-send-iq' mocked to capture its arguments."
-  `(let ((jabber-pubsub-test--captured-args nil))
+  `(let ((jabber-test-pubsub--captured-args nil))
      (cl-letf (((symbol-function 'jabber-send-iq)
                 (lambda (jc to type query &rest _rest)
-                  (setq jabber-pubsub-test--captured-args
+                  (setq jabber-test-pubsub--captured-args
                         (list :jc jc :to to :type type :query query)))))
        ,@body)))
 
-(ert-deftest jabber-pubsub-test-publish-iq-structure ()
+(ert-deftest jabber-test-pubsub-publish-iq-structure ()
   "Publish builds correct IQ set with pubsub xmlns."
-  (jabber-pubsub-test-with-mock-iq
+  (jabber-test-pubsub-with-mock-iq
    (jabber-pubsub-publish 'fake-jc "pubsub.example.com" "mynode" "item1"
                           '(payload () "data"))
-   (let ((args jabber-pubsub-test--captured-args))
+   (let ((args jabber-test-pubsub--captured-args))
      (should (equal (plist-get args :to) "pubsub.example.com"))
      (should (string= (plist-get args :type) "set"))
      (let ((query (plist-get args :query)))
@@ -155,22 +161,22 @@
            (should (eq (car item) 'item))
            (should (string= (cdr (assq 'id (cadr item))) "item1"))))))))
 
-(ert-deftest jabber-pubsub-test-publish-with-options ()
+(ert-deftest jabber-test-pubsub-publish-with-options ()
   "Publish with options includes <publish-options>."
-  (jabber-pubsub-test-with-mock-iq
+  (jabber-test-pubsub-with-mock-iq
    (jabber-pubsub-publish 'fake-jc nil "mynode" "item1"
                           '(payload () "data")
                           '(("pubsub#access_model" . "open")))
-   (let* ((query (plist-get jabber-pubsub-test--captured-args :query))
+   (let* ((query (plist-get jabber-test-pubsub--captured-args :query))
           (children (cddr query))
           (pub-opts (cl-find 'publish-options children :key #'car)))
      (should pub-opts))))
 
-(ert-deftest jabber-pubsub-test-retract-iq-structure ()
+(ert-deftest jabber-test-pubsub-retract-iq-structure ()
   "Retract builds correct IQ set without notify attribute."
-  (jabber-pubsub-test-with-mock-iq
+  (jabber-test-pubsub-with-mock-iq
    (jabber-pubsub-retract 'fake-jc "pubsub.example.com" "mynode" "item1")
-   (let* ((args jabber-pubsub-test--captured-args)
+   (let* ((args jabber-test-pubsub--captured-args)
           (query (plist-get args :query)))
      (should (string= (plist-get args :type) "set"))
      (should (eq (car query) 'pubsub))
@@ -181,33 +187,33 @@
        (let ((item (nth 2 retract)))
          (should (string= (cdr (assq 'id (cadr item))) "item1")))))))
 
-(ert-deftest jabber-pubsub-test-retract-with-notify ()
+(ert-deftest jabber-test-pubsub-retract-with-notify ()
   "Retract with NOTIFY adds notify=\"true\" attribute."
-  (jabber-pubsub-test-with-mock-iq
+  (jabber-test-pubsub-with-mock-iq
    (jabber-pubsub-retract 'fake-jc "pubsub.example.com" "mynode" "item1"
                           t)
-   (let* ((query (plist-get jabber-pubsub-test--captured-args :query))
+   (let* ((query (plist-get jabber-test-pubsub--captured-args :query))
           (retract (nth 2 query)))
      (should (string= (cdr (assq 'notify (cadr retract))) "true"))
      (let ((item (nth 2 retract)))
        (should (string= (cdr (assq 'id (cadr item))) "item1"))))))
 
-(ert-deftest jabber-pubsub-test-request-iq-structure ()
+(ert-deftest jabber-test-pubsub-request-iq-structure ()
   "Request items builds correct IQ get."
-  (jabber-pubsub-test-with-mock-iq
+  (jabber-test-pubsub-with-mock-iq
    (jabber-pubsub-request 'fake-jc "pubsub.example.com" "mynode" #'ignore)
-   (let* ((args jabber-pubsub-test--captured-args)
+   (let* ((args jabber-test-pubsub--captured-args)
           (query (plist-get args :query)))
      (should (string= (plist-get args :type) "get"))
      (let ((items (nth 2 query)))
        (should (eq (car items) 'items))
        (should (string= (cdr (assq 'node (cadr items))) "mynode"))))))
 
-(ert-deftest jabber-pubsub-test-delete-node-iq-structure ()
+(ert-deftest jabber-test-pubsub-delete-node-iq-structure ()
   "Delete node builds correct IQ set with owner xmlns."
-  (jabber-pubsub-test-with-mock-iq
+  (jabber-test-pubsub-with-mock-iq
    (jabber-pubsub-delete-node 'fake-jc "pubsub.example.com" "mynode")
-   (let* ((args jabber-pubsub-test--captured-args)
+   (let* ((args jabber-test-pubsub--captured-args)
           (query (plist-get args :query)))
      (should (string= (plist-get args :type) "set"))
      (should (string= (cdr (assq 'xmlns (cadr query)))
@@ -216,12 +222,12 @@
        (should (eq (car delete) 'delete))
        (should (string= (cdr (assq 'node (cadr delete))) "mynode"))))))
 
-(ert-deftest jabber-pubsub-test-configure-node-iq-structure ()
+(ert-deftest jabber-test-pubsub-configure-node-iq-structure ()
   "Configure node builds correct IQ set with data form."
-  (jabber-pubsub-test-with-mock-iq
+  (jabber-test-pubsub-with-mock-iq
    (jabber-pubsub-configure-node 'fake-jc "pubsub.example.com" "mynode"
                                  '(("pubsub#access_model" . "open")))
-   (let* ((args jabber-pubsub-test--captured-args)
+   (let* ((args jabber-test-pubsub--captured-args)
           (query (plist-get args :query)))
      (should (string= (plist-get args :type) "set"))
      (should (string= (cdr (assq 'xmlns (cadr query)))
@@ -241,5 +247,5 @@
          (should (string= ft-value
                            "http://jabber.org/protocol/pubsub#node_config")))))))
 
-(provide 'jabber-pubsub-tests)
-;;; jabber-pubsub-tests.el ends here
+(provide 'jabber-test-pubsub)
+;;; jabber-test-pubsub.el ends here

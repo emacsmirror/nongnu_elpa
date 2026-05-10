@@ -1,4 +1,10 @@
-;;; jabber-openpgp-legacy-tests.el --- Tests for XEP-0027 legacy OpenPGP  -*- lexical-binding: t; -*-
+;;; jabber-test-openpgp-legacy.el --- Tests for jabber-openpgp-legacy  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0373 OpenPGP for XMPP.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-xml)
@@ -23,7 +29,7 @@
 
 ;;; Group 1: detect-encrypted
 
-(ert-deftest jabber-openpgp-legacy-test-detect-encrypted-returns-stripped ()
+(ert-deftest jabber-test-openpgp-legacy-detect-encrypted-returns-stripped ()
   "detect-encrypted returns stripped armor text for XEP-0027 stanza."
   (let ((xml-data `(message ((from . "alice@example.com/res")
                              (type . "chat"))
@@ -33,19 +39,19 @@
     (should (string= "hQEOA7Le..."
                       (jabber-openpgp-legacy--detect-encrypted xml-data)))))
 
-(ert-deftest jabber-openpgp-legacy-test-detect-encrypted-returns-nil ()
+(ert-deftest jabber-test-openpgp-legacy-detect-encrypted-returns-nil ()
   "detect-encrypted returns nil for plain stanza."
   (let ((xml-data '(message ((from . "alice@example.com")
                              (type . "chat"))
                             (body () "hello plain"))))
     (should-not (jabber-openpgp-legacy--detect-encrypted xml-data))))
 
-(ert-deftest jabber-openpgp-legacy-test-detect-encrypted-non-string-child ()
+(ert-deftest jabber-test-openpgp-legacy-detect-encrypted-non-string-child ()
   "detect-encrypted returns nil when x element child is not a string."
   (let ((xml-data '(message ((from . "alice@example.com"))
                             (x ((xmlns . "jabber:x:encrypted"))
                                (inner ())))))
     (should-not (jabber-openpgp-legacy--detect-encrypted xml-data))))
 
-(provide 'jabber-openpgp-legacy-tests)
-;;; jabber-openpgp-legacy-tests.el ends here
+(provide 'jabber-test-openpgp-legacy)
+;;; jabber-test-openpgp-legacy.el ends here

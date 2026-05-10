@@ -1,4 +1,10 @@
-;;; jabber-omemo-module-tests.el --- ERT tests for OMEMO dynamic module  -*- lexical-binding: t; -*-
+;;; jabber-test-omemo-module.el --- Tests for jabber-omemo-module  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; OMEMO native C module interface.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-omemo-core)
@@ -9,11 +15,11 @@
 
 ;;; Group 1: Module loading
 
-(ert-deftest jabber-omemo-module-test-provides-feature ()
+(ert-deftest jabber-test-omemo-module-provides-feature ()
   "The module provides the `jabber-omemo-core' feature."
   (should (featurep 'jabber-omemo-core)))
 
-(ert-deftest jabber-omemo-module-test-functions-bound ()
+(ert-deftest jabber-test-omemo-module-functions-bound ()
   "All internal functions are bound after loading."
   (should (fboundp 'jabber-omemo--setup-store))
   (should (fboundp 'jabber-omemo--deserialize-store))
@@ -35,20 +41,20 @@
 
 ;;; Group 2: Store lifecycle
 
-(ert-deftest jabber-omemo-module-test-setup-store-returns-unibyte ()
+(ert-deftest jabber-test-omemo-module-setup-store-returns-unibyte ()
   "setup-store returns a non-empty unibyte string."
   (let ((blob (jabber-omemo--setup-store)))
     (should (stringp blob))
     (should (not (multibyte-string-p blob)))
     (should (> (length blob) 0))))
 
-(ert-deftest jabber-omemo-module-test-deserialize-store-returns-user-ptr ()
+(ert-deftest jabber-test-omemo-module-deserialize-store-returns-user-ptr ()
   "deserialize-store returns a user-ptr."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob)))
     (should (user-ptrp ptr))))
 
-(ert-deftest jabber-omemo-module-test-store-round-trip ()
+(ert-deftest jabber-test-omemo-module-store-round-trip ()
   "Serializing a deserialized store produces the same blob."
   (let* ((blob1 (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob1))
@@ -57,7 +63,7 @@
 
 ;;; Group 3: Bundle extraction
 
-(ert-deftest jabber-omemo-module-test-get-bundle-plist-keys ()
+(ert-deftest jabber-test-omemo-module-get-bundle-plist-keys ()
   "get-bundle returns a plist with expected keys."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob))
@@ -68,7 +74,7 @@
     (should (plist-get bundle :signature))
     (should (plist-get bundle :pre-keys))))
 
-(ert-deftest jabber-omemo-module-test-identity-key-length ()
+(ert-deftest jabber-test-omemo-module-identity-key-length ()
   "Identity key is 33 bytes (0x05 prefix + 32-byte key)."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob))
@@ -77,7 +83,7 @@
     (should (= (length ik) 33))
     (should (= (aref ik 0) #x05))))
 
-(ert-deftest jabber-omemo-module-test-signed-pre-key-length ()
+(ert-deftest jabber-test-omemo-module-signed-pre-key-length ()
   "Signed pre-key is 33 bytes."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob))
@@ -85,7 +91,7 @@
          (spk (plist-get bundle :signed-pre-key)))
     (should (= (length spk) 33))))
 
-(ert-deftest jabber-omemo-module-test-signature-length ()
+(ert-deftest jabber-test-omemo-module-signature-length ()
   "Signature is 64 bytes."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob))
@@ -93,7 +99,7 @@
          (sig (plist-get bundle :signature)))
     (should (= (length sig) 64))))
 
-(ert-deftest jabber-omemo-module-test-pre-keys-count ()
+(ert-deftest jabber-test-omemo-module-pre-keys-count ()
   "Pre-keys list has 100 entries."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob))
@@ -101,7 +107,7 @@
          (pks (plist-get bundle :pre-keys)))
     (should (= (length pks) 100))))
 
-(ert-deftest jabber-omemo-module-test-pre-key-format ()
+(ert-deftest jabber-test-omemo-module-pre-key-format ()
   "Each pre-key is (id . key) with integer id and 33-byte key."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob))
@@ -114,7 +120,7 @@
 
 ;;; Group 4: Key rotation
 
-(ert-deftest jabber-omemo-module-test-rotate-changes-spk-id ()
+(ert-deftest jabber-test-omemo-module-rotate-changes-spk-id ()
   "Rotating the signed pre-key changes its ID."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob))
@@ -125,7 +131,7 @@
                                :signed-pre-key-id)))
       (should-not (= id-before id-after)))))
 
-(ert-deftest jabber-omemo-module-test-refill-pre-keys ()
+(ert-deftest jabber-test-omemo-module-refill-pre-keys ()
   "refill-pre-keys does not error on a fresh store."
   (let* ((blob (jabber-omemo--setup-store))
          (ptr (jabber-omemo--deserialize-store blob)))
@@ -134,7 +140,7 @@
 
 ;;; Group 5: Message encrypt/decrypt
 
-(ert-deftest jabber-omemo-module-test-encrypt-returns-plist ()
+(ert-deftest jabber-test-omemo-module-encrypt-returns-plist ()
   "encrypt-message returns plist with :key, :iv, :ciphertext."
   (let ((result (jabber-omemo--encrypt-message
                  (encode-coding-string "hello" 'utf-8))))
@@ -142,21 +148,21 @@
     (should (plist-get result :iv))
     (should (plist-get result :ciphertext))))
 
-(ert-deftest jabber-omemo-module-test-encrypt-key-length ()
+(ert-deftest jabber-test-omemo-module-encrypt-key-length ()
   "Encryption key is 32 bytes (16 AES + 16 auth tag)."
   (let* ((result (jabber-omemo--encrypt-message
                   (encode-coding-string "test" 'utf-8)))
          (key (plist-get result :key)))
     (should (= (length key) 32))))
 
-(ert-deftest jabber-omemo-module-test-encrypt-iv-length ()
+(ert-deftest jabber-test-omemo-module-encrypt-iv-length ()
   "IV is 12 bytes."
   (let* ((result (jabber-omemo--encrypt-message
                   (encode-coding-string "test" 'utf-8)))
          (iv (plist-get result :iv)))
     (should (= (length iv) 12))))
 
-(ert-deftest jabber-omemo-module-test-decrypt-recovers-plaintext ()
+(ert-deftest jabber-test-omemo-module-decrypt-recovers-plaintext ()
   "Decrypting an encrypted message recovers the original."
   (let* ((msg (encode-coding-string "Hello there!" 'utf-8))
          (enc (jabber-omemo--encrypt-message msg))
@@ -166,7 +172,7 @@
                (plist-get enc :ciphertext))))
     (should (string= msg dec))))
 
-(ert-deftest jabber-omemo-module-test-encrypt-decrypt-round-trip-utf8 ()
+(ert-deftest jabber-test-omemo-module-encrypt-decrypt-round-trip-utf8 ()
   "Round-trip works with UTF-8 content."
   (let* ((msg (encode-coding-string "Hallo Welt! \u00e4\u00f6\u00fc" 'utf-8))
          (enc (jabber-omemo--encrypt-message msg))
@@ -176,7 +182,7 @@
                (plist-get enc :ciphertext))))
     (should (string= msg dec))))
 
-(ert-deftest jabber-omemo-module-test-decrypt-wrong-key-signals-error ()
+(ert-deftest jabber-test-omemo-module-decrypt-wrong-key-signals-error ()
   "Decrypting with a wrong key signals jabber-omemo-error."
   (let* ((msg (encode-coding-string "secret" 'utf-8))
          (enc (jabber-omemo--encrypt-message msg))
@@ -190,7 +196,7 @@
 
 ;;; Group 6: Session lifecycle
 
-(ert-deftest jabber-omemo-module-test-initiate-session-returns-user-ptr ()
+(ert-deftest jabber-test-omemo-module-initiate-session-returns-user-ptr ()
   "initiate-session returns a user-ptr."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -208,7 +214,7 @@
                    (car pk))))
     (should (user-ptrp session))))
 
-(ert-deftest jabber-omemo-module-test-serialize-session-returns-unibyte ()
+(ert-deftest jabber-test-omemo-module-serialize-session-returns-unibyte ()
   "serialize-session returns a non-empty unibyte string."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -229,7 +235,7 @@
     (should (not (multibyte-string-p blob)))
     (should (> (length blob) 0))))
 
-(ert-deftest jabber-omemo-module-test-session-round-trip ()
+(ert-deftest jabber-test-omemo-module-session-round-trip ()
   "Serializing a deserialized session preserves the data."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -251,7 +257,7 @@
     (should (user-ptrp session2))
     (should (string= blob1 blob2))))
 
-(ert-deftest jabber-omemo-module-test-initiate-session-bad-signature ()
+(ert-deftest jabber-test-omemo-module-initiate-session-bad-signature ()
   "initiate-session with a bad signature signals an error."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -272,7 +278,7 @@
 
 ;;; Group 7: Key encrypt/decrypt round-trip
 
-(ert-deftest jabber-omemo-module-test-encrypt-key-returns-plist ()
+(ert-deftest jabber-test-omemo-module-encrypt-key-returns-plist ()
   "encrypt-key returns a plist with :data and :pre-key-p."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -293,7 +299,7 @@
     (should (plist-get result :data))
     (should (plist-member result :pre-key-p))))
 
-(ert-deftest jabber-omemo-module-test-first-message-is-pre-key ()
+(ert-deftest jabber-test-omemo-module-first-message-is-pre-key ()
   "First encrypted key message has :pre-key-p = t."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -313,7 +319,7 @@
          (result (jabber-omemo--encrypt-key session test-key)))
     (should (eq t (plist-get result :pre-key-p)))))
 
-(ert-deftest jabber-omemo-module-test-key-encrypt-decrypt-round-trip ()
+(ert-deftest jabber-test-omemo-module-key-encrypt-decrypt-round-trip ()
   "Full Alice/Bob key encrypt/decrypt round-trip."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -341,7 +347,7 @@
                      bob-session bob is-prekey enc-data)))
     (should (string= original-key decrypted))))
 
-(ert-deftest jabber-omemo-module-test-consecutive-messages-are-pre-key ()
+(ert-deftest jabber-test-omemo-module-consecutive-messages-are-pre-key ()
   "Consecutive messages from initiator stay pre-key until reply."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -367,7 +373,7 @@
 
 ;;; Group 8: Heartbeat
 
-(ert-deftest jabber-omemo-module-test-heartbeat-nil-on-fresh-session ()
+(ert-deftest jabber-test-omemo-module-heartbeat-nil-on-fresh-session ()
   "heartbeat returns nil on a fresh session."
   (let* ((alice-blob (jabber-omemo--setup-store))
          (alice (jabber-omemo--deserialize-store alice-blob))
@@ -387,31 +393,31 @@
 
 ;;; Group 9: aesgcm encrypt/decrypt (XEP-0454)
 
-(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-returns-plist ()
+(ert-deftest jabber-test-omemo-module-aesgcm-encrypt-returns-plist ()
   "aesgcm-encrypt returns a plist with :key, :iv, :ciphertext."
   (let ((result (jabber-omemo--aesgcm-encrypt "hello")))
     (should (plist-get result :key))
     (should (plist-get result :iv))
     (should (plist-get result :ciphertext))))
 
-(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-key-length ()
+(ert-deftest jabber-test-omemo-module-aesgcm-encrypt-key-length ()
   "aesgcm-encrypt returns a 32-byte key."
   (let ((result (jabber-omemo--aesgcm-encrypt "test")))
     (should (= 32 (length (plist-get result :key))))))
 
-(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-iv-length ()
+(ert-deftest jabber-test-omemo-module-aesgcm-encrypt-iv-length ()
   "aesgcm-encrypt returns a 12-byte IV."
   (let ((result (jabber-omemo--aesgcm-encrypt "test")))
     (should (= 12 (length (plist-get result :iv))))))
 
-(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-ciphertext-length ()
+(ert-deftest jabber-test-omemo-module-aesgcm-encrypt-ciphertext-length ()
   "Ciphertext is plaintext length + 16 bytes for GCM tag."
   (let* ((plaintext "hello world")
          (result (jabber-omemo--aesgcm-encrypt plaintext)))
     (should (= (+ (length plaintext) 16)
                (length (plist-get result :ciphertext))))))
 
-(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-decrypt-round-trip ()
+(ert-deftest jabber-test-omemo-module-aesgcm-encrypt-decrypt-round-trip ()
   "Encrypting then decrypting recovers the original plaintext."
   (let* ((plaintext "The quick brown fox jumps over the lazy dog")
          (enc (jabber-omemo--aesgcm-encrypt plaintext))
@@ -421,7 +427,7 @@
                (plist-get enc :ciphertext))))
     (should (string= plaintext dec))))
 
-(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-binary-round-trip ()
+(ert-deftest jabber-test-omemo-module-aesgcm-encrypt-binary-round-trip ()
   "Encrypt/decrypt round-trip works for binary data."
   (let* ((plaintext (make-string 256 0))
          (_ (dotimes (i 256) (aset plaintext i i)))
@@ -432,11 +438,11 @@
                (plist-get enc :ciphertext))))
     (should (string= plaintext dec))))
 
-(ert-deftest jabber-omemo-module-test-aesgcm-encrypt-unique-keys ()
+(ert-deftest jabber-test-omemo-module-aesgcm-encrypt-unique-keys ()
   "Each call generates different keys."
   (let ((r1 (jabber-omemo--aesgcm-encrypt "test"))
         (r2 (jabber-omemo--aesgcm-encrypt "test")))
     (should-not (string= (plist-get r1 :key) (plist-get r2 :key)))))
 
-(provide 'jabber-omemo-module-tests)
-;;; jabber-omemo-module-tests.el ends here
+(provide 'jabber-test-omemo-module)
+;;; jabber-test-omemo-module.el ends here

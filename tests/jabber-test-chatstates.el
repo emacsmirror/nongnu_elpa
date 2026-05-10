@@ -1,11 +1,17 @@
-;;; jabber-chatstates-tests.el --- Tests for jabber-chatstates  -*- lexical-binding: t; -*-
+;;; jabber-test-chatstates.el --- Tests for jabber-chatstates  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0085 Chat State Notifications.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-chatstates)
 
 ;;; Group 1: Composing notification fix
 
-(ert-deftest jabber-chatstates-test-composing-after-first-send ()
+(ert-deftest jabber-test-chatstates-composing-after-first-send ()
   "Composing notification works after the first message send.
 The first-time gating used to set jabber-chatstates-requested to
 nil after the first message, breaking subsequent composing detection."
@@ -28,7 +34,7 @@ nil after the first message, breaking subsequent composing detection."
         (jabber-chatstates-after-change)
         (should sent-states)))))
 
-(ert-deftest jabber-chatstates-test-no-composing-when-disabled ()
+(ert-deftest jabber-test-chatstates-no-composing-when-disabled ()
   "Composing notification is not sent when jabber-chatstates-confirm is nil."
   (let ((sent-states nil))
     (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
@@ -44,7 +50,7 @@ nil after the first message, breaking subsequent composing detection."
         (jabber-chatstates-after-change)
         (should-not sent-states)))))
 
-(ert-deftest jabber-chatstates-test-send-hook-returns-active ()
+(ert-deftest jabber-test-chatstates-send-hook-returns-active ()
   "Send hook returns active element when chatstates-confirm is t."
   (with-temp-buffer
     (setq-local jabber-chatstates-confirm t)
@@ -55,7 +61,7 @@ nil after the first message, breaking subsequent composing detection."
       (should result)
       (should (equal (caar result) 'active)))))
 
-(ert-deftest jabber-chatstates-test-send-hook-nil-when-disabled ()
+(ert-deftest jabber-test-chatstates-send-hook-nil-when-disabled ()
   "Send hook returns nil when chatstates-confirm is nil."
   (with-temp-buffer
     (setq-local jabber-chatstates-confirm nil)
@@ -67,7 +73,7 @@ nil after the first message, breaking subsequent composing detection."
 
 ;;; Group 2: Inactive and gone states
 
-(ert-deftest jabber-chatstates-test-paused-starts-inactive-timer ()
+(ert-deftest jabber-test-chatstates-paused-starts-inactive-timer ()
   "Sending paused starts a 30s timer for inactive."
   (cl-letf (((symbol-function 'jabber-send-sexp-if-connected) #'ignore))
     (with-temp-buffer
@@ -80,7 +86,7 @@ nil after the first message, breaking subsequent composing detection."
       (should jabber-chatstates-inactive-timer)
       (cancel-timer jabber-chatstates-inactive-timer))))
 
-(ert-deftest jabber-chatstates-test-stop-timer-cancels-both ()
+(ert-deftest jabber-test-chatstates-stop-timer-cancels-both ()
   "stop-timer cancels both paused and inactive timers."
   (with-temp-buffer
     (setq-local jabber-chatstates-paused-timer
@@ -92,7 +98,7 @@ nil after the first message, breaking subsequent composing detection."
     (should-not (memq jabber-chatstates-paused-timer timer-list))
     (should-not (memq jabber-chatstates-inactive-timer timer-list))))
 
-(ert-deftest jabber-chatstates-test-send-inactive-sends-stanza ()
+(ert-deftest jabber-test-chatstates-send-inactive-sends-stanza ()
   "send-inactive sends an inactive chat state stanza."
   (let ((sent nil))
     (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
@@ -105,7 +111,7 @@ nil after the first message, breaking subsequent composing detection."
         (should sent)
         (should (assq 'inactive (cddr sent)))))))
 
-(ert-deftest jabber-chatstates-test-send-gone-sends-stanza ()
+(ert-deftest jabber-test-chatstates-send-gone-sends-stanza ()
   "send-gone sends a gone chat state stanza."
   (let ((sent nil))
     (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
@@ -120,7 +126,7 @@ nil after the first message, breaking subsequent composing detection."
         (should sent)
         (should (assq 'gone (cddr sent)))))))
 
-(ert-deftest jabber-chatstates-test-after-change-cancels-inactive-timer ()
+(ert-deftest jabber-test-chatstates-after-change-cancels-inactive-timer ()
   "Typing again cancels the inactive timer."
   (cl-letf (((symbol-function 'jabber-send-sexp-if-connected) #'ignore))
     (with-temp-buffer
@@ -137,6 +143,6 @@ nil after the first message, breaking subsequent composing detection."
       (jabber-chatstates-after-change)
       (should-not (memq jabber-chatstates-inactive-timer timer-list)))))
 
-(provide 'jabber-chatstates-tests)
+(provide 'jabber-test-chatstates)
 
-;;; jabber-chatstates-tests.el ends here
+;;; jabber-test-chatstates.el ends here

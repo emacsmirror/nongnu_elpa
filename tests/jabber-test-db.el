@@ -1,4 +1,10 @@
-;;; jabber-db-tests.el --- Tests for jabber-db  -*- lexical-binding: t; -*-
+;;; jabber-test-db.el --- Tests for jabber-db  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; SQLite message storage, schema, and queries.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-chat)
@@ -6,13 +12,13 @@
 
 ;;; Test infrastructure
 
-(defmacro jabber-db-test-with-db (&rest body)
+(defmacro jabber-test-db-with-db (&rest body)
   "Run BODY with a fresh temp SQLite database.
 Binds `jabber-db-path' to a temp file, ensures the DB is open,
 and tears down on exit."
   (declare (indent 0) (debug t))
-  `(let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
-          (jabber-db-path (expand-file-name "test.sqlite" jabber-db-test--dir))
+  `(let* ((jabber-test-db--dir (make-temp-file "jabber-db-test" t))
+          (jabber-db-path (expand-file-name "test.sqlite" jabber-test-db--dir))
           (jabber-db--connection nil)
           (jabber-backlog-days 3.0)
           (jabber-backlog-number 10))
@@ -21,49 +27,49 @@ and tears down on exit."
            (jabber-db-ensure-open)
            ,@body)
        (jabber-db-close)
-       (when (file-directory-p jabber-db-test--dir)
-         (delete-directory jabber-db-test--dir t)))))
+       (when (file-directory-p jabber-test-db--dir)
+         (delete-directory jabber-test-db--dir t)))))
 
 ;;; Group 1: Schema and lifecycle
 
-(ert-deftest jabber-db-test-ensure-open-creates-db ()
+(ert-deftest jabber-test-db-ensure-open-creates-db ()
   "Opening the database creates the file and returns a connection."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (sqlitep jabber-db--connection))
     (should (file-exists-p jabber-db-path))))
 
-(ert-deftest jabber-db-test-ensure-open-idempotent ()
+(ert-deftest jabber-test-db-ensure-open-idempotent ()
   "Calling ensure-open twice returns the same connection."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((db1 jabber-db--connection)
           (db2 (jabber-db-ensure-open)))
       (should (eq db1 db2)))))
 
-(ert-deftest jabber-db-test-close-and-reopen ()
+(ert-deftest jabber-test-db-close-and-reopen ()
   "Closing and reopening the database works."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-close)
     (should (null jabber-db--connection))
     (let ((db (jabber-db-ensure-open)))
       (should (sqlitep db)))))
 
-(ert-deftest jabber-db-test-schema-version ()
+(ert-deftest jabber-test-db-schema-version ()
   "The user_version pragma matches `jabber-db--schema-version'."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (= jabber-db--schema-version
                (caar (sqlite-select jabber-db--connection
                                     "PRAGMA user_version"))))))
 
-(ert-deftest jabber-db-test-wal-mode ()
+(ert-deftest jabber-test-db-wal-mode ()
   "WAL journal mode is active."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (string= "wal"
                      (caar (sqlite-select jabber-db--connection
                                          "PRAGMA journal_mode"))))))
 
-(ert-deftest jabber-db-test-tables-exist ()
+(ert-deftest jabber-test-db-tables-exist ()
   "All expected tables and indexes exist."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((tables (mapcar #'car
                           (sqlite-select jabber-db--connection
                             "SELECT name FROM sqlite_master WHERE type='table'"))))
@@ -73,9 +79,9 @@ and tears down on exit."
 
 ;;; Group 2: Store and retrieve
 
-(ert-deftest jabber-db-test-store-and-query ()
+(ert-deftest jabber-test-db-store-and-query ()
   "Storing a message and querying it back returns matching fields."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -91,9 +97,9 @@ and tears down on exit."
         (should (= ts (plist-get row :timestamp)))
         (should (string= "laptop" (plist-get row :resource)))))))
 
-(ert-deftest jabber-db-test-store-with-stanza-id ()
+(ert-deftest jabber-test-db-store-with-stanza-id ()
   "Storing a message with stanza-id and server-id preserves them."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -103,9 +109,9 @@ and tears down on exit."
         (should (string= "origin-123" (plist-get row :stanza-id)))
         (should (string= "server-456" (plist-get row :server-id)))))))
 
-(ert-deftest jabber-db-test-store-unicode-body ()
+(ert-deftest jabber-test-db-store-unicode-body ()
   "Unicode text in message body is preserved."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time)))
           (body "Hej! Gruss Gott! Ελληνικά 日本語 🎉"))
       (jabber-db-store-message
@@ -113,18 +119,18 @@ and tears down on exit."
       (let ((row (car (jabber-db-query "me@example.com" "friend@example.com"))))
         (should (string= body (plist-get row :body)))))))
 
-(ert-deftest jabber-db-test-store-nil-body ()
+(ert-deftest jabber-test-db-store-nil-body ()
   "Storing a message with nil body succeeds."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat" nil ts)
       (let ((row (car (jabber-db-query "me@example.com" "friend@example.com"))))
         (should (null (plist-get row :body)))))))
 
-(ert-deftest jabber-db-test-store-multiline-body ()
+(ert-deftest jabber-test-db-store-multiline-body ()
   "Newlines in message body are preserved."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time)))
           (body "Line one\nLine two\nLine three"))
       (jabber-db-store-message
@@ -134,9 +140,9 @@ and tears down on exit."
 
 ;;; Group 3: Backlog format and ordering
 
-(ert-deftest jabber-db-test-backlog-plist-format ()
+(ert-deftest jabber-test-db-backlog-plist-format ()
   "Backlog entries are plists with :from, :body, :timestamp, :delayed, :direction, :msg-type."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -151,9 +157,9 @@ and tears down on exit."
         (should (plist-get entry :delayed))
         (should (plist-get entry :timestamp))))))
 
-(ert-deftest jabber-db-test-backlog-chat-no-resource ()
+(ert-deftest jabber-test-db-backlog-chat-no-resource ()
   "Chat backlog sender is bare JID when no resource is stored."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -161,9 +167,9 @@ and tears down on exit."
       (let ((entry (car (jabber-db-backlog "me@example.com" "friend@example.com"))))
         (should (string= "friend@example.com" (plist-get entry :from)))))))
 
-(ert-deftest jabber-db-test-backlog-outgoing-format ()
+(ert-deftest jabber-test-db-backlog-outgoing-format ()
   "Outgoing backlog entries have account JID as :from."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "out" "chat"
@@ -172,9 +178,9 @@ and tears down on exit."
         (should (string= "out" (plist-get entry :direction)))
         (should (string= "me@example.com" (plist-get entry :from)))))))
 
-(ert-deftest jabber-db-test-backlog-ordering ()
+(ert-deftest jabber-test-db-backlog-ordering ()
   "Backlog returns messages in reverse chronological order."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -192,9 +198,9 @@ and tears down on exit."
         (should (string= "Second" (plist-get (nth 1 entries) :body)))
         (should (string= "First" (plist-get (nth 2 entries) :body)))))))
 
-(ert-deftest jabber-db-test-backlog-respects-count ()
+(ert-deftest jabber-test-db-backlog-respects-count ()
   "Backlog returns at most COUNT messages."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (dotimes (i 5)
         (jabber-db-store-message
@@ -204,9 +210,9 @@ and tears down on exit."
                       "me@example.com" "friend@example.com" 2)))
         (should (= 2 (length entries)))))))
 
-(ert-deftest jabber-db-test-backlog-time-filter ()
+(ert-deftest jabber-test-db-backlog-time-filter ()
   "Backlog respects the start-time parameter."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let* ((now (floor (float-time)))
            (old (- now 86400))    ; 1 day ago
            (very-old (- now 172800))) ; 2 days ago
@@ -228,9 +234,9 @@ and tears down on exit."
         (should (string= "Recent" (plist-get (nth 0 entries) :body)))
         (should (string= "Old" (plist-get (nth 1 entries) :body)))))))
 
-(ert-deftest jabber-db-test-backlog-msg-type-filter ()
+(ert-deftest jabber-test-db-backlog-msg-type-filter ()
   "Backlog with msg-type filters by message type."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((jabber-backlog-days 3.0)
           (jabber-backlog-number 50)
           (now (floor (float-time))))
@@ -253,9 +259,9 @@ and tears down on exit."
 
 ;;; Group 4: FTS search
 
-(ert-deftest jabber-db-test-fts-search ()
+(ert-deftest jabber-test-db-fts-search ()
   "Full-text search finds messages by keyword."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -268,9 +274,9 @@ and tears down on exit."
         (should (string-match-p "coffee"
                                 (plist-get (car results) :body)))))))
 
-(ert-deftest jabber-db-test-fts-search-with-peer ()
+(ert-deftest jabber-test-db-fts-search-with-peer ()
   "FTS search scoped to a specific peer."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "alice@example.com" "in" "chat"
@@ -285,9 +291,9 @@ and tears down on exit."
         (should (string= "alice@example.com"
                          (plist-get (car results) :peer)))))))
 
-(ert-deftest jabber-db-test-fts-search-no-match ()
+(ert-deftest jabber-test-db-fts-search-no-match ()
   "FTS search returns nil when no messages match."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -296,9 +302,9 @@ and tears down on exit."
 
 ;;; Group 5: Dedup and last-timestamp
 
-(ert-deftest jabber-db-test-dedup-stanza-id ()
+(ert-deftest jabber-test-db-dedup-stanza-id ()
   "Duplicate stanza_id keeps one row with body preserved and timestamp updated."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -312,9 +318,9 @@ and tears down on exit."
         (should (string= "First" (caar rows)))
         (should (= (1+ ts) (cadar rows)))))))
 
-(ert-deftest jabber-db-test-dedup-scoped-by-account ()
+(ert-deftest jabber-test-db-dedup-scoped-by-account ()
   "Same stanza_id from different accounts are stored as separate messages."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "alice@example.com" "friend@example.com" "in" "chat"
@@ -327,9 +333,9 @@ and tears down on exit."
                                  "SELECT account FROM message WHERE stanza_id='shared-id-999'")))
         (should (= 2 (length rows)))))))
 
-(ert-deftest jabber-db-test-no-dedup-without-stanza-id ()
+(ert-deftest jabber-test-db-no-dedup-without-stanza-id ()
   "Messages without stanza_id are never deduped."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (- (floor (float-time)) 10)))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -340,9 +346,9 @@ and tears down on exit."
       (let ((rows (jabber-db-query "me@example.com" "friend@example.com")))
         (should (= 2 (length rows)))))))
 
-(ert-deftest jabber-db-test-last-timestamp ()
+(ert-deftest jabber-test-db-last-timestamp ()
   "last-timestamp returns the latest timestamp for a peer."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -355,9 +361,9 @@ and tears down on exit."
 
 ;;; Group 6: Account isolation
 
-(ert-deftest jabber-db-test-account-isolation ()
+(ert-deftest jabber-test-db-account-isolation ()
   "Messages from different accounts are isolated."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "alice@example.com" "friend@example.com" "in" "chat"
@@ -372,9 +378,9 @@ and tears down on exit."
         (should (string= "Alice's message" (plist-get (car alice-msgs) :body)))
         (should (string= "Bob's message" (plist-get (car bob-msgs) :body)))))))
 
-(ert-deftest jabber-db-test-peer-isolation ()
+(ert-deftest jabber-test-db-peer-isolation ()
   "Messages to different peers are isolated."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "alice@example.com" "out" "chat"
@@ -389,28 +395,28 @@ and tears down on exit."
 
 ;;; Group 7: Empty database
 
-(ert-deftest jabber-db-test-empty-backlog ()
+(ert-deftest jabber-test-db-empty-backlog ()
   "Backlog returns nil on an empty database."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (null (jabber-db-backlog
                    "me@example.com" "friend@example.com")))))
 
-(ert-deftest jabber-db-test-empty-search ()
+(ert-deftest jabber-test-db-empty-search ()
   "Search returns nil on an empty database."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (null (jabber-db-search "me@example.com" "anything")))))
 
-(ert-deftest jabber-db-test-empty-last-timestamp ()
+(ert-deftest jabber-test-db-empty-last-timestamp ()
   "last-timestamp returns nil when no messages exist."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (null (jabber-db-last-timestamp
                    "me@example.com" "friend@example.com")))))
 
 ;;; Group 8: Query pagination
 
-(ert-deftest jabber-db-test-query-pagination ()
+(ert-deftest jabber-test-db-query-pagination ()
   "Query with limit and offset returns correct page."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (dotimes (i 5)
         (jabber-db-store-message
@@ -427,9 +433,9 @@ and tears down on exit."
         (should (= 2 (length page2)))
         (should (string= "Message 2" (plist-get (car page2) :body)))))))
 
-(ert-deftest jabber-db-test-query-time-range ()
+(ert-deftest jabber-test-db-query-time-range ()
   "Query with start-time and end-time filters correctly."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -447,9 +453,9 @@ and tears down on exit."
 
 ;;; Group 9: Data persistence across close/reopen
 
-(ert-deftest jabber-db-test-persistence ()
+(ert-deftest jabber-test-db-persistence ()
   "Data survives close and reopen."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -462,9 +468,9 @@ and tears down on exit."
 
 ;;; Group 10: MUC backlog round-trip
 
-(ert-deftest jabber-db-test-muc-backlog-sender-has-nickname ()
+(ert-deftest jabber-test-db-muc-backlog-sender-has-nickname ()
   "MUC backlog sender includes room JID and nickname as resource."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "room@conference.example.com" "in" "groupchat"
@@ -477,9 +483,9 @@ and tears down on exit."
         (should (string= "groupchat" (plist-get entry :msg-type)))
         (should (string= "Hello everyone" (plist-get entry :body)))))))
 
-(ert-deftest jabber-db-test-muc-backlog-multiple-senders ()
+(ert-deftest jabber-test-db-muc-backlog-multiple-senders ()
   "MUC backlog preserves distinct nicknames for different senders."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "room@conference.example.com" "in" "groupchat"
@@ -500,9 +506,9 @@ and tears down on exit."
         (should (string= "room@conference.example.com/alice"
                          (plist-get (nth 2 entries) :from)))))))
 
-(ert-deftest jabber-db-test-muc-backlog-persistence ()
+(ert-deftest jabber-test-db-muc-backlog-persistence ()
   "MUC messages survive close/reopen and retain nicknames."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "room@conference.example.com" "in" "groupchat"
@@ -515,7 +521,7 @@ and tears down on exit."
                          (plist-get entry :from)))
         (should (string= "Persistent MUC msg" (plist-get entry :body)))))))
 
-(ert-deftest jabber-db-test-nil-path-disables-storage ()
+(ert-deftest jabber-test-db-nil-path-disables-storage ()
   "Setting jabber-db-path to nil disables all DB operations."
   (let ((jabber-db-path nil)
         (jabber-db--connection nil))
@@ -527,9 +533,9 @@ and tears down on exit."
 
 ;;; Group 11: Import from history
 
-(ert-deftest jabber-db-test-import-history ()
+(ert-deftest jabber-test-db-import-history ()
   "Importing from flat-file history populates the database."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let* ((jabber-use-global-history nil)
            (jabber-history-dir
             (expand-file-name "history"
@@ -550,9 +556,9 @@ and tears down on exit."
         (should (string= "Hey!" (plist-get (cadr rows) :body)))
         (should (string= "out" (plist-get (cadr rows) :direction)))))))
 
-(ert-deftest jabber-db-test-import-history-strips-resource ()
+(ert-deftest jabber-test-db-import-history-strips-resource ()
   "Imported messages with resource JIDs are stored under the bare JID."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let* ((jabber-use-global-history nil)
            (jabber-history-dir
             (expand-file-name "history"
@@ -570,9 +576,9 @@ and tears down on exit."
         (should (string= "From work" (plist-get (car rows) :body)))
         (should (string= "Reply" (plist-get (cadr rows) :body)))))))
 
-(ert-deftest jabber-db-test-import-global-history ()
+(ert-deftest jabber-test-db-import-global-history ()
   "Importing from a global history file works."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let* ((jabber-use-global-history t)
            (jabber-global-history-filename
             (expand-file-name "global-history"
@@ -587,7 +593,7 @@ and tears down on exit."
 
 ;;; Group 12: jabber-db--row-to-plist
 
-(ert-deftest jabber-db-test-row-to-plist-incoming-chat ()
+(ert-deftest jabber-test-db-row-to-plist-incoming-chat ()
   "Incoming chat message builds correct plist."
   ;;  id  account               peer                  dir  body     ts          resource  type
   (let* ((row '(1 "me@example.com" "alice@example.com" "in"
@@ -600,21 +606,21 @@ and tears down on exit."
     (should (plist-get plist :delayed))
     (should (equal (seconds-to-time 1700000000) (plist-get plist :timestamp)))))
 
-(ert-deftest jabber-db-test-row-to-plist-incoming-no-resource ()
+(ert-deftest jabber-test-db-row-to-plist-incoming-no-resource ()
   "Incoming message without resource uses bare JID as :from."
   (let* ((row '(2 "me@example.com" "alice@example.com" "in"
                 "Hi" 1700000000 nil "chat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "alice@example.com" (plist-get plist :from)))))
 
-(ert-deftest jabber-db-test-row-to-plist-outgoing ()
+(ert-deftest jabber-test-db-row-to-plist-outgoing ()
   "Outgoing message uses account JID as :from."
   (let* ((row '(3 "me@example.com" "alice@example.com" "out"
                 "Bye!" 1700000000 nil "chat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "me@example.com" (plist-get plist :from)))))
 
-(ert-deftest jabber-db-test-row-to-plist-groupchat ()
+(ert-deftest jabber-test-db-row-to-plist-groupchat ()
   "Groupchat message has msg-type groupchat."
   (let* ((row '(4 "me@example.com" "room@conf.example.com" "in"
                 "Hello room" 1700000000 "Alice" "groupchat"))
@@ -622,14 +628,14 @@ and tears down on exit."
     (should (string= "groupchat" (plist-get plist :msg-type)))
     (should (string= "room@conf.example.com/Alice" (plist-get plist :from)))))
 
-(ert-deftest jabber-db-test-row-to-plist-nil-body ()
+(ert-deftest jabber-test-db-row-to-plist-nil-body ()
   "Nil body is converted to empty string."
   (let* ((row '(5 "me@example.com" "alice@example.com" "in"
                 nil 1700000000 nil "chat"))
          (plist (jabber-db--row-to-plist row)))
     (should (string= "" (plist-get plist :body)))))
 
-(ert-deftest jabber-db-test-row-to-plist-encrypted-flag ()
+(ert-deftest jabber-test-db-row-to-plist-encrypted-flag ()
   "Encrypted flag is correctly converted to boolean."
   ;;  id  account               peer                  dir  body     ts          resource type encrypted
   (let* ((row '(6 "me@example.com" "alice@example.com" "in"
@@ -637,7 +643,7 @@ and tears down on exit."
          (plist (jabber-db--row-to-plist row)))
     (should (eq t (plist-get plist :encrypted)))))
 
-(ert-deftest jabber-db-test-row-to-plist-not-encrypted ()
+(ert-deftest jabber-test-db-row-to-plist-not-encrypted ()
   "Zero encrypted flag yields nil."
   (let* ((row '(7 "me@example.com" "alice@example.com" "in"
                 "Plain" 1700000000 nil "chat" 0))
@@ -646,50 +652,50 @@ and tears down on exit."
 
 ;;; Group 13: Chat settings (encryption persistence)
 
-(ert-deftest jabber-db-test-chat-settings-table-exists ()
+(ert-deftest jabber-test-db-chat-settings-table-exists ()
   "The chat_settings table is created by the schema."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((tables (mapcar #'car
                           (sqlite-select jabber-db--connection
                             "SELECT name FROM sqlite_master WHERE type='table'"))))
       (should (member "chat_settings" tables)))))
 
-(ert-deftest jabber-db-test-set-and-get-encryption-omemo ()
+(ert-deftest jabber-test-db-set-and-get-encryption-omemo ()
   "Storing OMEMO encryption and reading it back returns the symbol."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'omemo)
     (should (eq 'omemo
                 (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
 
-(ert-deftest jabber-db-test-set-and-get-encryption-plaintext ()
+(ert-deftest jabber-test-db-set-and-get-encryption-plaintext ()
   "Storing plaintext encryption and reading it back returns the symbol."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
     (should (eq 'plaintext
                 (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
 
-(ert-deftest jabber-db-test-get-encryption-default-returns-nil ()
+(ert-deftest jabber-test-db-get-encryption-default-returns-nil ()
   "Storing `default' encryption returns nil from get."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'default)
     (should (null (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
 
-(ert-deftest jabber-db-test-get-encryption-missing-returns-nil ()
+(ert-deftest jabber-test-db-get-encryption-missing-returns-nil ()
   "Querying encryption for an unknown peer returns nil."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (null (jabber-db-get-chat-encryption "me@example.com" "nobody@example.com")))))
 
-(ert-deftest jabber-db-test-set-encryption-overwrites ()
+(ert-deftest jabber-test-db-set-encryption-overwrites ()
   "Setting encryption twice overwrites the previous value."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'omemo)
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
     (should (eq 'plaintext
                 (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
 
-(ert-deftest jabber-db-test-chat-settings-account-isolation ()
+(ert-deftest jabber-test-db-chat-settings-account-isolation ()
   "Encryption settings are isolated per account."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-set-chat-encryption "alice@example.com" "bob@example.com" 'omemo)
     (jabber-db-set-chat-encryption "carol@example.com" "bob@example.com" 'plaintext)
     (should (eq 'omemo
@@ -697,9 +703,9 @@ and tears down on exit."
     (should (eq 'plaintext
                 (jabber-db-get-chat-encryption "carol@example.com" "bob@example.com")))))
 
-(ert-deftest jabber-db-test-chat-settings-peer-isolation ()
+(ert-deftest jabber-test-db-chat-settings-peer-isolation ()
   "Encryption settings are isolated per peer."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'omemo)
     (jabber-db-set-chat-encryption "me@example.com" "bob@example.com" 'plaintext)
     (should (eq 'omemo
@@ -707,25 +713,25 @@ and tears down on exit."
     (should (eq 'plaintext
                 (jabber-db-get-chat-encryption "me@example.com" "bob@example.com")))))
 
-(ert-deftest jabber-db-test-chat-settings-persist-across-reopen ()
+(ert-deftest jabber-test-db-chat-settings-persist-across-reopen ()
   "Encryption settings survive close and reopen."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'omemo)
     (jabber-db-close)
     (jabber-db-ensure-open)
     (should (eq 'omemo
                 (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
 
-(ert-deftest jabber-db-test-chat-settings-muc-peer ()
+(ert-deftest jabber-test-db-chat-settings-muc-peer ()
   "Encryption settings work with MUC room JIDs."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-set-chat-encryption
      "me@example.com" "room@conference.example.com" 'plaintext)
     (should (eq 'plaintext
                 (jabber-db-get-chat-encryption
                  "me@example.com" "room@conference.example.com")))))
 
-(ert-deftest jabber-db-test-chat-settings-nil-path ()
+(ert-deftest jabber-test-db-chat-settings-nil-path ()
   "Chat settings no-op when jabber-db-path is nil."
   (let ((jabber-db-path nil)
         (jabber-db--connection nil))
@@ -744,21 +750,21 @@ and tears down on exit."
 (require 'jabber-chatbuffer)
 (require 'fsm)
 
-(defun jabber-db-test--make-fake-jc (account)
+(defun jabber-test-db--make-fake-jc (account)
   "Create a fake connection symbol for ACCOUNT (user@server)."
-  (let ((jc (gensym "jabber-db-test-jc-"))
+  (let ((jc (gensym "jabber-test-db-jc-"))
         (parts (split-string account "@")))
     (put jc :state-data (list :username (nth 0 parts)
                               :server (nth 1 parts)))
     jc))
 
-(defmacro jabber-db-test-with-chat-buffer (account peer &rest body)
+(defmacro jabber-test-db-with-chat-buffer (account peer &rest body)
   "Run BODY in a temp chat buffer with fake connection for ACCOUNT talking to PEER.
 Sets up jabber-chatting-with before jabber-chat-mode-setup, mimicking
 the corrected jabber-chat-create-buffer order."
   (declare (indent 2) (debug t))
-  `(jabber-db-test-with-db
-     (let* ((jc (jabber-db-test--make-fake-jc ,account))
+  `(jabber-test-db-with-db
+     (let* ((jc (jabber-test-db--make-fake-jc ,account))
             (buf (generate-new-buffer " *test-chat*"))
             (jabber-chat-default-encryption 'omemo)
             (jabber-chatting-with nil))
@@ -770,13 +776,13 @@ the corrected jabber-chat-create-buffer order."
              ,@body)
          (kill-buffer buf)))))
 
-(defmacro jabber-db-test-with-muc-buffer (account group &rest body)
+(defmacro jabber-test-db-with-muc-buffer (account group &rest body)
   "Run BODY in a temp MUC buffer with fake connection for ACCOUNT in GROUP.
 Sets up jabber-group before jabber-chat-mode-setup, mimicking
 the corrected jabber-muc-create-buffer order."
   (declare (indent 2) (debug t))
-  `(jabber-db-test-with-db
-     (let* ((jc (jabber-db-test--make-fake-jc ,account))
+  `(jabber-test-db-with-db
+     (let* ((jc (jabber-test-db--make-fake-jc ,account))
             (buf (generate-new-buffer " *test-muc*"))
             (jabber-chat-default-encryption 'omemo)
             (jabber-chatting-with nil))
@@ -788,24 +794,24 @@ the corrected jabber-muc-create-buffer order."
              ,@body)
          (kill-buffer buf)))))
 
-(ert-deftest jabber-db-test-chat-buffer-loads-encryption-from-db ()
+(ert-deftest jabber-test-db-chat-buffer-loads-encryption-from-db ()
   "1:1 chat buffer loads saved encryption from DB on setup."
-  (jabber-db-test-with-chat-buffer "me@example.com" "alice@example.com"
+  (jabber-test-db-with-chat-buffer "me@example.com" "alice@example.com"
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
     ;; Reset and re-run setup to simulate fresh buffer
     (setq jabber-chat-encryption nil)
     (jabber-chat-mode-setup jc #'ignore)
     (should (eq 'plaintext jabber-chat-encryption))))
 
-(ert-deftest jabber-db-test-chat-buffer-falls-back-to-default ()
+(ert-deftest jabber-test-db-chat-buffer-falls-back-to-default ()
   "1:1 chat buffer uses default when no DB setting exists."
-  (jabber-db-test-with-chat-buffer "me@example.com" "bob@example.com"
+  (jabber-test-db-with-chat-buffer "me@example.com" "bob@example.com"
     (should (eq 'omemo jabber-chat-encryption))))
 
-(ert-deftest jabber-db-test-chat-buffer-default-plaintext ()
+(ert-deftest jabber-test-db-chat-buffer-default-plaintext ()
   "1:1 chat buffer respects jabber-chat-default-encryption when set to plaintext."
-  (jabber-db-test-with-db
-    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+  (jabber-test-db-with-db
+    (let* ((jc (jabber-test-db--make-fake-jc "me@example.com"))
            (buf (generate-new-buffer " *test-chat-plain*"))
            (jabber-chat-default-encryption 'plaintext)
            (jabber-chatting-with nil))
@@ -817,19 +823,19 @@ the corrected jabber-muc-create-buffer order."
             (should (eq 'plaintext jabber-chat-encryption)))
         (kill-buffer buf)))))
 
-(ert-deftest jabber-db-test-chat-buffer-db-overrides-default ()
+(ert-deftest jabber-test-db-chat-buffer-db-overrides-default ()
   "DB setting overrides jabber-chat-default-encryption."
-  (jabber-db-test-with-chat-buffer "me@example.com" "alice@example.com"
+  (jabber-test-db-with-chat-buffer "me@example.com" "alice@example.com"
     ;; Default is omemo, but DB says plaintext
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
     (setq jabber-chat-encryption nil)
     (jabber-chat-mode-setup jc #'ignore)
     (should (eq 'plaintext jabber-chat-encryption))))
 
-(ert-deftest jabber-db-test-muc-buffer-loads-encryption-from-db ()
+(ert-deftest jabber-test-db-muc-buffer-loads-encryption-from-db ()
   "MUC buffer loads saved encryption from DB on setup."
-  (jabber-db-test-with-db
-    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+  (jabber-test-db-with-db
+    (let* ((jc (jabber-test-db--make-fake-jc "me@example.com"))
            (buf (generate-new-buffer " *test-muc-load*"))
            (jabber-chat-default-encryption 'omemo)
            (jabber-chatting-with nil))
@@ -843,15 +849,15 @@ the corrected jabber-muc-create-buffer order."
             (should (eq 'plaintext jabber-chat-encryption)))
         (kill-buffer buf)))))
 
-(ert-deftest jabber-db-test-muc-buffer-falls-back-to-plaintext ()
+(ert-deftest jabber-test-db-muc-buffer-falls-back-to-plaintext ()
   "MUC buffer defaults to plaintext when no DB setting exists."
-  (jabber-db-test-with-muc-buffer "me@example.com" "room@conference.example.com"
+  (jabber-test-db-with-muc-buffer "me@example.com" "room@conference.example.com"
     (should (eq 'plaintext jabber-chat-encryption))))
 
-(ert-deftest jabber-db-test-chat-buffer-without-peer-falls-back ()
+(ert-deftest jabber-test-db-chat-buffer-without-peer-falls-back ()
   "Buffer without jabber-chatting-with or jabber-group falls back to default."
-  (jabber-db-test-with-db
-    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+  (jabber-test-db-with-db
+    (let* ((jc (jabber-test-db--make-fake-jc "me@example.com"))
            (buf (generate-new-buffer " *test-no-peer*"))
            (jabber-chat-default-encryption 'omemo)
            (jabber-chatting-with nil))
@@ -863,10 +869,10 @@ the corrected jabber-muc-create-buffer order."
             (should (eq 'omemo jabber-chat-encryption)))
         (kill-buffer buf)))))
 
-(ert-deftest jabber-db-test-toggle-save-roundtrip ()
+(ert-deftest jabber-test-db-toggle-save-roundtrip ()
   "Toggling encryption saves to DB and reloading a fresh buffer picks it up."
-  (jabber-db-test-with-db
-    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+  (jabber-test-db-with-db
+    (let* ((jc (jabber-test-db--make-fake-jc "me@example.com"))
            (jabber-chat-default-encryption 'omemo)
            (jabber-chatting-with nil))
       ;; First buffer: toggle to plaintext
@@ -892,10 +898,10 @@ the corrected jabber-muc-create-buffer order."
 
 (defvar jabber-chat-header-line-format)  ; jabber-chat.el
 
-(ert-deftest jabber-db-test-redisplay-reloads-encryption ()
+(ert-deftest jabber-test-db-redisplay-reloads-encryption ()
   "jabber-chat-redisplay reloads encryption from DB."
-  (jabber-db-test-with-db
-    (let* ((jc (jabber-db-test--make-fake-jc "me@example.com"))
+  (jabber-test-db-with-db
+    (let* ((jc (jabber-test-db--make-fake-jc "me@example.com"))
            (buf (generate-new-buffer " *test-redisplay*"))
            (jabber-chat-default-encryption 'omemo)
            (jabber-chatting-with nil)
@@ -915,9 +921,9 @@ the corrected jabber-muc-create-buffer order."
 
 ;;; Group 15: Receipt columns and updates
 
-(ert-deftest jabber-db-test-receipt-columns ()
+(ert-deftest jabber-test-db-receipt-columns ()
   "Message table has delivered_at and displayed_at columns."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (sqlite-execute jabber-db--connection
                     "INSERT INTO message (account,peer,direction,timestamp)
                      VALUES ('a','b','out',1)")
@@ -925,9 +931,9 @@ the corrected jabber-muc-create-buffer order."
                      "SELECT delivered_at, displayed_at FROM message"))))
       (should (equal row '(nil nil))))))
 
-(ert-deftest jabber-db-test-update-receipt-delivered ()
+(ert-deftest jabber-test-db-update-receipt-delivered ()
   "Update delivered_at for an outgoing message by stanza_id."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "out" "chat" "hello" 1000
                              nil "msg-001")
@@ -937,9 +943,9 @@ the corrected jabber-muc-create-buffer order."
                      "SELECT delivered_at FROM message WHERE stanza_id='msg-001'"))))
       (should (equal row '(1001))))))
 
-(ert-deftest jabber-db-test-update-receipt-displayed ()
+(ert-deftest jabber-test-db-update-receipt-displayed ()
   "Update displayed_at for an outgoing message by stanza_id."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "out" "chat" "hello" 1000
                              nil "msg-002")
@@ -949,9 +955,9 @@ the corrected jabber-muc-create-buffer order."
                      "SELECT displayed_at FROM message WHERE stanza_id='msg-002'"))))
       (should (equal row '(1002))))))
 
-(ert-deftest jabber-db-test-update-receipt-no-overwrite ()
+(ert-deftest jabber-test-db-update-receipt-no-overwrite ()
   "Duplicate receipt does not overwrite earlier timestamp."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "out" "chat" "hello" 1000
                              nil "msg-003")
@@ -963,9 +969,9 @@ the corrected jabber-muc-create-buffer order."
                      "SELECT delivered_at FROM message WHERE stanza_id='msg-003'"))))
       (should (equal row '(1001))))))
 
-(ert-deftest jabber-db-test-update-receipt-nil-stanza-id ()
+(ert-deftest jabber-test-db-update-receipt-nil-stanza-id ()
   "Update with nil stanza_id is a no-op."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "out" "chat" "hello" 1000)
     (jabber-db-update-receipt "me@example.com" "them@example.com"
@@ -974,9 +980,9 @@ the corrected jabber-muc-create-buffer order."
                      "SELECT delivered_at FROM message LIMIT 1"))))
       (should (equal row '(nil))))))
 
-(ert-deftest jabber-db-test-update-receipt-scoped-by-peer ()
+(ert-deftest jabber-test-db-update-receipt-scoped-by-peer ()
   "Receipt update only affects matching account+peer, not other conversations."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@example.com" "alice@example.com"
                              "out" "chat" "hi alice" 1000 nil "msg-same-id")
     (jabber-db-store-message "me@example.com" "bob@example.com"
@@ -990,9 +996,9 @@ the corrected jabber-muc-create-buffer order."
       (should (equal alice 2000))
       (should (null bob)))))
 
-(ert-deftest jabber-db-test-update-receipt-only-outgoing ()
+(ert-deftest jabber-test-db-update-receipt-only-outgoing ()
   "Receipt update only affects outgoing messages, not incoming."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@example.com" "them@example.com"
                              "in" "chat" "incoming" 1000 nil "msg-in")
     (jabber-db-update-receipt "me@example.com" "them@example.com"
@@ -1003,9 +1009,9 @@ the corrected jabber-muc-create-buffer order."
 
 ;;; Group 16: Delete peer messages
 
-(ert-deftest jabber-db-test-delete-peer-messages ()
+(ert-deftest jabber-test-db-delete-peer-messages ()
   "Deleting peer messages removes all rows for that account+peer."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (- (floor (float-time)) 10)))
       (jabber-db-store-message
        "me@example.com" "alice@example.com" "in" "chat" "Hello" ts)
@@ -1022,22 +1028,22 @@ the corrected jabber-muc-create-buffer order."
         (should (= 1 (length rows)))
         (should (string= "Hey" (plist-get (car rows) :body)))))))
 
-(ert-deftest jabber-db-test-delete-peer-messages-empty ()
+(ert-deftest jabber-test-db-delete-peer-messages-empty ()
   "Deleting from a nonexistent peer is a no-op."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-delete-peer-messages "me@example.com" "nobody@example.com")
     ;; No error, no rows affected
     (should t)))
 
 ;;; Group 17: Message retraction
 
-(ert-deftest jabber-db-test-retract-with-reason ()
+(ert-deftest jabber-test-db-retract-with-reason ()
   "jabber-db-retract-message persists moderator and reason; backlog returns both."
   (skip-unless (fboundp 'sqlite-open))
   (let ((jabber-backlog-days 3.0)
         (jabber-backlog-number 10)
         (now (floor (float-time))))
-    (jabber-db-test-with-db
+    (jabber-test-db-with-db
       (jabber-db-store-message "me@x.com" "room@x.com"
                                "in" "groupchat" "offensive" now
                                nil nil "srv-retract-1")
@@ -1049,13 +1055,13 @@ the corrected jabber-muc-create-buffer order."
         (should (equal "room@x.com/mod" (plist-get entry :retracted-by)))
         (should (equal "spam" (plist-get entry :retraction-reason)))))))
 
-(ert-deftest jabber-db-test-retract-without-reason ()
+(ert-deftest jabber-test-db-retract-without-reason ()
   "jabber-db-retract-message with no reason leaves :retraction-reason nil."
   (skip-unless (fboundp 'sqlite-open))
   (let ((jabber-backlog-days 3.0)
         (jabber-backlog-number 10)
         (now (floor (float-time))))
-    (jabber-db-test-with-db
+    (jabber-test-db-with-db
       (jabber-db-store-message "me@x.com" "room@x.com"
                                "in" "groupchat" "msg" now
                                nil nil "srv-retract-2")
@@ -1067,9 +1073,9 @@ the corrected jabber-muc-create-buffer order."
 
 ;;; Group: Failed-decrypt replacement
 
-(ert-deftest jabber-db-test-store-replaces-failed-decrypt-by-stanza-id ()
+(ert-deftest jabber-test-db-store-replaces-failed-decrypt-by-stanza-id ()
   "Re-storing a message with real text replaces a decrypt-failure placeholder."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     ;; Store with failed-decrypt body
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "[OMEMO: could not decrypt]" 1700000000
@@ -1086,9 +1092,9 @@ the corrected jabber-muc-create-buffer order."
       (should (= 1 (length rows)))
       (should (string= "hello there" (caar rows))))))
 
-(ert-deftest jabber-db-test-store-replaces-failed-decrypt-by-server-id ()
+(ert-deftest jabber-test-db-store-replaces-failed-decrypt-by-server-id ()
   "Re-storing by server-id replaces a decrypt-failure placeholder."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "[OMEMO: could not decrypt]" 1700000000
                              "res" nil "srv-2")
@@ -1102,9 +1108,9 @@ the corrected jabber-muc-create-buffer order."
       (should (= 1 (length rows)))
       (should (string= "decrypted text" (caar rows))))))
 
-(ert-deftest jabber-db-test-store-no-replace-when-still-undecryptable ()
+(ert-deftest jabber-test-db-store-no-replace-when-still-undecryptable ()
   "Re-storing with another failed-decrypt body does not update."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "[OMEMO: could not decrypt]" 1700000000
                              "res" "stanza-3" "srv-3")
@@ -1118,9 +1124,9 @@ the corrected jabber-muc-create-buffer order."
       (should (= 1 (length rows)))
       (should (string= "[OMEMO: could not decrypt]" (caar rows))))))
 
-(ert-deftest jabber-db-test-store-no-replace-when-already-decrypted ()
+(ert-deftest jabber-test-db-store-no-replace-when-already-decrypted ()
   "Re-storing does not overwrite an already-decrypted message."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "original text" 1700000000
                              "res" "stanza-4" "srv-4")
@@ -1134,9 +1140,9 @@ the corrected jabber-muc-create-buffer order."
       (should (= 1 (length rows)))
       (should (string= "original text" (caar rows))))))
 
-(ert-deftest jabber-db-test-store-normalizes-timestamp-on-dedup ()
+(ert-deftest jabber-test-db-store-normalizes-timestamp-on-dedup ()
   "Re-storing a duplicate updates the timestamp to the server's value."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     ;; Store with local timestamp
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "hello" 1700000099
@@ -1151,9 +1157,9 @@ the corrected jabber-muc-create-buffer order."
       (should (= 1 (length rows)))
       (should (= 1700000100 (caar rows))))))
 
-(ert-deftest jabber-db-test-store-normalizes-timestamp-and-replaces-decrypt ()
+(ert-deftest jabber-test-db-store-normalizes-timestamp-and-replaces-decrypt ()
   "Failed-decrypt replacement also normalizes the timestamp."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "[OMEMO: could not decrypt]" 1700000099
                              "res" "stanza-6" "srv-6")
@@ -1170,7 +1176,7 @@ the corrected jabber-muc-create-buffer order."
 
 ;;; Group: Schema v2 migration and constraints
 
-(defconst jabber-db-test--v1-ddl
+(defconst jabber-test-db--v1-ddl
   '("CREATE TABLE IF NOT EXISTS message (
   id           INTEGER PRIMARY KEY,
   stanza_id    TEXT,
@@ -1199,27 +1205,27 @@ the corrected jabber-muc-create-buffer order."
   ON message(account, server_id) WHERE server_id IS NOT NULL")
   "V1 schema DDL for migration tests.")
 
-(defmacro jabber-db-test-with-v1-db (&rest body)
+(defmacro jabber-test-db-with-v1-db (&rest body)
   "Run BODY with a v1 database (has raw_xml, no occupant_id)."
   (declare (indent 0) (debug t))
-  `(let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
-          (jabber-db-path (expand-file-name "test.sqlite" jabber-db-test--dir))
+  `(let* ((jabber-test-db--dir (make-temp-file "jabber-db-test" t))
+          (jabber-db-path (expand-file-name "test.sqlite" jabber-test-db--dir))
           (jabber-db--connection nil))
      (unwind-protect
          (let ((db (sqlite-open jabber-db-path)))
-           (dolist (ddl jabber-db-test--v1-ddl)
+           (dolist (ddl jabber-test-db--v1-ddl)
              (sqlite-execute db ddl))
            (sqlite-execute db "PRAGMA user_version=1")
            (sqlite-close db)
            ,@body)
        (jabber-db-close)
-       (when (file-directory-p jabber-db-test--dir)
-         (delete-directory jabber-db-test--dir t)))))
+       (when (file-directory-p jabber-test-db--dir)
+         (delete-directory jabber-test-db--dir t)))))
 
-(ert-deftest jabber-db-test-v1-to-v2-migration ()
+(ert-deftest jabber-test-db-v1-to-v2-migration ()
   "Migrating from v1 adds occupant_id, drops raw_xml, and runs through v3."
   (skip-unless (fboundp 'sqlite-open))
-  (jabber-db-test-with-v1-db
+  (jabber-test-db-with-v1-db
     ;; Insert a v1 row with raw_xml
     (let ((db (sqlite-open jabber-db-path)))
       (sqlite-execute db "\
@@ -1240,10 +1246,10 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'hello', 1000, '<msg/>')")
      (sqlite-select jabber-db--connection
                     "SELECT raw_xml FROM message LIMIT 1"))))
 
-(ert-deftest jabber-db-test-v1-migration-preserves-data ()
+(ert-deftest jabber-test-db-v1-migration-preserves-data ()
   "Migrating from v1 preserves existing message data."
   (skip-unless (fboundp 'sqlite-open))
-  (jabber-db-test-with-v1-db
+  (jabber-test-db-with-v1-db
     (let ((db (sqlite-open jabber-db-path)))
       (sqlite-execute db "\
 INSERT INTO message (account, peer, direction, type, body, timestamp, resource)
@@ -1255,28 +1261,28 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
       (should (string= "preserved" (nth 0 row)))
       (should (string= "laptop" (nth 1 row))))))
 
-(ert-deftest jabber-db-test-check-direction-on-fresh-db ()
+(ert-deftest jabber-test-db-check-direction-on-fresh-db ()
   "CHECK constraint rejects invalid direction on fresh databases."
   (skip-unless (fboundp 'sqlite-open))
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should-error
      (sqlite-execute jabber-db--connection
                      "INSERT INTO message (account, peer, direction, type, body, timestamp)
                       VALUES ('a', 'b', 'bad', 'chat', 'x', 1000)"))))
 
-(ert-deftest jabber-db-test-check-type-on-fresh-db ()
+(ert-deftest jabber-test-db-check-type-on-fresh-db ()
   "CHECK constraint rejects invalid message type on fresh databases."
   (skip-unless (fboundp 'sqlite-open))
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should-error
      (sqlite-execute jabber-db--connection
                      "INSERT INTO message (account, peer, direction, type, body, timestamp)
                       VALUES ('a', 'b', 'in', 'invalid', 'x', 1000)"))))
 
-(ert-deftest jabber-db-test-occupant-id-round-trip ()
+(ert-deftest jabber-test-db-occupant-id-round-trip ()
   "Storing and retrieving occupant_id works end-to-end."
   (skip-unless (fboundp 'sqlite-open))
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
                              "hello" (floor (float-time))
                              "nick" "sid-1" nil "occ-abc-123")
@@ -1285,10 +1291,10 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
       (should row)
       (should (string= "occ-abc-123" (plist-get row :occupant-id))))))
 
-(ert-deftest jabber-db-test-occupant-id-nil-when-absent ()
+(ert-deftest jabber-test-db-occupant-id-nil-when-absent ()
   "occupant_id is nil when not provided."
   (skip-unless (fboundp 'sqlite-open))
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@x.com" "friend@x.com" "in" "chat"
                              "hello" (floor (float-time)))
     (let* ((rows (jabber-db-query "me@x.com" "friend@x.com"))
@@ -1298,9 +1304,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
 
 ;;; Group: server-ids-by-occupant-id
 
-(ert-deftest jabber-db-test-server-ids-by-occupant-id ()
+(ert-deftest jabber-test-db-server-ids-by-occupant-id ()
   "Returns correct server-ids for an occupant-id."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
                                "msg1" now "nick" nil "srv-a" "occ-1")
@@ -1312,9 +1318,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
         (should (member "srv-a" ids))
         (should (member "srv-b" ids))))))
 
-(ert-deftest jabber-db-test-server-ids-by-occupant-id-excludes-retracted ()
+(ert-deftest jabber-test-db-server-ids-by-occupant-id-excludes-retracted ()
   "Already-retracted messages are excluded."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
                                "msg1" now "nick" nil "srv-c" "occ-2")
@@ -1326,9 +1332,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
         (should (= 1 (length ids)))
         (should (string= "srv-d" (car ids)))))))
 
-(ert-deftest jabber-db-test-server-ids-by-occupant-id-excludes-nil-server-id ()
+(ert-deftest jabber-test-db-server-ids-by-occupant-id-excludes-nil-server-id ()
   "Messages without server-id are excluded."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
                                "msg1" now "nick" nil "srv-e" "occ-3")
@@ -1340,29 +1346,29 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
         (should (= 1 (length ids)))
         (should (string= "srv-e" (car ids)))))))
 
-(ert-deftest jabber-db-test-server-ids-by-occupant-id-unknown ()
+(ert-deftest jabber-test-db-server-ids-by-occupant-id-unknown ()
   "Returns nil for an unknown occupant-id."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (null (jabber-db-server-ids-by-occupant-id
                    "me@x.com" "room@x.com" "nonexistent")))))
 
-(ert-deftest jabber-db-test-occupant-id-by-server-id ()
+(ert-deftest jabber-test-db-occupant-id-by-server-id ()
   "Returns occupant-id for a known server-id."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
                              "hello" (floor (float-time))
                              "nick" nil "srv-occ-1" "occ-lookup")
     (should (string= "occ-lookup"
                       (jabber-db-occupant-id-by-server-id "srv-occ-1")))))
 
-(ert-deftest jabber-db-test-occupant-id-by-server-id-nil ()
+(ert-deftest jabber-test-db-occupant-id-by-server-id-nil ()
   "Returns nil for unknown server-id."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (should (null (jabber-db-occupant-id-by-server-id "nonexistent")))))
 
-(ert-deftest jabber-db-test-store-preserves-retraction-on-dedup ()
+(ert-deftest jabber-test-db-store-preserves-retraction-on-dedup ()
   "Re-storing a retracted message does not clear retracted_by."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
                              "spam" 1000 "nick" nil "srv-pres-1")
     (jabber-db-retract-message "srv-pres-1" "room@x.com/mod" "spam")
@@ -1376,9 +1382,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
 
 ;;; Group: message_oob child table
 
-(ert-deftest jabber-db-test-oob-table-exists ()
+(ert-deftest jabber-test-db-oob-table-exists ()
   "The message_oob table and index exist in fresh databases."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((tables (mapcar #'car
                           (sqlite-select jabber-db--connection
                             "SELECT name FROM sqlite_master WHERE type='table'"))))
@@ -1388,9 +1394,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
                              "SELECT name FROM sqlite_master WHERE type='index'"))))
       (should (member "idx_oob_message_id" indexes)))))
 
-(ert-deftest jabber-db-test-store-single-oob ()
+(ert-deftest jabber-test-db-store-single-oob ()
   "Storing a message with one OOB entry creates a child row."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -1402,9 +1408,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
         (should (string= "https://example.com/file.pdf" (caar rows)))
         (should (string= "A PDF" (cadar rows)))))))
 
-(ert-deftest jabber-db-test-store-multiple-oob ()
+(ert-deftest jabber-test-db-store-multiple-oob ()
   "Storing a message with multiple OOB entries creates multiple child rows."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -1421,9 +1427,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
         (should (null (cadr (nth 1 rows))))
         (should (string= "https://example.com/c.mp3" (car (nth 2 rows))))))))
 
-(ert-deftest jabber-db-test-store-nil-oob ()
+(ert-deftest jabber-test-db-store-nil-oob ()
   "Storing a message with nil OOB creates no child rows."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -1432,9 +1438,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
                    "SELECT count(*) FROM message_oob")))
         (should (= 0 (caar rows)))))))
 
-(ert-deftest jabber-db-test-backlog-oob-entries ()
+(ert-deftest jabber-test-db-backlog-oob-entries ()
   "Backlog returns :oob-entries with correct data."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -1450,9 +1456,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
         (should (string= "https://example.com/b.png" (car (cadr oob))))
         (should (null (cdr (cadr oob))))))))
 
-(ert-deftest jabber-db-test-backlog-oob-compat ()
+(ert-deftest jabber-test-db-backlog-oob-compat ()
   "Backlog sets :oob-url and :oob-desc from first entry for compat."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -1465,9 +1471,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
                          (plist-get entry :oob-url)))
         (should (string= "First" (plist-get entry :oob-desc)))))))
 
-(ert-deftest jabber-db-test-backlog-no-oob ()
+(ert-deftest jabber-test-db-backlog-no-oob ()
   "Backlog returns nil :oob-entries for messages without OOB."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "friend@example.com" "in" "chat"
@@ -1477,9 +1483,9 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
         (should (null (plist-get entry :oob-entries)))
         (should (null (plist-get entry :oob-url)))))))
 
-(ert-deftest jabber-db-test-oob-cascade-delete ()
+(ert-deftest jabber-test-db-oob-cascade-delete ()
   "Deleting a message cascades to message_oob rows."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       (jabber-db-store-message
        "me@example.com" "peer@example.com" "in" "chat"
@@ -1489,10 +1495,10 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
       (should (= 0 (caar (sqlite-select jabber-db--connection
                            "SELECT count(*) FROM message_oob")))))))
 
-(ert-deftest jabber-db-test-migration-v2-to-v4 ()
+(ert-deftest jabber-test-db-migration-v2-to-v4 ()
   "Migration v2->v4 applies the full chain: OOB child table, caps cache."
-  (let* ((jabber-db-test--dir (make-temp-file "jabber-db-test" t))
-         (jabber-db-path (expand-file-name "test.sqlite" jabber-db-test--dir))
+  (let* ((jabber-test-db--dir (make-temp-file "jabber-db-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" jabber-test-db--dir))
          (jabber-db--connection nil)
          (jabber-backlog-days 3.0)
          (jabber-backlog-number 10))
@@ -1542,12 +1548,12 @@ VALUES ('me@x.com', 'peer@x.com', 'in', 'chat', 'text', 1001,
             (should-not (member "oob_url" cols))
             (should-not (member "oob_desc" cols))))
       (jabber-db-close)
-      (when (file-directory-p jabber-db-test--dir)
-        (delete-directory jabber-db-test--dir t)))))
+      (when (file-directory-p jabber-test-db--dir)
+        (delete-directory jabber-test-db--dir t)))))
 
-(ert-deftest jabber-db-test-oob-dedup-replacement ()
+(ert-deftest jabber-test-db-oob-dedup-replacement ()
   "Failed-decrypt replacement updates OOB entries."
-  (jabber-db-test-with-db
+  (jabber-test-db-with-db
     (let ((ts (floor (float-time))))
       ;; Store with failed decrypt body and OOB.
       (jabber-db-store-message
@@ -1571,6 +1577,6 @@ VALUES ('me@x.com', 'peer@x.com', 'in', 'chat', 'text', 1001,
         (should (string= "https://new.com/a.pdf" (car (nth 0 oob))))
         (should (string= "https://new.com/b.pdf" (car (nth 1 oob))))))))
 
-(provide 'jabber-db-tests)
+(provide 'jabber-test-db)
 
-;;; jabber-db-tests.el ends here
+;;; jabber-test-db.el ends here

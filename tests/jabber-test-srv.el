@@ -1,4 +1,10 @@
-;;; jabber-srv-tests.el --- Tests for jabber-srv  -*- lexical-binding: t; -*-
+;;; jabber-test-srv.el --- Tests for jabber-srv  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; SRV DNS lookups and XEP-0368 direct TLS.
+
+;;; Code:
 
 (require 'ert)
 (require 'jabber-srv)
@@ -6,7 +12,7 @@
 
 ;;; Test data helpers
 
-(defun jabber-srv-test--make-answer (priority weight port target)
+(defun jabber-test-srv--make-answer (priority weight port target)
   "Build an SRV answer alist."
   (list (list 'priority priority)
         (list 'weight weight)
@@ -15,20 +21,20 @@
 
 ;;; Group by priority
 
-(ert-deftest jabber-srv-test-group-by-priority-single ()
+(ert-deftest jabber-test-srv-group-by-priority-single ()
   "Single priority group."
-  (let* ((a1 (jabber-srv-test--make-answer 10 50 5222 "a.example.com"))
-         (a2 (jabber-srv-test--make-answer 10 50 5222 "b.example.com"))
+  (let* ((a1 (jabber-test-srv--make-answer 10 50 5222 "a.example.com"))
+         (a2 (jabber-test-srv--make-answer 10 50 5222 "b.example.com"))
          (groups (jabber-srv--group-by-priority (list a1 a2))))
     (should (= (length groups) 1))
     (should (= (caar groups) 10))
     (should (= (length (cdar groups)) 2))))
 
-(ert-deftest jabber-srv-test-group-by-priority-multiple ()
+(ert-deftest jabber-test-srv-group-by-priority-multiple ()
   "Multiple priority groups sorted lowest first."
-  (let* ((a1 (jabber-srv-test--make-answer 20 50 5222 "low.example.com"))
-         (a2 (jabber-srv-test--make-answer 5 50 5222 "high.example.com"))
-         (a3 (jabber-srv-test--make-answer 20 50 5223 "low2.example.com"))
+  (let* ((a1 (jabber-test-srv--make-answer 20 50 5222 "low.example.com"))
+         (a2 (jabber-test-srv--make-answer 5 50 5222 "high.example.com"))
+         (a3 (jabber-test-srv--make-answer 20 50 5223 "low2.example.com"))
          (groups (jabber-srv--group-by-priority (list a1 a2 a3))))
     (should (= (length groups) 2))
     (should (= (caar groups) 5))
@@ -37,11 +43,11 @@
 
 ;;; Sort answers
 
-(ert-deftest jabber-srv-test-sort-answers-preserves-all ()
+(ert-deftest jabber-test-srv-sort-answers-preserves-all ()
   "Sort preserves all elements."
-  (let* ((a1 (jabber-srv-test--make-answer 10 50 5222 "a.example.com"))
-         (a2 (jabber-srv-test--make-answer 20 50 5222 "b.example.com"))
-         (a3 (jabber-srv-test--make-answer 10 50 5223 "c.example.com"))
+  (let* ((a1 (jabber-test-srv--make-answer 10 50 5222 "a.example.com"))
+         (a2 (jabber-test-srv--make-answer 20 50 5222 "b.example.com"))
+         (a3 (jabber-test-srv--make-answer 10 50 5223 "c.example.com"))
          (sorted (jabber-srv--sort-answers (list a1 a2 a3))))
     (should (= (length sorted) 3))
     ;; Priority 10 entries come before priority 20
@@ -54,14 +60,14 @@
 
 ;;; Fetch answers
 
-(ert-deftest jabber-srv-test-fetch-answers-nil ()
+(ert-deftest jabber-test-srv-fetch-answers-nil ()
   "No DNS results returns nil."
   (cl-letf (((symbol-function 'jabber-srv--dns-query)
              (lambda (_target)
                '((answers nil)))))
     (should (null (jabber-srv--fetch-answers "_xmpp-client._tcp.example.com")))))
 
-(ert-deftest jabber-srv-test-fetch-answers-dot ()
+(ert-deftest jabber-test-srv-fetch-answers-dot ()
   "Single dot target returns :dot."
   (cl-letf (((symbol-function 'jabber-srv--dns-query)
              (lambda (_target)
@@ -70,7 +76,7 @@
     (should (eq :dot (jabber-srv--fetch-answers
                       "_xmpp-client._tcp.example.com")))))
 
-(ert-deftest jabber-srv-test-fetch-answers-records ()
+(ert-deftest jabber-test-srv-fetch-answers-records ()
   "Normal records returned as list."
   (cl-letf (((symbol-function 'jabber-srv--dns-query)
              (lambda (_target)
@@ -85,7 +91,7 @@
 
 ;;; Lookup mixed
 
-(defun jabber-srv-test--mock-fetch (xmpps-answers xmpp-answers)
+(defun jabber-test-srv--mock-fetch (xmpps-answers xmpp-answers)
   "Return a mock for `jabber-srv--fetch-answers'.
 XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
   (lambda (target)
@@ -93,12 +99,12 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
      ((string-match "^_xmpps-client" target) xmpps-answers)
      ((string-match "^_xmpp-client" target) xmpp-answers))))
 
-(ert-deftest jabber-srv-test-lookup-mixed-both ()
+(ert-deftest jabber-test-srv-lookup-mixed-both ()
   "Both services return records, merged by priority, with fallback appended."
   (cl-letf (((symbol-function 'jabber-srv--fetch-answers)
-             (jabber-srv-test--mock-fetch
-              (list (jabber-srv-test--make-answer 5 50 443 "tls.example.com"))
-              (list (jabber-srv-test--make-answer 10 50 5222 "plain.example.com")))))
+             (jabber-test-srv--mock-fetch
+              (list (jabber-test-srv--make-answer 5 50 443 "tls.example.com"))
+              (list (jabber-test-srv--make-answer 10 50 5222 "plain.example.com")))))
     (let ((result (jabber-srv-lookup-mixed "example.com")))
       ;; 2 SRV records + 1 fallback
       (should (= (length result) 3))
@@ -116,12 +122,12 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
         (should (= (nth 1 last) 5222))
         (should-not (nth 2 last))))))
 
-(ert-deftest jabber-srv-test-lookup-mixed-only-xmpp ()
+(ert-deftest jabber-test-srv-lookup-mixed-only-xmpp ()
   "Only _xmpp-client returns records, fallback appended."
   (cl-letf (((symbol-function 'jabber-srv--fetch-answers)
-             (jabber-srv-test--mock-fetch
+             (jabber-test-srv--mock-fetch
               nil
-              (list (jabber-srv-test--make-answer 10 50 5222 "plain.example.com")))))
+              (list (jabber-test-srv--make-answer 10 50 5222 "plain.example.com")))))
     (let ((result (jabber-srv-lookup-mixed "example.com")))
       (should (= (length result) 2))
       (should (string= (nth 0 (car result)) "plain.example.com"))
@@ -129,11 +135,11 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
       ;; Fallback appended
       (should (equal (cadr result) '("example.com" 5222 nil))))))
 
-(ert-deftest jabber-srv-test-lookup-mixed-only-xmpps ()
+(ert-deftest jabber-test-srv-lookup-mixed-only-xmpps ()
   "Only _xmpps-client returns records, with STARTTLS fallback."
   (cl-letf (((symbol-function 'jabber-srv--fetch-answers)
-             (jabber-srv-test--mock-fetch
-              (list (jabber-srv-test--make-answer 5 50 443 "tls.example.com"))
+             (jabber-test-srv--mock-fetch
+              (list (jabber-test-srv--make-answer 5 50 443 "tls.example.com"))
               nil)))
     (let ((result (jabber-srv-lookup-mixed "example.com")))
       (should (= (length result) 2))
@@ -142,24 +148,24 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
       ;; Fallback
       (should (equal (cadr result) '("example.com" 5222 nil))))))
 
-(ert-deftest jabber-srv-test-lookup-mixed-xmpps-dot ()
+(ert-deftest jabber-test-srv-lookup-mixed-xmpps-dot ()
   "xmpps-client returns dot, only STARTTLS targets with fallback."
   (cl-letf (((symbol-function 'jabber-srv--fetch-answers)
-             (jabber-srv-test--mock-fetch
+             (jabber-test-srv--mock-fetch
               :dot
-              (list (jabber-srv-test--make-answer 10 50 5222 "plain.example.com")))))
+              (list (jabber-test-srv--make-answer 10 50 5222 "plain.example.com")))))
     (let ((result (jabber-srv-lookup-mixed "example.com")))
       (should (= (length result) 2))
       (should-not (nth 2 (car result)))
       (should (equal (cadr result) '("example.com" 5222 nil))))))
 
-(ert-deftest jabber-srv-test-lookup-mixed-neither ()
+(ert-deftest jabber-test-srv-lookup-mixed-neither ()
   "Neither service returns records."
   (cl-letf (((symbol-function 'jabber-srv--fetch-answers)
-             (jabber-srv-test--mock-fetch nil nil)))
+             (jabber-test-srv--mock-fetch nil nil)))
     (should (null (jabber-srv-lookup-mixed "example.com")))))
 
-(ert-deftest jabber-srv-test-lookup-mixed-xmpps-error ()
+(ert-deftest jabber-test-srv-lookup-mixed-xmpps-error ()
   "DNS error for xmpps is caught, xmpp results still used with fallback."
   (cl-letf (((symbol-function 'jabber-srv--fetch-answers)
              (lambda (target)
@@ -167,7 +173,7 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
                 ((string-match "^_xmpps-client" target)
                  (error "DNS query failed"))
                 ((string-match "^_xmpp-client" target)
-                 (list (jabber-srv-test--make-answer 10 50 5222
+                 (list (jabber-test-srv--make-answer 10 50 5222
                                                      "plain.example.com")))))))
     (let ((result (jabber-srv-lookup-mixed "example.com")))
       (should (= (length result) 2))
@@ -176,7 +182,7 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
 
 ;;; Fallback dedup
 
-(ert-deftest jabber-srv-test-has-fallback-p ()
+(ert-deftest jabber-test-srv-has-fallback-p ()
   "Detect existing domain:5222 STARTTLS in target list."
   (should (jabber-srv--has-fallback-p
            '(("example.com" 5222 nil)) "example.com"))
@@ -185,12 +191,12 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
   (should-not (jabber-srv--has-fallback-p
                '(("example.com" 443 t)) "example.com")))
 
-(ert-deftest jabber-srv-test-lookup-mixed-no-dup-fallback ()
+(ert-deftest jabber-test-srv-lookup-mixed-no-dup-fallback ()
   "No fallback appended when SRV already includes domain:5222 STARTTLS."
   (cl-letf (((symbol-function 'jabber-srv--fetch-answers)
-             (jabber-srv-test--mock-fetch
+             (jabber-test-srv--mock-fetch
               nil
-              (list (jabber-srv-test--make-answer 10 50 5222 "example.com")))))
+              (list (jabber-test-srv--make-answer 10 50 5222 "example.com")))))
     (let ((result (jabber-srv-lookup-mixed "example.com")))
       ;; SRV already has example.com:5222, no dup fallback
       (should (= (length result) 1))
@@ -198,19 +204,19 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
 
 ;;; jabber-srv-targets
 
-(ert-deftest jabber-srv-test-targets-user-override ()
+(ert-deftest jabber-test-srv-targets-user-override ()
   "User-specified network-server returns single STARTTLS target."
   (let ((result (jabber-srv-targets "example.com" "custom.host" nil)))
     (should (= (length result) 1))
     (should (equal (car result) '("custom.host" 5222 nil)))))
 
-(ert-deftest jabber-srv-test-targets-user-port ()
+(ert-deftest jabber-test-srv-targets-user-port ()
   "User-specified port returns single STARTTLS target."
   (let ((result (jabber-srv-targets "example.com" nil 5223)))
     (should (= (length result) 1))
     (should (equal (car result) '("example.com" 5223 nil)))))
 
-(ert-deftest jabber-srv-test-targets-fallback ()
+(ert-deftest jabber-test-srv-targets-fallback ()
   "No SRV records falls back to server:5222."
   (cl-letf (((symbol-function 'jabber-srv-lookup-mixed)
              (lambda (_server) nil)))
@@ -219,6 +225,6 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
         (should (= (length result) 1))
         (should (equal (car result) '("example.com" 5222 nil)))))))
 
-(provide 'jabber-srv-tests)
+(provide 'jabber-test-srv)
 
-;;; jabber-srv-tests.el ends here
+;;; jabber-test-srv.el ends here

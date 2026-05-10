@@ -1,4 +1,10 @@
-;;; jabber-disco-tests.el --- Tests for jabber-disco  -*- lexical-binding: t; -*-
+;;; jabber-test-disco.el --- Tests for jabber-disco  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; XEP-0030 Service Discovery and XEP-0115 Entity Caps.
+
+;;; Code:
 
 (require 'ert)
 
@@ -14,7 +20,7 @@
 
 ;;; Group 1: jabber-caps--store-hash
 
-(ert-deftest jabber-disco-test-store-hash-sets-caps-on-resource ()
+(ert-deftest jabber-test-disco-store-hash-sets-caps-on-resource ()
   "Storing a caps hash sets the caps property on the resource plist."
   (let ((jabber-jid-obarray (make-vector 127 0)))
     (jabber-caps--store-hash "alice@example.com/mobile" '("sha-1" . "abc123"))
@@ -25,7 +31,7 @@
       (should (equal (plist-get (cdr entry) 'caps)
                      '("sha-1" . "abc123"))))))
 
-(ert-deftest jabber-disco-test-store-hash-updates-existing-resource ()
+(ert-deftest jabber-test-disco-store-hash-updates-existing-resource ()
   "Storing a caps hash updates an existing resource entry, not duplicating it."
   (let ((jabber-jid-obarray (make-vector 127 0)))
     ;; Store initial caps.
@@ -43,7 +49,7 @@
       (should (equal (plist-get (cdr (car matching)) 'caps)
                      '("sha-1" . "v2"))))))
 
-(ert-deftest jabber-disco-test-store-hash-bare-jid ()
+(ert-deftest jabber-test-disco-store-hash-bare-jid ()
   "Storing caps for a bare JID (no resource) uses empty string as resource key."
   (let ((jabber-jid-obarray (make-vector 127 0)))
     (jabber-caps--store-hash "bob@example.com" '("sha-256" . "xyz"))
@@ -56,7 +62,7 @@
 
 ;;; Group 2: jabber-caps--query-if-needed
 
-(ert-deftest jabber-disco-test-query-if-needed-cache-hit ()
+(ert-deftest jabber-test-disco-query-if-needed-cache-hit ()
   "On cache hit, disco info is copied to jabber-disco-info-cache."
   (let ((jabber-caps-cache (make-hash-table :test 'equal))
         (jabber-disco-info-cache (make-hash-table :test 'equal))
@@ -70,7 +76,7 @@
                             jabber-disco-info-cache)
                    cached-data))))
 
-(ert-deftest jabber-disco-test-query-if-needed-cache-miss ()
+(ert-deftest jabber-test-disco-query-if-needed-cache-miss ()
   "On cache miss, a pending entry is created in jabber-caps-cache."
   (let ((jabber-caps-cache (make-hash-table :test 'equal))
         (jabber-disco-info-cache (make-hash-table :test 'equal))
@@ -89,7 +95,7 @@
       ;; An IQ query should have been dispatched.
       (should iq-sent))))
 
-(ert-deftest jabber-disco-test-query-if-needed-pending-recent ()
+(ert-deftest jabber-test-disco-query-if-needed-pending-recent ()
   "On recent pending query (<10s), JID is added to fallback list."
   (let ((jabber-caps-cache (make-hash-table :test 'equal))
         (jabber-disco-info-cache (make-hash-table :test 'equal))
@@ -102,7 +108,7 @@
     ;; bob's JID should be in the fallback list (cdr of entry).
     (should (member "bob@example.com/laptop" (cdr pending-entry)))))
 
-(ert-deftest jabber-disco-test-query-if-needed-pending-stale ()
+(ert-deftest jabber-test-disco-query-if-needed-pending-stale ()
   "On stale pending query (>10s), a new disco query is sent."
   (let ((jabber-caps-cache (make-hash-table :test 'equal))
         (jabber-disco-info-cache (make-hash-table :test 'equal))
@@ -123,7 +129,7 @@
 
 ;;; Group 3: jabber-process-caps-modern (integration)
 
-(ert-deftest jabber-disco-test-process-caps-modern-unsupported-hash ()
+(ert-deftest jabber-test-disco-process-caps-modern-unsupported-hash ()
   "When the hash algorithm is not in jabber-caps-hash-names, nothing happens."
   (let ((jabber-jid-obarray (make-vector 127 0))
         (jabber-caps-cache (make-hash-table :test 'equal))
@@ -133,7 +139,7 @@
     ;; No symbol should have been interned for this JID.
     (should-not (intern-soft "alice@example.com" jabber-jid-obarray))))
 
-(ert-deftest jabber-disco-test-process-caps-modern-stores-and-queries ()
+(ert-deftest jabber-test-disco-process-caps-modern-stores-and-queries ()
   "With a supported hash and empty cache, store-hash and query are both called."
   (let ((jabber-jid-obarray (make-vector 127 0))
         (jabber-caps-cache (make-hash-table :test 'equal))
@@ -153,5 +159,5 @@
       ;; Query should have been sent.
       (should iq-sent))))
 
-(provide 'jabber-disco-tests)
-;;; jabber-disco-tests.el ends here
+(provide 'jabber-test-disco)
+;;; jabber-test-disco.el ends here
