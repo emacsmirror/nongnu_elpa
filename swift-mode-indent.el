@@ -39,17 +39,29 @@
   :group 'swift
   :safe #'integerp)
 
-(defcustom swift-mode:parenthesized-expression-offset 4
-  "Amount of indentation inside parentheses and square brackets."
-  :type 'integer
-  :group 'swift
-  :safe #'integerp)
+(defcustom swift-mode:parenthesized-expression-offset nil
+  "Amount of indentation inside parentheses and square brackets.
 
-(defcustom swift-mode:multiline-statement-offset 4
-  "Amount of indentation for continuations of expressions."
-  :type 'integer
+If the value is nil, use `swift-mode:basic-offset'."
+  :type '(choice (const :tag "Use Basic Offset" nil) (integer :value 4))
   :group 'swift
-  :safe #'integerp)
+  :safe (lambda (v) (or (null v) (integerp v))))
+
+(defun swift-mode:parenthesized-expression-offset ()
+  "Return the amount of indentation inside parentheses and square brackets."
+  (or swift-mode:parenthesized-expression-offset swift-mode:basic-offset))
+
+(defcustom swift-mode:multiline-statement-offset nil
+  "Amount of indentation for continuations of expressions.
+
+If the value is nil, use `swift-mode:basic-offset'."
+  :type '(choice (const :tag "Use Basic Offset" nil) (integer :value 4))
+  :group 'swift
+  :safe (lambda (v) (or (null v) (integerp v))))
+
+(defun swift-mode:multiline-statement-offset ()
+  "Return the amount of indentation for continuations of expressions."
+  (or swift-mode:multiline-statement-offset swift-mode:basic-offset))
 
 (defcustom swift-mode:switch-case-offset 0
   "Amount of indentation for case labels in switch statements."
@@ -238,7 +250,7 @@ Also used for regexps."
         (progn
           (goto-char string-beginning-position)
           (swift-mode:calculate-indent-of-expression
-           swift-mode:multiline-statement-offset))
+           (swift-mode:multiline-statement-offset)))
       (forward-line 0)
       (backward-char)
       (swift-mode:goto-non-interpolated-expression-bol)
@@ -249,7 +261,7 @@ Also used for regexps."
           (progn
             (goto-char string-beginning-position)
             (swift-mode:calculate-indent-of-expression
-             swift-mode:multiline-statement-offset))
+             (swift-mode:multiline-statement-offset)))
         ;; The cursor was on the 3rd or following lines of the string, so
         ;; aligns with a non-empty preceding line.
         (if (and (bolp) (eolp))
@@ -457,9 +469,9 @@ Also used for regexps."
       (goto-char (swift-mode:token:start previous-token))
       (if (swift-mode:bol-other-than-comments-p)
           (swift-mode:align-with-current-line
-           swift-mode:multiline-statement-offset)
+           (swift-mode:multiline-statement-offset))
         (swift-mode:calculate-indent-before-else
-         swift-mode:multiline-statement-offset)))
+         (swift-mode:multiline-statement-offset))))
 
      ;; After "if"
      ;;
@@ -473,13 +485,13 @@ Also used for regexps."
      ((equal previous-text "if")
       (goto-char (swift-mode:token:start previous-token))
       (swift-mode:align-with-current-line
-       swift-mode:multiline-statement-offset))
+       (swift-mode:multiline-statement-offset)))
 
      ;; After "catch"
      ((equal previous-text "catch")
       (swift-mode:find-parent-and-align-with-next
        swift-mode:statement-parent-tokens
-       swift-mode:multiline-statement-offset))
+       (swift-mode:multiline-statement-offset)))
 
      ;; Before "where" on the current line
      ((and next-is-on-current-line (equal next-text "where"))
@@ -549,18 +561,18 @@ Also used for regexps."
           (goto-char (swift-mode:token:end previous-token))
           (swift-mode:backward-token-or-list)
           (swift-mode:calculate-indent-of-expression
-           swift-mode:multiline-statement-offset
-           swift-mode:multiline-statement-offset))
+           (swift-mode:multiline-statement-offset)
+           (swift-mode:multiline-statement-offset)))
          ((equal (swift-mode:token:text parent) "for")
           (swift-mode:find-parent-and-align-with-next '("for")))
          ((equal (swift-mode:token:text parent) "@specialized")
           (goto-char (swift-mode:token:start parent))
           (swift-mode:indentation (point)
-                                  swift-mode:parenthesized-expression-offset))
+                                  (swift-mode:parenthesized-expression-offset)))
          (t
           (swift-mode:find-parent-and-align-with-next
            (append swift-mode:statement-parent-tokens '(<))
-           swift-mode:multiline-statement-offset)))))
+           (swift-mode:multiline-statement-offset))))))
 
      ;; After "where"
      ((equal previous-text "where")
@@ -629,7 +641,7 @@ Also used for regexps."
       (goto-char (swift-mode:token:start previous-token))
       (if (swift-mode:bol-other-than-comments-p)
           (swift-mode:align-with-current-line
-           swift-mode:multiline-statement-offset)
+           (swift-mode:multiline-statement-offset))
         (let ((parent (save-excursion
                         (swift-mode:backward-sexps-until
                          (append swift-mode:statement-parent-tokens
@@ -638,11 +650,11 @@ Also used for regexps."
               (progn
                 (swift-mode:backward-token-or-list)
                 (swift-mode:calculate-indent-of-expression
-                 swift-mode:multiline-statement-offset
-                 swift-mode:multiline-statement-offset))
+                 (swift-mode:multiline-statement-offset)
+                 (swift-mode:multiline-statement-offset)))
             (swift-mode:find-parent-and-align-with-next
              (append swift-mode:statement-parent-tokens '(< "for"))
-             swift-mode:multiline-statement-offset)))))
+             (swift-mode:multiline-statement-offset))))))
 
      ;; After {
      ((eq previous-type '{)
@@ -654,14 +666,14 @@ Also used for regexps."
      ((memq previous-type '(\( \[ <))
       (goto-char (swift-mode:token:start previous-token))
       (swift-mode:calculate-indent-of-expression
-       swift-mode:parenthesized-expression-offset
-       swift-mode:parenthesized-expression-offset))
+       (swift-mode:parenthesized-expression-offset)
+       (swift-mode:parenthesized-expression-offset)))
 
      ;; After beginning of a interpolated expression
      ((eq previous-type 'string-chunk-before-interpolated-expression)
       (goto-char (swift-mode:token:start previous-token))
       (swift-mode:calculate-indent-after-beginning-of-interpolated-expression
-       swift-mode:parenthesized-expression-offset))
+       (swift-mode:parenthesized-expression-offset)))
 
      ;; Before "in" on the current line
      ((and next-is-on-current-line (equal next-text "in"))
@@ -767,7 +779,7 @@ Also used for regexps."
      ((member previous-text '("if" "guard" "while"))
       (swift-mode:find-parent-and-align-with-next
        swift-mode:statement-parent-tokens
-       swift-mode:multiline-statement-offset))
+       (swift-mode:multiline-statement-offset)))
 
      ;; Before :: on the current line for attributes:
      ;;
@@ -777,14 +789,14 @@ Also used for regexps."
            (eq previous-type 'attribute)
            (equal next-text "::"))
       (goto-char (swift-mode:token:start previous-token))
-      (swift-mode:indentation (point) swift-mode:multiline-statement-offset))
+      (swift-mode:indentation (point) (swift-mode:multiline-statement-offset)))
 
      ;; After attributes
      ((eq previous-type 'attribute)
       (goto-char (swift-mode:token:end previous-token))
       (swift-mode:backward-token-or-list)
       (swift-mode:calculate-indent-of-expression
-       swift-mode:multiline-statement-offset
+       (swift-mode:multiline-statement-offset)
        0
        t))
 
@@ -793,7 +805,7 @@ Also used for regexps."
       (goto-char (swift-mode:token:end previous-token))
       (swift-mode:backward-token-or-list)
       (swift-mode:calculate-indent-of-expression
-       swift-mode:multiline-statement-offset)))))
+       (swift-mode:multiline-statement-offset))))))
 
 (defun swift-mode:find-parent-and-align-with-next
     (parents
@@ -972,7 +984,7 @@ OFFSET is extra offset if given."
          ;;   else { 2 }
          (t
           (swift-mode:calculate-indent-of-expression
-           (or offset swift-mode:multiline-statement-offset))))
+           (or offset (swift-mode:multiline-statement-offset)))))
       (swift-mode:align-with-current-line offset))))
 
 (defun swift-mode:calculate-indent-for-curly-bracket (offset)
