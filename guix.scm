@@ -37,12 +37,12 @@
              (ice-9 popen)
              (ice-9 rdelim))
 
-(define %source-dir (dirname (current-filename)))
+(define %jabber-source-dir (dirname (current-filename)))
 
 (define (git-output . args)
-  "Run `git -C %source-dir ARGS...' and return its trimmed stdout, or
+  "Run `git -C %jabber-source-dir ARGS...' and return its trimmed stdout, or
 #f if the command fails or produces no output."
-  (let* ((port (apply open-pipe* OPEN_READ "git" "-C" %source-dir args))
+  (let* ((port (apply open-pipe* OPEN_READ "git" "-C" %jabber-source-dir args))
          (line (read-line port)))
     (close-pipe port)
     (if (eof-object? line) #f line)))
@@ -97,7 +97,7 @@ help window.  One definition, two uses.")
   (package
     (name "emacs-jabber-git")
     (version %version)
-    (source (local-file %source-dir
+    (source (local-file %jabber-source-dir
                         "emacs-jabber-checkout"
                         #:recursive? #t
                         #:select? emacs-jabber-file?))
