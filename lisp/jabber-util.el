@@ -31,6 +31,7 @@
 
 (require 'cl-lib)
 (require 'jabber-xml)
+(require 'jabber-sm)
 (require 'fsm)
 (require 'password-cache)
 (require 'keymap-popup)
@@ -844,6 +845,169 @@ FN is applied to the node and not to the data itself."
 Uses a `display' property so the separator adjusts to window
 width on redisplay."
   (propertize " " 'display '(space :width text) 'face 'jabber-separator))
+
+;;; Connection state primitives
+
+(defconst jabber-bind-xmlns "urn:ietf:params:xml:ns:xmpp-bind"
+  "RFC 6120 resource binding namespace.")
+
+(defconst jabber-session-xmlns "urn:ietf:params:xml:ns:xmpp-session"
+  "RFC 6120 session establishment namespace.")
+
+(defconst jabber-streams-xmlns "http://etherx.jabber.org/streams"
+  "RFC 6120 XMPP streams namespace.")
+
+(defvar jabber-connections nil
+  "List of jabber-connection FSMs.")
+
+(defvar *jabber-roster* nil
+  "The roster list.")
+
+(defvar jabber-jid-obarray (make-vector 127 0)
+  "Obarray for keeping JIDs.")
+
+(defvar *jabber-disconnecting* nil
+  "Non-nil if are we in the process of voluntary disconnection.")
+
+(defvar jabber-message-chain nil
+  "Incoming messages are sent to these functions, in order.
+Each entry is a cons (DEPTH . HANDLER).  Lower depth runs first.")
+
+(defvar jabber-iq-chain nil
+  "Incoming infoqueries are sent to these functions, in order.
+Each entry is a cons (DEPTH . HANDLER).  Lower depth runs first.")
+
+(defvar jabber-presence-chain nil
+  "Incoming presence notifications are sent to these functions, in order.
+Each entry is a cons (DEPTH . HANDLER).  Lower depth runs first.")
+
+;;;###autoload
+(defun jabber-chain-add (chain-var handler &optional depth)
+  "Add HANDLER to stanza processing chain CHAIN-VAR.
+DEPTH is numeric priority (default 0).  Lower runs first.
+Tolerates bare function entries from old-style registrations."
+  (let ((entry (cons (or depth 0) handler))
+        (entry-depth (lambda (e) (if (consp e) (car e) 0)))
+        (entry-fn (lambda (e) (if (consp e) (cdr e) e))))
+    (unless (cl-find handler (symbol-value chain-var) :key entry-fn)
+      (set chain-var
+           (sort (cons entry (symbol-value chain-var))
+                 (lambda (a b)
+                   (< (funcall entry-depth a)
+                      (funcall entry-depth b))))))))
+
+;;; Stanza transmission
+
+(defvar jabber-debug-log-xml)           ; jabber-console.el
+(declare-function jabber-process-console "jabber-console" (jc direction xml-data))
+
+(defun jabber-log-xml (fsm direction data)
+  "Print DATA to XML console.
+If `jabber-debug-log-xml' is nil, do nothing.
+FSM is the connection that is sending/receiving.
+DIRECTION is a string, either \"sending\" or \"receive\".
+DATA is any sexp."
+  (when jabber-debug-log-xml
+    (jabber-process-console fsm direction data)))
+
+(defun jabber-send-sexp--immediate (jc sexp)
+  "Send SEXP to JC immediately, bypassing the back-pressure gate.
+Log the XML, send it (with a proactive <r/> for countable stanzas
+when SM is enabled), and update the outbound counter."
+  (condition-case e
+      (jabber-log-xml jc "sending" sexp)
+    (error
+     (ding)
+     (message "Couldn't write XML log: %s" (error-message-string e))
+     (sit-for 2)))
+  (let* ((xml (jabber-sexp2xml sexp))
+         (state-data (fsm-get-state-data jc))
+         (sm-countable (and (plist-get state-data :sm-enabled)
+                            (jabber-sm--stanza-p sexp))))
+    (if sm-countable
+        (jabber-send-string jc (concat xml (jabber-sm--make-request-xml)))
+      (jabber-send-string jc xml)))
+  (jabber-sm--count-outbound (fsm-get-state-data jc) sexp))
+
+(defun jabber-send-sexp (jc sexp)
+  "Send the xml corresponding to SEXP to connection JC.
+When SM back-pressure is active and the in-flight limit is reached,
+queue the stanza for later delivery instead of sending immediately."
+  (let ((state-data (fsm-get-state-data jc)))
+    (if (jabber-sm--should-queue-p state-data sexp)
+        (progn
+          (jabber-sm--enqueue-pending state-data sexp)
+          (when (eq (jabber-xml-node-name sexp) 'message)
+            (message "SM: message queued (waiting for server ack, %d pending)"
+                     (length (plist-get state-data :sm-pending-queue)))))
+      (jabber-send-sexp--immediate jc sexp))))
+
+(defun jabber-send-sexp-if-connected (jc sexp)
+  "Send the stanza SEXP only if JC has established a session."
+  (fsm-send-sync jc (cons :send-if-connected sexp)))
+
+(defun jabber-send-string (jc string)
+  "Send STRING through the connection JC."
+  (let* ((state-data (fsm-get-state-data jc))
+         (connection (plist-get state-data :connection))
+         (send-function (plist-get state-data :send-function)))
+    (unless connection
+      (error "%s has no connection" (jabber-connection-jid jc)))
+    (funcall send-function connection string)))
+
+(defun jabber-send-stream-header (jc)
+  "Send stream header to connection JC."
+  (let ((stream-header
+         (concat "<?xml version='1.0'?><stream:stream to='"
+		 (plist-get (fsm-get-state-data jc) :server)
+		 "' xmlns='jabber:client' xmlns:stream='http://etherx.jabber.org/streams'"
+		 ;; Not supporting SASL is not XMPP compliant,
+		 ;; so don't pretend we are.
+		 (if (and (jabber-have-sasl-p) jabber-use-sasl)
+		     " version='1.0'"
+		   "")
+		 ">
+")))
+    (jabber-log-xml jc "sending" stream-header)
+    (jabber-send-string jc stream-header)))
+
+;;; Stanza dispatch
+
+(defvar jabber-xml-data)                ; jabber.el
+
+(defun jabber-process-input (jc xml-data)
+  "Process an incoming parsed tag.
+
+JC is the Jabber connection.
+XML-DATA is the parsed tree data from the stream (stanzas)
+obtained from `xml-parse-region'."
+  (let* ((jabber-xml-data xml-data)
+         (tag (jabber-xml-node-name xml-data))
+	 (functions (pcase tag
+		      ('iq jabber-iq-chain)
+		      ('presence jabber-presence-chain)
+		      ('message jabber-message-chain))))
+    (dolist (entry functions)
+      (let ((f (if (consp entry) (cdr entry) entry)))
+        (condition-case e
+	    (funcall f jc xml-data)
+	  ((debug error)
+	   (fsm-debug-output "Error %S while processing %S with function %s" e xml-data f)))))))
+
+(defun jabber-clear-roster ()
+  "Clean up the roster."
+  (mapatoms (lambda (x)
+	      (unintern x jabber-jid-obarray))
+	    jabber-jid-obarray)
+  (setq *jabber-roster* nil))
+
+;;; SASL check
+
+(defvar jabber-use-sasl)                ; jabber-core.el
+
+(defsubst jabber-have-sasl-p ()
+  "Return non-nil if SASL library is available."
+  (featurep 'sasl))
 
 ;;; Shared keymaps
 
