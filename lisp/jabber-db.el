@@ -36,17 +36,13 @@
 ;;; Code:
 
 (require 'jabber-util)
+(require 'jabber-xml)
 (eval-when-compile
   (require 'cl-lib)
   (require 'seq))
 
-;; Global reference declarations
-(declare-function jabber-xml-child-with-xmlns "jabber-xml.el"
-                  (node xmlns))
-(declare-function jabber-xml-get-attribute "jabber-xml.el" (node attribute))
 (declare-function jabber-muc-joined-p "jabber-muc" (group &optional jc))
 (declare-function jabber-muc-sender-p "jabber-muc" (jid))
-(declare-function jabber-xml-encrypted-p "jabber-xml" (xml-data))
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-chat-send-hooks)        ; jabber-chat.el
 (defvar jabber-chat-encryption)        ; jabber-chatbuffer.el

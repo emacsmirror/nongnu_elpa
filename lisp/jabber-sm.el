@@ -37,14 +37,9 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'jabber-xml)
+(require 'fsm)
 
-(declare-function fsm-get-state-data "fsm" (fsm))
-(declare-function jabber-xml-node-name "jabber-xml.el" (node))
-(declare-function jabber-xml-get-attribute "jabber-xml.el" (node attribute))
-(declare-function jabber-xml-get-xmlns "jabber-xml.el" (node))
-(declare-function jabber-xml-get-children "jabber-xml.el" (node child-name))
-(declare-function jabber-xml-child-with-xmlns "jabber-xml.el" (node xmlns))
-(declare-function jabber-sexp2xml "jabber-xml.el" (sexp))
 (defvar jabber-debug-log-xml)
 
 (defconst jabber-sm-xmlns "urn:xmpp:sm:3"
