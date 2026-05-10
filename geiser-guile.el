@@ -1,15 +1,15 @@
 ;;; geiser-guile.el --- Guile and Geiser talk to each other  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2009-2024 Jose Antonio Ortega Ruiz
+;; Copyright (C) 2009-2024, 2026 Jose Antonio Ortega Ruiz
 ;; Start date: Sun Mar 08, 2009 23:03
 
 ;; Author: Jose Antonio Ortega Ruiz (jao@gnu.org)
 ;; Maintainer: Jose Antonio Ortega Ruiz (jao@gnu.org)
 ;; Keywords: languages, guile, scheme, geiser
 ;; Homepage: https://gitlab.com/emacs-geiser/guile
-;; Package-Requires: ((emacs "26.1") (transient "0.3") (geiser "0.28.1"))
+;; Package-Requires: ((emacs "27.1") (transient "0.3") (geiser "0.33"))
 ;; SPDX-License-Identifier: BSD-3-Clause
-;; Version: 0.28.3
+;; Version: 0.28.4
 
 ;; This file is NOT part of GNU Emacs.
 
