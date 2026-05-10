@@ -20,36 +20,37 @@ GUIX_WRAP = $(if $(GUIX_SHELL),$(GUIX_SHELL) $(MAKE) --no-print-directory EMACS_
 JOBS         ?= $(shell nproc 2>/dev/null || echo 4)
 TEST_RESULTS := .test-results
 
-TESTS ?= tests/jabber-activity-tests.el \
-         tests/jabber-bookmarks-tests.el \
-         tests/jabber-carbons-tests.el \
-         tests/jabber-chatbuffer-tests.el \
-         tests/jabber-chatstates-tests.el \
-         tests/jabber-chat-tests.el \
-         tests/jabber-csi-tests.el \
-         tests/jabber-db-tests.el \
-         tests/jabber-disco-tests.el \
-         tests/jabber-mam-tests.el \
-         tests/jabber-message-correct-tests.el \
-         tests/jabber-message-reply-tests.el \
-         tests/jabber-modeline-tests.el \
-         tests/jabber-moderation-tests.el \
-         tests/jabber-muc-tests.el \
-         tests/jabber-omemo-message-tests.el \
-         tests/jabber-omemo-module-tests.el \
-         tests/jabber-omemo-protocol-tests.el \
-         tests/jabber-omemo-store-tests.el \
-         tests/jabber-omemo-trust-tests.el \
-         tests/jabber-openpgp-legacy-tests.el \
-         tests/jabber-presence-tests.el \
-         tests/jabber-pubsub-tests.el \
-         tests/jabber-receipts-tests.el \
-         tests/jabber-roster-tests.el \
-         tests/jabber-sm-tests.el \
-         tests/jabber-styling-tests.el \
-         tests/jabber-menu-tests.el \
-         tests/jabber-util-tests.el \
-         tests/jabber-xml-tests.el
+TESTS ?= tests/jabber-test-activity.el \
+         tests/jabber-test-bookmarks.el \
+         tests/jabber-test-carbons.el \
+         tests/jabber-test-chat.el \
+         tests/jabber-test-chatbuffer.el \
+         tests/jabber-test-chatstates.el \
+         tests/jabber-test-csi.el \
+         tests/jabber-test-db.el \
+         tests/jabber-test-disco.el \
+         tests/jabber-test-mam.el \
+         tests/jabber-test-menu.el \
+         tests/jabber-test-message-correct.el \
+         tests/jabber-test-message-reply.el \
+         tests/jabber-test-modeline.el \
+         tests/jabber-test-moderation.el \
+         tests/jabber-test-muc.el \
+         tests/jabber-test-omemo-message.el \
+         tests/jabber-test-omemo-module.el \
+         tests/jabber-test-omemo-protocol.el \
+         tests/jabber-test-omemo-store.el \
+         tests/jabber-test-omemo-trust.el \
+         tests/jabber-test-openpgp-legacy.el \
+         tests/jabber-test-presence.el \
+         tests/jabber-test-pubsub.el \
+         tests/jabber-test-receipts.el \
+         tests/jabber-test-roster.el \
+         tests/jabber-test-sm.el \
+         tests/jabber-test-srv.el \
+         tests/jabber-test-styling.el \
+         tests/jabber-test-util.el \
+         tests/jabber-test-xml.el
 
 TEST_STAMPS := $(patsubst tests/%.el,$(TEST_RESULTS)/%.stamp,$(TESTS))
 
