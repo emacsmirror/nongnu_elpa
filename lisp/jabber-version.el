@@ -30,7 +30,6 @@
 (require 'jabber-iq)
 (require 'jabber-util)
 (require 'jabber-disco)
-(require 'jabber-menu)
 (require 'find-func)
 (require 'lisp-mnt)
 

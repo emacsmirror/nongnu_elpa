@@ -33,6 +33,7 @@
 (require 'jabber-xml)
 (require 'fsm)
 (require 'password-cache)
+(require 'keymap-popup)
 
 (condition-case nil
     (require 'auth-source)
@@ -843,6 +844,36 @@ FN is applied to the node and not to the data itself."
 Uses a `display' property so the separator adjusts to window
 width on redisplay."
   (propertize " " 'display '(space :width text) 'face 'jabber-separator))
+
+;;; Shared keymaps
+
+(declare-function jabber-activity-switch-to "jabber-activity.el"
+                  (&optional jid-param))
+
+(keymap-popup-define jabber-common-keymap
+  "Common Jabber commands."
+  :parent special-mode-map
+  "C-c C-i" ("Info/Discovery" jabber-info-menu)
+  "C-c C-m" ("MUC" jabber-muc-menu)
+  "C-c C-s" ("Services" jabber-service-menu)
+  "TAB"     ("Next button" forward-button)
+  "<backtab>" ("Previous button" backward-button))
+
+(keymap-popup-define jabber-global-keymap
+  "Global Jabber commands."
+  "C-c" ("Connect" jabber-connect-all)
+  "C-d" ("Disconnect" jabber-disconnect)
+  "C-r" ("Roster" jabber-roster-popup)
+  "C-j" ("Chat with" jabber-chat-with)
+  "C-l" ("Next unread" jabber-activity-switch-to)
+  "C-a" ("Away" jabber-send-away-presence)
+  "C-o" ("Online" jabber-send-default-presence)
+  "C-x" ("Extended away" jabber-send-xa-presence)
+  "C-p" ("Set presence" jabber-send-presence)
+  "C-b" ("Switch buffer" jabber-chat-buffer-switch)
+  "C-m" ("Join MUC" jabber-muc-join))
+
+(define-key ctl-x-map "\C-j" jabber-global-keymap)
 
 (provide 'jabber-util)
 ;;; jabber-util.el ends here

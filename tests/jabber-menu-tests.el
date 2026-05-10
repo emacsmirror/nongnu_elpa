@@ -26,12 +26,13 @@ inherited bindings from parent mode keymaps."
   "Every command in a jabber popup keymap must be fboundp."
   (let ((maps (list jabber-chat-operations-menu-map
                     jabber-chat-encryption-menu-map
-                    jabber-chat-menu-map
-                    jabber-roster-context-menu-map
+                    jabber-roster-popup-map
+                    jabber-roster-presence-map
+                    jabber-roster-discovery-map
+                    jabber-roster-contact-action-map
                     jabber-info-menu-map
                     jabber-muc-menu-map
                     jabber-service-menu-map
-                    jabber-roster-mode-map
                     jabber-bookmarks-mode-map
                     jabber-bookmarks-edit-map
                     jabber-omemo-trust-mode-map))

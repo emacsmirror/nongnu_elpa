@@ -28,7 +28,6 @@
 
 (require 'jabber-iq)
 (require 'jabber-util)
-(require 'jabber-menu)
 (require 'jabber-disco)
 
 ;; Global reference declarations

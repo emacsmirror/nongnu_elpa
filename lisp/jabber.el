@@ -154,7 +154,6 @@ One disabled account with a non-standard port:
 
 ;;; guess internal dependencies!
 (require 'jabber-util)
-(require 'jabber-menu)
 (require 'jabber-xml)
 (require 'jabber-conn)
 (require 'jabber-core)

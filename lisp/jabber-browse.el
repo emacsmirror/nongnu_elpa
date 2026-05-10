@@ -35,7 +35,6 @@
 (require 'jabber-iq)
 (require 'jabber-xml)
 (require 'jabber-util)
-(require 'jabber-menu)
 
 (defconst jabber-browse-xmlns "jabber:iq:browse"
   "XEP-0011 Jabber Browsing namespace.")

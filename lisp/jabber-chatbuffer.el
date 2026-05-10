@@ -28,7 +28,6 @@
 
 (require 'jabber-util)
 (require 'jabber-core)
-(require 'jabber-menu)
 (require 'keymap-popup)
 
 (defvar jabber-point-insert nil
@@ -363,8 +362,6 @@ MAM sync in this buffer.  Set via the operations menu.")
   "E" ("Edit last message" jabber-correct-last-message)
   "r" ("Reply to message" jabber-chat-reply)
   :group "MUC"
-  "m" ("MUC operations" :keymap jabber-muc-menu-map
-       :if (lambda () (bound-and-true-p jabber-group)))
   "M" ("Retract message at point" jabber-moderation-retract
        :if (lambda () (bound-and-true-p jabber-group)))
   "X" ("Retract all by occupant" jabber-moderation-retract-by-occupant

@@ -30,7 +30,7 @@
 
 (require 'jabber-iq)
 (require 'jabber-xml)
-(require 'jabber-menu)
+(require 'keymap-popup)
 
 ;; Global reference declarations
 
@@ -768,6 +768,51 @@ ITEM-NODE: Specific node of the disco item to be removed.  Can be nil."
 				     `((node . ,item-node))))))
 		  'jabber-report-success "Disco removal"
 		  'jabber-report-success "Disco removal"))
+
+;;; Info and service menus
+
+(declare-function jabber-get-info "jabber-info.el" (jc to))
+(declare-function jabber-get-browse "jabber-browse.el" (jc to))
+(declare-function jabber-get-version "jabber-version.el" (jc to))
+(declare-function jabber-get-time "jabber-time.el" (jc to))
+(declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
+(declare-function jabber-ping "jabber-ping.el" (to))
+(declare-function jabber-get-register "jabber-register.el" (jc to))
+(declare-function jabber-get-search "jabber-search.el" (jc to))
+(declare-function jabber-ahc-execute-command "jabber-ahc.el" (jc to node))
+(declare-function jabber-ahc-get-list "jabber-ahc.el" (jc to))
+(declare-function jabber-enable-carbons "jabber-carbons.el" (jc))
+
+(keymap-popup-define jabber-info-menu-map
+  "Jabber info/discovery commands."
+  :group "Discovery"
+  "I" ("Get info" jabber-get-info)
+  "i" ("Disco items" jabber-get-disco-items)
+  "d" ("Disco info" jabber-get-disco-info)
+  "b" ("Browse" jabber-get-browse)
+  "v" ("Client version" jabber-get-version)
+  "p" ("Ping" jabber-ping)
+  "t" ("Request time" jabber-get-time)
+  "V" ("View vCard" jabber-vcard-get))
+
+(defun jabber-info-menu ()
+  "Jabber info/discovery commands."
+  (interactive)
+  (keymap-popup jabber-info-menu-map))
+
+(keymap-popup-define jabber-service-menu-map
+  "Jabber service commands."
+  :group "Services"
+  "r" ("Register" jabber-get-register)
+  "s" ("Search directory" jabber-get-search)
+  "c" ("Execute command" jabber-ahc-execute-command)
+  "l" ("Command list" jabber-ahc-get-list)
+  "C" ("Enable carbons" jabber-enable-carbons))
+
+(defun jabber-service-menu ()
+  "Jabber service commands."
+  (interactive)
+  (keymap-popup jabber-service-menu-map))
 
 (provide 'jabber-disco)
 ;;; jabber-disco.el ends here.

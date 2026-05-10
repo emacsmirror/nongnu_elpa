@@ -25,7 +25,6 @@
 
 ;;; Code:
 
-(require 'jabber-menu)
 (require 'jabber-util)
 (require 'jabber-truncate)
 (require 'xml)

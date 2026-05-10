@@ -5,7 +5,7 @@
 ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
 ifdef GUIX
-GUIX_SHELL := guix shell --pure -D -f guix.scm emacs-next emacs-package-lint emacs-relint --
+GUIX_SHELL := guix shell --pure -D -f guix.scm emacs-no-x emacs-package-lint emacs-relint --
 EMACS_CMD := $(GUIX_SHELL) emacs
 else
 GUIX_SHELL :=
@@ -178,6 +178,22 @@ do-test-summary: $(TEST_STAMPS)
 	[ $$failed -eq 0 ]
 
 load: clean-elc
+	@emacsclient --eval "(progn \
+	  (dolist (sym '(jabber-global-keymap jabber-common-keymap \
+	               jabber-chat-mode-map jabber-console-mode-map \
+	               jabber-browse-mode-map \
+	               jabber-roster-popup-map \
+	               jabber-roster-presence-map jabber-roster-discovery-map \
+	               jabber-roster-contact-action-map \
+	               jabber-info-menu-map jabber-muc-menu-map \
+	               jabber-service-menu-map \
+	               jabber-chat-encryption-menu-map \
+	               jabber-chat-operations-menu-map \
+	               jabber-omemo-trust-mode-map \
+	               jabber-bookmarks-edit-map jabber-bookmarks-mode-map)) \
+	    (when (boundp sym) (makunbound sym))))" > /dev/null
+	@emacsclient --eval "(load-file \"$(CURDIR)/lisp/jabber-util.el\")" > /dev/null || \
+	    printf "\033[31mFAIL\033[0m lisp/jabber-util.el\n"
 	@for f in lisp/*.el; do \
 	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
 	    printf "\033[31mFAIL\033[0m $$f\n"; \

@@ -28,7 +28,6 @@
 
 (require 'jabber-util)
 (require 'jabber-xml)
-(require 'jabber-menu)
 (require 'jabber-iq)
 (require 'jabber-disco)
 
