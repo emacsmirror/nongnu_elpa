@@ -135,16 +135,27 @@ Trailing newlines are always removed, regardless of this variable."
 (defvar jabber-roster-debug nil
   "Debug roster operations.")
 
+(defvar jabber-roster--scoped-connection nil
+  "When non-nil, a connection object to scope roster views to.
+Only contacts and rooms belonging to this connection are shown.")
+
 ;;; Popup interface
+
+(defun jabber-roster--contacts ()
+  "Return roster contacts, filtered by scope if active."
+  (if jabber-roster--scoped-connection
+      (plist-get (fsm-get-state-data jabber-roster--scoped-connection)
+                 :roster)
+    (jabber-concat-rosters)))
 
 (defun jabber-roster--online-count ()
   "Return count of contacts with at least one connected resource."
   (cl-count-if (lambda (buddy) (get buddy 'connected))
-               (jabber-concat-rosters)))
+               (jabber-roster--contacts)))
 
 (defun jabber-roster--total-count ()
   "Return total number of contacts across all accounts."
-  (length (jabber-concat-rosters)))
+  (length (jabber-roster--contacts)))
 
 (defun jabber-roster--unread-count ()
   "Return number of JIDs with unread activity."
@@ -152,7 +163,14 @@ Trailing newlines are always removed, regardless of this variable."
 
 (defun jabber-roster--muc-count ()
   "Return number of currently joined MUC rooms."
-  (hash-table-count jabber-muc--rooms))
+  (if jabber-roster--scoped-connection
+      (let ((count 0))
+        (maphash (lambda (_room entries)
+                   (when (assq jabber-roster--scoped-connection entries)
+                     (cl-incf count)))
+                 jabber-muc--rooms)
+        count)
+    (hash-table-count jabber-muc--rooms)))
 
 (keymap-popup-define jabber-roster-presence-map
   "Set presence."
@@ -195,7 +213,13 @@ Trailing newlines are always removed, regardless of this variable."
                  (if jabber-connections
                      (format "Jabber: %s"
                              (propertize
-                              (jabber-connection-bare-jid (car jabber-connections))
+                              (if jabber-roster--scoped-connection
+                                  (jabber-connection-bare-jid
+                                   jabber-roster--scoped-connection)
+                                (string-join
+                                 (mapcar #'jabber-connection-bare-jid
+                                         jabber-connections)
+                                 ", "))
                               'face 'font-lock-constant-face))
                    "Jabber (not connected)"))
   :group "Contacts"
@@ -233,6 +257,7 @@ Trailing newlines are always removed, regardless of this variable."
        :if (lambda () jabber-connections))
   "s" ("Subscribe" jabber-send-subscription-request
        :if (lambda () jabber-connections))
+  :row
   :group "Presence"
   "p" ("Presence" :keymap jabber-roster-presence-map
        :if (lambda () jabber-connections))
@@ -242,8 +267,19 @@ Trailing newlines are always removed, regardless of this variable."
   :group "Connection"
   "C" ("Connect" jabber-connect-all
        :if (lambda () (null jabber-connections)))
-  "D" ("Disconnect" jabber-disconnect
+  "D" ("Disconnect all" jabber-disconnect
        :if (lambda () jabber-connections))
+  "A" ((lambda ()
+         (format "Accounts %s"
+                 (propertize
+                  (format "[%s]"
+                          (if jabber-roster--scoped-connection
+                              (jabber-connection-bare-jid
+                               jabber-roster--scoped-connection)
+                            "all"))
+                  'face 'font-lock-constant-face)))
+       jabber-roster-accounts
+       :if (lambda () (cdr jabber-connections)))
   :group "OMEMO"
   "f" ("Fingerprints" jabber-omemo-show-fingerprints
        :if (lambda () jabber-connections)))
@@ -262,7 +298,7 @@ Trailing newlines are always removed, regardless of this variable."
   (interactive)
   (let* ((online (cl-remove-if-not
                   (lambda (buddy) (get buddy 'connected))
-                  (jabber-concat-rosters)))
+                  (jabber-roster--contacts)))
          (jid (jabber-read-jid-completing "Chat with (online): "
                                           online t)))
     (when jid
@@ -293,6 +329,64 @@ Trailing newlines are always removed, regardless of this variable."
          (room (completing-read "Room: " rooms nil t)))
     (when (and room (not (string-empty-p room)))
       (jabber-muc-switch-to room))))
+
+;;; Account management
+
+(defvar jabber-roster--selected-account nil
+  "Connection selected in the accounts menu.")
+
+(keymap-popup-define jabber-roster-account-action-map
+  "Account actions."
+  :description (lambda ()
+                 (if jabber-roster--selected-account
+                     (jabber-connection-bare-jid jabber-roster--selected-account)
+                   "Account"))
+  "i" ((lambda ()
+         (if (eq jabber-roster--scoped-connection
+                 jabber-roster--selected-account)
+             "Show all accounts"
+           "Isolate"))
+       jabber-roster--account-toggle-scope)
+  "d" ("Disconnect" jabber-roster--account-disconnect))
+
+(defun jabber-roster-accounts ()
+  "Select a connected account and show actions."
+  (interactive)
+  (let* ((accounts (mapcar (lambda (jc)
+                             (cons (jabber-connection-bare-jid jc) jc))
+                           jabber-connections))
+         (choice (completing-read "Account: " accounts nil t)))
+    (when (and choice (not (string-empty-p choice)))
+      (setq jabber-roster--selected-account (cdr (assoc choice accounts)))
+      (keymap-popup jabber-roster-account-action-map))))
+
+(defun jabber-roster--account-disconnect ()
+  "Disconnect the selected account."
+  (interactive)
+  (when jabber-roster--selected-account
+    (when (eq jabber-roster--scoped-connection jabber-roster--selected-account)
+      (setq jabber-roster--scoped-connection nil))
+    (jabber-disconnect-one jabber-roster--selected-account)
+    (setq jabber-roster--selected-account nil)))
+
+(defun jabber-roster--account-toggle-scope ()
+  "Toggle roster scope to/from the selected account."
+  (interactive)
+  (setq jabber-roster--scoped-connection
+        (if (eq jabber-roster--scoped-connection
+                jabber-roster--selected-account)
+            nil
+          jabber-roster--selected-account))
+  (setq jabber-roster--selected-account nil)
+  (keymap-popup jabber-roster-popup-map))
+
+(defun jabber-roster--clear-scope ()
+  "Clear scope if the scoped connection is no longer active."
+  (when (and jabber-roster--scoped-connection
+             (not (memq jabber-roster--scoped-connection jabber-connections)))
+    (setq jabber-roster--scoped-connection nil)))
+
+(add-hook 'jabber-post-disconnect-hook #'jabber-roster--clear-scope)
 
 (defun jabber-roster--jc-for-jid (jid)
   "Return the connection that has JID in its roster."
