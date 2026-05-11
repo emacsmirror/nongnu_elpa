@@ -129,13 +129,4 @@ With =pass= (password-store):
 #+end_src
 
 * Basic commands
-
-| Key                  | Command                          |
-|----------------------+----------------------------------|
-| =M-x jabber-connect= | Connect (prompts for account)    |
-| =C-x C-j C-c=        | Connect all accounts             |
-| =C-x C-j C-d=        | Disconnect                       |
-| =C-x C-j C-r=        | Open roster buffer               |
-| =C-x C-j C-j=        | Start or switch to a chat        |
-| =C-x C-j C-m=        | Join/switch to a MUC (groupchat) |
-| =C-x C-j C-b=        | Switch to a chat buffer          |
++ Use =M-x jabber-roster= or =C-x C-j C-r= to get started.
