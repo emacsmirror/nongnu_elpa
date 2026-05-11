@@ -87,7 +87,7 @@
   (let ((thing (gethash webid elfeed-web-webid-map)))
     (if thing
         thing
-      (or (with-elfeed-db-visit (entry _)
+      (or (elfeed-db-visit (entry _)
             (when (string= webid (elfeed-web-make-webid entry))
               (setf (gethash webid elfeed-web-webid-map)
                     (elfeed-db-return entry))))
@@ -133,7 +133,7 @@
          (modified-q (format "#%d %s" elfeed-web-limit q))
          (filter (elfeed-search-parse-filter modified-q))
          (count 0))
-    (with-elfeed-db-visit (entry feed)
+    (elfeed-db-visit (entry feed)
       (when (elfeed-search-filter filter entry feed count)
         (push entry results)
         (incf count)))
@@ -156,7 +156,7 @@ advanced past it (long poll)."
 
 (defservlet* elfeed/mark-all-read application/json ()
   "Marks all entries in the database as read (quick-and-dirty)."
-  (with-elfeed-db-visit (e _)
+  (elfeed-db-visit (e _)
     (elfeed-untag e 'unread))
   (princ (json-encode t)))
 
