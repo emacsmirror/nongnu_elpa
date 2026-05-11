@@ -82,7 +82,14 @@
   (and (module-name? module-name)
        (let ((file (or ((@@ (ice-9 session) module-filename) module-name)
                        (module-filename (resolve-module module-name #f)))))
-         (and (string? file) (%search-load-path file)))))
+         (cond ((string? file) (%search-load-path file))
+               ;; look-ups in the obarray of (guile) for syntax objects don't
+               ;; work, but we know definitions objects in that module can be
+               ;; found, when they're in scheme and not C, in ice-9/boot-9.scm
+               ;; most of the time.
+               ((equal? module-name '(guile))
+                (%search-load-path "ice-9/boot-9.scm"))
+               (else #f)))))
 
 (define (submodules mod)
   (hash-map->list (lambda (k v) v) (module-submodules mod)))
