@@ -78,20 +78,19 @@ Returns an alist of (PRIORITY . ENTRIES)."
 (defun jabber-srv--weighted-select (entries)
   "Select ENTRIES in weighted random order per RFC 2782.
 Returns the entries reordered by weighted random selection."
-  (let ((weight-acc 0)
-        weight-order
+  (let ((remaining (copy-sequence entries))
         result)
-    (dolist (a entries)
-      (cl-incf weight-acc (cadr (assq 'weight a)))
-      (push (cons weight-acc a) weight-order))
-    (setq weight-order (nreverse weight-order))
-    (while weight-order
-      (let* ((r (random (1+ weight-acc)))
-             (next (cl-dolist (a weight-order)
-                     (when (>= (car a) r)
-                       (cl-return a)))))
-        (push (cdr next) result)
-        (setq weight-order (delq next weight-order))))
+    (while remaining
+      (let* ((total (cl-loop for a in remaining
+                             sum (cadr (assq 'weight a))))
+             (r (random (1+ total)))
+             (running 0)
+             (chosen (cl-dolist (a remaining)
+                       (cl-incf running (cadr (assq 'weight a)))
+                       (when (>= running r)
+                         (cl-return a)))))
+        (push chosen result)
+        (setq remaining (delq chosen remaining))))
     (nreverse result)))
 
 (defun jabber-srv--fetch-answers (target)
