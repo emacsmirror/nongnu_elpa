@@ -238,10 +238,17 @@ is shown as an annotation.  Both are matchable regardless of mode."
                 (when-let* ((sym (cdr (assoc-string candidate table t))))
                   (let* ((jid (symbol-name sym))
                          (name (get sym 'name))
-                         (ann (if use-names jid name)))
-                    (when (and ann (not (string= ann candidate)))
-                      (propertize (concat "  " ann)
-                                  'face 'completions-annotations))))))))
+                         (alt (if use-names jid name))
+                         (show (get sym 'show))
+                         (presence (cdr (assoc show jabber-presence-strings)))
+                         (parts (list
+                                 (and alt (not (string= alt candidate)) alt)
+                                 presence)))
+                    (when-let* ((text (string-join
+                                       (delq nil parts)
+                                       "  ")))
+                      (unless (string-empty-p text)
+                        (concat "  " text)))))))))
        ;; all-completions: match by candidate or alternate form.
        ((eq action t)
         (let ((matches (all-completions string table pred))
