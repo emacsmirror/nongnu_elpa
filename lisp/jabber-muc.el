@@ -1144,7 +1144,8 @@ JC is the Jabber connection."
     (jabber-send-sexp jc
 		      `(presence ((to . ,(format "%s/%s" group nick))
 				  (type . "unavailable")))))
-  (jabber-bookmarks--retract-one jc group))
+  (when jabber-bookmarks-auto-add
+    (jabber-bookmarks--retract-one jc group)))
 
 
 (defvar-local jabber-muc-names--group nil
