@@ -188,8 +188,8 @@ Return non-nil if an actual update occurred, not counting content."
 (defun elfeed-normalize-tags (tags &rest more-tags)
   "Return the normalized tag list for TAGS.
 Additional tag lists can be given as MORE-TAGS."
-  (let ((all (apply #'append tags (nconc more-tags (list ())))))
-    (delete-consecutive-dups (sort all #'string<))))
+  (delete-consecutive-dups
+   (sort (apply #'append tags (nconc more-tags (list ()))) #'string<)))
 
 (defun elfeed-tag-1 (entry &rest tags)
   "Add TAGS to ENTRY."
@@ -523,9 +523,9 @@ supported by the database format."
 (defun elfeed-deref-entry (entry)
   "Move ENTRY's content to filesystem storage and return the entry."
   (let ((content (elfeed-entry-content entry)))
-    (prog1 entry
-      (when (stringp content)
-        (setf (elfeed-entry-content entry) (elfeed-ref content))))))
+    (when (stringp content)
+      (setf (elfeed-entry-content entry) (elfeed-ref content)))
+    entry))
 
 (defun elfeed-ref-delete (ref)
   "Remove the content behind REF from the database."
