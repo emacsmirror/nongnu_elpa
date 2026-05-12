@@ -287,7 +287,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
        (elfeed-search--header-button #'elfeed-update
                                      (concat "Updated " update))
        ", " unread (and (not (equal filter "")) ", ")
-       (propertize filter 'face 'elfeed-search-filter-face))))))
+       (elfeed-add-properties filter 'face 'elfeed-search-filter-face))))))
 
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"
   "Major mode for listing elfeed feed entries."
