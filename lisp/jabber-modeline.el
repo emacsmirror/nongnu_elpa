@@ -162,7 +162,7 @@ Which sections are shown is controlled by `jabber-modeline-sections'."
           (setq global-mode-string '("")))
         (jabber-mode-line-presence-update)
         (jabber-mode-line-count-contacts)
-        (add-hook 'jabber-send-presence
+        (add-hook 'jabber-presence-sent-hooks
                   #'jabber-mode-line-presence-update)
         (add-hook 'jabber-post-disconnect-hook
                   #'jabber-mode-line-presence-update)
@@ -179,7 +179,7 @@ Which sections are shown is controlled by `jabber-modeline-sections'."
       (setq jabber-mode-line--recount-timer nil))
     (setq jabber-mode-line-presence ""
           jabber-mode-line-contacts "")
-    (remove-hook 'jabber-send-presence
+    (remove-hook 'jabber-presence-sent-hooks
                  #'jabber-mode-line-presence-update)
     (remove-hook 'jabber-post-disconnect-hook
                  #'jabber-mode-line-presence-update)
