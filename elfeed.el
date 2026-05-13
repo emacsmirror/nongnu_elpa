@@ -691,10 +691,10 @@ The returned function should be added to `elfeed-new-entry-hook'."
             (date (elfeed-entry-date entry))
             (case-fold-search t))
         (cl-flet ((match (r s)
-                         (or (null r)
-                             (if (listp r)
-                                 (not (string-match-p (cadr r) s))
-                               (string-match-p r s)))))
+                    (pcase r
+                      (`nil t)
+                      (`(not ,x) (not (string-match-p x s)))
+                      (_ (string-match-p r s)))))
           (when (and
                  (match feed-title  (elfeed-feed-title  feed))
                  (match feed-url    (elfeed-feed-url    feed))
