@@ -1042,7 +1042,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
 
 (defun elfeed-search-mark (&rest entries)
   "Mark ENTRIES at point."
-  (interactive (elfeed-search-selected nil :ignore-marked)
+  (interactive (elfeed-search-selected :ignore-marked)
                elfeed-search-mode)
   (dolist (entry entries)
     (cl-pushnew entry elfeed-search--marked)
@@ -1054,7 +1054,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
 With prefix argument, unmark all currently marked entries."
   (interactive (if current-prefix-arg
                    elfeed-search--marked
-                 (elfeed-search-selected nil :ignore-marked))
+                 (elfeed-search-selected :ignore-marked))
                elfeed-search-mode)
   (dolist (entry entries)
     (cl-callf2 delq entry elfeed-search--marked)
@@ -1062,26 +1062,29 @@ With prefix argument, unmark all currently marked entries."
   (unless current-prefix-arg
     (elfeed-search--after-action 'mark)))
 
-(defun elfeed-search-selected (&optional ignore-region ignore-marked)
+(defun elfeed-search-selected (&optional ignore-region)
   "Return a list of the currently selected feeds.
 
-If IGNORE-REGION is non-nil, only return the entry under point.
-If IGNORE-MARKED is non-nil, do not return marked entries."
-  (cond
-   ((and (not ignore-region) (not ignore-marked) elfeed-search--marked))
-   ((and (not ignore-region) (use-region-p))
-    (let ((start (region-beginning))
-          (end   (region-end)))
-      (save-excursion
-        (goto-char start)
-        (goto-char (pos-bol))
-        (cl-loop while (< (point) end)
-                 when (prog1 (get-text-property (point) 'elfeed-entry)
-                        (forward-line 1))
-                 collect it into selected
-                 finally return selected))))
-   ((when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
-      (if ignore-region entry (list entry))))))
+If IGNORE-REGION is :ignore-marked, do not return marked entries.
+Otherwise if IGNORE-REGION is non-nil, only return the entry under
+point."
+  (let* ((ignore-marked (eq ignore-region :ignore-marked))
+        (ignore-region (and (not ignore-marked) ignore-region)))
+    (cond
+     ((and (not ignore-region) (not ignore-marked) elfeed-search--marked))
+     ((and (not ignore-region) (use-region-p))
+      (let ((start (region-beginning))
+            (end   (region-end)))
+        (save-excursion
+          (goto-char start)
+          (goto-char (pos-bol))
+          (cl-loop while (< (point) end)
+                   when (prog1 (get-text-property (point) 'elfeed-entry)
+                          (forward-line 1))
+                   collect it into selected
+                   finally return selected))))
+     ((when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
+        (if ignore-region entry (list entry)))))))
 
 (defun elfeed-search-browse-url (&optional secondary)
   "Visit the current entry in your browser using `browse-url'.
