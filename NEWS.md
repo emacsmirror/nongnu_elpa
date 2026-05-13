@@ -41,6 +41,8 @@
   in Ibuffer.
 * `elfeed-delete-feed`: New command to delete feed with all entries from the
   database.
+* `elfeed-search-mark`, `elfeed-search-unmark`: New commands for non-continuous
+  selections bound to `m` and `M`.
 * Moved elfeed-web.el to the separate repository at
   https://github.com/emacs-elfeed/elfeed-web.
 * Removed obsolete code and code updated for upcoming Emacs 31.

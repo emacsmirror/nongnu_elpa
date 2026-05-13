@@ -34,6 +34,9 @@
 (defvar elfeed-search--last-width 0
   "The last window width.")
 
+(defvar elfeed-search--marked nil
+  "List of marked entries.")
+
 (defvar elfeed-search-last-update 0
   "The last time the buffer was redrawn in epoch seconds.")
 
@@ -84,8 +87,8 @@ live filter editing is exited."
   "When non-nil, keep point at entry after performing a command.
 
 When nil, always move to next entry after a command.  The variable can
-be set to a list of symbols show, browse, tag and yank, such that point
-does not move after the listed operations.  Example:
+be set to a list of symbols show, browse, tag, mark and yank, such that
+point does not move after the listed operations.  Example:
 
   (setq elfeed-search-remain-on-entry \\='(browse show yank))"
   :group 'elfeed
@@ -162,6 +165,8 @@ When live editing the filter, it is bound to :live.")
   "r" #'elfeed-search-untag-all-unread
   "n" #'next-line
   "p" #'previous-line
+  "m" #'elfeed-search-mark
+  "M" #'elfeed-search-unmark
   "t" #'elfeed-search-set-entry-title
   "T" #'elfeed-search-set-feed-title
   "+" #'elfeed-search-tag-all
@@ -219,6 +224,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   ;; Ignore region for the `show' action, like the related commands, which also
   ;; ignore the region and show the entry at point only.
   (when (and (or (eq action 'show) (not (use-region-p)))
+             (or (eq action 'mark) (not elfeed-search--marked))
              (not (elfeed-search--remain-on-entry-p action)))
     (forward-line)))
 
@@ -400,6 +406,13 @@ The customization `elfeed-search-date-format' sets the formatting."
   '((t :inherit mode-line-buffer-id))
   "Face for showing the current Elfeed search filter."
   :group 'elfeed)
+
+(defface elfeed-search-marked-face
+  '((t :inherit (lazy-highlight bold)))
+  "Face for marked entries."
+  :group 'elfeed)
+
+(put 'elfeed-search-marked-overlay 'face 'elfeed-search-marked-face)
 
 (defcustom elfeed-search-title-max-width 70
   "Maximum column width for titles in the `elfeed-search' buffer."
@@ -856,8 +869,9 @@ expression, matching against entry link, title, and feed title."
         (setf entries (sort entries elfeed-search-sort-function)))
       (when (eq elfeed-search-sort-order 'ascending)
         (setf entries (nreverse entries)))
-      (setf elfeed-search-entries
-            entries))))
+      (setf elfeed-search-entries entries)
+      (cl-callf2 cl-delete-if-not (lambda (x) (memq x elfeed-search-entries))
+                 elfeed-search--marked))))
 
 (defun elfeed--save-position ()
   "Save entry, line and column."
@@ -935,11 +949,13 @@ directly.  Instead use `elfeed-search-update'."
           (let ((inhibit-read-only t)
                 (standard-output (current-buffer)))
             (erase-buffer)
+            (remove-overlays nil nil 'category 'elfeed-search-marked-overlay)
             (unless (eq method :preserve)
               (elfeed-search--update-list))
             (dolist (entry elfeed-search-entries)
               (elfeed-search--print-entry entry)
               (insert "\n"))
+            (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)
             (setf elfeed-search-last-update (float-time))))
         (setq list-buffers-directory elfeed-search-filter)
         ;; Highlighting gets lost due to debouncing.
@@ -997,31 +1013,75 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
     (save-excursion
       (when n (elfeed-goto-line n))
       (when-let* ((entry (elfeed-search-selected :ignore-region)))
+        (elfeed-search--remove-marked-overlay entry)
         (elfeed-kill-line)
-        (elfeed-search--print-entry entry)))))
+        (elfeed-search--print-entry entry)
+        (when (memq entry elfeed-search--marked)
+          (elfeed-search--make-marked-overlay entry))))))
 
 (defun elfeed-search-update-entry (entry)
   "Redraw ENTRY in the `elfeed-search' buffer."
   (when-let* ((n (cl-position entry elfeed-search-entries)))
     (elfeed-search-update-line (1+ n))))
 
-(defun elfeed-search-selected (&optional ignore-region)
+(defun elfeed-search--remove-marked-overlay (entry)
+  "Remove mark overlay from ENTRY."
+  (when-let* ((n (cl-position entry elfeed-search-entries)))
+    (save-excursion
+      (elfeed-goto-line (1+ n))
+      (remove-overlays (pos-bol) (pos-eol)
+                       'category 'elfeed-search-marked-overlay))))
+
+(defun elfeed-search--make-marked-overlay (entry)
+  "Add mark overlay over ENTRY."
+  (when-let* ((n (cl-position entry elfeed-search-entries)))
+    (save-excursion
+      (elfeed-goto-line (1+ n))
+      (overlay-put (make-overlay (pos-bol) (pos-eol))
+                   'category 'elfeed-search-marked-overlay))))
+
+(defun elfeed-search-mark (&rest entries)
+  "Mark ENTRIES at point."
+  (interactive (elfeed-search-selected nil :ignore-marked)
+               elfeed-search-mode)
+  (dolist (entry entries)
+    (cl-pushnew entry elfeed-search--marked)
+    (elfeed-search--make-marked-overlay entry))
+  (elfeed-search--after-action 'mark))
+
+(defun elfeed-search-unmark (&rest entries)
+  "Unmark ENTRIES at point.
+With prefix argument, unmark all currently marked entries."
+  (interactive (if current-prefix-arg
+                   elfeed-search--marked
+                 (elfeed-search-selected nil :ignore-marked))
+               elfeed-search-mode)
+  (dolist (entry entries)
+    (cl-callf2 delq entry elfeed-search--marked)
+    (elfeed-search--remove-marked-overlay entry))
+  (unless current-prefix-arg
+    (elfeed-search--after-action 'mark)))
+
+(defun elfeed-search-selected (&optional ignore-region ignore-marked)
   "Return a list of the currently selected feeds.
 
-If IGNORE-REGION is non-nil, only return the entry under point."
-  (if (and (not ignore-region) (use-region-p))
-      (let ((start (region-beginning))
-            (end   (region-end)))
-        (save-excursion
-          (goto-char start)
-          (goto-char (pos-bol))
-          (cl-loop while (< (point) end)
-                   when (prog1 (get-text-property (point) 'elfeed-entry)
-                          (forward-line 1))
-                   collect it into selected
-                   finally return selected)))
-    (when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
-      (if ignore-region entry (list entry)))))
+If IGNORE-REGION is non-nil, only return the entry under point.
+If IGNORE-MARKED is non-nil, do not return marked entries."
+  (cond
+   ((and (not ignore-region) (not ignore-marked) elfeed-search--marked))
+   ((and (not ignore-region) (use-region-p))
+    (let ((start (region-beginning))
+          (end   (region-end)))
+      (save-excursion
+        (goto-char start)
+        (goto-char (pos-bol))
+        (cl-loop while (< (point) end)
+                 when (prog1 (get-text-property (point) 'elfeed-entry)
+                        (forward-line 1))
+                 collect it into selected
+                 finally return selected))))
+   ((when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
+      (if ignore-region entry (list entry))))))
 
 (defun elfeed-search-browse-url (&optional secondary)
   "Visit the current entry in your browser using `browse-url'.
