@@ -1069,7 +1069,7 @@ If IGNORE-REGION is :ignore-marked, do not return marked entries.
 Otherwise if IGNORE-REGION is non-nil, only return the entry under
 point."
   (let* ((ignore-marked (eq ignore-region :ignore-marked))
-        (ignore-region (and (not ignore-marked) ignore-region)))
+         (ignore-region (and (not ignore-marked) ignore-region)))
     (cond
      ((and (not ignore-region) (not ignore-marked) elfeed-search--marked))
      ((and (not ignore-region) (use-region-p))
