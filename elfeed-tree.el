@@ -70,7 +70,7 @@
 (defvar-keymap elfeed-tree-mode-map
   :doc "Keymap for `elfeed-tree-mode'."
   :parent special-mode-map
-  "RET" #'elfeed-tree-show
+  "RET" #'elfeed-tree-search
   "<mouse-1>" #'elfeed-tree-click
   "<header-line> <mouse-1>" #'elfeed-search-header-click
   "n" #'next-line
@@ -83,7 +83,7 @@
 (easy-menu-define elfeed-tree-mode-menu elfeed-tree-mode-map
   "Menu for `elfeed-tree-mode'."
   '("Elfeed Tree"
-    ["Show feed or tag" elfeed-tree-show]
+    ["Search for feed or tag" elfeed-tree-search]
     ["Set feed title" elfeed-tree-set-feed-title]
     "--"
     ["Fetch all" elfeed-search-fetch]
@@ -108,15 +108,16 @@
               (pos (posn-point pos))
               (obj (or (get-text-property pos 'elfeed-filter)
                        (get-text-property pos 'elfeed-tag))))
-    (elfeed-tree-show obj)))
+    (elfeed-tree-search obj)))
 
-(defun elfeed-tree-show (filter-or-tag)
-  "Show FILTER-OR-TAG at point in `elfeed-tree' buffer.
+(defun elfeed-tree-search (filter-or-tag)
+  "Go to search buffer limited to FILTER-OR-TAG at point.
 FILTER-OR-TAG can either be a filter string, a single tag symbol or a
 list of tag symbols."
   (interactive (list (or (get-text-property (pos-bol) 'elfeed-filter)
                          (get-text-property (pos-bol) 'elfeed-tag)
                          (user-error "No feed or tag at point"))))
+  (push-mark)
   (elfeed-search)
   (elfeed-search-set-filter
    (concat

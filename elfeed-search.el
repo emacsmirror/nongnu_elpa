@@ -1167,6 +1167,7 @@ the browser defined by `browse-url-secondary-browser-function'."
     ;; Update hl-line overlay. This does not happen automatically, since
     ;; `elfeed-show-entry' switches to another buffer.
     (hl-line-highlight)
+    (push-mark)
     ;; elfeed-show.el is required by elfeed.el at runtime.
     (declare-function elfeed-show-entry "elfeed-show")
     (elfeed-show-entry entry)))
