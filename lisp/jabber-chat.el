@@ -174,6 +174,11 @@ WHO        :local or :foreign, for sent or received stanza, respectively
 MODE       :insert or :printp.  For :insert, insert text at point.
            For :printp, return non-nil if function would insert text.")
 
+(defvar jabber-chat--body-start nil
+  "Buffer position where the current message body starts.
+Bound dynamically during ewoc rendering so that printer-chain
+functions can style or fontify only the body region.")
+
 (defvar jabber-body-printers '(jabber-chat-normal-body)
   "List of functions that may be able to print a body for a message.
 Each function receives these arguments:
@@ -875,7 +880,8 @@ or X for undelivered."
          (/me-p (and (stringp body) (string-prefix-p "/me " body))))
     (jabber-chat-self-prompt msg (plist-get msg :timestamp)
                              (plist-get msg :delayed) /me-p)
-    (run-hook-with-args 'jabber-chat-printers msg :local :insert)
+    (let ((jabber-chat--body-start (point)))
+      (run-hook-with-args 'jabber-chat-printers msg :local :insert))
     (when (plist-get msg :edited)
       (insert (propertize " (edited)" 'face 'shadow)))
     (jabber-chat--insert-status-indicator msg)
@@ -888,7 +894,8 @@ or X for undelivered."
          (/me-p (and (stringp body) (string-prefix-p "/me " body))))
     (jabber-chat-print-prompt msg (plist-get msg :timestamp)
                               (plist-get msg :delayed) /me-p)
-    (run-hook-with-args 'jabber-chat-printers msg :foreign :insert)
+    (let ((jabber-chat--body-start (point)))
+      (run-hook-with-args 'jabber-chat-printers msg :foreign :insert))
     (when (plist-get msg :edited)
       (insert (propertize " (edited)" 'face 'shadow)))
     (insert "\n")))
@@ -914,8 +921,9 @@ or X for undelivered."
     (jabber-muc-print-prompt msg t /me-p)
     (if (plist-get msg :retracted)
         (jabber-chat--insert-tombstone msg)
-      (mapc (lambda (f) (funcall f msg :muc-local :insert))
-            (append jabber-muc-printers jabber-chat-printers))
+      (let ((jabber-chat--body-start (point)))
+        (mapc (lambda (f) (funcall f msg :muc-local :insert))
+              (append jabber-muc-printers jabber-chat-printers)))
       (when (plist-get msg :edited)
         (insert (propertize " (edited)" 'face 'shadow)))
       (jabber-chat--insert-status-indicator msg))
@@ -929,8 +937,9 @@ or X for undelivered."
     (jabber-muc-print-prompt msg nil /me-p)
     (if (plist-get msg :retracted)
         (jabber-chat--insert-tombstone msg)
-      (mapc (lambda (f) (funcall f msg :muc-foreign :insert))
-            (append jabber-muc-printers jabber-chat-printers))
+      (let ((jabber-chat--body-start (point)))
+        (mapc (lambda (f) (funcall f msg :muc-foreign :insert))
+              (append jabber-muc-printers jabber-chat-printers)))
       (when (plist-get msg :edited)
         (insert (propertize " (edited)" 'face 'shadow))))
     (insert "\n")))
@@ -1503,20 +1512,17 @@ When the image arrives the URL text is deleted and the image inserted."
   (when (eq mode :insert)
     (condition-case err
         (let ((end (point))
-	      (limit (max (- (point) 1000) (1+ (point-min)))))
-	  ;; We only need to fontify the text written since the last
-	  ;; prompt.  The prompt has a field property, so we can find it
-	  ;; using `field-beginning'.
-	  (let ((start (field-beginning nil nil limit)))
-	    (goto-address-fontify start end)
-	    ;; Clip overlays that leaked past end.  During ewoc
-	    ;; invalidation the body text abuts the next node with no
-	    ;; separator, so bounds-of-thing-at-point can extend into
-	    ;; the next message.
-	    (dolist (ov (overlays-in start end))
-	      (when (and (overlay-get ov 'goto-address)
-			 (> (overlay-end ov) end))
-		(move-overlay ov (overlay-start ov) end)))))
+              (start (or jabber-chat--body-start (point-min))))
+          (when (< start end)
+            (goto-address-fontify start end)
+            ;; Clip overlays that leaked past end.  During ewoc
+            ;; invalidation the body text abuts the next node with no
+            ;; separator, so bounds-of-thing-at-point can extend into
+            ;; the next message.
+            (dolist (ov (overlays-in start end))
+              (when (and (overlay-get ov 'goto-address)
+                         (> (overlay-end ov) end))
+                (move-overlay ov (overlay-start ov) end)))))
       (error (message "jabber-chat: goto-address-fontify failed: %s" err)))))
 
 (defun jabber-chat-mark-oob-attachment (msg _who mode)

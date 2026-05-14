@@ -300,16 +300,18 @@ as the user types."
 
 ;;; Chat printer integration
 
+(defvar jabber-chat--body-start)        ; jabber-chat.el
+
 (defun jabber-styling--post-body (msg _who mode)
   "Apply XEP-0393 styling to the body from MSG just inserted.
 MODE must be :insert for styling to apply."
   (when (and (eq mode :insert)
              jabber-styling-enable
              (not (plist-get msg :unstyled)))
-    (let ((end (point))
-          (start (field-beginning nil nil
-				  (max (- (point) 10000) (1+ (point-min))))))
-      (jabber-styling--apply-region start end))))
+    (let ((start (or jabber-chat--body-start (point-min)))
+          (end (point)))
+      (when (< start end)
+        (jabber-styling--apply-region start end)))))
 
 (with-eval-after-load "jabber-chat"
   (defvar jabber-chat-printers)
