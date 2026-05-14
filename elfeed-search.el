@@ -81,7 +81,14 @@ Changing this from the default will lead to misleading results
 during live filter editing, but the results be will correct when
 live filter editing is exited."
   :group 'elfeed
-  :type '(choice function (const nil)))
+  :type `(choice
+          (const :tag "Group by feed" ,#'elfeed-search-group-by-feed)
+          (function :tag "Custom function")
+          (const :tag "Default sorting" nil)))
+
+(defun elfeed-search-group-by-feed (a b)
+  "Group entries A and B by feed."
+  (string> (elfeed-entry-feed-id a) (elfeed-entry-feed-id b)))
 
 (defcustom elfeed-search-remain-on-entry nil
   "When non-nil, keep point at entry after performing a command.
