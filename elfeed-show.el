@@ -91,7 +91,7 @@ Called without arguments."
   "u" #'elfeed-show-tag-unread
   "+" #'elfeed-show-tag
   "-" #'elfeed-show-untag
-  "m" #'elfeed-show-mail
+  "m" #'elfeed-show-compose-mail
   "TAB" #'elfeed-show-next-link
   "M-TAB" #'shr-previous-link
   "<backtab>" #'shr-previous-link
@@ -546,8 +546,8 @@ Prompts for ENCLOSURE-INDEX when called interactively."
         (progn (kill-new url) (message "%s" url))
       (call-interactively #'shr-copy-url))))
 
-(defun elfeed-show-mail ()
-  "Prepare mail from elfeed-entry buffer."
+(defun elfeed-show-compose-mail ()
+  "Compose mail from elfeed-entry buffer."
   (interactive nil elfeed-show-mode)
   (declare-function message-goto-body "message")
   (declare-function message-goto-to "message")
