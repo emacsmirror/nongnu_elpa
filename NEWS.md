@@ -48,6 +48,7 @@
   the reference kept in the metadata.
 * `elfeed-show-refresh-hook`: New hook for addons to extend or enhance the show
   buffer.
+* `elfeed-search-group-by-feed`: New function for `elfeed-search-sort-function`.
 * Moved elfeed-web.el to the separate repository at
   https://github.com/emacs-elfeed/elfeed-web.
 * Removed obsolete code and code updated for upcoming Emacs 31.
