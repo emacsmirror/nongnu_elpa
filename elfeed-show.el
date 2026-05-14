@@ -91,6 +91,7 @@ Called without arguments."
   "u" #'elfeed-show-tag-unread
   "+" #'elfeed-show-tag
   "-" #'elfeed-show-untag
+  "m" #'elfeed-show-mail
   "TAB" #'elfeed-show-next-link
   "M-TAB" #'shr-previous-link
   "<backtab>" #'shr-previous-link
@@ -544,6 +545,24 @@ Prompts for ENCLOSURE-INDEX when called interactively."
     (if url
         (progn (kill-new url) (message "%s" url))
       (call-interactively #'shr-copy-url))))
+
+(defun elfeed-show-mail ()
+  "Prepare mail from elfeed-entry buffer."
+  (interactive nil elfeed-show-mode)
+  (declare-function message-goto-body "message")
+  (declare-function message-goto-to "message")
+  (let ((show-buffer (current-buffer))
+        (title (elfeed-entry-title elfeed-show-entry))
+        (link (elfeed-entry-link elfeed-show-entry)))
+    (compose-mail nil title)
+    (message-goto-body)
+    (insert (format "You may find this interesting:\n%s\n\n" link))
+    (let ((beg (point)))
+      (save-excursion
+        (insert-buffer-substring show-buffer)
+        (fill-region (point) (point-max))
+        (comment-region beg (point))))
+    (message-goto-to)))
 
 ;; Bookmarks
 
