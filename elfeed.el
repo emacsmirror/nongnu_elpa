@@ -487,7 +487,8 @@ URL identifies the feed and XML is the parsed content."
                     (guid (xml-query* (guid *) item))
                     (link (elfeed--fixup-protocol
                            protocol
-                           (or (xml-query* (link *) item) guid)))
+                           (elfeed-update-location
+                            url (or (xml-query* (link *) item) guid))))
                     (date (or (xml-query* (pubDate *) item)
                               (xml-query* (date *) item)))
                     (authors (nconc (elfeed--rss-author-to-plist
