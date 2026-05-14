@@ -231,13 +231,12 @@ Links are relative to BASE-URL if non-nil."
                     (propertize title 'face 'elfeed-show-entry-title-face)))
     (when elfeed-show-entry-author
       (dolist (author authors)
-        (let ((formatted (elfeed--show-format-author author)))
-          (insert
-           (format (propertize "Author: %s\n" 'face 'elfeed-show-entry-header-face)
-                   (propertize formatted 'face 'elfeed-show-entry-author-face))))))
-    (insert (format (propertize "Date: %s\n" 'face 'elfeed-show-entry-header-face)
-                    (propertize nicedate 'face 'elfeed-show-entry-date-face)))
-    (insert (format (propertize "Feed: %s\n" 'face 'elfeed-show-entry-header-face)
+        (insert
+         (format (propertize "Author: %s\n" 'face 'elfeed-show-entry-header-face)
+                 (propertize (elfeed--show-format-author author)
+                             'face 'elfeed-show-entry-author-face)))))
+    (insert (format (propertize "Date: %s\nFeed: %s\n" 'face 'elfeed-show-entry-header-face)
+                    (propertize nicedate 'face 'elfeed-show-entry-date-face)
                     (propertize feed-title 'face 'elfeed-show-entry-feed-face)))
     (when tags
       (insert (format (propertize "Tags: %s\n" 'face 'elfeed-show-entry-header-face)
