@@ -247,7 +247,7 @@ Links are relative to BASE-URL if non-nil."
              do (elfeed-insert-link (car enclosure))
              do (insert "\n"))
     (insert "\n")
-    (if content
+    (if (and content (not (string-blank-p content)))
         (if (eq type 'html)
             (elfeed-insert-html content base)
           (insert content))
