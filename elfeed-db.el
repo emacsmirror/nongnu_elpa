@@ -422,20 +422,18 @@ supported by the database format."
   "Set metadata to VALUE on THING under KEY."
   (unless (elfeed-readable-p value) (error "New value must be readable"))
   (let ((new-plist (plist-put (elfeed-meta--plist thing) key value)))
-    (prog1 value
-      (elfeed-meta--set-plist thing (elfeed-db--plist-fixup new-plist)))))
+    (elfeed-meta--set-plist thing (elfeed-db--plist-fixup new-plist))
+    value))
 
 (gv-define-setter elfeed-meta (value thing key &optional _default)
   `(elfeed-meta--put ,thing ,key ,value))
 
 (defun elfeed-meta--title (thing)
   "Return TITLE of THING."
-  (cl-typecase thing
-    (elfeed-feed  (or (plist-get (elfeed-feed-meta thing) :title)
-                      (elfeed-feed-title thing)))
-    (elfeed-entry (or (plist-get (elfeed-entry-meta thing) :title)
-                      (elfeed-entry-title thing)))
-    (otherwise (error "Don't know how to access title on %S" thing))))
+  (or (elfeed-meta thing :title)
+      (cl-typecase thing
+        (elfeed-feed (elfeed-feed-title thing))
+        (elfeed-entry (elfeed-entry-title thing)))))
 
 ;; Filesystem storage:
 
