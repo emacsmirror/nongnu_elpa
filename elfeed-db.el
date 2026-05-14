@@ -524,7 +524,8 @@ supported by the database format."
   "Move ENTRY's content to filesystem storage and return the entry."
   (let ((content (elfeed-entry-content entry)))
     (when (stringp content)
-      (setf (elfeed-entry-content entry) (elfeed-ref content)))
+      (setf (elfeed-entry-content entry) (and (not (string-blank-p content))
+                                              (elfeed-ref content))))
     entry))
 
 (defun elfeed-ref-delete (ref)

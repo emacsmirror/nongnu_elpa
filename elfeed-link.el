@@ -88,12 +88,10 @@ Org-mode HTML quote."
                                    (elfeed-entry-tags elfeed-show-entry)
                                    ":"))
           ;; Prepare support of different content type, only HTML for now
-          :content (pcase (elfeed-entry-content-type elfeed-show-entry)
-                     (`html
-                      ;; Embed the text into Org-mode HTML quote
-                      (format
-                       "#+BEGIN_EXPORT html\n%s\n#+END_EXPORT"
-                       (elfeed-deref (elfeed-entry-content elfeed-show-entry)))))
+          :content (let ((content (elfeed-deref (elfeed-entry-content elfeed-show-entry))))
+                     (when (and content (not (string-blank-p content))
+                                (eq (elfeed-entry-content-type elfeed-show-entry) 'html))
+                       (format "#+BEGIN_EXPORT html\n%s\n#+END_EXPORT" content)))
           :feed-title (elfeed-feed-title (elfeed-entry-feed elfeed-show-entry))
           :feed-external-link (elfeed-feed-url (elfeed-entry-feed elfeed-show-entry))
           ;; Concatenate feed authors names
