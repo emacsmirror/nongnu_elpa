@@ -222,7 +222,9 @@ Links are relative to BASE-URL if non-nil."
          (type (elfeed-entry-content-type elfeed-show-entry))
          (feed (elfeed-entry-feed elfeed-show-entry))
          (feed-title (elfeed-feed-title feed))
-         (base (and feed (elfeed-compute-base (elfeed-feed-url feed)))))
+         (base (and feed (elfeed-compute-base
+                          (or (elfeed-meta elfeed-show-entry :base-url)
+                              (elfeed-feed-url feed))))))
     (setq list-buffers-directory title)
     (erase-buffer)
     (insert (format (propertize "Title: %s\n" 'face 'elfeed-show-entry-header-face)

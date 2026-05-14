@@ -454,7 +454,9 @@ URL identifies the feed and XML is the parsed content."
                                :content content
                                :enclosures enclosures
                                :content-type content-type
-                               :meta `(,@(when authors
+                               :meta `(,@(unless (equal xml-base url)
+                                           (list :base-url xml-base))
+                                       ,@(when authors
                                            (list :authors authors))
                                        ,@(when categories
                                            (list :categories categories))))))
