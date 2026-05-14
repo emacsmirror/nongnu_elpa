@@ -1,3 +1,7 @@
+- 2026-05-14 v2.5.0 cage ::
+
+  This version allows to attach comments to annotations and other comments.
+
 - 2025-11-11 v2.4.5 cage ::
 
   This version fixes a bug that prevented correct loading of the annotations database.

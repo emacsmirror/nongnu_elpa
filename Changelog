@@ -1,10 +1,172 @@
+2026-05-14 cage
+
+
+	Merge pull request #177 from cage2/master
+
+2026-05-07 cage
+
+	* annotate.el:
+
+	- changed appearance of annotated text in thread window.
+
+2026-04-14 cage
+
+	* annotate.el:
+
+	- removed newline from reply's text in summary window.
+
+2026-03-30 cage
+
+	* annotate.el:
+
+	- shown the replies in summary window.
+	- replaced delete button's icon.
+
+2026-03-29 cage
+
+	* annotate.el:
+
+	- removed unused variable.
+
+2026-03-26 cage
+
+	* README.org,
+	* annotate.el:
+
+	- fixed README: removed escaping from lisp code and typo.
+	- removed useless call to function to delete a thread (the function to
+	delete a thread also remove the root of the thread); - removed 'show
+	thread' button, in summary window, when the root annotation is removed
+	pushing the 'delete' button'; - removed replies with no parents before
+	saving the annotations to file system.
+
+2026-03-25 cage
+
+	* Eask,
+	* README.org,
+	* annotate.el:
+
+	- updated or added docstrings.
+	- changed function's name with a more appropriate one.
+	- updated README;
+	- changed thread printing.
+	- removed hardcoded regular expressions in font lock matcher for
+	thread window.
+	- increased version number.
+	- removed warnings about docstrings too long.
+
+2026-03-18 cage
+
+	* annotate.el:
+
+	- removed warnings.
+
+2026-03-17 cage
+
+	* annotate.el:
+
+	- added button to show threads from a summary window;
+	- changed appearance of thread.
+	- changed appearance of threads.
+	- fixed arguments for 'overlay-put';
+	- ensured the database is saved if 'save-annotation' keyword
+	paramenter is not null in 'annotate--show-annotation-thread'.
+
+2026-03-16 cage
+
+	* annotate.el:
+
+	- moved, in the thread window, the action buttons in their own lines.
+
+2026-03-12 cage
+
+	* annotate.el:
+
+	- improved visuals of the threads;
+	- removed hardcoded colors for threads faces
+	- fixed macro `with-matching-annotation-fns'
+	was testing annotated text limits using '=', but reply
+	annotation has limits values equals to 'nil'.
+	- fixed 'annotate-annotated-text-empty-p' (as annotations limits for
+	replies are nulls);
+	- fixed 'annotate-db-replace-annotation'
+	was using an obsolete function to build the new annotation.
+	- ensured 'annotate--db-annotations-overlaps-p' returns nil,
+	if just a single annotation is a reply;
+	- ensured 'annotate--db-merge-annotations' build an annotation
+	that contains new fields (color, ID etc.).
+	- modified 'annotate--db-merge-databases' to deal with replies
+	annotations.
+	- fixed calls to 'overlay-put'.
+	- removed unused variable.
+
+2026-03-11 cage
+
+	* annotate.el:
+
+	- added coloring to the thread buffer.
+	- replaced 'font-lock-fontify-buffer' with 'font-lock-ensure' as
+	suggested by the compiler.
+	- added more coloring to the thread buffer;
+	- removed debug code.
+
+2026-03-10 cage
+
+	* annotate.el:
+
+	- implemented deleting thread node.
+	- implemented procedures to add nodes to a thread.
+	- added thread removing when deleting a root annotation from the
+	summary window.
+	- fixed function name in 'annotate-reply-to';
+	- removed outline-mode in thread window (interferes with text face
+	properities);
+	- fixed indentation chars in tree printing.
+
+2026-03-04 cage
+
+	* annotate.el:
+
+	- added procedures to delete and display a message's thread.
+
+2026-02-25 cage
+
+	* annotate.el:
+
+	- added reply annotations;
+	- added procedures to print a tree.
+
+2026-02-18 cage
+
+	* annotate.el:
+
+	- added 'annotate-generate-message-id';
+	- fixed documentation for 'annotate-color-index-from-dump';
+	- added missing slot for documentation about annotation serialization
+	format.
+	- changed parameters names for some database related function, to a
+	more meaningful ones.
+	- added unique ID field to each annotation;
+	- changed variables and parameters names to something more meaningful.
+	- removed tabulation characters.
+	- removed stray code that prevented the compilation of this package.
+	- removed warning about docstring with text line that was more than 80
+	characters long.
+	- added comments and fixed docstring in UUID generation function.
+
 2025-11-11 cage
 
+	* Changelog,
+	* Eask,
+	* NEWS.org,
 	* annotate.el:
 
 	- removed expansion of file paths when deserializing annotations
 	records;
 	- moved to local function code for record's deserialization.
+	- increased version number;
+	- updated Changelog and NEWS files.
+	Merge pull request #176 from cage2/master
 
 2025-11-02 cage
 
