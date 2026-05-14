@@ -1162,13 +1162,15 @@ the browser defined by `browse-url-secondary-browser-function'."
     (mapc #'elfeed-search-update-entry entries)
     (elfeed-search--after-action 'tag)))
 
-(defun elfeed-search-show-entry (entry)
-  "Display the currently selected ENTRY in a buffer."
-  (interactive (list (elfeed-search-selected :ignore-region))
+(defun elfeed-search-show-entry (entry &optional preview)
+  "Display the currently selected ENTRY in a buffer.
+If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
+  (interactive (list (elfeed-search-selected :ignore-region) current-prefix-arg)
                elfeed-search-mode)
   (when (elfeed-entry-p entry)
-    (elfeed-untag entry 'unread)
-    (elfeed-search-update-entry entry)
+    (unless preview
+      (elfeed-untag entry 'unread)
+      (elfeed-search-update-entry entry))
     (elfeed-search--after-action 'show)
     ;; Update hl-line overlay. This does not happen automatically, since
     ;; `elfeed-show-entry' switches to another buffer.
