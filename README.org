@@ -5,7 +5,7 @@ Feed. It requires Emacs 28.1 and is available for download from [[https://melpa.
 The Elfeed UI was inspired by [[https://notmuchmail.org/][notmuch]]. The database format is stable and is
 never expected to change.
 
-[[https://github.com/emacs-elfeed/elfeed/blob/screenshots/screenshot.png?raw=true][[[https://github.com/emacs-elfeed/elfeed/blob/screenshots/screenshot.png?raw=true]]]]
+[[https://github.com/emacs-elfeed/elfeed/blob/screenshots/screenshot.png?raw=true]]
 
 ** Prerequisites
 
@@ -276,23 +276,30 @@ In addition to the link, =org-store-link= also store some additional properties.
 You can access them in an Org-capture template with the template expansion
 =%:keyword=. (=org-store-link= is automatically called when you do a capture.)
 
-List of available keywords, when link is stored from an Elfeed search: - =type= :
-Type of Org-mode link - =link= : Org-mode link to this search, also available with
-%a, %A, %l and %L - =description= : The search filter
+List of available keywords, when link is stored from an Elfeed search:
 
-List of available keywords, when link is stored from an Elfeed entry: - =type= :
-Type of Org-mode link - =link= : Org-mode link to this entry, also available with
-%a, %A, %l and %L - =title= : Feed entry title - =description= : Feed entry
-description, same as title - =external-link=
-: Feed entry external link - =date= : Date time of the feed entry
-publication, in full ISO 8601 format - =date-timestamp= : Date time of
-the feed entry publication, in Org-mode active timestamp format -
-=date-inactive-timestamp= : Date time of the feed entry publication, in
-Org-mode inactive timestamp format - =authors= : List of feed entry
-authors names, joint by a comma - =tags= : List of feed entry tags, in
-Org-mode tags format - =content= : Content of the feed entry -
-=feed-title= : Title of the feed - =feed-external-link= : Feed external
-link - =feed-authors= : List of feed authors names, joint by a comma
+- =type= : Type of Org-mode link
+- =link= : Org-mode link to this search, also available with %a, %A, %l and %L
+- =description= : The search filter
+
+List of available keywords, when link is stored from an Elfeed entry:
+
+- =type= : Type of Org-mode link
+- =link= : Org-mode link to this entry, also available with %a, %A, %l and %L
+- =title= : Feed entry title
+- =description= : Feed entry description, same as title
+- =external-link= : Feed entry external link
+- =date= : Date time of the feed entry publication, in full ISO 8601 format
+- =date-timestamp= : Date time of the feed entry publication, in Org-mode active
+  timestamp format
+- =date-inactive-timestamp= : Date time of the feed entry publication, in
+  Org-mode inactive timestamp format
+- =authors= : List of feed entry authors names, joint by a comma
+- =tags= : List of feed entry tags, in Org-mode tags format
+- =content= : Content of the feed entry
+- =feed-title= : Title of the feed
+- =feed-external-link= : Feed external link
+- =feed-authors= : List of feed authors names, joint by a comma
 
 If =content= type is HTML, it is automatically embedded into an Org-mode HTML
 quote.
@@ -434,32 +441,18 @@ capability that limits its usefulness to me.
 
 ** Blog posts
 
-- [[https://nullprogram.com/blog/2013/09/04/][Introducing Elfeed, an
-  Emacs Web Feed Reader]].
+- [[https://nullprogram.com/blog/2013/09/04/][Introducing Elfeed, an Emacs Web Feed Reader]].
 - [[https://nullprogram.com/blog/2013/11/26/][Tips and Tricks]]
-- [[https://pragmaticemacs.wordpress.com/emacs/read-your-rss-feeds-in-emacs-with-elfeed/][Read
-  your RSS feeds in Emacs with Elfeed]]
-- [[https://kitchingroup.cheme.cmu.edu/blog/2017/01/05/Scoring-elfeed-articles/][Scoring
-  Elfeed articles]]
-- [[https://www.youtube.com/watch?v=pOFqzK1Ymr4][Using Emacs 29]],
-  [[https://www.youtube.com/watch?v=tjnK1rkO7RU][30]],
-  [[https://www.youtube.com/watch?v=5zuSUbAHH8c][31]]
-- [[https://babbagefiles.blogspot.com/2017/03/take-elfeed-everywhere-mobile-rss.html][Take
-  Elfeed everywhere: Mobile rss reading Emacs-style (for free/cheap)]]
-- [[https://noonker.github.io/posts/2020-04-22-elfeed/][Elfeed Rules!]]
-  ([[https://old.reddit.com/r/emacs/comments/g6oowz/elfeed_rules/][reddit]])
-- [[https://codingquark.com/emacs/2020/04/19/elfeed-protocol-ttrss.html][Elfeed
-  with Tiny Tiny RSS]]
-  ([[https://news.ycombinator.com/item?id=22915200][hn]])
-- [[https://xenodium.com/open-emacs-elfeed-links-in-background/][Open
-  Emacs elfeed links in the background]]
-- [[https://web.archive.org/web/20241126185125/https://cestlaz.github.io/post/using-emacs-72-customizing-elfeed/][Using
-  Emacs 72]]
+- [[https://pragmaticemacs.wordpress.com/emacs/read-your-rss-feeds-in-emacs-with-elfeed/][Read your RSS feeds in Emacs with Elfeed]]
+- [[https://kitchingroup.cheme.cmu.edu/blog/2017/01/05/Scoring-elfeed-articles/][Scoring Elfeed articles]]
+- [[https://www.youtube.com/watch?v=pOFqzK1Ymr4][Using Emacs 29]], [[https://www.youtube.com/watch?v=tjnK1rkO7RU][30]], [[https://www.youtube.com/watch?v=5zuSUbAHH8c][31]]
+- [[https://babbagefiles.blogspot.com/2017/03/take-elfeed-everywhere-mobile-rss.html][Take Elfeed everywhere: Mobile rss reading Emacs-style (for free/cheap)]]
+- [[https://noonker.github.io/posts/2020-04-22-elfeed/][Elfeed Rules!]] ([[https://old.reddit.com/r/emacs/comments/g6oowz/elfeed_rules/][reddit]])
+- [[https://codingquark.com/emacs/2020/04/19/elfeed-protocol-ttrss.html][Elfeed with Tiny Tiny RSS]] ([[https://news.ycombinator.com/item?id=22915200][hn]])
+- [[https://xenodium.com/open-emacs-elfeed-links-in-background/][Open Emacs elfeed links in the background]]
+- [[https://web.archive.org/web/20241126185125/https://cestlaz.github.io/post/using-emacs-72-customizing-elfeed/][Using Emacs 72]]
 - [[https://karthinks.com/blog/lazy-elfeed/][Lazy Elfeed]]
-- [[https://medium.com/emacs/using-elfeed-to-view-videos-6dfc798e51e6][Using
-  Elfeed to View Videos]]
-- [[https://protesilaos.com/codelog/2020-09-11-emacs-elfeed-bongo/][Manage
-  podcasts in Emacs with Elfeed and Bongo]]
+- [[https://medium.com/emacs/using-elfeed-to-view-videos-6dfc798e51e6][Using Elfeed to View Videos]]
+- [[https://protesilaos.com/codelog/2020-09-11-emacs-elfeed-bongo/][Manage podcasts in Emacs with Elfeed and Bongo]]
 - [[https://nullprogram.com/tags/elfeed/][Nullprogram Elfeed category]]
-- [[https://pragmaticemacs.wordpress.com/category/elfeed/][Pragmaticemacs
-  Elfeed category]]
+- [[https://pragmaticemacs.wordpress.com/category/elfeed/][Pragmaticemacs Elfeed category]]
