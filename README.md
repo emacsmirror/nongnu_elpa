@@ -7,7 +7,7 @@ from [MELPA](https://melpa.org/) or
 inspired by [notmuch](https://notmuchmail.org/). The database format
 is stable and is never expected to change.
 
-[![](https://i.imgur.com/kxgF5AH.png)](https://i.imgur.com/kxgF5AH.png)
+[![](https://github.com/emacs-elfeed/elfeed/blob/screenshots/screenshot.png?raw=true)](https://github.com/emacs-elfeed/elfeed/blob/screenshots/screenshot.png?raw=true)
 
 ## Prerequisites
 
