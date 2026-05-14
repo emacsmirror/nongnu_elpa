@@ -53,6 +53,32 @@
 
 (require 'elfeed-lib)
 
+(defcustom elfeed-feeds ()
+  "List of all feeds that Elfeed should follow.
+You must add your feeds to this list.
+
+In its simplest form this will be a list of strings of feed URLs.
+Items in this list can also be list whose car is the feed URL and cdr
+is a list of symbols to be applied to all discovered entries as
+tags (\"autotags\").  Additional metadata can be specified as plist,
+directly after the URL.  For example,
+
+  (setq elfeed-feeds \\='(\"https://foo/\"
+                       (\"https://bar/\" :title \"Custom Title\"
+                                       blog dev)
+                       (\"https://baz/\" comic fun)))
+
+All entries from the \"baz\" feed will be tagged as \"comic\" and
+\"fun\" when they are first discovered.  Entries of the \"bar\" feed
+will be tagged as \"blog\" and \"dev\", and a custom title is assigned
+to the feed."
+  :group 'elfeed
+  :type '(repeat
+          (choice
+           (string :tag "Feed URL")
+           (cons :tag "Feed URL and autotags" string (repeat symbol))
+           (cons :tag "Feed URL, metadata and autotags" string sexp))))
+
 (defcustom elfeed-db-directory
   (locate-user-emacs-file "elfeed" "~/.elfeed")
   "Directory where elfeed will store its database.
@@ -416,6 +442,10 @@ only list data structures will be scanned (e.g., cons, list, alist,
 plist).  The data structures must not be cyclic since this is not
 supported by the database format."
   (or (plist-get (elfeed-meta--plist thing) key)
+      (when (and (keywordp key) (elfeed-feed-p thing))
+        (let ((url (or (elfeed-feed-url thing)
+                       (elfeed-feed-id thing))))
+          (plist-get (cdr (assoc url elfeed-feeds)) key)))
       default))
 
 (defun elfeed-meta--put (thing key value)

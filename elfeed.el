@@ -57,25 +57,6 @@ alternative custom command if you use another custom frontend."
                  (const :tag "Tree buffer" elfeed-tree)
                  (command :tag "Custom command")))
 
-(defcustom elfeed-feeds ()
-  "List of all feeds that Elfeed should follow.
-You must add your feeds to this list.
-
-In its simplest form this will be a list of strings of feed URLs.
-Items in this list can also be list whose car is the feed URL
-and cdr is a list of symbols to be applied to all discovered
-entries as tags (\"autotags\").  For example,
-
-  (setq elfeed-feeds \\='(\"https://foo/\"
-                       \"https://bar/\"
-                       (\"https://baz/\" comic)))
-
-All entries from the \"baz\" feed will be tagged as \"comic\"
-when they are first discovered."
-  :group 'elfeed
-  :type '(repeat (choice string
-                         (cons string (repeat symbol)))))
-
 (defcustom elfeed-feed-functions
   (list #'elfeed-get-link-at-point
         #'thing-at-point-url-at-point
@@ -581,19 +562,33 @@ URL identifies the feed and XML is the parsed content."
                                    :rss1.0 item db-entry)
                db-entry))))
 
+(defun elfeed--plist-skip (plist)
+  "Skip over PLIST and return rest of the list."
+  (while (keywordp (car plist))
+    (setq plist (cddr plist)))
+  plist)
+
+(defun elfeed--feed-valid-p (feed)
+  "Valid FEED entry in `elfeed-feeds'."
+  (cl-typecase feed
+    (list (let ((autotags (elfeed--plist-skip (cdr feed))))
+            (and (stringp (car feed))
+                 (all (lambda (x)
+                        (and x (symbolp x) (not (keywordp x))))
+                      autotags)
+                 (evenp (- (length (cdr feed)) (length autotags))))))
+    (string t)))
+
 (defun elfeed-feed-list ()
   "Return a flat list version of `elfeed-feeds'.
 Only a list of strings will be returned."
   ;; Validate elfeed-feeds and fail early rather than asynchronously later.
-  (dolist (feed elfeed-feeds)
-    (unless (cl-typecase feed
-              (list (and (stringp (car feed))
-                         (cl-every #'symbolp (cdr feed))))
-              (string t))
-      (error "elfeed-feeds malformed, bad entry: %S" feed)))
-  (cl-loop for feed in elfeed-feeds
-           when (listp feed) collect (car feed)
-           else collect feed))
+  (cl-loop for feed in elfeed-feeds collect
+           (if (elfeed--feed-valid-p feed)
+               (cl-typecase feed
+                 (list (car feed))
+                 (string feed))
+             (error "elfeed-feeds malformed, bad entry: %S" feed))))
 
 (defun elfeed-feed-autotags (url-or-feed)
   "Return tags to automatically apply to all entries from URL-OR-FEED."
@@ -601,7 +596,7 @@ Only a list of strings will be returned."
                  (or (elfeed-feed-url url-or-feed)
                      (elfeed-feed-id url-or-feed))
                url-or-feed)))
-    (mapcar #'elfeed-keyword->symbol (cdr (assoc url elfeed-feeds)))))
+    (elfeed--plist-skip (cdr (assoc url elfeed-feeds)))))
 
 (defun elfeed-apply-autotags-now ()
   "Apply autotags to existing entries according to `elfeed-feeds'."

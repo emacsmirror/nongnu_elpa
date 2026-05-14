@@ -19,6 +19,13 @@
 (require 'xml)
 (require 'browse-url)
 
+(defun elfeed-keyword->symbol (keyword)
+  "If a keyword, convert KEYWORD into a plain symbol (remove the colon)."
+  (if (keywordp keyword)
+      (intern (substring (symbol-name keyword) 1))
+    keyword))
+(make-obsolete 'elfeed-keyword->symbol "No replacement" "3.4.2")
+
 (defun elfeed-strip-properties (string)
   "Return a copy of STRING with all properties removed.
 If STRING is nil, returns nil."
@@ -235,12 +242,6 @@ If LITERALLY is non-nil return the content literally."
                            (and (string= data (elfeed-slurp file))
                                 (not (string= data (elfeed-slurp file t)))))
                        (delete-file file)))))))))
-
-(defun elfeed-keyword->symbol (keyword)
-  "If a keyword, convert KEYWORD into a plain symbol (remove the colon)."
-  (if (keywordp keyword)
-      (intern (substring (symbol-name keyword) 1))
-    keyword))
 
 (defun elfeed-resize-vector (vector length)
   "Return a copy of VECTOR set to size LENGTH."

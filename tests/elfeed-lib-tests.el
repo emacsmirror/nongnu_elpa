@@ -129,10 +129,6 @@
           (should (string= (elfeed-slurp file) (concat data data))))
       (delete-file file))))
 
-(ert-deftest elfeed-keyword->symbol ()
-  (should (eq (elfeed-keyword->symbol :foo) 'foo))
-  (should (eq (elfeed-keyword->symbol 'foo) 'foo)))
-
 (ert-deftest elfeed-resize-vector ()
   (should (equal [nil nil] (elfeed-resize-vector [] 2)))
   (should (equal [1 2] (elfeed-resize-vector [1 2 3 4] 2)))

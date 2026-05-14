@@ -509,8 +509,41 @@
             (should (equal elfeed-feeds feeds)))
         (ignore-errors (delete-file outfile))))))
 
+(ert-deftest elfeed-feed-list ()
+  (let ((elfeed-feeds '("foo"
+                        ("bar" tag1 tag2)
+                        ("baz" :title "initial-title")
+                        ("qux"))))
+    (should (equal (elfeed-feed-list) '("foo" "bar" "baz" "qux"))))
+  (dolist (feed '(("foo" :k1)        ;; missing plist value
+                   ("foo" :k1 x :k2) ;; missing plist value
+                   ("foo" tag :foo)  ;; keyword used as autotag, should be symbol
+                   ("foo" "tag")))   ;; string used as autotag, should be symbol
+    (let ((elfeed-feeds (list feed)))
+      (should-error (elfeed-feed-list)))))
+
+(ert-deftest elfeed-feed-meta ()
+  (let ((elfeed-feeds '("foo"
+                        ("bar" :metakey metavalue bar1 bar2)
+                        ("baz" :title "initial-title"))))
+    (should (equal (elfeed-feed-list) '("foo" "bar" "baz")))
+    (should (equal (elfeed-feed-autotags "foo") '()))
+    (should (equal (elfeed-feed-autotags "bar") '(bar1 bar2)))
+    (should (equal (elfeed-meta (elfeed-feed--create :id "bar") :metakey)
+                   'metavalue))
+    (should (equal (elfeed-meta (elfeed-feed--create :url "bar") :metakey)
+                   'metavalue))
+    (should (equal (elfeed-meta (elfeed-feed--create :id "baz") :title)
+                   "initial-title"))
+    (should (equal (elfeed-meta--title
+                    (elfeed-feed--create :id "baz" :title "original-title"))
+                   "initial-title"))
+    (should (equal (elfeed-meta--title
+                    (elfeed-feed--create :id "baz" :meta '(:title "meta-title")))
+                   "meta-title"))))
+
 (ert-deftest elfeed-autotags ()
-  (let ((elfeed-feeds '("foo" ("bar" :tag-a tag-b) "baz" ("qux"))))
+  (let ((elfeed-feeds '("foo" ("bar" tag-a tag-b) "baz" ("qux"))))
     (should (equal (elfeed-feed-list) '("foo" "bar" "baz" "qux")))
     (should (equal (elfeed-feed-autotags "foo") '()))
     (should (equal (elfeed-feed-autotags "qux") '()))
@@ -521,7 +554,7 @@
     (with-temp-buffer
       (insert elfeed-test-atom)
       (goto-char (point-min))
-      (let* ((elfeed-feeds '("http://bar/" ("http://foo/" tag-a :tag-b)))
+      (let* ((elfeed-feeds '("http://bar/" ("http://foo/" tag-a tag-b)))
              (xml (elfeed-xml-parse-region))
              (entry (car (elfeed-entries-from-atom "http://foo/" xml))))
         (should (equal (elfeed-entry-tags entry)
