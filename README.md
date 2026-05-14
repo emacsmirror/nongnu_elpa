@@ -461,6 +461,17 @@ stored in the database. For example, for YouTube videos only the entry
 link is of interest and the regularly-changing entry content could be
 tossed to save time and storage.
 
+```elisp
+(defun strip-old-content ()
+  (let ((limit (elfeed-float-time "60 days ago")))
+    (elfeed-db-visit (entry feed)
+      (cond
+       ((< (elfeed-entry-date entry) limit)
+        (elfeed-db-return))
+       ((equal "https://example.com/feed/" (elfeed-feed-url feed))
+        (setf (elfeed-entry-content entry) nil))))))
+```
+
 ## Status and Roadmap
 
 Elfeed is to the point where it can serve 100% of my own web feed
