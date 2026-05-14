@@ -4,32 +4,10 @@ Elfeed is an extensible web feed reader for Emacs, supporting both
 Atom and RSS. It requires Emacs 28.1 and is available for download
 from [MELPA](https://melpa.org/) or
 [el-get](httpss://github.com/dimitri/el-get). The Elfeed UI was
-inspired by [notmuch](https://notmuchmail.org/).
-
-For a longer overview,
-
- * [Introducing Elfeed, an Emacs Web Feed Reader](https://nullprogram.com/blog/2013/09/04/).
- * [Tips and Tricks](https://nullprogram.com/blog/2013/11/26/)
- * [Read your RSS feeds in Emacs with Elfeed
-](https://pragmaticemacs.wordpress.com/emacs/read-your-rss-feeds-in-emacs-with-elfeed/)
- * [Scoring Elfeed articles](https://kitchingroup.cheme.cmu.edu/blog/2017/01/05/Scoring-elfeed-articles/)
- * [Using Emacs 29](https://www.youtube.com/watch?v=pOFqzK1Ymr4),
-   [30](https://www.youtube.com/watch?v=tjnK1rkO7RU),
-   [31](https://www.youtube.com/watch?v=5zuSUbAHH8c)
- * [Take Elfeed everywhere: Mobile rss reading Emacs-style (for free/cheap)](https://babbagefiles.blogspot.com/2017/03/take-elfeed-everywhere-mobile-rss.html)
- * [Elfeed Rules!](https://noonker.github.io/posts/2020-04-22-elfeed/) ([reddit](https://old.reddit.com/r/emacs/comments/g6oowz/elfeed_rules/))
- * [Elfeed with Tiny Tiny RSS](https://codingquark.com/emacs/2020/04/19/elfeed-protocol-ttrss.html) ([hn](https://news.ycombinator.com/item?id=22915200))
- * [Open Emacs elfeed links in the background](https://xenodium.com/open-emacs-elfeed-links-in-background/)
- * [Using Emacs 72](https://web.archive.org/web/20241126185125/https://cestlaz.github.io/post/using-emacs-72-customizing-elfeed/)
- * [Lazy Elfeed](https://karthinks.com/blog/lazy-elfeed/)
- * [Using Elfeed to View Videos](https://medium.com/emacs/using-elfeed-to-view-videos-6dfc798e51e6)
- * [Manage podcasts in Emacs with Elfeed and Bongo](https://protesilaos.com/codelog/2020-09-11-emacs-elfeed-bongo/)
- * [... more ...](https://nullprogram.com/tags/elfeed/)
- * [... and more ...](https://pragmaticemacs.wordpress.com/category/elfeed/)
+inspired by [notmuch](https://notmuchmail.org/). The database format
+is stable and is never expected to change.
 
 [![](https://i.imgur.com/kxgF5AH.png)](https://i.imgur.com/kxgF5AH.png)
-
-The database format is stable and is never expected to change.
 
 ## Prerequisites
 
@@ -490,3 +468,24 @@ extensible, text-file configured, power-user web feed client that can
 handle a reasonable number of feeds. The existing clients I've tried
 are missing some important capability that limits its usefulness to
 me.
+
+## Blog posts
+
+ * [Introducing Elfeed, an Emacs Web Feed Reader](https://nullprogram.com/blog/2013/09/04/).
+ * [Tips and Tricks](https://nullprogram.com/blog/2013/11/26/)
+ * [Read your RSS feeds in Emacs with Elfeed
+](https://pragmaticemacs.wordpress.com/emacs/read-your-rss-feeds-in-emacs-with-elfeed/)
+ * [Scoring Elfeed articles](https://kitchingroup.cheme.cmu.edu/blog/2017/01/05/Scoring-elfeed-articles/)
+ * [Using Emacs 29](https://www.youtube.com/watch?v=pOFqzK1Ymr4),
+   [30](https://www.youtube.com/watch?v=tjnK1rkO7RU),
+   [31](https://www.youtube.com/watch?v=5zuSUbAHH8c)
+ * [Take Elfeed everywhere: Mobile rss reading Emacs-style (for free/cheap)](https://babbagefiles.blogspot.com/2017/03/take-elfeed-everywhere-mobile-rss.html)
+ * [Elfeed Rules!](https://noonker.github.io/posts/2020-04-22-elfeed/) ([reddit](https://old.reddit.com/r/emacs/comments/g6oowz/elfeed_rules/))
+ * [Elfeed with Tiny Tiny RSS](https://codingquark.com/emacs/2020/04/19/elfeed-protocol-ttrss.html) ([hn](https://news.ycombinator.com/item?id=22915200))
+ * [Open Emacs elfeed links in the background](https://xenodium.com/open-emacs-elfeed-links-in-background/)
+ * [Using Emacs 72](https://web.archive.org/web/20241126185125/https://cestlaz.github.io/post/using-emacs-72-customizing-elfeed/)
+ * [Lazy Elfeed](https://karthinks.com/blog/lazy-elfeed/)
+ * [Using Elfeed to View Videos](https://medium.com/emacs/using-elfeed-to-view-videos-6dfc798e51e6)
+ * [Manage podcasts in Emacs with Elfeed and Bongo](https://protesilaos.com/codelog/2020-09-11-emacs-elfeed-bongo/)
+ * [Nullprogram Elfeed category](https://nullprogram.com/tags/elfeed/)
+ * [Pragmaticemacs Elfeed category](https://pragmaticemacs.wordpress.com/category/elfeed/)
