@@ -1132,38 +1132,47 @@ the browser defined by `browse-url-secondary-browser-function'."
       (apply #'elfeed-search-update-entry entries)
       (elfeed-search--after-action 'yank))))
 
+(defun elfeed-search--tag (fun)
+  "Call FUN with the entries to tag and update the entries afterwards."
+  (let* ((all current-prefix-arg)
+         (entries (if all elfeed-search-entries (elfeed-search-selected))))
+    (funcall fun entries)
+    (apply #'elfeed-search-update-entry entries)
+    (unless all
+      (elfeed-search--after-action 'tag))))
+
 (defun elfeed-search-tag-all (&rest tags)
   "Apply TAGS to all selected entries."
   (interactive (elfeed-search--prompt-tags "Tag: ") elfeed-search-mode)
-  (let ((entries (elfeed-search-selected)))
-    (apply #'elfeed-tag entries tags)
-    (apply #'elfeed-search-update-entry entries)
-    (elfeed-search--after-action 'tag)))
+  (elfeed-search--tag
+   (lambda (entries)
+     (apply #'elfeed-tag entries tags))))
 
 (defun elfeed-search-untag-all (&rest tags)
   "Remove TAGS from all selected entries."
-  (interactive
-   (elfeed-search--prompt-tags "Untag: " (elfeed-search-selected))
+  (interactive (elfeed-search--prompt-tags
+                "Untag: "
+                (if current-prefix-arg
+                    elfeed-search-entries
+                  (elfeed-search-selected)))
    elfeed-search-mode)
-  (let ((entries (elfeed-search-selected)))
-    (apply #'elfeed-untag entries tags)
-    (apply #'elfeed-search-update-entry entries)
-    (elfeed-search--after-action 'tag)))
+  (elfeed-search--tag
+   (lambda (entries)
+     (apply #'elfeed-untag entries tags))))
 
 (defun elfeed-search-toggle-all (&rest tags)
   "Toggle TAGS on all selected entries."
   (interactive (elfeed-search--prompt-tags "Toggle: ") elfeed-search-mode)
-  (let ((entries (elfeed-search-selected)))
-    (dolist (tag tags)
-      (let (entries-tag entries-untag)
-        (cl-loop for entry in entries
-                 when (elfeed-tagged-p tag entry)
-                 do (push entry entries-untag)
-                 else do (push entry entries-tag))
-        (elfeed-tag entries-tag tag)
-        (elfeed-untag entries-untag tag)))
-    (apply #'elfeed-search-update-entry entries)
-    (elfeed-search--after-action 'tag)))
+  (elfeed-search--tag
+   (lambda (entries)
+     (dolist (tag tags)
+       (let (entries-tag entries-untag)
+         (cl-loop for entry in entries
+                  when (elfeed-tagged-p tag entry)
+                  do (push entry entries-untag)
+                  else do (push entry entries-tag))
+         (elfeed-tag entries-tag tag)
+         (elfeed-untag entries-untag tag))))))
 
 (defun elfeed-search-show-entry (entry &optional preview)
   "Display the currently selected ENTRY in a buffer.

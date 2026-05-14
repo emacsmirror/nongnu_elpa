@@ -7,6 +7,10 @@
 * `elfeed-search`: New command as entry point.
 * `elfeed-search-set-filter`, `elfeed-search-tag-all`: Filter and tag completion
   using `completing-read-multiple`.
+* `elfeed-search-tag-all`, `elfeed-search-untag-all`,
+  `elfeed-search-toggle-all`, `elfeed-search-tag-all-unread`,
+  `elfeed-search-untag-all-unread`: If prefix argument is given, tag or untag
+  all entries, not only the selected ones.
 * `elfeed-search-browse-url-secondary`, `elfeed-show-visit-secondary`: New
   commands which open entries in the secondary browser. The commands are bound
   to the key `B`.
