@@ -268,7 +268,8 @@ This is a workaround for issues in `url-queue-retrieve'."
   (concat "urn:sha1:" (sha1 (format "%s" (or content (float-time))))))
 
 (defun elfeed--atom-content (entry)
-  "Get content string from ENTRY. If there is no content tag, use summary instead."
+  "Get content string from ENTRY.
+If there is no content tag, use summary instead."
   (let ((content-type (or (xml-query* (content :type) entry)
                           (xml-query* (summary :type) entry))))
     (if (equal content-type "xhtml")
@@ -298,6 +299,77 @@ If PROTOCOL is nil, returns URL."
   (if (and protocol url (string-match-p "\\`//[^/]" url))
       (concat protocol ":" url)
     url))
+
+(defun elfeed--json-authors-to-plist (obj)
+  "Parse list of authors from json OBJ into list of plists."
+  (cl-loop for author in (or (alist-get 'authors obj)
+                             (delq nil (list (alist-get 'author obj))))
+           for name = (alist-get 'name author)
+           for url = (alist-get 'url author)
+           collect `(,@(and name (list :name name))
+                     ,@(and url (list :uri url)))))
+
+(defun elfeed-entries-from-json (url json)
+  "Turn parsed JSON Feed content into a list of elfeed-entry structs.
+URL identifies the feed and JSON is the parsed content."
+  (let* ((feed-id url)
+         (protocol (url-type (url-generic-parse-url url)))
+         (namespace (elfeed-url-to-namespace url))
+         (feed (elfeed-db-get-feed feed-id))
+         (title (elfeed-cleanup (or (alist-get 'title json) "")))
+         (authors (elfeed--json-authors-to-plist json))
+         (autotags (elfeed-feed-autotags url)))
+    (setf (elfeed-feed-url feed) url
+          (elfeed-feed-title feed) title
+          (elfeed-feed-author feed) authors)
+    (cl-loop for item in (alist-get 'items json) collect
+             (let* ((title (or (alist-get 'title item)
+                               (alist-get 'url item) ""))
+                    (link (elfeed--fixup-protocol
+                           protocol
+                           (or (alist-get 'url item)
+                               (alist-get 'external_url item))))
+                    (date (or (alist-get 'date_published item)
+                              (alist-get 'date_modified item)))
+                    (authors (elfeed--json-authors-to-plist item))
+                    (categories (alist-get 'tags item))
+                    (content-html (alist-get 'content_html item))
+                    (content (or content-html
+                                 (alist-get 'content_text item)
+                                 (alist-get 'summary item)))
+                    (content-type (and content-html 'html))
+                    (id (or (alist-get 'id item)
+                            link
+                            (elfeed-generate-id content)))
+                    (full-id (cons namespace (elfeed-cleanup id)))
+                    (original (elfeed-db-get-entry full-id))
+                    (original-date (and original (elfeed-entry-date original)))
+                    (tags (elfeed-normalize-tags autotags elfeed-initial-tags))
+                    (enclosures
+                     (cl-loop for attachment in (alist-get 'attachments item)
+                              for url = (alist-get 'url attachment)
+                              for type = (alist-get 'mime_type attachment)
+                              for size = (alist-get 'size_in_bytes attachment)
+                              when url collect
+                              (list url type (and size (format "%s" size)))))
+                    (db-entry
+                     (elfeed-entry--create
+                      :title (elfeed-cleanup title)
+                      :id full-id
+                      :feed-id feed-id
+                      :link (elfeed-cleanup link)
+                      :tags tags
+                      :date (elfeed-new-date-for-entry original-date date)
+                      :content content
+                      :content-type content-type
+                      :enclosures enclosures
+                      :meta `(,@(when authors
+                                  (list :authors authors))
+                              ,@(when categories
+                                  (list :categories categories))))))
+               (run-hook-with-args 'elfeed-new-entry-parse-hook
+                                   :json item db-entry)
+               db-entry))))
 
 (defsubst elfeed--atom-authors-to-plist (authors)
   "Parse list of AUTHORS as XML tags into list of plists."
@@ -575,11 +647,16 @@ Only a list of strings will be returned."
               (if (equal url elfeed-curl-location)
                   (setf (elfeed-meta feed :canonical-url) nil)
                 (setf (elfeed-meta feed :canonical-url) elfeed-curl-location))
-              (let* ((xml (elfeed-xml-parse-region (point) (point-max)))
-                     (entries (cl-case (elfeed-feed-type xml)
-                                (:atom (elfeed-entries-from-atom url xml))
-                                (:rss (elfeed-entries-from-rss url xml))
-                                (:rss1.0 (elfeed-entries-from-rss1.0 url xml))
+              (let* ((json (or (string-suffix-p ".json" url) (looking-at-p "{")))
+                     (data (if json
+                               (json-parse-buffer :object-type 'alist :array-type 'list
+                                                  :null-object nil :false-object nil)
+                             (elfeed-xml-parse-region (point) (point-max))))
+                     (entries (cl-case (if json :json (elfeed-feed-type data))
+                                (:json (elfeed-entries-from-json url data))
+                                (:atom (elfeed-entries-from-atom url data))
+                                (:rss (elfeed-entries-from-rss url data))
+                                (:rss1.0 (elfeed-entries-from-rss1.0 url data))
                                 (otherwise
                                  (error (elfeed-handle-parse-error
                                          url "Unknown feed type."))))))

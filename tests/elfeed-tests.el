@@ -11,6 +11,39 @@
 (require 'elfeed-search-tests)
 (require 'elfeed-curl-tests)
 
+(defvar elfeed-test-json
+  "{
+    \"version\": \"https://jsonfeed.org/version/1.1\",
+    \"title\": \"JSON Title\",
+    \"home_page_url\": \"https://example.org/\",
+    \"feed_url\": \"https://example.org/feed.json\",
+    \"items\": [
+        {
+            \"id\": \"2\",
+            \"title\": \"Example entry 2\",
+            \"content_text\": \"This is a second item.\",
+            \"url\": \"https://example.org/second-item\",
+            \"date_published\": \"2010-02-07T14:04:00-05:00\",
+            \"author\": {
+              \"url\": \"https://example.org/author\",
+              \"name\": \"John Doe\"
+            }
+        },
+        {
+            \"id\": \"1\",
+            \"title\": \"Example entry 1\",
+            \"content_html\": \"<p>Hello, world!</p>\",
+            \"url\": \"https://example.org/first-item\",
+            \"date_published\": \"2011-02-07T14:04:00-05:00\",
+            \"tags\": [\"tag1\", \"tag2\"],
+            \"authors\": [
+              { \"name\": \"Jane Doe\" },
+              { \"name\": \"Baby Doe\" }
+            ]
+        }
+    ]
+    }")
+
 (defvar elfeed-test-rss
   "<?xml version=\"1.0\" encoding=\"UTF-8\"?>
 <rss version=\"2.0\" xmlns:dc=\"http://purl.org/dc/elements/1.1/\">
@@ -220,6 +253,33 @@
 
 (ert-deftest elfeed-entries-from-x ()
   (with-elfeed-test
+    (with-temp-buffer
+      (insert elfeed-test-json)
+      (goto-char (point-min))
+      (let* ((url (elfeed-test-generate-url))
+             (namespace (elfeed-url-to-namespace url))
+             (json (json-parse-buffer :object-type 'alist :array-type 'list
+                                      :null-object nil :false-object nil)))
+        (cl-destructuring-bind (a b) (elfeed-entries-from-json url json)
+          (should (string= (elfeed-feed-title (elfeed-db-get-feed url))
+                           "JSON Title"))
+          (should (string= (elfeed-entry-title a) "Example entry 2"))
+          (should (string= (elfeed-entry-link a) "https://example.org/second-item"))
+          (should (= (elfeed-entry-date a) 1265551440.0))
+          (should (equal (elfeed-entry-id a) (cons namespace "2")))
+          (should (string= (plist-get (nth 0 (elfeed-meta a :authors)) :name)
+                           "John Doe"))
+          (should (string= (plist-get (nth 0 (elfeed-meta a :authors)) :uri)
+                           "https://example.org/author"))
+          (should (string= (elfeed-entry-title b) "Example entry 1"))
+          (should (= (elfeed-entry-date b) 1297087440.0))
+          (should (equal (elfeed-entry-id b) (cons namespace "1")))
+          (should (string= (plist-get (nth 0 (elfeed-meta b :authors)) :name)
+                           "Jane Doe"))
+          (should (string= (plist-get (nth 1 (elfeed-meta b :authors)) :name)
+                           "Baby Doe"))
+          (should (member "tag1" (elfeed-meta b :categories)))
+          (should (member "tag2" (elfeed-meta b :categories))))))
     (with-temp-buffer
       (insert elfeed-test-rss)
       (goto-char (point-min))

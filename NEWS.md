@@ -50,6 +50,7 @@
   buffer.
 * `elfeed-show-compose-mail`: Command to compose mail from entry.
 * `elfeed-search-group-by-feed`: New function for `elfeed-search-sort-function`.
+* Support for jsonfeed.
 * Moved elfeed-web.el to the separate repository at
   https://github.com/emacs-elfeed/elfeed-web.
 * Removed obsolete code and code updated for upcoming Emacs 31.
