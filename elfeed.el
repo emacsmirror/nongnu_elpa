@@ -617,8 +617,9 @@ Only a list of strings will be returned."
                `((category . url)
                  (annotation-function
                   . ,(lambda (url)
-                       (when-let* ((feed (elfeed-db-get-feed url)))
-                         (format " (%s)" (elfeed-meta--title feed)))))))
+                       (when-let* ((feed (elfeed-db-get-feed url))
+                                   (title (elfeed-meta--title feed)))
+                         (format " (%s)" title))))))
               nil t)))
     (when (equal url "")
       (user-error "No feed selected"))
