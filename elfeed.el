@@ -11,8 +11,8 @@
 
 ;;; Commentary:
 
-;; Elfeed is a web feed client for Emacs, which supports Atom and RSS
-;; feeds.
+;; Elfeed is a web feed client for Emacs, which supports Atom, RSS
+;; and JSON feeds.
 ;;
 ;; After installation of Elfeed from a package archive, invoke M-x
 ;; elfeed to open the Elfeed search buffer.  The list of feeds can be
