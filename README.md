@@ -55,8 +55,8 @@ automatically.
 
 It is recommended that you make a global binding for `elfeed`.
 
-```el
-(global-set-key (kbd "C-x w") 'elfeed)
+```emacs-lisp
+(keymap-global-set "C-x w" #'elfeed)
 ```
 
 Running the interactive function `elfeed` will pop up the
@@ -72,7 +72,7 @@ This buffer will be empty until you add your feeds to the
 (or <kbd>G</kbd> in the Elfeed buffer). This will populate the Elfeed
 database with entries.
 
-```el
+```emacs-lisp
 ;; Somewhere in your .emacs file
 (setq elfeed-feeds
       '("https://nullprogram.com/feed/"
@@ -127,7 +127,7 @@ feeds through extra syntax in `elfeed-feeds`. Normally this is a list
 of strings, but an item can also be a list, providing set of
 "autotags" for a feed's entries.
 
-```el
+```emacs-lisp
 (setq elfeed-feeds
       '(("https://nullprogram.com/feed/" blog emacs)
         "https://sachachua.com/blog/category/emacs-news/feed/" ;; no autotagging
@@ -218,7 +218,7 @@ the "autotags" feature mentioned above, or with the
 `elfeed-new-entry-hook`. Functions in this hook are called with new
 entries, allowing them to be manipulated, such as adding tags.
 
-```el
+```emacs-lisp
 ;; Mark all YouTube entries
 (add-hook 'elfeed-new-entry-hook
           (elfeed-make-tagger :feed-url "youtube\\.com"
@@ -227,7 +227,7 @@ entries, allowing them to be manipulated, such as adding tags.
 
 Avoiding tagging old entries as `unread`:
 
-```el
+```emacs-lisp
 ;; Entries older than 2 weeks are marked as read
 (add-hook 'elfeed-new-entry-hook
           (elfeed-make-tagger :before "2 weeks ago"
@@ -236,7 +236,7 @@ Avoiding tagging old entries as `unread`:
 
 Or building your own subset feeds:
 
-```el
+```emacs-lisp
 (add-hook 'elfeed-new-entry-hook
           (elfeed-make-tagger :feed-url "example\\.com"
                               :entry-title '(not "something interesting")
@@ -439,7 +439,7 @@ stored in the database. For example, for YouTube videos only the entry
 link is of interest and the regularly-changing entry content could be
 tossed to save time and storage.
 
-```elisp
+```emacs-lisp
 (defun strip-old-content ()
   (let ((limit (elfeed-float-time "60 days ago")))
     (elfeed-db-visit (entry feed)
