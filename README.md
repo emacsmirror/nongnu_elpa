@@ -1,7 +1,7 @@
 # simple-httpd
 
-[![MELPA](http://melpa.org/packages/simple-httpd-badge.svg)](http://melpa.org/#/simple-httpd)
-[![MELPA Stable](http://stable.melpa.org/packages/simple-httpd-badge.svg)](http://stable.melpa.org/#/simple-httpd)
+[![MELPA](https://melpa.org/packages/simple-httpd-badge.svg)](https://melpa.org/#/simple-httpd)
+[![MELPA Stable](https://stable.melpa.org/packages/simple-httpd-badge.svg)](https://stable.melpa.org/#/simple-httpd)
 
 A simple Emacs web server.
 
