@@ -415,6 +415,53 @@ MAM sync in this buffer.  Set via the operations menu.")
   (display-line-numbers-mode 0)
   (put 'jabber-chat-mode 'flyspell-mode-predicate #'jabber-chat-mode-flyspell-verify))
 
+;;; bug-reference integration
+
+(defcustom jabber-bug-reference-alist
+  '(("jabber-el@conference\\.hmm\\.st"
+     "\\(#\\([0-9]+\\)\\)"
+     "https://codeberg.org/emacs-jabber/emacs-jabber/issues/%s"))
+  "Alist mapping JID patterns to `bug-reference-mode' configurations.
+Each entry has the form (JID-REGEXP BUG-REGEXP URL-FORMAT).
+
+JID-REGEXP is matched against the MUC room JID (e.g.
+\"emacs@conference.jabber.org\") or 1:1 chat partner bare JID.
+BUG-REGEXP and URL-FORMAT are set as `bug-reference-bug-regexp'
+and `bug-reference-url-format' respectively.
+
+To activate bug references in chat buffers, add
+`bug-reference-mode' to `jabber-chat-mode-hook':
+
+  (add-hook \\='jabber-chat-mode-hook #\\='bug-reference-mode)"
+  :type '(repeat (list (regexp :tag "JID regexp")
+                       (regexp :tag "Bug regexp")
+                       (choice :tag "URL format"
+                               (string :tag "Format string")
+                               (function :tag "Function"))))
+  :group 'jabber-chat)
+
+(defun jabber-bug-reference--try-setup (jid)
+  "Try to configure `bug-reference-mode' for JID.
+Match JID against `jabber-bug-reference-alist' and set the
+buffer-local bug-reference variables on the first match."
+  (catch 'done
+    (dolist (entry jabber-bug-reference-alist)
+      (when (string-match-p (nth 0 entry) jid)
+        (setq-local bug-reference-bug-regexp (nth 1 entry))
+        (setq-local bug-reference-url-format (nth 2 entry))
+        (throw 'done t)))))
+
+(defun jabber-bug-reference-setup ()
+  "Try setting up `bug-reference-mode' for Jabber chat buffers.
+Added to `bug-reference-auto-setup-functions' so that activating
+`bug-reference-mode' in a chat buffer automatically configures the
+bug regexp and URL format from `jabber-bug-reference-alist'."
+  (when (derived-mode-p 'jabber-chat-mode)
+    (when-let* ((jid (jabber-chat--peer-jid)))
+      (jabber-bug-reference--try-setup jid))))
+
+(add-hook 'bug-reference-auto-setup-functions #'jabber-bug-reference-setup)
+
 (defun jabber-chat-mode-setup (jc ewoc-pp)
   "Initialize chat buffer state for connection JC.
 EWOC-PP is the pretty-printer function for the message EWOC."
