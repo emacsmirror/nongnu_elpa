@@ -61,10 +61,10 @@ It is recommended that you make a global binding for =elfeed=.
 Running the interactive function =elfeed= will pop up the =*elfeed-search*= buffer,
 which will display feed items.
 
-- g: refresh view of the feed listing
-- G: fetch feed updates from the servers
-- s: update the search filter (see tags)
-- c: clear the search filter
+- =g=: refresh view of the feed listing
+- =G=: fetch feed updates from the servers
+- =s=: update the search filter (see tags)
+- =c=: clear the search filter
 
 This buffer will be empty until you add your feeds to the =elfeed-feeds= list and
 initiate an update with =M-x elfeed-update= (or G in the Elfeed buffer). This will
@@ -99,16 +99,16 @@ From the search buffer there are a number of ways to interact with entries.
 Entries are selected by placing the point over an entry. Multiple entries are
 selected at once by using an active region.
 
-- RET: view selected entry in a buffer
-- b: open selected entries in your browser (=browse-url=)
-- B: open selected entries in your secondary browser
-- y: copy selected entries URL to the clipboard
-- r: mark selected entries as read
-- u: mark selected entries as unread
-- +: add a specific tag to selected entries
-- -: remove a specific tag from selected entries
-- t: set title of selected entry
-- T: set title of selected feed
+- =RET=: view selected entry in a buffer
+- =b=: open selected entries in your browser (=browse-url=)
+- =B=: open selected entries in your secondary browser
+- =y=: copy selected entries URL to the clipboard
+- =r=: mark selected entries as read
+- =u=: mark selected entries as unread
+- =+=: add a specific tag to selected entries
+- =-=: remove a specific tag from selected entries
+- =t=: set title of selected entry
+- =T=: set title of selected feed
 
 ** Tags
 
