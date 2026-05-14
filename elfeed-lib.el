@@ -282,7 +282,7 @@ back to `current-kill'."
 If no such line exists, point is left in place."
   (let ((start (point)))
     (goto-char (point-min))
-    (unless (search-forward-regexp "^$" nil t)
+    (unless (search-forward-regexp "\r?\n\r?\n" nil t)
       (goto-char start))))
 
 (defun elfeed--shuffle (seq)

@@ -148,7 +148,13 @@
   (with-temp-buffer
     (insert "aaaaa\nbbbb\n\ncccccc")
     (elfeed-move-to-first-empty-line)
-    (should (= (point) 12)))
+    (should (equal (buffer-substring (point) (point-max)) "cccccc"))
+    (should (= (point) 13)))
+  (with-temp-buffer
+    (insert "aaaaa\nbbbb\r\n\r\ncccccc")
+    (elfeed-move-to-first-empty-line)
+    (should (equal (buffer-substring (point) (point-max)) "cccccc"))
+    (should (= (point) 15)))
   (with-temp-buffer
     (insert "aaaaa\nbbbb\ncccccc")
     (goto-char 5)

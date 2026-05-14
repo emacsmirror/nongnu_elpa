@@ -644,7 +644,13 @@ Only a list of strings will be returned."
            url (if use-curl elfeed-curl-error-message status)))
       (condition-case error
           (let ((feed (elfeed-db-get-feed url)))
-            (unless use-curl
+            (when (or (not use-curl)
+                      ;; HACK: Work around Curl bug for file:// URLs. Curl
+                      ;; responds with size_header=0 such that the header still
+                      ;; needs to be skipped.
+                      (and (string-prefix-p "file://" url)
+                           (looking-at-p "Content-Length: ")))
+              (goto-char (point-min))
               (elfeed-move-to-first-empty-line)
               (set-buffer-multibyte t))
             (unless (eql elfeed-curl-status-code 304)
