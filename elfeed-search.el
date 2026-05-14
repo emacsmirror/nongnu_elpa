@@ -1026,10 +1026,13 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
         (when (memq entry elfeed-search--marked)
           (elfeed-search--make-marked-overlay entry))))))
 
-(defun elfeed-search-update-entry (entry)
-  "Redraw ENTRY in the `elfeed-search' buffer."
-  (when-let* ((n (cl-position entry elfeed-search-entries)))
-    (elfeed-search-update-line (1+ n))))
+(defun elfeed-search-update-entry (&rest entries)
+  "Redraw ENTRIES in the `elfeed-search' buffer."
+  (if (length> entries 100)
+      (elfeed-search-update :force)
+    (cl-loop for entry in entries
+             for n = (cl-position entry elfeed-search-entries)
+             when n do (elfeed-search-update-line (1+ n)))))
 
 (defun elfeed-search--remove-marked-overlay (entry)
   "Remove mark overlay from ENTRY."
@@ -1108,7 +1111,7 @@ the browser defined by `browse-url-secondary-browser-function'."
       ;; internal browser is used, but the remainder of the functions needs to
       ;; run in the elfeed buffer.
       (with-current-buffer (elfeed-search-buffer)
-        (mapc #'elfeed-search-update-entry entries)
+        (apply #'elfeed-search-update-entry entries)
         (elfeed-search--after-action 'browse)))))
 
 (defun elfeed-search-browse-url-secondary ()
@@ -1126,7 +1129,7 @@ the browser defined by `browse-url-secondary-browser-function'."
       (kill-new links-str)
       (gui-set-selection elfeed-search-clipboard-type links-str)
       (message "Copied: %s" links-str)
-      (mapc #'elfeed-search-update-entry entries)
+      (apply #'elfeed-search-update-entry entries)
       (elfeed-search--after-action 'yank))))
 
 (defun elfeed-search-tag-all (&rest tags)
@@ -1134,7 +1137,7 @@ the browser defined by `browse-url-secondary-browser-function'."
   (interactive (elfeed-search--prompt-tags "Tag: ") elfeed-search-mode)
   (let ((entries (elfeed-search-selected)))
     (apply #'elfeed-tag entries tags)
-    (mapc #'elfeed-search-update-entry entries)
+    (apply #'elfeed-search-update-entry entries)
     (elfeed-search--after-action 'tag)))
 
 (defun elfeed-search-untag-all (&rest tags)
@@ -1144,7 +1147,7 @@ the browser defined by `browse-url-secondary-browser-function'."
    elfeed-search-mode)
   (let ((entries (elfeed-search-selected)))
     (apply #'elfeed-untag entries tags)
-    (mapc #'elfeed-search-update-entry entries)
+    (apply #'elfeed-search-update-entry entries)
     (elfeed-search--after-action 'tag)))
 
 (defun elfeed-search-toggle-all (&rest tags)
@@ -1159,7 +1162,7 @@ the browser defined by `browse-url-secondary-browser-function'."
                  else do (push entry entries-tag))
         (elfeed-tag entries-tag tag)
         (elfeed-untag entries-untag tag)))
-    (mapc #'elfeed-search-update-entry entries)
+    (apply #'elfeed-search-update-entry entries)
     (elfeed-search--after-action 'tag)))
 
 (defun elfeed-search-show-entry (entry &optional preview)
