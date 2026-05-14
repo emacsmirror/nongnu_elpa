@@ -227,8 +227,11 @@ Links are relative to BASE-URL if non-nil."
                               (elfeed-feed-url feed))))))
     (setq list-buffers-directory title)
     (erase-buffer)
-    (insert (format (propertize "Title: %s\n" 'face 'elfeed-show-entry-header-face)
-                    (propertize title 'face 'elfeed-show-entry-title-face)))
+    (insert (format
+             (propertize "Title: %s\n" 'face 'elfeed-show-entry-header-face)
+             (if (or (not title) (equal title ""))
+                 (propertize "(Untitled)" 'face '(elfeed-show-entry-title-face italic))
+               (propertize title 'face 'elfeed-show-entry-title-face))))
     (when elfeed-show-entry-author
       (dolist (author authors)
         (insert
