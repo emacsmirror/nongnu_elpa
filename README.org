@@ -1,4 +1,4 @@
-[[https://travis-ci.org/snosov1/toc-org][file:https://api.travis-ci.org/snosov1/toc-org.svg?branch=master]]
+[[https://github.com/snosov1/toc-org/actions/workflows/test.yml][file:https://github.com/snosov1/toc-org/actions/workflows/test.yml/badge.svg]]
 
 * About
 
