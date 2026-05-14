@@ -289,4 +289,9 @@
     (test-toc-org-insert-toc-gold-test-markdown
      (concat beg "<-- :TOC: -->")
      "# About\n:TOC:\n drawer\n:END:\n\ntoc-org is a utility to have an up-to-date table of contents in the\norg files without exporting (useful primarily for readme files on\nGitHub).\n\nIt is similar to the [[https://github.com/ardumont/markdown-toc][markdown-toc]] package, but works for org files.\n:TOC:\n  drawer\n:END:\n# Hello\n## Good-bye ##\n### Salut\n# Table of Contents                                                     <-- :TOC: -->\n- [About](#about)\n- [Hello](#hello)\n  - [Good-bye](#good-bye)\n")
+
+    ;; headings inside ``` code fences must not appear in the TOC
+    (test-toc-org-insert-toc-gold-test-markdown
+     "# Real heading\n\n```bash\n# Not a heading\n## Also not a heading\n```\n\n## Sub heading\n\n# Table of Contents <-- :TOC: -->\n"
+     "# Real heading\n\n```bash\n# Not a heading\n## Also not a heading\n```\n\n## Sub heading\n\n# Table of Contents <-- :TOC: -->\n- [Real heading](#real-heading)\n  - [Sub heading](#sub-heading)\n")
     ))
