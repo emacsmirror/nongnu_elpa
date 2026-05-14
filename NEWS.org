@@ -88,7 +88,7 @@
 
 ** 3.2.0 (2019-08-24)
 
-- Support for absolute date/time expressions in filters. See README.md
+- Support for absolute date/time expressions in filters. See README.org
   for documentation and examples.
 - curl's =--disable= is now default. To load your .curlrc file, use
   =--config= explicitly in =elfeed-curl-extra-arguments=.

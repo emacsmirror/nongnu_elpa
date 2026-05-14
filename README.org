@@ -141,13 +141,12 @@ tag. =+= means the tag is required, =-= means the tag must not be present.
 A component beginning with a =@= indicates an age or a date range. An age is a
 relative time expression or an absolute date expression. Entries older than this
 age are filtered out. The age description accepts plain English, but cannot have
-spaces, so use dashes. For example, ="@2-years-old"=, ="@3-days-ago"= or
-="@2019-06-24"=. The dashes and suffixes like =-old= are ignored, such that you can
-use a shorter form , e.g., ="@2years"=. A date range are two ages separated by a
-=--=, e.g. ="@2019-06-20--2019-06-24"= or ="@5-days-ago--1-day-ago"=. The entry must
-be newer than the first expression but older than the second. The database is
-date-oriented, so *filters that include an age restriction are significantly more
-efficient.*
+spaces, so use dashes. For example, =@2-years-old=, =@3-days-ago= or =@2019-06-24=.
+The dashes and suffixes like =-old= are ignored, such that you can use a shorter
+form , e.g., =@2years=. A date range are two ages separated by a =--= e.g.,
+=@2019-06-20--2019-06-24= or =@5-days-ago--1-day-ago=. The entry must be newer than
+the first expression but older than the second. The database is date-oriented,
+so *filters that include an age restriction are significantly more efficient.*
 
 A component beginning with a =!= is treated as an "inverse" regular expression.
 This means that any entry matching this regular expression will be filtered out.
@@ -158,9 +157,9 @@ A component beginning with a =#= limits the total number of entries displayed to
 the number immediately following the symbol. For example, to limit the display
 to 20 entries: =#20=.
 
-A component beginning with a === is a regular expression matching the entry's feed
+A component beginning with a ~=~ is a regular expression matching the entry's feed
 (title or URL). Only entries belonging to a feed that matches at least one of
-the === expressions will be shown.
+the ~=~ expressions will be shown.
 
 A component beginning with a =~= is a regular expression matching the entry's feed
 (title or URL). Only entries belonging to a feed that matches none of the =~=
