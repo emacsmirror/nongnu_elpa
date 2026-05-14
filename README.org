@@ -111,7 +111,7 @@ Re-run =guix home reconfigure= after pulling new commits and the
 package will be rebuilt from the updated checkout.
 
 * Configuration
-
+** Authentication
 Accounts are configured via =jabber-account-list=.  The simplest form
 uses auth-source =~/.authinfo.gpg= for passwords:
 
@@ -126,6 +126,21 @@ With =pass= (password-store):
   (setq jabber-account-list
         `(("user@example.org"
            (:password . ,(auth-source-pass-get 'secret "xmpp/example.org/user")))))
+#+end_src
+
+** Bug references
+
+#+begin_src emacs-lisp
+  (add-hook 'jabber-chat-mode-hook #'bug-reference-mode)
+
+  ;; Customize references
+  (setq jabber-bug-reference-alist
+        '(("jabber-el@conference\\.hmm\\.st"
+  	 "\\(#\\([0-9]+\\)\\)"
+  	 "https://codeberg.org/emacs-jabber/emacs-jabber/issues/%s")
+  	("#guix%irc\\.libera.chat@irc\\.biboumi-gateway\\.example"
+  	 "\\(#\\([0-9]+\\)\\)"
+  	 "https://codeberg.org/guix/guix/issues/%s")))
 #+end_src
 
 * Basic commands
