@@ -75,6 +75,9 @@ Called without arguments."
 (defvar elfeed-show-refresh-function #'elfeed-show-refresh--mail-style
   "Function called to refresh the `*elfeed-entry*' buffer.")
 
+(defvar elfeed-show-refresh-hook nil
+ "Functions in this list are called after the show buffer has been refreshed.")
+
 (defvar-keymap elfeed-show-mode-map
   :doc "Keymap for `elfeed-show-mode'."
   :parent special-mode-map
@@ -256,7 +259,8 @@ Links are relative to BASE-URL if non-nil."
 Used as `revert-buffer-function'."
   (declare (completion ignore)) ;; Press "g" or M-x revert-buffer
   (interactive)
-  (funcall elfeed-show-refresh-function))
+  (funcall elfeed-show-refresh-function)
+  (run-hooks 'elfeed-show-refresh-hook))
 
 (defcustom elfeed-show-unique-buffers nil
   "When non-nil, every entry buffer gets a unique name.

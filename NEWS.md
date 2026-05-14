@@ -46,6 +46,8 @@
 * `elfeed-db-gc`, `elfeed-db-pack`: Scan entry and feed meta data for
   `elfeed-ref` references. This way other packages can reference content with
   the reference kept in the metadata.
+* `elfeed-show-refresh-hook`: New hook for addons to extend or enhance the show
+  buffer.
 * Moved elfeed-web.el to the separate repository at
   https://github.com/emacs-elfeed/elfeed-web.
 * Removed obsolete code and code updated for upcoming Emacs 31.
