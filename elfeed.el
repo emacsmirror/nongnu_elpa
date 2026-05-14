@@ -323,8 +323,7 @@ URL identifies the feed and JSON is the parsed content."
           (elfeed-feed-title feed) title
           (elfeed-feed-author feed) authors)
     (cl-loop for item in (alist-get 'items json) collect
-             (let* ((title (or (alist-get 'title item)
-                               (alist-get 'url item) ""))
+             (let* ((title (or (alist-get 'title item) ""))
                     (link (elfeed--fixup-protocol
                            protocol
                            (or (alist-get 'url item)
@@ -393,6 +392,14 @@ URL identifies the feed and JSON is the parsed content."
   (cl-loop for creator in creators
            collect (list :name creator)))
 
+(defun elfeed--atom-cleanup-title (title type)
+  "Cleanup TITLE string.
+If TYPE is html, handle html entities."
+  (elfeed-cleanup
+   (if (and type (string-search "html" type))
+       (xml-substitute-special title)
+     title)))
+
 (defun elfeed-entries-from-atom (url xml)
   "Turn parsed Atom content into a list of elfeed-entry structs.
 URL identifies the feed and XML is the parsed content."
@@ -400,7 +407,9 @@ URL identifies the feed and XML is the parsed content."
          (protocol (url-type (url-generic-parse-url url)))
          (namespace (elfeed-url-to-namespace url))
          (feed (elfeed-db-get-feed feed-id))
-         (title (elfeed-cleanup (xml-query* (feed title *) xml)))
+         (title (elfeed--atom-cleanup-title
+                 (xml-query* (feed title *) xml)
+                 (xml-query* (feed title :type) xml)))
          (authors (xml-query-all* (feed author) xml))
          (xml-base (or (xml-query* (feed :base) xml) url))
          (autotags (elfeed-feed-autotags url)))
@@ -408,7 +417,9 @@ URL identifies the feed and XML is the parsed content."
           (elfeed-feed-title feed) title
           (elfeed-feed-author feed) (elfeed--atom-authors-to-plist authors))
     (cl-loop for entry in (xml-query-all* (feed entry) xml) collect
-             (let* ((title (or (xml-query* (title *) entry) ""))
+             (let* ((title (elfeed--atom-cleanup-title
+                            (or (xml-query* (title *) entry) "")
+                            (xml-query* (title :type) entry)))
                     (xml-base (elfeed-update-location
                                xml-base (xml-query* (:base) (list entry))))
                     (anylink (xml-query* (link :href) entry))
@@ -445,7 +456,7 @@ URL identifies the feed and XML is the parsed content."
                               for length = (xml-query* (:length) wrap)
                               collect (list href type length)))
                     (db-entry (elfeed-entry--create
-                               :title (elfeed-cleanup title)
+                               :title title
                                :feed-id feed-id
                                :id (cons namespace (elfeed-cleanup id))
                                :link (elfeed-cleanup link)
