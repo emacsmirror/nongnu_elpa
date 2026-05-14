@@ -1123,7 +1123,6 @@ the browser defined by `browse-url-secondary-browser-function'."
          (links (mapcar #'elfeed-entry-link entries))
          (links-str (string-join links " ")))
     (when entries
-      (elfeed-untag entries 'unread)
       (kill-new links-str)
       (gui-set-selection elfeed-search-clipboard-type links-str)
       (message "Copied: %s" links-str)
