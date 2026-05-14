@@ -137,6 +137,13 @@ auxiliary text."
       (when markdown-syntax-p
         (save-excursion
           (let ((case-fold-search t))
+            ;; remove ``` code fence blocks so their # lines aren't treated as headings
+            (goto-char (point-min))
+            (while (re-search-forward "^```" nil t)
+              (let ((beg (line-beginning-position)))
+                (when (re-search-forward "^```" nil t)
+                  (forward-line 1)
+                  (delete-region beg (point)))))
             (goto-char (point-min))
             (while (re-search-forward "^#+ " nil t)
               (replace-match (concat
