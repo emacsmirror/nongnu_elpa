@@ -19,9 +19,9 @@
 ;; configured in your user configuration.
 ;;
 ;;     (setq elfeed-feeds
-;;       '(("http://nullprogram.com/feed/" blog emacs)
-;;         "http://www.50ply.com/atom.xml" ;; no autotagging
-;;         ("http://nedroid.com/feed/" webcomic)))
+;;       '(("https://nullprogram.com/feed/" blog emacs)
+;;         "https://sachachua.com/blog/category/emacs-news/feed/" ;; no autotagging
+;;         ("https://nedroid.com/feed/" webcomic)))
 ;;
 ;; For the start a few basic commands suffice.  Inside the search
 ;; buffer press G to refresh the feeds, s to live filter the entries,
@@ -66,9 +66,9 @@ Items in this list can also be list whose car is the feed URL
 and cdr is a list of symbols to be applied to all discovered
 entries as tags (\"autotags\").  For example,
 
-  (setq elfeed-feeds \\='(\"http://foo/\"
-                       \"http://bar/\"
-                       (\"http://baz/\" comic)))
+  (setq elfeed-feeds \\='(\"https://foo/\"
+                       \"https://bar/\"
+                       (\"https://baz/\" comic)))
 
 All entries from the \"baz\" feed will be tagged as \"comic\"
 when they are first discovered."

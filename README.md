@@ -2,32 +2,32 @@
 
 Elfeed is an extensible web feed reader for Emacs, supporting both
 Atom and RSS. It requires Emacs 28.1 and is available for download
-from [MELPA](http://melpa.org/) or
-[el-get](https://github.com/dimitri/el-get). The Elfeed UI was
-inspired by [notmuch](http://notmuchmail.org/).
+from [MELPA](https://melpa.org/) or
+[el-get](httpss://github.com/dimitri/el-get). The Elfeed UI was
+inspired by [notmuch](https://notmuchmail.org/).
 
 For a longer overview,
 
- * [Introducing Elfeed, an Emacs Web Feed Reader](http://nullprogram.com/blog/2013/09/04/).
- * [Tips and Tricks](http://nullprogram.com/blog/2013/11/26/)
+ * [Introducing Elfeed, an Emacs Web Feed Reader](https://nullprogram.com/blog/2013/09/04/).
+ * [Tips and Tricks](https://nullprogram.com/blog/2013/11/26/)
  * [Read your RSS feeds in Emacs with Elfeed
-](http://pragmaticemacs.wordpress.com/emacs/read-your-rss-feeds-in-emacs-with-elfeed/)
- * [Scoring Elfeed articles](http://kitchingroup.cheme.cmu.edu/blog/2017/01/05/Scoring-elfeed-articles/)
+](https://pragmaticemacs.wordpress.com/emacs/read-your-rss-feeds-in-emacs-with-elfeed/)
+ * [Scoring Elfeed articles](https://kitchingroup.cheme.cmu.edu/blog/2017/01/05/Scoring-elfeed-articles/)
  * [Using Emacs 29](https://www.youtube.com/watch?v=pOFqzK1Ymr4),
    [30](https://www.youtube.com/watch?v=tjnK1rkO7RU),
    [31](https://www.youtube.com/watch?v=5zuSUbAHH8c)
- * [Take Elfeed everywhere: Mobile rss reading Emacs-style (for free/cheap)](http://babbagefiles.blogspot.com/2017/03/take-elfeed-everywhere-mobile-rss.html)
+ * [Take Elfeed everywhere: Mobile rss reading Emacs-style (for free/cheap)](https://babbagefiles.blogspot.com/2017/03/take-elfeed-everywhere-mobile-rss.html)
  * [Elfeed Rules!](https://noonker.github.io/posts/2020-04-22-elfeed/) ([reddit](https://old.reddit.com/r/emacs/comments/g6oowz/elfeed_rules/))
  * [Elfeed with Tiny Tiny RSS](https://codingquark.com/emacs/2020/04/19/elfeed-protocol-ttrss.html) ([hn](https://news.ycombinator.com/item?id=22915200))
- * [Open Emacs elfeed links in the background](http://xenodium.com/open-emacs-elfeed-links-in-background/)
+ * [Open Emacs elfeed links in the background](https://xenodium.com/open-emacs-elfeed-links-in-background/)
  * [Using Emacs 72](https://web.archive.org/web/20241126185125/https://cestlaz.github.io/post/using-emacs-72-customizing-elfeed/)
  * [Lazy Elfeed](https://karthinks.com/blog/lazy-elfeed/)
  * [Using Elfeed to View Videos](https://medium.com/emacs/using-elfeed-to-view-videos-6dfc798e51e6)
  * [Manage podcasts in Emacs with Elfeed and Bongo](https://protesilaos.com/codelog/2020-09-11-emacs-elfeed-bongo/)
- * [... more ...](http://nullprogram.com/tags/elfeed/)
- * [... and more ...](http://pragmaticemacs.wordpress.com/category/elfeed/)
+ * [... more ...](https://nullprogram.com/tags/elfeed/)
+ * [... and more ...](https://pragmaticemacs.wordpress.com/category/elfeed/)
 
-[![](http://i.imgur.com/kxgF5AH.png)](http://i.imgur.com/kxgF5AH.png)
+[![](https://i.imgur.com/kxgF5AH.png)](https://i.imgur.com/kxgF5AH.png)
 
 The database format is stable and is never expected to change.
 
@@ -97,7 +97,7 @@ database with entries.
 ```el
 ;; Somewhere in your .emacs file
 (setq elfeed-feeds
-      '("http://nullprogram.com/feed/"
+      '("https://nullprogram.com/feed/"
         "https://planet.emacslife.com/atom.xml"))
 ```
 
@@ -151,9 +151,9 @@ of strings, but an item can also be a list, providing set of
 
 ```el
 (setq elfeed-feeds
-      '(("http://nullprogram.com/feed/" blog emacs)
-        "http://www.50ply.com/atom.xml"  ; no autotagging
-        ("http://nedroid.com/feed/" webcomic)))
+      '(("https://nullprogram.com/feed/" blog emacs)
+        "https://sachachua.com/blog/category/emacs-news/feed/" ;; no autotagging
+        ("https://nedroid.com/feed/" webcomic)))
 ```
 
 ### Filter Syntax
@@ -219,7 +219,7 @@ Only show the most recent 10 previously-read entries tagged as
 Only show unread entries not having `emacs` or `xemacs` in the title
 or link.
 
-* `+emacs =http://example.org/feed/`
+* `+emacs =https://example.org/feed/`
 
 Only show entries tagged as `emacs` from a specific feed.
 
@@ -384,7 +384,7 @@ own properties to avoid collisions (e.g. `:xyz/rating`), or simply not
 using keywords as keys. Elfeed will always use keywords without a
 slash.
 
-[rd]: http://nullprogram.com/blog/2013/12/30/
+[rd]: https://nullprogram.com/blog/2013/12/30/
 
 ## Hooks
 
@@ -440,7 +440,7 @@ for parallel feed downloads with `url-retrieve`, not to mention the
 [tiny, hard-coded, 512 open descriptor limitation][files], so it
 limits itself to one feed at a time on this platform.
 
-[files]: http://msdn.microsoft.com/en-us/library/kdfaxaay%28vs.71%29.aspx
+[files]: https://msdn.microsoft.com/en-us/library/kdfaxaay%28vs.71%29.aspx
 
 If you fetch HTTPS feeds without cURL on *any* platform, it's
 essential that Emacs is built with the `--with-gnutls` option.
