@@ -22,6 +22,7 @@
   Elfeed major modes derive from =special-mode=.
 - =elfeed-db-directory=: Change default to =~/.config/emacs/elfeed=. The change is
   backward compatible. If =~/.elfeed= is present, it will be used.
+- =elfeed-db-cache-timeout=: New option to keep archive content cache alive.
 - Hide irrelevant commands in =M-x= if =read-extended-command-predicate= is set to
   =command-completion-default-include-p=.
 - =elfeed-search-set-filter=: Support shorter age filter syntax, e.g., =@6months=.

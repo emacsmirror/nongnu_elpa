@@ -89,6 +89,11 @@ old ~/.elfeed directory is present, it will be used instead."
   :group 'elfeed
   :type 'directory)
 
+(defcustom elfeed-db-cache-timeout 60
+  "Time in seconds to keep the cache buffer alive."
+  :group 'elfeed
+  :type 'natnum)
+
 (defvar elfeed-db nil
   "The core database for elfeed.")
 
@@ -473,6 +478,9 @@ supported by the database format."
 (defvar elfeed-ref-cache nil
   "Temporary storage of the full archive content.")
 
+(defvar elfeed-ref--cache-timer nil
+  "Cache timer to kill the buffer.")
+
 (cl-defstruct (elfeed-ref (:constructor elfeed-ref--create)
                           (:copier nil))
   id)
@@ -518,13 +526,16 @@ supported by the database format."
           (coding-system-for-read 'utf-8))
       (if (and index (file-exists-p archive-file))
           (progn
-            (unless elfeed-ref-cache
-              (with-temp-buffer
-                (insert-file-contents archive-file)
-                (setf elfeed-ref-cache (buffer-string)))
-              ;; Clear cache on next turn.
-              (run-at-time 0 nil (lambda () (setf elfeed-ref-cache nil))))
-            (substring elfeed-ref-cache (car index) (cdr index)))
+            ;; Ensure that cache is loaded.
+            (with-memoization elfeed-ref-cache (elfeed-slurp archive-file))
+            ;; Clear cache after delay.
+            (when elfeed-ref--cache-timer
+              (cancel-timer elfeed-ref--cache-timer)
+              (setq elfeed-ref--cache-timer nil))
+            (setq elfeed-ref--cache-timer
+                  (run-at-time elfeed-db-cache-timeout nil
+                               (lambda () (setq elfeed-ref-cache nil))))
+            (substring-no-properties elfeed-ref-cache (car index) (cdr index)))
         (let ((file (elfeed-ref--file ref)))
           (when (file-exists-p file)
             (elfeed-slurp file)))))))
@@ -648,6 +659,9 @@ If STATS-P is true, return the space cleared in bytes."
     ;; directory, see https://github.com/emacs-elfeed/elfeed/pull/569.
     (rename-file content-temp content-dest t)
     (rename-file index-temp index-dest t)
+    (when elfeed-ref--cache-timer
+      (cancel-timer elfeed-ref--cache-timer)
+      (setq elfeed-ref--cache-timer nil))
     (setf elfeed-ref-cache nil)
     (setf elfeed-ref-archive next-archive)
     (mapc #'elfeed-ref-delete packed)
