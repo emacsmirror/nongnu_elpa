@@ -367,7 +367,9 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   (unless (eq major-mode 'elfeed-search-mode)
     (elfeed-search-mode))
   (when new-filter
+    ;; Scroll to top when resetting the buffer
     (goto-char (point-min))
+    (set-window-start nil (point-min))
     (elfeed-search-set-filter new-filter)))
 
 (defun elfeed-search-buffer ()

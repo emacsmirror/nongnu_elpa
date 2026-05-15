@@ -289,7 +289,10 @@ The result depends on the value of `elfeed-show-unique-buffers'."
     (elfeed-show-mode)
     (setq elfeed-show-entry entry)
     (elfeed-show-refresh)
-    (funcall elfeed-show-entry-switch (current-buffer))))
+    (funcall elfeed-show-entry-switch (current-buffer))
+    ;; Scroll to top after reset
+    (when-let* ((win (get-buffer-window)))
+      (set-window-start win (point-min)))))
 
 (defun elfeed-show-next (&optional n)
   "Show the Nth next item in the `elfeed-search' buffer."
