@@ -109,8 +109,7 @@ list of tag symbols."
                          (get-text-property (pos-bol) 'elfeed-tag)
                          (user-error "No feed or tag at point"))))
   (push-mark)
-  (elfeed-search)
-  (elfeed-search-set-filter
+  (elfeed-search
    (concat
     elfeed-tree-filter
     (and (not (equal elfeed-tree-filter "")) " ")

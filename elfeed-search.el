@@ -341,12 +341,15 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   (elfeed-search-update :force))
 
 ;;;###autoload
-(defun elfeed-search ()
-  "Enter `elfeed-search' buffer."
+(defun elfeed-search (&optional new-filter)
+  "Enter `elfeed-search' buffer, optionally with a NEW-FILTER."
   (interactive)
   (switch-to-buffer (elfeed-search-buffer))
   (unless (eq major-mode 'elfeed-search-mode)
-    (elfeed-search-mode)))
+    (elfeed-search-mode))
+  (when new-filter
+    (goto-char (point-min))
+    (elfeed-search-set-filter new-filter)))
 
 (defun elfeed-search-buffer ()
   "Create and return search buffer."
@@ -861,7 +864,7 @@ expression, matching against entry link, title, and feed title."
    (let ((elfeed-search-filter-active :non-interactive))
      (list (elfeed-search--prompt
             (if current-prefix-arg "" elfeed-search-filter))))
-    elfeed-search-mode)
+   elfeed-search-mode)
   (with-current-buffer (elfeed-search-buffer)
     (setf elfeed-search-filter
           (or new-filter (default-value 'elfeed-search-filter)))
@@ -1334,8 +1337,7 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 ;;;###autoload
 (defun elfeed-search-bookmark-handler (record)
   "Jump to an `elfeed-search' bookmark RECORD."
-  (elfeed-search)
-  (elfeed-search-set-filter (bookmark-prop-get record 'location)))
+  (elfeed-search (bookmark-prop-get record 'location)))
 (put 'elfeed-search-bookmark-handler 'bookmark-handler-type "Elfeed Search")
 
 (defun elfeed-search-bookmark-make-record ()
@@ -1359,8 +1361,7 @@ state of the db for when `desktop-auto-save-timeout' is enabled."
 ;;;###autoload
 (defun elfeed-search-desktop-restore (_file-name _buffer-name search-filter)
   "Restore the SEARCH-FILTER of an `elfeed-search' buffer on desktop restore."
-  (elfeed-search)
-  (elfeed-search-set-filter search-filter)
+  (elfeed-search search-filter)
   (current-buffer))
 
 ;;;###autoload

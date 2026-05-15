@@ -116,8 +116,7 @@ search buffer or show a concrete entry."
             (cons (match-string 1 filter-or-id)
                   (match-string 2 filter-or-id)))
            (error "Entry not found")))
-    (elfeed-search)
-    (elfeed-search-set-filter filter-or-id)))
+    (elfeed-search filter-or-id)))
 
 ;;;###autoload
 (eval-after-load 'org
