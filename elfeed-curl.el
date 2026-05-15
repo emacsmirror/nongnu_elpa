@@ -217,11 +217,6 @@ output format."
                       :protocols protocols
                       :features features)))))))
 
-(defun elfeed-curl-get-version ()
-  "Return the version of curl for `elfeed-curl-program-name'."
-  (plist-get (elfeed-curl-get-capabilities) :version))
-(make-obsolete 'elfeed-curl-get-version 'elfeed-curl-get-capabilities "3.0.1")
-
 (defun elfeed-curl--token ()
   "Return a unique, random string that prints as a symbol without escapes.
 This token is used to split requests.  The % is excluded since
