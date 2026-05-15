@@ -1032,7 +1032,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
   (interactive nil elfeed-search-mode)
   (when (> (elfeed-queue-count-total) 0)
     (user-error "Update already running"))
-  (elfeed-log 'info "Elfeed update (visible only): %s"
+  (elfeed-log 'info "Elfeed visible update: %s"
               (format-time-string "%B %e %Y %H:%M:%S %Z"))
   (run-hooks 'elfeed-update-init-hooks)
   (cl-loop with seen = (make-hash-table :test 'equal)

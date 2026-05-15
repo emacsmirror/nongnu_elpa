@@ -17,6 +17,8 @@
   explicitly that should remain on the entry.
 - =elfeed-search-mode=: Auto-resizing of title column.
 - =elfeed-search-update-delay=: New option to debounce search buffer update.
+- =elfeed-update-background=: New function to update Elfeed in the background from
+  a timer.
 - =elfeed-use-libxml=: New customization option to enable parsing via =libxml=.
 - =elfeed-search-mode=, =elfeed-show-mode=, =elfeed-tree-mode=: All
   Elfeed major modes derive from =special-mode=.

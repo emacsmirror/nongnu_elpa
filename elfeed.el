@@ -636,8 +636,9 @@ Run `elfeed-update-init-hooks' before."
   (run-hooks 'elfeed-update-init-hooks)
   (elfeed--update-feed url))
 
-(defun elfeed--update-feed (url)
-  "Update a specific feed identified by URL."
+(defun elfeed--update-feed (url &optional inhibit-update-hooks)
+  "Update a specific feed identified by URL.
+If INHIBIT-UPDATE-HOOKS is non-nil do not run the `elfeed-update-hooks'."
   (elfeed-with-fetch url
     (if (elfeed-is-status-error status use-curl)
         (let ((print-escape-newlines t))
@@ -680,7 +681,8 @@ Run `elfeed-update-init-hooks' before."
         (error (elfeed-handle-parse-error url error))))
     (unless use-curl
       (kill-buffer))
-    (run-hook-with-args 'elfeed-update-hooks url)))
+    (unless inhibit-update-hooks
+      (run-hook-with-args 'elfeed-update-hooks url))))
 
 (defun elfeed-candidate-feeds ()
   "Return a list of possible feeds from `elfeed-feed-functions'."
@@ -735,12 +737,24 @@ called interactively, SAVE is set to t."
 (defun elfeed-update ()
   "Update all the feeds in `elfeed-feeds'."
   (interactive)
-  (when (> (elfeed-queue-count-total) 0)
-    (user-error "Update already running"))
-  (elfeed-log 'info "Elfeed update: %s"
-              (format-time-string "%B %e %Y %H:%M:%S %Z"))
-  (run-hooks 'elfeed-update-init-hooks)
-  (mapc #'elfeed--update-feed (elfeed--shuffle (elfeed-feed-list))))
+  (if (> (elfeed-queue-count-total) 0)
+      (user-error "Update already running")
+    (elfeed-log 'info "Elfeed update: %s"
+                (format-time-string "%B %e %Y %H:%M:%S %Z"))
+    (run-hooks 'elfeed-update-init-hooks)
+    (mapc #'elfeed--update-feed (elfeed--shuffle (elfeed-feed-list)))))
+
+;;;###autoload
+(defun elfeed-update-background ()
+  "Update all the feeds in `elfeed-feeds' without running update hooks.
+This function can be called from a timer in the background, since it
+does not disturb any visible Elfeed windows.  No new update is started
+if another update is already running."
+  (when (= (elfeed-queue-count-total) 0)
+    (elfeed-log 'info "Elfeed background update: %s"
+                (format-time-string "%B %e %Y %H:%M:%S %Z"))
+    (dolist (feed (elfeed--shuffle (elfeed-feed-list)))
+      (elfeed--update-feed feed t))))
 
 ;;;###autoload
 (defun elfeed ()
