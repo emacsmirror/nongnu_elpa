@@ -64,7 +64,10 @@ which will display feed items.
 - =g=: refresh view of the feed listing
 - =G=: fetch feed updates from the servers
 - =s=: update the search filter (see tags)
+- =S=: update the search filter statically
 - =c=: clear the search filter
+- ~=~: Add feed of the current entry to filter
+- =@=: Add date of the current entry to filter
 
 This buffer will be empty until you add your feeds to the =elfeed-feeds= list and
 initiate an update with =M-x elfeed-update= (or G in the Elfeed buffer). This will
@@ -100,13 +103,15 @@ Entries are selected by placing the point over an entry. Multiple entries are
 selected at once by using an active region.
 
 - =RET=: view selected entry in a buffer
-- =b=: open selected entries in your browser (=browse-url=)
+- =b=: open selected entries in your browser
 - =B=: open selected entries in your secondary browser
 - =y=: copy selected entries URL to the clipboard
-- =r=: mark selected entries as read
-- =u=: mark selected entries as unread
+- =r=: tag selected entries as read (=C-u r= to tag all)
+- =u=: tag selected entries as unread (=C-u u= to tag all)
 - =+=: add a specific tag to selected entries
 - =-=: remove a specific tag from selected entries
+- =m=: mark candidate
+- =M=: unmark candidate (=C-u M= to unmark all)
 - =t=: set title of selected entry
 - =T=: set title of selected feed
 
@@ -218,7 +223,7 @@ called with new entries, allowing them to be manipulated, such as adding tags.
 Avoiding tagging old entries as =unread=:
 
 #+begin_src emacs-lisp
-;; Entries older than 2 weeks are marked as read
+;; Entries older than 2 weeks are tagged as read
 (add-hook 'elfeed-new-entry-hook
           (elfeed-make-tagger :before "2 weeks ago"
                               :remove 'unread))
@@ -239,7 +244,7 @@ entries. Otherwise hooks will only apply to new entries on discovery.
 
 *** Custom Tag Faces
 
-By default, entries marked =unread= will have bolded titles in the =*elfeed-search*=
+By default, entries tagged =unread= will have bolded titles in the =*elfeed-search*=
 listing. You can customize how tags affect an entry's appearance by customizing
 =elfeed-search-face-alist=. For example, this configuration makes entries tagged
 =important= stand out in red.
