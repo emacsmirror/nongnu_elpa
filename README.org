@@ -1,0 +1,62 @@
+* simple-httpd
+
+[[https://melpa.org/#/simple-httpd][[[https://melpa.org/packages/simple-httpd-badge.svg]]]]
+[[https://stable.melpa.org/#/simple-httpd][[[https://stable.melpa.org/packages/simple-httpd-badge.svg]]]]
+
+A simple Emacs web server.
+
+This used to be =httpd.el= but there are already several of these out there
+already of varying usefulness. The server can serve files, directory listings
+and custom servlets. Client requests are sanitized, but the server is vulnerable
+to denial of service attacks, so it should only be used for local development or
+automation. We make no guarantees regarding security.
+
+This package is available on [[https://melpa.org/][MELPA]] and [[https://nongnu.elpa.org/][NonGNU ELPA]].
+
+** Usage
+
+Once loaded, there are only two interactive functions to worry about:
+=httpd-start= and =httpd-stop=. By default, files are served from =httpd-root= on port
+=httpd-port=. To disable, set =httpd-serve-files= to =nil=. Directory listings are
+enabled by default but can be disabled by setting =httpd-listings= to =nil=.
+
+#+begin_src emacs-lisp
+(require 'simple-httpd)
+(setq httpd-root "/var/www")
+(httpd-start)
+#+end_src
+
+** Servlets
+
+Servlets can be defined with =httpd-servlet=. They are enabled by default but can
+be disabled by setting =httpd-servlets= to =nil=. This one creates at servlet at
+=/hello-world= that says hello.
+
+#+begin_src emacs-lisp
+(httpd-servlet hello-world text/plain (path)
+  (insert "hello, " (file-name-nondirectory path)))
+#+end_src
+
+Another example at =/greeting/<name>= with optional parameter
+=?greeting=<greeting>=.
+
+#+begin_src emacs-lisp
+(httpd-servlet* greeting/:name text/plain ((greeting "hi" greeting-p))
+  (insert (format "%s, %s (provided: %s)" greeting name greeting-p)))
+#+end_src
+
+See the comment header in =simple-httpd.el= for full details.
+
+** Unit tests
+
+The unit tests can be run with =make test=. The tests do some mocking to avoid
+using network code during testing.
+
+** Related packages
+
+Packages built on simple-httpd:
+
+- [[https://github.com/skeeto/skewer-mode][skewer-mode]]
+- [[https://github.com/netguy204/imp.el][impatient-mode]]
+- [[https://github.com/gongo/airplay-el][airplay]]
+- [[https://github.com/skeeto/elfeed][elfeed-web]]
