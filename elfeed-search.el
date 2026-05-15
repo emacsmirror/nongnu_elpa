@@ -1003,38 +1003,14 @@ directly.  Instead use `elfeed-search-update'."
       (with-current-buffer buffer
         (elfeed-save-excursion
           (let ((inhibit-read-only t)
-                (standard-output (current-buffer))
-                (cmp (or elfeed-search-sort-function #'elfeed-db-compare))
-                (entries nil))
+                (standard-output (current-buffer)))
+            (erase-buffer)
             (remove-overlays nil nil 'category 'elfeed-search-marked-overlay)
-            (if (eq method :resize)
-                (erase-buffer)
+            (unless (eq method :resize)
               (elfeed-search--update-list))
-            (setq entries elfeed-search-entries)
-            (goto-char (point-min))
-            (while entries
-              (let ((entry (car entries))
-                    (old (get-text-property (point) 'elfeed-entry)))
-                (cond
-                 ;; Same entry.
-                 ((equal entry old)
-                  (forward-line)
-                  (pop entries))
-                 ;; Old entry sorts after new entry: Insert new entry.
-                 ((or (not old) (funcall cmp entry old))
-                  (elfeed-search--print-entry entry)
-                  (insert ?\n)
-                  (pop entries))
-                 ;; Old entry sorts before new entry: Delete old entry.
-                 (t (delete-line)))))
-            ;; Delete excess entries.
-            (delete-region (point) (point-max))
-            ;; Validate update code.
-            ;; (unless (equal
-            ;;          (mapcar (lambda (x) (get-text-property 0 'elfeed-entry x))
-            ;;                  (split-string (buffer-string) "\n" t))
-            ;;          elfeed-search-entries)
-            ;;   (message "elfeed-search-update: Entry mismatch!"))
+            (dolist (entry elfeed-search-entries)
+              (elfeed-search--print-entry entry)
+              (insert ?\n))
             (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)
             (setf elfeed-search-last-update (float-time)
                   list-buffers-directory elfeed-search-filter)))
