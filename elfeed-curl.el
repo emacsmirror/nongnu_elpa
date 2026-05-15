@@ -375,8 +375,10 @@ URL is the requested resource."
                    (setf result t
                          elfeed-curl-error-message nil
                          elfeed-curl-status-code nil))
-                  ((and (>= elfeed-curl-status-code 400)
-                        (<= elfeed-curl-status-code 599))
+                  ((if elfeed-curl-status-code
+                       (and (>= elfeed-curl-status-code 400)
+                            (<= elfeed-curl-status-code 599))
+                     (setq elfeed-curl-status-code 500))
                    (setf elfeed-curl-error-message
                          (format "HTTP %d" elfeed-curl-status-code)))
                   (t
