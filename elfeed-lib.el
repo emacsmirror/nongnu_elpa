@@ -53,10 +53,7 @@ N is the destination line."
 
 (defun elfeed-kill-line ()
   "Clear out the current line without touching anything else."
-  (beginning-of-line)
-  (let ((start (point)))
-    (end-of-line)
-    (delete-region start (point))))
+  (delete-region (pos-bol) (pos-eol)))
 
 (defun elfeed-time-duration (time &optional now)
   "Turn a TIME expression into a number of seconds.
