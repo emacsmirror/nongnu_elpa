@@ -347,14 +347,6 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
   "Run `elfeed-db-save' without triggering any errors, for use as a safe hook."
   (ignore-errors (elfeed-db-save)))
 
-(defun elfeed-db--empty ()
-  "Create an empty database object."
-  `(:version ,elfeed-db-version
-    :feeds ,(make-hash-table :test 'equal)
-    :entries ,(make-hash-table :test 'equal)
-    ;; Compiler may warn about this (bug#15327):
-    :index ,(avl-tree-create #'elfeed-db-compare)))
-
 (defun elfeed-db-upgrade (_db)
   "Upgrade the database DB from a previous format."
   (error "Upgrade is not supported"))
@@ -365,7 +357,11 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
   (let ((index (expand-file-name "index" elfeed-db-directory))
         (enable-local-variables nil)) ; don't set local variables from index!
     (if (not (file-exists-p index))
-        (setf elfeed-db (elfeed-db--empty))
+        (setf elfeed-db
+              (list :version elfeed-db-version
+                    :feeds (make-hash-table :test #'equal)
+                    :entries (make-hash-table :test #'equal)
+                    :index (avl-tree-create #'elfeed-db-compare)))
       ;; Override the default value for major-mode. There is no
       ;; preventing find-file-noselect from starting the default major
       ;; mode while also having it handle buffer conversion. Some
