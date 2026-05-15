@@ -481,7 +481,7 @@ supported by the database format."
   "Determine the storage filename for REF."
   (let ((id (elfeed-ref-id ref)))
     (file-name-concat (expand-file-name "data" elfeed-db-directory)
-                      (substring id 0 2) id)))
+                      (substring-no-properties id 0 2) id)))
 
 (cl-defun elfeed-ref-archive-filename (&optional (suffix ""))
   "Return the base filename of the archive files with optional SUFFIX."
@@ -527,9 +527,7 @@ supported by the database format."
             (substring elfeed-ref-cache (car index) (cdr index)))
         (let ((file (elfeed-ref--file ref)))
           (when (file-exists-p file)
-            (with-temp-buffer
-              (insert-file-contents file)
-              (buffer-string))))))))
+            (elfeed-slurp file)))))))
 
 (defun elfeed-ref (content)
   "Create a reference to CONTENT, to be persistently stored."
