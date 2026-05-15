@@ -271,6 +271,15 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                       unread-count entry-count
                       (hash-table-count feeds))))))
 
+(defun elfeed-search--log-button ()
+  "Button to show the Elfeed log."
+  (when (> elfeed-log-error-count 0)
+    (concat (elfeed-search--header-button
+             #'elfeed-log-show
+             (format (propertize "(%d)" 'face 'error)
+                     elfeed-log-error-count))
+            " ")))
+
 (defun elfeed-search--header ()
   "Computes the string to be used as the Elfeed header."
   (cond
@@ -280,8 +289,10 @@ Movement is configured by `elfeed-search-remain-on-entry'."
    ((let ((total (elfeed-queue-count-total)))
       (when (> total 0)
         (let ((active (elfeed-queue-count-active)))
-          (format "%d jobs pending, %d active..."
-                  (- total active) active)))))
+          (concat
+           (elfeed-search--log-button)
+           (format "%d jobs pending, %d active..."
+                   (- total active) active))))))
    ((let ((update (elfeed-add-properties
                    (format-time-string
                     "%Y-%m-%d %H:%M"
@@ -305,6 +316,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                      (split-string elfeed-search-filter) " "))
                    (""))))
       (concat
+       (elfeed-search--log-button)
        (elfeed-search--header-button #'elfeed-update
                                      (concat "Updated " update))
        ", " unread (and (not (equal filter "")) ", ")

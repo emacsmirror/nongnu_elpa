@@ -44,14 +44,15 @@
 (defvar elfeed-log-level 'info
   "Lowest type of messages to be logged.")
 
+(defvar elfeed-log-error-count 0
+  "Error count.")
+
 (defun elfeed-log-buffer ()
   "Returns the buffer for `elfeed-log', creating it as needed."
-  (let ((buffer (get-buffer elfeed-log-buffer-name)))
-    (if buffer
-        buffer
-      (with-current-buffer (generate-new-buffer elfeed-log-buffer-name)
+  (or (get-buffer elfeed-log-buffer-name)
+      (with-current-buffer (get-buffer-create elfeed-log-buffer-name)
         (special-mode)
-        (current-buffer)))))
+        (current-buffer))))
 
 (defun elfeed-log--level-number (level)
   "Return a relative level number for LEVEL."
@@ -74,6 +75,8 @@ FMT must be a string suitable for `format' given OBJECTS as arguments."
                           (warn 'elfeed-log-warn-level-face)
                           (error 'elfeed-log-error-level-face)))
         (inhibit-read-only t))
+    (when (eq level 'error)
+      (incf elfeed-log-error-count))
     (when (>= (elfeed-log--level-number level)
               (elfeed-log--level-number elfeed-log-level))
       (with-current-buffer log-buffer
@@ -85,6 +88,13 @@ FMT must be a string suitable for `format' given OBJECTS as arguments."
           (format-time-string "%Y-%m-%d %H:%M:%S")
           level
           (apply #'format fmt objects)))))))
+
+;;;###autoload
+(defun elfeed-log-show ()
+  "Show log buffer."
+  (interactive)
+  (setq elfeed-log-error-count 0)
+  (switch-to-buffer (elfeed-log-buffer)))
 
 (provide 'elfeed-log)
 ;;; elfeed-log.el ends here
