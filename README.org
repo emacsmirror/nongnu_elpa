@@ -1,3 +1,11 @@
+#+title: Elfeed Emacs Web Feed Reader
+#+author: Christopher Wellons
+#+language: en
+#+export_file_name: elfeed.texi
+#+texinfo_dir_category: Emacs misc features
+#+texinfo_dir_title: Elfeed: (elfeed).
+#+texinfo_dir_desc: Atom/RSS feed reader
+
 * Elfeed Emacs Web Feed Reader
 
 Elfeed is an extensible web feed reader for Emacs, supporting Atom, RSS and JSON
