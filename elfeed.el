@@ -646,12 +646,7 @@ If INHIBIT-UPDATE-HOOKS is non-nil do not run the `elfeed-update-hooks'."
            url (if use-curl elfeed-curl-error-message status)))
       (condition-case error
           (let ((feed (elfeed-db-get-feed url)))
-            (when (or (not use-curl)
-                      ;; HACK: Work around Curl bug for file:// URLs. Curl
-                      ;; responds with size_header=0 such that the header still
-                      ;; needs to be skipped.
-                      (and (string-prefix-p "file://" url)
-                           (looking-at-p "Content-Length: ")))
+            (unless use-curl
               (goto-char (point-min))
               (elfeed-move-to-first-empty-line)
               (set-buffer-multibyte t))

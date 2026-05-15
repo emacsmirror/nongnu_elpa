@@ -362,6 +362,12 @@ URL is the requested resource."
           (progn
             (elfeed-curl--prepare-response url n protocol)
             (cond ((eq protocol 'file)
+                   ;; HACK: Work around Curl bug for file:// URLs. Curl
+                   ;; responds with size_header=0 such that the header still
+                   ;; needs to be skipped.
+                   (when (looking-at-p "Content-Length: ")
+                     (goto-char (point-min))
+                     (elfeed-move-to-first-empty-line))
                    ;; No status code is returned by curl for file:// urls
                    (setf result t
                          elfeed-curl-error-message nil))
