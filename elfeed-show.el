@@ -84,7 +84,7 @@ Called without arguments."
   "d" #'elfeed-show-save-enclosure
   "n" #'elfeed-show-next
   "p" #'elfeed-show-prev
-  "s" #'elfeed-show-new-live-search
+  "s" #'elfeed-search-new-live
   "b" #'elfeed-show-visit
   "B" #'elfeed-show-visit-secondary
   "y" #'elfeed-show-yank
@@ -309,13 +309,6 @@ The result depends on the value of `elfeed-show-unique-buffers'."
   "Show the Nth previous item in the `elfeed-search' buffer."
   (interactive "p" elfeed-show-mode)
   (elfeed-show-next (- (or n 1))))
-
-(defun elfeed-show-new-live-search ()
-  "Quit the current window, search again in the `elfeed-search' buffer."
-  (interactive nil elfeed-show-mode)
-  (quit-window)
-  (elfeed-search)
-  (elfeed-search-live-filter))
 
 (defun elfeed-show-visit (&optional secondary)
   "Visit the current entry in your browser using `browse-url'.
@@ -591,6 +584,9 @@ Prompts for ENCLOSURE-INDEX when called interactively."
       (location . ,title)
       (position . ,position)
       (handler . elfeed-show-bookmark-handler))))
+
+(define-obsolete-function-alias 'elfeed-show-new-live-search
+  #'elfeed-search-new-live "3.4.2")
 
 (provide 'elfeed-show)
 ;;; elfeed-show.el ends here

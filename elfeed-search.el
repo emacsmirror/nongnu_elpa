@@ -1388,6 +1388,13 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
               (elfeed-search--prompt elfeed-search-filter)))
     (elfeed-search-update :force)))
 
+(defun elfeed-search-new-live ()
+  "Quit the current window, search again in the `elfeed-search' buffer."
+  (interactive nil elfeed-show-mode)
+  (quit-window)
+  (elfeed-search)
+  (elfeed-search-live-filter))
+
 ;; Bookmarks
 
 ;;;###autoload

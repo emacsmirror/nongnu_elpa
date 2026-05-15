@@ -74,6 +74,7 @@
   "<elfeed-tag>" #'elfeed-tree-search
   "<elfeed-filter>" #'elfeed-tree-search
   "<header-line> <mouse-1>" #'elfeed-search-header-button
+  "s" #'elfeed-search-new-live
   "n" #'next-line
   "p" #'previous-line
   "T" #'elfeed-tree-set-title
