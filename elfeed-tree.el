@@ -73,7 +73,7 @@
   "RET" #'elfeed-tree-search
   "<elfeed-tag>" #'elfeed-tree-search
   "<elfeed-filter>" #'elfeed-tree-search
-  "<header-line> <mouse-1>" #'elfeed-search-header-click
+  "<header-line> <mouse-1>" #'elfeed-search-header-button
   "n" #'next-line
   "p" #'previous-line
   "T" #'elfeed-tree-set-title

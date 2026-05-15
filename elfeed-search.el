@@ -166,7 +166,7 @@ When live editing the filter, it is bound to :live.")
   "<elfeed-entry>" #'elfeed-search-show-entry
   "<elfeed-feed>" #'elfeed-search-feed-filter
   "<elfeed-tag>" #'elfeed-search-tag-filter
-  "<header-line> <mouse-1>" #'elfeed-search-header-click
+  "<header-line> <mouse-1>" #'elfeed-search-header-button
   "s" #'elfeed-search-live-filter
   "S" #'elfeed-search-set-filter
   "c" #'elfeed-search-clear-filter
@@ -298,7 +298,10 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                        (elfeed-add-properties
                         x 'mouse-face 'highlight
                         'help-echo "Remove filter"
-                        'elfeed-header-filter x))
+                        'elfeed-header-button
+                        (lambda ()
+                          (interactive)
+                          (elfeed-search--toggle-filter x))))
                      (split-string elfeed-search-filter) " "))
                    (""))))
       (concat
@@ -1245,19 +1248,16 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
     (elfeed-search--toggle-filter (elfeed-search--feed-filter
                                    (elfeed-entry-feed entry)))))
 
-(defun elfeed-search-header-click ()
+(defun elfeed-search-header-button ()
   "Handle click on the header line of the search buffer."
   (declare (completion ignore))
   (interactive "@")
   (when-let* (((mouse-event-p last-input-event))
               (pos (event-end last-input-event))
-              (str (posn-string pos)))
-    (let (obj)
-      (cond
-       ((setq obj (get-text-property (cdr str) 'elfeed-header-filter (car str)))
-        (elfeed-search--toggle-filter obj))
-       ((setq obj (get-text-property (cdr str) 'elfeed-header-button (car str)))
-        (call-interactively obj))))))
+              (str (posn-string pos))
+              (button (get-text-property
+                       (cdr str) 'elfeed-header-button (car str))))
+    (call-interactively button)))
 
 (defun elfeed-search-set-entry-title (&optional title)
   "Manually set TITLE for the entry under point.
