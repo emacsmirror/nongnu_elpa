@@ -851,10 +851,9 @@ tags from."
   "Reset the search filter.
 Use the default value of the variable `elfeed-search-filter'."
   (interactive nil elfeed-search-mode)
-  (setf elfeed-search-filter (default-value 'elfeed-search-filter))
-  (elfeed-search-update :force))
+  (elfeed-search-set-filter))
 
-(defun elfeed-search-set-filter (new-filter)
+(defun elfeed-search-set-filter (&optional new-filter)
   "Set a new search filter for the `elfeed-search' buffer.
 
 When NEW-FILTER is nil, reset the filter to the default value.
