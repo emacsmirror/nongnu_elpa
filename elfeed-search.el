@@ -160,6 +160,8 @@ When live editing the filter, it is bound to :live.")
   :parent special-mode-map
   "G" #'elfeed-search-fetch
   "RET" #'elfeed-search-show-entry
+  "=" #'elfeed-search-feed-filter
+  "@" #'elfeed-search-date-filter
   "<elfeed-date>" #'elfeed-search-click
   "<elfeed-entry>" #'elfeed-search-click
   "<elfeed-feed>" #'elfeed-search-click
@@ -495,7 +497,7 @@ The customization `elfeed-search-date-format' sets the formatting."
                                    'follow-link [elfeed-entry]))
     (when feed-title
       (insert " " (propertize feed-title 'face 'elfeed-search-feed-face
-                              'mouse-face 'highlight 'elfeed-feed feed
+                              'mouse-face 'highlight
                               'follow-link [elfeed-feed])))
     (when tags
       (insert " (" (elfeed-search--format-tags tags) ")"))))
@@ -1212,6 +1214,19 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
                     (append filter (list str)))
                   " "))))
 
+(defun elfeed-search-date-filter ()
+  "Toggle date filter from date at point."
+  (interactive)
+  (when-let* ((date (get-text-property (pos-bol) 'elfeed-date)))
+    (elfeed-search--toggle-filter (elfeed-search--date-filter date))))
+
+(defun elfeed-search-feed-filter ()
+  "Toggle feed filter from feed at point."
+  (interactive)
+  (when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
+    (elfeed-search--toggle-filter (elfeed-search--feed-filter
+                                   (elfeed-entry-feed entry)))))
+
 (defun elfeed-search--feed-filter (feed)
   "Create filter string which matches FEED."
   (concat "=" (string-replace
@@ -1222,6 +1237,10 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
   "Create filter string which matches a single or a list TAGS."
   (mapconcat (lambda (x) (format "+%s" x))
              (ensure-list tags) " "))
+
+(defun elfeed-search--date-filter (date)
+  "Create filter string which matches a DATE."
+  (concat "@" (elfeed-search-format-date date)))
 
 (defun elfeed-search-header-click ()
   "Handle click on the header line of the search buffer."
@@ -1247,13 +1266,14 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
     (let (obj)
       (cond
        ((setq obj (get-text-property pos 'elfeed-date))
-        (elfeed-search--toggle-filter (concat "@" (elfeed-search-format-date obj))))
+        (elfeed-search--toggle-filter (elfeed-search--date-filter obj)))
        ((setq obj (get-text-property pos 'elfeed-tag))
         (elfeed-search--toggle-filter (elfeed-search--tag-filter obj)))
-       ((setq obj (get-text-property pos 'elfeed-feed))
-        (elfeed-search--toggle-filter (elfeed-search--feed-filter obj)))
        ((setq obj (get-text-property pos 'elfeed-entry))
-        (elfeed-search-show-entry obj))))))
+        (if (equal (get-text-property pos 'follow-link) [elfeed-feed])
+            (elfeed-search--toggle-filter (elfeed-search--feed-filter
+                                           (elfeed-entry-feed obj)))
+          (elfeed-search-show-entry obj)))))))
 
 (defun elfeed-search-set-entry-title (&optional title)
   "Manually set TITLE for the entry under point.
