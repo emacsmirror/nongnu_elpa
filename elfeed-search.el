@@ -1065,7 +1065,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
       (when n (elfeed-goto-line n))
       (when-let* ((entry (elfeed-search-selected :ignore-region)))
         (elfeed-search--remove-marked-overlay entry)
-        (elfeed-kill-line)
+        (delete-region (pos-bol) (pos-eol))
         (elfeed-search--print-entry entry)
         (when (memq entry elfeed-search--marked)
           (elfeed-search--make-marked-overlay entry))))))

@@ -43,17 +43,18 @@ ARGS are passed to FUNCTION."
   "Kill the current buffer."
   (interactive)
   (kill-buffer (current-buffer)))
-(make-obsolete 'elfeed-kill-buffer 'kill-current-buffer "3.4.2")
+(make-obsolete 'elfeed-kill-buffer #'kill-current-buffer "3.4.2")
+
+(defun elfeed-kill-line ()
+  "Clear out the current line without touching anything else."
+  (delete-region (pos-bol) (pos-eol)))
+(make-obsolete 'kill-line #'delete-region "3.4.2")
 
 (defun elfeed-goto-line (n)
   "Like `goto-line' but for non-interactive use.
 N is the destination line."
   (goto-char (point-min))
   (forward-line (1- n)))
-
-(defun elfeed-kill-line ()
-  "Clear out the current line without touching anything else."
-  (delete-region (pos-bol) (pos-eol)))
 
 (defun elfeed-time-duration (time &optional now)
   "Turn a TIME expression into a number of seconds.
