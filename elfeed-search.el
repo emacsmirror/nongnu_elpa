@@ -1001,10 +1001,10 @@ directly.  Instead use `elfeed-search-update'."
               (elfeed-search--update-list))
             (dolist (entry elfeed-search-entries)
               (elfeed-search--print-entry entry)
-              (insert "\n"))
+              (insert ?\n))
             (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)
-            (setf elfeed-search-last-update (float-time))))
-        (setq list-buffers-directory elfeed-search-filter)
+            (setf elfeed-search-last-update (float-time)
+                  list-buffers-directory elfeed-search-filter)))
         ;; Highlighting gets lost due to debouncing.
         (hl-line-highlight)
         (run-hooks 'elfeed-search-update-hook))))
@@ -1134,7 +1134,7 @@ point."
           (goto-char (pos-bol))
           (cl-loop while (< (point) end)
                    when (prog1 (get-text-property (point) 'elfeed-entry)
-                          (forward-line 1))
+                          (forward-line))
                    collect it into selected
                    finally return selected))))
      ((when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
