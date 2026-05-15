@@ -285,12 +285,11 @@ The result depends on the value of `elfeed-show-unique-buffers'."
 
 (defun elfeed-show-entry (entry)
   "Display ENTRY in the current buffer."
-  (let ((buff (get-buffer-create (elfeed-show--buffer-name entry))))
-    (with-current-buffer buff
-      (elfeed-show-mode)
-      (setq elfeed-show-entry entry)
-      (elfeed-show-refresh))
-    (funcall elfeed-show-entry-switch buff)))
+  (with-current-buffer (get-buffer-create (elfeed-show--buffer-name entry))
+    (elfeed-show-mode)
+    (setq elfeed-show-entry entry)
+    (elfeed-show-refresh)
+    (funcall elfeed-show-entry-switch (current-buffer))))
 
 (defun elfeed-show-next (&optional n)
   "Show the Nth next item in the `elfeed-search' buffer."
