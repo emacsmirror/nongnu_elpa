@@ -768,22 +768,28 @@ Executing a filter in bytecode form is generally faster than
                   (p (if (equal n "1") "" "s")))
              (mapcar (lambda (x) (concat "@" n x p))
                      '("hour" "day" "week" "month" "year"))))
-         ;; Cached, but static candidates, not depending on prefix.
+         ;; Static candidates (tags and history).
          (unless (equal input "")
-           (with-memoization cache
-             (delete-dups
-              (nconc
-               ;; +tag and -tag candidate strings
-               (mapcan
-                (lambda (x) (list (format "+%s" x) (format "-%s" x)))
-                (elfeed-db-get-all-tags))
-               ;; Old words from history
-               (mapcan
-                (lambda (h)
-                  (delq nil
-                        (mapcar (lambda (x) (and (length> x 1) x))
-                                (split-string h))))
-                elfeed-search-filter-history))))))))))
+           (let ((all
+                  (with-memoization cache
+                    (delete-dups
+                     (nconc
+                      ;; +tag and -tag candidate strings
+                      (mapcan
+                       (lambda (x) (list (format "+%s" x) (format "-%s" x)))
+                       (elfeed-db-get-all-tags))
+                      ;; Old words from history
+                      (mapcan
+                       (lambda (h)
+                         (delq nil
+                               (mapcar (lambda (x) (and (length> x 1) x))
+                                       (split-string h))))
+                       elfeed-search-filter-history))))))
+             (if (string-match-p "\\`[=~!#@]" input)
+                 ;; Keep only candidates matching the special prefix character.
+                 (let (completion-regexp-list completion-ignore-case)
+                   (all-completions (substring input 0 1) all))
+               all))))))))
 
 (defun elfeed-search--prompt (current)
   "Prompt for a new filter, starting with CURRENT."
