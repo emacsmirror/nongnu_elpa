@@ -345,7 +345,8 @@ Movement is configured by `elfeed-search-remain-on-entry'."
               bookmark-make-record-function
               #'elfeed-search-bookmark-make-record
               revert-buffer-function #'elfeed-search--update-force
-              default-directory (elfeed-default-directory))
+              default-directory (elfeed-default-directory)
+              hl-line-sticky-flag t)
   (buffer-disable-undo)
   (hl-line-mode)
   (make-local-variable 'elfeed-search-entries)

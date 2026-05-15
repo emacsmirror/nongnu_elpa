@@ -151,7 +151,8 @@ list of tag symbols."
                 (put symbol 'risky-local-variable t)
                 `(:eval
                   (prog1 ',symbol
-                    (set ',symbol (elfeed-tree--header))))))
+                    (set ',symbol (elfeed-tree--header)))))
+              hl-line-sticky-flag t)
   (outline-minor-mode)
   (buffer-disable-undo)
   (hl-line-mode)
