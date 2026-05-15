@@ -1030,12 +1030,12 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
 (defun elfeed-search-fetch-visible ()
   "Update any feed with an entry currently displayed in the search buffer."
   (interactive nil elfeed-search-mode)
+  (run-hooks 'elfeed-update-init-hooks)
   (cl-loop with seen = (make-hash-table :test 'equal)
            for entry in elfeed-search-entries
-           for feed = (elfeed-entry-feed entry)
-           for url = (elfeed-feed-url feed)
+           for url = (elfeed-feed-url (elfeed-entry-feed entry))
            unless (gethash url seen)
-           do (elfeed-update-feed (setf (gethash url seen) url))))
+           do (elfeed--update-feed (setf (gethash url seen) url))))
 
 (defun elfeed-search-update-line (&optional n)
   "Redraw line N, defaulting to the current line."

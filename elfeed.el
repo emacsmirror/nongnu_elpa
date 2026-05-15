@@ -157,9 +157,6 @@ list.  The second argument is the tag list.")
 It is called with 2 arguments.  The first argument is the entry
 list.  The second argument is the tag list.")
 
-(defvar elfeed--inhibit-update-init-hooks nil
-  "When non-nil, don't run `elfeed-update-init-hooks'.")
-
 (defun elfeed-queue-count-active ()
   "Return the number of items in process."
   (if elfeed-use-curl
@@ -633,10 +630,14 @@ Only a list of strings will be returned."
     url))
 
 (defun elfeed-update-feed (url)
-  "Update a specific feed identified by URL."
+  "Update a specific feed identified by URL.
+Run `elfeed-update-init-hooks' before."
   (interactive (list (elfeed--prompt-feed)))
-  (unless elfeed--inhibit-update-init-hooks
-    (run-hooks 'elfeed-update-init-hooks))
+  (run-hooks 'elfeed-update-init-hooks)
+  (elfeed--update-feed url))
+
+(defun elfeed--update-feed (url)
+  "Update a specific feed identified by URL."
   (elfeed-with-fetch url
     (if (elfeed-is-status-error status use-curl)
         (let ((print-escape-newlines t))
@@ -736,9 +737,8 @@ called interactively, SAVE is set to t."
   (interactive)
   (elfeed-log 'info "Elfeed update: %s"
               (format-time-string "%B %e %Y %H:%M:%S %Z"))
-  (let ((elfeed--inhibit-update-init-hooks t))
-    (mapc #'elfeed-update-feed (elfeed--shuffle (elfeed-feed-list))))
   (run-hooks 'elfeed-update-init-hooks)
+  (mapc #'elfeed--update-feed (elfeed--shuffle (elfeed-feed-list)))
   (elfeed-db-save))
 
 ;;;###autoload
