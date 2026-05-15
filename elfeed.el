@@ -735,6 +735,8 @@ called interactively, SAVE is set to t."
 (defun elfeed-update ()
   "Update all the feeds in `elfeed-feeds'."
   (interactive)
+  (when (> (elfeed-queue-count-total) 0)
+    (user-error "Update already running"))
   (elfeed-log 'info "Elfeed update: %s"
               (format-time-string "%B %e %Y %H:%M:%S %Z"))
   (run-hooks 'elfeed-update-init-hooks)
