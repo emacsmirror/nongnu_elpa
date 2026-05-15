@@ -103,6 +103,28 @@
      :tags (list 'unread)
      :feed-id feed-id)))
 
+(ert-deftest elfeed-db-add-order ()
+  (with-elfeed-test
+   (let* ((feed-a (elfeed-db-get-feed "https://alpha"))
+          (feed-b (elfeed-db-get-feed "https://beta"))
+          (entry-a1 (elfeed-entry--create :id (cons "alpha" "1")
+                                          :date 2 :feed-id (elfeed-feed-id feed-a)))
+          (entry-a2 (elfeed-entry--create :id (cons "alpha" "2")
+                                          :date 1 :feed-id (elfeed-feed-id feed-a)))
+          (entry-b1 (elfeed-entry--create :id (cons "beta" "1")
+                                          :date 2 :feed-id (elfeed-feed-id feed-b)))
+          (entry-b2 (elfeed-entry--create :id (cons "beta" "2")
+                                          :date 1 :feed-id (elfeed-feed-id feed-b))))
+     (elfeed-db-add (list entry-a1 entry-a2 entry-b1 entry-b2))
+     (should (elfeed-db-compare (elfeed-entry-id entry-b1) (elfeed-entry-id entry-a1)))
+     (should (elfeed-db-compare (elfeed-entry-id entry-a1) (elfeed-entry-id entry-b2)))
+     (should (elfeed-db-compare (elfeed-entry-id entry-b2) (elfeed-entry-id entry-a2)))
+     (should-not (elfeed-db-compare (elfeed-entry-id entry-a2) (elfeed-entry-id entry-b1)))
+     (let (result)
+       (elfeed-db-visit (entry)
+         (push entry result))
+       (should (equal (list entry-a2 entry-b2 entry-a1 entry-b1) result))))))
+
 (ert-deftest elfeed-db-size ()
   (let ((count 143))
     (with-elfeed-test

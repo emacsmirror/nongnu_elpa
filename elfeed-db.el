@@ -160,10 +160,8 @@ Return non-nil if an actual update occurred, not counting content."
 
 (defun elfeed-db-compare (a b)
   "Return non-nil if entry A is newer than entry B."
-  (let* ((entry-a (elfeed-db-get-entry a))
-         (entry-b (elfeed-db-get-entry b))
-         (date-a (elfeed-entry-date entry-a))
-         (date-b (elfeed-entry-date entry-b)))
+  (let ((date-a (elfeed-entry-date (gethash a elfeed-db-entries)))
+        (date-b (elfeed-entry-date (gethash b elfeed-db-entries))))
     (if (= date-a date-b)
         (string< (prin1-to-string b) (prin1-to-string a))
       (> date-a date-b))))
