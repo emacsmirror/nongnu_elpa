@@ -799,14 +799,17 @@ tags from."
                 (elfeed-db-get-all-tags))
               (user-error "No tags found")))
          (all-tags (mapcar #'symbol-name all-tags))
-         (initial (and entries (length= all-tags 1) (car all-tags)))
+         (initial (if (and entries (length= all-tags 1))
+                      (car all-tags)
+                    (let ((tag (get-text-property (point) 'elfeed-tag)))
+                      (and tag (symbolp tag) (symbol-name tag)))))
          (tags (if elfeed-search-completion
                    (completing-read-multiple
                     prompt
                     (completion-table-with-metadata
                      all-tags
                      '((category . elfeed-tag)))
-                    nil entries nil initial)
+                    nil entries initial)
                  (split-string (read-from-minibuffer prompt initial)
                                "[ \t]*,[ \t]*" t))))
     (unless tags
