@@ -160,7 +160,10 @@ When live editing the filter, it is bound to :live.")
   :parent special-mode-map
   "G" #'elfeed-search-fetch
   "RET" #'elfeed-search-show-entry
-  "<mouse-1>" #'elfeed-search-click
+  "<elfeed-date>" #'elfeed-search-click
+  "<elfeed-entry>" #'elfeed-search-click
+  "<elfeed-feed>" #'elfeed-search-click
+  "<elfeed-tag>" #'elfeed-search-click
   "<header-line> <mouse-1>" #'elfeed-search-header-click
   "s" #'elfeed-search-live-filter
   "S" #'elfeed-search-set-filter
@@ -455,7 +458,8 @@ The customization `elfeed-search-date-format' sets the formatting."
    (lambda (s)
      (propertize (symbol-name s)
                  'face 'elfeed-search-tag-face
-                 'mouse-face 'highlight 'elfeed-tag s))
+                 'mouse-face 'highlight 'elfeed-tag s
+                 'follow-link [elfeed-tag]))
    tags ","))
 
 (defun elfeed-search-print-entry--default (entry)
@@ -481,14 +485,18 @@ The customization `elfeed-search-date-format' sets the formatting."
                         :left)))
     (insert (elfeed-add-properties date-str
                                    'face 'elfeed-search-date-face
-                                   'mouse-face 'highlight 'elfeed-date date-float)
+                                   'mouse-face 'highlight
+                                   'elfeed-date date-float
+                                   'follow-link [elfeed-date])
             " "
             (elfeed-add-properties title-column
                                    'face title-faces 'kbd-help title
-                                   'mouse-face 'highlight 'elfeed-entry-title t))
+                                   'mouse-face 'highlight
+                                   'follow-link [elfeed-entry]))
     (when feed-title
       (insert " " (propertize feed-title 'face 'elfeed-search-feed-face
-                              'mouse-face 'highlight 'elfeed-feed feed)))
+                              'mouse-face 'highlight 'elfeed-feed feed
+                              'follow-link [elfeed-feed])))
     (when tags
       (insert " (" (elfeed-search--format-tags tags) ")"))))
 
@@ -1195,17 +1203,14 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
     (declare-function elfeed-show-entry "elfeed-show")
     (elfeed-show-entry entry)))
 
-(defun elfeed-search--add-filter (str)
-  "Add STR to variable `elfeed-search-filter'."
+(defun elfeed-search--toggle-filter (str)
+  "Toggle STR filter in variable `elfeed-search-filter'."
   (let ((filter (split-string elfeed-search-filter)))
-    (unless (member str filter)
-      (elfeed-search-set-filter (string-join (append filter (list str)) " ")))))
-
-(defun elfeed-search--remove-filter (str)
-  "Remove STR from variable `elfeed-search-filter'."
-  (let ((filter (split-string elfeed-search-filter)))
-    (when (member str filter)
-      (elfeed-search-set-filter (string-join (delete str filter) " ")))))
+    (elfeed-search-set-filter
+     (string-join (if (member str filter)
+                      (delete str filter)
+                    (append filter (list str)))
+                  " "))))
 
 (defun elfeed-search--feed-filter (feed)
   "Create filter string which matches FEED."
@@ -1218,35 +1223,36 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
   (mapconcat (lambda (x) (format "+%s" x))
              (ensure-list tags) " "))
 
-(defun elfeed-search-header-click (event)
-  "Handle click EVENT on the header line of the search buffer."
+(defun elfeed-search-header-click ()
+  "Handle click on the header line of the search buffer."
   (declare (completion ignore))
-  (interactive "@e")
-  (when-let* ((pos (event-end event))
+  (interactive "@")
+  (when-let* (((mouse-event-p last-input-event))
+              (pos (event-end last-input-event))
               (str (posn-string pos)))
     (let (obj)
       (cond
        ((setq obj (get-text-property (cdr str) 'elfeed-header-filter (car str)))
-        (elfeed-search--remove-filter obj))
+        (elfeed-search--toggle-filter obj))
        ((setq obj (get-text-property (cdr str) 'elfeed-header-button (car str)))
         (call-interactively obj))))))
 
-(defun elfeed-search-click (event)
-  "Handle click EVENT in search buffer."
+(defun elfeed-search-click ()
+  "Handle click in search buffer."
   (declare (completion ignore))
-  (interactive "@e")
-  (when-let* ((pos (event-end event))
+  (interactive "@")
+  (when-let* (((mouse-event-p last-input-event))
+              (pos (event-end last-input-event))
               (pos (posn-point pos)))
     (let (obj)
       (cond
        ((setq obj (get-text-property pos 'elfeed-date))
-        (elfeed-search--add-filter (concat "@" (elfeed-search-format-date obj))))
+        (elfeed-search--toggle-filter (concat "@" (elfeed-search-format-date obj))))
        ((setq obj (get-text-property pos 'elfeed-tag))
-        (elfeed-search--add-filter (elfeed-search--tag-filter obj)))
+        (elfeed-search--toggle-filter (elfeed-search--tag-filter obj)))
        ((setq obj (get-text-property pos 'elfeed-feed))
-        (elfeed-search--add-filter (elfeed-search--feed-filter obj)))
-       ((setq obj (and (get-text-property pos 'elfeed-entry-title)
-                       (get-text-property pos 'elfeed-entry)))
+        (elfeed-search--toggle-filter (elfeed-search--feed-filter obj)))
+       ((setq obj (get-text-property pos 'elfeed-entry))
         (elfeed-search-show-entry obj))))))
 
 (defun elfeed-search-set-entry-title (&optional title)

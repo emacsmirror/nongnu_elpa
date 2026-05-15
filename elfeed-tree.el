@@ -71,7 +71,8 @@
   :doc "Keymap for `elfeed-tree-mode'."
   :parent special-mode-map
   "RET" #'elfeed-tree-search
-  "<mouse-1>" #'elfeed-tree-click
+  "<elfeed-tag>" #'elfeed-tree-click
+  "<elfeed-filter>" #'elfeed-tree-click
   "<header-line> <mouse-1>" #'elfeed-search-header-click
   "n" #'next-line
   "p" #'previous-line
@@ -100,11 +101,12 @@
     "--"
     ["Customize" (customize-group 'elfeed)]))
 
-(defun elfeed-tree-click (event)
+(defun elfeed-tree-click ()
   "Handle click EVENT in `elfeed-tree' buffer."
   (declare (completion ignore))
-  (interactive "@e")
-  (when-let* ((pos (event-end event))
+  (interactive "@")
+  (when-let* (((mouse-event-p last-input-event))
+              (pos (event-end last-input-event))
               (pos (posn-point pos))
               (obj (or (get-text-property pos 'elfeed-filter)
                        (get-text-property pos 'elfeed-tag))))
@@ -377,6 +379,7 @@ COUNT the number of feeds and TAGS the list of tags."
              'elfeed-tag (if (and (> unread 0) (not (memq 'unread tags)))
                              `(,@tags unread)
                            tags)
+             'follow-link [elfeed-tag]
              'mouse-face 'highlight)
             "\n")))
 
@@ -419,6 +422,7 @@ DEPTH the tree depth."
         'elfeed-feed feed
         'elfeed-filter (concat (elfeed-search--feed-filter feed)
                                (and (> unread 0) " +unread"))
+        'follow-link [elfeed-filter]
         'mouse-face 'highlight)
        "\n"))
      (elfeed-tree--print subindent subtags title-fmt depth children))))
