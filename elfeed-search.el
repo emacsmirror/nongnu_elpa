@@ -981,11 +981,11 @@ command behaves just like `revert-buffer'."
 (defun elfeed-search--update-immediately (buffer &optional method)
   "Immediately update the `elfeed-search' BUFFER.
 METHOD can be nil, :force to force a full entry update and redraw or
-:preserve to preserve the entries and redraw.  Do not use this function
+:resize to preserve the entries and redraw.  Do not use this function
 directly.  Instead use `elfeed-search-update'."
   (when (and (buffer-live-p buffer)
              (or (eq method :force)
-                 (eq method :preserve)
+                 (eq method :resize)
                  (and (not elfeed-search-filter-active)
                       (< elfeed-search-last-update (elfeed-db-last-update)))))
     ;; Run inside window such that save excursion moves the window point.
@@ -997,7 +997,7 @@ directly.  Instead use `elfeed-search-update'."
                 (standard-output (current-buffer)))
             (erase-buffer)
             (remove-overlays nil nil 'category 'elfeed-search-marked-overlay)
-            (unless (eq method :preserve)
+            (unless (eq method :resize)
               (elfeed-search--update-list))
             (dolist (entry elfeed-search-entries)
               (elfeed-search--print-entry entry)
@@ -1034,7 +1034,7 @@ The function is used as hook."
           elfeed-search--resize-timer
           (run-at-time elfeed-search-update-delay nil
                        #'elfeed-search--update-immediately
-                       (elfeed-search-buffer) :preserve))))
+                       (elfeed-search-buffer) :resize))))
 
 (defun elfeed-search-fetch (prefix)
   "Update all feeds via `elfeed-update', or only visible feeds with PREFIX.
