@@ -217,7 +217,8 @@ When live editing the filter, it is bound to :live.")
      ["Apply auto tags" elfeed-apply-autotags-now]
      ["Apply hooks" elfeed-apply-hooks-now]
      ["Compact database" elfeed-db-compact]
-     ["Unjam queue" elfeed-unjam])
+     ["Unjam queue" elfeed-unjam]
+     ["Show log" elfeed-log-show])
     "--"
     ["Revert buffer" revert-buffer]
     ["Quit window" quit-window]
