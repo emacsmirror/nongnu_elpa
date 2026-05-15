@@ -16,6 +16,7 @@
 - =elfeed-search-remain-on-entry=: Generalized option to configure the commands
   explicitly that should remain on the entry.
 - =elfeed-search-mode=: Auto-resizing of title column.
+- =elfeed-search-update=: Speed up redraw by preserving old entries.
 - =elfeed-search-update-delay=: New option to debounce search buffer update.
 - =elfeed-update-background=: New function to update Elfeed in the background from
   a timer.
