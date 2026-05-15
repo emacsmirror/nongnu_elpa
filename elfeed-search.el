@@ -261,7 +261,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   "Count the number of entries and feeds being currently displayed."
   (if (and elfeed-search-filter-active elfeed-search-filter-overflowing)
       (substring "?/?:?")
-    (cl-loop with feeds = (make-hash-table :test 'equal)
+    (cl-loop with feeds = (make-hash-table :test #'equal)
              for entry in elfeed-search-entries
              for feed = (elfeed-entry-feed entry)
              for url = (elfeed-feed-url feed)
@@ -1052,7 +1052,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
   (elfeed-log 'info "Elfeed visible update: %s"
               (format-time-string "%B %e %Y %H:%M:%S %Z"))
   (run-hooks 'elfeed-update-init-hooks)
-  (cl-loop with seen = (make-hash-table :test 'equal)
+  (cl-loop with seen = (make-hash-table :test #'equal)
            for entry in elfeed-search-entries
            for url = (elfeed-feed-url (elfeed-entry-feed entry))
            unless (gethash url seen)

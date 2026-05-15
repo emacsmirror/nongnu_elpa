@@ -138,7 +138,7 @@ CREATE TABLE tags (
   (let ((feeds-buffer (generate-new-buffer " *csv-feeds*"))
         (entries-buffer (generate-new-buffer " *csv-entries*"))
         (tags-buffer (generate-new-buffer " *csv-tags*"))
-        (seen (make-hash-table :test 'eq)))
+        (seen (make-hash-table :test #'eq)))
     ;; Write headers
     (when headers-p
       (with-current-buffer feeds-buffer

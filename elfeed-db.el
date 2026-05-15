@@ -308,7 +308,7 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 
 (defun elfeed-db-get-all-tags ()
   "Return a list of all tags currently in the database."
-  (let ((table (make-hash-table :test 'eq)))
+  (let ((table (make-hash-table :test #'eq)))
     (elfeed-db-visit (e)
       (dolist (tag (elfeed-entry-tags e))
         (setf (gethash tag table) tag)))
@@ -566,7 +566,7 @@ supported by the database format."
 
 (defun elfeed-db-gc-empty-feeds ()
   "Remove feeds with no entries from the database."
-  (let ((seen (make-hash-table :test 'equal)))
+  (let ((seen (make-hash-table :test #'equal)))
     (elfeed-db-visit (entry feed)
       (setf (gethash (elfeed-feed-id feed) seen) feed))
     (maphash (lambda (id _)

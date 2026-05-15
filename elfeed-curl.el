@@ -181,7 +181,7 @@ output format."
     (90 . "SSL public key does not matched pinned public key")))
 
 (defvar elfeed-curl--capabilities-cache
-  (make-hash-table :test 'eq :weakness 'key)
+  (make-hash-table :test #'eq :weakness 'key)
   "Used to avoid invoking curl more than once for version info.")
 
 (defun elfeed-curl-get-capabilities ()
@@ -477,7 +477,7 @@ The goal is to fetch URLs with matching keys at the same time."
 Compatible means the requests have the same protocol, domain, port,
 headers, method, and body, allowing them to be used safely in the same
 curl invocation."
-  (let ((table (make-hash-table :test 'equal))
+  (let ((table (make-hash-table :test #'equal))
         (keys ())
         (queue-out ()))
     (dolist (entry queue-in)
