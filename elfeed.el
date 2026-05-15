@@ -740,8 +740,7 @@ called interactively, SAVE is set to t."
   (elfeed-log 'info "Elfeed update: %s"
               (format-time-string "%B %e %Y %H:%M:%S %Z"))
   (run-hooks 'elfeed-update-init-hooks)
-  (mapc #'elfeed--update-feed (elfeed--shuffle (elfeed-feed-list)))
-  (elfeed-db-save))
+  (mapc #'elfeed--update-feed (elfeed--shuffle (elfeed-feed-list))))
 
 ;;;###autoload
 (defun elfeed ()
