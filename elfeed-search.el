@@ -1263,7 +1263,7 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
     ;; Update hl-line overlay. This does not happen automatically, since
     ;; `elfeed-show-entry' switches to another buffer.
     (hl-line-highlight)
-    (push-mark)
+    (push-mark nil 'nomsg)
     ;; elfeed-show.el is required by elfeed.el at runtime.
     (declare-function elfeed-show-entry "elfeed-show")
     (elfeed-show-entry entry)))

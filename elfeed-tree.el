@@ -109,7 +109,7 @@ list of tag symbols."
   (interactive (list (or (get-text-property (pos-bol) 'elfeed-filter)
                          (get-text-property (pos-bol) 'elfeed-tag)
                          (user-error "No feed or tag at point"))))
-  (push-mark)
+  (push-mark nil 'nomsg)
   (elfeed-search
    (concat
     elfeed-tree-filter
