@@ -115,11 +115,24 @@
                                           :date 2 :feed-id (elfeed-feed-id feed-b)))
           (entry-b2 (elfeed-entry--create :id (cons "beta" "2")
                                           :date 1 :feed-id (elfeed-feed-id feed-b))))
+
      (elfeed-db-add (list entry-a1 entry-a2 entry-b1 entry-b2))
+
      (should (elfeed-db-compare (elfeed-entry-id entry-b1) (elfeed-entry-id entry-a1)))
      (should (elfeed-db-compare (elfeed-entry-id entry-a1) (elfeed-entry-id entry-b2)))
      (should (elfeed-db-compare (elfeed-entry-id entry-b2) (elfeed-entry-id entry-a2)))
      (should-not (elfeed-db-compare (elfeed-entry-id entry-a2) (elfeed-entry-id entry-b1)))
+
+     (should (elfeed-db-compare entry-b1 (elfeed-entry-id entry-a1)))
+     (should (elfeed-db-compare entry-a1 (elfeed-entry-id entry-b2)))
+     (should (elfeed-db-compare (elfeed-entry-id entry-b2) entry-a2))
+     (should-not (elfeed-db-compare (elfeed-entry-id entry-a2) entry-b1))
+
+     (should (elfeed-db-compare entry-b1 entry-a1))
+     (should (elfeed-db-compare entry-a1 entry-b2))
+     (should (elfeed-db-compare entry-b2 entry-a2))
+     (should-not (elfeed-db-compare entry-a2 entry-b1))
+
      (let (result)
        (elfeed-db-visit (entry)
          (push entry result))
