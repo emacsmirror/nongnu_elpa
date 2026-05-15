@@ -48,7 +48,7 @@ ARGS are passed to FUNCTION."
 (defun elfeed-kill-line ()
   "Clear out the current line without touching anything else."
   (delete-region (pos-bol) (pos-eol)))
-(make-obsolete 'kill-line #'delete-region "3.4.2")
+(make-obsolete 'elfeed-kill-line #'delete-region "3.4.2")
 
 (defun elfeed-goto-line (n)
   "Like `goto-line' but for non-interactive use.
