@@ -130,10 +130,9 @@ list of tag symbols."
 
 (defun elfeed-tree--header ()
   "Computes the string to be used in the header line."
-  (let ((elfeed-search-filter-active t)
-        (elfeed-search-filter-overflowing t))
-    ;; Reuse the header from the search buffer here
-    ;; without the unread count and the search filter.
+  ;; Reuse the header from the search buffer here
+  ;; without the unread count and the search filter.
+  (let ((elfeed-search-filter-active :hide))
     (elfeed-search--header)))
 
 (define-derived-mode elfeed-tree-mode special-mode "elfeed-tree"

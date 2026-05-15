@@ -259,22 +259,21 @@ Movement is configured by `elfeed-search-remain-on-entry'."
 
 (defun elfeed-search--count-unread ()
   "Count the number of entries and feeds being currently displayed."
-  (if (and elfeed-search-filter-active elfeed-search-filter-overflowing)
-      (substring "?/?:?")
-    (cl-loop with feeds = (make-hash-table :test #'equal)
-             for entry in elfeed-search-entries
-             for feed = (elfeed-entry-feed entry)
-             for url = (elfeed-feed-url feed)
-             count entry into entry-count
-             count (elfeed-tagged-p 'unread entry) into unread-count
-             do (puthash url t feeds)
-             finally
-             (cl-return
-              (elfeed-search--header-button
-               #'elfeed-search-fetch-visible
-               (format "%d/%d:%d"
-                       unread-count entry-count
-                       (hash-table-count feeds)))))))
+  (cl-loop with feeds = (make-hash-table :test #'equal)
+           for entry in elfeed-search-entries
+           for feed = (elfeed-entry-feed entry)
+           for url = (elfeed-feed-url feed)
+           count entry into entry-count
+           count (elfeed-tagged-p 'unread entry) into unread-count
+           do (puthash url t feeds)
+           finally
+           (cl-return
+            (elfeed-search--header-button
+             #'elfeed-search-fetch-visible
+             (format
+              (propertize "%d/%d:%d" 'face 'elfeed-search-unread-count-face)
+              unread-count entry-count
+              (hash-table-count feeds))))))
 
 (defun elfeed-search--log-button ()
   "Button to show the Elfeed log."
@@ -303,29 +302,31 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                     "%Y-%m-%d %H:%M"
                     (seconds-to-time (elfeed-db-last-update)))
                    'face 'elfeed-search-last-update-face))
-          (unread (elfeed-add-properties
-                   (elfeed-search--count-unread)
-                   'face 'elfeed-search-unread-count-face))
-          (filter (cond
-                   (elfeed-search-filter-active "")
-                   ((string-match-p "[^ ]" elfeed-search-filter)
-                    (mapconcat
-                     (lambda (x)
-                       (elfeed-add-properties
-                        x 'mouse-face 'highlight
-                        'help-echo (format "Remove filter %s" x)
-                        'elfeed-header-button
-                        (lambda ()
-                          (interactive)
-                          (elfeed-search--toggle-filter x))))
-                     (split-string elfeed-search-filter) " "))
-                   (""))))
+          (unread (cond
+                   ((eq elfeed-search-filter-active :hide) nil)
+                   ((and elfeed-search-filter-active
+                         elfeed-search-filter-overflowing)
+                    (propertize "?/?:?" 'face 'elfeed-search-unread-count-face))
+                   (t (elfeed-search--count-unread))))
+          (filter (when (and (not elfeed-search-filter-active)
+                             (string-match-p "[^ ]" elfeed-search-filter))
+                    (elfeed-add-properties
+                     (mapconcat
+                      (lambda (x)
+                        (elfeed-add-properties
+                         x 'mouse-face 'highlight
+                         'help-echo (format "Remove filter %s" x)
+                         'elfeed-header-button
+                         (lambda ()
+                           (interactive)
+                           (elfeed-search--toggle-filter x))))
+                      (split-string elfeed-search-filter) " ")
+                     'face 'elfeed-search-filter-face))))
       (concat
        (elfeed-search--log-button)
        (elfeed-search--header-button #'elfeed-update
                                      (concat "Updated " update))
-       ", " unread (and (not (equal filter "")) ", ")
-       (elfeed-add-properties filter 'face 'elfeed-search-filter-face))))))
+       (and unread ", ") unread (and filter ", ") filter)))))
 
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"
   "Major mode for listing elfeed feed entries."
