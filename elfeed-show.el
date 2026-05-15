@@ -109,7 +109,7 @@ Called without arguments."
     "--"
     ["Add tag" elfeed-show-tag]
     ["Remove tag" elfeed-show-untag]
-    ["Mark as unread" elfeed-show-tag-unread]
+    ["Tag as unread" elfeed-show-tag-unread]
     "--"
     ["Next entry" elfeed-show-next]
     ["Previous entry" elfeed-show-prev]
@@ -137,7 +137,7 @@ Called without arguments."
               default-directory (elfeed-default-directory)))
 
 (defun elfeed-show-tag-unread ()
-  "Mark the current entry unread."
+  "Tag the current entry as unread."
   (interactive nil elfeed-show-mode)
   (elfeed-show-tag 'unread))
 

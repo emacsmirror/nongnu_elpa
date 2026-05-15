@@ -196,8 +196,8 @@ When live editing the filter, it is bound to :live.")
     "--"
     ["Add tag" elfeed-search-tag-all]
     ["Remove tag" elfeed-search-untag-all]
-    ["Mark as unread" elfeed-search-tag-all-unread]
-    ["Mark as read" elfeed-search-untag-all-unread]
+    ["Tag as unread" elfeed-search-tag-all-unread]
+    ["Tag as read" elfeed-search-untag-all-unread]
     "--"
     ["Live filter" elfeed-search-live-filter]
     ("Filter"
