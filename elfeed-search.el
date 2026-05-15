@@ -802,10 +802,11 @@ tags from."
                 (elfeed-db-get-all-tags))
               (user-error "No tags found")))
          (all-tags (mapcar #'symbol-name all-tags))
-         (initial (if (and entries (length= all-tags 1))
-                      (car all-tags)
-                    (let ((tag (get-text-property (point) 'elfeed-tag)))
-                      (and tag (symbolp tag) (symbol-name tag)))))
+         (initial (when entries
+                    (if (length= all-tags 1)
+                        (car all-tags)
+                      (let ((tag (get-text-property (point) 'elfeed-tag)))
+                        (and tag (symbolp tag) (symbol-name tag))))))
          (tags (if elfeed-search-completion
                    (completing-read-multiple
                     prompt
