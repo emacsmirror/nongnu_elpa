@@ -7,7 +7,7 @@
 ;;; Commentary:
 
 ;; The `elfeed-csv-export' docstring has a SQL schema recommendation.
-;; Given these schemas, these CSV files are trivially imported into a
+;; Given these schemata, these CSV files are trivially imported into a
 ;; SQLite database using the sqlite3 command line program:
 
 ;;   sqlite> .mode csv

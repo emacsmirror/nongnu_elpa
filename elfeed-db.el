@@ -19,7 +19,7 @@
 
 ;; Feed content is stored in a content-addressable loose-file
 ;; database, very similar to an unpacked Git object database.  Entries
-;; have references to items in this database (elfeed-ref), keeping the
+;; have references to items in this database (`elfeed-ref'), keeping the
 ;; actual entry struct memory footprint small.  Most importantly, this
 ;; keeps the core index small so that it can quickly be written as a
 ;; whole to the filesystem.  The wire format is just the s-expression
@@ -27,7 +27,7 @@
 
 ;; The database can be compacted into a small number of compressed
 ;; files with the interactive function `elfeed-db-compact'.  This could
-;; be used as a kill-emacs hook.
+;; be used as a `kill-emacs-hook'.
 
 ;; An AVL tree containing all database entries ordered by date is
 ;; maintained as part of the database.  We almost always want to look
@@ -42,8 +42,8 @@
 ;; circular references.
 
 ;; Entry and feed objects can have arbitrary metadata attached,
-;; automatically stored in the database.  The setf-able `elfeed-meta'
-;; function is used to access these.
+;; automatically stored in the database.  The `setf'-able
+;; `elfeed-meta' function is used to access these.
 
 ;;; Code:
 
@@ -123,7 +123,7 @@ This is a chance to add custom tags to new entries.")
 
 (cl-defstruct (elfeed-feed (:constructor elfeed-feed--create)
                            (:copier nil))
-  "A web feed, contains elfeed-entry structs."
+  "A web feed, contains `elfeed-entry' structs."
   id url title author meta)
 
 (cl-defstruct (elfeed-entry (:constructor elfeed-entry--create)

@@ -867,7 +867,7 @@ present on the entry.  Examples: \"+unread\" or \"+unread -comic\".
 
 Any component beginning with an @ is an age limit or an age
 range.  If a limit, no posts older than this are allowed.  If a
-range, posts dates have to be inbetween the specified date
+range, posts dates have to be in-between the specified date
 range.  Examples:
 - \"@3days\"
 - \"@1year\"
@@ -878,14 +878,14 @@ range.  Examples:
 - \"@5-days-ago--1-day-ago\"
 
 Any component beginning with a # is an entry count maximum.  The
-number following # determines the maxiumum number of entries
+number following # determines the maximum number of entries
 to be shown (descending by date).  Examples: \"#20\" or \"#100\".
 
 Any component beginning with a = is a regular expression matching
 the entry's feed (title or URL). Only entries belonging to a feed
 that match at least one of the = expressions will be shown.
 
-Every other space-seperated element is treated like a regular
+Every other space-separated element is treated like a regular
 expression, matching against entry link, title, and feed title."
   (interactive
    (let ((elfeed-search-filter-active :non-interactive))
