@@ -25,6 +25,8 @@
 - Hide irrelevant commands in =M-x= if =read-extended-command-predicate= is set to
   =command-completion-default-include-p=.
 - =elfeed-search-set-filter=: Support shorter age filter syntax, e.g., =@6months=.
+- =elfeed-search-date-filter=, =elfeed-search-feed-filter=: New commands bound to ~@~
+  and ~=~ to filter for the date or feed at point.
 - New mouse menus in all Elfeed major modes.
 - Mouse support in the search buffer and the header line.
 - =elfeed-search=, =elfeed-tree=: Attach =elfeed-entry=, =elfeed-feed= and =elfeed-tag=
