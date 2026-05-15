@@ -366,8 +366,7 @@ This can be either a string (a file system path), or a function
 that takes a filename and the mime-type as arguments, and returns
 the enclosure dir."
   :type 'directory
-  :group 'elfeed
-  :safe 'stringp)
+  :group 'elfeed)
 
 (defcustom elfeed-save-multiple-enclosures-without-asking nil
   "If non-nil, saving multiple enclosures asks once for a directory.
