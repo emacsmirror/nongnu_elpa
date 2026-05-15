@@ -201,6 +201,8 @@ When live editing the filter, it is bound to :live.")
     "--"
     ["Live filter" elfeed-search-live-filter]
     ("Filter"
+     ["Current day only" elfeed-search-date-filter]
+     ["Current feed only" elfeed-search-feed-filter]
      ["Set filter" elfeed-search-set-filter]
      ["Clear filter" elfeed-search-clear-filter])
     "--"
