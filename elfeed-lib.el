@@ -21,34 +21,34 @@
 
 (defun elfeed-keyword->symbol (keyword)
   "If a keyword, convert KEYWORD into a plain symbol (remove the colon)."
+  (declare (obsolete nil "3.4.2"))
   (if (keywordp keyword)
       (intern (substring (symbol-name keyword) 1))
     keyword))
-(make-obsolete 'elfeed-keyword->symbol "No replacement" "3.4.2")
 
 (defun elfeed-strip-properties (string)
   "Return a copy of STRING with all properties removed.
 If STRING is nil, returns nil."
+  (declare (obsolete #'substring-no-properties "3.4.2"))
   (when string
     (substring-no-properties string)))
-(make-obsolete 'elfeed-strip-properties #'substring-no-properties "3.4.2")
 
 (defun elfeed-expose (function &rest args)
   "Return an interactive version of FUNCTION, \"exposing\" it to the user.
 ARGS are passed to FUNCTION."
+  (declare (obsolete nil "3.4.2"))
   (lambda () (interactive) (apply function args)))
-(make-obsolete 'elfeed-expose "No replacement" "3.4.2")
 
 (defun elfeed-kill-buffer ()
   "Kill the current buffer."
+  (declare (obsolete #'kill-current-buffer "3.4.2"))
   (interactive)
   (kill-buffer (current-buffer)))
-(make-obsolete 'elfeed-kill-buffer #'kill-current-buffer "3.4.2")
 
 (defun elfeed-kill-line ()
   "Clear out the current line without touching anything else."
+  (declare (obsolete #'delete-region "3.4.2"))
   (delete-region (pos-bol) (pos-eol)))
-(make-obsolete 'elfeed-kill-line #'delete-region "3.4.2")
 
 (defun elfeed-goto-line (n)
   "Like `goto-line' but for non-interactive use.

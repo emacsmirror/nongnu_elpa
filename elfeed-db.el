@@ -351,8 +351,8 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 
 (defun elfeed-db-upgrade (_db)
   "Upgrade the database DB from a previous format."
+  (declare (obsolete nil "3.4.2"))
   (error "Upgrade is not supported"))
-(make-obsolete 'elfeed-db-upgrade nil "3.4.2")
 
 (defun elfeed-db-load ()
   "Load the database index from the filesystem."
