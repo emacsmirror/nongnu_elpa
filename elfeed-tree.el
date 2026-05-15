@@ -71,8 +71,8 @@
   :doc "Keymap for `elfeed-tree-mode'."
   :parent special-mode-map
   "RET" #'elfeed-tree-search
-  "<elfeed-tag>" #'elfeed-tree-click
-  "<elfeed-filter>" #'elfeed-tree-click
+  "<elfeed-tag>" #'elfeed-tree-search
+  "<elfeed-filter>" #'elfeed-tree-search
   "<header-line> <mouse-1>" #'elfeed-search-header-click
   "n" #'next-line
   "p" #'previous-line
@@ -100,17 +100,6 @@
     ["Quit window" quit-window]
     "--"
     ["Customize" (customize-group 'elfeed)]))
-
-(defun elfeed-tree-click ()
-  "Handle click EVENT in `elfeed-tree' buffer."
-  (declare (completion ignore))
-  (interactive "@")
-  (when-let* (((mouse-event-p last-input-event))
-              (pos (event-end last-input-event))
-              (pos (posn-point pos))
-              (obj (or (get-text-property pos 'elfeed-filter)
-                       (get-text-property pos 'elfeed-tag))))
-    (elfeed-tree-search obj)))
 
 (defun elfeed-tree-search (filter-or-tag)
   "Go to search buffer limited to FILTER-OR-TAG at point.
