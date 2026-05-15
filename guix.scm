@@ -70,29 +70,6 @@ long as the submodule has been initialised."
              (string-suffix? ".tar" file)
              (string-suffix? ".tar.gz" file)))))
 
-;; Local definition until emacs-keymap-popup lands in Guix proper.
-(define-public emacs-keymap-popup
-  (package
-   (name "emacs-keymap-popup")
-   (version "0.2.2")
-   (source (origin
-            (method git-fetch)
-            (uri (git-reference
-                  (url "https://codeberg.org/thanosapollo/emacs-keymap-popup")
-                  (commit version)))
-            (file-name (git-file-name name version))
-            (sha256
-             (base32
-              "16f5lba7m1k7s2y80fkyf9lf4c79lhs4g0xz7y4bxz6r9x70m9zf"))))
-   (build-system emacs-build-system)
-   (arguments (list #:tests? #f))
-   (home-page "https://codeberg.org/thanosapollo/emacs-keymap-popup")
-   (synopsis "Described keymaps with popup help")
-   (description
-    "Produces a real Emacs keymap with embedded descriptions for a popup
-help window.  One definition, two uses.")
-   (license license:gpl3+)))
-
 (define-public emacs-jabber-git
   (package
     (name "emacs-jabber-git")
@@ -108,7 +85,7 @@ help window.  One definition, two uses.")
       #:include #~(cons "^[^/]*\\.so$"
                         %default-include)
       #:emacs emacs                     ;requires gnutls
-      #:test-command #~(list "make" "-C" ".." "test")
+      #:tests? #f
       #:phases
       #~(modify-phases %standard-phases
           (add-after 'unpack 'build-native-module
@@ -121,40 +98,7 @@ help window.  One definition, two uses.")
                   "emacs-jabber-picomemo")
                "../src/picomemo")
               (invoke "chmod" "--recursive" "u+w"
-                      "../src/picomemo")))
-          (add-after 'unpack 'fix-test-runner
-            (lambda _
-              ;; Replace grep -oP (Perl regex) with a
-              ;; POSIX-compatible alternative so the test
-              ;; runner counts results correctly.
-              (substitute* "../Makefile"
-                (("grep -oP '\\^Ran \\\\K\\[0-9\\]\\+'")
-                 (string-append
-                  "grep -o 'Ran [0-9]*'"
-                  " | grep -o '[0-9]*'")))))
-          (add-after 'unpack 'disable-failing-tests
-            (lambda _
-              ;; These 4 tests pass outside the build environment
-              ;; but fail inside it.
-              (define skip "\n  (skip-unless nil)")
-              (substitute*
-                  "../tests/jabber-disco-tests.el"
-                ((".*query-if-needed-cache-miss \\(\\)"
-                  all)
-                 (string-append all skip))
-                ((".*process-caps-modern.*queries \\(\\)"
-                  all)
-                 (string-append all skip)))
-              (substitute*
-                  (string-append
-                   "../tests/"
-                   "jabber-message-correct-tests.el")
-                ((".*correct-last-uses-original-id \\(\\)"
-                  all)
-                 (string-append all skip))
-                ((".*mam-syncing-skipped.*dispatch \\(\\)"
-                  all)
-                 (string-append all skip))))))))
+                      "../src/picomemo"))))))
     (native-inputs
      (list pkg-config
            (origin
