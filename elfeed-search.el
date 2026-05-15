@@ -270,9 +270,11 @@ Movement is configured by `elfeed-search-remain-on-entry'."
              do (puthash url t feeds)
              finally
              (cl-return
-              (format "%d/%d:%d"
-                      unread-count entry-count
-                      (hash-table-count feeds))))))
+              (elfeed-search--header-button
+               #'elfeed-search-fetch-visible
+               (format "%d/%d:%d"
+                       unread-count entry-count
+                       (hash-table-count feeds)))))))
 
 (defun elfeed-search--log-button ()
   "Button to show the Elfeed log."
@@ -311,7 +313,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                      (lambda (x)
                        (elfeed-add-properties
                         x 'mouse-face 'highlight
-                        'help-echo "Remove filter"
+                        'help-echo (format "Remove filter %s" x)
                         'elfeed-header-button
                         (lambda ()
                           (interactive)
