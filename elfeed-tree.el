@@ -348,29 +348,30 @@ NODES is a list of tree nodes."
   "Insert TITLE into buffer.
 INDENT is the indentation prefix, UNREAD and READ the respective counts,
 COUNT the number of feeds and TAGS the list of tags."
-  (let ((title (format "%s (%s/%s:%s)"
-                       title
-                       (if (> unread 0)
-                           (format
-                            (propertize
-                             "%s" 'face 'elfeed-tree-highlight-unread-face)
-                            unread)
-                         unread)
-                       (+ unread read)
-                       count))
-        (level (length indent)))
-    (add-face-text-property 0 (length title)
-                            (aref outline-font-lock-faces
-                                  (1- (min level (length outline-font-lock-faces))))
-                            'append title)
-    (insert (propertize
-             (concat indent title)
-             'elfeed-tag (if (and (> unread 0) (not (memq 'unread tags)))
-                             `(,@tags unread)
-                           tags)
-             'follow-link [elfeed-tag]
-             'mouse-face 'highlight)
-            "\n")))
+  (setq title (format "%s%s%s (%s/%s:%s)"
+                      indent (propertize " " 'invisible t) title
+                      (if (> unread 0)
+                          (format
+                           (propertize
+                            "%s" 'face 'elfeed-tree-highlight-unread-face)
+                           unread)
+                        unread)
+                      (+ unread read)
+                      count))
+  (add-face-text-property
+   0 (length title)
+   (aref outline-font-lock-faces
+         (1- (min (length indent) (length outline-font-lock-faces))))
+   'append title)
+  (insert
+   (elfeed-add-properties
+    title
+    'elfeed-tag (if (and (> unread 0) (not (memq 'unread tags)))
+                    `(,@tags unread)
+                  tags)
+    'follow-link [elfeed-tag]
+    'mouse-face 'highlight)
+   "\n"))
 
 (defun elfeed-tree--print (indent tags title-fmt depth nodes)
   "Print tree NODES.
@@ -423,7 +424,7 @@ not use this function directly.  Instead use `elfeed-tree-update'."
   (when (and (buffer-live-p buffer)
              (or force (< elfeed-tree--last-update (elfeed-db-last-update))))
     (with-current-buffer buffer
-      (save-excursion
+      (elfeed-save-excursion
         (let* ((inhibit-read-only t)
                (feeds+tags (elfeed-tree--collect))
                (feeds (car feeds+tags))
