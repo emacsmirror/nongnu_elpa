@@ -932,15 +932,16 @@ expression, matching against entry link, title, and feed title."
 
 (defun elfeed--save-position ()
   "Save entry, line and column."
-  (list (elfeed-search-selected :ignore-region)
+  (list (when elfeed-search-entries
+          (elfeed-search-selected :ignore-region))
         (line-number-at-pos)
         (current-column)))
 
 (defun elfeed--restore-position (pos)
   "Restore entry, line and column from saved POS."
   (pcase-let* ((`(,entry ,line ,column) pos)
-               (pos (cl-position entry elfeed-search-entries)))
-    (elfeed-goto-line (if pos (1+ pos) line))
+               (idx (cl-position entry elfeed-search-entries)))
+    (elfeed-goto-line (if idx (1+ idx) line))
     (move-to-column column)))
 
 (defmacro elfeed-save-excursion (&rest body)
