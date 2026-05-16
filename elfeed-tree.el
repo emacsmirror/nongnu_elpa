@@ -293,22 +293,21 @@ STATS is the unread/read/count statistics."
 (defun elfeed-tree--stats (nodes)
   "Compute sum of unread and read counts for parent nodes.
 NODES is a list of tree nodes."
-  (cl-loop
-   for (tag children leaves) in nodes
-   for rec = (elfeed-tree--stats children)
-   collect
-   (list
-    tag
-    ;; Sum unread counts from children and leaves
-    (+ (if rec (cl-loop for (_title ur _read . _) in rec sum ur) 0)
-       (if leaves (cl-loop for (_title ur _read . _) in leaves sum ur) 0))
-    ;; Sum read counts from children and leaves
-    (+ (if rec (cl-loop for (_title _ur read . _) in rec sum read) 0)
-       (if leaves (cl-loop for (_title _ur read . _) in leaves sum read) 0))
-    ;; Sum feed number from children and leaves
-    (+ (if rec (cl-loop for (_title _ur _read count . _) in rec sum count) 0)
-       (length leaves))
-    rec leaves)))
+  (cl-loop for (tag children leaves) in nodes
+           for rec = (elfeed-tree--stats children)
+           collect
+           (list
+            tag
+            ;; Sum unread counts from children and leaves
+            (+ (cl-loop for (_t u _r . _) in rec sum u)
+               (cl-loop for (_t u _r . _) in leaves sum u))
+            ;; Sum read counts from children and leaves
+            (+ (cl-loop for (_t _u r . _) in rec sum r)
+               (cl-loop for (_t _u r . _) in leaves sum r))
+            ;; Sum feed number from children and leaves
+            (+ (cl-loop for (_t _u _r c . _) in rec sum c)
+               (length leaves))
+            rec leaves)))
 
 (defun elfeed-tree--flatten (nodes)
   "Flatten tree NODES."
