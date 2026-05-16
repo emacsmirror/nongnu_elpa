@@ -71,7 +71,6 @@
   :doc "Keymap for `elfeed-tree-mode'."
   :parent special-mode-map
   "RET" #'elfeed-tree-search
-  "<elfeed-tag>" #'elfeed-tree-search
   "<elfeed-filter>" #'elfeed-tree-search
   "<header-line> <mouse-1>" #'elfeed-search-header-button
   "s" #'elfeed-search-new-live
@@ -103,21 +102,14 @@
     "--"
     ["Customize" (customize-group 'elfeed)]))
 
-(defun elfeed-tree-search (filter-or-tag)
-  "Go to search buffer limited to FILTER-OR-TAG at point.
-FILTER-OR-TAG can either be a filter string, a single tag symbol or a
-list of tag symbols."
+(defun elfeed-tree-search (filter)
+  "Go to search buffer limited to FILTER string at point."
   (interactive (list (or (get-text-property (pos-bol) 'elfeed-filter)
-                         (get-text-property (pos-bol) 'elfeed-tag)
-                         (user-error "No feed or tag at point"))))
+                         (user-error "No filter at point"))))
   (push-mark nil 'nomsg)
-  (elfeed-search
-   (concat
-    elfeed-tree-filter
-    (and (not (equal elfeed-tree-filter "")) " ")
-    (if (stringp filter-or-tag)
-        filter-or-tag
-      (elfeed-search--tag-filter filter-or-tag)))))
+  (elfeed-search (concat elfeed-tree-filter
+                         (and (not (equal elfeed-tree-filter "")) " ")
+                         filter)))
 
 (defun elfeed-tree-set-title (feed title)
   "Set TITLE of FEED at point."
@@ -366,9 +358,16 @@ COUNT the number of feeds and TAGS the list of tags."
   (insert
    (elfeed-add-properties
     title
-    'elfeed-tag (if (and (> unread 0) (not (memq 'unread tags)))
-                    `(,@tags unread)
-                  tags)
+    'elfeed-filter
+    (elfeed-search--tag-filter
+     (let ((tags (cl-loop for x in tags
+                          if (and (stringp x) (not (string-prefix-p "[" x)))
+                          collect (mapcar #'intern (split-string x))
+                          if (symbolp x)
+                          collect x)))
+       (if (and (> unread 0) (not (memq 'unread tags)))
+           `(,@tags unread)
+         tags)))
     'follow-link [elfeed-tag]
     'mouse-face 'highlight)
    "\n"))
@@ -384,11 +383,7 @@ DEPTH the tree depth."
    for level = (length indent)
    for (tag unread read count children leaves) in (elfeed-tree--sort nodes)
    for node-idx downfrom (length nodes) do
-   (let ((subtags (append tags
-                          (if (stringp tag)
-                              (unless (string-prefix-p "[" tag)
-                                (mapcar #'intern (split-string tag)))
-                            (list tag))))
+   (let ((subtags (append tags (list tag)))
          (subindent (concat indent
                             (elfeed-tree--node
                              (if (or (= level 1) (= node-idx 1)) 3 2)))))
