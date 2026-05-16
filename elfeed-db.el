@@ -119,6 +119,9 @@ This is a chance to add custom tags to new entries.")
 (defvar elfeed-db-unload-hook ()
   "Hook to run immediately after `elfeed-db-unload'.")
 
+(defvar-local elfeed-db--kill-on-unload nil
+  "This variable is non-nil for buffers which should be killed on unload.")
+
 ;; Data model:
 
 (cl-defstruct (elfeed-feed (:constructor elfeed-feed--create)
@@ -398,12 +401,25 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
           ;; Internal function use required for security!
           (avl-tree--cmpfun elfeed-db-index) #'elfeed-db-compare)))
 
+(defun elfeed-db--save-on-quit ()
+  "Install hooks to save the database when quitting the current buffer."
+  (setq-local elfeed-db--kill-on-unload t)
+  (add-hook 'kill-buffer-hook #'elfeed-db-save t 'local)
+  (add-hook 'quit-window-hook #'elfeed-db-save nil 'local))
+
 (defun elfeed-db-unload ()
   "Unload the database so that it can be operated on externally.
 
 Runs `elfeed-db-unload-hook' after unloading the database."
   (interactive)
   (elfeed-db-save)
+  (dolist (buf (buffer-list))
+    (when (buffer-local-value 'elfeed-db--kill-on-unload buf)
+      (with-current-buffer buf
+        ;; Make sure that `elfeed-db-save' is not executed again.
+        (remove-hook 'kill-buffer-hook #'elfeed-db-save 'local)
+        (remove-hook 'quit-window-hook #'elfeed-db-save 'local)
+        (kill-buffer))))
   (setf elfeed-db nil
         elfeed-db-feeds nil
         elfeed-db-entries nil
@@ -686,27 +702,7 @@ gzip-compressed files, so the gzip program must be in your PATH."
   "Run `elfeed-db-gc' without triggering any errors, for use as a safe hook."
   (ignore-errors (elfeed-db-gc)))
 
-(defvar-local elfeed-db--kill-on-unload nil
-  "This variable is non-nil for buffers which should be killed on unload.")
-
-(defun elfeed-db--kill-on-unload ()
-  "Kill Elfeed buffers on database unload."
-  (dolist (buf (buffer-list))
-    (when (buffer-local-value 'elfeed-db--kill-on-unload buf)
-      (with-current-buffer buf
-        ;; Make sure that `elfeed-db-save' is not executed again.
-        (remove-hook 'kill-buffer-hook #'elfeed-db-save 'local)
-        (remove-hook 'quit-window-hook #'elfeed-db-save 'local)
-        (kill-buffer)))))
-
-(defun elfeed-db--save-on-quit ()
-  "Install hooks to save the database when quitting the current buffer."
-  (setq-local elfeed-db--kill-on-unload t)
-  (add-hook 'kill-buffer-hook #'elfeed-db-save t 'local)
-  (add-hook 'quit-window-hook #'elfeed-db-save nil 'local))
-
 (unless noninteractive
-  (add-hook 'elfeed-db-unload-hook #'elfeed-db--kill-on-unload)
   (add-hook 'kill-emacs-hook #'elfeed-db-gc-safe :append)
   (add-hook 'kill-emacs-hook #'elfeed-db-save-safe))
 
