@@ -152,9 +152,7 @@
   (add-hook 'elfeed-tag-hooks #'elfeed-tree--tag)
   (add-hook 'elfeed-update-hooks #'elfeed-tree--update-debounce)
   (add-hook 'elfeed-update-init-hooks #'elfeed-tree--update-force)
-  (add-hook 'kill-buffer-hook #'elfeed-db-save t 'local)
-  (add-hook 'quit-window-hook 'elfeed-db-save nil 'local)
-  (add-hook 'elfeed-db-unload-hook #'elfeed-tree--unload)
+  (elfeed-db--save-on-quit)
   (elfeed-tree-update :force)
   (outline-minor-mode)
   (outline-hide-sublevels 1))
@@ -170,13 +168,6 @@
 (defun elfeed-tree--buffer ()
   "Create and return tree buffer."
   (get-buffer-create "*elfeed-tree*"))
-
-(defun elfeed-tree--unload ()
-  "Hook function for `elfeed-db-unload-hook'."
-  (with-current-buffer (elfeed-tree--buffer)
-    ;; don't try to save the database in this case
-    (remove-hook 'kill-buffer-hook #'elfeed-db-save t)
-    (kill-buffer)))
 
 (defun elfeed-tree--tag (_entries tags)
   "Refresh if unread TAGS have changed."

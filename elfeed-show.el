@@ -131,9 +131,9 @@ Called without arguments."
   :syntax-table nil :abbrev-table nil :interactive nil
   (buffer-disable-undo)
   (make-local-variable 'elfeed-show-entry)
-  (setq-local bookmark-make-record-function
-              #'elfeed-show-bookmark-make-record
+  (setq-local bookmark-make-record-function #'elfeed-show-bookmark-make-record
               revert-buffer-function #'elfeed-show-refresh
+              elfeed-db--kill-on-unload t
               default-directory (elfeed-default-directory)))
 
 (defun elfeed-show-tag-unread ()
