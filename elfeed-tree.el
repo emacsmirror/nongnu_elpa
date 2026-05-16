@@ -146,7 +146,6 @@
                   (prog1 ',symbol
                     (set ',symbol (elfeed-tree--header)))))
               hl-line-sticky-flag t)
-  (outline-minor-mode)
   (buffer-disable-undo)
   (hl-line-mode)
   (add-hook 'elfeed-untag-hooks #'elfeed-tree--tag)
@@ -157,7 +156,8 @@
   (add-hook 'quit-window-hook 'elfeed-db-save nil 'local)
   (add-hook 'elfeed-db-unload-hook #'elfeed-tree--unload)
   (elfeed-tree-update :force)
-  (outline-minor-mode))
+  (outline-minor-mode)
+  (outline-hide-sublevels 1))
 
 ;;;###autoload
 (defun elfeed-tree ()
@@ -340,37 +340,39 @@ NODES is a list of tree nodes."
   "Insert TITLE into buffer.
 INDENT is the indentation prefix, UNREAD and READ the respective counts,
 COUNT the number of feeds and TAGS the list of tags."
-  (setq title (format "%s%s%s (%s/%s:%s)"
-                      indent (propertize " " 'invisible t) title
-                      (if (> unread 0)
-                          (format
-                           (propertize
-                            "%s" 'face 'elfeed-tree-highlight-unread-face)
-                           unread)
-                        unread)
-                      (+ unread read)
-                      count))
+  (setq title
+        (concat
+         indent (propertize " " 'invisible t) (format "%s" title)
+         (propertize " #"
+                     'display (format " (%s/%s:%s)"
+                                      (if (> unread 0)
+                                          (format
+                                           (propertize
+                                            "%s" 'face 'elfeed-tree-highlight-unread-face)
+                                           unread)
+                                        unread)
+                                      (+ unread read)
+                                      count))))
   (add-face-text-property
    0 (length title)
    (aref outline-font-lock-faces
          (1- (min (length indent) (length outline-font-lock-faces))))
    'append title)
-  (insert
-   (elfeed-add-properties
-    title
-    'elfeed-filter
-    (elfeed-search--tag-filter
-     (let ((tags (cl-loop for x in tags
-                          if (and (stringp x) (not (string-prefix-p "[" x)))
-                          collect (mapcar #'intern (split-string x))
-                          if (symbolp x)
-                          collect x)))
-       (if (and (> unread 0) (not (memq 'unread tags)))
-           `(,@tags unread)
-         tags)))
-    'follow-link [elfeed-tag]
-    'mouse-face 'highlight)
-   "\n"))
+  (elfeed-add-properties
+   title
+   'elfeed-filter
+   (elfeed-search--tag-filter
+    (let ((tags (cl-loop for x in tags
+                         if (and (stringp x) (not (string-prefix-p "[" x)))
+                         collect (mapcar #'intern (split-string x))
+                         if (symbolp x)
+                         collect x)))
+      (if (and (> unread 0) (not (memq 'unread tags)))
+          `(,@tags unread)
+        tags)))
+   'follow-link [elfeed-tag]
+   'mouse-face 'highlight)
+  (insert title ?\n))
 
 (defun elfeed-tree--print (indent tags title-fmt depth nodes)
   "Print tree NODES.
@@ -420,7 +422,8 @@ not use this function directly.  Instead use `elfeed-tree-update'."
              (or force (< elfeed-tree--last-update (elfeed-db-last-update))))
     (with-current-buffer buffer
       (elfeed-save-excursion
-        (let* ((inhibit-read-only t)
+        (let* ((restore (outline-revert-buffer-restore-visibility))
+               (inhibit-read-only t)
                (feeds+tags (elfeed-tree--collect))
                (feeds (car feeds+tags))
                (tags (cdr feeds+tags))
@@ -446,7 +449,7 @@ not use this function directly.  Instead use `elfeed-tree-update'."
                               (elfeed-tree--build-tags
                                feeds tags
                                (take 3 (cdar all-feeds-tree))))
-          (outline-hide-sublevels 1)
+          (when restore (funcall restore))
           (setq elfeed-tree--last-update (float-time))))))
   ;; Always force a header line update
   (force-mode-line-update))
