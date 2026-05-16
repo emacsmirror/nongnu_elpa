@@ -341,10 +341,10 @@ the browser defined by `browse-url-secondary-browser-function'."
 (defun elfeed-show-tag (&rest tags)
   "Add TAGS to the displayed entry."
   (interactive (elfeed-search--prompt-tags "Tag: ") elfeed-show-mode)
-  (let ((entry elfeed-show-entry))
-    (apply #'elfeed-tag entry tags)
-    (with-current-buffer (elfeed-search-buffer)
-      (elfeed-search-update-entry entry))
+  (when (apply #'elfeed-tag elfeed-show-entry tags)
+    (let ((entry elfeed-show-entry))
+      (with-current-buffer (elfeed-search-buffer)
+        (elfeed-search-update-entry entry)))
     (elfeed-show-refresh)))
 
 (defun elfeed-show-untag (&rest tags)
@@ -352,10 +352,10 @@ the browser defined by `browse-url-secondary-browser-function'."
   (interactive
    (elfeed-search--prompt-tags "Untag: " elfeed-show-entry)
    elfeed-show-mode)
-  (let ((entry elfeed-show-entry))
-    (apply #'elfeed-untag entry tags)
-    (with-current-buffer (elfeed-search-buffer)
-      (elfeed-search-update-entry entry))
+  (when (apply #'elfeed-untag elfeed-show-entry tags)
+    (let ((entry elfeed-show-entry))
+      (with-current-buffer (elfeed-search-buffer)
+        (elfeed-search-update-entry entry)))
     (elfeed-show-refresh)))
 
 ;; Enclosures:

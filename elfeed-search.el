@@ -1158,9 +1158,10 @@ the browser defined by `browse-url-secondary-browser-function'."
   (let ((entries (elfeed-search-selected)))
     (when (elfeed--confirm-browse-url-p (length entries))
       (cl-loop for entry in entries
-               do (elfeed-untag entry 'unread)
                when (elfeed-entry-link entry)
-               do (elfeed-browse-url it secondary))
+               do (progn
+                    (elfeed-untag entry 'unread)
+                    (elfeed-browse-url it secondary)))
       ;; `browse-url' could have switched to another buffer if eww or another
       ;; internal browser is used, but the remainder of the functions needs to
       ;; run in the elfeed buffer.
@@ -1183,15 +1184,13 @@ the browser defined by `browse-url-secondary-browser-function'."
       (kill-new links-str)
       (gui-set-selection elfeed-search-clipboard-type links-str)
       (message "Copied: %s" links-str)
-      (apply #'elfeed-search-update-entry entries)
       (elfeed-search--after-action 'yank))))
 
 (defun elfeed-search--tag (fun)
   "Call FUN with the entries to tag and update the entries afterwards."
   (let* ((all current-prefix-arg)
          (entries (if all elfeed-search-entries (elfeed-search-selected))))
-    (funcall fun entries)
-    (apply #'elfeed-search-update-entry entries)
+    (apply #'elfeed-search-update-entry (funcall fun entries))
     (unless all
       (elfeed-search--after-action 'tag))))
 
@@ -1219,7 +1218,7 @@ the browser defined by `browse-url-secondary-browser-function'."
   (interactive (elfeed-search--prompt-tags "Toggle: ") elfeed-search-mode)
   (elfeed-search--tag
    (lambda (entries)
-     (dolist (tag tags)
+     (dolist (tag tags entries)
        (let (entries-tag entries-untag)
          (cl-loop for entry in entries
                   when (elfeed-tagged-p tag entry)
@@ -1234,8 +1233,7 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
   (interactive (list (elfeed-search-selected :ignore-region) current-prefix-arg)
                elfeed-search-mode)
   (when (elfeed-entry-p entry)
-    (unless preview
-      (elfeed-untag entry 'unread)
+    (when (and (not preview) (elfeed-untag entry 'unread))
       (elfeed-search-update-entry entry))
     (elfeed-search--after-action 'show)
     ;; Update hl-line overlay. This does not happen automatically, since
