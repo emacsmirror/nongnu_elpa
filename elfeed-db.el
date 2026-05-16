@@ -232,7 +232,7 @@ Additional tag lists can be given as MORE-TAGS."
 
 (defun elfeed-tag (entry-or-entry-list &rest tags)
   "Add TAGS to ENTRY-OR-ENTRY-LIST.
-Run `elfeed-tag-hooks' and return list of changed entries."
+Run `elfeed-tag-hook' and return list of changed entries."
   (cl-loop with changed = nil
            for entry in (ensure-list entry-or-entry-list)
            for old = (elfeed-entry-tags entry)
@@ -241,12 +241,12 @@ Run `elfeed-tag-hooks' and return list of changed entries."
                                        (setf (elfeed-entry-tags entry) new)
                                        (push entry changed))
            finally return (when changed
-                            (run-hook-with-args 'elfeed-tag-hooks changed tags)
+                            (run-hook-with-args 'elfeed-tag-hook changed tags)
                             changed)))
 
 (defun elfeed-untag (entry-or-entry-list &rest tags)
-  "Remove TAGS from ENTRY-OR-ENTRY-LIST and run `elfeed-untag-hooks'.
-Run `elfeed-untag-hooks' and return list of changed entries."
+  "Remove TAGS from ENTRY-OR-ENTRY-LIST and run `elfeed-untag-hook'.
+Run `elfeed-untag-hook' and return list of changed entries."
   (cl-loop with changed = nil
            for entry in (ensure-list entry-or-entry-list)
            for old = (elfeed-entry-tags entry)
@@ -255,7 +255,7 @@ Run `elfeed-untag-hooks' and return list of changed entries."
                                        (setf (elfeed-entry-tags entry) new)
                                        (push entry changed))
            finally return (when changed
-                            (run-hook-with-args 'elfeed-untag-hooks changed tags)
+                            (run-hook-with-args 'elfeed-untag-hook changed tags)
                             changed)))
 
 (defun elfeed-tagged-p (tag entry)

@@ -130,33 +130,40 @@ feeds unreadable.  Enabling may yield a performance boost."
 
 ;; Fetching:
 
-(defvar elfeed-http-error-hooks ()
+(define-obsolete-variable-alias 'elfeed-http-error-hooks 'elfeed-http-error-hook "3.4.2")
+(define-obsolete-variable-alias 'elfeed-parse-error-hooks 'elfeed-parse-error-hook "3.4.2")
+(define-obsolete-variable-alias 'elfeed-update-hooks 'elfeed-update-hook "3.4.2")
+(define-obsolete-variable-alias 'elfeed-update-init-hooks 'elfeed-update-init-hook "3.4.2")
+(define-obsolete-variable-alias 'elfeed-tag-hooks 'elfeed-tag-hook "3.4.2")
+(define-obsolete-variable-alias 'elfeed-untag-hooks 'elfeed-untag-hook "3.4.2")
+
+(defvar elfeed-http-error-hook ()
   "Hooks to run when an http connection error occurs.
 It is called with 2 arguments.  The first argument is the url of
 the failing feed.  The second argument is the http status code.")
 
-(defvar elfeed-parse-error-hooks ()
+(defvar elfeed-parse-error-hook ()
   "Hooks to run when an error occurs during the parsing of a feed.
 It is called with 2 arguments.  The first argument is the url of
 the failing feed.  The second argument is the error message .")
 
-(defvar elfeed-update-hooks ()
+(defvar elfeed-update-hook ()
   "Hooks to run any time a feed update has completed a request.
 It is called with 1 argument: the URL of the feed that was just
 updated.  The hook is called even when no new entries were
 found.")
 
-(defvar elfeed-update-init-hooks ()
+(defvar elfeed-update-init-hook ()
   "Hooks called when one or more feed updates have begun.
 Receivers may want to, say, update a display to indicate that
 updates are pending.")
 
-(defvar elfeed-tag-hooks ()
+(defvar elfeed-tag-hook ()
   "Hooks called when one or more entries add tags.
 It is called with 2 arguments.  The first argument is the entry
 list.  The second argument is the tag list.")
 
-(defvar elfeed-untag-hooks ()
+(defvar elfeed-untag-hook ()
   "Hooks called when one or more entries remove tags.
 It is called with 2 arguments.  The first argument is the entry
 list.  The second argument is the tag list.")
@@ -234,7 +241,7 @@ This is a workaround for issues in `url-queue-retrieve'."
       (elfeed-log 'warn "Elfeed aborted feeds: %s"
                   (string-join fails " ")))
     (setf url-queue nil))
-  (run-hooks 'elfeed-update-init-hooks))
+  (run-hooks 'elfeed-update-init-hook))
 
 ;; Parsing:
 
@@ -608,13 +615,13 @@ Only a list of strings will be returned."
 (defun elfeed-handle-http-error (url status)
   "Handle an http error during retrieval of URL with STATUS code."
   (incf (elfeed-meta (elfeed-db-get-feed url) :failures 0))
-  (run-hook-with-args 'elfeed-http-error-hooks url status)
+  (run-hook-with-args 'elfeed-http-error-hook url status)
   (elfeed-log 'error "%s: %S" url status))
 
 (defun elfeed-handle-parse-error (url error)
   "Handle parse error during parsing of URL with ERROR message."
   (incf (elfeed-meta (elfeed-db-get-feed url) :failures 0))
-  (run-hook-with-args 'elfeed-parse-error-hooks url error)
+  (run-hook-with-args 'elfeed-parse-error-hook url error)
   (elfeed-log 'error "%s: %s" url error))
 
 (defun elfeed--prompt-feed ()
@@ -635,14 +642,14 @@ Only a list of strings will be returned."
 
 (defun elfeed-update-feed (url)
   "Update a specific feed identified by URL.
-Run `elfeed-update-init-hooks' before."
+Run `elfeed-update-init-hook' before."
   (interactive (list (elfeed--prompt-feed)))
-  (run-hooks 'elfeed-update-init-hooks)
+  (run-hooks 'elfeed-update-init-hook)
   (elfeed--update-feed url))
 
-(defun elfeed--update-feed (url &optional inhibit-update-hooks)
+(defun elfeed--update-feed (url &optional inhibit-update-hook)
   "Update a specific feed identified by URL.
-If INHIBIT-UPDATE-HOOKS is non-nil do not run the `elfeed-update-hooks'."
+If INHIBIT-UPDATE-HOOK is non-nil do not run the `elfeed-update-hook'."
   (elfeed-with-fetch url
     (if (elfeed-is-status-error status use-curl)
         (let ((print-escape-newlines t))
@@ -678,8 +685,8 @@ If INHIBIT-UPDATE-HOOKS is non-nil do not run the `elfeed-update-hooks'."
         (error (elfeed-handle-parse-error url error))))
     (unless use-curl
       (kill-buffer))
-    (unless inhibit-update-hooks
-      (run-hook-with-args 'elfeed-update-hooks url))))
+    (unless inhibit-update-hook
+      (run-hook-with-args 'elfeed-update-hook url))))
 
 (defun elfeed-candidate-feeds ()
   "Return a list of possible feeds from `elfeed-feed-functions'."
@@ -723,12 +730,13 @@ called interactively, SAVE is set to t."
         (push entry entries)))
     (when (y-or-n-p (format "Really delete %d entries of feed %s? "
                             (length entries) url))
+      (run-hook-with-args 'elfeed-update-init-hook)
       (elfeed-db-delete entries)
       (elfeed-db-gc-empty-feeds)
       (setq elfeed-feeds (assoc-delete-all
                           url (delete url (copy-sequence elfeed-feeds))))
       (message "Deleted feed %s. Adjust `elfeed-feeds' in your configuration!" url)
-      (run-hook-with-args 'elfeed-update-hooks url))))
+      (run-hook-with-args 'elfeed-update-hook url))))
 
 ;;;###autoload
 (defun elfeed-update ()
@@ -738,7 +746,7 @@ called interactively, SAVE is set to t."
       (user-error "Update already running")
     (elfeed-log 'info "Elfeed update: %s"
                 (format-time-string "%B %e %Y %H:%M:%S %Z"))
-    (run-hooks 'elfeed-update-init-hooks)
+    (run-hooks 'elfeed-update-init-hook)
     (mapc #'elfeed--update-feed (elfeed--shuffle (elfeed-feed-list)))))
 
 ;;;###autoload

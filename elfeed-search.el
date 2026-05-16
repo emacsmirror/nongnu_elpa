@@ -352,8 +352,8 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   (hl-line-mode)
   (make-local-variable 'elfeed-search-entries)
   (make-local-variable 'elfeed-search-filter)
-  (add-hook 'elfeed-update-hooks #'elfeed-search--update-debounce)
-  (add-hook 'elfeed-update-init-hooks #'elfeed-search--update-force)
+  (add-hook 'elfeed-update-hook #'elfeed-search--update-debounce)
+  (add-hook 'elfeed-update-init-hook #'elfeed-search--update-force)
   (add-hook 'window-size-change-functions #'elfeed-search--resize nil 'local)
   (elfeed-db--save-on-quit)
   (elfeed-search-update :force))
@@ -1054,7 +1054,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
     (user-error "Update already running"))
   (elfeed-log 'info "Elfeed visible update: %s"
               (format-time-string "%B %e %Y %H:%M:%S %Z"))
-  (run-hooks 'elfeed-update-init-hooks)
+  (run-hooks 'elfeed-update-init-hook)
   (cl-loop with seen = (make-hash-table :test #'equal)
            for entry in elfeed-search-entries
            for url = (elfeed-feed-url (elfeed-entry-feed entry))
