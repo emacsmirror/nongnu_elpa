@@ -629,18 +629,11 @@ Only a list of strings will be returned."
       (user-error "No feed selected"))
     url))
 
-;; This variable is obsolete but still used by elfeed-protocol.  Instead of
-;; calling `elfeed-update-feed' call `elfeed--update-feed' if the init hooks
-;; should not run.
-(defvar elfeed--inhibit-update-init-hooks nil)
-(make-obsolete-variable 'elfeed--inhibit-update-init-hooks nil "3.4.2")
-
 (defun elfeed-update-feed (url)
   "Update a specific feed identified by URL.
 Run `elfeed-update-init-hooks' before."
   (interactive (list (elfeed--prompt-feed)))
-  (unless (with-no-warnings elfeed--inhibit-update-init-hooks)
-    (run-hooks 'elfeed-update-init-hooks))
+  (run-hooks 'elfeed-update-init-hooks)
   (elfeed--update-feed url))
 
 (defun elfeed--update-feed (url &optional inhibit-update-hooks)
