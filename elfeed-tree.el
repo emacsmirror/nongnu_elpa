@@ -6,10 +6,11 @@
 
 ;;; Commentary:
 
-;; The elfeed tree buffer gives an overview over all feeds and tags.
-;; The feeds are visualized as a tree using the feed auto tags.  The
-;; first auto tag is the root node, the second tag comes below, and so
-;; on.  Feeds with the same auto tags are grouped together.
+;; The `elfeed-tree' buffer gives an overview over all feeds and tags.
+;; Open the tree buffer via the command `elfeed-tree'.  The feeds are
+;; visualized as a tree using the feed auto tags.  The first auto tag
+;; is the root node, the second tag comes below, and so on.  Feeds
+;; with the same auto tags are grouped together.
 ;;
 ;; For example the configuration
 ;;
@@ -34,9 +35,9 @@
 ;;            ├─● …
 ;;            ╰─● emacs-devel
 ;;
-;; Unfold the tree nodes with TAB or S-TAB, jump to an entry via RET
-;; or by clicking.  This feature has been inspired by the
-;; elfeed-summary package.
+;; `outline-minor-mode' is enabled in the tree buffer.  Unfold the
+;; tree nodes with TAB or S-TAB, jump to an entry via RET or by
+;; clicking.  This feature was inspired by the elfeed-summary package.
 
 ;;; Code:
 

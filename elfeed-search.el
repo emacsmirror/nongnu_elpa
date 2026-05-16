@@ -6,7 +6,8 @@
 
 ;;; Commentary:
 
-;; Code to list feed entries.
+;; The `elfeed-search' buffer which lists feed entries and supports live
+;; filtering.  Open the search buffer via the command `elfeed-search'.
 
 ;;; Code:
 
