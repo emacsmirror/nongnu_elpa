@@ -673,9 +673,7 @@ If INHIBIT-UPDATE-HOOKS is non-nil do not run the `elfeed-update-hooks'."
                                 (:atom (elfeed-entries-from-atom url data))
                                 (:rss (elfeed-entries-from-rss url data))
                                 (:rss1.0 (elfeed-entries-from-rss1.0 url data))
-                                (otherwise
-                                 (error (elfeed-handle-parse-error
-                                         url "Unknown feed type."))))))
+                                (otherwise (error "Unknown feed type")))))
                 (elfeed-db-add entries))))
         (error (elfeed-handle-parse-error url error))))
     (unless use-curl
