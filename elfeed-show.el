@@ -561,10 +561,9 @@ Prompts for ENCLOSURE-INDEX when called interactively."
     (message-goto-body)
     (insert (format "You may find this interesting:\n%s\n\n" link))
     (let ((beg (point)))
-      (save-excursion
-        (insert-buffer-substring show-buffer)
-        (fill-region (point) (point-max))
-        (comment-region beg (point))))
+      (insert-buffer-substring show-buffer)
+      (fill-region (point) (point-max))
+      (comment-region beg (point)))
     (message-goto-to)))
 
 ;; Bookmarks
