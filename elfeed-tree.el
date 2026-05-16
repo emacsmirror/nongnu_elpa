@@ -343,7 +343,7 @@ COUNT the number of feeds and TAGS the list of tags."
   (setq title
         (concat
          indent (propertize " " 'invisible t) (format "%s" title)
-         (propertize " #"
+         (propertize " "
                      'display (format " (%s/%s:%s)"
                                       (if (> unread 0)
                                           (format
