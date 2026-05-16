@@ -43,6 +43,10 @@
 
 (defgroup elfeed ()
   "An Emacs web feed reader."
+  :link '(info-link :tag "Info Manual" "(elfeed)")
+  :link '(url-link :tag "Website" "https://github.com/emacs-elfeed/elfeed")
+  :link '(url-link :tag "Wiki" "https://github.com/emacs-elfeed/elfeed/wiki")
+  :link '(emacs-library-link :tag "Library Source" "elfeed.el")
   :group 'web
   :group 'comm)
 
