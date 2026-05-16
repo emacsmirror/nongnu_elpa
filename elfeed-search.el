@@ -1325,11 +1325,13 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 
 (defvar elfeed-search-filter-syntax-table
   (let ((table (make-syntax-table)))
-    (prog1 table
-      (modify-syntax-entry ?+ "w" table)
-      (modify-syntax-entry ?- "w" table)
-      (modify-syntax-entry ?= "w" table)
-      (modify-syntax-entry ?@ "w" table)))
+    (modify-syntax-entry ?+ "w" table)
+    (modify-syntax-entry ?- "w" table)
+    (modify-syntax-entry ?~ "w" table)
+    (modify-syntax-entry ?= "w" table)
+    (modify-syntax-entry ?@ "w" table)
+    (modify-syntax-entry ?# "w" table)
+    table)
   "Syntax table active when editing the filter in the minibuffer.")
 
 (defun elfeed-search--minibuffer-setup ()
