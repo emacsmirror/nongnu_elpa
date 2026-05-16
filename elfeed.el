@@ -147,6 +147,16 @@ the failing feed.  The second argument is the http status code.")
 It is called with 2 arguments.  The first argument is the url of
 the failing feed.  The second argument is the error message .")
 
+(defvar elfeed-fetch-hook (list #'elfeed-fetch-url)
+  "Hooks to run when fetching feeds.
+It is called with 2 arguments: the URL of the feed, and a callback
+function.  The hook must return non-nil if it handles the URL.  After
+fetching completed, the callback function must be called with the result
+as argument.  Result can either be the keyword :error in case of error,
+the keyword :success in case of success, the keyword :parse to parse
+feed XML or JSON in the current buffer at point and add the resulting
+entries to the database.")
+
 (defvar elfeed-update-hook ()
   "Hooks to run any time a feed update has completed a request.
 It is called with 1 argument: the URL of the feed that was just
@@ -647,46 +657,71 @@ Run `elfeed-update-init-hook' before."
   (run-hooks 'elfeed-update-init-hook)
   (elfeed--update-feed url))
 
+(defun elfeed--update-feed-parse (url)
+  "Parse buffer for entries from URL and add them to the database."
+  (condition-case error
+      (let* ((json (or (string-suffix-p ".json" url) (looking-at-p "{")))
+             (data (if json
+                       (json-parse-buffer :object-type 'alist :array-type 'list
+                                          :null-object nil :false-object nil)
+                     (elfeed-xml-parse-region (point) (point-max)))))
+        (elfeed-db-add
+         (cl-case (if json :json (elfeed-feed-type data))
+           (:json (elfeed-entries-from-json url data))
+           (:atom (elfeed-entries-from-atom url data))
+           (:rss (elfeed-entries-from-rss url data))
+           (:rss1.0 (elfeed-entries-from-rss1.0 url data))
+           (otherwise (error "Unknown feed type")))))
+    (error
+     (elfeed-handle-parse-error url error))))
+
 (defun elfeed--update-feed (url &optional inhibit-update-hook)
   "Update a specific feed identified by URL.
 If INHIBIT-UPDATE-HOOK is non-nil do not run the `elfeed-update-hook'."
+  (run-hook-with-args-until-success
+   'elfeed-fetch-hook url
+   (lambda (result)
+     (pcase result
+       ((or :error :success) nil)
+       (:parse (elfeed--update-feed-parse url))
+       (_ (error "Invalid fetch result")))
+     (unless inhibit-update-hook
+       (run-hook-with-args 'elfeed-update-hook url)))))
+
+(defun elfeed-fetch-url (url cb)
+  "Fetch feed from URL and call CB either with the keyword :error or :parse.
+In order to modify feed content, you can use a custom fetch function.
+
+    (defun custom-fetcher (url cb)
+      (elfeed-fetch-url url
+        (lambda (result)
+          (when (eq result :parse)
+            ;; ...manipulate buffer...
+            (funcall cb :parse)))))"
   (elfeed-with-fetch url
     (if (elfeed-is-status-error status use-curl)
         (let ((print-escape-newlines t))
           (elfeed-handle-http-error
-           url (if use-curl elfeed-curl-error-message status)))
-      (condition-case error
-          (let ((feed (elfeed-db-get-feed url)))
-            (unless use-curl
-              (goto-char (point-min))
-              (elfeed-move-to-first-empty-line)
-              (set-buffer-multibyte t))
-            (unless (eql elfeed-curl-status-code 304)
-              ;; Update Last-Modified and Etag
-              (setf (elfeed-meta feed :last-modified)
-                    (cdr (assoc "last-modified" elfeed-curl-headers))
-                    (elfeed-meta feed :etag)
-                    (cdr (assoc "etag" elfeed-curl-headers)))
-              (if (equal url elfeed-curl-location)
-                  (setf (elfeed-meta feed :canonical-url) nil)
-                (setf (elfeed-meta feed :canonical-url) elfeed-curl-location))
-              (let* ((json (or (string-suffix-p ".json" url) (looking-at-p "{")))
-                     (data (if json
-                               (json-parse-buffer :object-type 'alist :array-type 'list
-                                                  :null-object nil :false-object nil)
-                             (elfeed-xml-parse-region (point) (point-max))))
-                     (entries (cl-case (if json :json (elfeed-feed-type data))
-                                (:json (elfeed-entries-from-json url data))
-                                (:atom (elfeed-entries-from-atom url data))
-                                (:rss (elfeed-entries-from-rss url data))
-                                (:rss1.0 (elfeed-entries-from-rss1.0 url data))
-                                (otherwise (error "Unknown feed type")))))
-                (elfeed-db-add entries))))
-        (error (elfeed-handle-parse-error url error))))
+           url (if use-curl elfeed-curl-error-message status))
+          (funcall cb :error))
+      (unless use-curl
+        (goto-char (point-min))
+        (elfeed-move-to-first-empty-line)
+        (set-buffer-multibyte t))
+      (unless (eql elfeed-curl-status-code 304)
+        (let ((feed (elfeed-db-get-feed url)))
+          ;; Update Last-Modified and Etag
+          (setf (elfeed-meta feed :last-modified)
+                (cdr (assoc "last-modified" elfeed-curl-headers))
+                (elfeed-meta feed :etag)
+                (cdr (assoc "etag" elfeed-curl-headers)))
+          (if (equal url elfeed-curl-location)
+              (setf (elfeed-meta feed :canonical-url) nil)
+            (setf (elfeed-meta feed :canonical-url) elfeed-curl-location)))
+        (funcall cb :parse)))
     (unless use-curl
-      (kill-buffer))
-    (unless inhibit-update-hook
-      (run-hook-with-args 'elfeed-update-hook url))))
+      (kill-buffer)))
+  t)
 
 (defun elfeed-candidate-feeds ()
   "Return a list of possible feeds from `elfeed-feed-functions'."
