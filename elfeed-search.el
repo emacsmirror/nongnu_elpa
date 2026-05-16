@@ -815,32 +815,33 @@ Executing a filter in bytecode form is generally faster than
     (read-from-minibuffer
      "Filter: " current nil nil 'elfeed-search-filter-history)))
 
-(defun elfeed-search--prompt-tags (prompt &optional entries)
+(defun elfeed-search--prompt-tags (prompt &optional entry-or-entries-list)
   "Prompt for tags in the minibuffer.
-PROMPT is the prompt string and ENTRIES is a list of entries to take the
-tags from."
+PROMPT is the prompt string and ENTRY-OR-ENTRIES-LIST an entry or a list
+of entries to take the tags from."
   (let* ((all-tags
-          (or (if entries
+          (or (if entry-or-entries-list
                   (delete-dups
                    (copy-sequence
                     (apply #'append
                            (mapcar #'elfeed-entry-tags
-                                   (ensure-list entries)))))
+                                   (ensure-list entry-or-entries-list)))))
                 (elfeed-db-get-all-tags))
               (user-error "No tags found")))
          (all-tags (mapcar #'symbol-name all-tags))
-         (initial (when entries
+         (initial (when entry-or-entries-list
                     (if (length= all-tags 1)
                         (car all-tags)
                       (let ((tag (get-text-property (point) 'elfeed-tag)))
                         (and tag (symbolp tag) (symbol-name tag))))))
+         (require-match (not (not entry-or-entries-list)))
          (tags (if elfeed-search-completion
                    (completing-read-multiple
                     prompt
                     (completion-table-with-metadata
                      all-tags
                      '((category . elfeed-tag)))
-                    nil entries initial)
+                    nil require-match initial)
                  (split-string (read-from-minibuffer prompt initial)
                                "[ \t]*,[ \t]*" t))))
     (unless tags
@@ -1258,9 +1259,10 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
   "Create filter string which matches a DATE."
   (concat "@" (elfeed-search-format-date date)))
 
-(defun elfeed-search--tag-filter (tags)
-  "Create filter string which matches a single or a list TAGS."
-  (mapconcat (lambda (x) (format "+%s" x)) (ensure-list tags) " "))
+(defun elfeed-search--tag-filter (tag-or-tags-list)
+  "Create filter string which matches a TAG-OR-TAGS-LIST."
+  (mapconcat (lambda (x) (format "+%s" x))
+             (ensure-list tag-or-tags-list) " "))
 
 (defun elfeed-search--feed-filter (feed)
   "Create filter string which matches FEED."
