@@ -57,9 +57,9 @@
 - =elfeed-search-group-by-feed=: New function for =elfeed-search-sort-function=.
 - =elfeed-search-show-entry=: Do not mark entry as read when invoked with prefix
   argument.
-- =elfeed-fetch-hook=: New hook to implement custom feed fetching. This hook can
-  be used by =elfeed-protocol=, to generate a feed from an external program, or to
-  modify fetched content.
+- =elfeed-fetch-functions=: New hook to implement custom feed fetching. This hook
+  can be used by =elfeed-protocol=, to generate a feed from an external program,
+  or to modify fetched content.
 - Renamed all =*-hooks= variables to the new naming convention =*-hook=.
 - Support for JSON Feed.
 - Moved elfeed-web.el to the separate repository at

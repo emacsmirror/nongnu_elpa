@@ -147,15 +147,16 @@ the failing feed.  The second argument is the http status code.")
 It is called with 2 arguments.  The first argument is the url of
 the failing feed.  The second argument is the error message .")
 
-(defvar elfeed-fetch-hook (list #'elfeed-fetch-url)
-  "Hooks to run when fetching feeds.
+(defvar elfeed-fetch-functions (list #'elfeed-fetch-url)
+  "Abnormal hooks to run when fetching feeds.
 It is called with 2 arguments: the URL of the feed, and a callback
-function.  The hook must return non-nil if it handles the URL.  After
-fetching completed, the callback function must be called with the result
-as argument.  Result can either be the keyword :error in case of error,
-the keyword :success in case of success, the keyword :parse to parse
-feed XML or JSON in the current buffer at point and add the resulting
-entries to the database.")
+function.  The hook must return non-nil if it handles the URL and the
+other hooks that come after in the list are not called.  When fetching
+completed, the callback function must be called with a single result
+argument.  Result can either be the keyword :error in case of error, the
+keyword :success in case of success, the keyword :parse to parse feed
+XML or JSON in the current buffer at point and add the resulting entries
+to the database.")
 
 (defvar elfeed-update-hook ()
   "Hooks to run any time a feed update has completed a request.
@@ -679,7 +680,7 @@ Run `elfeed-update-init-hook' before."
   "Update a specific feed identified by URL.
 If INHIBIT-UPDATE-HOOK is non-nil do not run the `elfeed-update-hook'."
   (run-hook-with-args-until-success
-   'elfeed-fetch-hook url
+   'elfeed-fetch-functions url
    (lambda (result)
      (pcase result
        ((or :error :success) nil)
