@@ -192,13 +192,6 @@ Links are relative to BASE-URL if non-nil."
                             (substring content (- len))))))
   (shr-tag-a `(a ((href . ,url)) ,content)))
 
-(defun elfeed-compute-base (url)
-  "Return the base URL for URL, useful for relative paths."
-  (let ((obj (url-generic-parse-url url)))
-    (setf (url-filename obj) nil)
-    (setf (url-target obj) nil)
-    (url-recreate-url obj)))
-
 (defun elfeed-show--format-author (author)
   "Format AUTHOR plist for the header."
   (cl-destructuring-bind (&key name uri email &allow-other-keys)

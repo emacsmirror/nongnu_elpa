@@ -78,6 +78,13 @@ testing."
        (not (string-match-p "[ \n\t\r]" string))
        (not (null (url-type (url-generic-parse-url string))))))
 
+(defun elfeed-compute-base (url)
+  "Return the base URL for URL, useful for relative paths."
+  (let ((obj (url-generic-parse-url url)))
+    (setf (url-filename obj) nil)
+    (setf (url-target obj) nil)
+    (url-recreate-url obj)))
+
 (defun elfeed-format-column (string width &optional align)
   "Return STRING truncated or padded to WIDTH following alignment.
 ALIGN should be a keyword :left or :right."
