@@ -141,17 +141,6 @@ Called without arguments."
   (interactive nil elfeed-show-mode)
   (elfeed-show-tag 'unread))
 
-(cl-defun elfeed-insert-link (url &optional (content url))
-  "Insert a clickable hyperlink to URL titled CONTENT."
-  (when (and elfeed-show-truncate-long-urls
-             (integerp shr-width)
-             (> (length content) (- shr-width 8)))
-    (let ((len (- (/ shr-width 2) 10)))
-      (setq content (format "%s[...]%s"
-                            (substring content 0 len)
-                            (substring content (- len))))))
-  (shr-tag-a `(a ((href . ,url)) ,content)))
-
 (defun elfeed-show--format-author (author)
   "Format AUTHOR plist for the header."
   (cl-destructuring-bind (&key name uri email &allow-other-keys)
@@ -204,11 +193,11 @@ Called without arguments."
       (insert (format (propertize "Tags: %s\n" 'face 'elfeed-show-entry-header-face)
                       (propertize tagsstr 'face 'elfeed-show-entry-tags-face))))
     (insert (propertize "Link: " 'face 'elfeed-show-entry-header-face))
-    (elfeed-insert-link link link)
+    (elfeed-insert-link link nil elfeed-show-truncate-long-urls)
     (insert "\n")
     (cl-loop for enclosure in (elfeed-entry-enclosures elfeed-show-entry)
              do (insert (propertize "Enclosure: " 'face 'elfeed-show-entry-header-face))
-             do (elfeed-insert-link (car enclosure))
+             do (elfeed-insert-link (car enclosure) nil elfeed-show-truncate-long-urls)
              do (insert "\n"))
     (insert "\n")
     (if (and content (not (string-blank-p content)))

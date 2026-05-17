@@ -436,6 +436,19 @@ Links are relative to BASE-URL if non-nil."
           (shr-insert-document doc))
       (shr-insert-document doc))))
 
+(defun elfeed-insert-link (url &optional content truncate)
+  "Insert a clickable hyperlink to URL titled CONTENT.
+Optionally TRUNCATE content if too wide."
+  (setq content (or content url))
+  (when (and truncate
+             (integerp shr-width)
+             (> (length content) (- shr-width 8)))
+    (let ((len (- (/ shr-width 2) 10)))
+      (setq content (format "%s[...]%s"
+                            (substring content 0 len)
+                            (substring content (- len))))))
+  (shr-tag-a `(a ((href . ,url)) ,content)))
+
 ;; Keep old names to avoid breakage.
 (define-obsolete-function-alias 'elfeed-directory-empty-p
   #'directory-empty-p "3.4.2")
