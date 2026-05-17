@@ -634,28 +634,33 @@ since the scanner is not guarded against them."
         (setf (gethash (elfeed-entry-feed-id entry) feeds) t)
         (elfeed-db--scan-1 cb (elfeed-feed-meta (elfeed-entry-feed entry)))))))
 
-(defun elfeed-db-gc--string-reuse ()
-  "Make sure that strings are reused in the database."
-  (let ((string-table (make-hash-table :test #'equal))
+(defun elfeed-db-gc--share-objects ()
+  "Share strings and other immutable objects in the database."
+  (let ((table (make-hash-table :test #'equal))
         (new-entries (make-hash-table :test #'equal)))
     ;; Load all feed ids
     (cl-loop for feed-id hash-keys of elfeed-db-feeds using (hash-value feed) do
              (progn
-               (setf (gethash feed-id string-table) feed-id
+               (setf (gethash feed-id table) feed-id
                      (elfeed-feed-id feed) feed-id)
                (when (equal (elfeed-feed-url feed) feed-id)
                  (setf (elfeed-feed-url feed) feed-id))))
     (elfeed-db-visit (entry)
       ;; Reuse namespace id
       (when-let* ((namespace (car id)))
-        (if-let* ((reused-namespace (gethash namespace string-table)))
+        (if-let* ((reused-namespace (gethash namespace table)))
             (setf (car id) reused-namespace)
-          (setf (gethash namespace string-table) namespace)))
+          (setf (gethash namespace table) namespace)))
       ;; Reuse feed id
       (when-let* ((feed-id (elfeed-entry-feed-id entry)))
-        (if-let* ((reused-feed-id (gethash feed-id string-table)))
+        (if-let* ((reused-feed-id (gethash feed-id table)))
             (setf (elfeed-entry-feed-id entry) reused-feed-id)
-          (setf (gethash feed-id string-table) feed-id)))
+          (setf (gethash feed-id table) feed-id)))
+      ;; Reuse authors
+      (when-let* ((authors (elfeed-meta entry :authors)))
+        (if-let* ((reused-authors (gethash authors table)))
+            (setf (elfeed-meta entry :authors) reused-authors)
+          (setf (gethash authors table) authors)))
       ;; Reuse entry id
       (setf (elfeed-entry-id entry) id
             (gethash id new-entries) entry))
@@ -666,7 +671,7 @@ since the scanner is not guarded against them."
 (defun elfeed-db-gc (&optional stats-p)
   "Clean up unused content from the content database.
 If STATS-P is true, return the space cleared in bytes."
-  (elfeed-db-gc--string-reuse)
+  (elfeed-db-gc--share-objects)
   (elfeed-db-gc-empty-feeds)
   (let* ((data (expand-file-name "data" elfeed-db-directory))
          (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
