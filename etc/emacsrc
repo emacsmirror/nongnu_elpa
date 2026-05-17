@@ -44,12 +44,12 @@
 (define-key* beancount-mode-map [(control c)(control u)] #'outline-up-heading)
 
 ;; Selectively restore old-style keybindings.
-;; 
+;;
 ;; If you want all the old (pre-issue-#1) keybindings, then set
 ;; `beancount-mode-old-style-keybindings' in your Emacs configuration
 ;; to restore them en masse.  Or, to restore just certain bindings,
 ;; uncomment selected lines below:
-;; 
+;;
 ;; (define-key beancount-mode-map [(control c)(control g)] #'beancount-transaction-clear)
 ;; (define-key beancount-mode-map [(control c)(l)] #'beancount-check)
 ;; (define-key beancount-mode-map [(control c)(q)] #'beancount-query)
