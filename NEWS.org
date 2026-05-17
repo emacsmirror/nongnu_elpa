@@ -41,7 +41,15 @@
 - =elfeed-make-tagger=: Support matching on entry categories.
 - =elfeed-update-background=: New function to update Elfeed in the background from
   a timer.
-- Support for JSON Feed.
+- =elfeed-feeds=: Feeds can specify a =:no-update= option to disable feed updates.
+  The feed appears still in the list for manual updates, and you can configure
+  autotags for the entries which are part of the feed.
+#+begin_src emacs-lisp
+(setq elfeed-feeds
+ '(("https://yhetil.org/emacs-devel/new.atom" :no-update t emacs)
+   ...))
+#+end_src
+- Support for the JSON Feed format.
 
 *** Search buffer
 

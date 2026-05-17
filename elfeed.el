@@ -598,16 +598,17 @@ URL identifies the feed and XML is the parsed content."
                  (evenp (- (length (cdr feed)) (length autotags))))))
     (string t)))
 
-(defun elfeed-feed-list ()
+(defun elfeed-feed-list (&optional all)
   "Return a flat list version of `elfeed-feeds'.
-Only a list of strings will be returned."
+Only a list of strings will be returned.  If ALL is nil, include only
+feeds without the :no-update property."
   ;; Validate elfeed-feeds and fail early rather than asynchronously later.
-  (cl-loop for feed in elfeed-feeds collect
-           (if (elfeed--feed-valid-p feed)
-               (cl-typecase feed
-                 (list (car feed))
-                 (string feed))
-             (error "elfeed-feeds malformed, bad entry: %S" feed))))
+  (cl-loop for feed in elfeed-feeds
+           for url = (if (elfeed--feed-valid-p feed)
+                         (cl-typecase feed (list (car feed)) (string feed))
+                       (error "elfeed-feeds malformed, bad entry: %S" feed))
+           if (or all (not (plist-get (cdr (assoc url elfeed-feeds)) :no-update)))
+           collect url))
 
 (defun elfeed-feed-autotags (url-or-feed)
   "Return tags to automatically apply to all entries from URL-OR-FEED."
@@ -640,7 +641,7 @@ Only a list of strings will be returned."
   (let ((url (completing-read
               "Feed: "
               (completion-table-with-metadata
-               (elfeed-feed-list)
+               (elfeed-feed-list :all)
                `((category . url)
                  (annotation-function
                   . ,(lambda (url)
