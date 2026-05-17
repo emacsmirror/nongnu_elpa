@@ -409,7 +409,8 @@ Value set by `beancount--build-regexps'.")
     "plugin_processing_mode"
     "render_commas"
     "title"
-    "tolerance_multiplier"))
+    "tolerance_multiplier"
+    "use_precise_interpolation"))
 
 (defun beancount-outline-level ()
   (let ((len (- (match-end 1) (match-beginning 1))))
