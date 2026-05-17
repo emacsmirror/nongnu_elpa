@@ -7,8 +7,8 @@
 #+texinfo_dir_desc: Atom/RSS feed reader
 
 #+html: <a href="https://www.gnu.org/software/emacs/"><img alt="GNU Emacs" src="https://github.com/minad/corfu/blob/screenshots/emacs.svg?raw=true"/></a>
-#+html: <a href="https://elpa.nongnu.org/packages/elfeed.html"><img alt="NonGNU ELPA" src="https://elpa.nongnu.org/packages/elfeed.svg"/></a>
-#+html: <a href="https://elpa.nongnu.org/devel/elfeed.html"><img alt="NonGNU-devel ELPA" src="https://elpa.nongnu.org/devel/elfeed.svg"/></a>
+#+html: <a href="https://elpa.nongnu.org/nongnu/elfeed.html"><img alt="NonGNU ELPA" src="https://elpa.nongnu.org/nongnu/elfeed.svg"/></a>
+#+html: <a href="https://elpa.nongnu.org/nongnu-devel/elfeed.html"><img alt="NonGNU-devel ELPA" src="https://elpa.nongnu.org/nongnu-devel/elfeed.svg"/></a>
 #+html: <a href="https://melpa.org/#/elfeed"><img alt="MELPA" src="https://melpa.org/packages/elfeed-badge.svg"/></a>
 #+html: <a href="https://stable.melpa.org/#/elfeed"><img alt="MELPA Stable" src="https://stable.melpa.org/packages/elfeed-badge.svg"/></a>
 
