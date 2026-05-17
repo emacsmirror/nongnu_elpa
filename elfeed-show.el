@@ -536,10 +536,11 @@ Prompts for ENCLOSURE-INDEX when called interactively."
 
 (cl-defun elfeed-show--fetch (cb &key url key headers force)
   "Fetch link content, store result in the entry metadata and call CB.
-The callback CB is called with the content string on success in the show
-buffer.  URL defaults to the entry link.  The content is stored under
-KEY, defaulting to :link-content in the entry metadata.  HEADERS are
-optional HTTP headers.  If FORCE is non-nil do not use cached content."
+The callback CB is called with the URL and content string on success in
+the show buffer.  URL defaults to the entry link.  The content is stored
+under KEY, defaulting to :link-content in the entry metadata.  HEADERS
+are optional HTTP headers.  If FORCE is non-nil do not use cached
+content."
   (unless elfeed-use-curl
     (error "elfeed-show--fetch requires curl"))
   (setq url (or url
@@ -551,7 +552,7 @@ optional HTTP headers.  If FORCE is non-nil do not use cached content."
     (kill-process (alist-get key elfeed-show--fetch))
     (setf (alist-get key elfeed-show--fetch) nil))
   (if-let* ((content (and (not force) (elfeed-deref (elfeed-meta elfeed-show-entry key)))))
-      (funcall cb content)
+      (funcall cb url content)
     (setf (alist-get key elfeed-show--fetch)
           (elfeed-curl-retrieve
            url
@@ -565,7 +566,7 @@ optional HTTP headers.  If FORCE is non-nil do not use cached content."
                    (when (buffer-live-p buffer)
                      (with-current-buffer buffer
                        (when (eq entry elfeed-show-entry)
-                         (funcall cb content))))))))
+                         (funcall cb url content))))))))
            :headers headers))))
 
 (defun elfeed-show-fetch-link (&optional force)
@@ -574,7 +575,7 @@ If the prefix argument FORCE is non-nil, force refetching.  The fetched
 content is stored in the entry metadata under the key :link-content."
   (interactive "P" elfeed-show-mode)
   (elfeed-show--fetch
-   (lambda (content)
+   (lambda (url content)
      (let ((inhibit-read-only t))
        (save-excursion
          (when-let* ((pos (text-property-any (point-min) (point-max)
@@ -582,7 +583,7 @@ content is stored in the entry metadata under the key :link-content."
            (delete-region pos (point-max)))
          (goto-char (point-max))
          (insert (propertize "\n" 'elfeed-link-content t))
-         (elfeed-insert-html content))))
+         (elfeed-insert-html content (elfeed-compute-base url)))))
    :force force))
 
 (defun elfeed-show-auto-fetch-link ()
