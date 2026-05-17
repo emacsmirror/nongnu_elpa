@@ -17,7 +17,7 @@
 (require 'thingatpt)
 (require 'time-date)
 (require 'xml)
-(require 'browse-url)
+(require 'shr)
 
 (defun elfeed-keyword->symbol (keyword)
   "If a keyword, convert KEYWORD into a plain symbol (remove the colon)."
@@ -396,6 +396,45 @@ If SECONDARY is non-nil, use the `browse-url-secondary-browser-function'."
              browse-url-secondary-browser-function
            browse-url-browser-function)))
     (browse-url url)))
+
+(defvar elfeed--image-hack t
+  "Enable the image insertion hack.")
+
+(defvar-local elfeed--image-hack-tick 0
+  "Insert counter for the current buffer.
+This counter helps protecting against inserting outdated images.")
+(put 'elfeed--image-hack-tick 'permanent-local t)
+
+(defun elfeed-insert-html (html &optional base-url)
+  "Converted HTML markup to a propertized string.
+Links are relative to BASE-URL if non-nil."
+  (let ((doc (if (libxml-available-p)
+                 (with-temp-buffer
+                   ;; insert <base> to work around libxml-parse-html-region bug
+                   (when base-url
+                     (insert (format "<base href=\"%s\">" base-url)))
+                   (insert html)
+                   (libxml-parse-html-region (point-min) (point-max) base-url))
+               '(i () "Elfeed: libxml2 functionality is unavailable"))))
+    (if elfeed--image-hack
+        ;; HACK: Ensure that inserted images are not outdated, if the buffer content
+        ;; has changed in the meantime.  There should be a better solution in Emacs.
+        ;; See Emacs bug#80945 and https://github.com/emacs-elfeed/elfeed/issues/550.
+        (cl-letf* ((tick (incf elfeed--image-hack-tick))
+                   (orig (symbol-function 'url-queue-retrieve))
+                   ((symbol-function 'url-queue-retrieve)
+                    (lambda (url cb &rest args)
+                      (let ((cb (if (eq cb #'shr-image-fetched)
+                                    (lambda (status buffer &rest args)
+                                      (when (and (buffer-live-p buffer)
+                                                 (= tick
+                                                    (buffer-local-value
+                                                     'elfeed--image-hack-tick buffer)))
+                                        (apply #'shr-image-fetched status buffer args)))
+                                  cb)))
+                        (apply orig url cb args)))))
+          (shr-insert-document doc))
+      (shr-insert-document doc))))
 
 ;; Keep old names to avoid breakage.
 (define-obsolete-function-alias 'elfeed-directory-empty-p
