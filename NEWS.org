@@ -57,6 +57,12 @@
 - =elfeed-search-group-by-feed=: New function for =elfeed-search-sort-function=.
 - =elfeed-search-show-entry=: Do not mark entry as read when invoked with prefix
   argument.
+- =elfeed-search-separator-face=: New face for the search buffer separators.
+- =elfeed-search-add-separators=: New search buffer update hook which adds
+  separator overlays. Use it like this:
+#+begin_src emacs-lisp
+(add-hook 'elfeed-search-update-hook #'elfeed-search-add-separators)
+#+end_src
 - =elfeed-fetch-functions=: New hook to implement custom feed fetching. This hook
   can be used by =elfeed-protocol=, to generate a feed from an external program,
   or to modify fetched content.

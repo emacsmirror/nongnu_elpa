@@ -42,7 +42,9 @@
   "The last time the buffer was redrawn in epoch seconds.")
 
 (defvar elfeed-search-update-hook ()
-  "List of functions to run immediately following a search buffer update.")
+  "List of functions to run immediately following a search buffer update.
+The functions may modify the search buffer or add overlays, for example
+`elfeed-search-add-separators'.")
 
 (defcustom elfeed-search-update-delay 0.2
   "Delay search buffer updates to avoid redundant redraws.
@@ -444,6 +446,11 @@ The customization `elfeed-search-date-format' sets the formatting."
   :group 'elfeed)
 
 (put 'elfeed-search-marked-overlay 'face 'elfeed-search-marked-face)
+
+(defface elfeed-search-separator-face
+  '((t :inherit (bold elfeed-search-date-face) :underline t :extend t))
+  "Face for marked entries."
+  :group 'elfeed)
 
 (defcustom elfeed-search-title-max-width 70
   "Maximum column width for titles in the `elfeed-search' buffer."
@@ -1364,6 +1371,32 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
   (quit-window)
   (elfeed-search)
   (elfeed-search-live-filter))
+
+;; Separators in search display
+
+(defun elfeed-search-add-separators ()
+  "Add separators to the search buffer."
+  (remove-overlays (point-min) (point-max)
+                   'category 'elfeed-search-separator)
+  (let (last)
+    (save-excursion
+      (goto-char (point-min))
+      (while (not (eobp))
+        (when-let* ((entry (get-text-property (point) 'elfeed-entry))
+                    (title (if (eq elfeed-search-sort-function
+                                   #'elfeed-search-group-by-feed)
+                               (elfeed-feed-title (elfeed-entry-feed entry))
+                             (elfeed-search-format-date
+                              (elfeed-entry-date entry))))
+                    ((not (equal title last)))
+                    (ov (make-overlay (pos-bol) (pos-bol))))
+          (overlay-put ov 'category 'elfeed-search-separator)
+          (overlay-put ov 'before-string
+                       (concat (and last "\n")
+                               (propertize (concat title "\n")
+                                           'face 'elfeed-search-separator-face)))
+          (setq last title))
+        (forward-line)))))
 
 ;; Bookmarks
 
