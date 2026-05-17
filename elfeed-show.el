@@ -264,14 +264,14 @@ The result depends on the value of `elfeed-show-unique-buffers'."
 
 (defun elfeed-show-scroll-up-or-next ()
   "Scroll-up the current entry or go to the next entry."
-  (interactive)
+  (interactive nil elfeed-show-mode)
   (condition-case nil
       (scroll-up-command)
     (error (elfeed-show-next))))
 
 (defun elfeed-show-scroll-down-or-prev ()
   "Scroll-down the current entry or go to the previous entry."
-  (interactive)
+  (interactive nil elfeed-show-mode)
   (condition-case nil
       (scroll-down-command)
     (error
