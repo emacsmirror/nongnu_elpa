@@ -227,30 +227,36 @@ Additional tag lists can be given as MORE-TAGS."
 (defun elfeed-tag (entry-or-entry-list &rest tags)
   "Add TAGS to ENTRY-OR-ENTRY-LIST.
 Run `elfeed-tag-hook' and return list of changed entries."
-  (cl-loop with changed = nil
-           for entry in (ensure-list entry-or-entry-list)
+  (cl-loop for entry in (ensure-list entry-or-entry-list)
            for old = (elfeed-entry-tags entry)
            for new = (elfeed-normalize-tags (append tags old))
-           unless (equal new old) do (progn
-                                       (setf (elfeed-entry-tags entry) new)
-                                       (push entry changed))
-           finally return (when changed
-                            (run-hook-with-args 'elfeed-tag-hook changed tags)
-                            changed)))
+           unless (equal new old) collect entry into changed
+           finally return
+           (when changed
+             ;; Run the hook before the changes (see #220 and #598)
+             (run-hook-with-args 'elfeed-tag-hook changed tags)
+             (cl-loop for entry in changed
+                      for old = (elfeed-entry-tags entry)
+                      for new = (elfeed-normalize-tags (append tags old))
+                      do (setf (elfeed-entry-tags entry) new))
+             changed)))
 
 (defun elfeed-untag (entry-or-entry-list &rest tags)
   "Remove TAGS from ENTRY-OR-ENTRY-LIST and run `elfeed-untag-hook'.
 Run `elfeed-untag-hook' and return list of changed entries."
-  (cl-loop with changed = nil
-           for entry in (ensure-list entry-or-entry-list)
+  (cl-loop for entry in (ensure-list entry-or-entry-list)
            for old = (elfeed-entry-tags entry)
            for new = (cl-loop for x in old unless (memq x tags) collect x)
-           unless (equal new old) do (progn
-                                       (setf (elfeed-entry-tags entry) new)
-                                       (push entry changed))
-           finally return (when changed
-                            (run-hook-with-args 'elfeed-untag-hook changed tags)
-                            changed)))
+           unless (equal new old) collect entry into changed
+           finally return
+           (when changed
+             ;; Run the hook before the changes (see #220 and #598)
+             (run-hook-with-args 'elfeed-untag-hook changed tags)
+             (cl-loop for entry in changed
+                      for old = (elfeed-entry-tags entry)
+                      for new = (cl-loop for x in old unless (memq x tags) collect x)
+                      do (setf (elfeed-entry-tags entry) new))
+             changed)))
 
 (defun elfeed-tagged-p (tag entry)
   "Return non-nil if ENTRY is tagged by TAG."
