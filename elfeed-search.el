@@ -91,7 +91,9 @@ live filter editing is exited."
 
 (defun elfeed-search-group-by-feed (a b)
   "Group entries A and B by feed."
-  (string> (elfeed-entry-feed-id a) (elfeed-entry-feed-id b)))
+  (unless (equal (elfeed-entry-feed-id a) (elfeed-entry-feed-id b))
+    (string< (elfeed-meta--title (elfeed-entry-feed a))
+             (elfeed-meta--title (elfeed-entry-feed b)))))
 
 (defcustom elfeed-search-remain-on-entry nil
   "When non-nil, keep point at entry after performing a command.
