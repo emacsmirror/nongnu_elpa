@@ -109,6 +109,7 @@ Called without arguments."
     ["Browse entry" elfeed-show-visit]
     ["Browse secondary" elfeed-show-visit-secondary]
     ["Copy URL" elfeed-show-yank]
+    ["Fetch link" elfeed-show-fetch-link]
     "--"
     ["Add tag" elfeed-show-tag]
     ["Remove tag" elfeed-show-untag]
