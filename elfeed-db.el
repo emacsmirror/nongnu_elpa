@@ -224,7 +224,7 @@ Additional tag lists can be given as MORE-TAGS."
 (define-obsolete-function-alias 'elfeed-tag-1 #'elfeed-tag "3.4.2")
 (define-obsolete-function-alias 'elfeed-untag-1 #'elfeed-untag "3.4.2")
 
-(defun elfeed--apply-tag (entry-or-entry-list hook tags fun)
+(defun elfeed-tag--apply (entry-or-entry-list hook tags fun)
   "Apply FUN to compute new tags for ENTRY-OR-ENTRY-LIST.
 The HOOK is called with the list of changed entries and TAGS before the
 entries are changed."
@@ -245,14 +245,14 @@ entries are changed."
 (defun elfeed-tag (entry-or-entry-list &rest tags)
   "Add TAGS to ENTRY-OR-ENTRY-LIST.
 Run `elfeed-tag-hook' and return list of changed entries."
-  (elfeed--apply-tag entry-or-entry-list 'elfeed-tag-hook tags
+  (elfeed-tag--apply entry-or-entry-list 'elfeed-tag-hook tags
                      (lambda (old)
                        (elfeed-normalize-tags (append tags old)))))
 
 (defun elfeed-untag (entry-or-entry-list &rest tags)
   "Remove TAGS from ENTRY-OR-ENTRY-LIST and run `elfeed-untag-hook'.
 Run `elfeed-untag-hook' and return list of changed entries."
-  (elfeed--apply-tag entry-or-entry-list 'elfeed-untag-hook tags
+  (elfeed-tag--apply entry-or-entry-list 'elfeed-untag-hook tags
                      (lambda (old)
                        (cl-loop for x in old unless (memq x tags) collect x))))
 

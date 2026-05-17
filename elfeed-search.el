@@ -932,14 +932,14 @@ expression, matching against entry link, title, and feed title."
       (cl-callf2 cl-delete-if-not (lambda (x) (memq x elfeed-search-entries))
                  elfeed-search--marked))))
 
-(defun elfeed--save-position ()
+(defun elfeed-search--save-position ()
   "Save entry, line and column."
   (list (when elfeed-search-entries
           (elfeed-search-selected :ignore-region))
         (line-number-at-pos)
         (current-column)))
 
-(defun elfeed--restore-position (pos)
+(defun elfeed-search--restore-position (pos)
   "Restore entry, line and column from saved POS."
   (pcase-let* ((`(,entry ,line ,column) pos)
                (idx (cl-position entry elfeed-search-entries)))
@@ -951,18 +951,18 @@ expression, matching against entry link, title, and feed title."
 But keep entry, line and column instead of only point."
   (declare (indent defun) (debug t))
   (cl-with-gensyms (point-pos mark-pos)
-    `(let* ((,point-pos (elfeed--save-position))
+    `(let* ((,point-pos (elfeed-search--save-position))
             (,mark-pos (cons (when-let* ((m (marker-position (mark-marker))))
                                (save-excursion
                                  (goto-char m)
-                                 (elfeed--save-position)))
+                                 (elfeed-search--save-position)))
                              mark-active)))
      (unwind-protect
          ,@body
-       (elfeed--restore-position ,point-pos)
+       (elfeed-search--restore-position ,point-pos)
        (when-let* ((m (car ,mark-pos)))
          (setcar ,mark-pos (save-excursion
-                             (elfeed--restore-position m)
+                             (elfeed-search--restore-position m)
                              (copy-marker (point)))))
        (save-mark-and-excursion--restore ,mark-pos)))))
 

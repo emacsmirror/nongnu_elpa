@@ -198,7 +198,7 @@ Links are relative to BASE-URL if non-nil."
     (setf (url-target obj) nil)
     (url-recreate-url obj)))
 
-(defun elfeed--show-format-author (author)
+(defun elfeed-show--format-author (author)
   "Format AUTHOR plist for the header."
   (cl-destructuring-bind (&key name uri email &allow-other-keys)
       author
@@ -241,7 +241,7 @@ Links are relative to BASE-URL if non-nil."
       (dolist (author authors)
         (insert
          (format (propertize "Author: %s\n" 'face 'elfeed-show-entry-header-face)
-                 (propertize (elfeed--show-format-author author)
+                 (propertize (elfeed-show--format-author author)
                              'face 'elfeed-show-entry-author-face)))))
     (insert (format (propertize "Date: %s\nFeed: %s\n" 'face 'elfeed-show-entry-header-face)
                     (propertize nicedate 'face 'elfeed-show-entry-date-face)
