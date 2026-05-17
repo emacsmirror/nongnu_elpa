@@ -422,12 +422,10 @@ not use this function directly.  Instead use `elfeed-tree-update'."
                (nodes (elfeed-tree--build-nested feeds))
                (tree (elfeed-tree--stats (elfeed-tree--flatten (car nodes))))
                (tree-depth (max 2 (elfeed-tree--depth tree)))
-               (untagged-feeds-tree
-                (elfeed-tree--stats
-                 `(("[untagged feeds]" nil . ,(cdr nodes)))))
-               (all-feeds-tree
-                (elfeed-tree--stats
-                 `(("[all feeds]" nil ,feeds))))
+               (untagged-feeds-tree (when (cadr nodes)
+                                      (elfeed-tree--stats
+                                       `(("[untagged feeds]" nil ,(cadr nodes))))))
+               (all-feeds-tree (elfeed-tree--stats `(("[all feeds]" nil ,feeds))))
                (title-width (cl-loop for (title . _) in feeds
                                      maximize (length title)))
                (title-fmt (propertize (format "%%-%ds" title-width)
