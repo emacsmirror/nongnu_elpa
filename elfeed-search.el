@@ -41,7 +41,7 @@
 (defvar elfeed-search-last-update 0
   "The last time the buffer was redrawn in epoch seconds.")
 
-(defvar elfeed-search-update-hook ()
+(defvar elfeed-search-update-hook (list #'elfeed-search-add-separators)
   "List of functions to run immediately following a search buffer update.
 The functions may modify the search buffer or add overlays, for example
 `elfeed-search-add-separators'.")

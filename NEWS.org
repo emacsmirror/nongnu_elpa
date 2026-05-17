@@ -59,9 +59,10 @@
   argument.
 - =elfeed-search-separator-face=: New face for the search buffer separators.
 - =elfeed-search-add-separators=: New search buffer update hook which adds
-  separator overlays. Use it like this:
+  separator overlays. The separators are enabled by default. Remove the hook to
+  disable:
 #+begin_src emacs-lisp
-(add-hook 'elfeed-search-update-hook #'elfeed-search-add-separators)
+(remove-hook 'elfeed-search-update-hook #'elfeed-search-add-separators)
 #+end_src
 - =elfeed-fetch-functions=: New hook to implement custom feed fetching. This hook
   can be used by =elfeed-protocol=, to generate a feed from an external program,
