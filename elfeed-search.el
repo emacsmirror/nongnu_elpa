@@ -249,11 +249,11 @@ Movement is configured by `elfeed-search-remain-on-entry'."
              (not (elfeed-search--remain-on-entry-p action)))
     (forward-line)))
 
-(defun elfeed-search--header-button (command &optional text)
-  "Create header line button for COMMAND with optional TEXT."
+(defun elfeed-search--header-button (command &optional text help)
+  "Create header line button for COMMAND with optional TEXT and HELP."
   (propertize (or text (symbol-name command))
               'elfeed-header-button command
-              'help-echo (format "Run %s" command)
+              'help-echo (or help (format "Run %s" command))
               'mouse-face 'highlight))
 
 (defun elfeed-search--intro-header ()
@@ -319,13 +319,11 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                     (elfeed-add-properties
                      (mapconcat
                       (lambda (x)
-                        (elfeed-add-properties
-                         x 'mouse-face 'highlight
-                         'help-echo (format "Remove filter %s" x)
-                         'elfeed-header-button
+                        (elfeed-search--header-button
                          (lambda ()
                            (interactive)
-                           (elfeed-search--toggle-filter x))))
+                           (elfeed-search--toggle-filter x))
+                         x (format "Remove filter %s" x)))
                       (split-string elfeed-search-filter) " ")
                      'face 'elfeed-search-filter-face))))
       (concat
