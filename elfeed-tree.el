@@ -356,9 +356,9 @@ COUNT the number of feeds and TAGS the list of tags."
    (elfeed-search--tag-filter
     (let ((tags (cl-loop for x in tags
                          if (and (stringp x) (not (string-prefix-p "[" x)))
-                         collect (mapcar #'intern (split-string x))
-                         if (symbolp x)
-                         collect x)))
+                         nconc (mapcar #'intern (split-string x))
+                         else if (symbolp x)
+                         nconc (list x))))
       (if (and (> unread 0) (not (memq 'unread tags)))
           `(,@tags unread)
         tags)))
