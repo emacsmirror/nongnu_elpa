@@ -474,6 +474,33 @@
        (funcall tagger (elfeed-entry--create
                         :title "welcome to barfoo: enjoy your stay"
                         :date (elfeed-float-time "1 month ago")
+                        :feed-id (elfeed-feed-id feed)))))
+    (let* ((feed (elfeed-test-generate-feed))
+           (tagger (elfeed-make-tagger :entry-title "foobar"
+                                       :categories "foo\\|bar")))
+      (should
+       (funcall tagger (elfeed-entry--create
+                        :title "welcome to foobar"
+                        :meta '(:categories ("foo" "baz"))
+                        :feed-id (elfeed-feed-id feed))))
+      (should
+       (funcall tagger (elfeed-entry--create
+                        :title "welcome to foobar"
+                        :meta '(:categories ("baz" "bar"))
+                        :feed-id (elfeed-feed-id feed))))
+      (should-not
+       (funcall tagger (elfeed-entry--create
+                        :title "welcome to foobar"
+                        :feed-id (elfeed-feed-id feed))))
+      (should-not
+       (funcall tagger (elfeed-entry--create
+                        :title "welcome to foobar"
+                        :meta '(:categories "baz")
+                        :feed-id (elfeed-feed-id feed))))
+      (should-not
+       (funcall tagger (elfeed-entry--create
+                        :title "welcome to foobar"
+                        :meta '(:categories ("x" "y"))
                         :feed-id (elfeed-feed-id feed)))))))
 
 (ert-deftest elfeed-opml ()

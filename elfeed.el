@@ -806,16 +806,15 @@ if another update is already running."
 ;; New entry filtering
 
 (cl-defun elfeed-make-tagger
-    (&key feed-title feed-url entry-title entry-link after before
-          add remove callback)
+    (&key feed-title feed-url entry-title entry-link categories
+          after before add remove callback)
   "Create a function that adds or removes tags on matching entries.
 
-FEED-TITLE, FEED-URL, ENTRY-TITLE, and ENTRY-LINK are regular
-expressions or a list (not <regex>), which indicates a negative
-match.  AFTER and BEFORE are relative times (see
-`elfeed-time-duration').  Entries must match all provided
-expressions.  If an entry matches, add tags ADD and remove tags
-REMOVE.  Call CALLBACK for each entry.
+FEED-TITLE, FEED-URL, ENTRY-TITLE, ENTRY-LINK and CATEGORIES are regular
+expressions or an expression (not <regex>), which indicates a negative
+match.  AFTER and BEFORE are relative times (see `elfeed-time-duration').
+Entries must match all provided expressions.  If an entry matches, add
+tags ADD and remove tags REMOVE.  Call CALLBACK for each entry.
 
 Examples,
 
@@ -838,16 +837,19 @@ The returned function should be added to `elfeed-new-entry-hook'."
       (let ((feed (elfeed-entry-feed entry))
             (date (elfeed-entry-date entry))
             (case-fold-search t))
-        (cl-flet ((match (r s)
+        (cl-labels ((match (r s)
                     (pcase r
                       (`nil t)
-                      (`(not ,x) (not (string-match-p x s)))
-                      (_ (string-match-p r s)))))
+                      (`(not ,r) (not (match r s)))
+                      (_ (if (stringp s)
+                             (string-match-p r s)
+                           (any (lambda (s) (string-match-p r s)) s))))))
           (when (and
                  (match feed-title  (elfeed-feed-title  feed))
                  (match feed-url    (elfeed-feed-url    feed))
                  (match entry-title (elfeed-entry-title entry))
                  (match entry-link  (elfeed-entry-link  entry))
+                 (match categories  (elfeed-meta entry :categories))
                  (or (not after-time)  (> date (- (float-time) after-time)))
                  (or (not before-time) (< date (- (float-time) before-time))))
             (when add

@@ -76,6 +76,7 @@
 - =elfeed-fetch-functions=: New hook to implement custom feed fetching. This hook
   can be used by =elfeed-protocol=, to generate a feed from an external program,
   or to modify fetched content.
+- =elfeed-make-tagger=: Support matching on entry categories.
 - Renamed all =*-hooks= variables to the new naming convention =*-hook=.
 - Support for JSON Feed.
 - Moved elfeed-web.el to the separate repository at
