@@ -244,9 +244,9 @@ If LITERALLY is non-nil return the content literally."
 (defun elfeed-resize-vector (vector length)
   "Return a copy of VECTOR set to size LENGTH."
   (let ((new-vector (make-vector length nil)))
-    (prog1 new-vector ; don't use dotimes result (bug#16206)
-      (dotimes (i (min (length new-vector) (length vector)))
-        (setf (aref new-vector i) (aref vector i))))))
+    (dotimes (i (min (length new-vector) (length vector)))
+      (setf (aref new-vector i) (aref vector i)))
+    new-vector))
 
 (defun elfeed-readable-p (value)
   "Return non-nil if VALUE can be serialized."
@@ -286,9 +286,9 @@ If no such line exists, point is left in place."
 (defun elfeed--shuffle (seq)
   "Destructively shuffle SEQ."
   (let ((n (length seq)))
-    (prog1 seq  ; don't use dotimes result (bug#16206)
-      (dotimes (i n)
-        (cl-rotatef (elt seq i) (elt seq (+ i (cl-random (- n i)))))))))
+    (dotimes (i n)
+      (cl-rotatef (elt seq i) (elt seq (+ i (cl-random (- n i))))))
+    seq))
 
 (defun elfeed-split-ranges-to-numbers (str n)
   "Convert STR containing enclosure numbers into a list of numbers.

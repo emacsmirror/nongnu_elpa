@@ -221,12 +221,12 @@ output format."
   "Return a unique, random string that prints as a symbol without escapes.
 This token is used to split requests.  The % is excluded since
 it's special to --write-out."
-  (let* ((token (make-string 22 ?=))
-         (set "!$&*+-/0123456789:<>@ABCDEFGHIJKLMNOPQRSTUVWXYZ^_\
+  (let ((token (make-string 22 ?=))
+        (set "!$&*+-/0123456789:<>@ABCDEFGHIJKLMNOPQRSTUVWXYZ^_\
 abcdefghijklmnopqrstuvwxyz|~"))
-    (prog1 token ; workaround bug#16206
-      (dotimes (i (- (length token) 2))
-        (setf (aref token (1+ i)) (aref set (cl-random (length set))))))))
+    (dotimes (i (- (length token) 2))
+      (setf (aref token (1+ i)) (aref set (cl-random (length set)))))
+    token))
 
 (defun elfeed-curl--parse-write-out ()
   "Parse curl's write-out (-w) messages into `elfeed-curl--regions'."
