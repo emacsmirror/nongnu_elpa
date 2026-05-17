@@ -60,7 +60,7 @@ Many more extensions can be found on MELPA - here is an non-exhaustive list:
 
 Elfeed is broken into a multiple source files, so if you manually install it you
 will need to add the Elfeed package directory to your =load-path=. If installed
-via package.el or el-get, this will be done automatically.
+via package.el this will be done automatically.
 
 It is recommended that you make a global binding for =elfeed=.
 
