@@ -730,10 +730,7 @@ t to show the actual COMMAND, or a symbol to be shown instead."
   (and keycast-tab-bar-mode
        (keycast--active-frame-p)
        (and-let* ((output (keycast--format keycast-tab-bar-format)))
-         (concat output
-                 (make-string (max 0 (- keycast-tab-bar-minimal-width
-                                        (length output)))
-                              ?\s)))))
+         (string-pad output keycast-tab-bar-minimal-width))))
 
 ;;; Log-Buffer
 
