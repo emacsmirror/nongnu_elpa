@@ -391,7 +391,7 @@ own use. Here are the properties that Elfeed uses:
   =elfeed-show-fetch-link=.
 
 This list will grow in time, so you might consider namespacing your own
-properties to avoid collisions (e.g. =:xyz/rating=), or simply not using keywords
+properties to avoid collisions (e.g. =:xyz/rating=), or simply not using keywords
 as keys. Elfeed will always use keywords without a slash.
 
 ** Hooks
