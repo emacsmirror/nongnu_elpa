@@ -348,7 +348,7 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
       (let ((standard-output (current-buffer))
             (print-level nil)
             (print-length nil)
-            (print-circle nil))
+            (print-circle t)) ;; No cycles, but string reuse!
         (princ (format ";;; Elfeed Database Index (version %s)\n\n"
                        elfeed-db-version))
         (prin1 elfeed-db)))
@@ -625,9 +625,39 @@ supported by the database format."
         (setf (gethash (elfeed-entry-feed-id entry) feeds) t)
         (elfeed-db--scan-1 cb (elfeed-feed-meta (elfeed-entry-feed entry)))))))
 
+(defun elfeed-db-gc--string-reuse ()
+  "Make sure that strings are reused in the database."
+  (let ((string-table (make-hash-table :test #'equal))
+        (new-entries (make-hash-table :test #'equal)))
+    ;; Load all feed ids
+    (cl-loop for feed-id hash-keys of elfeed-db-feeds using (hash-value feed) do
+             (progn
+               (setf (gethash feed-id string-table) feed-id
+                     (elfeed-feed-id feed) feed-id)
+               (when (equal (elfeed-feed-url feed) feed-id)
+                 (setf (elfeed-feed-url feed) feed-id))))
+    (elfeed-db-visit (entry)
+      ;; Reuse namespace id
+      (when-let* ((namespace (car id)))
+        (if-let* ((reused-namespace (gethash namespace string-table)))
+            (setf (car id) reused-namespace)
+          (setf (gethash namespace string-table) namespace)))
+      ;; Reuse feed id
+      (when-let* ((feed-id (elfeed-entry-feed-id entry)))
+        (if-let* ((reused-feed-id (gethash feed-id string-table)))
+            (setf (elfeed-entry-feed-id entry) reused-feed-id)
+          (setf (gethash feed-id string-table) feed-id)))
+      ;; Reuse entry id
+      (setf (elfeed-entry-id entry) id
+            (gethash id new-entries) entry))
+    ;; Use new entries hash table such that ids are reused as hash table keys
+    (setq elfeed-db-entries new-entries
+          elfeed-db (plist-put elfeed-db :entries new-entries))))
+
 (defun elfeed-db-gc (&optional stats-p)
   "Clean up unused content from the content database.
 If STATS-P is true, return the space cleared in bytes."
+  (elfeed-db-gc--string-reuse)
   (elfeed-db-gc-empty-feeds)
   (let* ((data (expand-file-name "data" elfeed-db-directory))
          (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
@@ -674,7 +704,7 @@ If STATS-P is true, return the space cleared in bytes."
       (let ((standard-output (current-buffer))
             (print-level nil)
             (print-length nil)
-            (print-circle nil))
+            (print-circle t)) ;; No cycles, but string reuse!
         (prin1 next-archive)))
     ;; Rename two files, non-atomically! Instead use separate temporary data
     ;; directory, see https://github.com/emacs-elfeed/elfeed/pull/569.
