@@ -224,7 +224,7 @@ USE-CURL is needed since the interpretation depends on if curl is used."
 (defmacro elfeed-with-fetch (url &rest body)
   "Asynchronously run BODY in a buffer with the contents from URL.
 This macro is anaphoric, with STATUS referring to the status from
-`url-retrieve'/cURL and USE-CURL being the original invoked-value
+`url-retrieve'/curl and USE-CURL being the original invoked-value
 of `elfeed-use-curl'."
   (declare (indent defun) (debug (&define sexp def-body)))
   `(let* ((use-curl elfeed-use-curl) ; capture current value in closure

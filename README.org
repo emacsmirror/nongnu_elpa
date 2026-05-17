@@ -15,13 +15,13 @@ never expected to change.
 
 ** Prerequisites
 
-*It is /strongly/ recommended you have cURL installed*, either in your PATH or
+*It is strongly recommended you have curl installed*, either in your PATH or
 configured via =elfeed-curl-program-name=. Elfeed will prefer it to Emacs' own
 URL-fetching mechanism, =url-retrieve=. It's also essential for running Elfeed on
-Windows, where =url-retrieve= is broken. Updates using cURL are significantly
+Windows, where =url-retrieve= is broken. Updates using curl are significantly
 faster than the built-in method, both for you and the feed hosts.
 
-If this is giving you problems, fetching with cURL can be disabled by setting
+If this is giving you problems, fetching with curl can be disabled by setting
 =elfeed-use-curl= to nil.
 
 ** Extensions
@@ -393,7 +393,7 @@ interface. Patches welcome.
 
 ** Platform Support
 
-Summary: Install cURL and most problems disappear for all platforms.
+Summary: Install curl and most problems disappear for all platforms.
 
 I personally only use Elfeed on Linux, but it's occasionally tested on Windows.
 Unfortunately the Windows port of Emacs is a bit too unstable for parallel feed
@@ -401,7 +401,7 @@ downloads with =url-retrieve=, not to mention the [[https://msdn.microsoft.com/e
 descriptor limitation]], so it limits itself to one feed at a time on this
 platform.
 
-If you fetch HTTPS feeds without cURL on /any/ platform, it's essential that Emacs
+If you fetch HTTPS feeds without curl on /any/ platform, it's essential that Emacs
 is built with the =--with-gnutls= option. Otherwise Emacs runs gnutls in an
 inferior process, which rarely works well.
 

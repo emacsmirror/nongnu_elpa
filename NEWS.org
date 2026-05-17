@@ -194,9 +194,9 @@ an empty database as if starting from scratch.
 
 ** 2.0.0 (2016-08-26)
 
-- Elfeed now uses cURL when available (=elfeed-use-curl=)
-- Windows OS now supported when using cURL
-- Conditional GET (ETag, =If-Modified-Since=) when using cURL
+- Elfeed now uses curl when available (=elfeed-use-curl=)
+- Windows OS now supported when using curl
+- Conditional GET (ETag, =If-Modified-Since=) when using curl
 - Support for xml:base in Atom feeds
 - New options: =elfeed-set-max-connections=, =elfeed-set-timeout=
 - New feed metadata: :canonical-url, :etag, :last-modified

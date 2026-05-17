@@ -62,10 +62,10 @@
   :type 'integer)
 
 (defcustom elfeed-curl-extra-arguments ()
-  "A list of additional arguments to pass to cURL.
+  "A list of additional arguments to pass to curl.
 These extra arguments are appended after Elfeed's own arguments,
 and care must be taken to not interfere with Elfeed's needs.  The
-guideline is to avoid arguments that change anything about cURL's
+guideline is to avoid arguments that change anything about curl's
 output format."
   :group 'elfeed
   :type '(repeat string))
@@ -186,7 +186,7 @@ output format."
 
 (defun elfeed-curl-get-capabilities ()
   "Return capabilities plist for the curl at `elfeed-curl-program-name'.
-:version     -- cURL's version string
+:version     -- curl's version string
 :compression -- non-nil if --compressed is supported
 :protocols   -- symbol list of supported protocols
 :features    -- string list of supported features"
