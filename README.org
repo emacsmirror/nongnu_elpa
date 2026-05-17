@@ -7,9 +7,9 @@
 #+texinfo_dir_desc: Atom/RSS feed reader
 
 Elfeed is an extensible web feed reader for Emacs, supporting Atom, RSS and JSON
-Feed. It requires Emacs 28.1 and is available for download from [[https://melpa.org/][MELPA]] or [[https://github.com/dimitri/el-get][el-get]].
-The Elfeed UI was inspired by [[https://notmuchmail.org/][notmuch]]. The database format is stable and is
-never expected to change.
+Feed. It requires Emacs 28.1 and is available for download from [[https://melpa.org/][MELPA]]. The
+Elfeed UI was inspired by [[https://notmuchmail.org/][notmuch]]. The database format is stable and is never
+expected to change.
 
 [[https://github.com/emacs-elfeed/elfeed/blob/screenshots/screenshot.png?raw=true]]
 
@@ -354,7 +354,7 @@ quote.
 All feed and entry objects have plist where you can store your own arbitrary,
 [[https://nullprogram.com/blog/2013/12/30/][readable values]]. These values are automatically persisted in the database. This
 metadata is accessed using the polymorphic =elfeed-meta= function. The function is
-a generalized variable, such that it is setf-able. The macro =setf= must have
+a generalized variable, such that it is =setf=-able. The macro =setf= must have
 access to the definition of =elfeed-meta= at compile time. Therefore you must add
 a =(require 'elfeed)= at the top level, such that the Elisp byte compiler loads
 the definition.
