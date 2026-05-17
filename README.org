@@ -14,7 +14,7 @@ and custom servlets. Client requests are sanitized, but the server is vulnerable
 to denial of service attacks, so it should only be used for local development or
 automation. We make no guarantees regarding security.
 
-This package is available on [[https://melpa.org/][MELPA]] and [[https://nongnu.elpa.org/][NonGNU ELPA]].
+This package is available on [[https://melpa.org/][MELPA]] and [[https://nongnu.elpa.org/][ELPA]].
 
 ** Usage
 
