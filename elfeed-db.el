@@ -355,9 +355,20 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
     (rename-file temp dest t)
     :success))
 
+(defun elfeed-db--close-safely ()
+  "Run GC and save without triggering any errors, for use as a safe hook."
+  (ignore-errors (elfeed-db-gc))
+  (ignore-errors (elfeed-db-save)))
+
 (defun elfeed-db-save-safe ()
   "Run `elfeed-db-save' without triggering any errors, for use as a safe hook."
+  (declare (obsolete #'elfeed-db--close-safely "3.4.2"))
   (ignore-errors (elfeed-db-save)))
+
+(defun elfeed-db-gc-safe ()
+  "Run `elfeed-db-gc' without triggering any errors, for use as a safe hook."
+  (declare (obsolete #'elfeed-db--close-safely "3.4.2"))
+  (ignore-errors (elfeed-db-gc)))
 
 (defun elfeed-db-upgrade (_db)
   "Upgrade the database DB from a previous format."
@@ -728,13 +739,8 @@ gzip-compressed files, so the gzip program must be in your PATH."
   (elfeed-db-pack)
   (elfeed-db-gc))
 
-(defun elfeed-db-gc-safe ()
-  "Run `elfeed-db-gc' without triggering any errors, for use as a safe hook."
-  (ignore-errors (elfeed-db-gc)))
-
 (unless noninteractive
-  (add-hook 'kill-emacs-hook #'elfeed-db-gc-safe :append)
-  (add-hook 'kill-emacs-hook #'elfeed-db-save-safe))
+  (add-hook 'kill-emacs-hook #'elfeed-db--close-safely))
 
 (define-obsolete-function-alias 'copy-elfeed-entry
   #'copy-sequence "3.4.2")
