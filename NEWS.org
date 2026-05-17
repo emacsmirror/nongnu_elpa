@@ -2,57 +2,88 @@
 
 ** Development
 
+*** General
+
 - =elfeed-tree=: New command which opens an =elfeed-tree-mode= buffer.
-- =elfeed-entry-point=: New customization option to customize =M-x elfeed=.
 - =elfeed-search=: New command as entry point.
-- =elfeed-search-set-filter=, =elfeed-search-tag-all=: Filter and tag completion
-  using =completing-read-multiple=.
-- =elfeed-search-tag-all=, =elfeed-search-untag-all=, =elfeed-search-toggle-all=,
-  =elfeed-search-tag-all-unread=, =elfeed-search-untag-all-unread=: If prefix
-  argument is given, tag or untag all entries, not only the selected ones.
-- =elfeed-search-browse-url-secondary=, =elfeed-show-visit-secondary=: New commands
-  which open entries in the secondary browser. The commands are bound to =B=.
+- =elfeed-entry-point=: New customization option to customize =M-x elfeed= to either
+  the search or tree buffer.
+- =elfeed-search-mode=, =elfeed-show-mode=, =elfeed-tree-mode=: All Elfeed major modes
+  derive from =special-mode=.
+- Hide irrelevant commands in =M-x= if =read-extended-command-predicate= is set to
+  =command-completion-default-include-p=.
 - =elfeed-confirm-browse-url=: New customization option.
-- =elfeed-search-remain-on-entry=: Generalized option to configure the commands
-  explicitly that should remain on the entry.
-- =elfeed-search-mode=: Auto-resizing of title column.
-- =elfeed-search-update=: Speed up redraw by preserving old entries.
-- =elfeed-search-update-delay=: New option to debounce search buffer update.
-- =elfeed-update-background=: New function to update Elfeed in the background from
-  a timer.
-- =elfeed-log-show=: New command to show the log. Show error count in header line.
 - =elfeed-use-libxml=: New customization option to enable parsing via =libxml=.
-- =elfeed-search-mode=, =elfeed-show-mode=, =elfeed-tree-mode=: All
-  Elfeed major modes derive from =special-mode=.
+- New mouse menus in all Elfeed major modes.
+- Mouse support in the search buffer and the header line.
+- Moved elfeed-web.el to the separate repository at
+  https://github.com/emacs-elfeed/elfeed-web.
+- Show title and search filter in Ibuffer via the variable
+  =list-buffers-directory=.
+
+*** Database
+
 - =elfeed-db-directory=: Change default to =~/.config/emacs/elfeed=. The change is
   backward compatible. If =~/.elfeed= is present, it will be used.
 - =elfeed-db-cache-timeout=: New option to keep archive content cache alive.
-- Hide irrelevant commands in =M-x= if =read-extended-command-predicate= is set to
-  =command-completion-default-include-p=.
-- =elfeed-search-set-filter=: Support shorter age filter syntax, e.g., =@6months=.
-- =elfeed-search-date-filter=, =elfeed-search-feed-filter=: New commands bound to ~@~
-  and ~=~ to filter for the date or feed at point.
-- New mouse menus in all Elfeed major modes.
-- Mouse support in the search buffer and the header line.
-- =elfeed-search=, =elfeed-tree=: Attach =elfeed-entry=, =elfeed-feed= and =elfeed-tag=
-  text properties in buffer text for more efficient lookup and mouse support.
-- =elfeed-show-*-face=: New faces in =elfeed-show= buffer, which are used instead of
-  the faces from message.el.
-- =elfeed-search-set-entry-title=, =elfeed-search-set-feed-title=: Add =t= and =T= key
-  bindings to change entry and feed title.
 - =elfeed-db-save=, =elfeed-db-pack=: Reduce risk for database corruptions by
   writing to temporary files first and renaming atomically afterwards.
-- =elfeed-log-buffer-name=: Make =*elfeed-log*= ephemeral by default with a space in
-  front of the buffer name.
-- =elfeed-search-mode=, =elfeed-show-mode=: Show title and search filter in Ibuffer.
-- =elfeed-delete-feed=: New command to delete feed with all entries from the db.
-- =elfeed-search-mark=, =elfeed-search-unmark=: New commands for non-continuous
-  selections bound to =m= and =M=.
 - =elfeed-db-gc=, =elfeed-db-pack=: Scan entry and feed meta data for =elfeed-ref=
   references. This way other packages can reference content with the reference
   kept in the metadata.
+
+*** Feed updates
+
+- =elfeed-delete-feed=: New command to delete feed with all entries from the db.
+- =elfeed-fetch-functions=: New hook to implement custom feed fetching. This hook
+  can be used by =elfeed-protocol=, to generate a feed from an external program,
+  or to modify fetched content.
+- =elfeed-make-tagger=: Support matching on entry categories.
+- =elfeed-update-background=: New function to update Elfeed in the background from
+  a timer.
+- Support for JSON Feed.
+
+*** Search buffer
+
+- =elfeed-search-set-filter=, =elfeed-search-tag-all=: Filter and tag completion
+  using =completing-read-multiple=.
+- =elfeed-search-set-filter=: Support shorter age filter syntax, e.g., =@6months=.
+- =elfeed-search-date-filter=, =elfeed-search-feed-filter=: New commands bound to ~@~
+  and ~=~ to filter for the date or feed at point.
+- =elfeed-search-(un)tag-all=, =elfeed-search-toggle-all=,
+  =elfeed-search-(un)tag-all-unread=: If prefix argument is given, tag or untag
+  all entries, not only the selected ones.
+- =elfeed-search-remain-on-entry=: Generalized option to configure the commands
+  explicitly that should remain on the entry.
+- =elfeed-search-mode=: Auto-resizing of title column.
+- =elfeed-search-update-delay=: New option to debounce search buffer update.
+- =elfeed-search-separator-face=: New face for the search buffer separators.
+- =elfeed-search-add-separators=: New search buffer update hook which adds
+  separator overlays. The separators are enabled by default. Remove the hook to
+  disable:
+#+begin_src emacs-lisp
+(remove-hook 'elfeed-search-update-hook #'elfeed-search-add-separators)
+#+end_src
+- =elfeed-search-group-by-feed=: New function for =elfeed-search-sort-function=.
+- =elfeed-search-show-entry=: Do not mark entry as read when invoked with prefix
+  argument.
+- =elfeed-search-mark=, =elfeed-search-unmark=: New commands for non-continuous
+  selections bound to =m= and =M=.
+- =elfeed-search-set-entry-title=, =elfeed-search-set-feed-title=: Add =t= and =T= key
+  bindings to change entry and feed title.
+- =elfeed-search-browse-url-secondary=: New command which open entry in the
+  secondary browser. The command is bound to =B=.
+- Attach =elfeed-entry=, =elfeed-feed= and =elfeed-tag= text properties in buffer text
+  for more efficient lookup and mouse support.
+
+*** Show buffer
+
+- =elfeed-show-scroll-up/down-or-next/prev=: New scroll commands.
+- =elfeed-show-compose-mail=: Command to compose mail from entry.
 - =elfeed-show-refresh-hook=: New hook for addons to extend or enhance the show
   buffer.
+- =elfeed-show-visit-secondary=: New command which open entry in the secondary
+  browser. The command is bound to =B=.
 - =elfeed-show-fetch-link=: New command to fetch link content and insert it into
   the show buffer. The command is bound to the key =f=. In order to force fetching
   press the key =C-u f=. Auto fetching can be enabled per feed with the
@@ -62,26 +93,20 @@
  '(("https://www.debian.org/security/dsa" :fetch-link t linux debian)
    ...))
 #+end_src
-- =elfeed-show-scroll-up/down-or-next/prev=: New scroll commands.
-- =elfeed-show-compose-mail=: Command to compose mail from entry.
-- =elfeed-search-group-by-feed=: New function for =elfeed-search-sort-function=.
-- =elfeed-search-show-entry=: Do not mark entry as read when invoked with prefix
-  argument.
-- =elfeed-search-separator-face=: New face for the search buffer separators.
-- =elfeed-search-add-separators=: New search buffer update hook which adds
-  separator overlays. The separators are enabled by default. Remove the hook to
-  disable:
-#+begin_src emacs-lisp
-(remove-hook 'elfeed-search-update-hook #'elfeed-search-add-separators)
-#+end_src
-- =elfeed-fetch-functions=: New hook to implement custom feed fetching. This hook
-  can be used by =elfeed-protocol=, to generate a feed from an external program,
-  or to modify fetched content.
-- =elfeed-make-tagger=: Support matching on entry categories.
+- =elfeed-show-*-face=: New faces in =elfeed-show= buffer, which are used instead of
+  the faces from message.el.
+
+*** Logging
+
+- =elfeed-log-buffer-name=: Make =*elfeed-log*= ephemeral by default with a space in
+  front of the buffer name.
+- =elfeed-log-show=: New command to show the log.
+- Show error count in header line. Clicking on the error count will show the log
+  buffer.
+
+*** Compatibility
+
 - Renamed all =*-hooks= variables to the new naming convention =*-hook=.
-- Support for JSON Feed.
-- Moved elfeed-web.el to the separate repository at
-  https://github.com/emacs-elfeed/elfeed-web.
 - Removed obsolete code and code updated for upcoming Emacs 31.
 - Added Compat 31 dependency.
 - Depend on Emacs 28.1.
