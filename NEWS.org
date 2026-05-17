@@ -53,6 +53,15 @@
   kept in the metadata.
 - =elfeed-show-refresh-hook=: New hook for addons to extend or enhance the show
   buffer.
+- =elfeed-show-fetch-link=: New command to fetch link content and insert it into
+  the show buffer. The command is bound to the key =f=. In order to force fetching
+  press the key =C-u f=. Auto fetching can be enabled per feed with the
+  =:fetch-link= option.
+#+begin_src emacs-lisp
+(setq elfeed-feeds
+ '(("https://www.debian.org/security/dsa" :fetch-link t linux debian)
+   ...))
+#+end_src
 - =elfeed-show-compose-mail=: Command to compose mail from entry.
 - =elfeed-search-group-by-feed=: New function for =elfeed-search-sort-function=.
 - =elfeed-search-show-entry=: Do not mark entry as read when invoked with prefix

@@ -75,12 +75,13 @@ Called without arguments."
 (defvar elfeed-show-refresh-function #'elfeed-show-refresh--mail-style
   "Function called to refresh the `*elfeed-entry*' buffer.")
 
-(defvar elfeed-show-refresh-hook nil
+(defvar elfeed-show-refresh-hook (list #'elfeed-show-auto-fetch-link)
  "Functions in this list are called after the show buffer has been refreshed.")
 
 (defvar-keymap elfeed-show-mode-map
   :doc "Keymap for `elfeed-show-mode'."
   :parent special-mode-map
+  "f" #'elfeed-show-fetch-link
   "d" #'elfeed-show-save-enclosure
   "n" #'elfeed-show-next
   "p" #'elfeed-show-prev
@@ -261,7 +262,7 @@ Links are relative to BASE-URL if non-nil."
         (if (eq type 'html)
             (elfeed-insert-html content base)
           (insert content))
-      (insert (propertize "(empty)\n" 'face 'italic)))
+      (insert (propertize "(empty)\n" 'face 'italic 'elfeed-link-content t)))
     (goto-char (point-min))))
 
 (defun elfeed-show-refresh (&rest _)
@@ -565,6 +566,67 @@ Prompts for ENCLOSURE-INDEX when called interactively."
       (fill-region (point) (point-max))
       (comment-region beg (point)))
     (message-goto-to)))
+
+;; Link fetching
+
+(defvar elfeed-show--fetch nil
+  "Active fetch processes.")
+
+(cl-defun elfeed-show--fetch (cb &key url key headers force)
+  "Fetch link content, store result in the entry metadata and call CB.
+The callback CB is called with the content string on success in the show
+buffer.  URL defaults to the entry link.  The content is stored under
+KEY, defaulting to :link-content in the entry metadata.  HEADERS are
+optional HTTP headers.  If FORCE is non-nil do not use cached content."
+  (unless elfeed-use-curl
+    (error "elfeed-show--fetch requires curl"))
+  (setq url (or url
+                (when-let* ((entry elfeed-show-entry))
+                  (elfeed-entry-link entry))
+                (error "No link to fetch"))
+        key (or key :link-content))
+  (ignore-errors
+    (kill-process (alist-get key elfeed-show--fetch))
+    (setf (alist-get key elfeed-show--fetch) nil))
+  (if-let* ((content (and (not force) (elfeed-deref (elfeed-meta elfeed-show-entry key)))))
+      (funcall cb content)
+    (setf (alist-get key elfeed-show--fetch)
+          (elfeed-curl-retrieve
+           url
+           (let ((buffer (current-buffer))
+                 (entry elfeed-show-entry))
+             (lambda (status)
+               (setf (alist-get key elfeed-show--fetch) nil)
+               (unless (elfeed-is-status-error status t)
+                 (let ((content (buffer-string)))
+                   (setf (elfeed-meta entry key) (elfeed-ref content))
+                   (when (buffer-live-p buffer)
+                     (with-current-buffer buffer
+                       (when (eq entry elfeed-show-entry)
+                         (funcall cb content))))))))
+           :headers headers))))
+
+(defun elfeed-show-fetch-link (&optional force)
+  "Fetch link content and insert it into the show buffer.
+If the prefix argument FORCE is non-nil, force refetching.  The fetched
+content is stored in the entry metadata under the key :link-content."
+  (interactive "P" elfeed-show-mode)
+  (elfeed-show--fetch
+   (lambda (content)
+     (let ((inhibit-read-only t))
+       (save-excursion
+         (when-let* ((pos (text-property-any (point-min) (point-max)
+                                             'elfeed-link-content t)))
+           (delete-region pos (point-max)))
+         (goto-char (point-max))
+         (insert (propertize "\n" 'elfeed-link-content t))
+         (elfeed-insert-html content))))
+   :force force))
+
+(defun elfeed-show-auto-fetch-link ()
+  "Automatically fetch link content if the feed is marked with `:fetch-link'."
+  (when (elfeed-meta (elfeed-entry-feed elfeed-show-entry) :fetch-link)
+    (elfeed-show-fetch-link)))
 
 ;; Bookmarks
 
