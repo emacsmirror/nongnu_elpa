@@ -468,14 +468,10 @@ the regularly-changing entry content could be tossed to save time and storage.
 
 ** Status and Roadmap
 
-Elfeed is to the point where it can serve 100% of my own web feed needs. My
-personal selection of about 150 feeds has been acting as my test case as I
-optimize and add features.
-
-Some things I still might want to add:
-
-- Database synchronization between computers
-- Parallel feed fetching via separate Emacs subprocesses
+Elfeed is a mature and maintained Emacs package, which should integrate well
+into your Emacs setup. It is to the point where it can serve 100% of your web
+feed needs, even if you use hundreds of feeds. We still have to decide on a
+future roadmap.
 
 ** Motivation
 
