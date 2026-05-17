@@ -387,6 +387,8 @@ own use. Here are the properties that Elfeed uses:
 - =:title= : Overrides the feed-supplied title for display purposes,
   both for feeds and entries. See also =elfeed-search-set-feed-title=
   and =elfeed-search-set-entry-title=.
+- =:link-content= : The HTML content fetched from the entry link, see
+  =elfeed-show-fetch-link=.
 
 This list will grow in time, so you might consider namespacing your own
 properties to avoid collisions (e.g. =:xyz/rating=), or simply not using keywords
