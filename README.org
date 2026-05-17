@@ -27,28 +27,26 @@ If this is giving you problems, fetching with cURL can be disabled by setting
 ** Extensions
 
 There are projects which extend Elfeed with additional features. The following
-packages have more than 5K downloads on MELPA, which hints at a certain
-maturity, but no guarantees for compatibility are made.
+packages provide significant additional functionality and have more than 5K
+downloads on MELPA, which hints at a certain maturity. Note that no guarantees
+for compatibility are made.
 
-- [[https://github.com/algernon/elfeed-goodies][elfeed-goodies]]
-- [[https://github.com/remyhonig/elfeed-org][elfeed-org]]
-- [[https://github.com/fasheng/elfeed-protocol][elfeed-protocol]]
-- [[https://github.com/sp1ff/elfeed-score][elfeed-score]]
-- [[https://github.com/karthink/elfeed-tube][elfeed-tube]]
-- [[https://github.com/emacs-elfeed/elfeed-web][elfeed-web]]
+- [[https://github.com/remyhonig/elfeed-org][elfeed-org]]: Organize the feed list with Org.
+- [[https://github.com/fasheng/elfeed-protocol][elfeed-protocol]]: Support for many fetching methods.
+- [[https://github.com/sp1ff/elfeed-score][elfeed-score]]: Gnus-like scoring.
+- [[https://github.com/karthink/elfeed-tube][elfeed-tube]]: Enhancements for Youtube feeds.
+- [[https://github.com/emacs-elfeed/elfeed-web][elfeed-web]]: Web interface to Elfeed.
 
 Many more extensions can be found on MELPA - here is an non-exhaustive list:
 
-- [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related
-  packages on MELPA]]
-- [[https://github.com/areina/elfeed-cljsrn][Elfeed Android interface]]
-  ([[https://play.google.com/store/apps/details?id=com.elfeedcljsrn][Google
-  Play]])
+- [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related packages on MELPA]]
+- [[https://github.com/areina/elfeed-cljsrn][elfeed-cljsrn (Elfeed on Android)]]
 - [[https://github.com/rtrppl/cuckoo-search][cuckoo-search]]
 - [[https://github.com/benthamite/elfeed-ai][elfeed-ai]]
 - [[https://github.com/paulelms/elfeed-autotag][elfeed-autotag]]
 - [[https://github.com/rnadler/elfeed-curate][elfeed-curate]]
 - [[https://github.com/manojm321/elfeed-dashboard][elfeed-dashboard]]
+- [[https://github.com/algernon/elfeed-goodies][elfeed-goodies]]
 - [[https://github.com/fritzgrabo/elfeed-summarize][elfeed-summarize]]
 - [[https://github.com/SqrtMinusOne/elfeed-summary][elfeed-summary]]
 
