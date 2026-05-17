@@ -1269,19 +1269,19 @@ If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
 
 (defun elfeed-search-date-filter ()
   "Toggle date filter from date at point."
-  (interactive)
+  (interactive nil elfeed-search-mode)
   (when-let* ((date (get-text-property (pos-bol) 'elfeed-date)))
     (elfeed-search--toggle-filter (elfeed-search--date-filter date))))
 
 (defun elfeed-search-tag-filter ()
   "Toggle tag filter from tag at point."
-  (interactive)
+  (interactive nil elfeed-search-mode)
   (when-let* ((tag (get-text-property (point) 'elfeed-tag)))
     (elfeed-search--toggle-filter (elfeed-search--tag-filter tag))))
 
 (defun elfeed-search-feed-filter ()
   "Toggle feed filter from feed at point."
-  (interactive)
+  (interactive nil elfeed-search-mode)
   (when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
     (elfeed-search--toggle-filter (elfeed-search--feed-filter
                                    (elfeed-entry-feed entry)))))

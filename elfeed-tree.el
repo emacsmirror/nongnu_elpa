@@ -106,7 +106,8 @@
 (defun elfeed-tree-search (filter)
   "Go to search buffer limited to FILTER string at point."
   (interactive (list (or (get-text-property (pos-bol) 'elfeed-filter)
-                         (user-error "No filter at point"))))
+                         (user-error "No filter at point")))
+               elfeed-tree-mode)
   (push-mark nil 'nomsg)
   (elfeed-search (concat elfeed-tree-filter
                          (and (not (equal elfeed-tree-filter "")) " ")
@@ -118,7 +119,8 @@
    (let ((feed (or (get-text-property (pos-bol) 'elfeed-feed)
                    (user-error "No feed at point"))))
      (list feed (read-from-minibuffer "Feed title: "
-                                      (elfeed-meta--title feed)))))
+                                      (elfeed-meta--title feed))))
+   elfeed-tree-mode)
   (setf (elfeed-meta feed :title) title)
   (elfeed-tree-update :force))
 
