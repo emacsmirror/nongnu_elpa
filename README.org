@@ -265,6 +265,43 @@ listing. You can customize how tags affect an entry's appearance by customizing
 All faces from all tags will be applied to the entry title. The faces will be
 ordered as they appear in =elfeed-search-face-alist=.
 
+** Tree view
+
+Elfeed includes a tree view, which gives an overview over all feeds and tags.
+Invoke =M-x elfeed-tree= to open it. The feeds are visualized as a tree using the
+feed auto tags. The first auto tag is the root node, the second tag comes below,
+and so on. Feeds with the same auto tags are grouped together. Since
+=outline-minor-mode= is enabled in the buffer you can use =TAB= and =S-TAB= to fold
+like in Org-mode buffers. Use =RET= or click on tags or feeds to show the
+corresponding =elfeed-search= buffer.
+
+For example the configuration
+
+#+begin_src emacs-lisp
+(setq elfeed-feeds
+      '(("https://yhetil.org/emacs-devel/new.atom" emacs lists devel)
+        ("https://yhetil.org/emacs-bugs/new.atom" emacs lists bugs)
+        ("https://old.reddit.com/r/emacs.rss" emacs reddit)))
+#+end_src
+
+leads to a tree of the following form.
+
+#+begin_example
+emacs
+  ├─● /r/reddit
+  lists
+    ├─● emacs-devel
+    ╰─● emacs-bugs
+[all feeds]
+  ├─● …
+  ╰─● emacs-devel
+[all tags]
+  ├─● …
+  ╰─● emacs
+       ├─● …
+       ╰─● emacs-devel
+#+end_example
+
 ** Bookmarks
 
 Filters can be saved and restored using Emacs' built-in [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Bookmarks.html][bookmarks feature]]. While
