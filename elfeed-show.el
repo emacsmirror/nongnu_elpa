@@ -226,7 +226,7 @@ Links are relative to BASE-URL if non-nil."
          (content (elfeed-deref (elfeed-entry-content elfeed-show-entry)))
          (type (elfeed-entry-content-type elfeed-show-entry))
          (feed (elfeed-entry-feed elfeed-show-entry))
-         (feed-title (elfeed-feed-title feed))
+         (feed-title (elfeed-meta--title feed))
          (base (and feed (elfeed-compute-base
                           (or (elfeed-meta elfeed-show-entry :base-url)
                               (elfeed-feed-url feed))))))

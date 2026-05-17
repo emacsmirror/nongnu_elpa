@@ -1385,7 +1385,7 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
         (when-let* ((entry (get-text-property (point) 'elfeed-entry))
                     (title (if (eq elfeed-search-sort-function
                                    #'elfeed-search-group-by-feed)
-                               (elfeed-feed-title (elfeed-entry-feed entry))
+                               (elfeed-meta--title (elfeed-entry-feed entry))
                              (elfeed-search-format-date
                               (elfeed-entry-date entry))))
                     ((not (equal title last)))
