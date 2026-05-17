@@ -35,12 +35,6 @@
 ;; efficiently with the AVL tree.  This is the reasoning behind the
 ;; `elfeed-db-visit' interface.
 
-;; Unfortunately there's a nasty bug (bug#15190) in the reader that
-;; makes hash tables and `print-circle' incompatible.  It's been fixed
-;; in trunk, but many users will likely be stuck with this bug for the
-;; next few years.  This means the database format can't exploit
-;; circular references.
-
 ;; Entry and feed objects can have arbitrary metadata attached,
 ;; automatically stored in the database.  The `setf'-able
 ;; `elfeed-meta' function is used to access these.
@@ -476,8 +470,8 @@ Return DEFAULT if unavailable.  During `elfeed-db-gc' and
 `elfeed-db-pack', metadata values will be scanned for `elfeed-ref'
 objects, such that references in metadata will be kept alive.  Note that
 only list data structures will be scanned (e.g., cons, list, alist,
-plist).  The data structures must not be cyclic since this is not
-supported by the database format."
+plist).  The data structures must not be cyclic (e.g., cyclic lists)
+since the scanner is not guarded against them."
   (or (plist-get (elfeed-meta--plist thing) key)
       (when (and (keywordp key) (elfeed-feed-p thing))
         (let ((url (or (elfeed-feed-url thing)
