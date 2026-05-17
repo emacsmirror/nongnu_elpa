@@ -766,7 +766,7 @@ called interactively, SAVE is set to t."
         (push entry entries)))
     (when (y-or-n-p (format "Really delete %d entries of feed %s? "
                             (length entries) url))
-      (run-hook-with-args 'elfeed-update-init-hook)
+      (run-hooks 'elfeed-update-init-hook)
       (elfeed-db-delete entries)
       (elfeed-db-gc-empty-feeds)
       (setq elfeed-feeds (assoc-delete-all
