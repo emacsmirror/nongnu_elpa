@@ -1,15 +1,18 @@
-* Elfeed web Interface
-:PROPERTIES:
-:CUSTOM_ID: elfeed-web-interface
-:END:
-This is a demonstration/toy web interface for Elfeed remote network
-access. It's a single-page web application that follows the database
-live as new entries arrive. It's packaged separately as =elfeed-web=. To
-fire it up, run =M-x elfeed-web-start= and visit
-http://localhost:8080/elfeed/ (check your =httpd-port=) with a browser.
-See the =elfeed-web.el= header for endpoint documentation if you'd like
-to access the Elfeed database through the web API.
+#+title: Elfeed web interface
+
+#+html: <a href="https://www.gnu.org/software/emacs/"><img alt="GNU Emacs" src="https://github.com/minad/corfu/blob/screenshots/emacs.svg?raw=true"/></a>
+#+html: <a href="https://elpa.nongnu.org/nongnu/elfeed-web.html"><img alt="NonGNU ELPA" src="https://elpa.nongnu.org/nongnu/elfeed-web.svg"/></a>
+#+html: <a href="https://elpa.nongnu.org/nongnu-devel/elfeed-web.html"><img alt="NonGNU-devel ELPA" src="https://elpa.nongnu.org/nongnu-devel/elfeed-web.svg"/></a>
+#+html: <a href="https://melpa.org/#/elfeed-web"><img alt="MELPA" src="https://melpa.org/packages/elfeed-web-badge.svg"/></a>
+#+html: <a href="https://stable.melpa.org/#/elfeed-web"><img alt="MELPA Stable" src="https://stable.melpa.org/packages/elfeed-web-badge.svg"/></a>
+
+This is a demonstration/toy web interface for Elfeed remote network access. It's
+a single-page web application that follows the database live as new entries
+arrive. It's packaged separately as =elfeed-web=. To fire it up, run =M-x
+elfeed-web-start= and visit http://localhost:8080/elfeed/ (check your =httpd-port=)
+with a browser. See the =elfeed-web.el= header for endpoint documentation if you'd
+like to access the Elfeed database through the web API.
 
 It's rough and unfinished -- no keyboard shortcuts, read-only, no
-authentication, and a narrow entry viewer. This is basically Elfeed's
-"mobile" interface. Patches welcome.
+authentication, and a narrow entry viewer. This is basically Elfeed's "mobile"
+interface. Patches welcome.
