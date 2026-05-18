@@ -367,7 +367,8 @@ URL is the requested resource."
                    ;; needs to be skipped.
                    (when (looking-at-p "Content-Length: ")
                      (goto-char (point-min))
-                     (elfeed-move-to-first-empty-line))
+                     (elfeed-move-to-first-empty-line)
+                     (narrow-to-region (point) (point-max)))
                    ;; No status code is returned by curl for file:// urls
                    (setf result t
                          elfeed-curl-error-message nil))
