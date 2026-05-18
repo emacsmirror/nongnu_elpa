@@ -34,7 +34,7 @@ If this is giving you problems, fetching with curl can be disabled by setting
 
 There are projects which extend Elfeed with additional features. The following
 packages provide significant additional functionality and have more than 5K
-downloads on MELPA, which hints at a certain maturity. Note that no guarantees
+downloads on [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][MELPA]], which hints at a certain maturity. Note that no guarantees
 for compatibility are made.
 
 - [[https://github.com/remyhonig/elfeed-org][elfeed-org]]: Organize the feed list with Org.
