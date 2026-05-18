@@ -75,7 +75,10 @@ Each function should accept no arguments, and return a string or nil."
                  #'elfeed-clipboard-get))
 
 (defcustom elfeed-use-curl
-  (not (null (executable-find elfeed-curl-program-name)))
+  (if (executable-find elfeed-curl-program-name)
+      t
+    (warn "Elfeed: curl is not available, falling back to `url-retrieve'")
+    nil)
   "If non-nil, fetch feeds using curl instead of `url-retrieve'."
   :group 'elfeed
   :type 'boolean)
