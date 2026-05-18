@@ -304,33 +304,39 @@ Movement is configured by `elfeed-search-remain-on-entry'."
            (elfeed-search--log-button)
            (format "%d jobs pending, %d active..."
                    (- total active) active))))))
-   ((let ((update (elfeed-add-properties
-                   (format-time-string
-                    "%Y-%m-%d %H:%M"
-                    (seconds-to-time (elfeed-db-last-update)))
-                   'face 'elfeed-search-last-update-face))
-          (unread (cond
-                   ((eq elfeed-search-filter-active :hide) nil)
-                   ((and elfeed-search-filter-active
-                         elfeed-search-filter-overflowing)
-                    (propertize "?/?:?" 'face 'elfeed-search-unread-count-face))
-                   (t (elfeed-search--count-unread))))
-          (filter (when (and (not elfeed-search-filter-active)
-                             (string-match-p "[^ ]" elfeed-search-filter))
-                    (elfeed-add-properties
-                     (mapconcat
-                      (lambda (x)
-                        (elfeed-search--header-button
-                         (lambda ()
-                           (interactive)
-                           (elfeed-search--toggle-filter x))
-                         x (format "Remove filter %s" x)))
-                      (split-string elfeed-search-filter) " ")
-                     'face 'elfeed-search-filter-face))))
+   ((let* ((update (elfeed-db-last-update))
+           (delta (- (float-time) update))
+           (update (if (> delta elfeed-search-last-update-relative)
+                       (concat "Updated "
+                               (elfeed-add-properties
+                                (format-time-string "%Y-%m-%d %H:%M"
+                                                    (seconds-to-time update))
+                                'face 'elfeed-search-last-update-face))
+                     (format "Updated %s ago"
+                             (elfeed-add-properties
+                              (compat-call seconds-to-string delta t)
+                              'face 'elfeed-search-last-update-face))))
+           (unread (cond
+                    ((eq elfeed-search-filter-active :hide) nil)
+                    ((and elfeed-search-filter-active
+                          elfeed-search-filter-overflowing)
+                     (propertize "?/?:?" 'face 'elfeed-search-unread-count-face))
+                    (t (elfeed-search--count-unread))))
+           (filter (when (and (not elfeed-search-filter-active)
+                              (string-match-p "[^ ]" elfeed-search-filter))
+                     (elfeed-add-properties
+                      (mapconcat
+                       (lambda (x)
+                         (elfeed-search--header-button
+                          (lambda ()
+                            (interactive)
+                            (elfeed-search--toggle-filter x))
+                          x (format "Remove filter %s" x)))
+                       (split-string elfeed-search-filter) " ")
+                      'face 'elfeed-search-filter-face))))
       (concat
        (elfeed-search--log-button)
-       (elfeed-search--header-button #'elfeed-update
-                                     (concat "Updated " update))
+       (elfeed-search--header-button #'elfeed-update update)
        (and unread ", ") unread (and filter ", ") filter)))))
 
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"
@@ -468,6 +474,13 @@ The customization `elfeed-search-date-format' sets the formatting."
   "Space reserved for displaying the feed and tag information."
   :group 'elfeed
   :type 'integer)
+
+(defcustom elfeed-search-last-update-relative (* 60 60 24 14)
+  "Maximum relative last update time in seconds.
+Set to `most-positive-fixnum' to always use a relative time, or 0 to
+never show a relative time."
+  :type 'boolean
+  :group 'elfeed)
 
 (defcustom elfeed-search-face-alist
   '((unread elfeed-search-unread-title-face))
