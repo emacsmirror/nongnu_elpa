@@ -314,7 +314,9 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                                 'face 'elfeed-search-last-update-face))
                      (format "Updated %s ago"
                              (elfeed-add-properties
-                              (compat-call seconds-to-string delta t)
+                              (if (< delta 60)
+                                  "less than 1 minute"
+                                (compat-call seconds-to-string delta t))
                               'face 'elfeed-search-last-update-face))))
            (unread (cond
                     ((eq elfeed-search-filter-active :hide) nil)
