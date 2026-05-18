@@ -336,7 +336,9 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   "Major mode for listing elfeed feed entries."
   :syntax-table nil :abbrev-table nil :interactive nil
   (setq-local truncate-lines t
-              desktop-save-buffer #'elfeed-search-desktop-save
+              mode-line-modified nil
+              mode-line-mule-info nil
+              mode-line-remote nil
               ;; Provide format string via symbol value slot so that it will
               ;; not be %-construct interpolated. The symbol is uninterned
               ;; so that it's not *really* a global variable.
@@ -346,8 +348,8 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                 `(:eval
                   (prog1 ',symbol
                     (set ',symbol (funcall elfeed-search-header-function)))))
-              bookmark-make-record-function
-              #'elfeed-search-bookmark-make-record
+              desktop-save-buffer #'elfeed-search-desktop-save
+              bookmark-make-record-function #'elfeed-search-bookmark-make-record
               revert-buffer-function #'elfeed-search--update-force
               default-directory (elfeed-default-directory)
               hl-line-sticky-flag t)

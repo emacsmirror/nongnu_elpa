@@ -137,6 +137,9 @@ Called without arguments."
   (make-local-variable 'elfeed-show-entry)
   (setq-local bookmark-make-record-function #'elfeed-show-bookmark-make-record
               revert-buffer-function #'elfeed-show-refresh
+              mode-line-modified nil
+              mode-line-mule-info nil
+              mode-line-remote nil
               elfeed-db--kill-on-unload t
               default-directory (elfeed-default-directory)))
 

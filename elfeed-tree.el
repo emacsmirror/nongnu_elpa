@@ -135,9 +135,11 @@
   "Major mode for listing elfeed feeds as a tree."
   :syntax-table nil :abbrev-table nil :interactive nil
   (setq-local truncate-lines t
+              mode-line-modified nil
+              mode-line-mule-info nil
+              mode-line-remote nil
               revert-buffer-function #'elfeed-tree--update-force
-              bookmark-make-record-function
-              #'elfeed-tree-bookmark-make-record
+              bookmark-make-record-function #'elfeed-tree-bookmark-make-record
               default-directory (elfeed-default-directory)
               outline-regexp "\\*+"
               outline-minor-mode-cycle t
