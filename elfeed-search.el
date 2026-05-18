@@ -20,7 +20,7 @@
 
 (require 'elfeed)
 
-(defvar elfeed-search-entries ()
+(defvar-local elfeed-search-entries ()
   "List of the entries currently on display.")
 
 (defvar elfeed-search-filter-history nil
@@ -55,7 +55,8 @@ The delay is in seconds."
 (defcustom elfeed-search-filter "@6months +unread"
   "Query string filtering shown entries."
   :group 'elfeed
-  :type 'string)
+  :type 'string
+  :local t)
 
 (defcustom elfeed-search-completion t
   "Enable tag and search filter completion."
@@ -355,8 +356,6 @@ Movement is configured by `elfeed-search-remain-on-entry'."
               hl-line-sticky-flag t)
   (buffer-disable-undo)
   (hl-line-mode)
-  (make-local-variable 'elfeed-search-entries)
-  (make-local-variable 'elfeed-search-filter)
   (add-hook 'elfeed-update-hook #'elfeed-search--update-debounce)
   (add-hook 'elfeed-update-init-hook #'elfeed-search--update-force)
   (add-hook 'window-size-change-functions #'elfeed-search--resize nil 'local)

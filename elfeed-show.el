@@ -55,7 +55,7 @@
   :group 'elfeed
   :type 'boolean)
 
-(defvar elfeed-show-entry nil
+(defvar-local elfeed-show-entry nil
   "The entry being displayed in this buffer.")
 
 (defcustom elfeed-show-entry-switch #'switch-to-buffer
@@ -134,7 +134,6 @@ Called without arguments."
   "Mode for displaying Elfeed feed entries."
   :syntax-table nil :abbrev-table nil :interactive nil
   (buffer-disable-undo)
-  (make-local-variable 'elfeed-show-entry)
   (setq-local bookmark-make-record-function #'elfeed-show-bookmark-make-record
               revert-buffer-function #'elfeed-show-refresh
               mode-line-modified nil
