@@ -563,7 +563,7 @@ content."
                  (entry elfeed-show-entry))
              (lambda (status)
                (setf (alist-get key elfeed-show--fetch) nil)
-               (unless (elfeed-is-status-error status t)
+               (unless (elfeed-is-status-error status)
                  (let ((content (buffer-string)))
                    (setf (elfeed-meta entry key) (elfeed-ref content))
                    (when (buffer-live-p buffer)

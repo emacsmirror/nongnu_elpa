@@ -216,20 +216,21 @@ list.  The second argument is the tag list.")
       elfeed-curl-timeout
     url-queue-timeout))
 
-(defun elfeed-is-status-error (status use-curl)
+(cl-defun elfeed-is-status-error (status &optional (use-curl elfeed-use-curl))
   "Check if HTTP request returned STATUS means a error.
-USE-CURL is needed since the interpretation depends on if curl is used."
+The USE-CURL argument is deprecated."
+  (declare (advertised-calling-convention (status) "4.0.0"))
   (or (and use-curl (null status)) ; nil = error
       (and (not use-curl) (eq (car status) :error))))
 
 (defmacro elfeed-with-fetch (url &rest body)
   "Asynchronously run BODY in a buffer with the contents from URL.
 This macro is anaphoric, with STATUS referring to the status from
-`url-retrieve'/curl and USE-CURL being the original invoked-value
-of `elfeed-use-curl'."
+`url-retrieve' or curl.  The locally bound variable USE-CURL is deprecated."
   (declare (indent defun) (debug (&define sexp def-body)))
-  `(let* ((use-curl elfeed-use-curl) ; capture current value in closure
-          (cb (lambda (status) ,@body)))
+  `(let ((cb (let ((use-curl elfeed-use-curl))
+               (ignore use-curl)
+               (lambda (status) ,@body))))
      (if elfeed-use-curl
          (let* ((feed (elfeed-db-get-feed url))
                 (last-modified (elfeed-meta feed :last-modified))
@@ -702,12 +703,12 @@ In order to modify feed content, you can use a custom fetch function.
             ;; ...manipulate buffer...
             (funcall cb :parse)))))"
   (elfeed-with-fetch url
-    (if (elfeed-is-status-error status use-curl)
+    (if (elfeed-is-status-error status)
         (let ((print-escape-newlines t))
           (elfeed-handle-http-error
-           url (if use-curl elfeed-curl-error-message status))
+           url (if elfeed-use-curl elfeed-curl-error-message status))
           (funcall cb :error))
-      (unless use-curl
+      (unless elfeed-use-curl
         (goto-char (point-min))
         (elfeed-move-to-first-empty-line)
         (set-buffer-multibyte t))
@@ -722,7 +723,7 @@ In order to modify feed content, you can use a custom fetch function.
               (setf (elfeed-meta feed :canonical-url) nil)
             (setf (elfeed-meta feed :canonical-url) elfeed-curl-location)))
         (funcall cb :parse)))
-    (unless use-curl
+    (unless elfeed-use-curl
       (kill-buffer)))
   t)
 
