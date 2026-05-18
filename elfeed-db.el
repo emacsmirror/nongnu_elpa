@@ -221,8 +221,8 @@ Additional tag lists can be given as MORE-TAGS."
   (delete-consecutive-dups
    (sort (apply #'append tags (nconc more-tags (list ()))) #'string<)))
 
-(define-obsolete-function-alias 'elfeed-tag-1 #'elfeed-tag "3.4.2")
-(define-obsolete-function-alias 'elfeed-untag-1 #'elfeed-untag "3.4.2")
+(define-obsolete-function-alias 'elfeed-tag-1 #'elfeed-tag "4.0.0")
+(define-obsolete-function-alias 'elfeed-untag-1 #'elfeed-untag "4.0.0")
 
 (defun elfeed-tag--apply (entry-or-entry-list hook tags fun)
   "Apply FUN to compute new tags for ENTRY-OR-ENTRY-LIST.
@@ -360,17 +360,17 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 
 (defun elfeed-db-save-safe ()
   "Run `elfeed-db-save' without triggering any errors, for use as a safe hook."
-  (declare (obsolete #'elfeed-db--close-safely "3.4.2"))
+  (declare (obsolete #'elfeed-db--close-safely "4.0.0"))
   (ignore-errors (elfeed-db-save)))
 
 (defun elfeed-db-gc-safe ()
   "Run `elfeed-db-gc' without triggering any errors, for use as a safe hook."
-  (declare (obsolete #'elfeed-db--close-safely "3.4.2"))
+  (declare (obsolete #'elfeed-db--close-safely "4.0.0"))
   (ignore-errors (elfeed-db-gc)))
 
 (defun elfeed-db-upgrade (_db)
   "Upgrade the database DB from a previous format."
-  (declare (obsolete nil "3.4.2"))
+  (declare (obsolete nil "4.0.0"))
   (error "Upgrade is not supported"))
 
 (defun elfeed-db-load ()
@@ -746,11 +746,11 @@ gzip-compressed files, so the gzip program must be in your PATH."
   (add-hook 'kill-emacs-hook #'elfeed-db--close-safely))
 
 (define-obsolete-function-alias 'copy-elfeed-entry
-  #'copy-sequence "3.4.2")
+  #'copy-sequence "4.0.0")
 (define-obsolete-function-alias 'copy-elfeed-feed
-  #'copy-sequence "3.4.2")
+  #'copy-sequence "4.0.0")
 (define-obsolete-function-alias 'copy-elfeed-ref
-  #'copy-sequence "3.4.2")
+  #'copy-sequence "4.0.0")
 
 (provide 'elfeed-db)
 ;;; elfeed-db.el ends here

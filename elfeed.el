@@ -50,7 +50,8 @@
   :group 'web
   :group 'comm)
 
-(defconst elfeed-version "3.4.2")
+(defconst elfeed-version "3.4.2"
+  "The Elfeed version, used for example by `elfeed-user-agent'.")
 
 (defcustom elfeed-entry-point 'elfeed-search
   "Entry point for the command `elfeed'.
@@ -130,12 +131,12 @@ feeds unreadable.  Enabling may yield a performance boost."
 
 ;; Fetching:
 
-(define-obsolete-variable-alias 'elfeed-http-error-hooks 'elfeed-http-error-hook "3.4.2")
-(define-obsolete-variable-alias 'elfeed-parse-error-hooks 'elfeed-parse-error-hook "3.4.2")
-(define-obsolete-variable-alias 'elfeed-update-hooks 'elfeed-update-hook "3.4.2")
-(define-obsolete-variable-alias 'elfeed-update-init-hooks 'elfeed-update-init-hook "3.4.2")
-(define-obsolete-variable-alias 'elfeed-tag-hooks 'elfeed-tag-hook "3.4.2")
-(define-obsolete-variable-alias 'elfeed-untag-hooks 'elfeed-untag-hook "3.4.2")
+(define-obsolete-variable-alias 'elfeed-http-error-hooks 'elfeed-http-error-hook "4.0.0")
+(define-obsolete-variable-alias 'elfeed-parse-error-hooks 'elfeed-parse-error-hook "4.0.0")
+(define-obsolete-variable-alias 'elfeed-update-hooks 'elfeed-update-hook "4.0.0")
+(define-obsolete-variable-alias 'elfeed-update-init-hooks 'elfeed-update-init-hook "4.0.0")
+(define-obsolete-variable-alias 'elfeed-tag-hooks 'elfeed-tag-hook "4.0.0")
+(define-obsolete-variable-alias 'elfeed-untag-hooks 'elfeed-untag-hook "4.0.0")
 
 (defvar elfeed-http-error-hook ()
   "Hooks to run when an http connection error occurs.

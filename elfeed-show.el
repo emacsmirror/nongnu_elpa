@@ -612,7 +612,7 @@ content is stored in the entry metadata under the key :link-content."
       (handler . ,#'elfeed-show-bookmark-handler))))
 
 (define-obsolete-function-alias 'elfeed-show-new-live-search
-  #'elfeed-search-new-live "3.4.2")
+  #'elfeed-search-new-live "4.0.0")
 
 (provide 'elfeed-show)
 ;;; elfeed-show.el ends here

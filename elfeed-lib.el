@@ -21,7 +21,7 @@
 
 (defun elfeed-keyword->symbol (keyword)
   "If a keyword, convert KEYWORD into a plain symbol (remove the colon)."
-  (declare (obsolete nil "3.4.2"))
+  (declare (obsolete nil "4.0.0"))
   (if (keywordp keyword)
       (intern (substring (symbol-name keyword) 1))
     keyword))
@@ -29,25 +29,25 @@
 (defun elfeed-strip-properties (string)
   "Return a copy of STRING with all properties removed.
 If STRING is nil, returns nil."
-  (declare (obsolete #'substring-no-properties "3.4.2"))
+  (declare (obsolete #'substring-no-properties "4.0.0"))
   (when string
     (substring-no-properties string)))
 
 (defun elfeed-expose (function &rest args)
   "Return an interactive version of FUNCTION, \"exposing\" it to the user.
 ARGS are passed to FUNCTION."
-  (declare (obsolete nil "3.4.2"))
+  (declare (obsolete nil "4.0.0"))
   (lambda () (interactive) (apply function args)))
 
 (defun elfeed-kill-buffer ()
   "Kill the current buffer."
-  (declare (obsolete #'kill-current-buffer "3.4.2"))
+  (declare (obsolete #'kill-current-buffer "4.0.0"))
   (interactive)
   (kill-buffer (current-buffer)))
 
 (defun elfeed-kill-line ()
   "Clear out the current line without touching anything else."
-  (declare (obsolete #'delete-region "3.4.2"))
+  (declare (obsolete #'delete-region "4.0.0"))
   (delete-region (pos-bol) (pos-eol)))
 
 (defun elfeed-goto-line (n)
@@ -451,11 +451,11 @@ Optionally TRUNCATE content if too wide."
 
 ;; Keep old names to avoid breakage.
 (define-obsolete-function-alias 'elfeed-directory-empty-p
-  #'directory-empty-p "3.4.2")
+  #'directory-empty-p "4.0.0")
 (define-obsolete-function-alias 'elfeed-libxml-supported-p
-  #'libxml-available-p "3.4.2")
+  #'libxml-available-p "4.0.0")
 (define-obsolete-function-alias 'elfeed-get-url-at-point
-  #'thing-at-point-url-at-point "3.4.2")
+  #'thing-at-point-url-at-point "4.0.0")
 
 (provide 'elfeed-lib)
 ;;; elfeed-lib.el ends here

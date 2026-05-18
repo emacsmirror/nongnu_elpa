@@ -1,6 +1,6 @@
-* Changes
+#+title: Changes
 
-** Development
+** Upcoming 4.0.0 (development)
 
 *** General
 

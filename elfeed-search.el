@@ -63,7 +63,7 @@ The delay is in seconds."
   :type 'boolean)
 
 (define-obsolete-variable-alias 'elfeed-sort-order
-  'elfeed-search-sort-order "3.4.2")
+  'elfeed-search-sort-order "4.0.0")
 
 (defcustom elfeed-search-sort-order 'descending
   "The order in which entries should be displayed.
@@ -1435,9 +1435,9 @@ state of the db for when `desktop-auto-save-timeout' is enabled."
 
 ;; Keep old names to avoid breakage.
 (define-obsolete-function-alias 'elfeed-search-quit-window
-  #'quit-window "3.4.2")
+  #'quit-window "4.0.0")
 (define-obsolete-function-alias 'elfeed-search-update--force
-  #'revert-buffer "3.4.2")
+  #'revert-buffer "4.0.0")
 
 (provide 'elfeed-search)
 ;;; elfeed-search.el ends here
