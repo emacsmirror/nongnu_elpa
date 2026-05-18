@@ -136,6 +136,8 @@
   :syntax-table nil :abbrev-table nil :interactive nil
   (setq-local truncate-lines t
               revert-buffer-function #'elfeed-tree--update-force
+              bookmark-make-record-function
+              #'elfeed-tree-bookmark-make-record
               default-directory (elfeed-default-directory)
               outline-regexp "\\*+"
               outline-minor-mode-cycle t
@@ -445,6 +447,16 @@ not use this function directly.  Instead use `elfeed-tree-update'."
           (setq elfeed-tree--last-update (float-time))))))
   ;; Always force a header line update
   (force-mode-line-update))
+
+;;;###autoload
+(defun elfeed-tree-bookmark-handler (_record)
+  "Jump to an `elfeed-tree' bookmark RECORD."
+  (elfeed-tree))
+(put 'elfeed-tree-bookmark-handler 'bookmark-handler-type "Elfeed")
+
+(defun elfeed-tree-bookmark-make-record ()
+  "Return a bookmark record for the current `elfeed-tree' buffer."
+  `("elfeed tree" (handler . ,#'elfeed-tree-bookmark-handler)))
 
 (provide 'elfeed-tree)
 ;;; elfeed-tree.el ends here

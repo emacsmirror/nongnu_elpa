@@ -1405,16 +1405,14 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 (defun elfeed-search-bookmark-handler (record)
   "Jump to an `elfeed-search' bookmark RECORD."
   (elfeed-search (bookmark-prop-get record 'location)))
-(put 'elfeed-search-bookmark-handler 'bookmark-handler-type "Elfeed Search")
+(put 'elfeed-search-bookmark-handler 'bookmark-handler-type "Elfeed")
 
 (defun elfeed-search-bookmark-make-record ()
   "Return a bookmark record for the current `elfeed-search' buffer."
-  (let* ((filter (elfeed-search-parse-filter elfeed-search-filter))
-         (tags (plist-get filter :must-have)))
-    `(,(format "elfeed %s" elfeed-search-filter)
-      (location . ,elfeed-search-filter)
-      (tags ,@(mapcar #'symbol-name tags))
-      (handler . elfeed-search-bookmark-handler))))
+  `(,(format "elfeed %s" elfeed-search-filter)
+    (location . ,elfeed-search-filter)
+    (tags ,@(plist-get (elfeed-search-parse-filter elfeed-search-filter) :must-have))
+    (handler . ,#'elfeed-search-bookmark-handler)))
 
 ;; Desktop Save
 

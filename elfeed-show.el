@@ -237,13 +237,14 @@ The result depends on the value of `elfeed-show-unique-buffers'."
 
 (defun elfeed-show-entry (entry)
   "Display ENTRY in the current buffer."
-  (with-current-buffer (get-buffer-create (elfeed-show--buffer-name entry))
-    (elfeed-show-mode)
-    (setq elfeed-show-entry entry)
-    (elfeed-show-refresh)
-    (funcall elfeed-show-entry-switch (current-buffer))
+  (let ((buffer (get-buffer-create (elfeed-show--buffer-name entry))))
+    (with-current-buffer buffer
+      (elfeed-show-mode)
+      (setq elfeed-show-entry entry)
+      (elfeed-show-refresh))
+    (funcall elfeed-show-entry-switch buffer)
     ;; Scroll to top after reset
-    (when-let* ((win (get-buffer-window)))
+    (when-let* ((win (get-buffer-window buffer)))
       (set-window-start win (point-min)))))
 
 (defun elfeed-show-next (&optional n)
@@ -596,23 +597,19 @@ content is stored in the entry metadata under the key :link-content."
 ;;;###autoload
 (defun elfeed-show-bookmark-handler (record)
   "Show the bookmarked entry saved in the `RECORD'."
-  (let* ((id (bookmark-prop-get record 'id))
-         (entry (elfeed-db-get-entry id))
-         (position (bookmark-get-position record)))
-    (elfeed-show-entry entry)
-    (goto-char position)))
-(put 'elfeed-show-bookmark-handler 'bookmark-handler-type "Elfeed Entry")
+  (let ((elfeed-show-entry-switch #'switch-to-buffer))
+    (elfeed-show-entry (elfeed-db-get-entry (bookmark-prop-get record 'id))))
+  (goto-char (bookmark-get-position record)))
+(put 'elfeed-show-bookmark-handler 'bookmark-handler-type "Elfeed")
 
 (defun elfeed-show-bookmark-make-record ()
   "Save the current position and the entry into a bookmark."
-  (let ((id (elfeed-entry-id elfeed-show-entry))
-        (position (point))
-        (title (elfeed-entry-title elfeed-show-entry)))
+  (let ((title (elfeed-meta--title elfeed-show-entry)))
     `(,(format "elfeed entry \"%s\"" title)
-      (id . ,id)
+      (id . ,(elfeed-entry-id elfeed-show-entry))
       (location . ,title)
-      (position . ,position)
-      (handler . elfeed-show-bookmark-handler))))
+      (position . ,(point))
+      (handler . ,#'elfeed-show-bookmark-handler))))
 
 (define-obsolete-function-alias 'elfeed-show-new-live-search
   #'elfeed-search-new-live "3.4.2")
