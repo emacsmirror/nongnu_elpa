@@ -31,6 +31,8 @@
 - =elfeed-db-gc=, =elfeed-db-pack=: Scan entry and feed meta data for =elfeed-ref=
   references. This way other packages can reference content with the reference
   kept in the metadata.
+- =elfeed-db-gc=: Deduplicate strings in the database to reduce on-disk and
+  in-memory size.
 
 *** Feed updates
 
