@@ -291,8 +291,9 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                      elfeed-log-error-count))
             " ")))
 
-(defun elfeed-search--header ()
-  "Computes the string to be used as the Elfeed header."
+(defun elfeed-search--header (&optional hide-filter)
+  "Computes the string to be used as the Elfeed header.
+Hide filter and unread counter if HIDE-FILTER is non-nil."
   (cond
    ((not elfeed-db) "Database not loaded.")
    ((zerop (elfeed-db-last-update))
@@ -319,12 +320,13 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                                 (compat-call seconds-to-string delta t))
                               'face 'elfeed-search-last-update-face))))
            (unread (cond
-                    ((eq elfeed-search-filter-active :hide) nil)
+                    (hide-filter nil)
                     ((and elfeed-search-filter-active
                           elfeed-search-filter-overflowing)
                      (propertize "?/?:?" 'face 'elfeed-search-unread-count-face))
                     (t (elfeed-search--count-unread))))
-           (filter (when (and (not elfeed-search-filter-active)
+           (filter (when (and (not hide-filter)
+                              (not elfeed-search-filter-active)
                               (string-match-p "[^ ]" elfeed-search-filter))
                      (elfeed-add-properties
                       (mapconcat

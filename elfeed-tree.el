@@ -124,13 +124,6 @@
   (setf (elfeed-meta feed :title) title)
   (elfeed-tree-update :force))
 
-(defun elfeed-tree--header ()
-  "Computes the string to be used in the header line."
-  ;; Reuse the header from the search buffer here
-  ;; without the unread count and the search filter.
-  (let ((elfeed-search-filter-active :hide))
-    (elfeed-search--header)))
-
 (define-derived-mode elfeed-tree-mode special-mode "elfeed-tree"
   "Major mode for listing elfeed feeds as a tree."
   :syntax-table nil :abbrev-table nil :interactive nil
@@ -151,7 +144,7 @@
                 (put symbol 'risky-local-variable t)
                 `(:eval
                   (prog1 ',symbol
-                    (set ',symbol (elfeed-tree--header)))))
+                    (set ',symbol (elfeed-search--header t)))))
               hl-line-sticky-flag t)
   (buffer-disable-undo)
   (hl-line-mode)
