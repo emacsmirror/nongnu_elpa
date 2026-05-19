@@ -6,7 +6,7 @@
 ;; Maintainer: Karthik Chikmagalur <karthik.chikmagalur@gmail.com>, Ihor Radchenko <yantar92@posteo.net>, Daniel Mendler <mail@daniel-mendler.de>
 ;; URL: https://github.com/emacs-elfeed/elfeed-web
 ;; Version: 3.4.2
-;; Package-Requires: ((emacs "28.1") (compat "31") (elfeed "3.4.2") (simple-httpd "1.5.1"))
+;; Package-Requires: ((emacs "28.1") (compat "31") (elfeed "3.4.2") (simple-httpd "1.6"))
 ;; Keywords: network, hypermedia
 
 ;;; Commentary:
@@ -115,11 +115,11 @@
            :title  (elfeed-feed-title thing)
            :author (elfeed-feed-author thing)))))
 
-(defservlet* elfeed/things/:webid application/json ()
+(httpd-servlet* elfeed/things/:webid application/json ()
   "Return a requested thing (entry or feed)."
   (princ (json-encode (elfeed-web-for-json (elfeed-web-lookup webid)))))
 
-(defservlet* elfeed/content/:ref text/html ()
+(httpd-servlet* elfeed/content/:ref text/html ()
   "Serve content-addressable content at REF."
   (let ((content (elfeed-deref (elfeed-ref--create :id ref))))
     (if content
@@ -127,7 +127,7 @@
       (princ (json-encode '(:error 404)))
       (httpd-send-header t "application/json" 404))))
 
-(defservlet* elfeed/search application/json (q)
+(httpd-servlet* elfeed/search application/json (q)
   "Perform a search operation with Q and return the results."
   (let* ((results ())
          (modified-q (format "#%d %s" elfeed-web-limit q))
@@ -145,7 +145,7 @@
 (defvar elfeed-web-waiting ()
   "Clients waiting for an update.")
 
-(defservlet* elfeed/update application/json (time)
+(httpd-servlet* elfeed/update application/json (time)
   "Return the current :last-update time for the database. If a
 time parameter is provided don't respond until the time has
 advanced past it (long poll)."
@@ -154,13 +154,13 @@ advanced past it (long poll)."
         (push (httpd-discard-buffer) elfeed-web-waiting)
       (princ (json-encode update-time)))))
 
-(defservlet* elfeed/mark-all-read application/json ()
+(httpd-servlet* elfeed/mark-all-read application/json ()
   "Marks all entries in the database as read (quick-and-dirty)."
   (elfeed-db-visit (e)
     (elfeed-untag e 'unread))
   (princ (json-encode t)))
 
-(defservlet* elfeed/tags application/json ()
+(httpd-servlet* elfeed/tags application/json ()
   "Endpoint for adding and removing tags on zero or more entries.
 Only PUT requests are accepted, and the content must be a JSON
 object with any of these properties:
@@ -194,7 +194,7 @@ The current set of tags for each entry will be returned."
                collect (cons webid (elfeed-entry-tags entry)) into result
                finally (princ (if result (json-encode result) "{}"))))))
 
-(defservlet elfeed text/plain (uri-path _ request)
+(httpd-servlet elfeed text/plain (uri-path _ request)
   "Serve static files from `elfeed-web-data-root'."
   (let ((base "/elfeed/"))
     (if (< (length uri-path) (length base))
@@ -207,7 +207,7 @@ The current set of tags for each entry will be returned."
   (while elfeed-web-waiting
     (let ((proc (pop elfeed-web-waiting)))
       (ignore-errors
-        (with-httpd-buffer proc "application/json"
+        (httpd-with-buffer proc "application/json"
           (princ (json-encode (ffloor (elfeed-db-last-update)))))))))
 
 (defun elfeed-web-enabled (request)
