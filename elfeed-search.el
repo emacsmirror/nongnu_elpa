@@ -366,7 +366,6 @@ Hide filter and unread counter if HIDE-FILTER is non-nil."
               hl-line-sticky-flag t)
   (buffer-disable-undo)
   (hl-line-mode)
-  (add-hook 'minibuffer-setup-hook #'elfeed-search--minibuffer-setup)
   (add-hook 'elfeed-update-hook #'elfeed-search--update-debounce)
   (add-hook 'elfeed-update-init-hook #'elfeed-search--update-force)
   (add-hook 'window-size-change-functions #'elfeed-search--resize nil 'local)
@@ -814,25 +813,28 @@ Executing a filter in bytecode form is generally faster than
                    (all-completions (substring input 0 1) all))
                all))))))))
 
-(defun elfeed-search--prompt (current)
-  "Prompt for a new filter, starting with CURRENT."
+(defun elfeed-search--prompt (current &optional live)
+  "Prompt for a new filter starting from CURRENT, optionally with LIVE update."
   (unless (or (equal "" current) (string-suffix-p " " current))
     (setq current (concat current " ")))
-  (if elfeed-search-completion
-      (dlet ((crm-separator "[ \t]+")
-             (crm-prompt "%p")
-             (completion-show-inline-help nil))
-        (string-join
-         (completing-read-multiple
-          "Filter: "
-          (completion-table-with-metadata
-           (completion-table-dynamic
-            (elfeed-search--completion-table))
-           '((category . elfeed-search)))
-          nil nil current 'elfeed-search-filter-history)
-         " "))
-    (read-from-minibuffer
-     "Filter: " current nil nil 'elfeed-search-filter-history)))
+  (let ((elfeed-search-filter-active (if live :live :non-interactive)))
+    (minibuffer-with-setup-hook
+        #'elfeed-search--minibuffer-setup
+      (if elfeed-search-completion
+          (dlet ((crm-separator "[ \t]+")
+                 (crm-prompt "%p")
+                 (completion-show-inline-help nil))
+            (string-join
+             (completing-read-multiple
+              "Filter: "
+              (completion-table-with-metadata
+               (completion-table-dynamic
+                (elfeed-search--completion-table))
+               '((category . elfeed-search)))
+              nil nil current 'elfeed-search-filter-history)
+             " "))
+        (read-from-minibuffer
+         "Filter: " current nil nil 'elfeed-search-filter-history)))))
 
 (defun elfeed-search--prompt-tags (prompt &optional entry-or-entries-list)
   "Prompt for tags in the minibuffer.
@@ -908,9 +910,8 @@ that match at least one of the = expressions will be shown.
 Every other space-separated element is treated like a regular
 expression, matching against entry link, title, and feed title."
   (interactive
-   (let ((elfeed-search-filter-active :non-interactive))
-     (list (elfeed-search--prompt
-            (if current-prefix-arg "" elfeed-search-filter))))
+   (list (elfeed-search--prompt
+          (if current-prefix-arg "" elfeed-search-filter)))
    elfeed-search-mode)
   (with-current-buffer (elfeed-search-buffer)
     (setf elfeed-search-filter
@@ -1355,11 +1356,10 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
   "Syntax table active when editing the filter in the minibuffer.")
 
 (defun elfeed-search--minibuffer-setup ()
-  "Set up the minibuffer for live filtering."
-  (when elfeed-search-filter-active
-    (set-syntax-table elfeed-search-filter-syntax-table)
-    (when (eq :live elfeed-search-filter-active)
-      (add-hook 'post-command-hook 'elfeed-search--live-update nil 'local))))
+  "Set up the minibuffer for filtering."
+  (set-syntax-table elfeed-search-filter-syntax-table)
+  (when (eq :live elfeed-search-filter-active)
+    (add-hook 'post-command-hook 'elfeed-search--live-update nil 'local)))
 
 (defun elfeed-search--live-update ()
   "Update the `elfeed-search' buffer based on the contents of the minibuffer."
@@ -1378,9 +1378,8 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
   "Filter the `elfeed-search' buffer as the filter is written."
   (interactive nil elfeed-search-mode)
   (unwind-protect
-      (let ((elfeed-search-filter-active :live))
-        (setq elfeed-search-filter
-              (elfeed-search--prompt elfeed-search-filter)))
+      (setq elfeed-search-filter
+            (elfeed-search--prompt elfeed-search-filter :live))
     (elfeed-search-update :force)))
 
 (defun elfeed-search-new-live ()
