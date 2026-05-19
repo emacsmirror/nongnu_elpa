@@ -135,6 +135,11 @@ Possible alignments are :left and :right."
   :group 'elfeed
   :type '(list string integer (choice (const :left) (const :right))))
 
+(defcustom elfeed-search-separator-date-format "%b %Y"
+  "The `format-time-string' format for date separators."
+  :group 'elfeed
+  :type 'string)
+
 (defcustom elfeed-search-compile-filter t
   "If non-nil, compile search filters into bytecode on the fly."
   :group 'elfeed
@@ -1427,27 +1432,35 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 
 (defun elfeed-search-add-separators ()
   "Add separators to the search buffer."
-  (remove-overlays (point-min) (point-max)
-                   'category 'elfeed-search-separator)
-  (let (last)
+  (let ((last nil) (overlays 0))
+    (remove-overlays (point-min) (point-max)
+                     'category 'elfeed-search-separator)
     (save-excursion
       (goto-char (point-min))
       (while (not (eobp))
         (when-let* ((entry (get-text-property (point) 'elfeed-entry))
                     (title (if (eq (elfeed-search--sort-function)
                                    #'elfeed-search-group-by-feed)
+                               ;; If sorting by feed, using feed title.
                                (elfeed-meta--title (elfeed-entry-feed entry))
-                             (elfeed-search-format-date
-                              (elfeed-entry-date entry))))
+                             ;; Otherwise use date as separator title.
+                             (format-time-string
+                              elfeed-search-separator-date-format
+                              (seconds-to-time (elfeed-entry-date entry)))))
                     ((not (equal title last)))
                     (ov (make-overlay (pos-bol) (pos-bol))))
+          (incf overlays)
           (overlay-put ov 'category 'elfeed-search-separator)
           (overlay-put ov 'before-string
                        (concat (and last "\n")
                                (propertize (concat title "\n")
                                            'face 'elfeed-search-separator-face)))
           (setq last title))
-        (forward-line)))))
+        (forward-line)))
+    ;; Delete separator overlay if there is only a single separator
+    (when (= overlays 1)
+      (remove-overlays (point-min) (point-max)
+                       'category 'elfeed-search-separator))))
 
 ;; Bookmarks
 

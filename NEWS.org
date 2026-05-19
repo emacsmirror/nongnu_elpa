@@ -71,6 +71,7 @@
   relative to the current time.
 - =elfeed-search-update-delay=: New option to debounce search buffer update.
 - =elfeed-search-separator-face=: New face for the search buffer separators.
+- =elfeed-search-separator-date-format=: Format string for separator date.
 - =elfeed-search-add-separators=: New search buffer update hook which adds
   separator overlays. The separators are enabled by default. Remove the hook to
   disable:
