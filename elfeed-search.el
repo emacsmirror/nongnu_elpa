@@ -822,7 +822,7 @@ Executing a filter in bytecode form is generally faster than
         (lambda ()
           (set-syntax-table elfeed-search-filter-syntax-table)
           (when live
-            (add-hook 'post-command-hook 'elfeed-search--live-update nil 'local)))
+            (add-hook 'post-command-hook #'elfeed-search--live-update nil 'local)))
       (if elfeed-search-completion
           (dlet ((crm-separator "[ \t]+")
                  (crm-prompt "%p")
