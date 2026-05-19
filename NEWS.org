@@ -47,6 +47,7 @@
   The feed appears still in the list for manual updates, and you can configure
   autotags for the entries which are part of the feed.
 #+begin_src emacs-lisp
+;; Do not update this feed
 (setq elfeed-feeds
  '(("https://yhetil.org/emacs-devel/new.atom" :no-update t emacs)
    ...))
@@ -79,6 +80,14 @@
 - =elfeed-search-group-by-feed=: New function for =elfeed-search-sort-function=.
 - =elfeed-search-show-entry=: Do not mark entry as read when invoked with prefix
   argument.
+- =elfeed-search-show-entry=: Invoke alternative function on the current entry if
+  the key =:show-entry= is specified for a feed.
+#+begin_src emacs-lisp
+;; Always open entries in the browser
+(setq elfeed-feeds
+ '(("https://example.com/rss" :show-entry browse-url example)
+   ...))
+#+end_src
 - =elfeed-search-mark=, =elfeed-search-unmark=: New commands for non-continuous
   selections bound to =m= and =M=.
 - =elfeed-search-cycle-order=: New command bound to =o= to cycle between sort
@@ -101,8 +110,10 @@
 - =elfeed-show-fetch-link=: New command to fetch link content and insert it into
   the show buffer. The command is bound to the key =f=. In order to force fetching
   press the key =C-u f=. Auto fetching can be enabled per feed with the
-  =:fetch-link= option.
+  =:fetch-link= option. This is a good idea for link-only feeds which come without
+  content.
 #+begin_src emacs-lisp
+;; Automatically fetch the link content
 (setq elfeed-feeds
  '(("https://www.debian.org/security/dsa" :fetch-link t linux debian)
    ...))

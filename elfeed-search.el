@@ -1270,17 +1270,25 @@ the browser defined by `browse-url-secondary-browser-function'."
 
 (defun elfeed-search-show-entry (entry &optional preview)
   "Display the currently selected ENTRY in a buffer.
-If the prefix argument PREVIEW is non-nil, do not mark the entry as read."
-  (interactive (list (elfeed-search-selected :ignore-region) current-prefix-arg)
+If the prefix argument PREVIEW is non-nil, do not mark the entry as
+read.  If the feed specifies an alternative `:show-entry' function,
+e.g., `browse-url', this function will be called with the entry link as
+argument."
+  (interactive (list (or (elfeed-search-selected :ignore-region)
+                         (user-error "No entry selected!"))
+                     current-prefix-arg)
                elfeed-search-mode)
-  (when (elfeed-entry-p entry)
-    (when (and (not preview) (elfeed-untag entry 'unread))
-      (elfeed-search-update-entry entry))
-    (elfeed-search--after-action 'show)
-    ;; Update hl-line overlay. This does not happen automatically, since
-    ;; `elfeed-show-entry' switches to another buffer.
-    (hl-line-highlight)
-    (push-mark nil 'nomsg)
+  (when (and (not preview) (elfeed-untag entry 'unread))
+    (elfeed-search-update-entry entry))
+  (elfeed-search--after-action 'show)
+  ;; Update hl-line overlay. This does not happen automatically, since
+  ;; `elfeed-show-entry' switches to another buffer.
+  (hl-line-highlight)
+  (push-mark nil 'nomsg)
+  (if-let* ((feed (elfeed-entry-feed entry))
+            (show (elfeed-meta feed :show-entry))
+            (link (elfeed-entry-link entry)))
+      (funcall show link)
     ;; elfeed-show.el is required by elfeed.el at runtime.
     (declare-function elfeed-show-entry "elfeed-show")
     (elfeed-show-entry entry)))
