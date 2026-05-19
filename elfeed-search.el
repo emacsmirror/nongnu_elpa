@@ -32,14 +32,16 @@
 (defvar elfeed-search--resize-timer nil
   "Timer to debounce search window resizing.")
 
+(define-obsolete-variable-alias 'elfeed-search-last-update
+  'elfeed-search--last-update "4.0.0")
+(defvar elfeed-search--last-update 0
+  "The last time the buffer was redrawn in epoch seconds.")
+
 (defvar elfeed-search--last-width 0
   "The last window width.")
 
 (defvar elfeed-search--marked nil
   "List of marked entries.")
-
-(defvar elfeed-search-last-update 0
-  "The last time the buffer was redrawn in epoch seconds.")
 
 (defvar elfeed-search-update-hook (list #'elfeed-search-add-separators)
   "List of functions to run immediately following a search buffer update.
@@ -128,18 +130,22 @@ Possible alignments are :left and :right."
   :group 'elfeed
   :type 'boolean)
 
-(defvar elfeed-search-filter-active nil
-  "When non-nil, Elfeed is currently reading a filter from the minibuffer.
-When live editing the filter, it is bound to :live.")
-
-(defvar elfeed-search-filter-overflowing nil
-  "When non-nil, the current live filter overflows the window.")
-
 (defvar elfeed-search-header-function #'elfeed-search--header
   "Function that returns the string to be used for the Elfeed search header.")
 
 (defvar elfeed-search-print-entry-function #'elfeed-search-print-entry--default
   "Function to print entries into the *elfeed-search* buffer.")
+
+(define-obsolete-variable-alias 'elfeed-search-filter-active
+  'elfeed-search--filter-active "4.0.0")
+(defvar elfeed-search--filter-active nil
+  "When non-nil, Elfeed is currently reading a filter from the minibuffer.
+When live editing the filter, it is bound to :live.")
+
+(define-obsolete-variable-alias 'elfeed-search-filter-overflowing
+  'elfeed-search--filter-overflowing "4.0.0")
+(defvar elfeed-search--filter-overflowing nil
+  "When non-nil, the current live filter overflows the window.")
 
 (defun elfeed-search-tag-all-unread ()
   "Add the `unread' tag to all selected entries."
@@ -321,12 +327,12 @@ Hide filter and unread counter if HIDE-FILTER is non-nil."
                               'face 'elfeed-search-last-update-face))))
            (unread (cond
                     (hide-filter nil)
-                    ((and elfeed-search-filter-active
-                          elfeed-search-filter-overflowing)
+                    ((and elfeed-search--filter-active
+                          elfeed-search--filter-overflowing)
                      (propertize "?/?:?" 'face 'elfeed-search-unread-count-face))
                     (t (elfeed-search--count-unread))))
            (filter (when (and (not hide-filter)
-                              (not elfeed-search-filter-active)
+                              (not elfeed-search--filter-active)
                               (string-match-p "[^ ]" elfeed-search-filter))
                      (elfeed-add-properties
                       (mapconcat
@@ -817,7 +823,7 @@ Executing a filter in bytecode form is generally faster than
   "Prompt for a new filter starting from CURRENT, optionally with LIVE update."
   (unless (or (equal "" current) (string-suffix-p " " current))
     (setq current (concat current " ")))
-  (let ((elfeed-search-filter-active (if live :live :non-interactive)))
+  (let ((elfeed-search--filter-active (if live :live :non-interactive)))
     (minibuffer-with-setup-hook
         (lambda ()
           (set-syntax-table elfeed-search-filter-syntax-table)
@@ -1020,8 +1026,8 @@ directly.  Instead use `elfeed-search-update'."
   (when (and (buffer-live-p buffer)
              (or (eq method :force)
                  (eq method :resize)
-                 (and (not elfeed-search-filter-active)
-                      (< elfeed-search-last-update (elfeed-db-last-update)))))
+                 (and (not elfeed-search--filter-active)
+                      (< elfeed-search--last-update (elfeed-db-last-update)))))
     ;; Run inside window such that save excursion moves the window point.
     (with-selected-window (or (get-buffer-window buffer) (selected-window))
       ;; If no window is found, we still have to execute in the buffer.
@@ -1037,7 +1043,7 @@ directly.  Instead use `elfeed-search-update'."
               (elfeed-search--print-entry entry)
               (insert ?\n))
             (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)
-            (setf elfeed-search-last-update (float-time)
+            (setf elfeed-search--last-update (float-time)
                   list-buffers-directory elfeed-search-filter)))
         ;; Highlighting gets lost due to debouncing.
         (hl-line-highlight)
@@ -1360,7 +1366,7 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 
 (defun elfeed-search--live-update ()
   "Update the `elfeed-search' buffer based on the contents of the minibuffer."
-  (when (eq :live elfeed-search-filter-active)
+  (when (eq :live elfeed-search--filter-active)
     (let ((current-filter (minibuffer-contents-no-properties)))
       (with-current-buffer (elfeed-search-buffer)
         (let* ((window (get-buffer-window))
@@ -1368,7 +1374,7 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
                (limiter (if window (format "#%d " height) "#1 "))
                (elfeed-search-filter (concat limiter current-filter)))
           (elfeed-search-update :force)
-          (setf elfeed-search-filter-overflowing
+          (setf elfeed-search--filter-overflowing
                 (length= elfeed-search-entries height)))))))
 
 (defun elfeed-search-live-filter ()
