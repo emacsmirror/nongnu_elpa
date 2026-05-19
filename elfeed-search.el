@@ -535,8 +535,7 @@ never show a relative time."
 (defun elfeed-search-print-entry--default (entry)
   "Print ENTRY to the buffer."
   (let* ((tags (elfeed-entry-tags entry))
-         (date-float (elfeed-entry-date entry))
-         (date-str (elfeed-search-format-date date-float))
+         (date (elfeed-search-format-date (elfeed-entry-date entry)))
          (title (elfeed-meta--title entry))
          (title (if (or (not title) (equal title ""))
                     (elfeed-entry-link entry)
@@ -553,10 +552,9 @@ never show a relative time."
                                title-width
                                elfeed-search-title-max-width)
                         :left)))
-    (insert (elfeed-add-properties date-str
+    (insert (elfeed-add-properties date
                                    'face 'elfeed-search-date-face
                                    'mouse-face 'highlight
-                                   'elfeed-date date-float
                                    'follow-link [elfeed-date])
             " "
             (elfeed-add-properties title-column
@@ -1324,8 +1322,9 @@ argument."
 (defun elfeed-search-date-filter ()
   "Toggle date filter from date at point."
   (interactive nil elfeed-search-mode)
-  (when-let* ((date (get-text-property (pos-bol) 'elfeed-date)))
-    (elfeed-search--toggle-filter (elfeed-search--date-filter date))))
+  (when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
+    (elfeed-search--toggle-filter (elfeed-search--date-filter
+                                   (elfeed-entry-date entry)))))
 
 (defun elfeed-search-tag-filter ()
   "Toggle tag filter from tag at point."
