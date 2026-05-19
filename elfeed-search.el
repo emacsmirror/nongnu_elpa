@@ -339,7 +339,7 @@ Hide filter and unread counter if HIDE-FILTER is non-nil."
                      (format "Updated %s ago"
                              (elfeed-add-properties
                               (if (< delta 60)
-                                  "less than 1 minute"
+                                  "< 1 minute"
                                 (compat-call seconds-to-string delta t))
                               'face 'elfeed-search-last-update-face))))
            (unread (cond
