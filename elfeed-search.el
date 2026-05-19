@@ -819,7 +819,10 @@ Executing a filter in bytecode form is generally faster than
     (setq current (concat current " ")))
   (let ((elfeed-search-filter-active (if live :live :non-interactive)))
     (minibuffer-with-setup-hook
-        #'elfeed-search--minibuffer-setup
+        (lambda ()
+          (set-syntax-table elfeed-search-filter-syntax-table)
+          (when live
+            (add-hook 'post-command-hook 'elfeed-search--live-update nil 'local)))
       (if elfeed-search-completion
           (dlet ((crm-separator "[ \t]+")
                  (crm-prompt "%p")
@@ -1354,12 +1357,6 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
     (modify-syntax-entry ?# "w" table)
     table)
   "Syntax table active when editing the filter in the minibuffer.")
-
-(defun elfeed-search--minibuffer-setup ()
-  "Set up the minibuffer for filtering."
-  (set-syntax-table elfeed-search-filter-syntax-table)
-  (when (eq :live elfeed-search-filter-active)
-    (add-hook 'post-command-hook 'elfeed-search--live-update nil 'local)))
 
 (defun elfeed-search--live-update ()
   "Update the `elfeed-search' buffer based on the contents of the minibuffer."
