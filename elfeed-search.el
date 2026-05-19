@@ -85,12 +85,22 @@ suitable as the predicate for `sort'.
 
 Changing this from the default will lead to misleading results
 during live filter editing, but the results be will correct when
-live filter editing is exited."
+live filter editing is exited.
+
+The variable can also be set to a list of functions (or nil for the
+default function) such that you can cycle between the function via the
+command `elfeed-search-cycle-order'."
   :group 'elfeed
   :type `(choice
           (const :tag "Group by feed" ,#'elfeed-search-group-by-feed)
           (function :tag "Custom function")
-          (const :tag "Default sorting" nil)))
+          (const :tag "Default sorting" nil)
+          (repeat :tag "List of functions" function)))
+
+(defun elfeed-search--sort-function ()
+  "Get sort function."
+  (when-let* ((sort elfeed-search-sort-function))
+    (if (functionp sort) sort (car sort))))
 
 (defun elfeed-search-group-by-feed (a b)
   "Group entries A and B by feed."
@@ -180,6 +190,7 @@ When live editing the filter, it is bound to :live.")
   "<elfeed-feed>" #'elfeed-search-feed-filter
   "<elfeed-tag>" #'elfeed-search-tag-filter
   "<header-line> <mouse-1>" #'elfeed-search-header-button
+  "o" #'elfeed-search-cycle-order
   "s" #'elfeed-search-live-filter
   "S" #'elfeed-search-set-filter
   "c" #'elfeed-search-clear-filter
@@ -951,8 +962,8 @@ expression, matching against entry link, title, and feed title."
                 count (1+ count)))))
     ;; Determine the final list order
     (let ((entries (cdr head)))
-      (when elfeed-search-sort-function
-        (setf entries (sort entries elfeed-search-sort-function)))
+      (when-let* ((fun (elfeed-search--sort-function)))
+        (setf entries (sort entries fun)))
       (when (eq elfeed-search-sort-order 'ascending)
         (setf entries (nreverse entries)))
       (setf elfeed-search-entries entries)
@@ -1387,10 +1398,21 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 
 (defun elfeed-search-new-live ()
   "Quit the current window, search again in the `elfeed-search' buffer."
-  (interactive nil elfeed-show-mode)
+  (interactive nil elfeed-show-mode elfeed-tree-mode)
   (quit-window)
   (elfeed-search)
   (elfeed-search-live-filter))
+
+(defun elfeed-search-cycle-order ()
+  "Cycle between different sort functions."
+  (interactive nil elfeed-search-mode)
+  (setq-local elfeed-search-sort-function
+              (pcase elfeed-search-sort-function
+                (`nil (list #'elfeed-search-group-by-feed nil))
+                ((pred functionp) (list nil elfeed-search-sort-function))
+                (_ (cons (car (last elfeed-search-sort-function))
+                         (butlast elfeed-search-sort-function)))))
+  (elfeed-search-update :force))
 
 ;; Separators in search display
 
@@ -1403,7 +1425,7 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
       (goto-char (point-min))
       (while (not (eobp))
         (when-let* ((entry (get-text-property (point) 'elfeed-entry))
-                    (title (if (eq elfeed-search-sort-function
+                    (title (if (eq (elfeed-search--sort-function)
                                    #'elfeed-search-group-by-feed)
                                (elfeed-meta--title (elfeed-entry-feed entry))
                              (elfeed-search-format-date

@@ -81,6 +81,8 @@
   argument.
 - =elfeed-search-mark=, =elfeed-search-unmark=: New commands for non-continuous
   selections bound to =m= and =M=.
+- =elfeed-search-cycle-order=: New command bound to =o= to cycle between sort
+  functions.
 - =elfeed-search-set-entry-title=, =elfeed-search-set-feed-title=: Add =t= and =T= key
   bindings to change entry and feed title.
 - =elfeed-search-browse-url-secondary=: New command which open entry in the
