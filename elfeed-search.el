@@ -364,6 +364,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
               hl-line-sticky-flag t)
   (buffer-disable-undo)
   (hl-line-mode)
+  (add-hook 'minibuffer-setup-hook #'elfeed-search--minibuffer-setup)
   (add-hook 'elfeed-update-hook #'elfeed-search--update-debounce)
   (add-hook 'elfeed-update-init-hook #'elfeed-search--update-force)
   (add-hook 'window-size-change-functions #'elfeed-search--resize nil 'local)
@@ -1356,9 +1357,7 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
   (when elfeed-search-filter-active
     (set-syntax-table elfeed-search-filter-syntax-table)
     (when (eq :live elfeed-search-filter-active)
-      (add-hook 'post-command-hook 'elfeed-search--live-update nil :local))))
-
-(add-hook 'minibuffer-setup-hook 'elfeed-search--minibuffer-setup)
+      (add-hook 'post-command-hook 'elfeed-search--live-update nil 'local))))
 
 (defun elfeed-search--live-update ()
   "Update the `elfeed-search' buffer based on the contents of the minibuffer."
