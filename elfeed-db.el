@@ -144,13 +144,17 @@ Return non-nil if an actual update occurred, not counting content."
              count (not (equal part-a part-b))
              do (setf (aref a i) part-b)))))
 
-(defun elfeed-db-get-feed (id)
+(defsubst elfeed-db-ensure ()
+  "Ensure that the database has been loaded."
+  (unless elfeed-db (elfeed-db-load)))
+
+(defsubst elfeed-db-get-feed (id)
   "Get/create the feed for ID."
   (elfeed-db-ensure)
   (with-memoization (gethash id elfeed-db-feeds)
     (elfeed-feed--create :id id)))
 
-(defun elfeed-db-get-entry (id)
+(defsubst elfeed-db-get-entry (id)
   "Get the entry for ID."
   (elfeed-db-ensure)
   (gethash id elfeed-db-entries))
@@ -211,7 +215,7 @@ A and B can either be entries or ids."
     (elfeed-db-set-update-time))
   :success)
 
-(defun elfeed-entry-feed (entry)
+(defsubst elfeed-entry-feed (entry)
   "Get the feed struct for ENTRY."
   (elfeed-db-get-feed (elfeed-entry-feed-id entry)))
 
@@ -256,7 +260,7 @@ Run `elfeed-untag-hook' and return list of changed entries."
                      (lambda (old)
                        (cl-loop for x in old unless (memq x tags) collect x))))
 
-(defun elfeed-tagged-p (tag entry)
+(defsubst elfeed-tagged-p (tag entry)
   "Return non-nil if ENTRY is tagged by TAG."
   (memq tag (elfeed-entry-tags entry)))
 
@@ -435,10 +439,6 @@ Runs `elfeed-db-unload-hook' after unloading the database."
         elfeed-db-index nil)
   (run-hooks 'elfeed-db-unload-hook))
 
-(defun elfeed-db-ensure ()
-  "Ensure that the database has been loaded."
-  (unless elfeed-db (elfeed-db-load)))
-
 (defun elfeed-db-size ()
   "Return a count of the number of entries in the database."
   (let ((count-table (hash-table-count elfeed-db-entries))
@@ -449,21 +449,21 @@ Runs `elfeed-db-unload-hook' after unloading the database."
 
 ;; Metadata:
 
-(defun elfeed-meta--plist (thing)
+(defsubst elfeed-meta--plist (thing)
   "Get the metadata plist for THING."
   (cl-typecase thing
     (elfeed-feed  (elfeed-feed-meta  thing))
     (elfeed-entry (elfeed-entry-meta thing))
     (otherwise (error "Don't know how to access metadata on %S" thing))))
 
-(defun elfeed-meta--set-plist (thing plist)
+(defsubst elfeed-meta--set-plist (thing plist)
   "Set the metadata plist on THING to PLIST."
   (cl-typecase thing
     (elfeed-feed  (setf (elfeed-feed-meta thing) plist))
     (elfeed-entry (setf (elfeed-entry-meta thing) plist))
     (otherwise (error "Don't know how to access metadata on %S" thing))))
 
-(defun elfeed-db--plist-fixup (plist)
+(defsubst elfeed-db--plist-fixup (plist)
   "Remove nil values from PLIST."
   (cl-loop for (k v) on plist by #'cddr
            when v collect k and collect v))
