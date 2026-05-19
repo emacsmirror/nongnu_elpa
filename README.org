@@ -55,6 +55,7 @@ Many more extensions can be found on MELPA - here is an non-exhaustive list:
 - [[https://github.com/algernon/elfeed-goodies][elfeed-goodies]]
 - [[https://github.com/fritzgrabo/elfeed-summarize][elfeed-summarize]]
 - [[https://github.com/SqrtMinusOne/elfeed-summary][elfeed-summary]]
+- [[https://github.com/zabe40/elfeed-time][elfeed-time]]
 
 ** Getting Started
 
