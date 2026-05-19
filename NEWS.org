@@ -1,6 +1,6 @@
 #+options: toc:nil num:nil author:nil
 
-* Development
+* Version 1.6 (2026-05-19)
 
 - Depend on Compat, update for new Emacs versions.
 - ~httpd-servlet~, ~httpd-servlet*~, ~httpd-file-servlet~, ~httpd-with-buffer~:
