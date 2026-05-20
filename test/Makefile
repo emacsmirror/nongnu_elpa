@@ -190,8 +190,7 @@ test-postgresql18tls: test-pg.el
 
 
 test-postgresql18: test-pg.el
-	${DOCKER} run --rm --name pgsql \
-           --pull=newer \
+	${DOCKER} run --rm --name pgsql --pull=newer \
            --publish 127.0.0.1:5418:5418 \
            -e POSTGRES_DB=pgeltestdb \
            -e POSTGRES_USER=pgeltestuser \
@@ -204,8 +203,7 @@ test-postgresql18: test-pg.el
 	${DOCKER} stop pgsql
 
 test-postgresql17: test-pg.el
-	${DOCKER} run --rm --name pgsql \
-           --pull=newer \
+	${DOCKER} run --rm --name pgsql --pull=newer \
 	   --publish 127.0.0.1:5426:5426 \
 	   -e POSTGRES_DB=pgeltestdb \
 	   -e POSTGRES_USER=pgeltestuser \
@@ -827,10 +825,6 @@ test-gatewayd: test-pg.el
 # --config /opt/gatewayd.yaml --plugins-config /opt/gatewayd_plugins.yaml
 
 
-# to test: Hoop.dev security-scanning proxy, https://github.com/hoophq/hoop
-
-
-
 # ShardingSphere-Proxy: Apache ShardingSphere's proxy for distributed PostgreSQL setups, handling
 # sharding and scaling.
 #
@@ -952,8 +946,7 @@ test-readyset: test-pg.el
 # https://cratedb.com/docs/guide/install/container/docker.html
 # https://cratedb.com/docs/crate/reference/en/latest/interfaces/postgres.html
 test-cratedb: test-pg.el
-	${DOCKER} run --rm --name cratedb \
-          --pull=newer \
+	${DOCKER} run --rm --name cratedb --pull=newer \
           --net host \
           -e CRATE_HEAP_SIZE=1g \
           -d docker.io/crate/crate:nightly -Cnetwork.host=127.0.0.1 -Cdiscovery.type=single-node -Cpsql.port=5789
@@ -1221,8 +1214,7 @@ test-spanner: test-pg.el
 #
 # There is apparently an environment variable YDB_PG_PORT but it seems to be ignored.
 test-ydb: test-pg.el
-	${DOCKER} run --rm --name ydb \
-          --pull=newer \
+	${DOCKER} run --rm --name ydb --pull=newer \
           --publish 127.0.0.1:5119:5432 \
           -e YDB_EXPERIMENTAL_PG=1 \
           -e POSTGRES_USER=pgeltestuser \
@@ -1252,8 +1244,7 @@ test-ydb: test-pg.el
 #          --publish 127.0.0.1:9000:9000 \
 #          --publish 127.0.0.1:9042:9042 
 test-yugabyte: test-pg.el
-	${DOCKER} run --rm --name yugabyte \
-          --pull=newer \
+	${DOCKER} run --rm --name yugabyte --pull=newer \
           --net=host \
           -e YSQL_USER=pgeltestuser \
           -e YSQL_PASSWORD=pgeltest \
@@ -1264,6 +1255,7 @@ test-yugabyte: test-pg.el
             --ysql_port=5499 \
             --base_dir=/tmp \
             --ysql_enable_auth=true \
+            --tserver_flags ysql_yb_enable_listen_notify=true \
             --background=false
 	sleep 30
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5499/pgeltestdb $(MAKE) test
@@ -1277,8 +1269,7 @@ test-yugabyte: test-pg.el
 #
 # Don't use the :latest tag on the container; it's not kept up to date
 test-polardb: test-pg.el
-	${DOCKER} run --rm --name polardb \
-          --pull=newer \
+	${DOCKER} run --rm --name polardb --pull=newer \
           --publish 127.0.0.1:5998:5998 \
           -e POLARDB_PORT=5998 \
           -e POLARDB_USER=pgeltestuser \
@@ -1448,6 +1439,18 @@ test-doltgres: test-pg.el
            -d docker.io/dolthub/doltgresql:latest
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5489/pgeltestdb $(MAKE) test
 	${DOCKER} stop doltgres
+
+
+# https://datahike.io/notes/datahike-speaks-postgres/
+# https://github.com/replikativ/pg-datahike/releases
+# Doesn't seem to be a public container image currently
+test-datahike: test-pg.el
+	$(eval TESTDIR := $(shell mktemp -d -t datahike-runXXXX))
+	cd ${TESTDIR}
+	curl -fLO https://github.com/replikativ/pg-datahike/releases/latest/download/pg-datahike-0.1.43-standalone.jar
+	java -jar pg-datahike-0.1.43-standalone.jar --port 6167 --db pgeltestdb --memory &
+	sleep 2
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:6167/pgeltestdb $(MAKE) test
 
 
 # https://github.com/cybergarage/go-postgresql
@@ -1728,7 +1731,7 @@ test-serenedb: test-pg.el
 	${DOCKER} run --rm --name serenedb \
           --pull=newer \
           --net=host \
-          -d docker.io/serenedb/serenedb:26.04.4
+          -d docker.io/serenedb/serenedb:latest
 	sleep 5
 	PGURI=postgresql://postgres@127.0.0.1:7890/postgres $(MAKE) test
 	${DOCKER} stop serenedb
@@ -1826,6 +1829,11 @@ test-pgmicro: test-pg.el
 	sleep 5
 	PGURI=postgresql://pgeltestuser@127.0.0.1:5916/pgeltestdb $(MAKE) test
 	rm -rf ${TMPBDIR}
+
+
+# to test: Hoop.dev security-scanning proxy, https://github.com/hoophq/hoop
+
+
 
 
 # Create and populate a new database with information concerning works by Shakespeare.

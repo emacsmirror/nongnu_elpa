@@ -326,7 +326,8 @@
       (message "Detected backend variant: %s" (pgcon-server-variant con))
       (unless (member (pgcon-server-variant con)
                       '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb
-                                    cedardb pgsqlite datafusion stoolap picodata serenedb motherduck pgwire pgmicro))
+                                    cedardb pgsqlite datafusion stoolap picodata serenedb motherduck pgwire pgmicro
+                                    datahike))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
@@ -361,7 +362,7 @@
       (pgtest-add #'pg-test-edge-cases)
       (pgtest-add #'pg-test-procedures
                   :skip-variants '(cratedb spanner materialize ydb xata questdb thenile vertica
-                                           greptimedb datafusion picodata))
+                                           greptimedb datafusion picodata datahike))
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format). QuestDB does not
       ;; support the timestamptz type. CedarDB des not support the timetz data type.
       (pgtest-add #'pg-test-date
@@ -375,7 +376,8 @@
                   :skip-variants '(vertica picodata serenedb))
       (pgtest-add #'pg-test-numeric-range
                   :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb
-                                        vertica cedardb datafusion immudb stoolap pgsqlite serenedb picodata motherduck))
+                                        vertica cedardb datafusion immudb stoolap pgsqlite serenedb picodata motherduck
+                                        doltgres datahike))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb cratedb picodata serenedb)
                   :need-emacs "28")
@@ -409,7 +411,7 @@
                                         cedardb yellowbrick datafusion picodata motherduck))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
-                  :skip-variants '(cratedb risingwave spanner materialize picodata doltgres))
+                  :skip-variants '(cratedb risingwave spanner materialize picodata doltgres datahike))
       ;; Spanner does not support the INCREMENT clause in CREATE SEQUENCE. Vertica does not
       ;; implement the pg_sequences system table.
       (pgtest-add #'pg-test-sequence
@@ -419,9 +421,9 @@
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse
-                                           vertica cedardb yellowbrick datafusion immudb picodata serenedb))
+                                           vertica cedardb yellowbrick datafusion immudb picodata serenedb datahike))
       (pgtest-add #'pg-test-rowtype
-                  :skip-variants '(cratedb ydb cedardb spanner serenedb greptimedb))
+                  :skip-variants '(cratedb ydb cedardb spanner serenedb greptimedb risingwave picodata datahike))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion picodata serenedb
                                            motherduck))
@@ -454,10 +456,11 @@
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb datafusion))
       (pgtest-add #'pg-test-copy
                   :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick
-                                           datafusion picodata serenedb motherduck))
+                                           datafusion picodata serenedb motherduck doltgres datahike))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
-                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion serenedb motherduck))
+                  :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion serenedb motherduck
+                                           datahike))
       (pgtest-add #'pg-test-clone-connection)
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
@@ -482,10 +485,10 @@
                   :skip-variants '(cedardb datafusion picodata serenedb))
       (pgtest-add #'pg-test-notify
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb
-                                           yellowbrick opengauss datafusion picodata serenedb doltgres motherduck))
+                                           yellowbrick opengauss datafusion picodata serenedb doltgres motherduck datahike))
       (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum
-                                           cedardb yellowbrick opengauss datafusion picodata serenedb doltgres motherduck))
+                                           cedardb yellowbrick opengauss datafusion picodata serenedb doltgres motherduck datahike))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err

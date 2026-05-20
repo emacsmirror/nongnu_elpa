@@ -1,10 +1,16 @@
 # Changelog
 
+## [0.67] - Unreleased
+
+- Implement support for PostgreSQL variant Datahike with pg-datahike adapter.
+
+
+
 ## [0.66] - 2026-05-02
 
 - Fix a bug in our type serialization support. PostgreSQL makes it possible to define a rowtype
-  (user-defined composite type) with the name as a builtin type, so we make sure that system-defined
-  types are chosen over user-defined types when serializing objects.
+  (user-defined composite type) with the same name as a builtin type, so we make sure that
+  system-defined types are chosen over user-defined types when serializing objects.
 
 - Implement `pg-function-p` for the Risingwave variant. Unfortunately this implementation only
   recognizes user-defined functions, and not builtin functions.

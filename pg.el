@@ -891,6 +891,9 @@ Uses database DBNAME, user USER and password PASSWORD."
             (setf (pgcon-server-variant con) 'ivorydb))
           (when (string-prefix-p "duckdb." key)
             (setf (pgcon-server-variant con) 'pgduckdb))
+          (when (string= "application_name" key)
+            (when (string= "datahike" val)
+              (setf (pgcon-server-variant con) 'datahike)))
           (dolist (handler pg-parameter-change-functions)
             (funcall handler con key val)))))
 
