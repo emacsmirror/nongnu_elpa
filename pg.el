@@ -2709,7 +2709,13 @@ PostgreSQL and Emacs. CON should no longer be used."
            ;; oid-by-typname hashtable. PostgreSQL makes it possible to define a rowtype
            ;; (user-defined composite type) with the name 'text', for example, which could otherwise
            ;; interfere with our type serialization functions.
-           (sql (format "SELECT typname,oid FROM %s WHERE typname IN (%s) ORDER BY typnamespace DESC"
+           ;;
+           ;; We can't order by typnamespace because in CockroachDB when loading the hstore and
+           ;; vector extensions a new 'text' type is created with oid=100110 and typnamespace=105.
+           ;;   "SELECT typname,oid FROM %s WHERE typname IN (%s) ORDER BY typnamespace DESC"
+           (sql (format "SELECT typ.typname,typ.oid FROM %s AS typ
+                         JOIN pg_catalog.pg_namespace AS ns ON typ.typnamespace=ns.oid
+                         WHERE ns.nspname='pg_catalog' and typname IN (%s)"
                         pg-type (string-join qnames ",")))
            (res (ignore-errors (pg-exec con sql)))
            (pgtypes (and res (pg-result res :tuples)))
