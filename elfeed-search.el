@@ -946,9 +946,11 @@ expression, matching against entry link, title, and feed title."
           (or new-filter (default-value 'elfeed-search-filter)))
     (elfeed-search-update :force)))
 
-(defun elfeed-search--update-list ()
-  "Update `elfeed-search-entries' list."
-  (let* ((filter (elfeed-search-parse-filter elfeed-search-filter))
+(defun elfeed-search-entries (filter &optional sort ascending)
+  "Search database with FILTER string and return a list of matching entries.
+The entries are sorted by the entry comparison function SORT.  The result
+is reversed if ASCENDING is non-nil."
+  (let* ((filter (elfeed-search-parse-filter filter))
          (head (list nil))
          (tail head)
          (count 0))
@@ -970,13 +972,19 @@ expression, matching against entry link, title, and feed title."
                 count (1+ count)))))
     ;; Determine the final list order
     (let ((entries (cdr head)))
-      (when-let* ((fun (elfeed-search--sort-function)))
-        (setf entries (sort entries fun)))
-      (when (eq elfeed-search-sort-order 'ascending)
-        (setf entries (nreverse entries)))
-      (setf elfeed-search-entries entries)
-      (cl-callf2 cl-delete-if-not (lambda (x) (memq x elfeed-search-entries))
-                 elfeed-search--marked))))
+      (when sort (setq entries (sort entries sort)))
+      (when ascending (setq entries (nreverse entries)))
+      entries)))
+
+(defun elfeed-search--update-list ()
+  "Update `elfeed-search-entries' list."
+  (setq elfeed-search-entries (elfeed-search-entries
+                               elfeed-search-filter
+                               (elfeed-search--sort-function)
+                               (eq elfeed-search-sort-order 'ascending)))
+  (cl-callf2 cl-delete-if-not
+      (lambda (x) (memq x elfeed-search-entries))
+      elfeed-search--marked))
 
 (defun elfeed-search--save-position ()
   "Save entry, line and column."
