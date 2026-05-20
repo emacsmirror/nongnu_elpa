@@ -50,7 +50,8 @@
   :group 'jabber
   :type 'hook)
 
-(defgroup jabber-browse nil "browse display options"
+(defgroup jabber-browse nil
+  "Browse display options."
   :group 'jabber)
 
 (defcustom jabber-browse-buffer-format "*browse:%n*"
@@ -130,7 +131,7 @@ RESULT-ID is the id to be used for a response to a received iq message.
 
 The callback functions are called like this:
 \(funcall CALLBACK JC XML-DATA CLOSURE-DATA)
-with XML-DATA being the IQ stanza received in response. "
+with XML-DATA being the IQ stanza received in response."
   (let ((id (or result-id (format "emacs-iq-%d" (cl-incf jabber--iq-counter)))))
     (if (or success-callback error-callback)
 	(setq *jabber-open-info-queries* (cons (list id
@@ -209,9 +210,9 @@ string, or nil (dumps raw XML)."
 (defun jabber-process-data (jc xml-data closure-data)
   "Process random results from various requests.
 
-JC is the Jabber connection.
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
+JC is the Jabber connection.  XML-DATA is the parsed tree data
+from the stream (stanzas) obtained from `xml-parse-region'.
+CLOSURE-DATA is passed through to the browse buffer."
   (let* ((from (or (jabber-xml-get-attribute xml-data 'from)
                    (plist-get (fsm-get-state-data jc) :server)))
          (buf (jabber-browse--buffer from)))
@@ -225,9 +226,9 @@ obtained from `xml-parse-region'."
 (defun jabber-silent-process-data (jc xml-data closure-data)
   "Process random results from various requests to only alert hooks.
 
-JC is the Jabber connection.
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
+JC is the Jabber connection.  XML-DATA is the parsed tree data
+from the stream (stanzas) obtained from `xml-parse-region'.
+CLOSURE-DATA may be a function or string used to build the alert text."
   (let ((text (cond
                ((functionp closure-data)
                 (funcall closure-data jc xml-data))

@@ -195,8 +195,8 @@ an empty <before/> element (meaning \"last page\")."
 ;;; Result parsing
 
 (defun jabber-mam--parse-result (xml-data)
-  "Extract MAM result from a <message> stanza.
-Returns (ARCHIVE-ID DELAY-STAMP INNER-MESSAGE) or nil."
+  "Extract MAM result from the <message> stanza XML-DATA.
+Return (ARCHIVE-ID DELAY-STAMP INNER-MESSAGE) or nil."
   (when-let* ((result-el (jabber-xml-child-with-xmlns
                           xml-data jabber-mam-xmlns)))
     (let* ((archive-id (jabber-xml-get-attribute result-el 'id))
@@ -211,8 +211,8 @@ Returns (ARCHIVE-ID DELAY-STAMP INNER-MESSAGE) or nil."
         (list archive-id stamp inner-msg)))))
 
 (defun jabber-mam--parse-fin (xml-data)
-  "Parse a MAM <fin> IQ result.
-Returns plist (:complete BOOL :first ID :last ID)."
+  "Parse a MAM <fin> IQ result XML-DATA.
+Return plist (:complete BOOL :first ID :last ID)."
   (let* ((fin-el (jabber-xml-child-with-xmlns xml-data jabber-mam-xmlns))
          (complete (string= (or (jabber-xml-get-attribute fin-el 'complete) "")
                             "true"))
@@ -551,7 +551,7 @@ On item-not-found (stale sync point), falls back to time-based query."
         (jabber-mam--query jc nil nil nil start)))))
 
 (defun jabber-mam-maybe-catchup (jc)
-  "Post-connect hook: sync messages via MAM if enabled.
+  "Post-connect hook on JC: sync messages via MAM if enabled.
 Added to `jabber-post-connect-hooks'."
   (when jabber-mam-enable
     (jabber-disco-get-info

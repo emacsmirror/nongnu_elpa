@@ -131,9 +131,9 @@ Call REMEMBER with the password.  REMEMBER is expected to return it as well."
 (defun jabber-sasl-process-input (jc xml-data sasl-data)
   "SASL protocol input processing.
 
-JC is the Jabber connection.
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
+JC is the Jabber connection.  XML-DATA is the parsed tree data
+from the stream (stanzas) obtained from `xml-parse-region'.
+SASL-DATA is the (CLIENT STEP PASSPHRASE) state list."
   (let* ((client (car sasl-data))
 	 (step (nth 1 sasl-data))
 	 (passphrase (nth 2 sasl-data))

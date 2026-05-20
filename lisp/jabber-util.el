@@ -61,7 +61,8 @@
 ;;
 
 (defsubst jabber-read-with-input-method (prompt &optional initial-contents history default-value)
-  "Like `read-string', but always inheriting the current input method."
+  "Like `read-string' with PROMPT, but always inheriting the current input method.
+INITIAL-CONTENTS, HISTORY and DEFAULT-VALUE are passed straight through."
   ;; Preserve input method when entering a minibuffer.
   (read-string prompt initial-contents history default-value t))
 
@@ -269,7 +270,7 @@ is shown as an annotation.  Both are matchable regardless of mode."
 
 (declare-function jabber-muc-joined-p "jabber-muc.el" (group &optional jc))
 (defun jabber-read-jid-completing (prompt &optional subset require-match default resource fulljids)
-  "Read a jid out of the current roster from the minibuffer.
+  "Read a JID out of the current roster from the minibuffer, with PROMPT.
 If SUBSET is non-nil, it should be a list of symbols from which
 the JID is to be selected, instead of using the entire roster.
 If REQUIRE-MATCH is non-nil, the JID must be in the list used.
@@ -347,7 +348,7 @@ If FULLJIDS is non-nil, complete jids with resources."
 	 chosen)))))
 
 (defun jabber-read-node (prompt)
-  "Read node name, taking default from disco item at point."
+  "Read node name with PROMPT, taking default from disco item at point."
   (let ((node-at-point (get-text-property (point) 'jabber-node)))
     (read-string (concat prompt
 			 (if node-at-point
@@ -359,7 +360,7 @@ If FULLJIDS is non-nil, complete jids with resources."
   (concat "xmpp:" bare-jid))
 
 (defun jabber-read-password (bare-jid)
-  "Read Jabber password from minibuffer."
+  "Read Jabber password for BARE-JID from minibuffer or auth-source."
   (let ((found
 	 (nth 0 (auth-source-search
 		 :user (jabber-jid-username bare-jid)
@@ -509,8 +510,7 @@ obtained from `xml-parse-region'."
 	(jabber-parse-time stamp))))))
 
 (defun jabber-parse-legacy-time (timestamp)
-  "Parse timestamp in ccyymmddThh:mm:ss format (UTC) and return as internal
-time value."
+  "Parse TIMESTAMP in ccyymmddThh:mm:ss format (UTC) and return Emacs time."
   (let ((year (string-to-number (substring timestamp 0 4)))
 	(month (string-to-number (substring timestamp 4 6)))
 	(day (string-to-number (substring timestamp 6 8)))
@@ -529,6 +529,7 @@ TIME is in a format accepted by `format-time-string'."
   (format-time-string "%Y-%m-%dT%H:%M:%SZ" time t))
 
 (defun jabber-encode-timezone ()
+  "Return the local timezone formatted as an XEP-0082 numeric offset."
   (let ((time-zone-offset (nth 0 (current-time-zone))))
     (if (null time-zone-offset)
         "Z"
@@ -538,7 +539,7 @@ TIME is in a format accepted by `format-time-string'."
         (format "%s%02d:%02d"(if positivep "+" "-") hours minutes)))))
 
 (defun jabber-parse-time (raw-time)
-  "Parse the DateTime encoded in TIME according to XEP-0082."
+  "Parse the DateTime encoded in RAW-TIME according to XEP-0082."
   (let* ((time (if (string= (substring raw-time 4 5) "-")
                    raw-time
                  (concat
@@ -630,7 +631,7 @@ obtained from `xml-parse-region'."
   "String descriptions of legacy errors (XEP-0086).")
 
 (defun jabber-parse-error (error-xml)
-  "Parse the given <error/> tag and return a string fit for human consumption.
+  "Parse the given ERROR-XML <error/> tag and return a human-readable string.
 See secton 9.3, Stanza Errors, of XMPP Core, and XEP-0086, Legacy Errors."
   (let ((error-type (jabber-xml-get-attribute error-xml 'type))
 	(error-code (jabber-xml-get-attribute error-xml 'code))
@@ -653,7 +654,7 @@ See secton 9.3, Stanza Errors, of XMPP Core, and XEP-0086, Legacy Errors."
 	    (if text (format ": %s" text)))))
 
 (defun jabber-error-condition (error-xml)
-  "Parse the given <error/> tag and return the condition symbol."
+  "Parse the given ERROR-XML <error/> tag and return the condition symbol."
   (catch 'condition
     (dolist (child (jabber-xml-node-children error-xml))
       (when (string=
@@ -690,7 +691,7 @@ See secton 9.3, Stanza Errors, of XMPP Core, and XEP-0086, Legacy Errors."
   "String descriptions of XMPP stream errors.")
 
 (defun jabber-stream-error-condition (error-xml)
-  "Return the condition of a <stream:error/> tag."
+  "Return the condition of ERROR-XML, a <stream:error/> tag."
   ;; as we don't know the node name of the condition, we have to
   ;; search for it.
   (cl-dolist (node (jabber-xml-node-children error-xml))
@@ -740,7 +741,7 @@ See section 8.3 of XMPP Core (RFC 6120)."
 	  (list (downcase error-type) condition text app-specific)))
 
 (defun jabber-unhex (string)
-  "Convert a hex-encoded UTF-8 string to Emacs representation.
+  "Convert a hex-encoded UTF-8 STRING to Emacs representation.
 For example, \"ji%C5%99i@%C4%8Dechy.example/v%20Praze\" becomes
 \"jiři@čechy.example/v Praze\"."
   (decode-coding-string (url-unhex-string string) 'utf-8))
@@ -749,7 +750,7 @@ For example, \"ji%C5%99i@%C4%8Dechy.example/v%20Praze\" becomes
   "Handle XMPP links according to draft-saintandre-xmpp-iri-04.
 See Info node `(jabber)XMPP URIs'.
 URI is a string with the \"xmpp://\" link to handle.
-IGNORED-ARGS are ignored arguments the handler may pass. "
+IGNORED-ARGS are ignored arguments the handler may pass."
   (interactive "sEnter XMPP URI: ")
 
   (when (string-match "//" uri)
@@ -806,7 +807,7 @@ IGNORED-ARGS are ignored arguments the handler may pass. "
   (jabber-handle-uri (url-recreate-url url)))
 
 (defun string>-numerical (s1 s2)
-  "Return t if first arg string is more than second in numerical order."
+  "Return t when S1 collates after S2 in numerical order."
   (cond ((string= s1 s2) nil)
 	((> (length s1) (length s2)) t)
 	((< (length s1) (length s2)) nil)

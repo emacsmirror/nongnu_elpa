@@ -89,6 +89,7 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
 (keymap-set jabber-omemo-trust-mode-map "?" #'jabber-omemo-trust-menu)
 
 (defun jabber-omemo--list-format ()
+  "Return the column format vector for the OMEMO trust list buffer."
   (let ((list-format `[("Device ID" ,(/ (window-width) 10))
 		       ("Trust" ,(/ (window-width) 10))
 		       ("Fingerprint" ,(/ (window-width) 3))

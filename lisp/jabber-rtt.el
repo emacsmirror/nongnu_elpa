@@ -60,6 +60,7 @@
 
 ;;;###autoload
 (defun jabber-rtt-handle-message (jc xml-data)
+  "Process an inbound message XML-DATA on JC for XEP-0301 RTT events."
   ;; We could support this for MUC as well, if useful.
   (when-let* (((not (jabber-muc-message-p xml-data)))
               (from (jabber-xml-get-attribute xml-data 'from))
@@ -100,6 +101,7 @@
 	 )))))
 
 (defun jabber-rtt--reset ()
+  "Clear RTT state and tear down the typing ewoc node and timer."
   (when jabber-rtt-ewoc-node
     (jabber-chat-ewoc-delete jabber-rtt-ewoc-node))
   (when (timerp jabber-rtt-timer)
@@ -111,6 +113,7 @@
 	jabber-rtt-timer nil))
 
 (defun jabber-rtt--enqueue-actions (new-actions)
+  "Append NEW-ACTIONS to the pending RTT queue and start replay if idle."
   (setq jabber-rtt-pending-events
 	;; Ensure that the queue never contains more than 700 ms worth
 	;; of wait events.
@@ -119,6 +122,7 @@
     (jabber-rtt--process-actions (current-buffer))))
 
 (defun jabber-rtt--process-actions (buffer)
+  "Replay pending RTT actions inside BUFFER, scheduling waits with a timer."
   (with-current-buffer buffer
     (setq jabber-rtt-timer nil)
     (catch 'wait
@@ -162,7 +166,7 @@
 	     (throw 'wait nil))))))))
 
 (defun jabber-rtt--fix-waits (actions)
-  ;; Ensure that the sum of all wait events is no more than 700 ms.
+  "Scale wait events inside ACTIONS so their total never exceeds 700 ms."
   (let ((sum 0))
     (dolist (action actions)
       (when (eq (jabber-xml-node-name action) 'w)
@@ -219,6 +223,7 @@ XEP-0301, In-Band Real Time Text."
     (add-hook 'jabber-chat-send-hooks #'jabber-rtt--message-sent nil t)))
 
 (defun jabber-rtt--cancel-send ()
+  "Send a `cancel' RTT event and clear local send state."
   (when (timerp jabber-rtt-send-timer)
     (cancel-timer jabber-rtt-send-timer))
   (setq jabber-rtt-send-seq (1+ jabber-rtt-send-seq))
@@ -235,6 +240,7 @@ XEP-0301, In-Band Real Time Text."
 	jabber-rtt-send-last-timestamp nil))
 
 (defun jabber-rtt--send-current-text (resetp)
+  "Snapshot the unsent buffer text as an RTT `new' (or `reset' if RESETP) event."
   (let ((text (buffer-substring-no-properties jabber-point-insert (point-max))))
     ;; This should give us enough room to avoid wrap-arounds, even
     ;; with just 28 bits...
@@ -248,6 +254,8 @@ XEP-0301, In-Band Real Time Text."
 				     (t () ,text))))))
 
 (defun jabber-rtt--queue-update (beg end pre-change-length)
+  "After-change hook: queue an RTT edit for the BEG..END change.
+PRE-CHANGE-LENGTH is how many characters were replaced."
   (unless (or (< beg jabber-point-insert)
 	      (< end jabber-point-insert))
     (let ((timestamp (current-time)))
@@ -292,6 +300,7 @@ XEP-0301, In-Band Real Time Text."
 	    (run-with-timer 0.7 nil #'jabber-rtt--send-queued-events (current-buffer))))))
 
 (defun jabber-rtt--send-queued-events (buffer)
+  "Flush the pending RTT edit events for BUFFER as a single stanza."
   (with-current-buffer buffer
     (setq jabber-rtt-send-timer nil)
     (when jabber-rtt-outgoing-events
@@ -310,6 +319,7 @@ XEP-0301, In-Band Real Time Text."
 	(setq jabber-rtt-outgoing-events nil)))))
 
 (defun jabber-rtt--message-sent (_text _id)
+  "Chat-send hook: clear RTT state once the final <body/> is going out."
   ;; We're sending a <body/> element; reset our state
   (when (timerp jabber-rtt-send-timer)
     (cancel-timer jabber-rtt-send-timer))

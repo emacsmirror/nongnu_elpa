@@ -22,6 +22,12 @@
 ;; along with this program; if not, write to the Free Software
 ;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
+;;; Commentary:
+
+;; XEP-0146 remote-control commands for setting presence.
+
+;;; Code:
+
 (require 'jabber-presence)
 (require 'jabber-ahc)
 (defvar *jabber-current-show*)

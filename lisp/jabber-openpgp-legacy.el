@@ -317,14 +317,15 @@ envelope."
 ;;; Message decryption (receive)
 
 (defun jabber-openpgp-legacy--detect-encrypted (xml-data)
-  "Return stripped armor text from <x xmlns='jabber:x:encrypted'>, or nil."
+  "Return stripped armor text from \"jabber:x:encrypted\" child of XML-DATA, or nil."
   (when-let* ((x-el (jabber-xml-child-with-xmlns
                      xml-data jabber-openpgp-legacy-encrypted-xmlns))
               (stripped (car (jabber-xml-node-children x-el))))
     (and (stringp stripped) stripped)))
 
 (defun jabber-openpgp-legacy--decrypt-handler (_jc xml-data stripped)
-  "Decrypt XEP-0027 message.  STRIPPED is the base64-armored ciphertext."
+  "Decrypt XEP-0027 message XML-DATA.
+STRIPPED is the base64-armored ciphertext."
   (let* ((armored (jabber-openpgp-legacy--rearmor-message stripped))
          (ctx (epg-make-context 'OpenPGP))
          (plaintext (decode-coding-string

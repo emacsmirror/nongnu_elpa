@@ -1,4 +1,4 @@
-;; jabber-ahc.el - Ad-Hoc Commands by JEP-0050  -*- lexical-binding: t; -*-
+;;; jabber-ahc.el --- Ad-Hoc Commands by JEP-0050  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2003, 2004, 2007, 2008 - Magnus Henoch - mange@freemail.hu
 ;; Copyright (C) 2002, 2003, 2004 - tom berger - object@intelectronica.net
@@ -43,7 +43,7 @@
   "Alist of ad-hoc commands provided.
 
 The keys are node names as strings (which means that they must
-not conflict). The values are plists having the following properties -
+not conflict).  The values are plists having the following properties -
 
 acl     - function taking connection object and JID of requester,
 	  returning non-nil for access allowed.  No function means
@@ -117,7 +117,8 @@ obtained from `xml-parse-region'."
 (add-to-list 'jabber-iq-set-xmlns-alist
 	     (cons jabber-ahc-xmlns 'jabber-ahc-process))
 (defun jabber-ahc-process (jc xml-data)
-
+  "Dispatch an inbound ad-hoc-command IQ over JC.
+XML-DATA is the IQ stanza."
   (let ((to (jabber-xml-get-attribute xml-data 'from))
 	(id (jabber-xml-get-attribute xml-data 'id))
 	(node (jabber-xml-get-attribute (jabber-iq-query xml-data) 'node)))
@@ -140,7 +141,7 @@ obtained from `xml-parse-region'."
 
 ;;; CLIENT
 (defun jabber-ahc-get-list (jc to)
-  "Request list of ad-hoc commands.
+  "Request list of ad-hoc commands from TO.
 
 See XEP-0050.
 JC is the Jabber connection."
@@ -149,7 +150,7 @@ JC is the Jabber connection."
   (jabber-get-disco-items jc to jabber-ahc-xmlns))
 
 (defun jabber-ahc-execute-command (jc to node)
-  "Execute ad-hoc command.
+  "Execute ad-hoc command NODE on TO.
 
 See XEP-0050.
 JC is the Jabber connection."
@@ -165,6 +166,7 @@ JC is the Jabber connection."
 		  #'jabber-process-data "Command execution failed"))
 
 (defun jabber-ahc-display (jc xml-data)
+  "Render the ad-hoc-command result IQ XML-DATA on connection JC."
   (let* ((from (jabber-xml-get-attribute xml-data 'from))
 	 (query (jabber-iq-query xml-data))
 	 (node (jabber-xml-get-attribute query 'node))
@@ -232,7 +234,7 @@ JC is the Jabber connection."
       (widget-minor-mode 1))))
 
 (defun jabber-ahc-submit (action)
-  "Submit Ad-Hoc Command."
+  "Submit ad-hoc command form with the given ACTION (a symbol)."
 
   (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
 		  "set"

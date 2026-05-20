@@ -1,4 +1,4 @@
-;; jabber-keepalive.el - try to detect lost connection  -*- lexical-binding: t; -*-
+;;; jabber-keepalive.el --- Try to detect lost connection  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2004, 2008 - Magnus Henoch - mange@freemail.hu
 ;; Copyright (C) 2007 - Detlev Zundel - dzu@gnu.org
@@ -35,7 +35,7 @@
 
 ;;;###autoload
 (defgroup jabber-keepalive nil
-  "Keepalive functions try to detect lost connection"
+  "Keepalive functions try to detect lost connection."
   :group 'jabber)
 
 (defcustom jabber-keepalive-interval 600
@@ -97,6 +97,7 @@ for all accounts regardless of the argument."
     (setq jabber-keepalive-timer nil)))
 
 (defun jabber-keepalive-do ()
+  "Send a ping to every connection and arm the timeout timer."
   (when jabber-keepalive-debug
     (message "%s: sending keepalive packet(s)" (current-time-string)))
   (setq jabber-keepalive-timeout-timer
@@ -110,6 +111,7 @@ for all accounts regardless of the argument."
     (jabber-ping-send c nil 'jabber-keepalive-got-response nil nil)))
 
 (defun jabber-keepalive-got-response (jc &rest _args)
+  "Mark connection JC as having answered the last keepalive ping."
   (when jabber-keepalive-debug
     (message "%s: got keepalive response from %s"
 	     (current-time-string)
@@ -120,6 +122,7 @@ for all accounts regardless of the argument."
     (setq jabber-keepalive-timeout-timer nil)))
 
 (defun jabber-keepalive-timeout ()
+  "Treat any connection that did not answer as lost and disconnect it."
   (cancel-timer jabber-keepalive-timer)
   (setq jabber-keepalive-timer nil)
 
@@ -184,6 +187,7 @@ accounts."
     (setq jabber-whitespace-ping-timer nil)))
 
 (defun jabber-whitespace-ping-do ()
+  "Send a single space to every live connection as a whitespace ping."
   (dolist (c jabber-connections)
     (let* ((state-data (fsm-get-state-data c))
 	   (connection (plist-get state-data :connection)))

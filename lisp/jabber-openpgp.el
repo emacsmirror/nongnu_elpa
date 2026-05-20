@@ -116,9 +116,9 @@ Lookup order:
 
 (defun jabber-openpgp--ensure-recipient-keys (jc jids callback)
   "Ensure public keys for all JIDS are available, then call CALLBACK.
-For any JID whose key is missing locally, fetch it via PubSub.
+For any JID whose key is missing locally, fetch it via PubSub over JC.
 CALLBACK is called with no arguments once all keys are resolved.
-Signals an error (via `message') if any key remains unavailable."
+Signal an error (via `message') if any key remains unavailable."
   (let* ((missing (cl-remove-if #'jabber-openpgp--recipient-key jids))
          (remaining (length missing))
          (failed nil))
@@ -206,7 +206,7 @@ Returns the decrypted string."
        ("pubsub#access_model" . "open")))))
 
 (defun jabber-openpgp-on-connect (jc)
-  "Post-connect hook: advertise and publish key if configured.
+  "Post-connect hook on JC: advertise and publish key if configured.
 Added to `jabber-post-connect-hooks'."
   (when (jabber-openpgp--our-key-safe jc)
     (jabber-disco-advertise-feature
@@ -438,10 +438,10 @@ OPENPGP-EL is the <openpgp> child element."
 (jabber-disco-advertise-feature jabber-openpgp-xmlns)
 
 (defun jabber-openpgp--handle-keys-event (jc from _node items)
-  "Handle PubSub event for OpenPGP public key updates.
+  "Handle PubSub event for an OpenPGP public key update.
 JC is the connection, FROM is the sender JID, ITEMS is the list
-of child elements from the event.  Fetches updated key into the
-local GPG keyring.  Bails early if no local key is configured."
+of child elements from the event.  Fetch the updated key into the
+local GPG keyring.  Bail early if no local key is configured."
   (when (jabber-openpgp--our-key-safe jc)
     (let* ((item-el (car items))
            (keys-list (and (listp item-el)

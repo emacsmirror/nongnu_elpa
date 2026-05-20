@@ -23,7 +23,7 @@
 
 ;;; Commentary:
 
-;; There are several methods for transporting avatars in Jabber. [1][2][3]
+;; There are several methods for transporting avatars in Jabber.  [1][2][3]
 ;;
 ;; They all have in common that they identify avatars by their SHA1
 ;; checksum, and (at least partially) use Base64-encoded image data.
@@ -50,7 +50,7 @@
 ;;;; Variables
 
 (defgroup jabber-avatar nil
-  "Avatar related settings"
+  "Avatar related settings."
   :group 'jabber)
 
 (defcustom jabber-avatar-cache-directory
@@ -200,7 +200,8 @@ AVATAR may be one of:
       (put jid-symbol 'avatar-hash hash))))
 
 (defun jabber-create-image (file-or-data &optional _type data-p)
-  "Create a line-height-sized image from FILE-OR-DATA."
+  "Create a line-height-sized image from FILE-OR-DATA.
+When DATA-P is non-nil, FILE-OR-DATA is the raw image bytes."
   (let ((h (jabber-avatar--line-height)))
     (if data-p
         (jabber-image-create file-or-data nil h h)

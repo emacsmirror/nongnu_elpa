@@ -199,8 +199,8 @@ exceeds this value is from a newer (or development) build and
 cannot be used; the user is prompted to delete it.")
 
 (defun jabber-db--handle-unknown-schema (db)
-  "Detect a schema newer than `jabber-db--schema-version' and offer to reset.
-Returns non-nil if the database was deleted and the caller should
+  "Detect a schema newer than `jabber-db--schema-version' in DB and offer reset.
+Return non-nil if the database was deleted and the caller should
 re-open it."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
     (when (> version jabber-db--schema-version)
@@ -354,7 +354,8 @@ SELECT identities, features FROM caps_cache
 
 (defun jabber-db--detect-duplicate (db account peer timestamp body
                                        stanza-id server-id &optional type)
-  "Check whether a message already exists in DB.
+  "Check whether a message for ACCOUNT already exists in DB.
+PEER, TIMESTAMP, BODY, STANZA-ID and SERVER-ID identify the candidate.
 Return a symbol indicating the match type: `stanza_id', `server_id',
 `content', or nil for no match.
 Optional TYPE is the message type; stanza_id dedup is skipped for
@@ -389,7 +390,9 @@ WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
                                      direction type body timestamp
                                      stanza-id server-id encrypted
                                      oob-entries)
-  "Insert a new message row into DB and attach OOB entries."
+  "Insert a new message row into DB for ACCOUNT and attach OOB-ENTRIES.
+PEER, RESOURCE, OCCUPANT-ID, DIRECTION, TYPE, BODY, TIMESTAMP,
+STANZA-ID, SERVER-ID and ENCRYPTED fill the corresponding columns."
   (sqlite-execute
    db
    "INSERT INTO message \
@@ -409,10 +412,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
 (defun jabber-db--update-duplicate-ids (db account peer timestamp body
                                            stanza-id server-id oob-entries
                                            dup-id-col)
-  "Update an existing duplicate matched by DUP-ID-COL.
-Normalizes timestamp and replaces failed-decrypt placeholders.
-Skips retracted messages to prevent MAM replays from undoing retractions.
-PEER is used for stanza_id scoping (stanza IDs can collide in MUC)."
+  "Update an existing duplicate in DB matched by DUP-ID-COL.
+Normalize TIMESTAMP and replace failed-decrypt placeholders with BODY.
+Skip retracted messages to prevent MAM replays from undoing retractions.
+ACCOUNT and PEER scope the row; STANZA-ID and SERVER-ID identify it;
+OOB-ENTRIES replaces the row's OOB metadata when BODY is upgraded."
   (let* ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id))
          ;; stanza_id needs peer scope; server_id is globally unique.
          (where-clause (if (eq dup-id-col 'stanza_id)
@@ -461,7 +465,9 @@ VALUES (?, ?, ?)"
 
 (defun jabber-db--upgrade-content-match (db account peer timestamp body
                                             stanza-id server-id)
-  "Upgrade a content-matched row with server-assigned IDs."
+  "Upgrade a content-matched row in DB with server-assigned IDs.
+ACCOUNT, PEER, TIMESTAMP and BODY locate the row;
+STANZA-ID and SERVER-ID are the new IDs to fill in if missing."
   (when (or stanza-id server-id)
     (sqlite-execute
      db
@@ -670,7 +676,7 @@ WHERE message_id IN (%s) ORDER BY message_id, id"
 Messages are returned as plists with keys :from, :body, :timestamp,
 :delayed, :direction, :msg-type, etc.
 COUNT defaults to `jabber-backlog-number'.
-START-TIME is a float-time; only messages after this time are returned.
+START-TIME is a `float-time'; only messages after this time are returned.
 If nil, `jabber-backlog-days' is used to compute the cutoff.
 RESOURCE, when non-nil, filters to messages from that resource only.
 This is used for MUC private message buffers.

@@ -37,7 +37,8 @@
 
 (eval-when-compile (require 'cl-lib))
 
-(defgroup jabber-chat nil "chat display options"
+(defgroup jabber-chat nil
+  "Chat display options."
   :group 'jabber)
 
 (defcustom jabber-chat-buffer-format "*%j-%a*"
@@ -265,7 +266,7 @@ BODY and ID are passed to each hook function."
 nil if no backlog has been inserted.")
 
 (defvar jabber-chat-muc-presence-patterns-history nil
-  "History values selected for `jabber-muc-decorate-presence-patterns'")
+  "History values selected for `jabber-muc-decorate-presence-patterns'.")
 
 (defface jabber-muc-presence-dim
   '((t :inherit shadow :slant italic))
@@ -300,7 +301,7 @@ how to highlight presence events in MUC chat logs."
 (defcustom jabber-muc-decorate-presence-patterns (cdar jabber-muc-decorate-presence-patterns-alist)
   "List of regular expressions and face pairs.
 When a presence notification matches a pattern, display it with
-associated face.  Ignore notification if face is `nil'."
+associated face.  Ignore notification if face is nil."
   :type '(repeat
           :tag "Patterns"
           (cons :format "%v"
@@ -607,7 +608,8 @@ If ID is already registered, replace it."
                        (or (plist-get (cdr b) :priority) 50)))))))
 
 (defun jabber-chat--try-decrypt (jc xml-data parsed handler-props)
-  "Call the :decrypt function from HANDLER-PROPS with error handling.
+  "Call the :decrypt function from HANDLER-PROPS on XML-DATA with error handling.
+JC is the Jabber connection.  PARSED is the parsed message plist.
 On success, return the (mutated) XML-DATA.  On error, replace the
 body with \"[LABEL: could not decrypt]\" and return XML-DATA."
   (condition-case err
@@ -747,6 +749,8 @@ messages."
 
 (defun jabber-chat-muc-presence-patterns-select (global)
   "Select a MUC presence treatment.
+When GLOBAL is non-nil (prefix arg), set the default value instead
+of the buffer-local one.
 Prompts user to select a presence treatment by name, where the
 name is the `car' of an entry in
 `jabber-muc-decorate-presence-patterns-alist'.  The variable
@@ -778,8 +782,8 @@ clients)."
       (jabber-chat-redisplay))))
 
 (defun jabber-chat-muc-presence-highlight (message)
-  "Return non-`nil' to control MUC presence notification display.
-This matches :muc-notification message text with the list
+  "Return non-nil to control MUC presence notification display for MESSAGE.
+This matches MESSAGE's :muc-notification text against
 `jabber-muc-decorate-presence-patterns' and returns the pattern
 entry when a match is found, or nil if no matching pattern is
 found."
@@ -809,7 +813,7 @@ Returns a list of (URL . DESC) cons cells, or nil."
     (nreverse entries)))
 
 (defun jabber-chat--has-muc-invite-p (xml-data)
-  "Return non-nil if XML-DATA contains a MUC invitation."
+  "Return non-nil when XML-DATA carries a MUC invitation."
   (let ((muc-x (jabber-xml-child-with-xmlns
                 xml-data jabber-muc-xmlns-user)))
     (and muc-x (jabber-xml-get-children muc-x 'invite))))
@@ -1133,7 +1137,10 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
                         'rear-nonsticky t))))
 
 (defun jabber-chat-print-prompt (msg timestamp delayed dont-print-nick-p)
-  "Print prompt for received message MSG."
+  "Print prompt for received message MSG.
+TIMESTAMP overrides MSG's :timestamp when non-nil.
+DELAYED selects the delayed-message face.
+When DONT-PRINT-NICK-P is non-nil, omit the nickname."
   (let* ((from (plist-get msg :from))
          (timestamp (or timestamp (plist-get msg :timestamp)))
          (nick (if dont-print-nick-p ""
@@ -1155,7 +1162,10 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
    'jabber-chat-nick-system))
 
 (defun jabber-chat-self-prompt (msg timestamp delayed dont-print-nick-p)
-  "Print prompt for sent message MSG."
+  "Print prompt for sent message MSG.
+TIMESTAMP overrides MSG's :timestamp when non-nil.
+DELAYED selects the delayed-message face.
+When DONT-PRINT-NICK-P is non-nil, omit the nickname."
   (let* ((state-data (fsm-get-state-data jabber-buffer-connection))
          (username (plist-get state-data :username)))
     (jabber-chat--insert-prompt
@@ -1175,7 +1185,7 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
      "\n")))
 
 (defun jabber-chat-print-subject (msg _who mode)
-  "Print subject from message plist MSG, if any."
+  "Print subject from message plist MSG, if any, in display MODE."
   (let ((subject (plist-get msg :subject)))
     (when (not (zerop (length subject)))
       (pcase mode
@@ -1190,10 +1200,12 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
 		 "\n"))))))
 
 (defun jabber-chat-print-body (msg who mode)
+  "Dispatch MSG/WHO/MODE through `jabber-body-printers' until one succeeds."
   (run-hook-with-args-until-success 'jabber-body-printers msg who mode))
 
 (defun jabber-chat-normal-body (msg who mode)
-  "Print body from message plist MSG."
+  "Print body from message plist MSG.
+WHO and MODE follow the `jabber-body-printers' contract."
   (let ((body (plist-get msg :body)))
     (when body
 
@@ -1220,8 +1232,8 @@ When ENCRYPTED, `jabber-chat-encrypted-indicator' is prepended."
       t)))
 
 (defun jabber-chat-print-url (msg _who mode)
-  "Print OOB URLs from message plist MSG.
-Skips printing when the body already contains the URL to avoid
+  "Print OOB URLs from message plist MSG in display MODE.
+Skip printing when the body already contains the URL to avoid
 duplication (e.g. HTTP Upload messages)."
   (let ((entries (or (plist-get msg :oob-entries)
                      (when-let* ((url (plist-get msg :oob-url)))
@@ -1323,7 +1335,7 @@ with the created image (or nil) followed by CBARGS."
   (regexp-opt (jabber-chat--supported-image-extensions) t))
 
 (defun jabber-chat--image-url-p (url)
-  "Return non-nil if URL looks like an image based on file extension."
+  "Return non-nil when URL has an image-like file extension."
   (string-match-p (concat "\\." (jabber-chat--image-ext-regexp)
                           "\\(?:[?#].*\\)?$")
                   (downcase url)))
@@ -1448,7 +1460,7 @@ Uses `insert-image' so the URL serves as alt-text."
   "Idle timer for scanning image URLs in this buffer.")
 
 (defun jabber-chat--schedule-image-scan (_msg _who mode)
-  "Schedule an async image scan after message insertion.
+  "Schedule an async image scan after message insertion (MODE = :insert).
 Added to `jabber-chat-printers' to trigger after each message."
   (when (eql mode :insert)
     (let ((buf (current-buffer)))
@@ -1508,7 +1520,7 @@ When the image arrives the URL text is deleted and the image inserted."
                    beg end buf))))))))))
 
 (defun jabber-chat-goto-address (_msg _who mode)
-  "Call `goto-address' on the newly written text."
+  "Call function `goto-address' on the newly written text (MODE = :insert)."
   (when (eq mode :insert)
     (condition-case err
         (let ((end (point))
@@ -1526,8 +1538,8 @@ When the image arrives the URL text is deleted and the image inserted."
       (error (message "jabber-chat: goto-address-fontify failed: %s" err)))))
 
 (defun jabber-chat-mark-oob-attachment (msg _who mode)
-  "Mark non-image OOB attachment URLs with download keymap.
-Runs after `jabber-chat-goto-address' so the goto-address overlay
+  "Mark non-image OOB attachment URLs in MSG (MODE = :insert) for download.
+Runs after `jabber-chat-goto-address' so the `goto-address' overlay
 exists when we set our keymap as its parent."
   (when (eql mode :insert)
     (let ((entries (or (plist-get msg :oob-entries)
@@ -1556,6 +1568,7 @@ exists when we set our keymap as its parent."
 
 (defun jabber-chat-mark-aesgcm-url (_msg _who mode)
   "Mark non-image aesgcm:// URLs with download keymap and link face.
+Runs only when MODE is :insert.
 Skips URLs already handled by the image scanner."
   (when (eql mode :insert)
     (save-excursion
@@ -1575,7 +1588,7 @@ Skips URLs already handled by the image scanner."
 
 ;; jabber-compose is autoloaded in jabber.el
 (defun jabber-send-message (jc to subject body type)
-  "Send a message tag to the server.
+  "Send a message stanza to TO with SUBJECT, BODY and TYPE.
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)
 		     (jabber-read-jid-completing "to: ")
@@ -1611,7 +1624,7 @@ JC is the Jabber connection."
 (defun jabber-chat-with-jid-at-point (&optional other-window)
   "Start chat with JID at point.
 Signal an error if there is no JID at point.
-With a prefix argument, open buffer in other window."
+With a prefix argument OTHER-WINDOW, open buffer in other window."
   (interactive "P")
   (let ((jid-at-point (get-text-property (point)
 					 'jabber-jid))

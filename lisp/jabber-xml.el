@@ -210,8 +210,8 @@ Return nil if the attribute was not found."
     result))
 
 (defun jabber-xml-encrypted-p (xml-data)
-  "Return non-nil if XML-DATA contains an encryption element.
-Checks for OMEMO, legacy OpenPGP, and OX namespaces."
+  "Return non-nil when XML-DATA carries an encryption child element.
+Check for OMEMO, legacy OpenPGP, and OX namespaces."
   (and (or (jabber-xml-child-with-xmlns
             xml-data "eu.siacs.conversations.axolotl")
            (jabber-xml-child-with-xmlns
@@ -222,7 +222,7 @@ Checks for OMEMO, legacy OpenPGP, and OX namespaces."
 
 (defun jabber-xml-path (xml-data path)
   "Find sub-node of XML-DATA according to PATH.
-  PATH is a vaguely XPath-inspired list.  Each element can be:
+PATH is a vaguely XPath-inspired list.  Each element can be:
   a symbol     go to first child node with this node name
   cons cell    car is string containing namespace URI,
                cdr is string containing node name.  Find
@@ -262,6 +262,9 @@ ATTRIBUTES must be a list of symbols, as present in XML-DATA."
      ,@body))
 
 (defun jabber-xml-resolve-namespace-prefixes (xml-data &optional default-ns prefixes)
+  "Rewrite namespace prefixes in XML-DATA to xmlns attributes.
+DEFAULT-NS is the inherited default namespace; PREFIXES is the alist
+of declared prefixes."
   (let ((node-name (jabber-xml-node-name xml-data))
 	(attrs (jabber-xml-node-attributes xml-data)))
     (setq prefixes (jabber-xml-merge-namespace-declarations attrs prefixes))
@@ -292,6 +295,7 @@ ATTRIBUTES must be a list of symbols, as present in XML-DATA."
     xml-data))
 
 (defun jabber-xml-merge-namespace-declarations (attrs prefixes)
+  "Return PREFIXES extended with any xmlns:* declarations found in ATTRS."
   ;; First find any xmlns:foo attributes..
   (dolist (attr attrs)
     (let ((attr-name (symbol-name (car attr))))

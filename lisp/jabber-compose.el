@@ -40,9 +40,10 @@
 
 ;;;###autoload
 (defun jabber-compose (jc &optional recipient)
-  "Create a buffer for composing a Jabber message.
+  "Create a buffer for composing a Jabber message to RECIPIENT.
 
-JC is the Jabber connection."
+JC is the Jabber connection.  RECIPIENT, when non-nil, prefills
+the recipient list."
   (interactive (list (jabber-read-account)
 		     (jabber-read-jid-completing "To whom? ")))
 
@@ -84,6 +85,7 @@ JC is the Jabber connection."
     (goto-char (point-min))))
 
 (defun jabber-compose-send (&rest _ignore)
+  "Send the message composed in the current `jabber-compose' buffer."
   (let ((recipients (widget-value (cdr (assq :recipients jabber-widget-alist))))
 	(subject (widget-value (cdr (assq :subject jabber-widget-alist))))
 	(text (widget-value (cdr (assq :text jabber-widget-alist)))))

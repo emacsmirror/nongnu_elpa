@@ -42,7 +42,7 @@
 ;;
 
 (defun jabber-get-search (jc to)
-  "Send IQ get request in namespace \"jabber:iq:search\".
+  "Send IQ get request to TO in namespace \"jabber:iq:search\".
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)

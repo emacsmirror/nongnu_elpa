@@ -275,10 +275,10 @@ If support has not been discovered yet, discover it first."
   "URL from a pending upload, awaiting send.")
 
 (defun jabber-httpupload--send-hook (body _id)
-  "Attach OOB element if BODY contains a pending upload URL.
-Returns the OOB element list for `jabber-chat-send-hooks', and
-clears the pending state.  If the URL is no longer in BODY (user
-deleted it), the pending state is cleared with no effect."
+  "Attach OOB element when BODY carries a pending upload URL.
+Return the OOB element list for `jabber-chat-send-hooks', and
+clear the pending state.  If the URL is no longer in BODY (user
+deleted it), clear the pending state with no effect."
   (when-let* ((url jabber-httpupload--pending-url))
     (setq jabber-httpupload--pending-url nil)
     (when (string-match-p (regexp-quote url) body)
@@ -290,7 +290,7 @@ deleted it), the pending state is cleared with no effect."
 ;; Sending the URL
 
 (defun jabber-httpupload--send-url (jc jid get-url)
-  "Send GET-URL to JID with OOB metadata.
+  "Send GET-URL to JID over connection JC with OOB metadata.
 For groupchat, send directly.  For 1:1, use `jabber-chat-send'.
 If `jabber-httpupload-send-url-function' is set and handles the URL,
 skip the default plaintext send."
@@ -312,7 +312,7 @@ skip the default plaintext send."
 
 ;;;###autoload
 (defun jabber-httpupload-send-file (jc jid filepath)
-  "Upload FILEPATH and send the URL to JID via JC."
+  "Upload FILEPATH and send the URL to JID via connection JC."
   (interactive (list (jabber-read-account)
                      (jabber-read-jid-completing "Send file to: " nil nil nil 'full t)
                      (read-file-name "File to send: ")))
@@ -323,7 +323,7 @@ skip the default plaintext send."
 
 ;;;###autoload
 (defun jabber-httpupload-upload-file (jc filepath)
-  "Upload FILEPATH and copy the URL to the kill ring."
+  "Upload FILEPATH via connection JC and copy the URL to the kill ring."
   (interactive (list (jabber-read-account)
                      (read-file-name "File to upload: ")))
   (jabber-httpupload--upload

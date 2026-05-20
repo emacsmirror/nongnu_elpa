@@ -776,7 +776,7 @@ This macro is meant for use as an argument to `interactive'."
      (nconc (list jabber-buffer-connection jabber-group) ,args)))
 
 (defun jabber-muc-read-completing (prompt &optional allow-not-joined)
-  "Read the name of a joined chatroom, or use chatroom of current buffer if any.
+  "Read with PROMPT the name of a joined chatroom (or current buffer's room).
 If ALLOW-NOT-JOINED is provided and non-nil, permit choosing any
 JID; only provide completion as a guide."
   (or jabber-group
@@ -789,7 +789,7 @@ JID; only provide completion as a guide."
                                     jabber-group))))
 
 (defun jabber-muc-read-nickname (group prompt)
-  "Read the nickname of a participant in GROUP."
+  "Read with PROMPT the nickname of a participant in GROUP."
   (let ((nicknames (cdr (assoc group jabber-muc-participants))))
     (unless nicknames
       (error "Unknown group: %s" group))
@@ -857,7 +857,7 @@ JC is the Jabber connection."
 
 
 (defun jabber-muc-get-config (jc group)
-  "Ask for MUC configuration form.
+  "Ask for the MUC configuration form for GROUP.
 
 JC is the Jabber connection."
   (interactive (jabber-muc-argument-list))
@@ -957,7 +957,7 @@ Includes joined rooms and bookmarked rooms for this connection."
     (hash-table-keys rooms)))
 
 (defun jabber-muc-join (jc group nickname &optional popup)
-  "Join a groupchat, or change nick.
+  "Join GROUP as NICKNAME, or change nick.
 In interactive calls, or if POPUP is non-nil, switch to the
 groupchat buffer.
 
@@ -1016,7 +1016,7 @@ JC is the Jabber connection."
 
 ;;;###autoload
 (defun jabber-muc-switch-to (group)
-  "Switch to an active groupchat buffer.
+  "Switch to the active groupchat buffer for GROUP.
 Prompt with completion for joined rooms only."
   (interactive
    (list (completing-read "Groupchat: "
@@ -1135,7 +1135,7 @@ JC is the Jabber connection."
                     `(presence ((to . ,(format "%s/%s" group nickname))))))
 
 (defun jabber-muc-leave (jc group)
-  "Leave a groupchat.
+  "Leave groupchat GROUP.
 
 JC is the Jabber connection."
   (interactive (jabber-muc-argument-list))
@@ -1357,7 +1357,7 @@ When MEDIATED-P is non-nil, include a Decline button."
       (insert-button "Decline" 'action action))))
 
 (defun jabber-muc-print-invite (msg _who mode)
-  "Print MUC invitation from message plist MSG.
+  "Print MUC invitation from message plist MSG in display MODE.
 Requires :xml-data key in MSG for raw stanza access."
   (when-let* ((xml-data (plist-get msg :xml-data)))
     (or (when-let* ((parsed (jabber-muc--parse-mediated-invite xml-data)))
@@ -1433,7 +1433,7 @@ RESULT is a list of item vectors on success or an error node."
               (assq-delete-all jc jabber-muc--autojoin-queue))))))
 
 (defun jabber-muc--autojoin-timeout (jc)
-  "Timer callback: advance to the next room when self-presence times out."
+  "Timer callback for JC: advance to next room when self-presence times out."
   (setq jabber-muc--autojoin-timer nil)
   (when (memq jc jabber-connections)
     (jabber-muc--autojoin-next jc)))
@@ -1477,7 +1477,7 @@ never responds.  Does nothing if the queue is empty."
         (assq-delete-all jc jabber-muc--autojoin-disco-count)))
 
 (defun jabber-muc--rejoin-snapshot (jc)
-  "Rejoin rooms from the pre-disconnect snapshot not already joined.
+  "On JC, rejoin pre-disconnect rooms not already joined.
 Called after bookmark autojoin to recover non-bookmarked rooms.
 Rooms are added to the pending disco list for batched querying."
   (dolist (room-nick jabber-muc--rooms-before-disconnect)
@@ -1616,7 +1616,9 @@ Return nil if X-MUC is nil."
 			  (car (jabber-xml-get-children x-muc 'item))))))
 
 (defun jabber-muc-print-prompt (msg &optional local dont-print-nick-p)
-  "Print MUC prompt for message plist MSG."
+  "Print MUC prompt for message plist MSG.
+LOCAL is non-nil when MSG was sent by us (uses local-nick face).
+When DONT-PRINT-NICK-P is non-nil, omit the nickname."
   (let ((nick (jabber-jid-resource (plist-get msg :from)))
 	(timestamp (plist-get msg :timestamp))
 	(delayed (plist-get msg :delayed)))
@@ -1746,7 +1748,7 @@ JC is the Jabber connection."
 
 (defun jabber-muc--process-self-leave (jc group type status-codes
                                           error-node actor reason)
-  "Handle our own departure from GROUP.
+  "On JC, handle our own departure from GROUP.
 TYPE is the presence type (\"unavailable\" or \"error\").
 STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
   (let* ((leavingp t)
@@ -1858,7 +1860,7 @@ NICKNAME is the entering user.  Assumes `jabber-chat-ewoc' is current."
              :time (current-time))))))
 
 (defun jabber-muc--query-affiliations (jc group)
-  "Query member, admin, and owner affiliation lists for GROUP.
+  "On JC, query member, admin, and owner affiliation lists for GROUP.
 Sends three IQ-get requests.  Results are merged into
 `jabber-muc--room-jids' and `jabber-muc-participants'."
   (dolist (affiliation '("member" "admin" "owner"))
@@ -1894,7 +1896,7 @@ Silently ignore; the user may lack permissions."
 
 (defun jabber-muc--process-enter (jc group nickname symbol status-codes
                                      x-muc actor reason our-nickname)
-  "Handle a participant entering or updating presence in GROUP.
+  "On JC, handle a participant entering or updating presence in GROUP.
 NICKNAME is the user.  SYMBOL is their JID symbol.  STATUS-CODES,
 X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
   ;; Self-presence: check nickname too since some servers (e.g.
@@ -1979,7 +1981,7 @@ Accesses `jabber-pending-groupchats' to determine our nickname."
 	  :error-node error-node :status-codes status-codes)))
 
 (defun jabber-muc-process-presence (jc presence)
-  "Dispatch a MUC presence stanza to the appropriate handler."
+  "On JC, dispatch the MUC PRESENCE stanza to the appropriate handler."
   (let* ((p (jabber-muc--parse-presence presence))
 	 (type (plist-get p :type))
 	 (group (plist-get p :group))

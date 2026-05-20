@@ -31,7 +31,7 @@
 (eval-when-compile (require 'cl-lib))
 
 (defgroup jabber-mode-line nil
-  "Display Jabber status in mode line"
+  "Display Jabber status in mode line."
   :group 'jabber)
 
 (defcustom jabber-mode-line-compact t

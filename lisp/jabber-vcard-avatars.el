@@ -99,7 +99,8 @@ JC is the Jabber connection."
 		  #'ignore nil))
 
 (defun jabber-vcard-avatars-vcard (_jc iq closure)
-  "Get the photo from the vCard, and set the avatar."
+  "Get the photo from the vCard, and set the avatar.
+IQ is the vCard result stanza.  CLOSURE is (FROM-JID . SHA1-HASH)."
   (let ((from (car closure))
 	(sha1-hash (cdr closure))
 	(photo (assq 'PHOTO (jabber-vcard-parse (jabber-iq-query iq)))))
@@ -127,6 +128,9 @@ JC is the Jabber connection."
 		    #'jabber-vcard-avatars-find-current-1 nil)))
 
 (defun jabber-vcard-avatars-find-current-1 (jc xml-data success)
+  "Callback for the own-vCard fetch.
+JC is the Jabber connection.  XML-DATA is the IQ response.
+SUCCESS is non-nil when the request succeeded."
   (jabber-vcard-avatars-update-current
    jc
    (and success
@@ -137,6 +141,7 @@ JC is the Jabber connection."
 	      (avatar-sha1-sum avatar)))))))
 
 (defun jabber-vcard-avatars-update-current (jc new-hash)
+  "Update cached own-avatar hash for JC to NEW-HASH and resend presence."
   (let ((old-hash (gethash
 		   (jabber-connection-bare-jid jc)
 		   jabber-vcard-avatars-current-hash)))
@@ -147,6 +152,7 @@ JC is the Jabber connection."
 
 (add-to-list 'jabber-presence-element-functions 'jabber-vcard-avatars-presence-element)
 (defun jabber-vcard-avatars-presence-element (jc)
+  "Return the vCard-avatar presence child element for connection JC."
   (when jabber-vcard-avatars-publish
     (let ((hash (gethash
 		 (jabber-connection-bare-jid jc)

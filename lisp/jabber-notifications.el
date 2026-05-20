@@ -40,7 +40,7 @@ The default \"emacs\" is resolved by the system icon theme."
   :group 'jabber-alerts)
 
 (defcustom jabber-notifications-timeout nil
-  "Specifies the timeout of the pop up window in millisecond"
+  "Timeout of the pop up window in milliseconds."
   :type 'integer
   :group 'jabber-alerts)
 
@@ -55,7 +55,7 @@ The default \"emacs\" is resolved by the system icon theme."
   :group 'jabber-alerts)
 
 (defcustom jabber-notifications-urgency "low"
-  "Urgency of message"
+  "Urgency of message."
   :type '(choice (const :tag "Low" "low")
                  (const :tag "Normal" "normal")
                  (const :tag "Critical" "critical"))
@@ -80,7 +80,8 @@ nil disables MUC notifications entirely."
 ;;
 
 (defun jabber-message-notifications (from _buffer text title)
-  "Show a message through the notifications.el interface."
+  "Show a message from FROM through the notifications.el interface.
+TEXT is the message body and TITLE the notification title."
   (let ((body (or (jabber-escape-xml text) " "))
         (avatar-hash (get (jabber-jid-symbol from) 'avatar-hash)))
     (condition-case err
@@ -96,9 +97,10 @@ nil disables MUC notifications entirely."
        (message "jabber-notifications: D-Bus error: %s" (error-message-string err))))))
 
 (defun jabber-muc-notifications (nick group buffer text title)
-  "Show MUC message through the notifications.el interface.
-Controlled by `jabber-notifications-muc': notify for all messages,
-mentions only, or not at all."
+  "Show MUC message from NICK in GROUP through the notifications.el interface.
+BUFFER, TEXT and TITLE are passed through to the underlying
+notification call.  Controlled by `jabber-notifications-muc':
+notify for all messages, mentions only, or not at all."
   (when (pcase jabber-notifications-muc
           ('all t)
           ('mentions (jabber-muc-looks-like-personal-p text group))

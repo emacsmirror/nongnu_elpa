@@ -31,7 +31,8 @@
 (require 'jabber-util)
 (require 'jabber-xml)
 
-(defgroup jabber-alerts nil "auditory and visual alerts for jabber events"
+(defgroup jabber-alerts nil
+  "Auditory and visual alerts for Jabber events."
   :group 'jabber)
 
 (defcustom jabber-alert-message-hooks '(jabber-message-echo
@@ -305,6 +306,7 @@ Examples:
   :type 'boolean)
 
 (defun jabber-message-default-message (from buffer _text)
+  "Return the default alert string for a message from FROM in BUFFER."
   (when (or jabber-message-alert-same-buffer
 	    (not (memq (selected-window) (get-buffer-window-list buffer))))
     (if (jabber-muc-sender-p from)
@@ -314,7 +316,8 @@ Examples:
       (format "%s:" (jabber-jid-displayname from)))))
 
 (defun jabber-message-wave (from _buffer _text title)
-  "Play the wave file specified in `jabber-alert-message-wave'."
+  "Play the wave file specified in `jabber-alert-message-wave'.
+FROM selects the per-JID sound override; TITLE gates the action."
   (when title
     (let* ((case-fold-search t)
 	   (bare-jid (jabber-jid-user from))
@@ -326,17 +329,17 @@ Examples:
 	(funcall jabber-play-sound-file sound-file)))))
 
 (defun jabber-message-display (_from buffer _text title)
-  "Display the buffer where a new message has arrived."
+  "Display BUFFER where a new message has arrived (when TITLE is non-nil)."
   (when title
     (display-buffer buffer)))
 
 (defun jabber-message-switch (_from buffer _text title)
-  "Switch to the buffer where a new message has arrived."
+  "Switch to BUFFER where a new message has arrived (when TITLE is non-nil)."
   (when title
     (switch-to-buffer buffer)))
 
 (defun jabber-message-scroll (_from buffer _text _title)
-  "Scroll all nonselected windows where the chat buffer is displayed."
+  "Scroll BUFFER in all nonselected windows showing it."
   ;; jabber-chat-buffer-display will DTRT with point in the buffer.
   ;; But this change will not take effect in nonselected windows.
   ;; Therefore we do that manually here.
@@ -358,6 +361,8 @@ Examples:
 
 ;; MUC alert hooks
 (defun jabber-muc-default-message (nick group buffer _text)
+  "Return the default alert string for a MUC message from NICK in GROUP.
+BUFFER is the MUC buffer."
   (when (or jabber-message-alert-same-buffer
 	    (not (and (buffer-live-p buffer)
 		      (memq (selected-window) (get-buffer-window-list buffer)))))
@@ -369,28 +374,28 @@ Examples:
       (format "Message in %s" (jabber-jid-displayname group)))))
 
 (defun jabber-muc-wave (_nick _group _buffer _text title)
-  "Play the wave file specified in `jabber-alert-muc-wave'."
+  "Play the wave file specified in `jabber-alert-muc-wave' (when TITLE non-nil)."
   (when title
     (funcall jabber-play-sound-file jabber-alert-muc-wave)))
 
 (defun jabber-muc-display (_nick _group buffer _text title)
-  "Display the buffer where a new message has arrived."
+  "Display BUFFER where a new MUC message has arrived (when TITLE is non-nil)."
   (when (and title (buffer-live-p buffer))
     (display-buffer buffer)))
 
 (defun jabber-muc-switch (_nick _group buffer _text title)
-  "Switch to the buffer where a new message has arrived."
+  "Switch to BUFFER where a new MUC message has arrived (when TITLE non-nil)."
   (when (and title (buffer-live-p buffer))
     (switch-to-buffer buffer)))
 
 (defun jabber-muc-scroll (_nick _group buffer _text _title)
-  "Scroll buffer even if it is in an unselected window."
+  "Scroll BUFFER even if it is in an unselected window."
   (when (buffer-live-p buffer)
     (jabber-message-scroll nil buffer nil nil)))
 
 ;; Presence alert hooks
 (defun jabber-presence-default-message (who oldstatus newstatus _statustext)
-  "Return a string with the status change if OLDSTATUS and NEWSTATUS differs.
+  "Return a string describing the WHO presence change from OLDSTATUS to NEWSTATUS.
 
 Return nil if OLDSTATUS and NEWSTATUS are equal, and in other
 cases a string of the form \"\\='name\\=' (jid) is now NEWSTATUS (STATUSTEXT)\".
@@ -419,11 +424,12 @@ This function is not called directly, but is the default for
       (concat formattedname formattedstatus)))))
 
 (defun jabber-presence-only-chat-open-message (who oldstatus newstatus statustext)
-  "Same as `jabber-presence-default-message' but managing the presence messages.
+  "Like `jabber-presence-default-message' but only when a chat buffer is open.
 
 Return the same as `jabber-presence-default-message' but only
 if there is a chat buffer open for WHO, keeping the amount of presence messages
 at a more manageable level when there are lots of users.
+OLDSTATUS, NEWSTATUS and STATUSTEXT match the parent function's signature.
 
 This function is not called directly, but can be used as the value for
 `jabber-alert-presence-message-function'."
@@ -431,7 +437,8 @@ This function is not called directly, but can be used as the value for
     (jabber-presence-default-message who oldstatus newstatus statustext)))
 
 (defun jabber-presence-wave (who _oldstatus _newstatus _statustext proposed-alert)
-  "Play the wave file specified in `jabber-alert-presence-wave'."
+  "Play the wave file specified in `jabber-alert-presence-wave'.
+WHO selects the per-JID sound override; PROPOSED-ALERT gates the action."
   (when proposed-alert
     (let* ((case-fold-search t)
 	   (bare-jid (symbol-name who))
@@ -446,25 +453,26 @@ This function is not called directly, but can be used as the value for
 ;;; Info alert hooks
 
 (defun jabber-info-default-message (infotype buffer)
-  "Function for constructing info alert messages.
+  "Construct an info-alert message for INFOTYPE about BUFFER.
 
-The argument is INFOTYPE, a symbol telling the kind of info request completed.
-This function uses `jabber-info-message-alist' to find a message."
+INFOTYPE is a symbol naming the kind of info request that completed.
+Uses `jabber-info-message-alist' to find the message text."
   (concat (cdr (assq infotype jabber-info-message-alist))
 	  " (buffer "(buffer-name buffer) ")"))
 
 (defun jabber-info-wave (_infotype _buffer proposed-alert)
-  "Play the wave file specified in `jabber-alert-info-wave'."
+  "Play the wave file specified in `jabber-alert-info-wave'.
+PROPOSED-ALERT gates the action."
   (if proposed-alert
       (funcall jabber-play-sound-file jabber-alert-info-wave)))
 
 (defun jabber-info-display (_infotype buffer proposed-alert)
-  "Display buffer of completed request."
+  "Display BUFFER of completed request when PROPOSED-ALERT is non-nil."
   (when proposed-alert
     (display-buffer buffer)))
 
 (defun jabber-info-switch (_infotype buffer proposed-alert)
-  "Switch to buffer of completed request."
+  "Switch to BUFFER of completed request when PROPOSED-ALERT is non-nil."
   (when proposed-alert
     (switch-to-buffer buffer)))
 
@@ -498,9 +506,8 @@ autoanswer phrase."
   :type '(alist :key-type regexp :value-type string))
 
 (defun jabber-autoanswer-answer (from buffer text proposed-alert)
-  "Answer automaticaly when incoming text is in `jabber-autoanswer-alist'.
-Answer automaticaly when incoming text match the first element of
-`jabber-autoanswer-alist'"
+  "Answer automatically a 1:1 TEXT from FROM via `jabber-autoanswer-alist'.
+BUFFER is the chat buffer; PROPOSED-ALERT gates the action."
   (when (and from buffer text proposed-alert jabber-autoanswer-alist)
     (let ((message
            (cl-dolist (entry jabber-autoanswer-alist)
@@ -511,9 +518,8 @@ Answer automaticaly when incoming text match the first element of
 (cl-pushnew 'jabber-autoanswer-answer (get 'jabber-alert-message-hooks 'custom-options))
 
 (defun jabber-autoanswer-answer-muc (nick group buffer text proposed-alert)
-  "Answer automaticaly when incoming text is in `jabber-autoanswer-alist'.
-Answer automaticaly when incoming text match first element
-of `jabber-autoanswer-alist'."
+  "Auto-reply to MUC TEXT from NICK in GROUP using `jabber-autoanswer-alist'.
+BUFFER is the MUC buffer; PROPOSED-ALERT gates the action."
   (when (and nick group buffer text proposed-alert jabber-autoanswer-alist)
     (let ((message
            (cl-dolist (entry jabber-autoanswer-alist)

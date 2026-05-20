@@ -422,6 +422,9 @@ obtained from `xml-parse-region'."
 	  (error (insert "Couldn't display photo\n")))))))
 
 (defun jabber-vcard-do-edit (jc xml-data _closure-data)
+  "Open a widget buffer to edit our own vCard.
+JC is the Jabber connection.  XML-DATA is the IQ result holding
+the current vCard contents."
   (let ((parsed (jabber-vcard-parse (jabber-iq-query xml-data)))
 	start-position)
     (with-current-buffer (get-buffer-create "Edit vcard")
@@ -552,6 +555,7 @@ obtained from `xml-parse-region'."
       (goto-char start-position))))
 
 (defun jabber-vcard-submit (&rest _ignore)
+  "Publish the vCard edited in the current widget buffer."
   (let ((to-publish (jabber-vcard-reassemble
 		     (mapcar (lambda (entry)
 			       (cons (car entry) (widget-value (cdr entry))))

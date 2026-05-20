@@ -550,6 +550,7 @@ items for."
 
 (defun jabber-process-disco-info (jc xml-data)
   "Handle results from info disco requests.
+JC is the Jabber connection.  XML-DATA is the IQ result stanza.
 Return a formatted string with identities and features."
   (let ((result
          (with-temp-buffer

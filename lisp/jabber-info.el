@@ -73,7 +73,7 @@ inserted at its position."
     m))
 
 (defun jabber-info--make-callback (marker)
-  "Return a callback that inserts results at MARKER position."
+  "Return a callback that insert results at MARKER position."
   (lambda (jc xml-data closure-data)
     (when (buffer-live-p (marker-buffer marker))
       (with-current-buffer (marker-buffer marker)
@@ -92,7 +92,7 @@ inserted at its position."
               (insert (format "%S\n\n" xml-data))))))))))
 
 (defun jabber-info--query-bare (jc bare-jid marker)
-  "Fire queries appropriate for a bare JID.
+  "Fire queries appropriate for BARE-JID over connection JC.
 Results are inserted at MARKER in its buffer."
   (let ((cb (jabber-info--make-callback marker)))
     (jabber-send-iq jc bare-jid "get"
@@ -105,7 +105,7 @@ Results are inserted at MARKER in its buffer."
                     cb "Last online request failed")))
 
 (defun jabber-info--query-resource (jc full-jid marker)
-  "Fire queries appropriate for FULL-JID.
+  "Fire queries appropriate for FULL-JID over connection JC.
 Results are inserted at MARKER in its buffer."
   (let ((cb (jabber-info--make-callback marker)))
     (jabber-send-iq jc full-jid "get"

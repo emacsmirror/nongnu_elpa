@@ -48,7 +48,7 @@
 ;;
 
 (defun jabber-get-register (jc to)
-  "Send IQ get request in namespace \"jabber:iq:register\".
+  "Send IQ get request to TO in namespace \"jabber:iq:register\".
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)

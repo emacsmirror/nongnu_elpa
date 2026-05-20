@@ -79,8 +79,7 @@ Set to an empty string to disable the prefix."
   :type 'string)
 
 (defcustom jabber-activity-make-strings #'jabber-activity-make-strings-shorten
-  "Function which should return an alist of JID -> string when given a list of
-JIDs."
+  "Function that turns a list of JIDs into an alist of JID -> string."
   :set #'(lambda (var val)
 	   (custom-set-default var val)
 	   (when (and (featurep 'jabber-activity)
@@ -110,12 +109,11 @@ shown in the mode line or not."
   :type 'function)
 
 (defcustom jabber-activity-query-unread t
-  "Query the user as to whether killing Emacs should be cancelled when
-there are unread messages which otherwise would be lost."
+  "Whether to confirm exiting Emacs when there are unread messages."
   :type 'boolean)
 
 (defcustom jabber-activity-banned nil
-  "List of regexps of banned JID"
+  "List of regexps of banned JIDs."
   :type '(repeat string))
 
 (defface jabber-activity-chat-face
@@ -175,7 +173,7 @@ Invalidated when `jabber-activity-make-name-alist' rebuilds.")
 
 (defun jabber-activity-make-string-default (jid)
   "Return the nick of the JID.
-If no nick is available, return the user name part of the JID. In
+If no nick is available, return the user name part of the JID.  In
 private MUC conversations, return the user's nickname."
   (if (jabber-muc-sender-p jid)
       (jabber-jid-resource jid)
@@ -365,14 +363,15 @@ Recomputes `jabber-activity-mode-string' and
           (jabber-activity-mode-line-update))))))
 
 (defun jabber-activity-add (from _buffer _text _proposed-alert)
-  "Add a JID to mode line when `jabber-activity-show-p'."
+  "Add FROM to mode line when `jabber-activity-show-p' approves it."
   (when (funcall jabber-activity-show-p from)
     (add-to-list 'jabber-activity-jids from)
     (add-to-list 'jabber-activity-personal-jids from)
     (jabber-activity-mode-line-update)))
 
 (defun jabber-activity-add-muc (_nick group _buffer text _proposed-alert)
-  "Add GROUP to mode line.  Track personal mentions separately."
+  "Add GROUP to mode line.
+Track personal mentions detected in TEXT separately."
   (when (funcall jabber-activity-show-p group)
     (add-to-list 'jabber-activity-jids group)
     (when (jabber-muc-looks-like-personal-p text group)
@@ -380,7 +379,8 @@ Recomputes `jabber-activity-mode-string' and
     (jabber-activity-mode-line-update)))
 
 (defun jabber-activity-presence (who _oldstatus newstatus _statustext _proposed-alert)
-  "Add a JID to mode line on subscription requests."
+  "Add WHO to the mode line on subscription requests.
+NEWSTATUS is the presence type of the incoming stanza."
   (when (string= newstatus "subscribe")
     (add-to-list 'jabber-activity-jids (symbol-name who))
     (add-to-list 'jabber-activity-personal-jids (symbol-name who))

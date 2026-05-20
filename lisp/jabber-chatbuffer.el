@@ -556,6 +556,7 @@ Uses `jabber-chat-buffer-msg-count' for the number of messages."
          generation)))))
 
 (defun jabber-chat-buffer-send ()
+  "Send the message composed below the prompt in the current chat buffer."
   (interactive)
   ;; If user accidentally hits RET without writing anything, just
   ;; ignore it.
@@ -588,10 +589,10 @@ Uses `jabber-chat-buffer-msg-count' for the number of messages."
       (error "No jabber buffer found"))))
 (defun jabber-chat-redisplay (&optional all-chats)
   "Regenerate the EWOC text and header for one or more buffers.
-With prefix argument, regenerate all `jabber-chat-mode' buffers,
-otherwise regenerate the current buffer display.
-Scrolls each buffer so the chat log is visible with the prompt
-line at the bottom of the window."
+With prefix argument ALL-CHATS, regenerate all `jabber-chat-mode'
+buffers; otherwise regenerate the current buffer display.
+Scroll each buffer so the chat log is visible with the prompt line
+at the bottom of the window."
   (interactive "P")
   (let ((current-buffer (current-buffer)))
     (mapc

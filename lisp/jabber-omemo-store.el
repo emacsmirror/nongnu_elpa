@@ -202,7 +202,7 @@ SELECT device_id, active, last_seen FROM omemo_devices
 			   (list account jid)))))
 
 (defun jabber-omemo-store-set-device-active (account jid device-id active)
-  "Mark device DEVICE-ID as ACTIVE (non-nil) or inactive (nil)."
+  "Mark device DEVICE-ID of ACCOUNT+JID as ACTIVE (non-nil) or inactive (nil)."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db "\
 UPDATE omemo_devices SET active = ?
@@ -272,7 +272,8 @@ INSERT OR REPLACE INTO omemo_skipped_keys
 
 (defun jabber-omemo-store-load-skipped-key (account jid device-id
 						    dh-key msg-number)
-  "Load a skipped message key, or nil."
+  "Load a skipped message key for ACCOUNT+JID+DEVICE-ID, or nil.
+DH-KEY identifies the ratchet step and MSG-NUMBER the message within it."
   (when-let* ((db (jabber-db-ensure-open)))
     (jabber-omemo-store--as-unibyte
      (caar (sqlite-select db "\
@@ -283,7 +284,8 @@ SELECT message_key FROM omemo_skipped_keys
 
 (defun jabber-omemo-store-delete-skipped-key (account jid device-id
 						      dh-key msg-number)
-  "Delete a skipped message key after use."
+  "Delete a skipped message key for ACCOUNT+JID+DEVICE-ID after use.
+DH-KEY and MSG-NUMBER identify the entry."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db "\
 DELETE FROM omemo_skipped_keys

@@ -43,8 +43,8 @@
 
 (defun jabber-truncate-top (buffer &optional ewoc)
   "Clean old history from a chat BUFFER.
-Optional EWOC is ewoc-widget to work. Default is
-`jabber-chat-ewoc'. `jabber-log-lines-to-keep' specifies the
+Optional EWOC is ewoc-widget to work.  Default is
+`jabber-chat-ewoc'.  `jabber-log-lines-to-keep' specifies the
 number of lines to keep.
 
 Note that this might interfere with
@@ -75,13 +75,13 @@ get it, and then it just gets deleted."
               (ewoc-delete work-ewoc delete-before))))))
 
 (defun jabber-truncate-muc (_nick _group buffer _text _proposed-alert)
-  "Clean old history from MUC buffers.
+  "Clean old history from the MUC BUFFER.
 `jabber-log-lines-to-keep' specifies the number of lines to
 keep."
   (jabber-truncate-top buffer))
 
 (defun jabber-truncate-chat (_from buffer _text _proposed-alert)
-  "Clean old history from chat buffers.
+  "Clean old history from chat BUFFER.
 `jabber-log-lines-to-keep' specifies the number of lines to
 keep.
 

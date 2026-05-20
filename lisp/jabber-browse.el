@@ -40,7 +40,7 @@
   "XEP-0011 Jabber Browsing namespace.")
 
 (defun jabber-get-browse (jc to)
-  "Send a browse infoquery request to someone.
+  "Send a browse infoquery request to TO.
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)

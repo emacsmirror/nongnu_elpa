@@ -1,4 +1,4 @@
-;; jabber-presence.el - roster and presence bookkeeping  -*- lexical-binding: t; -*-
+;;; jabber-presence.el --- Roster and presence bookkeeping  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2003, 2004, 2007, 2008 - Magnus Henoch - mange@freemail.hu
 ;; Copyright (C) 2002, 2003, 2004 - tom berger - object@intelectronica.net
@@ -83,7 +83,7 @@ stanza.")
 ;;
 
 (defun jabber--roster-valid-push-p (from state-data)
-  "Return non-nil if FROM is a valid roster push sender.
+  "Return non-nil if FROM is a valid roster push sender for STATE-DATA.
 Valid senders are: nil (absent), the bare server, or our own full/bare JID."
   (let ((username (plist-get state-data :username))
         (server (plist-get state-data :server))
@@ -307,7 +307,7 @@ obtained from `xml-parse-region'."
              (plist-get resource-plist 'status)))))))))
 
 (defun jabber-process-subscription-request (jc from presence-status)
-  "Process an incoming subscription request.
+  "Process an incoming subscription request from FROM with PRESENCE-STATUS.
 JC is the Jabber connection."
   (with-current-buffer (jabber-chat-create-buffer jc from)
     (jabber-chat-ewoc-enter (list :subscription-request presence-status :time (current-time)))
@@ -316,14 +316,17 @@ JC is the Jabber connection."
       (run-hook-with-args hook (jabber-jid-symbol from) nil "subscribe" presence-status (funcall jabber-alert-presence-message-function (jabber-jid-symbol from) nil "subscribe" presence-status)))))
 
 (defun jabber-subscription-accept-mutual (&rest _ignored)
+  "Accept the pending subscription request and request reciprocal subscription."
   (message "Subscription accepted; reciprocal subscription request sent")
   (jabber-subscription-reply "subscribed" "subscribe"))
 
 (defun jabber-subscription-accept-one-way (&rest _ignored)
+  "Accept the pending subscription request without reciprocating."
   (message "Subscription accepted")
   (jabber-subscription-reply "subscribed"))
 
 (defun jabber-subscription-decline (&rest _ignored)
+  "Decline the pending subscription request."
   (message "Subscription declined")
   (jabber-subscription-reply "unsubscribed"))
 
@@ -350,6 +353,7 @@ JC is the Jabber connection."
             (jabber-chat-ewoc-delete n)))))))
 
 (defun jabber-subscription-reply (&rest types)
+  "Send one presence stanza per TYPES (e.g. \"subscribed\") to the current peer."
   (let ((to (jabber-jid-user jabber-chatting-with)))
     (dolist (type types)
       (jabber-send-sexp jabber-buffer-connection `(presence ((to . ,to) (type . ,type))))))
@@ -399,7 +403,8 @@ Show status properties from highest-priority resource."
 
 ;;;###autoload
 (defun jabber-send-presence (show status priority &optional jc)
-  "Set presence.
+  "Set presence to SHOW with STATUS message and PRIORITY.
+SHOW is one of \"\", \"away\", \"chat\", \"dnd\", \"xa\".
 When called interactively, prompt for which account to use.
 With prefix argument, send to all accounts.
 When JC is non-nil, send only for that connection.
@@ -514,8 +519,8 @@ JC is the Jabber connection."
 				      ,@(jabber-presence-children jc)))))))
 
 (defun jabber-send-away-presence (&optional status jc)
-  "Set status to away.
-With prefix argument, ask for status message.
+  "Set presence to away with the given STATUS message.
+With prefix argument, ask for STATUS message.
 If JC is non-nil, send only for that connection."
   (interactive
    (list
@@ -527,8 +532,8 @@ If JC is non-nil, send only for that connection."
 
 ;; XXX code duplication!
 (defun jabber-send-xa-presence (&optional status jc)
-  "Send extended away presence.
-With prefix argument, ask for status message.
+  "Send extended-away presence with the given STATUS message.
+With prefix argument, ask for STATUS message.
 If JC is non-nil, send only for that connection."
   (interactive
    (list
@@ -560,8 +565,8 @@ If JC is non-nil, send only for that connection."
     (jabber-send-default-presence jc)))
 
 (defun jabber-send-subscription-request (jc to &optional request)
-  "Send a subscription request to jid.
-Show him your request text, if specified.
+  "Send a subscription request to TO.
+REQUEST, if non-empty, is included as the status text.
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)
@@ -578,7 +583,7 @@ JC is the Jabber connection."
   "History of entered roster groups.")
 
 (defun jabber-roster-change (jc jid name groups)
-  "Add or change a roster item.
+  "Add or change roster item JID with NAME and GROUPS.
 JC is the Jabber connection."
   (interactive (let* ((jid (jabber-jid-symbol
 			    (jabber-read-jid-completing "Add/change JID: ")))
@@ -620,6 +625,7 @@ JC is the Jabber connection."
 		  #'jabber-report-success "Roster item change"))
 
 (defun jabber-roster-delete (jc jid)
+  "Remove JID from the roster on connection JC."
   (interactive (list (jabber-read-account)
 		     (jabber-read-jid-completing "Delete from roster: ")))
   (jabber-send-iq jc nil "set"

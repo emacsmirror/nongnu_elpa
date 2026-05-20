@@ -527,7 +527,7 @@ Return t if A is less than B."
 	(cl-return nil))))))
 
 (defun jabber-roster-sort-by-status (a b)
-  "Sort roster items by online status.
+  "Sort roster items A and B by online status.
 See `jabber-sort-order' for order used."
   (cl-flet ((order (item) (length (member (get item 'show) jabber-sort-order))))
     (let ((a-order (order a))
@@ -541,7 +541,7 @@ See `jabber-sort-order' for order used."
 	0)))))
 
 (defun jabber-roster-sort-by-displayname (a b)
-  "Sort roster items by displayed name."
+  "Sort roster items A and B by displayed name."
   (let ((a-name (jabber-jid-displayname a))
 	(b-name (jabber-jid-displayname b)))
     (cond
@@ -550,7 +550,7 @@ See `jabber-sort-order' for order used."
      (t 1))))
 
 (defun jabber-roster-sort-by-group (a b)
-  "Sort roster items by group membership."
+  "Sort roster items A and B by group membership."
   (cl-flet ((first-group (item) (or (car (get item 'groups)) "")))
     (let ((a-group (first-group a))
 	  (b-group (first-group b)))
@@ -560,7 +560,7 @@ See `jabber-sort-order' for order used."
        (t 1)))))
 
 (defun jabber-fix-status (status)
-  "Make status strings more readable."
+  "Make STATUS strings more readable."
   (when status
     (when (string-match "\n+$" status)
       (setq status (replace-match "" t t status)))

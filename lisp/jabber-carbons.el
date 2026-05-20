@@ -42,11 +42,15 @@ devices, keeping conversations in sync across clients."
   :group 'jabber)
 
 (defun jabber-carbon-success (jc xml-data _context)
+  "Callback when the carbons enable IQ succeeded.
+JC is the Jabber connection.  XML-DATA is the IQ response."
   (when (equal "result" (jabber-xml-get-attribute xml-data 'type))
     (message "Carbons feature successfully enabled for %s"
              (jabber-connection-jid jc))))
 
 (defun jabber-carbon-failure (_jc xml-data _context)
+  "Callback when the carbons enable IQ failed.
+XML-DATA is the IQ error stanza."
   (message "Carbons feature could not be enabled: %S" xml-data))
 
 ;;;###autoload

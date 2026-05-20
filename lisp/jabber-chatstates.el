@@ -74,6 +74,7 @@ It can be sent and cancelled several times.")
 ;; them.
 
 (defun jabber-chatstates-update-message ()
+  "Refresh the mode-line indicator for the peer's last chat state."
   (setq jabber-chatstates-message
         (if (and jabber-chatstates-last-state
                  (not (eq 'active jabber-chatstates-last-state)))
@@ -102,6 +103,7 @@ It can be sent and cancelled several times.")
 
 (add-hook 'jabber-chat-send-hooks #'jabber-chatstates-when-sending)
 (defun jabber-chatstates-when-sending (_text _id)
+  "Chat-send hook: cancel state timers and attach an `active' element."
   (jabber-chatstates--clear-typing)
   (jabber-chatstates-stop-timer)
   (when jabber-chatstates-confirm
@@ -167,6 +169,7 @@ Added to `kill-buffer-hook' in chat buffers."
        (gone ((xmlns . ,jabber-chatstates-xmlns)))))))
 
 (defun jabber-chatstates-after-change ()
+  "Post-command-hook: emit `composing'/`active' when typing state flips."
   (let* ((composing-now (not (= (point-max) jabber-point-insert)))
          (state (if composing-now 'composing 'active)))
     (when (and jabber-chatstates-confirm
@@ -184,6 +187,7 @@ Added to `kill-buffer-hook' in chat buffers."
 ;;; COMMON
 
 (defun jabber-handle-incoming-message-chatstates (jc xml-data)
+  "Update the chat buffer's typing indicator from XML-DATA on JC."
   (when-let* ((from (jabber-xml-get-attribute xml-data 'from))
               (buffer (get-buffer (jabber-chat-get-buffer from jc))))
     (with-current-buffer buffer

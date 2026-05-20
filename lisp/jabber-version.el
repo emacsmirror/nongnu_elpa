@@ -48,7 +48,7 @@ jabber:iq:version query response, when `jabber-version-show` is non
 `nil`.")
 
 (defun jabber-get-version (jc to)
-  "Request software version.
+  "Request software version of TO.
 
 JC is the Jabber connection."
   (interactive (list
@@ -63,6 +63,7 @@ JC is the Jabber connection."
 ;; called by jabber-process-data
 (defun jabber-process-version (_jc xml-data)
   "Handle results from jabber:iq:version requests.
+XML-DATA is the IQ result stanza.
 Return a formatted string with name, version, and OS."
   (let ((query (jabber-iq-query xml-data)))
     (mapconcat

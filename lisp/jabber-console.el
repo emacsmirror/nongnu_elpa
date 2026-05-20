@@ -21,7 +21,7 @@
 
 ;;; Commentary:
 
-;; Use *-jabber-console-* for sending custom XMPP code. Be careful!
+;; Use *-jabber-console-* for sending custom XMPP code.  Be careful!
 
 ;;; Code:
 
@@ -76,6 +76,7 @@ what kind of chat buffer is being created.")
 ;;
 
 (defun jabber-console-create-buffer (jc)
+  "Get or create the XMPP console buffer for connection JC."
   (with-current-buffer
       (get-buffer-create (format jabber-console-name-format (jabber-connection-bare-jid jc)))
     (unless (eq major-mode 'jabber-console-mode)
@@ -85,13 +86,14 @@ what kind of chat buffer is being created.")
     (current-buffer)))
 
 (defun jabber-console-send (jc data)
+  "Echo DATA into the console buffer for JC and send it raw to the server."
   ;; Put manual string into buffers ewoc
   (jabber-process-console jc "raw" data)
   ;; ...than sent it to server
   (jabber-send-string jc data))
 
 (defun jabber-console-comment (str)
-  "Insert comment into console buffer."
+  "Insert STR as a timestamped comment into the console buffer."
   (let ((string (concat
                  comment-start str "@" (jabber-encode-time (current-time)) ":"
                  comment-end "\n")))
@@ -100,7 +102,7 @@ what kind of chat buffer is being created.")
     (insert string)))
 
 (defun jabber-console-pp (data)
-  "Pretty Printer for XML-sexp and raw data."
+  "Pretty-print DATA, an XML-sexp or raw bytes, into the console buffer."
   (let ((direction (car data))
         (xml-list (cdr data))
         (raw (cadr data)))
@@ -144,7 +146,8 @@ what kind of chat buffer is being created.")
 
 ;;;###autoload
 (defun jabber-process-console (jc direction xml-data)
-  "Log XML-DATA i/o as XML in \"*-jabber-console-JID-*\" buffer."
+  "Log XML-DATA i/o for JC as XML in \"*-jabber-console-JID-*\" buffer.
+DIRECTION is a marker string (typically \"send\", \"recv\", or \"raw\")."
   (let ((buffer (get-buffer-create (jabber-console-create-buffer jc))))
     (with-current-buffer buffer
       (progn

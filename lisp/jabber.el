@@ -31,7 +31,7 @@
 ;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
 
 ;;; Commentary:
-;; jabber.el is an XMPP client for Emacs. XMPP (also known as
+;; jabber.el is an XMPP client for Emacs.  XMPP (also known as
 ;; 'Jabber') is the IETF-standard federated instant messaging protocol
 ;; - see http://xmpp.org for more information.
 
@@ -71,7 +71,8 @@ Contents of process buffers might be useful for debugging."
   :group 'jabber)
 
 ;;; these customize fields should come first
-(defgroup jabber nil "Jabber instant messaging"
+(defgroup jabber nil
+  "Jabber instant messaging."
   :group 'applications)
 
 ;;;###autoload
@@ -220,7 +221,8 @@ One disabled account with a non-standard port:
 (define-obsolete-face-alias 'jabber-title-medium 'jabber-title "0.10")
 (define-obsolete-face-alias 'jabber-title-large 'jabber-title "0.10")
 
-(defgroup jabber-debug nil "debugging options"
+(defgroup jabber-debug nil
+  "Debugging options."
   :group 'jabber)
 
 ;;;###autoload

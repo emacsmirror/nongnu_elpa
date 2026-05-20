@@ -51,7 +51,7 @@
 ;;
 
 (defun jabber-get-time (jc to)
-  "Request time.
+  "Request time from TO.
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)
@@ -67,11 +67,9 @@ JC is the Jabber connection."
                       (jabber-get-legacy-time jc from)))))
 
 (defun jabber-get-legacy-time (jc to)
-  "Request legacy time.
+  "Request legacy time from TO.
 
-JC is the Jabber connection.
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
+JC is the Jabber connection."
   (interactive (list (jabber-read-account)
                      (jabber-read-jid-completing "Request time of: "
                                                  nil nil nil 'full t)))
@@ -133,7 +131,7 @@ obtained from `xml-parse-region'."
 ;; the only difference between these two functions is the
 ;; `jabber-read-jid-completing' call.
 (defun jabber-get-last-online (jc to)
-  "Request time since a user was last online, or uptime of a component.
+  "Request time since TO was last online, or uptime of a component.
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)
@@ -146,7 +144,7 @@ JC is the Jabber connection."
 		  #'jabber-silent-process-data "Last online request failed"))
 
 (defun jabber-get-idle-time (jc to)
-  "Request idle time of user.
+  "Request idle time of user TO.
 
 JC is the Jabber connection."
   (interactive (list (jabber-read-account)
@@ -234,6 +232,8 @@ obtained from `xml-parse-region'."
 (jabber-disco-advertise-feature jabber-last-xmlns)
 
 (defun jabber-return-last (jc xml-data)
+  "Reply to a XEP-0012 last-activity query.
+JC is the Jabber connection.  XML-DATA is the incoming IQ stanza."
   (let ((to (jabber-xml-get-attribute xml-data 'from))
         (id (jabber-xml-get-attribute xml-data 'id)))
     (jabber-send-iq jc to "result"

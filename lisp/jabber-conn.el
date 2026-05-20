@@ -124,7 +124,9 @@ non-nil for direct TLS targets."
 
 ;; Plain TCP/IP connection
 (defun jabber-network-connect (fsm server network-server port)
-  "Connect to a Jabber server with a plain network connection.
+  "Connect to a Jabber SERVER with a plain network connection.
+NETWORK-SERVER is the explicit host overriding SRV resolution, or nil.
+PORT is the explicit port or nil for SRV/defaults.
 Send a message of the form (:connected CONNECTION) to FSM if
 connection succeeds.  Send a message (:connection-failed ERRORS) if
 connection fails."
@@ -164,6 +166,8 @@ When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER."
     (apply #'make-network-process args)))
 
 (defun jabber-network-connect-async (fsm server network-server port)
+  "Asynchronously connect FSM to SERVER, trying each SRV target in turn.
+NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
   ;; Get all potential targets...
   (let ((targets (jabber-srv-targets server network-server port))
 	errors)
@@ -248,18 +252,18 @@ When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER."
       (connect (car targets) (cdr targets)))))
 
 (defun jabber-network-send (connection string)
-  "Send a string via a plain TCP/IP connection to the Jabber Server."
+  "Send STRING via the plain TCP/IP CONNECTION to the Jabber server."
   (process-send-string connection string))
 
 
 (defun jabber-starttls-initiate (fsm)
-  "Initiate a STARTTLS connection."
+  "Initiate a STARTTLS connection on FSM."
   (jabber-send-sexp fsm
 		    `(starttls ((xmlns . ,jabber-tls-xmlns)))))
 
 (defun jabber-starttls-process-input (fsm xml-data)
-  "Process result of starttls request.
-On failure, signal error.
+  "Process result of starttls request on FSM.
+On failure, signal an error.
 
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
@@ -293,6 +297,7 @@ FSM is the finite state machine created in jabber.el library."
   (fsm-send fsm (list :connected fsm)))
 
 (defun jabber-virtual-send (connection string)
+  "Send STRING through CONNECTION via the virtual-server function."
   (funcall *jabber-virtual-server-function* connection string))
 
 (provide 'jabber-conn)

@@ -110,6 +110,7 @@ This is used to detect whether the user has become unidle.")
 ;;
 
 (defun jabber-autoaway-message (&rest args)
+  "Log to *Messages* via `message' with ARGS when verbose mode is on."
   (when jabber-autoaway-verbose
     (apply #'message args)))
 
@@ -139,6 +140,7 @@ Return nil on error."
              (lambda (a b) (if a (if b (< a b) t) nil)))))
 
 (defun jabber-autoaway-timer ()
+  "Idle-tick handler: mark as idle or schedule next check."
   ;; We use one-time timers, so reset the variable.
   (setq jabber-autoaway-timer nil)
   (let ((idle-time (jabber-autoaway-get-idle-time)))
@@ -153,6 +155,7 @@ Return nil on error."
 			      nil #'jabber-autoaway-timer))))))
 
 (defun jabber-autoaway-set-idle (&optional xa)
+  "Switch presence to away (or XA when XA is non-nil) and schedule unidle check."
   (jabber-autoaway-message "Autoaway triggered")
   ;; Send presence, unless the user has set a custom presence
   (unless (member *jabber-current-show* '("xa" "dnd"))
@@ -168,6 +171,7 @@ Return nil on error."
 						#'jabber-autoaway-maybe-unidle))))
 
 (defun jabber-autoaway-maybe-unidle ()
+  "Check idle time and return to active presence if user came back."
   (let ((idle-time (jabber-autoaway-get-idle-time)))
     (jabber-autoaway-message "Idle for %d seconds" idle-time)
     (if (member *jabber-current-show* '("xa" "away"))

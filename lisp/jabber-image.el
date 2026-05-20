@@ -119,7 +119,8 @@ error) followed by CBARGS.  Image is sized per
         (put-text-property beg end 'display image)))))
 
 (defun jabber-image--load-at-point (url beg end buffer)
-  "Fetch URL and display the image over the placeholder in BUFFER."
+  "Fetch URL and display the image over the placeholder in BUFFER.
+BEG and END mark the placeholder region to replace."
   (jabber-image-fetch
    url
    #'jabber-image--replace-placeholder

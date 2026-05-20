@@ -53,6 +53,8 @@ result."
 		  error-callback))
 
 (defun jabber-private-get-1 (jc xml-data success-callback)
+  "Pass the inner private XML node from XML-DATA to SUCCESS-CALLBACK.
+JC is the Jabber connection."
   (funcall success-callback jc
 	   (car (jabber-xml-node-children
 		 (jabber-iq-query xml-data)))))

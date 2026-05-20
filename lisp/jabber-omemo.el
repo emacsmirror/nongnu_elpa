@@ -585,7 +585,7 @@ for all stale devices, then deletes each bundle node."
               device-id (jabber-xml-path xml '(error))))))
 
 (defun jabber-omemo--remove-device (jc device-id &optional callback)
-  "Remove DEVICE-ID from our published device list and delete its bundle.
+  "Remove DEVICE-ID from JC's published device list and delete its bundle.
 Fetches the current list, filters out DEVICE-ID, re-publishes,
 then deletes the bundle PubSub node.  Calls CALLBACK when done."
   (jabber-omemo--fetch-device-list
@@ -783,7 +783,7 @@ Dedups concurrent calls per JC via
 ;;; Session establishment
 
 (defun jabber-omemo--establish-session (jc jid device-id bundle)
-  "Establish an OMEMO session with JID's DEVICE-ID using BUNDLE.
+  "Establish an OMEMO session on JC with JID's DEVICE-ID using BUNDLE.
 BUNDLE is a plist from `jabber-omemo--parse-bundle-xml'.
 Selects a random pre-key, initiates the session, saves to DB
 and cache, and stores an undecided trust record (TOFU)."
@@ -1023,7 +1023,7 @@ For MUC messages (type=groupchat), try in order:
             (jabber-omemo--match-jid-by-affiliation group nick))))))
 
 (defun jabber-omemo--decrypt-stanza (jc xml-data parsed)
-  "Decrypt OMEMO message in XML-DATA using PARSED data.
+  "Decrypt OMEMO message on JC in XML-DATA using PARSED data.
 Returns modified XML-DATA with decrypted body.
 
 Signals structured errors that callers can dispatch on:
@@ -1105,7 +1105,8 @@ then looks for <encrypted> element."
         (list :type 'omemo :parsed parsed))))))
 
 (defun jabber-omemo--decrypt-handler (jc xml-data detected)
-  "Decrypt OMEMO message.  DETECTED is the plist from detect.
+  "Decrypt OMEMO message on JC in XML-DATA.
+DETECTED is the plist from `jabber-omemo--detect-encrypted'.
 
 Catches structured OMEMO errors:
 - `jabber-omemo-not-for-us': silently return XML-DATA unchanged
@@ -1396,7 +1397,7 @@ Opens a tabulated-list buffer with interactive trust controls."
 
 ;;;###autoload
 (defun jabber-omemo-on-connect (jc)
-  "Post-connect hook for OMEMO initialization.
+  "Post-connect hook on JC for OMEMO initialization.
 Loads or creates the store, ensures our device is listed,
 republishes our bundle if it's out of date, and pre-fetches
 sessions for open chat buffers."
@@ -1434,6 +1435,7 @@ sessions for open chat buffers."
 
 (defun jabber-omemo--httpupload-transform (filepath callback)
   "Encrypt FILEPATH for aesgcm upload when OMEMO is active.
+CALLBACK receives the URL of the uploaded ciphertext.
 Returns (ENCRYPTED-PATH . WRAPPED-CALLBACK) or nil."
   (when (eq jabber-chat-encryption 'omemo)
     (condition-case err
@@ -1462,7 +1464,7 @@ Returns (ENCRYPTED-PATH . WRAPPED-CALLBACK) or nil."
        nil))))
 
 (defun jabber-omemo--httpupload-send-url (jc jid get-url)
-  "Send aesgcm:// URL as OMEMO-encrypted message.
+  "Send GET-URL (aesgcm://) as an OMEMO-encrypted message from JC to JID.
 Returns non-nil if handled, nil to fall through to plaintext."
   (when (string-prefix-p "aesgcm://" get-url)
     (if (bound-and-true-p jabber-group)

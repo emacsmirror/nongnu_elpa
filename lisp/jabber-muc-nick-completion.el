@@ -113,7 +113,8 @@ Optional argument GROUP to look."
                       *jabber-muc-participant-last-speaking*)))))))
 
 (defun jabber-muc-track-message-time (nick group _buffer text &optional _title)
-  "Tracks time of NICK's last speaking in GROUP."
+  "Track time of NICK's last speaking in GROUP.
+TEXT is the message body used to detect personal-mention bonus."
   (when nick
     (let ((time (float-time)))
       (jabber-muc-participant-update-activity
@@ -159,7 +160,7 @@ Optional argument GROUP to look."
     (point)))
 
 (defun jabber-muc-active-participants (group)
-  "Return nicks for speaking participants."
+  "Return nicks for speaking participants in GROUP."
   (let ((times (cdr (assoc group *jabber-muc-participant-last-speaking*))))
     (cl-remove-if-not
      (lambda (nick) (assoc nick times))

@@ -65,7 +65,7 @@
   :complete #'jabber-widget-jid-complete)
 
 (defun jabber-widget-jid-complete (widget)
-  "Perform completion on JID preceding point."
+  "Perform completion on JID preceding point in WIDGET."
   ;; mostly stolen from widget-color-complete
   (let* ((prefix (buffer-substring-no-properties (widget-field-start widget)
 						 (point)))
@@ -90,7 +90,7 @@
 	   (message "Making completion list...done")))))
 
 (defun jabber-widget-init-buffer (submit-to)
-  "Setup buffer-local variables for widgets."
+  "Set up buffer-local widget state with SUBMIT-TO as the form target JID."
   (setq-local jabber-widget-alist nil)
   (setq-local jabber-widget-submit-to submit-to)
   (setq buffer-read-only nil)
@@ -101,8 +101,7 @@
   (rename-uniquely))
 
 (defun jabber-widget-render-register-form (query &optional default-username)
-  "Display widgets from <query/> element in IQ register or search namespace.
-Display widgets from <query/> element in jabber:iq:{register,search} namespace.
+  "Display widgets from QUERY <query/> element in IQ register or search namespace.
 DEFAULT-USERNAME is the default value for the username field."
   (setq-local jabber-widget-alist nil)
   (setq-local jabber-widget-form-type 'register)
@@ -162,7 +161,7 @@ widgets of the current buffer."
    jabber-widget-alist))
 
 (defun jabber-widget-render-xdata-form (x &optional defaults)
-  "Display widgets from <x/> element in jabber:x:data namespace.
+  "Display widgets from the <x/> element X in jabber:x:data namespace.
 DEFAULTS is an alist associating variable names with default values.
 DEFAULTS takes precedence over values specified in the form."
   (setq-local jabber-widget-alist nil)
@@ -261,7 +260,7 @@ buffer."
 	 jabber-widget-alist)))
 
 (defun jabber-widget-xdata-value-convert (value type)
-  "Convert VALUE from form used by widget library to form required by XEP-0004.
+  "Convert VALUE of TYPE from widget-library form to XEP-0004 form.
 Return a list of strings, each of which to be included as cdata in a
 <value/> tag."
   (cond
@@ -275,7 +274,7 @@ Return a list of strings, each of which to be included as cdata in a
       (list value)))))
 
 (defun jabber-widget-render-xdata-search-results (xdata)
-  "Render search results in x:data form."
+  "Render search results from XDATA <x/> element in x:data form."
   (let ((title (car (jabber-xml-get-children xdata 'title))))
     (when title
       (insert (propertize (car (jabber-xml-node-children title)) 'face 'jabber-title) "\n")))
@@ -284,7 +283,7 @@ Return a list of strings, each of which to be included as cdata in a
     (jabber-widget-render-xdata-search-results-single xdata)))
 
 (defun jabber-widget-render-xdata-search-results-multi (xdata)
-  "Render multi-record search results."
+  "Render multi-record search results from XDATA."
   (let (fields
 	(jid-fields 0))
     (let ((reported (car (jabber-xml-get-children xdata 'reported)))
@@ -344,7 +343,7 @@ Return a list of strings, each of which to be included as cdata in a
 	(insert "\n")))))
 
 (defun jabber-widget-render-xdata-search-results-single (xdata)
-  "Render single-record search results."
+  "Render single-record search results from XDATA."
   (dolist (field (jabber-xml-get-children xdata 'field))
     (let ((label (jabber-xml-get-attribute field 'label))
 	  (values (mapcar #'(lambda (val)

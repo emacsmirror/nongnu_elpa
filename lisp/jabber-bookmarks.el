@@ -105,6 +105,8 @@ immediately, and return nil if it is not in the cache."
 	 (funcall cont jc entry))))))
 
 (defun jabber-get-conference-data-internal (result conference-jid key)
+  "Look up bookmark plist for CONFERENCE-JID in RESULT.
+If KEY is non-nil, return that field; otherwise the full plist."
   (let ((entry (cl-dolist (plist result)
                  (when (string= (plist-get plist :jid) conference-jid)
                    (cl-return plist)))))
@@ -114,7 +116,7 @@ immediately, and return nil if it is not in the cache."
 
 ;;;###autoload
 (defun jabber-parse-conference-bookmark (node)
-  "Convert a <conference/> tag into a plist.
+  "Convert the <conference/> XML NODE into a plist.
 The plist may contain the keys :jid, :name, :autojoin,
 :nick and :password."
   (when (eq (jabber-xml-node-name node) 'conference)
@@ -185,7 +187,7 @@ Replaces any existing entry with the same :jid."
     (puthash my-jid (or new t) jabber-bookmarks)))
 
 (defun jabber-bookmarks2--maybe-join (jc bookmark)
-  "Join the room in BOOKMARK if autojoin is set and not already joined."
+  "Join the room in BOOKMARK on JC if autojoin is set and not already joined."
   (let ((jid (plist-get bookmark :jid)))
     (unless (jabber-muc-joined-p jid jc)
       (jabber-muc-join jc jid
@@ -193,7 +195,7 @@ Replaces any existing entry with the same :jid."
                            (plist-get (fsm-get-state-data jc) :username))))))
 
 (defun jabber-bookmarks2--maybe-leave (jc jid)
-  "Leave room JID if currently joined, with a status message."
+  "Leave room JID on JC if currently joined, with a status message."
   (when (jabber-muc-joined-p jid jc)
     (let ((buf (jabber-muc-get-buffer jid)))
       (when (buffer-live-p buf)
@@ -242,7 +244,7 @@ If REFRESH is non-nil, always fetch from server and re-detect protocol."
       (jabber-bookmarks--detect-and-fetch jc cont refresh))))
 
 (defun jabber-bookmarks--detect-and-fetch (jc cont &optional refresh)
-  "Detect bookmark protocol via disco and fetch.
+  "Detect bookmark protocol on JC via disco and fetch via CONT.
 Query bare JID for the `#compat' feature.  If present, use XEP-0402
 PubSub; otherwise fall back to XEP-0049 Private XML Storage.
 When REFRESH is non-nil, re-run disco detection."
@@ -259,7 +261,7 @@ When REFRESH is non-nil, re-run disco detection."
      nil)))
 
 (defun jabber-bookmarks2--fetch (jc cont)
-  "Fetch bookmarks via XEP-0402 PubSub.
+  "Fetch bookmarks for JC via XEP-0402 PubSub.
 CONT is called with JC and the bookmark plist list.
 Falls back to legacy on PubSub error."
   (jabber-pubsub-request
@@ -271,7 +273,7 @@ Falls back to legacy on PubSub error."
      (jabber-bookmarks--get-legacy jc cont))))
 
 (defun jabber-bookmarks2--handle-fetch (jc xml-data cont)
-  "Process a PubSub items response for XEP-0402 bookmarks.
+  "Process a PubSub items response XML-DATA for XEP-0402 bookmarks on JC.
 Parses items, updates cache, and calls CONT with the plist list."
   (let* ((pubsub (car (jabber-xml-get-children xml-data 'pubsub)))
          (items-node (car (jabber-xml-get-children pubsub 'items)))
@@ -283,7 +285,7 @@ Parses items, updates cache, and calls CONT with the plist list."
     (funcall cont jc (when (listp value) value))))
 
 (defun jabber-bookmarks--get-legacy (jc cont)
-  "Fetch bookmarks via XEP-0049 Private XML Storage (legacy fallback).
+  "Fetch bookmarks for JC via XEP-0049 Private XML Storage (legacy fallback).
 Parses conference elements to plists and calls CONT."
   (jabber-private-get jc 'storage jabber-bookmarks-xmlns
                       (lambda (jc result)
@@ -294,8 +296,8 @@ Parses conference elements to plists and calls CONT."
                         (funcall cont jc nil))))
 
 (defun jabber-bookmarks--handle-legacy (jc result cont)
-  "Process an XEP-0049 storage response.
-Parses conference elements to plists, updates cache, calls CONT."
+  "Process an XEP-0049 storage RESULT for JC.
+Parse conference elements into plists, update cache, then call CONT."
   (let* ((children (when (eq (jabber-xml-node-name result) 'storage)
                      (jabber-xml-node-children result)))
          (plists (delq nil (mapcar (lambda (node)
@@ -316,7 +318,7 @@ return nil."
   (gethash (jabber-connection-bare-jid jc) jabber-bookmarks))
 
 (defun jabber-bookmarks--legacy-p (jc)
-  "Return non-nil if JC uses legacy XEP-0049 bookmarks."
+  "Return non-nil when JC is on legacy XEP-0049 bookmarks."
   (gethash (jabber-connection-bare-jid jc) jabber-bookmarks--legacy-accounts))
 
 (defun jabber-bookmarks--cache-snapshot (jc)
