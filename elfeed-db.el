@@ -693,7 +693,7 @@ since the scanner is not guarded against them."
   (elfeed-db--gc-dedup-objects)
   (elfeed-db--gc-empty-feeds)
   (elfeed-db--gc-content-files)
-  :sucess)
+  :success)
 
 (defun elfeed-db-pack ()
   "Pack all content into a single archive for efficient storage."
