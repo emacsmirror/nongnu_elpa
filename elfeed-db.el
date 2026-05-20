@@ -688,7 +688,8 @@ since the scanner is not guarded against them."
                               do (delete-directory dir)))))
 
 (defun elfeed-db-gc (&optional _stats)
-  "Clean up unused content from the content database."
+  "Perform garbage collection on the database.
+Deduplicate objects, delete empty feeds and unreferenced content files."
   (declare (advertised-calling-convention () "4.0.0"))
   (elfeed-db--gc-dedup-objects)
   (elfeed-db--gc-empty-feeds)
