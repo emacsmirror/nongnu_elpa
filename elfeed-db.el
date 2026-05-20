@@ -600,7 +600,7 @@ since the scanner is not guarded against them."
   (ignore-errors
     (delete-file (elfeed-ref--file ref))))
 
-(defun elfeed-db-gc-empty-feeds ()
+(defun elfeed-db--gc-empty-feeds ()
   "Remove feeds with no entries from the database."
   (let ((seen (make-hash-table :test #'equal)))
     (elfeed-db-visit (entry feed)
@@ -609,6 +609,8 @@ since the scanner is not guarded against them."
                (unless (gethash id seen)
                  (remhash id elfeed-db-feeds)))
              elfeed-db-feeds)))
+(define-obsolete-function-alias 'elfeed-db-gc-empty-feeds
+  #'elfeed-db--gc-empty-feeds "4.0.0")
 
 (defun elfeed-db--scan-1 (cb obj)
   "Scan OBJ for `elfeed-ref' references and call CB for each reference."
@@ -634,8 +636,8 @@ since the scanner is not guarded against them."
         (setf (gethash (elfeed-entry-feed-id entry) feeds) t)
         (elfeed-db--scan-1 cb (elfeed-feed-meta (elfeed-entry-feed entry)))))))
 
-(defun elfeed-db-gc--share-objects ()
-  "Share strings and other immutable objects in the database."
+(defun elfeed-db--gc-dedup-objects ()
+  "Deduplicate strings and other immutable objects in the database."
   (let ((table (make-hash-table :test #'equal))
         (new-entries (make-hash-table :test #'equal)))
     ;; Load all feed ids
@@ -668,11 +670,8 @@ since the scanner is not guarded against them."
     (setq elfeed-db-entries new-entries
           elfeed-db (plist-put elfeed-db :entries new-entries))))
 
-(defun elfeed-db-gc (&optional stats-p)
-  "Clean up unused content from the content database.
-If STATS-P is true, return the space cleared in bytes."
-  (elfeed-db-gc--share-objects)
-  (elfeed-db-gc-empty-feeds)
+(defun elfeed-db--gc-content-files ()
+  "Clean up unused content files."
   (let* ((data (expand-file-name "data" elfeed-db-directory))
          (dirs (directory-files data t "\\`[0-9a-z]\\{2\\}\\'"))
          (ids (mapcan (lambda (d) (directory-files d nil nil t)) dirs))
@@ -682,16 +681,19 @@ If STATS-P is true, return the space cleared in bytes."
     (elfeed-db--scan
      (lambda (ref) (setf (gethash (elfeed-ref-id ref) table) t)))
     (cl-loop for id hash-keys of table using (hash-value used)
-             for used-p = (or used (member id '("." "..")))
-             when (and (not used-p) stats-p)
-             sum (let* ((ref (elfeed-ref--create :id id))
-                        (file (elfeed-ref--file ref)))
-                   (* 1.0 (nth 7 (file-attributes file))))
-             unless used-p
+             unless (or used (member id '("." "..")))
              do (elfeed-ref-delete (elfeed-ref--create :id id))
              finally (cl-loop for dir in dirs
                               when (directory-empty-p dir)
                               do (delete-directory dir)))))
+
+(defun elfeed-db-gc (&optional _stats)
+  "Clean up unused content from the content database."
+  (declare (advertised-calling-convention () "4.0.0"))
+  (elfeed-db--gc-dedup-objects)
+  (elfeed-db--gc-empty-feeds)
+  (elfeed-db--gc-content-files)
+  :sucess)
 
 (defun elfeed-db-pack ()
   "Pack all content into a single archive for efficient storage."

@@ -779,7 +779,7 @@ called interactively, SAVE is set to t."
                             (length entries) url))
       (run-hooks 'elfeed-update-init-hook)
       (elfeed-db-delete entries)
-      (elfeed-db-gc-empty-feeds)
+      (elfeed-db--gc-empty-feeds)
       (setq elfeed-feeds (assoc-delete-all
                           url (delete url (copy-sequence elfeed-feeds))))
       (message "Deleted feed %s. Adjust `elfeed-feeds' in your configuration!" url)
