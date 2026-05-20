@@ -62,6 +62,9 @@
   :group 'elfeed
   :type '(vector string string string string))
 
+(defvar elfeed-tree-header-function (lambda () (elfeed-search--header t))
+  "Function that returns the string to be used for the header line.")
+
 (defvar elfeed-tree--update-timer nil
   "Timer to debounce search buffer updates.")
 
@@ -137,16 +140,8 @@
               outline-regexp "\\*+"
               outline-minor-mode-cycle t
               outline-minor-mode-cycle-filter nil
-              ;; Provide format string via symbol value slot so that it will
-              ;; not be %-construct interpolated. The symbol is uninterned
-              ;; so that it's not *really* a global variable.
-              header-line-format
-              (let ((symbol (make-symbol "dummy")))
-                (put symbol 'risky-local-variable t)
-                `(:eval
-                  (prog1 ',symbol
-                    (set ',symbol (elfeed-search--header t)))))
               hl-line-sticky-flag t)
+  (elfeed-search--header-line-format 'elfeed-tree-header-function)
   (buffer-disable-undo)
   (hl-line-mode)
   (add-hook 'elfeed-untag-hook #'elfeed-tree--tag)

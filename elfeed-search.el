@@ -146,7 +146,7 @@ Possible alignments are :left and :right."
   :type 'boolean)
 
 (defvar elfeed-search-header-function #'elfeed-search--header
-  "Function that returns the string to be used for the Elfeed search header.")
+  "Function that returns the string to be used for the header line.")
 
 (defvar elfeed-search-print-entry-function #'elfeed-search-print-entry--default
   "Function to print entries into the *elfeed-search* buffer.")
@@ -366,6 +366,18 @@ Hide filter and unread counter if HIDE-FILTER is non-nil."
        (elfeed-search--header-button #'elfeed-update update)
        (and unread ", ") unread (and filter ", ") filter)))))
 
+(defun elfeed-search--header-line-format (fun)
+  "Generate `header-line-format' from FUN."
+  ;; Provide format string via symbol value slot so that it will
+  ;; not be %-construct interpolated. The symbol is uninterned
+  ;; so that it's not *really* a global variable.
+  (setq header-line-format
+        (let ((sym (make-symbol (symbol-name fun))))
+          (put sym 'risky-local-variable t)
+          `(:eval
+            (prog1 ',sym
+              (set ',sym (funcall ,fun)))))))
+
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"
   "Major mode for listing elfeed feed entries."
   :syntax-table nil :abbrev-table nil :interactive nil
@@ -373,20 +385,12 @@ Hide filter and unread counter if HIDE-FILTER is non-nil."
               mode-line-modified nil
               mode-line-mule-info nil
               mode-line-remote nil
-              ;; Provide format string via symbol value slot so that it will
-              ;; not be %-construct interpolated. The symbol is uninterned
-              ;; so that it's not *really* a global variable.
-              header-line-format
-              (let ((symbol (make-symbol "dummy")))
-                (put symbol 'risky-local-variable t)
-                `(:eval
-                  (prog1 ',symbol
-                    (set ',symbol (funcall elfeed-search-header-function)))))
               desktop-save-buffer #'elfeed-search-desktop-save
               bookmark-make-record-function #'elfeed-search-bookmark-make-record
               revert-buffer-function #'elfeed-search--update-force
               default-directory (elfeed-default-directory)
               hl-line-sticky-flag t)
+  (elfeed-search--header-line-format 'elfeed-search-header-function)
   (buffer-disable-undo)
   (hl-line-mode)
   (add-hook 'elfeed-update-hook #'elfeed-search--update-debounce)
