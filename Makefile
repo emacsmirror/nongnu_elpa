@@ -97,6 +97,7 @@ lint-checkdoc:
 
 do-lint-checkdoc:
 	for file in lisp/*.el ; do \
+	case "$$file" in lisp/jabber-autoloads.el) continue;; esac; \
 	$(EMACS_CMD) -q -Q --batch --eval="(checkdoc-file \"$$file\")" ; \
 	done
 
