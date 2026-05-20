@@ -1429,26 +1429,37 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 
 ;; Separators in search display
 
+;; Default separator title function
+(put nil 'elfeed-search-separator
+     (lambda (entry)
+       (format-time-string elfeed-search-separator-date-format
+                           (seconds-to-time (elfeed-entry-date entry)))))
+
+;; Separator title function for `elfeed-search-group-by-feed'
+(put #'elfeed-search-group-by-feed 'elfeed-search-separator
+     (lambda (entry)
+       (elfeed-meta--title (elfeed-entry-feed entry))))
+
+(defun elfeed-search--separator-title (entry)
+  "Format separator title for ENTRY."
+  (let ((sort (elfeed-search--sort-function)))
+    (funcall (or (and (symbolp sort) (get sort 'elfeed-search-separator))
+                 (get nil 'elfeed-search-separator))
+             entry)))
+
 (defun elfeed-search-add-separators ()
   "Add separators to the search buffer."
-  (let ((last nil) (overlays 0))
+  (let ((last nil) (title nil) (ov nil) (count 0))
     (remove-overlays (point-min) (point-max)
                      'category 'elfeed-search-separator)
     (save-excursion
       (goto-char (point-min))
       (while (not (eobp))
         (when-let* ((entry (get-text-property (point) 'elfeed-entry))
-                    (title (if (eq (elfeed-search--sort-function)
-                                   #'elfeed-search-group-by-feed)
-                               ;; If sorting by feed, using feed title.
-                               (elfeed-meta--title (elfeed-entry-feed entry))
-                             ;; Otherwise use date as separator title.
-                             (format-time-string
-                              elfeed-search-separator-date-format
-                              (seconds-to-time (elfeed-entry-date entry)))))
-                    ((not (equal title last)))
-                    (ov (make-overlay (pos-bol) (pos-bol))))
-          (incf overlays)
+                    ((not (equal (setq title (elfeed-search--separator-title entry))
+                                 last))))
+          (incf count)
+          (setq ov (make-overlay (pos-bol) (pos-bol)))
           (overlay-put ov 'category 'elfeed-search-separator)
           (overlay-put ov 'before-string
                        (concat (and last "\n")
@@ -1456,10 +1467,8 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
                                            'face 'elfeed-search-separator-face)))
           (setq last title))
         (forward-line)))
-    ;; Delete separator overlay if there is only a single separator
-    (when (= overlays 1)
-      (remove-overlays (point-min) (point-max)
-                       'category 'elfeed-search-separator))))
+    ;; Delete unnecessary separator again if there is only a single one.
+    (when (= count 1) (delete-overlay ov))))
 
 ;; Bookmarks
 
