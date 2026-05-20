@@ -296,14 +296,13 @@ Movement is configured by `elfeed-search-remain-on-entry'."
            count entry into entry-count
            count (elfeed-tagged-p 'unread entry) into unread-count
            do (puthash url t feeds)
-           finally
-           (cl-return
-            (elfeed-search--header-button
-             #'elfeed-search-fetch-visible
-             (format
-              (propertize "%d/%d:%d" 'face 'elfeed-search-unread-count-face)
-              unread-count entry-count
-              (hash-table-count feeds))))))
+           finally return
+           (elfeed-search--header-button
+            #'elfeed-search-fetch-visible
+            (format
+             (propertize "%d/%d:%d" 'face 'elfeed-search-unread-count-face)
+             unread-count entry-count
+             (hash-table-count feeds)))))
 
 (defun elfeed-search--log-button ()
   "Button to show the Elfeed log."
