@@ -839,6 +839,31 @@ test-shardingsphere: test-pg.el
 	sleep 5
 
 
+# https://github.com/hasirciogluhq/xdatabase-proxy
+test-xdatabase: test-pg.el
+	${DOCKER} run --rm --name pgsql \
+           --net=host \
+           -e POSTGRES_DB=pgeltestdb \
+           -e POSTGRES_USER=pgeltestuser \
+           -e POSTGRES_PASSWORD=pgeltest \
+           -e PGPORT=5437 \
+           -d docker.io/library/postgres:18-alpine
+	sleep 1
+	${DOCKER} run --rm --name xdatabase --pull=newer \
+          --net=host \
+          -e DATABASE_TYPE=postgresql \
+          -e DISCOVERY_MODE=static \
+          -e RUNTIME=container \
+          -e PROXY_START_PORT=5388 \
+          -e STATIC_BACKENDS='pgeltestdbproxied=host.docker.internal:5437' \
+          -d ghcr.io/hasirciogluhq/xdatabase-proxy:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser.pgeltestdbproxied:pgeltest@127.0.0.1:5388/pgeltestdb $(MAKE) test
+	${DOCKER} stop pgsql
+	${DOCKER} stop xdatabase
+
+
+
 # https://github.com/multigres/multigres
 #
 # "Vitess for PostgreSQL", seems (202602) to require k8s
