@@ -138,7 +138,7 @@ Possible alignments are :left and :right."
 (defcustom elfeed-search-separator-date-format "%b %Y"
   "The `format-time-string' format for date separators."
   :group 'elfeed
-  :type 'string)
+  :type '(choice (const nil) string))
 
 (defcustom elfeed-search-compile-filter t
   "If non-nil, compile search filters into bytecode on the fly."
@@ -1441,8 +1441,9 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 ;; Default separator title function
 (put nil 'elfeed-search-separator
      (lambda (entry)
-       (format-time-string elfeed-search-separator-date-format
-                           (seconds-to-time (elfeed-entry-date entry)))))
+       (when elfeed-search-separator-date-format
+         (format-time-string elfeed-search-separator-date-format
+                             (seconds-to-time (elfeed-entry-date entry))))))
 
 ;; Separator title function for `elfeed-search-group-by-feed'
 (put #'elfeed-search-group-by-feed 'elfeed-search-separator
@@ -1458,15 +1459,15 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 
 (defun elfeed-search-add-separators ()
   "Add separators to the search buffer."
-  (let ((last nil) (title nil) (ov nil) (count 0))
+  (let ((last nil) (ov nil) (count 0))
     (remove-overlays (point-min) (point-max)
                      'category 'elfeed-search-separator)
     (save-excursion
       (goto-char (point-min))
       (while (not (eobp))
         (when-let* ((entry (get-text-property (point) 'elfeed-entry))
-                    ((not (equal (setq title (elfeed-search--separator-title entry))
-                                 last))))
+                    (title (elfeed-search--separator-title entry))
+                    ((not (equal title last))))
           (incf count)
           (setq ov (make-overlay (pos-bol) (pos-bol)))
           (overlay-put ov 'category 'elfeed-search-separator)
