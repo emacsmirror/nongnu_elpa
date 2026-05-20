@@ -204,6 +204,7 @@ Only contacts and rooms belonging to this connection are shown.")
                                      'face 'font-lock-constant-face)))
   "c" ("Chat" jabber-roster--action-chat)
   "i" ("Info" jabber-roster--action-info)
+  "e" ("Edit" jabber-roster--action-edit)
   "d" ("Delete" jabber-roster--action-delete)
   "b" ("Block" jabber-roster--action-block))
 
@@ -410,6 +411,31 @@ Only contacts and rooms belonging to this connection are shown.")
   (when jabber-roster--selected-jid
     (let ((jc (jabber-roster--jc-for-jid jabber-roster--selected-jid)))
       (jabber-get-info jc jabber-roster--selected-jid))))
+
+(defun jabber-roster--action-edit ()
+  "Edit name and groups of the selected contact."
+  (interactive)
+  (when jabber-roster--selected-jid
+    (let* ((jc (jabber-roster--jc-for-jid jabber-roster--selected-jid))
+           (sym (jabber-jid-symbol jabber-roster--selected-jid))
+           (name (get sym 'name))
+           (groups (get sym 'groups))
+           (all-groups
+            (apply #'append
+                   (mapcar (lambda (j) (get j 'groups))
+                           (plist-get (fsm-get-state-data jc) :roster))))
+           (new-name (jabber-read-with-input-method
+                      (format "Name: (default `%s') " name) nil nil name))
+           (new-groups (delete ""
+                               (completing-read-multiple
+                                (format "Groups, comma-separated: (default %s) "
+                                        (if groups (string-join groups ",") "none"))
+                                all-groups
+                                nil nil nil
+                                'jabber-roster-group-history
+                                (string-join groups ",")
+                                t))))
+      (jabber-roster-change jc sym new-name new-groups))))
 
 (defun jabber-roster--action-delete ()
   "Delete the selected contact from roster."
