@@ -984,7 +984,9 @@ is reversed if ASCENDING is non-nil."
                                (eq elfeed-search-sort-order 'ascending)))
   (cl-callf2 cl-delete-if-not
       (lambda (x) (memq x elfeed-search-entries))
-      elfeed-search--marked))
+      elfeed-search--marked)
+  (setq elfeed-search--last-update (float-time)
+        list-buffers-directory elfeed-search-filter))
 
 (defun elfeed-search--save-position ()
   "Save entry, line and column."
@@ -1069,9 +1071,7 @@ directly.  Instead use `elfeed-search-update'."
             (dolist (entry elfeed-search-entries)
               (elfeed-search--print-entry entry)
               (insert ?\n))
-            (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)
-            (setf elfeed-search--last-update (float-time)
-                  list-buffers-directory elfeed-search-filter)))
+            (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)))
         ;; Highlighting gets lost due to debouncing.
         (hl-line-highlight)
         (run-hooks 'elfeed-search-update-hook))))
