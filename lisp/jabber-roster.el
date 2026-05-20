@@ -350,16 +350,30 @@ Only contacts and rooms belonging to this connection are shown.")
        jabber-roster--account-toggle-scope)
   "d" ("Disconnect" jabber-roster--account-disconnect))
 
+(defconst jabber-roster--all-accounts-label "All accounts"
+  "Synthetic entry in the account picker that clears scope.")
+
 (defun jabber-roster-accounts ()
-  "Select a connected account and show actions."
+  "Select a connected account and show actions.
+When the roster is scoped to a single account, an \"All accounts\"
+entry is offered to clear the scope."
   (interactive)
   (let* ((accounts (mapcar (lambda (jc)
                              (cons (jabber-connection-bare-jid jc) jc))
                            jabber-connections))
-         (choice (completing-read "Account: " accounts nil t)))
-    (when (and choice (not (string-empty-p choice)))
+         (candidates (if jabber-roster--scoped-connection
+                         (cons jabber-roster--all-accounts-label
+                               (mapcar #'car accounts))
+                       (mapcar #'car accounts)))
+         (choice (completing-read "Account: " candidates nil t)))
+    (cond
+     ((or (null choice) (string-empty-p choice)))
+     ((string= choice jabber-roster--all-accounts-label)
+      (setq jabber-roster--scoped-connection nil)
+      (keymap-popup jabber-roster-popup-map))
+     (t
       (setq jabber-roster--selected-account (cdr (assoc choice accounts)))
-      (keymap-popup jabber-roster-account-action-map))))
+      (keymap-popup jabber-roster-account-action-map)))))
 
 (defun jabber-roster--account-disconnect ()
   "Disconnect the selected account."
