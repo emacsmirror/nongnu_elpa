@@ -1117,7 +1117,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
            unless (gethash url seen)
            do (elfeed--update-feed (setf (gethash url seen) url))))
 
-(defun elfeed-search-update-line (&optional n)
+(defun elfeed-search--update-line (&optional n)
   "Redraw line N, defaulting to the current line."
   (let ((inhibit-read-only t))
     (save-excursion
@@ -1135,7 +1135,7 @@ Given a prefix, this function becomes `elfeed-search-fetch-visible'."
       (elfeed-search-update :force)
     (cl-loop for entry in entries
              for n = (cl-position entry elfeed-search-entries)
-             when n do (elfeed-search-update-line (1+ n)))))
+             when n do (elfeed-search--update-line (1+ n)))))
 
 (defun elfeed-search--remove-marked-overlay (entry)
   "Remove mark overlay from ENTRY."
@@ -1513,6 +1513,8 @@ state of the db for when `desktop-auto-save-timeout' is enabled."
   #'quit-window "4.0.0")
 (define-obsolete-function-alias 'elfeed-search-update--force
   #'revert-buffer "4.0.0")
+(define-obsolete-function-alias 'elfeed-search-update-line
+  #'elfeed-search--update-line "4.0.0")
 
 (provide 'elfeed-search)
 ;;; elfeed-search.el ends here
