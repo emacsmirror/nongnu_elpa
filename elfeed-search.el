@@ -291,11 +291,9 @@ Movement is configured by `elfeed-search-remain-on-entry'."
   "Count the number of entries and feeds being currently displayed."
   (cl-loop with feeds = (make-hash-table :test #'equal)
            for entry in elfeed-search-entries
-           for feed = (elfeed-entry-feed entry)
-           for url = (elfeed-feed-url feed)
            count entry into entry-count
            count (elfeed-tagged-p 'unread entry) into unread-count
-           do (puthash url t feeds)
+           do (puthash (elfeed-feed-url (elfeed-entry-feed entry)) t feeds)
            finally return
            (elfeed-search--header-button
             #'elfeed-search-fetch-visible
@@ -325,7 +323,7 @@ Hide filter and unread counter if HIDE-FILTER is non-nil."
         (let ((active (elfeed-queue-count-active)))
           (concat
            (elfeed-search--log-button)
-           (format "%d jobs pending, %d active..."
+           (format "%d jobs pending, %d active…"
                    (- total active) active))))))
    ((let* ((update (elfeed-db-last-update))
            (delta (- (float-time) update))

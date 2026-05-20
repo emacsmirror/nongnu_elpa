@@ -444,7 +444,7 @@ Optionally TRUNCATE content if too wide."
              (integerp shr-width)
              (> (length content) (- shr-width 8)))
     (let ((len (- (/ shr-width 2) 10)))
-      (setq content (format "%s[...]%s"
+      (setq content (format "%s[…]%s"
                             (substring content 0 len)
                             (substring content (- len))))))
   (shr-tag-a `(a ((href . ,url)) ,content)))
