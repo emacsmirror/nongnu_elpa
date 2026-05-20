@@ -136,6 +136,7 @@
               default-directory (elfeed-default-directory)
               outline-regexp "\\*+"
               outline-minor-mode-cycle t
+              outline-minor-mode-cycle-filter nil
               ;; Provide format string via symbol value slot so that it will
               ;; not be %-construct interpolated. The symbol is uninterned
               ;; so that it's not *really* a global variable.
