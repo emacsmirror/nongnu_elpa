@@ -103,6 +103,7 @@ do-lint-checkdoc:
 lint-package-lint:
 	$(EMACS_CMD) -Q --batch \
 	--eval='(package-initialize)' --eval="(require 'package-lint)" \
+	--eval="(setq package-lint-main-file \"lisp/jabber.el\")" \
         -f 'package-lint-batch-and-exit' $(wildcard lisp/*.el)
 
 lint-relint:
