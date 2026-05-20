@@ -219,12 +219,17 @@ list.  The second argument is the tag list.")
       elfeed-curl-timeout
     url-queue-timeout))
 
-(cl-defun elfeed-is-status-error (status &optional (use-curl elfeed-use-curl))
-  "Check if HTTP request returned STATUS means a error.
-The USE-CURL argument is deprecated."
-  (declare (advertised-calling-convention (status) "4.0.0"))
-  (or (and use-curl (null status)) ; nil = error
-      (and (not use-curl) (eq (car status) :error))))
+(defun elfeed-status-error-p (status)
+  "Check if HTTP request returned STATUS means a error."
+  (or (and elfeed-use-curl (null status)) ; nil = error
+      (and (not elfeed-use-curl) (eq (car status) :error))))
+
+(defun elfeed-is-status-error (status use-curl)
+  "Use `elfeed-status-error-p' instead.
+STATUS is passed to `elfeed-status-error-p' and USE-CURL is deprecated."
+  (declare (obsolete #'elfeed-status-error-p "4.0.0"))
+  (let ((elfeed-use-curl use-curl))
+    (elfeed-status-error-p status)))
 
 (defmacro elfeed-with-fetch (url &rest body)
   "Asynchronously run BODY in a buffer with the contents from URL.
@@ -706,7 +711,7 @@ In order to modify feed content, you can use a custom fetch function.
             ;; ...manipulate buffer...
             (funcall cb :parse)))))"
   (elfeed-with-fetch url
-    (if (elfeed-is-status-error status)
+    (if (elfeed-status-error-p status)
         (let ((print-escape-newlines t))
           (elfeed-handle-http-error
            url (if elfeed-use-curl elfeed-curl-error-message status))
