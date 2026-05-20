@@ -534,7 +534,7 @@ since the scanner is not guarded against them."
           (setf elfeed-ref-archive (read (current-buffer))))
       (setf elfeed-ref-archive :empty))))
 
-(defun elfeed-ref-archive-ensure ()
+(defsubst elfeed-ref-archive-ensure ()
   "Ensure that the archive index is loaded."
   (unless elfeed-ref-archive (elfeed-ref-archive-load)))
 
