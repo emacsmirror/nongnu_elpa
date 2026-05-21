@@ -416,20 +416,9 @@ Hide filter and unread counter if HIDE-FILTER is non-nil."
 (defun elfeed-search-format-date (date)
   "Format DATE for printing in `elfeed-search-mode'.
 The customization `elfeed-search-date-format' sets the formatting."
-  (cl-destructuring-bind (format target alignment) elfeed-search-date-format
-    (let* ((string (format-time-string format (seconds-to-time date)))
-           (width (string-width string)))
-      (cond
-       ((> width target)
-        (if (eq alignment :left)
-            (substring string 0 target)
-          (substring string (- width target) width)))
-       ((< width target)
-        (let ((pad (make-string (- target width) ?\s)))
-          (if (eq alignment :left)
-              (concat string pad)
-            (concat pad string))))
-       (string)))))
+  (cl-destructuring-bind (format width align) elfeed-search-date-format
+    (elfeed-format-column (format-time-string format (seconds-to-time date))
+                          width align)))
 
 (defface elfeed-search-date-face
   '((((class color) (background light)) (:foreground "#aaa"))
