@@ -310,7 +310,7 @@ NODES is a list of tree nodes."
 
 (defun elfeed-tree--count-unread (unread read)
   "Format unread/total count for a feed line given UNREAD and READ."
-  (format "%4s/%-6s"
+  (format "%4s/%-5s"
           (if (> unread 0)
               (format
                (propertize "%s" 'face 'elfeed-tree-highlight-unread-face)
@@ -361,15 +361,19 @@ COUNT the number of feeds and TAGS the list of tags."
    'mouse-face 'highlight)
   (insert title ?\n))
 
-(defun elfeed-tree--print (indent tags title-fmt depth nodes)
+(defun elfeed-tree--print (indent tags title-width depth nodes)
   "Print tree NODES.
 INDENT is the current indentation prefix string.
 TAGS the list of outer tags which are added to the filter.
-TITLE-FMT the format string for the feed title.
+TITLE-WIDTH the width of the feed title.
 DEPTH the tree depth."
   (setq indent (or indent (propertize "*" 'invisible t)))
   (cl-loop
-   for level = (length indent)
+   with align1 = (+ 10 (* (+ 2 depth) (length (aref elfeed-tree-nodes 0))))
+   with align2 = (+ 1 align1 title-width)
+   with align1 = (propertize " " 'display `(space :align-to ,align1))
+   with align2 = (propertize " " 'display `(space :align-to ,align2))
+   with level = (length indent)
    for (tag unread read count children leaves) in (elfeed-tree--sort nodes)
    for node-idx downfrom (length nodes) do
    (let ((subtags (append tags (list tag)))
@@ -391,15 +395,19 @@ DEPTH the tree depth."
                               (substring (aref elfeed-tree-nodes 3))))
                            (make-list (- depth level -1) 0))
                 (elfeed-tree--count-unread unread read)
-                (format title-fmt title)
-                " " (elfeed-feed-id feed))
+                align1
+                (elfeed-add-properties
+                 (elfeed-format-column title title-width :left)
+                 'face 'elfeed-search-feed-face)
+                align2
+                (elfeed-feed-id feed))
         'elfeed-feed feed
         'elfeed-filter (concat (elfeed-search--feed-filter feed)
                                (and (> unread 0) " +unread"))
         'follow-link [elfeed-filter]
         'mouse-face 'highlight)
        "\n"))
-     (elfeed-tree--print subindent subtags title-fmt depth children))))
+     (elfeed-tree--print subindent subtags title-width depth children))))
 
 (defun elfeed-tree--update-immediately (buffer &optional force)
   "Immediately update the `elfeed-tree' BUFFER.
@@ -422,15 +430,13 @@ not use this function directly.  Instead use `elfeed-tree-update'."
                                        `(("[untagged feeds]" nil ,(cadr nodes))))))
                (all-feeds-tree (elfeed-tree--stats `(("[all feeds]" nil ,feeds))))
                (title-width (cl-loop for (title . _) in feeds
-                                     maximize (length title)))
-               (title-fmt (propertize (format "%%-%ds" title-width)
-                                      'face 'elfeed-search-feed-face)))
+                                     maximize (string-width title))))
           (erase-buffer)
           (goto-char (point-min))
-          (elfeed-tree--print nil nil title-fmt tree-depth tree)
-          (elfeed-tree--print nil nil title-fmt tree-depth untagged-feeds-tree)
-          (elfeed-tree--print nil nil title-fmt tree-depth all-feeds-tree)
-          (elfeed-tree--print nil nil title-fmt tree-depth
+          (elfeed-tree--print nil nil title-width tree-depth tree)
+          (elfeed-tree--print nil nil title-width tree-depth untagged-feeds-tree)
+          (elfeed-tree--print nil nil title-width tree-depth all-feeds-tree)
+          (elfeed-tree--print nil nil title-width tree-depth
                               (elfeed-tree--build-tags
                                feeds tags
                                (take 3 (cdar all-feeds-tree))))
