@@ -547,7 +547,7 @@ never show a relative time."
                                    'follow-link [elfeed-date])
             (propertize " " 'display `(space :align-to ,(1+ date-width)))
             (elfeed-add-properties title-column
-                                   'face title-faces 'kbd-help title
+                                   'face title-faces
                                    'mouse-face 'highlight
                                    'follow-link [elfeed-entry]))
     (when feed-title
