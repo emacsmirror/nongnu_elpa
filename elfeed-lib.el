@@ -90,8 +90,12 @@ testing."
 ALIGN should be a keyword :left or :right."
   (if (<= width 0)
       ""
-    (format (format "%%%s%d.%ds" (if (eq align :left) "-" "") width width)
-            string)))
+    (let ((w (string-width string)))
+      (cond
+       ((= w width) string)
+       ((> w width) (truncate-string-to-width string width))
+       ((eq align :left) (concat string (make-string (- width w) ?\s)))
+       (t (concat (make-string (- width w) ?\s) string))))))
 
 (defun elfeed-clamp (min value max)
   "Clamp VALUE between MIN and MAX."
