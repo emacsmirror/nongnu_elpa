@@ -99,7 +99,8 @@
   secondary browser. The command is bound to =B=.
 - Attach =elfeed-entry=, =elfeed-feed= and =elfeed-tag= text properties in buffer text
   for more efficient lookup and mouse support.
-- Improve column alignment.
+- Improve column alignment when =variable-pitch-mode= is used or wide characters
+  are displayed within entry titles.
 
 *** Show buffer
 
