@@ -123,7 +123,7 @@
 #+end_src
 - =elfeed-show-*-face=: New faces in =elfeed-show= buffer, which are used instead of
   the faces from message.el.
-- =elfeed-show-entry-date-format=: New customization option.
+- =elfeed-show-date-format=: New customization option.
 
 *** Logging
 

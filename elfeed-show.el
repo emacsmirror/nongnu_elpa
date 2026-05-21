@@ -71,13 +71,13 @@ Called without arguments."
   :group 'elfeed
   :type '(choice function))
 
-(defcustom elfeed-show-entry-date-format "%a, %e %b %Y %T %Z"
+(defcustom elfeed-show-date-format "%a, %e %b %Y %T %Z"
   "The ‘format-time-string’ format for date in the elfeed-entry buffer."
   :group 'elfeed
   :type 'string)
 
 (defvar elfeed-show-refresh-function #'elfeed-show-refresh--mail-style
-  "Function called to refresh the `*elfeed-entry*' buffer.")
+  "Function called to refresh the elfeed-entry buffer.")
 
 (defvar elfeed-show-refresh-hook (list #'elfeed-show-auto-fetch-link)
  "Functions in this list are called after the show buffer has been refreshed.")
@@ -176,7 +176,7 @@ Called without arguments."
          (link (elfeed-entry-link elfeed-show-entry))
          (tags (elfeed-entry-tags elfeed-show-entry))
          (tagsstr (mapconcat #'symbol-name tags ", "))
-         (nicedate (format-time-string elfeed-show-entry-date-format date))
+         (nicedate (format-time-string elfeed-show-date-format date))
          (content (elfeed-deref (elfeed-entry-content elfeed-show-entry)))
          (type (elfeed-entry-content-type elfeed-show-entry))
          (feed (elfeed-entry-feed elfeed-show-entry))
