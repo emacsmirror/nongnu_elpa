@@ -15,32 +15,32 @@
 (require 'elfeed)
 (require 'elfeed-search)
 
-(defface elfeed-show-entry-header-face
+(defface elfeed-show-header-face
   '((t :inherit font-lock-keyword-face))
   "Face for showing headers in the elfeed-entry buffer."
   :group 'elfeed)
 
-(defface elfeed-show-entry-title-face
+(defface elfeed-show-title-face
   '((t :weight bold :inherit font-lock-string-face))
   "Face for showing the title name in the elfeed-entry buffer."
   :group 'elfeed)
 
-(defface elfeed-show-entry-author-face
+(defface elfeed-show-author-face
   '((t :weight bold :inherit font-lock-string-face))
   "Face for showing the author name in the elfeed-entry buffer."
   :group 'elfeed)
 
-(defface elfeed-show-entry-date-face
+(defface elfeed-show-date-face
   '((t :inherit font-lock-string-face))
   "Face for showing the date in the elfeed-entry buffer."
   :group 'elfeed)
 
-(defface elfeed-show-entry-feed-face
+(defface elfeed-show-feed-face
   '((t :inherit font-lock-string-face))
   "Face for showing the feed name in the elfeed-entry buffer."
   :group 'elfeed)
 
-(defface elfeed-show-entry-tags-face
+(defface elfeed-show-tags-face
   '((t :inherit font-lock-string-face))
   "Face for showing the tag names in the elfeed-entry buffer."
   :group 'elfeed)
@@ -50,7 +50,9 @@
   :group 'elfeed
   :type 'boolean)
 
-(defcustom elfeed-show-entry-author t
+(define-obsolete-variable-alias 'elfeed-show-entry-author
+  'elfeed-show-author "4.0.0")
+(defcustom elfeed-show-author t
   "When non-nil, show the entry's author (if it's in the entry's metadata)."
   :group 'elfeed
   :type 'boolean)
@@ -187,27 +189,27 @@ Called without arguments."
     (setq list-buffers-directory title)
     (erase-buffer)
     (insert (format
-             (propertize "Title: %s\n" 'face 'elfeed-show-entry-header-face)
+             (propertize "Title: %s\n" 'face 'elfeed-show-header-face)
              (if (or (not title) (equal title ""))
-                 (propertize "(Untitled)" 'face '(elfeed-show-entry-title-face italic))
-               (propertize title 'face 'elfeed-show-entry-title-face))))
-    (when elfeed-show-entry-author
+                 (propertize "(Untitled)" 'face '(elfeed-show-title-face italic))
+               (propertize title 'face 'elfeed-show-title-face))))
+    (when elfeed-show-author
       (dolist (author authors)
         (insert
-         (format (propertize "Author: %s\n" 'face 'elfeed-show-entry-header-face)
+         (format (propertize "Author: %s\n" 'face 'elfeed-show-header-face)
                  (propertize (elfeed-show--format-author author)
-                             'face 'elfeed-show-entry-author-face)))))
-    (insert (format (propertize "Date: %s\nFeed: %s\n" 'face 'elfeed-show-entry-header-face)
-                    (propertize nicedate 'face 'elfeed-show-entry-date-face)
-                    (propertize feed-title 'face 'elfeed-show-entry-feed-face)))
+                             'face 'elfeed-show-author-face)))))
+    (insert (format (propertize "Date: %s\nFeed: %s\n" 'face 'elfeed-show-header-face)
+                    (propertize nicedate 'face 'elfeed-show-date-face)
+                    (propertize feed-title 'face 'elfeed-show-feed-face)))
     (when tags
-      (insert (format (propertize "Tags: %s\n" 'face 'elfeed-show-entry-header-face)
-                      (propertize tagsstr 'face 'elfeed-show-entry-tags-face))))
-    (insert (propertize "Link: " 'face 'elfeed-show-entry-header-face))
+      (insert (format (propertize "Tags: %s\n" 'face 'elfeed-show-header-face)
+                      (propertize tagsstr 'face 'elfeed-show-tags-face))))
+    (insert (propertize "Link: " 'face 'elfeed-show-header-face))
     (elfeed-insert-link link nil elfeed-show-truncate-long-urls)
     (insert "\n")
     (cl-loop for enclosure in (elfeed-entry-enclosures elfeed-show-entry)
-             do (insert (propertize "Enclosure: " 'face 'elfeed-show-entry-header-face))
+             do (insert (propertize "Enclosure: " 'face 'elfeed-show-header-face))
              do (elfeed-insert-link (car enclosure) nil elfeed-show-truncate-long-urls)
              do (insert "\n"))
     (insert "\n")
@@ -507,7 +509,7 @@ Prompts for ENCLOSURE-INDEX when called interactively."
   "Skip to the next link, exclusive of the Link header."
   (interactive nil elfeed-show-mode)
   (let ((properties (text-properties-at (line-beginning-position))))
-    (when (memq 'elfeed-show-entry-header-face properties)
+    (when (memq 'elfeed-show-header-face properties)
       (forward-paragraph))
     (shr-next-link)))
 
