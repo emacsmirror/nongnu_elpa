@@ -470,23 +470,23 @@ Optionally TRUNCATE content if too wide."
       (elfeed-goto-line line))
     (move-to-column column)))
 
-(defvar-local elfeed--restore-window-point nil
+(defvar-local elfeed--position-restore-wpoint nil
   "Restore window point before redisplay.")
 
-(defun elfeed--sync-window-points ()
+(defun elfeed--position-sync-wpoint ()
   "Synchronize window points after `elfeed-with-position'."
   (let ((pt (point)))
     (dolist (win (get-buffer-window-list nil nil t))
       (set-window-point win pt))
     (remove-hook 'pre-redisplay-functions
-                 elfeed--restore-window-point 'local)
-    (setq elfeed--restore-window-point
+                 elfeed--position-restore-wpoint 'local)
+    (setq elfeed--position-restore-wpoint
           (lambda (win)
             (remove-hook 'pre-redisplay-functions
-                         elfeed--restore-window-point 'local)
+                         elfeed--position-restore-wpoint 'local)
             (set-window-point win pt)))
     (add-hook 'pre-redisplay-functions
-              elfeed--restore-window-point nil 'local)))
+              elfeed--position-restore-wpoint nil 'local)))
 
 (defun elfeed--with-position-f (prop fun)
   "See `elfeed-with-position' for PROP and FUN."
@@ -499,7 +499,7 @@ Optionally TRUNCATE content if too wide."
     (unwind-protect
         (funcall fun)
       (elfeed--position-restore prop point-pos)
-      (elfeed--sync-window-points)
+      (elfeed--position-sync-wpoint)
       (when-let* ((m (car mark-pos)))
         (setcar mark-pos (save-excursion
                            (elfeed--position-restore prop m)
