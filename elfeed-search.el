@@ -989,25 +989,49 @@ is reversed if ASCENDING is non-nil."
     (elfeed-goto-line (if idx (1+ idx) line))
     (move-to-column column)))
 
+(defvar-local elfeed-search--restore-window-point nil
+  "Restore window point before redisplay.")
+
+(defun elfeed-search--sync-window-points ()
+  "Synchronize window points after `elfeed-save-excursion'."
+  (let ((pt (point)))
+    (dolist (win (get-buffer-window-list nil nil t))
+      (set-window-point win pt))
+    (remove-hook 'pre-redisplay-functions
+                 elfeed-search--restore-window-point 'local)
+    (setq elfeed-search--restore-window-point
+          (lambda (win)
+            (remove-hook 'pre-redisplay-functions
+                         elfeed-search--restore-window-point 'local)
+            (set-window-point win pt)))
+    (add-hook 'pre-redisplay-functions
+              elfeed-search--restore-window-point nil 'local)))
+
+(defun elfeed--save-excursion-f (fun)
+  "See `elfeed-save-excursion' for documentation.
+Position is saved around FUN."
+  (let* ((point-pos (elfeed-search--save-position))
+         (mark-pos (cons (when-let* ((m (marker-position (mark-marker))))
+                            (save-excursion
+                              (goto-char m)
+                              (elfeed-search--save-position)))
+                          mark-active)))
+    (unwind-protect
+        (funcall fun)
+      (elfeed-search--restore-position point-pos)
+      (elfeed-search--sync-window-points)
+      (when-let* ((m (car mark-pos)))
+        (setcar mark-pos (save-excursion
+                           (elfeed-search--restore-position m)
+                           (copy-marker (point)))))
+      (save-mark-and-excursion--restore mark-pos))))
+
 (defmacro elfeed-save-excursion (&rest body)
   "Like `save-mark-and-excursion' around BODY.
-But keep entry, line and column instead of only point."
+Keep entry, line and column instead of only point.
+Make sure that window points are updated properly."
   (declare (indent defun) (debug t))
-  (cl-with-gensyms (point-pos mark-pos)
-    `(let* ((,point-pos (elfeed-search--save-position))
-            (,mark-pos (cons (when-let* ((m (marker-position (mark-marker))))
-                               (save-excursion
-                                 (goto-char m)
-                                 (elfeed-search--save-position)))
-                             mark-active)))
-     (unwind-protect
-         ,@body
-       (elfeed-search--restore-position ,point-pos)
-       (when-let* ((m (car ,mark-pos)))
-         (setcar ,mark-pos (save-excursion
-                             (elfeed-search--restore-position m)
-                             (copy-marker (point)))))
-       (save-mark-and-excursion--restore ,mark-pos)))))
+  `(elfeed--save-excursion-f (lambda () ,@body)))
 
 (defun elfeed-search-update (&optional force)
   "Update the `elfeed-search' buffer listing to match the database.
