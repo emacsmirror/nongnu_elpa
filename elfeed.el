@@ -629,11 +629,19 @@ feeds without the :no-update property."
                url-or-feed)))
     (elfeed--plist-skip (cdr (assoc url elfeed-feeds)))))
 
+(defun elfeed-apply-hooks-now ()
+  "Apply `elfeed-new-entry-hook' to all entries in the database."
+  (interactive)
+  (elfeed-db-visit (entry)
+    (run-hook-with-args 'elfeed-new-entry-hook entry))
+  (message "Hooks applied"))
+
 (defun elfeed-apply-autotags-now ()
   "Apply autotags to existing entries according to `elfeed-feeds'."
   (interactive)
   (elfeed-db-visit (entry feed)
-    (apply #'elfeed-tag entry (elfeed-feed-autotags feed))))
+    (apply #'elfeed-tag entry (elfeed-feed-autotags feed)))
+  (message "Auto tags applied"))
 
 (defun elfeed-handle-http-error (url status)
   "Handle an http error during retrieval of URL with STATUS code."

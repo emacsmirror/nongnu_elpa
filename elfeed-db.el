@@ -311,12 +311,6 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
           (push entry entries)))
       (nreverse entries))))
 
-(defun elfeed-apply-hooks-now ()
-  "Apply `elfeed-new-entry-hook' to all entries in the database."
-  (interactive)
-  (elfeed-db-visit (entry)
-    (run-hook-with-args 'elfeed-new-entry-hook entry)))
-
 (defmacro elfeed-db-return (&optional value)
   "Use this to exit early and return VALUE from `elfeed-db-visit'."
   (declare (debug (&optional sexp)))
@@ -437,6 +431,7 @@ Runs `elfeed-db-unload-hook' after unloading the database."
         elfeed-db-feeds nil
         elfeed-db-entries nil
         elfeed-db-index nil)
+  (message "Database unloaded")
   (run-hooks 'elfeed-db-unload-hook))
 
 (defun elfeed-db-size ()
@@ -742,8 +737,10 @@ gzip-compressed files, so the gzip program must be in your PATH."
   (interactive)
   (unless (elfeed-gzip-supported-p)
     (error "Aborting compaction: gzip auto-compression-mode unsupported"))
+  (message "Compacting...")
   (elfeed-db-pack)
-  (elfeed-db-gc))
+  (elfeed-db-gc)
+  (message "Compacting...done"))
 
 (unless noninteractive
   (add-hook 'kill-emacs-hook #'elfeed-db--close-safely))
