@@ -221,8 +221,9 @@ list.  The second argument is the tag list.")
 
 (defun elfeed-status-error-p (status)
   "Check if HTTP request returned STATUS means a error."
-  (or (and elfeed-use-curl (null status)) ; nil = error
-      (and (not elfeed-use-curl) (eq (car status) :error))))
+  (if elfeed-use-curl
+      (not status)
+    (eq (car status) :error)))
 
 (defun elfeed-is-status-error (status use-curl)
   "Use `elfeed-status-error-p' instead.
