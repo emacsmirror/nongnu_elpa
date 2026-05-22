@@ -347,6 +347,7 @@ COUNT the number of feeds and TAGS the list of tags."
    'append title)
   (elfeed-add-properties
    title
+   'elfeed-tree (mapconcat (lambda (x) (format "%s" x)) tags " ")
    'elfeed-filter
    (elfeed-search--tag-filter
     (let ((tags (cl-loop for x in tags
@@ -402,6 +403,9 @@ DEPTH the tree depth."
                 align2
                 (elfeed-feed-id feed))
         'elfeed-feed feed
+        'elfeed-tree (concat
+                      (mapconcat (lambda (x) (format "%s" x)) subtags " ")
+                      " " (elfeed-feed-id feed))
         'elfeed-filter (concat (elfeed-search--feed-filter feed)
                                (and (> unread 0) " +unread"))
         'follow-link [elfeed-filter]
@@ -416,7 +420,7 @@ not use this function directly.  Instead use `elfeed-tree-update'."
   (when (and (buffer-live-p buffer)
              (or force (< elfeed-tree--last-update (elfeed-db-last-update))))
     (with-current-buffer buffer
-      (elfeed-save-excursion
+      (elfeed-with-position elfeed-tree
         (let* ((restore (outline-revert-buffer-restore-visibility))
                (inhibit-read-only t)
                (feeds+tags (elfeed-tree--collect))

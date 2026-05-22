@@ -453,6 +453,72 @@ Optionally TRUNCATE content if too wide."
                             (substring content (- len))))))
   (shr-tag-a `(a ((href . ,url)) ,content)))
 
+(defun elfeed--position-save (prop)
+  "Save PROP value, line and column."
+  (list (get-text-property (pos-bol) prop)
+        (line-number-at-pos)
+        (current-column)))
+
+(defun elfeed--position-restore (prop pos)
+  "Restore PROP value, line and column from saved POS."
+  (pcase-let* ((`(,val ,line ,column) pos))
+    (goto-char (point-min))
+    (while (and val (not (eobp))
+                (not (equal (get-text-property (point) prop) val)))
+      (forward-line))
+    (unless (and val (equal (get-text-property (point) prop) val))
+      (elfeed-goto-line line))
+    (move-to-column column)))
+
+(defvar-local elfeed--restore-window-point nil
+  "Restore window point before redisplay.")
+
+(defun elfeed--sync-window-points ()
+  "Synchronize window points after `elfeed-with-position'."
+  (let ((pt (point)))
+    (dolist (win (get-buffer-window-list nil nil t))
+      (set-window-point win pt))
+    (remove-hook 'pre-redisplay-functions
+                 elfeed--restore-window-point 'local)
+    (setq elfeed--restore-window-point
+          (lambda (win)
+            (remove-hook 'pre-redisplay-functions
+                         elfeed--restore-window-point 'local)
+            (set-window-point win pt)))
+    (add-hook 'pre-redisplay-functions
+              elfeed--restore-window-point nil 'local)))
+
+(defun elfeed--with-position-f (prop fun)
+  "See `elfeed-with-position' for PROP and FUN."
+  (let* ((point-pos (elfeed--position-save prop))
+         (mark-pos (cons (when-let* ((m (marker-position (mark-marker))))
+                            (save-excursion
+                              (goto-char m)
+                              (elfeed--position-save prop)))
+                          mark-active)))
+    (unwind-protect
+        (funcall fun)
+      (elfeed--position-restore prop point-pos)
+      (elfeed--sync-window-points)
+      (when-let* ((m (car mark-pos)))
+        (setcar mark-pos (save-excursion
+                           (elfeed--position-restore prop m)
+                           (copy-marker (point)))))
+      (save-mark-and-excursion--restore mark-pos))))
+
+(defmacro elfeed-with-position (prop &rest body)
+  "Like `save-mark-and-excursion' around BODY.
+Keep line and column instead of only point.  First the line is
+determined by finding a line with a matching property value for PROP.
+Make sure that window points are updated properly."
+  (declare (indent defun) (debug t))
+  `(elfeed--with-position-f ',prop (lambda () ,@body)))
+
+(defmacro elfeed-save-excursion (&rest body)
+  "Obsolete in favor of `elfeed-with-position'."
+  (declare (obsolete nil "4.0.0"))
+  `(elfeed-with-position elfeed-entry ,@body))
+
 ;; Keep old names to avoid breakage.
 (define-obsolete-function-alias 'elfeed-directory-empty-p
   #'directory-empty-p "4.0.0")
