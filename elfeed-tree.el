@@ -358,7 +358,7 @@ COUNT the number of feeds and TAGS the list of tags."
       (if (and (> unread 0) (not (memq 'unread tags)))
           `(,@tags unread)
         tags)))
-   'follow-link [elfeed-tag]
+   'follow-link [elfeed-filter]
    'mouse-face 'highlight)
   (insert title ?\n))
 
