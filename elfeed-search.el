@@ -513,7 +513,7 @@ never show a relative time."
          (list 'elfeed-search-title-face)))
 
 (defun elfeed-search--column-date (entry)
-  "Format the date information for ENTRY."
+  "Format the date column for ENTRY, return pair of string and width."
   (cons (elfeed-add-properties
          (elfeed-search-format-date (elfeed-entry-date entry))
          'face 'elfeed-search-date-face
@@ -522,13 +522,12 @@ never show a relative time."
         (cadr elfeed-search-date-format)))
 
 (defun elfeed-search--column-title (entry)
-  "Format the title information for ENTRY."
-  (let* ((tags (elfeed-entry-tags entry))
-         (title (elfeed-meta--title entry))
+  "Format the title column for ENTRY, return pair of string and width."
+  (let* ((title (elfeed-meta--title entry))
          (title (if (or (not title) (equal title ""))
                     (elfeed-entry-link entry)
                   title))
-         (title-faces (elfeed-search--faces tags))
+         (title-faces (elfeed-search--faces (elfeed-entry-tags entry)))
          (window (get-buffer-window))
          (title-width (elfeed-clamp
                        elfeed-search-title-min-width
@@ -543,7 +542,7 @@ never show a relative time."
           title-width)))
 
 (defun elfeed-search--column-feed (entry)
-  "Format the feed information for ENTRY."
+  "Format the feed column for ENTRY, return string."
   (when-let* ((feed (elfeed-entry-feed entry))
               (title (elfeed-meta--title feed)))
     (propertize title 'face 'elfeed-search-feed-face
@@ -551,7 +550,7 @@ never show a relative time."
                 'follow-link [elfeed-feed])))
 
 (defun elfeed-search--column-tags (entry)
-  "Format the tags information for ENTRY."
+  "Format the tags column for ENTRY, return string."
   (when-let* ((tags (elfeed-entry-tags entry)))
     (concat "("
             (mapconcat
