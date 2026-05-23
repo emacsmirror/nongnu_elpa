@@ -129,6 +129,22 @@
 (defsubst vm-set-folder-imap-retrieved-count (val)
   (aset vm-folder-access-data 12 val))
 
+(defun vm-folder-cache-file (&optional buffer)
+  "Return the cache file path for BUFFER, or current buffer if nil.
+Returns nil if BUFFER is not a VM folder with a remote access method."
+  (interactive)
+  (let ((file (with-current-buffer (or buffer (current-buffer))
+                (cond ((eq vm-folder-access-method 'imap)
+                       (vm-imap-make-filename-for-spec (vm-folder-imap-maildrop-spec)))
+                      ((eq vm-folder-access-method 'pop)
+                       (vm-pop-make-filename-for-spec (vm-folder-pop-maildrop-spec)))
+                      (t nil)))))
+    (when (called-interactively-p 'interactive)
+      (if file
+          (message "%s" file)
+        (message "Not a remote folder")))
+    file))
+
 (defun vm-set-buffer-modified-p (flag &optional buffer)
   "Sets the `buffer-modified-p' of the current folder to FLAG.  Optional
 argument BUFFER can ask for it to be done for some other folder. 

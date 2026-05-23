@@ -30,7 +30,8 @@ VM 8.4.0
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
-    
+  * Add vm-folder-cache-file function to get cache file for current VM buffer.
+
 
 VM 8.3.2 released 2025-12-29
 
