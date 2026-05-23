@@ -1,4 +1,4 @@
-;;; elfeed.el --- An Emacs Atom/RSS feed reader -*- lexical-binding: t; -*-
+;;; elfeed.el --- An Atom/RSS feed reader -*- lexical-binding: t; -*-
 
 ;; This is free and unencumbered software released into the public domain.
 
@@ -918,7 +918,8 @@ saved to your customization file."
   "Fetch feed URL and call BODY (obsolete).
 Use `elfeed-fetch-url' instead which updates the Etag and modification
 date, in addition to checking the tag and date.  The new
-`elfeed-fetch-url' completely disentangles the curl and url-queue code."
+`elfeed-fetch-url' completely disentangles the `elfeed-curl-enqueue' and
+`url-queue-queue' code."
   (declare (obsolete #'elfeed-fetch-url "4.0.0"))
   `(let ((cb (let ((use-curl elfeed-use-curl))
                (ignore use-curl)

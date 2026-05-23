@@ -964,7 +964,7 @@ is reversed if ASCENDING is non-nil."
       entries)))
 
 (defun elfeed-search--update-list ()
-  "Update `elfeed-search-entries' list."
+  "Update the variable `elfeed-search-entries' and `elfeed-search--last-update'."
   (setq elfeed-search-entries (elfeed-search-entries
                                elfeed-search-filter
                                (elfeed-search--sort-function)

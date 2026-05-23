@@ -204,7 +204,7 @@ s-expression.  See `xml-query-all*' for more information.
 QUERY is *not* evaluated, so it should not be quoted."
   (xml-query--compile query sexp))
 
-(defun xml-query-all--compile (query input)
+(defun xml-query--all-compile (query input)
   (let ((output (make-symbol "output")))
     `(let ((,output ()))
        ,(xml-query--compile-top query input `(push v ,output))
@@ -226,7 +226,7 @@ symbol-qnames.
 Sub-expression lists are not supported by this macro.
 
 QUERY is *not* evaluated, so it should not be quoted."
-  (xml-query-all--compile query sexp))
+  (xml-query--all-compile query sexp))
 
 (provide 'xml-query)
 ;;; xml-query.el ends here

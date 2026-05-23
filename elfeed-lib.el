@@ -515,7 +515,8 @@ Make sure that window points are updated properly."
   `(elfeed--with-position-f ',prop (lambda () ,@body)))
 
 (defmacro elfeed-save-excursion (&rest body)
-  "Obsolete in favor of `elfeed-with-position'."
+  "Obsolete in favor of more flexible `elfeed-with-position'.
+`elfeed-with-position' takes a PROP argument in addition to BODY."
   (declare (obsolete nil "4.0.0"))
   `(elfeed-with-position elfeed-entry ,@body))
 

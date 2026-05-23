@@ -552,7 +552,7 @@ under KEY, defaulting to :link-content in the entry metadata.  HEADERS
 are optional HTTP headers.  If FORCE is non-nil do not use cached
 content."
   (unless elfeed-use-curl
-    (error "elfeed-show--fetch requires curl"))
+    (error "`elfeed-show-fetch-link' requires curl"))
   (setq url (or url
                 (when-let* ((entry elfeed-show-entry))
                   (elfeed-entry-link entry))
