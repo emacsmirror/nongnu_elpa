@@ -709,26 +709,12 @@ If INHIBIT-UPDATE-HOOK is non-nil do not run the `elfeed-update-hook'."
      (unless inhibit-update-hook
        (run-hook-with-args 'elfeed-update-hook url)))))
 
-(defun elfeed-fetch-url (url cb)
-  "Fetch feed from URL and call CB either with the keyword :error or :parse.
-In order to modify feed content, you can use a custom fetch function.
-
-    (defun custom-fetcher (url cb)
-      (elfeed-fetch-url url
-        (lambda (result)
-          (when (eq result :parse)
-            ;; ...manipulate buffer...
-            (funcall cb :parse)))))"
+(defun elfeed--fetch-url-curl (url cb)
   (elfeed-with-fetch url
     (if (elfeed-status-error-p status)
         (let ((print-escape-newlines t))
-          (elfeed-handle-http-error
-           url (if elfeed-use-curl elfeed-curl-error-message status))
+          (elfeed-handle-http-error url elfeed-curl-error-message)
           (funcall cb :error))
-      (unless elfeed-use-curl
-        (goto-char (point-min))
-        (elfeed-move-to-first-empty-line)
-        (set-buffer-multibyte t))
       (unless (eql elfeed-curl-status-code 304)
         (let ((feed (elfeed-db-get-feed url)))
           ;; Update Last-Modified and Etag
@@ -739,10 +725,33 @@ In order to modify feed content, you can use a custom fetch function.
           (if (equal url elfeed-curl-location)
               (setf (elfeed-meta feed :canonical-url) nil)
             (setf (elfeed-meta feed :canonical-url) elfeed-curl-location)))
-        (funcall cb :parse)))
-    (unless elfeed-use-curl
-      (kill-buffer)))
-  t)
+        (funcall cb :parse)))))
+
+(defun elfeed--fetch-url-queue (url cb)
+  (elfeed-with-fetch url
+    (if (elfeed-status-error-p status)
+        (let ((print-escape-newlines t))
+          (elfeed-handle-http-error url status)
+          (funcall cb :error))
+      (goto-char (point-min))
+      (elfeed-move-to-first-empty-line)
+      (set-buffer-multibyte t)
+      (funcall cb :parse))
+    (kill-buffer)))
+
+(defun elfeed-fetch-url (url cb)
+  "Fetch feed from URL and call CB either with the keyword :error or :parse.
+In order to modify feed content, you can use a custom fetch function.
+
+    (defun custom-fetcher (url cb)
+      (elfeed-fetch-url url
+        (lambda (result)
+          (when (eq result :parse)
+            ;; ...manipulate buffer...
+            (funcall cb :parse)))))"
+  (if elfeed-use-curl
+      (elfeed--fetch-url-curl url cb)
+    (elfeed--fetch-url-queue url cb)))
 
 (defun elfeed-candidate-feeds ()
   "Return a list of possible feeds from `elfeed-feed-functions'."
