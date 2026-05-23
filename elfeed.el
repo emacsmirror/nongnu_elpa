@@ -915,7 +915,10 @@ saved to your customization file."
     (eq (car status) :error)))
 
 (defmacro elfeed-with-fetch (url &rest body)
-  "Fetch feed URL and call BODY (obsolete)."
+  "Fetch feed URL and call BODY (obsolete).
+Use `elfeed-fetch-url' instead which updates the Etag and modification
+date, in addition to checking the tag and date.  The new
+`elfeed-fetch-url' completely disentangles the curl and url-queue code."
   (declare (obsolete #'elfeed-fetch-url "4.0.0"))
   `(let ((cb (let ((use-curl elfeed-use-curl))
                (ignore use-curl)
