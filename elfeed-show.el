@@ -568,9 +568,9 @@ content."
            url
            (let ((buffer (current-buffer))
                  (entry elfeed-show-entry))
-             (lambda (status)
+             (lambda (success)
                (setf (alist-get key elfeed-show--fetch) nil)
-               (unless (elfeed-status-error-p status)
+               (when success
                  (let ((content (buffer-string)))
                    (setf (elfeed-meta entry key) (elfeed-ref content))
                    (when (buffer-live-p buffer)

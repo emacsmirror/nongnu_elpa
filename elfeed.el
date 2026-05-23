@@ -219,12 +219,6 @@ list.  The second argument is the tag list.")
       elfeed-curl-timeout
     url-queue-timeout))
 
-(defun elfeed-status-error-p (status)
-  "Check if HTTP request returned STATUS means a error."
-  (if elfeed-use-curl
-      (not status)
-    (eq (car status) :error)))
-
 (defun elfeed-unjam ()
   "Manually clear the connection pool when connections fail to timeout.
 This is a workaround for issues in `url-queue-retrieve'."
@@ -684,8 +678,8 @@ If INHIBIT-UPDATE-HOOK is non-nil do not run the `elfeed-update-hook'."
 
 (defun elfeed--fetch-url-curl (url cb)
   "See `elfeed-fetch-url' for documentation of URL and CB."
-  (let ((cb (lambda (status)
-              (if (elfeed-status-error-p status)
+  (let ((cb (lambda (success)
+              (if (not success)
                   (let ((print-escape-newlines t))
                     (elfeed-handle-http-error url elfeed-curl-error-message)
                     (funcall cb :error))
@@ -713,7 +707,7 @@ If INHIBIT-UPDATE-HOOK is non-nil do not run the `elfeed-update-hook'."
 (defun elfeed--fetch-url-queue (url cb)
   "See `elfeed-fetch-url' for documentation of URL and CB."
   (let ((cb (lambda (status)
-              (if (elfeed-status-error-p status)
+              (if (eq (car status) :error)
                   (let ((print-escape-newlines t))
                     (elfeed-handle-http-error url status)
                     (funcall cb :error))
@@ -915,9 +909,10 @@ saved to your customization file."
 
 (defun elfeed-is-status-error (status use-curl)
   "Check if STATUS is an error, USE-CURL specifies the backend (obsolete)."
-  (declare (obsolete #'elfeed-status-error-p "4.0.0"))
-  (let ((elfeed-use-curl use-curl))
-    (elfeed-status-error-p status)))
+  (declare (obsolete nil "4.0.0"))
+  (if use-curl
+      (not status)
+    (eq (car status) :error)))
 
 (defmacro elfeed-with-fetch (url &rest body)
   "Fetch feed URL and call BODY (obsolete)."
