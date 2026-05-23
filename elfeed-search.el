@@ -1300,8 +1300,7 @@ argument."
 
 (defun elfeed-search--feed-filter (feed &optional exclude)
   "Create filter string which matches FEED.
-
-If exclude is non-nil, create filter string excluding FEED instead."
+If EXCLUDE is non-nil, create filter string excluding FEED instead."
   (concat (if exclude "~" "=")
           (string-replace "\\." "." (regexp-quote (elfeed-feed-id feed)))))
 
@@ -1318,19 +1317,18 @@ If exclude is non-nil, create filter string excluding FEED instead."
   (when-let* ((tag (get-text-property (point) 'elfeed-tag)))
     (elfeed-search--toggle-filter (elfeed-search--tag-filter tag))))
 
-(defun elfeed-search-feed-filter ()
-  "Toggle feed filter from feed at point."
-  (interactive nil elfeed-search-mode)
+(defun elfeed-search-feed-filter (&optional exclude)
+  "Toggle feed filter from feed at point.
+Create an exclude filter if prefix argument EXCLUDE is non-nil."
+  (interactive "P" elfeed-search-mode)
   (when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
-    (elfeed-search--toggle-filter (elfeed-search--feed-filter
-                                   (elfeed-entry-feed entry)))))
+    (elfeed-search--toggle-filter
+     (elfeed-search--feed-filter (elfeed-entry-feed entry) exclude))))
 
 (defun elfeed-search-exclude-feed-filter ()
   "Exclude feed at point from search results."
   (interactive nil elfeed-search-mode)
-  (when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
-    (elfeed-search--toggle-filter (elfeed-search--feed-filter
-                                   (elfeed-entry-feed entry) t))))
+  (elfeed-search-feed-filter t))
 
 (defun elfeed-search-header-button ()
   "Handle click on the header line of the search buffer."
