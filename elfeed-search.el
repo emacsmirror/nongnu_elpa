@@ -522,7 +522,7 @@ never show a relative time."
                  'follow-link [elfeed-tag]))
    tags ","))
 
-(defun elfeed-search-format-column--date (entry)
+(defun elfeed-search--column-date (entry)
   "Format the date information for ENTRY."
   (let ((date (elfeed-search-format-date (elfeed-entry-date entry)))
         (date-width (cadr elfeed-search-date-format)))
@@ -533,7 +533,7 @@ never show a relative time."
                             'follow-link [elfeed-date])
      date-width)))
 
-(defun elfeed-search-format-column--title (entry)
+(defun elfeed-search--column-title (entry)
   "Format the title information for ENTRY."
   (let* ((tags (elfeed-entry-tags entry))
          (title (elfeed-meta--title entry))
@@ -555,7 +555,7 @@ never show a relative time."
                             'follow-link [elfeed-entry])
      title-width)))
 
-(defun elfeed-search-format-column--feed (entry)
+(defun elfeed-search--column-feed (entry)
   "Format the feed information for ENTRY."
   (if-let* ((feed (elfeed-entry-feed entry))
             (feed-title (and feed (elfeed-meta--title feed))))
@@ -563,21 +563,21 @@ never show a relative time."
                   'mouse-face 'highlight
                   'follow-link [elfeed-feed])))
 
-(defun elfeed-search-format-column--tags (entry)
+(defun elfeed-search--column-tags (entry)
   "Format the tags information for ENTRY."
   (if-let ((tags (elfeed-entry-tags entry)))
       (concat "(" (elfeed-search--format-tags tags) ")")))
 
 (defun elfeed-search-print-entry--default (entry)
   "Print ENTRY to the buffer."
-  (let* ((date (elfeed-search-format-column--date entry))
+  (let* ((date (elfeed-search--column-date entry))
          (date-str (car date))
          (date-width (cdr date))
-         (title (elfeed-search-format-column--title entry))
+         (title (elfeed-search--column-title entry))
          (title-str (car title))
          (title-width (cdr title))
-         (feed (elfeed-search-format-column--feed entry))
-         (tags (elfeed-search-format-column--tags entry)))
+         (feed (elfeed-search--column-feed entry))
+         (tags (elfeed-search--column-tags entry)))
     (insert
      (concat
       date-str
