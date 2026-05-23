@@ -225,31 +225,6 @@ list.  The second argument is the tag list.")
       (not status)
     (eq (car status) :error)))
 
-(defun elfeed-is-status-error (status use-curl)
-  "Use `elfeed-status-error-p' instead.
-STATUS is passed to `elfeed-status-error-p' and USE-CURL is deprecated."
-  (declare (obsolete #'elfeed-status-error-p "4.0.0"))
-  (let ((elfeed-use-curl use-curl))
-    (elfeed-status-error-p status)))
-
-(defmacro elfeed-with-fetch (url &rest body)
-  "Fetch feed URL and call BODY (obsolete)."
-  (declare (obsolete #'elfeed-fetch-url "4.0.0"))
-  `(let ((cb (let ((use-curl elfeed-use-curl))
-               (ignore use-curl)
-               (lambda (status) ,@body))))
-     (if elfeed-use-curl
-         (let* ((feed (elfeed-db-get-feed url))
-                (last-modified (elfeed-meta feed :last-modified))
-                (etag (elfeed-meta feed :etag))
-                (headers `(("User-Agent" . ,elfeed-user-agent))))
-           (when etag
-             (push `("If-None-Match" . ,etag) headers))
-           (when last-modified
-             (push `("If-Modified-Since" . ,last-modified) headers))
-           (elfeed-curl-enqueue ,url cb :headers headers))
-       (url-queue-retrieve ,url cb () t t))))
-
 (defun elfeed-unjam ()
   "Manually clear the connection pool when connections fail to timeout.
 This is a workaround for issues in `url-queue-retrieve'."
@@ -937,6 +912,30 @@ saved to your customization file."
                                 for title = (or (elfeed-feed-title feed) "")
                                 collect `(outline ((xmlUrl . ,url)
                                                    (title . ,title)))))))))))
+
+(defun elfeed-is-status-error (status use-curl)
+  "Check if STATUS is an error, USE-CURL specifies the backend (obsolete)."
+  (declare (obsolete #'elfeed-status-error-p "4.0.0"))
+  (let ((elfeed-use-curl use-curl))
+    (elfeed-status-error-p status)))
+
+(defmacro elfeed-with-fetch (url &rest body)
+  "Fetch feed URL and call BODY (obsolete)."
+  (declare (obsolete #'elfeed-fetch-url "4.0.0"))
+  `(let ((cb (let ((use-curl elfeed-use-curl))
+               (ignore use-curl)
+               (lambda (status) ,@body))))
+     (if elfeed-use-curl
+         (let* ((feed (elfeed-db-get-feed url))
+                (last-modified (elfeed-meta feed :last-modified))
+                (etag (elfeed-meta feed :etag))
+                (headers `(("User-Agent" . ,elfeed-user-agent))))
+           (when etag
+             (push `("If-None-Match" . ,etag) headers))
+           (when last-modified
+             (push `("If-Modified-Since" . ,last-modified) headers))
+           (elfeed-curl-enqueue ,url cb :headers headers))
+       (url-queue-retrieve ,url cb () t t))))
 
 (provide 'elfeed)
 
