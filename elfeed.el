@@ -233,10 +233,8 @@ STATUS is passed to `elfeed-status-error-p' and USE-CURL is deprecated."
     (elfeed-status-error-p status)))
 
 (defmacro elfeed-with-fetch (url &rest body)
-  "Asynchronously run BODY in a buffer with the contents from URL.
-This macro is anaphoric, with STATUS referring to the status from
-`url-retrieve' or curl.  The locally bound variable USE-CURL is deprecated."
-  (declare (indent defun) (debug (&define sexp def-body)))
+  "Fetch feed URL and call BODY (obsolete)."
+  (declare (obsolete #'elfeed-fetch-url "4.0.0"))
   `(let ((cb (let ((use-curl elfeed-use-curl))
                (ignore use-curl)
                (lambda (status) ,@body))))
@@ -710,34 +708,46 @@ If INHIBIT-UPDATE-HOOK is non-nil do not run the `elfeed-update-hook'."
        (run-hook-with-args 'elfeed-update-hook url)))))
 
 (defun elfeed--fetch-url-curl (url cb)
-  (elfeed-with-fetch url
-    (if (elfeed-status-error-p status)
-        (let ((print-escape-newlines t))
-          (elfeed-handle-http-error url elfeed-curl-error-message)
-          (funcall cb :error))
-      (unless (eql elfeed-curl-status-code 304)
-        (let ((feed (elfeed-db-get-feed url)))
-          ;; Update Last-Modified and Etag
-          (setf (elfeed-meta feed :last-modified)
-                (cdr (assoc "last-modified" elfeed-curl-headers))
-                (elfeed-meta feed :etag)
-                (cdr (assoc "etag" elfeed-curl-headers)))
-          (if (equal url elfeed-curl-location)
-              (setf (elfeed-meta feed :canonical-url) nil)
-            (setf (elfeed-meta feed :canonical-url) elfeed-curl-location)))
-        (funcall cb :parse)))))
+  "See `elfeed-fetch-url' for documentation of URL and CB."
+  (let ((cb (lambda (status)
+              (if (elfeed-status-error-p status)
+                  (let ((print-escape-newlines t))
+                    (elfeed-handle-http-error url elfeed-curl-error-message)
+                    (funcall cb :error))
+                (unless (eql elfeed-curl-status-code 304)
+                  (let ((feed (elfeed-db-get-feed url)))
+                    ;; Update Last-Modified and Etag
+                    (setf (elfeed-meta feed :last-modified)
+                          (cdr (assoc "last-modified" elfeed-curl-headers))
+                          (elfeed-meta feed :etag)
+                          (cdr (assoc "etag" elfeed-curl-headers)))
+                    (if (equal url elfeed-curl-location)
+                        (setf (elfeed-meta feed :canonical-url) nil)
+                      (setf (elfeed-meta feed :canonical-url) elfeed-curl-location)))
+                  (funcall cb :parse))))))
+    (let* ((feed (elfeed-db-get-feed url))
+           (last-modified (elfeed-meta feed :last-modified))
+           (etag (elfeed-meta feed :etag))
+           (headers `(("User-Agent" . ,elfeed-user-agent))))
+      (when etag
+        (push `("If-None-Match" . ,etag) headers))
+      (when last-modified
+        (push `("If-Modified-Since" . ,last-modified) headers))
+      (elfeed-curl-enqueue url cb :headers headers))))
 
 (defun elfeed--fetch-url-queue (url cb)
-  (elfeed-with-fetch url
-    (if (elfeed-status-error-p status)
-        (let ((print-escape-newlines t))
-          (elfeed-handle-http-error url status)
-          (funcall cb :error))
-      (goto-char (point-min))
-      (elfeed-move-to-first-empty-line)
-      (set-buffer-multibyte t)
-      (funcall cb :parse))
-    (kill-buffer)))
+  "See `elfeed-fetch-url' for documentation of URL and CB."
+  (let ((cb (lambda (status)
+              (if (elfeed-status-error-p status)
+                  (let ((print-escape-newlines t))
+                    (elfeed-handle-http-error url status)
+                    (funcall cb :error))
+                (goto-char (point-min))
+                (elfeed-move-to-first-empty-line)
+                (set-buffer-multibyte t)
+                (funcall cb :parse))
+              (kill-buffer))))
+    (url-queue-retrieve url cb nil t t)))
 
 (defun elfeed-fetch-url (url cb)
   "Fetch feed from URL and call CB either with the keyword :error or :parse.
