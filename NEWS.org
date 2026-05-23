@@ -59,8 +59,9 @@
 - =elfeed-search-set-filter=, =elfeed-search-tag-all=: Filter and tag completion
   using =completing-read-multiple=.
 - =elfeed-search-set-filter=: Support shorter age filter syntax, e.g., =@6months=.
-- =elfeed-search-date-filter=, =elfeed-search-feed-filter=: New commands bound to ~@~
-  and ~=~ to filter for the date or feed at point.
+- =elfeed-search-date-filter=, =elfeed-search-feed-filter= and
+  =elfeed-search-exclude-feed-filter=: New commands bound to ~@~, ~=~ and ~~~ to
+  filter for the date or feed at point.
 - =elfeed-search-(un)tag-all=, =elfeed-search-toggle-all=,
   =elfeed-search-(un)tag-all-unread=: If prefix argument is given, tag or untag
   all entries, not only the selected ones.

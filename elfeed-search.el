@@ -189,6 +189,7 @@ When live editing the filter, it is bound to :live.")
   "G" #'elfeed-search-fetch
   "RET" #'elfeed-search-show-entry
   "=" #'elfeed-search-feed-filter
+  "~" #'elfeed-search-exclude-feed-filter
   "@" #'elfeed-search-date-filter
   "<elfeed-date>" #'elfeed-search-date-filter
   "<elfeed-entry>" #'elfeed-search-show-entry
@@ -1297,9 +1298,12 @@ argument."
   (mapconcat (lambda (x) (format "+%s" x))
              (ensure-list tag-or-tags-list) " "))
 
-(defun elfeed-search--feed-filter (feed)
-  "Create filter string which matches FEED."
-  (concat "=" (string-replace "\\." "." (regexp-quote (elfeed-feed-id feed)))))
+(defun elfeed-search--feed-filter (feed &optional exclude)
+  "Create filter string which matches FEED.
+
+If exclude is non-nil, create filter string excluding FEED instead."
+  (concat (if exclude "~" "=")
+          (string-replace "\\." "." (regexp-quote (elfeed-feed-id feed)))))
 
 (defun elfeed-search-date-filter ()
   "Toggle date filter from date at point."
@@ -1320,6 +1324,13 @@ argument."
   (when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
     (elfeed-search--toggle-filter (elfeed-search--feed-filter
                                    (elfeed-entry-feed entry)))))
+
+(defun elfeed-search-exclude-feed-filter ()
+  "Exclude feed at point from search results."
+  (interactive nil elfeed-search-mode)
+  (when-let* ((entry (get-text-property (pos-bol) 'elfeed-entry)))
+    (elfeed-search--toggle-filter (elfeed-search--feed-filter
+                                   (elfeed-entry-feed entry) t))))
 
 (defun elfeed-search-header-button ()
   "Handle click on the header line of the search buffer."
