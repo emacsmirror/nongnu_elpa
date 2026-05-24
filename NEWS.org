@@ -116,11 +116,13 @@
   the show buffer. The command is bound to the key =f=. In order to force fetching
   press the key =C-u f=. Auto fetching can be enabled per feed with the
   =:fetch-link= option. This is a good idea for link-only feeds which come without
-  content.
+  content. If =:fetch-link= is set to =replace= the feed entry content is replaced
+  entirely.
 #+begin_src emacs-lisp
-;; Automatically fetch the link content
+;; Automatically fetch the link content, and possibly replace entry content
 (setq elfeed-feeds
- '(("https://www.debian.org/security/dsa" :fetch-link t linux debian)
+ '(("https://www.debian.org/security/dsa" :fetch-link replace linux debian)
+   ("https://example.com/rss" :fetch-link t)
    ...))
 #+end_src
 - =elfeed-show-*-face=: New faces in =elfeed-show= buffer, which are used instead of
