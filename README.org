@@ -77,8 +77,9 @@ which will display feed items.
 - =s=: update the search filter (see tags)
 - =S=: update the search filter statically
 - =c=: clear the search filter
-- ~=~: Add feed of the current entry to filter
-- =@=: Add date of the current entry to filter
+- =@=: add current date to the filter
+- ~=~: only include current feed
+- =~=: exclude current feed
 
 This buffer will be empty until you add your feeds to the =elfeed-feeds= list and
 initiate an update with =M-x elfeed-update= (or G in the Elfeed buffer). This will
