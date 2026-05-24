@@ -240,9 +240,9 @@ When live editing the filter, it is bound to :live.")
      ["Current feed only" elfeed-search-feed-filter]
      ["Set filter" elfeed-search-set-filter]
      ["Clear filter" elfeed-search-clear-filter])
-    "--"
-    ["Cycle sort order" elfeed-search-cycle-order]
-    ["Reverse sort order" elfeed-search-reverse-order]
+    ("Sort order"
+     ["Cycle" elfeed-search-cycle-order]
+     ["Reverse" elfeed-search-reverse-order])
     "--"
     ["Fetch all" elfeed-search-fetch]
     ("Fetch"
