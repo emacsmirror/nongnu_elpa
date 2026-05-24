@@ -611,8 +611,13 @@ content is stored in the entry metadata under the key :link-content."
   ;; We reuse `eww-readable-dom' here for now, but a contribution for a more
   ;; sophisticated reader mode might be welcome, maybe even upstream in Eww.
   (require 'eww)
-  (declare-function eww-readable-dom "eww")
-  (or (eww-readable-dom dom) dom))
+  (if (fboundp 'eww-readable-dom) ;; Emacs 31
+      (or (eww-readable-dom dom) dom)
+    ;; TODO: There is a bug here, since `eww-highest-readability' removes the
+    ;; base tag. Images may not load, but who needs images in readable mode ;)
+    (with-no-warnings
+      (eww-score-readability dom)
+      (or (eww-highest-readability dom) dom))))
 
 (defun elfeed-show-readable ()
   "Toggle readable mode."
