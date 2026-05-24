@@ -812,21 +812,36 @@ Store the result in TARGET-BUF when non-nil."
                 (goto-char (min (+ (point) diff-ansi-chunks-size) (point-max)))
                 (goto-char (pos-eol))
 
-                (let ((output (concat temp-dir (number-to-string i))))
+                (let ((output (concat temp-dir (number-to-string i)))
+                      ;; Round-trip the chunk losslessly; the worker reads it
+                      ;; back with this same coding (below).  The `-unix' EOL is
+                      ;; explicit so reading performs no CRLF->LF conversion,
+                      ;; which would drop CR characters from the chunk.
+                      (coding-system-for-write 'utf-8-emacs-unix))
                   (write-region point-prev (point) output nil 0)
-                  ;; The "site-file" can cause messages that break our logic
-                  ;; which requires predictable process output, see: #4.
+                  ;; The worker's output must be only the `prin1' result (the
+                  ;; parent reads it back), so nothing else may reach the output.
+                  ;; `--no-site-file'/`--no-site-lisp' suppress site messages
+                  ;; (see: #4).  The chunk is read with `insert-file-contents'
+                  ;; under bindings that disable all of Emacs's file-handling
+                  ;; logic, never *visited* as a command-line file:
+                  ;; - visiting would parse the chunk's first line as a `-*-'
+                  ;;   mode line (a colorized "-*- lexical-binding -*-" header
+                  ;;   prints "Malformed mode-line" to the output, breaking
+                  ;;   `read'); `insert-file-contents' runs no `set-auto-mode' /
+                  ;;   `hack-local-variables' / find-file hooks.
+                  ;; - `coding-system-for-read' pins the decoding, so no
+                  ;;   `coding:' cookie in the content is honoured.
+                  ;; - `format-alist' / `after-insert-file-functions' are
+                  ;;   silenced so no format or after-insert decoder runs.
                   (push (list
-                         emacs-bin
-                         ;; Site files can generate warnings, interfering with the batch operation.
-                         ;; For example a warning about a header not including lexical-binding
-                         ;; will cause the command to fail entirely.
-                         "--no-site-file"
-                         "--no-site-lisp"
-                         "--batch"
-                         output
-                         "--eval"
-                         emacs-eval-arg)
+                         emacs-bin "--no-site-file" "--no-site-lisp" "--batch" "--eval"
+                         (format (concat
+                                  "(let ((coding-system-for-read 'utf-8-emacs-unix)"
+                                  " (format-alist nil) (after-insert-file-functions nil))"
+                                  " (insert-file-contents %S))")
+                                 output)
+                         "--eval" emacs-eval-arg)
                         per-chunk-args))
                 (incf i))
 
