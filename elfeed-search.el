@@ -105,9 +105,13 @@ command `elfeed-search-cycle-order'."
 (defun elfeed-search-group-by-feed (a b)
   "Group entries A and B by feed."
   (unless (equal (elfeed-entry-feed-id a) (elfeed-entry-feed-id b))
-    (string-collate-lessp (elfeed-meta--title (elfeed-entry-feed a))
-                          (elfeed-meta--title (elfeed-entry-feed b))
-                          nil t)))
+    (let ((less (string-collate-lessp
+                 (elfeed-meta--title (elfeed-entry-feed a))
+                 (elfeed-meta--title (elfeed-entry-feed b))
+                 nil t)))
+      (if (eq elfeed-search-sort-order 'ascending)
+          (not less)
+        less))))
 
 (defcustom elfeed-search-remain-on-entry nil
   "When non-nil, keep point at entry after performing a command.
@@ -197,6 +201,7 @@ When live editing the filter, it is bound to :live.")
   "<elfeed-tag>" #'elfeed-search-tag-filter
   "<header-line> <mouse-1>" #'elfeed-search-header-button
   "o" #'elfeed-search-cycle-order
+  "O" #'elfeed-search-reverse-order
   "s" #'elfeed-search-live-filter
   "S" #'elfeed-search-set-filter
   "c" #'elfeed-search-clear-filter
@@ -235,7 +240,9 @@ When live editing the filter, it is bound to :live.")
      ["Current feed only" elfeed-search-feed-filter]
      ["Set filter" elfeed-search-set-filter]
      ["Clear filter" elfeed-search-clear-filter])
+    "--"
     ["Cycle sort order" elfeed-search-cycle-order]
+    ["Reverse sort order" elfeed-search-reverse-order]
     "--"
     ["Fetch all" elfeed-search-fetch]
     ("Fetch"
@@ -1419,6 +1426,15 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
                 ((pred functionp) (list nil elfeed-search-sort-function))
                 (_ (cons (car (last elfeed-search-sort-function))
                          (butlast elfeed-search-sort-function)))))
+  (elfeed-search-update :force))
+
+(defun elfeed-search-reverse-order ()
+  "Reverse sort order."
+  (interactive nil elfeed-search-mode)
+  (setq-local elfeed-search-sort-order
+              (if (eq elfeed-search-sort-order 'ascending)
+                  'descending
+                'ascending))
   (elfeed-search-update :force))
 
 ;; Separators in search display
