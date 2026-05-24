@@ -294,7 +294,7 @@ If no such line exists, point is left in place."
     (unless (search-forward-regexp "\r?\n\r?\n" nil t)
       (goto-char start))))
 
-(defun elfeed--shuffle (seq)
+(defun elfeed-shuffle (seq)
   "Destructively shuffle SEQ."
   (let ((n (length seq)))
     (dotimes (i n)

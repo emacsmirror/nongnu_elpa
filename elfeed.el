@@ -796,7 +796,7 @@ called interactively, SAVE is set to t."
     (elfeed-log 'info "Elfeed update: %s"
                 (format-time-string "%B %e %Y %H:%M:%S %Z"))
     (run-hooks 'elfeed-update-init-hook)
-    (mapc #'elfeed--update-feed (elfeed--shuffle (elfeed-feed-list)))))
+    (mapc #'elfeed--update-feed (elfeed-shuffle (elfeed-feed-list)))))
 
 ;;;###autoload
 (defun elfeed-update-background ()
@@ -807,7 +807,7 @@ if another update is already running."
   (when (= (elfeed-queue-count-total) 0)
     (elfeed-log 'info "Elfeed background update: %s"
                 (format-time-string "%B %e %Y %H:%M:%S %Z"))
-    (dolist (feed (elfeed--shuffle (elfeed-feed-list)))
+    (dolist (feed (elfeed-shuffle (elfeed-feed-list)))
       (elfeed--update-feed feed t))))
 
 ;;;###autoload
