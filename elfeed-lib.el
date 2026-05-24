@@ -420,6 +420,10 @@ Links are relative to BASE-URL if non-nil."
                    (insert html)
                    (libxml-parse-html-region (point-min) (point-max) base-url))
                '(i () "Elfeed: libxml2 functionality is unavailable"))))
+    (run-hook-wrapped 'elfeed-transform-html-functions
+                      (lambda (hook)
+                        (setq doc (funcall hook doc))
+                        nil))
     (if elfeed--image-hack
         ;; HACK: Ensure that inserted images are not outdated, if the buffer content
         ;; has changed in the meantime.  There should be a better solution in Emacs.

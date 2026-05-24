@@ -84,7 +84,7 @@ Each function should accept no arguments, and return a string or nil."
   :type 'boolean)
 
 (defcustom elfeed-use-libxml nil
-  "Use faster libxml2 for parsing.
+  "Use faster libxml2 for feed parsing.
 This setting is experimental, and disabled for now.  It may lead to
 subtle differences to the usual xml.el parser, which renders certain
 feeds unreadable.  Enabling may yield a performance boost."
@@ -150,6 +150,11 @@ the failing feed.  The second argument is the http status code.")
   "Hooks to run when an error occurs during the parsing of a feed.
 It is called with 2 arguments.  The first argument is the url of
 the failing feed.  The second argument is the error message .")
+
+(defvar elfeed-transform-html-functions nil
+  "List of functions to transform HTML before insertion.
+Each function takes a DOM and returns the modified DOM.  For example the
+DOM can be cleaned up with a readability filter.")
 
 (defvar elfeed-fetch-functions (list #'elfeed-fetch-url)
   "Abnormal hooks to run when fetching feeds.
