@@ -604,7 +604,8 @@ content is stored in the entry metadata under the key :link-content."
 
 (defun elfeed-show-auto-fetch-link ()
   "Automatically fetch link content if the feed is marked with `:fetch-link'."
-  (when (elfeed-meta (elfeed-entry-feed elfeed-show-entry) :fetch-link)
+  (when (or (elfeed-meta elfeed-show-entry :link-content)
+            (elfeed-meta (elfeed-entry-feed elfeed-show-entry) :fetch-link))
     (elfeed-show-fetch-link)))
 
 ;; Readable mode
