@@ -10,8 +10,9 @@
 
 ;;; Code:
 
-(require 'cl-lib)
-(require 'compat)
+(eval-when-compile (require 'subr-x))
+
+(require 'elfeed-lib)
 
 (defface elfeed-log-date-face
   '((t :inherit font-lock-type-face))

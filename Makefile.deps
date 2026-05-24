@@ -3,7 +3,7 @@ elfeed-curl.elc: elfeed-lib.el elfeed-log.el
 elfeed-db.elc: elfeed-lib.el
 elfeed-lib.elc:
 elfeed-link.elc: elfeed-db.el elfeed-search.el elfeed-show.el
-elfeed-log.elc:
+elfeed-log.elc: elfeed-lib.el
 elfeed-search.elc: elfeed.el
 elfeed-show.elc: elfeed.el elfeed-search.el
 elfeed-tree.elc: elfeed.el elfeed-search.el
