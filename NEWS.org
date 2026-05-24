@@ -128,8 +128,9 @@
 - =elfeed-show-date-format=: New customization option.
 - =elfeed-transform-html-functions=: New hook to implement HTML dom transformation
   before the HTML is displayed.
-- =elfeed-show-readable=: Command to toggle readable mode. Readable mode can be
-  enabled automatically via =:readable= and even combined with =:fetch-link=.
+- =elfeed-show-readable=: Command to toggle readable mode bound to key =R=. Readable
+  mode can be enabled automatically via =:readable= and even combined with
+  =:fetch-link=.
 #+begin_src emacs-lisp
 ;; Automatically fetch the link content and make it readable
 (setq elfeed-feeds
