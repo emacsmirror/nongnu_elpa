@@ -560,7 +560,7 @@ never show a relative time."
 (defun elfeed-search--column-tags (entry)
   "Format the tags column for ENTRY, return string."
   (when-let* ((tags (elfeed-entry-tags entry)))
-    (concat "("
+    (concat " ("
             (mapconcat
              (lambda (s)
                (propertize (symbol-name s)
@@ -579,10 +579,12 @@ never show a relative time."
     (insert date
             (propertize " " 'display `(space :align-to ,(1+ date-width)))
             title
-            (and feed (propertize " " 'display
-                                  `( space :align-to
-                                     ,(+ 2 date-width title-width))))
-            feed (and tags " ") tags)))
+            (if feed
+                (propertize " " 'display
+                            `( space :align-to
+                               ,(+ 2 date-width title-width)))
+              "")
+            (or feed "") (or tags ""))))
 
 (defun elfeed-search-parse-filter (filter)
   "Parse the elements of a search FILTER into a plist."
