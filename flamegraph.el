@@ -1,4 +1,4 @@
-;;; profiler-flamegraph.el --- Flame graphs for the Emacs profiler  -*- lexical-binding: t; -*-
+;;; flamegraph.el --- Flame graphs for the Emacs profiler  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Dmitry Gutov
 
@@ -17,9 +17,9 @@
 ;; Visualize the data recorded by Emacs's native profiler (see
 ;; `profiler.el') as a flame graph.
 ;;
-;; Run a profiler session as usual (`profiler-start' ... `profiler-stop'),
-;; then `M-x profiler-flamegraph' to view the result.  `M-x
-;; profiler-flamegraph-find-profile' opens a profile previously saved with
+;; Start the profiler with `profiler-start', run the code you want to
+;; measure, then `M-x flamegraph-profiler-report' to view the result.
+;; `M-x flamegraph-find-profiler-report' opens a profile previously saved with
 ;; `profiler-report-write-profile'.
 ;;
 ;; The graph is drawn top-down ("icicle" orientation): the outermost frame
@@ -39,8 +39,8 @@
 ;; The pipeline has three stages:
 ;;   1. `profiler-calltree-build' (from profiler.el) merges the recorded
 ;;      backtraces into a call tree.
-;;   2. `profiler-flamegraph--frames' lays that tree out into a flat list of
-;;      `profiler-flamegraph-frame' records, each carrying a fractional
+;;   2. `flamegraph--frames' lays that tree out into a flat list of
+;;      `flamegraph-frame' records, each carrying a fractional
 ;;      START and WIDTH in [0,1] plus a DEPTH.
 ;;   3. The frames are rendered into the buffer, which you can then navigate
 ;;      and zoom.
@@ -50,17 +50,17 @@
 (require 'cl-lib)
 (require 'profiler)
 
-(defgroup profiler-flamegraph nil
+(defgroup flamegraph nil
   "Flame graphs for the Emacs profiler."
   :group 'profiler
-  :prefix "profiler-flamegraph-")
+  :prefix "flamegraph-")
 
-(defcustom profiler-flamegraph-width nil
+(defcustom flamegraph-width nil
   "Width of the flame-graph canvas, in columns.
 If nil, use the width of the window displaying the buffer."
   :type '(choice (const :tag "Window width" nil) natnum))
 
-(defcustom profiler-flamegraph-frame-border 1
+(defcustom flamegraph-frame-border 1
   "Width in pixels of the gap left on each side of a frame.
 Separates adjacent frames visually.  0 disables it.  On a text
 terminal a \"pixel\" is one column."
@@ -68,8 +68,8 @@ terminal a \"pixel\" is one column."
 
 ;;; Layout: call tree -> flat list of frames
 
-(cl-defstruct (profiler-flamegraph-frame
-               (:constructor profiler-flamegraph--frame)
+(cl-defstruct (flamegraph-frame
+               (:constructor flamegraph--frame)
                (:copier nil))
   "A single laid-out box of the flame graph.
 NODE is the `profiler-calltree' node it stands for.  START and WIDTH
@@ -77,12 +77,12 @@ give its horizontal extent as fractions in [0,1] of the whole graph,
 and DEPTH is its row (0 is the outermost frame)."
   node depth start width)
 
-(defun profiler-flamegraph--collect (node depth start total frames)
+(defun flamegraph--collect (node depth start total frames)
   "Lay out calltree NODE and its descendants, prepending to FRAMES.
 DEPTH is NODE's row.  START is its left edge and TOTAL the denominator,
 both in sample/byte counts.  Return (FRAMES . MAX-DEPTH)."
   (let* ((count (profiler-calltree-count node))
-         (frame (profiler-flamegraph--frame
+         (frame (flamegraph--frame
                  :node node :depth depth
                  :start (/ (float start) total)
                  :width (/ (float count) total)))
@@ -90,14 +90,14 @@ both in sample/byte counts.  Return (FRAMES . MAX-DEPTH)."
          (child-start start))
     (push frame frames)
     (dolist (child (profiler-calltree-children node))
-      (let ((res (profiler-flamegraph--collect
+      (let ((res (flamegraph--collect
                   child (1+ depth) child-start total frames)))
         (setq frames (car res)
               max-depth (max max-depth (cdr res))))
       (cl-incf child-start (profiler-calltree-count child)))
     (cons frames max-depth)))
 
-(defun profiler-flamegraph--frames (root)
+(defun flamegraph--frames (root)
   "Lay out the flame graph rooted at ROOT, a `profiler-calltree' node.
 If ROOT is the dummy top node (its entry is nil), its children become
 the depth-0 frames; otherwise ROOT itself is the single depth-0 frame.
@@ -108,14 +108,14 @@ widths are relative to."
         ;; Zoomed in: ROOT spans the full width.
         (progn
           (setq total (max 1 (profiler-calltree-count root)))
-          (let ((res (profiler-flamegraph--collect root 0 0 total nil)))
+          (let ((res (flamegraph--collect root 0 0 total nil)))
             (setq frames (car res) max-depth (cdr res))))
       ;; Full view: the dummy root's children are the outermost frames.
       (setq total (max 1 (apply #'+ (mapcar #'profiler-calltree-count
                                             (profiler-calltree-children root)))))
       (let ((start 0))
         (dolist (child (profiler-calltree-children root))
-          (let ((res (profiler-flamegraph--collect child 0 start total frames)))
+          (let ((res (flamegraph--collect child 0 start total frames)))
             (setq frames (car res)
                   max-depth (max max-depth (cdr res))))
           (cl-incf start (profiler-calltree-count child)))))
@@ -123,7 +123,7 @@ widths are relative to."
 
 ;;; Frame appearance
 
-(defun profiler-flamegraph--entry-name (entry)
+(defun flamegraph--entry-name (entry)
   "Return a display name for calltree ENTRY."
   (cond ((eq entry t) "Others")
         ((eq entry '...) "...")
@@ -132,7 +132,7 @@ widths are relative to."
         (t (require 'help-fns)
            (substring-no-properties (help-fns-function-name entry)))))
 
-(defun profiler-flamegraph--color (name)
+(defun flamegraph--color (name)
   "Return a warm \"hot\" background color for the frame named NAME.
 The same NAME always maps to the same color, as in classic flame graphs."
   (let ((h (abs (sxhash-equal name))))
@@ -146,39 +146,39 @@ The same NAME always maps to the same color, as in classic flame graphs."
 ;; Rows are laid out in pixels using `(space :align-to PIXEL)'.  Because
 ;; every frame is positioned at an absolute pixel offset, widths are exact
 ;; (not rounded to whole columns) and parent/child edges line up across
-;; rows; a background gap of `profiler-flamegraph-frame-border' pixels on
+;; rows; a background gap of `flamegraph-frame-border' pixels on
 ;; each side separates adjacent frames.  On a text terminal a "pixel" is one
 ;; column, so the same code degrades to a column layout.
 
-(defvar-local profiler-flamegraph--frame-positions nil
+(defvar-local flamegraph--frame-positions nil
   "Sorted vector of buffer positions, one per drawn frame.")
 
-(defun profiler-flamegraph--canvas-width ()
+(defun flamegraph--canvas-width ()
   "Return the canvas width in pixels (columns on a text terminal)."
   (let ((cw (frame-char-width)))
     (max (* 40 cw)
-         (or (and profiler-flamegraph-width (* profiler-flamegraph-width cw))
+         (or (and flamegraph-width (* flamegraph-width cw))
              (let ((win (get-buffer-window (current-buffer) t)))
                (and win (window-body-width win t)))
              (* 80 cw)))))
 
-(defun profiler-flamegraph--render-text (frames max-depth grand-total)
+(defun flamegraph--render-text (frames max-depth grand-total)
   "Draw FRAMES into the current buffer, one row per depth.
 MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
   (let* ((cw (frame-char-width))
-         (total-px (profiler-flamegraph--canvas-width))
-         (border (if (display-graphic-p) profiler-flamegraph-frame-border 0))
+         (total-px (flamegraph--canvas-width))
+         (border (if (display-graphic-p) flamegraph-frame-border 0))
          (rows (make-vector (1+ max-depth) nil))
          positions)
     ;; Bucket frames by row as pixel spans, dropping ones too narrow.
     (dolist (frame frames)
-      (let ((x0 (round (* (profiler-flamegraph-frame-start frame) total-px)))
-            (x1 (round (* (+ (profiler-flamegraph-frame-start frame)
-                             (profiler-flamegraph-frame-width frame))
+      (let ((x0 (round (* (flamegraph-frame-start frame) total-px)))
+            (x1 (round (* (+ (flamegraph-frame-start frame)
+                             (flamegraph-frame-width frame))
                           total-px))))
         (when (>= (- x1 x0) 1)          ; skip sub-pixel frames
           (push (list x0 x1 frame)
-                (aref rows (profiler-flamegraph-frame-depth frame))))))
+                (aref rows (flamegraph-frame-depth frame))))))
     (dotimes (depth (1+ max-depth))
       (dolist (seg (sort (aref rows depth) :key #'car))
         (pcase-let* ((`(,x0 ,x1 ,frame) seg)
@@ -187,18 +187,18 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
                      (insetp (>= (- x1 x0) (* 2 (1+ border))))
                      (boxl (if insetp (+ x0 border) x0))
                      (boxr (if insetp (- x1 border) x1))
-                     (node (profiler-flamegraph-frame-node frame))
+                     (node (flamegraph-frame-node frame))
                      (count (profiler-calltree-count node))
-                     (name (profiler-flamegraph--entry-name
+                     (name (flamegraph--entry-name
                             (profiler-calltree-entry node)))
                      ;; Truncate the name to what fits; no ellipsis.
                      (label (truncate-string-to-width
                              name (max 0 (/ (- boxr boxl) cw))))
                      (props (list 'face (list :background
-                                              (profiler-flamegraph--color name)
+                                              (flamegraph--color name)
                                               :foreground "black")
                                   'mouse-face 'highlight
-                                  'profiler-flamegraph-frame frame
+                                  'flamegraph-frame frame
                                   'help-echo
                                   (format "%s  —  %s (%s of total)"
                                           name (profiler-format-number count)
@@ -213,93 +213,93 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
           (insert (apply #'propertize " "
                          'display `(space :align-to (,boxr)) props))))
       (insert "\n"))
-    (setq profiler-flamegraph--frame-positions
+    (setq flamegraph--frame-positions
           (vconcat (sort positions #'<)))))
 
 ;;; Buffer state and drawing
 
-(defvar-local profiler-flamegraph--profile nil
+(defvar-local flamegraph--profile nil
   "The `profiler-profile' being displayed.")
-(defvar-local profiler-flamegraph--top nil
+(defvar-local flamegraph--top nil
   "The full call tree (dummy root node from `profiler-calltree-build').")
-(defvar-local profiler-flamegraph--root nil
+(defvar-local flamegraph--root nil
   "Currently zoomed-in calltree node, or nil for the full view.")
-(defvar-local profiler-flamegraph--grand-total 0
+(defvar-local flamegraph--grand-total 0
   "Total sample/byte count of the whole profile.")
 
-(defun profiler-flamegraph--unit ()
+(defun flamegraph--unit ()
   "Return the count unit of the current profile, as a string."
-  (if (eq (profiler-profile-type profiler-flamegraph--profile) 'memory)
+  (if (eq (profiler-profile-type flamegraph--profile) 'memory)
       "bytes" "samples"))
 
-(defun profiler-flamegraph--header ()
+(defun flamegraph--header ()
   "Return the header line for the current view."
-  (let* ((type (profiler-profile-type profiler-flamegraph--profile))
-         (root profiler-flamegraph--root)
+  (let* ((type (profiler-profile-type flamegraph--profile))
+         (root flamegraph--root)
          (zoomed (and root (profiler-calltree-entry root))))
     (format " %s flame graph · %s %s · root: %s%s"
             (if (eq type 'cpu) "CPU" "Memory")
-            (profiler-format-number profiler-flamegraph--grand-total)
-            (profiler-flamegraph--unit)
+            (profiler-format-number flamegraph--grand-total)
+            (flamegraph--unit)
             (if zoomed
-                (profiler-flamegraph--entry-name (profiler-calltree-entry root))
+                (flamegraph--entry-name (profiler-calltree-entry root))
               "all")
             (if zoomed
                 (format " (%s)" (profiler-format-percent
                                  (profiler-calltree-count root)
-                                 profiler-flamegraph--grand-total))
+                                 flamegraph--grand-total))
               ""))))
 
-(defun profiler-flamegraph--draw ()
+(defun flamegraph--draw ()
   "(Re)draw the flame graph in the current buffer."
   (let ((inhibit-read-only t)
-        (root (or profiler-flamegraph--root profiler-flamegraph--top)))
+        (root (or flamegraph--root flamegraph--top)))
     (erase-buffer)
     (pcase-let ((`(,frames ,_total ,max-depth)
-                 (profiler-flamegraph--frames root)))
-      (profiler-flamegraph--render-text
-       frames max-depth profiler-flamegraph--grand-total))
+                 (flamegraph--frames root)))
+      (flamegraph--render-text
+       frames max-depth flamegraph--grand-total))
     ;; Double % so percentages aren't taken as mode-line %-constructs.
     (setq header-line-format
-          (string-replace "%" "%%" (profiler-flamegraph--header)))
+          (string-replace "%" "%%" (flamegraph--header)))
     ;; Each row begins with a background gap, so land on the first frame.
-    (goto-char (if (length> profiler-flamegraph--frame-positions 0)
-                   (aref profiler-flamegraph--frame-positions 0)
+    (goto-char (if (length> flamegraph--frame-positions 0)
+                   (aref flamegraph--frame-positions 0)
                  (point-min)))))
 
 ;;; Commands
 
-(defun profiler-flamegraph--frame-at-point ()
-  "Return the `profiler-flamegraph-frame' at point, or nil."
-  (get-text-property (point) 'profiler-flamegraph-frame))
+(defun flamegraph--frame-at-point ()
+  "Return the `flamegraph-frame' at point, or nil."
+  (get-text-property (point) 'flamegraph-frame))
 
-(defun profiler-flamegraph-zoom (&optional event)
+(defun flamegraph-zoom (&optional event)
   "Zoom into the frame at point (or at EVENT), making it the new root."
   (interactive (list last-nonmenu-event))
   (when (and event (not (eq event 'return)))
     (let ((posn (event-end event)))
       (when (posnp posn) (posn-set-point posn))))
-  (let ((frame (profiler-flamegraph--frame-at-point)))
+  (let ((frame (flamegraph--frame-at-point)))
     (when frame
-      (setq profiler-flamegraph--root (profiler-flamegraph-frame-node frame))
-      (profiler-flamegraph--draw))))
+      (setq flamegraph--root (flamegraph-frame-node frame))
+      (flamegraph--draw))))
 
-(defun profiler-flamegraph-zoom-out ()
+(defun flamegraph-zoom-out ()
   "Zoom out to the parent of the current root frame."
   (interactive)
-  (let* ((root profiler-flamegraph--root)
+  (let* ((root flamegraph--root)
          (parent (and root (profiler-calltree-parent root))))
     (if (null root)
         (message "Already at the top level")
       ;; A parent whose entry is nil is the dummy top: go to the full view.
-      (setq profiler-flamegraph--root
+      (setq flamegraph--root
             (and parent (profiler-calltree-entry parent) parent))
-      (profiler-flamegraph--draw))))
+      (flamegraph--draw))))
 
-(defun profiler-flamegraph--goto (next)
+(defun flamegraph--goto (next)
   "Move point to the next drawn frame, or the previous one if NEXT is nil."
   (let ((pt (point)) (best nil))
-    (cl-loop for p across profiler-flamegraph--frame-positions do
+    (cl-loop for p across flamegraph--frame-positions do
              (when (if next
                        (and (> p pt) (or (null best) (< p best)))
                      (and (< p pt) (or (null best) (> p best))))
@@ -308,101 +308,100 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
         (goto-char best)
       (message "No %s frame" (if next "next" "previous")))))
 
-(defun profiler-flamegraph-next ()
+(defun flamegraph-next ()
   "Move point to the next frame."
   (interactive)
-  (profiler-flamegraph--goto t))
+  (flamegraph--goto t))
 
-(defun profiler-flamegraph-previous ()
+(defun flamegraph-previous ()
   "Move point to the previous frame."
   (interactive)
-  (profiler-flamegraph--goto nil))
+  (flamegraph--goto nil))
 
-(defun profiler-flamegraph-describe ()
+(defun flamegraph-describe ()
   "Describe the function of the frame at point."
   (interactive)
-  (let ((frame (profiler-flamegraph--frame-at-point)))
+  (let ((frame (flamegraph--frame-at-point)))
     (if (null frame)
         (message "No frame at point")
       (let ((entry (profiler-calltree-entry
-                    (profiler-flamegraph-frame-node frame))))
+                    (flamegraph-frame-node frame))))
         (if (or (and (symbolp entry) (fboundp entry)) (functionp entry))
             (progn (require 'help-fns) (describe-function entry))
           (message "Not a function: %s"
-                   (profiler-flamegraph--entry-name entry)))))))
+                   (flamegraph--entry-name entry)))))))
 
-(defun profiler-flamegraph-redraw ()
+(defun flamegraph-redraw ()
   "Redraw the flame graph, e.g. to pick up a new window width."
   (interactive)
-  (profiler-flamegraph--draw))
+  (flamegraph--draw))
 
-(defun profiler-flamegraph--echo ()
+(defun flamegraph--echo ()
   "Show information about the frame at point in the echo area."
-  (let ((frame (profiler-flamegraph--frame-at-point)))
+  (let ((frame (flamegraph--frame-at-point)))
     (when frame
-      (let* ((node (profiler-flamegraph-frame-node frame))
+      (let* ((node (flamegraph-frame-node frame))
              (count (profiler-calltree-count node)))
         (message "%s  %s %s  (%s of total)"
-                 (profiler-flamegraph--entry-name (profiler-calltree-entry node))
+                 (flamegraph--entry-name (profiler-calltree-entry node))
                  (profiler-format-number count)
-                 (profiler-flamegraph--unit)
-                 (profiler-format-percent count profiler-flamegraph--grand-total))))))
+                 (flamegraph--unit)
+                 (profiler-format-percent count flamegraph--grand-total))))))
 
 ;;; Mode
 
-(defvar-keymap profiler-flamegraph-mode-map
-  :doc "Keymap for `profiler-flamegraph-mode'."
-  "RET"       #'profiler-flamegraph-zoom
-  "<mouse-1>" #'profiler-flamegraph-zoom
-  "u"         #'profiler-flamegraph-zoom-out
-  "n"         #'profiler-flamegraph-next
-  "TAB"       #'profiler-flamegraph-next
-  "p"         #'profiler-flamegraph-previous
-  "<backtab>" #'profiler-flamegraph-previous
-  "d"         #'profiler-flamegraph-describe
-  "g"         #'profiler-flamegraph-redraw
+(defvar-keymap flamegraph-mode-map
+  :doc "Keymap for `flamegraph-mode'."
+  "RET"       #'flamegraph-zoom
+  "<mouse-1>" #'flamegraph-zoom
+  "u"         #'flamegraph-zoom-out
+  "n"         #'flamegraph-next
+  "TAB"       #'flamegraph-next
+  "p"         #'flamegraph-previous
+  "<backtab>" #'flamegraph-previous
+  "d"         #'flamegraph-describe
+  "g"         #'flamegraph-redraw
   "q"         #'quit-window)
 
-(define-derived-mode profiler-flamegraph-mode special-mode "Flamegraph"
+(define-derived-mode flamegraph-mode special-mode "Flamegraph"
   "Major mode for viewing a flame graph of profiler data."
   (setq buffer-read-only t
         truncate-lines t
         buffer-undo-list t)
-  (add-hook 'post-command-hook #'profiler-flamegraph--echo nil t))
+  (add-hook 'post-command-hook #'flamegraph--echo nil t))
 
 ;;; Entry points
 
-(defun profiler-flamegraph--setup-buffer (profile)
+(defun flamegraph--setup-buffer (profile)
   "Create and return a flame-graph buffer for PROFILE.
 The buffer's state is initialized but it is not drawn; draw it with
-`profiler-flamegraph--draw' once it is shown in a window, so the canvas
+`flamegraph--draw' once it is shown in a window, so the canvas
 matches the window width."
   (let ((buffer (get-buffer-create
                  (format "*Flamegraph: %s*"
                          (if (eq (profiler-profile-type profile) 'cpu)
                              "CPU" "Memory")))))
     (with-current-buffer buffer
-      (profiler-flamegraph-mode)
+      (flamegraph-mode)
       (let ((top (profiler-calltree-build (profiler-profile-log profile))))
         (profiler-calltree-sort top #'profiler-calltree-count>)
-        (setq profiler-flamegraph--profile profile
-              profiler-flamegraph--top top
-              profiler-flamegraph--root nil
-              profiler-flamegraph--grand-total
+        (setq flamegraph--profile profile
+              flamegraph--top top
+              flamegraph--root nil
+              flamegraph--grand-total
               (max 1 (apply #'+ (mapcar #'profiler-calltree-count
                                         (profiler-calltree-children top)))))))
     buffer))
 
-;;;###autoload
-(defun profiler-flamegraph-profile (profile)
+(defun flamegraph--profile (profile)
   "Display a flame graph for PROFILE, a `profiler-profile' object."
-  (let ((buffer (profiler-flamegraph--setup-buffer profile)))
+  (let ((buffer (flamegraph--setup-buffer profile)))
     ;; Display first, then draw, so the canvas spans the actual window.
     (pop-to-buffer buffer)
-    (profiler-flamegraph--draw)))
+    (flamegraph--draw)))
 
 ;;;###autoload
-(defun profiler-flamegraph ()
+(defun flamegraph-profiler-report ()
   "Display a flame graph of the current profiler results.
 Uses the CPU profile if one was recorded, otherwise the memory profile."
   (interactive)
@@ -411,16 +410,16 @@ Uses the CPU profile if one was recorded, otherwise the memory profile."
   (when (profiler-memory-running-p)
     (setq profiler-memory-log (profiler-memory-log)))
   (cond (profiler-cpu-log
-         (profiler-flamegraph-profile (profiler-cpu-profile)))
+         (flamegraph--profile (profiler-cpu-profile)))
         (profiler-memory-log
-         (profiler-flamegraph-profile (profiler-memory-profile)))
+         (flamegraph--profile (profiler-memory-profile)))
         (t (user-error "No profiler run recorded"))))
 
 ;;;###autoload
-(defun profiler-flamegraph-find-profile (filename)
+(defun flamegraph-find-profiler-report (filename)
   "Display a flame graph for the profile saved in FILENAME."
   (interactive (list (read-file-name "Find profile: " default-directory)))
-  (profiler-flamegraph-profile (profiler-read-profile filename)))
+  (flamegraph--profile (profiler-read-profile filename)))
 
-(provide 'profiler-flamegraph)
-;;; profiler-flamegraph.el ends here
+(provide 'flamegraph)
+;;; flamegraph.el ends here
