@@ -140,7 +140,10 @@ Called without arguments."
     "--"
     ["Customize" (customize-group 'elfeed)]))
 
-(define-derived-mode elfeed-show-mode special-mode "elfeed-show"
+(define-derived-mode elfeed-show-mode special-mode
+  '("elfeed-show"
+    (:eval (and (memq 'elfeed-show--readable elfeed-transform-html-functions)
+                ":readable")))
   "Mode for displaying Elfeed feed entries."
   :syntax-table nil :abbrev-table nil :interactive nil
   (buffer-disable-undo)
