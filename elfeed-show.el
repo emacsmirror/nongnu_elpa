@@ -81,7 +81,9 @@ Called without arguments."
 (defvar elfeed-show-refresh-function #'elfeed-show-refresh--mail-style
   "Function called to refresh the elfeed-entry buffer.")
 
-(defvar elfeed-show-refresh-hook (list #'elfeed-show-auto-fetch-link)
+(defvar elfeed-show-refresh-hook
+  (list #'elfeed-show-auto-readable
+        #'elfeed-show-auto-fetch-link)
  "Functions in this list are called after the show buffer has been refreshed.")
 
 (defvar-keymap elfeed-show-mode-map
@@ -106,6 +108,7 @@ Called without arguments."
   "<mouse-2>" #'shr-browse-url
   "A" #'elfeed-show-add-enclosure-to-playlist
   "P" #'elfeed-show-play-enclosure
+  "R" #'elfeed-show-readable
   "SPC" #'elfeed-show-scroll-up-or-next
   "S-SPC" #'elfeed-show-scroll-down-or-prev
   "DEL" #'elfeed-show-scroll-down-or-prev)
@@ -600,6 +603,34 @@ content is stored in the entry metadata under the key :link-content."
   "Automatically fetch link content if the feed is marked with `:fetch-link'."
   (when (elfeed-meta (elfeed-entry-feed elfeed-show-entry) :fetch-link)
     (elfeed-show-fetch-link)))
+
+;; Readable mode
+
+(defun elfeed-show--readable (dom)
+  "Readable DOM."
+  ;; We reuse `eww-readable-dom' here for now, but a contribution for a more
+  ;; sophisticated reader mode might be welcome, maybe even upstream in Eww.
+  (require 'eww)
+  (declare-function eww-readable-dom "eww")
+  (or (eww-readable-dom dom) dom))
+
+(defun elfeed-show-readable ()
+  "Toggle readable mode."
+  (interactive nil elfeed-show-mode)
+  (let ((off (memq #'elfeed-show--readable elfeed-transform-html-functions)))
+    (setq-local elfeed-transform-html-functions
+                (if off
+                    (remq #'elfeed-show--readable elfeed-transform-html-functions)
+                  `(,@elfeed-transform-html-functions ,#'elfeed-show--readable)))
+    (message "Readable: %s" (if off "off" "on"))
+    (elfeed-show-refresh)))
+
+(defun elfeed-show-auto-readable ()
+  "Automatically enable readable mode."
+  (when (and (not (local-variable-p 'elfeed-transform-html-functions))
+             (elfeed-meta (elfeed-entry-feed elfeed-show-entry) :readable))
+    (let ((inhibit-message t))
+      (elfeed-show-readable))))
 
 ;; Bookmarks
 
