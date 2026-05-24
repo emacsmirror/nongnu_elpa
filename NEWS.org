@@ -125,6 +125,8 @@
 - =elfeed-show-*-face=: New faces in =elfeed-show= buffer, which are used instead of
   the faces from message.el.
 - =elfeed-show-date-format=: New customization option.
+- =elfeed-transform-html-functions=: New hook to implement HTML dom transformation
+  before the HTML is displayed.
 
 *** Logging
 
