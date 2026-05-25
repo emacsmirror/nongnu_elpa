@@ -310,6 +310,30 @@ emacs
        ╰─● emacs-devel
 #+end_example
 
+** Feed options
+
+The =elfeed-feeds= variable allows you to set options per feed as a plist in
+addition to the auto tags which come after the options. The options can be
+accessed via =(elfeed-meta feed :key)=. Right now Elfeed supports these keys:
+
+- =:no-update= - Prevent a feed from updating when invoking =elfeed-update=.
+- =:fetch-link= - Automatically fetch the content of the link and display it in
+  the =elfeed-show= buffer.
+- =:readable= - Enable readable mode in the =elfeed-show= buffer.
+- =:show-entry= - Specify an alternative show function, e.g., =browse-url=.
+
+Example:
+
+#+begin_src emacs-lisp
+(setq elfeed-feeds
+      '(("https://planet.emacslife.com/atom.xml" :no-update t emacs)
+        ("https://sachachua.com/blog/category/emacs-news/feed/" :show-entry eww-browse-url emacs)
+        ("https://www.debian.org/security/dsa" :fetch-link replace :readable t security)))
+#+end_src
+
+You can define custom properties for your own purposes but you may consider
+namespacing the keys with a prefix to avoid collisions.
+
 ** Bookmarks
 
 Filters can be saved and restored using Emacs' built-in [[https://www.gnu.org/software/emacs/manual/html_node/emacs/Bookmarks.html][bookmarks feature]]. While
