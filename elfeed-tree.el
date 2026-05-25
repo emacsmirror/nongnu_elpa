@@ -62,7 +62,8 @@
   :group 'elfeed
   :type '(vector string string string string))
 
-(defvar elfeed-tree-header-function (lambda () (elfeed-search--header t))
+(defvar elfeed-tree-header-function
+  (lambda () (or (elfeed--header-jobs) (elfeed--header-update)))
   "Function that returns the string to be used for the header line.")
 
 (defvar elfeed-tree-update-hook nil
@@ -79,7 +80,7 @@
   :parent special-mode-map
   "RET" #'elfeed-tree-search
   "<elfeed-filter>" #'elfeed-tree-search
-  "<header-line> <mouse-1>" #'elfeed-search-header-button
+  "<header-line> <mouse-1>" #'elfeed-header-button
   "s" #'elfeed-search-new-live
   "n" #'next-line
   "p" #'previous-line
@@ -144,7 +145,7 @@
               outline-minor-mode-cycle t
               outline-minor-mode-cycle-filter nil
               hl-line-sticky-flag t)
-  (elfeed-search--header-line-format 'elfeed-tree-header-function)
+  (elfeed--header-line-format 'elfeed-tree-header-function)
   (buffer-disable-undo)
   (hl-line-mode)
   (add-hook 'elfeed-untag-hook #'elfeed-tree--tag)

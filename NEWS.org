@@ -18,6 +18,8 @@
   https://github.com/emacs-elfeed/elfeed-web.
 - Show title and search filter in Ibuffer via the variable
   =list-buffers-directory=.
+- =elfeed-last-update-relative=: New option to show last database update in the
+  header line relative to the current time.
 
 *** Database
 
@@ -76,8 +78,6 @@
 - =elfeed-search-remain-on-entry=: Generalized option to configure the commands
   explicitly that should remain on the entry.
 - =elfeed-search-mode=: Auto-resizing of title column.
-- =elfeed-search-last-update-relative=: New option to show last database update
-  relative to the current time.
 - =elfeed-search-update-delay=: New option to debounce search buffer update.
 - =elfeed-search-separator-face=: New face for the search buffer separators.
 - =elfeed-search-separator-date-format=: Format string for separator date.

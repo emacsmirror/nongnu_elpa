@@ -132,6 +132,13 @@ feeds unreadable.  Enabling may yield a performance boost."
       (file-name-as-directory (expand-file-name elfeed-default-directory))
     default-directory))
 
+(defcustom elfeed-last-update-relative (* 60 60 24 14)
+  "Maximum relative last update time in seconds in the header line.
+Set to `most-positive-fixnum' to always use a relative time, or 0 to
+never show a relative time."
+  :type 'boolean
+  :group 'elfeed)
+
 ;; Fetching:
 
 (define-obsolete-variable-alias 'elfeed-http-error-hooks 'elfeed-http-error-hook "4.0.0")
@@ -911,6 +918,82 @@ saved to your customization file."
                                 for title = (or (elfeed-feed-title feed) "")
                                 collect `(outline ((xmlUrl . ,url)
                                                    (title . ,title)))))))))))
+
+(defun elfeed-header-button ()
+  "Handle click on the header line of the search buffer."
+  (declare (completion ignore))
+  (interactive "@")
+  (when-let* (((mouse-event-p last-input-event))
+              (pos (event-end last-input-event))
+              (str (posn-string pos))
+              (button (get-text-property
+                       (cdr str) 'elfeed-header-button (car str))))
+    (call-interactively button)))
+
+(defun elfeed--header-button (command &optional text help)
+  "Create header line button for COMMAND with optional TEXT and HELP."
+  (propertize (or text (symbol-name command))
+              'elfeed-header-button command
+              'help-echo (or help (format "Run %s" command))
+              'mouse-face 'highlight))
+
+(defun elfeed--header-log-button ()
+  "Button to show the Elfeed log."
+  (when (> elfeed-log-error-count 0)
+    (concat (elfeed--header-button
+             #'elfeed-log-show
+             (format (propertize "(%d)" 'face 'error)
+                     elfeed-log-error-count))
+            " ")))
+
+(defun elfeed--header-jobs ()
+  "Header showing active jobs."
+  (cond
+   ((not elfeed-db) "Database not loaded.")
+   ((zerop (elfeed-db-last-update))
+    (concat "Database empty. Use "
+            (elfeed--header-button #'elfeed-add-feed) ", or "
+            (elfeed--header-button #'elfeed-load-opml) ", or "
+            (elfeed--header-button #'elfeed-update) "."))
+   ((let ((total (elfeed-queue-count-total)))
+      (when (> total 0)
+        (let ((active (elfeed-queue-count-active)))
+          (concat
+           (elfeed--header-log-button)
+           (format "%d jobs pending, %d active…"
+                   (- total active) active))))))))
+
+(defun elfeed--header-update ()
+  "Header showing the last update time."
+  (let* ((update (elfeed-db-last-update))
+         (delta (- (float-time) update))
+         (update (if (> delta elfeed-last-update-relative)
+                     (concat "Updated "
+                             (elfeed-add-properties
+                              (format-time-string "%Y-%m-%d %H:%M"
+                                                  (seconds-to-time update))
+                              'face 'elfeed-search-last-update-face))
+                   (format "Updated %s ago"
+                           (elfeed-add-properties
+                            (if (< delta 60)
+                                "< 1 minute"
+                              (compat-call seconds-to-string delta t))
+                            'face 'elfeed-search-last-update-face)))))
+    (concat
+     (elfeed--header-log-button)
+     (elfeed--header-button #'elfeed-update update))))
+
+(defun elfeed--header-line-format (fun)
+  "Generate `header-line-format' from FUN."
+  ;; Provide format string via symbol value slot so that it will
+  ;; not be %-construct interpolated. The symbol is uninterned
+  ;; so that it's not *really* a global variable.
+  (setq header-line-format
+        (let ((sym (make-symbol (symbol-name fun))))
+          (put sym 'risky-local-variable t)
+          `(:eval
+            (prog1 ',sym
+              (set ',sym (funcall ,fun)))))))
 
 (defun elfeed-is-status-error (status use-curl)
   "Check if STATUS is an error, USE-CURL specifies the backend (obsolete)."
