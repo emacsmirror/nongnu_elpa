@@ -1318,16 +1318,15 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
 
 (defun elfeed-search--live-update ()
   "Update the `elfeed-search' buffer based on the contents of the minibuffer."
-  (when (eq :live elfeed-search--filter-active)
-    (let ((current-filter (minibuffer-contents-no-properties)))
-      (with-current-buffer (elfeed-search-buffer)
-        (let* ((window (get-buffer-window))
-               (height (window-total-height window))
-               (limiter (if window (format "#%d " height) "#1 "))
-               (elfeed-search-filter (concat limiter current-filter)))
-          (elfeed-search-update :force)
-          (setf elfeed-search--filter-overflowing
-                (length= elfeed-search-entries height)))))))
+  (let ((current-filter (minibuffer-contents-no-properties)))
+    (with-current-buffer (elfeed-search-buffer)
+      (let* ((window (get-buffer-window))
+             (height (window-total-height window))
+             (limiter (if window (format "#%d " height) "#1 "))
+             (elfeed-search-filter (concat limiter current-filter)))
+        (elfeed-search-update :force)
+        (setf elfeed-search--filter-overflowing
+              (length= elfeed-search-entries height))))))
 
 (defun elfeed-search-live-filter ()
   "Filter the `elfeed-search' buffer as the filter is written."
