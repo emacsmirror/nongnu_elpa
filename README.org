@@ -30,33 +30,6 @@ faster than the built-in method, both for you and the feed hosts.
 If this is giving you problems, fetching with curl can be disabled by setting
 =elfeed-use-curl= to nil.
 
-** Extensions
-
-There are projects which extend Elfeed with additional features. The following
-packages provide significant additional functionality and have more than 5K
-downloads on [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][MELPA]], which hints at a certain maturity. Note that no guarantees
-for compatibility are made.
-
-- [[https://github.com/fasheng/elfeed-protocol][elfeed-protocol]]: Support for many fetching methods.
-- [[https://github.com/sp1ff/elfeed-score][elfeed-score]]: Gnus-like scoring.
-- [[https://github.com/karthink/elfeed-tube][elfeed-tube]]: Enhancements for Youtube feeds.
-- [[https://github.com/emacs-elfeed/elfeed-web][elfeed-web]]: Web interface to Elfeed.
-
-Many more extensions can be found on MELPA - here is an non-exhaustive list:
-
-- [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related packages on MELPA]]
-- [[https://github.com/areina/elfeed-cljsrn][elfeed-cljsrn (Elfeed on Android)]]
-- [[https://github.com/rtrppl/cuckoo-search][cuckoo-search]]
-- [[https://github.com/benthamite/elfeed-ai][elfeed-ai]]
-- [[https://github.com/paulelms/elfeed-autotag][elfeed-autotag]]
-- [[https://github.com/rnadler/elfeed-curate][elfeed-curate]]
-- [[https://github.com/manojm321/elfeed-dashboard][elfeed-dashboard]]
-- [[https://github.com/algernon/elfeed-goodies][elfeed-goodies]]
-- [[https://github.com/remyhonig/elfeed-org][elfeed-org]]
-- [[https://github.com/fritzgrabo/elfeed-summarize][elfeed-summarize]]
-- [[https://github.com/SqrtMinusOne/elfeed-summary][elfeed-summary]]
-- [[https://github.com/zabe40/elfeed-time][elfeed-time]]
-
 ** Getting Started
 
 Elfeed is broken into a multiple source files, so if you manually install it you
@@ -513,6 +486,33 @@ As far as I know, outside of Elfeed there does not exist an extensible,
 text-file configured, power-user web feed client that can handle a reasonable
 number of feeds. The existing clients I've tried are missing some important
 capability that limits its usefulness to me.
+
+** Extensions
+
+There are projects which extend Elfeed with additional features. The following
+packages provide significant additional functionality and have more than 5K
+downloads on [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][MELPA]], which hints at a certain maturity. Note that no guarantees
+for compatibility are made.
+
+- [[https://github.com/fasheng/elfeed-protocol][elfeed-protocol]]: Support for many fetching methods.
+- [[https://github.com/sp1ff/elfeed-score][elfeed-score]]: Gnus-like scoring.
+- [[https://github.com/karthink/elfeed-tube][elfeed-tube]]: Enhancements for Youtube feeds.
+- [[https://github.com/emacs-elfeed/elfeed-web][elfeed-web]]: Web interface to Elfeed.
+
+Many more extensions can be found on MELPA - here is an non-exhaustive list:
+
+- [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related packages on MELPA]]
+- [[https://github.com/areina/elfeed-cljsrn][elfeed-cljsrn (Elfeed on Android)]]
+- [[https://github.com/rtrppl/cuckoo-search][cuckoo-search]]
+- [[https://github.com/benthamite/elfeed-ai][elfeed-ai]]
+- [[https://github.com/paulelms/elfeed-autotag][elfeed-autotag]]
+- [[https://github.com/rnadler/elfeed-curate][elfeed-curate]]
+- [[https://github.com/manojm321/elfeed-dashboard][elfeed-dashboard]]
+- [[https://github.com/algernon/elfeed-goodies][elfeed-goodies]]
+- [[https://github.com/remyhonig/elfeed-org][elfeed-org]]
+- [[https://github.com/fritzgrabo/elfeed-summarize][elfeed-summarize]]
+- [[https://github.com/SqrtMinusOne/elfeed-summary][elfeed-summary]]
+- [[https://github.com/zabe40/elfeed-time][elfeed-time]]
 
 ** Blog posts
 
