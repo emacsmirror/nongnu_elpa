@@ -32,11 +32,8 @@ If this is giving you problems, fetching with curl can be disabled by setting
 
 ** Getting Started
 
-Elfeed is broken into a multiple source files, so if you manually install it you
-will need to add the Elfeed package directory to your =load-path=. If installed
-via package.el this will be done automatically.
-
-It is recommended that you make a global binding for =elfeed=.
+We recommend that you install Elfeed via =M-x package-install=. You may want to
+define a a global binding for the main entry point command =elfeed=.
 
 #+begin_src emacs-lisp
 (keymap-global-set "C-x w" #'elfeed)
@@ -55,8 +52,8 @@ which will display feed items.
 - =~=: exclude current feed
 
 This buffer will be empty until you add your feeds to the =elfeed-feeds= list and
-initiate an update with =M-x elfeed-update= (or G in the Elfeed buffer). This will
-populate the Elfeed database with entries.
+initiate an update with =M-x elfeed-update= (or press =G= in the Elfeed buffer).
+This will populate the Elfeed database with entries.
 
 #+begin_src emacs-lisp
 ;; Somewhere in your .emacs file
