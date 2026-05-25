@@ -82,6 +82,7 @@
   feeds are updated.
 - =elfeed-search-resize-delay=: New option to debounce search buffer redraws on
   window resize.
+- =elfeed-search-live-delay=: New option to debounce live search filter updates.
 - =elfeed-search-separator-face=: New face for the search buffer separators.
 - =elfeed-search-separator-date-format=: Format string for separator date.
 - =elfeed-search-add-separators=: New search buffer update hook which adds

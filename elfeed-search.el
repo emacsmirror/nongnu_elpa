@@ -32,6 +32,9 @@
 (defvar elfeed-search--resize-timer nil
   "Timer to debounce search window resizing.")
 
+(defvar elfeed-search--live-timer nil
+  "Timer to debounce the live filter.")
+
 (define-obsolete-variable-alias 'elfeed-search-last-update
   'elfeed-search--last-update "4.0.0")
 (defvar elfeed-search--last-update 0
@@ -49,14 +52,18 @@ The functions may modify the search buffer or add overlays, for example
 `elfeed-search-add-separators'.")
 
 (defcustom elfeed-search-update-delay 1.0
-  "Delay search buffer updates to avoid overly frequent redraws.
-The delay is in seconds."
+  "Delay search buffer updates by that many seconds to reduce redraws."
+  :group 'elfeed
+  :type 'number)
+
+(defcustom elfeed-search-live-delay 0.1
+  "Delay search buffer live updates by that many seconds to reduce redraws."
   :group 'elfeed
   :type 'number)
 
 (defcustom elfeed-search-resize-delay 0.1
-  "Delay search buffer resizing to avoid overly frequent redraws.
-The delay is in seconds.  Set to nil to disable redraw on resize."
+  "Delay search buffer resizing by that many seconds to reduce redraws.
+Set to nil to disable redraw on resize."
   :group 'elfeed
   :type '(choice (const nil) number))
 
@@ -796,7 +803,7 @@ Executing a filter in bytecode form is generally faster than
         (lambda ()
           (set-syntax-table elfeed-search-filter-syntax-table)
           (when live
-            (add-hook 'post-command-hook #'elfeed-search--live-update nil 'local)))
+            (add-hook 'post-command-hook #'elfeed-search--live nil 'local)))
       (if elfeed-search-completion
           (dlet ((crm-separator "[ \t]+")
                  (crm-prompt "%p")
@@ -1316,17 +1323,31 @@ Sets the :title key of the feed's metadata.  See `elfeed-meta'."
     table)
   "Syntax table active when editing the filter in the minibuffer.")
 
-(defun elfeed-search--live-update ()
-  "Update the `elfeed-search' buffer based on the contents of the minibuffer."
-  (let ((current-filter (minibuffer-contents-no-properties)))
+(defun elfeed-search--live-immediately (buffer)
+  "Update the `elfeed-search' buffer based on the contents of the minibuffer.
+BUFFER is the active minibuffer."
+  (when-let* (((buffer-live-p buffer))
+              (filter (with-current-buffer buffer
+                        (minibuffer-contents-no-properties))))
     (with-current-buffer (elfeed-search-buffer)
       (let* ((window (get-buffer-window))
              (height (window-total-height window))
              (limiter (if window (format "#%d " height) "#1 "))
-             (elfeed-search-filter (concat limiter current-filter)))
+             (elfeed-search-filter (concat limiter filter)))
         (elfeed-search-update :force)
         (setf elfeed-search--filter-overflowing
               (length= elfeed-search-entries height))))))
+
+(defun elfeed-search--live ()
+  "Update the `elfeed-search' buffer live based on the contents of the minibuffer.
+The update is delayed by `elfeed-search-live-delay'."
+  (when elfeed-search--live-timer
+    (cancel-timer elfeed-search--live-timer)
+    (setq elfeed-search--live-timer nil))
+  (setf elfeed-search--live-timer
+        (run-at-time elfeed-search-live-delay nil
+                     #'elfeed-search--live-immediately
+                     (current-buffer))))
 
 (defun elfeed-search-live-filter ()
   "Filter the `elfeed-search' buffer as the filter is written."
