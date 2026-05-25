@@ -81,10 +81,10 @@ Called without arguments."
 (defvar elfeed-show-refresh-function #'elfeed-show-refresh--mail-style
   "Function called to refresh the elfeed-entry buffer.")
 
-(defvar elfeed-show-refresh-hook
+(defvar elfeed-show-update-hook
   (list #'elfeed-show-auto-readable
         #'elfeed-show-auto-fetch-link)
- "Functions in this list are called after the show buffer has been refreshed.")
+ "Functions in this list are called after the show buffer has been updated.")
 
 (defvar-keymap elfeed-show-mode-map
   :doc "Keymap for `elfeed-show-mode'."
@@ -232,7 +232,7 @@ Used as `revert-buffer-function'."
   (declare (completion ignore)) ;; Press "g" or M-x revert-buffer
   (interactive)
   (funcall elfeed-show-refresh-function)
-  (run-hooks 'elfeed-show-refresh-hook))
+  (run-hooks 'elfeed-show-update-hook))
 
 (defcustom elfeed-show-unique-buffers nil
   "When non-nil, every entry buffer gets a unique name.

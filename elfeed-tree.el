@@ -65,6 +65,9 @@
 (defvar elfeed-tree-header-function (lambda () (elfeed-search--header t))
   "Function that returns the string to be used for the header line.")
 
+(defvar elfeed-tree-update-hook nil
+ "Functions in this list are called after the tree buffer has been updated.")
+
 (defvar elfeed-tree--update-timer nil
   "Timer to debounce search buffer updates.")
 
@@ -445,7 +448,8 @@ not use this function directly.  Instead use `elfeed-tree-update'."
                                feeds tags
                                (take 3 (cdar all-feeds-tree))))
           (when restore (funcall restore))
-          (setq elfeed-tree--last-update (float-time))))))
+          (setq elfeed-tree--last-update (float-time))
+          (run-hooks 'elfeed-tree-update-hook)))))
   ;; Always force a header line update
   (force-mode-line-update))
 

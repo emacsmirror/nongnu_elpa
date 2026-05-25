@@ -335,11 +335,11 @@ The =elfeed-feeds= variable allows you to set options per feed as a plist in
 addition to the auto tags which come after the options. The options can be
 accessed via =(elfeed-meta feed :key)=. Right now Elfeed supports these keys:
 
-- =:no-update= - Prevent a feed from updating when invoking =elfeed-update=.
-- =:fetch-link= - Automatically fetch the content of the link and display it in
+- =:no-update= : Prevent a feed from updating when invoking =elfeed-update=.
+- =:fetch-link= : Automatically fetch the content of the link and display it in
   the =elfeed-show= buffer.
-- =:readable= - Enable readable mode in the =elfeed-show= buffer.
-- =:show-entry= - Specify an alternative show function, e.g., =browse-url=.
+- =:readable= : Enable readable mode in the =elfeed-show= buffer.
+- =:show-entry= : Specify an alternative show function, e.g., =browse-url=.
 
 Example:
 
@@ -409,6 +409,14 @@ points without resorting to advice.
   parsing fails, beyond logging.
 - =elfeed-db-update-hook= : Called any time the database has had a major
   modification.
+- =elfeed-db-unload-hook= : Called before unloading the database.
+- =elfeed-update-hook= : Called any time a feed is updated.
+- =elfeed-update-init-hook= : Called before feed updates.
+- =elfeed-tag-hook= : Called before an entry gets tagged.
+- =elfeed-untag-hook= : Called before an entry gets untagged.
+- =elfeed-show-update-hook= : Called after the show buffer has been updated.
+- =elfeed-search-update-hook= : Called after the search buffer has been updated.
+- =elfeed-tree-update-hook= : Called after the tree buffer has been updated.
 
 ** Viewing Entries
 

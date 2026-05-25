@@ -4,8 +4,6 @@
 
 *** General
 
-- =elfeed-tree=: New command which opens an =elfeed-tree-mode= buffer.
-- =elfeed-search=: New command as entry point.
 - =elfeed-entry-point=: New customization option to customize =M-x elfeed= to either
   the search or tree buffer.
 - =elfeed-search-mode=, =elfeed-show-mode=, =elfeed-tree-mode=: All Elfeed major modes
@@ -54,8 +52,14 @@
 #+end_src
 - Support for the JSON Feed format.
 
+*** Tree buffer
+
+- New =elfeed-tree-mode= which lists all feeds and tags as a tree structure.
+- =elfeed-tree=: New command which opens an =elfeed-tree-mode= buffer.
+
 *** Search buffer
 
+- =elfeed-search=: New command as entry point.
 - =elfeed-search-set-filter=, =elfeed-search-tag-all=: Filter and tag completion
   using =completing-read-multiple=.
 - =elfeed-search-set-filter=: Support shorter age filter syntax, e.g., =@6months=.
@@ -108,7 +112,7 @@
 
 - =elfeed-show-scroll-up/down-or-next/prev=: New scroll commands.
 - =elfeed-show-compose-mail=: Command to compose mail from entry.
-- =elfeed-show-refresh-hook=: New hook for addons to extend or enhance the show
+- =elfeed-show-update-hook=: New hook for add-ons to extend or enhance the show
   buffer.
 - =elfeed-show-visit-secondary=: New command which open entry in the secondary
   browser. The command is bound to =B=.
