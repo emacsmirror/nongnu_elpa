@@ -6,9 +6,8 @@
 
 ;;; Commentary:
 
-;; Code for integration with org-mode.
-
-;; To use, add (require 'elfeed-link) somewhere in your configuration.
+;; Code for integration with org-mode.  The feature is autoloaded and Elfeed
+;; links should work automatically in Org.
 
 ;;; Code:
 
@@ -119,16 +118,12 @@ search buffer or show a concrete entry."
     (elfeed-search filter-or-id)))
 
 ;;;###autoload
-(eval-after-load 'org
-  `(funcall
-    ;; The extra quote below is necessary because uncompiled closures
-    ;; do not evaluate to themselves. The quote is harmless for
-    ;; byte-compiled function objects.
-    ',(lambda ()
-        (org-link-set-parameters
-         "elfeed"
-         :follow #'elfeed-link-open
-         :store #'elfeed-link-store-link))))
+(eval-after-load 'ol
+  (lambda ()
+    (org-link-set-parameters
+     "elfeed"
+     :follow #'elfeed-link-open
+     :store #'elfeed-link-store-link)))
 
 (provide 'elfeed-link)
 ;;; elfeed-link.el ends here
