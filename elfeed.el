@@ -934,7 +934,7 @@ saved to your customization file."
   "Create header line button for COMMAND with optional TEXT and HELP."
   (propertize (or text (symbol-name command))
               'elfeed-header-button command
-              'help-echo (or help (format "Run %s" command))
+              'help-echo (or help (format "Run `%s'" command))
               'mouse-face 'highlight))
 
 (defun elfeed--header-log-button ()
@@ -987,7 +987,7 @@ relative to the database according to BUFFER-UPDATE."
      (when (> db-update buffer-update)
        (concat " " (elfeed--header-button #'revert-buffer
                                           (propertize "(*)" 'face 'error)
-                                          "Buffer is outdated. Revert!"))))))
+                                          "Buffer is outdated. Run `revert-buffer'."))))))
 
 (defun elfeed--header-line-format (fun)
   "Generate `header-line-format' from FUN."
