@@ -143,6 +143,10 @@ The same NAME always maps to the same color, as in classic flame graphs."
             (% (/ h 50) 230)            ; green: 0-229
             (% (/ h 11500) 55))))       ; blue:  0-54
 
+(defun flamegraph--percent (count total)
+  "Format COUNT as a percentage of TOTAL with ~3 significant figures."
+  (format "%.3g%%" (/ (* 100.0 count) total)))
+
 ;;; Text renderer
 
 ;; Rows are laid out in pixels using `(space :align-to PIXEL)'.  Because
@@ -204,8 +208,7 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
                                   'help-echo
                                   (format "%s  —  %s (%s of total)"
                                           name (profiler-format-number count)
-                                          (profiler-format-percent
-                                           count grand-total)))))
+                                          (flamegraph--percent count grand-total)))))
           ;; Empty background gap, up to the box's left edge.
           (insert (propertize " " 'display `(space :align-to (,boxl))))
           (push (point) positions)
@@ -244,7 +247,7 @@ outermost frames.")
                 (flamegraph--entry-name (profiler-calltree-entry root))
               "all")
             (if zoomed
-                (format " (%s)" (profiler-format-percent
+                (format " (%s)" (flamegraph--percent
                                  (profiler-calltree-count root)
                                  flamegraph--grand-total))
               ""))))
@@ -345,7 +348,7 @@ outermost frames.")
                  (flamegraph--entry-name (profiler-calltree-entry node))
                  (profiler-format-number count)
                  flamegraph--unit
-                 (profiler-format-percent count flamegraph--grand-total))))))
+                 (flamegraph--percent count flamegraph--grand-total))))))
 
 ;;; Mode
 
