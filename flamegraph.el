@@ -147,6 +147,17 @@ The same NAME always maps to the same color, as in classic flame graphs."
   "Format COUNT as a percentage of TOTAL with ~3 significant figures."
   (format "%.3g%%" (/ (* 100.0 count) total)))
 
+(defun flamegraph--help-echo (_window object pos)
+  (let ((frame (get-text-property pos 'flamegraph-frame object)))
+    (when (and frame (bufferp object))
+      (let* ((node (flamegraph-frame-node frame))
+             (count (profiler-calltree-count node))
+             (total (buffer-local-value 'flamegraph--grand-total object)))
+        (format "%s  —  %s (%s of total)"
+                (flamegraph--entry-name (profiler-calltree-entry node))
+                (profiler-format-number count)
+                (flamegraph--percent count total))))))
+
 ;;; Text renderer
 
 ;; Rows are laid out in pixels using `(space :align-to PIXEL)'.  Because
@@ -168,9 +179,9 @@ The same NAME always maps to the same color, as in classic flame graphs."
                (and win (window-body-width win t)))
              (* 80 cw)))))
 
-(defun flamegraph--render-text (frames max-depth grand-total)
+(defun flamegraph--render-text (frames max-depth)
   "Draw FRAMES into the current buffer, one row per depth.
-MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
+MAX-DEPTH is the deepest row."
   (let* ((cw (frame-char-width))
          (total-px (flamegraph--canvas-width))
          (border (if (display-graphic-p) flamegraph-frame-border 0))
@@ -194,7 +205,6 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
                      (boxl (if insetp (+ x0 border) x0))
                      (boxr (if insetp (- x1 border) x1))
                      (node (flamegraph-frame-node frame))
-                     (count (profiler-calltree-count node))
                      (name (flamegraph--entry-name
                             (profiler-calltree-entry node)))
                      ;; Truncate the name to what fits; no ellipsis.
@@ -205,10 +215,7 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
                                               :foreground "black")
                                   'mouse-face 'highlight
                                   'flamegraph-frame frame
-                                  'help-echo
-                                  (format "%s  —  %s (%s of total)"
-                                          name (profiler-format-number count)
-                                          (flamegraph--percent count grand-total)))))
+                                  'help-echo #'flamegraph--help-echo)))
           ;; Empty background gap, up to the box's left edge.
           (insert (propertize " " 'display `(space :align-to (,boxl))))
           (push (point) positions)
@@ -255,12 +262,12 @@ outermost frames.")
 (defun flamegraph--draw ()
   "(Re)draw the flame graph in the current buffer."
   (let ((inhibit-read-only t)
+        (inhibit-modification-hooks t)
         (root (or flamegraph--root flamegraph--top)))
     (erase-buffer)
     (pcase-let ((`(,frames ,_total ,max-depth)
                  (flamegraph--frames root)))
-      (flamegraph--render-text
-       frames max-depth flamegraph--grand-total))
+      (flamegraph--render-text frames max-depth))
     ;; Double % so percentages aren't taken as mode-line %-constructs.
     (setq header-line-format
           (string-replace "%" "%%" (flamegraph--header)))
@@ -425,11 +432,6 @@ Uses the CPU profile if one was recorded, otherwise the memory profile."
 
 ;;; Folded stacks
 
-(defun flamegraph--find-child (node name)
-  "Return NODE's child whose entry is the string NAME, or nil."
-  (cl-find name (profiler-calltree-children node)
-           :key #'profiler-calltree-entry :test #'equal))
-
 (defun flamegraph--read-folded (filename)
   "Parse folded stacks in FILENAME into a calltree root node.
 Each non-empty line has the form \"FRAME;FRAME;... COUNT\", outermost
@@ -446,7 +448,12 @@ COUNT is added to every frame along the stack."
             (let ((node root)
                   (count (string-to-number (match-string 2 line))))
               (dolist (frame (split-string (match-string 1 line) ";" t))
-                (let ((child (flamegraph--find-child node frame)))
+                (let ((children (profiler-calltree-children node))
+                      (child nil))
+                  (while children
+                    (if (equal (profiler-calltree-entry (car children)) frame)
+                        (setq child (car children) children nil)
+                      (setq children (cdr children))))
                   (unless child
                     (setq child (profiler-make-calltree :entry frame :parent node))
                     (push child (profiler-calltree-children node)))
