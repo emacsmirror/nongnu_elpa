@@ -65,8 +65,8 @@ populate the Elfeed database with entries.
         "https://planet.emacslife.com/atom.xml"))
 #+end_src
 
-Another option for providing a feed list is with an OPML file. Running =M-x
-elfeed-load-opml= will fill =elfeed-feeds= with feeds listed in an OPML file. When
+Another option for providing a feed list is with an OPML file. Running =M-x elfeed-load-opml=
+will fill =elfeed-feeds= with feeds listed in an OPML file. When
 =elfeed-load-opml= is called interactively, it will automatically save the
 feedlist to your customization file, so you will only need to do this once.
 
@@ -461,8 +461,8 @@ inferior process, which rarely works well.
 The database should keep itself under control without any manual intervention,
 but steps can be taken to minimize the database size if desired. The simplest
 option is to run the =elfeed-db-compact= command, which will pack the loose-file
-content database into a single compressed file. This function works well in
-=kill-emacs-hook=.
+content database into a single compressed file. We recommend to execute
+=elfeed-db-compact= from time to time manually.
 
 Going further, a function could be added to =elfeed-new-entry-hook= to strip
 unwanted/unneeded content from select entries before being stored in the
@@ -485,7 +485,8 @@ the regularly-changing entry content could be tossed to save time and storage.
 Elfeed is a mature and maintained Emacs package, which should integrate well
 into your Emacs setup. It is to the point where it can serve 100% of your web
 feed needs, even if you use hundreds of feeds. We still have to decide on a
-future roadmap.
+future roadmap, but our goal is to preserve the overall character and behavior
+of Elfeed.
 
 ** Motivation
 
