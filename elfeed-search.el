@@ -297,7 +297,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
              (hash-table-count feeds)))))
 
 (defun elfeed-search--header ()
-  "Computes the string to be used as the Elfeed header."
+  "Computes the string to be used as the header line."
   (or
    (elfeed--header-jobs)
    (let ((unread (if (and elfeed-search--filter-active
@@ -316,7 +316,7 @@ Movement is configured by `elfeed-search-remain-on-entry'."
                         x (format "Remove filter %s" x)))
                      (split-string elfeed-search-filter) " ")
                     'face 'elfeed-search-filter-face))))
-     (concat (elfeed--header-update)
+     (concat (elfeed--header-update elfeed-search--last-update)
              (and unread ", ") unread (and filter ", ") filter))))
 
 (define-derived-mode elfeed-search-mode special-mode "elfeed-search"

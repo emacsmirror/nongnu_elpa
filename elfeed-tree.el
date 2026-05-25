@@ -62,8 +62,7 @@
   :group 'elfeed
   :type '(vector string string string string))
 
-(defvar elfeed-tree-header-function
-  (lambda () (or (elfeed--header-jobs) (elfeed--header-update)))
+(defvar elfeed-tree-header-function #'elfeed-tree--header
   "Function that returns the string to be used for the header line.")
 
 (defvar elfeed-tree-update-hook nil
@@ -88,6 +87,11 @@
   "G" #'elfeed-update
   "TAB" #'outline-cycle
   "<backtab>" #'outline-cycle-buffer)
+
+(defun elfeed-tree--header ()
+  "Computes the string to be used as the header line."
+  (or (elfeed--header-jobs)
+      (elfeed--header-update elfeed-tree--last-update)))
 
 (easy-menu-define elfeed-tree-mode-menu elfeed-tree-mode-map
   "Menu for `elfeed-tree-mode'."

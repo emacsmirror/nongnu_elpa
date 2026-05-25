@@ -963,25 +963,31 @@ saved to your customization file."
            (format "%d jobs pending, %d active…"
                    (- total active) active))))))))
 
-(defun elfeed--header-update ()
-  "Header showing the last update time."
-  (let* ((update (elfeed-db-last-update))
-         (delta (- (float-time) update))
-         (update (if (> delta elfeed-last-update-relative)
-                     (concat "Updated "
-                             (elfeed-add-properties
-                              (format-time-string "%Y-%m-%d %H:%M"
-                                                  (seconds-to-time update))
-                              'face 'elfeed-search-last-update-face))
-                   (format "Updated %s ago"
-                           (elfeed-add-properties
-                            (if (< delta 60)
-                                "< 1 minute"
-                              (compat-call seconds-to-string delta t))
-                            'face 'elfeed-search-last-update-face)))))
+(defun elfeed--header-update (buffer-update)
+  "Header showing the last database update time.
+Furthermore show an extra button if the current buffer is outdated
+relative to the database according to BUFFER-UPDATE."
+  (let* ((db-update (elfeed-db-last-update))
+         (delta (- (float-time) db-update))
+         (updated (if (> delta elfeed-last-update-relative)
+                      (concat "Updated "
+                              (elfeed-add-properties
+                               (format-time-string "%Y-%m-%d %H:%M"
+                                                   (seconds-to-time db-update))
+                               'face 'elfeed-search-last-update-face))
+                    (format "Updated %s ago"
+                            (elfeed-add-properties
+                             (if (< delta 60)
+                                 "< 1 minute"
+                               (compat-call seconds-to-string delta t))
+                             'face 'elfeed-search-last-update-face)))))
     (concat
      (elfeed--header-log-button)
-     (elfeed--header-button #'elfeed-update update))))
+     (elfeed--header-button #'elfeed-update updated)
+     (when (> db-update buffer-update)
+       (concat " " (elfeed--header-button #'revert-buffer
+                                          (propertize "(*)" 'face 'error)
+                                          "Buffer is outdated. Revert!"))))))
 
 (defun elfeed--header-line-format (fun)
   "Generate `header-line-format' from FUN."
