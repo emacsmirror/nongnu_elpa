@@ -78,7 +78,10 @@
 - =elfeed-search-remain-on-entry=: Generalized option to configure the commands
   explicitly that should remain on the entry.
 - =elfeed-search-mode=: Auto-resizing of title column.
-- =elfeed-search-update-delay=: New option to debounce search buffer update.
+- =elfeed-search-update-delay=: New option to debounce search buffer redraws when
+  feeds are updated.
+- =elfeed-search-resize-delay=: New option to debounce search buffer redraws on
+  window resize.
 - =elfeed-search-separator-face=: New face for the search buffer separators.
 - =elfeed-search-separator-date-format=: Format string for separator date.
 - =elfeed-search-add-separators=: New search buffer update hook which adds

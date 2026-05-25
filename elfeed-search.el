@@ -48,11 +48,17 @@
 The functions may modify the search buffer or add overlays, for example
 `elfeed-search-add-separators'.")
 
-(defcustom elfeed-search-update-delay 0.2
-  "Delay search buffer updates to avoid redundant redraws.
+(defcustom elfeed-search-update-delay 1.0
+  "Delay search buffer updates to avoid overly frequent redraws.
 The delay is in seconds."
   :group 'elfeed
   :type 'number)
+
+(defcustom elfeed-search-resize-delay 0.1
+  "Delay search buffer resizing to avoid overly frequent redraws.
+The delay is in seconds.  Set to nil to disable redraw on resize."
+  :group 'elfeed
+  :type '(choice (const nil) number))
 
 (defcustom elfeed-search-filter "@6months +unread"
   "Query string filtering shown entries."
@@ -1006,11 +1012,12 @@ The function is used as hook."
     (when elfeed-search--resize-timer
       (cancel-timer elfeed-search--resize-timer)
       (setq elfeed-search--resize-timer nil))
-    (setf elfeed-search--last-width (window-width win)
-          elfeed-search--resize-timer
-          (run-at-time elfeed-search-update-delay nil
-                       #'elfeed-search--update-immediately
-                       (elfeed-search-buffer) :resize))))
+    (when elfeed-search-resize-delay
+      (setf elfeed-search--last-width (window-width win)
+            elfeed-search--resize-timer
+            (run-at-time elfeed-search-resize-delay nil
+                         #'elfeed-search--update-immediately
+                         (elfeed-search-buffer) :resize)))))
 
 (defun elfeed-search-fetch (prefix)
   "Update all feeds via `elfeed-update', or only visible feeds with PREFIX.
