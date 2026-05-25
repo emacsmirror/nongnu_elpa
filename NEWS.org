@@ -41,6 +41,8 @@
 - =elfeed-make-tagger=: Support matching on entry categories.
 - =elfeed-update-background=: New function to update Elfeed in the background from
   a timer.
+- =elfeed-feeds=: Feeds can specify per-feed options as a plist. Currently
+  supported options are =:no-update=, =:fetch-link=, =:readable= and =:show-entry=.
 - =elfeed-feeds=: Feeds can specify a =:no-update= option to disable feed updates.
   The feed appears still in the list for manual updates, and you can configure
   autotags for the entries which are part of the feed.
@@ -50,7 +52,9 @@
  '(("https://yhetil.org/emacs-devel/new.atom" :no-update t emacs)
    ...))
 #+end_src
-- Support for the JSON Feed format.
+- Support for the JSON Feed format. JSON feeds are automatically detected,
+  parsed with the Emacs JSON parser, but otherwise treated like the usual RSS or
+  Atom feeds.
 
 *** Tree buffer
 
@@ -110,8 +114,10 @@
 
 *** Show buffer
 
-- =elfeed-show-scroll-up/down-or-next/prev=: New scroll commands.
-- =elfeed-show-compose-mail=: Command to compose mail from entry.
+- =elfeed-show-scroll-up/down-or-next/prev=: New scroll commands which move to the
+  next or previous entry when reaching the end or the beginning of the buffer.
+- =elfeed-show-compose-mail=: Command to compose a mail from an entry, bound to
+  the key =m=.
 - =elfeed-show-update-hook=: New hook for add-ons to extend or enhance the show
   buffer.
 - =elfeed-show-visit-secondary=: New command which open entry in the secondary
