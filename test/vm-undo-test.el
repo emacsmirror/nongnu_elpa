@@ -37,7 +37,198 @@
   (should (fboundp 'vm-add-existing-message-labels))
   (should (fboundp 'vm-delete-message-labels))
   (should (fboundp 'vm-add-or-delete-message-labels))
-  (should (fboundp 'vm-set-labels)))
+  (should (fboundp 'vm-set-labels))
+  (should (fboundp 'vm-expunge-label)))
+
+;;; vm-expunge-label tests
+
+(require 'vm-misc)
+
+(ert-deftest vm-undo-test-expunge-label-removes-from-messages ()
+  "Test that vm-expunge-label removes label from all messages."
+  (vm-test-with-folder
+      "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test 1
+
+Body 1
+
+From sender@example.com Mon Jan  1 00:00:01 2024
+From: sender@example.com
+Subject: Test 2
+
+Body 2
+
+From sender@example.com Mon Jan  1 00:00:02 2024
+From: sender@example.com
+Subject: Test 3
+
+Body 3
+"
+    ;; Set up as a valid VM folder buffer
+    (setq major-mode 'vm-mode)
+    ;; Initialize the label obarray
+    (setq vm-label-obarray (make-vector 29 0))
+    ;; Add labels to messages
+    (let ((m1 (nth 0 vm-message-list))
+          (m2 (nth 1 vm-message-list))
+          (m3 (nth 2 vm-message-list)))
+      ;; Set up labels directly (bypass vm-set-labels which needs full folder setup)
+      (vm-set-decoded-labels-of m1 '("important" "work"))
+      (vm-set-decoded-labels-of m2 '("important"))
+      (vm-set-decoded-labels-of m3 '("personal"))
+      ;; Add labels to obarray
+      (intern "important" vm-label-obarray)
+      (intern "work" vm-label-obarray)
+      (intern "personal" vm-label-obarray)
+      ;; Mock yes-or-no-p to return t and vm-set-labels to just update labels
+      (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t))
+                ((symbol-function 'vm-set-labels)
+                 (lambda (m labels) (vm-set-decoded-labels-of m labels)))
+                ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+                ((symbol-function 'vm-inform) #'ignore))
+        (vm-expunge-label "important"))
+      ;; Check that "important" was removed from all messages
+      (should-not (member "important" (vm-labels-of m1)))
+      (should-not (member "important" (vm-labels-of m2)))
+      ;; Check that other labels remain
+      (should (member "work" (vm-labels-of m1)))
+      (should (member "personal" (vm-labels-of m3))))))
+
+(ert-deftest vm-undo-test-expunge-label-removes-from-obarray ()
+  "Test that vm-expunge-label removes label from folder obarray."
+  (vm-test-with-folder
+      "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    ;; Set up as a valid VM folder buffer
+    (setq major-mode 'vm-mode)
+    ;; Initialize the label obarray
+    (setq vm-label-obarray (make-vector 29 0))
+    (intern "remove-me" vm-label-obarray)
+    (intern "keep-me" vm-label-obarray)
+    ;; Set up label on message
+    (vm-set-decoded-labels-of (car vm-message-list) '("remove-me"))
+    ;; Mock required functions
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t))
+              ((symbol-function 'vm-set-labels)
+               (lambda (m labels) (vm-set-decoded-labels-of m labels)))
+              ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+              ((symbol-function 'vm-inform) #'ignore))
+      (vm-expunge-label "remove-me"))
+    ;; Check that "remove-me" is gone from obarray
+    (should-not (intern-soft "remove-me" vm-label-obarray))
+    ;; Check that "keep-me" remains
+    (should (intern-soft "keep-me" vm-label-obarray))))
+
+(ert-deftest vm-undo-test-expunge-label-aborts-on-no ()
+  "Test that vm-expunge-label aborts when user says no."
+  (vm-test-with-folder
+      "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    ;; Set up as a valid VM folder buffer
+    (setq major-mode 'vm-mode)
+    ;; Initialize the label obarray
+    (setq vm-label-obarray (make-vector 29 0))
+    (intern "keep-this" vm-label-obarray)
+    ;; Set up label on message
+    (vm-set-decoded-labels-of (car vm-message-list) '("keep-this"))
+    ;; Mock yes-or-no-p to return nil
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) nil)))
+      (should-error (vm-expunge-label "keep-this")))
+    ;; Label should still be on message
+    (should (member "keep-this" (vm-labels-of (car vm-message-list))))
+    ;; Label should still be in obarray
+    (should (intern-soft "keep-this" vm-label-obarray))))
+
+(ert-deftest vm-undo-test-expunge-label-case-insensitive ()
+  "Test that vm-expunge-label is case-insensitive."
+  (vm-test-with-folder
+      "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    ;; Set up as a valid VM folder buffer
+    (setq major-mode 'vm-mode)
+    ;; Initialize the label obarray
+    (setq vm-label-obarray (make-vector 29 0))
+    (intern "mixedcase" vm-label-obarray)
+    ;; Set up label on message (stored lowercase)
+    (vm-set-decoded-labels-of (car vm-message-list) '("mixedcase"))
+    ;; Mock required functions
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t))
+              ((symbol-function 'vm-set-labels)
+               (lambda (m labels) (vm-set-decoded-labels-of m labels)))
+              ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+              ((symbol-function 'vm-inform) #'ignore))
+      ;; Call with uppercase - should still work
+      (vm-expunge-label "MIXEDCASE"))
+    ;; Label should be removed (downcased internally)
+    (should-not (member "mixedcase" (vm-labels-of (car vm-message-list))))))
+
+(ert-deftest vm-undo-test-expunge-label-no-matching-messages ()
+  "Test vm-expunge-label when no messages have the label."
+  (vm-test-with-folder
+      "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    ;; Set up as a valid VM folder buffer
+    (setq major-mode 'vm-mode)
+    ;; Initialize the label obarray
+    (setq vm-label-obarray (make-vector 29 0))
+    (intern "orphan-label" vm-label-obarray)
+    ;; No messages have this label
+    (vm-set-decoded-labels-of (car vm-message-list) '("other-label"))
+    ;; Mock required functions
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t))
+              ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+              ((symbol-function 'vm-inform) #'ignore))
+      ;; Should still work - removes from obarray even with 0 messages
+      (vm-expunge-label "orphan-label"))
+    ;; Label should be removed from obarray
+    (should-not (intern-soft "orphan-label" vm-label-obarray))))
+
+(ert-deftest vm-undo-test-expunge-label-records-undo ()
+  "Test that vm-expunge-label records an undo entry for the obarray."
+  (vm-test-with-folder
+      "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    ;; Set up as a valid VM folder buffer
+    (setq major-mode 'vm-mode)
+    ;; Initialize the label obarray and undo list
+    (setq vm-label-obarray (make-vector 29 0))
+    (setq vm-undo-record-list nil)
+    (intern "undo-test" vm-label-obarray)
+    ;; No messages have this label (simpler test)
+    ;; Mock required functions
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (_) t))
+              ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+              ((symbol-function 'vm-inform) #'ignore))
+      (vm-expunge-label "undo-test"))
+    ;; Label should be gone from obarray
+    (should-not (intern-soft "undo-test" vm-label-obarray))
+    ;; Check that an undo record was created for the obarray
+    (should (member '(intern "undo-test" vm-label-obarray) vm-undo-record-list))
+    ;; Evaluate the intern undo record
+    (eval '(intern "undo-test" vm-label-obarray))
+    ;; Label should be back in obarray
+    (should (intern-soft "undo-test" vm-label-obarray))))
 
 ;;; Flag setting functions tests
 
