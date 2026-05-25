@@ -14,13 +14,15 @@
 
 ;;; Commentary:
 
-;; Visualize the data recorded by Emacs's native profiler (see
-;; `profiler.el') as a flame graph.
+;; View profiling data as a flame graph.  Data can come from Emacs's native
+;; profiler (see `profiler.el') or from a folded stacks file (the common
+;; flame-graph interchange format).
 ;;
 ;; Start the profiler with `profiler-start', run the code you want to
 ;; measure, then `M-x flamegraph-profiler-report' to view the result.
 ;; `M-x flamegraph-find-profiler-report' opens a profile previously saved with
-;; `profiler-report-write-profile'.
+;; `profiler-report-write-profile'.  `M-x flamegraph-find-file' opens a
+;; folded-stacks file.
 ;;
 ;; The graph is drawn top-down ("icicle" orientation): the outermost frame
 ;; (bottom of the call stack) is the top row, and the stack grows downward.
@@ -37,8 +39,8 @@
 ;;   q               quit
 ;;
 ;; The pipeline has three stages:
-;;   1. `profiler-calltree-build' (from profiler.el) merges the recorded
-;;      backtraces into a call tree.
+;;   1. A data source produces a `profiler-calltree': the profiler via
+;;      `profiler-calltree-build', a folded-stacks file by direct parsing.
 ;;   2. `flamegraph--frames' lays that tree out into a flat list of
 ;;      `flamegraph-frame' records, each carrying a fractional
 ;;      START and WIDTH in [0,1] plus a DEPTH.
@@ -218,29 +220,26 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
 
 ;;; Buffer state and drawing
 
-(defvar-local flamegraph--profile nil
-  "The `profiler-profile' being displayed.")
 (defvar-local flamegraph--top nil
-  "The full call tree (dummy root node from `profiler-calltree-build').")
+  "The full call tree: a dummy root node whose children are the
+outermost frames.")
 (defvar-local flamegraph--root nil
   "Currently zoomed-in calltree node, or nil for the full view.")
 (defvar-local flamegraph--grand-total 0
-  "Total sample/byte count of the whole profile.")
-
-(defun flamegraph--unit ()
-  "Return the count unit of the current profile, as a string."
-  (if (eq (profiler-profile-type flamegraph--profile) 'memory)
-      "bytes" "samples"))
+  "Total count of the whole graph.")
+(defvar-local flamegraph--unit "samples"
+  "Count unit, as a string (e.g. \"samples\" or \"bytes\").")
+(defvar-local flamegraph--title ""
+  "Short label for the data source, shown in the header.")
 
 (defun flamegraph--header ()
   "Return the header line for the current view."
-  (let* ((type (profiler-profile-type flamegraph--profile))
-         (root flamegraph--root)
+  (let* ((root flamegraph--root)
          (zoomed (and root (profiler-calltree-entry root))))
-    (format " %s flame graph · %s %s · root: %s%s"
-            (if (eq type 'cpu) "CPU" "Memory")
+    (format " %s · %s %s · root: %s%s"
+            flamegraph--title
             (profiler-format-number flamegraph--grand-total)
-            (flamegraph--unit)
+            flamegraph--unit
             (if zoomed
                 (flamegraph--entry-name (profiler-calltree-entry root))
               "all")
@@ -345,7 +344,7 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
         (message "%s  %s %s  (%s of total)"
                  (flamegraph--entry-name (profiler-calltree-entry node))
                  (profiler-format-number count)
-                 (flamegraph--unit)
+                 flamegraph--unit
                  (profiler-format-percent count flamegraph--grand-total))))))
 
 ;;; Mode
@@ -364,7 +363,7 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
   "q"         #'quit-window)
 
 (define-derived-mode flamegraph-mode special-mode "Flamegraph"
-  "Major mode for viewing a flame graph of profiler data."
+  "Major mode for viewing a flame graph."
   (setq buffer-read-only t
         truncate-lines t
         buffer-undo-list t)
@@ -372,33 +371,33 @@ MAX-DEPTH is the deepest row; GRAND-TOTAL the whole-profile count."
 
 ;;; Entry points
 
-(defun flamegraph--setup-buffer (profile)
-  "Create and return a flame-graph buffer for PROFILE.
-The buffer's state is initialized but it is not drawn; draw it with
-`flamegraph--draw' once it is shown in a window, so the canvas
-matches the window width."
-  (let ((buffer (get-buffer-create
-                 (format "*Flamegraph: %s*"
-                         (if (eq (profiler-profile-type profile) 'cpu)
-                             "CPU" "Memory")))))
+(defun flamegraph--show (top unit title)
+  "Display a flame graph for calltree TOP and return its buffer.
+TOP is a dummy root node whose children are the outermost frames.  UNIT
+names the count unit (e.g. \"samples\"); TITLE labels the data source in
+the header."
+  (let ((buffer (get-buffer-create (format "*Flamegraph: %s*" title))))
     (with-current-buffer buffer
       (flamegraph-mode)
-      (let ((top (profiler-calltree-build (profiler-profile-log profile))))
-        (profiler-calltree-sort top #'profiler-calltree-count>)
-        (setq flamegraph--profile profile
-              flamegraph--top top
-              flamegraph--root nil
-              flamegraph--grand-total
-              (max 1 (apply #'+ (mapcar #'profiler-calltree-count
-                                        (profiler-calltree-children top)))))))
+      (profiler-calltree-sort top #'profiler-calltree-count>)
+      (setq flamegraph--top top
+            flamegraph--root nil
+            flamegraph--unit unit
+            flamegraph--title title
+            flamegraph--grand-total
+            (max 1 (apply #'+ (mapcar #'profiler-calltree-count
+                                      (profiler-calltree-children top))))))
+    ;; Display first, then draw, so the canvas spans the actual window.
+    (pop-to-buffer buffer)
+    (flamegraph--draw)
     buffer))
 
 (defun flamegraph--profile (profile)
   "Display a flame graph for PROFILE, a `profiler-profile' object."
-  (let ((buffer (flamegraph--setup-buffer profile)))
-    ;; Display first, then draw, so the canvas spans the actual window.
-    (pop-to-buffer buffer)
-    (flamegraph--draw)))
+  (flamegraph--show
+   (profiler-calltree-build (profiler-profile-log profile))
+   (if (eq (profiler-profile-type profile) 'memory) "bytes" "samples")
+   (if (eq (profiler-profile-type profile) 'cpu) "CPU" "Memory")))
 
 ;;;###autoload
 (defun flamegraph-profiler-report ()
@@ -420,6 +419,49 @@ Uses the CPU profile if one was recorded, otherwise the memory profile."
   "Display a flame graph for the profile saved in FILENAME."
   (interactive (list (read-file-name "Find profile: " default-directory)))
   (flamegraph--profile (profiler-read-profile filename)))
+
+;;; Folded stacks
+
+(defun flamegraph--find-child (node name)
+  "Return NODE's child whose entry is the string NAME, or nil."
+  (cl-find name (profiler-calltree-children node)
+           :key #'profiler-calltree-entry :test #'equal))
+
+(defun flamegraph--read-folded (filename)
+  "Parse folded stacks in FILENAME into a calltree root node.
+Each non-empty line has the form \"FRAME;FRAME;... COUNT\", outermost
+frame first, as produced by Brendan Gregg's stackcollapse-* tools.
+COUNT is added to every frame along the stack."
+  (let ((root (profiler-make-calltree)))
+    (with-temp-buffer
+      (insert-file-contents filename)
+      (goto-char (point-min))
+      (while (not (eobp))
+        (let ((line (buffer-substring-no-properties
+                     (line-beginning-position) (line-end-position))))
+          (when (string-match "\\`\\(.+\\) \\([0-9]+\\)\\'" line)
+            (let ((node root)
+                  (count (string-to-number (match-string 2 line))))
+              (dolist (frame (split-string (match-string 1 line) ";" t))
+                (let ((child (flamegraph--find-child node frame)))
+                  (unless child
+                    (setq child (profiler-make-calltree :entry frame :parent node))
+                    (push child (profiler-calltree-children node)))
+                  (cl-incf (profiler-calltree-count child) count)
+                  (setq node child))))))
+        (forward-line)))
+    root))
+
+;;;###autoload
+(defun flamegraph-find-file (filename)
+  "Display a flame graph for the folded stacks in FILENAME.
+This is the interchange format produced by Brendan Gregg's
+stackcollapse-*.pl tools and read by flamegraph.pl: one line per stack,
+frames separated by \";\" (outermost first), then a space and a count."
+  (interactive (list (read-file-name "Folded stacks file: " nil nil t)))
+  (flamegraph--show (flamegraph--read-folded filename)
+                    "samples"
+                    (file-name-nondirectory filename)))
 
 (provide 'flamegraph)
 ;;; flamegraph.el ends here
