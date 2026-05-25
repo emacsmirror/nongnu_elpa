@@ -62,7 +62,7 @@
 If nil, use the width of the window displaying the buffer."
   :type '(choice (const :tag "Window width" nil) natnum))
 
-(defcustom flamegraph-frame-border 1
+(defcustom flamegraph-frame-spacing 1
   "Width in pixels of the gap left on each side of a frame.
 Separates adjacent frames visually.  0 disables it.  On a text
 terminal a \"pixel\" is one column."
@@ -163,7 +163,7 @@ The same NAME always maps to the same color, as in classic flame graphs."
 ;; Rows are laid out in pixels using `(space :align-to PIXEL)'.  Because
 ;; every frame is positioned at an absolute pixel offset, widths are exact
 ;; (not rounded to whole columns) and parent/child edges line up across
-;; rows; a background gap of `flamegraph-frame-border' pixels on
+;; rows; a background gap of `flamegraph-frame-spacing' pixels on
 ;; each side separates adjacent frames.  On a text terminal a "pixel" is one
 ;; column, so the same code degrades to a column layout.
 
@@ -184,7 +184,7 @@ The same NAME always maps to the same color, as in classic flame graphs."
 MAX-DEPTH is the deepest row."
   (let* ((cw (frame-char-width))
          (total-px (flamegraph--canvas-width))
-         (border (if (display-graphic-p) flamegraph-frame-border 0))
+         (spacing (if (display-graphic-p) flamegraph-frame-spacing 0))
          (rows (make-vector (1+ max-depth) nil))
          positions)
     ;; Bucket frames by row as pixel spans, dropping ones too narrow.
@@ -201,9 +201,9 @@ MAX-DEPTH is the deepest row."
         (pcase-let* ((`(,x0 ,x1 ,frame) seg)
                      ;; Inset the colored box by BORDER on each side, unless
                      ;; the frame is too thin to spare the pixels.
-                     (insetp (>= (- x1 x0) (* 2 (1+ border))))
-                     (boxl (if insetp (+ x0 border) x0))
-                     (boxr (if insetp (- x1 border) x1))
+                     (insetp (>= (- x1 x0) (* 2 (1+ spacing))))
+                     (boxl (if insetp (+ x0 spacing) x0))
+                     (boxr (if insetp (- x1 spacing) x1))
                      (node (flamegraph-frame-node frame))
                      (name (flamegraph--entry-name
                             (profiler-calltree-entry node)))
