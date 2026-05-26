@@ -375,17 +375,20 @@ outermost frames.")
   (flamegraph--goto nil))
 
 (defun flamegraph-describe ()
-  "Describe the function of the frame at point."
+  "Describe the frame at point.
+For Emacs functions this shows the usual function documentation.  For
+other frames it shows a report: the sampled source line in context, the
+frame's sample counts, and buttons to its caller and callees."
   (interactive)
   (let ((frame (flamegraph--frame-at-point)))
     (if (null frame)
         (message "No frame at point")
-      (let ((entry (profiler-calltree-entry
-                    (flamegraph-frame-node frame))))
+      (let* ((node (flamegraph-frame-node frame))
+             (entry (profiler-calltree-entry node)))
         (if (or (and (symbolp entry) (fboundp entry)) (functionp entry))
             (progn (require 'help-fns) (describe-function entry))
-          (message "Not a function: %s"
-                   (flamegraph--entry-name entry)))))))
+          (flamegraph--describe-frame
+           node flamegraph--grand-total flamegraph--directory))))))
 
 (defun flamegraph--entry-location (entry)
   "Extract a (FILE . LINE) source location embedded in ENTRY, or nil.
@@ -395,20 +398,20 @@ in each frame (e.g. \"work (app/main.py:20)\")."
     (cons (match-string 1 entry)
           (string-to-number (match-string 2 entry)))))
 
-(defun flamegraph--visit-location (file line)
-  "Visit FILE at LINE in another window.
-A relative FILE is resolved against `flamegraph-source-directory', or the
-data file's directory, or `default-directory'."
-  (let ((path (expand-file-name
-               file (or flamegraph-source-directory
-                        flamegraph--directory
-                        default-directory))))
-    (if (not (file-exists-p path))
-        (message "Source file not found: %s" path)
-      (find-file-other-window path)
-      (when (> line 0)
-        (goto-char (point-min))
-        (forward-line (1- line))))))
+(defun flamegraph--resolve-source (file directory)
+  "Expand FILE against the configured source directory and return it.
+A relative FILE is resolved against `flamegraph-source-directory', then
+DIRECTORY, then `default-directory'."
+  (expand-file-name file (or flamegraph-source-directory
+                             directory
+                             default-directory)))
+
+(defun flamegraph--visit-file (path line)
+  "Visit PATH at LINE in another window."
+  (find-file-other-window path)
+  (when (> line 0)
+    (goto-char (point-min))
+    (forward-line (1- line))))
 
 (defun flamegraph-find ()
   "Visit the source of the function of the frame at point.
@@ -429,11 +432,147 @@ necessarily its definition."
           (find-function-other-window entry))
          ((stringp entry)
           (let ((loc (flamegraph--entry-location entry)))
-            (if loc
-                (flamegraph--visit-location (car loc) (cdr loc))
-              (message "No source location in: %s" entry))))
+            (if (null loc)
+                (message "No source location in: %s" entry)
+              (let ((path (flamegraph--resolve-source
+                           (car loc) flamegraph--directory)))
+                (if (file-exists-p path)
+                    (flamegraph--visit-file path (cdr loc))
+                  (message "Source file not found: %s" path))))))
          (t (message "Cannot find definition of: %s"
                      (flamegraph--entry-name entry))))))))
+
+(defun flamegraph--frame-display-name (entry)
+  "Return ENTRY's name with any embedded FILE:LINE location stripped."
+  (if (and (stringp entry)
+           (string-match "\\([^ ()]*\\.[^ ():]+\\):\\([0-9]+\\)" entry))
+      (string-trim-right (substring entry 0 (match-beginning 0)) "[ (-]+")
+    (flamegraph--entry-name entry)))
+
+(defun flamegraph--snippet-line (n marked)
+  "Format buffer line N for the snippet, marking it when MARKED."
+  (format " %s %4d  %s"
+          (if marked "▸" " ")
+          n
+          (buffer-substring (line-beginning-position) (line-end-position))))
+
+(defun flamegraph--source-snippet (path line &optional context)
+  "Return source context around LINE of PATH as a fontified string, or nil.
+The file is loaded in its major mode so the text is syntax-highlighted.
+Besides CONTEXT lines on each side of the sampled LINE (which is marked),
+the enclosing structural lines up to the definition are kept — each line
+that is less indented than the one below it — so the nesting that leads
+to the sampled line stays visible.  Skipped runs are elided with `⋯'.
+CONTEXT defaults to 4."
+  (setq context (or context 4))
+  (when (and (file-readable-p path) (> line 0))
+    (with-temp-buffer
+      (insert-file-contents path)
+      (let ((buffer-file-name path)
+            (enable-local-variables nil))
+        (delay-mode-hooks (set-auto-mode)))
+      (let ((maxline (line-number-at-pos (point-max))))
+        (when (<= line maxline)
+          (let* ((lo (max 1 (- line context)))
+                 (hi (min maxline (+ line context)))
+                 (def (save-excursion
+                        (goto-char (point-min))
+                        (forward-line (1- line))
+                        (let ((p (point)))
+                          (ignore-errors (beginning-of-defun))
+                          (if (< (point) p) (line-number-at-pos) 1))))
+                 (keep nil))
+            ;; The sampled line and its immediate context.
+            (cl-loop for n from lo to hi do (push n keep))
+            ;; Enclosing structural lines (each less indented than the one
+            ;; below) from the sampled line up to the definition.
+            (save-excursion
+              (goto-char (point-min))
+              (forward-line (1- line))
+              (let ((min-ind (current-indentation))
+                    (n line))
+                (while (> n def)
+                  (forward-line -1)
+                  (setq n (1- n))
+                  (unless (looking-at-p "[ \t]*$")
+                    (let ((ind (current-indentation)))
+                      (when (< ind min-ind)
+                        (push n keep)
+                        (setq min-ind ind)))))))
+            (push def keep)
+            (setq keep (sort (delete-dups keep) #'<))
+            ;; Render kept lines in order, eliding the gaps with `⋯'.
+            (let ((prev nil) (out nil))
+              (dolist (n keep)
+                (when (and prev (> n (1+ prev)))
+                  (push "      ⋯" out))
+                (goto-char (point-min))
+                (forward-line (1- n))
+                (ignore-errors
+                  (font-lock-ensure (line-beginning-position)
+                                    (line-end-position)))
+                (push (flamegraph--snippet-line n (= n line)) out)
+                (setq prev n))
+              (mapconcat #'identity (nreverse out) "\n"))))))))
+
+(defun flamegraph--describe-button (node total directory)
+  "Insert a button that describes NODE, passing TOTAL and DIRECTORY along."
+  (insert-text-button (flamegraph--frame-display-name
+                       (profiler-calltree-entry node))
+                      'type 'help-xref
+                      'help-function #'flamegraph--describe-frame
+                      'help-args (list node total directory)))
+
+(defun flamegraph--describe-frame (node total directory)
+  "Show a report for calltree NODE in the *Help* buffer.
+TOTAL is the grand total for percentages; DIRECTORY resolves relative
+source paths.  Caller and callee names are buttons describing those
+frames, with Help-style back/forward navigation."
+  (require 'help-mode)
+  (help-setup-xref (list #'flamegraph--describe-frame node total directory)
+                   (called-interactively-p 'interactive))
+  (let* ((entry (profiler-calltree-entry node))
+         (loc (and (stringp entry) (flamegraph--entry-location entry)))
+         (path (and loc (flamegraph--resolve-source (car loc) directory)))
+         (count (profiler-calltree-count node))
+         (kids (sort (copy-sequence (profiler-calltree-children node))
+                     (lambda (a b) (> (profiler-calltree-count a)
+                                      (profiler-calltree-count b)))))
+         (self (- count (apply #'+ 0 (mapcar #'profiler-calltree-count kids))))
+         (parent (profiler-calltree-parent node)))
+    (with-help-window (help-buffer)
+      (with-current-buffer standard-output
+        (insert (flamegraph--frame-display-name entry))
+        (when loc
+          (insert "  ")
+          (insert-text-button
+           (format "%s:%d" (car loc) (cdr loc))
+           'action (lambda (_)
+                     (if (file-exists-p path)
+                         (flamegraph--visit-file path (cdr loc))
+                       (message "Source file not found: %s" path)))
+           'follow-link t
+           'help-echo "mouse-1, RET: visit this line")
+          (when-let* ((snippet (flamegraph--source-snippet path (cdr loc))))
+            (insert "\n\n" snippet)))
+        (insert (format "\n\nSamples  %s (%s of total)    self  %s (%s)\n"
+                        (profiler-format-number count)
+                        (flamegraph--percent count total)
+                        (profiler-format-number self)
+                        (flamegraph--percent self total)))
+        (when (and parent (profiler-calltree-entry parent))
+          (insert "\nCalled from  ")
+          (flamegraph--describe-button parent total directory)
+          (insert "\n"))
+        (when kids
+          (insert "\nCalls\n")
+          (dolist (k kids)
+            (insert (format "  %7s  " (profiler-format-number
+                                       (profiler-calltree-count k))))
+            (flamegraph--describe-button k total directory)
+            (insert (format "  (%s)\n"
+                            (flamegraph--percent
+                             (profiler-calltree-count k) count)))))))))
 
 (defun flamegraph-redraw ()
   "Redraw the flame graph, e.g. to pick up a new window width."
