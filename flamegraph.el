@@ -37,6 +37,7 @@
 ;;   n / TAB         move to the next frame
 ;;   p / S-TAB       move to the previous frame
 ;;   d               describe the function at point
+;;   f               visit the frame's source (definition or file:line)
 ;;   g               redraw (e.g. after resizing the window)
 ;;   q               quit
 ;;
@@ -69,6 +70,13 @@ If nil, use the width of the window displaying the buffer."
 Separates adjacent frames visually.  0 disables it.  On a text
 terminal a \"pixel\" is one column."
   :type 'natnum)
+
+(defcustom flamegraph-source-directory nil
+  "Directory to resolve relative source paths against when visiting a frame.
+Used by \\[flamegraph-find] for folded stacks whose frames embed a
+FILE:LINE location.  If nil, paths are resolved against the directory of
+the data file the graph was loaded from."
+  :type '(choice (const :tag "Data file's directory" nil) directory))
 
 ;;; Layout: call tree -> flat list of frames
 
@@ -247,6 +255,8 @@ outermost frames.")
   "Count unit, as a string (e.g. \"samples\" or \"bytes\").")
 (defvar-local flamegraph--title ""
   "Short label for the data source, shown in the header.")
+(defvar-local flamegraph--directory nil
+  "Directory of the data file, for resolving relative source paths.")
 
 (defun flamegraph--header ()
   "Return the header line for the current view."
@@ -377,6 +387,54 @@ outermost frames.")
           (message "Not a function: %s"
                    (flamegraph--entry-name entry)))))))
 
+(defun flamegraph--entry-location (entry)
+  "Extract a (FILE . LINE) source location embedded in ENTRY, or nil.
+Recognizes the FILE:LINE form that profilers such as py-spy and rbspy put
+in each frame (e.g. \"work (app/main.py:20)\")."
+  (when (string-match "\\([^ ()]*\\.[^ ():]+\\):\\([0-9]+\\)" entry)
+    (cons (match-string 1 entry)
+          (string-to-number (match-string 2 entry)))))
+
+(defun flamegraph--visit-location (file line)
+  "Visit FILE at LINE in another window.
+A relative FILE is resolved against `flamegraph-source-directory', or the
+data file's directory, or `default-directory'."
+  (let ((path (expand-file-name
+               file (or flamegraph-source-directory
+                        flamegraph--directory
+                        default-directory))))
+    (if (not (file-exists-p path))
+        (message "Source file not found: %s" path)
+      (find-file-other-window path)
+      (when (> line 0)
+        (goto-char (point-min))
+        (forward-line (1- line))))))
+
+(defun flamegraph-find ()
+  "Visit the source of the function of the frame at point.
+For Emacs functions this jumps to the definition.  For folded stacks
+whose frames embed a FILE:LINE location (as py-spy and rbspy emit), it
+visits that file and line.  Note that this is the line the frame was
+executing when sampled, which is somewhere in the function body, not
+necessarily its definition."
+  (interactive)
+  (let ((frame (flamegraph--frame-at-point)))
+    (if (null frame)
+        (message "No frame at point")
+      (let ((entry (profiler-calltree-entry
+                    (flamegraph-frame-node frame))))
+        (cond
+         ((and (symbolp entry) (fboundp entry))
+          (require 'find-func)
+          (find-function-other-window entry))
+         ((stringp entry)
+          (let ((loc (flamegraph--entry-location entry)))
+            (if loc
+                (flamegraph--visit-location (car loc) (cdr loc))
+              (message "No source location in: %s" entry))))
+         (t (message "Cannot find definition of: %s"
+                     (flamegraph--entry-name entry))))))))
+
 (defun flamegraph-redraw ()
   "Redraw the flame graph, e.g. to pick up a new window width."
   (interactive)
@@ -416,6 +474,7 @@ Do nothing when the echo area already shows an unrelated message."
   "p"         #'flamegraph-previous
   "<backtab>" #'flamegraph-previous
   "d"         #'flamegraph-describe
+  "f"         #'flamegraph-find
   "g"         #'flamegraph-redraw
   "q"         #'quit-window)
 
@@ -428,11 +487,12 @@ Do nothing when the echo area already shows an unrelated message."
 
 ;;; Entry points
 
-(defun flamegraph--show (top unit title)
+(defun flamegraph--show (top unit title &optional directory)
   "Display a flame graph for calltree TOP and return its buffer.
 TOP is a dummy root node whose children are the outermost frames.  UNIT
 names the count unit (e.g. \"samples\"); TITLE labels the data source in
-the header."
+the header.  DIRECTORY, if given, resolves relative source paths when
+visiting a frame."
   (let ((buffer (get-buffer-create (format "*Flamegraph: %s*" title))))
     (with-current-buffer buffer
       (flamegraph-mode)
@@ -443,6 +503,7 @@ the header."
             flamegraph--forward nil
             flamegraph--unit unit
             flamegraph--title title
+            flamegraph--directory directory
             flamegraph--grand-total
             (max 1 (apply #'+ (mapcar #'profiler-calltree-count
                                       (profiler-calltree-children top))))))
@@ -520,7 +581,8 @@ frames separated by \";\" (outermost first), then a space and a count."
   (interactive (list (read-file-name "Folded stacks file: " nil nil t)))
   (flamegraph--show (flamegraph--read-folded filename)
                     "samples"
-                    (file-name-nondirectory filename)))
+                    (file-name-nondirectory filename)
+                    (file-name-directory (expand-file-name filename))))
 
 (provide 'flamegraph)
 ;;; flamegraph.el ends here
