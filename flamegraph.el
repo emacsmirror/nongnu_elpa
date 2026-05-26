@@ -33,6 +33,7 @@
 ;;   RET / mouse-1   zoom into the frame at point (make it the new root)
 ;;   u               zoom back out to the parent frame
 ;;   t               reset the zoom to the whole graph
+;;   l / r           go back / forward through the zoom history
 ;;   n / TAB         move to the next frame
 ;;   p / S-TAB       move to the previous frame
 ;;   d               describe the function at point
@@ -236,6 +237,10 @@ MAX-DEPTH is the deepest row."
 outermost frames.")
 (defvar-local flamegraph--root nil
   "Currently zoomed-in calltree node, or nil for the full view.")
+(defvar-local flamegraph--history nil
+  "Stack of previously viewed roots, for `flamegraph-back'.")
+(defvar-local flamegraph--forward nil
+  "Stack of roots backed out of, for `flamegraph-forward'.")
 (defvar-local flamegraph--grand-total 0
   "Total count of the whole graph.")
 (defvar-local flamegraph--unit "samples"
@@ -283,6 +288,14 @@ outermost frames.")
   "Return the `flamegraph-frame' at point, or nil."
   (get-text-property (point) 'flamegraph-frame))
 
+(defun flamegraph--goto-root (root)
+  "Switch the view to ROOT, recording the change in the zoom history."
+  (unless (eq root flamegraph--root)
+    (push flamegraph--root flamegraph--history)
+    (setq flamegraph--forward nil
+          flamegraph--root root)
+    (flamegraph--draw)))
+
 (defun flamegraph-zoom (&optional event)
   "Zoom into the frame at point (or at EVENT), making it the new root."
   (interactive (list last-nonmenu-event))
@@ -291,8 +304,7 @@ outermost frames.")
       (when (posnp posn) (posn-set-point posn))))
   (let ((frame (flamegraph--frame-at-point)))
     (when frame
-      (setq flamegraph--root (flamegraph-frame-node frame))
-      (flamegraph--draw))))
+      (flamegraph--goto-root (flamegraph-frame-node frame)))))
 
 (defun flamegraph-zoom-out ()
   "Zoom out to the parent of the current root frame."
@@ -302,16 +314,32 @@ outermost frames.")
     (if (null root)
         (message "Already at the top level")
       ;; A parent whose entry is nil is the dummy top: go to the full view.
-      (setq flamegraph--root
-            (and parent (profiler-calltree-entry parent) parent))
-      (flamegraph--draw))))
+      (flamegraph--goto-root
+       (and parent (profiler-calltree-entry parent) parent)))))
 
 (defun flamegraph-zoom-reset ()
   "Reset the zoom to the whole graph (the top level)."
   (interactive)
   (if (null flamegraph--root)
       (message "Already at the top level")
-    (setq flamegraph--root nil)
+    (flamegraph--goto-root nil)))
+
+(defun flamegraph-back ()
+  "Return to the previously viewed root (zoom history)."
+  (interactive)
+  (if (null flamegraph--history)
+      (message "No earlier view")
+    (push flamegraph--root flamegraph--forward)
+    (setq flamegraph--root (pop flamegraph--history))
+    (flamegraph--draw)))
+
+(defun flamegraph-forward ()
+  "Go forward to the next viewed root (zoom history)."
+  (interactive)
+  (if (null flamegraph--forward)
+      (message "No later view")
+    (push flamegraph--root flamegraph--history)
+    (setq flamegraph--root (pop flamegraph--forward))
     (flamegraph--draw)))
 
 (defun flamegraph--goto (next)
@@ -381,6 +409,8 @@ Do nothing when the echo area already shows an unrelated message."
   "<mouse-1>" #'flamegraph-zoom
   "u"         #'flamegraph-zoom-out
   "t"         #'flamegraph-zoom-reset
+  "l"         #'flamegraph-back
+  "r"         #'flamegraph-forward
   "n"         #'flamegraph-next
   "TAB"       #'flamegraph-next
   "p"         #'flamegraph-previous
@@ -409,6 +439,8 @@ the header."
       (profiler-calltree-sort top #'profiler-calltree-count>)
       (setq flamegraph--top top
             flamegraph--root nil
+            flamegraph--history nil
+            flamegraph--forward nil
             flamegraph--unit unit
             flamegraph--title title
             flamegraph--grand-total
