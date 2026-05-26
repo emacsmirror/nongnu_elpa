@@ -52,12 +52,16 @@ The functions may modify the search buffer or add overlays, for example
 `elfeed-search-add-separators'.")
 
 (defcustom elfeed-search-update-delay 1.0
-  "Delay search buffer updates by that many seconds to reduce redraws."
+  "Delay search buffer updates by that many seconds to reduce redraws.
+This delay affects only the redraws after feed updates.  See also
+`elfeed-search-live-delay' and `elfeed-search-resize-delay'."
   :group 'elfeed
   :type 'number)
 
 (defcustom elfeed-search-live-delay 0.1
-  "Delay search buffer live updates by that many seconds to reduce redraws."
+  "Delay search buffer live updates by that many seconds to reduce redraws.
+This delay affects only the redraws during live filtering.  See also
+`elfeed-search-update-delay' and `elfeed-search-resize-delay'."
   :group 'elfeed
   :type 'number)
 
