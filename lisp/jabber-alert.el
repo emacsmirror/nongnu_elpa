@@ -301,10 +301,6 @@ Examples:
   "If nil, don't display message alerts for the current buffer."
   :type 'boolean)
 
-(defcustom jabber-muc-alert-self nil
-  "If nil, don't display MUC alerts for your own messages."
-  :type 'boolean)
-
 (defun jabber-message-default-message (from buffer _text)
   "Return the default alert string for a message from FROM in BUFFER."
   (when (or jabber-message-alert-same-buffer
@@ -367,8 +363,7 @@ BUFFER is the MUC buffer."
 	    (not (and (buffer-live-p buffer)
 		      (memq (selected-window) (get-buffer-window-list buffer)))))
     (if nick
-	(when (or jabber-muc-alert-self
-		  (not (jabber-muc-our-nick-p group nick)))
+	(unless (jabber-muc-our-nick-p group nick)
 	  (format "Message from %s in %s" nick (jabber-jid-displayname
 						group)))
       (format "Message in %s" (jabber-jid-displayname group)))))

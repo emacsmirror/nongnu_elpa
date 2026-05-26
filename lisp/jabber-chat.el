@@ -648,21 +648,24 @@ JC is the Jabber connection."
              return (jabber-chat--try-decrypt jc xml-data parsed props)
              finally return xml-data)))
 
-(defun jabber-chat--display-message (_jc _xml-data chat-buffer
-					 error-p from msg-plist)
+(defun jabber-chat--display-message (jc _xml-data chat-buffer
+					error-p from msg-plist)
   "Display an incoming message and run alert hooks.
 Insert an EWOC entry into CHAT-BUFFER for the message described by
 MSG-PLIST, then run `jabber-message-hooks' and
 `jabber-alert-message-hooks'.  ERROR-P is non-nil when the stanza
-contains an error element.  FROM is the sender JID.
-_JC and _XML-DATA are reserved for future use by OMEMO."
-  (let ((body-text (plist-get msg-plist :body)))
+contains an error element.  FROM is the sender JID.  JC is the
+Jabber connection, used to detect self-authored carbons.
+_XML-DATA is reserved for future use by OMEMO."
+  (let ((body-text (plist-get msg-plist :body))
+        (self-p (string= (jabber-jid-user from)
+                         (jabber-connection-bare-jid jc))))
     (with-current-buffer chat-buffer
       (jabber-chatstates--clear-typing)
       (jabber-maybe-print-rare-time
        (jabber-chat-ewoc-enter
         (list (if error-p :error :foreign) msg-plist)))
-      (unless error-p
+      (when (and (not error-p) (not self-p))
         (let ((inhibit-message jabber-chat-mam-syncing))
           (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
             (run-hook-with-args hook
