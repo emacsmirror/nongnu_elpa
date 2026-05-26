@@ -345,17 +345,24 @@ outermost frames.")
   (interactive)
   (flamegraph--draw))
 
+(defvar-local flamegraph--last-echo nil
+  "Last message shown by `flamegraph--echo'.")
+
 (defun flamegraph--echo ()
-  "Show information about the frame at point in the echo area."
-  (let ((frame (flamegraph--frame-at-point)))
-    (when frame
+  "Show information about the frame at point in the echo area.
+Do nothing when the echo area already shows an unrelated message."
+  (let ((current (current-message))
+        (frame (flamegraph--frame-at-point)))
+    (when (and frame (or (null current) (equal current flamegraph--last-echo)))
       (let* ((node (flamegraph-frame-node frame))
-             (count (profiler-calltree-count node)))
-        (message "%s  %s %s  (%s of total)"
-                 (flamegraph--entry-name (profiler-calltree-entry node))
-                 (profiler-format-number count)
-                 flamegraph--unit
-                 (flamegraph--percent count flamegraph--grand-total))))))
+             (count (profiler-calltree-count node))
+             (msg (format "%s  %s %s  (%s of total)"
+                          (flamegraph--entry-name (profiler-calltree-entry node))
+                          (profiler-format-number count)
+                          flamegraph--unit
+                          (flamegraph--percent count flamegraph--grand-total))))
+        (setq flamegraph--last-echo msg)
+        (message "%s" msg)))))
 
 ;;; Mode
 
