@@ -32,6 +32,7 @@
 ;; In the *Flamegraph* buffer:
 ;;   RET / mouse-1   zoom into the frame at point (make it the new root)
 ;;   u               zoom back out to the parent frame
+;;   t               reset the zoom to the whole graph
 ;;   n / TAB         move to the next frame
 ;;   p / S-TAB       move to the previous frame
 ;;   d               describe the function at point
@@ -305,6 +306,14 @@ outermost frames.")
             (and parent (profiler-calltree-entry parent) parent))
       (flamegraph--draw))))
 
+(defun flamegraph-zoom-reset ()
+  "Reset the zoom to the whole graph (the top level)."
+  (interactive)
+  (if (null flamegraph--root)
+      (message "Already at the top level")
+    (setq flamegraph--root nil)
+    (flamegraph--draw)))
+
 (defun flamegraph--goto (next)
   "Move point to the next drawn frame, or the previous one if NEXT is nil."
   (let ((pt (point)) (best nil))
@@ -371,6 +380,7 @@ Do nothing when the echo area already shows an unrelated message."
   "RET"       #'flamegraph-zoom
   "<mouse-1>" #'flamegraph-zoom
   "u"         #'flamegraph-zoom-out
+  "t"         #'flamegraph-zoom-reset
   "n"         #'flamegraph-next
   "TAB"       #'flamegraph-next
   "p"         #'flamegraph-previous
