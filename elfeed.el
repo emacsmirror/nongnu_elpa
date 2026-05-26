@@ -927,7 +927,7 @@ saved to your customization file."
               (pos (event-end last-input-event))
               (str (posn-string pos))
               (button (get-text-property
-                       (cdr str) 'elfeed-header-button (car str))))
+                       (cdr str) 'elfeed--header-button (car str))))
     (call-interactively button)))
 
 (defvar-keymap elfeed--header-button-map
@@ -938,7 +938,7 @@ saved to your customization file."
 (defun elfeed--header-button (command &optional text help)
   "Create header line button for COMMAND with optional TEXT and HELP."
   (propertize (or text (symbol-name command))
-              'elfeed-header-button command
+              'elfeed--header-button command
               'keymap elfeed--header-button-map
               'help-echo (or help (format "Run `%s'" command))
               'mouse-face 'highlight))
