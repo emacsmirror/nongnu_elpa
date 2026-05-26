@@ -79,7 +79,6 @@
   :parent special-mode-map
   "RET" #'elfeed-tree-search
   "<elfeed-filter>" #'elfeed-tree-search
-  "<header-line> <mouse-1>" #'elfeed-header-button
   "s" #'elfeed-search-new-live
   "n" #'next-line
   "p" #'previous-line

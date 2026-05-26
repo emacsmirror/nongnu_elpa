@@ -919,7 +919,7 @@ saved to your customization file."
                                 collect `(outline ((xmlUrl . ,url)
                                                    (title . ,title)))))))))))
 
-(defun elfeed-header-button ()
+(defun elfeed--header-button-click ()
   "Handle click on the header line of the search buffer."
   (declare (completion ignore))
   (interactive "@")
@@ -930,10 +930,16 @@ saved to your customization file."
                        (cdr str) 'elfeed-header-button (car str))))
     (call-interactively button)))
 
+(defvar-keymap elfeed--header-button-map
+  :doc "Keymap attached as a text property to header line buttons."
+  "<header-line> <down-mouse-1>" #'ignore
+  "<header-line> <mouse-1>" #'elfeed--header-button-click)
+
 (defun elfeed--header-button (command &optional text help)
   "Create header line button for COMMAND with optional TEXT and HELP."
   (propertize (or text (symbol-name command))
               'elfeed-header-button command
+              'keymap elfeed--header-button-map
               'help-echo (or help (format "Run `%s'" command))
               'mouse-face 'highlight))
 

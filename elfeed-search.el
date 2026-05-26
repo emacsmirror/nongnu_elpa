@@ -216,7 +216,6 @@ When live editing the filter, it is bound to :live.")
   "<elfeed-entry>" #'elfeed-search-show-entry
   "<elfeed-feed>" #'elfeed-search-feed-filter
   "<elfeed-tag>" #'elfeed-search-tag-filter
-  "<header-line> <mouse-1>" #'elfeed-header-button
   "o" #'elfeed-search-cycle-order
   "O" #'elfeed-search-reverse-order
   "s" #'elfeed-search-live-filter
