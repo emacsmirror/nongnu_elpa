@@ -54,6 +54,7 @@
 
 (require 'cl-lib)
 (require 'profiler)
+(require 'cursor-sensor)
 
 (defgroup flamegraph nil
   "Flame graphs for the Emacs profiler."
@@ -227,7 +228,10 @@ MAX-DEPTH is the deepest row."
                                   'flamegraph-frame frame
                                   'help-echo #'flamegraph--help-echo)))
           ;; Empty background gap, up to the box's left edge.
-          (insert (propertize " " 'display `(space :align-to (,boxl))))
+          (insert (propertize " " 'display `(space :align-to (,boxl))
+                              'cursor-intangible t
+                              'front-sticky '(cursor-intangible)
+                              'rear-nonsticky '(cursor-intangible)))
           (push (point) positions)
           ;; The colored box: the label, then a stretch filling to BOXR.
           (unless (string-empty-p label)
@@ -584,9 +588,16 @@ frames, with Help-style back/forward navigation."
 
 (defun flamegraph--echo ()
   "Show information about the frame at point in the echo area.
-Do nothing when the echo area already shows an unrelated message."
+Do nothing when the echo area already shows an unrelated message.
+On an intangible gap, describe the frame point is about to relocate to,
+since this runs before that relocation happens."
   (let ((current (current-message))
-        (frame (flamegraph--frame-at-point)))
+        (frame (or (flamegraph--frame-at-point)
+                   (let ((pos (and (bound-and-true-p cursor-intangible-mode)
+                                   (ignore-errors
+                                     (cursor-sensor-tangible-pos
+                                      (point) (selected-window))))))
+                     (and pos (get-text-property pos 'flamegraph-frame))))))
     (when (and frame (or (null current) (equal current flamegraph--last-echo)))
       (let* ((node (flamegraph-frame-node frame))
              (count (profiler-calltree-count node))
@@ -622,6 +633,7 @@ Do nothing when the echo area already shows an unrelated message."
   (setq buffer-read-only t
         truncate-lines t
         buffer-undo-list t)
+  (cursor-intangible-mode 1)
   (add-hook 'post-command-hook #'flamegraph--echo nil t))
 
 ;;; Entry points
