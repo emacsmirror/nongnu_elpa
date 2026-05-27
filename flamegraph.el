@@ -293,9 +293,9 @@ outermost frames.")
 (defvar-local flamegraph--root nil
   "Currently zoomed-in calltree node, or nil for the full view.")
 (defvar-local flamegraph--history nil
-  "Stack of previously viewed roots, for `flamegraph-back'.")
+  "Stack of previous view states, for `flamegraph-back'.")
 (defvar-local flamegraph--forward nil
-  "Stack of roots backed out of, for `flamegraph-forward'.")
+  "Stack of view states backed out of, for `flamegraph-forward'.")
 (defvar-local flamegraph--grand-total 0
   "Total count of the whole graph.")
 (defvar-local flamegraph--unit "samples"
@@ -329,8 +329,9 @@ outermost frames.")
                              `(space :align-to (- right ,(string-width hint))))
                  hint))))))
 
-(defun flamegraph--draw ()
-  "(Re)draw the flame graph in the current buffer."
+(defun flamegraph--draw (&optional point)
+  "(Re)draw the flame graph in the current buffer.
+If POINT is non-nil, restore point there after drawing."
   (let ((inhibit-read-only t)
         (inhibit-modification-hooks t)
         (root (or flamegraph--root flamegraph--top)))
@@ -339,10 +340,13 @@ outermost frames.")
                  (flamegraph--frames root)))
       (flamegraph--render-text frames max-depth))
     (setq header-line-format (flamegraph--header))
-    ;; Each row begins with a background gap, so land on the first frame.
-    (goto-char (if (length> flamegraph--frame-positions 0)
-                   (aref flamegraph--frame-positions 0)
-                 (point-min)))))
+    ;; Each row begins with a background gap, so land on the first frame
+    ;; unless the caller is restoring a previous view.
+    (goto-char (if point
+                   (min (max point (point-min)) (point-max))
+                 (if (length> flamegraph--frame-positions 0)
+                     (aref flamegraph--frame-positions 0)
+                   (point-min))))))
 
 ;;; Commands
 
@@ -350,10 +354,14 @@ outermost frames.")
   "Return the `flamegraph-frame' at point, or nil."
   (get-text-property (point) 'flamegraph-frame))
 
+(defun flamegraph--view-state ()
+  "Return the current root and point as a restorable view state."
+  (cons flamegraph--root (point)))
+
 (defun flamegraph--goto-root (root)
   "Switch the view to ROOT, recording the change in the zoom history."
   (unless (eq root flamegraph--root)
-    (push flamegraph--root flamegraph--history)
+    (push (flamegraph--view-state) flamegraph--history)
     (setq flamegraph--forward nil
           flamegraph--root root)
     (flamegraph--draw)))
@@ -387,22 +395,24 @@ outermost frames.")
     (flamegraph--goto-root nil)))
 
 (defun flamegraph-back ()
-  "Return to the previously viewed root (zoom history)."
+  "Return to the previously viewed root and point (zoom history)."
   (interactive)
   (if (null flamegraph--history)
       (message "No earlier view")
-    (push flamegraph--root flamegraph--forward)
-    (setq flamegraph--root (pop flamegraph--history))
-    (flamegraph--draw)))
+    (push (flamegraph--view-state) flamegraph--forward)
+    (let ((state (pop flamegraph--history)))
+      (setq flamegraph--root (car state))
+      (flamegraph--draw (cdr state)))))
 
 (defun flamegraph-forward ()
-  "Go forward to the next viewed root (zoom history)."
+  "Go forward to the next viewed root and point (zoom history)."
   (interactive)
   (if (null flamegraph--forward)
       (message "No later view")
-    (push flamegraph--root flamegraph--history)
-    (setq flamegraph--root (pop flamegraph--forward))
-    (flamegraph--draw)))
+    (push (flamegraph--view-state) flamegraph--history)
+    (let ((state (pop flamegraph--forward)))
+      (setq flamegraph--root (car state))
+      (flamegraph--draw (cdr state)))))
 
 (defun flamegraph--goto (next)
   "Move point to the next drawn frame, or the previous one if NEXT is nil."
