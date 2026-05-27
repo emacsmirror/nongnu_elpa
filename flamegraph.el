@@ -66,10 +66,9 @@
 If nil, use the width of the window displaying the buffer."
   :type '(choice (const :tag "Window width" nil) natnum))
 
-(defcustom flamegraph-frame-spacing 1
-  "Width in pixels of the gap left on each side of a frame.
-Separates adjacent frames visually.  0 disables it.  On a text
-terminal a \"pixel\" is one column."
+(defcustom flamegraph-text-padding 5
+  "Padding in pixels between a frame's left edge and its label.
+On a text terminal a \"pixel\" is one column."
   :type 'natnum)
 
 (defcustom flamegraph-source-directory nil
@@ -174,9 +173,10 @@ The same NAME always maps to the same color, as in classic flame graphs."
 ;; Rows are laid out in pixels using `(space :align-to PIXEL)'.  Because
 ;; every frame is positioned at an absolute pixel offset, widths are exact
 ;; (not rounded to whole columns) and parent/child edges line up across
-;; rows; a background gap of `flamegraph-frame-spacing' pixels on
-;; each side separates adjacent frames.  On a text terminal a "pixel" is one
-;; column, so the same code degrades to a column layout.
+;; rows.  Frames abut; adjacent ones are told apart by color, and a
+;; background gap is drawn only where the data leaves empty space.  On a
+;; text terminal a "pixel" is one column, so the same code degrades to a
+;; column layout.
 
 (defvar-local flamegraph--frame-positions nil
   "Sorted vector of buffer positions, one per drawn frame.")
@@ -195,7 +195,7 @@ The same NAME always maps to the same color, as in classic flame graphs."
 MAX-DEPTH is the deepest row."
   (let* ((cw (frame-char-width))
          (total-px (flamegraph--canvas-width))
-         (spacing (if (display-graphic-p) flamegraph-frame-spacing 0))
+         (pad (if (display-graphic-p) flamegraph-text-padding 0))
          (rows (make-vector (1+ max-depth) nil))
          positions)
     ;; Bucket frames by row as pixel spans, dropping ones too narrow.
@@ -208,37 +208,50 @@ MAX-DEPTH is the deepest row."
           (push (list x0 x1 frame)
                 (aref rows (flamegraph-frame-depth frame))))))
     (dotimes (depth (1+ max-depth))
-      (dolist (seg (sort (aref rows depth) :key #'car))
-        (pcase-let* ((`(,x0 ,x1 ,frame) seg)
-                     ;; Inset the colored box by BORDER on each side, unless
-                     ;; the frame is too thin to spare the pixels.
-                     (insetp (>= (- x1 x0) (* 2 (1+ spacing))))
-                     (boxl (if insetp (+ x0 spacing) x0))
-                     (boxr (if insetp (- x1 spacing) x1))
-                     (node (flamegraph-frame-node frame))
-                     (name (flamegraph--entry-name
-                            (profiler-calltree-entry node)))
-                     ;; Truncate the name to what fits; no ellipsis.
-                     (label (truncate-string-to-width
-                             name (max 0 (/ (- boxr boxl) cw))))
-                     (props (list 'face (list :background
-                                              (flamegraph--color name)
-                                              :foreground "black")
-                                  'mouse-face 'highlight
+      (let ((x 0))
+        (dolist (seg (sort (aref rows depth) :key #'car))
+          (pcase-let* ((`(,x0 ,x1 ,frame) seg)
+                       (node (flamegraph-frame-node frame))
+                       (name (flamegraph--entry-name
+                              (profiler-calltree-entry node)))
+                       (color (flamegraph--color name))
+                       ;; A fresh value per frame so the mouse highlight stops
+                       ;; at the frame's edges.
+                       (mf (list 'highlight))
+                       ;; Truncate the name to what fits after padding.
+                       (label (truncate-string-to-width
+                               name (max 0 (/ (- x1 x0 pad) cw))))
+                       (props (list 'face (list :background color
+                                                :foreground "black")
+                                    'mouse-face mf
+                                    'flamegraph-frame frame
+                                    'help-echo #'flamegraph--help-echo)))
+            ;; Background gap only where the data leaves empty space.
+            (when (> x0 x)
+              (insert (propertize " " 'display `(space :align-to (,x0))
+                                  'cursor-intangible t
+                                  'front-sticky '(cursor-intangible)
+                                  'rear-nonsticky '(cursor-intangible))))
+            ;; Padding before the label.
+            (when (and (> pad 0) (not (string-empty-p label)))
+              (insert (propertize " "
+                                  'display `(space :align-to (,(+ x0 pad)))
+                                  'cursor-intangible t
+                                  'front-sticky '(cursor-intangible)
+                                  'rear-nonsticky '(cursor-intangible)
+                                  'face (list :background color :foreground "black")
+                                  'mouse-face mf
                                   'flamegraph-frame frame
                                   'help-echo #'flamegraph--help-echo)))
-          ;; Empty background gap, up to the box's left edge.
-          (insert (propertize " " 'display `(space :align-to (,boxl))
-                              'cursor-intangible t
-                              'front-sticky '(cursor-intangible)
-                              'rear-nonsticky '(cursor-intangible)))
-          (push (point) positions)
-          ;; The colored box: the label, then a stretch filling to BOXR.
-          (unless (string-empty-p label)
-            (insert (apply #'propertize label props)))
-          (insert (apply #'propertize " "
-                         'display `(space :align-to (,boxr)) props))))
-      (insert "\n"))
+            ;; Record the frame's first tangible position (the label, or the
+            ;; fill when unlabeled) for navigation.
+            (push (point) positions)
+            (unless (string-empty-p label)
+              (insert (apply #'propertize label props)))
+            (insert (apply #'propertize " "
+                           'display `(space :align-to (,x1)) props))
+            (setq x x1)))
+        (insert "\n")))
     (setq flamegraph--frame-positions
           (vconcat (sort positions #'<)))))
 
