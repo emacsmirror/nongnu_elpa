@@ -71,6 +71,12 @@ If nil, use the width of the window displaying the buffer."
 On a text terminal a \"pixel\" is one column."
   :type 'natnum)
 
+(defcustom flamegraph-frame-border 1
+  "Width in pixels of the border stroke at each frame's left edge.
+0 disables it.  Frames too narrow to spare the pixels get no border.
+On a text terminal the unit is columns."
+  :type 'natnum)
+
 (defcustom flamegraph-source-directory nil
   "Directory to resolve relative source paths against when visiting a frame.
 Used by \\[flamegraph-find] for folded stacks whose frames embed a
@@ -153,6 +159,13 @@ The same NAME always maps to the same color, as in classic flame graphs."
             (% (/ h 50) 230)            ; green: 0-229
             (% (/ h 11500) 55))))       ; blue:  0-54
 
+(defun flamegraph--darken (hex factor)
+  "Scale each channel of \"#rrggbb\" HEX by FACTOR (0..1)."
+  (format "#%02x%02x%02x"
+          (round (* factor (string-to-number (substring hex 1 3) 16)))
+          (round (* factor (string-to-number (substring hex 3 5) 16)))
+          (round (* factor (string-to-number (substring hex 5 7) 16)))))
+
 (defun flamegraph--percent (count total)
   "Format COUNT as a percentage of TOTAL with ~3 significant figures."
   (format "%.3g%%" (/ (* 100.0 count) total)))
@@ -196,6 +209,7 @@ MAX-DEPTH is the deepest row."
   (let* ((cw (frame-char-width))
          (total-px (flamegraph--canvas-width))
          (pad (if (display-graphic-p) flamegraph-text-padding 0))
+         (border (if (display-graphic-p) flamegraph-frame-border 0))
          (rows (make-vector (1+ max-depth) nil))
          positions)
     ;; Bucket frames by row as pixel spans, dropping ones too narrow.
@@ -218,9 +232,10 @@ MAX-DEPTH is the deepest row."
                        ;; A fresh value per frame so the mouse highlight stops
                        ;; at the frame's edges.
                        (mf (list 'highlight))
-                       ;; Truncate the name to what fits after padding.
+                       ;; A border that fits, then the label inset by padding.
+                       (bw (if (> (- x1 x0) (* 2 border)) border 0))
                        (label (truncate-string-to-width
-                               name (max 0 (/ (- x1 x0 pad) cw))))
+                               name (max 0 (/ (- x1 x0 bw pad) cw))))
                        (props (list 'face (list :background color
                                                 :foreground "black")
                                     'mouse-face mf
@@ -232,10 +247,21 @@ MAX-DEPTH is the deepest row."
                                   'cursor-intangible t
                                   'front-sticky '(cursor-intangible)
                                   'rear-nonsticky '(cursor-intangible))))
+            ;; Border stroke at the frame's left edge, when it can spare it.
+            (when (> bw 0)
+              (insert (propertize " "
+                                  'display `(space :align-to (,(+ x0 bw)))
+                                  'cursor-intangible t
+                                  'front-sticky '(cursor-intangible)
+                                  'rear-nonsticky '(cursor-intangible)
+                                  'face (list :background (flamegraph--darken color 0.6))
+                                  'mouse-face mf
+                                  'flamegraph-frame frame
+                                  'help-echo #'flamegraph--help-echo)))
             ;; Padding before the label.
             (when (and (> pad 0) (not (string-empty-p label)))
               (insert (propertize " "
-                                  'display `(space :align-to (,(+ x0 pad)))
+                                  'display `(space :align-to (,(+ x0 bw pad)))
                                   'cursor-intangible t
                                   'front-sticky '(cursor-intangible)
                                   'rear-nonsticky '(cursor-intangible)
