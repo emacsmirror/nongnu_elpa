@@ -308,19 +308,26 @@ outermost frames.")
 (defun flamegraph--header ()
   "Return the header line for the current view."
   (let* ((root flamegraph--root)
-         (zoomed (and root (profiler-calltree-entry root))))
-    (format " %s · %s %s · root: %s%s"
-            flamegraph--title
-            (profiler-format-number flamegraph--grand-total)
-            flamegraph--unit
-            (if zoomed
-                (flamegraph--entry-name (profiler-calltree-entry root))
-              "all")
-            (if zoomed
-                (format " (%s)" (flamegraph--percent
-                                 (profiler-calltree-count root)
-                                 flamegraph--grand-total))
-              ""))))
+         (zoomed (and root (profiler-calltree-entry root)))
+         (left (format " %s · %s %s · root: %s%s"
+                       flamegraph--title
+                       (profiler-format-number flamegraph--grand-total)
+                       flamegraph--unit
+                       (if zoomed
+                           (flamegraph--entry-name (profiler-calltree-entry root))
+                         "all")
+                       (if zoomed
+                           (format " (%s)" (flamegraph--percent
+                                            (profiler-calltree-count root)
+                                            flamegraph--grand-total))
+                         ""))))
+    (concat (string-replace "%" "%%" left)
+            (when zoomed
+              (let ((hint "l: back · t: reset "))
+                (concat
+                 (propertize " " 'display
+                             `(space :align-to (- right ,(string-width hint))))
+                 hint))))))
 
 (defun flamegraph--draw ()
   "(Re)draw the flame graph in the current buffer."
@@ -331,9 +338,7 @@ outermost frames.")
     (pcase-let ((`(,frames ,_total ,max-depth)
                  (flamegraph--frames root)))
       (flamegraph--render-text frames max-depth))
-    ;; Double % so percentages aren't taken as mode-line %-constructs.
-    (setq header-line-format
-          (string-replace "%" "%%" (flamegraph--header)))
+    (setq header-line-format (flamegraph--header))
     ;; Each row begins with a background gap, so land on the first frame.
     (goto-char (if (length> flamegraph--frame-positions 0)
                    (aref flamegraph--frame-positions 0)
