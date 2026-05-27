@@ -200,7 +200,11 @@ The same NAME always maps to the same color, as in classic flame graphs."
     (max (* 40 cw)
          (or (and flamegraph-width (* flamegraph-width cw))
              (let ((win (get-buffer-window (current-buffer) t)))
-               (and win (window-body-width win t)))
+               (and win
+                    ;; Keep a spare character inside redisplay's wrap
+                    ;; boundary.  Otherwise right-edge stretch glyphs can
+                    ;; either wrap or get truncated, hiding tiny frames.
+                    (- (window-body-width win t) cw)))
              (* 80 cw)))))
 
 (defun flamegraph--render-text (frames max-depth)
@@ -232,8 +236,9 @@ MAX-DEPTH is the deepest row."
                        ;; A fresh value per frame so the mouse highlight stops
                        ;; at the frame's edges.
                        (mf (list 'highlight))
-                       ;; A border that fits, then the label inset by padding.
-                       (bw (if (> (- x1 x0) (* 2 border)) border 0))
+                       ;; A border that fits, except at the row's left edge
+                       ;; (where it would double the window edge).
+                       (bw (if (and (> x0 0) (> (- x1 x0) (* 2 border))) border 0))
                        (label (truncate-string-to-width
                                name (max 0 (/ (- x1 x0 bw pad) cw))))
                        (props (list 'face (list :background color
@@ -671,7 +676,8 @@ since this runs before that relocation happens."
   "Major mode for viewing a flame graph."
   (setq buffer-read-only t
         truncate-lines t
-        buffer-undo-list t)
+        buffer-undo-list t
+        left-fringe-width 0)
   (cursor-intangible-mode 1)
   (add-hook 'post-command-hook #'flamegraph--echo nil t))
 
@@ -699,6 +705,7 @@ visiting a frame."
                                       (profiler-calltree-children top))))))
     ;; Display first, then draw, so the canvas spans the actual window.
     (pop-to-buffer buffer)
+    (set-window-fringes (selected-window) 0 nil)
     (flamegraph--draw)
     buffer))
 
