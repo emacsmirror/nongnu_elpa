@@ -233,9 +233,9 @@ MAX-DEPTH is the deepest row."
                        (name (flamegraph--entry-name
                               (profiler-calltree-entry node)))
                        (color (flamegraph--color name))
-                       ;; A fresh value per frame so the mouse highlight stops
-                       ;; at the frame's edges.
-                       (mf (list 'highlight))
+                       (mf (list :background color
+                                 :box (list :line-width (- flamegraph-frame-border)
+                                            :color "black")))
                        ;; A border that fits, except at the row's left edge
                        ;; (where it would double the window edge).
                        (bw (if (and (> x0 0) (> (- x1 x0) (* 2 border))) border 0))
@@ -260,7 +260,6 @@ MAX-DEPTH is the deepest row."
                                   'front-sticky '(cursor-intangible)
                                   'rear-nonsticky '(cursor-intangible)
                                   'face (list :background (flamegraph--darken color 0.6))
-                                  'mouse-face mf
                                   'flamegraph-frame frame
                                   'help-echo #'flamegraph--help-echo)))
             ;; Padding before the label.
