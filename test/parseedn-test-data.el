@@ -161,7 +161,6 @@
        "inst"
        (a-list
         :source "#inst \"2020-09-09T06:56:04\""
-        ;; FIXME this value may differ depending on the timezone of your machine
-        :edn '((edn-inst 24408 31876)))))
+        :edn (list (cl-list* 'edn-inst (date-to-time "2020-09-09T06:56:04"))))))
 
 ;;; parseedn-test-data.el ends here
