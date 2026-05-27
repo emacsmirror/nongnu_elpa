@@ -36,7 +36,8 @@
 ;;   l / r           go back / forward through the zoom history
 ;;   n / TAB         move to the next frame
 ;;   p / S-TAB       move to the previous frame
-;;   d               describe the function at point
+;;   d               describe the frame at point
+;;   mouse-2         describe the clicked frame
 ;;   f               visit the frame's source (definition or file:line)
 ;;   g               redraw (e.g. after resizing the window)
 ;;   q               quit
@@ -436,12 +437,15 @@ If POINT is non-nil, restore point there after drawing."
   (interactive)
   (flamegraph--goto nil))
 
-(defun flamegraph-describe ()
-  "Describe the frame at point.
+(defun flamegraph-describe (&optional event)
+  "Describe the frame at point or EVENT.
 For Emacs functions this shows the usual function documentation.  For
 other frames it shows a report: the sampled source line in context, the
 frame's sample counts, and buttons to its caller and callees."
-  (interactive)
+  (interactive (list last-nonmenu-event))
+  (when event
+    (let ((posn (event-end event)))
+      (when (posnp posn) (posn-set-point posn))))
   (let ((frame (flamegraph--frame-at-point)))
     (if (null frame)
         (message "No frame at point")
@@ -673,6 +677,7 @@ since this runs before that relocation happens."
   :doc "Keymap for `flamegraph-mode'."
   "RET"       #'flamegraph-zoom
   "<mouse-1>" #'flamegraph-zoom
+  "<mouse-2>" #'flamegraph-describe
   "u"         #'flamegraph-zoom-out
   "t"         #'flamegraph-zoom-reset
   "l"         #'flamegraph-back
