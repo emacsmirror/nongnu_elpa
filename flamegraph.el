@@ -458,8 +458,10 @@ frame's sample counts, and buttons to its caller and callees."
 (defun flamegraph--entry-location (entry)
   "Extract a (FILE . LINE) source location embedded in ENTRY, or nil.
 Recognizes the FILE:LINE form that profilers such as py-spy and rbspy put
-in each frame (e.g. \"work (app/main.py:20)\")."
-  (when (string-match "\\([^ ()]*\\.[^ ():]+\\):\\([0-9]+\\)" entry)
+in each frame (e.g. \"work (app/main.py:20)\"), and the FUNC:FILE:LINE form
+that \"perf script -F +srcline\" folded stacks use (e.g.
+\"redisplay_window:/path/xdisp.c:21020\")."
+  (when (string-match "\\([^ ():]*\\.[^ ():]+\\):\\([0-9]+\\)" entry)
     (cons (match-string 1 entry)
           (string-to-number (match-string 2 entry)))))
 
@@ -510,8 +512,8 @@ necessarily its definition."
 (defun flamegraph--frame-display-name (entry)
   "Return ENTRY's name with any embedded FILE:LINE location stripped."
   (if (and (stringp entry)
-           (string-match "\\([^ ()]*\\.[^ ():]+\\):\\([0-9]+\\)" entry))
-      (string-trim-right (substring entry 0 (match-beginning 0)) "[ (-]+")
+           (string-match "\\([^ ():]*\\.[^ ():]+\\):\\([0-9]+\\)" entry))
+      (string-trim-right (substring entry 0 (match-beginning 0)) "[ (:-]+")
     (flamegraph--entry-name entry)))
 
 (defun flamegraph--snippet-line (n marked)
