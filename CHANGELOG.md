@@ -8,6 +8,7 @@
 - New `adoc-blockquote-face` for the body of `[quote]` and `[verse]` delimited blocks (inherits `font-lock-doc-face`); previously the body was left unfontified.
 - New `adoc-highlight-face` for `#text#` / `##text##` highlighted spans (inherits the standard `highlight` face); previously these reused `adoc-gen-face`.
 - New `adoc-url-face` (inherits `font-lock-string-face`) for URL targets and standalone URLs / email addresses. Link text inside `[…]` still uses `adoc-reference-face`. URL targets previously reused `adoc-internal-reference-face` (for `http://…[label]` form) or `adoc-reference-face` (for bare URLs), conflating link text and link target.
+- New `adoc-metadata-key-face` (inherits `font-lock-variable-name-face`) and `adoc-metadata-value-face` (inherits `font-lock-string-face`) for document attribute entries like `:author: Bozhidar Batsov`. Previously the key used `adoc-meta-face` (the generic markup face) and the value reused `adoc-secondary-text-face`; both now have dedicated semantic faces.
 
 ### Changes
 

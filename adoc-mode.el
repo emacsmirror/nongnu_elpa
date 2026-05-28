@@ -802,6 +802,18 @@ For example the URL part of `http://example.com[foo]', or a raw
   "Face for the content of `[quote]' and `[verse]' delimited blocks."
   :group 'adoc-faces)
 
+(defface adoc-metadata-key-face
+  '((t (:inherit font-lock-variable-name-face)))
+  "Face for the key of a document attribute entry.
+For example the `:author:' in `:author: Bozhidar Batsov'."
+  :group 'adoc-faces)
+
+(defface adoc-metadata-value-face
+  '((t (:inherit font-lock-string-face)))
+  "Face for the value of a document attribute entry.
+For example `Bozhidar Batsov' in `:author: Bozhidar Batsov'."
+  :group 'adoc-faces)
+
 (defface adoc-highlight-face
   '((t (:inherit highlight)))
   "Face for highlighted text written as `#text#'.
@@ -2419,8 +2431,8 @@ for multiline constructs to be matched."
    ;; attribute entry
    ;; ------------------------------
    (list (adoc-re-attribute-entry)
-         '(1 'adoc-meta-face)
-         '(2 'adoc-secondary-text-face nil t))
+         '(1 'adoc-metadata-key-face)
+         '(2 'adoc-metadata-value-face nil t))
 
 
    ;; attribute list
