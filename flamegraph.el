@@ -441,9 +441,9 @@ If POINT is non-nil, restore point there after drawing."
 
 (defun flamegraph-describe (&optional event)
   "Describe the frame at point or EVENT.
-For Emacs functions this shows the usual function documentation.  For
-other frames it shows a report: the sampled source line in context, the
-frame's sample counts, and buttons to its caller and callees."
+Shows a report: the frame's name (clickable for Emacs functions, to
+their usual documentation), the sampled source line in context, the
+sample counts, and buttons to the caller and callees."
   (interactive (list last-nonmenu-event))
   (when event
     (let ((posn (event-end event)))
@@ -451,12 +451,9 @@ frame's sample counts, and buttons to its caller and callees."
   (let ((frame (flamegraph--frame-at-point)))
     (if (null frame)
         (message "No frame at point")
-      (let* ((node (flamegraph-frame-node frame))
-             (entry (profiler-calltree-entry node)))
-        (if (or (and (symbolp entry) (fboundp entry)) (functionp entry))
-            (progn (require 'help-fns) (describe-function entry))
-          (flamegraph--describe-frame
-           node flamegraph--grand-total flamegraph--directory))))))
+      (flamegraph--describe-frame
+       (flamegraph-frame-node frame)
+       flamegraph--grand-total flamegraph--directory))))
 
 (defun flamegraph--entry-location (entry)
   "Extract a (FILE . LINE) source location embedded in ENTRY, or nil.
@@ -467,6 +464,22 @@ that \"perf script -F +srcline\" folded stacks use (e.g.
   (when (string-match "\\([^ ():]*\\.[^ ():]+\\):\\([0-9]+\\)" entry)
     (cons (match-string 1 entry)
           (string-to-number (match-string 2 entry)))))
+
+(defun flamegraph--symbol-location (symbol)
+  "Return (FILE . LINE) of SYMBOL's defining source, or nil.
+Uses `find-function-noselect', so handles autoloads and — when the user
+has set `find-function-C-source-directory' — subrs."
+  (when (and (symbolp symbol) (fboundp symbol))
+    (require 'find-func)
+    (condition-case nil
+        (let ((res (find-function-noselect symbol t)))
+          (when (consp res)
+            (let ((buf (car res)) (pos (cdr res)))
+              (when (and (bufferp buf) (buffer-file-name buf))
+                (with-current-buffer buf
+                  (cons (buffer-file-name buf)
+                        (line-number-at-pos pos)))))))
+      (error nil))))
 
 (defun flamegraph--resolve-source (file directory)
   "Expand FILE against the configured source directory and return it.
@@ -551,6 +564,7 @@ with `⋯'.  CONTEXT defaults to 4."
                  (def-pos (save-excursion
                             (goto-char (point-min))
                             (forward-line (1- line))
+                            (end-of-line)
                             (let ((p (point)))
                               (ignore-errors (beginning-of-defun))
                               (if (< (point) p) (point) (point-min)))))
@@ -559,11 +573,16 @@ with `⋯'.  CONTEXT defaults to 4."
                             (goto-char def-pos)
                             (ignore-errors (end-of-defun))
                             (if (> (point) def-pos) (point) (point-max))))
+                 ;; Anything that's plausibly a symbol — no whitespace,
+                 ;; brackets, parens, comma, semicolon.  Permissive on
+                 ;; purpose: Lisp names use `-' (and friends), C names use
+                 ;; `_'; `\_<...\_>' below enforces real symbol boundaries
+                 ;; in the target buffer's syntax.
                  (names (cl-remove-if-not
                          (lambda (n)
-                           (and (stringp n)
-                                (string-match-p
-                                 "\\`[A-Za-z_][A-Za-z0-9_]*\\'" n)))
+                           (and (stringp n) (not (string-empty-p n))
+                                (not (string-match-p
+                                      "[][[:space:]();,]" n))))
                          names))
                  (keep nil))
             ;; The sampled line and its immediate context.
@@ -632,8 +651,12 @@ frames, with Help-style back/forward navigation."
   (help-setup-xref (list #'flamegraph--describe-frame node total directory)
                    (called-interactively-p 'interactive))
   (let* ((entry (profiler-calltree-entry node))
-         (loc (and (stringp entry) (flamegraph--entry-location entry)))
-         (path (and loc (flamegraph--resolve-source (car loc) directory)))
+         (loc (cond ((stringp entry) (flamegraph--entry-location entry))
+                    ((symbolp entry) (flamegraph--symbol-location entry))))
+         (path (when loc
+                 (if (stringp entry)
+                     (flamegraph--resolve-source (car loc) directory)
+                   (car loc))))
          (count (profiler-calltree-count node))
          (kids (sort (copy-sequence (profiler-calltree-children node))
                      (lambda (a b) (> (profiler-calltree-count a)
@@ -642,7 +665,11 @@ frames, with Help-style back/forward navigation."
          (parent (profiler-calltree-parent node)))
     (with-help-window (help-buffer)
       (with-current-buffer standard-output
-        (insert (flamegraph--frame-display-name entry))
+        (if (and (symbolp entry) (fboundp entry))
+            (insert-text-button (flamegraph--frame-display-name entry)
+                                'type 'help-function
+                                'help-args (list entry))
+          (insert (flamegraph--frame-display-name entry)))
         (when loc
           (insert "  ")
           (insert-text-button
