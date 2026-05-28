@@ -5,17 +5,16 @@ files produced by `perf`, `py-spy`, `rbspy`, and friends.
 
 [bg]: https://www.brendangregg.com/flamegraphs.html
 
-Single-file package, text renderer (an SVG renderer is planned).
-Top-down "icicle" orientation: the outermost frame sits on the top
-row, and the stack grows downward. Identical call paths are merged
-and children are sorted heaviest-first — what speedscope calls the
-"Left Heavy" view.
+Rendered into an interactive buffer using display specs (an SVG
+renderer is planned). Top-down "icicle" orientation: the outermost
+frame sits on the top row, and the stack grows downward. Identical
+call paths are merged and children are sorted heaviest-first.
 
-Frames are interactive: `d` opens a description with samples, parent,
-and callees, plus a snippet highlighting where those callees are
-called from in source; `f` jumps to the source line. The snippet and
-`f` need the data to include `file:line` — Elisp profiles always do;
-for perf, fold with `-F +srcline` (see
+`RET` / `mouse-1` zooms into a frame; `d` describes the frame
+(parent, callees, self-time) with a source snippet highlighting its
+outgoing calls; `f` jumps to that source line. The snippet and `f`
+need the data to include `file:line` — Elisp profiles always do; for
+perf, fold with `-F +srcline` (see
 [Recording](#recording-profile-data) below).
 
 ## Installation
