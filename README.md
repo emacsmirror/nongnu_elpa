@@ -61,8 +61,8 @@ M-x flamegraph-find-file RET path/to/profile-or-stacks RET
 ```
 
 Auto-detects between a profile saved with `profiler-report-write-profile`
-and a `.folded` file. `.folded` is the common flame-graph interchange
-format (one `;`-separated stack per line, followed by the sample count).
+and a "folded stacks" file. The latter is a common interchange format
+(one `;`-separated stack per line, followed by the sample count).
 
 ## Key bindings (in the `*Flamegraph*` buffer)
 
@@ -129,6 +129,11 @@ rbspy record --format flamegraph --raw-file out.folded …
 Both emit frames in `NAME (file:line)` / `NAME - file:line` shape; the
 package parses both.
 
+For more profilers and recording recipes, see section 4 ("Instructions")
+of the canonical [CPU Flame Graphs][cpufg] article.
+
+[cpufg]: https://www.brendangregg.com/FlameGraphs/cpuflamegraphs.html
+
 ## Customization
 
 | Variable | Purpose |
@@ -144,15 +149,11 @@ package parses both.
 
 ## Development
 
-```sh
-make check     # byte-compile (warnings → errors) + ERT suite
-make compile
-make test
-make clean
-```
+`make check` byte-compiles (warnings → errors) and runs the ERT suite;
+`EMACS=/path/to/emacs make check` pins a particular build. CI runs it
+on Emacs 30.1 and snapshot.
 
-Use `EMACS=/path/to/emacs make check` to test against a particular
-Emacs build. CI runs the same targets on Emacs 30.1 and snapshot.
+New ERT tests are welcome; they live under `test/`.
 
 ## License
 
