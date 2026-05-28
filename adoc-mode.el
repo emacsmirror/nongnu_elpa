@@ -824,6 +824,21 @@ For example `Bozhidar Batsov' in `:author: Bozhidar Batsov'."
   "Face for the body text of a `footnote:[…]' macro."
   :group 'adoc-faces)
 
+(defface adoc-strike-through-face
+  '((t (:strike-through t)))
+  "Face for strike-through text written as `[.line-through]#text#'."
+  :group 'adoc-faces)
+
+(defface adoc-underline-face
+  '((t (:underline t)))
+  "Face for underlined text written as `[.underline]#text#'."
+  :group 'adoc-faces)
+
+(defface adoc-overline-face
+  '((t (:overline t)))
+  "Face for overlined text written as `[.overline]#text#'."
+  :group 'adoc-faces)
+
 (defface adoc-highlight-face
   '((t (:inherit highlight)))
   "Face for highlighted text written as `#text#'.
@@ -1867,6 +1882,58 @@ TEXT-FACE is a face name symbol or nil."
    '(2 'adoc-gen-face)
    '(3 '(face nil adoc-reserved block-del))))
 
+(defcustom adoc-role-face-alist
+  '(("line-through" . adoc-strike-through-face)
+    ("underline"    . adoc-underline-face)
+    ("overline"     . adoc-overline-face))
+  "Alist mapping AsciiDoc role names to text faces.
+Recognised inside `[role]#text#' / `[.role]#text#' (and the
+unconstrained `##text##' variant).  Add entries to fontify
+additional roles defined in your stylesheet."
+  :type '(alist :key-type (string :tag "Role name")
+                :value-type (face :tag "Face"))
+  :group 'adoc-faces
+  :package-version '(adoc-mode . "0.9.0"))
+
+(defun adoc--role-face-from-attribute ()
+  "Return the role face for the current quote match, if any.
+Looks at the optional attribute list captured in match group 1
+and returns the matching face from `adoc-role-face-alist',
+otherwise nil.  Handles `[role]', `[.role]', `[role.other]', and
+`[role#id]' shapes.
+
+Wrapped in `save-match-data' so we don't disturb font-lock's
+outer match while parsing the attribute list."
+  (save-match-data
+    (when-let* ((beg (match-beginning 1))
+                (end (match-end 1))
+                (text (buffer-substring-no-properties beg end))
+                ((>= (length text) 2)))
+      (let* ((inside (substring text 1 -1))
+             (no-id (car (split-string inside "#")))
+             (without-dot (if (string-prefix-p "." no-id)
+                              (substring no-id 1)
+                            no-id))
+             (names (split-string without-dot "\\." t)))
+        (cl-some (lambda (n) (cdr (assoc n adoc-role-face-alist)))
+                 names)))))
+
+(defun adoc--quote-face (default-face)
+  "Return face(s) for the body of a quoted span.
+If the current match's attribute list carries a role recognised
+in `adoc-role-face-alist', combine the role face with
+DEFAULT-FACE.  Otherwise return DEFAULT-FACE unchanged.
+
+If DEFAULT-FACE is a facespec list (e.g. from
+`adoc-facespec-subscript') it is returned as is; role dispatch
+only applies to plain face symbols."
+  (let ((role (adoc--role-face-from-attribute)))
+    (cond
+     ((null role) default-face)
+     ((null default-face) role)
+     ((symbolp default-face) (list role default-face))
+     (t default-face))))
+
 (defun adoc-kw-quote (type ldel text-face-spec &optional del-face rdel literal-p)
   "Return a keyword which highlights (un)constrained quotes.
 When LITERAL-P is non-nil, the contained text is literal text.
@@ -1881,7 +1948,7 @@ face-spec expression (e.g. from `adoc-facespec-subscript')."
      ;; highlighers
      '(1 '(face adoc-meta-face adoc-reserved t) t t)                    ; attribute list
      `(2 '(face ,(or del-face 'adoc-meta-hide-face) adoc-reserved t) t)  ; open del
-     `(3 ,text-face-form append)                                              ; text
+     `(3 (adoc--quote-face ,text-face-form) append)                      ; text
      (if literal-p
          '(3 '(face adoc-verbatim-face adoc-reserved t) append)
        '(3 nil)) ; grumbl, I don't know how to get rid of it

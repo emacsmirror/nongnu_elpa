@@ -716,6 +716,58 @@ Don't use it for anything real.")
   ;; .... todo
   )
 
+(ert-deftest adoctest-test-role-faces ()
+  "Role-aware fontification of [.role]#text# / [role]#text# spans.
+The role face is layered on top of the surrounding quote's default
+face (matching how Asciidoctor's stylesheet renders the role class
+on top of the `<mark>' default)."
+  (adoctest-faces "role-line-through"
+                  ;; Asciidoctor preferred syntax: leading dot
+                  "Lorem " nil
+                  "[.line-through]" 'adoc-meta-face
+                  "#" 'adoc-meta-hide-face
+                  "ipsum" '(adoc-strike-through-face adoc-highlight-face)
+                  "#" 'adoc-meta-hide-face " dolor" nil)
+  (adoctest-faces "role-line-through-legacy"
+                  ;; Legacy syntax without leading dot
+                  "Lorem " nil
+                  "[line-through]" 'adoc-meta-face
+                  "#" 'adoc-meta-hide-face
+                  "ipsum" '(adoc-strike-through-face adoc-highlight-face)
+                  "#" 'adoc-meta-hide-face " dolor" nil)
+  (adoctest-faces "role-underline"
+                  "Lorem " nil
+                  "[.underline]" 'adoc-meta-face
+                  "#" 'adoc-meta-hide-face
+                  "ipsum" '(adoc-underline-face adoc-highlight-face)
+                  "#" 'adoc-meta-hide-face " dolor" nil)
+  (adoctest-faces "role-overline"
+                  "Lorem " nil
+                  "[.overline]" 'adoc-meta-face
+                  "#" 'adoc-meta-hide-face
+                  "ipsum" '(adoc-overline-face adoc-highlight-face)
+                  "#" 'adoc-meta-hide-face " dolor" nil)
+  (adoctest-faces "role-with-id"
+                  ;; [.role#id] should still dispatch on role
+                  "Lorem " nil
+                  "[.line-through#myid]" 'adoc-meta-face
+                  "#" 'adoc-meta-hide-face
+                  "ipsum" '(adoc-strike-through-face adoc-highlight-face)
+                  "#" 'adoc-meta-hide-face " dolor" nil)
+  ;; Role combines with the surrounding quote's default face
+  (adoctest-faces "role-combines-with-bold"
+                  "Lorem " nil
+                  "[.line-through]" 'adoc-meta-face
+                  "*" 'adoc-meta-hide-face
+                  "ipsum" '(adoc-strike-through-face adoc-bold-face)
+                  "*" 'adoc-meta-hide-face " dolor" nil)
+  ;; Unknown role: text-face falls back to the default
+  (adoctest-faces "role-unknown"
+                  "Lorem " nil
+                  "[.frobnicate]" 'adoc-meta-face
+                  "#" 'adoc-meta-hide-face "ipsum" 'adoc-highlight-face
+                  "#" 'adoc-meta-hide-face " dolor" nil))
+
 (ert-deftest adoctest-test-url ()
   (adoctest-faces "url"
                   ;; url inline macro with attriblist

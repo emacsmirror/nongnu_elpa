@@ -10,6 +10,7 @@
 - New `adoc-url-face` (inherits `font-lock-string-face`) for URL targets and standalone URLs / email addresses. Link text inside `[…]` still uses `adoc-reference-face`. URL targets previously reused `adoc-internal-reference-face` (for `http://…[label]` form) or `adoc-reference-face` (for bare URLs), conflating link text and link target.
 - New `adoc-metadata-key-face` (inherits `font-lock-variable-name-face`) and `adoc-metadata-value-face` (inherits `font-lock-string-face`) for document attribute entries like `:author: Bozhidar Batsov`. Previously the key used `adoc-meta-face` (the generic markup face) and the value reused `adoc-secondary-text-face`; both now have dedicated semantic faces.
 - New `adoc-footnote-marker-face` (inherits `adoc-command-face`) and `adoc-footnote-text-face` (inherits `font-lock-comment-face`) for `footnote:[…]` and `footnoteref:[…]` macros. The marker name (`footnote`, `footnoteref`) previously reused the generic `adoc-command-face` and the body text reused `adoc-secondary-text-face`.
+- New `adoc-strike-through-face`, `adoc-underline-face`, `adoc-overline-face`, and an `adoc-role-face-alist` defcustom. `[.line-through]#text#`, `[.underline]#text#`, and `[.overline]#text#` (plus the legacy `[role]#text#` and `[role#id]#text#` shapes, and combinations like `[.line-through]*bold*`) now fontify the span with the matching role face layered on top of the surrounding quote's default face. Add entries to `adoc-role-face-alist` to fontify custom roles defined in your stylesheet.
 
 ### Changes
 
