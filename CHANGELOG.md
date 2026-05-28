@@ -12,6 +12,7 @@
 - Simplify `adoc-meta-face` to `(:inherit shadow :slant normal :weight normal)` instead of overriding eleven attributes including `:family "Monospace"`. AsciiDoc markup characters now respect the user's font choices and theme `shadow` colour rather than being forced into a monospace family with hardcoded grays.
 - Drop the dated 3D button decoration (`:box (:style released-button)`) and hardcoded hex colours from `adoc-command-face` and `adoc-complex-replacement-face`; inherit from `font-lock-builtin-face` instead.
 - `adoc-meta-hide-face` no longer hardcodes `gray75`/`gray25` foregrounds; it simply inherits from `adoc-meta-face` so the colour tracks the theme. Customise the face if you want hidden markup to fade further into the background.
+- Drop the self-referencing `(defvar adoc-X-face 'adoc-X-face)` boilerplate and the `adoc-delimiter` / `adoc-hide-delimiter` aliases. Font-lock keyword specs now quote face symbols directly. No user-visible change; this is purely an internal cleanup.
 
 ### Bugs fixed
 
