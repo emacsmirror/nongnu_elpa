@@ -373,5 +373,99 @@ return that buffer's contents (a propertized string)."
                        (eq (button-type (button-at (point)))
                            'help-function))))))
 
+;;; `flamegraph-find-source' branches
+
+(defun flamegraph-test--frame (entry)
+  "Build a `flamegraph-frame' wrapping a calltree node carrying ENTRY."
+  (flamegraph--frame
+   :node (profiler-make-calltree :entry entry :count 1)
+   :start 0 :width 1 :depth 0))
+
+(defmacro flamegraph-test--with-mocks (bindings &rest body)
+  "Run BODY with each (FN REPL) in BINDINGS shadowing FN's definition."
+  (declare (indent 1))
+  `(cl-letf* ,(mapcar (lambda (b) `((symbol-function ',(car b)) ,(cadr b)))
+                      bindings)
+     ,@body))
+
+(ert-deftest flamegraph-test-find-source-fboundp-symbol ()
+  "An fboundp symbol entry routes to `find-function-other-window'."
+  (let (called)
+    (flamegraph-test--with-mocks
+        ((flamegraph--frame-at-point
+          (lambda () (flamegraph-test--frame 'flamegraph-describe)))
+         (find-function-other-window (lambda (sym) (setq called sym))))
+      (flamegraph-find-source))
+    (should (eq called 'flamegraph-describe))))
+
+(ert-deftest flamegraph-test-find-source-embedded-location ()
+  "A string entry with an embedded srcline visits via `flamegraph--visit-file'."
+  (flamegraph-test--with-temp-source path "(defun outer () 1)\n"
+    (let (visited)
+      (flamegraph-test--with-mocks
+          ((flamegraph--frame-at-point
+            (lambda ()
+              (flamegraph-test--frame (format "outer:%s:1" path))))
+           (flamegraph--visit-file
+            (lambda (p l) (setq visited (cons p l)))))
+        (flamegraph-find-source))
+      (should (equal visited (cons path 1))))))
+
+(ert-deftest flamegraph-test-find-source-no-frame ()
+  "Without a frame at point the command messages and exits."
+  (let (msg)
+    (flamegraph-test--with-mocks
+        ((flamegraph--frame-at-point (lambda () nil))
+         (message (lambda (fmt &rest args) (setq msg (apply #'format fmt args)))))
+      (flamegraph-find-source))
+    (should (equal msg "No frame at point"))))
+
+(ert-deftest flamegraph-test-find-source-no-location ()
+  "A string entry without an embedded srcline messages and exits."
+  (let (msg)
+    (flamegraph-test--with-mocks
+        ((flamegraph--frame-at-point
+          (lambda () (flamegraph-test--frame "emacs")))
+         (message (lambda (fmt &rest args) (setq msg (apply #'format fmt args)))))
+      (flamegraph-find-source))
+    (should (string-match-p "\\`No source location in: emacs" msg))))
+
+(ert-deftest flamegraph-test-find-source-missing-file ()
+  "When the resolved file doesn't exist the command messages and exits."
+  (let (msg)
+    (flamegraph-test--with-mocks
+        ((flamegraph--frame-at-point
+          (lambda () (flamegraph-test--frame "foo:/does/not/exist.c:10")))
+         (message (lambda (fmt &rest args) (setq msg (apply #'format fmt args)))))
+      (flamegraph-find-source))
+    (should (string-match-p "\\`Source file not found:" msg))))
+
+;;; `flamegraph--resolve-source' precedence
+
+(ert-deftest flamegraph-test-resolve-source-custom-dir-wins ()
+  "`flamegraph-source-directory' takes precedence over DIRECTORY."
+  (let ((flamegraph-source-directory "/from/custom/"))
+    (should (equal (flamegraph--resolve-source "foo.c" "/from/data/")
+                   "/from/custom/foo.c"))))
+
+(ert-deftest flamegraph-test-resolve-source-data-dir ()
+  "DIRECTORY (the data file's dir) is used when custom is nil."
+  (let ((flamegraph-source-directory nil))
+    (should (equal (flamegraph--resolve-source "foo.c" "/from/data/")
+                   "/from/data/foo.c"))))
+
+(ert-deftest flamegraph-test-resolve-source-default-dir ()
+  "`default-directory' is the last resort."
+  (let ((flamegraph-source-directory nil)
+        (default-directory "/from/default/"))
+    (should (equal (flamegraph--resolve-source "foo.c" nil)
+                   "/from/default/foo.c"))))
+
+(ert-deftest flamegraph-test-resolve-source-absolute-bypasses-base ()
+  "Absolute paths bypass every base directory."
+  (let ((flamegraph-source-directory "/from/custom/"))
+    (should (equal (flamegraph--resolve-source "/abs/foo.c" "/from/data/")
+                   "/abs/foo.c"))))
+
 (provide 'flamegraph-tests)
 ;;; flamegraph-tests.el ends here
