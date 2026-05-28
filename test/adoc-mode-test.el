@@ -720,33 +720,33 @@ Don't use it for anything real.")
   (adoctest-faces "url"
                   ;; url inline macro with attriblist
                   "foo " nil
-                  "http://www.lorem.com/ipsum.html" 'adoc-internal-reference-face
+                  "http://www.lorem.com/ipsum.html" 'adoc-url-face
                   "[" 'adoc-meta-face "sit amet" 'adoc-reference-face "]" 'adoc-meta-face
                   " bar \n" nil
                   ;; link text contains newlines and commas
-                  "http://www.lorem.com/ipsum.html" 'adoc-internal-reference-face
+                  "http://www.lorem.com/ipsum.html" 'adoc-url-face
                   "[" 'adoc-meta-face
                   "sit,\namet,\nconsectetur" 'adoc-reference-face
                   "]" 'adoc-meta-face
                   " bar \n" nil
                   ;; url inline macro withOUT attriblist
-                  "http://www.lorem.com/ipsum.html" 'adoc-reference-face
+                  "http://www.lorem.com/ipsum.html" 'adoc-url-face
                   "[]" 'adoc-meta-face
                   " bar \n" nil
                   ;; plain url
-                  "http://www.lorem.com/ipsum.html" 'adoc-reference-face
-                  " foo " nil "joe.bloggs@foobar.com" 'adoc-reference-face ))
+                  "http://www.lorem.com/ipsum.html" 'adoc-url-face
+                  " foo " nil "joe.bloggs@foobar.com" 'adoc-url-face ))
 
 (ert-deftest adoctest-test-url-enclosing-quote ()
   (adoctest-faces "url-enclosing-quote"
                   ;; spaces between __ and url seem really to be needed also in asciidoc
                   "foo " nil "__" 'adoc-meta-hide-face " " nil
-                  "http://www.lorem.com/ipsum.html" '(adoc-emphasis-face adoc-reference-face)
+                  "http://www.lorem.com/ipsum.html" '(adoc-emphasis-face adoc-url-face)
                   " " nil "__" 'adoc-meta-hide-face
 
                   "\nfoo " nil
                   "**" 'adoc-meta-hide-face " " nil
-                  "joe.bloggs@foobar.com" '(adoc-bold-face adoc-reference-face)
+                  "joe.bloggs@foobar.com" '(adoc-bold-face adoc-url-face)
                   " " nil "**" 'adoc-meta-hide-face ))
 
 ;; inline substitutions only within the block they belong to. I.e. don't cross

@@ -776,7 +776,15 @@ something that is orthogonal to the adoc-bold-face etc faces."
 
 (defface adoc-reference-face
   '((t (:inherit link)))
-  "Face for link references."
+  "Face for the link-text portion of a link or inline macro.
+For example the `foo' in `http://example.com[foo]'."
+  :group 'adoc-faces)
+
+(defface adoc-url-face
+  '((t (:inherit font-lock-string-face)))
+  "Face for URL targets and standalone URLs.
+For example the URL part of `http://example.com[foo]', or a raw
+`http://example.com' appearing as bare text."
   :group 'adoc-faces)
 
 (defface adoc-link-title-face
@@ -1894,9 +1902,9 @@ TEXTPROPS is an additional plist with textproperties."
   (let ((cmd-name (regexp-opt '("http" "https" "ftp" "file" "irc" "mailto" "callto" "link"))))
     (list
      `(lambda (end) (adoc-kwf-std end ,(adoc-re-inline-macro cmd-name) '(0) '(0)))
-     `(1 '(face adoc-internal-reference-face adoc-reserved t adoc-flyspell-ignore t) t) ; cmd-name
-     `(2 '(face adoc-internal-reference-face adoc-reserved t) t) ; :
-     `(3 '(face adoc-internal-reference-face adoc-reserved t adoc-flyspell-ignore t) t) ; target
+     `(1 '(face adoc-url-face adoc-reserved t adoc-flyspell-ignore t) t) ; cmd-name
+     `(2 '(face adoc-url-face adoc-reserved t) t) ; :
+     `(3 '(face adoc-url-face adoc-reserved t adoc-flyspell-ignore t) t) ; target
      '(4 '(face adoc-meta-face adoc-reserved t) t)               ; [
      `(5 '(face adoc-reference-face adoc-attribute-list adoc-reference-face) append)
      '(6 '(face adoc-meta-face adoc-reserved t) t))))            ; ]
@@ -1905,9 +1913,9 @@ TEXTPROPS is an additional plist with textproperties."
   (let ((cmd-name (regexp-opt '("http" "https" "ftp" "file" "irc" "mailto" "callto" "link"))))
     (list
      `(lambda (end) (adoc-kwf-std end ,(adoc-re-inline-macro cmd-name nil nil 'empty) '(0) '(0)))
-     '(1 '(face adoc-reference-face adoc-reserved t adoc-flyspell-ignore t) append) ; cmd-name
-     '(2 '(face adoc-reference-face adoc-reserved t) append)               ; :
-     '(3 '(face adoc-reference-face adoc-reserved t adoc-flyspell-ignore t) append)               ; target
+     '(1 '(face adoc-url-face adoc-reserved t adoc-flyspell-ignore t) append) ; cmd-name
+     '(2 '(face adoc-url-face adoc-reserved t) append)               ; :
+     '(3 '(face adoc-url-face adoc-reserved t adoc-flyspell-ignore t) append)               ; target
      '(4 '(face adoc-meta-face adoc-reserved t) t) ; [
                                         ; 5 = attriblist is empty
      '(6 '(face adoc-meta-face adoc-reserved t) t)))) ; ]
@@ -1948,7 +1956,7 @@ TEXTPROPS is an additional plist with textproperties."
          (both (concat "\\(?:" url "\\)\\|\\(?:" url<> "\\)\\|\\(?:" email "\\)")))
     (list
      `(lambda (end) (adoc-kwf-std end ,both '(0) '(0)))
-     '(0 '(face adoc-reference-face adoc-reserved t adoc-flyspell-ignore t) append t))))
+     '(0 '(face adoc-url-face adoc-reserved t adoc-flyspell-ignore t) append t))))
 
 ;; bug: escapes are not handled yet
 ;; TODO: give the inserted character a specific face. But I fear that is not
