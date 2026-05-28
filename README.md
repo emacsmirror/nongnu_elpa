@@ -17,13 +17,13 @@ data to include `file:line` — Elisp profiles always do; for perf,
 fold with `-F +srcline` (see [Recording](#recording-profile-data)
 below).
 
-<p align="center">
-  <img src="docs/img/flamegraph-light.png" width="490">
-  <img src="docs/img/flamegraph-dark.png"  width="490">
+<p style="white-space:nowrap">
+  <img src="docs/img/flamegraph-light.png" style="max-width:50%">
+  <img src="docs/img/flamegraph-dark.png"  style="max-width:50%">
 </p>
-<p align="center">
-  <img src="docs/img/describe-light.png"  width="490">
-  <img src="docs/img/describe-dark.png"   width="490">
+<p style="white-space:nowrap">
+  <img src="docs/img/describe-light.png"  style="max-width:50%">
+  <img src="docs/img/describe-dark.png"   style="max-width:50%">
 </p>
 
 In the snippet, we pull in and highlight the source lines where the
