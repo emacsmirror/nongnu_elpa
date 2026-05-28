@@ -469,7 +469,6 @@ customizable.")
   formatting or substitutions within Listing blocks apart from
   Special Characters and Callouts. Listing blocks are often used
   for computer output and file listings.")
-(defconst adoc-help-bold "Bold.")
 (defconst adoc-help-delimited-block-literal
   "'LiteralBlocks' are rendered just like literal paragraphs.")
 (defconst adoc-help-delimited-block-quote
