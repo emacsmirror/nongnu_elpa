@@ -322,6 +322,11 @@ requires Emacs to be built with ImageMagick support."
 
 
 ;;;; faces / font lock
+(defgroup adoc-faces nil
+  "Faces used in Adoc Mode."
+  :group 'adoc
+  :group 'faces)
+
 (defface adoc-align-face
   '((t (:inherit (adoc-meta-face))))
   "Face used so the text looks left aligned.
@@ -605,11 +610,6 @@ customizable.")
 ;;; Font Lock =================================================================
 
 (require 'font-lock)
-
-(defgroup adoc-faces nil
-  "Faces used in Adoc Mode."
-  :group 'adoc
-  :group 'faces)
 
 (defface adoc-gen-face
   '((t (:inherit font-lock-function-name-face)))
