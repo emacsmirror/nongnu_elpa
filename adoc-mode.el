@@ -671,19 +671,22 @@ or italic styling from a surrounding constrained quote."
 (defvar adoc-markup-face 'adoc-markup-face)
 
 (defface adoc-meta-hide-face
-  '((default (:inherit adoc-meta-face))
-    (((background light)) :foreground "gray75")
-    (((background dark)) :foreground "gray25"))
+  '((t (:inherit adoc-meta-face)))
   "For meta characters which can be \\='hidden\\='.
-Hidden in the sense of *almost* not visible. They does not need to
+Hidden in the sense of *almost* not visible.  They do not need to
 be properly seen because one knows what these characters must be;
-deduced from the highlighting of the near context. E.g in
-AsciiDocs \\='_important_\\=', the underlines would be highlighted with
-adoc-hide-delimiter-face, and the text \\='important\\=' would be
-highlighted with adoc-emphasis-face. Because \\='important\\=' is
-highlighted, one knows that it must be surrounded with the meta
-characters \\='_\\=', and thus the meta characters do not need to be
-properly seen.
+deduced from the highlighting of the near context.  E.g. in
+AsciiDoc's \\='_important_\\=', the underscores would be highlighted with
+`adoc-meta-hide-face' and the text \\='important\\=' with
+`adoc-emphasis-face'.  Because \\='important\\=' is highlighted, one
+knows that it must be surrounded with the meta characters \\='_\\=', and
+thus the meta characters do not need to be properly seen.
+
+By default this face simply inherits from `adoc-meta-face' so it
+tracks the active theme.  Customise it (for example to a foreground
+close to the background colour) if you want the markup to fade
+further into the background.
+
 For example:
 AsciiDoc: *bold emphasis text* or _emphasis text_
           ^                    ^    ^             ^"
