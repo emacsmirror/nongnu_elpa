@@ -84,6 +84,9 @@ FILE:LINE location.  If nil, paths are resolved against the directory of
 the data file the graph was loaded from."
   :type '(choice (const :tag "Data file's directory" nil) directory))
 
+(defface flamegraph-call-site '((t :inherit highlight))
+  "Face for callee occurrences highlighted in a description buffer's source.")
+
 ;;; Layout: call tree -> flat list of frames
 
 (cl-defstruct (flamegraph-frame
@@ -523,14 +526,17 @@ necessarily its definition."
           n
           (buffer-substring (line-beginning-position) (line-end-position))))
 
-(defun flamegraph--source-snippet (path line &optional context)
+(defun flamegraph--source-snippet (path line &optional names context)
   "Return source context around LINE of PATH as a fontified string, or nil.
 The file is loaded in its major mode so the text is syntax-highlighted.
 Besides CONTEXT lines on each side of the sampled LINE (which is marked),
 the enclosing structural lines up to the definition are kept — each line
 that is less indented than the one below it — so the nesting that leads
-to the sampled line stays visible.  Skipped runs are elided with `⋯'.
-CONTEXT defaults to 4."
+to the sampled line stays visible.  NAMES is a list of callee names: lines
+within the enclosing defun where a name occurs as a whole symbol are also
+kept, and the occurrences highlighted with `flamegraph-call-site', so the
+call sites of a frame's children stay visible.  Skipped runs are elided
+with `⋯'.  CONTEXT defaults to 4."
   (setq context (or context 4))
   (when (and (file-readable-p path) (> line 0))
     (with-temp-buffer
@@ -542,12 +548,23 @@ CONTEXT defaults to 4."
         (when (<= line maxline)
           (let* ((lo (max 1 (- line context)))
                  (hi (min maxline (+ line context)))
-                 (def (save-excursion
-                        (goto-char (point-min))
-                        (forward-line (1- line))
-                        (let ((p (point)))
-                          (ignore-errors (beginning-of-defun))
-                          (if (< (point) p) (line-number-at-pos) 1))))
+                 (def-pos (save-excursion
+                            (goto-char (point-min))
+                            (forward-line (1- line))
+                            (let ((p (point)))
+                              (ignore-errors (beginning-of-defun))
+                              (if (< (point) p) (point) (point-min)))))
+                 (def (line-number-at-pos def-pos))
+                 (def-end (save-excursion
+                            (goto-char def-pos)
+                            (ignore-errors (end-of-defun))
+                            (if (> (point) def-pos) (point) (point-max))))
+                 (names (cl-remove-if-not
+                         (lambda (n)
+                           (and (stringp n)
+                                (string-match-p
+                                 "\\`[A-Za-z_][A-Za-z0-9_]*\\'" n)))
+                         names))
                  (keep nil))
             ;; The sampled line and its immediate context.
             (cl-loop for n from lo to hi do (push n keep))
@@ -567,6 +584,13 @@ CONTEXT defaults to 4."
                         (push n keep)
                         (setq min-ind ind)))))))
             (push def keep)
+            ;; Callee call sites anywhere in the enclosing defun.
+            (dolist (name names)
+              (save-excursion
+                (goto-char def-pos)
+                (let ((re (concat "\\_<" (regexp-quote name) "\\_>")))
+                  (while (re-search-forward re def-end t)
+                    (push (line-number-at-pos (match-beginning 0)) keep)))))
             (setq keep (sort (delete-dups keep) #'<))
             ;; Render kept lines in order, eliding the gaps with `⋯'.
             (let ((prev nil) (out nil))
@@ -578,6 +602,15 @@ CONTEXT defaults to 4."
                 (ignore-errors
                   (font-lock-ensure (line-beginning-position)
                                     (line-end-position)))
+                ;; Highlight callee occurrences on this line, additively
+                ;; over the font-lock faces.
+                (dolist (name names)
+                  (goto-char (line-beginning-position))
+                  (let ((re (concat "\\_<" (regexp-quote name) "\\_>"))
+                        (eol (line-end-position)))
+                    (while (re-search-forward re eol t)
+                      (add-face-text-property (match-beginning 0) (match-end 0)
+                                              'flamegraph-call-site))))
                 (push (flamegraph--snippet-line n (= n line)) out)
                 (setq prev n))
               (mapconcat #'identity (nreverse out) "\n"))))))))
@@ -620,7 +653,12 @@ frames, with Help-style back/forward navigation."
                        (message "Source file not found: %s" path)))
            'follow-link t
            'help-echo "mouse-1, RET: visit this line")
-          (when-let* ((snippet (flamegraph--source-snippet path (cdr loc))))
+          (when-let* ((snippet (flamegraph--source-snippet
+                                path (cdr loc)
+                                (mapcar (lambda (k)
+                                          (flamegraph--frame-display-name
+                                           (profiler-calltree-entry k)))
+                                        kids))))
             (insert "\n\n" snippet)))
         (insert (format "\n\nSamples  %s (%s of total)    self  %s (%s)\n"
                         (profiler-format-number count)
