@@ -964,6 +964,22 @@ Don't use it for anything real.")
               ("sub chapter 2.2" . 84)))))))
     (kill-buffer "adoc-test")))
 
+(ert-deftest adoctest-update-title-faces ()
+  (unwind-protect
+      (let ((adoc-title-scaling t)
+            (adoc-title-scaling-values '(2.5 2.0 1.6 1.3 1.1 1.0)))
+        (adoc-update-title-faces)
+        (should (= 2.5 (face-attribute 'adoc-title-0-face :height)))
+        (should (= 1.1 (face-attribute 'adoc-title-4-face :height)))
+        (setq adoc-title-scaling nil)
+        (adoc-update-title-faces)
+        (should (= 1.0 (face-attribute 'adoc-title-0-face :height)))
+        (should (= 1.0 (face-attribute 'adoc-title-5-face :height))))
+    ;; restore defaults so subsequent tests see the documented heights
+    (let ((adoc-title-scaling t)
+          (adoc-title-scaling-values '(2.0 1.8 1.6 1.4 1.2 1.0)))
+      (adoc-update-title-faces))))
+
 (ert-deftest adoctest-adoc-kw-replacement ()
   (unwind-protect
       (progn

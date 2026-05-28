@@ -849,41 +849,116 @@ this feature."
   :group 'adoc-faces)
 (defvar adoc-title-face 'adoc-title-face)
 
+(defcustom adoc-title-scaling t
+  "Whether to use variable-height faces for section titles.
+When non-nil each `adoc-title-N-face' is sized according to
+`adoc-title-scaling-values'.  When nil all title faces use the
+buffer's default height.
+
+Modifying this variable through `setq' has no immediate effect on
+already-loaded faces; use `customize-set-variable' or call
+`adoc-update-title-faces' afterwards."
+  :type 'boolean
+  :initialize #'custom-initialize-default
+  :set (lambda (sym val)
+         (set-default sym val)
+         (when (fboundp 'adoc-update-title-faces)
+           (adoc-update-title-faces)))
+  :group 'adoc-faces
+  :package-version '(adoc-mode . "0.9.0"))
+
+(defcustom adoc-title-scaling-values
+  '(2.0 1.8 1.6 1.4 1.2 1.0)
+  "List of `:height' values for titles of level 0 through 5.
+Only takes effect when `adoc-title-scaling' is non-nil."
+  :type '(repeat float)
+  :initialize #'custom-initialize-default
+  :set (lambda (sym val)
+         (set-default sym val)
+         (when (fboundp 'adoc-update-title-faces)
+           (adoc-update-title-faces)))
+  :group 'adoc-faces
+  :package-version '(adoc-mode . "0.9.0"))
+
 (defface adoc-title-0-face
-  '((t (:inherit adoc-title-face :height 2.0)))
-  "Face for document's title."
+  `((t (:inherit adoc-title-face
+                 :height ,(if adoc-title-scaling
+                              (float (nth 0 adoc-title-scaling-values))
+                            1.0))))
+  "Face for document's title.
+You probably don't want to customise this face directly.  Instead
+configure `adoc-title-face' or the scaling variable
+`adoc-title-scaling'."
   :group 'adoc-faces)
 (defvar adoc-title-0-face 'adoc-title-0-face)
 
 (defface adoc-title-1-face
-  '((t (:inherit adoc-title-face :height 1.8)))
-  "Face for level 1 titles."
+  `((t (:inherit adoc-title-face
+                 :height ,(if adoc-title-scaling
+                              (float (nth 1 adoc-title-scaling-values))
+                            1.0))))
+  "Face for level 1 titles.
+See `adoc-title-0-face' for customisation tips."
   :group 'adoc-faces)
 (defvar adoc-title-1-face 'adoc-title-1-face)
 
 (defface adoc-title-2-face
-  '((t (:inherit adoc-title-face :height 1.6)))
-  "Face for level 2 titles."
+  `((t (:inherit adoc-title-face
+                 :height ,(if adoc-title-scaling
+                              (float (nth 2 adoc-title-scaling-values))
+                            1.0))))
+  "Face for level 2 titles.
+See `adoc-title-0-face' for customisation tips."
   :group 'adoc-faces)
 (defvar adoc-title-2-face 'adoc-title-2-face)
 
 (defface adoc-title-3-face
-  '((t (:inherit adoc-title-face :height 1.4)))
-  "Face for level 3 titles."
+  `((t (:inherit adoc-title-face
+                 :height ,(if adoc-title-scaling
+                              (float (nth 3 adoc-title-scaling-values))
+                            1.0))))
+  "Face for level 3 titles.
+See `adoc-title-0-face' for customisation tips."
   :group 'adoc-faces)
 (defvar adoc-title-3-face 'adoc-title-3-face)
 
 (defface adoc-title-4-face
-  '((t (:inherit adoc-title-face :height 1.2)))
-  "Face for level 4 titles."
+  `((t (:inherit adoc-title-face
+                 :height ,(if adoc-title-scaling
+                              (float (nth 4 adoc-title-scaling-values))
+                            1.0))))
+  "Face for level 4 titles.
+See `adoc-title-0-face' for customisation tips."
   :group 'adoc-faces)
 (defvar adoc-title-4-face 'adoc-title-4-face)
 
 (defface adoc-title-5-face
-  '((t (:inherit adoc-title-face :height 1.0)))
-  "Face for level 5 titles."
+  `((t (:inherit adoc-title-face
+                 :height ,(if adoc-title-scaling
+                              (float (nth 5 adoc-title-scaling-values))
+                            1.0))))
+  "Face for level 5 titles.
+See `adoc-title-0-face' for customisation tips."
   :group 'adoc-faces)
 (defvar adoc-title-5-face 'adoc-title-5-face)
+
+(defun adoc-update-title-faces ()
+  "Refresh `adoc-title-N-face' heights from the scaling customs.
+Reads `adoc-title-scaling' and `adoc-title-scaling-values' and
+applies the corresponding `:height' to every title face.  Faces
+that the user has explicitly customised (i.e. that carry a
+`saved-face' property) are left untouched.
+
+Called automatically from the `:set' callbacks of
+`adoc-title-scaling' and `adoc-title-scaling-values'; invoke it
+directly if you changed those variables with `setq'."
+  (dotimes (n 6)
+    (let ((face (intern (format "adoc-title-%d-face" n)))
+          (height (if adoc-title-scaling
+                      (float (nth n adoc-title-scaling-values))
+                    1.0)))
+      (unless (get face 'saved-face)
+        (set-face-attribute face nil :height height)))))
 
 (defface adoc-typewriter-face
   '((t :inherit (fixed-pitch adoc-gen-face)))
