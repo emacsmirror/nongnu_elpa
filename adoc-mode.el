@@ -622,16 +622,18 @@ customizable.")
   :group 'faces)
 
 (defface adoc-gen-face
-  '((((background light))
-     (:foreground "medium blue"))
-    (((background dark))
-     (:foreground "skyblue")))
+  '((t (:inherit font-lock-function-name-face)))
   "Generic/base face for text with special formatting.
 
 Typically `adoc-title-0-face', `adoc-bold-face' etc.
-inherit from it.  Also used for generic text thas hasn't got its
+inherit from it.  Also used for generic text that hasn't got its
 own dedicated face, e.g. if a markup command imposes arbitrary
-colors/sizes/fonts upon it."
+colors/sizes/fonts upon it.
+
+The default inherits from `font-lock-function-name-face' so that
+AsciiDoc-formatted text picks up the active theme's palette;
+customise this face to override the colour for all derived faces
+at once."
   :group 'adoc-faces)
 (defvar adoc-gen-face 'adoc-gen-face)
 
@@ -766,10 +768,7 @@ AsciiDoc: *bold emphasis text* or _emphasis text_
 (defvar adoc-preprocessor-face 'adoc-preprocessor-face)
 
 (defface adoc-verbatim-face
-  '((((background light))
-     (:background "cornsilk"))
-    (((background dark))
-     (:background "saddlebrown")))
+  '((t (:inherit font-lock-string-face)))
   "For verbatim text.
 
 Verbatim in a sense that all its characters are to be taken
@@ -802,9 +801,7 @@ language.
 (defvar adoc-language-keyword-face 'adoc-language-keyword-face)
 
 (defface adoc-replacement-face
-  '((default (:family "Monospace"))
-    (((background light)) (:foreground "purple3"))
-    (((background dark)) (:foreground "plum1")))
+  '((t (:inherit font-lock-constant-face)))
   "Meta characters that are replaced by text in the output.
 See also `adoc-complex-replacement-face'.
 For example
@@ -924,7 +921,7 @@ this feature."
 (defvar adoc-internal-reference-face 'adoc-internal-reference-face)
 
 (defface adoc-secondary-text-face
-  '((t :inherit adoc-gen-face :foreground "firebrick" :height 0.9))
+  '((t (:inherit font-lock-comment-face :height 0.9)))
   "For text that is not part of the running text.
 For example for captions of tables or images,
 or for footnotes, or for floating text."
