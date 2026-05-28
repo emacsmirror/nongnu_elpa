@@ -80,7 +80,7 @@ On a text terminal the unit is columns."
 
 (defcustom flamegraph-source-directory nil
   "Directory to resolve relative source paths against when visiting a frame.
-Used by \\[flamegraph-find] for folded stacks whose frames embed a
+Used by \\[flamegraph-find-source] for folded stacks whose frames embed a
 FILE:LINE location.  If nil, paths are resolved against the directory of
 the data file the graph was loaded from."
   :type '(choice (const :tag "Data file's directory" nil) directory))
@@ -479,7 +479,7 @@ DIRECTORY, then `default-directory'."
     (goto-char (point-min))
     (forward-line (1- line))))
 
-(defun flamegraph-find ()
+(defun flamegraph-find-source ()
   "Visit the source of the function of the frame at point.
 For Emacs functions this jumps to the definition.  For folded stacks
 whose frames embed a FILE:LINE location (as py-spy and rbspy emit), it
@@ -687,7 +687,7 @@ since this runs before that relocation happens."
   "p"         #'flamegraph-previous
   "<backtab>" #'flamegraph-previous
   "d"         #'flamegraph-describe
-  "f"         #'flamegraph-find
+  "f"         #'flamegraph-find-source
   "g"         #'flamegraph-redraw
   "q"         #'quit-window)
 
