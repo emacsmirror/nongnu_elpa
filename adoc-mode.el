@@ -814,6 +814,16 @@ For example the `:author:' in `:author: Bozhidar Batsov'."
 For example `Bozhidar Batsov' in `:author: Bozhidar Batsov'."
   :group 'adoc-faces)
 
+(defface adoc-footnote-marker-face
+  '((t (:inherit adoc-command-face)))
+  "Face for the `footnote:' / `footnoteref:' macro name."
+  :group 'adoc-faces)
+
+(defface adoc-footnote-text-face
+  '((t (:inherit font-lock-comment-face)))
+  "Face for the body text of a `footnote:[…]' macro."
+  :group 'adoc-faces)
+
 (defface adoc-highlight-face
   '((t (:inherit highlight)))
   "Face for highlighted text written as `#text#'.
@@ -2584,10 +2594,11 @@ for multiline constructs to be matched."
    (adoc-kw-inline-macro "anchor" nil nil nil 'adoc-anchor-face t '("xreflabel"))
    (adoc-kw-inline-macro "xref" nil nil nil '(adoc-reference-face adoc-internal-reference-face) t
                          '(("caption") (("caption" . adoc-reference-face))))
-   (adoc-kw-inline-macro "footnote" t nil nil nil nil 'adoc-secondary-text-face)
-   (adoc-kw-inline-macro "footnoteref" t 'single-attribute nil nil nil
+   (adoc-kw-inline-macro "footnote" t nil 'adoc-footnote-marker-face nil nil 'adoc-footnote-text-face)
+   (adoc-kw-inline-macro "footnoteref" t 'single-attribute 'adoc-footnote-marker-face nil nil
                          '(("id") (("id" . adoc-internal-reference-face))))
-   (adoc-kw-inline-macro "footnoteref" t nil nil nil nil '("id" "text"))
+   (adoc-kw-inline-macro "footnoteref" t nil 'adoc-footnote-marker-face nil nil
+                         '(("id" "text") (("text" . adoc-footnote-text-face))))
 
    ;; Asciidoctor UI macros
    (adoc-kw-inline-macro "kbd" t nil 'adoc-command-face nil t)

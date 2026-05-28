@@ -437,66 +437,66 @@ Don't use it for anything real.")
 (ert-deftest adoctest-test-footnotes ()
   (adoctest-faces "footnotes"
                   ;; simple example
-                  "footnote" 'adoc-command-face ":" 'adoc-meta-face
-                  "[" 'adoc-meta-face "lorem ipsum" 'adoc-secondary-text-face
+                  "footnote" 'adoc-footnote-marker-face ":" 'adoc-meta-face
+                  "[" 'adoc-meta-face "lorem ipsum" 'adoc-footnote-text-face
                   "]" 'adoc-meta-face "\n" nil
 
                   ;; footnote can be hard up against the preceding word
-                  "lorem" 'no-face "footnote" 'adoc-command-face ":" 'adoc-meta-face
-                  "[" 'adoc-meta-face "ipsum" 'adoc-secondary-text-face
+                  "lorem" 'no-face "footnote" 'adoc-footnote-marker-face ":" 'adoc-meta-face
+                  "[" 'adoc-meta-face "ipsum" 'adoc-footnote-text-face
                   "]" 'adoc-meta-face "\n" nil
 
                   ;; attribute-list is not really an attribute list but normal text,
                   ;; i.e. comma, equal, double quotes are not fontified as meta characters
-                  "footnote" 'adoc-command-face ":" 'adoc-meta-face
+                  "footnote" 'adoc-footnote-marker-face ":" 'adoc-meta-face
                   "[" 'adoc-meta-face
-                  "lorem, ipsum=dolor, sit=\"amen\"" 'adoc-secondary-text-face
+                  "lorem, ipsum=dolor, sit=\"amen\"" 'adoc-footnote-text-face
                   "]" 'adoc-meta-face "\n" nil
 
                   ;; multiline attribute list
-                  "footnote" 'adoc-command-face ":" 'adoc-meta-face
+                  "footnote" 'adoc-footnote-marker-face ":" 'adoc-meta-face
                   "[" 'adoc-meta-face
-                  "lorem\nipsum\ndolor\nsit\namen" 'adoc-secondary-text-face
+                  "lorem\nipsum\ndolor\nsit\namen" 'adoc-footnote-text-face
                   "]" 'adoc-meta-face "\n" nil
                   ))
 
 (ert-deftest adoctest-test-footnoterefs ()
   (adoctest-faces "footnoterefs"
                   ;; simple example
-                  "footnoteref" 'adoc-command-face ":" 'adoc-meta-face
+                  "footnoteref" 'adoc-footnote-marker-face ":" 'adoc-meta-face
                   "[" 'adoc-meta-face
                   "myid" 'adoc-internal-reference-face
                   "]" 'adoc-meta-face "\n" nil
 
-                  "footnoteref" 'adoc-command-face ":" 'adoc-meta-face
+                  "footnoteref" 'adoc-footnote-marker-face ":" 'adoc-meta-face
                   "[" 'adoc-meta-face
                   "myid" 'adoc-anchor-face
                   "," 'adoc-meta-face
-                  "lorem ipsum" 'adoc-secondary-text-face
+                  "lorem ipsum" 'adoc-footnote-text-face
                   "]" 'adoc-meta-face "\n" nil
 
                   ;; footnoteref can be hard up against the preceding word
                   "lorem" 'no-face
-                  "footnoteref" 'adoc-command-face ":" 'adoc-meta-face
+                  "footnoteref" 'adoc-footnote-marker-face ":" 'adoc-meta-face
                   "[" 'adoc-meta-face
                   "myid" 'adoc-internal-reference-face
                   "]" 'adoc-meta-face "\n" nil
 
                   "lorem" 'no-face
-                  "footnoteref" 'adoc-command-face ":" 'adoc-meta-face
+                  "footnoteref" 'adoc-footnote-marker-face ":" 'adoc-meta-face
                   "[" 'adoc-meta-face
                   "myid" 'adoc-anchor-face
                   "," 'adoc-meta-face
-                  "lorem ipsum" 'adoc-secondary-text-face
+                  "lorem ipsum" 'adoc-footnote-text-face
                   "]" 'adoc-meta-face "\n" nil
 
                   ;; multiline text
                   "lorem" 'no-face
-                  "footnoteref" 'adoc-command-face ":" 'adoc-meta-face
+                  "footnoteref" 'adoc-footnote-marker-face ":" 'adoc-meta-face
                   "[" 'adoc-meta-face
                   "myid" 'adoc-anchor-face
                   "," 'adoc-meta-face
-                  "lorem\nipsum\ndolor\nsit" 'adoc-secondary-text-face
+                  "lorem\nipsum\ndolor\nsit" 'adoc-footnote-text-face
                   "]" 'adoc-meta-face "\n" nil
                   ))
 
