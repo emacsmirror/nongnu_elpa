@@ -540,17 +540,17 @@ necessarily its definition."
           n
           (buffer-substring (line-beginning-position) (line-end-position))))
 
-(defun flamegraph--source-snippet (path line &optional names context)
+(defun flamegraph--source-snippet (path line &optional find-regions context)
   "Return source context around LINE of PATH as a fontified string, or nil.
 The file is loaded in its major mode so the text is syntax-highlighted.
 Besides CONTEXT lines on each side of the sampled LINE (which is marked),
 the enclosing structural lines up to the definition are kept — each line
 that is less indented than the one below it — so the nesting that leads
-to the sampled line stays visible.  NAMES is a list of callee names: lines
-within the enclosing defun where a name occurs as a whole symbol are also
-kept, and the occurrences highlighted with `flamegraph-call-site', so the
-call sites of a frame's children stay visible.  Skipped runs are elided
-with `⋯'.  CONTEXT defaults to 4."
+to the sampled line stays visible.  FIND-REGIONS, if non-nil, is called
+with the enclosing defun's start and end buffer positions; it returns
+a list of (BEG . END) ranges within the loaded buffer to highlight with
+`flamegraph-call-site'.  Their lines are kept as well.  Skipped runs
+are elided with `⋯'.  CONTEXT defaults to 4."
   (setq context (or context 4))
   (when (and (file-readable-p path) (> line 0))
     (with-temp-buffer
@@ -574,17 +574,8 @@ with `⋯'.  CONTEXT defaults to 4."
                             (goto-char def-pos)
                             (ignore-errors (end-of-defun))
                             (if (> (point) def-pos) (point) (point-max))))
-                 ;; Anything that's plausibly a symbol — no whitespace,
-                 ;; brackets, parens, comma, semicolon.  Permissive on
-                 ;; purpose: Lisp names use `-' (and friends), C names use
-                 ;; `_'; `\_<...\_>' below enforces real symbol boundaries
-                 ;; in the target buffer's syntax.
-                 (names (cl-remove-if-not
-                         (lambda (n)
-                           (and (stringp n) (not (string-empty-p n))
-                                (not (string-match-p
-                                      "[][[:space:]();,]" n))))
-                         names))
+                 (regions (and find-regions
+                               (funcall find-regions def-pos def-end)))
                  (keep nil))
             ;; The sampled line and its immediate context.
             (cl-loop for n from lo to hi do (push n keep))
@@ -604,13 +595,9 @@ with `⋯'.  CONTEXT defaults to 4."
                         (push n keep)
                         (setq min-ind ind)))))))
             (push def keep)
-            ;; Callee call sites anywhere in the enclosing defun.
-            (dolist (name names)
-              (save-excursion
-                (goto-char def-pos)
-                (let ((re (concat "\\_<" (regexp-quote name) "\\_>")))
-                  (while (re-search-forward re def-end t)
-                    (push (line-number-at-pos (match-beginning 0)) keep)))))
+            ;; Lines containing a callee match.
+            (dolist (r regions)
+              (push (line-number-at-pos (car r)) keep))
             (setq keep (sort (delete-dups keep) #'<))
             ;; Render kept lines in order, eliding the gaps with `⋯'.
             (let ((prev nil) (out nil))
@@ -622,18 +609,108 @@ with `⋯'.  CONTEXT defaults to 4."
                 (ignore-errors
                   (font-lock-ensure (line-beginning-position)
                                     (line-end-position)))
-                ;; Highlight callee occurrences on this line, additively
-                ;; over the font-lock faces.
-                (dolist (name names)
-                  (goto-char (line-beginning-position))
-                  (let ((re (concat "\\_<" (regexp-quote name) "\\_>"))
-                        (eol (line-end-position)))
-                    (while (re-search-forward re eol t)
-                      (add-face-text-property (match-beginning 0) (match-end 0)
+                ;; Apply highlights to any regions that fall on this line
+                ;; — additively over the font-lock faces.
+                (let ((bol (line-beginning-position))
+                      (eol (line-end-position)))
+                  (dolist (r regions)
+                    (when (and (<= bol (car r)) (>= eol (cdr r)))
+                      (add-face-text-property (car r) (cdr r)
                                               'flamegraph-call-site))))
                 (push (flamegraph--snippet-line n (= n line)) out)
                 (setq prev n))
               (mapconcat #'identity (nreverse out) "\n"))))))))
+
+(defun flamegraph--skip-through-p (entry)
+  "Non-nil if ENTRY is a control construct to descend through when
+looking for a frame's real callees in source (e.g. `if', `let',
+`progn').  In an Elisp profile these special-form frames sit between a
+function and its actual callees and are not useful as call sites."
+  (and (symbolp entry) (special-form-p entry)))
+
+(defun flamegraph--enclosing-form-region (pos)
+  "Return (BEG . END) of the form surrounding the callee name at POS.
+Uses `backward-up-list' to find the parenthesized group POS sits in
+and `forward-sexp' to bound it.  Returns nil if no enclosing form
+exists (top level)."
+  (save-excursion
+    (goto-char pos)
+    (condition-case nil
+        (let ((beg (progn (backward-up-list) (point))))
+          (cons beg (progn (forward-sexp) (point))))
+      (error nil))))
+
+(defun flamegraph--callee-name-acceptable-p (name)
+  "Whether NAME is plausibly a symbol we can usefully search in source.
+Rejects empty strings and anything containing whitespace, brackets,
+parens, comma, or semicolon — `\\=\\_<...\\=\\_>' below enforces real
+symbol boundaries in the target buffer's syntax."
+  (and (stringp name) (not (string-empty-p name))
+       (not (string-match-p "[][[:space:]();,]" name))))
+
+(defun flamegraph--collect-nested-call-sites (node beg end)
+  "Walk NODE's call subtree against the buffer region [BEG END].
+For each child whose display name matches `\\=\\_<NAME\\=\\_>' in the
+current region, record the match as a highlight region (unless its
+entry is a skip-through) and recurse into the child with the matched
+call's enclosing form as the new search bound.
+
+Skip-through (special-form) children are PURELY TRANSPARENT: not
+searched, never narrow the region, just descended through.  Their
+textual presence in source is unreliable as an anchor — the profile
+records post-macro-expansion frames whose names may exist in source
+in completely unrelated forms (a literal `(if …)' elsewhere), or
+may not exist at all (`dolist' → `while'/`let').  Only real function
+matches narrow, which is what preserves structural attribution.
+
+Returns a list of (POS-BEG . POS-END) regions to highlight."
+  (let (regions)
+    (cl-labels
+        ((walk (n region)
+           (dolist (k (profiler-calltree-children n))
+             (let* ((entry (profiler-calltree-entry k))
+                    (name (flamegraph--frame-display-name entry))
+                    (skip (flamegraph--skip-through-p entry)))
+               (cond
+                (skip
+                 ;; Special form — transparent descend, no narrowing.
+                 (walk k region))
+                ((flamegraph--callee-name-acceptable-p name)
+                 ;; Real function — search in the current region.
+                 ;; Each match is highlighted and narrows the search
+                 ;; for this child's own children.
+                 (save-excursion
+                   (goto-char (car region))
+                   (let ((re (concat "\\_<" (regexp-quote name) "\\_>")))
+                     (while (re-search-forward re (cdr region) t)
+                       (let ((mb (match-beginning 0))
+                             (me (match-end 0)))
+                         (push (cons mb me) regions)
+                         (when-let* ((sub (flamegraph--enclosing-form-region
+                                           mb)))
+                           (walk k sub))))))))))))
+      (walk node (cons beg end)))
+    (nreverse regions)))
+
+(defun flamegraph--insert-call-tree (node total ref depth directory)
+  "Insert NODE's children as a tree, expanding a skip-through child
+inline so the path to its real callees is visible.  TOTAL is the grand
+total for the call graph; REF is the count of the originally-described
+frame, used so the printed percentages add up under that frame.  DEPTH
+controls the indentation."
+  (let ((kids (sort (copy-sequence (profiler-calltree-children node))
+                    (lambda (a b) (> (profiler-calltree-count a)
+                                     (profiler-calltree-count b))))))
+    (dolist (k kids)
+      (insert (make-string (+ 2 (* 2 depth)) ?\s))
+      (insert (format "%7s  " (profiler-format-number
+                               (profiler-calltree-count k))))
+      (flamegraph--describe-button k total directory)
+      (insert (format "  (%s)\n"
+                      (flamegraph--percent
+                       (profiler-calltree-count k) ref)))
+      (when (flamegraph--skip-through-p (profiler-calltree-entry k))
+        (flamegraph--insert-call-tree k total ref (1+ depth) directory)))))
 
 (defun flamegraph--describe-button (node total directory)
   "Insert a button that describes NODE, passing TOTAL and DIRECTORY along."
@@ -684,10 +761,9 @@ frames, with Help-style back/forward navigation."
            'help-echo "mouse-1, RET: visit this line")
           (when-let* ((snippet (flamegraph--source-snippet
                                 path (cdr loc)
-                                (mapcar (lambda (k)
-                                          (flamegraph--frame-display-name
-                                           (profiler-calltree-entry k)))
-                                        kids))))
+                                (lambda (b e)
+                                  (flamegraph--collect-nested-call-sites
+                                   node b e)))))
             (insert "\n\n" snippet)))
         (insert (format "\n\nSamples  %s (%s of total)    self  %s (%s)\n"
                         (profiler-format-number count)
@@ -700,13 +776,7 @@ frames, with Help-style back/forward navigation."
           (insert "\n"))
         (when kids
           (insert "\nCalls\n")
-          (dolist (k kids)
-            (insert (format "  %7s  " (profiler-format-number
-                                       (profiler-calltree-count k))))
-            (flamegraph--describe-button k total directory)
-            (insert (format "  (%s)\n"
-                            (flamegraph--percent
-                             (profiler-calltree-count k) count)))))))))
+          (flamegraph--insert-call-tree node total count 0 directory))))))
 
 (defun flamegraph-redraw ()
   "Redraw the flame graph, e.g. to pick up a new window width."
