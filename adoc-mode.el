@@ -789,6 +789,18 @@ something that is orthogonal to the adoc-bold-face etc faces."
   "Face for HTML comments."
   :group 'adoc-faces)
 
+(defface adoc-blockquote-face
+  '((t (:inherit font-lock-doc-face)))
+  "Face for the content of `[quote]' and `[verse]' delimited blocks."
+  :group 'adoc-faces)
+
+(defface adoc-highlight-face
+  '((t (:inherit highlight)))
+  "Face for highlighted text written as `#text#'.
+In Asciidoctor a hash-delimited span renders with the default
+`highlighted' style (typically a yellow background)."
+  :group 'adoc-faces)
+
 (defface adoc-superscript-face
   '((t :inherit adoc-gen-face :height 0.8))
   "For superscript text.
@@ -2376,7 +2388,7 @@ for multiline constructs to be matched."
    (adoc-kw-delimited-block 1 'adoc-passthrough-face) ; passthrough
    (adoc-kw-delimited-block 2 'adoc-code-face) ; listing
    (adoc-kw-delimited-block 3 'adoc-verbatim-face) ; literal
-   (adoc-kw-delimited-block 4 nil t) ; quote
+   (adoc-kw-delimited-block 4 'adoc-blockquote-face t) ; quote
    (adoc-kw-delimited-block 5 nil t) ; example
    (adoc-kw-delimited-block 6 'adoc-secondary-text-face t) ; sidebar
    (adoc-kw-delimited-block 7 nil t) ; open block
@@ -2492,8 +2504,8 @@ for multiline constructs to be matched."
    (adoc-kw-quote 'adoc-constrained "+" 'adoc-typewriter-face)
    (adoc-kw-quote 'adoc-unconstrained  "__" 'adoc-emphasis-face)
    (adoc-kw-quote 'adoc-constrained "_" 'adoc-emphasis-face)
-   (adoc-kw-quote 'adoc-unconstrained "##" 'adoc-gen-face) ; unquoted text
-   (adoc-kw-quote 'adoc-constrained "#" 'adoc-gen-face)    ; unquoted text
+   (adoc-kw-quote 'adoc-unconstrained "##" 'adoc-highlight-face) ; highlighted text
+   (adoc-kw-quote 'adoc-constrained "#" 'adoc-highlight-face)    ; highlighted text
    (adoc-kw-quote 'adoc-unconstrained "~" (adoc-facespec-subscript)) ; subscript
    (adoc-kw-quote 'adoc-unconstrained "^" (adoc-facespec-superscript)) ; superscript
 

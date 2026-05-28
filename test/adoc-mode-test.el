@@ -570,8 +570,8 @@ Don't use it for anything real.")
                   "Lorem " nil "+" 'adoc-meta-hide-face "ipsum" 'adoc-typewriter-face "+" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "__" 'adoc-meta-hide-face " ipsum " 'adoc-emphasis-face "__" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "_" 'adoc-meta-hide-face "ipsum" 'adoc-emphasis-face "_" 'adoc-meta-hide-face " dolor\n" nil
-                  "Lorem " nil "##" 'adoc-meta-hide-face " ipsum " 'adoc-gen-face "##" 'adoc-meta-hide-face " dolor\n" nil
-                  "Lorem " nil "#" 'adoc-meta-hide-face "ipsum" 'adoc-gen-face "#" 'adoc-meta-hide-face " dolor\n" nil
+                  "Lorem " nil "##" 'adoc-meta-hide-face " ipsum " 'adoc-highlight-face "##" 'adoc-meta-hide-face " dolor\n" nil
+                  "Lorem " nil "#" 'adoc-meta-hide-face "ipsum" 'adoc-highlight-face "#" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "~" 'adoc-meta-hide-face " ipsum " 'adoc-subscript-face "~" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "^" 'adoc-meta-hide-face " ipsum " 'adoc-superscript-face "^" 'adoc-meta-hide-face " dolor"))
 
