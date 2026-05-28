@@ -20,9 +20,8 @@
 ;;
 ;; Start the profiler with `profiler-start', run the code you want to
 ;; measure, then `M-x flamegraph-profiler-report' to view the result.
-;; `M-x flamegraph-find-profiler-report' opens a profile previously saved with
-;; `profiler-report-write-profile'.  `M-x flamegraph-find-file' opens a
-;; folded-stacks file.
+;; `M-x flamegraph-find-file' opens a profile previously saved with
+;; `profiler-report-write-profile', or a folded-stacks file.
 ;;
 ;; The graph is drawn top-down ("icicle" orientation): the outermost frame
 ;; (bottom of the call stack) is the top row, and the stack grows downward.
@@ -750,55 +749,50 @@ Uses the CPU profile if one was recorded, otherwise the memory profile."
          (flamegraph--profile (profiler-memory-profile)))
         (t (user-error "No profiler run recorded"))))
 
-;;;###autoload
-(defun flamegraph-find-profiler-report (filename)
-  "Display a flame graph for the profile saved in FILENAME."
-  (interactive (list (read-file-name "Find profile: " default-directory)))
-  (flamegraph--profile (profiler-read-profile filename)))
+;;; File input
 
-;;; Folded stacks
-
-(defun flamegraph--read-folded (filename)
-  "Parse folded stacks in FILENAME into a calltree root node.
+(defun flamegraph--read-folded-buffer ()
+  "Parse folded stacks in the current buffer into a calltree root node.
 Each non-empty line has the form \"FRAME;FRAME;... COUNT\", outermost
 frame first, as produced by Brendan Gregg's stackcollapse-* tools.
 COUNT is added to every frame along the stack."
   (let ((root (profiler-make-calltree)))
-    (with-temp-buffer
-      (insert-file-contents filename)
-      (goto-char (point-min))
-      (while (not (eobp))
-        (let ((line (buffer-substring-no-properties
-                     (line-beginning-position) (line-end-position))))
-          (when (string-match "\\`\\(.+\\) \\([0-9]+\\)\\'" line)
-            (let ((node root)
-                  (count (string-to-number (match-string 2 line))))
-              (dolist (frame (split-string (match-string 1 line) ";" t))
-                (let ((children (profiler-calltree-children node))
-                      (child nil))
-                  (while children
-                    (if (equal (profiler-calltree-entry (car children)) frame)
-                        (setq child (car children) children nil)
-                      (setq children (cdr children))))
-                  (unless child
-                    (setq child (profiler-make-calltree :entry frame :parent node))
-                    (push child (profiler-calltree-children node)))
-                  (cl-incf (profiler-calltree-count child) count)
-                  (setq node child))))))
-        (forward-line)))
+    (goto-char (point-min))
+    (while (not (eobp))
+      (let ((line (buffer-substring-no-properties
+                   (line-beginning-position) (line-end-position))))
+        (when (string-match "\\`\\(.+\\) \\([0-9]+\\)\\'" line)
+          (let ((node root)
+                (count (string-to-number (match-string 2 line))))
+            (dolist (frame (split-string (match-string 1 line) ";" t))
+              (let ((children (profiler-calltree-children node))
+                    (child nil))
+                (while children
+                  (if (equal (profiler-calltree-entry (car children)) frame)
+                      (setq child (car children) children nil)
+                    (setq children (cdr children))))
+                (unless child
+                  (setq child (profiler-make-calltree :entry frame :parent node))
+                  (push child (profiler-calltree-children node)))
+                (cl-incf (profiler-calltree-count child) count)
+                (setq node child))))))
+      (forward-line))
     root))
 
 ;;;###autoload
 (defun flamegraph-find-file (filename)
-  "Display a flame graph for the folded stacks in FILENAME.
-This is the interchange format produced by Brendan Gregg's
-stackcollapse-*.pl tools and read by flamegraph.pl: one line per stack,
-frames separated by \";\" (outermost first), then a space and a count."
-  (interactive (list (read-file-name "Folded stacks file: " nil nil t)))
-  (flamegraph--show (flamegraph--read-folded filename)
-                    "samples"
-                    (file-name-nondirectory filename)
-                    (file-name-directory (expand-file-name filename))))
+  "Display a flame graph for profile data in FILENAME.
+Emacs profiler profiles and folded stacks files are detected automatically."
+  (interactive (list (read-file-name "Find flame graph file: " nil nil t)))
+  (with-temp-buffer
+    (insert-file-contents filename)
+    (goto-char (point-min))
+    (if (looking-at-p "[[:space:]]*(")
+        (flamegraph--profile (read (current-buffer)))
+      (flamegraph--show (flamegraph--read-folded-buffer)
+                        "samples"
+                        (file-name-nondirectory filename)
+                        (file-name-directory (expand-file-name filename))))))
 
 (provide 'flamegraph)
 ;;; flamegraph.el ends here
