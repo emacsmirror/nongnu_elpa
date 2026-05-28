@@ -717,24 +717,16 @@ AsciiDoc: *bold emphasis text* or _emphasis text_
 (defvar adoc-code-face 'adoc-code-face)
 
 (defface adoc-command-face
-  '((default (:inherit (adoc-meta-face bold)
-                       :box (
-                            :line-width 2
-                            :style released-button)))
-    (((background light))(:background "#f5f5f5" :foreground "black" :box (:color "#dcdcdc")))
-    (((background dark))(:background "#272822" :foreground "#e6db74" :box (:color "#e6db74"))))
-  "Face for command names."
+  '((t (:inherit font-lock-builtin-face :weight bold)))
+  "Face for command names (e.g. the `kbd' in `kbd:[C-c C-c]')."
   :group 'adoc-faces)
 (defvar adoc-command-face 'adoc-command-face)
 
 (defface adoc-complex-replacement-face
-  '((default (:inherit adoc-meta-face
-                       :box (:line-width 2 :style released-button)))
-    (((background light)) (:background "plum1" :foreground "purple3" :box (:color "plum1")))
-    (((background dark)) (:background "purple3" :foreground "plum1" :box (:color "purple3"))))
+  '((t (:inherit font-lock-builtin-face)))
   "Markup that is replaced by something complex.
-  For example an image, or a table of contents.
-  AsciiDoc: image:...[...]"
+For example an image, or a table of contents.
+AsciiDoc: image:...[...]"
   :group 'adoc-faces)
 (defvar adoc-complex-replacement-face 'adoc-complex-replacement-face)
 

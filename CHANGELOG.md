@@ -6,6 +6,7 @@
 
 - `adoc-gen-face`, `adoc-verbatim-face`, `adoc-secondary-text-face`, and `adoc-replacement-face` now inherit from `font-lock-*` faces instead of hardcoding literal colours. Themes that style the font-lock palette will now style AsciiDoc buffers consistently. Users who relied on the old defaults can restore them via `M-x customize-face`.
 - Simplify `adoc-meta-face` to `(:inherit shadow :slant normal :weight normal)` instead of overriding eleven attributes including `:family "Monospace"`. AsciiDoc markup characters now respect the user's font choices and theme `shadow` colour rather than being forced into a monospace family with hardcoded grays.
+- Drop the dated 3D button decoration (`:box (:style released-button)`) and hardcoded hex colours from `adoc-command-face` and `adoc-complex-replacement-face`; inherit from `font-lock-builtin-face` instead.
 
 ### Bugs fixed
 
