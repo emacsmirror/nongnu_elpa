@@ -2,6 +2,10 @@
 
 ## main (unreleased)
 
+### Bugs fixed
+
+- Recognize level-5 section titles (`====== Title`). Previously `adoc-title-max-level` was off by one, so the deepest heading level supported by AsciiDoc was treated as ordinary text. Title promotion/demotion now cycles through all six one-line levels and the five two-line levels independently.
+
 ## 0.8.0 (2026-02-21)
 
 ### New features

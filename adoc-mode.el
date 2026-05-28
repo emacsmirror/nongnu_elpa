@@ -348,8 +348,10 @@ aligned.
 
 
 ;;;; misc
-(defconst adoc-title-max-level 4
-  "Max title level, counting starts at 0.")
+(defconst adoc-title-max-level 5
+  "Max title level, counting starts at 0.
+AsciiDoc supports six heading levels: a level-0 document title plus
+level-1 through level-5 sections.")
 
 (defconst adoc-uolist-max-level 5
   "Max unordered (bulleted) list item nesting level, counting starts at 0.")
@@ -2249,7 +2251,8 @@ for multiline constructs to be matched."
    (adoc-kw-two-line-title (nth 2 adoc-two-line-title-del) adoc-title-2-face)
    (adoc-kw-two-line-title (nth 3 adoc-two-line-title-del) adoc-title-3-face)
    (adoc-kw-two-line-title (nth 4 adoc-two-line-title-del) adoc-title-4-face)
-   ;; (adoc-kw-two-line-title (nth 5 adoc-two-line-title-del) adoc-title-5-face) ;; TODO: don't work now
+   ;; AsciiDoc's two-line title syntax has only five delimiter pairs, so
+   ;; there is no level-5 two-line title (one-line titles cover six levels).
 
 
    ;; block macros
@@ -2846,7 +2849,10 @@ trailing delimiter ('== my title ==').
          ;; method ensuring the correct length of the underline, be aware that
          ;; due to adoc-adjust-title-del we sometimes want to find a title which has
          ;; the wrong underline length.
-         ((and (or (looking-at (adoc-re-two-line-title (nth level adoc-two-line-title-del)))
+         ;; Two-line titles only cover the first N levels (one per entry in
+         ;; adoc-two-line-title-del); skip the check for higher levels.
+         ((and (< level (length adoc-two-line-title-del))
+               (or (looking-at (adoc-re-two-line-title (nth level adoc-two-line-title-del)))
                    (save-excursion
                      (forward-line -1)
                      (beginning-of-line)
@@ -2925,13 +2931,19 @@ and title's text are not preserved, afterwards its always one space."
                               ((eq new-sub-type t) (if (eq sub-type 1) 2 1))
                               (t (error "NEW-SUB-TYPE has invalid value"))))
            (level (nth 2 descriptor))
+           ;; One-line titles support six levels (0-5); two-line titles
+           ;; only support as many levels as adoc-two-line-title-del has
+           ;; entries (currently five, 0-4).
+           (level-count (if (eq new-type-val 1)
+                            (1+ adoc-title-max-level)
+                          (length adoc-two-line-title-del)))
            (new-level (cond
                        ((or (null new-level-rel) (eq new-level-rel 0))
                         level)
                        ((not (null new-level-rel))
-                        (let ((x (% (+ level new-level-rel) (+ adoc-title-max-level 1))))
+                        (let ((x (% (+ level new-level-rel) level-count)))
                           (if (< x 0)
-                              (+ x adoc-title-max-level 1)
+                              (+ x level-count)
                             x)))
                        ((not (null new-level-abs))
                         new-level-abs)
@@ -3046,14 +3058,17 @@ LOCAL-ATTRIBUTE-FACE-ALIST before it is looked up in
 
 (defun adoc-imenu-create-index ()
   (let* ((index-alist)
+         (two-line-count (length adoc-two-line-title-del))
          (re-all-titles-core
           (mapconcat
            (lambda (level)
-             (concat
-              (adoc-re-one-line-title level)
-              "\\|"
-              (adoc-re-two-line-title (nth level adoc-two-line-title-del))))
-           '(0 1 2 3 4)
+             (if (< level two-line-count)
+                 (concat
+                  (adoc-re-one-line-title level)
+                  "\\|"
+                  (adoc-re-two-line-title (nth level adoc-two-line-title-del)))
+               (adoc-re-one-line-title level)))
+           (number-sequence 0 adoc-title-max-level)
            "\\)\\|\\(?:"))
          (re-all-titles
           (concat "\\(?:" re-all-titles-core "\\)")))

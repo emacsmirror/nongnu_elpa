@@ -804,13 +804,15 @@ Don't use it for anything real.")
 
 (ert-deftest adoctest-test-promote-title ()
   (adoctest-trans "= foo" "== foo" '(adoc-promote-title 1))
-  (adoctest-trans "===== foo" "= foo" '(adoc-promote-title 1))
+  ;; One-line titles span six levels (0-5), so level 5 wraps to level 0.
+  (adoctest-trans "====== foo" "= foo" '(adoc-promote-title 1))
   (adoctest-trans "== foo" "==== foo" '(adoc-promote-title 2))
 
   (adoctest-trans "= foo =" "== foo ==" '(adoc-promote-title 1))
-  (adoctest-trans "===== foo =====" "= foo =" '(adoc-promote-title 1))
+  (adoctest-trans "====== foo ======" "= foo =" '(adoc-promote-title 1))
   (adoctest-trans "== foo ==" "==== foo ====" '(adoc-promote-title 2))
 
+  ;; Two-line titles span five levels (0-4), so promoting level 4 wraps to 0.
   (adoctest-trans "foo!\n===!" "foo\n---" '(adoc-promote-title 1))
   (adoctest-trans "foo!\n+++!" "foo\n===" '(adoc-promote-title 1))
   (adoctest-trans "foo!\n---!" "foo\n^^^" '(adoc-promote-title 2)))
@@ -818,8 +820,8 @@ Don't use it for anything real.")
 ;; since it's a whitebox test we know demote and promote only differ by inverse
 ;; arg. So demote doesn't need to be throuhly tested again
 (ert-deftest adoctest-test-demote-title ()
-  (adoctest-trans "= foo" "===== foo" '(adoc-demote-title 1))
-  (adoctest-trans "= foo =" "===== foo =====" '(adoc-demote-title 1))
+  (adoctest-trans "= foo" "====== foo" '(adoc-demote-title 1))
+  (adoctest-trans "= foo =" "====== foo ======" '(adoc-demote-title 1))
   (adoctest-trans "foo!\n===!" "foo\n+++" '(adoc-demote-title 1)))
 
 ;; todo: test after transition point is still on title lines
