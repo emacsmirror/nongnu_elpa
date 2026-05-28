@@ -242,5 +242,136 @@ callees outside it must still be found."
       (should (text-property-any 0 (length s)
                                  'face 'flamegraph-call-site s)))))
 
+;;; Calls-tree rendering — `flamegraph--insert-call-tree'
+
+(defun flamegraph-test--render-call-tree (node ref)
+  "Render NODE's call tree (REF samples for percent scaling) and return
+the resulting string."
+  (with-temp-buffer
+    (flamegraph--insert-call-tree node ref ref 0 nil)
+    (buffer-string)))
+
+(defun flamegraph-test--line-with (str lines)
+  "Return the first LINES element containing STR as a whole symbol."
+  (cl-find-if (lambda (l)
+                (string-match-p (concat "\\_<" (regexp-quote str) "\\_>") l))
+              lines))
+
+(defun flamegraph-test--indent (line)
+  "Leading-space count of LINE."
+  (if (string-match "\\` +" line) (length (match-string 0 line)) 0))
+
+(ert-deftest flamegraph-test-call-tree-children-sorted-by-count ()
+  "Direct children appear sorted by count, descending."
+  (let* ((bar (profiler-make-calltree :entry 'bar :count 30))
+         (baz (profiler-make-calltree :entry 'baz :count 70))
+         (foo (profiler-make-calltree :entry 'foo :count 100
+                                      :children (list bar baz))))
+    (let* ((out (flamegraph-test--render-call-tree foo 100))
+           (baz-pos (string-match "\\_<baz\\_>" out))
+           (bar-pos (string-match "\\_<bar\\_>" out)))
+      (should baz-pos)
+      (should bar-pos)
+      (should (< baz-pos bar-pos)))))
+
+(ert-deftest flamegraph-test-call-tree-skip-through-expanded-indented ()
+  "Skip-through children render their sub-children indented underneath."
+  (let* ((real-child (profiler-make-calltree :entry 'real-fn :count 80))
+         (if-node    (profiler-make-calltree :entry 'if :count 80
+                                             :children (list real-child)))
+         (other      (profiler-make-calltree :entry 'other-fn :count 20))
+         (root (profiler-make-calltree :entry 'root :count 100
+                                       :children (list if-node other))))
+    (let* ((out (flamegraph-test--render-call-tree root 100))
+           (lines (split-string out "\n" t))
+           (if-line    (flamegraph-test--line-with "if" lines))
+           (rf-line    (flamegraph-test--line-with "real-fn" lines))
+           (other-line (flamegraph-test--line-with "other-fn" lines)))
+      (should if-line)
+      (should rf-line)
+      (should other-line)
+      ;; real-fn is indented deeper than its skip-through parent.
+      (should (> (flamegraph-test--indent rf-line)
+                 (flamegraph-test--indent if-line)))
+      ;; The non-skip sibling sits at the same depth as `if'.
+      (should (= (flamegraph-test--indent if-line)
+                 (flamegraph-test--indent other-line))))))
+
+(ert-deftest flamegraph-test-call-tree-non-skip-not-expanded ()
+  "A non-skip child's own descendants are NOT inlined into the tree."
+  (let* ((grand (profiler-make-calltree :entry 'grand :count 50))
+         (kid   (profiler-make-calltree :entry 'kid :count 50
+                                        :children (list grand)))
+         (root (profiler-make-calltree :entry 'root :count 100
+                                       :children (list kid))))
+    (let* ((out (flamegraph-test--render-call-tree root 100))
+           (lines (split-string out "\n" t)))
+      (should (flamegraph-test--line-with "kid" lines))
+      (should-not (flamegraph-test--line-with "grand" lines)))))
+
+(ert-deftest flamegraph-test-call-tree-percent-scaled-to-ref ()
+  "Sub-children's percentage uses REF (the described frame's count),
+not their immediate parent — so all percents add up under that frame."
+  ;; root 1000, if 500, fn 250 → fn's printed share is 25%, not 50%.
+  (let* ((fn (profiler-make-calltree :entry 'fn :count 250))
+         (if-node (profiler-make-calltree :entry 'if :count 500
+                                          :children (list fn)))
+         (root (profiler-make-calltree :entry 'root :count 1000
+                                       :children (list if-node))))
+    (let* ((out (flamegraph-test--render-call-tree root 1000))
+           (fn-line (flamegraph-test--line-with
+                     "fn" (split-string out "\n" t))))
+      (should fn-line)
+      (should (string-match-p "(25%)" fn-line))
+      (should-not (string-match-p "(50%)" fn-line)))))
+
+(ert-deftest flamegraph-test-call-tree-rows-are-describe-buttons ()
+  "Every rendered row is a clickable describe-button."
+  (let* ((bar (profiler-make-calltree :entry 'bar :count 1))
+         (foo (profiler-make-calltree :entry 'foo :count 1
+                                      :children (list bar))))
+    (with-temp-buffer
+      (flamegraph--insert-call-tree foo 1 1 0 nil)
+      (goto-char (point-min))
+      (let ((b (next-button (point))))
+        (should b)
+        (should (eq (button-type b) 'help-xref))
+        (should (eq (button-get b 'help-function)
+                    #'flamegraph--describe-frame))))))
+
+;;; Heading rendering in `flamegraph--describe-frame'
+
+(defun flamegraph-test--describe-help (node)
+  "Render NODE in the help buffer via `flamegraph--describe-frame' and
+return that buffer's contents (a propertized string)."
+  (require 'help-mode)
+  (flamegraph--describe-frame node (profiler-calltree-count node) nil)
+  (with-current-buffer (help-buffer) (buffer-string)))
+
+(ert-deftest flamegraph-test-describe-symbol-heading-is-help-button ()
+  "For an fboundp symbol entry the heading is a `help-function' button."
+  (let ((node (profiler-make-calltree :entry 'flamegraph-describe
+                                      :count 10)))
+    (flamegraph-test--describe-help node)
+    (with-current-buffer (help-buffer)
+      (goto-char (point-min))
+      (let ((b (button-at (point))))
+        (should b)
+        (should (eq (button-type b) 'help-function))
+        (should (equal (button-get b 'help-args)
+                       '(flamegraph-describe)))))))
+
+(ert-deftest flamegraph-test-describe-string-heading-is-plain ()
+  "For a non-symbol entry, the heading is plain text (no button at point 1)."
+  (let ((node (profiler-make-calltree
+               :entry "redisplay_window:/tmp/xdisp.c:1"
+               :count 10)))
+    (flamegraph-test--describe-help node)
+    (with-current-buffer (help-buffer)
+      (goto-char (point-min))
+      (should-not (and (button-at (point))
+                       (eq (button-type (button-at (point)))
+                           'help-function))))))
+
 (provide 'flamegraph-tests)
 ;;; flamegraph-tests.el ends here
