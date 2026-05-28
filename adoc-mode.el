@@ -638,25 +638,11 @@ at once."
 (defvar adoc-gen-face 'adoc-gen-face)
 
 (defface adoc-meta-face
-  '((default (
-              :family "Monospace" ; emacs's faces.el also directly uses "Monospace", so I assume it is safe to do so
-              :stipple nil
-              :inverse-video nil
-              :box nil
-              :strike-through nil
-              :overline nil
-              :underline nil
-              :slant normal
-              :weight normal
-              :width normal
-              :foundry "unknown"))
-    (((background light)) (:foreground "gray65"))
-    (((background dark)) (:foreground "gray30")))
+  '((t (:inherit shadow :slant normal :weight normal)))
   "Face for general meta characters and base for special meta characters.
-The default sets all face properties to a value because then it's
-easier for major mode to write font lock regular expressions."
-  ;; For example in '<b>...<foo>...</b>', if <foo> is fontified before <b>, <b>
-  ;; might then make <foo> bold, which is not the intend.
+Inherits from `shadow' so the colour tracks the active theme.  The
+`:slant' and `:weight' resets keep the markup from picking up bold
+or italic styling from a surrounding constrained quote."
   :group 'adoc-faces)
 (defvar adoc-meta-face 'adoc-meta-face)
 
