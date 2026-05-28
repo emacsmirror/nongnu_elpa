@@ -863,6 +863,19 @@ test-xdatabase: test-pg.el
 	${DOCKER} stop xdatabase
 
 
+# TODO: add test recipe for ProxySQL (https://proxysql.com/) and pgagroal (https://github.com/pgagroal/pgagroal) proxies.
+
+
+# https://www.xtdb.com/
+test-xtdb: test-pg.el
+	${DOCKER} run --rm --name xtdb --pull=newer \
+           --publish 127.0.0.1:5439:5432 \
+           -d ghcr.io/xtdb/xtdb:latest
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5439/xtdb $(MAKE) test
+	${DOCKER} stop xtdb
+
+
 
 # https://github.com/multigres/multigres
 #
