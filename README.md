@@ -10,12 +10,26 @@ renderer is planned). Top-down "icicle" orientation: the outermost
 frame sits on the top row, and the stack grows downward. Identical
 call paths are merged and children are sorted heaviest-first.
 
-`RET` / `mouse-1` zooms into a frame; `d` describes the frame
-(parent, callees, self-time) with a source snippet highlighting its
-outgoing calls; `f` jumps to that source line. The snippet and `f`
-need the data to include `file:line` — Elisp profiles always do; for
-perf, fold with `-F +srcline` (see
-[Recording](#recording-profile-data) below).
+`RET` / `mouse-1` zooms into a frame; `d` opens a description (parent,
+callees, self-time) with a source code snippet highlighting its
+outgoing calls; `f` opens that source. The snippet and `f` need the
+data to include `file:line` — Elisp profiles always do; for perf,
+fold with `-F +srcline` (see [Recording](#recording-profile-data)
+below).
+
+<p align="center">
+  <img src="docs/img/flamegraph-light.png" width="490">
+  <img src="docs/img/flamegraph-dark.png"  width="490">
+</p>
+<p align="center">
+  <img src="docs/img/describe-light.png"  width="490">
+  <img src="docs/img/describe-dark.png"   width="490">
+</p>
+
+In the snippet, we pull in and highlight the source lines where the
+frame's outgoing calls appear. Parent and callees are cross-references
+(click to describe them); `l` / `r` walk the navigation history,
+help-mode style.
 
 ## Installation
 
@@ -65,23 +79,6 @@ format (one `;`-separated stack per line, followed by the sample count).
 | `f` | Visit the frame's source (definition or executing line) |
 | `g` | Redraw (e.g. after resizing the window) |
 | `q` | Quit |
-
-## The describe buffer (`d`)
-
-For the frame at point, shows:
-
-- A clickable heading — for an Elisp symbol, opens the standard
-  `describe-function` help; for a frame with an embedded source
-  location, the `file:line` is a second button that visits that line.
-- A source snippet of the enclosing function, with the sampled line
-  marked, structurally-enclosing lines kept (so the nesting that leads
-  to the sampled line stays visible), and **every direct callee of the
-  frame highlighted at its call site**, with skip-through special-form
-  layers descended transparently.
-- Sample count and self-time.
-- Buttons to the frame's parent and to each callee. Callees rendered
-  through `if`/`let`/`progn`/etc. are expanded inline so the path to
-  the real callees stays visible.
 
 ## Recording profile data
 
