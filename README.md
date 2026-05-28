@@ -1,7 +1,7 @@
 # flamegraph.el
 
-[Flame graphs][bg] for the Emacs profiler — and for folded-stacks
-files produced by `perf`, `py-spy`, `rbspy`, and friends.
+[Flame graphs][bg] for the Emacs profiler, and for folded-stacks
+files produced by `perf`, `py-spy`, `rbspy`, etc.
 
 [bg]: https://www.brendangregg.com/flamegraphs.html
 
