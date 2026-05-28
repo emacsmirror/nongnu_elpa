@@ -99,20 +99,20 @@ and DEPTH is its row (0 is the outermost frame)."
   "Lay out calltree NODE and its descendants, prepending to FRAMES.
 DEPTH is NODE's row.  START is its left edge and TOTAL the denominator,
 both in sample/byte counts.  Return (FRAMES . MAX-DEPTH)."
-  (let* ((count (profiler-calltree-count node))
-         (frame (flamegraph--frame
+  (let ((max-depth depth)
+        (stack (list (list node depth start))))
+    (while stack
+      (pcase-let ((`(,node ,depth ,start) (pop stack)))
+        (let ((child-start start))
+          (push (flamegraph--frame
                  :node node :depth depth
                  :start (/ (float start) total)
-                 :width (/ (float count) total)))
-         (max-depth depth)
-         (child-start start))
-    (push frame frames)
-    (dolist (child (profiler-calltree-children node))
-      (let ((res (flamegraph--collect
-                  child (1+ depth) child-start total frames)))
-        (setq frames (car res)
-              max-depth (max max-depth (cdr res))))
-      (cl-incf child-start (profiler-calltree-count child)))
+                 :width (/ (float (profiler-calltree-count node)) total))
+                frames)
+          (when (> depth max-depth) (setq max-depth depth))
+          (dolist (child (profiler-calltree-children node))
+            (push (list child (1+ depth) child-start) stack)
+            (cl-incf child-start (profiler-calltree-count child))))))
     (cons frames max-depth)))
 
 (defun flamegraph--frames (root)
