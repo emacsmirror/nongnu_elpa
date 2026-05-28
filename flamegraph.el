@@ -521,7 +521,8 @@ necessarily its definition."
                            (car loc) flamegraph--directory)))
                 (if (file-exists-p path)
                     (flamegraph--visit-file path (cdr loc))
-                  (message "Source file not found: %s" path))))))
+                  (message "Source file not found: %s"
+                           (abbreviate-file-name path)))))))
          (t (message "Cannot find definition of: %s"
                      (flamegraph--entry-name entry))))))))
 
@@ -673,11 +674,12 @@ frames, with Help-style back/forward navigation."
         (when loc
           (insert "  ")
           (insert-text-button
-           (format "%s:%d" (car loc) (cdr loc))
+           (format "%s:%d" (abbreviate-file-name (car loc)) (cdr loc))
            'action (lambda (_)
                      (if (file-exists-p path)
                          (flamegraph--visit-file path (cdr loc))
-                       (message "Source file not found: %s" path)))
+                       (message "Source file not found: %s"
+                                (abbreviate-file-name path))))
            'follow-link t
            'help-echo "mouse-1, RET: visit this line")
           (when-let* ((snippet (flamegraph--source-snippet
