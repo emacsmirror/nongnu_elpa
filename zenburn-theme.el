@@ -246,6 +246,7 @@ Also bind `class' to ((class color) (min-colors 89))."
                                   :box (:line-width -1 :style released-button)
                                   :extend t))))
    `(highlight ((t (:background ,zenburn-bg-05))))
+   `(error ((t (:foreground ,zenburn-error :weight bold))))
    `(success ((t (:foreground ,zenburn-success :weight bold))))
    `(warning ((t (:foreground ,zenburn-warning :weight bold))))
    `(tooltip ((t (:foreground ,zenburn-fg :background ,zenburn-bg+1))))
@@ -277,9 +278,9 @@ Also bind `class' to ((class color) (min-colors 89))."
    `(compilation-line-face ((t (:foreground ,zenburn-yellow))))
    `(compilation-line-number ((t (:foreground ,zenburn-yellow))))
    `(compilation-message-face ((t (:foreground ,zenburn-blue))))
-   `(compilation-warning-face ((t (:foreground ,zenburn-orange :weight bold :underline t))))
+   `(compilation-warning-face ((t (:inherit warning :underline t))))
    `(compilation-mode-line-exit ((t (:foreground ,zenburn-green+2 :weight bold))))
-   `(compilation-mode-line-fail ((t (:foreground ,zenburn-red :weight bold))))
+   `(compilation-mode-line-fail ((t (:inherit error))))
    `(compilation-mode-line-run ((t (:foreground ,zenburn-yellow :weight bold))))
 ;;;;; completions
    `(completions-annotations ((t (:foreground ,zenburn-fg-1))))
@@ -705,7 +706,7 @@ Also bind `class' to ((class color) (min-colors 89))."
    `(diredp-symlink ((t (:foreground ,zenburn-yellow))))
    `(diredp-write-priv ((t (:foreground ,zenburn-magenta))))
 ;;;;; dired-async
-   `(dired-async-failures ((t (:foreground ,zenburn-red :weight bold))))
+   `(dired-async-failures ((t (:inherit error))))
    `(dired-async-message ((t (:foreground ,zenburn-yellow :weight bold))))
    `(dired-async-mode-message ((t (:foreground ,zenburn-yellow))))
 ;;;;; diredfl
@@ -770,14 +771,14 @@ Also bind `class' to ((class color) (min-colors 89))."
    `(doom-modeline-vcs-default ((t (:foreground ,zenburn-fg-1))))
    `(doom-modeline-lsp-success ((t (:foreground ,zenburn-green+2 :weight bold))))
    `(doom-modeline-lsp-warning ((t (:foreground ,zenburn-yellow :weight bold))))
-   `(doom-modeline-lsp-error ((t (:foreground ,zenburn-red :weight bold))))
+   `(doom-modeline-lsp-error ((t (:inherit error))))
    `(doom-modeline-lsp-running ((t (:foreground ,zenburn-orange))))
    `(doom-modeline-battery-charging ((t (:foreground ,zenburn-green))))
    `(doom-modeline-battery-full ((t (:foreground ,zenburn-green))))
    `(doom-modeline-battery-normal ((t (:foreground ,zenburn-fg-1))))
    `(doom-modeline-battery-warning ((t (:foreground ,zenburn-yellow :weight bold))))
-   `(doom-modeline-battery-critical ((t (:foreground ,zenburn-red :weight bold))))
-   `(doom-modeline-battery-error ((t (:foreground ,zenburn-red :weight bold))))
+   `(doom-modeline-battery-critical ((t (:inherit error))))
+   `(doom-modeline-battery-error ((t (:inherit error))))
    `(doom-modeline-time ((t (:foreground ,zenburn-bg+3))))
    `(doom-modeline-compilation ((t (:foreground ,zenburn-orange :weight bold))))
 ;;;;; eglot
@@ -939,7 +940,7 @@ Also bind `class' to ((class color) (min-colors 89))."
       (t (:foreground ,zenburn-green-2 :weight bold :underline t))))
    `(flymake-end-of-line-diagnostics-face ((t (:height 0.85 :box (:line-width -1 :color ,zenburn-bg+2)))))
    `(flymake-error-echo ((t (:foreground ,zenburn-red-1 :weight bold))))
-   `(flymake-warning-echo ((t (:foreground ,zenburn-orange :weight bold))))
+   `(flymake-warning-echo ((t (:inherit warning))))
    `(flymake-note-echo ((t (:foreground ,zenburn-green-2 :weight bold))))
 ;;;;; flyspell
    `(flyspell-duplicate
@@ -1230,7 +1231,7 @@ Also bind `class' to ((class color) (min-colors 89))."
    `(jabber-title-large ((t (:height 1.3 :weight bold))))
 ;;;;; js2-mode
    `(js2-warning ((t (:underline ,zenburn-orange))))
-   `(js2-error ((t (:foreground ,zenburn-red :weight bold))))
+   `(js2-error ((t (:inherit error))))
    `(js2-jsdoc-tag ((t (:foreground ,zenburn-green-2))))
    `(js2-jsdoc-type ((t (:foreground ,zenburn-green+2))))
    `(js2-jsdoc-value ((t (:foreground ,zenburn-green+3))))
