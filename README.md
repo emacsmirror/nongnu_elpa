@@ -41,7 +41,7 @@ your `load-path`:
 ```elisp
 (add-to-list 'load-path "/path/to/emacs-flamegraph")
 (autoload 'flamegraph-profiler-report "flamegraph" nil t)
-(autoload 'flamegraph-find-file       "flamegraph" nil t)
+(autoload 'flamegraph-find-profile    "flamegraph" nil t)
 ```
 
 Requires Emacs 30.1+.
@@ -59,7 +59,7 @@ M-x flamegraph-profiler-report
 ### From a saved profile or folded-stacks file
 
 ```
-M-x flamegraph-find-file RET path/to/profile-or-stacks RET
+M-x flamegraph-find-profile RET path/to/profile-or-stacks RET
 ```
 
 Auto-detects between a profile saved with `profiler-report-write-profile`
@@ -88,7 +88,7 @@ and a "folded stacks" file. The latter is a common interchange format
 
 Just `M-x profiler-start` / `M-x flamegraph-profiler-report`. Or save
 with `profiler-report-write-profile` and view later with
-`flamegraph-find-file`.
+`flamegraph-find-profile`.
 
 ### perf (Linux)
 
