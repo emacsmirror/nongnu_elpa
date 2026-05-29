@@ -1,5 +1,7 @@
 # flamegraph.el
 
+[![CI](https://github.com/dgutov/emacs-flamegraph/actions/workflows/ci.yml/badge.svg)](https://github.com/dgutov/emacs-flamegraph/actions/workflows/ci.yml)
+
 [Flame graphs][bg] for the Emacs profiler, and for folded-stacks
 files produced by `perf`, `py-spy`, `rbspy`, etc.
 
