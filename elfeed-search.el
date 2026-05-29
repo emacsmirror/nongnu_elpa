@@ -1002,7 +1002,9 @@ directly.  Instead use `elfeed-search-update'."
         (hl-line-highlight)
         (run-hooks 'elfeed-search-update-hook))))
   ;; Always force a header line update
-  (force-mode-line-update))
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (force-mode-line-update))))
 
 (defun elfeed-search--update-force (&rest _)
   "Call `elfeed-search-update' with argument :force.

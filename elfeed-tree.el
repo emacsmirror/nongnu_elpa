@@ -455,7 +455,9 @@ not use this function directly.  Instead use `elfeed-tree-update'."
           (setq elfeed-tree--last-update (float-time))
           (run-hooks 'elfeed-tree-update-hook)))))
   ;; Always force a header line update
-  (force-mode-line-update))
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (force-mode-line-update))))
 
 ;;;###autoload
 (defun elfeed-tree-bookmark-handler (_record)
