@@ -51,6 +51,21 @@ defining them in this alist."
           :key-type (string :tag "Name")
           :value-type (string :tag " Hex")))
 
+;;;###autoload
+(defcustom zenburn-override-semantic-colors-alist '()
+  "Place to override default theme semantic colors.
+
+Semantic colors give meaning-based names (like `zenburn-comment'
+or `zenburn-error') to entries in the positional palette.  Values
+may be either a hex string or the symbol of a palette entry (for
+example, `zenburn-yellow').  See `zenburn-default-semantic-colors-alist'
+for the list of semantic names that ship with the theme."
+  :group 'zenburn-theme
+  :type '(alist
+          :key-type (string :tag "Name")
+          :value-type (choice (string :tag "Hex")
+                              (symbol :tag "Palette name"))))
+
 (defvar zenburn-use-variable-pitch nil
   "When non-nil, use variable pitch face for some headings and titles.")
 
@@ -147,17 +162,67 @@ Each element has the form (NAME . HEX).
 `+N' suffixes indicate a color is lighter.
 `-N' suffixes indicate a color is darker.")
 
+(defvar zenburn-default-semantic-colors-alist
+  '(;; Status
+    ("zenburn-error"                   . zenburn-red)
+    ("zenburn-warning"                 . zenburn-orange)
+    ("zenburn-success"                 . zenburn-green)
+    ("zenburn-info"                    . zenburn-blue)
+    ;; Font lock
+    ("zenburn-comment"                 . zenburn-green)
+    ("zenburn-comment-delimiter"       . zenburn-green-2)
+    ("zenburn-doc"                     . zenburn-green+2)
+    ("zenburn-string"                  . zenburn-red)
+    ("zenburn-keyword"                 . zenburn-yellow)
+    ("zenburn-function-name"           . zenburn-cyan)
+    ("zenburn-variable-name"           . zenburn-orange)
+    ("zenburn-type"                    . zenburn-blue-1)
+    ("zenburn-constant"                . zenburn-green+4)
+    ("zenburn-preprocessor"            . zenburn-blue+1)
+    ;; Diff
+    ("zenburn-diff-added-bg"           . "#335533")
+    ("zenburn-diff-added-fg"           . zenburn-green)
+    ("zenburn-diff-changed-bg"         . "#555511")
+    ("zenburn-diff-changed-fg"         . zenburn-yellow-1)
+    ("zenburn-diff-removed-bg"         . "#553333")
+    ("zenburn-diff-removed-fg"         . zenburn-red-2)
+    ("zenburn-diff-refine-added-bg"    . "#338833")
+    ("zenburn-diff-refine-added-fg"    . zenburn-green+4)
+    ("zenburn-diff-refine-changed-bg"  . "#888811")
+    ("zenburn-diff-refine-changed-fg"  . zenburn-yellow)
+    ("zenburn-diff-refine-removed-bg"  . "#883333")
+    ("zenburn-diff-refine-removed-fg"  . zenburn-red))
+  "Semantic color mappings layered on top of `zenburn-default-colors-alist'.
+Each element has the form (NAME . VALUE) where VALUE is either a
+hex string or the symbol of an entry in `zenburn-default-colors-alist'.
+Symbols are resolved against the positional palette at expansion
+time, so user overrides in `zenburn-override-colors-alist' flow
+through automatically.")
+
 (defmacro zenburn-with-color-variables (&rest body)
-  "`let' bind all colors defined in `zenburn-colors-alist' around BODY.
+  "`let*' bind all Zenburn palette colors around BODY.
+
+Bindings are introduced in order: positional palette first (from
+`zenburn-default-colors-alist' overlaid with
+`zenburn-override-colors-alist'), then the semantic palette (from
+`zenburn-default-semantic-colors-alist' overlaid with
+`zenburn-override-semantic-colors-alist').  Semantic values may
+reference positional palette names as symbols, which resolve against
+the just-introduced bindings.
+
 Also bind `class' to ((class color) (min-colors 89))."
   (declare (indent 0))
-  `(let ((class '((class color) (min-colors 89)))
-         ,@(mapcar (lambda (cons)
-                     (list (intern (car cons)) (cdr cons)))
-                   (append zenburn-default-colors-alist
-                           zenburn-override-colors-alist))
-         (z-variable-pitch (if zenburn-use-variable-pitch
-                               'variable-pitch 'default)))
+  `(let* ((class '((class color) (min-colors 89)))
+          ,@(mapcar (lambda (cons)
+                      (list (intern (car cons)) (cdr cons)))
+                    (append zenburn-default-colors-alist
+                            zenburn-override-colors-alist))
+          ,@(mapcar (lambda (cons)
+                      (list (intern (car cons)) (cdr cons)))
+                    (append zenburn-default-semantic-colors-alist
+                            zenburn-override-semantic-colors-alist))
+          (z-variable-pitch (if zenburn-use-variable-pitch
+                                'variable-pitch 'default)))
      ,@body))
 
 ;;; Theme Faces
@@ -181,8 +246,8 @@ Also bind `class' to ((class color) (min-colors 89))."
                                   :box (:line-width -1 :style released-button)
                                   :extend t))))
    `(highlight ((t (:background ,zenburn-bg-05))))
-   `(success ((t (:foreground ,zenburn-green :weight bold))))
-   `(warning ((t (:foreground ,zenburn-orange :weight bold))))
+   `(success ((t (:foreground ,zenburn-success :weight bold))))
+   `(warning ((t (:foreground ,zenburn-warning :weight bold))))
    `(tooltip ((t (:foreground ,zenburn-fg :background ,zenburn-bg+1))))
 ;;;;; ansi-colors
    `(ansi-color-black ((t (:foreground ,zenburn-bg
@@ -277,31 +342,31 @@ Also bind `class' to ((class color) (min-colors 89))."
    `(vertical-border ((t (:foreground ,zenburn-fg))))
 ;;;;; font lock
    `(font-lock-builtin-face ((t (:foreground ,zenburn-fg :weight bold))))
-   `(font-lock-comment-face ((t (:foreground ,zenburn-green))))
-   `(font-lock-comment-delimiter-face ((t (:foreground ,zenburn-green-2))))
-   `(font-lock-constant-face ((t (:foreground ,zenburn-green+4))))
-   `(font-lock-doc-face ((t (:foreground ,zenburn-green+2))))
-   `(font-lock-function-name-face ((t (:foreground ,zenburn-cyan))))
-   `(font-lock-keyword-face ((t (:foreground ,zenburn-yellow :weight bold))))
-   `(font-lock-negation-char-face ((t (:foreground ,zenburn-yellow :weight bold))))
-   `(font-lock-preprocessor-face ((t (:foreground ,zenburn-blue+1))))
+   `(font-lock-comment-face ((t (:foreground ,zenburn-comment))))
+   `(font-lock-comment-delimiter-face ((t (:foreground ,zenburn-comment-delimiter))))
+   `(font-lock-constant-face ((t (:foreground ,zenburn-constant))))
+   `(font-lock-doc-face ((t (:foreground ,zenburn-doc))))
+   `(font-lock-function-name-face ((t (:foreground ,zenburn-function-name))))
+   `(font-lock-keyword-face ((t (:foreground ,zenburn-keyword :weight bold))))
+   `(font-lock-negation-char-face ((t (:foreground ,zenburn-keyword :weight bold))))
+   `(font-lock-preprocessor-face ((t (:foreground ,zenburn-preprocessor))))
    `(font-lock-regexp-grouping-construct ((t (:foreground ,zenburn-yellow :weight bold))))
    `(font-lock-regexp-grouping-backslash ((t (:foreground ,zenburn-green :weight bold))))
-   `(font-lock-string-face ((t (:foreground ,zenburn-red))))
-   `(font-lock-type-face ((t (:foreground ,zenburn-blue-1))))
-   `(font-lock-variable-name-face ((t (:foreground ,zenburn-orange))))
+   `(font-lock-string-face ((t (:foreground ,zenburn-string))))
+   `(font-lock-type-face ((t (:foreground ,zenburn-type))))
+   `(font-lock-variable-name-face ((t (:foreground ,zenburn-variable-name))))
    `(font-lock-warning-face ((t (:foreground ,zenburn-yellow-2 :weight bold))))
 ;;;;; font lock (Emacs 29+)
    `(font-lock-bracket-face ((t (:foreground ,zenburn-fg))))
    `(font-lock-delimiter-face ((t (:foreground ,zenburn-fg))))
    `(font-lock-escape-face ((t (:foreground ,zenburn-green :weight bold))))
-   `(font-lock-function-call-face ((t (:foreground ,zenburn-cyan))))
+   `(font-lock-function-call-face ((t (:foreground ,zenburn-function-name))))
    `(font-lock-misc-punctuation-face ((t (:foreground ,zenburn-fg))))
-   `(font-lock-number-face ((t (:foreground ,zenburn-green+4))))
+   `(font-lock-number-face ((t (:foreground ,zenburn-constant))))
    `(font-lock-operator-face ((t (:foreground ,zenburn-fg))))
-   `(font-lock-property-name-face ((t (:foreground ,zenburn-orange))))
-   `(font-lock-property-use-face ((t (:foreground ,zenburn-orange))))
-   `(font-lock-variable-use-face ((t (:foreground ,zenburn-orange))))
+   `(font-lock-property-name-face ((t (:foreground ,zenburn-variable-name))))
+   `(font-lock-property-use-face ((t (:foreground ,zenburn-variable-name))))
+   `(font-lock-variable-use-face ((t (:foreground ,zenburn-variable-name))))
 
    `(c-annotation-face ((t (:inherit font-lock-constant-face))))
 ;;;;; line numbers (Emacs 26.1 and above)
@@ -597,12 +662,12 @@ Also bind `class' to ((class color) (min-colors 89))."
    `(denote-faces-prompt-old-name ((t (:foreground ,zenburn-red))))
 ;;;;; diff
    ;; Please read (info "(magit)Theming Faces") before changing this.
-   `(diff-added          ((t (:background "#335533" :foreground ,zenburn-green))))
-   `(diff-changed        ((t (:background "#555511" :foreground ,zenburn-yellow-1))))
-   `(diff-removed        ((t (:background "#553333" :foreground ,zenburn-red-2))))
-   `(diff-refine-added   ((t (:background "#338833" :foreground ,zenburn-green+4))))
-   `(diff-refine-changed ((t (:background "#888811" :foreground ,zenburn-yellow))))
-   `(diff-refine-removed ((t (:background "#883333" :foreground ,zenburn-red))))
+   `(diff-added          ((t (:background ,zenburn-diff-added-bg          :foreground ,zenburn-diff-added-fg))))
+   `(diff-changed        ((t (:background ,zenburn-diff-changed-bg        :foreground ,zenburn-diff-changed-fg))))
+   `(diff-removed        ((t (:background ,zenburn-diff-removed-bg        :foreground ,zenburn-diff-removed-fg))))
+   `(diff-refine-added   ((t (:background ,zenburn-diff-refine-added-bg   :foreground ,zenburn-diff-refine-added-fg))))
+   `(diff-refine-changed ((t (:background ,zenburn-diff-refine-changed-bg :foreground ,zenburn-diff-refine-changed-fg))))
+   `(diff-refine-removed ((t (:background ,zenburn-diff-refine-removed-bg :foreground ,zenburn-diff-refine-removed-fg))))
    `(diff-header ((,class (:background ,zenburn-bg+2))
                   (t (:background ,zenburn-fg :foreground ,zenburn-bg))))
    `(diff-file-header
