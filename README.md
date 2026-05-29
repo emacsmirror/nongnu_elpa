@@ -95,13 +95,21 @@ with `profiler-report-write-profile` and view later with
 Recording:
 
 ```sh
-perf record -F 99 -g --call-graph fp -p <pid> -- sleep 30
+perf record -F 99 -g --call-graph fp -p <pid> -o out.perf.data -- sleep 30
 ```
 
-Use frame-pointer unwinding (`--call-graph fp`) when possible — DWARF
-unwinding (`--call-graph dwarf,N`) caps the captured stack at N bytes
-and turns into `[unknown]` frames once Emacs's redisplay/bidi recursion
-overflows it. This needs the binary built with `-fno-omit-frame-pointer`.
+Use frame-pointer unwinding (`--call-graph fp`) when possible — this
+needs the binary built with `-fno-omit-frame-pointer`, otherwise many
+samples come back as `[unknown]`. On a stock build, `--call-graph dwarf,N`
+also works and resolves most frames; the N-byte stack cap is its main
+limitation.
+
+If your app produces deep call stacks (Emacs easily does), raise the
+kernel's frame cap before recording:
+
+```sh
+sudo sysctl kernel.perf_event_max_stack=512   # default 127
+```
 
 Folding with source locations:
 
@@ -112,27 +120,28 @@ perf script --max-stack 512 --no-inline -F +srcline --full-source-path \
   > out.folded
 ```
 
-Both `-F +srcline` (perf has to be asked to emit srclines) and
-`--no-inline` (perf 6.8's `addr2line` subprocess protocol desyncs on
-binutils ≥2.39's variable inline-record count) are required. Use
-`--full-source-path` so resolved paths are absolute.
+Pass `-F +srcline` so `perf script` emits source-line fields, and
+`--full-source-path` so those fields use full paths. Source-line
+resolution can be slow on deep-callchain profiles. Processing time may
+improve with `--no-inline` if inline expansion is costly, at the cost of
+omitting inlined frames.
 
-If you want to keep inlined frames despite this, you'll need either
-perf ≥ 6.9 (`--addr2line`) or an Emacs built `-no-pie` so the script's
-own `addr2line -i` can resolve PIE addresses.
+For faster report generation without source locations, omit `-F +srcline`,
+`--full-source-path`, and `--srcline` altogether.
 
 ### py-spy, rbspy
 
 ```sh
 py-spy record --format raw -o out.folded …
-rbspy record --format flamegraph --raw-file out.folded …
+rbspy record --format collapsed --file out.folded …
 ```
 
-Both emit frames in `NAME (file:line)` / `NAME - file:line` shape; the
-package parses both.
+Both commands write folded-stacks text (`py-spy` calls this `raw`,
+`rbspy` calls it `collapsed`) with frames that include source line
+slightly differenly; this package parses both.
 
-For more profilers and recording recipes, see section 4 ("Instructions")
-of the canonical [CPU Flame Graphs][cpufg] article.
+For more profilers and recipes, see section 4 ("Instructions") of the
+canonical [CPU Flame Graphs][cpufg] article.
 
 [cpufg]: https://www.brendangregg.com/FlameGraphs/cpuflamegraphs.html
 
