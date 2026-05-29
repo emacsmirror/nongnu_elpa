@@ -20,7 +20,7 @@
 ;;
 ;; Start the profiler with `profiler-start', run the code you want to
 ;; measure, then `M-x flamegraph-profiler-report' to view the result.
-;; `M-x flamegraph-find-file' opens a profile previously saved with
+;; `M-x flamegraph-find-profile' opens a profile previously saved with
 ;; `profiler-report-write-profile', or a folded-stacks file.
 ;;
 ;; The graph is drawn top-down ("icicle" orientation): the outermost frame
@@ -919,7 +919,7 @@ COUNT is added to every frame along the stack."
     root))
 
 ;;;###autoload
-(defun flamegraph-find-file (filename)
+(defun flamegraph-find-profile (filename)
   "Display a flame graph for profile data in FILENAME.
 Emacs profiler profiles and folded stacks files are detected automatically."
   (interactive (list (read-file-name "Find flame graph file: " nil nil t)))
