@@ -197,24 +197,24 @@ The same NAME always maps to the same color, as in classic flame graphs."
 (defvar-local flamegraph--frame-positions nil
   "Sorted vector of buffer positions, one per drawn frame.")
 
-(defun flamegraph--canvas-width ()
-  "Return the canvas width in pixels (columns on a text terminal)."
-  (let ((cw (frame-char-width)))
-    (max (* 40 cw)
-         (or (and flamegraph-width (* flamegraph-width cw))
-             (let ((win (get-buffer-window (current-buffer) t)))
-               (and win
-                    ;; Keep a spare character inside redisplay's wrap
-                    ;; boundary.  Otherwise right-edge stretch glyphs can
-                    ;; either wrap or get truncated, hiding tiny frames.
-                    (- (window-body-width win t) cw)))
-             (* 80 cw)))))
+(defun flamegraph--canvas-width (win cw)
+  "Return the canvas width in pixels (columns on a text terminal).
+WIN is the window showing the buffer, or nil; CW is its char width."
+  (max (* 40 cw)
+       (or (and flamegraph-width (* flamegraph-width cw))
+           (and win
+                ;; Keep a spare character inside redisplay's wrap
+                ;; boundary.  Otherwise right-edge stretch glyphs can
+                ;; either wrap or get truncated, hiding tiny frames.
+                (- (window-body-width win t) cw))
+           (* 80 cw))))
 
 (defun flamegraph--render-text (frames max-depth)
   "Draw FRAMES into the current buffer, one row per depth.
 MAX-DEPTH is the deepest row."
-  (let* ((cw (frame-char-width))
-         (total-px (flamegraph--canvas-width))
+  (let* ((win (get-buffer-window (current-buffer) t))
+         (cw (if win (window-font-width win) (frame-char-width)))
+         (total-px (flamegraph--canvas-width win cw))
          (pad (if (display-graphic-p) flamegraph-text-padding 0))
          (border (if (display-graphic-p) flamegraph-frame-border 0))
          (rows (make-vector (1+ max-depth) nil))
@@ -836,7 +836,8 @@ since this runs before that relocation happens."
         buffer-undo-list t
         left-fringe-width 0)
   (cursor-intangible-mode 1)
-  (add-hook 'post-command-hook #'flamegraph--echo nil t))
+  (add-hook 'post-command-hook #'flamegraph--echo nil t)
+  (add-hook 'text-scale-mode-hook #'flamegraph-redraw nil t))
 
 ;;; Entry points
 
