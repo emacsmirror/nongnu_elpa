@@ -197,7 +197,8 @@ When live editing the filter, it is bound to :live.")
   "Place point on last entry."
   (interactive nil elfeed-search-mode)
   (goto-char (point-max))
-  (forward-line -1))
+  (unless (use-region-p)
+    (forward-line -1)))
 
 (defun elfeed-search-first-entry ()
   "Place point on first entry."
