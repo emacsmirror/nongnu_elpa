@@ -92,7 +92,7 @@ The default implementation uses `completing-read'.")
                  (cl-assert (string= (substring latex 0 1) "\\") nil
                             "LaTeX substitution does not start with \\.")
                  (let ((len (length latex)))
-                   (cl-assert (< 1 len) nil "Trivially short LaTeX subtitution")
+                   (cl-assert (< 1 len) nil "Trivially short LaTeX substitution")
                    ;; for \foo, put \f, \fo, \foo into the table
                    (cl-loop for i from 2 to len
                             do (_append (substring latex 0 i) latex))))
@@ -898,7 +898,7 @@ If there is not a LaTeX-like symbol at point, return nil."
                     (= ?\\ (char-before))
                     ;; Checks char not in whitespace, comment, or
                     ;; escape. This works better than checking char is
-                    ;; in word constitutents (?w) because things like
+                    ;; in word constituents (?w) because things like
                     ;; "\^(", "\1/", and "\^=)" are valid.
                     (member (char-syntax (char-before)) '(?\s ?< ?> ?\\))))
       (backward-char))
