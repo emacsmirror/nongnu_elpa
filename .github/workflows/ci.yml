@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Minimum supported (Package-Requires) + latest stable + snapshot.
+        emacs_version:
+          - '27.1'
+          - '30.1'
+          - snapshot
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: purcell/setup-emacs@master
+        with:
+          version: ${{ matrix.emacs_version }}
+
+      - name: Byte-compile (warnings as errors)
+        run: |
+          emacs -Q --batch -L . -L test \
+            --eval '(setq byte-compile-error-on-warn t)' \
+            -f batch-byte-compile \
+            treepy.el \
+            test/treepy.el-zipper-test.el \
+            test/treepy.el-walker-test.el
+
+      - name: Run tests
+        run: |
+          emacs -Q --batch -L . -L test \
+            -l test/treepy.el-zipper-test.el \
+            -l test/treepy.el-walker-test.el \
+            -f ert-run-tests-batch-and-exit
