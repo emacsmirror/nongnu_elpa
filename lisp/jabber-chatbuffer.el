@@ -59,6 +59,8 @@ previous sequence detect the mismatch and stop.")
 
 ;; Global reference declarations
 
+(defvar jabber-muc-menu-map)
+
 (declare-function jabber-muc-nick-completion-at-point "jabber-muc-nick-completion.el" ())
 (declare-function jabber-httpupload--upload "jabber-httpupload"
                   (jc filepath callback))
@@ -331,6 +333,12 @@ MAM sync in this buffer.  Set via the operations menu.")
     (when (yes-or-no-p (format "Remove %s from roster? " jid))
       (jabber-roster-delete jabber-buffer-connection jid))))
 
+(defun jabber-chat-muc-actions-menu ()
+  "Show MUC actions for the current chat buffer."
+  (interactive)
+  (require 'jabber-muc)
+  (keymap-popup jabber-muc-menu-map))
+
 (keymap-popup-define jabber-chat-operations-menu-map
   :description (lambda ()
 		 (let ((peer (or (bound-and-true-p jabber-group)
@@ -358,6 +366,8 @@ MAM sync in this buffer.  Set via the operations menu.")
   "E" ("Edit last message" jabber-correct-last-message)
   "r" ("Reply to message" jabber-chat-reply)
   :group "MUC"
+  "m" ("MUC Actions" jabber-chat-muc-actions-menu
+       :if (lambda () (bound-and-true-p jabber-group)))
   "M" ("Retract message at point" jabber-moderation-retract
        :if (lambda () (bound-and-true-p jabber-group)))
   "X" ("Retract all by occupant" jabber-moderation-retract-by-occupant

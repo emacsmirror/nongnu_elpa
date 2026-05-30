@@ -2015,6 +2015,12 @@ Accesses `jabber-pending-groupchats' to determine our nickname."
 
 (keymap-popup-define jabber-muc-menu-map
   "Jabber MUC commands."
+  :description (lambda ()
+                 (if (bound-and-true-p jabber-group)
+                     (format "MUC actions for %s"
+                             (propertize jabber-group 'face
+                                         'font-lock-constant-face))
+                   "MUC actions"))
   :group "Room"
   "j" ("Join" jabber-muc-join)
   "J" ("Create room" jabber-muc-create)
