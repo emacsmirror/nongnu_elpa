@@ -156,7 +156,9 @@ canonical [CPU Flame Graphs][cpufg] article.
 
 | Face | Purpose |
 | --- | --- |
-| `flamegraph-call-site` | Highlight for callee occurrences in the describe-buffer snippet |
+| `flamegraph-call-site-hot` | Highlight for the hottest callee occurrences in the describe-buffer snippet |
+| `flamegraph-call-site-warm` | Highlight for moderately hot callee occurrences |
+| `flamegraph-call-site-cool` | Highlight for minor callee occurrences |
 
 ## Development
 

@@ -108,8 +108,8 @@
      ,@body))
 
 (defun flamegraph-test--region-texts (regions)
-  "Texts spanned by REGIONS (a list of (BEG . END)) in current buffer."
-  (mapcar (lambda (r) (buffer-substring-no-properties (car r) (cdr r)))
+  "Texts spanned by REGIONS (a list of (BEG END WEIGHT)) in current buffer."
+  (mapcar (lambda (r) (buffer-substring-no-properties (car r) (cadr r)))
           regions))
 
 (ert-deftest flamegraph-test-walker-strict-nesting ()
@@ -225,22 +225,29 @@ callees outside it must still be found."
       (should s)
       (should (string-match-p "^ ▸ +2 " s)))))
 
+(defun flamegraph-test--has-face (string face)
+  "Non-nil if FACE is applied anywhere in STRING (symbol or in a list)."
+  (cl-loop for i below (length string)
+           for f = (get-text-property i 'face string)
+           thereis (or (eq f face) (and (listp f) (memq face f)))))
+
 (ert-deftest flamegraph-test-source-snippet-applies-highlight-face ()
-  "Callee matches in the snippet carry the `flamegraph-call-site' face."
+  "Callee matches in the snippet carry a heat face scaled by share.
+foo at 100% of outer is hot; bar at 10% is warm."
   (flamegraph-test--with-temp-source path
       "(defun outer ()\n  (foo (bar)))\n"
     (let* ((bar (profiler-make-calltree :entry 'bar :count 1))
-           (foo (profiler-make-calltree :entry 'foo :count 1
+           (foo (profiler-make-calltree :entry 'foo :count 10
                                         :children (list bar)))
-           (outer (profiler-make-calltree :entry 'outer :count 1
+           (outer (profiler-make-calltree :entry 'outer :count 10
                                           :children (list foo)))
            (s (flamegraph--source-snippet
                path 1
                (lambda (b e)
                  (flamegraph--collect-nested-call-sites outer b e)))))
       (should s)
-      (should (text-property-any 0 (length s)
-                                 'face 'flamegraph-call-site s)))))
+      (should (flamegraph-test--has-face s 'flamegraph-call-site-hot))
+      (should (flamegraph-test--has-face s 'flamegraph-call-site-warm)))))
 
 ;;; Calls-tree rendering — `flamegraph--insert-call-tree'
 

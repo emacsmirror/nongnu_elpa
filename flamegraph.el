@@ -84,8 +84,26 @@ FILE:LINE location.  If nil, paths are resolved against the directory of
 the data file the graph was loaded from."
   :type '(choice (const :tag "Data file's directory" nil) directory))
 
-(defface flamegraph-call-site '((t :inherit highlight))
-  "Face for callee occurrences highlighted in a description buffer's source.")
+(defface flamegraph-call-site-hot
+  '((((background light)) :background "#ff9b3d")
+    (((background dark))  :background "#9c4a1c"))
+  "Face for the hottest callee occurrences in a description buffer's source.")
+
+(defface flamegraph-call-site-warm
+  '((((background light)) :background "#ffd24d")
+    (((background dark))  :background "#7a5817"))
+  "Face for moderately hot callee occurrences in a description buffer's source.")
+
+(defface flamegraph-call-site-cool
+  '((((background light)) :background "#fff0c0")
+    (((background dark))  :background "#4a3a14"))
+  "Face for minor callee occurrences in a description buffer's source.")
+
+(defun flamegraph--call-site-face (weight)
+  "Return the call-site heat face for fractional WEIGHT in [0,1]."
+  (cond ((>= weight 0.40) 'flamegraph-call-site-hot)
+        ((>= weight 0.10) 'flamegraph-call-site-warm)
+        (t                'flamegraph-call-site-cool)))
 
 ;;; Layout: call tree -> flat list of frames
 
@@ -548,9 +566,10 @@ the enclosing structural lines up to the definition are kept — each line
 that is less indented than the one below it — so the nesting that leads
 to the sampled line stays visible.  FIND-REGIONS, if non-nil, is called
 with the enclosing defun's start and end buffer positions; it returns
-a list of (BEG . END) ranges within the loaded buffer to highlight with
-`flamegraph-call-site'.  Their lines are kept as well.  Skipped runs
-are elided with `⋯'.  CONTEXT defaults to 4."
+a list of (BEG END WEIGHT) ranges within the loaded buffer to highlight
+with a heat face chosen from WEIGHT (see `flamegraph--call-site-face').
+Their lines are kept as well.  Skipped runs are elided with `⋯'.
+CONTEXT defaults to 4."
   (setq context (or context 4))
   (when (and (file-readable-p path) (> line 0))
     (with-temp-buffer
@@ -614,9 +633,10 @@ are elided with `⋯'.  CONTEXT defaults to 4."
                 (let ((bol (line-beginning-position))
                       (eol (line-end-position)))
                   (dolist (r regions)
-                    (when (and (<= bol (car r)) (>= eol (cdr r)))
-                      (add-face-text-property (car r) (cdr r)
-                                              'flamegraph-call-site))))
+                    (pcase-let ((`(,rb ,re ,w) r))
+                      (when (and (<= bol rb) (>= eol re))
+                        (add-face-text-property
+                         rb re (flamegraph--call-site-face w))))))
                 (push (flamegraph--snippet-line n (= n line)) out)
                 (setq prev n))
               (mapconcat #'identity (nreverse out) "\n"))))))))
@@ -663,14 +683,17 @@ in completely unrelated forms (a literal `(if …)' elsewhere), or
 may not exist at all (`dolist' → `while'/`let').  Only real function
 matches narrow, which is what preserves structural attribution.
 
-Returns a list of (POS-BEG . POS-END) regions to highlight."
-  (let (regions)
+Each region is (POS-BEG POS-END WEIGHT), WEIGHT being the callee's
+share of NODE's count, for heat styling."
+  (let ((total (max 1 (profiler-calltree-count node)))
+        regions)
     (cl-labels
         ((walk (n region)
            (dolist (k (profiler-calltree-children n))
              (let* ((entry (profiler-calltree-entry k))
                     (name (flamegraph--frame-display-name entry))
-                    (skip (flamegraph--skip-through-p entry)))
+                    (skip (flamegraph--skip-through-p entry))
+                    (weight (/ (float (profiler-calltree-count k)) total)))
                (cond
                 (skip
                  ;; Special form — transparent descend, no narrowing.
@@ -685,7 +708,7 @@ Returns a list of (POS-BEG . POS-END) regions to highlight."
                      (while (re-search-forward re (cdr region) t)
                        (let ((mb (match-beginning 0))
                              (me (match-end 0)))
-                         (push (cons mb me) regions)
+                         (push (list mb me weight) regions)
                          (when-let* ((sub (flamegraph--enclosing-form-region
                                            mb)))
                            (walk k sub))))))))))))
