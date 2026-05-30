@@ -84,6 +84,12 @@ FILE:LINE location.  If nil, paths are resolved against the directory of
 the data file the graph was loaded from."
   :type '(choice (const :tag "Data file's directory" nil) directory))
 
+(defcustom flamegraph-call-site-threshold 0.02
+  "Minimum share of a frame's samples for a callee to appear in its snippet.
+Callees below this fraction (of the described frame's count) are not
+highlighted in the describe-buffer source."
+  :type 'float)
+
 (defface flamegraph-call-site-hot
   '((((background light)) :background "#ff9b3d")
     (((background dark))  :background "#9c4a1c"))
@@ -683,8 +689,10 @@ in completely unrelated forms (a literal `(if …)' elsewhere), or
 may not exist at all (`dolist' → `while'/`let').  Only real function
 matches narrow, which is what preserves structural attribution.
 
-Each region is (POS-BEG POS-END WEIGHT), WEIGHT being the callee's
-share of NODE's count, for heat styling."
+Callees below `flamegraph-call-site-threshold' of NODE's count are
+dropped along with their subtree.  Each region is (POS-BEG POS-END
+WEIGHT), WEIGHT being the callee's share of NODE's count, for heat
+styling."
   (let ((total (max 1 (profiler-calltree-count node)))
         regions)
     (cl-labels
@@ -698,6 +706,9 @@ share of NODE's count, for heat styling."
                 (skip
                  ;; Special form — transparent descend, no narrowing.
                  (walk k region))
+                ((< weight flamegraph-call-site-threshold)
+                 ;; Too cold to be worth showing — drop it and its subtree.
+                 nil)
                 ((flamegraph--callee-name-acceptable-p name)
                  ;; Real function — search in the current region.
                  ;; Each match is highlighted and narrows the search

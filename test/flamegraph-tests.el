@@ -193,6 +193,25 @@ callees outside it must still be found."
                      outer (point-min) (point-max))))
       (should (equal (flamegraph-test--region-texts regions) '("foo"))))))
 
+(ert-deftest flamegraph-test-walker-below-threshold-dropped ()
+  "Callees below `flamegraph-call-site-threshold' are dropped with subtree.
+hot at 50% is kept; cold at 1% (and its child) are not."
+  (flamegraph-test--with-elisp-source
+      "(defun outer ()
+  (hot (deep))
+  (cold))"
+    (let* ((deep  (profiler-make-calltree :entry 'deep :count 1))
+           (hot   (profiler-make-calltree :entry 'hot :count 50
+                                          :children (list deep)))
+           (cold  (profiler-make-calltree :entry 'cold :count 1))
+           (outer (profiler-make-calltree :entry 'outer :count 100
+                                          :children (list hot cold)))
+           (flamegraph-call-site-threshold 0.02)
+           (regions (flamegraph--collect-nested-call-sites
+                     outer (point-min) (point-max))))
+      ;; hot (50%) kept; deep is 1% of outer -> dropped; cold (1%) dropped.
+      (should (equal (flamegraph-test--region-texts regions) '("hot"))))))
+
 ;;; `flamegraph--symbol-location'
 
 (ert-deftest flamegraph-test-symbol-location ()

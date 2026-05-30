@@ -153,6 +153,7 @@ canonical [CPU Flame Graphs][cpufg] article.
 | `flamegraph-frame-border` | Pixel gap between adjacent frame boxes |
 | `flamegraph-text-padding` | Pixels between a frame's left edge and its label |
 | `flamegraph-source-directory` | Where to resolve relative paths when visiting source |
+| `flamegraph-call-site-threshold` | Min sample share for a callee to appear in the describe-buffer snippet (default: 2%) |
 
 | Face | Purpose |
 | --- | --- |
