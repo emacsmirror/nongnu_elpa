@@ -1,5 +1,17 @@
 #+TITLE: Changelog
 
+* [0.10.10]
+#+date: 2026-05-30
+
+** Added
+- Roster contact popup can edit contact name and groups
+- Roster account picker can clear scoped view with “All accounts”
+- Chat operations menu exposes MUC actions from room buffers
+
+** Fixes
+- Suppress alerts for self-sent carbons and own MUC messages
+
+
 * [0.10.9]
 #+date: 2026-05-15
 
