@@ -301,7 +301,6 @@ the browser defined by `browse-url-secondary-browser-function'."
   (interactive "P" elfeed-show-mode)
   (when-let* ((link (elfeed-entry-link elfeed-show-entry))
               ((elfeed--confirm-browse-url-p)))
-    (message "Sent to browser: %s" link)
     (elfeed-browse-url link secondary)))
 
 (defun elfeed-show-visit-secondary ()

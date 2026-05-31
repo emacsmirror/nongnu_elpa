@@ -399,6 +399,7 @@ If SECONDARY is non-nil, use the `browse-url-secondary-browser-function'."
          (if secondary
              browse-url-secondary-browser-function
            browse-url-browser-function)))
+    (message "Sent to browser: %s" url)
     (browse-url url)))
 
 (defvar elfeed--image-hack t
