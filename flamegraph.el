@@ -680,30 +680,25 @@ symbol boundaries in the target buffer's syntax."
        (not (string-match-p "[][[:space:]();,]" name))))
 
 (defun flamegraph--collect-nested-call-sites (node beg end &optional reached)
-  "Walk NODE's call subtree against the buffer region [BEG END].
-For each child whose display name matches `\\=\\_<NAME\\=\\_>' in the
-current region, record the match as a highlight region (unless its
-entry is a skip-through) and recurse into the child with the matched
-call's enclosing form as the new search bound.
+  "Walk NODE's call subtree against the buffer region [BEG END],
+recording each child whose display name matches `\\=\\_<NAME\\=\\_>' in
+the current region as a highlight region.
 
 Skip-through children (see `flamegraph--skip-through-p') are transparent:
-not searched, never narrow the region, just descended through.  Only
-function matches narrow the region, which preserves structural
-attribution — a `(foo (bar …))' in source bounds the search for `bar' to
-within the `foo' call.
+not searched, never narrow the region, just descended through.  A
+function match narrows the region for that child's own descendants, which
+preserves structural attribution — a `(foo (bar …))' in source bounds the
+search for `bar' to within the `foo' call.
 
 Each region is (POS-BEG POS-END WEIGHT), WEIGHT being the callee's share
 of NODE's count, for heat styling.  Callees below
 `flamegraph-call-site-threshold' are omitted from the regions, but still
 traversed.
 
-If REACHED (a hash table) is non-nil, mark in it every node whose callees
-should be shown nested in the \"Calls\" tree: a node is reached when it
-has a child found in the source (directly, or through transparent
-skip-through frames).  This is independent of the threshold, so the Calls
-tree may show cold callees the snippet omits — but it stops, like the
-snippet, where source attribution runs out (a function whose own body is
-not in this defun)."
+REACHED, if non-nil, is a hash table into which every node with a child
+found in the source is marked; `flamegraph--insert-call-tree' uses it to
+nest the \"Calls\" tree.  It ignores the threshold, so the tree may show
+cold callees the snippet omits."
   (let ((total (max 1 (profiler-calltree-count node)))
         regions)
     (cl-labels
@@ -745,13 +740,12 @@ not in this defun)."
     (nreverse regions)))
 
 (defun flamegraph--insert-call-tree (node total ref depth directory reached)
-  "Insert NODE's children as a tree, nesting those found in the source.
-REACHED is the hash table populated by `flamegraph--collect-nested-call-sites':
-a child is expanded inline (its own callees shown indented) only when it
-is a key there, so the tree follows the same source-attributed nesting as
-the snippet.  TOTAL is the grand total for the call graph; REF is the
-count of the originally-described frame, used so the printed percentages
-add up under that frame.  DEPTH controls the indentation."
+  "Insert NODE's children as a tree.
+A child is expanded inline (its own callees shown indented) only when it
+is a key in REACHED, the table from `flamegraph--collect-nested-call-sites'.
+TOTAL is the grand total for the call graph; REF is the count of the
+originally-described frame, used so the printed percentages add up under
+that frame.  DEPTH controls the indentation."
   (let ((kids (sort (copy-sequence (profiler-calltree-children node))
                     (lambda (a b) (> (profiler-calltree-count a)
                                      (profiler-calltree-count b))))))
