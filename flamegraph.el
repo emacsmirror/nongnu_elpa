@@ -648,10 +648,15 @@ defaults to 4."
               (mapconcat #'identity (nreverse out) "\n"))))))))
 
 (defun flamegraph--skip-through-p (entry)
-  "Non-nil if ENTRY is a control construct to descend through when
-looking for a frame's real callees in source (e.g. `if', `let',
-`progn').  In an Elisp profile these special-form frames sit between a
-function and its actual callees and are not useful as call sites."
+  "Non-nil if ENTRY is a frame to descend through transparently when
+anchoring a frame's callees to source (e.g. `if', `let', `progn').
+Macros often add these special forms, so the profile records them where
+the source had a macro call instead.  They also make poor anchors in
+their own right: matching one by name is fairly likely to land on an
+unrelated occurrence.
+FIXME: `apply' and `funcall' play a similar role (e.g. a `cl-defmethod'
+dispatch reaches the method body through `apply') but are not yet
+treated as skip-throughs, so the walk dead-ends at them."
   (and (symbolp entry) (special-form-p entry)))
 
 (defun flamegraph--enclosing-form-region (pos)
@@ -681,13 +686,11 @@ current region, record the match as a highlight region (unless its
 entry is a skip-through) and recurse into the child with the matched
 call's enclosing form as the new search bound.
 
-Skip-through (special-form) children are PURELY TRANSPARENT: not
-searched, never narrow the region, just descended through.  Their
-textual presence in source is unreliable as an anchor — the profile
-records post-macro-expansion frames whose names may exist in source
-in completely unrelated forms (a literal `(if …)' elsewhere), or
-may not exist at all (`dolist' → `while'/`let').  Only real function
-matches narrow, which is what preserves structural attribution.
+Skip-through children (see `flamegraph--skip-through-p') are transparent:
+not searched, never narrow the region, just descended through.  Only
+function matches narrow the region, which preserves structural
+attribution — a `(foo (bar …))' in source bounds the search for `bar' to
+within the `foo' call.
 
 Each region is (POS-BEG POS-END WEIGHT), WEIGHT being the callee's share
 of NODE's count, for heat styling.  Callees below
@@ -714,12 +717,12 @@ not in this defun)."
                       (weight (/ (float (profiler-calltree-count k)) total)))
                  (cond
                   ((flamegraph--skip-through-p entry)
-                   ;; Special form — transparent descend, no narrowing.
+                   ;; Skip-through — transparent descend, no narrowing.
                    (when (walk k region)
                      (when reached (puthash k t reached))
                      (setq reachable t)))
                   ((flamegraph--callee-name-acceptable-p name)
-                   ;; Real function — search in the current region.  Each
+                   ;; Function — search in the current region.  Each
                    ;; match is highlighted and narrows the search for this
                    ;; child's own children.
                    (save-excursion
