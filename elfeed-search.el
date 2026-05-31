@@ -1169,7 +1169,7 @@ the browser defined by `browse-url-secondary-browser-function'."
     (when entries
       (kill-new links-str)
       (gui-set-selection elfeed-search-clipboard-type links-str)
-      (message "Copied: %s" links-str)
+      (message "Yanked: %s" links-str)
       (elfeed-search--after-action 'yank))))
 
 (defun elfeed-search--tag (fun)
