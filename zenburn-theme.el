@@ -268,17 +268,11 @@ the just-introduced bindings."
    `(ansi-color-white ((t (:foreground ,zenburn-fg
                                        :background ,zenburn-fg-1))))
 ;;;;; compilation
-   `(compilation-column-face ((t (:foreground ,zenburn-yellow))))
-   `(compilation-enter-directory-face ((t (:foreground ,zenburn-green))))
-   `(compilation-error-face ((t (:foreground ,zenburn-red-1 :weight bold :underline t))))
-   `(compilation-face ((t (:foreground ,zenburn-fg))))
-   `(compilation-info-face ((t (:foreground ,zenburn-blue))))
+   `(compilation-column-number ((t (:foreground ,zenburn-yellow))))
+   `(compilation-error ((t (:foreground ,zenburn-red-1 :weight bold :underline t))))
    `(compilation-info ((t (:foreground ,zenburn-green+4 :underline t))))
-   `(compilation-leave-directory-face ((t (:foreground ,zenburn-green))))
-   `(compilation-line-face ((t (:foreground ,zenburn-yellow))))
    `(compilation-line-number ((t (:foreground ,zenburn-yellow))))
-   `(compilation-message-face ((t (:foreground ,zenburn-blue))))
-   `(compilation-warning-face ((t (:inherit warning :underline t))))
+   `(compilation-warning ((t (:inherit warning :underline t))))
    `(compilation-mode-line-exit ((t (:foreground ,zenburn-green+2 :weight bold))))
    `(compilation-mode-line-fail ((t (:inherit error))))
    `(compilation-mode-line-run ((t (:foreground ,zenburn-yellow :weight bold))))
@@ -301,10 +295,6 @@ the just-introduced bindings."
    '(eww-invalid-certificate ((t (:inherit error))))
    '(eww-valid-certificate   ((t (:inherit success))))
 ;;;;; grep
-   `(grep-context-face ((t (:foreground ,zenburn-fg))))
-   `(grep-error-face ((t (:foreground ,zenburn-red-1 :weight bold :underline t))))
-   `(grep-hit-face ((t (:foreground ,zenburn-blue))))
-   `(grep-match-face ((t (:foreground ,zenburn-orange :weight bold))))
    `(match ((t (:background ,zenburn-bg-1 :foreground ,zenburn-orange :weight bold))))
 ;;;;; hi-lock
    `(hi-blue    ((t (:background ,zenburn-cyan    :foreground ,zenburn-bg-1))))
@@ -1140,7 +1130,6 @@ the just-introduced bindings."
 ;;;;; highlight-thing
    `(highlight-thing ((t (:background ,zenburn-bg+2))))
 ;;;;; hl-line-mode
-   `(hl-line-face ((t (:background ,zenburn-bg-05))))
    `(hl-line ((t (:background ,zenburn-bg-05 :extend t))))
 ;;;;; hl-sexp
    `(hl-sexp-face ((t (:background ,zenburn-bg+1))))

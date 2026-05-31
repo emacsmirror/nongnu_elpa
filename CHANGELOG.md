@@ -23,6 +23,11 @@
 * Add `corfu-popupinfo` face.
 * Add `flymake-end-of-line-diagnostics-face` and `flymake-{error,warning,note}-echo` faces.
 
+### Bug fixes
+
+* Fix three compilation faces that were theming the wrong symbol: `compilation-column-face`, `compilation-error-face`, and `compilation-warning-face` are defcustoms holding face names, not faces themselves, so the theme entries did nothing. Renamed to the real faces `compilation-column-number`, `compilation-error`, and `compilation-warning`.
+* Drop ten more dead `*-face` theme entries that were setting specs on defcustoms instead of faces (no behavioral effect): `compilation-face`, `compilation-info-face`, `compilation-line-face`, `compilation-message-face`, `compilation-enter-directory-face`, `compilation-leave-directory-face`, `grep-context-face`, `grep-error-face`, `grep-hit-face`, `grep-match-face`, and `hl-line-face`. Their real targets are either already themed under the correct name or generic faces (`shadow`, `underline`) we shouldn't override.
+
 ### Changes
 
 * Promote `zenburn-use-variable-pitch`, `zenburn-scale-org-headlines`, and `zenburn-scale-outline-headlines` from plain `defvar`s to boolean `defcustom`s so they show up in `M-x customize-group RET zenburn-theme` and accept safe file-local values.
