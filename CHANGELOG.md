@@ -25,7 +25,9 @@
 
 ### Changes
 
+* Promote `zenburn-use-variable-pitch`, `zenburn-scale-org-headlines`, and `zenburn-scale-outline-headlines` from plain `defvar`s to boolean `defcustom`s so they show up in `M-x customize-group RET zenburn-theme` and accept safe file-local values.
 * Drop the legacy `((class color) (min-colors 89))` display-class dance and the obsolete low-color terminal fallbacks (`:inverse-video`, swapped fg/bg, monochrome `:weight bold`) for `mode-line`, `region`, `diff-header`, `diff-file-header`, `hl-line`, `hl-line-face`, and `hl-sexp-face`. Modern terminals all qualify as full-color, so the branching no longer earns its keep.
+* Drop `zenburn-height-minus-1`, which has been defined but never referenced anywhere in the theme.
 * Route `adoc-comment-face`, `ledger-font-comment-face`, and `js2-jsdoc-type` through `:inherit` so they track customizations to `font-lock-comment-face` / `font-lock-doc-face`.
 * Expand `adoc-mode` support: cover all 37 faces, give title levels distinct per-level colors with optional scaling via `zenburn-scale-outline-headlines`, differentiate `adoc-meta-face` from `adoc-meta-hide-face`, and fix `adoc-emphasis-face` to render italic instead of bold.
 

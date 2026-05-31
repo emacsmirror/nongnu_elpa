@@ -66,20 +66,23 @@ for the list of semantic names that ship with the theme."
           :value-type (choice (string :tag "Hex")
                               (symbol :tag "Palette name"))))
 
-(defvar zenburn-use-variable-pitch nil
-  "When non-nil, use variable pitch face for some headings and titles.")
+(defcustom zenburn-use-variable-pitch nil
+  "When non-nil, use variable pitch face for some headings and titles."
+  :type 'boolean
+  :safe #'booleanp
+  :group 'zenburn-theme)
 
-(defvar zenburn-scale-org-headlines nil
-  "Whether `org-mode' headlines should be scaled.")
+(defcustom zenburn-scale-org-headlines nil
+  "Whether `org-mode' headlines should be scaled."
+  :type 'boolean
+  :safe #'booleanp
+  :group 'zenburn-theme)
 
-(defvar zenburn-scale-outline-headlines nil
-  "Whether `outline-mode' headlines should be scaled.")
-
-(defcustom zenburn-height-minus-1 0.8
-  "Font size -1."
-  :type 'number
-  :group 'zenburn-theme
-  :package-version '(zenburn . "2.6"))
+(defcustom zenburn-scale-outline-headlines nil
+  "Whether `outline-mode' headlines should be scaled."
+  :type 'boolean
+  :safe #'booleanp
+  :group 'zenburn-theme)
 
 (defcustom zenburn-height-plus-1 1.1
   "Font size +1."
