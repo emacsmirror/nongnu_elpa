@@ -308,8 +308,10 @@ expandable (their children shown nested)."
               lines))
 
 (defun flamegraph-test--indent (line)
-  "Leading-space count of LINE."
-  (if (string-match "\\` +" line) (length (match-string 0 line)) 0))
+  "Column where LINE's name starts, after the leading count field."
+  (if (string-match "\\`[ ,0-9]+?\\([^ ,0-9]\\)" line)
+      (match-beginning 1)
+    0))
 
 (ert-deftest flamegraph-test-call-tree-children-sorted-by-count ()
   "Direct children appear sorted by count, descending."

@@ -753,9 +753,9 @@ add up under that frame.  DEPTH controls the indentation."
                     (lambda (a b) (> (profiler-calltree-count a)
                                      (profiler-calltree-count b))))))
     (dolist (k kids)
-      (insert (make-string (+ 2 (* 2 depth)) ?\s))
       (insert (format "%7s  " (profiler-format-number
                                (profiler-calltree-count k))))
+      (insert (make-string (* 2 depth) ?\s))
       (flamegraph--describe-button k total directory)
       (insert (format "  (%s)\n"
                       (flamegraph--percent
