@@ -260,7 +260,7 @@
 
 ;;; Preorder vs Postorder
 
-(setq numered-tree '(1 . ((2 . (4 5)) 3)))
+(defvar numered-tree '(1 . ((2 . (4 5)) 3)))
 
 (defun numered-children (node)
   (cdr node))
@@ -368,7 +368,7 @@ be (defn new-&node-type> [field-map])."
                (:concat `((:args . ,children)))
                (:value `((:val . ,(car children))))))))
 
-(setq custom-zipper (treepy-zipper #'custom-branch-p #'custom-children #'custom-make-node custom-tree))
+(defvar custom-zipper (treepy-zipper #'custom-branch-p #'custom-children #'custom-make-node custom-tree))
 
 (defun can-simplify-concat? (node)
   (and (equal ':concat (node-type node))
@@ -470,7 +470,7 @@ be (defn new-&node-type> [field-map])."
 
 
 (defun treepy-parseclj--make-node (node children)
-  "Helper parseclj function to create nodes 'a la treepy'.
+  "Helper parseclj function to create nodes a la treepy.
 NODE is an AST node.  CHILDREN is a list of AST nodes."
   (mapcar (lambda (pair)
             (if (eql (car pair) :children)
