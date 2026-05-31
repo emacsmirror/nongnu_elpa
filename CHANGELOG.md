@@ -25,6 +25,7 @@
 
 ### Changes
 
+* Route `adoc-comment-face`, `ledger-font-comment-face`, and `js2-jsdoc-type` through `:inherit` so they track customizations to `font-lock-comment-face` / `font-lock-doc-face`.
 * Expand `adoc-mode` support: cover all 37 faces, give title levels distinct per-level colors with optional scaling via `zenburn-scale-outline-headlines`, differentiate `adoc-meta-face` from `adoc-meta-hide-face`, and fix `adoc-emphasis-face` to render italic instead of bold.
 
 ## 2.9.0 (2026-03-29)
