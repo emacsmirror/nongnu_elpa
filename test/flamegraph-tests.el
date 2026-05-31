@@ -193,6 +193,30 @@ callees outside it must still be found."
                      outer (point-min) (point-max))))
       (should (equal (flamegraph-test--region-texts regions) '("foo"))))))
 
+(ert-deftest flamegraph-test-walker-reached-tracks-source-nesting ()
+  "REACHED marks a node iff a nested call of it is found in the source.
+`wrap' is found and its child `inner' is found inside it -> reached;
+`leaf' is found but its child is not in source -> not reached."
+  (flamegraph-test--with-elisp-source
+      "(defun outer ()
+  (wrap (inner))
+  (leaf))"
+    (let* ((inner (profiler-make-calltree :entry 'inner :count 10))
+           (wrap  (profiler-make-calltree :entry 'wrap :count 10
+                                          :children (list inner)))
+           (hidden (profiler-make-calltree :entry 'not-in-source :count 5))
+           (leaf  (profiler-make-calltree :entry 'leaf :count 5
+                                          :children (list hidden)))
+           (outer (profiler-make-calltree :entry 'outer :count 20
+                                          :children (list wrap leaf)))
+           (reached (make-hash-table :test 'eq))
+           (regions (flamegraph--collect-nested-call-sites
+                     outer (point-min) (point-max) reached)))
+      (should (equal (flamegraph-test--region-texts regions)
+                     '("wrap" "inner" "leaf")))
+      (should (gethash wrap reached))
+      (should-not (gethash leaf reached)))))
+
 (ert-deftest flamegraph-test-walker-below-threshold-dropped ()
   "Callees below `flamegraph-call-site-threshold' are dropped with subtree.
 hot at 50% is kept; cold at 1% (and its child) are not."
@@ -270,12 +294,15 @@ foo at 100% of outer is hot; bar at 10% is warm."
 
 ;;; Calls-tree rendering — `flamegraph--insert-call-tree'
 
-(defun flamegraph-test--render-call-tree (node ref)
+(defun flamegraph-test--render-call-tree (node ref &optional reached-nodes)
   "Render NODE's call tree (REF samples for percent scaling) and return
-the resulting string."
-  (with-temp-buffer
-    (flamegraph--insert-call-tree node ref ref 0 nil)
-    (buffer-string)))
+the resulting string.  REACHED-NODES are the calltrees to mark as
+expandable (their children shown nested)."
+  (let ((reached (make-hash-table :test 'eq)))
+    (dolist (n reached-nodes) (puthash n t reached))
+    (with-temp-buffer
+      (flamegraph--insert-call-tree node ref ref 0 nil reached)
+      (buffer-string))))
 
 (defun flamegraph-test--line-with (str lines)
   "Return the first LINES element containing STR as a whole symbol."
@@ -300,15 +327,16 @@ the resulting string."
       (should bar-pos)
       (should (< baz-pos bar-pos)))))
 
-(ert-deftest flamegraph-test-call-tree-skip-through-expanded-indented ()
-  "Skip-through children render their sub-children indented underneath."
+(ert-deftest flamegraph-test-call-tree-reached-expanded-indented ()
+  "A reached child renders its sub-children indented underneath; an
+unreached sibling does not, and stays at the top depth."
   (let* ((real-child (profiler-make-calltree :entry 'real-fn :count 80))
          (if-node    (profiler-make-calltree :entry 'if :count 80
                                              :children (list real-child)))
          (other      (profiler-make-calltree :entry 'other-fn :count 20))
          (root (profiler-make-calltree :entry 'root :count 100
                                        :children (list if-node other))))
-    (let* ((out (flamegraph-test--render-call-tree root 100))
+    (let* ((out (flamegraph-test--render-call-tree root 100 (list if-node)))
            (lines (split-string out "\n" t))
            (if-line    (flamegraph-test--line-with "if" lines))
            (rf-line    (flamegraph-test--line-with "real-fn" lines))
@@ -316,20 +344,21 @@ the resulting string."
       (should if-line)
       (should rf-line)
       (should other-line)
-      ;; real-fn is indented deeper than its skip-through parent.
+      ;; real-fn is indented deeper than its reached parent.
       (should (> (flamegraph-test--indent rf-line)
                  (flamegraph-test--indent if-line)))
-      ;; The non-skip sibling sits at the same depth as `if'.
+      ;; The unreached sibling sits at the same depth as `if'.
       (should (= (flamegraph-test--indent if-line)
                  (flamegraph-test--indent other-line))))))
 
-(ert-deftest flamegraph-test-call-tree-non-skip-not-expanded ()
-  "A non-skip child's own descendants are NOT inlined into the tree."
+(ert-deftest flamegraph-test-call-tree-unreached-not-expanded ()
+  "A child not in REACHED is a leaf: its own descendants are not inlined."
   (let* ((grand (profiler-make-calltree :entry 'grand :count 50))
          (kid   (profiler-make-calltree :entry 'kid :count 50
                                         :children (list grand)))
          (root (profiler-make-calltree :entry 'root :count 100
                                        :children (list kid))))
+    ;; kid is not passed as reached.
     (let* ((out (flamegraph-test--render-call-tree root 100))
            (lines (split-string out "\n" t)))
       (should (flamegraph-test--line-with "kid" lines))
@@ -344,7 +373,7 @@ not their immediate parent — so all percents add up under that frame."
                                           :children (list fn)))
          (root (profiler-make-calltree :entry 'root :count 1000
                                        :children (list if-node))))
-    (let* ((out (flamegraph-test--render-call-tree root 1000))
+    (let* ((out (flamegraph-test--render-call-tree root 1000 (list if-node)))
            (fn-line (flamegraph-test--line-with
                      "fn" (split-string out "\n" t))))
       (should fn-line)
@@ -357,7 +386,7 @@ not their immediate parent — so all percents add up under that frame."
          (foo (profiler-make-calltree :entry 'foo :count 1
                                       :children (list bar))))
     (with-temp-buffer
-      (flamegraph--insert-call-tree foo 1 1 0 nil)
+      (flamegraph--insert-call-tree foo 1 1 0 nil (make-hash-table :test 'eq))
       (goto-char (point-min))
       (let ((b (next-button (point))))
         (should b)
