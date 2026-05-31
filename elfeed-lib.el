@@ -494,6 +494,8 @@ Optionally TRUNCATE content if too wide."
 
 (defun elfeed--with-position-f (prop fun)
   "See `elfeed-with-position' for PROP and FUN."
+  ;; TODO: When we get the new function `markers-in' in Emacs 32 we should take
+  ;; advantage of it to restore all markers. See Emacs bug#81153.
   (let* ((point-pos (elfeed--position-save prop))
          (mark-pos (cons (when-let* ((m (marker-position (mark-marker))))
                             (save-excursion
