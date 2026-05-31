@@ -564,18 +564,17 @@ necessarily its definition."
           n
           (buffer-substring (line-beginning-position) (line-end-position))))
 
-(defun flamegraph--source-snippet (path line &optional find-regions context)
+(defun flamegraph--source-snippet (path line &optional node reached context)
   "Return source context around LINE of PATH as a fontified string, or nil.
 The file is loaded in its major mode so the text is syntax-highlighted.
 Besides CONTEXT lines on each side of the sampled LINE (which is marked),
 the enclosing structural lines up to the definition are kept — each line
 that is less indented than the one below it — so the nesting that leads
-to the sampled line stays visible.  FIND-REGIONS, if non-nil, is called
-with the enclosing defun's start and end buffer positions; it returns
-a list of (BEG END WEIGHT) ranges within the loaded buffer to highlight
-with a heat face chosen from WEIGHT (see `flamegraph--call-site-face').
-Their lines are kept as well.  Skipped runs are elided with `⋯'.
-CONTEXT defaults to 4."
+to the sampled line stays visible.  When NODE (a calltree) is non-nil, its
+nested calls found in the enclosing defun are highlighted with a heat face
+and their lines kept too (see `flamegraph--collect-nested-call-sites',
+which also fills REACHED).  Skipped runs are elided with `⋯'.  CONTEXT
+defaults to 4."
   (setq context (or context 4))
   (when (and (file-readable-p path) (> line 0))
     (with-temp-buffer
@@ -599,8 +598,9 @@ CONTEXT defaults to 4."
                             (goto-char def-pos)
                             (ignore-errors (end-of-defun))
                             (if (> (point) def-pos) (point) (point-max))))
-                 (regions (and find-regions
-                               (funcall find-regions def-pos def-end)))
+                 (regions (and node
+                               (flamegraph--collect-nested-call-sites
+                                node def-pos def-end reached)))
                  (keep nil))
             ;; The sampled line and its immediate context.
             (cl-loop for n from lo to hi do (push n keep))
@@ -813,10 +813,7 @@ frames, with Help-style back/forward navigation."
            'follow-link t
            'help-echo "mouse-1, RET: visit this line")
           (when-let* ((snippet (flamegraph--source-snippet
-                                path (cdr loc)
-                                (lambda (b e)
-                                  (flamegraph--collect-nested-call-sites
-                                   node b e reached)))))
+                                path (cdr loc) node reached)))
             (insert "\n\n" snippet)))
         (insert (format "\n\nSamples  %s (%s of total)    self  %s (%s)\n"
                         (profiler-format-number count)

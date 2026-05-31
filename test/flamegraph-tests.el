@@ -284,10 +284,7 @@ foo at 100% of outer is hot; bar at 10% is warm."
                                         :children (list bar)))
            (outer (profiler-make-calltree :entry 'outer :count 10
                                           :children (list foo)))
-           (s (flamegraph--source-snippet
-               path 1
-               (lambda (b e)
-                 (flamegraph--collect-nested-call-sites outer b e)))))
+           (s (flamegraph--source-snippet path 1 outer)))
       (should s)
       (should (flamegraph-test--has-face s 'flamegraph-call-site-hot))
       (should (flamegraph-test--has-face s 'flamegraph-call-site-warm)))))
