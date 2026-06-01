@@ -1056,6 +1056,63 @@ on top of the `<mark>' default)."
       (adoc-cycle-buffer)
       (should-not (outline-invisible-p body)))))
 
+;;;; Text styling
+
+(ert-deftest adoctest-test-insert-markup-word ()
+  ;; with no region, the word at point is wrapped
+  (adoctest-trans "foo!" "*foo*" '(adoc-insert-bold))
+  (adoctest-trans "foo!" "_foo_" '(adoc-insert-italic))
+  (adoctest-trans "foo!" "`foo`" '(adoc-insert-monospace))
+  (adoctest-trans "foo!" "#foo#" '(adoc-insert-highlight))
+  (adoctest-trans "foo!" "^foo^" '(adoc-insert-superscript))
+  (adoctest-trans "foo!" "~foo~" '(adoc-insert-subscript)))
+
+(ert-deftest adoctest-test-insert-markup-empty ()
+  ;; with neither region nor word, insert an empty pair
+  (adoctest-trans "!" "**" '(adoc-insert-bold)))
+
+(ert-deftest adoctest-test-insert-bold-region ()
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "foo bar baz")
+    (goto-char 5) (set-mark 8) (activate-mark) ; region "bar"
+    (adoc-insert-bold)
+    (should (string-equal (buffer-string) "foo *bar* baz"))))
+
+(ert-deftest adoctest-test-insert-bold-toggle-off ()
+  ;; delimiters just outside the region are removed
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "foo *bar* baz")
+    (goto-char 6) (set-mark 9) (activate-mark) ; region "bar"
+    (adoc-insert-bold)
+    (should (string-equal (buffer-string) "foo bar baz")))
+  ;; delimiters inside the region are removed too
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "foo *bar* baz")
+    (goto-char 5) (set-mark 10) (activate-mark) ; region "*bar*"
+    (adoc-insert-bold)
+    (should (string-equal (buffer-string) "foo bar baz"))))
+
+(ert-deftest adoctest-test-insert-link ()
+  (with-temp-buffer
+    (adoc-mode)
+    (adoc-insert-link "https://example.com" "Example")
+    (should (string-equal (buffer-string) "https://example.com[Example]")))
+  ;; an empty label yields a bare URL
+  (with-temp-buffer
+    (adoc-mode)
+    (adoc-insert-link "https://example.com" "")
+    (should (string-equal (buffer-string) "https://example.com")))
+  ;; an active region is replaced by the link
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "see here now")
+    (goto-char 5) (set-mark 9) (activate-mark) ; region "here"
+    (adoc-insert-link "https://x.com" "here")
+    (should (string-equal (buffer-string) "see https://x.com[here] now"))))
+
 ;;;; List editing
 
 (ert-deftest adoctest-test-list-promote-demote-unordered ()

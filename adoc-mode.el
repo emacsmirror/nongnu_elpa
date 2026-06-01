@@ -3582,6 +3582,114 @@ contents (all titles, no bodies), and the fully expanded buffer
   (interactive)
   (outline-cycle-buffer))
 
+;;;; Text styling
+
+(defun adoc--insert-markup (left right)
+  "Wrap the active region or the word at point with LEFT and RIGHT.
+If the region (or word) is already wrapped with those delimiters,
+remove them instead, so the command toggles the markup off.  With
+no region and no word at point, insert the delimiters and leave
+point between them."
+  (let ((ll (length left))
+        (rl (length right)))
+    (cond
+     ((use-region-p)
+      (let ((beg (region-beginning))
+            (end (region-end)))
+        (cond
+         ;; Delimiters sit just outside the region: unwrap them.
+         ((and (>= (- beg ll) (point-min))
+               (<= (+ end rl) (point-max))
+               (string= (buffer-substring-no-properties (- beg ll) beg) left)
+               (string= (buffer-substring-no-properties end (+ end rl)) right))
+          (delete-region end (+ end rl))
+          (delete-region (- beg ll) beg)
+          (goto-char (- end ll)))
+         ;; Delimiters sit just inside the region: unwrap them.
+         ((and (>= (- end beg) (+ ll rl))
+               (string= (buffer-substring-no-properties beg (+ beg ll)) left)
+               (string= (buffer-substring-no-properties (- end rl) end) right))
+          (delete-region (- end rl) end)
+          (delete-region beg (+ beg ll))
+          (goto-char (- end ll rl)))
+         (t
+          (goto-char end)
+          (insert right)
+          (goto-char beg)
+          (insert left)
+          (goto-char (+ end ll rl))))))
+     ((thing-at-point 'word)
+      (let* ((bounds (bounds-of-thing-at-point 'word))
+             (beg (car bounds))
+             (end (cdr bounds)))
+        (goto-char end)
+        (insert right)
+        (goto-char beg)
+        (insert left)
+        (goto-char (+ end ll rl))))
+     (t
+      (insert left right)
+      (backward-char rl)))))
+
+(defun adoc-insert-bold ()
+  "Make the region or word at point bold (`*text*'), or toggle it off."
+  (interactive)
+  (adoc--insert-markup "*" "*"))
+
+(defun adoc-insert-italic ()
+  "Emphasise the region or word at point (`_text_'), or toggle it off."
+  (interactive)
+  (adoc--insert-markup "_" "_"))
+
+(defun adoc-insert-monospace ()
+  "Make the region or word at point monospaced (\\=`text\\=`), or toggle it off."
+  (interactive)
+  (adoc--insert-markup "`" "`"))
+
+(defun adoc-insert-highlight ()
+  "Highlight the region or word at point (`#text#'), or toggle it off."
+  (interactive)
+  (adoc--insert-markup "#" "#"))
+
+(defun adoc-insert-superscript ()
+  "Superscript the region or word at point (`^text^'), or toggle it off."
+  (interactive)
+  (adoc--insert-markup "^" "^"))
+
+(defun adoc-insert-subscript ()
+  "Subscript the region or word at point (`~text~'), or toggle it off."
+  (interactive)
+  (adoc--insert-markup "~" "~"))
+
+(defun adoc-insert-link (url &optional text)
+  "Insert an AsciiDoc link to URL labelled TEXT.
+Interactively, prompt for both; an active region supplies the
+default link text and is replaced by the link.  When TEXT is
+empty, a bare URL is inserted."
+  (interactive
+   (let ((region (when (use-region-p)
+                   (buffer-substring-no-properties
+                    (region-beginning) (region-end)))))
+     (list (read-string "URL: ")
+           (read-string "Link text: " region))))
+  (when (use-region-p)
+    (delete-region (region-beginning) (region-end)))
+  (insert url)
+  (when (and text (> (length text) 0))
+    (insert "[" text "]")))
+
+(defvar adoc-style-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map "b" 'adoc-insert-bold)
+    (define-key map "i" 'adoc-insert-italic)
+    (define-key map "m" 'adoc-insert-monospace)
+    (define-key map "h" 'adoc-insert-highlight)
+    (define-key map "l" 'adoc-insert-link)
+    (define-key map "^" 'adoc-insert-superscript)
+    (define-key map "~" 'adoc-insert-subscript)
+    map)
+  "Keymap for AsciiDoc text-styling commands, bound to \\`C-c C-s'.")
+
 (defvar sgml-char-names)
 
 (defun adoc-make-unichar-alist ()
@@ -3774,6 +3882,7 @@ ITEMS is a list of (name pos . level)."
     (define-key map (kbd "M-<down>") 'adoc-move-list-item-down)
     (define-key map (kbd "TAB") 'adoc-cycle)
     (define-key map (kbd "<backtab>") 'adoc-cycle-buffer)
+    (define-key map "\C-c\C-s" adoc-style-map)
     (define-key map "\C-c\C-t" 'adoc-toggle-title-type)
     (define-key map "\C-c\C-a" 'adoc-goto-ref-label)
     (define-key map "\C-c\C-o" 'adoc-follow-thing-at-point)
@@ -3795,6 +3904,15 @@ ITEMS is a list of (name pos . level)."
         ["Move list item up" adoc-move-list-item-up]
         ["Move list item down" adoc-move-list-item-down]
         ["Renumber list" adoc-renumber-list]
+        "---"
+        ("Styling"
+         ["Bold" adoc-insert-bold]
+         ["Italic" adoc-insert-italic]
+         ["Monospace" adoc-insert-monospace]
+         ["Highlight" adoc-insert-highlight]
+         ["Superscript" adoc-insert-superscript]
+         ["Subscript" adoc-insert-subscript]
+         ["Link" adoc-insert-link])
         ["Toggle title type" adoc-toggle-title-type]
         ["Adjust title underline" adoc-adjust-title-del]
         ["Follow thing at point" adoc-follow-thing-at-point]
