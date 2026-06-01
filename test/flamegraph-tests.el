@@ -234,6 +234,89 @@ only the real call in code is matched, not the earlier textual mentions."
                      outer (point-min) (point-max))))
       (should (equal (flamegraph-test--region-texts regions) '("foo"))))))
 
+(ert-deftest flamegraph-test-walker-shows-external-anonymous-callback-frame ()
+  "An external callback invoked via `funcall' is shown as a frame, but
+its body is not part of the current definition."
+  (flamegraph-test--with-elisp-source
+      "(defun outer (cb)
+  (funcall cb))"
+    (let* ((deep (profiler-make-calltree :entry 'deep-call :count 10))
+           (clos (profiler-make-calltree
+                  :entry (make-byte-code 257 "\300\207" [] 2)
+                  :count 10 :children (list deep)))
+           (fc   (profiler-make-calltree :entry 'funcall :count 10
+                                         :children (list clos)))
+           (outer (profiler-make-calltree :entry 'outer :count 10
+                                          :children (list fc)))
+           (shown (make-hash-table :test 'eq)))
+      (flamegraph--collect-nested-call-sites
+       outer (point-min) (point-max) shown)
+      (should (gethash fc shown))
+      (should (gethash clos shown))
+      (should-not (gethash deep shown)))))
+
+(ert-deftest flamegraph-test-walker-shows-source-lambda-callback ()
+  "An anonymous callback is shown when it corresponds to a lambda in the
+current definition, but the lambda's callees still use normal anchoring."
+  (flamegraph-test--with-elisp-source
+      "(defun outer ()
+  (funcall (lambda ()
+             (deep-call))))"
+    (let* ((hidden (profiler-make-calltree :entry 'hidden-body :count 5))
+           (deep (profiler-make-calltree :entry 'deep-call :count 10
+                                         :children (list hidden)))
+           (clos (profiler-make-calltree
+                  :entry (make-byte-code 257 "\300\207" [] 2)
+                  :count 10 :children (list deep)))
+           (fc   (profiler-make-calltree :entry 'funcall :count 10
+                                         :children (list clos)))
+           (outer (profiler-make-calltree :entry 'outer :count 10
+                                          :children (list fc)))
+           (shown (make-hash-table :test 'eq))
+           (regions (flamegraph--collect-nested-call-sites
+                     outer (point-min) (point-max) shown)))
+      (should (equal (flamegraph-test--region-texts regions)
+                     '("funcall" "lambda" "deep-call")))
+      (should (gethash fc shown))
+      (should (gethash clos shown))
+      (should (gethash deep shown))
+      (should-not (gethash hidden shown)))))
+
+(ert-deftest flamegraph-test-walker-multiple-source-lambdas-use-normal-matching ()
+  "Anonymous callbacks use the same all-occurrences matching as named calls."
+  (flamegraph-test--with-elisp-source
+      "(defun outer ()
+  (register (lambda ()
+              (first-call))
+            (lambda ()
+              (second-call))))"
+    (let* ((first-call (profiler-make-calltree :entry 'first-call :count 6))
+           (second-call (profiler-make-calltree :entry 'second-call :count 4))
+           (first-clos (profiler-make-calltree
+                        :entry (make-byte-code 257 "\300\207" [] 2)
+                        :count 6 :children (list first-call)))
+           (second-clos (profiler-make-calltree
+                         :entry (make-byte-code 257 "\300\207" [] 2)
+                         :count 4 :children (list second-call)))
+           (register (profiler-make-calltree :entry 'register :count 10
+                                             :children (list first-clos
+                                                             second-clos)))
+           (outer (profiler-make-calltree :entry 'outer :count 10
+                                          :children (list register)))
+           (shown (make-hash-table :test 'eq))
+           (regions (flamegraph--collect-nested-call-sites
+                     outer (point-min) (point-max) shown)))
+      ;; As with named functions, the profile does not identify which
+      ;; textual occurrence corresponds to this frame, so each anonymous
+      ;; frame searches all lambda occurrences in the current region.
+      (should (equal (flamegraph-test--region-texts regions)
+                     '("register" "lambda" "first-call" "lambda"
+                       "lambda" "lambda" "second-call")))
+      (should (gethash first-clos shown))
+      (should (gethash first-call shown))
+      (should (gethash second-clos shown))
+      (should (gethash second-call shown)))))
+
 (ert-deftest flamegraph-test-walker-shown-marks-source-calls ()
   "SHOWN marks calls found in the source and their source-found nesting,
 but not a matched callee's own body.

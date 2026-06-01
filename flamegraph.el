@@ -679,6 +679,10 @@ symbol boundaries in the target buffer's syntax."
   (and (stringp name) (not (string-empty-p name))
        (not (string-match-p "[][[:space:]();,]" name))))
 
+(defun flamegraph--anonymous-function-p (entry)
+  "Non-nil if ENTRY is a function object with no source-searchable name."
+  (and (not (symbolp entry)) (functionp entry)))
+
 (defun flamegraph--collect-nested-call-sites (node beg end &optional shown)
   "Walk NODE's call subtree against the buffer region [BEG END],
 recording each child whose display name matches `\\=\\_<NAME\\=\\_>' in
@@ -701,8 +705,11 @@ a function matched in the source, or a function not in the source but
 whose parent is scaffolding (a skip-through, or the described frame
 itself) — i.e. a macro-concealed call of the current definition.  A
 function not in the source whose parent is a *matched* call is the
-callee's own body and is omitted.  SHOWN ignores the threshold, so the
-tree may show cold callees the snippet omits."
+callee's own body and is omitted.  An anonymous function object is searched
+as `lambda', using the same source anchoring flow as named functions; if no
+lambda form is found, the object itself is still shown as an unanchored
+callback frame.  SHOWN ignores the threshold, so the tree may show cold
+callees the snippet omits."
   (let ((total (max 1 (profiler-calltree-count node)))
         regions)
     (cl-labels
@@ -714,7 +721,10 @@ tree may show cold callees the snippet omits."
            (let ((any nil))
              (dolist (k (profiler-calltree-children n))
                (let* ((entry (profiler-calltree-entry k))
-                      (name (flamegraph--frame-display-name entry))
+                      (anonymous (flamegraph--anonymous-function-p entry))
+                      (name (if anonymous
+                                "lambda"
+                              (flamegraph--frame-display-name entry)))
                       (weight (/ (float (profiler-calltree-count k)) total)))
                  (cond
                   ((flamegraph--skip-through-p entry)
@@ -754,7 +764,7 @@ tree may show cold callees the snippet omits."
                                ;; re-matching its own name.
                                (walk k (cons me (min (cdr sub) (cdr region)))
                                      nil)))))
-                       (when (or found concealed-ok)
+                       (when (or found concealed-ok anonymous)
                          (when shown (puthash k t shown))
                          (setq any t))))))))
              any)))
