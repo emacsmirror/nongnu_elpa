@@ -170,7 +170,7 @@ widths are relative to."
 ;;; Frame appearance
 
 (defun flamegraph--entry-name (entry)
-  "Return a display name for calltree ENTRY."
+  "Return ENTRY as a plain string, without stripping profiler metadata."
   (cond ((eq entry t) "Others")
         ((eq entry '...) "...")
         ((stringp entry) entry)
@@ -344,7 +344,7 @@ outermost frames.")
                        (profiler-format-number flamegraph--grand-total)
                        flamegraph--unit
                        (if zoomed
-                           (flamegraph--entry-name (profiler-calltree-entry root))
+                           (flamegraph--frame-display-name (profiler-calltree-entry root))
                          "all")
                        (if zoomed
                            (format " (%s)" (flamegraph--percent
@@ -552,7 +552,7 @@ necessarily its definition."
                   (message "Source file not found: %s"
                            (abbreviate-file-name path)))))))
          (t (message "Cannot find definition of: %s"
-                     (flamegraph--entry-name entry))))))))
+                     (flamegraph--frame-display-name entry))))))))
 
 (defun flamegraph--frame-display-name (entry)
   "Return ENTRY's name with embedded source location text stripped."
