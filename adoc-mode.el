@@ -1955,6 +1955,28 @@ face-spec expression (e.g. from `adoc-facespec-subscript')."
        '(3 nil)) ; grumbl, I don't know how to get rid of it
      `(4 '(face ,(or del-face 'adoc-meta-hide-face) adoc-reserved t) t)))); close del
 
+(defconst adoc-re-escaped-formatting
+  "\\(\\\\\\)\\(\\([*_`#+^~]\\)\\3*\\)"
+  "Regexp matching a backslash-escaped inline formatting delimiter.
+Group 1 is the escaping backslash; group 2 is the escaped
+delimiter run, a maximal run of one formatting delimiter
+character (`*', `**', `+++', …).  A lone `$' is intentionally
+excluded: single dollars are not markup (only `$$' is), and a
+literal `\\$' is far more common in prose.")
+
+(defun adoc-kw-escaped-formatting ()
+  "Return a font-lock keyword for backslash-escaped inline formatting.
+In AsciiDoc a backslash before an inline formatting delimiter
+escapes it, so the markup is rendered literally.  The keyword
+de-emphasises the backslash and marks the escaped delimiters as
+reserved literal text, so the quote keywords (which refuse to
+match across `adoc-reserved' text) leave the span alone."
+  (list
+   `(lambda (end)
+      (adoc-kwf-std end adoc-re-escaped-formatting '(2)))
+   '(1 '(face adoc-meta-hide-face adoc-reserved t) t)  ; the backslash
+   '(2 '(face nil adoc-reserved t) t)))                ; the escaped delimiters
+
 (defun adoc-kw-inline-macro (&optional cmd-name unconstrained attribute-list-constraints cmd-face target-faces target-meta-p attribute-list textprops)
   "Returns a kewyword which highlights an inline macro.
 
@@ -2572,6 +2594,10 @@ for multiline constructs to be matched."
    ;; 6. Inline Macros
    ;; 7. Replacements2
 
+
+   ;; backslash-escaped inline formatting (must precede the quote keywords
+   ;; below so the escaped delimiters are reserved before they are scanned)
+   (adoc-kw-escaped-formatting)
 
    ;; Inline code and passthroughs
    ;; ----------------------------

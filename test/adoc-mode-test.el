@@ -1113,6 +1113,29 @@ on top of the `<mark>' default)."
     (adoc-insert-link "https://x.com" "here")
     (should (string-equal (buffer-string) "see https://x.com[here] now"))))
 
+;;;; Escaped formatting
+
+(ert-deftest adoctest-test-escaped-formatting ()
+  ;; constrained: escaped markup is literal, the backslash is de-emphasised
+  (adoctest-faces "escaped-bold"
+                  "\\" 'adoc-meta-hide-face "*foo*" 'no-face)
+  ;; unconstrained escape (previously leaked an inner constrained match)
+  (adoctest-faces "escaped-unconstrained-bold"
+                  "\\" 'adoc-meta-hide-face "**foo**" 'no-face)
+  (adoctest-faces "escaped-monospace"
+                  "\\" 'adoc-meta-hide-face "`foo`" 'no-face)
+  ;; a backslash before a non-formatting char is left untouched
+  (adoctest-faces "non-escape-backslash" "a\\b" 'no-face)
+  ;; normal markup after an escaped span still fontifies
+  (adoctest-faces "escape-then-bold"
+                  "\\" 'adoc-meta-hide-face "*x* " 'no-face
+                  "*" 'adoc-meta-hide-face "y" 'adoc-bold-face "*" 'adoc-meta-hide-face)
+  ;; a lone dollar is not markup, so a literal \$ is left untouched
+  (adoctest-faces "escaped-dollar" "x \\$5 y" 'no-face)
+  ;; a triple-delimiter passthrough is escaped in full
+  (adoctest-faces "escaped-passthrough"
+                  "\\" 'adoc-meta-hide-face "+++p+++" 'no-face))
+
 ;;;; List editing
 
 (ert-deftest adoctest-test-list-promote-demote-unordered ()

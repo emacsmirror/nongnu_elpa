@@ -34,7 +34,7 @@ be easily ignored.
 
 Here are some of the main features of `adoc-mode`:
 
-- comprehensive syntax highlighting for all AsciiDoc elements
+- comprehensive syntax highlighting for all AsciiDoc elements, including backslash-escaped inline formatting (e.g. `\*not bold*`)
 - native fontification of source code blocks using language-appropriate major modes
 - font-lock support for Asciidoctor inline macros (`kbd:[]`, `btn:[]`, `menu:[]`, etc.)
 - inline image preview with right-click context menus and remote image support
@@ -234,7 +234,8 @@ These days all upstream packages (e.g. on MELPA) are built from Bozhidar's fork.
 
 Here are some features that we're considering to add in the future:
 
-- Correctly highlighting backslash escapes
+- Table editing and alignment
+- Verifying and improving compliance with the latest AsciiDoc language specification
 
 Check out the issue tracker for more details.
 
