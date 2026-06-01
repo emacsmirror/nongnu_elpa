@@ -1066,6 +1066,78 @@ on top of the `<mark>' default)."
     (should-error (adoc-insert-list-item) :type 'user-error)
     (should (string-equal (buffer-string) "just some prose"))))
 
+(ert-deftest adoctest-test-move-list-item-down ()
+  (adoctest-trans "* a!\n* b\n" "* b\n* a\n" '(adoc-move-list-item-down))
+  ;; a missing final newline must not merge the two items into one line
+  (adoctest-trans "* a!\n* b" "* b\n* a\n" '(adoc-move-list-item-down))
+  ;; the item carries its nested sub-items with it
+  (adoctest-trans "* one!\n** sub\n* two\n" "* two\n* one\n** sub\n"
+                  '(adoc-move-list-item-down)))
+
+(ert-deftest adoctest-test-move-list-item-up ()
+  (adoctest-trans "* a\n* b!\n" "* b\n* a\n" '(adoc-move-list-item-up))
+  ;; a missing final newline must not merge the two items into one line
+  (adoctest-trans ". one\n. two!" ". two\n. one\n" '(adoc-move-list-item-up))
+  (adoctest-trans "* one\n** sub\n* two!\n" "* two\n* one\n** sub\n"
+                  '(adoc-move-list-item-up)))
+
+(ert-deftest adoctest-test-move-list-item-distinct-lists ()
+  ;; a same-level item of a different list type is not a sibling
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "1. alpha\n- bullet\n2. beta\n")
+    (goto-char (point-min))
+    (should-error (adoc-move-list-item-down) :type 'user-error)
+    (should (string-equal (buffer-string) "1. alpha\n- bullet\n2. beta\n"))))
+
+(ert-deftest adoctest-test-move-list-item-no-sibling ()
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "* only\n")
+    (goto-char (point-min))
+    (should-error (adoc-move-list-item-down) :type 'user-error)
+    (should (string-equal (buffer-string) "* only\n")))
+  ;; a shallower neighbour is not a sibling
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "** a\n* b\n")
+    (goto-char (point-min))
+    (should-error (adoc-move-list-item-down) :type 'user-error)
+    (should (string-equal (buffer-string) "** a\n* b\n"))))
+
+(ert-deftest adoctest-test-renumber-list ()
+  (adoctest-trans "1. a!\n1. b\n1. c\n" "1. a\n2. b\n3. c\n" '(adoc-renumber-list))
+  ;; works from any item in the run, and preserves the first item's start value
+  (adoctest-trans "1. a\n5. b!\n9. c\n" "1. a\n2. b\n3. c\n" '(adoc-renumber-list))
+  (adoctest-trans "3. a!\n1. b\n" "3. a\n4. b\n" '(adoc-renumber-list))
+  ;; alphabetic lists
+  (adoctest-trans "a. x!\na. y\n" "a. x\nb. y\n" '(adoc-renumber-list))
+  ;; a missing final newline must terminate (not loop forever)
+  (adoctest-trans "1. a!\n9. b" "1. a\n2. b" '(adoc-renumber-list)))
+
+(ert-deftest adoctest-test-renumber-list-alpha-overflow ()
+  (with-temp-buffer
+    (adoc-mode)
+    (dotimes (_ 27) (insert "a. item\n"))
+    (goto-char (point-min))
+    (should-error (adoc-renumber-list) :type 'user-error)))
+
+(ert-deftest adoctest-test-renumber-list-errors ()
+  ;; roman lists are left untouched
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "i) a\nv) b\n")
+    (goto-char (point-min))
+    (should-error (adoc-renumber-list) :type 'user-error)
+    (should (string-equal (buffer-string) "i) a\nv) b\n")))
+  ;; not on an explicitly-numbered list
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "* a\n* b\n")
+    (goto-char (point-min))
+    (should-error (adoc-renumber-list) :type 'user-error)
+    (should (string-equal (buffer-string) "* a\n* b\n"))))
+
 (ert-deftest adoctest-test-xref-at-point-1 ()
   (unwind-protect
       (progn

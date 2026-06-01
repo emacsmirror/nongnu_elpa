@@ -41,7 +41,7 @@ Here are some of the main features of `adoc-mode`:
 - ~50 tempo templates for inserting AsciiDoc markup (formatting, titles, blocks, lists, macros, etc.)
 - heading navigation modelled on `markdown-mode` / `org-mode`: next / previous heading (`C-c C-n` / `C-c C-p`), forward / backward at the same level (`C-c C-f` / `C-c C-b`), and up to the parent heading (`C-c C-u`)
 - title management: promote / demote (`M-left` / `M-right`), toggle between one-line and two-line styles, adjust underline length
-- list editing: `M-left` / `M-right` also nest the list item at point deeper or shallower, and `M-RET` inserts a sibling item (incrementing the number for explicitly-numbered lists)
+- list editing: `M-left` / `M-right` nest the list item at point deeper or shallower, `M-RET` inserts a sibling item (incrementing the number for explicitly-numbered lists), `M-up` / `M-down` move an item (with its sub-items) past its siblings, and `M-x adoc-renumber-list` renumbers an explicitly-numbered list
 - navigate to anchors (`C-c C-a`) and follow URLs, `include::` macros, and xrefs at point (`C-c C-o` / `M-.`)
 - nested `imenu` index with hierarchical heading structure
 - `outline-minor-mode` enabled out of the box for folding (one-line title style only)
@@ -233,7 +233,6 @@ These days all upstream packages (e.g. on MELPA) are built from Bozhidar's fork.
 
 Here are some features that we're considering to add in the future:
 
-- Moving list items up / down and renumbering explicitly-numbered lists
 - Correctly highlighting backslash escapes
 
 Check out the issue tracker for more details.

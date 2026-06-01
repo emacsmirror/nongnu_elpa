@@ -2987,6 +2987,199 @@ incremented number or letter."
       (end-of-line)
       (insert "\n" indent new-marker " "))))
 
+(defun adoc--line-list-level ()
+  "Return the nesting level of the list item on the current line, or nil."
+  (let ((item (adoc--list-item-at-point)))
+    (and item (plist-get item :level))))
+
+(defun adoc--list-item-block-end (level)
+  "Return the position at the end of the list item block on the current line.
+Point must be at the beginning of the marker line of an item at
+nesting LEVEL.  The block runs through any immediately following
+continuation lines and more deeply nested items, stopping before
+the first blank line, sibling, or shallower item.  The returned
+position is at the beginning of a line (or `point-max')."
+  (save-excursion
+    (forward-line 1)
+    (let ((end (point)))
+      (while (and (not (eobp))
+                  (not (looking-at-p "[ \t]*$"))
+                  (let ((il (adoc--line-list-level)))
+                    (or (null il) (> il level))))
+        (forward-line 1)
+        (setq end (point)))
+      end)))
+
+(defun adoc--same-list-p (item)
+  "Return non-nil if the item on the current line is a sibling of ITEM.
+Siblings share the same list type, nesting level and indentation
+\(and, for explicitly-numbered lists, the same marker kind), so
+two distinct adjacent lists are not treated as one."
+  (let ((other (adoc--list-item-at-point)))
+    (and other
+         (eq (plist-get other :type) (plist-get item :type))
+         (= (plist-get other :level) (plist-get item :level))
+         (string= (plist-get other :indent) (plist-get item :indent))
+         (or (not (eq (plist-get item :type) 'explicit-numbered))
+             (eq (adoc--explicit-marker-kind (plist-get other :marker))
+                 (adoc--explicit-marker-kind (plist-get item :marker)))))))
+
+(defun adoc--next-sibling-start (from item)
+  "Return the start of the next sibling of ITEM at or after FROM, or nil.
+Blank lines, continuation lines and more deeply nested items are
+skipped.  A shallower item, or a same-level item belonging to a
+different list, stops the search and yields nil."
+  (let ((level (plist-get item :level)))
+    (save-excursion
+      (goto-char from)
+      (catch 'found
+        (while (not (eobp))
+          (unless (looking-at-p "[ \t]*$")
+            (let ((il (adoc--line-list-level)))
+              (cond
+               ((null il))
+               ((and (= il level) (adoc--same-list-p item)) (throw 'found (point)))
+               ((<= il level) (throw 'found nil)))))
+          (forward-line 1))
+        nil))))
+
+(defun adoc--prev-sibling-start (before item)
+  "Return the start of the previous sibling of ITEM before BEFORE, or nil.
+Blank lines, continuation lines and more deeply nested items are
+skipped.  A shallower item, or a same-level item belonging to a
+different list, stops the search and yields nil."
+  (let ((level (plist-get item :level)))
+    (save-excursion
+      (goto-char before)
+      (catch 'found
+        (while (not (bobp))
+          (forward-line -1)
+          (unless (looking-at-p "[ \t]*$")
+            (let ((il (adoc--line-list-level)))
+              (cond
+               ((null il))
+               ((and (= il level) (adoc--same-list-p item)) (throw 'found (point)))
+               ((<= il level) (throw 'found nil))))))
+        nil))))
+
+(defun adoc--move-list-item (down)
+  "Move the list item at point past its sibling, DOWN when non-nil else up.
+The item's nested sub-items and continuation lines move with it."
+  (let ((item (adoc--list-item-at-point)))
+    (unless item
+      (user-error "Not on a list item"))
+    (let ((level (plist-get item :level))
+          (col (current-column)))
+      (beginning-of-line)
+      (let* ((s1 (point))
+             (e1 (adoc--list-item-block-end level)))
+        (if down
+            (let ((s2 (adoc--next-sibling-start e1 item)))
+              (unless s2 (user-error "No next item at this level"))
+              (let ((e2 (save-excursion
+                          (goto-char s2)
+                          (adoc--list-item-block-end level))))
+                ;; Avoid merging lines when the buffer lacks a final newline.
+                (when (and (= e2 (point-max)) (/= (char-before e2) ?\n))
+                  (save-excursion (goto-char (point-max)) (insert "\n"))
+                  (setq e2 (point-max)))
+                (transpose-regions s1 e1 s2 e2)
+                (goto-char (+ s1 (- e2 e1)))
+                (move-to-column col)))
+          (let ((ps (adoc--prev-sibling-start s1 item)))
+            (unless ps (user-error "No previous item at this level"))
+            ;; Avoid merging lines when the buffer lacks a final newline.
+            (when (and (= e1 (point-max)) (/= (char-before e1) ?\n))
+              (save-excursion (goto-char (point-max)) (insert "\n"))
+              (setq e1 (point-max)))
+            (transpose-regions ps s1 s1 e1)
+            (goto-char ps)
+            (move-to-column col)))))))
+
+(defun adoc-move-list-item-down (&optional arg)
+  "Move the list item at point down past the next sibling ARG times.
+The item's nested sub-items and continuation lines move with it."
+  (interactive "p")
+  (dotimes (_ (or arg 1))
+    (adoc--move-list-item t)))
+
+(defun adoc-move-list-item-up (&optional arg)
+  "Move the list item at point up past the previous sibling ARG times.
+The item's nested sub-items and continuation lines move with it."
+  (interactive "p")
+  (dotimes (_ (or arg 1))
+    (adoc--move-list-item nil)))
+
+(defun adoc--explicit-marker-kind (marker)
+  "Return the kind of an explicitly-numbered list MARKER.
+One of `arabic', `lower-alpha', `upper-alpha', `lower-roman',
+`upper-roman', or nil."
+  (cond
+   ((string-match-p "\\`[0-9]+\\.\\'" marker) 'arabic)
+   ((string-match-p "\\`[a-z]\\.\\'" marker) 'lower-alpha)
+   ((string-match-p "\\`[A-Z]\\.\\'" marker) 'upper-alpha)
+   ((string-match-p "\\`[ivxlcdm]+)\\'" marker) 'lower-roman)
+   ((string-match-p "\\`[IVXLCDM]+)\\'" marker) 'upper-roman)))
+
+(defun adoc--explicit-marker-value (kind marker)
+  "Return the 1-based ordinal that MARKER represents for list KIND."
+  (pcase kind
+    ('arabic (string-to-number marker))
+    ('lower-alpha (1+ (- (aref marker 0) ?a)))
+    ('upper-alpha (1+ (- (aref marker 0) ?A)))))
+
+(defun adoc--explicit-marker (kind n)
+  "Return the marker string for the Nth (1-based) item of list KIND."
+  (pcase kind
+    ('arabic (format "%d." n))
+    ('lower-alpha (format "%c." (+ ?a (1- n))))
+    ('upper-alpha (format "%c." (+ ?A (1- n))))))
+
+(defun adoc--explicit-item-on-line-p (kind indent)
+  "Non-nil if the current line holds an explicit item of KIND and INDENT."
+  (let ((item (adoc--list-item-at-point)))
+    (and item
+         (eq (plist-get item :type) 'explicit-numbered)
+         (string= (plist-get item :indent) indent)
+         (eq (adoc--explicit-marker-kind (plist-get item :marker)) kind))))
+
+(defun adoc-renumber-list ()
+  "Renumber the explicitly-numbered list at point.
+Only flat arabic (\"1.\") and alphabetic (\"a.\"/\"A.\") lists are
+renumbered; the sequence starts from the first item's current
+value.  Roman-numeral lists are left untouched."
+  (interactive)
+  (let ((item (adoc--list-item-at-point)))
+    (unless (and item (eq (plist-get item :type) 'explicit-numbered))
+      (user-error "Not on an explicitly-numbered list item"))
+    (let* ((indent (plist-get item :indent))
+           (kind (adoc--explicit-marker-kind (plist-get item :marker))))
+      (unless (memq kind '(arabic lower-alpha upper-alpha))
+        (user-error "Can only renumber arabic or alphabetic lists"))
+      (save-excursion
+        (beginning-of-line)
+        ;; Walk back to the first item of the run.
+        (while (save-excursion (and (zerop (forward-line -1))
+                                    (adoc--explicit-item-on-line-p kind indent)))
+          (forward-line -1))
+        (let ((n (adoc--explicit-marker-value
+                  kind (plist-get (adoc--list-item-at-point) :marker))))
+          (while (and (not (eobp))
+                      (adoc--explicit-item-on-line-p kind indent))
+            (when (and (memq kind '(lower-alpha upper-alpha)) (> n 26))
+              (user-error "Alphabetic lists cannot have more than 26 items"))
+            (let* ((it (adoc--list-item-at-point))
+                   (beg (plist-get it :marker-beg))
+                   (old (plist-get it :marker))
+                   (new (adoc--explicit-marker kind n)))
+              (unless (string= old new)
+                (save-excursion
+                  (goto-char beg)
+                  (delete-region beg (+ beg (length old)))
+                  (insert new))))
+            (setq n (1+ n))
+            (forward-line 1)))))))
+
 (defun adoc-calc ()
   "(Re-)calculates variables used in adoc-mode.
 Needs to be called after changes to certain (customization)
@@ -3551,6 +3744,8 @@ ITEMS is a list of (name pos . level)."
     (define-key map (kbd "M-<left>") 'adoc-promote)
     (define-key map (kbd "M-<right>") 'adoc-demote)
     (define-key map (kbd "M-RET") 'adoc-insert-list-item)
+    (define-key map (kbd "M-<up>") 'adoc-move-list-item-up)
+    (define-key map (kbd "M-<down>") 'adoc-move-list-item-down)
     (define-key map "\C-c\C-t" 'adoc-toggle-title-type)
     (define-key map "\C-c\C-a" 'adoc-goto-ref-label)
     (define-key map "\C-c\C-o" 'adoc-follow-thing-at-point)
@@ -3566,6 +3761,9 @@ ITEMS is a list of (name pos . level)."
         ["Promote (title / list item)" adoc-promote]
         ["Demote (title / list item)" adoc-demote]
         ["Insert list item" adoc-insert-list-item]
+        ["Move list item up" adoc-move-list-item-up]
+        ["Move list item down" adoc-move-list-item-down]
+        ["Renumber list" adoc-renumber-list]
         ["Toggle title type" adoc-toggle-title-type]
         ["Adjust title underline" adoc-adjust-title-del]
         ["Follow thing at point" adoc-follow-thing-at-point]
