@@ -35,6 +35,7 @@
 
 ### Changes
 
+* Drop face entries for 13 abandoned/superseded third-party packages: `ace-jump` (use `avy`), `context-coloring`, `dim-autoload`, `egg` (use `magit`), `guide-key` (use `which-key`), `highlight-symbol` (use `symbol-overlay`), `irfc`, `jabber-mode`, `linum-mode` (use built-in `display-line-numbers-mode`), `mew`, `nav`, `mumamo` (use `polymode`), `sx`. Also drop variable settings for `company-quickhelp` and `fci-rule-color` (use built-in `display-fill-column-indicator-mode`).
 * Replace the internal `z-variable-pitch` macro shim with a real `zenburn-variable-pitch` face that headings inherit from. `zenburn-use-variable-pitch` still toggles the default behavior (inherit `variable-pitch` vs `default`), and users can now also customize `zenburn-variable-pitch` directly via `M-x customize-face` for finer-grained control.
 * Promote `zenburn-use-variable-pitch`, `zenburn-scale-org-headlines`, and `zenburn-scale-outline-headlines` from plain `defvar`s to boolean `defcustom`s so they show up in `M-x customize-group RET zenburn-theme` and accept safe file-local values.
 * Drop the legacy `((class color) (min-colors 89))` display-class dance and the obsolete low-color terminal fallbacks (`:inverse-video`, swapped fg/bg, monochrome `:weight bold`) for `mode-line`, `region`, `diff-header`, `diff-file-header`, `hl-line`, `hl-line-face`, and `hl-sexp-face`. Modern terminals all qualify as full-color, so the branching no longer earns its keep.

@@ -408,11 +408,6 @@ the just-introduced bindings."
 
 ;;;; Third-party packages
 
-;;;;; ace-jump
-   `(ace-jump-face-background
-     ((t (:foreground ,zenburn-fg-1 :background ,zenburn-bg :inverse-video nil))))
-   `(ace-jump-face-foreground
-     ((t (:foreground ,zenburn-green+2 :background ,zenburn-bg :inverse-video nil))))
 ;;;;; ace-window
    `(aw-background-face
      ((t (:foreground ,zenburn-fg-1 :background ,zenburn-bg :inverse-video nil))))
@@ -625,17 +620,6 @@ the just-introduced bindings."
    `(circe-server-face ((t (:foreground ,zenburn-green))))
    `(circe-topic-diff-new-face ((t (:foreground ,zenburn-orange :weight bold))))
    `(circe-prompt-face ((t (:foreground ,zenburn-orange :background ,zenburn-bg :weight bold))))
-;;;;; context-coloring
-   `(context-coloring-level-0-face ((t :foreground ,zenburn-fg)))
-   `(context-coloring-level-1-face ((t :foreground ,zenburn-cyan)))
-   `(context-coloring-level-2-face ((t :foreground ,zenburn-green+4)))
-   `(context-coloring-level-3-face ((t :foreground ,zenburn-yellow)))
-   `(context-coloring-level-4-face ((t :foreground ,zenburn-orange)))
-   `(context-coloring-level-5-face ((t :foreground ,zenburn-magenta)))
-   `(context-coloring-level-6-face ((t :foreground ,zenburn-blue+1)))
-   `(context-coloring-level-7-face ((t :foreground ,zenburn-green+2)))
-   `(context-coloring-level-8-face ((t :foreground ,zenburn-yellow-2)))
-   `(context-coloring-level-9-face ((t :foreground ,zenburn-red+1)))
 ;;;;; coq
    `(coq-solve-tactics-face ((t (:foreground nil :inherit font-lock-constant-face))))
 ;;;;; ctable
@@ -679,8 +663,6 @@ the just-introduced bindings."
    `(diff-hl-change ((t (:foreground ,zenburn-blue :background ,zenburn-blue-2))))
    `(diff-hl-delete ((t (:foreground ,zenburn-red+1 :background ,zenburn-red-1))))
    `(diff-hl-insert ((t (:foreground ,zenburn-green+1 :background ,zenburn-green-2))))
-;;;;; dim-autoload
-   `(dim-autoload-cookie-line ((t :foreground ,zenburn-bg+1)))
 ;;;;; dired+
    `(diredp-display-msg ((t (:foreground ,zenburn-blue))))
    `(diredp-compressed-file-suffix ((t (:foreground ,zenburn-orange))))
@@ -807,18 +789,6 @@ the just-introduced bindings."
    `(ediff-odd-diff-Ancestor ((t (:background ,zenburn-bg+2))))
    `(ediff-odd-diff-B ((t (:background ,zenburn-bg+2))))
    `(ediff-odd-diff-C ((t (:background ,zenburn-bg+2))))
-;;;;; egg
-   `(egg-text-base ((t (:foreground ,zenburn-fg))))
-   `(egg-help-header-1 ((t (:foreground ,zenburn-yellow))))
-   `(egg-help-header-2 ((t (:foreground ,zenburn-green+3))))
-   `(egg-branch ((t (:foreground ,zenburn-yellow))))
-   `(egg-branch-mono ((t (:foreground ,zenburn-yellow))))
-   `(egg-term ((t (:foreground ,zenburn-yellow))))
-   `(egg-diff-add ((t (:foreground ,zenburn-green+4))))
-   `(egg-diff-del ((t (:foreground ,zenburn-red+1))))
-   `(egg-diff-file-header ((t (:foreground ,zenburn-yellow-2))))
-   `(egg-section-title ((t (:foreground ,zenburn-yellow))))
-   `(egg-stash-mono ((t (:foreground ,zenburn-green+4))))
 ;;;;; elfeed
    `(elfeed-log-error-level-face ((t (:foreground ,zenburn-red))))
    `(elfeed-log-info-level-face ((t (:foreground ,zenburn-blue))))
@@ -1076,10 +1046,6 @@ the just-introduced bindings."
    `(mm-uu-extract ((t (:background ,zenburn-bg-05 :foreground ,zenburn-green+1))))
 ;;;;; go-guru
    `(go-guru-hl-identifier-face ((t (:foreground ,zenburn-bg-1 :background ,zenburn-green+1))))
-;;;;; guide-key
-   `(guide-key/highlight-command-face ((t (:foreground ,zenburn-blue))))
-   `(guide-key/key-face ((t (:foreground ,zenburn-green))))
-   `(guide-key/prefix-command-face ((t (:foreground ,zenburn-green+1))))
 ;;;;; hackernews
    '(hackernews-comment-count ((t (:inherit link-visited :underline nil))))
    '(hackernews-link          ((t (:inherit link         :underline nil))))
@@ -1143,8 +1109,6 @@ the just-introduced bindings."
    `(helpful-heading ((t (:foreground ,zenburn-blue :weight bold :height 1.2))))
 ;;;;; highlight-numbers
    `(highlight-numbers-number ((t (:foreground ,zenburn-blue))))
-;;;;; highlight-symbol
-   `(highlight-symbol-face ((t (:background ,zenburn-bg+2))))
 ;;;;; highlight-thing
    `(highlight-thing ((t (:background ,zenburn-bg+2))))
 ;;;;; hl-line-mode
@@ -1175,17 +1139,6 @@ the just-introduced bindings."
    `(info-syntax-class-item ((t (:background ,zenburn-bg-1 :foreground ,zenburn-blue+1))))
    `(info-user-option-ref-item ((t (:background ,zenburn-bg-1 :foreground ,zenburn-red))))
    `(info-variable-ref-item ((t (:background ,zenburn-bg-1 :foreground ,zenburn-orange))))
-;;;;; irfc
-   `(irfc-head-name-face ((t (:foreground ,zenburn-red :weight bold))))
-   `(irfc-head-number-face ((t (:foreground ,zenburn-red :weight bold))))
-   `(irfc-reference-face ((t (:foreground ,zenburn-blue-1 :weight bold))))
-   `(irfc-requirement-keyword-face ((t (:inherit font-lock-keyword-face))))
-   `(irfc-rfc-link-face ((t (:inherit link))))
-   `(irfc-rfc-number-face ((t (:foreground ,zenburn-cyan :weight bold))))
-   `(irfc-std-number-face ((t (:foreground ,zenburn-green+4 :weight bold))))
-   `(irfc-table-item-face ((t (:foreground ,zenburn-green+3))))
-   `(irfc-title-face ((t (:foreground ,zenburn-yellow
-                                      :underline t :weight bold))))
 ;;;;; ivy
    `(ivy-confirm-face ((t (:foreground ,zenburn-green :background ,zenburn-bg))))
    `(ivy-current-match ((t (:foreground ,zenburn-yellow :weight bold :underline t))))
@@ -1213,22 +1166,6 @@ the just-introduced bindings."
    `(jinx-save ((t (:foreground ,zenburn-green+2 :weight bold))))
    `(jinx-key ((t (:foreground ,zenburn-blue :weight bold))))
    `(jinx-annotation ((t (:foreground ,zenburn-fg-1))))
-;;;;; jabber-mode
-   `(jabber-roster-user-away ((t (:foreground ,zenburn-green+2))))
-   `(jabber-roster-user-online ((t (:foreground ,zenburn-blue-1))))
-   `(jabber-roster-user-dnd ((t (:foreground ,zenburn-red+1))))
-   `(jabber-roster-user-xa ((t (:foreground ,zenburn-magenta))))
-   `(jabber-roster-user-chatty ((t (:foreground ,zenburn-orange))))
-   `(jabber-roster-user-error ((t (:foreground ,zenburn-red+1))))
-   `(jabber-rare-time-face ((t (:foreground ,zenburn-green+1))))
-   `(jabber-chat-prompt-local ((t (:foreground ,zenburn-blue-1))))
-   `(jabber-chat-prompt-foreign ((t (:foreground ,zenburn-red+1))))
-   `(jabber-chat-prompt-system ((t (:foreground ,zenburn-green+3))))
-   `(jabber-activity-face((t (:foreground ,zenburn-red+1))))
-   `(jabber-activity-personal-face ((t (:foreground ,zenburn-blue+1))))
-   `(jabber-title-small ((t (:height 1.1 :weight bold))))
-   `(jabber-title-medium ((t (:height 1.2 :weight bold))))
-   `(jabber-title-large ((t (:height 1.3 :weight bold))))
 ;;;;; js2-mode
    `(js2-warning ((t (:underline ,zenburn-orange))))
    `(js2-error ((t (:inherit error))))
@@ -1268,8 +1205,6 @@ the just-introduced bindings."
    `(ledger-font-reconciler-cleared-face ((t (:foreground ,zenburn-fg :weight normal))))
    `(ledger-font-reconciler-pending-face ((t (:foreground ,zenburn-orange :weight normal))))
    `(ledger-font-report-clickable-face ((t (:foreground ,zenburn-orange :weight normal))))
-;;;;; linum-mode
-   `(linum ((t (:foreground ,zenburn-green+2 :background ,zenburn-bg))))
 ;;;;; lispy
    `(lispy-command-name-face ((t (:background ,zenburn-bg-05 :inherit font-lock-function-name-face))))
    `(lispy-cursor-face ((t (:foreground ,zenburn-bg :background ,zenburn-fg))))
@@ -1470,33 +1405,6 @@ the just-introduced bindings."
    `(message-header-xheader ((t (:foreground ,zenburn-green))))
    `(message-mml ((t (:foreground ,zenburn-yellow :weight bold))))
    `(message-separator ((t (:inherit font-lock-comment-face))))
-;;;;; mew
-   `(mew-face-header-subject ((t (:foreground ,zenburn-orange))))
-   `(mew-face-header-from ((t (:foreground ,zenburn-yellow))))
-   `(mew-face-header-date ((t (:foreground ,zenburn-green))))
-   `(mew-face-header-to ((t (:foreground ,zenburn-red))))
-   `(mew-face-header-key ((t (:foreground ,zenburn-green))))
-   `(mew-face-header-private ((t (:foreground ,zenburn-green))))
-   `(mew-face-header-important ((t (:foreground ,zenburn-blue))))
-   `(mew-face-header-marginal ((t (:foreground ,zenburn-fg :weight bold))))
-   `(mew-face-header-warning ((t (:foreground ,zenburn-red))))
-   `(mew-face-header-xmew ((t (:foreground ,zenburn-green))))
-   `(mew-face-header-xmew-bad ((t (:foreground ,zenburn-red))))
-   `(mew-face-body-url ((t (:foreground ,zenburn-orange))))
-   `(mew-face-body-comment ((t (:foreground ,zenburn-fg :slant italic))))
-   `(mew-face-body-cite1 ((t (:foreground ,zenburn-green))))
-   `(mew-face-body-cite2 ((t (:foreground ,zenburn-blue))))
-   `(mew-face-body-cite3 ((t (:foreground ,zenburn-orange))))
-   `(mew-face-body-cite4 ((t (:foreground ,zenburn-yellow))))
-   `(mew-face-body-cite5 ((t (:foreground ,zenburn-red))))
-   `(mew-face-mark-review ((t (:foreground ,zenburn-blue))))
-   `(mew-face-mark-escape ((t (:foreground ,zenburn-green))))
-   `(mew-face-mark-delete ((t (:foreground ,zenburn-red))))
-   `(mew-face-mark-unlink ((t (:foreground ,zenburn-yellow))))
-   `(mew-face-mark-refile ((t (:foreground ,zenburn-green))))
-   `(mew-face-mark-unread ((t (:foreground ,zenburn-red-2))))
-   `(mew-face-eof-message ((t (:foreground ,zenburn-green))))
-   `(mew-face-eof-part ((t (:foreground ,zenburn-yellow))))
 ;;;;; mic-paren
    `(paren-face-match ((t (:foreground ,zenburn-cyan :background ,zenburn-bg :weight bold))))
    `(paren-face-mismatch ((t (:foreground ,zenburn-bg :background ,zenburn-magenta :weight bold))))
@@ -1516,13 +1424,6 @@ the just-introduced bindings."
    `(mingus-album-face ((t (:underline t :foreground ,zenburn-red+1))))
    `(mingus-album-stale-face ((t (:foreground ,zenburn-red+1))))
    `(mingus-stopped-face ((t (:foreground ,zenburn-red))))
-;;;;; nav
-   `(nav-face-heading ((t (:foreground ,zenburn-yellow))))
-   `(nav-face-button-num ((t (:foreground ,zenburn-cyan))))
-   `(nav-face-dir ((t (:foreground ,zenburn-green))))
-   `(nav-face-hdir ((t (:foreground ,zenburn-red))))
-   `(nav-face-file ((t (:foreground ,zenburn-fg))))
-   `(nav-face-hfile ((t (:foreground ,zenburn-red-4))))
 ;;;;; merlin
    `(merlin-type-face ((t (:inherit highlight))))
    `(merlin-compilation-warning-face
@@ -1545,12 +1446,6 @@ the just-introduced bindings."
    `(mu4e-cited-7-face ((t (:foreground ,zenburn-blue    :slant italic))))
    `(mu4e-replied-face ((t (:foreground ,zenburn-bg+3))))
    `(mu4e-trashed-face ((t (:foreground ,zenburn-bg+3 :strike-through t))))
-;;;;; mumamo
-   `(mumamo-background-chunk-major ((t (:background nil))))
-   `(mumamo-background-chunk-submode1 ((t (:background ,zenburn-bg-1))))
-   `(mumamo-background-chunk-submode2 ((t (:background ,zenburn-bg+2))))
-   `(mumamo-background-chunk-submode3 ((t (:background ,zenburn-bg+3))))
-   `(mumamo-background-chunk-submode4 ((t (:background ,zenburn-bg+1))))
 ;;;;; nerd-icons
    `(nerd-icons-red ((t (:foreground ,zenburn-red))))
    `(nerd-icons-lred ((t (:foreground ,zenburn-red+1))))
@@ -1931,20 +1826,6 @@ the just-introduced bindings."
    `(symbol-overlay-face-6 ((t (:background ,zenburn-red-1 :foreground ,zenburn-bg))))
    `(symbol-overlay-face-7 ((t (:background ,zenburn-green-2 :foreground ,zenburn-fg))))
    `(symbol-overlay-face-8 ((t (:background ,zenburn-cyan :foreground ,zenburn-bg))))
-;;;;; sx
-   `(sx-custom-button
-     ((t (:background ,zenburn-fg :foreground ,zenburn-bg-1
-                      :box (:line-width 3 :style released-button) :height 0.9))))
-   `(sx-question-list-answers
-     ((t (:foreground ,zenburn-green+3
-                      :height 1.0 :inherit sx-question-list-parent))))
-   `(sx-question-mode-accepted
-     ((t (:foreground ,zenburn-green+3
-                      :height 1.3 :inherit sx-question-mode-title))))
-   '(sx-question-mode-content-face ((t (:inherit highlight))))
-   `(sx-question-mode-kbd-tag
-     ((t (:box (:color ,zenburn-bg-1 :line-width 3 :style released-button)
-               :height 0.9 :weight semi-bold))))
 ;;;;; tabbar
    `(tabbar-button ((t (:foreground ,zenburn-fg
                                     :background ,zenburn-bg))))
@@ -2187,11 +2068,6 @@ the just-introduced bindings."
 ;;;;; ansi-color
    `(ansi-color-names-vector [,zenburn-bg ,zenburn-red ,zenburn-green ,zenburn-yellow
                                           ,zenburn-blue ,zenburn-magenta ,zenburn-cyan ,zenburn-fg])
-;;;;; company-quickhelp
-   `(company-quickhelp-color-background ,zenburn-bg+1)
-   `(company-quickhelp-color-foreground ,zenburn-fg)
-;;;;; fill-column-indicator
-   `(fci-rule-color ,zenburn-bg-05)
 ;;;;; nrepl-client
    `(nrepl-message-colors
      '(,zenburn-red ,zenburn-orange ,zenburn-yellow ,zenburn-green ,zenburn-green+4
