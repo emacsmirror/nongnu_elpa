@@ -890,6 +890,129 @@ on top of the `<mark>' default)."
   (adoctest-trans "lorem!\n========!" "lorem\n=====" '(adoc-adjust-title-del))
   (adoctest-trans "lorem!\n=====!" "lorem\n=====" '(adoc-adjust-title-del)))
 
+;;;; Heading navigation
+
+(defun adoctest-insert-nav-doc ()
+  "Insert a small multi-level document used by the navigation tests."
+  (insert "= Doc Title\n\n"
+          "intro\n\n"
+          "== Section A\n\n"
+          "text a\n\n"
+          "=== Sub A1\n\n"
+          "text\n\n"
+          "=== Sub A2\n\n"
+          "more\n\n"
+          "== Section B\n\n"
+          "end\n"))
+
+(defun adoctest-goto-heading (text)
+  "Move point to the beginning of the line containing TEXT."
+  (goto-char (point-min))
+  (search-forward text)
+  (beginning-of-line))
+
+(ert-deftest adoctest-test-next-visible-heading ()
+  (with-temp-buffer
+    (adoc-mode)
+    (adoctest-insert-nav-doc)
+    (goto-char (point-min))
+    (adoc-next-visible-heading 1)
+    (should (looking-at-p "== Section A$"))
+    (adoc-next-visible-heading 1)
+    (should (looking-at-p "=== Sub A1$"))
+    ;; a count argument moves several headings at once
+    (adoc-next-visible-heading 2)
+    (should (looking-at-p "== Section B$"))
+    ;; nothing past the last heading: point stays put, signals a user-error
+    (let ((pos (point)))
+      (should-error (adoc-next-visible-heading 1) :type 'user-error)
+      (should (= (point) pos)))))
+
+(ert-deftest adoctest-test-previous-visible-heading ()
+  (with-temp-buffer
+    (adoc-mode)
+    (adoctest-insert-nav-doc)
+    (adoctest-goto-heading "Section B")
+    (adoc-previous-visible-heading 1)
+    (should (looking-at-p "=== Sub A2$"))
+    (adoc-previous-visible-heading 2)
+    (should (looking-at-p "== Section A$"))
+    ;; from within a section body it climbs to that section's heading
+    (adoctest-goto-heading "text a")
+    (adoc-previous-visible-heading 1)
+    (should (looking-at-p "== Section A$"))
+    ;; a negative argument moves forward
+    (adoc-previous-visible-heading -1)
+    (should (looking-at-p "=== Sub A1$"))))
+
+(ert-deftest adoctest-test-forward-same-level ()
+  (with-temp-buffer
+    (adoc-mode)
+    (adoctest-insert-nav-doc)
+    ;; level-1 -> level-1, skipping the level-2 subsections in between
+    (adoctest-goto-heading "Section A")
+    (adoc-forward-same-level 1)
+    (should (looking-at-p "== Section B$"))
+    ;; level-2 -> level-2
+    (adoctest-goto-heading "Sub A1")
+    (adoc-forward-same-level 1)
+    (should (looking-at-p "=== Sub A2$"))
+    ;; a shallower heading stops the search; point is restored
+    (adoctest-goto-heading "Sub A2")
+    (let ((pos (point)))
+      (should-error (adoc-forward-same-level 1) :type 'user-error)
+      (should (= (point) pos)))))
+
+(ert-deftest adoctest-test-backward-same-level ()
+  (with-temp-buffer
+    (adoc-mode)
+    (adoctest-insert-nav-doc)
+    (adoctest-goto-heading "Section B")
+    (adoc-backward-same-level 1)
+    (should (looking-at-p "== Section A$"))
+    (adoctest-goto-heading "Sub A2")
+    (adoc-backward-same-level 1)
+    (should (looking-at-p "=== Sub A1$"))
+    ;; a shallower heading stops the search; point is restored
+    (adoctest-goto-heading "Sub A1")
+    (let ((pos (point)))
+      (should-error (adoc-backward-same-level 1) :type 'user-error)
+      (should (= (point) pos)))))
+
+(ert-deftest adoctest-test-up-heading ()
+  (with-temp-buffer
+    (adoc-mode)
+    (adoctest-insert-nav-doc)
+    (adoctest-goto-heading "Sub A1")
+    (adoc-up-heading 1)
+    (should (looking-at-p "== Section A$"))
+    ;; two levels up from a level-2 heading reaches the document title
+    (adoctest-goto-heading "Sub A2")
+    (adoc-up-heading 2)
+    (should (looking-at-p "= Doc Title$"))
+    ;; nothing above the document title: point is restored
+    (adoctest-goto-heading "Doc Title")
+    (let ((pos (point)))
+      (should-error (adoc-up-heading 1) :type 'user-error)
+      (should (= (point) pos)))))
+
+(ert-deftest adoctest-test-nav-two-line-titles ()
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "Doc Title\n=========\n\n"
+            "intro\n\n"
+            "Section A\n---------\n\n"
+            "text\n\n"
+            "Section B\n---------\n\n"
+            "end\n")
+    (goto-char (point-min))
+    (adoc-next-visible-heading 1)
+    (should (looking-at-p "Section A$"))
+    (adoc-forward-same-level 1)
+    (should (looking-at-p "Section B$"))
+    (adoc-up-heading 1)
+    (should (looking-at-p "Doc Title$"))))
+
 (ert-deftest adoctest-test-xref-at-point-1 ()
   (unwind-protect
       (progn

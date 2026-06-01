@@ -3090,6 +3090,168 @@ and title's text are not preserved, afterwards its always one space."
         (forward-line -1))
       (move-to-column saved-col))))
 
+;;;; Heading navigation
+
+(defun adoc--re-all-titles ()
+  "Return a regexp matching any section title (one-line or two-line)."
+  (let* ((two-line-count (length adoc-two-line-title-del))
+         (core
+          (mapconcat
+           (lambda (level)
+             (if (< level two-line-count)
+                 (concat
+                  (adoc-re-one-line-title level)
+                  "\\|"
+                  (adoc-re-two-line-title (nth level adoc-two-line-title-del)))
+               (adoc-re-one-line-title level)))
+           (number-sequence 0 adoc-title-max-level)
+           "\\)\\|\\(?:")))
+    (concat "\\(?:" core "\\)")))
+
+(defun adoc--title-bounds ()
+  "Return (LEVEL START END) when point is on a section title, else nil.
+START and END delimit the whole title (both lines for a two-line
+title); point need not be on the first line."
+  (let ((descriptor (adoc-title-descriptor)))
+    (when descriptor
+      (list (nth 2 descriptor) (nth 4 descriptor) (nth 5 descriptor)))))
+
+(defun adoc--forward-heading ()
+  "Move point to the start of the next section title.
+Return the title's level, or nil if there is no following title.
+Point is left unchanged when nil is returned."
+  (let ((bounds (adoc--title-bounds))
+        (re (adoc--re-all-titles))
+        (orig (point))
+        level)
+    ;; If we're on a title, step past it so we don't match it again.
+    (when bounds (goto-char (nth 2 bounds)))
+    (while (and (not level) (re-search-forward re nil t))
+      (goto-char (match-beginning 0))
+      (let ((descriptor (adoc-title-descriptor)))
+        (if descriptor
+            (setq level (nth 2 descriptor))
+          ;; A regexp match the descriptor rejects; skip the line and retry.
+          (forward-line 1))))
+    (unless level (goto-char orig))
+    level))
+
+(defun adoc--backward-heading ()
+  "Move point to the start of the previous section title.
+Return the title's level, or nil if there is no preceding title.
+Point is left unchanged when nil is returned."
+  (let ((bounds (adoc--title-bounds))
+        (re (adoc--re-all-titles))
+        (orig (point))
+        level)
+    (when bounds (goto-char (nth 1 bounds)))
+    (while (and (not level) (re-search-backward re nil t))
+      (goto-char (match-beginning 0))
+      (let ((descriptor (adoc-title-descriptor)))
+        (when descriptor (setq level (nth 2 descriptor)))))
+    (unless level (goto-char orig))
+    level))
+
+(defun adoc--back-to-heading ()
+  "Move to the title heading the section point is in, return its level.
+Signal a `user-error' when point is before the first section title."
+  (let ((bounds (adoc--title-bounds)))
+    (cond
+     (bounds (goto-char (nth 1 bounds)) (car bounds))
+     (t (let ((level (adoc--backward-heading)))
+          (unless level (user-error "Before first section title"))
+          level)))))
+
+(defun adoc-next-visible-heading (arg)
+  "Move forward to the ARGth next visible section title.
+With a negative ARG, move backward (see
+`adoc-previous-visible-heading')."
+  (interactive "p")
+  (if (< arg 0)
+      (adoc-previous-visible-heading (- arg))
+    (let ((orig (point))
+          level)
+      (dotimes (_ arg)
+        (while (and (setq level (adoc--forward-heading))
+                    (invisible-p (point))))
+        (unless level
+          (goto-char orig)
+          (user-error "No following section title"))))))
+
+(defun adoc-previous-visible-heading (arg)
+  "Move backward to the ARGth previous visible section title.
+With a negative ARG, move forward (see
+`adoc-next-visible-heading')."
+  (interactive "p")
+  (if (< arg 0)
+      (adoc-next-visible-heading (- arg))
+    (let ((orig (point))
+          level)
+      (dotimes (_ arg)
+        (while (and (setq level (adoc--backward-heading))
+                    (invisible-p (point))))
+        (unless level
+          (goto-char orig)
+          (user-error "No preceding section title"))))))
+
+(defun adoc-forward-same-level (arg)
+  "Move forward to the ARGth next visible title at the same level.
+A title at a shallower (more important) level or the end of the
+buffer stops the search.  With a negative ARG, move backward."
+  (interactive "p")
+  (if (< arg 0)
+      (adoc-backward-same-level (- arg))
+    (let ((orig (point))
+          (level (adoc--back-to-heading)))
+      (dotimes (_ arg)
+        (let (target stop found)
+          (while (and (not target) (not stop)
+                      (setq found (adoc--forward-heading)))
+            (cond
+             ((< found level) (setq stop t))
+             ((and (= found level) (not (invisible-p (point))))
+              (setq target (point)))))
+          (unless target
+            (goto-char orig)
+            (user-error "No following same-level section title")))))))
+
+(defun adoc-backward-same-level (arg)
+  "Move backward to the ARGth previous visible title at the same level.
+A title at a shallower (more important) level or the start of the
+buffer stops the search.  With a negative ARG, move forward."
+  (interactive "p")
+  (if (< arg 0)
+      (adoc-forward-same-level (- arg))
+    (let ((orig (point))
+          (level (adoc--back-to-heading)))
+      (dotimes (_ arg)
+        (let (target stop found)
+          (while (and (not target) (not stop)
+                      (setq found (adoc--backward-heading)))
+            (cond
+             ((< found level) (setq stop t))
+             ((and (= found level) (not (invisible-p (point))))
+              (setq target (point)))))
+          (unless target
+            (goto-char orig)
+            (user-error "No preceding same-level section title")))))))
+
+(defun adoc-up-heading (arg)
+  "Move to the visible parent title, ARG levels up."
+  (interactive "p")
+  (let ((orig (point))
+        (level (adoc--back-to-heading)))
+    (dotimes (_ arg)
+      (let (target found)
+        (while (and (not target)
+                    (setq found (adoc--backward-heading)))
+          (when (and (< found level) (not (invisible-p (point))))
+            (setq target (point)
+                  level found)))
+        (unless target
+          (goto-char orig)
+          (user-error "No parent section title"))))))
+
 (defvar sgml-char-names)
 
 (defun adoc-make-unichar-alist ()
@@ -3173,20 +3335,7 @@ LOCAL-ATTRIBUTE-FACE-ALIST before it is looked up in
 
 (defun adoc-imenu-create-index ()
   (let* ((index-alist)
-         (two-line-count (length adoc-two-line-title-del))
-         (re-all-titles-core
-          (mapconcat
-           (lambda (level)
-             (if (< level two-line-count)
-                 (concat
-                  (adoc-re-one-line-title level)
-                  "\\|"
-                  (adoc-re-two-line-title (nth level adoc-two-line-title-del)))
-               (adoc-re-one-line-title level)))
-           (number-sequence 0 adoc-title-max-level)
-           "\\)\\|\\(?:"))
-         (re-all-titles
-          (concat "\\(?:" re-all-titles-core "\\)")))
+         (re-all-titles (adoc--re-all-titles)))
     (save-restriction
       (widen)
       (goto-char (point-min))
@@ -3283,14 +3432,25 @@ ITEMS is a list of (name pos . level)."
 
 (defvar adoc-mode-map
   (let ((map (make-sparse-keymap)))
-    (define-key map "\C-c\C-d" 'adoc-demote)
-    (define-key map "\C-c\C-p" 'adoc-promote)
+    (define-key map "\C-c\C-n" 'adoc-next-visible-heading)
+    (define-key map "\C-c\C-p" 'adoc-previous-visible-heading)
+    (define-key map "\C-c\C-f" 'adoc-forward-same-level)
+    (define-key map "\C-c\C-b" 'adoc-backward-same-level)
+    (define-key map "\C-c\C-u" 'adoc-up-heading)
+    (define-key map (kbd "M-<left>") 'adoc-promote)
+    (define-key map (kbd "M-<right>") 'adoc-demote)
     (define-key map "\C-c\C-t" 'adoc-toggle-title-type)
     (define-key map "\C-c\C-a" 'adoc-goto-ref-label)
     (define-key map "\C-c\C-o" 'adoc-follow-thing-at-point)
     (define-key map (kbd "M-.") 'adoc-follow-thing-at-point)
     (easy-menu-define adoc-mode-menu map "Menu for adoc mode"
       `("AsciiDoc"
+        ["Next heading" adoc-next-visible-heading]
+        ["Previous heading" adoc-previous-visible-heading]
+        ["Forward (same level)" adoc-forward-same-level]
+        ["Backward (same level)" adoc-backward-same-level]
+        ["Up to parent heading" adoc-up-heading]
+        "---"
         ["Promote" adoc-promote]
         ["Demote" adoc-demote]
         ["Toggle title type" adoc-toggle-title-type]
@@ -3498,11 +3658,12 @@ Turning on Adoc mode runs the normal hook `adoc-mode-hook'."
   (add-hook 'font-lock-extend-region-functions #'adoc-font-lock-extend-region nil t)
 
   ;; outline mode
-  (setq-local outline-regexp "=\\{1,5\\}[ \t]+[^ \t\n]")
+  (setq-local outline-regexp "=\\{1,6\\}[ \t]+[^ \t\n]")
   (setq-local outline-level (lambda ()
                               (save-excursion
                                 (skip-chars-forward "=")
                                 (current-column))))
+  (outline-minor-mode 1)
 
   ;; fill
   (add-hook 'fill-nobreak-predicate #'adoc-fill-nobreak-p nil t)

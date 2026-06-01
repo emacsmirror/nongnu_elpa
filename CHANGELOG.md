@@ -4,6 +4,7 @@
 
 ### New features
 
+- Add heading navigation commands modelled on `markdown-mode` and `org-mode`: `adoc-next-visible-heading` (`C-c C-n`), `adoc-previous-visible-heading` (`C-c C-p`), `adoc-forward-same-level` (`C-c C-f`), `adoc-backward-same-level` (`C-c C-b`), and `adoc-up-heading` (`C-c C-u`). They understand both one-line (`== Title`) and two-line (underlined) titles and skip headings hidden by folding. `outline-minor-mode` is now enabled by default so the folding commands are available out of the box.
 - New `adoc-title-scaling` defcustom (default `t`) and `adoc-title-scaling-values` list let users disable the variable-height title faces or pick their own scale factors. Set the boolean to nil for uniformly-sized headings, or customise the list to control the level-0..5 heights. Mirrors `markdown-header-scaling`.
 - New `adoc-blockquote-face` for the body of `[quote]` and `[verse]` delimited blocks (inherits `font-lock-doc-face`); previously the body was left unfontified.
 - New `adoc-highlight-face` for `#text#` / `##text##` highlighted spans (inherits the standard `highlight` face); previously these reused `adoc-gen-face`.
@@ -14,6 +15,7 @@
 
 ### Changes
 
+- Title promotion and demotion move to `M-left` and `M-right` (org-style), freeing up `C-c C-p` and `C-c C-d` for the new heading-navigation commands. Previously `adoc-promote` lived on `C-c C-p` and `adoc-demote` on `C-c C-d`.
 - `adoc-gen-face`, `adoc-verbatim-face`, `adoc-secondary-text-face`, and `adoc-replacement-face` now inherit from `font-lock-*` faces instead of hardcoding literal colours. Themes that style the font-lock palette will now style AsciiDoc buffers consistently. Users who relied on the old defaults can restore them via `M-x customize-face`.
 - Simplify `adoc-meta-face` to `(:inherit shadow :slant normal :weight normal)` instead of overriding eleven attributes including `:family "Monospace"`. AsciiDoc markup characters now respect the user's font choices and theme `shadow` colour rather than being forced into a monospace family with hardcoded grays.
 - Drop the dated 3D button decoration (`:box (:style released-button)`) and hardcoded hex colours from `adoc-command-face` and `adoc-complex-replacement-face`; inherit from `font-lock-builtin-face` instead.

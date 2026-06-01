@@ -39,10 +39,11 @@ Here are some of the main features of `adoc-mode`:
 - font-lock support for Asciidoctor inline macros (`kbd:[]`, `btn:[]`, `menu:[]`, etc.)
 - inline image preview with right-click context menus and remote image support
 - ~50 tempo templates for inserting AsciiDoc markup (formatting, titles, blocks, lists, macros, etc.)
-- title management: promote / demote, toggle between one-line and two-line styles, adjust underline length
+- heading navigation modelled on `markdown-mode` / `org-mode`: next / previous heading (`C-c C-n` / `C-c C-p`), forward / backward at the same level (`C-c C-f` / `C-c C-b`), and up to the parent heading (`C-c C-u`)
+- title management: promote / demote (`M-left` / `M-right`), toggle between one-line and two-line styles, adjust underline length
 - navigate to anchors (`C-c C-a`) and follow URLs, `include::` macros, and xrefs at point (`C-c C-o` / `M-.`)
 - nested `imenu` index with hierarchical heading structure
-- support for `outline-mode` (one-line title style only)
+- `outline-minor-mode` enabled out of the box for folding (one-line title style only)
 - integration with `flyspell-mode` (skips non-prose regions), comment commands (`M-;`), and compilation mode
 
 === Demo
