@@ -44,7 +44,7 @@ Here are some of the main features of `adoc-mode`:
 - list editing: `M-left` / `M-right` nest the list item at point deeper or shallower, `M-RET` inserts a sibling item (incrementing the number for explicitly-numbered lists), `M-up` / `M-down` move an item (with its sub-items) past its siblings, and `M-x adoc-renumber-list` renumbers an explicitly-numbered list
 - navigate to anchors (`C-c C-a`) and follow URLs, `include::` macros, and xrefs at point (`C-c C-o` / `M-.`)
 - nested `imenu` index with hierarchical heading structure
-- `outline-minor-mode` enabled out of the box for folding (one-line title style only)
+- outline folding built on `outline-minor-mode` (enabled out of the box): `TAB` cycles the subtree at point, `S-TAB` cycles the whole buffer (overview / contents / show all), one-line title style only
 - integration with `flyspell-mode` (skips non-prose regions), comment commands (`M-;`), and compilation mode
 
 === Demo

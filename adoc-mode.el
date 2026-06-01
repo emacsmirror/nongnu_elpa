@@ -44,6 +44,7 @@
 
 (require 'cl-lib)
 (require 'compile)
+(require 'outline)
 (require 'subr-x)
 (require 'adoc-mode-image)
 (require 'adoc-mode-tempo)
@@ -3556,6 +3557,31 @@ buffer stops the search.  With a negative ARG, move forward."
           (goto-char orig)
           (user-error "No parent section title"))))))
 
+;;;; Outline cycling
+
+(defun adoc-cycle (&optional arg)
+  "Cycle the visibility of the section subtree at point.
+On a section title, rotate its subtree between folded, child
+titles only, and fully shown (via `outline-cycle').  Off a title,
+indent or insert a tab as usual.  With a prefix ARG, cycle the
+visibility of the whole buffer instead (see `adoc-cycle-buffer').
+
+Only one-line titles (e.g. `== Title') are recognised by the
+underlying `outline-minor-mode'."
+  (interactive "P")
+  (cond
+   (arg (adoc-cycle-buffer))
+   ((outline-on-heading-p) (outline-cycle))
+   (t (indent-for-tab-command))))
+
+(defun adoc-cycle-buffer ()
+  "Cycle the visibility of all section titles in the buffer.
+Rotate between an overview (top-level titles only), a table of
+contents (all titles, no bodies), and the fully expanded buffer
+\(via `outline-cycle-buffer')."
+  (interactive)
+  (outline-cycle-buffer))
+
 (defvar sgml-char-names)
 
 (defun adoc-make-unichar-alist ()
@@ -3746,6 +3772,8 @@ ITEMS is a list of (name pos . level)."
     (define-key map (kbd "M-RET") 'adoc-insert-list-item)
     (define-key map (kbd "M-<up>") 'adoc-move-list-item-up)
     (define-key map (kbd "M-<down>") 'adoc-move-list-item-down)
+    (define-key map (kbd "TAB") 'adoc-cycle)
+    (define-key map (kbd "<backtab>") 'adoc-cycle-buffer)
     (define-key map "\C-c\C-t" 'adoc-toggle-title-type)
     (define-key map "\C-c\C-a" 'adoc-goto-ref-label)
     (define-key map "\C-c\C-o" 'adoc-follow-thing-at-point)
@@ -3757,6 +3785,9 @@ ITEMS is a list of (name pos . level)."
         ["Forward (same level)" adoc-forward-same-level]
         ["Backward (same level)" adoc-backward-same-level]
         ["Up to parent heading" adoc-up-heading]
+        "---"
+        ["Cycle subtree visibility" adoc-cycle]
+        ["Cycle buffer visibility" adoc-cycle-buffer]
         "---"
         ["Promote (title / list item)" adoc-promote]
         ["Demote (title / list item)" adoc-demote]

@@ -1013,6 +1013,49 @@ on top of the `<mark>' default)."
     (adoc-up-heading 1)
     (should (looking-at-p "Doc Title$"))))
 
+;;;; Outline cycling
+
+(defun adoctest-cycle-buffer ()
+  "Set up a temp buffer with a small document for cycling tests."
+  (adoc-mode)
+  (insert "= Top\n\n== A\n\nbody a\n\n== B\n\nbody b\n")
+  (font-lock-ensure)
+  (goto-char (point-min)))
+
+(ert-deftest adoctest-test-cycle-subtree ()
+  (with-temp-buffer
+    (adoctest-cycle-buffer)
+    (let ((body (save-excursion (search-forward "body a") (point))))
+      (search-forward "== A") (beginning-of-line)
+      (should-not (outline-invisible-p body))
+      ;; on a heading, cycling folds the subtree, then reveals it again
+      (adoc-cycle)
+      (should (outline-invisible-p body))
+      (adoc-cycle)
+      (should-not (outline-invisible-p body)))))
+
+(ert-deftest adoctest-test-cycle-off-heading-does-not-fold ()
+  (with-temp-buffer
+    (adoctest-cycle-buffer)
+    (let ((body (save-excursion (search-forward "body a") (point))))
+      ;; point on an ordinary line: cycling must not fold anything
+      (goto-char body)
+      (adoc-cycle)
+      (should-not (outline-invisible-p body)))))
+
+(ert-deftest adoctest-test-cycle-buffer ()
+  (with-temp-buffer
+    (adoctest-cycle-buffer)
+    (let ((body (save-excursion (search-forward "body a") (point))))
+      (should-not (outline-invisible-p body))
+      ;; a prefix argument cycles the whole buffer: overview hides bodies
+      (adoc-cycle '(4))
+      (should (outline-invisible-p body))
+      ;; ... and the dedicated command eventually shows everything again
+      (adoc-cycle-buffer)
+      (adoc-cycle-buffer)
+      (should-not (outline-invisible-p body)))))
+
 ;;;; List editing
 
 (ert-deftest adoctest-test-list-promote-demote-unordered ()
