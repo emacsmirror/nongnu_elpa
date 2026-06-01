@@ -447,6 +447,29 @@ foo at 100% of outer is hot; bar at 10% is warm."
       (should (flamegraph-test--has-face s 'flamegraph-call-site-hot))
       (should (flamegraph-test--has-face s 'flamegraph-call-site-warm)))))
 
+(ert-deftest flamegraph-test-source-snippet-lines-ret-visits-source ()
+  "RET on a snippet source line, including the final EOL, visits that line."
+  (flamegraph-test--with-temp-source path
+      "(defun outer ()
+  (foo)
+  (bar))
+"
+    (let ((snippet (flamegraph--source-snippet path 2 nil))
+          visited)
+      (should snippet)
+      (cl-letf (((symbol-function 'flamegraph--visit-file)
+                 (lambda (p l) (setq visited (cons p l)))))
+        (with-temp-buffer
+          (insert snippet)
+          (goto-char (point-min))
+          (re-search-forward " 3  ")
+          (end-of-line)
+          (should-not (button-at (point)))
+          (let ((map (get-text-property (point) 'keymap)))
+            (should map)
+            (call-interactively (lookup-key map (kbd "RET")))))
+        (should (equal visited (cons path 3)))))))
+
 ;;; Calls-tree rendering — `flamegraph--insert-call-tree'
 
 (defun flamegraph-test--render-call-tree (node ref &optional shown-nodes)

@@ -557,12 +557,33 @@ necessarily its definition."
       (string-trim-right (substring entry 0 (match-beginning 0)) "[ (:-]+")
     (flamegraph--entry-name entry)))
 
-(defun flamegraph--snippet-line (n marked)
+(defvar-keymap flamegraph--snippet-line-map
+  :doc "Keymap active on source snippet lines."
+  "RET" #'flamegraph--snippet-visit-source)
+
+(defun flamegraph--snippet-visit-source ()
+  "Visit the source line described by text properties at point."
+  (interactive)
+  (let ((path (get-text-property (point) 'flamegraph-source-path))
+        (line (get-text-property (point) 'flamegraph-source-line)))
+    (when (and path line)
+      (flamegraph--visit-file path line))))
+
+(defun flamegraph--snippet-line (path n marked)
   "Format buffer line N for the snippet, marking it when MARKED."
-  (format " %s %4d  %s"
-          (if marked "▸" " ")
-          n
-          (buffer-substring (line-beginning-position) (line-end-position))))
+  (let ((line (format " %s %4d  %s
+"
+                      (if marked "▸" " ")
+                      n
+                      (buffer-substring (line-beginning-position)
+                                        (line-end-position)))))
+    (add-text-properties
+     0 (length line)
+     `(keymap ,flamegraph--snippet-line-map
+       flamegraph-source-path ,path
+       flamegraph-source-line ,n)
+     line)
+    line))
 
 (defun flamegraph--source-snippet (path line &optional node shown context)
   "Return source context around LINE of PATH as a fontified string, or nil.
@@ -628,7 +649,8 @@ defaults to 4."
             (let ((prev nil) (out nil))
               (dolist (n keep)
                 (when (and prev (> n (1+ prev)))
-                  (push "      ⋯" out))
+                  (push "      ⋯
+" out))
                 (goto-char (point-min))
                 (forward-line (1- n))
                 (ignore-errors
@@ -643,9 +665,9 @@ defaults to 4."
                       (when (and (<= bol rb) (>= eol re))
                         (add-face-text-property
                          rb re (flamegraph--call-site-face w))))))
-                (push (flamegraph--snippet-line n (= n line)) out)
+                (push (flamegraph--snippet-line path n (= n line)) out)
                 (setq prev n))
-              (mapconcat #'identity (nreverse out) "\n"))))))))
+              (apply #'concat (nreverse out)))))))))
 
 (defun flamegraph--skip-through-p (entry)
   "Non-nil if ENTRY is a frame to descend through transparently when
