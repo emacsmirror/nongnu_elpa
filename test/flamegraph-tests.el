@@ -45,7 +45,7 @@
   (should (null (flamegraph--entry-location "[unknown]")))
   (should (null (flamegraph--entry-location ""))))
 
-;;; Display name strips the embedded location
+;;; Display/search names strip profiler metadata for different uses
 
 (ert-deftest flamegraph-test-frame-display-name-strips-location ()
   (should (equal (flamegraph--frame-display-name
@@ -54,11 +54,32 @@
   (should (equal (flamegraph--frame-display-name "work (app/main.py:20)")
                  "work"))
   (should (equal (flamegraph--frame-display-name "block in foo - lib/foo.rb:12")
-                 "block in foo")))
+                 "block in foo"))
+  (should (equal (flamegraph--frame-display-name
+                  "select [c function] - (unknown)")
+                 "select [c function]")))
 
 (ert-deftest flamegraph-test-frame-display-name-pass-through ()
   (should (equal (flamegraph--frame-display-name "emacs") "emacs"))
   (should (equal (flamegraph--frame-display-name "[unknown]") "[unknown]")))
+
+(ert-deftest flamegraph-test-frame-search-name-rbspy-native ()
+  "Ruby native frames from rbspy search by method name."
+  (should (equal (flamegraph--frame-search-name
+                  "gsub! [c function] - (unknown)")
+                 "gsub!"))
+  (should (equal (flamegraph--frame-search-name
+                  "any? [c function] - (unknown)")
+                 "any?"))
+  (should (equal (flamegraph--frame-search-name
+                  "block in foo - lib/foo.rb:12")
+                 "block in foo")))
+
+(ert-deftest flamegraph-test-frame-search-name-el-anonymous ()
+  "Anonymous Elisp function objects search as lambda."
+  (should (equal (flamegraph--frame-search-name
+                  (make-byte-code 257 "\300\207" [] 2))
+                 "lambda")))
 
 ;;; skip-through-p / callee-name-acceptable-p
 
@@ -126,6 +147,26 @@
   "Texts spanned by REGIONS (a list of (BEG END WEIGHT)) in current buffer."
   (mapcar (lambda (r) (buffer-substring-no-properties (car r) (cadr r)))
           regions))
+
+(ert-deftest flamegraph-test-walker-rbspy-native-frame-search-name ()
+  "Ruby native frames are matched by method name in source."
+  (with-temp-buffer
+    (ruby-mode)
+    (insert "def outer
+  name.gsub!(/x/, y)
+  items.any? { |item| item.ok? }
+end")
+    (let* ((gsub (profiler-make-calltree
+                  :entry "gsub! [c function] - (unknown)" :count 10))
+           (any (profiler-make-calltree
+                 :entry "any? [c function] - (unknown)" :count 5))
+           (outer (profiler-make-calltree
+                   :entry "outer - lib/foo.rb:1" :count 15
+                   :children (list gsub any)))
+           (regions (flamegraph--collect-nested-call-sites
+                     outer (point-min) (point-max))))
+      (should (equal (flamegraph-test--region-texts regions)
+                     '("gsub!" "any?"))))))
 
 (ert-deftest flamegraph-test-walker-strict-nesting ()
   "Real-function chains narrow strictly: a stray sibling is not matched.

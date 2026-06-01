@@ -555,11 +555,29 @@ necessarily its definition."
                      (flamegraph--entry-name entry))))))))
 
 (defun flamegraph--frame-display-name (entry)
-  "Return ENTRY's name with any embedded FILE:LINE location stripped."
-  (if (and (stringp entry)
-           (string-match "\\([^ ():]*\\.[^ ():]+\\):\\([0-9]+\\)" entry))
-      (string-trim-right (substring entry 0 (match-beginning 0)) "[ (:-]+")
-    (flamegraph--entry-name entry)))
+  "Return ENTRY's name with embedded source location text stripped."
+  (cond
+   ((and (stringp entry)
+         (string-match "\\([^ ():]*\\.[^ ():]+\\):\\([0-9]+\\)" entry))
+    (string-trim-right (substring entry 0 (match-beginning 0)) "[ (:-]+"))
+   ((and (stringp entry)
+         (string-match "\\`\\(.+\\) - (unknown)\\'" entry))
+    (match-string 1 entry))
+   (t (flamegraph--entry-name entry))))
+
+(defun flamegraph--frame-search-name (entry)
+  "Return ENTRY's name for matching against source text.
+This can differ from `flamegraph--frame-display-name' when a profiler
+adds metadata around the source spelling of the frame."
+  (cond
+   ;; profiler.el: anonymous function objects are written as lambda forms.
+   ((flamegraph--el-anonymous-function-p entry) "lambda")
+   ;; rbspy: Ruby native frames include implementation/source metadata.
+   ((and (stringp entry)
+         (string-match
+          "\\`\\(.+?\\) \\[c function\\] - (unknown)\\'" entry))
+    (match-string 1 entry))
+   (t (flamegraph--frame-display-name entry))))
 
 (defvar-keymap flamegraph--snippet-line-map
   :doc "Keymap active on source snippet lines."
@@ -717,8 +735,8 @@ symbol boundaries in the target buffer's syntax."
   (and (stringp name) (not (string-empty-p name))
        (not (string-match-p "[][[:space:]();,]" name))))
 
-(defun flamegraph--anonymous-function-p (entry)
-  "Non-nil if ENTRY is a function object with no source-searchable name."
+(defun flamegraph--el-anonymous-function-p (entry)
+  "Non-nil if ENTRY is an anonymous Elisp function object."
   (and (not (symbolp entry)) (functionp entry)))
 
 (defun flamegraph--collect-nested-call-sites (node beg end &optional shown)
@@ -759,10 +777,8 @@ callees the snippet omits."
            (let ((any nil))
              (dolist (k (profiler-calltree-children n))
                (let* ((entry (profiler-calltree-entry k))
-                      (anonymous (flamegraph--anonymous-function-p entry))
-                      (name (if anonymous
-                                "lambda"
-                              (flamegraph--frame-display-name entry)))
+                      (anonymous (flamegraph--el-anonymous-function-p entry))
+                      (name (flamegraph--frame-search-name entry))
                       (weight (/ (float (profiler-calltree-count k)) total)))
                  (cond
                   ((flamegraph--skip-through-p entry)
