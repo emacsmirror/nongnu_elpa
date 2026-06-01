@@ -522,7 +522,8 @@ DIRECTORY, then `default-directory'."
   (find-file-other-window path)
   (when (> line 0)
     (goto-char (point-min))
-    (forward-line (1- line))))
+    (forward-line (1- line))
+    (pulse-momentary-highlight-one-line (point))))
 
 (defun flamegraph-find-source ()
   "Visit the source of the function of the frame at point.
