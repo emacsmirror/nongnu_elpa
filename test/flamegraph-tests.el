@@ -96,6 +96,21 @@
       (should (equal (buffer-substring-no-properties (car r) (cdr r))
                      "(bar (baz))")))))
 
+(ert-deftest flamegraph-test-enclosing-head-form-region ()
+  "Only a form head can anchor that form's argument region."
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (insert "(foo #'bar (baz))")
+    (goto-char (point-min))
+    (re-search-forward "\\_<foo\\_>")
+    (should (flamegraph--enclosing-head-form-region (match-beginning 0)))
+    (goto-char (point-min))
+    (re-search-forward "\\_<bar\\_>")
+    (should-not (flamegraph--enclosing-head-form-region (match-beginning 0)))
+    (goto-char (point-min))
+    (re-search-forward "\\_<baz\\_>")
+    (should (flamegraph--enclosing-head-form-region (match-beginning 0)))))
+
 ;;; Walker — `flamegraph--collect-nested-call-sites'
 
 (defmacro flamegraph-test--with-elisp-source (src &rest body)
@@ -343,6 +358,38 @@ under `wrap'.  `not-in-source' is `leaf''s body -> not shown."
       (should (gethash inner shown))
       (should (gethash leaf shown))
       (should-not (gethash hidden shown)))))
+
+(ert-deftest flamegraph-test-walker-quoted-function-does-not-anchor-body ()
+  "A `#'callee' argument identifies CALLEE but not CALLEE's body.
+Calls in the same argument list still belong to the surrounding call's
+region."
+  (flamegraph-test--with-elisp-source
+      "(defun outer ()
+  (apply #'callee buffer
+         (list (argument-call))))"
+    (let* ((callee-body (profiler-make-calltree :entry 'callee-body
+                                                :count 10))
+           (callee (profiler-make-calltree :entry 'callee :count 10
+                                           :children (list callee-body)))
+           (argument-call (profiler-make-calltree :entry 'argument-call
+                                                  :count 2))
+           (list-node (profiler-make-calltree :entry 'list :count 2
+                                              :children (list argument-call)))
+           (apply-node (profiler-make-calltree :entry 'apply :count 12
+                                               :children (list callee
+                                                               list-node)))
+           (outer (profiler-make-calltree :entry 'outer :count 12
+                                          :children (list apply-node)))
+           (shown (make-hash-table :test 'eq))
+           (regions (flamegraph--collect-nested-call-sites
+                     outer (point-min) (point-max) shown)))
+      (should (equal (flamegraph-test--region-texts regions)
+                     '("apply" "callee" "list" "argument-call")))
+      (should (gethash apply-node shown))
+      (should (gethash callee shown))
+      (should-not (gethash callee-body shown))
+      (should (gethash list-node shown))
+      (should (gethash argument-call shown)))))
 
 (ert-deftest flamegraph-test-walker-below-threshold-dropped ()
   "Callees below `flamegraph-call-site-threshold' are dropped with subtree.

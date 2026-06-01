@@ -693,6 +693,18 @@ exists (top level)."
           (cons beg (progn (forward-sexp) (point))))
       (error nil))))
 
+(defun flamegraph--enclosing-head-form-region (pos)
+  "Return enclosing form region when POS is at that form's head.
+For an occurrence in `(foo ...)', POS on `foo' returns the form's
+region.  For quoted or function-quoted references such as `'foo' or
+`#'foo' in another call's arguments, return nil: the occurrence can
+identify that frame, but it cannot anchor that frame's own callees."
+  (when-let* ((region (flamegraph--enclosing-form-region pos)))
+    (save-excursion
+      (goto-char (1+ (car region)))
+      (forward-comment (point-max))
+      (and (= (point) pos) region))))
+
 (defun flamegraph--callee-name-acceptable-p (name)
   "Whether NAME is plausibly a symbol we can usefully search in source.
 Rejects empty strings and anything containing whitespace, brackets,
@@ -776,14 +788,13 @@ callees the snippet omits."
                              (setq found t)
                              (when (>= weight flamegraph-call-site-threshold)
                                (push (list mb me weight) regions))
-                             (when-let* ((sub (flamegraph--enclosing-form-region
+                             (when-let* ((sub (flamegraph--enclosing-head-form-region
                                                mb)))
                                ;; Search K's own calls in this call's
                                ;; arguments: from past the matched head to the
-                               ;; form end, clamped to REGION so a stray
-                               ;; enclosing form cannot widen it.  Starting at
-                               ;; the head's end keeps a recursive callee from
-                               ;; re-matching its own name.
+                               ;; form end, clamped to REGION.  References in
+                               ;; arguments, like #'foo, identify `foo' but do
+                               ;; not expose `foo''s body at that site.
                                (walk k (cons me (min (cdr sub) (cdr region)))
                                      nil)))))
                        (when (or found concealed-ok anonymous)
