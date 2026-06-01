@@ -47,6 +47,7 @@ Here are some of the main features of `adoc-mode`:
 - nested `imenu` index with hierarchical heading structure
 - outline folding built on `outline-minor-mode` (enabled out of the box): `TAB` cycles the subtree at point, `S-TAB` cycles the whole buffer (overview / contents / show all), one-line title style only
 - integration with `flyspell-mode` (skips non-prose regions), comment commands (`M-;`), and compilation mode
+- filling that respects AsciiDoc hard line breaks (a line ending in ` +`) and section titles
 
 === Demo
 

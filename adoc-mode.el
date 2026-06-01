@@ -4153,6 +4153,7 @@ Turning on Adoc mode runs the normal hook `adoc-mode-hook'."
 
   ;; fill
   (add-hook 'fill-nobreak-predicate #'adoc-fill-nobreak-p nil t)
+  (setq-local fill-paragraph-function #'adoc-fill-paragraph)
 
   ;; misc
   (setq-local page-delimiter "^<<<+$")
@@ -4186,6 +4187,27 @@ from breaking section title lines."
   (save-excursion
     (beginning-of-line)
     (looking-at-p "=\\{1,6\\}[ \t]")))
+
+(defun adoc-fill-paragraph (&optional justify)
+  "Fill the current paragraph, preserving AsciiDoc hard line breaks.
+A line ending in a space followed by `+' is a forced line break;
+filling must not merge it with the following line.  Such breaks
+are marked as hard newlines so the filler keeps them.  Serves as
+the buffer's `fill-paragraph-function'."
+  (save-excursion
+    (let ((beg (progn (backward-paragraph) (point)))
+          (end (progn (forward-paragraph) (point))))
+      ;; Drop any stale hard newlines first (e.g. from a ` +' the user has
+      ;; since deleted), then mark the breaks that are still present.
+      (remove-text-properties beg end '(hard nil))
+      (goto-char beg)
+      (while (re-search-forward " \\+$" end t)
+        (when (eq (char-after) ?\n)
+          (put-text-property (point) (1+ (point)) 'hard t)))))
+  (let ((use-hard-newlines t)
+        (fill-paragraph-function nil))
+    (fill-paragraph justify))
+  t)
 
 ;; Flyspell
 

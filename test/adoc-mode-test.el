@@ -1136,6 +1136,54 @@ on top of the `<mark>' default)."
   (adoctest-faces "escaped-passthrough"
                   "\\" 'adoc-meta-hide-face "+++p+++" 'no-face))
 
+;;;; Filling
+
+(ert-deftest adoctest-test-fill-preserves-hard-break ()
+  (with-temp-buffer
+    (adoc-mode)
+    (setq fill-column 40)
+    (insert "alpha beta gamma +\ndelta epsilon\neta theta iota\n")
+    (goto-char (point-min))
+    (fill-paragraph)
+    (should (string-equal (buffer-string)
+                          "alpha beta gamma +\ndelta epsilon eta theta iota\n"))))
+
+(ert-deftest adoctest-test-fill-joins-plain-lines ()
+  (with-temp-buffer
+    (adoc-mode)
+    (setq fill-column 40)
+    (insert "word1 word2 word3\nword4 word5\n")
+    (goto-char (point-min))
+    (fill-paragraph)
+    (should (string-equal (buffer-string) "word1 word2 word3 word4 word5\n"))))
+
+(ert-deftest adoctest-test-fill-list-item-indents-continuation ()
+  (with-temp-buffer
+    (adoc-mode)
+    (setq fill-column 40)
+    (insert "* long list item that should wrap nicely when filled to a narrow width indeed yes\n")
+    (goto-char (point-min))
+    (fill-paragraph)
+    (should (string-equal
+             (buffer-string)
+             "* long list item that should wrap nicely\n  when filled to a narrow width indeed\n  yes\n"))))
+
+(ert-deftest adoctest-test-fill-clears-stale-hard-break ()
+  ;; once the user removes a ` +', a refill must merge the lines again
+  (with-temp-buffer
+    (adoc-mode)
+    (setq fill-column 30)
+    (insert "alpha beta gamma delta epsilon zeta eta theta iota +\nkappa lambda mu nu\n")
+    (goto-char (point-min))
+    (fill-paragraph)
+    (goto-char (point-min))
+    (re-search-forward " \\+$")
+    (delete-char -2)                    ; drop the trailing " +"
+    (goto-char (point-min))
+    (fill-paragraph)
+    (should-not (string-match-p "iota +\n" (buffer-string)))
+    (should (string-match-p "iota kappa" (buffer-string)))))
+
 ;;;; List editing
 
 (ert-deftest adoctest-test-list-promote-demote-unordered ()
