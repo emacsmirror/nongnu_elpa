@@ -4,6 +4,7 @@
 
 ### New features
 
+- Add list editing: `adoc-promote` (`M-left`) and `adoc-demote` (`M-right`) now nest the list item at point one level deeper or shallower (for unordered `*`/`-` and implicitly-numbered `.` lists) in addition to acting on section titles, and the new `adoc-insert-list-item` (`M-RET`) inserts a sibling item below the current one, keeping its indentation and marker and incrementing the number/letter of explicitly-numbered items.
 - Add heading navigation commands modelled on `markdown-mode` and `org-mode`: `adoc-next-visible-heading` (`C-c C-n`), `adoc-previous-visible-heading` (`C-c C-p`), `adoc-forward-same-level` (`C-c C-f`), `adoc-backward-same-level` (`C-c C-b`), and `adoc-up-heading` (`C-c C-u`). They understand both one-line (`== Title`) and two-line (underlined) titles and skip headings hidden by folding. `outline-minor-mode` is now enabled by default so the folding commands are available out of the box.
 - New `adoc-title-scaling` defcustom (default `t`) and `adoc-title-scaling-values` list let users disable the variable-height title faces or pick their own scale factors. Set the boolean to nil for uniformly-sized headings, or customise the list to control the level-0..5 heights. Mirrors `markdown-header-scaling`.
 - New `adoc-blockquote-face` for the body of `[quote]` and `[verse]` delimited blocks (inherits `font-lock-doc-face`); previously the body was left unfontified.

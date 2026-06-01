@@ -2826,23 +2826,32 @@ When point is on an xref or cross-reference, jump to its anchor."
     (user-error "Nothing to follow at point"))))
 
 (defun adoc-promote (&optional arg)
-  "Promotes the structure at point ARG levels.
+  "Promote the structure at point ARG levels.
 
 When ARG is nil (i.e. when no prefix arg is given), it defaults
-to 1. When ARG is negative, level is demoted that many levels.
+to 1.  When ARG is negative, the structure is demoted that many
+levels instead.
 
-The intention is that the structure can be a title or a list
-element or anything else which has a \='level\='.  However currently
-it works only for titles."
+On a section title this adds title levels (e.g. `=' -> `==', see
+`adoc-promote-title').  On a list item it nests the item one
+level deeper (e.g. `*' -> `**', see `adoc-demote' for the
+opposite direction)."
   (interactive "p")
-  (adoc-promote-title arg))
+  (let ((item (adoc--list-item-at-point)))
+    (if item
+        (adoc--change-list-item-level item (or arg 1))
+      (adoc-promote-title arg))))
 
 (defun adoc-demote (&optional arg)
-  "Demotes the structure at point ARG levels.
+  "Demote the structure at point ARG levels.
 
-Analogous to `adoc-promote', see there."
+Analogous to `adoc-promote', see there.  On a list item this
+nests the item one level shallower (e.g. `**' -> `*')."
   (interactive "p")
-  (adoc-demote-title arg))
+  (let ((item (adoc--list-item-at-point)))
+    (if item
+        (adoc--change-list-item-level item (- (or arg 1)))
+      (adoc-demote-title arg))))
 
 (defun adoc-promote-title (&optional arg)
   "Promotes the title at point ARG levels.
@@ -2875,6 +2884,108 @@ non-nil, the sub type is toggled."
   (when type-type
     (setq type-type t))
   (adoc-modify-title nil nil (not type-type) type-type))
+
+;;;; List editing
+
+(defun adoc--list-item-at-point ()
+  "Return a description of the list item on the current line, or nil.
+The description is a plist with these keys:
+
+:type        one of `unordered', `implicit-numbered',
+             `explicit-numbered'
+:marker      the marker string, e.g. \"*\", \"..\" or \"1.\"
+:indent      the leading whitespace string
+:marker-beg  buffer position of the marker's first character
+:level       0-based nesting level
+
+Labeled lists and callouts are intentionally not recognised, as
+their markers are too easily confused with ordinary prose."
+  (save-excursion
+    (beginning-of-line)
+    (cond
+     ((looking-at (adoc-re-oulisti 'adoc-unordered 'adoc-all-levels))
+      (let ((marker (match-string-no-properties 2)))
+        (list :type 'unordered
+              :marker marker
+              :indent (match-string-no-properties 1)
+              :marker-beg (match-beginning 2)
+              :level (if (string-prefix-p "-" marker) 0 (length marker)))))
+     ((looking-at (adoc-re-oulisti 'adoc-implicitly-numbered 'adoc-all-levels))
+      (let ((marker (match-string-no-properties 2)))
+        (list :type 'implicit-numbered
+              :marker marker
+              :indent (match-string-no-properties 1)
+              :marker-beg (match-beginning 2)
+              :level (1- (length marker)))))
+     ((looking-at (adoc-re-oulisti 'adoc-explicitly-numbered))
+      (list :type 'explicit-numbered
+            :marker (match-string-no-properties 2)
+            :indent (match-string-no-properties 1)
+            :marker-beg (match-beginning 2)
+            :level 0)))))
+
+(defun adoc--unordered-marker (level)
+  "Return the unordered list marker for nesting LEVEL (0-based).
+Level 0 is the dash bullet; deeper levels use that many asterisks."
+  (if (<= level 0) "-" (make-string (min level 5) ?*)))
+
+(defun adoc--implicit-numbered-marker (level)
+  "Return the implicit-numbered list marker (dots) for LEVEL (0-based)."
+  (make-string (1+ (min (max level 0) 4)) ?.))
+
+(defun adoc--increment-marker (marker)
+  "Return list MARKER incremented for the next sibling item.
+Arabic numbers (\"1.\") and single letters (\"a.\") are
+incremented.  Roman numerals, the last letter of the alphabet,
+and other markers are returned unchanged, leaving the user to fix
+them up."
+  (cond
+   ((string-match "\\`\\([0-9]+\\)\\(\\.\\)\\'" marker)
+    (concat (number-to-string (1+ (string-to-number (match-string 1 marker))))
+            (match-string 2 marker)))
+   ;; Stop before the alphabet wraps past `z'/`Z' into punctuation.
+   ((string-match "\\`\\([a-yA-Y]\\)\\(\\.\\)\\'" marker)
+    (concat (char-to-string (1+ (aref (match-string 1 marker) 0)))
+            (match-string 2 marker)))
+   (t marker)))
+
+(defun adoc--change-list-item-level (item delta)
+  "Change list ITEM's nesting level by DELTA, rewriting its marker.
+A positive DELTA nests the item deeper, a negative one shallower.
+The level is clamped to the range the marker style supports."
+  (let* ((type (plist-get item :type))
+         (level (plist-get item :level))
+         (old-marker (plist-get item :marker))
+         (beg (plist-get item :marker-beg))
+         new-marker)
+    (pcase type
+      ('unordered
+       (setq new-marker (adoc--unordered-marker (max 0 (min 5 (+ level delta))))))
+      ('implicit-numbered
+       (setq new-marker (adoc--implicit-numbered-marker (max 0 (min 4 (+ level delta))))))
+      (_ (user-error "Cannot change the nesting level of a %s list item"
+                     (symbol-name type))))
+    (unless (string= new-marker old-marker)
+      (save-excursion
+        (goto-char beg)
+        (delete-region beg (+ beg (length old-marker)))
+        (insert new-marker)))))
+
+(defun adoc-insert-list-item (&optional _arg)
+  "Insert a new list item below the item at point.
+The new item keeps the indentation, marker style and nesting
+level of the current item; explicitly-numbered items get an
+incremented number or letter."
+  (interactive "p")
+  (let ((item (adoc--list-item-at-point)))
+    (unless item
+      (user-error "Not on a list item"))
+    (let ((indent (plist-get item :indent))
+          (new-marker (if (eq (plist-get item :type) 'explicit-numbered)
+                          (adoc--increment-marker (plist-get item :marker))
+                        (plist-get item :marker))))
+      (end-of-line)
+      (insert "\n" indent new-marker " "))))
 
 (defun adoc-calc ()
   "(Re-)calculates variables used in adoc-mode.
@@ -3439,6 +3550,7 @@ ITEMS is a list of (name pos . level)."
     (define-key map "\C-c\C-u" 'adoc-up-heading)
     (define-key map (kbd "M-<left>") 'adoc-promote)
     (define-key map (kbd "M-<right>") 'adoc-demote)
+    (define-key map (kbd "M-RET") 'adoc-insert-list-item)
     (define-key map "\C-c\C-t" 'adoc-toggle-title-type)
     (define-key map "\C-c\C-a" 'adoc-goto-ref-label)
     (define-key map "\C-c\C-o" 'adoc-follow-thing-at-point)
@@ -3451,8 +3563,9 @@ ITEMS is a list of (name pos . level)."
         ["Backward (same level)" adoc-backward-same-level]
         ["Up to parent heading" adoc-up-heading]
         "---"
-        ["Promote" adoc-promote]
-        ["Demote" adoc-demote]
+        ["Promote (title / list item)" adoc-promote]
+        ["Demote (title / list item)" adoc-demote]
+        ["Insert list item" adoc-insert-list-item]
         ["Toggle title type" adoc-toggle-title-type]
         ["Adjust title underline" adoc-adjust-title-del]
         ["Follow thing at point" adoc-follow-thing-at-point]

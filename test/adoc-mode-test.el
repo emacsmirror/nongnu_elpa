@@ -1013,6 +1013,59 @@ on top of the `<mark>' default)."
     (adoc-up-heading 1)
     (should (looking-at-p "Doc Title$"))))
 
+;;;; List editing
+
+(ert-deftest adoctest-test-list-promote-demote-unordered ()
+  ;; promote nests deeper, demote nests shallower
+  (adoctest-trans "* foo!" "** foo" '(adoc-promote 1))
+  (adoctest-trans "** foo!" "* foo" '(adoc-demote 1))
+  ;; level 1 (*) demotes to level 0 (-), and back
+  (adoctest-trans "* foo!" "- foo" '(adoc-demote 1))
+  (adoctest-trans "- foo!" "* foo" '(adoc-promote 1))
+  ;; clamped at the extremes
+  (adoctest-trans "- foo!" "- foo" '(adoc-demote 1))
+  (adoctest-trans "***** foo!" "***** foo" '(adoc-promote 1))
+  ;; leading indentation is preserved
+  (adoctest-trans "  ** foo!" "  *** foo" '(adoc-promote 1))
+  ;; a numeric argument changes several levels at once
+  (adoctest-trans "* foo!" "*** foo" '(adoc-promote 2)))
+
+(ert-deftest adoctest-test-list-promote-demote-numbered ()
+  (adoctest-trans ". foo!" ".. foo" '(adoc-promote 1))
+  (adoctest-trans ".. foo!" ". foo" '(adoc-demote 1))
+  (adoctest-trans ". foo!" ". foo" '(adoc-demote 1)))
+
+(ert-deftest adoctest-test-list-promote-explicit-numbered-errors ()
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "1. foo")
+    (goto-char (point-min))
+    (should-error (adoc-promote 1) :type 'user-error)
+    ;; buffer is left untouched
+    (should (string-equal (buffer-string) "1. foo"))))
+
+(ert-deftest adoctest-test-insert-list-item ()
+  (adoctest-trans "* foo!" "* foo\n* " '(adoc-insert-list-item))
+  (adoctest-trans "- foo!" "- foo\n- " '(adoc-insert-list-item))
+  (adoctest-trans ".. bar!" ".. bar\n.. " '(adoc-insert-list-item))
+  ;; explicitly-numbered items get an incremented marker
+  (adoctest-trans "1. foo!" "1. foo\n2. " '(adoc-insert-list-item))
+  (adoctest-trans "a. foo!" "a. foo\nb. " '(adoc-insert-list-item))
+  (adoctest-trans "9. foo!" "9. foo\n10. " '(adoc-insert-list-item))
+  ;; roman numerals and the last letter of the alphabet are copied verbatim
+  (adoctest-trans "i) foo!" "i) foo\ni) " '(adoc-insert-list-item))
+  (adoctest-trans "z. foo!" "z. foo\nz. " '(adoc-insert-list-item))
+  ;; indentation is preserved
+  (adoctest-trans "  ** foo!" "  ** foo\n  ** " '(adoc-insert-list-item)))
+
+(ert-deftest adoctest-test-insert-list-item-not-in-list ()
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "just some prose")
+    (goto-char (point-min))
+    (should-error (adoc-insert-list-item) :type 'user-error)
+    (should (string-equal (buffer-string) "just some prose"))))
+
 (ert-deftest adoctest-test-xref-at-point-1 ()
   (unwind-protect
       (progn
