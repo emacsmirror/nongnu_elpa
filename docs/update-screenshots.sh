@@ -2,6 +2,13 @@
 # Picks the two most recent PNGs from ~/Pictures/Screenshots/ (newest = dark,
 # second-newest = light) and crops them into ./img/.
 #
+# --- Display settings ------------------------------------------------------
+#   (set-face-attribute 'default nil
+#                       :height 110 :weight 'semi-light :family "Cascadia Mono")
+#   (setq-default line-spacing 1)
+#   (dolist (feature '(menu tool scroll))
+#     (funcall (intern (format "%s-bar-mode" feature)) -1))
+#
 # --- Sizing/positioning Emacs ---------------------------------------------
 # Current frame is at (22, 26) with outer dims 2636x1016. Eval inside Emacs
 # (M-:) to put a frame back in that spot. Use 2621x950 inner pixels to match
