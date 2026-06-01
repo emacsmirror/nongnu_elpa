@@ -1,8 +1,9 @@
-;;; flamegraph.el --- Flame graphs for the Emacs profiler  -*- lexical-binding: t; -*-
+;;; flamegraph.el --- Flame graphs for Emacs's native profiler and folded stacks files -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Dmitry Gutov
 
 ;; Author: Dmitry Gutov <dmitry@gutov.dev>
+;; Homepage: https://github.com/dgutov/emacs-flamegraph/
 ;; Keywords: lisp, tools
 ;; Version: 0.1
 ;; Package-Requires: ((emacs "30.1"))
