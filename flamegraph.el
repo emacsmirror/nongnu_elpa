@@ -751,7 +751,12 @@ that frame.  DEPTH controls the indentation."
       (insert (format "%7s  " (profiler-format-number
                                (profiler-calltree-count k))))
       (insert (make-string (* 2 depth) ?\s))
-      (flamegraph--describe-button k total directory)
+      ;; Dim callees below the threshold: they are absent from the snippet
+      ;; (see `flamegraph-call-site-threshold'), so mark why here.
+      (flamegraph--describe-button
+       k total directory
+       (< (/ (float (profiler-calltree-count k)) ref)
+          flamegraph-call-site-threshold))
       (insert (format "  (%s)\n"
                       (flamegraph--percent
                        (profiler-calltree-count k) ref)))
@@ -759,13 +764,15 @@ that frame.  DEPTH controls the indentation."
         (flamegraph--insert-call-tree k total ref (1+ depth) directory
                                       reached)))))
 
-(defun flamegraph--describe-button (node total directory)
-  "Insert a button that describes NODE, passing TOTAL and DIRECTORY along."
-  (insert-text-button (flamegraph--frame-display-name
-                       (profiler-calltree-entry node))
-                      'type 'help-xref
-                      'help-function #'flamegraph--describe-frame
-                      'help-args (list node total directory)))
+(defun flamegraph--describe-button (node total directory &optional dim)
+  "Insert a button that describes NODE, passing TOTAL and DIRECTORY along.
+With DIM non-nil, shadow the name (but keep it clickable)."
+  (apply #'insert-text-button (flamegraph--frame-display-name
+                               (profiler-calltree-entry node))
+         'type 'help-xref
+         'help-function #'flamegraph--describe-frame
+         'help-args (list node total directory)
+         (when dim '(face (shadow button)))))
 
 (defun flamegraph--describe-frame (node total directory)
   "Show a report for calltree NODE in the *Help* buffer.

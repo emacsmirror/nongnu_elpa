@@ -363,6 +363,26 @@ unreached sibling does not, and stays at the top depth."
       (should (flamegraph-test--line-with "kid" lines))
       (should-not (flamegraph-test--line-with "grand" lines)))))
 
+(defun flamegraph-test--name-dimmed-p (str name)
+  "Non-nil if NAME's button in STR carries the `shadow' face."
+  (let ((pos (string-match (concat "\\_<" (regexp-quote name) "\\_>") str)))
+    (and pos
+         (let ((face (get-text-property pos 'face str)))
+           (and (listp face) (memq 'shadow face))))))
+
+(ert-deftest flamegraph-test-call-tree-dims-below-threshold ()
+  "Callees below `flamegraph-call-site-threshold' get a dimmed name;
+those at or above it do not."
+  (let* ((cold (profiler-make-calltree :entry 'cold :count 1))
+         (hot  (profiler-make-calltree :entry 'hot :count 99))
+         (root (profiler-make-calltree :entry 'root :count 100
+                                       :children (list hot cold)))
+         (flamegraph-call-site-threshold 0.02)
+         (out (flamegraph-test--render-call-tree root 100)))
+    ;; cold is 1% -> dimmed; hot is 99% -> normal.
+    (should (flamegraph-test--name-dimmed-p out "cold"))
+    (should-not (flamegraph-test--name-dimmed-p out "hot"))))
+
 (ert-deftest flamegraph-test-call-tree-percent-scaled-to-ref ()
   "Sub-children's percentage uses REF (the described frame's count),
 not their immediate parent — so all percents add up under that frame."
