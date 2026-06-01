@@ -2,6 +2,8 @@
 
 ## master (unreleased)
 
+## 2.10.0 (2026-06-01)
+
 ### New features
 
 * Introduce a semantic color palette layered on top of the positional palette. Faces now reference meaning-based names like `zenburn-comment`, `zenburn-string`, `zenburn-keyword`, `zenburn-error`, and `zenburn-diff-added-bg` instead of `zenburn-green`, `zenburn-red`, etc. Users can remap meanings without touching the base palette via the new `zenburn-override-semantic-colors-alist` customization. Migrated so far: `font-lock`, basic `success`/`warning`, and the `diff` section (which also pulls the previously hardcoded diff backgrounds into named entries).
