@@ -331,6 +331,8 @@ outermost frames.")
   "Short label for the data source, shown in the header.")
 (defvar-local flamegraph--directory nil
   "Directory of the data file, for resolving relative source paths.")
+(defvar-local flamegraph--profiler-el-calls nil
+  "Non-nil when calltree entries come from profiler.el.")
 
 (defun flamegraph--header ()
   "Return the header line for the current view."
@@ -477,7 +479,8 @@ sample counts, and buttons to the caller and callees."
         (message "No frame at point")
       (flamegraph--describe-frame
        (flamegraph-frame-node frame)
-       flamegraph--grand-total flamegraph--directory))))
+       flamegraph--grand-total flamegraph--directory
+       flamegraph--profiler-el-calls))))
 
 (defun flamegraph--entry-location (entry)
   "Extract a (FILE . LINE) source location embedded in ENTRY, or nil.
@@ -593,9 +596,9 @@ the enclosing structural lines up to the definition are kept — each line
 that is less indented than the one below it — so the nesting that leads
 to the sampled line stays visible.  When NODE (a calltree) is non-nil, its
 nested calls found in the enclosing defun are highlighted with a heat face
-and their lines kept too (see `flamegraph--collect-nested-call-sites',
-which also fills SHOWN).  Skipped runs are elided with `⋯'.  CONTEXT
-defaults to 4."
+and their lines kept too (see `flamegraph--collect-nested-call-sites').
+When SHOWN is non-nil, it is filled for Calls tree rendering.  Skipped
+runs are elided with `⋯'.  CONTEXT defaults to 4."
   (setq context (or context 4))
   (when (and (file-readable-p path) (> line 0))
     (with-temp-buffer
@@ -804,13 +807,15 @@ callees the snippet omits."
       (walk node (cons beg end) t))
     (nreverse regions)))
 
-(defun flamegraph--insert-call-tree (node total ref depth directory shown)
-  "Insert NODE's children as a tree, those in SHOWN nested under it.
-SHOWN is the table from `flamegraph--collect-nested-call-sites'.  A child
-absent from it is skipped, along with its subtree; these are a callee's
-internal calls.  TOTAL is the grand total for the call graph; REF is the
-count of the originally-described frame, used so the printed percentages
-add up under that frame.  DEPTH controls the indentation."
+(defun flamegraph--insert-call-tree (node total ref depth directory shown
+                                      profiler-el-calls)
+  "Insert NODE's children whose nodes are present in SHOWN.
+A child absent from SHOWN is skipped, along with its subtree.  When SHOWN
+contains descendants, render them recursively under their shown parents.
+TOTAL is the grand total for the call graph; REF is the count of the
+originally-described frame, used so the printed percentages add up under
+that frame.  DEPTH controls the indentation.  PROFILER-EL-CALLS is passed
+through to describe buttons."
   (let ((kids (sort (copy-sequence (profiler-calltree-children node))
                     (lambda (a b) (> (profiler-calltree-count a)
                                      (profiler-calltree-count b))))))
@@ -823,31 +828,37 @@ add up under that frame.  DEPTH controls the indentation."
         ;; (see `flamegraph-call-site-threshold'), so mark why here.
         (flamegraph--describe-button
          k total directory
-         (< (/ (float (profiler-calltree-count k)) ref)
-            flamegraph-call-site-threshold))
+         (and profiler-el-calls
+              (< (/ (float (profiler-calltree-count k)) ref)
+                 flamegraph-call-site-threshold))
+         profiler-el-calls)
         (insert (format "  (%s)\n"
                         (flamegraph--percent
                          (profiler-calltree-count k) ref)))
         (flamegraph--insert-call-tree k total ref (1+ depth) directory
-                                      shown)))))
+                                      shown profiler-el-calls)))))
 
-(defun flamegraph--describe-button (node total directory &optional dim)
-  "Insert a button that describes NODE, passing TOTAL and DIRECTORY along.
+(defun flamegraph--describe-button (node total directory &optional dim
+                                      profiler-el-calls)
+  "Insert a button that describes NODE, passing context along.
 With DIM non-nil, shadow the name (but keep it clickable)."
   (apply #'insert-text-button (flamegraph--frame-display-name
                                (profiler-calltree-entry node))
          'type 'help-xref
          'help-function #'flamegraph--describe-frame
-         'help-args (list node total directory)
+         'help-args (list node total directory profiler-el-calls)
          (when dim '(face (shadow button)))))
 
-(defun flamegraph--describe-frame (node total directory)
+(defun flamegraph--describe-frame (node total directory &optional profiler-el-calls)
   "Show a report for calltree NODE in the *Help* buffer.
 TOTAL is the grand total for percentages; DIRECTORY resolves relative
-source paths.  Caller and callee names are buttons describing those
+source paths.  PROFILER-EL-CALLS means entries come from profiler.el;
+source matches may add structure to the Calls tree.  Otherwise they only
+affect the snippet.  Caller and callee names are buttons describing those
 frames, with Help-style back/forward navigation."
   (require 'help-mode)
-  (help-setup-xref (list #'flamegraph--describe-frame node total directory)
+  (help-setup-xref (list #'flamegraph--describe-frame node total directory
+                         profiler-el-calls)
                    (called-interactively-p 'interactive))
   (let* ((entry (profiler-calltree-entry node))
          (loc (cond ((stringp entry) (flamegraph--entry-location entry))
@@ -882,7 +893,8 @@ frames, with Help-style back/forward navigation."
            'follow-link t
            'help-echo "mouse-1, RET: visit this line")
           (when-let* ((snippet (flamegraph--source-snippet
-                                path (cdr loc) node shown)))
+                                path (cdr loc) node
+                                (and profiler-el-calls shown))))
             (insert "\n\n" snippet)))
         (insert (format "\n\nSamples  %s (%s of total)    self  %s (%s)\n"
                         (profiler-format-number count)
@@ -891,17 +903,17 @@ frames, with Help-style back/forward navigation."
                         (flamegraph--percent self total)))
         (when (and parent (profiler-calltree-entry parent))
           (insert "\nCalled from  ")
-          (flamegraph--describe-button parent total directory)
+          (flamegraph--describe-button parent total directory nil
+                                      profiler-el-calls)
           (insert "\n"))
         (when kids
-          ;; With no source to attribute against (e.g. a C frame, or a
-          ;; missing file), nothing was marked: fall back to the direct
-          ;; children as a flat list.
+          ;; With no profiler.el source matches for the Calls tree, fall
+          ;; back to the direct children as a flat list.
           (when (zerop (hash-table-count shown))
             (dolist (k kids) (puthash k t shown)))
           (insert "\nCalls\n")
           (flamegraph--insert-call-tree node total count 0 directory
-                                        shown))))))
+                                        shown profiler-el-calls))))))
 
 (defun flamegraph-redraw ()
   "Redraw the flame graph, e.g. to pick up a new window width."
@@ -966,12 +978,12 @@ since this runs before that relocation happens."
 
 ;;; Entry points
 
-(defun flamegraph--show (top unit title &optional directory)
+(defun flamegraph--show (top unit title &optional directory profiler-el-calls)
   "Display a flame graph for calltree TOP and return its buffer.
 TOP is a dummy root node whose children are the outermost frames.  UNIT
 names the count unit (e.g. \"samples\"); TITLE labels the data source in
 the header.  DIRECTORY, if given, resolves relative source paths when
-visiting a frame."
+visiting a frame.  PROFILER-EL-CALLS means entries come from profiler.el."
   (let ((buffer (get-buffer-create (format "*Flamegraph: %s*" title))))
     (with-current-buffer buffer
       (flamegraph-mode)
@@ -983,6 +995,7 @@ visiting a frame."
             flamegraph--unit unit
             flamegraph--title title
             flamegraph--directory directory
+            flamegraph--profiler-el-calls profiler-el-calls
             flamegraph--grand-total
             (max 1 (apply #'+ (mapcar #'profiler-calltree-count
                                       (profiler-calltree-children top))))))
@@ -997,7 +1010,8 @@ visiting a frame."
   (flamegraph--show
    (profiler-calltree-build (profiler-profile-log profile))
    (if (eq (profiler-profile-type profile) 'memory) "bytes" "samples")
-   (if (eq (profiler-profile-type profile) 'cpu) "CPU" "Memory")))
+   (if (eq (profiler-profile-type profile) 'cpu) "CPU" "Memory")
+   nil t))
 
 ;;;###autoload
 (defun flamegraph-profiler-report ()

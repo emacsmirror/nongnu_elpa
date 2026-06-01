@@ -479,6 +479,13 @@ is still shown."
            for f = (get-text-property i 'face string)
            thereis (or (eq f face) (and (listp f) (memq face f)))))
 
+(defun flamegraph-test--text-has-face (string text face)
+  "Non-nil if TEXT in STRING has FACE at its first character."
+  (let ((pos (string-match-p (regexp-quote text) string)))
+    (and pos
+         (let ((f (get-text-property pos 'face string)))
+           (or (eq f face) (and (listp f) (memq face f)))))))
+
 (ert-deftest flamegraph-test-source-snippet-applies-highlight-face ()
   "Callee matches in the snippet carry a heat face scaled by share.
 foo at 100% of outer is hot; bar at 10% is warm."
@@ -493,6 +500,28 @@ foo at 100% of outer is hot; bar at 10% is warm."
       (should s)
       (should (flamegraph-test--has-face s 'flamegraph-call-site-hot))
       (should (flamegraph-test--has-face s 'flamegraph-call-site-warm)))))
+
+(ert-deftest flamegraph-test-source-snippet-threshold-only-affects-regions ()
+  "Below-threshold callees fill SHOWN but are not highlighted."
+  (flamegraph-test--with-temp-source path
+      "(defun outer ()
+  (foo)
+  (cold))
+"
+    (let* ((foo (profiler-make-calltree :entry 'foo :count 99))
+           (cold (profiler-make-calltree :entry 'cold :count 1))
+           (outer (profiler-make-calltree :entry 'outer :count 100
+                                          :children (list foo cold)))
+           (flamegraph-call-site-threshold 0.02)
+           (shown (make-hash-table :test 'eq))
+           (s (flamegraph--source-snippet path 1 outer shown)))
+      (should s)
+      (should (gethash foo shown))
+      (should (gethash cold shown))
+      (should (flamegraph-test--text-has-face
+               s "foo" 'flamegraph-call-site-hot))
+      (should-not (flamegraph-test--text-has-face
+                   s "cold" 'flamegraph-call-site-cool)))))
 
 (ert-deftest flamegraph-test-source-snippet-lines-ret-visits-source ()
   "RET on a snippet source line, including the final EOL, visits that line."
@@ -532,7 +561,7 @@ nil, every descendant of NODE is shown."
                       (mark k))))
         (mark node)))
     (with-temp-buffer
-      (flamegraph--insert-call-tree node ref ref 0 nil shown)
+      (flamegraph--insert-call-tree node ref ref 0 nil shown t)
       (buffer-string))))
 
 (defun flamegraph-test--line-with (str lines)
@@ -641,7 +670,7 @@ not their immediate parent — so all percents add up under that frame."
          (shown (make-hash-table :test 'eq)))
     (puthash bar t shown)
     (with-temp-buffer
-      (flamegraph--insert-call-tree foo 1 1 0 nil shown)
+      (flamegraph--insert-call-tree foo 1 1 0 nil shown t)
       (goto-char (point-min))
       (let ((b (next-button (point))))
         (should b)
@@ -651,11 +680,12 @@ not their immediate parent — so all percents add up under that frame."
 
 ;;; Heading rendering in `flamegraph--describe-frame'
 
-(defun flamegraph-test--describe-help (node)
+(defun flamegraph-test--describe-help (node &optional profiler-el-calls)
   "Render NODE in the help buffer via `flamegraph--describe-frame' and
 return that buffer's contents (a propertized string)."
   (require 'help-mode)
-  (flamegraph--describe-frame node (profiler-calltree-count node) nil)
+  (flamegraph--describe-frame node (profiler-calltree-count node) nil
+                              profiler-el-calls)
   (with-current-buffer (help-buffer) (buffer-string)))
 
 (ert-deftest flamegraph-test-describe-symbol-heading-is-help-button ()
@@ -682,6 +712,27 @@ return that buffer's contents (a propertized string)."
       (should-not (and (button-at (point))
                        (eq (button-type (button-at (point)))
                            'help-function))))))
+
+(ert-deftest flamegraph-test-describe-folded-stack-calls-stay-flat ()
+  "String frames get source snippets but not profiler.el Calls pruning."
+  (flamegraph-test--with-temp-source path
+      "(defun outer ()
+  (foo (bar)))
+"
+    (let* ((bar (profiler-make-calltree :entry "bar" :count 10))
+           (foo (profiler-make-calltree :entry "foo" :count 10
+                                        :children (list bar)))
+           (outer (profiler-make-calltree
+                   :entry (format "outer (%s:1)" path)
+                   :count 10 :children (list foo)))
+           (out (flamegraph-test--describe-help outer)))
+      (should (string-match-p "foo (bar)" out))
+      (should (flamegraph-test--has-face out 'flamegraph-call-site-hot))
+      (should (string-match "\nCalls\n" out))
+      (let ((calls (substring out (match-end 0))))
+        (should (flamegraph-test--line-with "foo" (split-string calls "\n" t)))
+        (should-not (flamegraph-test--line-with "bar"
+                                                (split-string calls "\n" t)))))))
 
 ;;; `flamegraph-find-source' branches
 

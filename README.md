@@ -13,11 +13,10 @@ frame sits on the top row, and the stack grows downward. Identical
 call paths are merged and children are sorted heaviest-first.
 
 `RET` / `mouse-1` zooms into a frame; `d` opens a description (parent,
-callees, self-time) with a source code snippet highlighting its
-outgoing calls; `f` opens that source. The snippet and `f` need the
-data to include `file:line` — Elisp profiles always do; for perf,
-fold with `-F +srcline` (see [Recording](#recording-profile-data)
-below).
+callees, self-time) with a source code snippet; `f` opens that source.
+The snippet and `f` need a source location: Elisp profiler frames can be
+resolved through their definitions; for perf, fold with `-F +srcline`
+(see [Recording](#recording-profile-data) below).
 
 <p style="white-space:nowrap">
   <img src="docs/img/flamegraph-light.png" width="400">
@@ -28,10 +27,14 @@ below).
   <img src="docs/img/describe-dark.png"   width="400">
 </p>
 
-In the snippet, we pull in and highlight the source lines where the
-frame's outgoing calls appear. Parent and callees are cross-references
+In the snippet, we try to pull in and highlight the source lines where
+the frame's outgoing calls appear. Parent and callees are cross-references
 (click to describe them); `l` / `r` walk the navigation history,
 help-mode style.
+
+For Emacs profiler data, those source matches may also add structure to
+the Calls tree. Folded-stacks profiles use them only for snippet
+highlighting, and keep the Calls list flat.
 
 ## Installation
 
