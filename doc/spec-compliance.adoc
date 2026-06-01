@@ -1,0 +1,377 @@
+= adoc-mode AsciiDoc Specification Compliance
+:toc: left
+:toclevels: 2
+
+This document audits how well `adoc-mode` tracks the modern AsciiDoc
+language as defined by the
+https://gitlab.eclipse.org/eclipse/asciidoc-lang/asciidoc-lang[Eclipse
+AsciiDoc Language project] (the AsciiDoc Working Group spec and the
+Asciidoctor documentation it is derived from).
+
+`adoc-mode`'s syntax rules originate from the old Python `asciidoc.conf`,
+so some constructs reflect AsciiDoc.py / legacy "compat-mode" behaviour
+rather than the current language. This audit identifies that drift.
+
+== Scope and method
+
+`adoc-mode` is a font-lock and editing mode, not a parser or converter.
+"Compliance" therefore means: does the mode *recognise and highlight*
+the constructs the current spec defines, without highlighting syntax the
+spec has dropped or redefined? Pure processing concerns (substitution
+ordering, ToC generation, include resolution, docinfo, conversion) are
+out of scope, except where they have a syntactic surface the editor
+highlights (e.g. `include::`/`ifdef::` directives).
+
+Findings are graded:
+
+* *High* - the mode highlights something incorrectly per the current
+  spec, or misses a common modern construct, in a way users will hit
+  often.
+* *Medium* - a real gap or drift, but in a less common construct.
+* *Low* - cosmetic, rare, or deprecated-but-harmless.
+
+== Summary of key findings
+
+[cols="1,3,1",options="header"]
+|===
+| Area | Finding | Severity
+
+| text
+| `+text+` / `++text++` are still highlighted as monospace (legacy
+  AsciiDoc.py "compat-mode"). In modern AsciiDoc the backtick is the only
+  monospace delimiter; `+` is a passthrough delimiter, not monospace.
+| High
+
+| text
+| Modern curved-quote syntax `+"`text`"+` (double) and ``'`text`'`` (single)
+  is not recognised.
+| Medium
+
+| text
+| The deprecated AsciiDoc.py curved-quote templates `` `text' `` and
+  ``\`\`text''`` are still offered in the menu / tempo templates.
+| Low
+
+| lists
+| Checklist items (`* [ ]`, `* [x]`, `* [*]`) are not recognised.
+| Medium
+
+| blocks / sections / attributes
+| The modern block-attribute *ID shorthand* `[#id]` (and `[#id.role]`)
+  is not recognised; only the legacy block anchor `[[id]]` is.
+| Medium
+
+| text
+| The literal-monospace enclosure `` `+text+` `` is not handled as a unit.
+| Low
+
+| blocks
+| Collapsible blocks (`[%collapsible]`) have no dedicated handling.
+| Low
+|===
+
+== Per-module audit
+
+=== text (inline formatting)
+
+[cols="2,2,3,1",options="header"]
+|===
+| Construct | Spec | adoc-mode | Severity
+
+| Bold `*x*` / `**x**`
+| Constrained + unconstrained
+| Supported
+| -
+
+| Italic `_x_` / `__x__`
+| Constrained + unconstrained
+| Supported
+| -
+
+| Monospace `` `x` `` / ` ``x`` `
+| Backtick, constrained + unconstrained
+| Supported
+| -
+
+| Monospace `+x+` / `++x++`
+| *Not* monospace in modern AsciiDoc (legacy compat-mode only); `+` is a
+  passthrough delimiter
+| Still highlighted as monospace (`adoc-typewriter-face`)
+| High
+
+| Highlight `#x#` / `##x##`
+| Marked text
+| Supported
+| -
+
+| Superscript `^x^` / Subscript `~x~`
+| Unconstrained
+| Supported
+| -
+
+| Curved quotes `+"`x`"+` / ``'`x`'``
+| Modern smart-quote syntax (backticks inside straight quotes)
+| Not recognised
+| Medium
+
+| Legacy curved quotes `` `x' `` / ``\`\`x''``
+| Deprecated in Asciidoctor
+| Not fontified (good), but still offered as menu/tempo templates
+| Low
+
+| Literal monospace `` `+x+` ``
+| Backtick + plus enclosure (a passthrough shorthand)
+| Outer/inner delimiters highlighted separately, not as one literal span
+| Low
+
+| Roles `[.role]#x#`, strike/underline/overline
+| Built-in + custom roles
+| Supported (`adoc-role-face-alist`)
+| -
+|===
+
+=== blocks
+
+[cols="2,3,1",options="header"]
+|===
+| Construct | adoc-mode | Severity
+
+| Delimited blocks: example `====`, sidebar `****`, listing `----`,
+  literal `....`, quote `____`, passthrough `++++`, open `--`, comment `////`
+| Supported
+| -
+
+| Admonition block `[NOTE]` and paragraph `NOTE:`
+| Supported (both styles)
+| -
+
+| Block title `.Title`
+| Supported
+| -
+
+| Block anchor `[[id]]`
+| Supported
+| -
+
+| Block ID shorthand `[#id]` / `[#id.role]`
+| Not recognised (only `[[id]]`); this is the preferred modern form
+| Medium
+
+| Hard line breaks (line ending in ` +`)
+| Preserved when filling; `[%hardbreaks]` option not specially handled
+| Low
+
+| Collapsible `[%collapsible]`
+| No dedicated handling (content still highlights)
+| Low
+
+| Discrete headings `[discrete]`
+| Heading still highlights; the `[discrete]` style is a generic attr line
+| Low
+|===
+
+=== lists
+
+[cols="2,3,1",options="header"]
+|===
+| Construct | adoc-mode | Severity
+
+| Unordered `*` / `-`, nested by repetition
+| Supported
+| -
+
+| Ordered, explicit (`1.`, `a.`, `i)`) and implicit (`.`, `..`)
+| Supported
+| -
+
+| Description lists `term::` / `;;` / `:::` / `::::`
+| Supported
+| -
+
+| Q&A `term::` under `[qanda]`, glossary
+| Supported
+| -
+
+| Callout list `<1>`
+| Supported
+| -
+
+| Checklists `* [ ]` / `* [x]` / `* [*]`
+| Not recognised (highlighted as a plain unordered item, the `[ ]`/`[x]`
+  is not treated as a checkbox)
+| Medium
+
+| List continuation `+`
+| Supported
+| -
+|===
+
+=== sections
+
+[cols="2,3,1",options="header"]
+|===
+| Construct | adoc-mode | Severity
+
+| One-line titles `=` ... `======` (levels 0-5)
+| Supported
+| -
+
+| Two-line (setext) titles
+| Editing commands (promote/demote, imenu, navigation) understand them,
+  but highlighting is *off by default* (`adoc-enable-two-line-title` is
+  nil) - which matches their deprecated status
+| -
+
+| Auto-generated IDs, section refs `<<id>>`
+| Refs supported; IDs are a processing concern
+| -
+
+| Custom section ID via `[#id]` shorthand
+| Not recognised (see blocks / attributes)
+| Medium
+
+| Discrete heading, special sections (appendix, bibliography, glossary)
+| Styles are generic attribute lines; titles highlight normally
+| Low
+|===
+
+=== macros
+
+[cols="2,3,1",options="header"]
+|===
+| Construct | adoc-mode | Severity
+
+| Cross references `<<id>>` / `xref:id[]`
+| Supported
+| -
+
+| Link / URL macros, autolinks (bare URLs), mailto
+| Supported
+| -
+
+| Image `image:` / `image::`, with attributes
+| Supported (plus inline preview)
+| -
+
+| Footnotes `footnote:[]` / `footnoteref:[]`
+| Supported (dedicated faces)
+| -
+
+| UI macros `kbd:[]`, `btn:[]`, `menu:[]`
+| Supported
+| -
+
+| STEM `stem:[]`, `latexmath:[]`, `asciimath:[]`
+| Supported
+| -
+
+| Passthrough macro `pass:[]`
+| Supported
+| -
+
+| Icon macro `icon:name[]`
+| Not recognised (no `icon` keyword registered; macros are matched by name)
+| Medium
+|===
+
+=== tables
+
+[cols="2,3,1",options="header"]
+|===
+| Construct | adoc-mode | Severity
+
+| Table delimiter `|===`, cells `|`
+| Supported
+| -
+
+| Cell / column specifiers (span, align, style)
+| Supported (`adoc-re-cell-specifier`)
+| -
+
+| Alternative formats (CSV `,`, DSV `:`) via `format=`
+| Verify - cell highlighting assumes the `|` PSV format
+| Low
+|===
+
+=== attributes
+
+[cols="2,3,1",options="header"]
+|===
+| Construct | adoc-mode | Severity
+
+| Attribute entry `:name: value`, unset `:name!:`
+| Supported (dedicated key/value faces)
+| -
+
+| Attribute reference `{name}`
+| Supported (resolved in image paths too)
+| -
+
+| Element attribute list `[positional, name=value]`
+| Supported
+| -
+
+| ID/role/option shorthand `[#id.role%opt]`
+| Partial - the attribute list highlights, but `#id` / `.role` / `%opt`
+  shorthands inside it are not individually recognised
+| Medium
+
+| Counters `{counter:name}`, character-replacement refs
+| Verify
+| Low
+|===
+
+=== subs, pass, verbatim
+
+[cols="2,3,1",options="header"]
+|===
+| Construct | adoc-mode | Severity
+
+| Passthrough delimited block `++++`, macro `pass:[]`, triple-plus `+++`, `$$`
+| Supported
+| -
+
+| Listing `----`, literal `....` blocks
+| Supported
+| -
+
+| Source blocks `[source,lang]` with native fontification
+| Supported
+| -
+
+| Callouts in verbatim blocks `<1>`
+| Supported
+| -
+|===
+
+=== Lower-priority / processing-only modules
+
+These are largely conversion concerns with little or no editor surface:
+
+* *directives* - `include::`, `ifdef::`/`ifndef::`/`endif::`, `ifeval::`
+  are highlighted as preprocessor lines (supported).
+* *toc* - generated output; no source syntax to highlight.
+* *docinfo* - external files; out of scope.
+* *stem* - the `[stem]` block and `stem:[]` macro surfaces are covered
+  under blocks/macros.
+* *document* - header (title, author, revision, attribute entries) is
+  highlighted; most of this module is processing semantics.
+
+== Recommended follow-ups (prioritised)
+
+. *Stop highlighting `+text+` / `++text++` as monospace by default.* This
+  is the clearest spec drift. Consider gating the legacy behaviour behind
+  a `compat-mode` defcustom (default off) so users who set `:compat-mode:`
+  can re-enable it.
+. *Recognise checklist items* (`* [ ]`, `* [x]`, `* [*]`) with a dedicated
+  face for the checkbox.
+. *Recognise the block-attribute ID/role/option shorthand* `[#id]`,
+  `[#id.role]`, `[%opt]` on block attribute lines, and treat `[#id]` as a
+  block anchor for `adoc-goto-ref-label` / xref following.
+. *Add modern curved-quote highlighting* `+"`text`"+` and ``'`text`'``.
+. *Drop or de-emphasise the deprecated `` `text' `` / ``\`\`text''``
+  templates* in the menu, or relabel them as legacy.
+. *Add the `icon:name[]` inline macro* to the recognised macro set
+  (currently unhandled).
+. *Verify* CSV/DSV table formats, counters, and the literal-monospace
+  `` `+text+` `` enclosure, and add handling where it is missing.
