@@ -181,6 +181,24 @@ callees outside it must still be found."
                      '("company-abort" "company-call-frontends"
                        "run-with-timer"))))))
 
+(ert-deftest flamegraph-test-walker-ignores-string-and-comment-matches ()
+  "A callee name mentioned in a docstring or comment is not a call site:
+only the real call in code is matched, not the earlier textual mentions."
+  (flamegraph-test--with-elisp-source
+      "(defun outer ()
+  \"Docstring mentioning foo.\"
+  ;; A comment mentioning foo.
+  (foo))"
+    (let* ((foo (profiler-make-calltree :entry 'foo :count 1))
+           (outer (profiler-make-calltree :entry 'outer :count 1
+                                          :children (list foo)))
+           (regions (flamegraph--collect-nested-call-sites
+                     outer (point-min) (point-max))))
+      ;; Exactly one region: the call on the last line, not the docstring
+      ;; or comment occurrences.
+      (should (equal (flamegraph-test--region-texts regions) '("foo")))
+      (should (= 4 (line-number-at-pos (car (car regions))))))))
+
 (ert-deftest flamegraph-test-walker-unsearchable-names-skipped ()
   "An unsearchable name (e.g. \"[unknown]\") must not error or recurse."
   (flamegraph-test--with-elisp-source

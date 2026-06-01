@@ -733,14 +733,24 @@ tree may show cold callees the snippet omits."
                        ;; A match narrows the region for this child's own
                        ;; walk, whose callee-body children are then hidden.
                        (while (re-search-forward re (cdr region) t)
-                         (setq found t)
                          (let ((mb (match-beginning 0))
                                (me (match-end 0)))
-                           (when (>= weight flamegraph-call-site-threshold)
-                             (push (list mb me weight) regions))
-                           (when-let* ((sub (flamegraph--enclosing-form-region
-                                             mb)))
-                             (walk k sub nil))))
+                           ;; Skip occurrences in strings or comments (e.g. a
+                           ;; name mentioned in a docstring): they are not
+                           ;; calls, and their enclosing form would escape the
+                           ;; current region.  `syntax-ppss' moves point, so
+                           ;; guard it.
+                           (unless (save-excursion (nth 8 (syntax-ppss mb)))
+                             (setq found t)
+                             (when (>= weight flamegraph-call-site-threshold)
+                               (push (list mb me weight) regions))
+                             (when-let* ((sub (flamegraph--enclosing-form-region
+                                               mb)))
+                               ;; Clamp to REGION so a stray enclosing form
+                               ;; can never widen the search.
+                               (walk k (cons (max (car sub) (car region))
+                                             (min (cdr sub) (cdr region)))
+                                     nil)))))
                        (when (or found concealed-ok)
                          (when shown (puthash k t shown))
                          (setq any t))))))))
