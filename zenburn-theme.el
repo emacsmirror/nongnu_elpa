@@ -108,6 +108,14 @@ for the list of semantic names that ship with the theme."
   :group 'zenburn-theme
   :package-version '(zenburn . "2.6"))
 
+(defface zenburn-variable-pitch '((t :inherit default))
+  "Face used by Zenburn for headings and titles that should optionally
+render in a variable-pitch font.  The theme rebinds this to inherit
+from `variable-pitch' when `zenburn-use-variable-pitch' is non-nil.
+Customize this face directly if you want finer-grained control than
+the boolean toggle provides."
+  :group 'zenburn-theme)
+
 ;;; Color Palette
 
 (defvar zenburn-default-colors-alist
@@ -220,9 +228,7 @@ the just-introduced bindings."
           ,@(mapcar (lambda (cons)
                       (list (intern (car cons)) (cdr cons)))
                     (append zenburn-default-semantic-colors-alist
-                            zenburn-override-semantic-colors-alist))
-          (z-variable-pitch (if zenburn-use-variable-pitch
-                                'variable-pitch 'default)))
+                            zenburn-override-semantic-colors-alist)))
      ,@body))
 
 ;;; Theme Faces
@@ -252,6 +258,7 @@ the just-introduced bindings."
    `(warning ((t (:foreground ,zenburn-warning :weight bold))))
    `(tooltip ((t (:foreground ,zenburn-fg :background ,zenburn-bg+1))))
    `(read-multiple-choice-face ((t (:foreground ,zenburn-yellow :weight bold))))
+   `(zenburn-variable-pitch ((t (:inherit ,(if zenburn-use-variable-pitch 'variable-pitch 'default)))))
 ;;;;; ansi-colors
    `(ansi-color-black ((t (:foreground ,zenburn-bg
                                        :background ,zenburn-bg-1))))
@@ -437,21 +444,21 @@ the just-introduced bindings."
    `(adoc-subscript-face ((t (:foreground ,zenburn-fg :height 0.8))))
    `(adoc-superscript-face ((t (:foreground ,zenburn-fg :height 0.8))))
    `(adoc-table-face ((t (:foreground ,zenburn-green+2))))
-   `(adoc-title-face ((t (:inherit ,z-variable-pitch :foreground ,zenburn-orange :weight bold))))
-   `(adoc-title-0-face ((t (:inherit ,z-variable-pitch :foreground ,zenburn-blue :weight bold
+   `(adoc-title-face ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-orange :weight bold))))
+   `(adoc-title-0-face ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-blue :weight bold
                                      ,@(when zenburn-scale-outline-headlines
                                          (list :height zenburn-height-plus-4))))))
-   `(adoc-title-1-face ((t (:inherit ,z-variable-pitch :foreground ,zenburn-orange :weight bold
+   `(adoc-title-1-face ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-orange :weight bold
                                      ,@(when zenburn-scale-outline-headlines
                                          (list :height zenburn-height-plus-3))))))
-   `(adoc-title-2-face ((t (:inherit ,z-variable-pitch :foreground ,zenburn-green+4 :weight bold
+   `(adoc-title-2-face ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-green+4 :weight bold
                                      ,@(when zenburn-scale-outline-headlines
                                          (list :height zenburn-height-plus-2))))))
-   `(adoc-title-3-face ((t (:inherit ,z-variable-pitch :foreground ,zenburn-blue-1 :weight bold
+   `(adoc-title-3-face ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-blue-1 :weight bold
                                      ,@(when zenburn-scale-outline-headlines
                                          (list :height zenburn-height-plus-1))))))
-   `(adoc-title-4-face ((t (:inherit ,z-variable-pitch :foreground ,zenburn-yellow-2 :weight bold))))
-   `(adoc-title-5-face ((t (:inherit ,z-variable-pitch :foreground ,zenburn-cyan :weight bold))))
+   `(adoc-title-4-face ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-yellow-2 :weight bold))))
+   `(adoc-title-5-face ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-cyan :weight bold))))
    `(adoc-typewriter-face ((t (:foreground ,zenburn-green+1))))
    `(adoc-value-face ((t (:foreground ,zenburn-green))))
    `(adoc-verbatim-face ((t (:background ,zenburn-bg-05 :extend t))))
@@ -1630,22 +1637,22 @@ the just-introduced bindings."
    `(org-formula ((t (:foreground ,zenburn-yellow-2))))
    `(org-headline-done ((t (:foreground ,zenburn-green+3))))
    `(org-hide ((t (:foreground ,zenburn-bg))))
-   `(org-level-1 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-orange
+   `(org-level-1 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-orange
                                ,@(when zenburn-scale-org-headlines
                                    (list :height zenburn-height-plus-4))))))
-   `(org-level-2 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-green+4
+   `(org-level-2 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-green+4
                                ,@(when zenburn-scale-org-headlines
                                    (list :height zenburn-height-plus-3))))))
-   `(org-level-3 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-blue-1
+   `(org-level-3 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-blue-1
                                ,@(when zenburn-scale-org-headlines
                                    (list :height zenburn-height-plus-2))))))
-   `(org-level-4 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-yellow-2
+   `(org-level-4 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-yellow-2
                                ,@(when zenburn-scale-org-headlines
                                    (list :height zenburn-height-plus-1))))))
-   `(org-level-5 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-cyan))))
-   `(org-level-6 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-green+2))))
-   `(org-level-7 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-red+2))))
-   `(org-level-8 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-magenta))))
+   `(org-level-5 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-cyan))))
+   `(org-level-6 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-green+2))))
+   `(org-level-7 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-red+2))))
+   `(org-level-8 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-magenta))))
    `(org-link ((t (:foreground ,zenburn-yellow-2 :underline t))))
    `(org-quote ((t (:background ,zenburn-bg+05 :extend t))))
    `(org-scheduled ((t (:foreground ,zenburn-green+4))))
@@ -1665,7 +1672,7 @@ the just-introduced bindings."
    `(org-mode-line-clock-overrun ((t (:foreground ,zenburn-bg :background ,zenburn-red-1))))
    `(org-ellipsis ((t (:foreground ,zenburn-yellow-1 :underline t))))
    `(org-footnote ((t (:foreground ,zenburn-cyan :underline t))))
-   `(org-document-title ((t (:inherit ,z-variable-pitch :foreground ,zenburn-blue
+   `(org-document-title ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-blue
                                       :weight bold
                                       ,@(when zenburn-scale-org-headlines
                                           (list :height zenburn-height-plus-4))))))
@@ -1685,22 +1692,22 @@ the just-introduced bindings."
    `(org-ref-glossary-face ((t :underline t)))
    `(org-ref-acronym-face ((t :underline t)))
 ;;;;; outline
-   `(outline-1 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-orange
+   `(outline-1 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-orange
                              ,@(when zenburn-scale-outline-headlines
                                  (list :height zenburn-height-plus-4))))))
-   `(outline-2 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-green+4
+   `(outline-2 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-green+4
                              ,@(when zenburn-scale-outline-headlines
                                  (list :height zenburn-height-plus-3))))))
-   `(outline-3 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-blue-1
+   `(outline-3 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-blue-1
                              ,@(when zenburn-scale-outline-headlines
                                  (list :height zenburn-height-plus-2))))))
-   `(outline-4 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-yellow-2
+   `(outline-4 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-yellow-2
                              ,@(when zenburn-scale-outline-headlines
                                  (list :height zenburn-height-plus-1))))))
-   `(outline-5 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-cyan))))
-   `(outline-6 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-green+2))))
-   `(outline-7 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-red-4))))
-   `(outline-8 ((t (:inherit ,z-variable-pitch :foreground ,zenburn-blue-4))))
+   `(outline-5 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-cyan))))
+   `(outline-6 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-green+2))))
+   `(outline-7 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-red-4))))
+   `(outline-8 ((t (:inherit zenburn-variable-pitch :foreground ,zenburn-blue-4))))
 ;;;;; p4
    `(p4-depot-added-face ((t :inherit diff-added)))
    `(p4-depot-branch-op-face ((t :inherit diff-changed)))

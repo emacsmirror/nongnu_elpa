@@ -35,6 +35,7 @@
 
 ### Changes
 
+* Replace the internal `z-variable-pitch` macro shim with a real `zenburn-variable-pitch` face that headings inherit from. `zenburn-use-variable-pitch` still toggles the default behavior (inherit `variable-pitch` vs `default`), and users can now also customize `zenburn-variable-pitch` directly via `M-x customize-face` for finer-grained control.
 * Promote `zenburn-use-variable-pitch`, `zenburn-scale-org-headlines`, and `zenburn-scale-outline-headlines` from plain `defvar`s to boolean `defcustom`s so they show up in `M-x customize-group RET zenburn-theme` and accept safe file-local values.
 * Drop the legacy `((class color) (min-colors 89))` display-class dance and the obsolete low-color terminal fallbacks (`:inverse-video`, swapped fg/bg, monochrome `:weight bold`) for `mode-line`, `region`, `diff-header`, `diff-file-header`, `hl-line`, `hl-line-face`, and `hl-sexp-face`. Modern terminals all qualify as full-color, so the branching no longer earns its keep.
 * Drop `zenburn-height-minus-1`, which has been defined but never referenced anywhere in the theme.
