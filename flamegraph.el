@@ -712,14 +712,12 @@ cold callees the snippet omits."
                       (weight (/ (float (profiler-calltree-count k)) total)))
                  (cond
                   ((flamegraph--skip-through-p entry)
-                   ;; Skip-through — transparent descend, no narrowing.
+                   ;; Transparent: descend without narrowing.
                    (when (walk k region)
                      (when reached (puthash k t reached))
                      (setq reachable t)))
                   ((flamegraph--callee-name-acceptable-p name)
-                   ;; Function — search in the current region.  Each
-                   ;; match is highlighted and narrows the search for this
-                   ;; child's own children.
+                   ;; A match narrows the region for this child's own walk.
                    (save-excursion
                      (goto-char (car region))
                      (let ((re (concat "\\_<" (regexp-quote name) "\\_>"))
