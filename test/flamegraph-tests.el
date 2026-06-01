@@ -131,6 +131,29 @@ stray `bar' is outside the foo-form's region."
       (should (equal (flamegraph-test--region-texts regions)
                      '("foo" "bar" "baz"))))))
 
+(ert-deftest flamegraph-test-walker-self-recursion-not-renested ()
+  "A function called once in source but recursing deeply in the profile
+is shown once, not as a chain: searching a matched call's arguments must
+not re-match the call's own head symbol."
+  (flamegraph-test--with-elisp-source
+      "(defun outer ()
+  (rec x))"
+    (let* ((rec3 (profiler-make-calltree :entry 'rec :count 1))
+           (rec2 (profiler-make-calltree :entry 'rec :count 2
+                                         :children (list rec3)))
+           (rec1 (profiler-make-calltree :entry 'rec :count 3
+                                         :children (list rec2)))
+           (outer (profiler-make-calltree :entry 'outer :count 3
+                                          :children (list rec1)))
+           (shown (make-hash-table :test 'eq))
+           (regions (flamegraph--collect-nested-call-sites
+                     outer (point-min) (point-max) shown)))
+      ;; Only the one written `(rec x)' is a call site.
+      (should (equal (flamegraph-test--region-texts regions) '("rec")))
+      (should (gethash rec1 shown))
+      (should-not (gethash rec2 shown))
+      (should-not (gethash rec3 shown)))))
+
 (ert-deftest flamegraph-test-walker-macro-expansion-transparent ()
   "Skip-through frames absent from source must not stop the descent.
 The profiler records post-expansion frames (here `while'/`let' from

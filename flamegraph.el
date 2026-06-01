@@ -746,10 +746,13 @@ tree may show cold callees the snippet omits."
                                (push (list mb me weight) regions))
                              (when-let* ((sub (flamegraph--enclosing-form-region
                                                mb)))
-                               ;; Clamp to REGION so a stray enclosing form
-                               ;; can never widen the search.
-                               (walk k (cons (max (car sub) (car region))
-                                             (min (cdr sub) (cdr region)))
+                               ;; Search K's own calls in this call's
+                               ;; arguments: from past the matched head to the
+                               ;; form end, clamped to REGION so a stray
+                               ;; enclosing form cannot widen it.  Starting at
+                               ;; the head's end keeps a recursive callee from
+                               ;; re-matching its own name.
+                               (walk k (cons me (min (cdr sub) (cdr region)))
                                      nil)))))
                        (when (or found concealed-ok)
                          (when shown (puthash k t shown))
