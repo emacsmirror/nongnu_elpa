@@ -6,6 +6,11 @@
 
 * Introduce a semantic color palette layered on top of the positional palette. Faces now reference meaning-based names like `zenburn-comment`, `zenburn-string`, `zenburn-keyword`, `zenburn-error`, and `zenburn-diff-added-bg` instead of `zenburn-green`, `zenburn-red`, etc. Users can remap meanings without touching the base palette via the new `zenburn-override-semantic-colors-alist` customization. Migrated so far: `font-lock`, basic `success`/`warning`, and the `diff` section (which also pulls the previously hardcoded diff backgrounds into named entries).
 * Style the built-in `error` face explicitly. A handful of faces (`eww-invalid-certificate`, `git-annex-dired-annexed-unavailable`, `realgud-bp-enabled-face`) already inherited from it but previously picked up stock Emacs's red rather than the Zenburn palette.
+* Add `completion-preview` support (Emacs 30+).
+* Add `next-error-message` (Emacs 28+) and `header-line-highlight` (Emacs 28+).
+* Add `read-multiple-choice-face`.
+* Extend `tab-line` coverage with `tab-line-tab-modified`, `tab-line-tab-special`, `tab-line-tab-inactive-alternate`, `tab-line-tab-group`, `tab-line-highlight`, and `tab-line-close-highlight`.
+* Extend `eglot` coverage with `eglot-mode-line`, `eglot-parameter-hint-face`, and `eglot-type-hint-face`.
 * Add `lsp-mode` and `lsp-ui` support.
 * Add `hl-todo` support.
 * Add `nerd-icons` support.

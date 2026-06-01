@@ -245,11 +245,13 @@ the just-introduced bindings."
                                   :background ,zenburn-bg-1
                                   :box (:line-width -1 :style released-button)
                                   :extend t))))
+   `(header-line-highlight ((t (:inherit header-line :background ,zenburn-bg+1))))
    `(highlight ((t (:background ,zenburn-bg-05))))
    `(error ((t (:foreground ,zenburn-error :weight bold))))
    `(success ((t (:foreground ,zenburn-success :weight bold))))
    `(warning ((t (:foreground ,zenburn-warning :weight bold))))
    `(tooltip ((t (:foreground ,zenburn-fg :background ,zenburn-bg+1))))
+   `(read-multiple-choice-face ((t (:foreground ,zenburn-yellow :weight bold))))
 ;;;;; ansi-colors
    `(ansi-color-black ((t (:foreground ,zenburn-bg
                                        :background ,zenburn-bg-1))))
@@ -276,6 +278,7 @@ the just-introduced bindings."
    `(compilation-mode-line-exit ((t (:foreground ,zenburn-green+2 :weight bold))))
    `(compilation-mode-line-fail ((t (:inherit error))))
    `(compilation-mode-line-run ((t (:foreground ,zenburn-yellow :weight bold))))
+   `(next-error-message ((t (:background ,zenburn-bg+1 :extend t))))
 ;;;;; completions
    `(completions-annotations ((t (:foreground ,zenburn-fg-1))))
    `(completions-common-part ((t (:foreground ,zenburn-blue))))
@@ -283,6 +286,11 @@ the just-introduced bindings."
    `(completions-group-title ((t (:foreground ,zenburn-yellow :weight bold))))
    `(completions-group-separator ((t (:foreground ,zenburn-green :strike-through t))))
    `(completions-highlight ((t (:background ,zenburn-bg+2))))
+;;;;; completion-preview (Emacs 30+)
+   `(completion-preview ((t (:foreground ,zenburn-fg-1))))
+   `(completion-preview-common ((t (:inherit completion-preview :slant italic))))
+   `(completion-preview-exact ((t (:inherit completion-preview :weight bold))))
+   `(completion-preview-highlight ((t (:inherit completions-highlight))))
 ;;;;; customize
    `(custom-variable-tag ((t (:foreground ,zenburn-blue :weight bold))))
    `(custom-group-tag ((t (:foreground ,zenburn-blue :weight bold :height 1.2))))
@@ -772,6 +780,9 @@ the just-introduced bindings."
    `(eglot-diagnostic-tag-unnecessary-face ((t (:foreground ,zenburn-green :underline (:style wave :color ,zenburn-bg+3)))))
    `(eglot-diagnostic-tag-deprecated-face ((t (:foreground ,zenburn-green :strike-through ,zenburn-bg+3))))
    `(eglot-inlay-hint-face ((t (:foreground ,zenburn-bg+3 :height 0.9))))
+   `(eglot-parameter-hint-face ((t (:inherit eglot-inlay-hint-face))))
+   `(eglot-type-hint-face ((t (:inherit eglot-inlay-hint-face))))
+   `(eglot-mode-line ((t (:foreground ,zenburn-yellow :weight bold))))
 ;;;;; ediff
    `(ediff-current-diff-A ((t (:foreground ,zenburn-fg :background ,zenburn-red-4))))
    `(ediff-current-diff-Ancestor ((t (:foreground ,zenburn-fg :background ,zenburn-red-4))))
@@ -1960,6 +1971,12 @@ the just-introduced bindings."
    `(tab-line-tab-current ((t (:foreground ,zenburn-fg
                                            :background ,zenburn-bg+1
                                            :box (:line-width -1 :style pressed-button)))))
+   `(tab-line-tab-inactive-alternate ((t (:inherit tab-line-tab-inactive :background ,zenburn-bg-05))))
+   `(tab-line-tab-modified ((t (:inherit tab-line-tab :foreground ,zenburn-orange))))
+   `(tab-line-tab-special ((t (:inherit tab-line-tab :slant italic))))
+   `(tab-line-tab-group ((t (:foreground ,zenburn-yellow :weight bold))))
+   `(tab-line-highlight ((t (:inherit tab-line-tab :background ,zenburn-bg+2))))
+   `(tab-line-close-highlight ((t (:foreground ,zenburn-red))))
 ;;;;; transient
    `(transient-heading ((t (:foreground ,zenburn-yellow :weight bold))))
    `(transient-argument ((t (:foreground ,zenburn-orange :weight bold))))
