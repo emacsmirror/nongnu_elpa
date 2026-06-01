@@ -193,10 +193,11 @@ callees outside it must still be found."
                      outer (point-min) (point-max))))
       (should (equal (flamegraph-test--region-texts regions) '("foo"))))))
 
-(ert-deftest flamegraph-test-walker-reached-tracks-source-nesting ()
-  "REACHED marks a node iff a nested call of it is found in the source.
-`wrap' is found and its child `inner' is found inside it -> reached;
-`leaf' is found but its child is not in source -> not reached."
+(ert-deftest flamegraph-test-walker-shown-marks-source-calls ()
+  "SHOWN marks calls found in the source and their source-found nesting,
+but not a matched callee's own body.
+`wrap', `inner' and `leaf' are in the source -> shown; `inner' nests
+under `wrap'.  `not-in-source' is `leaf''s body -> not shown."
   (flamegraph-test--with-elisp-source
       "(defun outer ()
   (wrap (inner))
@@ -209,13 +210,15 @@ callees outside it must still be found."
                                           :children (list hidden)))
            (outer (profiler-make-calltree :entry 'outer :count 20
                                           :children (list wrap leaf)))
-           (reached (make-hash-table :test 'eq))
+           (shown (make-hash-table :test 'eq))
            (regions (flamegraph--collect-nested-call-sites
-                     outer (point-min) (point-max) reached)))
+                     outer (point-min) (point-max) shown)))
       (should (equal (flamegraph-test--region-texts regions)
                      '("wrap" "inner" "leaf")))
-      (should (gethash wrap reached))
-      (should-not (gethash leaf reached)))))
+      (should (gethash wrap shown))
+      (should (gethash inner shown))
+      (should (gethash leaf shown))
+      (should-not (gethash hidden shown)))))
 
 (ert-deftest flamegraph-test-walker-below-threshold-dropped ()
   "Callees below `flamegraph-call-site-threshold' are dropped with subtree.
@@ -235,6 +238,37 @@ hot at 50% is kept; cold at 1% (and its child) are not."
                      outer (point-min) (point-max))))
       ;; hot (50%) kept; deep is 1% of outer -> dropped; cold (1%) dropped.
       (should (equal (flamegraph-test--region-texts regions) '("hot"))))))
+
+(ert-deftest flamegraph-test-walker-hides-matched-callee-body ()
+  "A call found in source hides its own body, even through skip-throughs;
+a call concealed by a macro (under a skip-through in the described body)
+is still shown."
+  (flamegraph-test--with-elisp-source
+      "(defun outer ()
+  (when flag
+    (concealed))
+  (matched))"
+    (let* ((;; `matched' body: matched -> if -> deep-fn  (callee internals)
+            deep-fn (profiler-make-calltree :entry 'deep-fn :count 40))
+           (body-if (profiler-make-calltree :entry 'if :count 40
+                                            :children (list deep-fn)))
+           (matched (profiler-make-calltree :entry 'matched :count 40
+                                            :children (list body-if)))
+           ;; `when' expands to `if' (skip-through) in the described body,
+           ;; concealing the real call `concealed'.
+           (concealed (profiler-make-calltree :entry 'concealed :count 30))
+           (when-if (profiler-make-calltree :entry 'if :count 30
+                                            :children (list concealed)))
+           (outer (profiler-make-calltree :entry 'outer :count 100
+                                          :children (list matched when-if)))
+           (shown (make-hash-table :test 'eq)))
+      (flamegraph--collect-nested-call-sites
+       outer (point-min) (point-max) shown)
+      (should (gethash matched shown))      ; in source
+      (should (gethash when-if shown))      ; scaffolding leading to a call
+      (should (gethash concealed shown))    ; macro-concealed current-def call
+      (should-not (gethash body-if shown))  ; matched's body
+      (should-not (gethash deep-fn shown))))) ; matched's body, deeper
 
 ;;; `flamegraph--symbol-location'
 
@@ -291,14 +325,20 @@ foo at 100% of outer is hot; bar at 10% is warm."
 
 ;;; Calls-tree rendering — `flamegraph--insert-call-tree'
 
-(defun flamegraph-test--render-call-tree (node ref &optional reached-nodes)
+(defun flamegraph-test--render-call-tree (node ref &optional shown-nodes)
   "Render NODE's call tree (REF samples for percent scaling) and return
-the resulting string.  REACHED-NODES are the calltrees to mark as
-expandable (their children shown nested)."
-  (let ((reached (make-hash-table :test 'eq)))
-    (dolist (n reached-nodes) (puthash n t reached))
+the resulting string.  Only nodes in SHOWN-NODES are rendered; when it is
+nil, every descendant of NODE is shown."
+  (let ((shown (make-hash-table :test 'eq)))
+    (if shown-nodes
+        (dolist (n shown-nodes) (puthash n t shown))
+      (cl-labels ((mark (n)
+                    (dolist (k (profiler-calltree-children n))
+                      (puthash k t shown)
+                      (mark k))))
+        (mark node)))
     (with-temp-buffer
-      (flamegraph--insert-call-tree node ref ref 0 nil reached)
+      (flamegraph--insert-call-tree node ref ref 0 nil shown)
       (buffer-string))))
 
 (defun flamegraph-test--line-with (str lines)
@@ -326,16 +366,16 @@ expandable (their children shown nested)."
       (should bar-pos)
       (should (< baz-pos bar-pos)))))
 
-(ert-deftest flamegraph-test-call-tree-reached-expanded-indented ()
-  "A reached child renders its sub-children indented underneath; an
-unreached sibling does not, and stays at the top depth."
+(ert-deftest flamegraph-test-call-tree-shown-child-indented ()
+  "A shown child renders its shown sub-children indented underneath."
   (let* ((real-child (profiler-make-calltree :entry 'real-fn :count 80))
          (if-node    (profiler-make-calltree :entry 'if :count 80
                                              :children (list real-child)))
          (other      (profiler-make-calltree :entry 'other-fn :count 20))
          (root (profiler-make-calltree :entry 'root :count 100
                                        :children (list if-node other))))
-    (let* ((out (flamegraph-test--render-call-tree root 100 (list if-node)))
+    (let* ((out (flamegraph-test--render-call-tree
+                 root 100 (list if-node real-child other)))
            (lines (split-string out "\n" t))
            (if-line    (flamegraph-test--line-with "if" lines))
            (rf-line    (flamegraph-test--line-with "real-fn" lines))
@@ -343,22 +383,22 @@ unreached sibling does not, and stays at the top depth."
       (should if-line)
       (should rf-line)
       (should other-line)
-      ;; real-fn is indented deeper than its reached parent.
+      ;; real-fn is indented deeper than its parent.
       (should (> (flamegraph-test--indent rf-line)
                  (flamegraph-test--indent if-line)))
-      ;; The unreached sibling sits at the same depth as `if'.
+      ;; The sibling sits at the same depth as `if'.
       (should (= (flamegraph-test--indent if-line)
                  (flamegraph-test--indent other-line))))))
 
-(ert-deftest flamegraph-test-call-tree-unreached-not-expanded ()
-  "A child not in REACHED is a leaf: its own descendants are not inlined."
+(ert-deftest flamegraph-test-call-tree-unshown-omitted ()
+  "A child absent from SHOWN is omitted, along with its subtree."
   (let* ((grand (profiler-make-calltree :entry 'grand :count 50))
          (kid   (profiler-make-calltree :entry 'kid :count 50
                                         :children (list grand)))
          (root (profiler-make-calltree :entry 'root :count 100
                                        :children (list kid))))
-    ;; kid is not passed as reached.
-    (let* ((out (flamegraph-test--render-call-tree root 100))
+    ;; Only kid is shown, not grand.
+    (let* ((out (flamegraph-test--render-call-tree root 100 (list kid)))
            (lines (split-string out "\n" t)))
       (should (flamegraph-test--line-with "kid" lines))
       (should-not (flamegraph-test--line-with "grand" lines)))))
@@ -392,7 +432,7 @@ not their immediate parent — so all percents add up under that frame."
                                           :children (list fn)))
          (root (profiler-make-calltree :entry 'root :count 1000
                                        :children (list if-node))))
-    (let* ((out (flamegraph-test--render-call-tree root 1000 (list if-node)))
+    (let* ((out (flamegraph-test--render-call-tree root 1000 (list if-node fn)))
            (fn-line (flamegraph-test--line-with
                      "fn" (split-string out "\n" t))))
       (should fn-line)
@@ -403,9 +443,11 @@ not their immediate parent — so all percents add up under that frame."
   "Every rendered row is a clickable describe-button."
   (let* ((bar (profiler-make-calltree :entry 'bar :count 1))
          (foo (profiler-make-calltree :entry 'foo :count 1
-                                      :children (list bar))))
+                                      :children (list bar)))
+         (shown (make-hash-table :test 'eq)))
+    (puthash bar t shown)
     (with-temp-buffer
-      (flamegraph--insert-call-tree foo 1 1 0 nil (make-hash-table :test 'eq))
+      (flamegraph--insert-call-tree foo 1 1 0 nil shown)
       (goto-char (point-min))
       (let ((b (next-button (point))))
         (should b)

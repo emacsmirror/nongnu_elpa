@@ -564,7 +564,7 @@ necessarily its definition."
           n
           (buffer-substring (line-beginning-position) (line-end-position))))
 
-(defun flamegraph--source-snippet (path line &optional node reached context)
+(defun flamegraph--source-snippet (path line &optional node shown context)
   "Return source context around LINE of PATH as a fontified string, or nil.
 The file is loaded in its major mode so the text is syntax-highlighted.
 Besides CONTEXT lines on each side of the sampled LINE (which is marked),
@@ -573,7 +573,7 @@ that is less indented than the one below it — so the nesting that leads
 to the sampled line stays visible.  When NODE (a calltree) is non-nil, its
 nested calls found in the enclosing defun are highlighted with a heat face
 and their lines kept too (see `flamegraph--collect-nested-call-sites',
-which also fills REACHED).  Skipped runs are elided with `⋯'.  CONTEXT
+which also fills SHOWN).  Skipped runs are elided with `⋯'.  CONTEXT
 defaults to 4."
   (setq context (or context 4))
   (when (and (file-readable-p path) (> line 0))
@@ -600,7 +600,7 @@ defaults to 4."
                             (if (> (point) def-pos) (point) (point-max))))
                  (regions (and node
                                (flamegraph--collect-nested-call-sites
-                                node def-pos def-end reached)))
+                                node def-pos def-end shown)))
                  (keep nil))
             ;; The sampled line and its immediate context.
             (cl-loop for n from lo to hi do (push n keep))
@@ -679,7 +679,7 @@ symbol boundaries in the target buffer's syntax."
   (and (stringp name) (not (string-empty-p name))
        (not (string-match-p "[][[:space:]();,]" name))))
 
-(defun flamegraph--collect-nested-call-sites (node beg end &optional reached)
+(defun flamegraph--collect-nested-call-sites (node beg end &optional shown)
   "Walk NODE's call subtree against the buffer region [BEG END],
 recording each child whose display name matches `\\=\\_<NAME\\=\\_>' in
 the current region as a highlight region.
@@ -695,33 +695,43 @@ of NODE's count, for heat styling.  Callees below
 `flamegraph-call-site-threshold' are omitted from the regions, but still
 traversed.
 
-REACHED, if non-nil, is a hash table into which every node with a child
-found in the source is marked; `flamegraph--insert-call-tree' uses it to
-nest the \"Calls\" tree.  It ignores the threshold, so the tree may show
-cold callees the snippet omits."
+SHOWN, if non-nil, is a hash table into which every node to display in
+the \"Calls\" tree is marked: a skip-through that leads to a shown call,
+a function matched in the source, or a function not in the source but
+whose parent is scaffolding (a skip-through, or the described frame
+itself) — i.e. a macro-concealed call of the current definition.  A
+function not in the source whose parent is a *matched* call is the
+callee's own body and is omitted.  SHOWN ignores the threshold, so the
+tree may show cold callees the snippet omits."
   (let ((total (max 1 (profiler-calltree-count node)))
         regions)
     (cl-labels
-        ;; Walk N's children against REGION; return non-nil if any of them
-        ;; is found in source (so N's callees are worth showing nested).
-        ((walk (n region)
-           (let ((reachable nil))
+        ;; Walk N's children against REGION.  CONCEALED-OK means a child
+        ;; not found in source is current-definition code hidden by a macro
+        ;; (N is scaffolding), so still shown; otherwise it is N's callee
+        ;; body.  Return non-nil if anything in the subtree was shown.
+        ((walk (n region concealed-ok)
+           (let ((any nil))
              (dolist (k (profiler-calltree-children n))
                (let* ((entry (profiler-calltree-entry k))
                       (name (flamegraph--frame-display-name entry))
                       (weight (/ (float (profiler-calltree-count k)) total)))
                  (cond
                   ((flamegraph--skip-through-p entry)
-                   ;; Transparent: descend without narrowing.
-                   (when (walk k region)
-                     (when reached (puthash k t reached))
-                     (setq reachable t)))
+                   ;; Scaffolding: shown only if it leads to a shown call.
+                   ;; It conceals current-definition code only where the
+                   ;; surrounding context already does (CONCEALED-OK), not
+                   ;; inside a matched callee's body.
+                   (when (walk k region concealed-ok)
+                     (when shown (puthash k t shown))
+                     (setq any t)))
                   ((flamegraph--callee-name-acceptable-p name)
-                   ;; A match narrows the region for this child's own walk.
                    (save-excursion
                      (goto-char (car region))
                      (let ((re (concat "\\_<" (regexp-quote name) "\\_>"))
                            (found nil))
+                       ;; A match narrows the region for this child's own
+                       ;; walk, whose callee-body children are then hidden.
                        (while (re-search-forward re (cdr region) t)
                          (setq found t)
                          (let ((mb (match-beginning 0))
@@ -730,39 +740,40 @@ cold callees the snippet omits."
                              (push (list mb me weight) regions))
                            (when-let* ((sub (flamegraph--enclosing-form-region
                                              mb)))
-                             (when (and (walk k sub) reached)
-                               (puthash k t reached)))))
-                       (when found (setq reachable t))))))))
-             reachable)))
-      (walk node (cons beg end)))
+                             (walk k sub nil))))
+                       (when (or found concealed-ok)
+                         (when shown (puthash k t shown))
+                         (setq any t))))))))
+             any)))
+      (walk node (cons beg end) t))
     (nreverse regions)))
 
-(defun flamegraph--insert-call-tree (node total ref depth directory reached)
-  "Insert NODE's children as a tree.
-A child is expanded inline (its own callees shown indented) only when it
-is a key in REACHED, the table from `flamegraph--collect-nested-call-sites'.
-TOTAL is the grand total for the call graph; REF is the count of the
-originally-described frame, used so the printed percentages add up under
-that frame.  DEPTH controls the indentation."
+(defun flamegraph--insert-call-tree (node total ref depth directory shown)
+  "Insert NODE's children as a tree, those in SHOWN nested under it.
+SHOWN is the table from `flamegraph--collect-nested-call-sites'.  A child
+absent from it is skipped, along with its subtree; these are a callee's
+internal calls.  TOTAL is the grand total for the call graph; REF is the
+count of the originally-described frame, used so the printed percentages
+add up under that frame.  DEPTH controls the indentation."
   (let ((kids (sort (copy-sequence (profiler-calltree-children node))
                     (lambda (a b) (> (profiler-calltree-count a)
                                      (profiler-calltree-count b))))))
     (dolist (k kids)
-      (insert (format "%7s  " (profiler-format-number
-                               (profiler-calltree-count k))))
-      (insert (make-string (* 2 depth) ?\s))
-      ;; Dim callees below the threshold: they are absent from the snippet
-      ;; (see `flamegraph-call-site-threshold'), so mark why here.
-      (flamegraph--describe-button
-       k total directory
-       (< (/ (float (profiler-calltree-count k)) ref)
-          flamegraph-call-site-threshold))
-      (insert (format "  (%s)\n"
-                      (flamegraph--percent
-                       (profiler-calltree-count k) ref)))
-      (when (gethash k reached)
+      (when (gethash k shown)
+        (insert (format "%7s  " (profiler-format-number
+                                 (profiler-calltree-count k))))
+        (insert (make-string (* 2 depth) ?\s))
+        ;; Dim callees below the threshold: they are absent from the snippet
+        ;; (see `flamegraph-call-site-threshold'), so mark why here.
+        (flamegraph--describe-button
+         k total directory
+         (< (/ (float (profiler-calltree-count k)) ref)
+            flamegraph-call-site-threshold))
+        (insert (format "  (%s)\n"
+                        (flamegraph--percent
+                         (profiler-calltree-count k) ref)))
         (flamegraph--insert-call-tree k total ref (1+ depth) directory
-                                      reached)))))
+                                      shown)))))
 
 (defun flamegraph--describe-button (node total directory &optional dim)
   "Insert a button that describes NODE, passing TOTAL and DIRECTORY along.
@@ -795,7 +806,7 @@ frames, with Help-style back/forward navigation."
                                       (profiler-calltree-count b)))))
          (self (- count (apply #'+ 0 (mapcar #'profiler-calltree-count kids))))
          (parent (profiler-calltree-parent node))
-         (reached (make-hash-table :test 'eq)))
+         (shown (make-hash-table :test 'eq)))
     (with-help-window (help-buffer)
       (with-current-buffer standard-output
         (if (and (symbolp entry) (fboundp entry))
@@ -815,7 +826,7 @@ frames, with Help-style back/forward navigation."
            'follow-link t
            'help-echo "mouse-1, RET: visit this line")
           (when-let* ((snippet (flamegraph--source-snippet
-                                path (cdr loc) node reached)))
+                                path (cdr loc) node shown)))
             (insert "\n\n" snippet)))
         (insert (format "\n\nSamples  %s (%s of total)    self  %s (%s)\n"
                         (profiler-format-number count)
@@ -827,9 +838,14 @@ frames, with Help-style back/forward navigation."
           (flamegraph--describe-button parent total directory)
           (insert "\n"))
         (when kids
+          ;; With no source to attribute against (e.g. a C frame, or a
+          ;; missing file), nothing was marked: fall back to the direct
+          ;; children as a flat list.
+          (when (zerop (hash-table-count shown))
+            (dolist (k kids) (puthash k t shown)))
           (insert "\nCalls\n")
           (flamegraph--insert-call-tree node total count 0 directory
-                                        reached))))))
+                                        shown))))))
 
 (defun flamegraph-redraw ()
   "Redraw the flame graph, e.g. to pick up a new window width."
