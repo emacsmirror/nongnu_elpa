@@ -2752,6 +2752,9 @@ for multiline constructs to be matched."
    (adoc-kw-inline-macro "footnoteref" t nil 'adoc-footnote-marker-face nil nil
                          '(("id" "text") (("text" . adoc-footnote-text-face))))
 
+   ;; icon macro: icon:target[attrlist], target is the icon name/path
+   (adoc-kw-inline-macro "icon" nil nil 'adoc-command-face 'adoc-internal-reference-face t)
+
    ;; Asciidoctor UI macros
    (adoc-kw-inline-macro "kbd" t nil 'adoc-command-face nil t)
    (adoc-kw-inline-macro "btn" t nil 'adoc-command-face nil t)

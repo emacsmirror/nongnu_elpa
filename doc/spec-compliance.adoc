@@ -275,8 +275,8 @@ Findings are graded:
 | -
 
 | Icon macro `icon:name[]`
-| Not recognised (no `icon` keyword registered; macros are matched by name)
-| Medium
+| *Fixed* - registered as an inline macro
+| -
 |===
 
 === tables
@@ -389,7 +389,7 @@ implements.
 . [ ] *Drop or de-emphasise the deprecated `` `text' `` / ``\`\`text''``
   templates* in the menu (and the `+...+` / `++...++` "Monospaced"
   templates), or relabel them as legacy.
-. [ ] *Add the `icon:name[]` inline macro* to the recognised macro set
-  (currently unhandled).
+. [x] *Add the `icon:name[]` inline macro* to the recognised macro set.
+  Done.
 . [ ] *Verify* CSV/DSV table formats, counters, and the literal-monospace
   `` `+text+` `` enclosure, and add handling where it is missing.

@@ -705,7 +705,11 @@ Don't use it for anything real.")
                   "Click " nil "btn" 'adoc-command-face ":[" 'adoc-meta-face "OK" 'adoc-value-face "]" 'adoc-meta-face)
   ;; pass macro
   (adoctest-faces "asciidoctor-pass-macro"
-                  "Use " nil "pass" 'adoc-command-face ":[" 'adoc-meta-face "raw content" 'adoc-value-face "]" 'adoc-meta-face))
+                  "Use " nil "pass" 'adoc-command-face ":[" 'adoc-meta-face "raw content" 'adoc-value-face "]" 'adoc-meta-face)
+  ;; icon macro
+  (adoctest-faces "asciidoctor-icon-macro"
+                  "icon" 'adoc-command-face ":" 'adoc-meta-face "heart" 'adoc-internal-reference-face
+                  "[" 'adoc-meta-face "2x" 'adoc-value-face "]" 'adoc-meta-face))
 
 (ert-deftest adoctest-test-meta-face-cleanup ()
   ;; begin with a few simple explicit cases which are easier to debug in case of troubles
