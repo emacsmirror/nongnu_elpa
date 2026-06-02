@@ -390,13 +390,10 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
       (cl-letf (((default-value 'major-mode) 'fundamental-mode))
         (with-current-buffer (find-file-noselect index :nowarn)
           (goto-char (point-min))
-          (if (eql elfeed-db-version 4)
-              ;; May need to skip over dummy database
-              (let ((db-1 (read (current-buffer)))
-                    (db-2 (ignore-errors (read (current-buffer)))))
-                (setf elfeed-db (or db-2 db-1)))
-            ;; Just load first database
-            (setf elfeed-db (read (current-buffer))))
+          ;; May need to skip over dummy database
+          (let ((db-1 (read (current-buffer)))
+                (db-2 (ignore-errors (read (current-buffer)))))
+            (setf elfeed-db (or db-2 db-1)))
           (kill-buffer))))
     ;; Perform an upgrade if necessary and possible
     (unless (equal (plist-get elfeed-db :version) elfeed-db-version)
