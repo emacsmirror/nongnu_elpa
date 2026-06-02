@@ -58,8 +58,10 @@ Findings are graded:
 | Medium
 
 | blocks / sections / attributes
-| The modern block-attribute *ID shorthand* `[#id]` (and `[#id.role]`)
-  is not recognised; only the legacy block anchor `[[id]]` is.
+| [.line-through]#The modern block-attribute *ID shorthand* `[#id]` is not
+  recognised.# *FIXED* - `[#id]` is highlighted as an anchor and is
+  navigable; the `.role`/`%opt` shorthands inside an arbitrary attribute
+  list are still not individually faced.
 | Medium
 
 | text
@@ -157,8 +159,8 @@ Findings are graded:
 | -
 
 | Block ID shorthand `[#id]` / `[#id.role]`
-| Not recognised (only `[[id]]`); this is the preferred modern form
-| Medium
+| *Fixed* - highlighted as an anchor and navigable (see `block-id-shorthand`)
+| -
 
 | Hard line breaks (line ending in ` +`)
 | Preserved when filling; `[%hardbreaks]` option not specially handled
@@ -230,8 +232,8 @@ Findings are graded:
 | -
 
 | Custom section ID via `[#id]` shorthand
-| Not recognised (see blocks / attributes)
-| Medium
+| Fixed (see blocks / attributes)
+| -
 
 | Discrete heading, special sections (appendix, bibliography, glossary)
 | Styles are generic attribute lines; titles highlight normally
@@ -315,8 +317,9 @@ Findings are graded:
 | -
 
 | ID/role/option shorthand `[#id.role%opt]`
-| Partial - the attribute list highlights, but `#id` / `.role` / `%opt`
-  shorthands inside it are not individually recognised
+| Partial - a pure `[#id]` line highlights the id as an anchor and is
+  navigable; the `.role` / `%opt` shorthands inside an arbitrary attribute
+  list are still not individually faced
 | Medium
 
 | Counters `{counter:name}`, character-replacement refs
@@ -377,9 +380,11 @@ implements.
 . [x] *Recognise checklist items* (`* [ ]`, `* [x]`, `* [*]`) with a
   dedicated face for the checkbox. Done - `adoc-kw-checkbox` /
   `adoc-checkbox-face`.
-. [ ] *Recognise the block-attribute ID/role/option shorthand* `[#id]`,
-  `[#id.role]`, `[%opt]` on block attribute lines, and treat `[#id]` as a
-  block anchor for `adoc-goto-ref-label` / xref following.
+. [x] *Recognise the block-attribute ID shorthand* `[#id]`. Done -
+  `[#id]` / `[#id.role%opt]` lines highlight the id as an anchor
+  (`block-id-shorthand`) and `adoc-goto-ref-label` follows `[#id]` (and
+  `[style#id]`) targets. Faceting `.role` / `%opt` inside arbitrary
+  attribute lists is left as a smaller follow-up.
 . [ ] *Add modern curved-quote highlighting* `+"`text`"+` and ``'`text`'``.
 . [ ] *Drop or de-emphasise the deprecated `` `text' `` / ``\`\`text''``
   templates* in the menu (and the `+...+` / `++...++` "Monospaced"

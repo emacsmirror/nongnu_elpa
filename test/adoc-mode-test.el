@@ -1383,6 +1383,30 @@ on top of the `<mark>' default)."
         (should (equal (line-number-at-pos) 3)))
     (kill-buffer "adoc-test")))
 
+(ert-deftest adoctest-test-block-id-shorthand-faces ()
+  ;; the id in a [#id] block-attribute line is highlighted like an anchor
+  (adoctest-faces "block-id-shorthand"
+                  "[#" 'adoc-meta-face "myid" 'adoc-anchor-face "]" 'adoc-meta-face)
+  (adoctest-faces "block-id-shorthand-role"
+                  "[#" 'adoc-meta-face "myid" 'adoc-anchor-face ".role%open]" 'adoc-meta-face))
+
+(ert-deftest adoctest-test-goto-block-id-shorthand ()
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "[#sect2]\n"          ;1
+            "== Two\n"            ;2
+            "\n"                  ;3
+            "[source#sid]\n"      ;4
+            "----\n"              ;5
+            "code\n"              ;6
+            "----\n")             ;7
+    ;; the pure shorthand form
+    (adoc-goto-ref-label "sect2")
+    (should (equal (line-number-at-pos) 1))
+    ;; the style+id form is navigable too
+    (adoc-goto-ref-label "sid")
+    (should (equal (line-number-at-pos) 4))))
+
 (defun adoctest-template (template expected)
   "Todo document adoctest-template TEMPLATE EXPECTED."
   (let ((buf-name (concat "adoctest-" (symbol-name template))))

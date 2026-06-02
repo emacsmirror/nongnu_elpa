@@ -1366,10 +1366,19 @@ this id. If ID is nil, the regexp matches any anchor."
    ((eq type 'inline-general)
     (adoc-re-inline-macro "anchor" id))
 
+   ((eq type 'block-id-shorthand)
+    ;; Modern block ID shorthand on a block attribute line, e.g. [#id],
+    ;; [#id.role%opt] or [style#id].  Group 1 is the id; anything before the
+    ;; `#' is a positional style and anything after is a role/option/attr.
+    (concat "^\\[\\(?:[^][#\n]*\\)#"
+            "\\(" (if id (regexp-quote id) (adoc-re-id)) "\\)"
+            "\\(?:[.%,][^]\n]*\\)?"
+            "\\][ \t]*$"))
+
    ((null type)
     (mapconcat
      (lambda (x) (adoc-re-anchor x id))
-     '(block-id inline-special biblio inline-general)
+     '(block-id block-id-shorthand inline-special biblio inline-general)
      "\\|"))
 
    (t
@@ -2598,6 +2607,14 @@ for multiline constructs to be matched."
          '(0 '(face adoc-meta-face adoc-reserved block-del))
          '(1 '(face adoc-anchor-face adoc-flyspell-ignore t) t) ;; BLOCK-ID
          '(2 'adoc-secondary-text-face t t)) ;; SECONDARY-TEXT
+   ;; block id shorthand on its own line: [#id], [#id.role], [#id.role%opt]
+   (list `(lambda (end)
+            (adoc-kwf-std
+             end
+             "^\\(\\[#\\)\\([-a-zA-Z0-9_]+\\)\\(?:[.%][^]\n]*\\)?\\(\\]\\)[ \t]*$"
+             '(0)))
+         '(0 '(face adoc-meta-face adoc-reserved block-del))
+         '(2 '(face adoc-anchor-face adoc-flyspell-ignore t) t)) ;; BLOCK-ID
 
    ;; --- general attribute list block element
    ;; ^\[(?P<attrlist>.*)\]$

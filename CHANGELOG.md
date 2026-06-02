@@ -4,6 +4,7 @@
 
 ### New features
 
+- Recognise the modern block ID shorthand `[#id]`. The id in a `[#id]` / `[#id.role%opt]` block-attribute line is now highlighted like an anchor (`adoc-anchor-face`), and cross-reference following (`adoc-goto-ref-label`, `M-.`) jumps to `[#id]` block IDs - including the `[style#id]` form, e.g. `[source#id]` - not just `[[id]]` anchors.
 - Highlight checklist items. An unordered list item whose text begins with `[ ]` (unchecked), `[x]`/`[X]`, or `[*]` (checked) now fontifies the checkbox with the new `adoc-checkbox-face` (inherits `font-lock-constant-face`).
 - Honour backslash escapes in inline formatting: a backslash before a formatting delimiter (e.g. `\*not bold*`, `\**nor this**`, `` \`nor code` ``) now de-emphasises the backslash and leaves the escaped span as literal text instead of fontifying it as markup. Previously the unconstrained forms still leaked an inner constrained match (`\**x**` highlighted `x`).
 - `fill-paragraph` (and auto-fill) now preserve AsciiDoc hard line breaks: a line ending in a space and a `+` is no longer merged with the following line. Filling still joins ordinary soft-wrapped lines and indents list-item continuations.
