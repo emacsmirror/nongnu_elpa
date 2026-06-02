@@ -50,8 +50,10 @@ Findings are graded:
 | Medium
 
 | text
-| The deprecated AsciiDoc.py curved-quote templates `` `text' `` and
-  ``\`\`text''`` are still offered in the menu / tempo templates.
+| [.line-through]#The deprecated AsciiDoc.py curved-quote templates
+  `` `text' `` and ``\`\`text''`` are still offered in the menu / tempo
+  templates.# *FIXED* - replaced with the modern `+"`text`"+` / ``'`text`'``
+  templates; the `+...+` templates are relabelled as passthroughs.
 | Low
 
 | lists
@@ -122,8 +124,9 @@ Findings are graded:
 
 | Legacy curved quotes `` `x' `` / ``\`\`x''``
 | Deprecated in Asciidoctor
-| Not fontified (good), but still offered as menu/tempo templates
-| Low
+| Not fontified (good); the menu/tempo templates have been replaced by the
+  modern curved-quote forms
+| -
 
 | Literal monospace `` `+x+` ``
 | Backtick + plus enclosure (a passthrough shorthand)
@@ -388,9 +391,10 @@ implements.
   attribute lists is left as a smaller follow-up.
 . [x] *Add modern curved-quote highlighting* `+"`text`"+` and ``'`text`'``.
   Done.
-. [ ] *Drop or de-emphasise the deprecated `` `text' `` / ``\`\`text''``
-  templates* in the menu (and the `+...+` / `++...++` "Monospaced"
-  templates), or relabel them as legacy.
+. [x] *Drop the deprecated `` `text' `` / ``\`\`text''`` templates* and
+  relabel the `+...+` / `++...++` ones. Done - the curved-quote templates
+  are replaced with the modern forms and the plus templates are relabelled
+  as passthroughs.
 . [x] *Add the `icon:name[]` inline macro* to the recognised macro set.
   Done.
 . [ ] *Verify* CSV/DSV table formats, counters, and the literal-monospace

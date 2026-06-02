@@ -407,9 +407,11 @@ customizable.")
 (defconst adoc-help-monospace
   "Aka typewritter. This does _not_ mean verbatim / literal")
 (defconst adoc-help-single-quote
-  "Single quotation marks around enclosed text.")
+  "Curved (smart) single quotation marks around the enclosed text,
+written as '`text`'.")
 (defconst adoc-help-double-quote
-  "Quotation marks around enclosed text.")
+  "Curved (smart) double quotation marks around the enclosed text,
+written as \"`text`\".")
 (defconst adoc-help-underline
   "Applies an underline decoration to the span of text.")
 (defconst adoc-help-overline
@@ -4021,14 +4023,14 @@ ITEMS is a list of (name pos . level)."
            :help ,adoc-help-emphasis ]
           ["*Bold*" tempo-template-adoc-bold
            :help ,adoc-help-bold ]
-          ["+Monospaced+" tempo-template-adoc-monospace
+          ["`Monospaced`" tempo-template-adoc-monospace-literal
            :help ,adoc-help-monospace]
-          ["`Monospaced literal`" tempo-template-adoc-monospace-literal ; redundant to the one in the passthrough section
-           :help ,adoc-help-monospace-literal]
-          ["`Single quote'" tempo-template-adoc-single-quote
-           :help ,adoc-help-single-quote]
-          ["``Double quote''" tempo-template-adoc-double-quote
+          ["Passthrough: +text+" tempo-template-adoc-typewriter-face
+           :help ,adoc-help-pass]
+          ["Curved double quote: \"`text`\"" tempo-template-adoc-double-curved-quote
            :help ,adoc-help-double-quote]
+          ["Curved single quote: '`text`'" tempo-template-adoc-single-curved-quote
+           :help ,adoc-help-single-quote]
           ["The text [.underline]#underline me# is underlined." tempo-template-adoc-underline
            :help ,adoc-help-underline]
           ["The text [.overline]#overline me# is overlined." tempo-template-adoc-overline
@@ -4051,8 +4053,8 @@ ITEMS is a list of (name pos . level)."
            :help ,adoc-help-emphasis ]
           ["**Bold**" tempo-template-adoc-bold-uc
            :help ,adoc-help-bold ]
-          ["++Monospaced++" tempo-template-adoc-monospace-uc
-           :help ,adoc-help-monospace]
+          ["Passthrough: ++text++" tempo-template-adoc-monospace-uc
+           :help ,adoc-help-pass]
           ["[attributes]##text##" tempo-template-adoc-attributed-uc
            :help ,adoc-help-attributed])
          ("Text formatting - misc"
@@ -4174,9 +4176,9 @@ ITEMS is a list of (name pos . level)."
             :help ,adoc-help-latexmath]
            ["+++text+++" tempo-template-adoc-pass-+++
             :help ,adoc-help-pass-+++]
-           ["$$text$$" tempo-template-pass-$$
+           ["$$text$$" tempo-template-adoc-pass-$$
             :help ,adoc-help-pass-$$]
-           ["`text`" tempo-template-monospace-literal ; redundant to the one in the quotes section
+           ["`text`" tempo-template-adoc-monospace-literal ; redundant to the one in the quotes section
             :help ,adoc-help-monospace-literal])))
         "---"
         ["Toggle display of images" adoc-toggle-images t]))

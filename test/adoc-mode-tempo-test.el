@@ -28,7 +28,10 @@
   (adoctest-quotes "**" "**" '(tempo-template-adoc-bold-uc))
   (adoctest-quotes "++" "++" '(tempo-template-adoc-monospace-uc))
   (adoctest-quotes "^" "^" '(tempo-template-adoc-superscript))
-  (adoctest-quotes "~" "~" '(tempo-template-adoc-subscript)))
+  (adoctest-quotes "~" "~" '(tempo-template-adoc-subscript))
+  ;; modern curved (smart) quotes
+  (adoctest-quotes "\"`" "`\"" '(tempo-template-adoc-double-curved-quote))
+  (adoctest-quotes "'`" "`'" '(tempo-template-adoc-single-curved-quote)))
 
 (ert-deftest adoctest-test-tempo-formatting-misc ()
 

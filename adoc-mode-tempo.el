@@ -116,8 +116,10 @@ which can be truthy even without an active region."
 (adoc-tempo-define "adoc-bold" '("*" (r "text" text) "*") nil (bound-and-true-p adoc-help-bold))
 (adoc-tempo-define "adoc-typewriter-face" '("+" (r "text" text) "+") nil (bound-and-true-p adoc-help-monospace))
 (adoc-tempo-define "adoc-monospace-literal" '("`" (r "text" text) "`"))
-(adoc-tempo-define "adoc-single-quote" '("`" (r "text" text) "'") nil (bound-and-true-p adoc-help-single-quote))
-(adoc-tempo-define "adoc-double-quote" '("``" (r "text" text) "''") nil (bound-and-true-p adoc-help-double-quote))
+;; Modern curved (smart) quotes: "`text`" and '`text`'.  These replace the
+;; deprecated AsciiDoc.py `text' / ``text'' templates.
+(adoc-tempo-define "adoc-double-curved-quote" '("\"`" (r "text" text) "`\"") nil (bound-and-true-p adoc-help-double-quote))
+(adoc-tempo-define "adoc-single-curved-quote" '("'`" (r "text" text) "`'") nil (bound-and-true-p adoc-help-single-quote))
 (adoc-tempo-define "adoc-attributed" '("[" p "]#" (r "text" text) "#") nil (bound-and-true-p adoc-help-attributed))
 (adoc-tempo-define "adoc-underline" '("[.underline]#" (r "text" text) "#") nil (bound-and-true-p adoc-help-underline))
 (adoc-tempo-define "adoc-overline" '("[.overline]#" (r "text" text) "#") nil (bound-and-true-p adoc-help-overline))
