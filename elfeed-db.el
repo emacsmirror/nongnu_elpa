@@ -458,6 +458,9 @@ Runs `elfeed-db-unload-hook' after unloading the database."
   (cl-loop for (k v) on plist by #'cddr
            when v collect k and collect v))
 
+(defvar elfeed--feeds-meta (make-hash-table :test #'eq)
+  "Cache of feed meta data.")
+
 (defun elfeed-meta (thing key &optional default)
   "Access metadata for THING (entry, feed) under KEY.
 Return DEFAULT if unavailable.  During `elfeed-db-gc' and
@@ -467,10 +470,16 @@ only list data structures will be scanned (e.g., cons, list, alist,
 plist).  The data structures must not be cyclic (e.g., cyclic lists)
 since the scanner is not guarded against them."
   (or (plist-get (elfeed-meta--plist thing) key)
-      (when (and (keywordp key) (elfeed-feed-p thing))
-        (let ((url (or (elfeed-feed-url thing)
-                       (elfeed-feed-id thing))))
-          (plist-get (cdr (assoc url elfeed-feeds)) key)))
+      (when (elfeed-feed-p thing)
+        (let ((plist (with-memoization (gethash thing elfeed--feeds-meta)
+                       (let ((plist (cdr (assoc (or (elfeed-feed-url thing)
+                                                    (elfeed-feed-id thing))
+                                                elfeed-feeds))))
+                         (or (cl-loop while (keywordp (car plist))
+                                      collect (pop plist)
+                                      collect (pop plist))
+                             t)))))
+          (and (consp plist) (plist-get plist key))))
       default))
 
 (defun elfeed-meta--put (thing key value)
