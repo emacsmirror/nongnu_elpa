@@ -711,6 +711,94 @@ Don't use it for anything real.")
                   "icon" 'adoc-command-face ":" 'adoc-meta-face "heart" 'adoc-internal-reference-face
                   "[" 'adoc-meta-face "2x" 'adoc-value-face "]" 'adoc-meta-face))
 
+(ert-deftest adoctest-test-stem-macros ()
+  (adoctest-faces "stem-macro"
+                  "stem" 'adoc-command-face ":[" 'adoc-meta-face "x^2" 'adoc-value-face "]" 'adoc-meta-face)
+  (adoctest-faces "latexmath-macro"
+                  "latexmath" 'adoc-command-face ":[" 'adoc-meta-face "C" 'adoc-value-face "]" 'adoc-meta-face)
+  (adoctest-faces "asciimath-macro"
+                  "asciimath" 'adoc-command-face ":[" 'adoc-meta-face "x" 'adoc-value-face "]" 'adoc-meta-face)
+  (adoctest-faces "menu-macro"
+                  "menu" 'adoc-command-face ":" 'adoc-meta-face "File" 'adoc-meta-face
+                  "[" 'adoc-meta-face "Save" 'adoc-value-face "]" 'adoc-meta-face))
+
+(ert-deftest adoctest-test-indexterm ()
+  (adoctest-faces "indexterm" "(((index term)))" 'adoc-meta-face))
+
+;;;; Cross references and anchors (additional)
+
+(ert-deftest adoctest-test-xref-inline ()
+  ;; <<id>> with no caption: the id is the reference
+  (adoctest-faces "xref-no-caption"
+                  "<<" 'adoc-meta-hide-face "sect-id" 'adoc-reference-face ">>" 'adoc-meta-hide-face)
+  ;; <<id,caption>>: the id is meta, the caption is the reference text
+  (adoctest-faces "xref-with-caption"
+                  "<<" 'adoc-meta-hide-face "sect-id" 'adoc-meta-face "," 'adoc-meta-hide-face
+                  "the caption" 'adoc-reference-face ">>" 'adoc-meta-hide-face))
+
+(ert-deftest adoctest-test-biblio-anchor ()
+  (adoctest-faces "biblio-anchor"
+                  "[" 'adoc-meta-face "[[biblio1]]" 'adoc-value-face "]" 'adoc-meta-face))
+
+;;;; Attribute entries, admonitions, tables, directives, breaks
+
+(ert-deftest adoctest-test-attribute-entry ()
+  ;; :name: value — dedicated metadata faces for key and value
+  (adoctest-faces "attribute-entry"
+                  ":author: " 'adoc-metadata-key-face "Bozhidar" 'adoc-metadata-value-face))
+
+(ert-deftest adoctest-test-admonitions ()
+  ;; paragraph style: NOTE: text
+  (adoctest-faces "admonition-paragraph"
+                  "NOTE:" 'adoc-complex-replacement-face " " 'adoc-align-face "pay attention" 'no-face)
+  ;; block style: [NOTE]
+  (adoctest-faces "admonition-block"
+                  "[NOTE]" 'adoc-complex-replacement-face))
+
+(ert-deftest adoctest-test-table ()
+  (adoctest-faces "table"
+                  "|===" 'adoc-table-face "\n" nil
+                  "|" 'adoc-table-face "Cell A\n" nil
+                  "|===" 'adoc-table-face))
+
+(ert-deftest adoctest-test-directives ()
+  ;; include:: directive
+  (adoctest-faces "include-directive"
+                  "include::" 'adoc-preprocessor-face "file.adoc" 'adoc-meta-face
+                  "[]" 'adoc-meta-hide-face)
+  ;; ifdef:: conditional with content
+  (adoctest-faces "ifdef-directive"
+                  "ifdef::" 'adoc-preprocessor-face "env" 'adoc-meta-face
+                  "[" 'adoc-meta-hide-face "shown text" 'no-face "]" 'adoc-meta-hide-face))
+
+(ert-deftest adoctest-test-block-breaks ()
+  ;; thematic break / ruler
+  (adoctest-faces "ruler" "'''" 'adoc-complex-replacement-face)
+  ;; page break
+  (adoctest-faces "page-break" "<<<" 'adoc-meta-face))
+
+(ert-deftest adoctest-test-hard-line-break ()
+  ;; a line ending in " +" is a forced line break; the + is highlighted
+  (adoctest-faces "hard-line-break"
+                  "first line " 'no-face "+" 'adoc-meta-face))
+
+(ert-deftest adoctest-test-quote-block ()
+  ;; the body of a [quote]/____ block uses the blockquote face
+  (adoctest-faces "quote-block"
+                  "____" 'adoc-meta-hide-face "\n" nil
+                  "quoted words" 'adoc-blockquote-face "\n" nil
+                  "____" 'adoc-meta-hide-face))
+
+;;;; Numbered and callout lists
+
+(ert-deftest adoctest-test-numbered-and-callout-lists ()
+  (adoctest-faces "explicit-numbered"
+                  "1." 'adoc-list-face " " 'adoc-align-face "first" 'no-face)
+  (adoctest-faces "implicit-numbered"
+                  "." 'adoc-list-face " " 'adoc-align-face "implicit" 'no-face)
+  (adoctest-faces "callout-list"
+                  "<1>" 'adoc-list-face " " 'adoc-align-face "callout text" 'no-face))
+
 (ert-deftest adoctest-test-meta-face-cleanup ()
   ;; begin with a few simple explicit cases which are easier to debug in case of troubles
 
@@ -1534,18 +1622,22 @@ on top of the `<mark>' default)."
 
 (ert-deftest adoctest-adoc-kw-replacement ()
   (unwind-protect
-      (progn
-	(set-buffer (get-buffer-create "adoc-test"))
-	(erase-buffer)
-	(adoc-mode)
-	(let ((adoc-insert-replacement t))
-	  (adoc-calc)
-	  (insert "(C)")
-	  (font-lock-flush)
-	  (font-lock-ensure)
-	  (should (string-equal (overlay-get (car (overlays-in (point) (point-max))) 'after-string) "©"))
-	  )
-	)
+      (let ((adoc-insert-replacement t))
+        (set-buffer (get-buffer-create "adoc-test"))
+        (adoc-mode)
+        (adoc-calc)
+        (dolist (case '(("(C)" . "©") ("(R)" . "®") ("(TM)" . "™")
+                        ("..." . "…") ("->" . "→") ("=>" . "⇒")
+                        ("<-" . "←") ("<=" . "⇐")))
+          (erase-buffer)
+          (remove-overlays)
+          (insert (car case))
+          (font-lock-flush)
+          (font-lock-ensure)
+          (let ((ov (seq-find (lambda (o) (overlay-get o 'after-string))
+                              (overlays-in (point-min) (point-max)))))
+            (should ov)
+            (should (string-equal (overlay-get ov 'after-string) (cdr case))))))
     (adoc-calc)
     (kill-buffer "adoc-test")))
 
