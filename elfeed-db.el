@@ -443,17 +443,15 @@ Runs `elfeed-db-unload-hook' after unloading the database."
 
 (defsubst elfeed-meta--plist (thing)
   "Get the metadata plist for THING."
-  (cl-typecase thing
-    (elfeed-feed  (elfeed-feed-meta  thing))
-    (elfeed-entry (elfeed-entry-meta thing))
-    (otherwise (error "Don't know how to access metadata on %S" thing))))
+  (if (elfeed-feed-p thing)
+      (elfeed-feed-meta  thing)
+    (elfeed-entry-meta thing)))
 
 (defsubst elfeed-meta--set-plist (thing plist)
   "Set the metadata plist on THING to PLIST."
-  (cl-typecase thing
-    (elfeed-feed  (setf (elfeed-feed-meta thing) plist))
-    (elfeed-entry (setf (elfeed-entry-meta thing) plist))
-    (otherwise (error "Don't know how to access metadata on %S" thing))))
+  (if (elfeed-feed-p thing)
+      (setf (elfeed-feed-meta thing) plist)
+    (setf (elfeed-entry-meta thing) plist)))
 
 (defsubst elfeed-db--plist-fixup (plist)
   "Remove nil values from PLIST."
@@ -488,9 +486,9 @@ since the scanner is not guarded against them."
 (defun elfeed-meta--title (thing)
   "Return TITLE of THING."
   (or (elfeed-meta thing :title)
-      (cl-typecase thing
-        (elfeed-feed (elfeed-feed-title thing))
-        (elfeed-entry (elfeed-entry-title thing)))))
+      (if (elfeed-feed-p thing)
+          (elfeed-feed-title thing)
+        (elfeed-entry-title thing))))
 
 ;; Filesystem storage:
 
