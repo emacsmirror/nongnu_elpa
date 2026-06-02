@@ -891,7 +891,11 @@ frames, with Help-style back/forward navigation."
                                       (profiler-calltree-count b)))))
          (self (- count (apply #'+ 0 (mapcar #'profiler-calltree-count kids))))
          (parent (profiler-calltree-parent node))
-         (shown (make-hash-table :test 'eq)))
+         (shown (make-hash-table :test 'eq))
+         (snippet (when loc
+                    (flamegraph--source-snippet
+                     path (cdr loc) node
+                     (and profiler-el-calls shown)))))
     (with-help-window (help-buffer)
       (with-current-buffer standard-output
         (if (and (symbolp entry) (fboundp entry))
@@ -910,11 +914,10 @@ frames, with Help-style back/forward navigation."
                                 (abbreviate-file-name path))))
            'follow-link t
            'help-echo "mouse-1, RET: visit this line")
-          (when-let* ((snippet (flamegraph--source-snippet
-                                path (cdr loc) node
-                                (and profiler-el-calls shown))))
+          (when snippet
             (insert "\n\n" snippet)))
-        (insert (format "\n\nSamples  %s (%s of total)    self  %s (%s)\n"
+        (insert (format "%sSamples  %s (%s of total)    self  %s (%s)\n"
+                        (if snippet "\n" "\n\n")
                         (profiler-format-number count)
                         (flamegraph--percent count total)
                         (profiler-format-number self)
