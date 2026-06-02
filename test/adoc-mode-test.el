@@ -566,8 +566,9 @@ Don't use it for anything real.")
                   "Lorem " nil "$$" 'adoc-meta-hide-face " ipsum " '(adoc-typewriter-face adoc-verbatim-face) "$$" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "**" 'adoc-meta-hide-face " ipsum " 'adoc-bold-face "**" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "*" 'adoc-meta-hide-face "ipsum" 'adoc-bold-face "*" 'adoc-meta-hide-face " dolor\n" nil
-                  "Lorem " nil "++" 'adoc-meta-hide-face " ipsum " 'adoc-typewriter-face "++" 'adoc-meta-hide-face " dolor\n" nil
-                  "Lorem " nil "+" 'adoc-meta-hide-face "ipsum" 'adoc-typewriter-face "+" 'adoc-meta-hide-face " dolor\n" nil
+                  ;; +text+ / ++text++ are passthroughs now (normal text, not monospace)
+                  "Lorem " nil "++" 'adoc-meta-hide-face " ipsum " 'no-face "++" 'adoc-meta-hide-face " dolor\n" nil
+                  "Lorem " nil "+" 'adoc-meta-hide-face "ipsum" 'no-face "+" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "__" 'adoc-meta-hide-face " ipsum " 'adoc-emphasis-face "__" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "_" 'adoc-meta-hide-face "ipsum" 'adoc-emphasis-face "_" 'adoc-meta-hide-face " dolor\n" nil
                   "Lorem " nil "##" 'adoc-meta-hide-face " ipsum " 'adoc-highlight-face "##" 'adoc-meta-hide-face " dolor\n" nil
@@ -621,7 +622,7 @@ Don't use it for anything real.")
                     "~~~~~~~~~~~" 'adoc-meta-hide-face "\n" nil
                     "." 'adoc-meta-face "lorem " 'adoc-gen-face "_" 'adoc-meta-hide-face "ipsum" '(adoc-gen-face adoc-emphasis-face) "_" 'adoc-meta-hide-face "\n" nil
                     "\n" nil
-                    "lorem " 'adoc-gen-face "+" 'adoc-meta-hide-face "ipsum" '(adoc-gen-face adoc-typewriter-face) "+" 'adoc-meta-hide-face " sit" 'adoc-gen-face "::" 'adoc-list-face " " 'adoc-align-face
+                    "lorem " 'adoc-gen-face "+" 'adoc-meta-hide-face "ipsum" 'no-face "+" 'adoc-meta-hide-face " sit" 'adoc-gen-face "::" 'adoc-list-face " " 'adoc-align-face
                     )))
 
 ;; test border cases where the quote delimiter is at the beginning and/or the
@@ -826,7 +827,7 @@ on top of the `<mark>' default)."
                   "------------" 'adoc-meta-hide-face "\n" nil
                   "lorem ++ ipsum\n" 'no-face
                   "\n" nil
-                  "lorem " 'no-face "++" 'adoc-meta-hide-face " ipsum " 'adoc-typewriter-face "++" 'adoc-meta-hide-face "\n" nil
+                  "lorem " 'no-face "++" 'adoc-meta-hide-face " ipsum " 'no-face "++" 'adoc-meta-hide-face "\n" nil
                   "\n" nil
 
                   "." 'adoc-meta-face "block ^title" 'adoc-gen-face "\n" nil
@@ -1135,6 +1136,32 @@ on top of the `<mark>' default)."
   ;; a triple-delimiter passthrough is escaped in full
   (adoctest-faces "escaped-passthrough"
                   "\\" 'adoc-meta-hide-face "+++p+++" 'no-face))
+
+;;;; Inline passthrough (+text+ / ++text++)
+
+(ert-deftest adoctest-test-inline-passthrough ()
+  ;; +text+ is a passthrough rendered as normal text, not monospace
+  (adoctest-faces "single-plus-passthrough"
+                  "+" 'adoc-meta-hide-face "plain" 'no-face "+" 'adoc-meta-hide-face)
+  ;; ++text++ is the unconstrained passthrough
+  (adoctest-faces "double-plus-passthrough"
+                  "++" 'adoc-meta-hide-face "un" 'no-face "++" 'adoc-meta-hide-face)
+  ;; inline formatting inside a passthrough is suppressed
+  (adoctest-faces "passthrough-suppresses-formatting"
+                  "+" 'adoc-meta-hide-face "no *bold* here" 'no-face
+                  "+" 'adoc-meta-hide-face))
+
+(ert-deftest adoctest-test-backtick-still-monospace ()
+  ;; the backtick remains the monospace delimiter (only + changed)
+  (with-temp-buffer
+    (adoc-mode)
+    (insert "x `mono` y")
+    (font-lock-ensure)
+    (goto-char (point-min))
+    (search-forward "mono")
+    (let ((faces (get-text-property (- (point) 2) 'face)))
+      (should (memq 'adoc-typewriter-face
+                    (if (listp faces) faces (list faces)))))))
 
 ;;;; Filling
 

@@ -1955,6 +1955,24 @@ face-spec expression (e.g. from `adoc-facespec-subscript')."
        '(3 nil)) ; grumbl, I don't know how to get rid of it
      `(4 '(face ,(or del-face 'adoc-meta-hide-face) adoc-reserved t) t)))); close del
 
+(defun adoc-kw-inline-passthrough (type ldel)
+  "Return a keyword for an inline passthrough delimited by LDEL.
+TYPE is `adoc-constrained' for a single-plus passthrough (`+x+')
+or `adoc-unconstrained' for a double-plus one (`++x++').
+
+Unlike the backtick, the plus delimiters are not monospace
+formatting in modern AsciiDoc: a passthrough is rendered as
+normal output text with inline formatting suppressed.  So the
+enclosed text is left in the default face but marked reserved, so
+the quote keywords do not format it, and the delimiters are
+de-emphasised."
+  (list
+   `(lambda (end) (adoc-kwf-std end ,(adoc-re-quote type ldel) '(1 2 4) '(3)))
+   '(1 '(face adoc-meta-face adoc-reserved t) t t)      ; attribute list
+   '(2 '(face adoc-meta-hide-face adoc-reserved t) t)   ; opening delimiter
+   '(3 '(face nil adoc-reserved t) t)                   ; passthrough text
+   '(4 '(face adoc-meta-hide-face adoc-reserved t) t))) ; closing delimiter
+
 (defconst adoc-re-escaped-formatting
   "\\(\\\\\\)\\(\\([*_`#+^~]\\)\\3*\\)"
   "Regexp matching a backslash-escaped inline formatting delimiter.
@@ -2608,6 +2626,14 @@ for multiline constructs to be matched."
    (adoc-kw-quote 'adoc-unconstrained "+++" 'adoc-typewriter-face nil nil t)
    ;; $$text$$ passthrough (special characters escaped)
    (adoc-kw-quote 'adoc-unconstrained "$$" 'adoc-typewriter-face nil nil t)
+   ;; +text+ / ++text++ inline passthroughs.  In modern AsciiDoc these are
+   ;; passthroughs (formatting suppressed, rendered as normal text), NOT
+   ;; monospace; only the backtick is monospace.  Must precede the quote
+   ;; keywords so the enclosed text is reserved before they scan it.  The
+   ;; double (unconstrained) form is registered first so it wins over the
+   ;; single (constrained) one.
+   (adoc-kw-inline-passthrough 'adoc-unconstrained "++")
+   (adoc-kw-inline-passthrough 'adoc-constrained "+")
 
    ;; special characters
    ;; ------------------
@@ -2620,11 +2646,9 @@ for multiline constructs to be matched."
    ;; ------------------------------
    (adoc-kw-quote 'adoc-unconstrained "**" 'adoc-bold-face)
    (adoc-kw-quote 'adoc-constrained "*" 'adoc-bold-face)
-   ;; The old AsciiDoc ``text'' (double quote) and `text' (single quote)
-   ;; syntaxes are deprecated in Asciidoctor.  Backtick inline code is
-   ;; handled in the passthrough section above.
-   (adoc-kw-quote 'adoc-unconstrained "++" 'adoc-typewriter-face)
-   (adoc-kw-quote 'adoc-constrained "+" 'adoc-typewriter-face)
+   ;; The +text+ / ++text++ monospace markup of legacy AsciiDoc.py
+   ;; "compat-mode" is gone; the plus forms are inline passthroughs, handled
+   ;; in the passthrough section above.  Backtick is the only monospace mark.
    (adoc-kw-quote 'adoc-unconstrained  "__" 'adoc-emphasis-face)
    (adoc-kw-quote 'adoc-constrained "_" 'adoc-emphasis-face)
    (adoc-kw-quote 'adoc-unconstrained "##" 'adoc-highlight-face) ; highlighted text

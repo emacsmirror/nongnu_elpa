@@ -37,9 +37,10 @@ Findings are graded:
 | Area | Finding | Severity
 
 | text
-| `+text+` / `++text++` are still highlighted as monospace (legacy
-  AsciiDoc.py "compat-mode"). In modern AsciiDoc the backtick is the only
-  monospace delimiter; `+` is a passthrough delimiter, not monospace.
+| [.line-through]#`+text+` / `++text++` are still highlighted as monospace
+  (legacy AsciiDoc.py "compat-mode").# *FIXED* - they are now treated as
+  inline passthroughs (normal text, formatting suppressed); the backtick is
+  the only monospace delimiter.
 | High
 
 | text
@@ -93,11 +94,13 @@ Findings are graded:
 | Supported
 | -
 
-| Monospace `+x+` / `++x++`
-| *Not* monospace in modern AsciiDoc (legacy compat-mode only); `+` is a
-  passthrough delimiter
-| Still highlighted as monospace (`adoc-typewriter-face`)
-| High
+| Passthrough `+x+` / `++x++`
+| Inline passthroughs (constrained/unconstrained), rendered as normal text
+  with formatting suppressed; not monospace
+| *Fixed* - treated as passthroughs (`adoc-kw-inline-passthrough`):
+  delimiters de-emphasised, content left in the default face and reserved
+  so inner formatting is not applied
+| -
 
 | Highlight `#x#` / `##x##`
 | Marked text
@@ -359,19 +362,28 @@ These are largely conversion concerns with little or no editor surface:
 
 == Recommended follow-ups (prioritised)
 
-. *Stop highlighting `+text+` / `++text++` as monospace by default.* This
-  is the clearest spec drift. Consider gating the legacy behaviour behind
-  a `compat-mode` defcustom (default off) so users who set `:compat-mode:`
-  can re-enable it.
-. *Recognise checklist items* (`* [ ]`, `* [x]`, `* [*]`) with a dedicated
-  face for the checkbox.
-. *Recognise the block-attribute ID/role/option shorthand* `[#id]`,
+[NOTE]
+====
+Items are checked off as they are addressed. The legacy `compat-mode`
+monospace behaviour was simply dropped rather than gated behind a
+defcustom, since it is no longer part of the language Asciidoctor
+implements.
+====
+
+. [x] *Stop highlighting `+text+` / `++text++` as monospace.* Done -
+  reclassified as inline passthroughs (`adoc-kw-inline-passthrough`).
+  Note: the menu / tempo templates still offer `+...+` / `++...++` under a
+  "Monospaced" label; fold that into the template cleanup (item 5).
+. [ ] *Recognise checklist items* (`* [ ]`, `* [x]`, `* [*]`) with a
+  dedicated face for the checkbox.
+. [ ] *Recognise the block-attribute ID/role/option shorthand* `[#id]`,
   `[#id.role]`, `[%opt]` on block attribute lines, and treat `[#id]` as a
   block anchor for `adoc-goto-ref-label` / xref following.
-. *Add modern curved-quote highlighting* `+"`text`"+` and ``'`text`'``.
-. *Drop or de-emphasise the deprecated `` `text' `` / ``\`\`text''``
-  templates* in the menu, or relabel them as legacy.
-. *Add the `icon:name[]` inline macro* to the recognised macro set
+. [ ] *Add modern curved-quote highlighting* `+"`text`"+` and ``'`text`'``.
+. [ ] *Drop or de-emphasise the deprecated `` `text' `` / ``\`\`text''``
+  templates* in the menu (and the `+...+` / `++...++` "Monospaced"
+  templates), or relabel them as legacy.
+. [ ] *Add the `icon:name[]` inline macro* to the recognised macro set
   (currently unhandled).
-. *Verify* CSV/DSV table formats, counters, and the literal-monospace
+. [ ] *Verify* CSV/DSV table formats, counters, and the literal-monospace
   `` `+text+` `` enclosure, and add handling where it is missing.
