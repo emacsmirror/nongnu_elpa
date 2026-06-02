@@ -44,8 +44,9 @@ Findings are graded:
 | High
 
 | text
-| Modern curved-quote syntax `+"`text`"+` (double) and ``'`text`'`` (single)
-  is not recognised.
+| [.line-through]#Modern curved-quote syntax `+"`text`"+` / ``'`text`'`` is
+  not recognised.# *FIXED* - recognised; delimiters de-emphasised, enclosed
+  text normal (and the inner backticks are no longer mis-read as monospace).
 | Medium
 
 | text
@@ -116,8 +117,8 @@ Findings are graded:
 
 | Curved quotes `+"`x`"+` / ``'`x`'``
 | Modern smart-quote syntax (backticks inside straight quotes)
-| Not recognised
-| Medium
+| *Fixed* - delimiters de-emphasised, enclosed text normal
+| -
 
 | Legacy curved quotes `` `x' `` / ``\`\`x''``
 | Deprecated in Asciidoctor
@@ -385,7 +386,8 @@ implements.
   (`block-id-shorthand`) and `adoc-goto-ref-label` follows `[#id]` (and
   `[style#id]`) targets. Faceting `.role` / `%opt` inside arbitrary
   attribute lists is left as a smaller follow-up.
-. [ ] *Add modern curved-quote highlighting* `+"`text`"+` and ``'`text`'``.
+. [x] *Add modern curved-quote highlighting* `+"`text`"+` and ``'`text`'``.
+  Done.
 . [ ] *Drop or de-emphasise the deprecated `` `text' `` / ``\`\`text''``
   templates* in the menu (and the `+...+` / `++...++` "Monospaced"
   templates), or relabel them as legacy.

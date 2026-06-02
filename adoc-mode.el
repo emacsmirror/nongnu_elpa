@@ -2652,6 +2652,13 @@ for multiline constructs to be matched."
    ;; below so the escaped delimiters are reserved before they are scanned)
    (adoc-kw-escaped-formatting)
 
+   ;; Curved (smart) quotes: "`text`" -> double, '`text`' -> single.  These
+   ;; must precede the backtick keywords below so the enclosing backticks are
+   ;; taken as part of the quote delimiter rather than as inline code.  The
+   ;; enclosed text is normal text, so it gets no special face.
+   (adoc-kw-quote 'adoc-constrained "\"`" nil nil "`\"")
+   (adoc-kw-quote 'adoc-constrained "'`" nil nil "`'")
+
    ;; Inline code and passthroughs
    ;; ----------------------------
    ;; Asciidoctor: `text` is inline code (monospace literal)

@@ -1179,6 +1179,20 @@ on top of the `<mark>' default)."
       (should (memq 'adoc-typewriter-face
                     (if (listp faces) faces (list faces)))))))
 
+;;;; Curved (smart) quotes
+
+(ert-deftest adoctest-test-curved-quotes ()
+  ;; "`text`" / '`text`' : delimiters de-emphasised, enclosed text normal
+  ;; (and crucially the inner backticks are not taken as inline code)
+  (adoctest-faces "curved-double"
+                  "\"`" 'adoc-meta-hide-face "hello" 'no-face "`\"" 'adoc-meta-hide-face)
+  (adoctest-faces "curved-single"
+                  "'`" 'adoc-meta-hide-face "great" 'no-face "`'" 'adoc-meta-hide-face))
+
+(ert-deftest adoctest-test-plain-double-quotes-untouched ()
+  ;; ordinary straight quotes (no backticks) are not markup
+  (adoctest-faces "plain-quotes" "say \"text\" here" 'no-face))
+
 ;;;; Filling
 
 (ert-deftest adoctest-test-fill-preserves-hard-break ()
