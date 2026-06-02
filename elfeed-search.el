@@ -641,11 +641,12 @@ original, but will be equal in its effect."
         (push (format "~%s" feed) output))
       (string-join (nreverse output) " "))))
 
-(defun elfeed-search-filter (filter entry feed &optional count)
+(defun elfeed-search-filter (filter entry feed &optional count now)
   "Return non-nil if ENTRY and FEED pass FILTER.
 
-COUNT is the total number of entries collected so far, for
-filtering against a limit filter (example: #10).
+COUNT is the total number of entries collected so far, for filtering
+against a limit filter (example: #10).  NOW is the current float time in
+seconds.
 
 See `elfeed-search-set-filter' for format/syntax documentation.
 This function must *only* be called within the body of
@@ -657,7 +658,7 @@ This function must *only* be called within the body of
       filter
     (let* ((tags (elfeed-entry-tags entry))
            (date (elfeed-entry-date entry))
-           (age (- (float-time) date))
+           (age (- (or now (float-time)) date))
            (title (elfeed-meta--title entry))
            (link (elfeed-entry-link entry))
            (feed-title (or (elfeed-meta--title feed) ""))
@@ -699,18 +700,11 @@ Executing a filter in bytecode form is generally faster than
                                feeds     not-feeds
                                limit &allow-other-keys)
       filter
-    `(lambda (,(if (or after matches not-matches must-have must-not-have)
-                   'entry
-                 '_entry)
-              ,(if (or feeds not-feeds)
-                   'feed
-                 '_feed)
-              ,(if limit
-                   'count
-                 '_count))
+    `(lambda (entry feed count &optional now)
+       (ignore entry feed count now)
        (let* (,@(when after
                   '((date (elfeed-entry-date entry))
-                    (age (- (float-time) date))))
+                    (age (- (or now (float-time)) date))))
               ,@(when (or must-have must-not-have)
                   '((tags (elfeed-entry-tags entry))))
               ,@(when (or matches not-matches)
@@ -913,7 +907,8 @@ is reversed if ASCENDING is non-nil."
   (let* ((filter (elfeed-search-parse-filter filter))
          (head (list nil))
          (tail head)
-         (count 0))
+         (count 0)
+         (now (float-time)))
     (if elfeed-search-compile-filter
         ;; Force lexical bindings regardless of the current
         ;; buffer-local value. Lexical scope uses the faster
@@ -921,12 +916,12 @@ is reversed if ASCENDING is non-nil."
         (let ((lexical-binding t)
               (func (byte-compile (elfeed-search-compile-filter filter))))
           (elfeed-db-visit (entry feed)
-            (when (funcall func entry feed count)
+            (when (funcall func entry feed count now)
               (setf (cdr tail) (list entry)
                     tail (cdr tail)
                     count (1+ count)))))
       (elfeed-db-visit (entry feed)
-        (when (elfeed-search-filter filter entry feed count)
+        (when (elfeed-search-filter filter entry feed count now)
           (setf (cdr tail) (list entry)
                 tail (cdr tail)
                 count (1+ count)))))
