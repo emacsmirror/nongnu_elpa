@@ -255,12 +255,13 @@ The result depends on the value of `elfeed-show-unique-buffers'."
   (let ((buffer (get-buffer-create (elfeed-show--buffer-name entry))))
     (with-current-buffer buffer
       (elfeed-show-mode)
-      (setq elfeed-show-entry entry)
-      (elfeed-show-refresh))
+      (setq elfeed-show-entry entry))
     (funcall elfeed-show-entry-switch buffer)
-    ;; Scroll to top after reset
-    (when-let* ((win (get-buffer-window buffer)))
-      (set-window-start win (point-min)))))
+    (with-current-buffer buffer
+      (elfeed-show-refresh)
+      ;; Scroll to top after reset
+      (when-let* ((win (get-buffer-window buffer)))
+        (set-window-start win (point-min))))))
 
 (defun elfeed-show-next (&optional n)
   "Show the Nth next item in the `elfeed-search' buffer."
