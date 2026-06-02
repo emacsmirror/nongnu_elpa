@@ -7,7 +7,7 @@
 ;; Author: Florian Kaufmann <sensorflo@gmail.com>
 ;; URL: https://github.com/bbatsov/adoc-mode
 ;; Created: 2009
-;; Version: 0.8.0
+;; Version: 0.9.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: asciidoc, text
 ;;
@@ -49,14 +49,14 @@
 (require 'adoc-mode-image)
 (require 'adoc-mode-tempo)
 
-(defconst adoc-mode-version "0.8.0"
+(defconst adoc-mode-version "0.9.0"
   "adoc mode version number.")
 
 ;;;; customization
 (defgroup adoc nil "Support for editing AsciiDoc files in GNU Emacs."
   :group 'text
   :prefix "adoc-"
-  :version "0.8.0"
+  :version "0.9.0"
   :link '(url-link "https://github.com/bbatsov/adoc-mode"))
 
 (defcustom adoc-script-raise '(-0.3 0.3)

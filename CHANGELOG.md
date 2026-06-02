@@ -2,6 +2,8 @@
 
 ## main (unreleased)
 
+## 0.9.0 (2026-06-02)
+
 ### New features
 
 - Recognise the modern curved-quote syntax `"`text`"` (double) and `'`text`'` (single). The delimiters are de-emphasised and the enclosed text is shown as normal text; previously the inner backticks were mis-highlighted as inline monospace.
@@ -38,6 +40,7 @@
 
 ### Bugs fixed
 
+- [#65](https://github.com/bbatsov/adoc-mode/issues/65): Image previews now resolve attribute references in the image path (e.g. `image:{my-badge}[]`) against the document's `:name: value` attribute entries before displaying the image.
 - `+text+` and `++text++` are no longer highlighted as monospace. In modern AsciiDoc the backtick is the only monospace delimiter; the single and double plus are *inline passthroughs* (constrained and unconstrained), rendered as normal text with inline formatting suppressed. They are now fontified as passthroughs - the delimiters are de-emphasised and the enclosed text keeps the default face with formatting suppressed - rather than reusing the monospace face left over from the old AsciiDoc.py "compat-mode" syntax.
 - Recognize level-5 section titles (`====== Title`). Previously `adoc-title-max-level` was off by one, so the deepest heading level supported by AsciiDoc was treated as ordinary text. Title promotion/demotion now cycles through all six one-line levels and the five two-line levels independently.
 
