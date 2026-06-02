@@ -767,6 +767,7 @@ as `lambda', using the same source anchoring flow as named functions; if no
 lambda form is found, the object itself is still shown as an unanchored
 callback frame.  SHOWN ignores the threshold, so the tree may show cold
 callees the snippet omits."
+  (syntax-propertize end)
   (let ((total (max 1 (profiler-calltree-count node)))
         regions)
     (cl-labels
