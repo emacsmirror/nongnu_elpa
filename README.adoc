@@ -30,6 +30,11 @@ final output. What must be bold is bold, what must be italic is italic etc.
 Meta characters are naturally still visible, but in a faint way, so they can
 be easily ignored.
 
+`adoc-mode` aims to be fully compatible with the modern official
+https://gitlab.eclipse.org/eclipse/asciidoc-lang/asciidoc-lang[AsciiDoc language specification]
+developed under the Eclipse AsciiDoc Working Group. You can follow our
+progress toward that goal in link:doc/spec-compliance.adoc[the spec-compliance document].
+
 == Features
 
 Here are some of the main features of `adoc-mode`:
