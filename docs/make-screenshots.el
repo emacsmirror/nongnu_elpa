@@ -70,14 +70,14 @@ Return (DESCRIBE-WINDOW . FLAMEGRAPH-WINDOW)."
   (let ((fg-buf (get-buffer (format "*Flamegraph: %s*" "CPU"))))
     (with-current-buffer fg-buf
       (let* ((target (alist-get mode flamegraph-shot--targets))
-             (node (flamegraph-shot--find flamegraph--top target)))
-        (when node
-          ;; Zoom to the selected frame's parent so the harness frames
-          ;; (normal-top-level … flamegraph-shot--profile) drop out.
-          (when-let* ((parent (profiler-calltree-parent node)))
-            (flamegraph--goto-root parent))
-          (flamegraph--describe-frame node flamegraph--grand-total nil
-                                      flamegraph--profiler-el-calls))))
+             (node (or (flamegraph-shot--find flamegraph--top target)
+                       (error "Frame %s not found in profile" target))))
+        ;; Zoom to the selected frame's parent so the harness frames
+        ;; (normal-top-level … flamegraph-shot--profile) drop out.
+        (when-let* ((parent (profiler-calltree-parent node)))
+          (flamegraph--goto-root parent))
+        (flamegraph--describe-frame node flamegraph--grand-total nil
+                                    flamegraph--profiler-el-calls)))
     (delete-other-windows (get-buffer-window fg-buf))
     (let* ((fg-win (get-buffer-window fg-buf))
            (help-win (split-window fg-win flamegraph-shot--pane-width 'left t)))
