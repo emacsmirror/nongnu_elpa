@@ -692,6 +692,11 @@ AsciiDoc: *bold emphasis text* or _emphasis text_
   "Face for list item markers."
   :group 'adoc-faces)
 
+(defface adoc-checkbox-face
+  '((t (:inherit font-lock-constant-face)))
+  "Face for checklist checkboxes (`[ ]', `[x]', `[*]')."
+  :group 'adoc-faces)
+
 (defface adoc-code-face
   '((t (:inherit fixed-pitch)))
   "Face for inline code and fenced code blocks.
@@ -1833,6 +1838,18 @@ Concerning TYPE, LEVEL and SUB-TYPE see `adoc-re-llisti'."
    (lambda (end) (adoc-kwf-std end "^\\(\\+\\)[ \t]*$" '(1)))
    '(1 '(face adoc-meta-face adoc-reserved block-del) t)))
 
+(defun adoc-kw-checkbox ()
+  "Creates a keyword for font-lock which highlights checklist checkboxes.
+A checklist item is an unordered list item whose text begins with
+`[ ]' (unchecked), `[x]'/`[X]', or `[*]' (checked)."
+  (list
+   `(lambda (end)
+      (adoc-kwf-std end
+                    ,(concat "^[ \t]*\\(?:-\\|\\*\\{1,5\\}\\)[ \t]+"
+                             "\\(\\[[ xX*]\\]\\)[ \t]")
+                    '(1)))
+   '(1 'adoc-checkbox-face t)))
+
 (defun adoc-kw-delimited-block (del &optional text-face inhibit-text-reserved)
   "Creates a keyword for font-lock which highlights a delimited block.
 TEXT-FACE is a face name symbol or nil."
@@ -2517,6 +2534,7 @@ for multiline constructs to be matched."
    (adoc-kw-llisti 'adoc-labeled-normal 3)
    (adoc-kw-llisti 'adoc-labeled-qanda)
    (adoc-kw-llisti 'adoc-labeled-glossary)
+   (adoc-kw-checkbox)
    (adoc-kw-list-continuation)
 
    ;; Delimited blocks

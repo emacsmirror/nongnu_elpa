@@ -4,6 +4,7 @@
 
 ### New features
 
+- Highlight checklist items. An unordered list item whose text begins with `[ ]` (unchecked), `[x]`/`[X]`, or `[*]` (checked) now fontifies the checkbox with the new `adoc-checkbox-face` (inherits `font-lock-constant-face`).
 - Honour backslash escapes in inline formatting: a backslash before a formatting delimiter (e.g. `\*not bold*`, `\**nor this**`, `` \`nor code` ``) now de-emphasises the backslash and leaves the escaped span as literal text instead of fontifying it as markup. Previously the unconstrained forms still leaked an inner constrained match (`\**x**` highlighted `x`).
 - `fill-paragraph` (and auto-fill) now preserve AsciiDoc hard line breaks: a line ending in a space and a `+` is no longer merged with the following line. Filling still joins ordinary soft-wrapped lines and indents list-item continuations.
 - Add region-aware text-styling commands under the `C-c C-s` prefix, modelled on `markdown-mode`: `adoc-insert-bold` (`C-c C-s b`, `*text*`), `adoc-insert-italic` (`i`, `_text_`), `adoc-insert-monospace` (`m`, `` `text` ``), `adoc-insert-highlight` (`h`, `#text#`), `adoc-insert-superscript` (`^`, `^text^`), `adoc-insert-subscript` (`~`, `~text~`), and `adoc-insert-link` (`l`). Each wraps the active region or the word at point, removes the markup again when it is already wrapped, and inserts an empty pair when there is nothing to wrap.

@@ -200,9 +200,9 @@ Findings are graded:
 | -
 
 | Checklists `* [ ]` / `* [x]` / `* [*]`
-| Not recognised (highlighted as a plain unordered item, the `[ ]`/`[x]`
-  is not treated as a checkbox)
-| Medium
+| *Fixed* - the checkbox is highlighted with `adoc-checkbox-face`
+  (`adoc-kw-checkbox`)
+| -
 
 | List continuation `+`
 | Supported
@@ -374,8 +374,9 @@ implements.
   reclassified as inline passthroughs (`adoc-kw-inline-passthrough`).
   Note: the menu / tempo templates still offer `+...+` / `++...++` under a
   "Monospaced" label; fold that into the template cleanup (item 5).
-. [ ] *Recognise checklist items* (`* [ ]`, `* [x]`, `* [*]`) with a
-  dedicated face for the checkbox.
+. [x] *Recognise checklist items* (`* [ ]`, `* [x]`, `* [*]`) with a
+  dedicated face for the checkbox. Done - `adoc-kw-checkbox` /
+  `adoc-checkbox-face`.
 . [ ] *Recognise the block-attribute ID/role/option shorthand* `[#id]`,
   `[#id.role]`, `[%opt]` on block attribute lines, and treat `[#id]` as a
   block anchor for `adoc-goto-ref-label` / xref following.

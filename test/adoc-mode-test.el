@@ -680,6 +680,18 @@ Don't use it for anything real.")
                   ;; preceding newline, because we're at the beginning of the buffer
                   "lorem" 'adoc-gen-face "::" 'adoc-list-face " " nil "ipsum" 'no-face))
 
+(ert-deftest adoctest-test-checklist ()
+  ;; checked and unchecked checklist boxes get the checkbox face
+  (adoctest-faces "checklist-checked"
+                  "*" 'adoc-list-face " " 'adoc-align-face "[x]" 'adoc-checkbox-face " done" 'no-face)
+  (adoctest-faces "checklist-unchecked"
+                  "*" 'adoc-list-face " " 'adoc-align-face "[ ]" 'adoc-checkbox-face " todo" 'no-face)
+  (adoctest-faces "checklist-star"
+                  "-" 'adoc-list-face " " 'adoc-align-face "[*]" 'adoc-checkbox-face " done" 'no-face)
+  ;; a bracketed token that isn't a checkbox is left alone
+  (adoctest-faces "checklist-not-a-box"
+                  "*" 'adoc-list-face " " 'adoc-align-face "[z] nope" 'no-face))
+
 (ert-deftest adoctest-test-inline-macros ()
   (adoctest-faces "inline-macros"
                   "commandname" 'adoc-command-face ":target[" 'adoc-meta-face "attribute list" 'adoc-value-face "]" 'adoc-meta-face))
