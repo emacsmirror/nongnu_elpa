@@ -102,7 +102,7 @@ old ~/.elfeed directory is present, it will be used instead."
 (defvar elfeed-db-index nil
   "Collection of all entries sorted by date, part of `elfeed-db'.")
 
-(defvar elfeed-db-version 4
+(defconst elfeed-db-version 4
   "The database version this version of Elfeed expects to use.")
 
 (defvar elfeed-new-entry-hook ()
