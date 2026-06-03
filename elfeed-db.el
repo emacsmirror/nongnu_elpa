@@ -47,6 +47,9 @@
 
 (require 'elfeed-lib)
 
+(defvar elfeed-feed--meta-cache (make-hash-table :test #'eq)
+  "Cache of predefined feed meta data in the `elfeed-feeds' list.")
+
 (defcustom elfeed-feeds ()
   "List of all feeds that Elfeed should follow.
 You must add your feeds to this list.
@@ -71,7 +74,10 @@ to the feed."
           (choice
            (string :tag "Feed URL")
            (cons :tag "Feed URL and autotags" string (repeat symbol))
-           (cons :tag "Feed URL, metadata and autotags" string sexp))))
+           (cons :tag "Feed URL, metadata and autotags" string sexp)))
+  :set (lambda (symbol value)
+         (set-default symbol value)
+         (clrhash elfeed-feed--meta-cache)))
 
 (defgroup elfeed-db ()
   "Elfeed database."
@@ -460,9 +466,6 @@ Runs `elfeed-db-unload-hook' after unloading the database."
   (cl-loop for (k v) on plist by #'cddr
            when v collect k and collect v))
 
-(defvar elfeed--feeds-meta (make-hash-table :test #'eq)
-  "Cache of feed meta data.")
-
 (defun elfeed-meta (thing key &optional default)
   "Access metadata for THING (entry, feed) under KEY.
 Return DEFAULT if unavailable.  During `elfeed-db-gc' and
@@ -473,7 +476,7 @@ plist).  The data structures must not be cyclic (e.g., cyclic lists)
 since the scanner is not guarded against them."
   (or (plist-get (elfeed-meta--plist thing) key)
       (when (elfeed-feed-p thing)
-        (let ((plist (with-memoization (gethash thing elfeed--feeds-meta)
+        (let ((plist (with-memoization (gethash thing elfeed-feed--meta-cache)
                        (let ((plist (cdr (assoc (or (elfeed-feed-url thing)
                                                     (elfeed-feed-id thing))
                                                 elfeed-feeds))))
