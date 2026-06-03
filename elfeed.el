@@ -226,12 +226,13 @@ list.  The second argument is the tag list.")
   "Manually clear the connection pool when connections fail to timeout.
 This is a workaround for issues in `url-queue-retrieve'."
   (interactive)
+  (setq elfeed-log-error-count 0)
+  (elfeed-log 'info "Unjamming queue")
   (if elfeed-use-curl
       (setf elfeed-curl-queue nil
             elfeed-curl-queue-active 0)
     (when-let* ((fails (mapcar #'url-queue-url url-queue)))
-      (elfeed-log 'warn "Elfeed aborted feeds: %s"
-                  (string-join fails " ")))
+      (elfeed-log 'warn "Aborted feeds: %s" (string-join fails " ")))
     (setf url-queue nil))
   (run-hooks 'elfeed-update-init-hook))
 
@@ -791,7 +792,8 @@ called interactively, SAVE is set to t."
   (interactive)
   (if (> (elfeed-queue-count-total) 0)
       (user-error "Update already running")
-    (elfeed-log 'info "Elfeed update: %s"
+    (setq elfeed-log-error-count 0)
+    (elfeed-log 'info "Update all feeds: %s"
                 (format-time-string "%B %e %Y %H:%M:%S %Z"))
     (run-hooks 'elfeed-update-init-hook)
     (mapc #'elfeed--update-feed (elfeed-shuffle (elfeed-feed-list)))))
@@ -803,7 +805,7 @@ This function can be called from a timer in the background, since it
 does not disturb any visible Elfeed windows.  No new update is started
 if another update is already running."
   (when (= (elfeed-queue-count-total) 0)
-    (elfeed-log 'info "Elfeed background update: %s"
+    (elfeed-log 'info "Update all feeds in background: %s"
                 (format-time-string "%B %e %Y %H:%M:%S %Z"))
     (dolist (feed (elfeed-shuffle (elfeed-feed-list)))
       (elfeed--update-feed feed t))))
