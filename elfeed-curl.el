@@ -46,19 +46,20 @@
 (require 'elfeed-lib)
 (require 'elfeed-log)
 
+(defgroup elfeed-curl ()
+  "Elfeed curl backend."
+  :group 'elfeed)
+
 (defcustom elfeed-curl-program-name "curl"
   "Name/path by which to invoke the curl program."
-  :group 'elfeed
   :type 'string)
 
 (defcustom elfeed-curl-max-connections 16
   "Maximum number of concurrent fetches."
-  :group 'elfeed
   :type 'integer)
 
 (defcustom elfeed-curl-timeout 30
   "Maximum number of seconds a fetch is allowed to take once started."
-  :group 'elfeed
   :type 'integer)
 
 (defcustom elfeed-curl-extra-arguments ()
@@ -67,7 +68,6 @@ These extra arguments are appended after Elfeed's own arguments,
 and care must be taken to not interfere with Elfeed's needs.  The
 guideline is to avoid arguments that change anything about curl's
 output format."
-  :group 'elfeed
   :type '(repeat string))
 
 (defvar elfeed-curl-queue ()

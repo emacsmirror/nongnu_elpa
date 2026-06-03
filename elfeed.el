@@ -57,7 +57,6 @@
   "Entry point for the command `elfeed'.
 You can set this either to the search or the tree command, or an
 alternative custom command if you use another custom frontend."
-  :group 'elfeed
   :type '(choice (const :tag "Search buffer" elfeed-search)
                  (const :tag "Tree buffer" elfeed-tree)
                  (command :tag "Custom command")))
@@ -68,7 +67,6 @@ alternative custom command if you use another custom frontend."
         #'elfeed-clipboard-get)
   "List of functions to use to get possible feeds for `elfeed-add-feed'.
 Each function should accept no arguments, and return a string or nil."
-  :group 'elfeed
   :type 'hook
   :options (list #'elfeed-get-link-at-point
                  #'thing-at-point-url-at-point
@@ -80,7 +78,6 @@ Each function should accept no arguments, and return a string or nil."
     (warn "Elfeed: curl is not available, falling back to `url-retrieve'")
     nil)
   "If non-nil, fetch feeds using curl instead of `url-retrieve'."
-  :group 'elfeed
   :type 'boolean)
 
 (defcustom elfeed-use-libxml nil
@@ -88,22 +85,18 @@ Each function should accept no arguments, and return a string or nil."
 This setting is experimental, and disabled for now.  It may lead to
 subtle differences to the usual xml.el parser, which renders certain
 feeds unreadable.  Enabling may yield a performance boost."
-  :group 'elfeed
   :type 'boolean)
 
 (defcustom elfeed-user-agent (format "Emacs Elfeed %s" elfeed-version)
   "User agent string to use for Elfeed (requires `elfeed-use-curl')."
-  :group 'elfeed
   :type 'string)
 
 (defcustom elfeed-initial-tags '(unread)
   "Initial tags for new entries."
-  :group 'elfeed
   :type '(repeat symbol))
 
 (defcustom elfeed-confirm-browse-url 2
   "Confirm `browse-url' when opening this many or more URLs."
-  :group 'elfeed
   :type '(choice (const :tag "No confirmation" nil)
                  (const :tag "Always confirm" t)
                  natnum))
@@ -120,7 +113,6 @@ feeds unreadable.  Enabling may yield a performance boost."
 
 (defcustom elfeed-default-directory nil
   "Default directory for all Elfeed buffers."
-  :group 'elfeed
   :type '(choice (const :tag "current" nil)
                  (const :tag "user home" "~/")
                  directory))
@@ -136,8 +128,7 @@ feeds unreadable.  Enabling may yield a performance boost."
   "Maximum relative last update time in seconds in the header line.
 Set to `most-positive-fixnum' to always use a relative time, or 0 to
 never show a relative time."
-  :type 'boolean
-  :group 'elfeed)
+  :type 'boolean)
 
 ;; Fetching:
 

@@ -47,20 +47,25 @@
 (require 'elfeed-search)
 (require 'outline)
 
-(defface elfeed-tree-highlight-unread-face
-  '((t :inherit warning))
-  "Face used in tree mode to highlight unread entries."
+(defgroup elfeed-tree ()
+  "Elfeed tree buffer."
   :group 'elfeed)
 
 (defcustom elfeed-tree-filter "@6months"
   "Query string added to filter."
-  :group 'elfeed
   :type 'string)
 
 (defcustom elfeed-tree-nodes ["├─●" "╰─●" "│  " "   "]
   "Strings used to visualize nodes of the tree."
-  :group 'elfeed
   :type '(vector string string string string))
+
+(defgroup elfeed-tree-faces ()
+  "Elfeed tree buffer faces."
+  :group 'elfeed-tree)
+
+(defface elfeed-tree-highlight-unread-face
+  '((t :inherit warning))
+  "Face used in tree mode to highlight unread entries.")
 
 (defvar elfeed-tree-header-function #'elfeed-tree--header
   "Function that returns the string to be used for the header line.")

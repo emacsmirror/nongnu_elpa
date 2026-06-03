@@ -20,6 +20,10 @@
 
 (require 'elfeed)
 
+(defgroup elfeed-search ()
+  "Elfeed search buffer."
+  :group 'elfeed)
+
 (defvar-local elfeed-search-entries ()
   "List of the entries currently on display.")
 
@@ -55,31 +59,26 @@ The functions may modify the search buffer or add overlays, for example
   "Delay search buffer updates by that many seconds to reduce redraws.
 This delay affects only the redraws after feed updates.  See also
 `elfeed-search-live-delay' and `elfeed-search-resize-delay'."
-  :group 'elfeed
   :type 'number)
 
 (defcustom elfeed-search-live-delay 0.1
   "Delay search buffer live updates by that many seconds to reduce redraws.
 This delay affects only the redraws during live filtering.  See also
 `elfeed-search-update-delay' and `elfeed-search-resize-delay'."
-  :group 'elfeed
   :type 'number)
 
 (defcustom elfeed-search-resize-delay 0.1
   "Delay search buffer resizing by that many seconds to reduce redraws.
 Set to nil to disable redraw on resize."
-  :group 'elfeed
   :type '(choice (const nil) number))
 
 (defcustom elfeed-search-filter "@6months +unread"
   "Query string filtering shown entries."
-  :group 'elfeed
   :type 'string
   :local t)
 
 (defcustom elfeed-search-completion t
   "Enable tag and search filter completion."
-  :group 'elfeed
   :type 'boolean)
 
 (define-obsolete-variable-alias 'elfeed-sort-order
@@ -91,7 +90,6 @@ Set to nil to disable redraw on resize."
 Changing this from the default will lead to misleading results
 during live filter editing, but the results be will correct when
 live filter editing is exited."
-  :group 'elfeed
   :type '(choice (const descending) (const ascending)))
 
 (defcustom elfeed-search-sort-function nil
@@ -107,7 +105,6 @@ live filter editing is exited.
 The variable can also be set to a list of functions (or nil for the
 default function) such that you can cycle between the function via the
 command `elfeed-search-cycle-order'."
-  :group 'elfeed
   :type `(choice
           (const :tag "Group by feed" ,#'elfeed-search-group-by-feed)
           (function :tag "Custom function")
@@ -138,14 +135,12 @@ be set to a list of symbols show, browse, tag, mark and yank, such that
 point does not move after the listed operations.  Example:
 
   (setq elfeed-search-remain-on-entry \\='(browse show yank))"
-  :group 'elfeed
   :type '(choice (const nil) (const t)
                  (repeat symbol)))
 
 (defcustom elfeed-search-clipboard-type 'PRIMARY
   "Selects the clipboard `elfeed-search-yank' should use.
 Choices are the symbols PRIMARY, SECONDARY, or CLIPBOARD."
-  :group 'elfeed
   :type '(choice (const PRIMARY) (const SECONDARY) (const CLIPBOARD)))
 
 (defcustom elfeed-search-date-format '("%Y-%m-%d" 10 :left)
@@ -153,18 +148,32 @@ Choices are the symbols PRIMARY, SECONDARY, or CLIPBOARD."
 
 This should be (string integer keyword) for (format width alignment).
 Possible alignments are :left and :right."
-  :group 'elfeed
   :type '(list string integer (choice (const :left) (const :right))))
 
 (defcustom elfeed-search-separator-date-format "%b %Y"
   "The `format-time-string' format for date separators."
-  :group 'elfeed
   :type '(choice (const nil) string))
 
 (defcustom elfeed-search-compile-filter t
   "If non-nil, compile search filters into bytecode on the fly."
-  :group 'elfeed
   :type 'boolean)
+
+(defcustom elfeed-search-title-max-width 70
+  "Maximum column width for titles in the `elfeed-search' buffer."
+  :type 'integer)
+
+(defcustom elfeed-search-title-min-width 16
+  "Minimum column width for titles in the `elfeed-search' buffer."
+  :type 'integer)
+
+(defcustom elfeed-search-trailing-width 30
+  "Space reserved for displaying the feed and tag information."
+  :type 'integer)
+
+(defcustom elfeed-search-face-alist
+  '((unread elfeed-search-unread-title-face))
+  "Mapping of tags to faces in the Elfeed entry listing."
+  :type '(alist :key-type symbol :value-type (repeat face)))
 
 (defvar elfeed-search-header-function #'elfeed-search--header
   "Function that returns the string to be used for the header line.")
@@ -381,83 +390,56 @@ The customization `elfeed-search-date-format' sets the formatting."
     (elfeed-format-column (format-time-string format (seconds-to-time date))
                           width align)))
 
+(defgroup elfeed-search-faces ()
+  "Elfeed search buffer faces."
+  :group 'elfeed-search)
+
 (defface elfeed-search-date-face
   '((((class color) (background light)) (:foreground "#aaa"))
     (((class color) (background dark))  (:foreground "#77a")))
-  "Face used in search mode for dates."
-  :group 'elfeed)
+  "Face used in search mode for dates.")
 
 (defface elfeed-search-title-face
   '((((class color) (background light)) (:foreground "#000"))
     (((class color) (background dark))  (:foreground "#fff")))
-  "Face used in search mode for titles."
-  :group 'elfeed)
+  "Face used in search mode for titles.")
 
 (defface elfeed-search-unread-title-face
   '((t :weight bold))
-  "Face used in search mode for unread entry titles."
-  :group 'elfeed)
+  "Face used in search mode for unread entry titles.")
 
 (defface elfeed-search-feed-face
   '((((class color) (background light)) (:foreground "#aa0"))
     (((class color) (background dark))  (:foreground "#ff0")))
-  "Face used in search mode for feed titles."
-  :group 'elfeed)
+  "Face used in search mode for feed titles.")
 
 (defface elfeed-search-tag-face
   '((((class color) (background light)) (:foreground "#070"))
     (((class color) (background dark))  (:foreground "#0f0")))
-  "Face used in search mode for tags."
-  :group 'elfeed)
+  "Face used in search mode for tags.")
 
 (defface elfeed-search-last-update-face
   '((t))
-  "Face for showing the date and time the database was last updated."
-  :group 'elfeed)
+  "Face for showing the date and time the database was last updated.")
 
 (defface elfeed-search-unread-count-face
   '((((class color) (background light)) (:foreground "#000"))
     (((class color) (background dark))  (:foreground "#fff")))
-  "Face used in search mode for the unread counter in the header."
-  :group 'elfeed)
+  "Face used in search mode for the unread counter in the header.")
 
 (defface elfeed-search-filter-face
   '((t :inherit mode-line-buffer-id))
-  "Face for showing the current Elfeed search filter."
-  :group 'elfeed)
+  "Face for showing the current Elfeed search filter.")
 
 (defface elfeed-search-marked-face
   '((t :inherit (lazy-highlight bold)))
-  "Face for marked entries."
-  :group 'elfeed)
+  "Face for marked entries.")
 
 (put 'elfeed-search-marked-overlay 'face 'elfeed-search-marked-face)
 
 (defface elfeed-search-separator-face
   '((t :inherit (bold elfeed-search-date-face) :underline t :extend t))
-  "Face for marked entries."
-  :group 'elfeed)
-
-(defcustom elfeed-search-title-max-width 70
-  "Maximum column width for titles in the `elfeed-search' buffer."
-  :group 'elfeed
-  :type 'integer)
-
-(defcustom elfeed-search-title-min-width 16
-  "Minimum column width for titles in the `elfeed-search' buffer."
-  :group 'elfeed
-  :type 'integer)
-
-(defcustom elfeed-search-trailing-width 30
-  "Space reserved for displaying the feed and tag information."
-  :group 'elfeed
-  :type 'integer)
-
-(defcustom elfeed-search-face-alist
-  '((unread elfeed-search-unread-title-face))
-  "Mapping of tags to faces in the Elfeed entry listing."
-  :group 'elfeed
-  :type '(alist :key-type symbol :value-type (repeat face)))
+  "Face for marked entries.")
 
 (defun elfeed-search--faces (tags)
   "Return all the faces that apply to an entry with TAGS."

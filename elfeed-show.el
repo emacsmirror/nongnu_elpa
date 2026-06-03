@@ -15,54 +15,22 @@
 (require 'elfeed)
 (require 'elfeed-search)
 
-(defface elfeed-show-header-face
-  '((t :inherit font-lock-keyword-face))
-  "Face for showing headers in the elfeed-entry buffer."
-  :group 'elfeed)
-
-(defface elfeed-show-title-face
-  '((t :weight bold :inherit font-lock-string-face))
-  "Face for showing the title name in the elfeed-entry buffer."
-  :group 'elfeed)
-
-(defface elfeed-show-author-face
-  '((t :weight bold :inherit font-lock-string-face))
-  "Face for showing the author name in the elfeed-entry buffer."
-  :group 'elfeed)
-
-(defface elfeed-show-date-face
-  '((t :inherit font-lock-string-face))
-  "Face for showing the date in the elfeed-entry buffer."
-  :group 'elfeed)
-
-(defface elfeed-show-feed-face
-  '((t :inherit font-lock-string-face))
-  "Face for showing the feed name in the elfeed-entry buffer."
-  :group 'elfeed)
-
-(defface elfeed-show-tags-face
-  '((t :inherit font-lock-string-face))
-  "Face for showing the tag names in the elfeed-entry buffer."
+(defgroup elfeed-show ()
+  "Elfeed entry buffer."
   :group 'elfeed)
 
 (defcustom elfeed-show-truncate-long-urls t
   "When non-nil, use an ellipsis to shorten very long displayed URLs."
-  :group 'elfeed
   :type 'boolean)
 
 (define-obsolete-variable-alias 'elfeed-show-entry-author
   'elfeed-show-author "4.0.0")
 (defcustom elfeed-show-author t
   "When non-nil, show the entry's author (if it's in the entry's metadata)."
-  :group 'elfeed
   :type 'boolean)
-
-(defvar-local elfeed-show-entry nil
-  "The entry being displayed in this buffer.")
 
 (defcustom elfeed-show-entry-switch #'switch-to-buffer
   "Function used to display the feed entry buffer."
-  :group 'elfeed
   :type '(choice (function-item switch-to-buffer)
                  (function-item pop-to-buffer)
                  function))
@@ -70,13 +38,60 @@
 (defcustom elfeed-show-entry-delete #'ignore
   "Function called when quitting from the elfeed-entry buffer.
 Called without arguments."
-  :group 'elfeed
   :type '(choice function))
 
 (defcustom elfeed-show-date-format "%a, %e %b %Y %T %Z"
   "The ‘format-time-string’ format for date in the elfeed-entry buffer."
-  :group 'elfeed
   :type 'string)
+
+(defcustom elfeed-show-unique-buffers nil
+  "When non-nil, every entry buffer gets a unique name.
+This allows for displaying multiple show buffers at the same
+time."
+  :type 'boolean)
+
+(defcustom elfeed-enclosure-default-dir "~/"
+  "Default directory for saving enclosures.
+This can be either a string (a file system path), or a function
+that takes a filename and the mime-type as arguments, and returns
+the enclosure dir."
+  :type 'directory)
+
+(defcustom elfeed-save-multiple-enclosures-without-asking nil
+  "If non-nil, saving multiple enclosures asks once for a directory.
+All attachments are saved in the chosen directory."
+  :type 'boolean)
+
+(defgroup elfeed-show-faces ()
+  "Elfeed entry buffer faces."
+  :group 'elfeed-show)
+
+(defface elfeed-show-header-face
+  '((t :inherit font-lock-keyword-face))
+  "Face for showing headers in the elfeed-entry buffer.")
+
+(defface elfeed-show-title-face
+  '((t :weight bold :inherit font-lock-string-face))
+  "Face for showing the title name in the elfeed-entry buffer.")
+
+(defface elfeed-show-author-face
+  '((t :weight bold :inherit font-lock-string-face))
+  "Face for showing the author name in the elfeed-entry buffer.")
+
+(defface elfeed-show-date-face
+  '((t :inherit font-lock-string-face))
+  "Face for showing the date in the elfeed-entry buffer.")
+
+(defface elfeed-show-feed-face
+  '((t :inherit font-lock-string-face))
+  "Face for showing the feed name in the elfeed-entry buffer.")
+
+(defface elfeed-show-tags-face
+  '((t :inherit font-lock-string-face))
+  "Face for showing the tag names in the elfeed-entry buffer.")
+
+(defvar-local elfeed-show-entry nil
+  "The entry being displayed in this buffer.")
 
 (defvar elfeed-show-refresh-function #'elfeed-show-refresh--mail-style
   "Function called to refresh the elfeed-entry buffer.")
@@ -234,13 +249,6 @@ Used as `revert-buffer-function'."
   (funcall elfeed-show-refresh-function)
   (run-hooks 'elfeed-show-update-hook))
 
-(defcustom elfeed-show-unique-buffers nil
-  "When non-nil, every entry buffer gets a unique name.
-This allows for displaying multiple show buffers at the same
-time."
-  :group 'elfeed
-  :type 'boolean)
-
 (defun elfeed-show--buffer-name (entry)
   "Return the appropriate buffer name for ENTRY.
 The result depends on the value of `elfeed-show-unique-buffers'."
@@ -338,20 +346,6 @@ the browser defined by `browse-url-secondary-browser-function'."
     (elfeed-show-refresh)))
 
 ;; Enclosures:
-
-(defcustom elfeed-enclosure-default-dir "~/"
-  "Default directory for saving enclosures.
-This can be either a string (a file system path), or a function
-that takes a filename and the mime-type as arguments, and returns
-the enclosure dir."
-  :type 'directory
-  :group 'elfeed)
-
-(defcustom elfeed-save-multiple-enclosures-without-asking nil
-  "If non-nil, saving multiple enclosures asks once for a directory.
-All attachments are saved in the chosen directory."
-  :type 'boolean
-  :group 'elfeed)
 
 (defvar elfeed-show-enclosure-filename-function
   #'elfeed-show-enclosure-filename-remote

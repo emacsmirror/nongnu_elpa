@@ -14,39 +14,44 @@
 
 (require 'elfeed-lib)
 
-(defface elfeed-log-date-face
-  '((t :inherit font-lock-type-face))
-  "Face for showing the date in the elfeed log buffer."
+(defgroup elfeed-log ()
+  "Elfeed log buffer."
   :group 'elfeed)
 
-(defface elfeed-log-error-level-face
-  '((t :foreground "red"))
-  "Face for showing the `error' log level in the elfeed log buffer."
-  :group 'elfeed)
+(defcustom elfeed-log-buffer-name " *elfeed-log*"
+  "Name of buffer used for logging Elfeed events."
+  :type 'string)
 
-(defface elfeed-log-warn-level-face
-  '((t :foreground "goldenrod"))
-  "Face for showing the `warn' log level in the elfeed log buffer."
-  :group 'elfeed)
-
-(defface elfeed-log-info-level-face
-  '((t :foreground "deep sky blue"))
-  "Face for showing the `info' log level in the elfeed log buffer."
-  :group 'elfeed)
-
-(defface elfeed-log-debug-level-face
-  '((t :foreground "magenta2"))
-  "Face for showing the `debug' log level in the elfeed log buffer."
-  :group 'elfeed)
-
-(defvar elfeed-log-buffer-name " *elfeed-log*"
-  "Name of buffer used for logging Elfeed events.")
-
-(defvar elfeed-log-level 'info
-  "Lowest type of messages to be logged.")
+(defcustom elfeed-log-level 'info
+  "Lowest type of messages to be logged."
+  :type 'symbol)
 
 (defvar elfeed-log-error-count 0
   "Error count.")
+
+(defgroup elfeed-log-faces ()
+  "Elfeed log buffer faces."
+  :group 'elfeed-log)
+
+(defface elfeed-log-date-face
+  '((t :inherit font-lock-type-face))
+  "Face for showing the date in the elfeed log buffer.")
+
+(defface elfeed-log-error-level-face
+  '((t :foreground "red"))
+  "Face for showing the `error' log level in the elfeed log buffer.")
+
+(defface elfeed-log-warn-level-face
+  '((t :foreground "goldenrod"))
+  "Face for showing the `warn' log level in the elfeed log buffer.")
+
+(defface elfeed-log-info-level-face
+  '((t :foreground "deep sky blue"))
+  "Face for showing the `info' log level in the elfeed log buffer.")
+
+(defface elfeed-log-debug-level-face
+  '((t :foreground "magenta2"))
+  "Face for showing the `debug' log level in the elfeed log buffer.")
 
 (defun elfeed-log-buffer ()
   "Returns the buffer for `elfeed-log', creating it as needed."

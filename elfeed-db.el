@@ -73,6 +73,10 @@ to the feed."
            (cons :tag "Feed URL and autotags" string (repeat symbol))
            (cons :tag "Feed URL, metadata and autotags" string sexp))))
 
+(defgroup elfeed-db ()
+  "Elfeed database."
+  :group 'elfeed)
+
 (defcustom elfeed-db-directory
   (locate-user-emacs-file "elfeed" "~/.elfeed")
   "Directory where elfeed will store its database.
@@ -80,12 +84,10 @@ You may want to customize this setting in your user configuration.
 Elfeed uses a subdirectory of your Emacs configuration by default, e.g.,
 ~/.config/emacs/elfeed, in order to keep the user home clean.  But if an
 old ~/.elfeed directory is present, it will be used instead."
-  :group 'elfeed
   :type 'directory)
 
 (defcustom elfeed-db-cache-timeout 60
   "Time in seconds to keep the cache buffer alive."
-  :group 'elfeed
   :type 'natnum)
 
 (defvar elfeed-db nil
