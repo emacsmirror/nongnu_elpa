@@ -255,7 +255,7 @@
   :readme "README.md")
 
  (evil-emacs-cursor-model-mode :url "https://github.com/maxfriis/evil-emacs-cursor-model-mode")
- 
+
  (evil-escape		:url "https://github.com/emacsorphanage/evil-escape.git"
   :readme "README.md"
   :ignored-files ("LICENSE"))
@@ -312,6 +312,11 @@
  (fj			:url "https://codeberg.org/martianh/fj.el"
   :readme "readme.org"
   )
+
+ (flamegraph :url "https://github.com/dgutov/emacs-flamegraph"
+             :readme "README.md"
+             :renames (("docs/" ""))
+             :ignored-files ("test" "LICENSE" "Makefile"))
 
  (flx			:url "https://github.com/lewang/flx"
   :readme "README.md"
@@ -750,7 +755,7 @@
   :ignored-files (".github" "Makefile" "*.png"))
 
  (paredit		:url "https://paredit.org/paredit.git")
- 
+
  ;; (parinfer-rust-mode	:url "https://github.com/justinbarclay/parinfer-rust-mode"
  ;;  )
 
@@ -781,7 +786,7 @@
   ;; FIXME: `elpa-admin.el' doesn't know what to do with that.
   ;; :doc "doc/book.toml"
   :readme "README.md")
- 
+
  (php-mode		:url "https://github.com/emacs-php/php-mode"
   :lisp-dir "lisp"
   :news "CHANGELOG.md"
