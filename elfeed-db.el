@@ -506,7 +506,10 @@ since the scanner is not guarded against them."
 (defvar elfeed-ref-archive nil
   "Index of archived/packed content.")
 
-(defvar elfeed-ref-cache nil
+(define-obsolete-variable-alias 'elfeed-ref-cache
+  'elfeed-ref--cache "4.0.0")
+
+(defvar elfeed-ref--cache nil
   "Temporary storage of the full archive content.")
 
 (defvar elfeed-ref--cache-timer nil
@@ -558,15 +561,15 @@ since the scanner is not guarded against them."
       (if (and index (file-exists-p archive-file))
           (progn
             ;; Ensure that cache is loaded.
-            (with-memoization elfeed-ref-cache (elfeed-slurp archive-file))
+            (with-memoization elfeed-ref--cache (elfeed-slurp archive-file))
             ;; Clear cache after delay.
             (when elfeed-ref--cache-timer
               (cancel-timer elfeed-ref--cache-timer)
               (setq elfeed-ref--cache-timer nil))
             (setq elfeed-ref--cache-timer
                   (run-at-time elfeed-db-cache-timeout nil
-                               (lambda () (setq elfeed-ref-cache nil))))
-            (substring-no-properties elfeed-ref-cache (car index) (cdr index)))
+                               (lambda () (setq elfeed-ref--cache nil))))
+            (substring-no-properties elfeed-ref--cache (car index) (cdr index)))
         (let ((file (elfeed-ref--file ref)))
           (when (file-exists-p file)
             (elfeed-slurp file)))))))
@@ -731,8 +734,8 @@ Deduplicate objects, delete empty feeds and unreferenced content files."
     (when elfeed-ref--cache-timer
       (cancel-timer elfeed-ref--cache-timer)
       (setq elfeed-ref--cache-timer nil))
-    (setf elfeed-ref-cache nil)
-    (setf elfeed-ref-archive next-archive)
+    (setq elfeed-ref--cache nil
+          elfeed-ref-archive next-archive)
     (mapc #'elfeed-ref-delete packed)
     :success))
 
