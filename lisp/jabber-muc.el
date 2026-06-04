@@ -333,6 +333,10 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (replace-id new-body new-from muc-p buffer))
 (declare-function jabber-reactions--reaction-only-p "jabber-reactions"
                   (xml-data))
+(declare-function jabber-chatstates--delete-typing-node "jabber-chatstates" ())
+(declare-function jabber-chatstates--muc-reinsert-typing "jabber-chatstates" ())
+(declare-function jabber-chatstates--muc-remove-nick "jabber-chatstates"
+                  (nick))
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-alert-muc-function)      ; jabber-alert.el
 (defvar jabber-body-printers)           ; jabber-chat.el
@@ -1809,6 +1813,10 @@ come from the stanza."
     (jabber-muc-remove-participant group nickname)
     (when-let* ((buffer (jabber-muc-find-buffer group)))
       (with-current-buffer buffer
+        (when (and (fboundp 'jabber-chatstates--muc-remove-nick)
+                   (fboundp 'jabber-chatstates--delete-typing-node))
+          (jabber-chatstates--muc-remove-nick nickname)
+          (jabber-chatstates--delete-typing-node))
         (jabber-maybe-print-rare-time
          (jabber-chat-ewoc-enter
           (list :muc-notice
@@ -1824,7 +1832,9 @@ come from the stanza."
                           (jabber-xml-get-attribute item 'nick)))
                  (t
                   (concat name " has left the chatroom")))
-                :time (current-time))))))))
+                :time (current-time))))
+        (when (fboundp 'jabber-chatstates--muc-reinsert-typing)
+          (jabber-chatstates--muc-reinsert-typing))))))
 
 (defun jabber-muc--room-created-message ()
   "Return a string with buttons for configuring a newly created room."

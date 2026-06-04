@@ -29,6 +29,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)
 (require 'jabber-util)
 (require 'ewoc)
 (require 'jabber-core)
@@ -40,6 +41,9 @@
 
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
+
+(declare-function jabber-muc-find-buffer "jabber-muc" (group))
+(declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
 
 (defgroup jabber-chatstates nil
   "Chat state notifications."
@@ -65,6 +69,9 @@ Non-nil means send states, nil means don't.")
 (defvar-local jabber-chatstates--ewoc-node nil
   "Ewoc node for the typing indicator, or nil.")
 
+(defvar-local jabber-chatstates--muc-composers nil
+  "Ordered list of MUC occupants currently composing in this buffer.")
+
 (defvar-local jabber-chatstates-composing-sent nil
   "Has composing notification been sent?
 It can be sent and cancelled several times.")
@@ -85,26 +92,120 @@ It can be sent and cancelled several times.")
   "Show or remove the typing indicator ewoc node for STATE."
   (let ((inhibit-read-only t))
     (if (eq state 'composing)
-        (unless jabber-chatstates--ewoc-node
-          (setq jabber-chatstates--ewoc-node
-                (jabber-chat-ewoc-enter
-                 (list :typing
-                       (format "%s is typing..."
-                               (jabber-jid-displayname jabber-chatting-with))))))
-      (when jabber-chatstates--ewoc-node
-        (jabber-chat-ewoc-delete jabber-chatstates--ewoc-node)
-        (setq jabber-chatstates--ewoc-node nil)))))
+        (progn
+          (when (and jabber-chatstates--ewoc-node
+                     (not (jabber-chatstates--live-ewoc-node-p
+                           jabber-chatstates--ewoc-node)))
+            (setq jabber-chatstates--ewoc-node nil))
+          (unless jabber-chatstates--ewoc-node
+            (setq jabber-chatstates--ewoc-node
+                  (jabber-chat-ewoc-enter
+                   (list :typing
+                         (format "%s is typing..."
+                                 (jabber-jid-displayname jabber-chatting-with)))))))
+      (jabber-chatstates--delete-typing-node))))
+
+(defun jabber-chatstates--composing-state-p (state)
+  "Return non-nil when STATE is the XEP-0085 composing state."
+  (eq state 'composing))
+
+(defun jabber-chatstates--muc-add-composer (composers nick)
+  "Return COMPOSERS with NICK appended once, preserving order."
+  (if (member nick composers)
+      composers
+    (append composers (list nick))))
+
+(defun jabber-chatstates--muc-remove-composer (composers nick)
+  "Return COMPOSERS without NICK, preserving order."
+  (remove nick composers))
+
+(defun jabber-chatstates--muc-composers-for-state (composers nick state)
+  "Return COMPOSERS updated for NICK's chat STATE."
+  (if (jabber-chatstates--composing-state-p state)
+      (jabber-chatstates--muc-add-composer composers nick)
+    (jabber-chatstates--muc-remove-composer composers nick)))
+
+(defun jabber-chatstates--format-muc-composers (composers)
+  "Return typing text for COMPOSERS, or nil when no one is composing."
+  (pcase composers
+    ('nil nil)
+    (`(,nick) (format "%s is typing..." nick))
+    (_ (format "%s are typing..." (string-join composers ", ")))))
+
+(defun jabber-chatstates--live-ewoc-node-p (node)
+  "Return non-nil when NODE still has a live EWOC marker."
+  (and-let* ((marker (ignore-errors (ewoc-location node))))
+    (marker-buffer marker)))
+
+(defun jabber-chatstates--delete-typing-node ()
+  "Remove the current typing indicator node without changing state."
+  (when jabber-chatstates--ewoc-node
+    (when (jabber-chatstates--live-ewoc-node-p jabber-chatstates--ewoc-node)
+      (jabber-chat-ewoc-delete jabber-chatstates--ewoc-node))
+    (setq jabber-chatstates--ewoc-node nil)))
+
+(defun jabber-chatstates--muc-reinsert-typing ()
+  "Reinsert the current buffer's MUC typing indicator at the bottom."
+  (jabber-chatstates--delete-typing-node)
+  (when-let* ((message (jabber-chatstates--format-muc-composers
+                        jabber-chatstates--muc-composers)))
+    (setq jabber-chatstates--ewoc-node
+          (jabber-chat-ewoc-enter (list :typing message)))))
+
+(defun jabber-chatstates--update-muc-ewoc ()
+  "Refresh the current buffer's MUC typing indicator at the bottom."
+  (let ((inhibit-read-only t))
+    (jabber-chatstates--muc-reinsert-typing)))
+
+(defun jabber-chatstates--muc-remove-nick (nick)
+  "Remove MUC NICK from the current buffer's composer state."
+  (setq jabber-chatstates--muc-composers
+        (jabber-chatstates--muc-remove-composer
+         jabber-chatstates--muc-composers nick)))
+
+(defun jabber-chatstates--muc-clear-nick (nick)
+  "Remove MUC NICK from the current buffer's typing indicator."
+  (jabber-chatstates--muc-remove-nick nick)
+  (jabber-chatstates--update-muc-ewoc))
 
 (defun jabber-chatstates--clear-typing ()
   "Remove the typing indicator ewoc node if present."
-  (when jabber-chatstates--ewoc-node
-    (jabber-chat-ewoc-delete jabber-chatstates--ewoc-node)
-    (setq jabber-chatstates--ewoc-node nil)))
+  (jabber-chatstates--delete-typing-node))
+
+(defun jabber-chatstates--clear-send-typing ()
+  "Remove direct-chat typing state while preserving active MUC composers."
+  (unless jabber-chatstates--muc-composers
+    (jabber-chatstates--clear-typing)))
+
+(defun jabber-chatstates--message-state (xml-data)
+  "Return the chat state symbol from XML-DATA, or nil."
+  (jabber-xml-node-name
+   (cl-find jabber-chatstates-xmlns
+            (jabber-xml-node-children xml-data)
+            :key (lambda (x) (jabber-xml-get-attribute x 'xmlns))
+            :test #'string=)))
+
+(defun jabber-chatstates--muc-self-nick-p (group nick jc)
+  "Return non-nil when NICK is our nickname in GROUP on JC."
+  (and-let* ((self-nick (jabber-muc-nickname group jc)))
+    (string= nick self-nick)))
+
+(defun jabber-chatstates--handle-muc-state (jc from state)
+  "Apply incoming MUC chat STATE from FROM on JC."
+  (when-let* ((group (jabber-jid-user from))
+              (nick (jabber-jid-resource from))
+              (buffer (jabber-muc-find-buffer group)))
+    (with-current-buffer buffer
+      (unless (jabber-chatstates--muc-self-nick-p group nick jc)
+        (setq jabber-chatstates--muc-composers
+              (jabber-chatstates--muc-composers-for-state
+               jabber-chatstates--muc-composers nick state)))
+      (jabber-chatstates--update-muc-ewoc))))
 
 (add-hook 'jabber-chat-send-hooks #'jabber-chatstates-when-sending)
 (defun jabber-chatstates-when-sending (_text _id)
   "Chat-send hook: cancel state timers and attach an `active' element."
-  (jabber-chatstates--clear-typing)
+  (jabber-chatstates--clear-send-typing)
   (jabber-chatstates-stop-timer)
   (when jabber-chatstates-confirm
     (setq jabber-chatstates-composing-sent nil)
@@ -186,10 +287,9 @@ Added to `kill-buffer-hook' in chat buffers."
 
 ;;; COMMON
 
-(defun jabber-handle-incoming-message-chatstates (jc xml-data)
-  "Update the chat buffer's typing indicator from XML-DATA on JC."
-  (when-let* ((from (jabber-xml-get-attribute xml-data 'from))
-              (buffer (get-buffer (jabber-chat-get-buffer from jc))))
+(defun jabber-chatstates--handle-direct-state (jc xml-data from)
+  "Update the direct chat buffer from XML-DATA sent by FROM on JC."
+  (when-let* ((buffer (get-buffer (jabber-chat-get-buffer from jc))))
     (with-current-buffer buffer
       (cond
        ;; If we get an error message, we shouldn't report any
@@ -199,20 +299,25 @@ Added to `kill-buffer-hook' in chat buffers."
         (setq jabber-chatstates-requested nil))
 
        (t
-	(let ((state
-	       (jabber-xml-node-name
-		(cl-find jabber-chatstates-xmlns
-			 (jabber-xml-node-children xml-data)
-			 :key (lambda (x) (jabber-xml-get-attribute x 'xmlns))
-			 :test #'string=))))
-	  ;; Set up hooks for composition notification
-	  (when (and jabber-chatstates-confirm state)
-	    (setq jabber-chatstates-requested t)
-	    (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t)
-	    (add-hook 'kill-buffer-hook #'jabber-chatstates-send-gone nil t))
+        (let ((state (jabber-chatstates--message-state xml-data)))
+          ;; Set up hooks for composition notification
+          (when (and jabber-chatstates-confirm state)
+            (setq jabber-chatstates-requested t)
+            (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t)
+            (add-hook 'kill-buffer-hook #'jabber-chatstates-send-gone nil t))
 
-	  (setq jabber-chatstates-last-state state)
-	  (jabber-chatstates--update-ewoc state)))))))
+          (setq jabber-chatstates-last-state state)
+          (jabber-chatstates--update-ewoc state)))))))
+
+(defun jabber-handle-incoming-message-chatstates (jc xml-data)
+  "Update the chat buffer's typing indicator from XML-DATA on JC."
+  (when-let* ((from (jabber-xml-get-attribute xml-data 'from)))
+    (if (string= (jabber-xml-get-attribute xml-data 'type) "groupchat")
+        (let ((state (jabber-chatstates--message-state xml-data)))
+          (when (and (not (string= (jabber-xml-get-attribute xml-data 'type) "error"))
+                     (or state (jabber-xml-get-children xml-data 'body)))
+            (jabber-chatstates--handle-muc-state jc from state)))
+      (jabber-chatstates--handle-direct-state jc xml-data from))))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-handle-incoming-message-chatstates 50)
 

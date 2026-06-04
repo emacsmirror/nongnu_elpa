@@ -14,6 +14,7 @@
 
 ;; jabber-chat requires this via jabber-muc
 (defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
+(defvar jabber-group nil)
 (defvar jabber-muc-participants nil)
 
 ;;; Test helpers
@@ -479,6 +480,73 @@ again, and the ewoc created on the first call must survive."
         (should (eq 'jc-old jabber-buffer-connection))
         (jabber-chat-mode-setup 'jc-new #'ignore)
         (should (eq 'jc-new jabber-buffer-connection))))))
+
+;;; Group 11: Refresh completion
+
+(ert-deftest jabber-test-chatbuffer-refresh-recenters-after-chunked-insert ()
+  "Refresh recenters only from the chunked insertion completion callback."
+  (jabber-test-chatbuffer-with-ewoc
+    (let ((events nil)
+          (callback nil)
+          (insert-generation nil)
+          (jabber-buffer-connection 'fake-jc)
+          (jabber-chatting-with "friend@example.com")
+          (jabber-group nil)
+          (jabber-chat-buffer-msg-count nil)
+          (jabber-backlog-number 10)
+          (jabber-chat-earliest-backlog nil)
+          (entries (list (list :timestamp (current-time) :body "hello"))))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-backlog)
+                 (lambda (&rest _) entries))
+                ((symbol-function 'jabber-muc-sender-p)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'jabber-chat--insert-backlog-chunked)
+                 (lambda (_buffer _entries cb &optional generation)
+                   (setq events (append events '(insert-start))
+                         callback cb
+                         insert-generation generation)))
+                ((symbol-function 'jabber-chat-display-buffer-images)
+                 (lambda ()
+                   (setq events (append events '(images)))))
+                ((symbol-function 'jabber-chat-buffer-recenter-input)
+                 (lambda ()
+                   (setq events (append events '(recenter))))))
+        (jabber-chat-buffer-refresh)
+        (should (equal '(insert-start) events))
+        (should callback)
+        (should (= insert-generation jabber-chat--backlog-generation))
+        (funcall callback)
+        (should (equal '(insert-start images recenter) events))))))
+
+(ert-deftest jabber-test-chatbuffer-refresh-empty-skips-completion-callbacks ()
+  "Empty refresh preserves behavior by skipping insert completion callbacks."
+  (jabber-test-chatbuffer-with-ewoc
+    (let ((events nil)
+          (jabber-buffer-connection 'fake-jc)
+          (jabber-chatting-with "friend@example.com")
+          (jabber-group nil)
+          (jabber-chat-buffer-msg-count nil)
+          (jabber-backlog-number 10)
+          (jabber-chat-earliest-backlog nil))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-backlog)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'jabber-muc-sender-p)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'jabber-chat--insert-backlog-chunked)
+                 (lambda (&rest _)
+                   (setq events (append events '(insert-start)))))
+                ((symbol-function 'jabber-chat-display-buffer-images)
+                 (lambda ()
+                   (setq events (append events '(images)))))
+                ((symbol-function 'jabber-chat-buffer-recenter-input)
+                 (lambda ()
+                   (setq events (append events '(recenter))))))
+        (jabber-chat-buffer-refresh)
+        (should-not events)))))
 
 (provide 'jabber-test-chatbuffer)
 

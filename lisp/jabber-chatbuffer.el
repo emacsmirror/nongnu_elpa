@@ -544,6 +544,11 @@ EWOC-PP is the pretty-printer function for the message EWOC."
                   (buffer entries callback &optional generation))
 (declare-function jabber-chat-display-buffer-images "jabber-chat" ())
 
+(defun jabber-chat-buffer--refresh-complete ()
+  "Finish a chat buffer refresh after backlog insertion completes."
+  (jabber-chat-display-buffer-images)
+  (jabber-chat-buffer-recenter-input))
+
 (defun jabber-chat-buffer-refresh ()
   "Refresh the current chat buffer from the database without killing it.
 Clears the ewoc and reloads backlog entries in place.  Cancels any
@@ -581,7 +586,7 @@ Uses `jabber-chat-buffer-msg-count' for the number of messages."
               (float-time (plist-get (car (last entries)) :timestamp)))
         (jabber-chat--insert-backlog-chunked
          (current-buffer) entries
-         #'jabber-chat-display-buffer-images
+         #'jabber-chat-buffer--refresh-complete
          generation)))))
 
 (defun jabber-chat-buffer-send ()
