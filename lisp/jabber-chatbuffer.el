@@ -34,6 +34,15 @@
 (defvar jabber-point-insert nil
   "Position where the message being composed starts.")
 
+(defcustom jabber-scrolltobottom-all nil
+  "Non-nil means keep the input area at the bottom in all chat windows.
+This recenters all visible windows displaying the current chat buffer
+whose window point is in the input area, at or after
+`jabber-point-insert'.  The default nil preserves the current behavior
+of recentering only one visible window."
+  :type 'boolean
+  :group 'jabber-chat)
+
 (defun jabber-chat-buffer--recenter-input-p (window)
   "Return non-nil when WINDOW should recenter to the input area."
   (and (window-live-p window)
@@ -43,13 +52,65 @@
                   (window-buffer window))
               (>= (window-point window) jabber-point-insert)))))
 
-(defun jabber-chat-buffer-recenter-input ()
-  "Recenter the visible current buffer window to the input area."
-  (when-let* ((window (get-buffer-window (current-buffer))))
-    (when (jabber-chat-buffer--recenter-input-p window)
-      (with-selected-window window
+(defun jabber-chat-buffer--recenter-input-window (window)
+  "Recenter WINDOW so the input area is at the bottom."
+  (with-selected-window window
+    (let ((resize-mini-windows nil))
+      (save-excursion
         (goto-char jabber-point-insert)
         (recenter -1)))))
+
+(defun jabber-chat-buffer--recenter-input-all ()
+  "Recenter all visible `current-buffer' windows following the input area."
+  (dolist (window (get-buffer-window-list (current-buffer) nil 'visible))
+    (when (jabber-chat-buffer--recenter-input-p window)
+      (jabber-chat-buffer--recenter-input-window window))))
+
+(defun jabber-chat-buffer-recenter-input ()
+  "Recenter visible `current-buffer' window(s) to the input area."
+  (if jabber-scrolltobottom-all
+      (jabber-chat-buffer--recenter-input-all)
+    (when-let* ((window (get-buffer-window (current-buffer))))
+      (when (jabber-chat-buffer--recenter-input-p window)
+        (jabber-chat-buffer--recenter-input-window window)))))
+
+(defvar-local jabber-chat-buffer--scrolltobottom-window-info nil
+  "Pre-insert scroll-to-bottom state for visible chat windows.
+Each entry is (WINDOW . FOLLOWING-P), where FOLLOWING-P records
+whether WINDOW was following the input area before message insertion.")
+
+(defun jabber-chat-buffer--scrolltobottom-windows ()
+  "Return windows eligible for pre-insert scroll-to-bottom state."
+  (if jabber-scrolltobottom-all
+      (get-buffer-window-list (current-buffer) nil 'visible)
+    (when-let* ((window (get-buffer-window (current-buffer))))
+      (list window))))
+
+(defun jabber-chat-buffer--scrolltobottom-before-insert ()
+  "Record pre-insert follow state for eligible `current-buffer' windows."
+  (setq jabber-chat-buffer--scrolltobottom-window-info
+        (mapcar (lambda (window)
+                  (cons window
+                        (and (jabber-chat-buffer--recenter-input-p window) t)))
+                (jabber-chat-buffer--scrolltobottom-windows))))
+
+(defun jabber-chat-buffer--scrolltobottom-after-insert ()
+  "Recenter windows that followed before insertion, then clear state."
+  (unwind-protect
+      (dolist (entry jabber-chat-buffer--scrolltobottom-window-info)
+        (when (and (cdr entry)
+                   (window-live-p (car entry)))
+          (jabber-chat-buffer--recenter-input-window (car entry))))
+    (setq jabber-chat-buffer--scrolltobottom-window-info nil)))
+
+(defmacro jabber-chat-buffer-with-scrolltobottom (&rest body)
+  "Run BODY with ERC-like pre/post scroll-to-bottom state."
+  (declare (indent 0) (debug t))
+  `(progn
+     (jabber-chat-buffer--scrolltobottom-before-insert)
+     (unwind-protect
+         (progn ,@body)
+       (jabber-chat-buffer--scrolltobottom-after-insert))))
 
 (defvar jabber-send-function nil
   "Function for sending a message from a chat buffer.")

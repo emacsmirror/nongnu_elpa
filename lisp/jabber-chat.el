@@ -660,10 +660,11 @@ _XML-DATA is reserved for future use by OMEMO."
         (self-p (string= (jabber-jid-user from)
                          (jabber-connection-bare-jid jc))))
     (with-current-buffer chat-buffer
-      (jabber-chatstates--clear-typing)
-      (jabber-maybe-print-rare-time
-       (jabber-chat-ewoc-enter
-        (list (if error-p :error :foreign) msg-plist)))
+      (jabber-chat-buffer-with-scrolltobottom
+        (jabber-chatstates--clear-typing)
+        (jabber-maybe-print-rare-time
+         (jabber-chat-ewoc-enter
+          (list (if error-p :error :foreign) msg-plist))))
       (when (and (not error-p) (not self-p))
         (let ((inhibit-message jabber-chat-mam-syncing))
           (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))

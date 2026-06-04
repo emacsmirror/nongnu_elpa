@@ -1705,8 +1705,9 @@ messages."
 				printers))
                    (not (and (jabber-muc--history-message-p xml-data)
                              jabber-chat-earliest-backlog)))
-          (jabber-maybe-print-rare-time
-           (jabber-chat-ewoc-enter (list type msg-plist))))))
+          (jabber-chat-buffer-with-scrolltobottom
+            (jabber-maybe-print-rare-time
+             (jabber-chat-ewoc-enter (list type msg-plist)))))))
     ;; Alert hooks run regardless of buffer existence, but not for
     ;; history messages.
     (unless (jabber-muc--history-message-p xml-data)
@@ -1785,13 +1786,14 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
     (let ((buffer (get-buffer (jabber-muc-get-buffer group jc))))
       (if buffer
           (with-current-buffer buffer
-            (jabber-maybe-print-rare-time
-             (jabber-chat-ewoc-enter
-              (list (if (string= type "error")
-                        :muc-error
-                      :muc-notice)
-                    message
-                    :time (current-time)))))
+            (jabber-chat-buffer-with-scrolltobottom
+              (jabber-maybe-print-rare-time
+               (jabber-chat-ewoc-enter
+                (list (if (string= type "error")
+                          :muc-error
+                        :muc-notice)
+                      message
+                      :time (current-time))))))
         (message "%s: %s" (jabber-jid-displayname group) message)))
     ;; Stagger: skip failed room and try the next one.
     ;; Defer via timer so Emacs can redisplay between joins.
@@ -1813,28 +1815,29 @@ come from the stanza."
     (jabber-muc-remove-participant group nickname)
     (when-let* ((buffer (jabber-muc-find-buffer group)))
       (with-current-buffer buffer
-        (when (and (fboundp 'jabber-chatstates--muc-remove-nick)
-                   (fboundp 'jabber-chatstates--delete-typing-node))
-          (jabber-chatstates--muc-remove-nick nickname)
-          (jabber-chatstates--delete-typing-node))
-        (jabber-maybe-print-rare-time
-         (jabber-chat-ewoc-enter
-          (list :muc-notice
-                (cond
-                 ((member jabber-muc-status-banned status-codes)
-                  (concat name " has been banned"
-                          (jabber-muc--format-actor-reason actor reason)))
-                 ((member jabber-muc-status-kicked status-codes)
-                  (concat name " has been kicked"
-                          (jabber-muc--format-actor-reason actor reason)))
-                 ((member jabber-muc-status-nick-changed status-codes)
-                  (concat name " changes nickname to "
-                          (jabber-xml-get-attribute item 'nick)))
-                 (t
-                  (concat name " has left the chatroom")))
-                :time (current-time))))
-        (when (fboundp 'jabber-chatstates--muc-reinsert-typing)
-          (jabber-chatstates--muc-reinsert-typing))))))
+        (jabber-chat-buffer-with-scrolltobottom
+          (when (and (fboundp 'jabber-chatstates--muc-remove-nick)
+                     (fboundp 'jabber-chatstates--delete-typing-node))
+            (jabber-chatstates--muc-remove-nick nickname)
+            (jabber-chatstates--delete-typing-node))
+          (jabber-maybe-print-rare-time
+           (jabber-chat-ewoc-enter
+            (list :muc-notice
+                  (cond
+                   ((member jabber-muc-status-banned status-codes)
+                    (concat name " has been banned"
+                            (jabber-muc--format-actor-reason actor reason)))
+                   ((member jabber-muc-status-kicked status-codes)
+                    (concat name " has been kicked"
+                            (jabber-muc--format-actor-reason actor reason)))
+                   ((member jabber-muc-status-nick-changed status-codes)
+                    (concat name " changes nickname to "
+                            (jabber-xml-get-attribute item 'nick)))
+                   (t
+                    (concat name " has left the chatroom")))
+                  :time (current-time))))
+          (when (fboundp 'jabber-chatstates--muc-reinsert-typing)
+            (jabber-chatstates--muc-reinsert-typing)))))))
 
 (defun jabber-muc--room-created-message ()
   "Return a string with buttons for configuring a newly created room."
@@ -1855,19 +1858,21 @@ come from the stanza."
   "Insert extra ewoc notices for STATUS-CODES into the current MUC buffer.
 NICKNAME is the entering user.  Assumes `jabber-chat-ewoc' is current."
   (when (member jabber-muc-status-nick-modified status-codes)
-    (jabber-chat-ewoc-enter
-     (list :muc-notice
-           (concat "Your nick was changed to " nickname " by the server")
-           :time (current-time))))
+    (jabber-chat-buffer-with-scrolltobottom
+      (jabber-chat-ewoc-enter
+       (list :muc-notice
+             (concat "Your nick was changed to " nickname " by the server")
+             :time (current-time)))))
   (when (member jabber-muc-status-room-created status-codes)
     (if jabber-muc--auto-configure
         (progn
           (setq jabber-muc--auto-configure nil)
           (jabber-muc-get-config jabber-buffer-connection jabber-group))
-      (jabber-chat-ewoc-enter
-       (list :muc-notice
-             (jabber-muc--room-created-message)
-             :time (current-time))))))
+      (jabber-chat-buffer-with-scrolltobottom
+        (jabber-chat-ewoc-enter
+         (list :muc-notice
+               (jabber-muc--room-created-message)
+               :time (current-time)))))))
 
 (defun jabber-muc--query-affiliations (jc group)
   "On JC, query member, admin, and owner affiliation lists for GROUP.
@@ -1942,10 +1947,11 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
                                              reason actor)))
         (when report
           (with-current-buffer buffer
-            (jabber-maybe-print-rare-time
-             (jabber-chat-ewoc-enter
-              (list :muc-notice report
-                    :time (current-time)))))))
+            (jabber-chat-buffer-with-scrolltobottom
+              (jabber-maybe-print-rare-time
+               (jabber-chat-ewoc-enter
+                (list :muc-notice report
+                      :time (current-time))))))))
       ;; Extra notices (status 201/210) fire for self-presence regardless
       ;; of whether there was an affiliation delta report.
       (when self-p
