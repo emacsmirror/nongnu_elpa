@@ -102,6 +102,7 @@ ROW is a sequence (list or vector)."
            do (insert (elfeed-csv-quote value))
            finally (newline)))
 
+;;;###autoload
 (cl-defun elfeed-csv-export (feeds-file entries-file tags-file &key headers-p)
   "Create separate CSV files for feeds, entries, and tags.
 

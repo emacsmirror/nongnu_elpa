@@ -1033,7 +1033,6 @@ date, in addition to checking the tag and date.  The new
 
 (unless nil
   ;; run-time only, so don't load when compiling other files
-  (require 'elfeed-csv)
   (require 'elfeed-show)
   (require 'elfeed-search)
   (require 'elfeed-tree))
