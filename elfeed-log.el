@@ -27,7 +27,7 @@
   :type 'symbol)
 
 (defvar elfeed-log-error-count 0
-  "Error count.")
+  "Number of logged errors since the last feed update.")
 
 (defgroup elfeed-log-faces ()
   "Elfeed log buffer faces."
