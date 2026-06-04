@@ -20,6 +20,7 @@
   =list-buffers-directory=.
 - =elfeed-last-update-relative=: New option to show last database update in the
   header line relative to the current time.
+- =elfeed-csv-export=: Marked as autoloaded, =elfeed-csv= is not required anymore.
 
 *** Database
 
@@ -160,8 +161,8 @@
 - =elfeed-log-buffer-name=: Make =*elfeed-log*= ephemeral by default with a space in
   front of the buffer name.
 - =elfeed-log-show=: New command to show the log.
-- Show error count in header line. Clicking on the error count will show the log
-  buffer.
+- Show error count in header line. Updating the feeds resets the counter.
+  Clicking on the error count will show the log buffer.
 
 *** Compatibility
 
