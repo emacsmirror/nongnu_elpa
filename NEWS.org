@@ -68,7 +68,8 @@
 
 - =elfeed-search=: New command as entry point.
 - =elfeed-search-set-filter=, =elfeed-search-tag-all=: Filter and tag completion
-  using =completing-read-multiple=.
+  using =completing-read-multiple=. Disable completion via the variable
+  =elfeed-search-completion=.
 - =elfeed-search-set-filter=: Support shorter age filter syntax, e.g., =@6months=.
 - =elfeed-search-date-filter=, =elfeed-search-feed-filter= and
   =elfeed-search-exclude-feed-filter=: New commands bound to ~@~, ~=~ and ~~~ to
@@ -85,7 +86,8 @@
   window resize.
 - =elfeed-search-live-delay=: New option to debounce live search filter updates.
 - =elfeed-search-separator-face=: New face for the search buffer separators.
-- =elfeed-search-separator-date-format=: Format string for separator date.
+- =elfeed-search-separator-date-format=: Format string for separator date. Set to
+  =nil= to disable the date separators.
 - =elfeed-search-add-separators=: New search buffer update hook which adds
   separator overlays. The separators are enabled by default. Remove the hook to
   disable:
