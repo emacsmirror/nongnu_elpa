@@ -167,6 +167,18 @@ Pass extra arguments to every Asciidoctor invocation via
 (setq adoc-asciidoctor-extra-args '("-a" "sectnums"))
 ----
 
+=== Syntax Checking
+
+If you use https://www.flycheck.org/[Flycheck], it ships a built-in
+`asciidoctor` checker that works in `adoc-mode` out of the box - it runs the
+`asciidoctor` command and reports its errors and warnings inline. Just enable
+`flycheck-mode` (and make sure `asciidoctor` is on your `PATH`):
+
+[source,emacs-lisp]
+----
+(add-hook 'adoc-mode-hook #'flycheck-mode)
+----
+
 === Image Preview
 
 If you click kbd:[mouse-3] on an image link like
