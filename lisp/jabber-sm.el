@@ -319,14 +319,20 @@ Return updated STATE-DATA."
          (last-acked (plist-get state-data :sm-last-acked))
          (queue (plist-get state-data :sm-outbound-queue))
          (pruned (jabber-sm--prune-queue queue h)))
-    (when (not (jabber-sm--counter-<= h sent))
+    (cond
+     ((jabber-sm--counter-<= h last-acked)
+      state-data)
+     ((not (jabber-sm--counter-<= h sent))
       (message "SM warning: server acked more stanzas than sent (h=%d, sent=%d)"
-               h sent))
-    (when (not (jabber-sm--counter-<= h last-acked))
+               h sent)
+      (setq state-data (plist-put state-data :sm-outbound-count h))
       (setq state-data (plist-put state-data :sm-last-acked h))
       (setq state-data (plist-put state-data :sm-outbound-queue pruned))
       (plist-put state-data :sm-stall-since nil))
-    state-data))
+     (t
+      (setq state-data (plist-put state-data :sm-last-acked h))
+      (setq state-data (plist-put state-data :sm-outbound-queue pruned))
+      (plist-put state-data :sm-stall-since nil)))))
 
 ;;; Enable/resume XML generation
 

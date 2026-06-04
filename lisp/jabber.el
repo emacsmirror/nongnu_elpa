@@ -172,6 +172,7 @@ One disabled account with a non-standard port:
 (require 'jabber-moderation)
 (require 'jabber-message-correct)
 (require 'jabber-message-reply)
+(require 'jabber-reactions)
 (require 'jabber-styling)
 (require 'jabber-browse)
 (require 'jabber-compose)

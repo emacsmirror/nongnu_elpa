@@ -34,6 +34,23 @@
 (defvar jabber-point-insert nil
   "Position where the message being composed starts.")
 
+(defun jabber-chat-buffer--recenter-input-p (window)
+  "Return non-nil when WINDOW should recenter to the input area."
+  (and (window-live-p window)
+       (with-current-buffer (window-buffer window)
+         (and (markerp jabber-point-insert)
+              (eq (marker-buffer jabber-point-insert)
+                  (window-buffer window))
+              (>= (window-point window) jabber-point-insert)))))
+
+(defun jabber-chat-buffer-recenter-input ()
+  "Recenter the visible current buffer window to the input area."
+  (when-let* ((window (get-buffer-window (current-buffer))))
+    (when (jabber-chat-buffer--recenter-input-p window)
+      (with-selected-window window
+        (goto-char jabber-point-insert)
+        (recenter -1)))))
+
 (defvar jabber-send-function nil
   "Function for sending a message from a chat buffer.")
 
@@ -83,6 +100,7 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-chat-reply "jabber-message-reply" ())
 (declare-function jabber-correct-last-message "jabber-message-correct" ())
 (declare-function jabber-chat-cancel-reply "jabber-message-reply" ())
+(declare-function jabber-reactions-react-at-point-or-insert "jabber-reactions" ())
 
 ;;
 
@@ -415,7 +433,8 @@ MAM sync in this buffer.  Set via the operations menu.")
   "C-c C-e" #'jabber-chat-encryption-menu
   "C-c C-m" #'jabber-muc-menu
   "C-c C-r" #'jabber-chat-reply
-  "C-c C-k" #'jabber-chat-cancel-reply)
+  "C-c C-k" #'jabber-chat-cancel-reply
+  "!" #'jabber-reactions-react-at-point-or-insert)
 
 (define-derived-mode jabber-chat-mode fundamental-mode "jabber-chat"
   "Major mode for Jabber chat buffers.
@@ -622,10 +641,7 @@ at the bottom of the window."
            (setq jabber-chat-encryption saved))
          (jabber-chat-encryption--update-header)
          (force-mode-line-update)
-         (when-let* ((win (get-buffer-window buffer)))
-           (with-selected-window win
-             (goto-char jabber-point-insert)
-             (recenter -1)))))
+         (jabber-chat-buffer-recenter-input)))
      (seq-filter
       (lambda (buffer)
         (with-current-buffer buffer

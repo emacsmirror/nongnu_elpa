@@ -331,6 +331,8 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
                   (replace-id new-body new-from muc-p buffer))
+(declare-function jabber-reactions--reaction-only-p "jabber-reactions"
+                  (xml-data))
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-alert-muc-function)      ; jabber-alert.el
 (defvar jabber-body-printers)           ; jabber-chat.el
@@ -408,10 +410,7 @@ JC is the Jabber connection."
              #'jabber-chat-display-buffer-images
              jabber-chat--backlog-generation))))
 
-      (when-let* ((win (get-buffer-window (current-buffer))))
-        (with-selected-window win
-          (goto-char jabber-point-insert)
-          (recenter -1))))
+      (jabber-chat-buffer-recenter-input))
 
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
@@ -1725,21 +1724,22 @@ messages."
 
 JC is the Jabber connection."
   (when (jabber-muc-message-p xml-data)
-    (let* ((xml-data (jabber-chat--decrypt-if-needed jc xml-data))
-           (from (jabber-xml-get-attribute xml-data 'from))
-           (group (jabber-jid-user from))
-           (nick (jabber-jid-resource from))
-           (type (jabber-muc--classify-message jc group nick xml-data))
-           (msg-plist (jabber-chat--msg-plist-from-stanza xml-data))
-           (replace-id (jabber-message-correct--replace-id xml-data)))
-      (if (and replace-id (not (jabber-muc--history-message-p xml-data)))
-          (jabber-message-correct--apply
-           replace-id
-           (plist-get msg-plist :body)
-           from
-           t
-           (jabber-muc-find-buffer group))
-        (jabber-muc--display-message jc xml-data group nick type msg-plist)))))
+    (let ((xml-data (jabber-chat--decrypt-if-needed jc xml-data)))
+      (unless (jabber-reactions--reaction-only-p xml-data)
+        (let* ((from (jabber-xml-get-attribute xml-data 'from))
+               (group (jabber-jid-user from))
+               (nick (jabber-jid-resource from))
+               (type (jabber-muc--classify-message jc group nick xml-data))
+               (msg-plist (jabber-chat--msg-plist-from-stanza xml-data))
+               (replace-id (jabber-message-correct--replace-id xml-data)))
+          (if (and replace-id (not (jabber-muc--history-message-p xml-data)))
+              (jabber-message-correct--apply
+               replace-id
+               (plist-get msg-plist :body)
+               from
+               t
+               (jabber-muc-find-buffer group))
+            (jabber-muc--display-message jc xml-data group nick type msg-plist)))))))
 
 (defun jabber-muc--format-actor-reason (actor reason)
   "Format optional \" by ACTOR\" / \" - \\='REASON\\='\" suffix."

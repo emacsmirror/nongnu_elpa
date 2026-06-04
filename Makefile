@@ -44,6 +44,7 @@ TESTS ?= tests/jabber-test-activity.el \
          tests/jabber-test-openpgp-legacy.el \
          tests/jabber-test-presence.el \
          tests/jabber-test-pubsub.el \
+         tests/jabber-test-reactions.el \
          tests/jabber-test-receipts.el \
          tests/jabber-test-roster.el \
          tests/jabber-test-sm.el \

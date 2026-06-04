@@ -201,6 +201,30 @@
     (should (= (length (plist-get result :sm-outbound-queue)) 1))
     (should (= (caar (plist-get result :sm-outbound-queue)) 3))))
 
+(ert-deftest jabber-test-sm-process-ack-ahead-recovers ()
+  "Ack-ahead recovery keeps outbound counters consistent."
+  (let* ((sd (list :sm-enabled t
+                   :sm-outbound-count 11501
+                   :sm-outbound-queue (list (cons 11501 'a))
+                   :sm-last-acked 11501
+                   :sm-stall-since 1.0))
+         (ack '(a ((xmlns . "urn:xmpp:sm:3") (h . "11502"))))
+         (result (jabber-sm--process-ack sd ack)))
+    (should (= (plist-get result :sm-outbound-count) 11502))
+    (should (= (plist-get result :sm-last-acked) 11502))
+    (should (= (jabber-sm--in-flight-count result) 0))
+    (should-not (plist-get result :sm-stall-since)))
+  (dolist (h '("11502" "11501"))
+    (let* ((sd (list :sm-enabled t
+                     :sm-outbound-count 11502
+                     :sm-outbound-queue (list (cons 11502 'a))
+                     :sm-last-acked 11502
+                     :sm-stall-since 1.0))
+           (before (copy-tree sd))
+           (ack `(a ((xmlns . "urn:xmpp:sm:3") (h . ,h))))
+           (result (jabber-sm--process-ack sd ack)))
+      (should (equal result before)))))
+
 ;;; FSM routing helper
 
 (ert-deftest jabber-test-sm-maybe-enable-with-sm ()

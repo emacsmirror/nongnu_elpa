@@ -29,8 +29,10 @@
 (require 'jabber-core)
 (require 'jabber-alert)
 (require 'jabber-chatbuffer)
+(require 'jabber-reactions)
 (require 'ewoc)
 (require 'goto-addr)
+(require 'subr-x)
 (require 'url-parse)
 (require 'url-queue)
 (require 'hex-util)
@@ -368,10 +370,7 @@ JC is the Jabber connection."
       ;; Catch up missed 1:1 messages from MAM.
       (jabber-mam-chat-opened jc (jabber-jid-user chat-with))
 
-      (when-let* ((win (get-buffer-window (current-buffer))))
-        (with-selected-window win
-          (goto-char jabber-point-insert)
-          (recenter -1))))
+      (jabber-chat-buffer-recenter-input))
 
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
@@ -880,6 +879,30 @@ or X for undelivered."
       (when indicator
         (insert indicator)))))
 
+(defun jabber-chat--reaction-sender ()
+  "Return the local sender key for reaction display."
+  (jabber-reactions--local-sender))
+
+(defun jabber-chat--reaction-entry-string (entry)
+  "Return propertized reaction summary text for ENTRY."
+  (propertize (format "%d%s"
+                      (plist-get entry :count)
+                      (plist-get entry :reaction))
+              'face (if (plist-get entry :chosen)
+                        'jabber-reaction-chosen
+                      'jabber-reaction)))
+
+(defun jabber-chat--insert-reactions (msg)
+  "Insert compact reaction summaries for MSG."
+  (unless (plist-get msg :retracted)
+    (when-let* ((entries (jabber-reactions--display-entries
+                          (plist-get msg :reactions)
+                          (jabber-chat--reaction-sender))))
+      (insert "\n"
+              (string-join
+               (mapcar #'jabber-chat--reaction-entry-string entries)
+               "  ")))))
+
 (defun jabber-chat-pp--local (data)
   "Render a locally sent message from DATA."
   (let* ((msg (cadr data))
@@ -892,6 +915,7 @@ or X for undelivered."
     (when (plist-get msg :edited)
       (insert (propertize " (edited)" 'face 'shadow)))
     (jabber-chat--insert-status-indicator msg)
+    (jabber-chat--insert-reactions msg)
     (insert "\n")))
 
 (defun jabber-chat-pp--foreign (data)
@@ -905,6 +929,7 @@ or X for undelivered."
       (run-hook-with-args 'jabber-chat-printers msg :foreign :insert))
     (when (plist-get msg :edited)
       (insert (propertize " (edited)" 'face 'shadow)))
+    (jabber-chat--insert-reactions msg)
     (insert "\n")))
 
 (defun jabber-chat--insert-tombstone (msg)
@@ -933,7 +958,8 @@ or X for undelivered."
               (append jabber-muc-printers jabber-chat-printers)))
       (when (plist-get msg :edited)
         (insert (propertize " (edited)" 'face 'shadow)))
-      (jabber-chat--insert-status-indicator msg))
+      (jabber-chat--insert-status-indicator msg)
+      (jabber-chat--insert-reactions msg))
     (insert "\n")))
 
 (defun jabber-chat-pp--muc-foreign (data)
@@ -948,7 +974,8 @@ or X for undelivered."
         (mapc (lambda (f) (funcall f msg :muc-foreign :insert))
               (append jabber-muc-printers jabber-chat-printers)))
       (when (plist-get msg :edited)
-        (insert (propertize " (edited)" 'face 'shadow))))
+        (insert (propertize " (edited)" 'face 'shadow)))
+      (jabber-chat--insert-reactions msg))
     (insert "\n")))
 
 (defun jabber-chat-pp--error (data)
