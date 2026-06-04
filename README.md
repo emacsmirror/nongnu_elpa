@@ -1,6 +1,8 @@
 # flamegraph.el
 
 [![CI](https://github.com/dgutov/emacs-flamegraph/actions/workflows/ci.yml/badge.svg)](https://github.com/dgutov/emacs-flamegraph/actions/workflows/ci.yml)
+[![NonGNU ELPA](https://elpa.nongnu.org/nongnu/flamegraph.svg)](https://elpa.nongnu.org/nongnu/flamegraph.html)
+[![NonGNU-devel ELPA](https://elpa.nongnu.org/nongnu-devel/flamegraph.svg)](https://elpa.nongnu.org/nongnu-devel/flamegraph.html)
 
 [Flame graphs][bg] for the Emacs profiler, and for folded-stacks
 files produced by `perf`, `py-spy`, `rbspy`, etc.
@@ -38,14 +40,14 @@ highlighting, and keep the Calls list flat.
 
 ## Installation
 
-Until this lands on a package archive, clone the repo and add it to
-your `load-path`:
+Available from [NonGNU ELPA][nongnu], which is enabled by default in
+Emacs 28+:
 
-```elisp
-(add-to-list 'load-path "/path/to/emacs-flamegraph")
-(autoload 'flamegraph-profiler-report "flamegraph" nil t)
-(autoload 'flamegraph-find-profile    "flamegraph" nil t)
 ```
+M-x package-install RET flamegraph RET
+```
+
+[nongnu]: https://elpa.nongnu.org/nongnu/flamegraph.html
 
 Requires Emacs 30.1+.
 
