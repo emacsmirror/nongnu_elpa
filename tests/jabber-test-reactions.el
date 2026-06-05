@@ -7,7 +7,30 @@
 ;;; Code:
 
 (require 'ert)
+(require 'jabber-db)
 (require 'jabber-reactions)
+
+(declare-function jabber-db-replace-reactions
+                  "jabber-db" (account peer type target-id sender reactions
+                              &optional updated-at))
+(declare-function jabber-reactions--message-updated-at
+                  "jabber-reactions" (message))
+
+;;; Test infrastructure
+
+(defmacro jabber-test-reactions-with-db (&rest body)
+  "Run BODY with a fresh temp SQLite database."
+  (declare (indent 0) (debug t))
+  `(let* ((jabber-test-reactions--dir (make-temp-file "jabber-reactions-test" t))
+          (jabber-db-path (expand-file-name "test.sqlite" jabber-test-reactions--dir))
+          (jabber-db--connection nil))
+     (unwind-protect
+         (progn
+           (jabber-db-ensure-open)
+           ,@body)
+       (jabber-db-close)
+       (when (file-directory-p jabber-test-reactions--dir)
+         (delete-directory jabber-test-reactions--dir t)))))
 
 ;;; Group 1: Pure reaction state helpers
 
@@ -126,6 +149,96 @@
                            (reaction nil "👍"))
                 ,extra)))))
 
+(ert-deftest jabber-test-reactions-reaction-only-p-accepts-fallback-body ()
+  "A reaction stanza with whole-body fallback is reaction-only."
+  (should
+   (jabber-reactions--reaction-only-p
+    `(message ((from . "juliet@example.com") (type . "chat"))
+              (body nil "> quoted\n👍")
+              (reactions ((xmlns . ,jabber-reactions-xmlns)
+                          (id . "target-1"))
+                         (reaction nil "👍"))
+              (fallback ((xmlns . "urn:xmpp:fallback:0")
+                         (for . ,jabber-reactions-xmlns))
+                        (body ((start . "0") (end . "10"))))))))
+
+(ert-deftest jabber-test-reactions-reaction-only-p-rejects-partial-fallback-body ()
+  "A reaction stanza with partially covered fallback body is not reaction-only."
+  (should-not
+   (jabber-reactions--reaction-only-p
+    `(message ((from . "juliet@example.com") (type . "chat"))
+              (body nil "> quoted\n👍")
+              (reactions ((xmlns . ,jabber-reactions-xmlns)
+                          (id . "target-1"))
+                         (reaction nil "👍"))
+              (fallback ((xmlns . "urn:xmpp:fallback:0")
+                         (for . ,jabber-reactions-xmlns))
+                        (body ((start . "0") (end . "1"))))))))
+
+(ert-deftest jabber-test-reactions-reaction-only-p-rejects-length-minus-one ()
+  "A fallback ending at the last character index is not full coverage."
+  (should-not
+   (jabber-reactions--reaction-only-p
+    `(message ((from . "juliet@example.com") (type . "chat"))
+              (body nil "> quoted\n👍")
+              (reactions ((xmlns . ,jabber-reactions-xmlns)
+                          (id . "target-1"))
+                         (reaction nil "👍"))
+              (fallback ((xmlns . "urn:xmpp:fallback:0")
+                         (for . ,jabber-reactions-xmlns))
+                        (body ((start . "0") (end . "9"))))))))
+
+(ert-deftest jabber-test-reactions-reaction-only-p-rejects-subject-only-fallback ()
+  "A fallback with children but no body child does not cover the body."
+  (should-not
+   (jabber-reactions--reaction-only-p
+    `(message ((from . "juliet@example.com") (type . "chat"))
+              (body nil "> quoted\n👍")
+              (reactions ((xmlns . ,jabber-reactions-xmlns)
+                          (id . "target-1"))
+                         (reaction nil "👍"))
+              (fallback ((xmlns . "urn:xmpp:fallback:0")
+                         (for . ,jabber-reactions-xmlns))
+                        (subject ((start . "0") (end . "10"))))))))
+
+(ert-deftest jabber-test-reactions-reaction-only-p-rejects-malformed-fallback-range ()
+  "A malformed body fallback range does not cover the body."
+  (should-not
+   (jabber-reactions--reaction-only-p
+    `(message ((from . "juliet@example.com") (type . "chat"))
+              (body nil "> quoted\n👍")
+              (reactions ((xmlns . ,jabber-reactions-xmlns)
+                          (id . "target-1"))
+                         (reaction nil "👍"))
+              (fallback ((xmlns . "urn:xmpp:fallback:0")
+                         (for . ,jabber-reactions-xmlns))
+                        (body ((start . "oops") (end . "10"))))))))
+
+(ert-deftest jabber-test-reactions-reaction-only-p-accepts-childless-fallback ()
+  "A reaction fallback with no child elements covers the whole body."
+  (should
+   (jabber-reactions--reaction-only-p
+    `(message ((from . "juliet@example.com") (type . "chat"))
+              (body nil "> quoted\n👍")
+              (reactions ((xmlns . ,jabber-reactions-xmlns)
+                          (id . "target-1"))
+                         (reaction nil "👍"))
+              (fallback ((xmlns . "urn:xmpp:fallback:0")
+                         (for . ,jabber-reactions-xmlns)))))))
+
+(ert-deftest jabber-test-reactions-reaction-only-p-accepts-body-child-fallback ()
+  "A reaction fallback with a bare body child covers the whole body."
+  (should
+   (jabber-reactions--reaction-only-p
+    `(message ((from . "juliet@example.com") (type . "chat"))
+              (body nil "> quoted\n👍")
+              (reactions ((xmlns . ,jabber-reactions-xmlns)
+                          (id . "target-1"))
+                         (reaction nil "👍"))
+              (fallback ((xmlns . "urn:xmpp:fallback:0")
+                         (for . ,jabber-reactions-xmlns))
+                        (body nil))))))
+
 (ert-deftest jabber-test-reactions-react-allows-custom-picker-input ()
   "Outgoing reaction picker accepts custom reactions outside defaults."
   (let ((sent nil)
@@ -142,6 +255,7 @@
                  "🔥"))
               ((symbol-function 'jabber-send-sexp)
                (lambda (_jc stanza) (setq sent stanza)))
+              ((symbol-function 'jabber-db-replace-reactions) #'ignore)
               ((symbol-function 'jabber-reactions--optimistic-update) #'ignore))
       (with-temp-buffer
         (setq-local jabber-buffer-connection 'fake-jc)
@@ -173,6 +287,7 @@
                  (lambda (_jc _xml-data) (cons inner nil)))
                 ((symbol-function 'jabber-chat-find-buffer)
                  (lambda (_chat-with) (current-buffer)))
+                ((symbol-function 'jabber-db-replace-reactions) #'ignore)
                 ((symbol-function 'jabber-chat-ewoc-find-by-id)
                  (lambda (_stanza-id) node))
                 ((symbol-function 'jabber-chat-ewoc-invalidate) #'ignore))
@@ -201,12 +316,135 @@
                  (lambda (_jc _xml-data) (cons inner carbon-buffer)))
                 ((symbol-function 'jabber-chat-find-buffer)
                  (lambda (_chat-with) nil))
+                ((symbol-function 'jabber-db-replace-reactions) #'ignore)
                 ((symbol-function 'jabber-chat-ewoc-find-by-id)
                  (lambda (_stanza-id) node))
                 ((symbol-function 'jabber-chat-ewoc-invalidate) #'ignore))
         (jabber-reactions--handle-message 'fake-jc outer)
         (should (equal (plist-get (cadr (ewoc-data node)) :reactions)
                        '(("romeo@example.com" . ("🔥")))))))))
+
+(ert-deftest jabber-test-reactions-message-updated-at-returns-nil-without-delay ()
+  "Reaction source timestamps are nil when no delay is present."
+  (should-not (jabber-reactions--message-updated-at '(message nil))))
+
+(ert-deftest jabber-test-reactions-handle-invisible-target-persists ()
+  "Incoming reactions persist even when no visible target node exists."
+  (jabber-test-reactions-with-db
+   (jabber-db-store-message "romeo@example.com" "juliet@example.com"
+                            "in" "chat" "hello" 1000 nil "target-1")
+   (let ((xml `(message ((from . "juliet@example.com/laptop")
+                         (to . "romeo@example.com")
+                         (type . "chat"))
+                        (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                    (id . "target-1"))
+                                   (reaction nil "👍"))
+                        (delay ((xmlns . "urn:xmpp:delay")
+                                (stamp . "2025-01-15T10:30:00Z"))))))
+     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                (lambda (_jc) "romeo@example.com"))
+               ((symbol-function 'jabber-chat-find-buffer)
+                (lambda (_chat-with) nil)))
+       (jabber-reactions--handle-message 'fake-jc xml))
+     (let* ((entry (car (jabber-db-backlog
+                         "romeo@example.com" "juliet@example.com")))
+            (reactions (plist-get entry :reactions))
+            (updated-at (caar (sqlite-select jabber-db--connection
+                               "SELECT updated_at FROM message_reaction"))))
+       (should (equal reactions '(("juliet@example.com" . ("👍")))))
+       (should (= updated-at
+                  (floor (float-time (date-to-time "2025-01-15T10:30:00Z")))))))))
+
+(ert-deftest jabber-test-reactions-handle-stale-after-empty-does-not-resurrect ()
+  "Incoming stale reactions do not overwrite a newer empty replacement."
+  (jabber-test-reactions-with-db
+   (jabber-db-store-message "romeo@example.com" "juliet@example.com"
+                            "in" "chat" "hello" 1000 nil "target-1")
+   (cl-labels ((reaction-message
+                (stamp &rest reactions)
+                `(message ((from . "juliet@example.com/laptop")
+                           (to . "romeo@example.com")
+                           (type . "chat"))
+                          (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                      (id . "target-1"))
+                                     ,@(mapcar (lambda (reaction)
+                                                 `(reaction nil ,reaction))
+                                               reactions))
+                          (delay ((xmlns . "urn:xmpp:delay")
+                                  (stamp . ,stamp))))))
+     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                (lambda (_jc) "romeo@example.com"))
+               ((symbol-function 'jabber-chat-find-buffer)
+                (lambda (_chat-with) nil)))
+       (jabber-reactions--handle-message
+        'fake-jc (reaction-message "2025-01-15T10:30:00Z" "👍"))
+       (jabber-reactions--handle-message
+        'fake-jc (reaction-message "2025-01-15T10:31:00Z"))
+       (jabber-reactions--handle-message
+        'fake-jc (reaction-message "2025-01-15T10:30:30Z" "🎉")))
+     (let ((entry (car (jabber-db-backlog
+                        "romeo@example.com" "juliet@example.com"))))
+       (should-not (plist-get entry :reactions))))))
+
+(ert-deftest jabber-test-reactions-handle-visible-stale-update-is-ignored ()
+  "Incoming stale delayed reactions do not overwrite visible buffer state."
+  (jabber-test-reactions-with-db
+   (jabber-db-store-message "romeo@example.com" "juliet@example.com"
+                            "in" "chat" "hello" 1000 nil "target-1")
+   (jabber-db-replace-reactions "romeo@example.com" "juliet@example.com"
+                                "chat" "target-1" "juliet@example.com"
+                                '("🎉")
+                                (floor (float-time
+                                        (date-to-time "2025-01-15T10:31:00Z"))))
+   (with-temp-buffer
+     (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+            (msg '(:id "target-1" :body "hello"
+                   :reactions (("juliet@example.com" . ("🎉")))))
+            (node (ewoc-enter-last jabber-chat-ewoc (list :foreign msg)))
+            (xml `(message ((from . "juliet@example.com/laptop")
+                            (to . "romeo@example.com")
+                            (type . "chat"))
+                           (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                       (id . "target-1"))
+                                      (reaction nil "👍"))
+                           (delay ((xmlns . "urn:xmpp:delay")
+                                   (stamp . "2025-01-15T10:30:00Z"))))))
+       (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                  (lambda (_jc) "romeo@example.com"))
+                 ((symbol-function 'jabber-chat-find-buffer)
+                  (lambda (_chat-with) (current-buffer)))
+                 ((symbol-function 'jabber-chat-ewoc-find-by-id)
+                  (lambda (_stanza-id) node))
+                 ((symbol-function 'jabber-chat-ewoc-invalidate) #'ignore))
+         (jabber-reactions--handle-message 'fake-jc xml)
+         (should (equal (plist-get (cadr (ewoc-data node)) :reactions)
+                        '(("juliet@example.com" . ("🎉"))))))))))
+
+(ert-deftest jabber-test-reactions-handle-live-same-second-updates ()
+  "No-delay incoming reactions apply in arrival order."
+  (jabber-test-reactions-with-db
+   (jabber-db-store-message "romeo@example.com" "juliet@example.com"
+                            "in" "chat" "hello" 1000 nil "target-1")
+   (cl-labels ((reaction-message
+                (reaction)
+                `(message ((from . "juliet@example.com/laptop")
+                           (to . "romeo@example.com")
+                           (type . "chat"))
+                          (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                      (id . "target-1"))
+                                     (reaction nil ,reaction)))))
+     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                (lambda (_jc) "romeo@example.com"))
+               ((symbol-function 'jabber-chat-find-buffer)
+                (lambda (_chat-with) nil))
+               ((symbol-function 'float-time)
+                (lambda (&optional _time) 1234.0)))
+       (jabber-reactions--handle-message 'fake-jc (reaction-message "👍"))
+       (jabber-reactions--handle-message 'fake-jc (reaction-message "🎉")))
+     (let* ((entry (car (jabber-db-backlog
+                         "romeo@example.com" "juliet@example.com")))
+            (reactions (plist-get entry :reactions)))
+       (should (equal reactions '(("juliet@example.com" . ("🎉")))))))))
 
 (provide 'jabber-test-reactions)
 ;;; jabber-test-reactions.el ends here

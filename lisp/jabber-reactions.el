@@ -29,6 +29,7 @@
 (require 'cl-lib)
 (require 'ewoc)
 (require 'subr-x)
+(require 'jabber-db)
 (require 'jabber-disco)
 (require 'jabber-util)
 
@@ -37,6 +38,9 @@
 
 (defconst jabber-reactions-hints-xmlns "urn:xmpp:hints"
   "XEP-0334 Message Processing Hints namespace.")
+
+(defconst jabber-reactions-fallback-xmlns "urn:xmpp:fallback:0"
+  "XEP-0428 Fallback Indication namespace.")
 
 (defcustom jabber-reactions-default-choices
   '("👍" "❤️" "😂" "🎉" "😮" "😢" "🙏")
@@ -62,6 +66,11 @@ are not filtered against it."
 (defvar jabber-group)
 (defvar jabber-point-insert)
 
+(declare-function jabber-db-reaction-stale-p
+                  "jabber-db" (account peer type target-id sender updated-at))
+(declare-function jabber-db-replace-reactions
+                  "jabber-db" (account peer type target-id sender reactions
+                                        &optional updated-at))
 (declare-function jabber-chat--unwrap-carbon "jabber-chat" (jc xml-data))
 (declare-function jabber-chat-ewoc-find-by-id "jabber-chatbuffer" (stanza-id))
 (declare-function jabber-chat-ewoc-invalidate "jabber-chatbuffer" (node))
@@ -173,14 +182,75 @@ an empty update."
                      (car (jabber-xml-node-children reaction)))
                    (jabber-xml-get-children reactions 'reaction))))))
 
+(defun jabber-reactions--fallback-for-reactions-p (fallback)
+  "Return non-nil when FALLBACK marks XEP-0444 reaction fallback text."
+  (and (string= (or (jabber-xml-get-attribute fallback 'xmlns) "")
+                jabber-reactions-fallback-xmlns)
+       (string= (or (jabber-xml-get-attribute fallback 'for) "")
+                jabber-reactions-xmlns)))
+
+(defun jabber-reactions--body-text (xml-data)
+  "Return the plain `<body>' text from XML-DATA, or nil."
+  (car (jabber-xml-node-children
+        (car (jabber-xml-get-children xml-data 'body)))))
+
+(defun jabber-reactions--integer-attribute (xml-data attribute)
+  "Return XML-DATA's integer ATTRIBUTE, or nil when malformed."
+  (when-let* ((value (jabber-xml-get-attribute xml-data attribute))
+              ((string-match-p "\\`[0-9]+\\'" value)))
+    (string-to-number value)))
+
+(defun jabber-reactions--element-children (xml-data)
+  "Return XML-DATA's child elements."
+  (cl-remove-if-not #'listp (jabber-xml-node-children xml-data)))
+
+(defun jabber-reactions--fallback-body-range (fallback)
+  "Return FALLBACK body coverage as `whole', (START END), or nil."
+  (let ((children (jabber-reactions--element-children fallback)))
+    (if (null children)
+        'whole
+      (when-let* ((body (car (jabber-xml-get-children fallback 'body))))
+        (let ((start-attr (jabber-xml-get-attribute body 'start))
+              (end-attr (jabber-xml-get-attribute body 'end)))
+          (cond
+           ((and (null start-attr) (null end-attr)) 'whole)
+           ((and start-attr end-attr)
+            (when-let* ((start (jabber-reactions--integer-attribute body 'start))
+                        (end (jabber-reactions--integer-attribute body 'end)))
+              (list start end)))))))))
+
+(defun jabber-reactions--range-covers-body-p (range body)
+  "Return non-nil when RANGE covers all of BODY."
+  (or (eq range 'whole)
+      (pcase range
+        (`(,start ,end)
+         (and (zerop start)
+              (>= end (length body)))))))
+
+(defun jabber-reactions--fallback-body-p (xml-data)
+  "Return non-nil when XML-DATA's body is only XEP-0444 fallback text."
+  (when-let* ((body (jabber-reactions--body-text xml-data)))
+    (cl-some (lambda (fallback)
+               (and (jabber-reactions--fallback-for-reactions-p fallback)
+                    (jabber-reactions--range-covers-body-p
+                     (jabber-reactions--fallback-body-range fallback)
+                     body)))
+             (jabber-xml-get-children xml-data 'fallback))))
+
 (defun jabber-reactions--reaction-only-p (xml-data)
   "Return non-nil when XML-DATA is only a reaction update stanza.
 A reaction-only stanza has a XEP-0444 `<reactions>' payload and no
-`<body>', `<subject>', or `<error>' child."
+real `<body>', `<subject>', or `<error>' child.  A `<body>' fully marked
+as XEP-0428 fallback for reactions does not count as a real body."
   (and (jabber-xml-child-with-xmlns xml-data jabber-reactions-xmlns)
-       (not (jabber-xml-get-children xml-data 'body))
+       (or (not (jabber-xml-get-children xml-data 'body))
+           (jabber-reactions--fallback-body-p xml-data))
        (not (jabber-xml-get-children xml-data 'subject))
        (not (jabber-xml-get-children xml-data 'error))))
+
+(defun jabber-reactions--history-inhibit-p (_jc xml-data)
+  "Return non-nil when XML-DATA should not be stored as a message body."
+  (jabber-reactions--reaction-only-p xml-data))
 
 (defun jabber-reactions--incoming-sender (from type)
   "Return the reaction sender key for incoming FROM and message TYPE."
@@ -195,6 +265,39 @@ A reaction-only stanza has a XEP-0444 `<reactions>' payload and no
     (if (string= type "groupchat")
         (jabber-muc-find-buffer (jabber-jid-user from))
       (jabber-chat-find-buffer (jabber-jid-user from)))))
+
+(defun jabber-reactions--storage-peer (jc message type)
+  "Return the DB peer for reaction-bearing MESSAGE on JC with TYPE."
+  (let ((from (jabber-xml-get-attribute message 'from))
+        (to (jabber-xml-get-attribute message 'to)))
+    (if (string= type "groupchat")
+        (and from (jabber-jid-user from))
+      (let ((account (jabber-connection-bare-jid jc)))
+        (cond
+         ((and from (string= (jabber-jid-user from) account))
+          (and to (jabber-jid-user to)))
+         (from (jabber-jid-user from))
+         (to (jabber-jid-user to)))))))
+
+(defun jabber-reactions--message-updated-at (message)
+  "Return the source timestamp for reaction MESSAGE, or nil.
+Nil means MESSAGE has no delayed/source timestamp and should be applied
+in arrival order."
+  (when-let* ((timestamp (jabber-message-timestamp message)))
+    (floor (float-time timestamp))))
+
+(defun jabber-reactions--persist-update (jc message target-id sender reactions)
+  "Persist SENDER's REACTIONS for TARGET-ID from MESSAGE on JC.
+Return :stale when persistent storage confirms MESSAGE is stale."
+  (let ((type (or (jabber-xml-get-attribute message 'type) "chat"))
+        (updated-at (jabber-reactions--message-updated-at message)))
+    (when-let* ((account (jabber-connection-bare-jid jc))
+                (peer (jabber-reactions--storage-peer jc message type)))
+      (unless (jabber-db-replace-reactions
+               account peer type target-id sender reactions updated-at)
+        (when (jabber-db-reaction-stale-p
+               account peer type target-id sender updated-at)
+          :stale)))))
 
 (defun jabber-reactions--unwrap-stanza (jc xml-data)
   "Return (MESSAGE . BUFFER) for reaction-bearing XML-DATA on JC."
@@ -296,6 +399,10 @@ buffers with a known destination."
              (jabber-reactions--build-stanza to type target-id
                                              sender-reactions
                                              (jabber-reactions--message-id)))
+            (jabber-db-replace-reactions
+             (jabber-connection-bare-jid jabber-buffer-connection)
+             (jabber-jid-user to)
+             type target-id sender sender-reactions)
             (unless (bound-and-true-p jabber-group)
               (jabber-reactions--optimistic-update node msg sender sender-reactions))))
       (jabber-reactions--insert-literal-bang))))
@@ -320,15 +427,20 @@ buffers with a known destination."
                             message jabber-reactions-xmlns))
                 (parsed (jabber-reactions--parse-element reactions))
                 (from (jabber-xml-get-attribute message 'from))
-                (type (jabber-xml-get-attribute message 'type))
-                (sender (jabber-reactions--incoming-sender from type))
-                (buffer (or carbon-buffer
-                            (jabber-reactions--buffer-for-stanza from type))))
-      (with-current-buffer buffer
-        (when-let* ((node (jabber-chat-ewoc-find-by-id (car parsed))))
-          (jabber-reactions--apply-incoming-update node sender (cadr parsed)))))))
+                (type (or (jabber-xml-get-attribute message 'type) "chat"))
+                (sender (jabber-reactions--incoming-sender from type)))
+      (unless (eq (jabber-reactions--persist-update
+                   jc message (car parsed) sender (cadr parsed))
+                  :stale)
+        (when-let* ((buffer (or carbon-buffer
+                                (jabber-reactions--buffer-for-stanza from type))))
+          (with-current-buffer buffer
+            (when-let* ((node (jabber-chat-ewoc-find-by-id (car parsed))))
+              (jabber-reactions--apply-incoming-update node sender (cadr parsed)))))))))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-reactions--handle-message -5)
+(add-to-list 'jabber-history-inhibit-received-message-functions
+             #'jabber-reactions--history-inhibit-p)
 
 ;;; Disco
 

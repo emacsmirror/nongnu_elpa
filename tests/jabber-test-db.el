@@ -9,6 +9,11 @@
 (require 'ert)
 (require 'jabber-chat)
 (require 'jabber-db)
+(require 'jabber-reactions)
+
+(declare-function jabber-db-replace-reactions
+                  "jabber-db" (account peer type target-id sender reactions
+                                        &optional updated-at))
 
 ;;; Test infrastructure
 
@@ -1532,9 +1537,15 @@ VALUES ('me@x.com', 'peer@x.com', 'in', 'chat', 'text', 1001,
             (sqlite-close db))
           ;; Open with migration.
           (jabber-db-ensure-open)
-          ;; Check version is now 4 (full chain: v2->v3->v4).
-          (should (= 4 (caar (sqlite-select jabber-db--connection
-                                            "PRAGMA user_version"))))
+          ;; Check version is current (full chain: v2 through latest).
+          (should (= jabber-db--schema-version
+                     (caar (sqlite-select jabber-db--connection
+                                          "PRAGMA user_version"))))
+          (let ((tables (mapcar #'car
+                                (sqlite-select jabber-db--connection
+                                  "SELECT name FROM sqlite_master WHERE type='table'"))))
+            (should (member "message_reaction" tables))
+            (should (member "message_reaction_actor" tables)))
           ;; OOB data migrated to child table.
           (let ((oob-rows (sqlite-select jabber-db--connection
                            "SELECT url, desc FROM message_oob")))
@@ -1576,6 +1587,219 @@ VALUES ('me@x.com', 'peer@x.com', 'in', 'chat', 'text', 1001,
         (should (= 2 (length oob)))
         (should (string= "https://new.com/a.pdf" (car (nth 0 oob))))
         (should (string= "https://new.com/b.pdf" (car (nth 1 oob))))))))
+
+;;; Group: message_reaction child table
+
+(ert-deftest jabber-test-db-reaction-table-exists ()
+  "The reaction row and actor metadata tables exist in fresh databases."
+  (jabber-test-db-with-db
+    (let ((tables (mapcar #'car
+                          (sqlite-select jabber-db--connection
+                            "SELECT name FROM sqlite_master WHERE type='table'"))))
+      (should (member "message_reaction" tables))
+      (should (member "message_reaction_actor" tables)))
+    (let ((indexes (mapcar #'car
+                           (sqlite-select jabber-db--connection
+                             "SELECT name FROM sqlite_master WHERE type='index'"))))
+      (should (member "idx_reaction_message_id" indexes)))))
+
+(ert-deftest jabber-test-db-reaction-fallback-body-not-stored ()
+  "Reaction fallback body is not stored as a normal message body."
+  (jabber-test-db-with-db
+    (let ((xml `(message ((from . "friend@example.com/laptop")
+                          (type . "chat")
+                          (id . "reaction-1"))
+                         (body nil "> quoted\n👍")
+                         (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                     (id . "target-1"))
+                                    (reaction nil "👍"))
+                         (fallback ((xmlns . "urn:xmpp:fallback:0")
+                                    (for . ,jabber-reactions-xmlns))
+                                   (body ((start . "0") (end . "10")))))))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com")))
+        (jabber-db--message-handler 'fake-jc xml))
+      (should (null (jabber-db-query "me@example.com" "friend@example.com"))))))
+
+(ert-deftest jabber-test-db-replace-reactions-chat-by-stanza-id ()
+  "Direct-chat reactions are stored against the target stanza id."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (should (jabber-db-replace-reactions
+             "me@example.com" "friend@example.com" "chat" "stanza-1"
+             "friend@example.com" '("👍" "👍" "🎉")))
+    (let ((rows (sqlite-select jabber-db--connection
+                 "SELECT sender, reaction FROM message_reaction")))
+      (should (= 2 (length rows)))
+      (should (member '("friend@example.com" "👍") rows))
+      (should (member '("friend@example.com" "🎉") rows)))))
+
+(ert-deftest jabber-test-db-replace-reactions-groupchat-by-server-id ()
+  "MUC reactions are stored against the target server id."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "room@example.com"
+                             "in" "groupchat" "hello" 1000
+                             "alice" nil "server-1")
+    (should (jabber-db-replace-reactions
+             "me@example.com" "room@example.com" "groupchat" "server-1"
+             "room@example.com/bob" '("❤️")))
+    (let ((row (car (sqlite-select jabber-db--connection
+                    "SELECT sender, reaction FROM message_reaction"))))
+      (should (equal row '("room@example.com/bob" "❤️"))))))
+
+(ert-deftest jabber-test-db-replace-reactions-stores-source-timestamp ()
+  "Reaction replacement stores the supplied source timestamp."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (should (jabber-db-replace-reactions
+             "me@example.com" "friend@example.com" "chat" "stanza-1"
+             "alice" '("👍") 1234))
+    (should (= 1234 (caar (sqlite-select jabber-db--connection
+                            "SELECT updated_at FROM message_reaction"))))
+    (should (= 1234 (caar (sqlite-select jabber-db--connection
+                            "SELECT updated_at FROM message_reaction_actor"))))))
+
+(ert-deftest jabber-test-db-replace-reactions-newer-overwrites ()
+  "A newer reaction replacement overwrites existing sender state."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" '("👍") 1000)
+    (should (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                         "chat" "stanza-1" "alice" '("🎉") 1001))
+    (should (equal (sqlite-select jabber-db--connection
+                     "SELECT reaction, updated_at FROM message_reaction")
+                   '(("🎉" 1001))))))
+
+(ert-deftest jabber-test-db-replace-reactions-stale-ignored ()
+  "An older or equal reaction replacement does not overwrite sender state."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" '("👍") 1000)
+    (should-not (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                             "chat" "stanza-1" "alice" '("🎉") 999))
+    (should-not (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                             "chat" "stanza-1" "alice" '("❤️") 1000))
+    (should (equal (sqlite-select jabber-db--connection
+                     "SELECT reaction, updated_at FROM message_reaction")
+                   '(("👍" 1000))))))
+
+(ert-deftest jabber-test-db-replace-reactions-old-call-remains-compatible ()
+  "Reaction replacement still works when callers omit UPDATED-AT."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (should (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                         "chat" "stanza-1" "alice" '("👍")))
+    (should (equal (caar (sqlite-select jabber-db--connection
+                           "SELECT reaction FROM message_reaction"))
+                   "👍"))))
+
+(ert-deftest jabber-test-db-replace-reactions-empty-removes-sender ()
+  "An empty replacement removes only that sender's reactions."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" '("👍"))
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "bob" '("🎉"))
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" nil)
+    (let ((rows (sqlite-select jabber-db--connection
+                 "SELECT sender, reaction FROM message_reaction")))
+      (should (equal rows '(("bob" "🎉")))))))
+
+(ert-deftest jabber-test-db-replace-reactions-empty-preserves-actor-timestamp ()
+  "Empty replacement records actor timestamp and blocks older replays."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" '("👍") 1000)
+    (should (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                         "chat" "stanza-1" "alice" nil 1001))
+    (should-not (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                             "chat" "stanza-1" "alice" '("🎉") 1000))
+    (should (= 1001 (caar (sqlite-select jabber-db--connection
+                            "SELECT updated_at FROM message_reaction_actor"))))
+    (should (= 0 (caar (sqlite-select jabber-db--connection
+                         "SELECT count(*) FROM message_reaction"))))))
+
+(ert-deftest jabber-test-db-replace-reactions-local-same-second-updates ()
+  "Local replacements without UPDATED-AT are accepted even in the same second."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (cl-letf (((symbol-function 'float-time) (lambda (&optional _time) 1234.9)))
+      (should (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                           "chat" "stanza-1" "alice" '("👍")))
+      (should (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                           "chat" "stanza-1" "alice" '("🎉"))))
+    (should (equal (sqlite-select jabber-db--connection
+                     "SELECT reaction, updated_at FROM message_reaction")
+                   '(("🎉" 1234))))))
+
+(ert-deftest jabber-test-db-replace-reactions-explicit-equal-rejected ()
+  "Source-ordered replacement with equal timestamp is ignored."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" '("👍") 1000)
+    (should-not (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                             "chat" "stanza-1" "alice" '("🎉") 1000))
+    (should (equal (sqlite-select jabber-db--connection
+                     "SELECT reaction, updated_at FROM message_reaction")
+                   '(("👍" 1000))))))
+
+(ert-deftest jabber-test-db-backlog-empty-reactions-after-removal ()
+  "Empty replacement leaves no reactions in backlog."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" '("👍") 1000)
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" nil 1001)
+    (let ((entry (car (jabber-db-backlog "me@example.com" "friend@example.com"))))
+      (should-not (plist-get entry :reactions)))))
+
+(ert-deftest jabber-test-db-backlog-attaches-reactions ()
+  "Backlog entries include persisted reaction state."
+  (jabber-test-db-with-db
+    (let ((ts (floor (float-time))))
+      (jabber-db-store-message "me@example.com" "friend@example.com"
+                               "in" "chat" "hello" ts nil "stanza-1"))
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" '("👍" "🎉"))
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "bob" '("👍"))
+    (let* ((entry (car (jabber-db-backlog
+                        "me@example.com" "friend@example.com")))
+           (reactions (plist-get entry :reactions)))
+      (should (equal (alist-get "alice" reactions nil nil #'equal)
+                     '("👍" "🎉")))
+      (should (equal (alist-get "bob" reactions nil nil #'equal)
+                     '("👍"))))))
+
+(ert-deftest jabber-test-db-reaction-cascade-delete ()
+  "Deleting a message cascades to reaction rows and actor metadata."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@example.com" "friend@example.com"
+                             "in" "chat" "hello" 1000 nil "stanza-1")
+    (jabber-db-replace-reactions "me@example.com" "friend@example.com"
+                                 "chat" "stanza-1" "alice" '("👍"))
+    (jabber-db-delete-peer-messages "me@example.com" "friend@example.com")
+    (should (= 0 (caar (sqlite-select jabber-db--connection
+                         "SELECT count(*) FROM message_reaction"))))
+    (should (= 0 (caar (sqlite-select jabber-db--connection
+                         "SELECT count(*) FROM message_reaction_actor"))))))
 
 (provide 'jabber-test-db)
 

@@ -541,7 +541,7 @@
       <xmpp:SupportedXep>
         <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0444.html"/>
         <xmpp:status>partial</xmpp:status>
-        <xmpp:note>Message Reactions display is in-memory only, with no persistence, no restriction discovery, and provisional MUC actor identity.</xmpp:note>
+        <xmpp:note>Message Reactions are persisted and displayed from backlog; restriction discovery is not implemented and MUC actor identity remains provisional.</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
     <implements>

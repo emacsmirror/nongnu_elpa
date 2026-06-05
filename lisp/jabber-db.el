@@ -35,6 +35,7 @@
 
 ;;; Code:
 
+(require 'subr-x)
 (require 'jabber-util)
 (require 'jabber-xml)
 (eval-when-compile
@@ -179,6 +180,19 @@ END"
   desc       TEXT)"
     "CREATE INDEX IF NOT EXISTS idx_oob_message_id
   ON message_oob(message_id)"
+    "CREATE TABLE IF NOT EXISTS message_reaction (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender     TEXT NOT NULL,
+  reaction   TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender, reaction))"
+    "CREATE INDEX IF NOT EXISTS idx_reaction_message_id
+  ON message_reaction(message_id)"
+    "CREATE TABLE IF NOT EXISTS message_reaction_actor (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender     TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender))"
     "CREATE TABLE IF NOT EXISTS caps_cache (
   hash       TEXT NOT NULL,
   ver        TEXT NOT NULL,
@@ -192,7 +206,7 @@ END"
   (dolist (ddl jabber-db--schema-ddl)
     (sqlite-execute db ddl)))
 
-(defconst jabber-db--schema-version 4
+(defconst jabber-db--schema-version 5
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -260,7 +274,26 @@ CREATE TABLE IF NOT EXISTS caps_cache (
   features   TEXT NOT NULL,
   PRIMARY KEY (hash, ver))")
       (sqlite-execute db "PRAGMA user_version=4")
-      (setq version 4))))
+      (setq version 4))
+    (when (= version 4)
+      (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS message_reaction (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender     TEXT NOT NULL,
+  reaction   TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender, reaction))")
+      (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_reaction_message_id
+  ON message_reaction(message_id)")
+      (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS message_reaction_actor (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender     TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender))")
+      (sqlite-execute db "PRAGMA user_version=5")
+      (setq version 5))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
@@ -598,6 +631,110 @@ FROM message WHERE stanza_id = ? LIMIT 1"
             (if resource (concat peer "/" resource) peer)
           account)))))
 
+;;; Reactions
+
+(defun jabber-db--reaction-id-column (type)
+  "Return the message ID column used for reaction targets of TYPE."
+  (if (string= type "groupchat") "server_id" "stanza_id"))
+
+(defun jabber-db--message-id-for-reaction-target (db account peer type target-id)
+  "Return DB message id for reaction target TARGET-ID, or nil.
+DB is the SQLite connection.  ACCOUNT, PEER and TYPE scope the lookup."
+  (when (and account peer type target-id)
+    (caar (sqlite-select
+           db
+           (format "SELECT id FROM message \
+WHERE account = ? AND peer = ? AND type = ? AND %s = ? LIMIT 1"
+                   (jabber-db--reaction-id-column type))
+           (list account peer type target-id)))))
+
+(defun jabber-db--reaction-current-updated-at (db message-id sender)
+  "Return actor reaction timestamp in DB for MESSAGE-ID and SENDER."
+  (caar (sqlite-select db "SELECT updated_at FROM message_reaction_actor \
+WHERE message_id = ? AND sender = ?"
+                       (list message-id sender))))
+
+(defun jabber-db--source-reaction-stale-p (db message-id sender updated-at)
+  "Return non-nil when UPDATED-AT is stale for MESSAGE-ID and SENDER in DB."
+  (when-let* ((current-updated-at (jabber-db--reaction-current-updated-at
+                                   db message-id sender)))
+    (<= updated-at current-updated-at)))
+
+(defun jabber-db-reaction-stale-p (account peer type target-id sender updated-at)
+  "Return non-nil when UPDATED-AT is stale for SENDER's target reactions.
+ACCOUNT, PEER, TYPE and TARGET-ID identify the target message.  Return
+nil when storage is disabled or the target is not stored."
+  (when-let* ((db (jabber-db-ensure-open))
+              (updated-at)
+              (message-id (jabber-db--message-id-for-reaction-target
+                           db account peer type target-id)))
+    (jabber-db--source-reaction-stale-p db message-id sender updated-at)))
+
+(defun jabber-db-replace-reactions (account peer type target-id sender reactions
+                                    &optional updated-at)
+  "Replace SENDER's REACTIONS for TARGET-ID in ACCOUNT/PEER conversation.
+TYPE is the target message type.  Return non-nil when the target message
+exists and the replacement was applied.  Empty REACTIONS deletes SENDER's
+stored reactions for the target.  Non-nil UPDATED-AT is source ordered and
+older or equal values are ignored.  Nil UPDATED-AT is a local replacement
+and is always accepted with the current timestamp."
+  (when-let* ((db (jabber-db-ensure-open))
+              (message-id (jabber-db--message-id-for-reaction-target
+                           db account peer type target-id)))
+    (unless (and updated-at
+                 (jabber-db--source-reaction-stale-p
+                  db message-id sender updated-at))
+      (let ((deduplicated (delete-dups (cl-remove-if-not #'stringp reactions)))
+            (replacement-updated-at (or updated-at (floor (float-time)))))
+        (sqlite-execute db "INSERT INTO message_reaction_actor \
+(message_id, sender, updated_at) VALUES (?, ?, ?) \
+ON CONFLICT(message_id, sender) DO UPDATE SET updated_at = excluded.updated_at"
+                        (list message-id sender replacement-updated-at))
+        (sqlite-execute db "DELETE FROM message_reaction \
+WHERE message_id = ? AND sender = ?"
+                        (list message-id sender))
+        (dolist (reaction deduplicated)
+          (unless (string-empty-p reaction)
+            (sqlite-execute db "INSERT INTO message_reaction \
+(message_id, sender, reaction, updated_at) VALUES (?, ?, ?, ?)"
+                            (list message-id sender reaction replacement-updated-at))))
+        t))))
+
+(defun jabber-db-reactions-for-message-ids (message-ids)
+  "Return reaction state for MESSAGE-IDS keyed by message DB id.
+The returned hash table maps message ids to alists of (SENDER . REACTIONS)."
+  (let ((grouped (make-hash-table :test #'eql)))
+    (when-let* ((db (jabber-db-ensure-open))
+                ((cl-some #'identity message-ids)))
+      (dolist (row (sqlite-select
+                    db
+                    (format "SELECT message_id, sender, reaction \
+FROM message_reaction WHERE message_id IN (%s) \
+ORDER BY message_id, updated_at, rowid"
+                            (mapconcat #'number-to-string message-ids ","))))
+        (seq-let (message-id sender reaction) row
+          (push reaction (alist-get sender (gethash message-id grouped)
+                                    nil nil #'equal))))
+      (maphash (lambda (message-id sender-state)
+                 (puthash message-id
+                          (mapcar (lambda (entry)
+                                    (cons (car entry) (nreverse (cdr entry))))
+                                  (nreverse sender-state))
+                          grouped))
+               grouped))
+    grouped))
+
+(defun jabber-db--attach-reactions (plists)
+  "Batch-query reactions and attach them to PLISTS by :db-id."
+  (let* ((ids (cl-loop for p in plists
+                       for id = (plist-get p :db-id)
+                       when id collect id))
+         (reactions (jabber-db-reactions-for-message-ids ids)))
+    (dolist (p plists)
+      (when-let* ((db-id (plist-get p :db-id)))
+        (plist-put p :reactions (gethash db-id reactions))))
+    plists))
+
 ;;; Retrieval
 
 (defun jabber-db--row-to-plist (row)
@@ -716,7 +853,8 @@ AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?"))))
                            (if (eq n t) -1 n)))))
            (rows (sqlite-select db sql params))
            (plists (mapcar #'jabber-db--row-to-plist rows)))
-      (jabber-db--attach-oob-entries db plists))))
+      (jabber-db--attach-reactions
+       (jabber-db--attach-oob-entries db plists)))))
 
 (defun jabber-db--raw-row-to-plist (row)
   "Convert a raw query ROW to a plist.
