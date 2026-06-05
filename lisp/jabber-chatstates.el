@@ -44,6 +44,7 @@
 
 (declare-function jabber-muc-find-buffer "jabber-muc" (group))
 (declare-function jabber-muc-nickname "jabber-muc" (group &optional jc))
+(declare-function jabber-reactions--reaction-only-p "jabber-reactions" (xml-data))
 
 (defgroup jabber-chatstates nil
   "Chat state notifications."
@@ -287,6 +288,12 @@ Added to `kill-buffer-hook' in chat buffers."
 
 ;;; COMMON
 
+(defun jabber-chatstates--real-body-message-p (xml-data)
+  "Return non-nil when XML-DATA has a body that should clear chatstates."
+  (and (jabber-xml-get-children xml-data 'body)
+       (not (and (fboundp 'jabber-reactions--reaction-only-p)
+                 (jabber-reactions--reaction-only-p xml-data)))))
+
 (defun jabber-chatstates--handle-direct-state (jc xml-data from)
   "Update the direct chat buffer from XML-DATA sent by FROM on JC."
   (when-let* ((buffer (get-buffer (jabber-chat-get-buffer from jc))))
@@ -306,8 +313,9 @@ Added to `kill-buffer-hook' in chat buffers."
             (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t)
             (add-hook 'kill-buffer-hook #'jabber-chatstates-send-gone nil t))
 
-          (setq jabber-chatstates-last-state state)
-          (jabber-chatstates--update-ewoc state)))))))
+          (when (or state (jabber-chatstates--real-body-message-p xml-data))
+            (setq jabber-chatstates-last-state state)
+            (jabber-chatstates--update-ewoc state))))))))
 
 (defun jabber-handle-incoming-message-chatstates (jc xml-data)
   "Update the chat buffer's typing indicator from XML-DATA on JC."
@@ -315,7 +323,7 @@ Added to `kill-buffer-hook' in chat buffers."
     (if (string= (jabber-xml-get-attribute xml-data 'type) "groupchat")
         (let ((state (jabber-chatstates--message-state xml-data)))
           (when (and (not (string= (jabber-xml-get-attribute xml-data 'type) "error"))
-                     (or state (jabber-xml-get-children xml-data 'body)))
+                     (or state (jabber-chatstates--real-body-message-p xml-data)))
             (jabber-chatstates--handle-muc-state jc from state)))
       (jabber-chatstates--handle-direct-state jc xml-data from))))
 

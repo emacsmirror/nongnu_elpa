@@ -8,6 +8,7 @@
 
 (require 'ert)
 (require 'jabber-chatstates)
+(require 'jabber-reactions)
 
 (defun jabber-test-chatstates--message (from type state)
   "Return a message sexp from FROM with TYPE and chat STATE."
@@ -28,6 +29,18 @@
             (reactions ((xmlns . "urn:xmpp:reactions:0")
                         (id . "target-1"))
                        (reaction nil "👍"))))
+
+(defun jabber-test-chatstates--reaction-fallback-message (from type)
+  "Return a reaction message from FROM with TYPE and fallback text."
+  `(message ((from . ,from)
+             (type . ,type))
+            (body nil "> quoted\n👍")
+            (reactions ((xmlns . "urn:xmpp:reactions:0")
+                        (id . "target-1"))
+                       (reaction nil "👍"))
+            (fallback ((xmlns . "urn:xmpp:fallback:0")
+                       (for . "urn:xmpp:reactions:0"))
+                      (body ((start . "0") (end . "10"))))))
 
 (defun jabber-test-chatstates--ewoc-data ()
   "Return the current EWOC data in display order."
@@ -438,6 +451,26 @@ nil after the first message, breaking subsequent composing detection."
         (should (equal (jabber-test-chatstates--ewoc-data)
                        '((:typing "alice is typing..."))))))))
 
+(ert-deftest jabber-test-chatstates-groupchat-reaction-fallback-preserves-composing ()
+  "Incoming groupchat reaction fallback body does not clear occupant typing."
+  (with-temp-buffer
+    (let ((muc-buffer (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                 (lambda (_group) muc-buffer))
+                ((symbol-function 'jabber-muc-nickname) #'ignore))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--message
+          "room@conference.example/alice" "groupchat" 'composing))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--reaction-fallback-message
+          "room@conference.example/alice" "groupchat"))
+        (should (equal jabber-chatstates--muc-composers '("alice")))
+        (should (equal (jabber-test-chatstates--ewoc-data)
+                       '((:typing "alice is typing..."))))))))
+
 (ert-deftest jabber-test-chatstates-groupchat-self-nick-is-ignored ()
   "Incoming groupchat state from our nick refreshes without mutating composers."
   (let ((find-called nil)
@@ -514,6 +547,48 @@ nil after the first message, breaking subsequent composing detection."
           (should-not muc-called)
           (should (eq jabber-chatstates-last-state 'composing))
           (should (equal entered '(:typing "alice@example.org is typing..."))))))))
+
+(ert-deftest jabber-test-chatstates-direct-reaction-fallback-preserves-composing ()
+  "Incoming direct reaction fallback body does not clear peer typing."
+  (with-temp-buffer
+    (rename-buffer " *jabber-direct-chatstates-reaction-fallback-test*" t)
+    (let ((chat-buffer (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (setq-local jabber-chatting-with "alice@example.org/resource")
+      (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from _jc) (buffer-name chat-buffer))))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--message
+          "alice@example.org/resource" "chat" 'composing))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--reaction-fallback-message
+          "alice@example.org/resource" "chat"))
+        (should (eq jabber-chatstates-last-state 'composing))
+        (should (equal (jabber-test-chatstates--ewoc-data)
+                       '((:typing "alice@example.org is typing..."))))))))
+
+(ert-deftest jabber-test-chatstates-direct-message-clears-composing ()
+  "Incoming direct message without chatstate clears peer typing."
+  (with-temp-buffer
+    (rename-buffer " *jabber-direct-chatstates-message-clears-test*" t)
+    (let ((chat-buffer (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (setq-local jabber-chatting-with "alice@example.org/resource")
+      (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from _jc) (buffer-name chat-buffer))))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--message
+          "alice@example.org/resource" "chat" 'composing))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--plain-message
+          "alice@example.org/resource" "chat"))
+        (should-not jabber-chatstates-last-state)
+        (should-not jabber-chatstates--ewoc-node)
+        (should-not (jabber-test-chatstates--ewoc-data))))))
 
 (ert-deftest jabber-test-chatstates-direct-active-forgets-stale-node ()
   "Incoming direct active clears a stale typing node without error."
