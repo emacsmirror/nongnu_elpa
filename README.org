@@ -1,4 +1,7 @@
 #+TITLE: jabber.el - The XMPP client for Emacs
+#+TEXINFO_DIR_NAME: * jabber.el: (jabber)
+#+TEXINFO_DIR_DESC: jabber.el - The XMPP client for Emacs
+#+TEXINFO_DIR_CATEGORY: Emacs
 
 * About
 [[https://elpa.nongnu.org/nongnu/jabber.svg]]
@@ -12,6 +15,10 @@ See the [[https://xmpp.org/software/jabber-el/][xmpp.org page]] for the full lis
 + Source:
   + [[https://git.thanosapollo.org/emacs-jabber/][Upstream]]
   + [[https://codeberg.org/emacs-jabber/emacs-jabber/][Codeberg]] /Mirror/
+
++ Discuss the project in these XMPP MUCs:
+  + =jabber-el@conference.hmm.st= for the project
+  + =emacs@conference.conversations.im= for Emacs peer support including jabber.el
 
 * Requirements
 
@@ -50,7 +57,8 @@ You can install it via =M-x package-install RET jabber=
     :vc (:url "https://git.thanosapollo.org/emacs-jabber/"
               :branch "master"
               :rev :newest
-              :lisp-dir "lisp")
+              :lisp-dir "lisp"
+              :doc "README.org")
     :custom
     (jabber-account-list '(("user@example.org")))
     :config
