@@ -5,7 +5,7 @@
 ;; Author: Daniel Mendler and Consult contributors
 ;; Maintainer: Daniel Mendler <mail@daniel-mendler.de>
 ;; Created: 2020
-;; Version: 1.1
+;; Version: 1.2
 ;; Package-Requires: ((emacs "29.1") (consult "3.5") (flycheck "35"))
 ;; URL: https://github.com/minad/consult-flycheck
 ;; Keywords: languages, tools, completion
