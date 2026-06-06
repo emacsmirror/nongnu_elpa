@@ -418,7 +418,7 @@
         <xmpp:status>partial</xmpp:status>
         <xmpp:version>0.4.0</xmpp:version>
         <xmpp:since>0.10.0</xmpp:since>
-        <xmpp:note>1:1 received and displayed markers.  No MUC marker tracking or acknowledged marker support.</xmpp:note>
+        <xmpp:note>1:1 received and displayed markers.  No MUC marker tracking.</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
     <implements>
