@@ -10,6 +10,8 @@
 (require 'jabber-xml)
 (require 'jabber-sm)
 
+(defvar jabber-connections)
+
 ;;; Counter arithmetic
 
 (ert-deftest jabber-test-sm-inc-counter ()
@@ -386,6 +388,22 @@
 (ert-deftest jabber-test-sm-make-request-xml ()
   "Request XML is well-formed."
   (should (string-match-p "<r xmlns=" (jabber-sm--make-request-xml))))
+
+;;; Ack timer
+
+(ert-deftest jabber-test-sm-r-timer-reports-errors ()
+  "Ack timer errors are reported without escaping the timer."
+  (let ((jabber-connections '(fake-jc))
+        messages)
+    (cl-letf (((symbol-function 'jabber-sm--request-ack)
+               (lambda (_jc) (error "send failed")))
+              ((symbol-function 'jabber-sm--check-stall)
+               (lambda (_jc) (error "should not run")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) messages))))
+      (jabber-sm--r-timer-function 'fake-jc)
+      (should (equal '("SM: ack timer failed: send failed") messages)))))
 
 ;;; Queue operations across 2^32 boundary
 

@@ -388,11 +388,12 @@ Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
 (defun jabber-sm--r-timer-function (jc)
   "Timer callback: send <r/> to JC and check for ack stall."
   (when (memq jc jabber-connections)
-    (condition-case nil
+    (condition-case err
         (progn
           (jabber-sm--request-ack jc)
           (jabber-sm--check-stall jc))
-      (error nil))))
+      (error
+       (message "SM: ack timer failed: %s" (error-message-string err))))))
 
 (defun jabber-sm--start-r-timer (jc state-data)
   "Start a periodic <r/> timer for connection JC.
