@@ -453,6 +453,8 @@
 
 ;;; Group 9: OMEMO immediate display status transitions
 
+(defvar jabber-muc-printers)
+
 (defmacro jabber-test-chatbuffer-with-rendering-ewoc (&rest body)
   "Set up a temp buffer with a rendering chat ewoc, then run BODY.
 Uses `jabber-chat-pp' so status indicators are actually rendered."
@@ -461,10 +463,15 @@ Uses `jabber-chat-pp' so status indicators are actually rendered."
      (let ((jabber-chat-ewoc (ewoc-create #'jabber-chat-pp nil nil 'nosep))
            (jabber-chat--msg-nodes (make-hash-table :test 'equal))
            (jabber-chat-printers '(jabber-chat-print-body))
+           (jabber-muc-printers nil)
            (jabber-chat-header-line-format nil)
            (inhibit-read-only t))
        (cl-letf (((symbol-function 'jabber-chat-self-prompt)
-                  (lambda (_msg _ts _delayed _/me-p) (insert "me: "))))
+                  (lambda (_msg _ts _delayed _/me-p) (insert "me: ")))
+                 ((symbol-function 'jabber-chat-print-prompt)
+                  (lambda (_msg _ts _delayed _/me-p) (insert "them: ")))
+                 ((symbol-function 'jabber-muc-print-prompt)
+                  (lambda (_msg _local-p _/me-p) (insert "room: "))))
          ,@body))))
 
 (ert-deftest jabber-test-chatbuffer-sending-status-renders-warning-dot ()
@@ -477,6 +484,34 @@ Uses `jabber-chat-pp' so status indicators are actually rendered."
       (goto-char (point-min))
       (should (search-forward "\u00b7" nil t))
       (should (eq 'warning (get-text-property (1- (point)) 'face))))))
+
+(ert-deftest jabber-test-chatbuffer-reply-context-renders-1to1 ()
+  "A 1:1 reply renders reply context before the body."
+  (jabber-test-chatbuffer-with-rendering-ewoc
+    (let* ((msg (list :id "reply-1" :body "answer"
+                      :from "alice@example.com/phone"
+                      :reply-to-id "orig-1"
+                      :reply-to-jid "alice@example.com/phone"
+                      :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :foreign msg))))
+      (should node)
+      (let ((text (buffer-string)))
+        (should (string-match-p "reply to phone (orig-1)" text))
+        (should (string-match-p "reply to phone (orig-1)\nanswer" text))))))
+
+(ert-deftest jabber-test-chatbuffer-reply-context-renders-muc ()
+  "A MUC reply renders reply context before the body."
+  (jabber-test-chatbuffer-with-rendering-ewoc
+    (let* ((msg (list :id "reply-2" :body "answer"
+                      :from "room@conf.example.com/bob"
+                      :reply-to-id "server-orig-1"
+                      :reply-to-jid "room@conf.example.com/alice"
+                      :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :muc-foreign msg))))
+      (should node)
+      (let ((text (buffer-string)))
+        (should (string-match-p "reply to alice (server-orig-1)" text))
+        (should (string-match-p "reply to alice (server-orig-1)\nanswer" text))))))
 
 (ert-deftest jabber-test-chatbuffer-status-sending-to-sent ()
   "Status :sending -> :sent updates the indicator face."

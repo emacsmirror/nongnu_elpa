@@ -955,6 +955,22 @@ or X for undelivered."
                (mapcar #'jabber-chat--reaction-entry-string entries)
                "  ")))))
 
+(defun jabber-chat--reply-context-label (msg)
+  "Return a compact reply context label for MSG, or nil."
+  (when-let* ((reply-id (plist-get msg :reply-to-id)))
+    (let* ((jid (plist-get msg :reply-to-jid))
+           (who (and jid
+                     (or (jabber-jid-resource jid)
+                         (jabber-jid-displayname jid)))))
+      (if (and who (not (string-empty-p who)))
+          (format "reply to %s (%s)" who reply-id)
+        (format "reply to %s" reply-id)))))
+
+(defun jabber-chat--insert-reply-context (msg)
+  "Insert reply context line for MSG when reply metadata is present."
+  (when-let* ((label (jabber-chat--reply-context-label msg)))
+    (insert (propertize (concat label "\n") 'face 'shadow))))
+
 (defun jabber-chat-pp--local (data)
   "Render a locally sent message from DATA."
   (let* ((msg (cadr data))
@@ -962,6 +978,7 @@ or X for undelivered."
          (/me-p (and (stringp body) (string-prefix-p "/me " body))))
     (jabber-chat-self-prompt msg (plist-get msg :timestamp)
                              (plist-get msg :delayed) /me-p)
+    (jabber-chat--insert-reply-context msg)
     (let ((jabber-chat--body-start (point)))
       (run-hook-with-args 'jabber-chat-printers msg :local :insert))
     (when (plist-get msg :edited)
@@ -977,6 +994,7 @@ or X for undelivered."
          (/me-p (and (stringp body) (string-prefix-p "/me " body))))
     (jabber-chat-print-prompt msg (plist-get msg :timestamp)
                               (plist-get msg :delayed) /me-p)
+    (jabber-chat--insert-reply-context msg)
     (let ((jabber-chat--body-start (point)))
       (run-hook-with-args 'jabber-chat-printers msg :foreign :insert))
     (when (plist-get msg :edited)
@@ -1005,6 +1023,7 @@ or X for undelivered."
     (jabber-muc-print-prompt msg t /me-p)
     (if (plist-get msg :retracted)
         (jabber-chat--insert-tombstone msg)
+      (jabber-chat--insert-reply-context msg)
       (let ((jabber-chat--body-start (point)))
         (mapc (lambda (f) (funcall f msg :muc-local :insert))
               (append jabber-muc-printers jabber-chat-printers)))
@@ -1022,6 +1041,7 @@ or X for undelivered."
     (jabber-muc-print-prompt msg nil /me-p)
     (if (plist-get msg :retracted)
         (jabber-chat--insert-tombstone msg)
+      (jabber-chat--insert-reply-context msg)
       (let ((jabber-chat--body-start (point)))
         (mapc (lambda (f) (funcall f msg :muc-foreign :insert))
               (append jabber-muc-printers jabber-chat-printers)))
