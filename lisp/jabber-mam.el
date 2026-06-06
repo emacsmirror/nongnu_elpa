@@ -48,7 +48,8 @@
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
-                  (replace-id new-body new-from muc-p buffer))
+                  (replace-id new-body new-from muc-p buffer
+                              &optional new-occupant-id))
 
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
@@ -353,7 +354,8 @@ JC is the Jabber connection.  XML-DATA is the stanza."
             (if replace-id
                 (jabber-message-correct--apply
                  replace-id body (plist-get fields :from)
-                 (string= (plist-get fields :type) "groupchat") nil)
+                 (string= (plist-get fields :type) "groupchat") nil
+                 (jabber-db--extract-occupant-id inner-msg))
               (jabber-db-store-message
                (plist-get fields :our-jid) peer
                (plist-get fields :direction) (plist-get fields :type)

@@ -114,6 +114,20 @@
                "room@muc.example.com/mallory"
                t)))
 
+(ert-deftest jabber-test-message-correct-valid-sender-muc-same-occupant-id ()
+  "MUC: same occupant-id allows correction even if resource changed."
+  (should (jabber-message-correct--valid-sender-p
+           "room@muc.example.com/alice"
+           "room@muc.example.com/alice2"
+           t "occ-1" "occ-1")))
+
+(ert-deftest jabber-test-message-correct-valid-sender-muc-different-occupant-id ()
+  "MUC: different occupant-id rejects correction even if resource matches."
+  (should-not (jabber-message-correct--valid-sender-p
+               "room@muc.example.com/alice"
+               "room@muc.example.com/alice"
+               t "occ-1" "occ-2")))
+
 ;;; Group 3: DB integration
 
 (ert-deftest jabber-test-message-correct-db-correct-message ()
@@ -259,6 +273,32 @@ WHERE stanza_id = 'stanza-abc'"))
                (lambda (_id _body) (setq db-called t))))
       (jabber-message-correct--apply
        "muc-orig-2" "evil" "room@muc.example.com/mallory" t nil))
+    (should-not db-called)))
+
+(ert-deftest jabber-test-message-correct-apply-muc-same-occupant-id ()
+  "MUC: correction with matching occupant-id is accepted."
+  (let (db-called)
+    (cl-letf (((symbol-function 'jabber-db-message-sender-by-stanza-id)
+               (lambda (_id) "room@muc.example.com/alice"))
+              ((symbol-function 'jabber-db-occupant-id-by-stanza-id)
+               (lambda (_id) "occ-1"))
+              ((symbol-function 'jabber-db-correct-message)
+               (lambda (_id _body) (setq db-called t))))
+      (jabber-message-correct--apply
+       "muc-orig-3" "corrected" "room@muc.example.com/alice2" t nil "occ-1"))
+    (should db-called)))
+
+(ert-deftest jabber-test-message-correct-apply-muc-different-occupant-id ()
+  "MUC: correction with different occupant-id is rejected."
+  (let (db-called)
+    (cl-letf (((symbol-function 'jabber-db-message-sender-by-stanza-id)
+               (lambda (_id) "room@muc.example.com/alice"))
+              ((symbol-function 'jabber-db-occupant-id-by-stanza-id)
+               (lambda (_id) "occ-1"))
+              ((symbol-function 'jabber-db-correct-message)
+               (lambda (_id _body) (setq db-called t))))
+      (jabber-message-correct--apply
+       "muc-orig-4" "evil" "room@muc.example.com/alice" t nil "occ-2"))
     (should-not db-called)))
 
 (ert-deftest jabber-test-message-correct-apply-outgoing-carbon ()

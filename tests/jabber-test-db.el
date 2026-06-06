@@ -1371,6 +1371,15 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
   (jabber-test-db-with-db
     (should (null (jabber-db-occupant-id-by-server-id "nonexistent")))))
 
+(ert-deftest jabber-test-db-occupant-id-by-stanza-id ()
+  "Returns occupant-id for a known stanza-id."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@x.com" "room@x.com" "in" "groupchat"
+                             "hello" (floor (float-time))
+                             "nick" "stanza-occ-1" nil "occ-stanza")
+    (should (string= "occ-stanza"
+                     (jabber-db-occupant-id-by-stanza-id "stanza-occ-1")))))
+
 (ert-deftest jabber-test-db-store-preserves-retraction-on-dedup ()
   "Re-storing a retracted message does not clear retracted_by."
   (jabber-test-db-with-db

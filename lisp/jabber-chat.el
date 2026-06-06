@@ -252,7 +252,8 @@ BODY and ID are passed to each hook function."
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
-                  (replace-id new-body new-from muc-p buffer))
+                  (replace-id new-body new-from muc-p buffer
+                              &optional new-occupant-id))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
@@ -702,7 +703,8 @@ JC is the Jabber connection."
                (plist-get msg-plist :body)
                from
                nil
-               (jabber-chat-find-buffer from))
+               (jabber-chat-find-buffer from)
+               (jabber-db--extract-occupant-id xml-data))
             (when (or error-p
                       (run-hook-with-args-until-success 'jabber-chat-printers
                                                         msg-plist :foreign :printp))

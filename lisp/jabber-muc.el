@@ -330,7 +330,8 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-message-correct--replace-id "jabber-message-correct"
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
-                  (replace-id new-body new-from muc-p buffer))
+                  (replace-id new-body new-from muc-p buffer
+                              &optional new-occupant-id))
 (declare-function jabber-reactions--reaction-only-p "jabber-reactions"
                   (xml-data))
 (declare-function jabber-chatstates--delete-typing-node "jabber-chatstates" ())
@@ -1743,7 +1744,8 @@ JC is the Jabber connection."
                (plist-get msg-plist :body)
                from
                t
-               (jabber-muc-find-buffer group))
+               (jabber-muc-find-buffer group)
+               (jabber-db--extract-occupant-id xml-data))
             (jabber-muc--display-message jc xml-data group nick type msg-plist)))))))
 
 (defun jabber-muc--format-actor-reason (actor reason)

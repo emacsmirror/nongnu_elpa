@@ -59,28 +59,38 @@
 
 ;;; Sender validation
 
-(defun jabber-message-correct--valid-sender-p (original-from new-from muc-p)
+(defun jabber-message-correct--valid-sender-p
+    (original-from new-from muc-p &optional original-occupant-id new-occupant-id)
   "Return non-nil if NEW-FROM may correct a message from ORIGINAL-FROM.
-MUC-P non-nil means full-JID comparison; otherwise bare-JID comparison."
+MUC-P non-nil means full-JID comparison unless ORIGINAL-OCCUPANT-ID
+and NEW-OCCUPANT-ID are both available."
   (if muc-p
-      (string= original-from new-from)
+      (if (and original-occupant-id new-occupant-id)
+          (string= original-occupant-id new-occupant-id)
+        (string= original-from new-from))
     (string= (jabber-jid-user original-from)
              (jabber-jid-user new-from))))
 
 ;;; Apply correction
 
-(defun jabber-message-correct--apply (replace-id new-body new-from muc-p buffer)
+(defun jabber-message-correct--apply
+    (replace-id new-body new-from muc-p buffer &optional new-occupant-id)
   "Apply correction REPLACE-ID with NEW-BODY sent by NEW-FROM.
 MUC-P non-nil for groupchat.  BUFFER is the chat buffer or nil.
+NEW-OCCUPANT-ID is the correction stanza's XEP-0421 occupant-id.
 Validates sender against the stored original message (via DB lookup)
 before writing.  If the original is not in the DB the correction is
 dropped.  Returns non-nil when the correction was accepted."
-  (let ((original-from (jabber-db-message-sender-by-stanza-id replace-id)))
+  (let ((original-from (jabber-db-message-sender-by-stanza-id replace-id))
+        (original-occupant-id (and muc-p
+                                   (jabber-db-occupant-id-by-stanza-id
+                                    replace-id))))
     (cond
      ((null original-from)
       (message "XEP-0308: correction for unknown message %s dropped" replace-id)
       nil)
-     ((not (jabber-message-correct--valid-sender-p original-from new-from muc-p))
+     ((not (jabber-message-correct--valid-sender-p
+            original-from new-from muc-p original-occupant-id new-occupant-id))
       (message "XEP-0308: rejected correction from %s for message by %s"
                new-from original-from)
       nil)

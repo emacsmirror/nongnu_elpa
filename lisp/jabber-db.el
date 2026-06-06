@@ -644,6 +644,14 @@ Optional REASON is the human-readable retraction reason string."
 WHERE server_id = ? LIMIT 1"
                          (list server-id)))))
 
+(defun jabber-db-occupant-id-by-stanza-id (stanza-id)
+  "Return the occupant-id for the message with STANZA-ID, or nil."
+  (when (and jabber-db--connection stanza-id)
+    (caar (sqlite-select jabber-db--connection
+                         "SELECT occupant_id FROM message \
+WHERE stanza_id = ? LIMIT 1"
+                         (list stanza-id)))))
+
 (defun jabber-db-server-ids-by-occupant-id (account peer occupant-id)
   "Return server-ids for messages with OCCUPANT-ID in PEER on ACCOUNT.
 Only returns non-retracted messages that have a server-id."
