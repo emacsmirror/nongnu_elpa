@@ -129,6 +129,24 @@
 
 ;;; Group 3: jabber-process-caps-modern (integration)
 
+(ert-deftest jabber-test-disco-parse-info-preserves-xdata-forms ()
+  "Disco info parsing preserves XEP-0128 data forms."
+  (let* ((form `(x ((xmlns . ,jabber-xdata-xmlns) (type . "result"))
+                   (field ((var . "FORM_TYPE") (type . "hidden"))
+                          (value () "urn:xmpp:http:upload:0"))
+                   (field ((var . "max-file-size"))
+                          (value () "5242880"))))
+         (result (jabber-disco-parse-info
+                  `(iq ((from . "upload.example.net") (type . "result"))
+                       (query ((xmlns . ,jabber-disco-xmlns-info))
+                              (identity ((category . "store")
+                                         (type . "file")
+                                         (name . "HTTP File Upload")))
+                              (feature ((var . "urn:xmpp:http:upload:0")))
+                              ,form)))))
+    (should (equal (nth 1 result) '("urn:xmpp:http:upload:0")))
+    (should (equal (nth 2 result) (list form)))))
+
 (ert-deftest jabber-test-disco-process-caps-modern-unsupported-hash ()
   "When the hash algorithm is not in jabber-caps-hash-names, nothing happens."
   (let ((jabber-jid-obarray (make-vector 127 0))

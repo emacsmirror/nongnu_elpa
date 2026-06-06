@@ -37,6 +37,45 @@
                                (url . "https://download.example.net/file")))))))
     (should-error (jabber-httpupload-parse-slot-answer slot) :type 'error)))
 
+;;; Service metadata
+
+(defun jabber-test-httpupload--max-size-form (size)
+  "Return an HTTP Upload disco form advertising SIZE."
+  `(x ((xmlns . ,jabber-xdata-xmlns) (type . "result"))
+      (field ((var . "FORM_TYPE") (type . "hidden"))
+             (value () ,jabber-httpupload-xmlns))
+      (field ((var . "max-file-size"))
+             (value () ,size))))
+
+(ert-deftest jabber-test-httpupload-records-max-file-size ()
+  (let ((jabber-httpupload-support nil)
+        (jabber-httpupload-max-file-size nil)
+        (result (list nil
+                      (list jabber-httpupload-xmlns)
+                      (list (jabber-test-httpupload--max-size-form "512")))))
+    (jabber-httpupload--record-support 'jc "upload.example.net" result)
+    (should (equal jabber-httpupload-support
+                   '((jc . "upload.example.net"))))
+    (should (equal jabber-httpupload-max-file-size '((jc . 512))))))
+
+(ert-deftest jabber-test-httpupload-rejects-oversized-file-before-slot-request ()
+  (let ((jabber-httpupload-support '((jc . "upload.example.net")))
+        (jabber-httpupload-max-file-size '((jc . 3)))
+        (slot-requested nil)
+        (file (make-temp-file "jabber-httpupload-test")))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "1234"))
+          (cl-letf (((symbol-function 'jabber-send-iq)
+                     (lambda (&rest _args)
+                       (setq slot-requested t))))
+            (should-error
+             (jabber-httpupload--upload 'jc file #'ignore)
+             :type 'user-error)
+            (should-not slot-requested)))
+      (delete-file file))))
+
 ;;; Discovery
 
 (ert-deftest jabber-test-httpupload-discover-errors-with-no-items ()
@@ -70,6 +109,7 @@
 (ert-deftest jabber-test-httpupload-discover-uploads-with-feature ()
   (let ((items (list ["Upload" "upload.example.net" nil]))
         (jabber-httpupload-support nil)
+        (jabber-httpupload-max-file-size nil)
         (uploaded nil))
     (cl-letf (((symbol-function 'fsm-get-state-data)
                (lambda (_jc) '(:server "example.net")))
@@ -79,7 +119,10 @@
               ((symbol-function 'jabber-disco-get-info)
                (lambda (jc _jid _node callback closure)
                  (funcall callback jc closure
-                          (list nil (list jabber-httpupload-xmlns)))))
+                          (list nil
+                                (list jabber-httpupload-xmlns)
+                                (list (jabber-test-httpupload--max-size-form
+                                       "4096"))))))
               ((symbol-function 'jabber-httpupload--upload)
                (lambda (jc filepath callback)
                  (setq uploaded (list jc filepath callback))))
@@ -87,6 +130,7 @@
       (jabber-httpupload--discover-and-upload 'jc "/tmp/file.txt" #'ignore)
       (should (equal jabber-httpupload-support
                      '((jc . "upload.example.net"))))
+      (should (equal jabber-httpupload-max-file-size '((jc . 4096))))
       (should (equal uploaded
                      (list 'jc "/tmp/file.txt" #'ignore))))))
 

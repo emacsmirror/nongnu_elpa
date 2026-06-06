@@ -28,6 +28,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'jabber-iq)
 (require 'jabber-xml)
 (require 'keymap-popup)
@@ -664,7 +665,11 @@ obtained from `xml-parse-region'."
    (mapcar
     #'(lambda (feature)
 	(jabber-xml-get-attribute feature 'var))
-    (jabber-xml-get-children (jabber-iq-query xml-data) 'feature))))
+    (jabber-xml-get-children (jabber-iq-query xml-data) 'feature))
+   (cl-remove-if-not
+    (lambda (x)
+      (string= (jabber-xml-get-xmlns x) jabber-xdata-xmlns))
+    (jabber-xml-get-children (jabber-iq-query xml-data) 'x))))
 
 (defun jabber-disco-get-info-immediately (jid node)
   "Get cached disco info for JID and NODE.

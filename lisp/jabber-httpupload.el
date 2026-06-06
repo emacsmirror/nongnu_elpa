@@ -87,6 +87,11 @@ OMEMO sets this to send aesgcm:// URLs as encrypted messages.")
   "Alist of Jabber connections and the node with HTTP Upload support.
 Each element is (jabber-connection . upload-iri).")
 
+(defvar jabber-httpupload-max-file-size nil
+  "Alist of Jabber connections and advertised HTTP Upload size limits.
+Each element is (jabber-connection . max-file-size), where
+max-file-size is in bytes.")
+
 (defun jabber-httpupload-test-all-connections-support ()
   "Test all connections in `jabber-connections' for HTTP Upload support.
 Store the results in `jabber-httpupload-support'.  If the connection was
@@ -110,7 +115,7 @@ is present, store the IRI in `jabber-httpupload-support'."
                          (lambda (jc _data result)
                            (when (member jabber-httpupload-xmlns
                                          (nth 1 result))
-                             (push (cons jc iri) jabber-httpupload-support)))
+                             (jabber-httpupload--record-support jc iri result)))
                          nil))
 
 (defun jabber-httpupload-apply-to-items (jc callback)
@@ -126,6 +131,52 @@ CALLBACK receives two arguments: the Jabber connection and the item vector."
 (defun jabber-httpupload-server-has-support (jc)
   "Return (JC . upload-iri) if the server supports HTTP Upload, nil otherwise."
   (assq jc jabber-httpupload-support))
+
+(defun jabber-httpupload--xdata-field-value (form var)
+  "Return the first value for xdata FORM field VAR."
+  (when-let* ((field (cl-find-if
+                      (lambda (field)
+                        (string= (jabber-xml-get-attribute field 'var) var))
+                      (jabber-xml-get-children form 'field)))
+              (value (car (jabber-xml-get-children field 'value)))
+              (text (car (jabber-xml-node-children value)))
+              ((stringp text)))
+    text))
+
+(defun jabber-httpupload--parse-max-file-size (value)
+  "Return positive integer VALUE, or nil when VALUE is invalid."
+  (when (and (stringp value)
+             (string-match-p "\\`[0-9]+\\'" value))
+    (let ((size (string-to-number value)))
+      (and (> size 0) size))))
+
+(defun jabber-httpupload--max-file-size (result)
+  "Return HTTP Upload max-file-size from disco info RESULT, or nil."
+  (cl-some (lambda (form)
+             (when (string= (jabber-httpupload--xdata-field-value
+                             form "FORM_TYPE")
+                            jabber-httpupload-xmlns)
+               (jabber-httpupload--parse-max-file-size
+                (jabber-httpupload--xdata-field-value
+                 form "max-file-size"))))
+           (nth 2 result)))
+
+(defun jabber-httpupload--record-support (jc iri result)
+  "Record HTTP Upload support for JC through IRI using disco RESULT."
+  (unless (assq jc jabber-httpupload-support)
+    (push (cons jc iri) jabber-httpupload-support))
+  (if-let* ((max-file-size (jabber-httpupload--max-file-size result)))
+      (setf (alist-get jc jabber-httpupload-max-file-size) max-file-size)
+    (setq jabber-httpupload-max-file-size
+          (assq-delete-all jc jabber-httpupload-max-file-size))))
+
+(defun jabber-httpupload--validate-file-size (jc filepath size)
+  "Signal a user error if FILEPATH is larger than JC's advertised SIZE limit."
+  (when-let* ((max-file-size (cdr (assq jc jabber-httpupload-max-file-size))))
+    (when (> size max-file-size)
+      (user-error "File %s is too large for HTTP Upload (maximum %s bytes)"
+                  (file-name-nondirectory filepath)
+                  max-file-size))))
 
 ;; Slot parsing
 
@@ -230,8 +281,7 @@ certificates.  Return the process on success, nil if curl is not found."
 On success, pass the uploaded URL to CALLBACK."
   (when (and (not (jabber-httpupload--disco-error-p result))
              (member jabber-httpupload-xmlns (nth 1 result)))
-    (unless (assq jc jabber-httpupload-support)
-      (push (cons jc iri) jabber-httpupload-support))
+    (jabber-httpupload--record-support jc iri result)
     (jabber-httpupload--upload jc filepath callback)
     t))
 
@@ -285,6 +335,7 @@ If support has not been discovered yet, discover it first."
                   (mailcap-extension-to-mime ext))
                 "application/octet-stream"))
            (filename (file-name-nondirectory filepath)))
+      (jabber-httpupload--validate-file-size jc filepath size)
       (jabber-send-iq jc (cdr (jabber-httpupload-server-has-support jc)) "get"
                       `(request ((xmlns . ,jabber-httpupload-xmlns)
                                  (filename . ,filename)
