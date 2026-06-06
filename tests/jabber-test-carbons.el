@@ -53,6 +53,20 @@ Optional BODY overrides the default \"Hello\"."
                                 (message ,inner-attrs
                                          (body nil ,(or body "Hello"))))))))
 
+(defun jabber-test-carbons--make-carbon-with-namespaces
+    (type wrapper-xmlns forwarded-xmlns)
+  "Build a carbon-like stanza with explicit namespace values.
+TYPE is `sent' or `received'.  WRAPPER-XMLNS is the namespace for
+the carbon wrapper.  FORWARDED-XMLNS is the namespace for
+<forwarded/>."
+  `(message ((from . "me@example.com") (type . "chat"))
+            (,type ((xmlns . ,wrapper-xmlns))
+                   (forwarded ((xmlns . ,forwarded-xmlns))
+                              (message ((from . "me@example.com/phone")
+                                        (to . "friend@example.com")
+                                        (type . "chat"))
+                                       (body nil "Hello"))))))
+
 (defun jabber-test-carbons--make-plain-message (from to)
   "Build a plain (non-carbon) message stanza."
   `(message ((from . ,from) (to . ,to) (type . "chat"))
@@ -88,6 +102,18 @@ Optional BODY overrides the default \"Hello\"."
                   "friend@example.com" "me@example.com"))
          (result (jabber-chat--extract-carbon stanza)))
     (should-not result)))
+
+(ert-deftest jabber-chat-test-extract-carbon-rejects-wrapper-namespace ()
+  "Extract-carbon rejects sent/received elements outside carbons."
+  (let ((stanza (jabber-test-carbons--make-carbon-with-namespaces
+                 'sent "urn:example:not-carbons" "urn:xmpp:forward:0")))
+    (should-not (jabber-chat--extract-carbon stanza))))
+
+(ert-deftest jabber-chat-test-extract-carbon-rejects-forwarded-namespace ()
+  "Extract-carbon rejects forwarded elements outside XEP-0297."
+  (let ((stanza (jabber-test-carbons--make-carbon-with-namespaces
+                 'sent "urn:xmpp:carbons:2" "urn:example:not-forward")))
+    (should-not (jabber-chat--extract-carbon stanza))))
 
 ;;; Group 2: jabber-chat--unwrap-carbon
 

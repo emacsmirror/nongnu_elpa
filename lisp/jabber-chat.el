@@ -32,6 +32,7 @@
 (require 'jabber-reactions)
 (require 'ewoc)
 (require 'goto-addr)
+(require 'seq)
 (require 'subr-x)
 (require 'url-parse)
 (require 'url-queue)
@@ -259,11 +260,16 @@ BODY and ID are passed to each hook function."
 (declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
 (declare-function jabber-chatstates--clear-typing "jabber-chatstates" ())
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
-(defvar jabber-carbons-xmlns)          ; jabber-carbons.el
 (defvar jabber-image-max-width)        ; jabber-image.el
 (defvar jabber-image-max-height)       ; jabber-image.el
 
 ;;
+
+(defconst jabber-chat--forward-xmlns "urn:xmpp:forward:0"
+  "XEP-0297 forwarded stanza namespace.")
+
+(defconst jabber-chat--carbons-xmlns "urn:xmpp:carbons:2"
+  "XEP-0280 Message Carbons namespace.")
 
 (defvar jabber-chat-earliest-backlog nil
   "Float-time of earliest backlog entry inserted into buffer.
@@ -485,11 +491,16 @@ Returns the inner message element, or nil if XML-DATA is not a carbon."
   "Extract carbon type and inner message from XML-DATA.
 Returns (TYPE . MESSAGE) where TYPE is `sent' or `received',
 or nil if XML-DATA is not a carbon."
-  (let ((wrapper (or (car (jabber-xml-get-children xml-data 'sent))
-                     (car (jabber-xml-get-children xml-data 'received)))))
+  (let ((wrapper (seq-find
+                  (lambda (child)
+                    (and (memq (jabber-xml-node-name child) '(sent received))
+                         (string= (jabber-xml-get-xmlns child)
+                                  jabber-chat--carbons-xmlns)))
+                  (jabber-xml-node-children xml-data))))
     (when wrapper
       (let* ((type (jabber-xml-node-name wrapper))
-             (fwd (car (jabber-xml-get-children wrapper 'forwarded)))
+             (fwd (jabber-xml-child-with-xmlns
+                   wrapper jabber-chat--forward-xmlns))
              (msg (car (jabber-xml-get-children fwd 'message))))
         (when msg (cons type msg))))))
 
@@ -507,7 +518,7 @@ prevent forged carbons (CVE-2017-5589)."
                          (jabber-xml-get-attribute xml-data 'from))))
         (if (not (string= outer-from (jabber-connection-bare-jid jc)))
             (progn
-              (warn "jabber: dropping forged carbon from %s" outer-from)
+              (warn "Jabber: dropping forged carbon from %s" outer-from)
               (cons xml-data nil))
           (let* ((type (car carbon))
                  (inner-msg (cdr carbon)))
