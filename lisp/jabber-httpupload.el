@@ -208,26 +208,56 @@ certificates.  Return the process on success, nil if curl is not found."
 
 ;; Core upload pipeline
 
+(defun jabber-httpupload--disco-error-p (result)
+  "Return non-nil when RESULT is a disco error node."
+  (eq (car-safe result) 'error))
+
+(defun jabber-httpupload--unsupported-error ()
+  "Report that the current server has no HTTP Upload service."
+  (user-error "HTTP Upload is not supported by this server"))
+
+(defun jabber-httpupload--maybe-upload (jc filepath callback iri result)
+  "Upload FILEPATH on JC through IRI when RESULT advertises HTTP Upload.
+On success, pass the uploaded URL to CALLBACK."
+  (when (and (not (jabber-httpupload--disco-error-p result))
+             (member jabber-httpupload-xmlns (nth 1 result)))
+    (unless (assq jc jabber-httpupload-support)
+      (push (cons jc iri) jabber-httpupload-support))
+    (jabber-httpupload--upload jc filepath callback)
+    t))
+
+(defun jabber-httpupload--discover-from-items (jc filepath callback items)
+  "Inspect ITEMS for JC and upload FILEPATH when one supports HTTP Upload.
+On success, pass the uploaded URL to CALLBACK."
+  (if (or (null items)
+          (jabber-httpupload--disco-error-p items))
+      (jabber-httpupload--unsupported-error)
+    (let ((remaining (length items))
+          (done nil))
+      (dolist (item items)
+        (let ((iri (elt item 1)))
+          (jabber-disco-get-info
+           jc iri nil
+           (lambda (jc _data result)
+             (unless done
+               (if (jabber-httpupload--maybe-upload jc filepath callback iri result)
+                   (setq done t)
+                 (setq remaining (1- remaining))
+                 (when (zerop remaining)
+                   (jabber-httpupload--unsupported-error)))))
+           nil))))))
+
 (defun jabber-httpupload--discover-and-upload (jc filepath callback)
   "Discover HTTP Upload support for JC, then upload FILEPATH.
 On success, call (funcall CALLBACK get-url).
 Error if the server does not support HTTP Upload."
   (message "Discovering HTTP Upload support...")
-  (let ((done nil))
-    (jabber-httpupload-apply-to-items
-     jc
-     (lambda (jc item)
-       (let ((iri (elt item 1)))
-         (jabber-disco-get-info
-          jc iri nil
-          (lambda (jc _data result)
-            (when (and (not done)
-                       (member jabber-httpupload-xmlns (nth 1 result)))
-              (setq done t)
-              (unless (assq jc jabber-httpupload-support)
-                (push (cons jc iri) jabber-httpupload-support))
-              (jabber-httpupload--upload jc filepath callback)))
-          nil))))))
+  (let ((node (plist-get (fsm-get-state-data jc) :server)))
+    (jabber-disco-get-items
+     jc node nil
+     (lambda (jc _data result)
+       (jabber-httpupload--discover-from-items jc filepath callback result))
+     nil)))
 
 (defun jabber-httpupload--upload (jc filepath callback)
   "Upload FILEPATH via HTTP Upload on JC.
