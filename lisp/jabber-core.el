@@ -49,6 +49,7 @@
 (defcustom jabber-post-connect-hooks '(jabber-send-current-presence
 				       jabber-muc-autojoin
 				       jabber-muc-self-ping-start
+				       jabber-mam-maybe-catchup
 				       jabber-whitespace-ping-start
 				       jabber-vcard-avatars-find-current
 				       jabber-carbons-maybe-enable
@@ -59,6 +60,7 @@ The functions should accept one argument, the connection object."
   :options '(jabber-send-current-presence
 	     jabber-muc-autojoin
 	     jabber-muc-self-ping-start
+	     jabber-mam-maybe-catchup
 	     jabber-whitespace-ping-start
 	     jabber-keepalive-start
 	     jabber-vcard-avatars-find-current

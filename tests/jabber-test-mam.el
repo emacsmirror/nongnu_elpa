@@ -12,6 +12,7 @@
 (require 'jabber-chat)
 (require 'jabber-muc)
 (require 'jabber-mam)
+(require 'jabber-core)
 (require 'jabber-message-correct)
 
 ;;; Test infrastructure
@@ -82,6 +83,19 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
     (put jc :state-data (list :username (nth 0 parts)
                               :server (nth 1 parts)))
     jc))
+
+;;; Group 0: Hook defaults
+
+(ert-deftest jabber-test-mam-post-connect-hook-default ()
+  "MAM catch-up is enabled for fresh connections by default."
+  (should (memq 'jabber-mam-maybe-catchup jabber-post-connect-hooks))
+  (should (memq 'jabber-mam-maybe-catchup
+                (get 'jabber-post-connect-hooks 'custom-options)))
+  (should (equal jabber-post-resume-hooks
+                 '(jabber-muc-self-ping-rooms
+                   jabber-mam-maybe-catchup
+                   jabber-muc-self-ping-start
+                   jabber-whitespace-ping-start))))
 
 ;;; Group 1: Large sync
 

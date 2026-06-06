@@ -9,6 +9,14 @@
 (require 'ert)
 (require 'jabber-chat)
 
+(defun jabber-test-chat--make-fake-jc (account)
+  "Create a fake connection symbol for ACCOUNT."
+  (let ((jc (gensym "jabber-test-chat-jc-"))
+        (parts (split-string account "@")))
+    (put jc :state-data (list :username (nth 0 parts)
+                              :server (nth 1 parts)))
+    jc))
+
 ;; jabber-chat uses this constant from jabber-muc, which has too many
 ;; dependencies to load in isolation.  Define it here for tests.
 (defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
@@ -388,6 +396,39 @@
   (should (boundp 'jabber-chat-muc-presence-patterns-history))
   ;; The old typo should not exist
   (should-not (boundp 'jaber-chat-much-presence-patterns-history)))
+
+;;; Group 10: jabber-chat-create-buffer
+
+(ert-deftest jabber-test-chat-create-buffer-notifies-mam-on-create-and-reopen ()
+  "Creating and reopening a chat buffer each notify MAM once."
+  (let* ((jc1 (jabber-test-chat--make-fake-jc "me@example.com"))
+         (jc2 (jabber-test-chat--make-fake-jc "me@example.com"))
+         (peer "emma@example.com/laptop")
+         (bare-peer "emma@example.com")
+         (jabber-chat-buffer-format " *jabber-test-chat-%j-%a*")
+         (calls nil)
+         buf)
+    (cl-letf (((symbol-function 'jabber-db-backlog)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-db-get-chat-encryption)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-mam-chat-opened)
+               (lambda (jc peer)
+                 (push (cons jc peer) calls))))
+      (unwind-protect
+          (progn
+            (setq buf (jabber-chat-create-buffer jc1 peer))
+            (should (= 1 (length calls)))
+            (should (equal (list (cons jc1 bare-peer)) calls))
+            (should (eq buf (jabber-chat-create-buffer jc2 peer)))
+            (should (= 2 (length calls)))
+            (should (equal (list (cons jc2 bare-peer)
+                                 (cons jc1 bare-peer))
+                           calls))
+            (with-current-buffer buf
+              (should (eq jc2 jabber-buffer-connection))))
+        (when (buffer-live-p buf)
+          (kill-buffer buf))))))
 
 (provide 'jabber-test-chat)
 

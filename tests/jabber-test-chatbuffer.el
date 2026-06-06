@@ -7,6 +7,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'cl-lib)
 (require 'ewoc)
 (require 'jabber-chatbuffer)
 (require 'jabber-chat)
@@ -226,7 +227,116 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should-not (plist-get plist :id))))
 
-;;; Group 7: OMEMO anonymous-room warning
+;;; Group 7: Carbon display suppression
+
+(defun jabber-test-chatbuffer--sent-carbon (inner)
+  "Wrap INNER in a sent carbon from the local account."
+  `(message ((from . "me@example.com/resource")
+             (type . "chat"))
+            (sent ((xmlns . "urn:xmpp:carbons:2"))
+                  (forwarded ((xmlns . "urn:xmpp:forward:0"))
+                             ,inner))))
+
+(defun jabber-test-chatbuffer--received-carbon (inner)
+  "Wrap INNER in a received carbon from the local account."
+  `(message ((from . "me@example.com/resource")
+             (type . "chat"))
+            (received ((xmlns . "urn:xmpp:carbons:2"))
+                      (forwarded ((xmlns . "urn:xmpp:forward:0"))
+                                 ,inner))))
+
+(defmacro jabber-test-chatbuffer-with-process-chat-spies (&rest body)
+  "Run BODY with `jabber-process-chat' storage and display spies."
+  (declare (indent 0) (debug t))
+  `(let ((stored nil)
+         (displayed nil)
+         (buffer (generate-new-buffer " *test-carbon-chat*"))
+         (jabber-chat-printers (list (lambda (&rest _) t))))
+     (unwind-protect
+         (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                    (lambda (_jc) "me@example.com"))
+                   ((symbol-function 'jabber-muc-message-p)
+                    (lambda (&rest _) nil))
+                   ((symbol-function 'jabber-muc-sender-p)
+                    (lambda (&rest _) nil))
+                   ((symbol-function 'jabber-chat--decrypt-if-needed)
+                    (lambda (_jc xml-data) xml-data))
+                   ((symbol-function 'jabber-message-correct--replace-id)
+                    (lambda (&rest _) nil))
+                   ((symbol-function 'jabber-chat-create-buffer)
+                    (lambda (&rest _) buffer))
+                   ((symbol-function 'jabber-chat--store-carbon)
+                    (lambda (_jc xml-data) (push xml-data stored)))
+                   ((symbol-function 'jabber-chat--display-message)
+                    (lambda (&rest args) (push args displayed))))
+           ,@body)
+       (kill-buffer buffer))))
+
+(ert-deftest jabber-test-chatbuffer-reaction-sent-carbon-not-stored-or-displayed ()
+  "Reaction fallback sent carbons are not stored or displayed as chat text."
+  (jabber-test-chatbuffer-with-process-chat-spies
+    (let* ((inner `(message ((from . "me@example.com/phone")
+                             (to . "friend@example.com")
+                             (type . "chat")
+                             (id . "reaction-carbon-1"))
+                            (body nil "> hello\n👍")
+                            (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                        (id . "target-1"))
+                                       (reaction nil "👍"))
+                            (fallback ((xmlns . "urn:xmpp:fallback:0")
+                                       (for . ,jabber-reactions-xmlns)))))
+           (carbon (jabber-test-chatbuffer--sent-carbon inner)))
+      (jabber-process-chat 'fake-jc carbon)
+      (should-not stored)
+      (should-not displayed))))
+
+(ert-deftest jabber-test-chatbuffer-reaction-received-carbon-not-stored-or-displayed ()
+  "Reaction fallback received carbons are not stored or displayed as chat text."
+  (jabber-test-chatbuffer-with-process-chat-spies
+    (let* ((inner `(message ((from . "friend@example.com/phone")
+                             (to . "me@example.com/resource")
+                             (type . "chat")
+                             (id . "reaction-carbon-2"))
+                            (body nil "> hello\n👍")
+                            (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                        (id . "target-1"))
+                                       (reaction nil "👍"))
+                            (fallback ((xmlns . "urn:xmpp:fallback:0")
+                                       (for . ,jabber-reactions-xmlns)))))
+           (carbon (jabber-test-chatbuffer--received-carbon inner)))
+      (jabber-process-chat 'fake-jc carbon)
+      (should-not stored)
+      (should-not displayed))))
+
+(ert-deftest jabber-test-chatbuffer-normal-sent-carbon-stores-and-displays ()
+  "Normal sent carbons still store and display as before."
+  (jabber-test-chatbuffer-with-process-chat-spies
+    (let* ((inner '(message ((from . "me@example.com/phone")
+                             (to . "friend@example.com")
+                             (type . "chat")
+                             (id . "normal-carbon-1"))
+                            (body nil "hello from phone")))
+           (carbon (jabber-test-chatbuffer--sent-carbon inner)))
+      (jabber-process-chat 'fake-jc carbon)
+      (should (= 1 (length stored)))
+      (should (eq inner (car stored)))
+      (should (= 1 (length displayed))))))
+
+(ert-deftest jabber-test-chatbuffer-normal-received-carbon-stores-and-displays ()
+  "Normal received carbons still store and display as before."
+  (jabber-test-chatbuffer-with-process-chat-spies
+    (let* ((inner '(message ((from . "friend@example.com/phone")
+                             (to . "me@example.com/resource")
+                             (type . "chat")
+                             (id . "normal-carbon-2"))
+                            (body nil "hello from phone")))
+           (carbon (jabber-test-chatbuffer--received-carbon inner)))
+      (jabber-process-chat 'fake-jc carbon)
+      (should (= 1 (length stored)))
+      (should (eq inner (car stored)))
+      (should (= 1 (length displayed))))))
+
+;;; Group 8: OMEMO anonymous-room warning
 
 (require 'jabber-omemo)
 
