@@ -24,9 +24,9 @@
          (request (assq 'request result))
          (markable (assq 'markable result)))
     (should (string= "urn:xmpp:receipts"
-                      (cdr (assq 'xmlns (cadr request)))))
+                     (cdr (assq 'xmlns (cadr request)))))
     (should (string= "urn:xmpp:chat-markers:0"
-                      (cdr (assq 'xmlns (cadr markable)))))))
+                     (cdr (assq 'xmlns (cadr markable)))))))
 
 ;;; Group 2: Incoming receipt handling
 
@@ -291,14 +291,14 @@
           (jabber-db-ensure-open)
           ;; Store 3 outgoing messages
           (jabber-db-store-message "me@example.com" "them@example.com"
-                                  "out" "chat" "msg1" 1000
-                                  nil "id-1" )
+                                   "out" "chat" "msg1" 1000
+                                   nil "id-1" )
           (jabber-db-store-message "me@example.com" "them@example.com"
-                                  "out" "chat" "msg2" 1001
-                                  nil "id-2" )
+                                   "out" "chat" "msg2" 1001
+                                   nil "id-2" )
           (jabber-db-store-message "me@example.com" "them@example.com"
-                                  "out" "chat" "msg3" 1002
-                                  nil "id-3" )
+                                   "out" "chat" "msg3" 1002
+                                   nil "id-3" )
           ;; Mark all as delivered
           (jabber-db-update-receipt "me@example.com" "them@example.com"
                                     "id-1" "delivered_at" 1010)
@@ -331,14 +331,14 @@
         (progn
           (jabber-db-ensure-open)
           (jabber-db-store-message "me@example.com" "them@example.com"
-                                  "out" "chat" "msg1" 1000
-                                  nil "id-1" )
+                                   "out" "chat" "msg1" 1000
+                                   nil "id-1" )
           (jabber-db-store-message "me@example.com" "them@example.com"
-                                  "out" "chat" "msg2" 1001
-                                  nil "id-2" )
+                                   "out" "chat" "msg2" 1001
+                                   nil "id-2" )
           (jabber-db-store-message "me@example.com" "them@example.com"
-                                  "out" "chat" "msg3" 1002
-                                  nil "id-3" )
+                                   "out" "chat" "msg3" 1002
+                                   nil "id-3" )
           ;; Only mark msg1 and msg3 as delivered (msg2 undelivered)
           (jabber-db-update-receipt "me@example.com" "them@example.com"
                                     "id-1" "delivered_at" 1010)
@@ -412,13 +412,12 @@
     (should (equal updated-id "msg-333"))
     (should (equal updated-col "delivered_at"))))
 
-(ert-deftest jabber-test-receipts-send-hook-muc-no-request ()
-  "Send hook in MUC groupchat adds markable but no request."
+(ert-deftest jabber-test-receipts-send-hook-muc-no-elements ()
+  "Send hook in MUC groupchat does not request receipts or markers."
   (with-temp-buffer
     (setq-local jabber-group "room@conference.example.com")
     (let ((result (jabber-receipts--send-hook "hello" "msg-001")))
-      (should (assq 'markable result))
-      (should-not (assq 'request result)))))
+      (should-not result))))
 
 ;;; Group 8: XEP-0280 Message Carbons
 

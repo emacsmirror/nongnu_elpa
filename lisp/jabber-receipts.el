@@ -75,11 +75,11 @@ Incoming receipts are always processed regardless of this setting."
   "Add receipt request and markable elements to outgoing messages.
 Added to `jabber-chat-send-hooks'.
 Per XEP-0184, receipt requests are NOT RECOMMENDED in MUC
-groupchat because every occupant would respond.  Chat markers
-\(XEP-0333) are fine in MUC."
+groupchat because every occupant would respond.  MUC chat markers
+need per-occupant tracking, so do not request them from groupchat
+messages until that state exists."
   (if (bound-and-true-p jabber-group)
-      ;; MUC groupchat: markable only, no receipt request.
-      `((markable ((xmlns . ,jabber-chat-markers-xmlns))))
+      nil
     `((request ((xmlns . ,jabber-receipts-xmlns)))
       (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
 
