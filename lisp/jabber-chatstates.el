@@ -135,8 +135,13 @@ It can be sent and cancelled several times.")
 
 (defun jabber-chatstates--live-ewoc-node-p (node)
   "Return non-nil when NODE still has a live EWOC marker."
-  (and-let* ((marker (ignore-errors (ewoc-location node))))
-    (marker-buffer marker)))
+  (condition-case err
+      (and-let* ((marker (ewoc-location node)))
+        (marker-buffer marker))
+    (error
+     (message "Jabber: stale chat state ewoc node: %s"
+              (error-message-string err))
+     nil)))
 
 (defun jabber-chatstates--delete-typing-node ()
   "Remove the current typing indicator node without changing state."

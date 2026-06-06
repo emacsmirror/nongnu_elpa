@@ -253,6 +253,18 @@ nil after the first message, breaking subsequent composing detection."
       (jabber-chatstates--clear-typing)
       (should-not jabber-chatstates--ewoc-node))))
 
+(ert-deftest jabber-test-chatstates-live-node-error-is-reported ()
+  "EWOC lookup errors are reported and treated as stale nodes."
+  (let (logged)
+    (cl-letf (((symbol-function 'ewoc-location)
+               (lambda (_node) (error "bad node")))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq logged (apply #'format format-string args)))))
+      (should-not (jabber-chatstates--live-ewoc-node-p 'bad-node)))
+    (should (string-match-p "stale chat state ewoc node: bad node"
+                            logged))))
+
 (ert-deftest jabber-test-chatstates-direct-send-forgets-stale-typing-node ()
   "Local direct-chat send ignores stale typing nodes."
   (with-temp-buffer
