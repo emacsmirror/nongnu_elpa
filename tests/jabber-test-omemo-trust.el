@@ -129,13 +129,18 @@
 
 (ert-deftest jabber-test-omemo-trust-column-format ()
   "Mode sets a 4-column tabulated-list-format."
-  (with-temp-buffer
-    (jabber-omemo-trust-mode)
-    (should (= 4 (length tabulated-list-format)))
-    (should (string= "Device ID" (car (aref tabulated-list-format 0))))
-    (should (string= "Trust" (car (aref tabulated-list-format 1))))
-    (should (string= "Fingerprint" (car (aref tabulated-list-format 2))))
-    (should (string= "First Seen" (car (aref tabulated-list-format 3))))))
+  (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 20)))
+    (with-temp-buffer
+      (jabber-omemo-trust-mode)
+      (should (= 4 (length tabulated-list-format)))
+      (should (equal "Device ID" (car (aref tabulated-list-format 0))))
+      (should (= 9 (cadr (aref tabulated-list-format 0))))
+      (should (equal "Trust" (car (aref tabulated-list-format 1))))
+      (should (= 8 (cadr (aref tabulated-list-format 1))))
+      (should (equal "Fingerprint" (car (aref tabulated-list-format 2))))
+      (should (= 32 (cadr (aref tabulated-list-format 2))))
+      (should (equal "First Seen" (car (aref tabulated-list-format 3))))
+      (should (= 16 (cadr (aref tabulated-list-format 3)))))))
 
 (provide 'jabber-test-omemo-trust)
 ;;; jabber-test-omemo-trust.el ends here

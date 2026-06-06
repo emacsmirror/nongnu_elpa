@@ -90,11 +90,11 @@ Returns the key without the first byte, or as-is if shorter than 2 bytes."
 
 (defun jabber-omemo--list-format ()
   "Return the column format vector for the OMEMO trust list buffer."
-  (let ((list-format `[("Device ID" ,(/ (window-width) 10))
-		       ("Trust" ,(/ (window-width) 10))
-		       ("Fingerprint" ,(/ (window-width) 3))
-		       ("First Seen" ,(/ (window-width) 10))]))
-    list-format))
+  (let ((width (window-width)))
+    (vector (list "Device ID" (max 9 (/ width 10)))
+            (list "Trust" (max 8 (/ width 10)))
+            (list "Fingerprint" (max 32 (/ width 3)))
+            (list "First Seen" (max 16 (/ width 10))))))
 
 (define-derived-mode jabber-omemo-trust-mode tabulated-list-mode "OMEMO-Trust"
   "Major mode for managing OMEMO device trust.
