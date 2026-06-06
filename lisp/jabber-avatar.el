@@ -124,18 +124,18 @@ If MIME-TYPE is not specified, try to find it from the image data."
   (frame-char-height))
 
 (defun jabber-avatar-image (avatar)
-  "Create an image from AVATAR sized to fit a single line.
+  "Create an image from AVATAR sized to fit configured avatar bounds.
 Return nil if images of this type are not supported."
   (condition-case nil
-      (let ((h (jabber-avatar--line-height)))
-        (jabber-image-create
-         (with-temp-buffer
-           (set-buffer-multibyte nil)
-           (insert (avatar-base64-data avatar))
-           (base64-decode-region (point-min) (point-max))
-           (buffer-string))
-         (avatar-mime-type avatar)
-         h h))
+      (jabber-image-create
+       (with-temp-buffer
+         (set-buffer-multibyte nil)
+         (insert (avatar-base64-data avatar))
+         (base64-decode-region (point-min) (point-max))
+         (buffer-string))
+       (avatar-mime-type avatar)
+       jabber-avatar-max-width
+       jabber-avatar-max-height)
     (error nil)))
 
 ;;;; Avatar cache
@@ -188,8 +188,10 @@ AVATAR may be one of:
       (setq image (lambda ()
                     (when-let* ((file (jabber-avatar-find-cached avatar)))
                       (condition-case nil
-                          (let ((h (jabber-avatar--line-height)))
-                            (jabber-image-create-from-file file h h))
+                          (jabber-image-create-from-file
+                           file
+                           jabber-avatar-max-width
+                           jabber-avatar-max-height)
                         (error nil))))))
      (t
       (setq hash nil)
