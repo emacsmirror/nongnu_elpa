@@ -10,7 +10,9 @@
 (require 'ewoc)
 
 (require 'jabber-xml)
+(require 'jabber-chat)
 (require 'jabber-chatbuffer)
+(require 'jabber-muc)
 (require 'jabber-message-reply)
 
 ;;; Group 1: jabber-message-reply--build-fallback-text
@@ -110,6 +112,56 @@
       (should elements)
       (should (cl-some (lambda (el) (eq (car el) 'reply)) elements))
       (should-not (cl-some (lambda (el) (eq (car el) 'fallback)) elements)))))
+
+;;; Group 4: incoming fallback parsing
+
+(ert-deftest jabber-test-message-reply-strips-incoming-fallback ()
+  "Incoming XEP-0461 reply fallback is removed from displayed body."
+  (let* ((stanza '(message ((from . "alice@example.com/tablet")
+                            (id . "reply-1")
+                            (type . "chat"))
+                           (body () "> Alice:\n> Hello\nActual reply")
+                           (reply ((xmlns . "urn:xmpp:reply:0")
+                                   (to . "alice@example.com/tablet")
+                                   (id . "orig-1")))
+                           (fallback ((xmlns . "urn:xmpp:fallback:0")
+                                      (for . "urn:xmpp:reply:0"))
+                                     (body ((start . "0")
+                                            (end . "17"))))))
+         (msg (jabber-chat--msg-plist-from-stanza stanza)))
+    (should (equal "Actual reply" (plist-get msg :body)))
+    (should (equal "orig-1" (plist-get msg :reply-to-id)))))
+
+(ert-deftest jabber-test-message-reply-preserves-malformed-fallback ()
+  "Malformed XEP-0461 fallback ranges leave the body unchanged."
+  (let* ((body "> Alice:\n> Hello\nActual reply")
+         (stanza `(message ((from . "alice@example.com/tablet")
+                            (id . "reply-2")
+                            (type . "chat"))
+                           (body () ,body)
+                           (reply ((xmlns . "urn:xmpp:reply:0")
+                                   (to . "alice@example.com/tablet")
+                                   (id . "orig-1")))
+                           (fallback ((xmlns . "urn:xmpp:fallback:0")
+                                      (for . "urn:xmpp:reply:0"))
+                                     (body ((start . "x")
+                                            (end . "17"))))))
+         (msg (jabber-chat--msg-plist-from-stanza stanza)))
+    (should (equal body (plist-get msg :body)))))
+
+(ert-deftest jabber-test-message-reply-preserves-fallback-without-reply ()
+  "Fallback text is preserved when no XEP-0461 reply element is present."
+  (let* ((body "> Alice:\n> Hello\nActual reply")
+         (stanza `(message ((from . "alice@example.com/tablet")
+                            (id . "reply-3")
+                            (type . "chat"))
+                           (body () ,body)
+                           (fallback ((xmlns . "urn:xmpp:fallback:0")
+                                      (for . "urn:xmpp:reply:0"))
+                                     (body ((start . "0")
+                                            (end . "17"))))))
+         (msg (jabber-chat--msg-plist-from-stanza stanza)))
+    (should (equal body (plist-get msg :body)))))
 
 (provide 'jabber-test-message-reply)
 

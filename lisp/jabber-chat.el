@@ -831,6 +831,44 @@ Returns a list of (URL . DESC) cons cells, or nil."
                 xml-data jabber-muc-xmlns-user)))
     (and muc-x (jabber-xml-get-children muc-x 'invite))))
 
+(defconst jabber-chat--reply-xmlns "urn:xmpp:reply:0"
+  "XEP-0461 message replies namespace.")
+
+(defconst jabber-chat--fallback-xmlns "urn:xmpp:fallback:0"
+  "XEP-0428 fallback indication namespace.")
+
+(defun jabber-chat--fallback-offset (value)
+  "Return VALUE as a non-negative integer, or nil."
+  (when (and (stringp value)
+             (string-match-p "\\`[0-9]+\\'" value))
+    (string-to-number value)))
+
+(defun jabber-chat--reply-fallback-range (xml-data)
+  "Return the XEP-0461 fallback body range in XML-DATA, or nil."
+  (when-let* ((fallback (jabber-xml-child-with-xmlns
+                         xml-data jabber-chat--fallback-xmlns))
+              ((eq (jabber-xml-node-name fallback) 'fallback))
+              ((string= (jabber-xml-get-attribute fallback 'for)
+                        jabber-chat--reply-xmlns))
+              (body (car (jabber-xml-get-children fallback 'body)))
+              (start (jabber-xml-get-attribute body 'start))
+              (end (jabber-xml-get-attribute body 'end)))
+    (when-let* ((from (jabber-chat--fallback-offset start))
+                (to (jabber-chat--fallback-offset end)))
+      (list from to))))
+
+(defun jabber-chat--strip-reply-fallback (body xml-data)
+  "Return BODY with a valid XEP-0461 fallback range from XML-DATA removed.
+Malformed fallback ranges leave BODY unchanged."
+  (if-let* (((stringp body))
+            (range (jabber-chat--reply-fallback-range xml-data))
+            (start (car range))
+            (end (cadr range))
+            ((<= 0 start end (length body))))
+      (concat (substring body 0 start)
+              (substring body end))
+    body))
+
 (defun jabber-chat--build-msg-plist (xml-data delayed)
   "Build a message plist from the fields in XML-DATA.
 DELAYED marks the message as delayed unconditionally."
@@ -838,11 +876,14 @@ DELAYED marks the message as delayed unconditionally."
          (oob-entries (jabber-chat--extract-oob-entries xml-data))
          (error-node (car (jabber-xml-get-children xml-data 'error)))
          (sid-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:sid:0"))
-         (reply-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:reply:0"))
+         (reply-el (jabber-xml-child-with-xmlns xml-data
+                                                jabber-chat--reply-xmlns))
          (unstyled-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:styling:0"))
          (raw-body (car (jabber-xml-node-children
                          (car (jabber-xml-get-children xml-data 'body)))))
-         (body raw-body))
+         (body (if reply-el
+                   (jabber-chat--strip-reply-fallback raw-body xml-data)
+                 raw-body)))
     (list
      :id (jabber-xml-get-attribute xml-data 'id)
      :server-id (when sid-el (jabber-xml-get-attribute sid-el 'id))
