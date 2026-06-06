@@ -105,6 +105,17 @@
     (should (equal (alist-get "bob" (plist-get updated :reactions) nil nil #'equal)
                    '("🎉")))))
 
+(ert-deftest jabber-test-reactions-single-element-rejects-multiple-payloads ()
+  "Messages with multiple reactions elements do not select a payload."
+  (let ((message `(message nil
+                           (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                       (id . "target-1"))
+                                      (reaction nil "👍"))
+                           (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                       (id . "target-1"))
+                                      (reaction nil "🎉")))))
+    (should-not (jabber-reactions--single-element message))))
+
 ;;; Group 2: Outgoing stanza helpers
 
 (ert-deftest jabber-test-reactions-build-stanza-includes-store-hint ()
@@ -323,6 +334,34 @@
         (jabber-reactions--handle-message 'fake-jc outer)
         (should (equal (plist-get (cadr (ewoc-data node)) :reactions)
                        '(("romeo@example.com" . ("🔥")))))))))
+
+(ert-deftest jabber-test-reactions-handle-multiple-payloads-ignores-update ()
+  "Incoming stanzas with multiple reactions payloads are ignored."
+  (with-temp-buffer
+    (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+           (msg '(:id "target-1" :body "hello"))
+           (node (ewoc-enter-last jabber-chat-ewoc (list :foreign msg)))
+           (xml `(message ((from . "juliet@example.com/laptop")
+                           (to . "romeo@example.com")
+                           (type . "chat"))
+                          (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                      (id . "target-1"))
+                                     (reaction nil "👍"))
+                          (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                      (id . "target-1"))
+                                     (reaction nil "🎉"))))
+           (persisted nil))
+      (cl-letf (((symbol-function 'jabber-chat-find-buffer)
+                 (lambda (_chat-with) (current-buffer)))
+                ((symbol-function 'jabber-db-replace-reactions)
+                 (lambda (&rest _)
+                   (setq persisted t)))
+                ((symbol-function 'jabber-chat-ewoc-find-by-id)
+                 (lambda (_stanza-id) node))
+                ((symbol-function 'jabber-chat-ewoc-invalidate) #'ignore))
+        (jabber-reactions--handle-message 'fake-jc xml)
+        (should-not persisted)
+        (should-not (plist-get (cadr (ewoc-data node)) :reactions))))))
 
 (ert-deftest jabber-test-reactions-message-updated-at-returns-nil-without-delay ()
   "Reaction source timestamps are nil when no delay is present."

@@ -182,6 +182,16 @@ an empty update."
                      (car (jabber-xml-node-children reaction)))
                    (jabber-xml-get-children reactions 'reaction))))))
 
+(defun jabber-reactions--single-element (message)
+  "Return MESSAGE's sole XEP-0444 reactions element, or nil."
+  (let ((reactions (cl-remove-if-not
+                    (lambda (child)
+                      (string= (jabber-xml-get-attribute child 'xmlns)
+                               jabber-reactions-xmlns))
+                    (jabber-xml-get-children message 'reactions))))
+    (and (null (cdr reactions))
+         (car reactions))))
+
 (defun jabber-reactions--fallback-for-reactions-p (fallback)
   "Return non-nil when FALLBACK is XEP-0444 reaction fallback text.
 Mark fallback text as reaction-only when the fallback element covers the body."
@@ -425,8 +435,7 @@ buffers with a known destination."
 Update stored and visible reaction state for the sending entity."
   (pcase-let* ((`(,message . ,carbon-buffer)
                 (jabber-reactions--unwrap-stanza jc xml-data)))
-    (when-let* ((reactions (jabber-xml-child-with-xmlns
-                            message jabber-reactions-xmlns))
+    (when-let* ((reactions (jabber-reactions--single-element message))
                 (parsed (jabber-reactions--parse-element reactions))
                 (from (jabber-xml-get-attribute message 'from))
                 (type (or (jabber-xml-get-attribute message 'type) "chat"))
