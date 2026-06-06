@@ -49,11 +49,10 @@
     (should (equal "server-id-2"
                    (jabber-message-reply--select-id msg t)))))
 
-(ert-deftest jabber-test-message-reply-select-id-muc-fallback ()
-  "In MUC without :server-id, fall back to :id."
+(ert-deftest jabber-test-message-reply-select-id-muc-requires-server-id ()
+  "In MUC without :server-id, do not use the stanza id."
   (let ((msg (list :id "client-id-3" :server-id nil)))
-    (should (equal "client-id-3"
-                   (jabber-message-reply--select-id msg t)))))
+    (should-not (jabber-message-reply--select-id msg t))))
 
 (ert-deftest jabber-test-message-reply-select-id-missing ()
   "Missing both IDs returns nil."

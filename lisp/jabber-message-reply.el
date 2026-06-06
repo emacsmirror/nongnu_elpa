@@ -75,10 +75,10 @@ Returns \"> Author:\\n> line1\\n> line2\\n\"."
 
 (defun jabber-message-reply--select-id (msg muc-p)
   "Select the appropriate message ID from MSG for a reply.
-In MUC (when MUC-P is non-nil), prefer :server-id.
+In MUC (when MUC-P is non-nil), use :server-id only.
 In 1:1 chat, use :id.  Returns nil if unavailable."
   (if muc-p
-      (or (plist-get msg :server-id) (plist-get msg :id))
+      (plist-get msg :server-id)
     (plist-get msg :id)))
 
 ;;; Send hook
