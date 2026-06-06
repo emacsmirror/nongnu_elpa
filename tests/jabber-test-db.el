@@ -1076,6 +1076,34 @@ the corrected jabber-muc-create-buffer order."
         (should (plist-get entry :retracted))
         (should-not (plist-get entry :retraction-reason))))))
 
+(ert-deftest jabber-test-db-retract-message-in-peer-is-scoped ()
+  "Scoped retraction only updates when account, peer, and server-id match."
+  (let ((jabber-backlog-days 3.0)
+        (jabber-backlog-number 10)
+        (now (floor (float-time))))
+    (jabber-test-db-with-db
+      (jabber-db-store-message "me@x.com" "room1@x.com"
+                               "in" "groupchat" "one" now
+                               nil "client-room1" "srv-room1")
+      (jabber-db-store-message "me@x.com" "room2@x.com"
+                               "in" "groupchat" "two" now
+                               nil nil "srv-room2")
+      (jabber-db-retract-message-in-peer
+       "me@x.com" "room2@x.com" "srv-room1" "room2@x.com/mod" "spam")
+      (should-not (plist-get (car (jabber-db-backlog "me@x.com" "room1@x.com"))
+                             :retracted))
+      (jabber-db-retract-message-in-peer
+       "me@x.com" "room1@x.com" "client-room1" "room1@x.com/mod" "spam")
+      (should-not (plist-get (car (jabber-db-backlog "me@x.com" "room1@x.com"))
+                             :retracted))
+      (jabber-db-retract-message-in-peer
+       "me@x.com" "room1@x.com" "srv-room1" "room1@x.com/mod" "spam")
+      (let ((room1 (car (jabber-db-backlog "me@x.com" "room1@x.com")))
+            (room2 (car (jabber-db-backlog "me@x.com" "room2@x.com"))))
+        (should (plist-get room1 :retracted))
+        (should (equal "room1@x.com/mod" (plist-get room1 :retracted-by)))
+        (should-not (plist-get room2 :retracted))))))
+
 ;;; Group: Failed-decrypt replacement
 
 (ert-deftest jabber-test-db-store-replaces-failed-decrypt-by-stanza-id ()

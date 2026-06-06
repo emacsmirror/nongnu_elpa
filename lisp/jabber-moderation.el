@@ -93,11 +93,11 @@ moderation action stanzas must come from the bare MUC service."
   (or tombstone-p
       (not (jabber-jid-resource from))))
 
-(defun jabber-moderation--handle-message (_jc xml-data)
+(defun jabber-moderation--handle-message (jc xml-data)
   "Handle moderated message retraction in XML-DATA.
 Live <retract/> action stanzas update an existing message.  Archived
 <retracted/> tombstones use the preserved MAM archive id as the original
-server id."
+server id.  JC is the connection the stanza arrived on."
   (when-let* ((type (jabber-xml-get-attribute xml-data 'type))
               ((string= type "groupchat"))
               (entry (jabber-moderation--retraction-element xml-data))
@@ -113,7 +113,8 @@ server id."
            (reason (car (jabber-xml-node-children reason-el)))
            (buf (jabber-muc-find-buffer room)))
       (when moderator
-        (jabber-db-retract-message stanza-id moderator reason))
+        (jabber-db-retract-message-in-peer
+         (jabber-connection-bare-jid jc) room stanza-id moderator reason))
       (when buf
         (with-current-buffer buf
           (jabber-moderation--mark-ewoc-retracted

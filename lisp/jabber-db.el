@@ -636,6 +636,17 @@ Optional REASON is the human-readable retraction reason string."
                     "UPDATE message SET retracted_by = ?, retraction_reason = ? WHERE server_id = ?"
                     (list retracted-by reason server-id))))
 
+(defun jabber-db-retract-message-in-peer (account peer server-id retracted-by
+                                                  &optional reason)
+  "Mark SERVER-ID as retracted in PEER on ACCOUNT.
+RETRACTED-BY is the moderator or sender JID.  Optional REASON is
+the human-readable retraction reason string."
+  (when (and jabber-db--connection account peer server-id)
+    (sqlite-execute jabber-db--connection
+                    "UPDATE message SET retracted_by = ?, retraction_reason = ? \
+WHERE account = ? AND peer = ? AND server_id = ?"
+                    (list retracted-by reason account peer server-id))))
+
 (defun jabber-db-occupant-id-by-server-id (server-id)
   "Return the occupant-id for the message with SERVER-ID, or nil."
   (when (and jabber-db--connection server-id)

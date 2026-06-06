@@ -56,7 +56,9 @@
     (let ((buf (current-buffer)))
       (cl-letf (((symbol-function 'jabber-muc-find-buffer)
                  (lambda (_group) buf))
-                ((symbol-function 'jabber-db-retract-message)
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@muc.example.com"))
+                ((symbol-function 'jabber-db-retract-message-in-peer)
                  #'ignore))
         ;; Simulate retraction stanza; <reason> is a child of <retract>
         ;; per XEP-0425, not of <moderated>.
@@ -68,7 +70,7 @@
                                   (moderated ((by . "room@muc.example.com/admin")
                                               (xmlns . "urn:xmpp:message-moderate:1")))
                                   (reason () "spam")))))
-          (jabber-moderation--handle-message nil retract-xml)))
+          (jabber-moderation--handle-message 'fake-jc retract-xml)))
       ;; Verify the plist was mutated
       (let* ((node (jabber-chat-ewoc-find-by-id "stanza-id-1"))
              (data (ewoc-data node))
@@ -89,9 +91,12 @@
           db-call)
       (cl-letf (((symbol-function 'jabber-muc-find-buffer)
                  (lambda (_group) buf))
-                ((symbol-function 'jabber-db-retract-message)
-                 (lambda (server-id moderator reason)
-                   (setq db-call (list server-id moderator reason)))))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@muc.example.com"))
+                ((symbol-function 'jabber-db-retract-message-in-peer)
+                 (lambda (account peer server-id moderator reason)
+                   (setq db-call
+                         (list account peer server-id moderator reason)))))
         (let ((tombstone-xml
                '(message ((from . "room@muc.example.com/alice")
                           (type . "groupchat")
@@ -102,10 +107,11 @@
                                     (moderated ((by . "room@muc.example.com/admin")
                                                 (xmlns . "urn:xmpp:message-moderate:1")))
                                     (reason () "spam")))))
-          (jabber-moderation--handle-message nil tombstone-xml)))
+          (jabber-moderation--handle-message 'fake-jc tombstone-xml)))
       (let* ((node (jabber-chat-ewoc-find-by-id "stanza-id-1"))
              (msg (cadr (ewoc-data node))))
-        (should (equal '("stanza-id-1" "room@muc.example.com/admin" "spam")
+        (should (equal '("me@muc.example.com" "room@muc.example.com"
+                         "stanza-id-1" "room@muc.example.com/admin" "spam")
                        db-call))
         (should (plist-get msg :retracted))
         (should (equal "room@muc.example.com/admin"
@@ -123,7 +129,9 @@
     (let ((buf (current-buffer)))
       (cl-letf (((symbol-function 'jabber-muc-find-buffer)
                  (lambda (_group) buf))
-                ((symbol-function 'jabber-db-retract-message)
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@muc.example.com"))
+                ((symbol-function 'jabber-db-retract-message-in-peer)
                  #'ignore))
         ;; Use client-id-1, not server-stanza-id-1 -- MUST be ignored
         (let ((retract-xml
@@ -134,7 +142,7 @@
                                   (moderated ((by . "room@muc.example.com/admin")
                                               (xmlns . "urn:xmpp:message-moderate:1")))))))
           ;; Returns t (consumed by chain) but must not mutate the message
-          (jabber-moderation--handle-message nil retract-xml))))
+          (jabber-moderation--handle-message 'fake-jc retract-xml))))
     (let* ((node (jabber-chat-ewoc-find-by-id "client-id-1"))
            (msg (cadr (ewoc-data node))))
       (should-not (plist-get msg :retracted)))))
@@ -182,7 +190,9 @@
     (let ((buf (current-buffer)))
       (cl-letf (((symbol-function 'jabber-muc-find-buffer)
                  (lambda (_group) buf))
-                ((symbol-function 'jabber-db-retract-message)
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@muc.example.com"))
+                ((symbol-function 'jabber-db-retract-message-in-peer)
                  #'ignore))
         (let ((retract-xml
                '(message ((from . "room@muc.example.com")
@@ -192,7 +202,7 @@
                                   (moderated ((by . "room@muc.example.com/admin")
                                               (xmlns . "urn:xmpp:message-moderate:1")))))))
           ;; Should return t (consumed) but not error
-          (should (jabber-moderation--handle-message nil retract-xml)))))))
+          (should (jabber-moderation--handle-message 'fake-jc retract-xml)))))))
 
 ;;; Group 6: tombstone rendering
 
