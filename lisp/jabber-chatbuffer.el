@@ -226,11 +226,12 @@ before sending with RET."
     (jabber-httpupload--upload
      jabber-buffer-connection filepath
      (lambda (get-url)
-       (with-current-buffer buffer
-         (goto-char (point-max))
-         (insert get-url)
-         (setq jabber-httpupload--pending-url get-url)
-         (message "Uploaded: %s (send with RET)" get-url))))))
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer
+           (goto-char (point-max))
+           (insert get-url)
+           (setq jabber-httpupload--pending-url get-url)
+           (message "Uploaded: %s (send with RET)" get-url)))))))
 
 (defcustom jabber-chat-default-encryption 'omemo
   "Default encryption mode for new chat buffers."

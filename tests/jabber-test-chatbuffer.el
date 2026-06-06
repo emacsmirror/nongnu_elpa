@@ -12,6 +12,7 @@
 (require 'jabber-chatbuffer)
 (require 'jabber-chat)
 (require 'jabber-db)
+(require 'jabber-httpupload)
 
 ;; jabber-chat requires this via jabber-muc
 (defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
@@ -880,6 +881,43 @@ again, and the ewoc created on the first call must survive."
         (jabber-chat-buffer--scrolltobottom-after-insert)
         (should (equal '(win-live) recentered))
         (should-not jabber-chat-buffer--scrolltobottom-window-info)))))
+
+;;; Group 13: HTTP Upload callback
+
+(ert-deftest jabber-test-chatbuffer-attach-file-inserts-url-when-buffer-live ()
+  "Upload completion inserts the URL into the original live buffer."
+  (with-temp-buffer
+    (let ((jabber-buffer-connection 'jc)
+          (callback nil)
+          (messages nil))
+      (cl-letf (((symbol-function 'jabber-httpupload--upload)
+                 (lambda (_jc _filepath cb)
+                   (setq callback cb)))
+                ((symbol-function 'message)
+                 (lambda (format-string &rest args)
+                   (push (apply #'format format-string args) messages))))
+        (jabber-chat-attach-file "/tmp/file.txt")
+        (funcall callback "https://upload.example.net/file.txt")
+        (should (string= (buffer-string)
+                         "https://upload.example.net/file.txt"))
+        (should (string= jabber-httpupload--pending-url
+                         "https://upload.example.net/file.txt"))
+        (should (equal messages
+                       '("Uploaded: https://upload.example.net/file.txt (send with RET)")))))))
+
+(ert-deftest jabber-test-chatbuffer-attach-file-skips-dead-buffer ()
+  "Upload completion skips insertion when the original buffer was killed."
+  (let ((buffer (generate-new-buffer " *jabber-upload-dead*"))
+        (callback nil))
+    (with-current-buffer buffer
+      (setq-local jabber-buffer-connection 'jc)
+      (cl-letf (((symbol-function 'jabber-httpupload--upload)
+                 (lambda (_jc _filepath cb)
+                   (setq callback cb))))
+        (jabber-chat-attach-file "/tmp/file.txt")))
+    (kill-buffer buffer)
+    (should-not (buffer-live-p buffer))
+    (should-not (funcall callback "https://upload.example.net/file.txt"))))
 
 (provide 'jabber-test-chatbuffer)
 
