@@ -252,21 +252,21 @@ OUTER in place."
 
 (defun jabber-mam--valid-sender-p (jc from queryid)
   "Return non-nil if FROM is a valid MAM result sender for JC.
-Valid senders are our own bare JID (1:1 archive) or a joined MUC
-room (room archive).  A nil FROM is accepted only for own-archive
-queries (no MUC target) because some servers omit the attribute
-when the message originates from the user's own archive.
+Valid senders are the entity recorded for QUERYID: our own bare JID
+for user archives, or the queried room JID for room archives.  A
+nil FROM is accepted only for own-archive queries because some
+servers omit the attribute when the message originates from the
+user's own archive.
 QUERYID identifies the active query for target lookup."
-  (if (null from)
-      ;; Accept nil from only for own-archive queries.
-      ;; MUC queries always have a room JID in query-targets.
-      (let ((target (cdr (assoc queryid jabber-mam--query-targets
-                                #'string=))))
-        (or (null target) (eq target 'one-shot)))
-    (let ((bare (jabber-jid-user from))
-          (our-jid (jabber-connection-bare-jid jc)))
-      (or (string= bare our-jid)
-          (jabber-muc-nickname bare)))))
+  (let ((target (cdr (assoc queryid jabber-mam--query-targets
+                            #'string=))))
+    (if (null from)
+        (or (null target) (eq target 'one-shot))
+      (let ((bare (jabber-jid-user from))
+            (our-jid (jabber-connection-bare-jid jc)))
+        (if (and target (not (eq target 'one-shot)))
+            (string= bare target)
+          (string= bare our-jid))))))
 
 (defun jabber-mam--classify-direction (jc from to type)
   "Classify message direction and peer from MAM result fields.

@@ -227,6 +227,27 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
       (should before-el)
       (should (string= "some-id" (car (jabber-xml-node-children before-el)))))))
 
+(ert-deftest jabber-test-mam-valid-sender-accepts-query-room ()
+  "MUC MAM results are valid only from the room targeted by QUERYID."
+  (let ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+        (jabber-mam--query-targets '(("muc-query" . "room-a@muc"))))
+    (should (jabber-mam--valid-sender-p jc "room-a@muc/nick" "muc-query"))))
+
+(ert-deftest jabber-test-mam-valid-sender-rejects-other-joined-room ()
+  "MUC MAM results from another joined room do not match QUERYID."
+  (let ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+        (jabber-mam--query-targets '(("muc-query" . "room-a@muc")))
+        (jabber-muc--rooms (make-hash-table :test #'equal)))
+    (puthash "room-b@muc" (list (cons jc "nick")) jabber-muc--rooms)
+    (should-not
+     (jabber-mam--valid-sender-p jc "room-b@muc/nick" "muc-query"))))
+
+(ert-deftest jabber-test-mam-valid-sender-accepts-own-archive ()
+  "User archive MAM results are valid from the account bare JID."
+  (let ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+        (jabber-mam--query-targets nil))
+    (should (jabber-mam--valid-sender-p jc "me@example.com" "user-query"))))
+
 (ert-deftest jabber-test-mam-parse-fin-incomplete ()
   "jabber-mam--parse-fin returns :complete nil when not complete."
   (let* ((xml (jabber-test-mam--make-fin "last-123"))
@@ -901,6 +922,7 @@ VALUES ('a','b','in','chat','test',1)")
     (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
            (room "room@conference.example.com")
            (jabber-mam--syncing (list (cons jc "muc-query")))
+           (jabber-mam--query-targets (list (cons "muc-query" room)))
            (jabber-mam--tx-depth 1)
            (jabber-chat--crypto-loaded t)
            (jabber-muc--rooms (make-hash-table :test 'equal))
