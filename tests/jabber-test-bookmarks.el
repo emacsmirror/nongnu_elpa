@@ -738,6 +738,22 @@
       (should (equal "Password" (car (aref format 4))))
       (should (= 8 (cadr (aref format 4)))))))
 
+(ert-deftest jabber-bookmarks-test-refresh-buffer-updates-column-format ()
+  "Refreshing the bookmark buffer recalculates column widths."
+  (let ((buffer (get-buffer-create "*jabber-bookmarks*"))
+        (width 80))
+    (unwind-protect
+        (cl-letf (((symbol-function 'window-width)
+                   (lambda (&rest _) width))
+                  ((symbol-function 'tabulated-list-print)
+                   #'ignore))
+          (with-current-buffer buffer
+            (jabber-bookmarks-mode)
+            (setq width 160)
+            (jabber-bookmarks--refresh-buffer)
+            (should (= 52 (cadr (aref tabulated-list-format 0))))))
+      (kill-buffer buffer))))
+
 (provide 'jabber-test-bookmarks)
 
 ;;; jabber-test-bookmarks.el ends here

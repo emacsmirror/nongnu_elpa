@@ -497,11 +497,7 @@ CALLBACK is called with JC, XML-DATA, and t on success or nil on failure."
   (jabber-get-bookmarks
    jabber-buffer-connection
    (lambda (_jc _bookmarks)
-     (when-let* ((buf (get-buffer "*jabber-bookmarks*")))
-       (with-current-buffer buf
-         (setq tabulated-list-format (jabber-bookmarks--column-format))
-         (tabulated-list-init-header)
-         (tabulated-list-print t))))
+     (jabber-bookmarks--refresh-buffer))
    t))
 
 ;;;###autoload
@@ -645,6 +641,8 @@ NICK, if non-nil, is stored in the bookmark."
   "Refresh the bookmarks buffer if it exists."
   (when-let* ((buf (get-buffer "*jabber-bookmarks*")))
     (with-current-buffer buf
+      (setq tabulated-list-format (jabber-bookmarks--column-format))
+      (tabulated-list-init-header)
       (tabulated-list-print t))))
 
 ;;; Transient editor
