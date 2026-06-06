@@ -76,6 +76,31 @@
             (should-not slot-requested)))
       (delete-file file))))
 
+;;; Slot errors
+
+(ert-deftest jabber-test-httpupload-slot-error-file-too-large ()
+  (let ((xml `(iq ((type . "error"))
+                  (error ((type . "modify"))
+                         (file-too-large ((xmlns . ,jabber-httpupload-xmlns))
+                                         (max-file-size () "20000"))))))
+    (should (string= (jabber-httpupload--slot-error-message "file.jpg" xml)
+                     "File file.jpg is too large for HTTP Upload (maximum 20000 bytes)"))))
+
+(ert-deftest jabber-test-httpupload-slot-error-retry ()
+  (let ((xml `(iq ((type . "error"))
+                  (error ((type . "wait"))
+                         (retry ((xmlns . ,jabber-httpupload-xmlns)
+                                 (stamp . "2017-12-03T23:42:05Z")))))))
+    (should (string= (jabber-httpupload--slot-error-message "file.jpg" xml)
+                     "HTTP Upload temporarily unavailable for file.jpg; retry after 2017-12-03T23:42:05Z"))))
+
+(ert-deftest jabber-test-httpupload-slot-error-generic-stanza-error ()
+  (let ((xml `(iq ((type . "error"))
+                  (error ((type . "auth"))
+                         (forbidden ((xmlns . ,jabber-stanzas-xmlns)))))))
+    (should (string= (jabber-httpupload--slot-error-message "file.jpg" xml)
+                     "HTTP Upload slot rejected for file.jpg: Forbidden"))))
+
 ;;; Discovery
 
 (ert-deftest jabber-test-httpupload-discover-errors-with-no-items ()

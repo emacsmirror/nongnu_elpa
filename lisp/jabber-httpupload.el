@@ -38,11 +38,10 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'fsm)
 (require 'mailcap)
 (require 'jabber)
-(eval-when-compile
-  (require 'cl-lib))
 
 (declare-function jabber-chat-send "jabber-chat.el"
                   (jc body &optional extra-elements))
@@ -177,6 +176,49 @@ CALLBACK receives two arguments: the Jabber connection and the item vector."
       (user-error "File %s is too large for HTTP Upload (maximum %s bytes)"
                   (file-name-nondirectory filepath)
                   max-file-size))))
+
+(defun jabber-httpupload--error-child (error child-name)
+  "Return ERROR's XEP-0363 child named CHILD-NAME."
+  (cl-find-if (lambda (child)
+                (and (eq (jabber-xml-node-name child) child-name)
+                     (string= (jabber-xml-get-attribute child 'xmlns)
+                              jabber-httpupload-xmlns)))
+              (jabber-xml-node-children error)))
+
+(defun jabber-httpupload--child-text (node child-name)
+  "Return NODE's first CHILD-NAME text."
+  (when-let* ((child (car (jabber-xml-get-children node child-name)))
+              (text (car (jabber-xml-node-children child)))
+              ((stringp text)))
+    text))
+
+(defun jabber-httpupload--slot-error-message (filename xml-data)
+  "Return a user-facing slot error message for FILENAME and XML-DATA."
+  (let* ((error (jabber-iq-error xml-data))
+         (file-too-large (and error
+                              (jabber-httpupload--error-child
+                               error 'file-too-large)))
+         (retry (and error
+                     (jabber-httpupload--error-child error 'retry))))
+    (cond
+     (file-too-large
+      (if-let* ((max-file-size
+                 (jabber-httpupload--parse-max-file-size
+                  (jabber-httpupload--child-text
+                   file-too-large 'max-file-size))))
+          (format "File %s is too large for HTTP Upload (maximum %s bytes)"
+                  filename max-file-size)
+        (format "File %s is too large for HTTP Upload" filename)))
+     (retry
+      (if-let* ((stamp (jabber-xml-get-attribute retry 'stamp)))
+          (format "HTTP Upload temporarily unavailable for %s; retry after %s"
+                  filename stamp)
+        (format "HTTP Upload temporarily unavailable for %s" filename)))
+     (error
+      (format "HTTP Upload slot rejected for %s: %s"
+              filename (jabber-parse-error error)))
+     (t
+      (format "HTTP Upload slot rejected for %s" filename)))))
 
 ;; Slot parsing
 
@@ -355,8 +397,9 @@ If support has not been discovered yet, discover it first."
                             (error "Upload function failed to PUT %s" filename))))
                       nil
                       (lambda (_jc xml-data _data)
-                        (error "HTTP Upload slot rejected for %s: %S"
-                               filename xml-data))
+                        (user-error "%s"
+                                    (jabber-httpupload--slot-error-message
+                                     filename xml-data)))
                       nil))))
 
 ;; Pending OOB for deferred sends (C-c C-a in chat buffers)
