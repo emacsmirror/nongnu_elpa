@@ -272,6 +272,21 @@ stripped from both names and values per XEP-0363 Section 11."
   (member (plist-get (fsm-get-state-data jc) :server)
           jabber-invalid-certificate-servers))
 
+(defun jabber-httpupload--curl-sentinel (process event callback callback-arg)
+  "Handle curl upload PROCESS EVENT.
+Call CALLBACK with CALLBACK-ARG only when curl exits with status zero."
+  (when (buffer-live-p (process-buffer process))
+    (with-current-buffer (process-buffer process)
+      (let ((inhibit-read-only t))
+        (goto-char (point-max))
+        (insert (format "Sentinel: %S\n" event)))))
+  (when (memq (process-status process) '(exit signal))
+    (let ((status (process-exit-status process)))
+      (if (zerop status)
+          (funcall callback callback-arg)
+        (message "HTTP Upload failed: curl exited with status %s (%s)"
+                 status (string-trim event))))))
+
 (defun jabber-httpupload-put-file-curl (filepath headers put-url
 						 callback callback-arg
 						 &optional ignore-cert-problems)
@@ -298,15 +313,8 @@ certificates.  Return the process on success, nil if curl is not found."
                     :buffer buffer
                     :command command
                     :sentinel (lambda (process event)
-                                (when (buffer-live-p (process-buffer process))
-                                  (with-current-buffer (process-buffer process)
-                                    (let ((inhibit-read-only t))
-                                      (goto-char (point-max))
-                                      (insert (format "Sentinel: %S\n" event)))))
-                                (if (string= event "finished\n")
-                                    (funcall callback callback-arg)
-                                  (message "HTTP Upload failed: %s"
-                                           (string-trim event))))))))
+                                (jabber-httpupload--curl-sentinel
+                                 process event callback callback-arg))))))
 
 ;; Core upload pipeline
 

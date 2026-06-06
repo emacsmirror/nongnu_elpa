@@ -101,6 +101,54 @@
     (should (string= (jabber-httpupload--slot-error-message "file.jpg" xml)
                      "HTTP Upload slot rejected for file.jpg: Forbidden"))))
 
+;;; Curl upload
+
+(ert-deftest jabber-test-httpupload-curl-sentinel-calls-callback-on-zero-exit ()
+  "Curl sentinel calls its callback when curl exits successfully."
+  (let ((buffer (generate-new-buffer " *jabber-curl-test*"))
+        (called nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'process-buffer)
+                   (lambda (_process) buffer))
+                  ((symbol-function 'process-status)
+                   (lambda (_process) 'exit))
+                  ((symbol-function 'process-exit-status)
+                   (lambda (_process) 0)))
+          (jabber-httpupload--curl-sentinel
+           'process "finished\n"
+           (lambda (arg)
+             (setq called arg))
+           'done)
+          (should (eq called 'done))
+          (with-current-buffer buffer
+            (should (string-match-p "Sentinel: \"finished" (buffer-string)))))
+      (kill-buffer buffer))))
+
+(ert-deftest jabber-test-httpupload-curl-sentinel-reports-nonzero-exit ()
+  "Curl sentinel reports nonzero exit without calling its callback."
+  (let ((buffer (generate-new-buffer " *jabber-curl-test*"))
+        (called nil)
+        (messages nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'process-buffer)
+                   (lambda (_process) buffer))
+                  ((symbol-function 'process-status)
+                   (lambda (_process) 'exit))
+                  ((symbol-function 'process-exit-status)
+                   (lambda (_process) 22))
+                  ((symbol-function 'message)
+                   (lambda (format-string &rest args)
+                     (push (apply #'format format-string args) messages))))
+          (jabber-httpupload--curl-sentinel
+           'process "exited abnormally with code 22\n"
+           (lambda (_arg)
+             (setq called t))
+           'done)
+          (should-not called)
+          (should (equal messages
+                         '("HTTP Upload failed: curl exited with status 22 (exited abnormally with code 22)"))))
+      (kill-buffer buffer))))
+
 ;;; Discovery
 
 (ert-deftest jabber-test-httpupload-discover-errors-with-no-items ()
