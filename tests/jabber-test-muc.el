@@ -889,6 +889,33 @@ entry with JC=nil."
       ;; But the room should be in the queue
       (should (jabber-muc--autojoin-queued-p 'jc1 "room@muc")))))
 
+;;; Group 20: Participant list UI
+
+(ert-deftest jabber-muc-test-names-revert-refreshes-participants ()
+  "Reverting a MUC names buffer refreshes participant entries."
+  (let ((jabber-muc-participants
+         '(("room@muc"
+            ("alice" role "participant" affiliation "member"
+             jid "alice@example.com/res")))))
+    (with-temp-buffer
+      (jabber-muc-names-mode)
+      (setq jabber-muc-names--group "room@muc")
+      (jabber-muc-names--refresh)
+      (should (equal ["alice" "participant" "member" "alice@example.com/res"]
+                     (cadar tabulated-list-entries)))
+      (setq jabber-muc-participants
+            '(("room@muc"
+               ("alice" role "moderator" affiliation "admin"
+                jid "alice@example.com/res")
+               ("bob" role "visitor" affiliation "none"
+                jid "bob@example.com/res"))))
+      (revert-buffer nil t)
+      (should (= 2 (length tabulated-list-entries)))
+      (should (equal ["alice" "moderator" "admin" "alice@example.com/res"]
+                     (cadar tabulated-list-entries)))
+      (should (equal ["bob" "visitor" "none" "bob@example.com/res"]
+                     (cadr (cadr tabulated-list-entries)))))))
+
 (ert-deftest jabber-muc-test-process-enter-schedules-next ()
   "Self-presence in process-enter schedules autojoin-next via timer."
   (let* ((jabber-muc--autojoin-queue nil)

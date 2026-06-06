@@ -1155,6 +1155,23 @@ JC is the Jabber connection."
 (defvar-local jabber-muc-names--group nil
   "Room JID for the current participants buffer.")
 
+(defun jabber-muc-names--entries (group)
+  "Return tabulated-list entries for participants in GROUP."
+  (mapcar (lambda (participant)
+            (let ((nick (car participant))
+                  (props (cdr participant)))
+              (list nick (vector
+                          nick
+                          (or (plist-get props 'role) "")
+                          (or (plist-get props 'affiliation) "")
+                          (or (plist-get props 'jid) "")))))
+          (cdr (assoc group jabber-muc-participants))))
+
+(defun jabber-muc-names--refresh ()
+  "Refresh the participant list from `jabber-muc-participants'."
+  (setq tabulated-list-entries
+        (jabber-muc-names--entries jabber-muc-names--group)))
+
 (define-derived-mode jabber-muc-names-mode tabulated-list-mode
   "MUC-Names"
   "Major mode for displaying MUC participant lists."
@@ -1162,29 +1179,20 @@ JC is the Jabber connection."
                                ("Role" 12 t)
                                ("Affiliation" 12 t)
                                ("JID" 30 t)])
+  (add-hook 'tabulated-list-revert-hook #'jabber-muc-names--refresh nil t)
   (tabulated-list-init-header))
 
 (defun jabber-muc-names ()
   "Display participants of the current room in a tabulated-list buffer."
   (interactive)
   (let* ((group jabber-group)
-         (participants (cdr (assoc group jabber-muc-participants)))
          (buf (get-buffer-create (format "*MUC Participants: %s*"
                                          (jabber-jid-displayname group)))))
     (with-current-buffer buf
       (jabber-muc-names-mode)
       (setq jabber-muc-names--group group)
-      (setq tabulated-list-entries
-            (mapcar (lambda (p)
-                      (let ((nick (car p))
-                            (props (cdr p)))
-                        (list nick (vector
-                                    nick
-                                    (or (plist-get props 'role) "")
-                                    (or (plist-get props 'affiliation) "")
-                                    (or (plist-get props 'jid) "")))))
-                    participants))
-      (tabulated-list-print))
+      (jabber-muc-names--refresh)
+      (tabulated-list-print t))
     (display-buffer buf)))
 
 
