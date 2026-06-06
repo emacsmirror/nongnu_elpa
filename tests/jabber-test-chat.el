@@ -118,6 +118,40 @@
          (plist (jabber-chat--msg-plist-from-stanza stanza)))
     (should-not (plist-get plist :xml-data))))
 
+(ert-deftest jabber-test-chat-plist-from-stanza-server-id ()
+  "Valid stanza-id element sets :server-id."
+  (let* ((stanza '(message ((from . "room@muc.example.com/alice")
+                            (type . "groupchat"))
+                           (body () "Hello")
+                           (stanza-id ((xmlns . "urn:xmpp:sid:0")
+                                       (id . "server-1")
+                                       (by . "room@muc.example.com")))))
+         (plist (jabber-chat--msg-plist-from-stanza stanza)))
+    (should (equal (plist-get plist :server-id) "server-1"))))
+
+(ert-deftest jabber-test-chat-plist-from-stanza-skips-origin-id ()
+  "Origin-id before stanza-id does not become :server-id."
+  (let* ((stanza '(message ((from . "room@muc.example.com/alice")
+                            (type . "groupchat"))
+                           (body () "Hello")
+                           (origin-id ((xmlns . "urn:xmpp:sid:0")
+                                       (id . "origin-1")))
+                           (stanza-id ((xmlns . "urn:xmpp:sid:0")
+                                       (id . "server-1")
+                                       (by . "room@muc.example.com")))))
+         (plist (jabber-chat--msg-plist-from-stanza stanza)))
+    (should (equal (plist-get plist :server-id) "server-1"))))
+
+(ert-deftest jabber-test-chat-plist-from-stanza-rejects-stanza-id-without-by ()
+  "Stanza-id without by is not treated as a server id."
+  (let* ((stanza '(message ((from . "room@muc.example.com/alice")
+                            (type . "groupchat"))
+                           (body () "Hello")
+                           (stanza-id ((xmlns . "urn:xmpp:sid:0")
+                                       (id . "server-1")))))
+         (plist (jabber-chat--msg-plist-from-stanza stanza)))
+    (should-not (plist-get plist :server-id))))
+
 ;;; Group 2: jabber-chat--oob-field
 
 (ert-deftest jabber-test-chat-oob-field-url ()

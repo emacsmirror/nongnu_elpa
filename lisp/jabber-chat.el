@@ -880,13 +880,23 @@ Malformed fallback ranges leave BODY unchanged."
               (substring body end))
     body))
 
+(defun jabber-chat--stanza-id-element (xml-data)
+  "Return the first valid XEP-0359 <stanza-id/> child in XML-DATA."
+  (seq-find
+   (lambda (child)
+     (and (eq (jabber-xml-node-name child) 'stanza-id)
+          (string= (jabber-xml-get-xmlns child) "urn:xmpp:sid:0")
+          (jabber-xml-get-attribute child 'id)
+          (jabber-xml-get-attribute child 'by)))
+   (jabber-xml-node-children xml-data)))
+
 (defun jabber-chat--build-msg-plist (xml-data delayed)
   "Build a message plist from the fields in XML-DATA.
 DELAYED marks the message as delayed unconditionally."
   (let* ((msg-timestamp (jabber-message-timestamp xml-data))
          (oob-entries (jabber-chat--extract-oob-entries xml-data))
          (error-node (car (jabber-xml-get-children xml-data 'error)))
-         (sid-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:sid:0"))
+         (sid-el (jabber-chat--stanza-id-element xml-data))
          (reply-el (jabber-xml-child-with-xmlns xml-data
                                                 jabber-chat--reply-xmlns))
          (unstyled-el (jabber-xml-child-with-xmlns xml-data "urn:xmpp:styling:0"))
