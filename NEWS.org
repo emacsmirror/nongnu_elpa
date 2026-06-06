@@ -1,8 +1,8 @@
-#+title: Changes
+#+title: Elfeed Changelog
 
-** Upcoming 4.0.0 (development)
+* Upcoming 4.0.0 (development)
 
-*** General
+** General
 
 - =elfeed-entry-point=: New customization option to customize =M-x elfeed= to either
   the search or tree buffer.
@@ -22,7 +22,7 @@
   header line relative to the current time.
 - =elfeed-csv-export=: Marked as autoloaded, =elfeed-csv= is not required anymore.
 
-*** Database
+** Database
 
 - =elfeed-db-directory=: Change default to =~/.config/emacs/elfeed=. The change is
   backward compatible. If =~/.elfeed= is present, it will be used.
@@ -35,7 +35,7 @@
 - =elfeed-db-gc=: Deduplicate strings in the database to reduce on-disk and
   in-memory size.
 
-*** Feed updates
+** Feed updates
 
 - =elfeed-delete-feed=: New command to delete feed with all entries from the db.
 - =elfeed-fetch-functions=: New hook to implement custom feed fetching. This hook
@@ -59,12 +59,12 @@
   parsed with the Emacs JSON parser, but otherwise treated like the usual RSS or
   Atom feeds.
 
-*** Tree buffer
+** Tree buffer
 
 - New =elfeed-tree-mode= which lists all feeds and tags as a tree structure.
 - =elfeed-tree=: New command which opens an =elfeed-tree-mode= buffer.
 
-*** Search buffer
+** Search buffer
 
 - =elfeed-search=: New command as entry point.
 - =elfeed-search-set-filter=, =elfeed-search-tag-all=: Filter and tag completion
@@ -119,7 +119,7 @@
 - Improve column alignment when =variable-pitch-mode= is used or wide characters
   are displayed within entry titles.
 
-*** Show buffer
+** Show buffer
 
 - =elfeed-show-scroll-up/down-or-next/prev=: New scroll commands which move to the
   next or previous entry when reaching the end or the beginning of the buffer.
@@ -158,7 +158,7 @@
    ...))
 #+end_src
 
-*** Logging
+** Logging
 
 - =elfeed-log-buffer-name=: Make =*elfeed-log*= ephemeral by default with a space in
   front of the buffer name.
@@ -166,7 +166,7 @@
 - Show error count in header line. Updating the feeds resets the counter.
   Clicking on the error count will show the log buffer.
 
-*** Compatibility
+** Compatibility
 
 - Renamed all =*-hooks= variables to the new naming convention =*-hook=.
 - Removed obsolete code and code updated for upcoming Emacs 31.
@@ -174,16 +174,16 @@
 - Depend on Emacs 28.1.
 - Many small fixes and robustness improvements.
 
-** 3.4.2 (2024-07-29)
+* Version 3.4.2 (2024-07-29)
 
 - Fix =browse-url= usage (243add9e)
 - Deal with various warnings from recent Emacs releases
 
-** 3.4.1 (2021-02-25)
+* Version 3.4.1 (2021-02-25)
 
 - Fix elfeed-search-last-entry and elfeed-search-first-entry
 
-** 3.4.0 (2021-01-30)
+* Version 3.4.0 (2021-01-30)
 
 - New search filter: ~ excludes matching feeds
 - Support fetching feeds via file://
@@ -195,14 +195,14 @@
 - New elfeed-show command: elfeed-kill-link-url-at-point (c)
 - Various other minor behavior improvements
 
-** 3.3.0 (2019-11-23)
+* Version 3.3.0 (2019-11-23)
 
 - New option: =elfeed-search-remain-on-entry=.
 - More graceful handling of feed filters (=).
 - Fix minor time handling issue with Emacs >= 26.1
 - Load bookmarks before trying to use them.
 
-** 3.2.0 (2019-08-24)
+* Version 3.2.0 (2019-08-24)
 
 - Support for absolute date/time expressions in filters. See README.org
   for documentation and examples.
@@ -218,7 +218,7 @@
   multiple show buffers at the same time.
 - Various minor fixes and improvements.
 
-** 3.1.0 (2018-08-29)
+* Version 3.1.0 (2018-08-29)
 
 - Add =elfeed-show-enclosure-filename-function= for controlling
   enclosure filenames.
@@ -227,7 +227,7 @@
   used.
 - Minor documentation fixes.
 
-** 3.0.0 (2018-05-13)
+* Version 3.0.0 (2018-05-13)
 
 - Under Emacs 26, there is a new database index format (version 4).
 
@@ -244,12 +244,12 @@ created before performing the upgrade. If Emacs 25, whether running this
 or any prior Elfeed release, loads the new database format, it will see
 an empty database as if starting from scratch.
 
-** 2.3.1 (2018-05-13)
+* Version 2.3.1 (2018-05-13)
 
 - The index is now saved when quitting the elfeed-search window ("q").
 - =elfeed-link= is now autoloaded.
 
-** 2.3.0 (2018-01-21)
+* Version 2.3.0 (2018-01-21)
 
 - New ==<feed-matcher>= syntax in search filters
 - Support for protocol-relative entry links (i.e. //example.com/foo/)
@@ -261,19 +261,19 @@ an empty database as if starting from scratch.
 - Connect curl with a pipe instead of a pty---a performance boost
 - Minor bug fixes
 
-** 2.2.0 (2017-07-09)
+* Version 2.2.0 (2017-07-09)
 
 - Support for org links (=elfeed-link.el=)
 - Added =elfeed-db-unload=
 - New =elfeed-curl-retrieve= interface (breaking changes)
 - New hooks =elfeed-tag-hooks= and =elfeed-untag-hooks=
 
-** 2.1.1 (2017-04-02)
+* Version 2.1.1 (2017-04-02)
 
 - Added =elfeed-show-entry-author= customization variable.
 - Added =elfeed-search-unparse-filter=
 
-** 2.1.0 (2017-01-25)
+* Version 2.1.0 (2017-01-25)
 
 - New entry ID based only on domain, not whole feed
 - Byte-compiled search filters (=elfeed-search-compile-filter=)
@@ -283,14 +283,14 @@ an empty database as if starting from scratch.
 - New =elfeed-add-feed= interface (thanks Mark Oteiza)
 - New xml-query macros for faster feed parsing
 
-** 2.0.1 (2016-10-30)
+* Version 2.0.1 (2016-10-30)
 
 - Added =elfeed-curl-extra-arguments= customization
 - Use =x-get-selection= instead of =x-get-selection-value=
 - More flexible date handling (including Atom 0.3 support)
 - Various elfeed-web fixes
 
-** 2.0.0 (2016-08-26)
+* Version 2.0.0 (2016-08-26)
 
 - Elfeed now uses curl when available (=elfeed-use-curl=)
 - Windows OS now supported when using curl
@@ -302,7 +302,7 @@ an empty database as if starting from scratch.
 - New database export option: =elfeed-csv-export=
 - Additional validation for =elfeed-feeds=
 
-** 1.4.1 (2016-05-25)
+* Version 1.4.1 (2016-05-25)
 
 - Major bug fix: disable local variables when loading the index
 - New command =elfeed-show-play-enclosure= (requires emms)
@@ -313,7 +313,7 @@ an empty database as if starting from scratch.
 - Smarter handling of invalid timestamps
 - Following links in show mode (=elfeed-show-visit=) takes a prefix arg
 
-** 1.4.0 (2015-12-22)
+* Version 1.4.0 (2015-12-22)
 
 - New header built on Emacs' built-in buffer headers
 - New hook: =elfeed-new-entry-parse-hook=
@@ -325,13 +325,13 @@ an empty database as if starting from scratch.
 - Various bug fixes
 - Fixes to feed Unicode decoding
 
-** 1.3.0 (2015-11-20)
+* Version 1.3.0 (2015-11-20)
 
 - =elfeed-search-face-alist= for custom entry faces
 - =display-local-help= (C-h .) support in search
 - Fixes to #n count filter
 
-** 1.2.0 (2015-10-05)
+* Version 1.2.0 (2015-10-05)
 
 - Switched to url-queue (see =url-queue-timeout=)
 - New #n filter for limiting results to first n entries
@@ -343,7 +343,7 @@ an empty database as if starting from scratch.
 - =elfeed-http-error-hooks=, =elfeed-parse-error-hooks=
 - Various bug fixes
 
-** 1.1.2 (2014-11-04)
+* Version 1.1.2 (2014-11-04)
 
 - Fixed support for non-HTTP protocols
 - Add ! search syntax
@@ -354,7 +354,7 @@ an empty database as if starting from scratch.
 - Add elfeed-search-filter customization
 - Various bug fixes
 
-** 1.1.1 (2014-06-14)
+* Version 1.1.1 (2014-06-14)
 
 - Fix database corruption issue
 - Properly handle URLs from XML
@@ -363,7 +363,7 @@ an empty database as if starting from scratch.
 - Add =elfeed-sort-order=
 - Use tab and backtab to move between links
 
-** 1.1.0 (2014-01-27)
+* Version 1.1.0 (2014-01-27)
 
 - Autotagging support
 - Better database performance
@@ -373,7 +373,7 @@ an empty database as if starting from scratch.
 - Update to cl-lib from cl
 - Lots of bug fixes
 
-** 1.0.1 (2013-09-08)
+* Version 1.0.1 (2013-09-08)
 
 - Live filter editing
 - Support for RSS 1.0
@@ -385,6 +385,6 @@ an empty database as if starting from scratch.
 - Automated builds
 - Lots of small bug fixes
 
-** 1.0.0 (2013-09-02)
+* Version 1.0.0 (2013-09-02)
 
 - Initial release
