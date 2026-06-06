@@ -564,9 +564,9 @@
       <xmpp:SupportedXep>
         <xmpp:xep rdf:resource="https://xmpp.org/extensions/xep-0308.html"/>
         <xmpp:version>1.2.0</xmpp:version>
-        <xmpp:status>complete</xmpp:status>
+        <xmpp:status>partial</xmpp:status>
         <xmpp:since>0.10.0</xmpp:since>
-        <xmpp:note>MUC rejoin presence-tracking check not implemented (spec SHOULD).</xmpp:note>
+        <xmpp:note>Body correction is implemented.  Complete payload replacement and MUC rejoin presence-tracking check are not implemented.</xmpp:note>
       </xmpp:SupportedXep>
     </implements>
 
