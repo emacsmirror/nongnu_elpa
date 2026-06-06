@@ -237,10 +237,10 @@ JC is the Jabber connection.  XML-DATA is the incoming IQ stanza."
   (let ((to (jabber-xml-get-attribute xml-data 'from))
         (id (jabber-xml-get-attribute xml-data 'id)))
     (jabber-send-iq jc to "result"
-                    `(time ((xmlns . ,jabber-last-xmlns)
-			    ;; XEP-0012 specifies that this is an integer.
-                            (seconds . ,(number-to-string
-					 (floor (jabber-autoaway-get-idle-time))))))
+                    `(query ((xmlns . ,jabber-last-xmlns)
+                             ;; XEP-0012 specifies that this is an integer.
+                             (seconds . ,(number-to-string
+                                          (floor (jabber-autoaway-get-idle-time))))))
                     nil nil nil nil
                     id)))
 
