@@ -11,6 +11,32 @@
 
 (require 'jabber-httpupload)
 
+;;; Slot parsing
+
+(ert-deftest jabber-test-httpupload-parse-slot-answer ()
+  (let* ((slot `(iq ()
+                    (slot ((xmlns . ,jabber-httpupload-xmlns))
+                          (put ((xmlns . ,jabber-httpupload-xmlns)
+                                (url . "https://upload.example.net/file"))
+                               (header ((name . "Authorization"))
+                                       "Bearer token"))
+                          (get ((xmlns . ,jabber-httpupload-xmlns)
+                                (url . "https://download.example.net/file"))))))
+         (result (jabber-httpupload-parse-slot-answer slot)))
+    (should (equal result
+                   '(("https://upload.example.net/file"
+                      ("Authorization" . "Bearer token"))
+                     "https://download.example.net/file")))))
+
+(ert-deftest jabber-test-httpupload-parse-slot-rejects-wrong-namespace ()
+  (let ((slot '(iq ()
+                   (slot ((xmlns . "urn:xmpp:other"))
+                         (put ((xmlns . "urn:xmpp:other")
+                               (url . "https://upload.example.net/file")))
+                         (get ((xmlns . "urn:xmpp:other")
+                               (url . "https://download.example.net/file")))))))
+    (should-error (jabber-httpupload-parse-slot-answer slot) :type 'error)))
+
 ;;; Discovery
 
 (ert-deftest jabber-test-httpupload-discover-errors-with-no-items ()

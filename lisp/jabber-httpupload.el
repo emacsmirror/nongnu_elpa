@@ -134,13 +134,22 @@ CALLBACK receives two arguments: the Jabber connection and the item vector."
   (when value
     (replace-regexp-in-string "[\r\n]" "" value)))
 
+(defun jabber-httpupload--child (node child-name)
+  "Return NODE's XEP-0363 child named CHILD-NAME."
+  (cl-find-if (lambda (child)
+                (and (eq (jabber-xml-node-name child) child-name)
+                     (string= (jabber-xml-get-attribute child 'xmlns)
+                              jabber-httpupload-xmlns)))
+              (jabber-xml-get-children node child-name)))
+
 (defun jabber-httpupload-parse-slot-answer (xml-data)
   "Parse PUT/GET URLs from a slot response XML-DATA.
 Return ((put-url . ((header-name . header-value) ...)) get-url).
 Header names are matched case-insensitively and newlines are
 stripped from both names and values per XEP-0363 Section 11."
-  (let* ((put (jabber-xml-path xml-data '(slot put)))
-         (get (jabber-xml-path xml-data '(slot get)))
+  (let* ((slot (jabber-httpupload--child xml-data 'slot))
+         (put (and slot (jabber-httpupload--child slot 'put)))
+         (get (and slot (jabber-httpupload--child slot 'get)))
          (put-url (jabber-xml-get-attribute put 'url))
          (get-url (jabber-xml-get-attribute get 'url)))
     (unless (and put-url get-url)
