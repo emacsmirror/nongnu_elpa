@@ -1603,6 +1603,77 @@ VALUES ('me@x.com', 'peer@x.com', 'in', 'chat', 'text', 1001,
                              "SELECT name FROM sqlite_master WHERE type='index'"))))
       (should (member "idx_reaction_message_id" indexes)))))
 
+(ert-deftest jabber-test-db-v5-repairs-missing-reaction-actor-table ()
+  "A v5 DB missing message_reaction_actor is repaired without data loss."
+  (skip-unless (fboundp 'sqlite-open))
+  (let* ((jabber-test-db--dir (make-temp-file "jabber-db-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" jabber-test-db--dir))
+         (jabber-db--connection nil))
+    (unwind-protect
+        (progn
+          (let ((db (sqlite-open jabber-db-path)))
+            (sqlite-execute db "\
+CREATE TABLE message (
+  id INTEGER PRIMARY KEY,
+  account TEXT NOT NULL,
+  peer TEXT NOT NULL,
+  direction TEXT NOT NULL,
+  type TEXT,
+  body TEXT,
+  timestamp INTEGER NOT NULL,
+  stanza_id TEXT)")
+            (sqlite-execute db "\
+CREATE TABLE message_reaction (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender     TEXT NOT NULL,
+  reaction   TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender, reaction))")
+            (sqlite-execute db "\
+INSERT INTO message (id, account, peer, direction, type, body, timestamp, stanza_id)
+VALUES (1, 'me@example.com', 'friend@example.com', 'in', 'chat', 'hello', 1000,
+  'target-1')")
+            (sqlite-execute db "\
+INSERT INTO message_reaction (message_id, sender, reaction, updated_at)
+VALUES (1, 'friend@example.com', '👍', 1001)")
+            (sqlite-execute db "PRAGMA user_version=5")
+            (sqlite-close db))
+          (jabber-db-ensure-open)
+          (let ((tables (mapcar #'car
+                                (sqlite-select jabber-db--connection
+                                  "SELECT name FROM sqlite_master WHERE type='table'"))))
+            (should (member "message_reaction_actor" tables)))
+          (should (= 1 (caar (sqlite-select jabber-db--connection
+                              "SELECT count(*) FROM message_reaction"))))
+          (should (equal '("friend@example.com" 1001)
+                         (car (sqlite-select jabber-db--connection
+                                "SELECT sender, updated_at FROM message_reaction_actor"))))
+          (should-not (jabber-db-replace-reactions
+                       "me@example.com" "friend@example.com" "chat" "target-1"
+                       "friend@example.com" '("🎉") 1000))
+          (should (equal '("👍" 1001)
+                         (car (sqlite-select jabber-db--connection
+                                "SELECT reaction, updated_at FROM message_reaction"))))
+          (should (string= "hello"
+                           (caar (sqlite-select jabber-db--connection
+                                  "SELECT body FROM message WHERE id = 1"))))
+          (jabber-db-close)
+          (jabber-db-ensure-open)
+          (should (= 1 (caar (sqlite-select jabber-db--connection
+                              "SELECT count(*) FROM message_reaction_actor"))))
+          (should (equal '("friend@example.com" 1001)
+                         (car (sqlite-select jabber-db--connection
+                                "SELECT sender, updated_at FROM message_reaction_actor"))))
+          (should (equal '("👍" 1001)
+                         (car (sqlite-select jabber-db--connection
+                                "SELECT reaction, updated_at FROM message_reaction"))))
+          (should (string= "hello"
+                           (caar (sqlite-select jabber-db--connection
+                                  "SELECT body FROM message WHERE id = 1")))))
+      (jabber-db-close)
+      (when (file-directory-p jabber-test-db--dir)
+        (delete-directory jabber-test-db--dir t)))))
+
 (ert-deftest jabber-test-db-reaction-fallback-body-not-stored ()
   "Reaction fallback body is not stored as a normal message body."
   (jabber-test-db-with-db

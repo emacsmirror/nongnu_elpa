@@ -206,6 +206,62 @@ END"
   (dolist (ddl jabber-db--schema-ddl)
     (sqlite-execute db ddl)))
 
+(defun jabber-db--table-exists-p (db table)
+  "Return non-nil when TABLE exists in DB."
+  (not (null (sqlite-select db "\
+SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?"
+                           (list table)))))
+
+(defun jabber-db--ensure-reaction-actor-table (db)
+  "Create the reaction actor metadata table in DB when missing."
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS message_reaction_actor (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender     TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender))"))
+
+(defun jabber-db--reaction-actors-current-p (db)
+  "Return non-nil when reaction actor metadata in DB is current."
+  (and (jabber-db--table-exists-p db "message_reaction_actor")
+       (zerop (caar (sqlite-select db "\
+SELECT count(*)
+FROM (
+  SELECT message_id, sender, MAX(updated_at) AS updated_at
+  FROM message_reaction
+  GROUP BY message_id, sender) AS reaction_actor
+LEFT JOIN message_reaction_actor
+  ON message_reaction_actor.message_id = reaction_actor.message_id
+ AND message_reaction_actor.sender = reaction_actor.sender
+WHERE message_reaction_actor.message_id IS NULL
+   OR message_reaction_actor.updated_at < reaction_actor.updated_at")))))
+
+(defun jabber-db--backfill-reaction-actors (db)
+  "Backfill reaction actor metadata in DB from reaction rows."
+  (sqlite-execute db "\
+INSERT OR IGNORE INTO message_reaction_actor (message_id, sender, updated_at)
+  SELECT message_id, sender, MAX(updated_at)
+  FROM message_reaction
+  GROUP BY message_id, sender")
+  (sqlite-execute db "\
+UPDATE message_reaction_actor
+SET updated_at = (
+  SELECT MAX(updated_at)
+  FROM message_reaction
+  WHERE message_reaction.message_id = message_reaction_actor.message_id
+    AND message_reaction.sender = message_reaction_actor.sender)
+WHERE updated_at < (
+  SELECT MAX(updated_at)
+  FROM message_reaction
+  WHERE message_reaction.message_id = message_reaction_actor.message_id
+    AND message_reaction.sender = message_reaction_actor.sender)"))
+
+(defun jabber-db--repair-reaction-actors (db)
+  "Repair reaction actor metadata in DB when missing or stale."
+  (unless (jabber-db--reaction-actors-current-p db)
+    (jabber-db--ensure-reaction-actor-table db)
+    (jabber-db--backfill-reaction-actors db)))
+
 (defconst jabber-db--schema-version 5
   "Current schema version.
 Bump this when adding migrations.  A database whose version
@@ -286,14 +342,12 @@ CREATE TABLE IF NOT EXISTS message_reaction (
       (sqlite-execute db "\
 CREATE INDEX IF NOT EXISTS idx_reaction_message_id
   ON message_reaction(message_id)")
-      (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS message_reaction_actor (
-  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
-  sender     TEXT NOT NULL,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (message_id, sender))")
+      (jabber-db--ensure-reaction-actor-table db)
+      (jabber-db--backfill-reaction-actors db)
       (sqlite-execute db "PRAGMA user_version=5")
-      (setq version 5))))
+      (setq version 5))
+    (when (= version 5)
+      (jabber-db--repair-reaction-actors db))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
