@@ -132,6 +132,21 @@
     (should (equal "Actual reply" (plist-get msg :body)))
     (should (equal "orig-1" (plist-get msg :reply-to-id)))))
 
+(ert-deftest jabber-test-message-reply-strips-whole-body-fallback ()
+  "Reply fallback with no body range strips the whole displayed body."
+  (let* ((stanza '(message ((from . "alice@example.com/tablet")
+                            (id . "reply-1")
+                            (type . "chat"))
+                           (body () "> Alice:\n> Hello")
+                           (reply ((xmlns . "urn:xmpp:reply:0")
+                                   (to . "alice@example.com/tablet")
+                                   (id . "orig-1")))
+                           (fallback ((xmlns . "urn:xmpp:fallback:0")
+                                      (for . "urn:xmpp:reply:0")))))
+         (msg (jabber-chat--msg-plist-from-stanza stanza)))
+    (should (equal "" (plist-get msg :body)))
+    (should (equal "orig-1" (plist-get msg :reply-to-id)))))
+
 (ert-deftest jabber-test-message-reply-preserves-malformed-fallback ()
   "Malformed XEP-0461 fallback ranges leave the body unchanged."
   (let* ((body "> Alice:\n> Hello\nActual reply")
@@ -160,6 +175,18 @@
                                       (for . "urn:xmpp:reply:0"))
                                      (body ((start . "0")
                                             (end . "17"))))))
+         (msg (jabber-chat--msg-plist-from-stanza stanza)))
+    (should (equal body (plist-get msg :body)))))
+
+(ert-deftest jabber-test-message-reply-preserves-whole-fallback-without-reply ()
+  "Whole-body fallback is preserved when no XEP-0461 reply element is present."
+  (let* ((body "> Alice:\n> Hello")
+         (stanza `(message ((from . "alice@example.com/tablet")
+                            (id . "reply-4")
+                            (type . "chat"))
+                           (body () ,body)
+                           (fallback ((xmlns . "urn:xmpp:fallback:0")
+                                      (for . "urn:xmpp:reply:0")))))
          (msg (jabber-chat--msg-plist-from-stanza stanza)))
     (should (equal body (plist-get msg :body)))))
 

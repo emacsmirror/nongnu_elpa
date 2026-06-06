@@ -855,29 +855,34 @@ Returns a list of (URL . DESC) cons cells, or nil."
     (string-to-number value)))
 
 (defun jabber-chat--reply-fallback-range (xml-data)
-  "Return the XEP-0461 fallback body range in XML-DATA, or nil."
+  "Return the XEP-0461 fallback body range in XML-DATA.
+Return `all' when the fallback applies to the whole body."
   (when-let* ((fallback (jabber-xml-child-with-xmlns
                          xml-data jabber-chat--fallback-xmlns))
               ((eq (jabber-xml-node-name fallback) 'fallback))
               ((string= (jabber-xml-get-attribute fallback 'for)
-                        jabber-chat--reply-xmlns))
-              (body (car (jabber-xml-get-children fallback 'body)))
-              (start (jabber-xml-get-attribute body 'start))
-              (end (jabber-xml-get-attribute body 'end)))
-    (when-let* ((from (jabber-chat--fallback-offset start))
-                (to (jabber-chat--fallback-offset end)))
-      (list from to))))
+                        jabber-chat--reply-xmlns)))
+    (if-let* ((body (car (jabber-xml-get-children fallback 'body))))
+        (when-let* ((start (jabber-xml-get-attribute body 'start))
+                    (end (jabber-xml-get-attribute body 'end))
+                    (from (jabber-chat--fallback-offset start))
+                    (to (jabber-chat--fallback-offset end)))
+          (list from to))
+      'all)))
 
 (defun jabber-chat--strip-reply-fallback (body xml-data)
   "Return BODY with a valid XEP-0461 fallback range from XML-DATA removed.
 Malformed fallback ranges leave BODY unchanged."
   (if-let* (((stringp body))
-            (range (jabber-chat--reply-fallback-range xml-data))
-            (start (car range))
-            (end (cadr range))
-            ((<= 0 start end (length body))))
-      (concat (substring body 0 start)
-              (substring body end))
+            (range (jabber-chat--reply-fallback-range xml-data)))
+      (if (eq range 'all)
+          ""
+        (let ((start (car range))
+              (end (cadr range)))
+          (if (<= 0 start end (length body))
+              (concat (substring body 0 start)
+                      (substring body end))
+            body)))
     body))
 
 (defun jabber-chat--stanza-id-element (xml-data)
