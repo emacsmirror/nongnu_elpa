@@ -227,32 +227,34 @@ is already `:displayed'."
         (account (jabber-connection-bare-jid jc))
         (peer (jabber-jid-user from))
         (status (if (string= column "displayed_at") :displayed :delivered)))
-    (jabber-db-update-receipt account peer ref-id column timestamp)
-    (when-let* ((buffer (jabber-receipts--find-buffer from jc)))
-      (with-current-buffer buffer
-        (when-let* ((node (jabber-chat-ewoc-find-by-id ref-id)))
-          (let* ((msg (cadr (ewoc-data node)))
-                 (current-status (plist-get msg :status))
-                 (msg-ts (plist-get msg :timestamp))
-                 (msg-epoch (and msg-ts (floor (float-time msg-ts))))
-                 (inhibit-read-only t))
-            (when (or (null current-status)
-                      (jabber-receipts--status-upgrades-p current-status status))
-              ;; XEP-0333: displayed markers for older messages MUST be
-              ;; ignored (forward-only rule).
-              (when (or (not (string= column "displayed_at"))
-                        (not msg-epoch)
-                        (> msg-epoch jabber-receipts--latest-displayed-ts))
+    (if-let* ((buffer (jabber-receipts--find-buffer from jc)))
+        (with-current-buffer buffer
+          (when-let* ((node (jabber-chat-ewoc-find-by-id ref-id)))
+            (let* ((msg (cadr (ewoc-data node)))
+                   (current-status (plist-get msg :status))
+                   (msg-ts (plist-get msg :timestamp))
+                   (msg-epoch (and msg-ts (floor (float-time msg-ts))))
+                   (displayed-p (string= column "displayed_at"))
+                   (forward-p (or (not displayed-p)
+                                  (not msg-epoch)
+                                  (> msg-epoch jabber-receipts--latest-displayed-ts)))
+                   (inhibit-read-only t))
+              (when (and forward-p
+                         (or (null current-status)
+                             (jabber-receipts--status-upgrades-p
+                              current-status status)))
+                (jabber-db-update-receipt account peer ref-id column timestamp)
                 (plist-put msg :status status)
                 (jabber-chat-ewoc-invalidate node)
                 (jabber-receipts--update-header-line column timestamp)
-                (when (string= column "displayed_at")
+                (when displayed-p
                   (when msg-epoch
                     (setq jabber-receipts--latest-displayed-ts msg-epoch))
                   (jabber-receipts--cascade-displayed node)
                   (when msg-epoch
                     (jabber-db-cascade-displayed
-                     account peer timestamp msg-epoch)))))))))))
+                     account peer timestamp msg-epoch)))))))
+      (jabber-db-update-receipt account peer ref-id column timestamp))))
 
 (defun jabber-receipts--cascade-displayed (node)
   "Walk backward from NODE, promoting :delivered nodes to :displayed.

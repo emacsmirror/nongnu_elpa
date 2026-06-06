@@ -619,6 +619,46 @@ peer state by treating our own emitted markers as incoming ones."
          'fake-jc "them@example.com" "msg-99" "delivered_at"))
       (should (eq :displayed (plist-get msg :status))))))
 
+(ert-deftest jabber-test-receipts-old-displayed-does-not-update-db ()
+  "An older displayed marker is ignored before any DB write."
+  (with-temp-buffer
+    (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+           (jabber-receipts--latest-displayed-ts
+            (floor (float-time (encode-time 0 5 10 1 1 2026))))
+           (msg (list :id "msg-old" :status :delivered
+                      :timestamp (encode-time 0 0 10 1 1 2026)))
+           (node (ewoc-enter-last jabber-chat-ewoc (list :local msg)))
+           db-updated)
+      (cl-letf (((symbol-function 'jabber-db-update-receipt)
+                 (lambda (&rest _) (setq db-updated t)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_j) "me@example.com"))
+                ((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from &optional _jc) (buffer-name)))
+                ((symbol-function 'jabber-chat-ewoc-find-by-id)
+                 (lambda (_id) node))
+                ((symbol-function 'jabber-chat-ewoc-invalidate) #'ignore))
+        (jabber-receipts--update-status
+         'fake-jc "them@example.com" "msg-old" "displayed_at"))
+      (should-not db-updated)
+      (should (eq :delivered (plist-get msg :status))))))
+
+(ert-deftest jabber-test-receipts-missing-displayed-id-does-not-update-db ()
+  "A displayed marker for an unknown message is ignored when buffer is present."
+  (with-temp-buffer
+    (let (db-updated)
+      (cl-letf (((symbol-function 'jabber-db-update-receipt)
+                 (lambda (&rest _) (setq db-updated t)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_j) "me@example.com"))
+                ((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from &optional _jc) (buffer-name)))
+                ((symbol-function 'jabber-chat-ewoc-find-by-id)
+                 (lambda (_id) nil)))
+        (jabber-receipts--update-status
+         'fake-jc "them@example.com" "missing" "displayed_at"))
+      (should-not db-updated))))
+
 (provide 'jabber-test-receipts)
 
 ;;; jabber-test-receipts.el ends here
