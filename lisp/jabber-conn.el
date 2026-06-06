@@ -165,6 +165,14 @@ When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER."
 			      (jabber-conn--tls-parameters server)))))
     (apply #'make-network-process args)))
 
+(defun jabber-conn--delete-failed-process (connection buffer)
+  "Delete failed CONNECTION and BUFFER unless debug retention is enabled."
+  (when (processp connection)
+    (delete-process connection))
+  (when (and (buffer-live-p buffer)
+             (not jabber-debug-keep-process-buffers))
+    (kill-buffer buffer)))
+
 (defun jabber-network-connect-async (fsm server network-server port)
   "Asynchronously connect FSM to SERVER, trying each SRV target in turn.
 NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
@@ -179,6 +187,8 @@ NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
 	   (let ((host (nth 0 target))
 		 (svc (nth 1 target))
 		 (directtls-p (nth 2 target))
+		 (proc nil)
+		 (process-buffer nil)
 		 (timeout-timer nil)
 		 (settled nil))
 	     (cl-labels ((cancel-timeout
@@ -208,7 +218,7 @@ NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
 					    host svc status)))
 			       (message "%s" err)
 			       (push err errors))
-			     (when c (delete-process c))
+			     (jabber-conn--delete-failed-process c process-buffer)
 			     (if remaining-targets
 				 (progn
 				   (message
@@ -220,10 +230,11 @@ NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
 			       (fsm-send fsm (list :connection-failed
 						   (nreverse errors)))))))
 	       (condition-case e
-		   (let ((proc (jabber-conn--make-process
-				host svc
-				(generate-new-buffer jabber-process-buffer)
-				directtls-p server)))
+		   (let ((buffer (generate-new-buffer jabber-process-buffer)))
+                     (setq process-buffer buffer)
+                     (setq proc
+                           (jabber-conn--make-process
+                            host svc buffer directtls-p server))
 		     (set-process-sentinel
 		      proc
 		      (lambda (connection status)
@@ -244,8 +255,10 @@ NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
 				(connection-failed
 				 proc "connection timed out"))))))
 		 (file-error
+                  (jabber-conn--delete-failed-process proc process-buffer)
 		  (connection-failed nil (car (cddr e))))
 		 (error
+                  (jabber-conn--delete-failed-process proc process-buffer)
 		  (connection-failed nil (error-message-string e))))))))
       (message "Connecting to %s:%s..."
 	       (nth 0 (car targets)) (nth 1 (car targets)))
