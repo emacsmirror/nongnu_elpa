@@ -22,11 +22,11 @@
 (ert-deftest jabber-test-bookmarks-parse-full ()
   "Parse conference item with all fields."
   (let* ((item '(item ((id . "room@conference.example.com"))
-                       (conference ((xmlns . "urn:xmpp:bookmarks:1")
-                                    (name . "The Room")
-                                    (autojoin . "true"))
-                                   (nick () "MyNick")
-                                   (password () "secret"))))
+                      (conference ((xmlns . "urn:xmpp:bookmarks:1")
+                                   (name . "The Room")
+                                   (autojoin . "true"))
+                                  (nick () "MyNick")
+                                  (password () "secret"))))
          (result (jabber-bookmarks2--parse-item item)))
     (should (string= (plist-get result :jid) "room@conference.example.com"))
     (should (string= (plist-get result :name) "The Room"))
@@ -37,7 +37,7 @@
 (ert-deftest jabber-test-bookmarks-parse-minimal ()
   "Parse conference item with only JID (no name, nick, password)."
   (let* ((item '(item ((id . "room@conference.example.com"))
-                       (conference ((xmlns . "urn:xmpp:bookmarks:1")))))
+                      (conference ((xmlns . "urn:xmpp:bookmarks:1")))))
          (result (jabber-bookmarks2--parse-item item)))
     (should (string= (plist-get result :jid) "room@conference.example.com"))
     (should-not (plist-get result :name))
@@ -67,8 +67,19 @@
 (ert-deftest jabber-test-bookmarks-parse-no-conference ()
   "Return nil when item has no <conference> child."
   (let ((item '(item ((id . "room@conference.example.com"))
-                      (something-else ()))))
+                     (something-else ()))))
     (should-not (jabber-bookmarks2--parse-item item))))
+
+(ert-deftest jabber-test-bookmarks-parse-preserves-extensions ()
+  "Parse and keep the XEP-0402 <extensions/> element."
+  (let* ((extensions '(extensions ()
+                                  (group ((xmlns . "xmpp:prosody.im/bookmarks")
+                                          (name . "work")))))
+         (item `(item ((id . "room@conference.example.com"))
+                      (conference ((xmlns . "urn:xmpp:bookmarks:1"))
+                                  ,extensions)))
+         (result (jabber-bookmarks2--parse-item item)))
+    (should (equal extensions (plist-get result :extensions)))))
 
 ;;; Group 2: Build conference XML
 
@@ -76,10 +87,10 @@
   "Build conference element with all fields."
   (let ((elem (jabber-bookmarks2--build-conference
                '(:jid "room@c.example.com"
-                 :name "Room" :autojoin t :nick "Me" :password "pw"))))
+                      :name "Room" :autojoin t :nick "Me" :password "pw"))))
     (should (eq (car elem) 'conference))
     (should (string= (cdr (assq 'xmlns (cadr elem)))
-                      "urn:xmpp:bookmarks:1"))
+                     "urn:xmpp:bookmarks:1"))
     (should (string= (cdr (assq 'name (cadr elem))) "Room"))
     (should (string= (cdr (assq 'autojoin (cadr elem))) "true"))
     ;; Check nick child
@@ -97,7 +108,7 @@
                '(:jid "room@c.example.com"))))
     (should (eq (car elem) 'conference))
     (should (string= (cdr (assq 'xmlns (cadr elem)))
-                      "urn:xmpp:bookmarks:1"))
+                     "urn:xmpp:bookmarks:1"))
     (should-not (assq 'name (cadr elem)))
     (should-not (assq 'autojoin (cadr elem)))
     (should-not (jabber-xml-get-children elem 'nick))
@@ -109,10 +120,21 @@
                '(:jid "r@c.example.com" :autojoin nil))))
     (should-not (assq 'autojoin (cadr elem)))))
 
+(ert-deftest jabber-test-bookmarks-build-preserves-extensions ()
+  "Build native bookmark XML with the original <extensions/> element."
+  (let* ((extensions '(extensions ()
+                                  (group ((xmlns . "xmpp:prosody.im/bookmarks")
+                                          (name . "work")))))
+         (elem (jabber-bookmarks2--build-conference
+                (list :jid "room@c.example.com"
+                      :extensions extensions))))
+    (should (equal extensions
+                   (car (jabber-xml-get-children elem 'extensions))))))
+
 (ert-deftest jabber-test-bookmarks-roundtrip ()
   "Build then parse returns equivalent plist."
   (let* ((original '(:jid "room@c.example.com"
-                     :name "Room" :autojoin t :nick "Me" :password "pw"))
+			  :name "Room" :autojoin t :nick "Me" :password "pw"))
          (elem (jabber-bookmarks2--build-conference original))
          (item `(item ((id . "room@c.example.com")) ,elem))
          (parsed (jabber-bookmarks2--parse-item item)))
@@ -121,6 +143,19 @@
     (should (plist-get parsed :autojoin))
     (should (string= (plist-get parsed :nick) "Me"))
     (should (string= (plist-get parsed :password) "pw"))))
+
+(ert-deftest jabber-test-bookmarks-roundtrip-preserves-extensions ()
+  "Build then parse keeps unknown native bookmark extensions."
+  (let* ((extensions '(extensions ()
+                                  (private ((xmlns . "urn:example:private")
+                                            (value . "1")))))
+         (original (list :jid "room@c.example.com"
+                         :name "Room"
+                         :extensions extensions))
+         (elem (jabber-bookmarks2--build-conference original))
+         (item `(item ((id . "room@c.example.com")) ,elem))
+         (parsed (jabber-bookmarks2--parse-item item)))
+    (should (equal extensions (plist-get parsed :extensions)))))
 
 ;;; Group 3: Parse XEP-0048 items (regression)
 
@@ -258,15 +293,15 @@
   (let ((cache '((:jid "room1@c.example.com" :name "Room 1" :nick "A")
                  (:jid "room2@c.example.com" :name "Room 2" :nick "B"))))
     (should (string= (jabber-get-conference-data-internal
-                       cache "room2@c.example.com" :nick)
-                      "B"))
+                      cache "room2@c.example.com" :nick)
+                     "B"))
     (should (string= (plist-get
-                       (jabber-get-conference-data-internal
-                        cache "room1@c.example.com" nil)
-                       :name)
-                      "Room 1"))
+                      (jabber-get-conference-data-internal
+                       cache "room1@c.example.com" nil)
+                      :name)
+                     "Room 1"))
     (should-not (jabber-get-conference-data-internal
-                  cache "unknown@c.example.com" nil))))
+                 cache "unknown@c.example.com" nil))))
 
 ;;; Group 5: Publish and retract IQ structure
 
@@ -278,8 +313,8 @@
   `(let ((jabber-bookmarks-test--iq-calls nil))
      (cl-letf (((symbol-function 'jabber-send-iq)
                 (lambda (jc to type query
-                         &optional success-cb _success-data error-cb _error-data
-                         &rest _)
+                            &optional success-cb _success-data error-cb _error-data
+                            &rest _)
                   (push (list :jc jc :to to :type type :query query
                               :success-cb success-cb :error-cb error-cb)
                         jabber-bookmarks-test--iq-calls))))
@@ -298,9 +333,9 @@
      (should (eq (car query) 'pubsub))
      (should (eq (car publish) 'publish))
      (should (string= (cdr (assq 'node (cadr publish)))
-                       jabber-bookmarks2-xmlns))
+                      jabber-bookmarks2-xmlns))
      (should (string= (cdr (assq 'id (cadr item)))
-                       "room@c.example.com"))
+                      "room@c.example.com"))
      ;; Has publish-options
      (let ((pub-opts (cl-find 'publish-options (cddr query) :key #'car)))
        (should pub-opts)))))
@@ -316,7 +351,7 @@
           (item (nth 2 retract)))
      (should (string= (cdr (assq 'notify (cadr retract))) "true"))
      (should (string= (cdr (assq 'id (cadr item)))
-                       "room@c.example.com")))))
+                      "room@c.example.com")))))
 
 ;;; Group 6: set-bookmarks diff logic
 
@@ -548,7 +583,7 @@
   (let ((jabber-bookmarks (make-hash-table :test 'equal)))
     (puthash "user@example.com"
              '((:jid "room@c.example.com" :name "Room"
-                :autojoin t :nick "Me" :password "secret"))
+                     :autojoin t :nick "Me" :password "secret"))
              jabber-bookmarks)
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (j) (jabber-bookmarks-test--bare-jid j))))

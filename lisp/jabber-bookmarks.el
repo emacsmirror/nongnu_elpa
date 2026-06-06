@@ -135,8 +135,8 @@ The plist may contain the keys :jid, :name, :autojoin,
   "Parse a PubSub ITEM sexp into a bookmark plist.
 JID comes from the item id attribute; the rest from the
 <conference> child element.
-Returns (:jid JID :name NAME :autojoin BOOL :nick NICK :password PASS),
-or nil if ITEM has no <conference> child."
+Returns (:jid JID :name NAME :autojoin BOOL :nick NICK :password PASS
+:extensions EXTENSIONS), or nil if ITEM has no <conference> child."
   (let* ((jid (jabber-xml-get-attribute item 'id))
          (conf (car (jabber-xml-get-children item 'conference))))
     (when conf
@@ -147,11 +147,12 @@ or nil if ITEM has no <conference> child."
             :nick (car (jabber-xml-node-children
                         (car (jabber-xml-get-children conf 'nick))))
             :password (car (jabber-xml-node-children
-                            (car (jabber-xml-get-children conf 'password))))))))
+                            (car (jabber-xml-get-children conf 'password))))
+            :extensions (car (jabber-xml-get-children conf 'extensions))))))
 
 (defun jabber-bookmarks2--build-conference (plist)
   "Build an XEP-0402 <conference> element from bookmark PLIST.
-PLIST keys: :name, :autojoin, :nick, :password.
+PLIST keys: :name, :autojoin, :nick, :password, :extensions.
 The :jid key is not included in the element (it becomes the PubSub item id)."
   `(conference ((xmlns . ,jabber-bookmarks2-xmlns)
                 ,@(when (plist-get plist :name)
@@ -161,7 +162,9 @@ The :jid key is not included in the element (it becomes the PubSub item id)."
                ,@(when (plist-get plist :nick)
                    `((nick () ,(plist-get plist :nick))))
                ,@(when (plist-get plist :password)
-                   `((password () ,(plist-get plist :password))))))
+                   `((password () ,(plist-get plist :password))))
+               ,@(when (plist-get plist :extensions)
+                   (list (plist-get plist :extensions)))))
 
 ;;; XEP-0402 PubSub event handler (live sync)
 
