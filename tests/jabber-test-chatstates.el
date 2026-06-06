@@ -110,6 +110,17 @@ nil after the first message, breaking subsequent composing detection."
     (let ((result (jabber-chatstates-when-sending "hello" "id-1")))
       (should-not result))))
 
+(ert-deftest jabber-test-chatstates-send-hook-nil-when-not-requested ()
+  "Send hook returns nil after chat state negotiation is disabled."
+  (with-temp-buffer
+    (setq-local jabber-chatstates-confirm t)
+    (setq-local jabber-chatstates-requested nil)
+    (setq-local jabber-chatstates-last-state nil)
+    (setq-local jabber-chatstates-composing-sent nil)
+    (setq-local jabber-chatstates-paused-timer nil)
+    (let ((result (jabber-chatstates-when-sending "hello" "id-1")))
+      (should-not result))))
+
 ;;; Group 2: Inactive and gone states
 
 (ert-deftest jabber-test-chatstates-paused-starts-inactive-timer ()

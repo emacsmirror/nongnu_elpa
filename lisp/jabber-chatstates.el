@@ -213,7 +213,7 @@ It can be sent and cancelled several times.")
   "Chat-send hook: cancel state timers and attach an `active' element."
   (jabber-chatstates--clear-send-typing)
   (jabber-chatstates-stop-timer)
-  (when jabber-chatstates-confirm
+  (when (and jabber-chatstates-confirm jabber-chatstates-requested)
     (setq jabber-chatstates-composing-sent nil)
     `((active ((xmlns . ,jabber-chatstates-xmlns))))))
 
