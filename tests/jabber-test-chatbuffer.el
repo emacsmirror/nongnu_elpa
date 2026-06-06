@@ -75,6 +75,53 @@
     (should (= 5 (hash-table-count jabber-chat--msg-nodes)))
     (should (gethash "msg-002" jabber-chat--msg-nodes))))
 
+(ert-deftest jabber-test-chatbuffer-shift-undo-list-translates-positions ()
+  "Undo entries that contain buffer positions are shifted together."
+  (with-temp-buffer
+    (let ((marker (point-marker))
+          (buffer-undo-list
+           (list 4
+                 (cons 6 9)
+                 (cons "abc" 7)
+                 (cons "def" -8)
+                 '(nil face bold 10 . 12)
+                 nil
+                 (cons t 0))))
+      (push (cons marker 3) buffer-undo-list)
+      (jabber-chat-buffer--shift-undo-list 5)
+      (should (equal buffer-undo-list
+                     (list (cons marker 3)
+                           9
+                           (cons 11 14)
+                           (cons "abc" 12)
+                           (cons "def" -13)
+                           '(nil face bold 15 . 17)
+                           nil
+                           (cons t 0)))))))
+
+(ert-deftest jabber-test-chatbuffer-ewoc-enter-shifts-input-undo ()
+  "Inserting chat output keeps typed input undo entries aligned."
+  (with-temp-buffer
+    (setq buffer-undo-list nil)
+    (let ((jabber-chat-ewoc
+           (ewoc-create
+            (lambda (data)
+              (insert (plist-get (cadr data) :body)))
+            nil (concat (jabber-separator) "\n") 'nosep))
+          (jabber-chat--msg-nodes (make-hash-table :test 'equal)))
+      (goto-char (point-max))
+      (setq-local jabber-point-insert (point-marker))
+      (insert "draft")
+      (let ((undo-entry (copy-tree (car buffer-undo-list)))
+            (prompt (marker-position jabber-point-insert)))
+        (jabber-chat-ewoc-enter
+         (list :local (list :id "shift-input" :body "hello")))
+        (let ((shift (- jabber-point-insert prompt)))
+          (should (cl-plusp shift))
+          (should (equal (car buffer-undo-list)
+                         (cons (+ (car undo-entry) shift)
+                               (+ (cdr undo-entry) shift)))))))))
+
 ;;; Group 2: jabber-chat-ewoc-find-by-id
 
 (ert-deftest jabber-test-chatbuffer-find-by-id-returns-node ()

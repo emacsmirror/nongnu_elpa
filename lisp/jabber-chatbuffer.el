@@ -724,6 +724,31 @@ at the bottom of the window."
 ;; keep the undo list clean.  Only the composition area (after
 ;; `jabber-point-insert') records undo entries.
 
+(defun jabber-chat-buffer--shift-undo-list (shift)
+  "Translate buffer positions in `buffer-undo-list' by SHIFT."
+  (unless (or (zerop shift) (atom buffer-undo-list))
+    (let ((list buffer-undo-list)
+          elt)
+      (while list
+        (setq elt (car list))
+        (cond ((integerp elt)
+               (setcar list (+ elt shift)))
+              ((or (atom elt)
+                   (markerp (car elt)))
+               nil)
+              ((integerp (car elt))
+               (setcar elt (+ (car elt) shift))
+               (setcdr elt (+ (cdr elt) shift)))
+              ((stringp (car elt))
+               (setcdr elt (+ (cdr elt)
+                              (* (if (natnump (cdr elt)) 1 -1)
+                                 shift))))
+              ((null (car elt))
+               (let ((cons (nthcdr 3 elt)))
+                 (setcar cons (+ (car cons) shift))
+                 (setcdr cons (+ (cdr cons) shift)))))
+        (setq list (cdr list))))))
+
 (defun jabber-chat-ewoc-enter (data)
   "Insert DATA into the chat ewoc and register by stanza ID.
 DATA is (TYPE MSG-PLIST).  When the plist has a non-nil :id or
@@ -737,8 +762,13 @@ or nil if the message was a duplicate."
     ;; Skip if this stanza ID is already displayed.
     (unless (or (and id (gethash id jabber-chat--msg-nodes))
                 (and sid (gethash sid jabber-chat--msg-nodes)))
-      (let ((buffer-undo-list t)
-            (node (ewoc-enter-last jabber-chat-ewoc data)))
+      (let* ((preinsert-point (and (markerp jabber-point-insert)
+                                   (marker-position jabber-point-insert)))
+             (node (let ((buffer-undo-list t))
+                     (ewoc-enter-last jabber-chat-ewoc data))))
+        (when preinsert-point
+          (jabber-chat-buffer--shift-undo-list
+           (- jabber-point-insert preinsert-point)))
         (when id (puthash id node jabber-chat--msg-nodes))
         (when sid (puthash sid node jabber-chat--msg-nodes))
         node))))
