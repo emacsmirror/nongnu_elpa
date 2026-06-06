@@ -258,34 +258,53 @@
     (setq-local jabber-buffer-connection 'fake-jc)
     (let* ((msg (list :id "msg-r1" :server-id "sid-retract"
                       :body "spam" :timestamp (current-time)))
-           (sent-iq nil))
+           (sent-iq nil)
+           (db-call nil)
+           (buf (current-buffer)))
       (jabber-chat-ewoc-enter (list :muc-foreign msg))
       (goto-char (point-min))
       (cl-letf (((symbol-function 'jabber-send-iq)
-                 (lambda (_jc to type query &rest _rest)
-                   (setq sent-iq (list :to to :type type :query query))))
+                 (lambda (jc to type query success success-data
+                             error error-data)
+                   (setq sent-iq
+                         (list :jc jc :to to :type type :query query
+                               :success success :success-data success-data
+                               :error error :error-data error-data))))
                 ((symbol-function 'read-string)
                  (lambda (&rest _) "test reason"))
+                ((symbol-function 'jabber-muc-nickname)
+                 (lambda (_room _jc) "nick"))
+                ((symbol-function 'jabber-muc-find-buffer)
+                 (lambda (_room) buf))
                 ((symbol-function 'jabber-db-retract-message)
-                 #'ignore))
-        (jabber-moderation-retract))
-      (should (equal "room@muc.example.com" (plist-get sent-iq :to)))
-      (should (equal "set" (plist-get sent-iq :type)))
-      (let ((query (plist-get sent-iq :query)))
-        (should (eq 'moderate (car query)))
-        (should (equal "sid-retract"
-                       (cdr (assq 'id (cadr query)))))
-        (should (equal jabber-moderation-xmlns
-                       (cdr (assq 'xmlns (cadr query)))))
-        ;; Check retract child
-        (let ((retract (nth 2 query)))
-          (should (eq 'retract (car retract)))
-          (should (equal jabber-moderation-retract-xmlns
-                         (cdr (assq 'xmlns (cadr retract))))))
-        ;; Check reason child
-        (let ((reason (nth 3 query)))
-          (should (eq 'reason (car reason)))
-          (should (equal "test reason" (nth 2 reason))))))))
+                 (lambda (&rest args) (setq db-call args))))
+        (jabber-moderation-retract)
+        (should (equal "room@muc.example.com" (plist-get sent-iq :to)))
+        (should (equal "set" (plist-get sent-iq :type)))
+        (should-not db-call)
+        (let ((query (plist-get sent-iq :query)))
+          (should (eq 'moderate (car query)))
+          (should (equal "sid-retract"
+                         (cdr (assq 'id (cadr query)))))
+          (should (equal jabber-moderation-xmlns
+                         (cdr (assq 'xmlns (cadr query)))))
+          ;; Check retract child
+          (let ((retract (nth 2 query)))
+            (should (eq 'retract (car retract)))
+            (should (equal jabber-moderation-retract-xmlns
+                           (cdr (assq 'xmlns (cadr retract))))))
+          ;; Check reason child
+          (let ((reason (nth 3 query)))
+            (should (eq 'reason (car reason)))
+            (should (equal "test reason" (nth 2 reason)))))
+        (funcall (plist-get sent-iq :success)
+                 'fake-jc '(iq ((type . "result")))
+                 (plist-get sent-iq :success-data))
+        (should (equal '("sid-retract" "room@muc.example.com/nick" "test reason")
+                       db-call))
+        (let* ((node (jabber-chat-ewoc-find-by-id "sid-retract"))
+               (msg (cadr (ewoc-data node))))
+          (should (plist-get msg :retracted)))))))
 
 (ert-deftest jabber-test-moderation-retract-errors-without-server-id ()
   "jabber-moderation-retract signals error when no server-id."

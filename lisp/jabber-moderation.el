@@ -142,24 +142,29 @@ RETRACTED-BY and REASON are stored on the message plist."
     (setcar (cdr data) msg)
     (jabber-chat-ewoc-invalidate node)))
 
-(defun jabber-moderation--send-retract (jc room server-id &optional reason)
-  "Send a moderation IQ to retract SERVER-ID in ROOM on JC.
-Also marks the message as retracted locally in the DB and ewoc.
-Optional REASON is a human-readable string."
-  (let ((moderator (concat room "/" (jabber-muc-nickname room jc))))
+(defun jabber-moderation--mark-local-retracted (_jc _xml-data data)
+  "Mark the moderated message in DATA as retracted locally."
+  (pcase-let ((`(,room ,server-id ,moderator ,reason) data))
     (jabber-db-retract-message server-id moderator reason)
     (when-let* ((buf (jabber-muc-find-buffer room)))
       (with-current-buffer buf
-        (jabber-moderation--mark-ewoc-retracted server-id moderator reason))))
-  (jabber-send-iq
-   jc room "set"
-   `(moderate ((id . ,server-id)
-               (xmlns . ,jabber-moderation-xmlns))
-              (retract ((xmlns . ,jabber-moderation-retract-xmlns)))
-              ,@(when (and reason (not (string-empty-p reason)))
-                  `((reason () ,reason))))
-   #'jabber-report-success "Message retraction"
-   #'jabber-report-success "Message retraction"))
+        (jabber-moderation--mark-ewoc-retracted server-id moderator reason)))))
+
+(defun jabber-moderation--send-retract (jc room server-id &optional reason)
+  "Send a moderation IQ to retract SERVER-ID in ROOM on JC.
+Marks the message as retracted locally after the MUC accepts the IQ.
+Optional REASON is a human-readable string."
+  (let ((moderator (concat room "/" (jabber-muc-nickname room jc))))
+    (jabber-send-iq
+     jc room "set"
+     `(moderate ((id . ,server-id)
+                 (xmlns . ,jabber-moderation-xmlns))
+                (retract ((xmlns . ,jabber-moderation-retract-xmlns)))
+                ,@(when (and reason (not (string-empty-p reason)))
+                    `((reason () ,reason))))
+     #'jabber-moderation--mark-local-retracted
+     (list room server-id moderator reason)
+     #'jabber-report-success "Message retraction")))
 
 (defun jabber-moderation-retract ()
   "Retract the MUC message at point via XEP-0425 moderation.
