@@ -242,7 +242,9 @@ It can be sent and cancelled several times.")
 
 (defun jabber-chatstates-send-paused ()
   "Send a `paused' state notification, then start the inactive timer."
-  (when (and jabber-chatstates-confirm jabber-chatting-with)
+  (when (and jabber-chatstates-confirm
+             jabber-chatstates-requested
+             jabber-chatting-with)
     (setq jabber-chatstates-composing-sent nil)
     (jabber-send-sexp-if-connected
      jabber-buffer-connection
@@ -255,7 +257,9 @@ It can be sent and cancelled several times.")
 
 (defun jabber-chatstates-send-inactive ()
   "Send an `inactive' state notification."
-  (when (and jabber-chatstates-confirm jabber-chatting-with)
+  (when (and jabber-chatstates-confirm
+             jabber-chatstates-requested
+             jabber-chatting-with)
     (jabber-send-sexp-if-connected
      jabber-buffer-connection
      `(message
@@ -266,7 +270,9 @@ It can be sent and cancelled several times.")
 (defun jabber-chatstates-send-gone ()
   "Send a `gone' state notification and cancel timers.
 Added to `kill-buffer-hook' in chat buffers."
-  (when (and jabber-chatstates-confirm jabber-chatting-with)
+  (when (and jabber-chatstates-confirm
+             jabber-chatstates-requested
+             jabber-chatting-with)
     (jabber-chatstates-stop-timer)
     (jabber-send-sexp-if-connected
      jabber-buffer-connection
@@ -281,6 +287,7 @@ Added to `kill-buffer-hook' in chat buffers."
          (state (if composing-now 'composing 'active)))
     (when (and jabber-chatstates-confirm
                jabber-chatting-with
+               jabber-chatstates-requested
                (not (eq composing-now jabber-chatstates-composing-sent)))
       (jabber-send-sexp-if-connected
        jabber-buffer-connection
@@ -308,17 +315,24 @@ Added to `kill-buffer-hook' in chat buffers."
        ;; events, as the requests are mirrored from us.
        ((string= (jabber-xml-get-attribute xml-data 'type) "error")
         (remove-hook 'post-command-hook #'jabber-chatstates-after-change t)
+        (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t)
         (setq jabber-chatstates-requested nil))
 
        (t
-        (let ((state (jabber-chatstates--message-state xml-data)))
+        (let ((state (jabber-chatstates--message-state xml-data))
+              (body-message-p (jabber-chatstates--real-body-message-p
+                               xml-data)))
           ;; Set up hooks for composition notification
           (when (and jabber-chatstates-confirm state)
             (setq jabber-chatstates-requested t)
             (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t)
             (add-hook 'kill-buffer-hook #'jabber-chatstates-send-gone nil t))
+          (when (and body-message-p (not state))
+            (remove-hook 'post-command-hook #'jabber-chatstates-after-change t)
+            (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t)
+            (setq jabber-chatstates-requested nil))
 
-          (when (or state (jabber-chatstates--real-body-message-p xml-data))
+          (when (or state body-message-p)
             (setq jabber-chatstates-last-state state)
             (jabber-chatstates--update-ewoc state))))))))
 

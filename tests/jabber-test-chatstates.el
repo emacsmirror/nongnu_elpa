@@ -89,6 +89,23 @@ nil after the first message, breaking subsequent composing detection."
         (jabber-chatstates-after-change)
         (should-not sent-states)))))
 
+(ert-deftest jabber-test-chatstates-no-composing-when-not-requested ()
+  "Composing notification is not sent after negotiation opt-out."
+  (let ((sent-states nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (push sexp sent-states))))
+      (with-temp-buffer
+        (setq-local jabber-chatstates-confirm t)
+        (setq-local jabber-chatstates-requested nil)
+        (setq-local jabber-chatting-with "them@example.com")
+        (setq-local jabber-buffer-connection 'fake-jc)
+        (setq-local jabber-point-insert (point-min))
+        (setq-local jabber-chatstates-composing-sent nil)
+        (goto-char (point-max))
+        (insert "hello")
+        (jabber-chatstates-after-change)
+        (should-not sent-states)))))
+
 (ert-deftest jabber-test-chatstates-send-hook-returns-active ()
   "Send hook returns active element when chatstates-confirm is t."
   (with-temp-buffer
@@ -136,6 +153,21 @@ nil after the first message, breaking subsequent composing detection."
       (should jabber-chatstates-inactive-timer)
       (cancel-timer jabber-chatstates-inactive-timer))))
 
+(ert-deftest jabber-test-chatstates-paused-not-sent-when-not-requested ()
+  "send-paused is a no-op after negotiation opt-out."
+  (let ((sent nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (setq sent sexp))))
+      (with-temp-buffer
+        (setq-local jabber-chatstates-confirm t)
+        (setq-local jabber-chatstates-requested nil)
+        (setq-local jabber-chatting-with "them@example.com")
+        (setq-local jabber-buffer-connection 'fake-jc)
+        (setq-local jabber-chatstates-inactive-timer nil)
+        (jabber-chatstates-send-paused)
+        (should-not sent)
+        (should-not jabber-chatstates-inactive-timer)))))
+
 (ert-deftest jabber-test-chatstates-stop-timer-cancels-both ()
   "stop-timer cancels both paused and inactive timers."
   (with-temp-buffer
@@ -175,6 +207,21 @@ nil after the first message, breaking subsequent composing detection."
         (jabber-chatstates-send-gone)
         (should sent)
         (should (assq 'gone (cddr sent)))))))
+
+(ert-deftest jabber-test-chatstates-send-gone-not-sent-when-not-requested ()
+  "send-gone is a no-op after negotiation opt-out."
+  (let ((sent nil))
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc sexp) (setq sent sexp))))
+      (with-temp-buffer
+        (setq-local jabber-chatstates-confirm t)
+        (setq-local jabber-chatstates-requested nil)
+        (setq-local jabber-chatting-with "them@example.com")
+        (setq-local jabber-buffer-connection 'fake-jc)
+        (setq-local jabber-chatstates-paused-timer nil)
+        (setq-local jabber-chatstates-inactive-timer nil)
+        (jabber-chatstates-send-gone)
+        (should-not sent)))))
 
 (ert-deftest jabber-test-chatstates-after-change-cancels-inactive-timer ()
   "Typing again cancels the inactive timer."
@@ -599,6 +646,7 @@ nil after the first message, breaking subsequent composing detection."
     (let ((chat-buffer (current-buffer))
           (jabber-chat-ewoc (ewoc-create #'ignore)))
       (setq-local jabber-chatting-with "alice@example.org/resource")
+      (setq-local jabber-chatstates-requested t)
       (cl-letf (((symbol-function 'jabber-chat-get-buffer)
                  (lambda (_from _jc) (buffer-name chat-buffer))))
         (jabber-handle-incoming-message-chatstates
@@ -610,8 +658,28 @@ nil after the first message, breaking subsequent composing detection."
          (jabber-test-chatstates--plain-message
           "alice@example.org/resource" "chat"))
         (should-not jabber-chatstates-last-state)
+        (should-not jabber-chatstates-requested)
         (should-not jabber-chatstates--ewoc-node)
         (should-not (jabber-test-chatstates--ewoc-data))))))
+
+(ert-deftest jabber-test-chatstates-direct-message-removes-send-hooks ()
+  "A direct body reply without chatstate removes local send hooks."
+  (with-temp-buffer
+    (rename-buffer " *jabber-direct-chatstates-hook-opt-out-test*" t)
+    (let ((chat-buffer (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (setq-local jabber-chatstates-requested t)
+      (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t)
+      (add-hook 'kill-buffer-hook #'jabber-chatstates-send-gone nil t)
+      (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from _jc) (buffer-name chat-buffer))))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--plain-message
+          "alice@example.org/resource" "chat"))
+        (should-not jabber-chatstates-requested)
+        (should-not (memq #'jabber-chatstates-after-change post-command-hook))
+        (should-not (memq #'jabber-chatstates-send-gone kill-buffer-hook))))))
 
 (ert-deftest jabber-test-chatstates-direct-active-forgets-stale-node ()
   "Incoming direct active clears a stale typing node without error."
