@@ -409,6 +409,52 @@ COUNT-1 messages to be altered.  COUNT defaults to one."
 		 count (vm-interactive-p) "Delete labels to")))
     (vm-add-or-delete-message-labels string m-list nil)))
 
+;;;###autoload
+(defun vm-expunge-label (label)
+  "Completely remove LABEL from the current folder.
+Removes LABEL from all messages and from the folder's label list,
+so it will no longer appear in label completions.
+
+This operation can be undone with `vm-undo'.
+
+When called interactively, prompts for confirmation showing the
+number of messages that will be affected."
+  (interactive
+   (save-current-buffer
+     (vm-follow-summary-cursor)
+     (vm-select-folder-buffer)
+     (let ((completion-ignore-case t))
+       (list (completing-read "Expunge label: "
+                              (vm-obarray-to-string-list vm-label-obarray)
+                              nil t)))))
+  (vm-follow-summary-cursor)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (vm-error-if-folder-read-only)
+  (let* ((label (downcase label))
+         (affected-messages
+          (cl-count-if (lambda (m) (member label (vm-labels-of m)))
+                       vm-message-list))
+         (count 0))
+    ;; Confirm before proceeding
+    (unless (yes-or-no-p
+             (format "Expunge label \"%s\" from %d message%s? "
+                     label affected-messages
+                     (if (= affected-messages 1) "" "s")))
+      (error "Aborted"))
+    ;; Remove from all messages
+    (dolist (m vm-message-list)
+      (let ((labels (vm-labels-of m)))
+        (when (member label labels)
+          (vm-set-labels m (delete label (copy-sequence labels)))
+          (setq count (1+ count)))))
+    ;; Remove from folder's label obarray (record undo to re-intern it)
+    (vm-undo-record (list 'intern label 'vm-label-obarray))
+    (unintern label vm-label-obarray)
+    ;; Update display
+    (vm-update-summary-and-mode-line)
+    (vm-inform 5 "Label \"%s\" expunged from %d message%s"
+               label count (if (= count 1) "" "s"))))
+
 (defun vm-add-or-delete-message-labels (string m-list add)
   "Add or delete the labels given in STRING for all messages in
 M-LIST.  STRING is a MIME-decoded string with text properties.

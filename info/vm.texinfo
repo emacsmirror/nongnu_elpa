@@ -4565,6 +4565,12 @@ other BABYL mailers.  The labels used are ``recent'', ``unseen'',
 ``edited'' and ``written''.  If (and only if) you are using BABYL format
 folders, you should not use these label names for your own purposes.
 
+@findex vm-expunge-label
+To completely remove a label from a folder, use @kbd{M-x vm-expunge-label}.
+This removes the label from all messages that have it and also removes
+it from the folder's label list, so it will no longer appear in label
+completions.  This operation can be undone with @code{vm-undo}.
+
 @vindex vm-flush-interval
 @cindex auto-save
 All message attributes are stored in the folder.  In order for
