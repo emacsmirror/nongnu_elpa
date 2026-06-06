@@ -183,7 +183,8 @@ an empty update."
                    (jabber-xml-get-children reactions 'reaction))))))
 
 (defun jabber-reactions--fallback-for-reactions-p (fallback)
-  "Return non-nil when FALLBACK marks XEP-0444 reaction fallback text."
+  "Return non-nil when FALLBACK is XEP-0444 reaction fallback text.
+Mark fallback text as reaction-only when the fallback element covers the body."
   (and (string= (or (jabber-xml-get-attribute fallback 'xmlns) "")
                 jabber-reactions-fallback-xmlns)
        (string= (or (jabber-xml-get-attribute fallback 'for) "")
@@ -420,7 +421,8 @@ buffers with a known destination."
     (jabber-chat-ewoc-invalidate node)))
 
 (defun jabber-reactions--handle-message (jc xml-data)
-  "Handle incoming XEP-0444 reaction updates in XML-DATA on JC."
+  "Handle incoming XEP-0444 reaction stanzas in XML-DATA on JC.
+Update stored and visible reaction state for the sending entity."
   (pcase-let* ((`(,message . ,carbon-buffer)
                 (jabber-reactions--unwrap-stanza jc xml-data)))
     (when-let* ((reactions (jabber-xml-child-with-xmlns
