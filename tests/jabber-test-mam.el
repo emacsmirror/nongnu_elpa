@@ -66,6 +66,25 @@ TYPE defaults to \"chat\"."
                                            (id . ,stanza-id))
                                           (body () ,(format "Message %d" index))))))))
 
+(defun jabber-test-mam--make-correction-message
+    (archive-id stanza-id replace-id from body)
+  "Build a fake MAM correction stanza.
+ARCHIVE-ID and STANZA-ID identify the archived correction.  REPLACE-ID is
+the original message id.  FROM is the correction sender."
+  `(message ((from . "me@example.com"))
+            (result ((xmlns . ,jabber-mam-xmlns)
+                     (queryid . ,jabber-test-mam-queryid)
+                     (id . ,archive-id))
+                    (forwarded ((xmlns . ,jabber-mam-forward-xmlns))
+                               (delay ((xmlns . ,jabber-mam-delay-xmlns)
+                                       (stamp . "2025-01-01T00:00:00Z")))
+                               (message ((from . ,from)
+                                         (to . "me@example.com")
+                                         (id . ,stanza-id))
+                                        (body () ,body)
+                                        (replace ((id . ,replace-id)
+                                                  (xmlns . ,jabber-message-correct-xmlns))))))))
+
 (defun jabber-test-mam--make-fin (last-id &optional complete)
   "Build a fake <fin> IQ result with LAST-ID.
 When COMPLETE is non-nil, mark the archive as fully consumed."
@@ -608,6 +627,42 @@ OUR-NICK is our nickname; every 3rd message is from us."
         (should (<= (plist-get data :min-ts) (plist-get data :max-ts)))))))
 
 ;;; Group 9: disconnect cleanup
+
+(ert-deftest jabber-test-mam-correction-from-original-sender-updates-db ()
+  "Archived XEP-0308 correction from the original sender updates storage."
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
+           (jabber-mam--tx-depth 1)
+           (jabber-muc-participants nil))
+      (jabber-mam--process-message jc (jabber-test-mam--make-message 1))
+      (jabber-mam--process-message
+       jc
+       (jabber-test-mam--make-correction-message
+        "archive-correction-1" "correction-1" "stanza-000001"
+        "friend@example.com/other-resource" "Corrected body"))
+      (let ((row (car (sqlite-select (jabber-db-ensure-open)
+                                     "SELECT body, edited FROM message \
+WHERE stanza_id = 'stanza-000001'"))))
+        (should (equal '("Corrected body" 1) row))))))
+
+(ert-deftest jabber-test-mam-correction-from-wrong-sender-rejected ()
+  "Archived XEP-0308 correction from another sender does not update storage."
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
+           (jabber-mam--tx-depth 1)
+           (jabber-muc-participants nil))
+      (jabber-mam--process-message jc (jabber-test-mam--make-message 1))
+      (jabber-mam--process-message
+       jc
+       (jabber-test-mam--make-correction-message
+        "archive-correction-2" "correction-2" "stanza-000001"
+        "mallory@example.com/resource" "Forged body"))
+      (let ((row (car (sqlite-select (jabber-db-ensure-open)
+                                     "SELECT body, edited FROM message \
+WHERE stanza_id = 'stanza-000001'"))))
+        (should (equal '("Message 1" 0) row))))))
 
 
 (ert-deftest jabber-test-mam-cleanup-all-commits-transaction ()
