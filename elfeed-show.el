@@ -280,7 +280,8 @@ The result depends on the value of `elfeed-show-unique-buffers'."
     (with-current-buffer (elfeed-search-buffer)
       (forward-line
        (- (or n 1) (if (elfeed-search--remain-on-entry-p 'show) 0 1)))
-      (call-interactively #'elfeed-search-show-entry))))
+      (let (current-prefix-arg)
+        (call-interactively #'elfeed-search-show-entry)))))
 
 (defun elfeed-show-prev (&optional n)
   "Show the Nth previous item in the `elfeed-search' buffer."
