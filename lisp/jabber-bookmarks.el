@@ -459,12 +459,12 @@ CALLBACK is called with JC, XML-DATA, and t on success or nil on failure."
 
 (defun jabber-bookmarks--column-format ()
   "Compute `tabulated-list-format' based on window width."
-  (let* ((w (- (window-width) (* 5 2))) ; subtract padding (5 cols * 2)
-         (jid-w      (floor (* w 0.35)))
-         (name-w     (floor (* w 0.20)))
-         (autojoin-w (floor (* w 0.10)))
-         (nick-w     (floor (* w 0.20)))
-         (password-w (- w jid-w name-w autojoin-w nick-w)))
+  (let* ((w (max 0 (- (window-width) (* 5 2)))) ; subtract padding (5 cols * 2)
+         (jid-w (max 20 (floor (* w 0.35))))
+         (name-w (max 12 (floor (* w 0.20))))
+         (autojoin-w (max 8 (floor (* w 0.10))))
+         (nick-w (max 12 (floor (* w 0.20))))
+         (password-w (max 8 (- w jid-w name-w autojoin-w nick-w))))
     (vector (list "JID" jid-w t)
             (list "Name" name-w t)
             (list "Autojoin" autojoin-w t)

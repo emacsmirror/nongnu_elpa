@@ -720,6 +720,24 @@
     (should legacy-called)
     (should-not pubsub-called)))
 
+;;; Group 7: Bookmark editor UI
+
+(ert-deftest jabber-bookmarks-test-column-format-has-minimum-widths ()
+  "Bookmark editor columns stay usable in narrow windows."
+  (cl-letf (((symbol-function 'window-width) (lambda (&rest _) 20)))
+    (let ((format (jabber-bookmarks--column-format)))
+      (should (= 5 (length format)))
+      (should (equal "JID" (car (aref format 0))))
+      (should (= 20 (cadr (aref format 0))))
+      (should (equal "Name" (car (aref format 1))))
+      (should (= 12 (cadr (aref format 1))))
+      (should (equal "Autojoin" (car (aref format 2))))
+      (should (= 8 (cadr (aref format 2))))
+      (should (equal "Nick" (car (aref format 3))))
+      (should (= 12 (cadr (aref format 3))))
+      (should (equal "Password" (car (aref format 4))))
+      (should (= 8 (cadr (aref format 4)))))))
+
 (provide 'jabber-test-bookmarks)
 
 ;;; jabber-test-bookmarks.el ends here
