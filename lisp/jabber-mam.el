@@ -232,12 +232,17 @@ Return plist (:complete BOOL :first ID :last ID)."
 
 ;;; Message chain handler
 
-(defun jabber-mam--unwrap-into (outer inner)
+(defun jabber-mam--unwrap-into (outer inner &optional archive-id)
   "Replace OUTER stanza's attributes and children with INNER's.
 Marks the stanza as MAM-origin so downstream handlers can suppress
-outgoing receipts.  Mutates OUTER in place."
+outgoing receipts.  ARCHIVE-ID is preserved for bodyless archive
+stanzas whose downstream handlers need the MAM result id.  Mutates
+OUTER in place."
   (setcar (cdr outer) (append (jabber-xml-node-attributes inner)
-                              '((jabber-mam--origin . "t"))))
+                              `((jabber-mam--origin . "t")
+                                ,@(and archive-id
+                                       `((jabber-mam--archive-id
+                                          . ,archive-id))))))
   (setcdr (cdr outer) (cddr inner)))
 
 (defun jabber-mam--active-query-p (queryid)
@@ -360,7 +365,7 @@ JC is the Jabber connection.  XML-DATA is the stanza."
                                         (plist-get fields :stanza-id) ts)
             (jabber-mam--mark-dirty peer (plist-get fields :type))
             (setcdr (cdr xml-data) nil))
-        (jabber-mam--unwrap-into xml-data inner-msg)))))
+        (jabber-mam--unwrap-into xml-data inner-msg archive-id)))))
 
 (defun jabber-mam--our-muc-nick-p (room nick jc)
   "Return non-nil if NICK in ROOM is us on connection JC.

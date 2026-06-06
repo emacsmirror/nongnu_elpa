@@ -78,6 +78,40 @@
                        (plist-get msg :retracted-by)))
         (should (equal "spam" (plist-get msg :retraction-reason)))))))
 
+(ert-deftest jabber-test-moderation-tombstone-updates-ewoc ()
+  "Archived tombstone sets :retracted using the MAM archive id."
+  (jabber-test-moderation-with-ewoc
+    (let ((msg (list :id "client-id-1" :server-id "stanza-id-1"
+                     :from "room@muc.example.com/alice"
+                     :body "spam" :timestamp (current-time))))
+      (jabber-chat-ewoc-enter (list :muc-foreign msg)))
+    (let ((buf (current-buffer))
+          db-call)
+      (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                 (lambda (_group) buf))
+                ((symbol-function 'jabber-db-retract-message)
+                 (lambda (server-id moderator reason)
+                   (setq db-call (list server-id moderator reason)))))
+        (let ((tombstone-xml
+               '(message ((from . "room@muc.example.com/alice")
+                          (type . "groupchat")
+                          (jabber-mam--origin . "t")
+                          (jabber-mam--archive-id . "stanza-id-1"))
+                         (retracted ((stamp . "2026-01-01T00:00:00Z")
+                                     (xmlns . "urn:xmpp:message-retract:1"))
+                                    (moderated ((by . "room@muc.example.com/admin")
+                                                (xmlns . "urn:xmpp:message-moderate:1")))
+                                    (reason () "spam")))))
+          (jabber-moderation--handle-message nil tombstone-xml)))
+      (let* ((node (jabber-chat-ewoc-find-by-id "stanza-id-1"))
+             (msg (cadr (ewoc-data node))))
+        (should (equal '("stanza-id-1" "room@muc.example.com/admin" "spam")
+                       db-call))
+        (should (plist-get msg :retracted))
+        (should (equal "room@muc.example.com/admin"
+                       (plist-get msg :retracted-by)))
+        (should (equal "spam" (plist-get msg :retraction-reason)))))))
+
 ;;; Group 3: stanza-id source validation
 
 (ert-deftest jabber-test-moderation-rejects-client-id ()

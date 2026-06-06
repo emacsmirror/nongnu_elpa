@@ -37,6 +37,7 @@
 (require 'jabber-iq)
 (require 'jabber-muc)
 (require 'jabber-db)
+(require 'cl-lib)
 
 (defvar jabber-chat-ewoc)              ; jabber-chatbuffer.el
 (defvar jabber-group)                   ; jabber-muc.el
@@ -48,32 +49,67 @@
 (defconst jabber-moderation-retract-xmlns "urn:xmpp:message-retract:1"
   "XML namespace for XEP-0424 Message Retraction.")
 
+(defun jabber-moderation--child-with-name-and-xmlns (xml-data name xmlns)
+  "Return the first child of XML-DATA with NAME and XMLNS."
+  (cl-find-if (lambda (child)
+                (and (listp child)
+                     (eq (jabber-xml-node-name child) name)
+                     (string= (jabber-xml-get-xmlns child) xmlns)))
+              (jabber-xml-node-children xml-data)))
+
+(defun jabber-moderation--retraction-element (xml-data)
+  "Return (ELEMENT . TOMBSTONE-P) for a moderated retraction in XML-DATA."
+  (or (when-let* ((retract (jabber-moderation--child-with-name-and-xmlns
+                            xml-data 'retract
+                            jabber-moderation-retract-xmlns)))
+        (cons retract nil))
+      (when-let* (((jabber-xml-get-attribute xml-data 'jabber-mam--origin))
+                  (retracted (jabber-moderation--child-with-name-and-xmlns
+                              xml-data 'retracted
+                              jabber-moderation-retract-xmlns)))
+        (cons retracted t))))
+
+(defun jabber-moderation--moderator (xml-data moderated)
+  "Return the moderator JID from MODERATED in XML-DATA, or nil."
+  (or (jabber-xml-get-attribute moderated 'by)
+      ;; Prosody sends the v0 <apply-to>/<moderated by="..."> with the
+      ;; moderator JID but omits it from the v1 element.  Fall back to v0.
+      (when-let* ((apply-to (jabber-xml-child-with-xmlns
+                             xml-data "urn:xmpp:fasten:0"))
+                  (mod-v0 (car (jabber-xml-get-children apply-to 'moderated))))
+        (jabber-xml-get-attribute mod-v0 'by))))
+
+(defun jabber-moderation--target-id (xml-data retraction tombstone-p)
+  "Return the server id targeted by RETRACTION in XML-DATA.
+TOMBSTONE-P non-nil means RETRACTION is an archived <retracted/> element."
+  (if tombstone-p
+      (jabber-xml-get-attribute xml-data 'jabber-mam--archive-id)
+    (jabber-xml-get-attribute retraction 'id)))
+
+(defun jabber-moderation--valid-source-p (from tombstone-p)
+  "Return non-nil if FROM may send this moderation stanza.
+TOMBSTONE-P allows archived tombstones from the original occupant.  Live
+moderation action stanzas must come from the bare MUC service."
+  (or tombstone-p
+      (not (jabber-jid-resource from))))
+
 (defun jabber-moderation--handle-message (_jc xml-data)
   "Handle moderated message retraction in XML-DATA.
-If the stanza contains a <retract> with a <moderated> child, look up
-the original message in the MUC buffer and replace it with a tombstone."
+Live <retract/> action stanzas update an existing message.  Archived
+<retracted/> tombstones use the preserved MAM archive id as the original
+server id."
   (when-let* ((type (jabber-xml-get-attribute xml-data 'type))
               ((string= type "groupchat"))
-              (retract (jabber-xml-child-with-xmlns
-                        xml-data jabber-moderation-retract-xmlns))
-              (moderated (car (jabber-xml-get-children retract 'moderated)))
-              (stanza-id (jabber-xml-get-attribute retract 'id))
+              (entry (jabber-moderation--retraction-element xml-data))
+              (retraction (car entry))
+              (moderated (car (jabber-xml-get-children retraction 'moderated)))
+              (stanza-id (jabber-moderation--target-id
+                          xml-data retraction (cdr entry)))
               (from (jabber-xml-get-attribute xml-data 'from))
-              (room (jabber-jid-user from))
-              ;; Only accept retractions from the MUC service itself
-              ;; (bare room JID, no resource).
-              ((not (jabber-jid-resource from))))
-    (let* ((moderator
-            (or (jabber-xml-get-attribute moderated 'by)
-                ;; Prosody sends the v0 <apply-to>/<moderated by="...">
-                ;; with the moderator JID but omits it from the v1
-                ;; <retract>/<moderated> element.  Fall back to v0.
-                (when-let* ((apply-to (jabber-xml-child-with-xmlns
-                                       xml-data "urn:xmpp:fasten:0"))
-                            (mod-v0 (car (jabber-xml-get-children
-                                          apply-to 'moderated))))
-                  (jabber-xml-get-attribute mod-v0 'by))))
-           (reason-el (car (jabber-xml-get-children retract 'reason)))
+              ((jabber-moderation--valid-source-p from (cdr entry)))
+              (room (jabber-jid-user from)))
+    (let* ((moderator (jabber-moderation--moderator xml-data moderated))
+           (reason-el (car (jabber-xml-get-children retraction 'reason)))
            (reason (car (jabber-xml-node-children reason-el)))
            (buf (jabber-muc-find-buffer room)))
       (when moderator

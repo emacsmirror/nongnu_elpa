@@ -759,6 +759,9 @@ VALUES ('a','b','in','chat','test',1)")
                         (jabber-xml-get-attribute stanza 'from)))
       ;; MAM origin marker should be set
       (should (jabber-xml-get-attribute stanza 'jabber-mam--origin))
+      ;; Archive id is needed by downstream tombstone handlers.
+      (should (equal "archive-001"
+                     (jabber-xml-get-attribute stanza 'jabber-mam--archive-id)))
       ;; The receipt element should be a child
       (should (car (jabber-xml-get-children stanza 'received))))))
 
