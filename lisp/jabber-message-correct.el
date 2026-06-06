@@ -50,8 +50,12 @@
 (defun jabber-message-correct--replace-id (xml-data)
   "Return the id from the <replace> child of XML-DATA, or nil."
   (when-let* ((el (jabber-xml-child-with-xmlns xml-data
-                                               jabber-message-correct-xmlns)))
-    (jabber-xml-get-attribute el 'id)))
+                                               jabber-message-correct-xmlns))
+              (replace-id (jabber-xml-get-attribute el 'id))
+              ((not (string= replace-id
+                             (or (jabber-xml-get-attribute xml-data 'id)
+                                 "")))))
+    replace-id))
 
 ;;; Sender validation
 

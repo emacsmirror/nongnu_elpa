@@ -61,6 +61,21 @@
                                     (xmlns . ,jabber-message-correct-xmlns))))))
     (should (equal "msg-1" (jabber-message-correct--replace-id stanza)))))
 
+(ert-deftest jabber-test-message-correct-replace-id-missing-id ()
+  "Correction element without id is ignored."
+  (let ((stanza `(message ((from . "alice@example.com") (id . "msg-2"))
+                          (body () "hello corrected")
+                          (replace ((xmlns . ,jabber-message-correct-xmlns))))))
+    (should-not (jabber-message-correct--replace-id stanza))))
+
+(ert-deftest jabber-test-message-correct-replace-id-self-reference ()
+  "Correction element that references its own stanza id is ignored."
+  (let ((stanza `(message ((from . "alice@example.com") (id . "msg-2"))
+                          (body () "hello corrected")
+                          (replace ((id . "msg-2")
+                                    (xmlns . ,jabber-message-correct-xmlns))))))
+    (should-not (jabber-message-correct--replace-id stanza))))
+
 (ert-deftest jabber-test-message-correct-replace-id-wrong-xmlns ()
   "Element with wrong xmlns is not treated as a correction."
   (let ((stanza '(message ((from . "alice@example.com") (id . "msg-3"))
