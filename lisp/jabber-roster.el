@@ -126,6 +126,11 @@ Trailing newlines are always removed, regardless of this variable."
 (declare-function jabber-get-info "jabber-info.el" (jc to))
 (declare-function jabber-blocking-block-jid "jabber-blocking.el" (jc jid))
 (declare-function jabber-activity-switch-to "jabber-activity.el" (&optional jid-param))
+(declare-function jabber-get-conference-data "jabber-bookmarks.el"
+                  (jc conference-jid cont &optional key))
+(declare-function jabber-muc-active-rooms "jabber-muc.el" ())
+(declare-function jabber-muc-connection "jabber-muc.el" (group))
+(declare-function jabber-muc-switch-to "jabber-muc.el" (group))
 
 (defvar *jabber-current-show*)          ; jabber.el
 (defvar jabber-presence-strings)        ; jabber.el
@@ -248,7 +253,8 @@ Only contacts and rooms belonging to this connection are shown.")
                  (propertize (number-to-string (jabber-roster--muc-count))
                              'face 'keymap-popup-value)))
        jabber-roster-switch-muc
-       :if (lambda () (> (jabber-roster--muc-count) 0)))
+       :if (lambda () (> (jabber-roster--muc-count) 0))
+       :c-u "match by room name")
   "j" ("Join room" jabber-muc-join
        :if (lambda () jabber-connections))
   "B" ("Bookmarks" jabber-edit-bookmarks
@@ -323,12 +329,123 @@ Only contacts and rooms belonging to this connection are shown.")
       (when (and jid (not (string-empty-p jid)))
         (jabber-activity-switch-to jid)))))
 
-(defun jabber-roster-switch-muc ()
-  "Select a joined MUC room and switch to it."
-  (interactive)
-  (let* ((rooms (jabber-muc-active-rooms))
-         (room (completing-read "Room: " rooms nil t)))
-    (when (and room (not (string-empty-p room)))
+(defun jabber-roster--muc-room-name (room)
+  "Return cached bookmark name for ROOM, or nil if absent."
+  (when-let* ((jc (jabber-muc-connection room))
+              (name (jabber-get-conference-data jc room nil :name)))
+    (unless (or (string-empty-p name)
+                (string= name room))
+      name)))
+
+(defun jabber-roster--muc-completion-entries ()
+  "Return active MUC completion entries as (ROOM . NAME)."
+  (mapcar (lambda (room)
+            (cons room (jabber-roster--muc-room-name room)))
+          (jabber-muc-active-rooms)))
+
+(defun jabber-roster--muc-name-counts (entries)
+  "Return hash table of cached-name counts from MUC ENTRIES."
+  (let ((counts (make-hash-table :test 'equal)))
+    (dolist (entry entries counts)
+      (when-let* ((name (cdr entry)))
+        (puthash name (1+ (gethash name counts 0)) counts)))))
+
+(defun jabber-roster--muc-room-jids (entries)
+  "Return hash table of active room JIDs from MUC ENTRIES."
+  (let ((rooms (make-hash-table :test 'equal)))
+    (dolist (entry entries rooms)
+      (puthash (car entry) t rooms))))
+
+(defun jabber-roster--muc-safe-name-candidate-p (name name-counts room-jids)
+  "Return non-nil when NAME is safe as a completion candidate.
+NAME-COUNTS records cached-name frequency.  ROOM-JIDS records
+active room JIDs in the same completion set."
+  (and name
+       (= (gethash name name-counts 0) 1)
+       (not (gethash name room-jids))))
+
+(defun jabber-roster--muc-completion-candidate
+    (entry name-counts room-jids use-names)
+  "Return completion candidate for ENTRY using NAME-COUNTS and ROOM-JIDS.
+When USE-NAMES is non-nil, use a cached name only if it is safe."
+  (let ((room (car entry))
+        (name (cdr entry)))
+    (if (and use-names
+             (jabber-roster--muc-safe-name-candidate-p
+              name name-counts room-jids))
+        name
+      room)))
+
+(defun jabber-roster--muc-completion-item
+    (entry name-counts room-jids use-names)
+  "Return a completion item plist for MUC ENTRY.
+NAME-COUNTS records cached-name frequency.  ROOM-JIDS records
+active room JIDs.  When USE-NAMES is non-nil, safe cached names
+become candidates."
+  (let* ((room (car entry))
+         (name (cdr entry))
+         (candidate (jabber-roster--muc-completion-candidate
+                     entry name-counts room-jids use-names))
+         (annotation (if (string= candidate room) name room)))
+    (list :room room
+          :candidate candidate
+          :annotation annotation)))
+
+(defun jabber-roster--muc-completion-items (entries use-names)
+  "Return completion item plists for MUC ENTRIES.
+When USE-NAMES is non-nil, safe cached names become candidates
+and room JIDs become annotations."
+  (let ((name-counts (jabber-roster--muc-name-counts entries))
+        (room-jids (jabber-roster--muc-room-jids entries)))
+    (mapcar (lambda (entry)
+              (jabber-roster--muc-completion-item
+               entry name-counts room-jids use-names))
+            entries)))
+
+(defun jabber-roster--muc-completion-table (items)
+  "Return completion table for MUC ITEMS."
+  (let ((candidates (mapcar (lambda (item)
+                              (cons (plist-get item :candidate)
+                                    (plist-get item :room)))
+                            items))
+        (annotations (make-hash-table :test 'equal)))
+    (dolist (item items)
+      (when-let* ((annotation (plist-get item :annotation)))
+        (puthash (plist-get item :candidate) annotation annotations)))
+    (lambda (string pred action)
+      (if (eq action 'metadata)
+          `(metadata
+            (annotation-function
+             . ,(lambda (candidate)
+                  (when-let* ((annotation (gethash candidate annotations)))
+                    (concat "  " annotation)))))
+        (complete-with-action action candidates string pred)))))
+
+(defun jabber-roster--muc-completion-normalize (candidate items)
+  "Return CANDIDATE normalized to a room JID from MUC ITEMS."
+  (or (cdr (assoc-string candidate
+                         (mapcar (lambda (item)
+                                   (cons (plist-get item :candidate)
+                                         (plist-get item :room)))
+                                 items)))
+      (and (cl-find candidate items
+                    :key (lambda (item) (plist-get item :room))
+                    :test #'string=)
+           candidate)))
+
+(defun jabber-roster-switch-muc (use-names)
+  "Select a joined MUC room and switch to it.
+With prefix argument USE-NAMES, complete on unique cached room
+names and annotate them with room JIDs."
+  (interactive "P")
+  (let* ((entries (jabber-roster--muc-completion-entries))
+         (items (jabber-roster--muc-completion-items entries use-names))
+         (candidate (completing-read "Room: "
+                                     (jabber-roster--muc-completion-table items)
+                                     nil t)))
+    (when-let* ((room (and (not (string-empty-p candidate))
+                           (jabber-roster--muc-completion-normalize
+                            candidate items))))
       (jabber-muc-switch-to room))))
 
 ;;; Account management
