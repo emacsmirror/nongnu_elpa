@@ -169,8 +169,9 @@ JC is the connection, FROM is the sender, CARBON-TYPE is nil,
               ((not (eq carbon-type 'sent)))
               ((not (jabber-xml-get-attribute effective 'jabber-mam--origin)))
               ((jabber-xml-get-children effective 'body))
-              ((jabber-xml-child-with-xmlns
-                effective jabber-chat-markers-xmlns)))
+              (marker (jabber-xml-child-with-xmlns
+                       effective jabber-chat-markers-xmlns))
+              ((eq (jabber-xml-node-name marker) 'markable)))
     (when-let* ((buffer (jabber-receipts--find-buffer from jc)))
       (with-current-buffer buffer
         (when jabber-chat-send-receipts

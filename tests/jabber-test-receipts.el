@@ -176,6 +176,24 @@
                    (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
       (should (equal "msg-200" jabber-receipts--pending-displayed-id)))))
 
+(ert-deftest jabber-test-receipts-displayed-does-not-set-pending-id ()
+  "Incoming displayed marker does not queue another displayed marker."
+  (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)
+            ((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_j) "me@example.com"))
+            ((symbol-function 'jabber-chat-get-buffer)
+             (lambda (_from &optional _jc) (buffer-name))))
+    (with-temp-buffer
+      (setq-local jabber-receipts--pending-displayed-id nil)
+      (let ((jabber-chat-send-receipts t))
+        (jabber-receipts--handle-message
+         'fake-jc
+         `(message ((from . "them@example.com") (id . "marker-1") (type . "chat"))
+                   (body nil "fallback")
+                   (displayed ((xmlns . ,jabber-chat-markers-xmlns)
+                               (id . "msg-200"))))))
+      (should-not jabber-receipts--pending-displayed-id))))
+
 ;;; Group 4: Header-line update
 
 (ert-deftest jabber-test-receipts-header-line-delivered ()
