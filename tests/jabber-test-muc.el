@@ -916,6 +916,40 @@ entry with JC=nil."
       (should (equal ["bob" "visitor" "none" "bob@example.com/res"]
                      (cadr (cadr tabulated-list-entries)))))))
 
+;;; Group 21: MUC status-code notices
+
+(ert-deftest jabber-test-muc-status-notices-privacy-and-logging ()
+  "Privacy and logging status codes produce user-visible notices."
+  (should (equal
+           '("This room exposes your real JID to other occupants"
+             "This room is publicly logged"
+             "This room is no longer publicly logged"
+             "This room is now non-anonymous"
+             "This room is now semi-anonymous")
+           (jabber-muc--status-notices
+            (list jabber-muc-status-nonanonymous
+                  jabber-muc-status-logging-enabled
+                  jabber-muc-status-logging-disabled
+                  jabber-muc-status-now-nonanonymous
+                  jabber-muc-status-now-semianonymous)))))
+
+(ert-deftest jabber-test-muc-enter-extra-notices-inserts-status-notices ()
+  "Entering a room inserts notices for privacy and logging status codes."
+  (let (notices)
+    (cl-letf (((symbol-function 'jabber-muc--insert-notice)
+               (lambda (notice)
+                 (push notice notices))))
+      (jabber-muc--enter-extra-notices
+       "me"
+       (list jabber-muc-status-nonanonymous
+             jabber-muc-status-logging-enabled
+             jabber-muc-status-now-nonanonymous))
+      (should (equal
+               '("This room exposes your real JID to other occupants"
+                 "This room is publicly logged"
+                 "This room is now non-anonymous")
+               (nreverse notices))))))
+
 (ert-deftest jabber-muc-test-process-enter-schedules-next ()
   "Self-presence in process-enter schedules autojoin-next via timer."
   (let* ((jabber-muc--autojoin-queue nil)

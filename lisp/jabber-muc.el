@@ -204,15 +204,19 @@ this many seconds, the room is skipped and the next one is tried."
   :group 'jabber-muc)
 
 ;;; MUC status codes (XEP-0045)
-(defconst jabber-muc-status-nonanonymous     "100")
-(defconst jabber-muc-status-self-presence    "110")
-(defconst jabber-muc-status-room-created     "201")
-(defconst jabber-muc-status-nick-modified    "210")
-(defconst jabber-muc-status-banned           "301")
-(defconst jabber-muc-status-nick-changed     "303")
-(defconst jabber-muc-status-kicked           "307")
+(defconst jabber-muc-status-nonanonymous "100")
+(defconst jabber-muc-status-self-presence "110")
+(defconst jabber-muc-status-logging-enabled "170")
+(defconst jabber-muc-status-logging-disabled "171")
+(defconst jabber-muc-status-now-nonanonymous "172")
+(defconst jabber-muc-status-now-semianonymous "173")
+(defconst jabber-muc-status-room-created "201")
+(defconst jabber-muc-status-nick-modified "210")
+(defconst jabber-muc-status-banned "301")
+(defconst jabber-muc-status-nick-changed "303")
+(defconst jabber-muc-status-kicked "307")
 (defconst jabber-muc-status-nick-not-allowed "406")
-(defconst jabber-muc-status-nick-conflict    "409")
+(defconst jabber-muc-status-nick-conflict "409")
 
 (defcustom jabber-muc-default-nicknames nil
   "Default nickname for specific MUC rooms."
@@ -1864,25 +1868,46 @@ come from the stanza."
     (insert ".")
     (buffer-string)))
 
+(defun jabber-muc--status-notices (status-codes)
+  "Return user-visible notices for MUC STATUS-CODES."
+  (delq nil
+        (mapcar
+         (lambda (code)
+           (cond
+            ((string= code jabber-muc-status-nonanonymous)
+             "This room exposes your real JID to other occupants")
+            ((string= code jabber-muc-status-logging-enabled)
+             "This room is publicly logged")
+            ((string= code jabber-muc-status-logging-disabled)
+             "This room is no longer publicly logged")
+            ((string= code jabber-muc-status-now-nonanonymous)
+             "This room is now non-anonymous")
+            ((string= code jabber-muc-status-now-semianonymous)
+             "This room is now semi-anonymous")))
+         status-codes)))
+
+(defun jabber-muc--insert-notice (notice)
+  "Insert NOTICE into the current MUC buffer."
+  (jabber-chat-buffer-with-scrolltobottom
+    (jabber-chat-ewoc-enter
+     (list :muc-notice notice
+           :time (current-time)))))
+
 (defun jabber-muc--enter-extra-notices (nickname status-codes)
   "Insert extra ewoc notices for STATUS-CODES into the current MUC buffer.
 NICKNAME is the entering user.  Assumes `jabber-chat-ewoc' is current."
+  (mapc #'jabber-muc--insert-notice
+        (jabber-muc--status-notices status-codes))
   (when (member jabber-muc-status-nick-modified status-codes)
-    (jabber-chat-buffer-with-scrolltobottom
-      (jabber-chat-ewoc-enter
-       (list :muc-notice
-             (concat "Your nick was changed to " nickname " by the server")
-             :time (current-time)))))
+    (jabber-muc--insert-notice
+     (concat "Your nick was changed to " nickname " by the server")))
   (when (member jabber-muc-status-room-created status-codes)
     (if jabber-muc--auto-configure
         (progn
           (setq jabber-muc--auto-configure nil)
           (jabber-muc-get-config jabber-buffer-connection jabber-group))
-      (jabber-chat-buffer-with-scrolltobottom
-        (jabber-chat-ewoc-enter
-         (list :muc-notice
-               (jabber-muc--room-created-message)
-               :time (current-time)))))))
+      (jabber-muc--insert-notice
+       (jabber-muc--room-created-message)))))
 
 (defun jabber-muc--query-affiliations (jc group)
   "On JC, query member, admin, and owner affiliation lists for GROUP.
@@ -1962,8 +1987,8 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
                (jabber-chat-ewoc-enter
                 (list :muc-notice report
                       :time (current-time))))))))
-      ;; Extra notices (status 201/210) fire for self-presence regardless
-      ;; of whether there was an affiliation delta report.
+      ;; Status-code notices fire for self-presence regardless of
+      ;; whether there was an affiliation delta report.
       (when self-p
         (with-current-buffer buffer
           (jabber-muc--enter-extra-notices nickname status-codes)
