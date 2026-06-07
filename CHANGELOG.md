@@ -1,9 +1,14 @@
 # Changelog
 
-## [0.67] - Unreleased
+## [0.67] - 2026-06-07
 
 - Implement support for PostgreSQL variant Datahike with pg-datahike adapter.
 
+- Implement support for the H2 embeddable database.
+
+- Implement support for the XTDB immutable database.
+
+- SereneDB variant: improve the filtering out of system tables in `pg-tables`.
 
 
 ## [0.66] - 2026-05-02

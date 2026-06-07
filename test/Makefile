@@ -834,6 +834,7 @@ test-xdatabase: test-pg.el
 test-xtdb: test-pg.el
 	${DOCKER} run --rm --name xtdb --pull=newer \
            --publish 127.0.0.1:5439:5432 \
+           -e XTDB_PASSWORD=pgeltest \
            -d ghcr.io/xtdb/xtdb:latest
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5439/xtdb $(MAKE) test
