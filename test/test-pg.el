@@ -357,6 +357,11 @@
         (let* ((res (pg-exec con "SELECT extversion FROM pg_extension WHERE extname='timescaledb'"))
                (tuple (pg-result res :tuple 0)))
           (message "Timescale extension version: %s" (cl-first tuple))))
+      ;; Log the version number for the pg_duckdb extension
+      (when (eq 'pgduckdb (pgcon-server-variant con))
+        (let* ((res (pg-exec con "SELECT extversion FROM pg_extension WHERE extname='pg_duckdb'"))
+               (tuple (pg-result res :tuple 0)))
+          (message "pg_duckdb extension version: %s" (cl-first tuple))))
       ;; Log the version number for the Citus extension, if present (Citus is not currently detected as a variant)
       (when (eq 'postgresql (pgcon-server-variant con))
         (when (pg-function-p con "citus_version")
@@ -442,7 +447,7 @@
                    :skip-variants '(ydb cratedb questdb thenile cedardb datafusion))
       (pgtest-add #'pg-test-metadata ;;  cockroachdb
                   :skip-variants '(cratedb risingwave materialize questdb greptimedb ydb spanner
-                                           vertica datafusion picodata h2))
+                                           vertica datafusion picodata h2 xtdb))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
                   :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb
