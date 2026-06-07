@@ -682,31 +682,33 @@ If INHIBIT-UPDATE-HOOK is non-nil do not run the `elfeed-update-hook'."
 
 (defun elfeed--fetch-url-curl (url cb)
   "See `elfeed-fetch-url' for documentation of URL and CB."
-  (let ((cb (lambda (success)
-              (if (not success)
-                  (let ((print-escape-newlines t))
-                    (elfeed-handle-http-error url elfeed-curl-error-message)
-                    (funcall cb :error))
-                (unless (eql elfeed-curl-status-code 304)
-                  (let ((feed (elfeed-db-get-feed url)))
-                    ;; Update Last-Modified and Etag
-                    (setf (elfeed-meta feed :last-modified)
-                          (cdr (assoc "last-modified" elfeed-curl-headers))
-                          (elfeed-meta feed :etag)
-                          (cdr (assoc "etag" elfeed-curl-headers)))
-                    (if (equal url elfeed-curl-location)
-                        (setf (elfeed-meta feed :canonical-url) nil)
-                      (setf (elfeed-meta feed :canonical-url) elfeed-curl-location)))
-                  (funcall cb :parse))))))
-    (let* ((feed (elfeed-db-get-feed url))
-           (last-modified (elfeed-meta feed :last-modified))
-           (etag (elfeed-meta feed :etag))
-           (headers `(("User-Agent" . ,elfeed-user-agent))))
-      (when etag
-        (push `("If-None-Match" . ,etag) headers))
-      (when last-modified
-        (push `("If-Modified-Since" . ,last-modified) headers))
-      (elfeed-curl-enqueue url cb :headers headers))))
+  (let* ((cb (lambda (success)
+               (cond
+                ((not success)
+                 (let ((print-escape-newlines t))
+                   (elfeed-handle-http-error url elfeed-curl-error-message)
+                   (funcall cb :error)))
+                ((eq elfeed-curl-status-code 304) ;; Not modified
+                 (funcall cb :success))
+                ((let ((feed (elfeed-db-get-feed url)))
+                   ;; Update Last-Modified and Etag
+                   (setf (elfeed-meta feed :last-modified)
+                         (cdr (assoc "last-modified" elfeed-curl-headers))
+                         (elfeed-meta feed :etag)
+                         (cdr (assoc "etag" elfeed-curl-headers)))
+                   (if (equal url elfeed-curl-location)
+                       (setf (elfeed-meta feed :canonical-url) nil)
+                     (setf (elfeed-meta feed :canonical-url) elfeed-curl-location))
+                   (funcall cb :parse))))))
+         (feed (elfeed-db-get-feed url))
+         (last-modified (elfeed-meta feed :last-modified))
+         (etag (elfeed-meta feed :etag))
+         (headers `(("User-Agent" . ,elfeed-user-agent))))
+    (when etag
+      (push `("If-None-Match" . ,etag) headers))
+    (when last-modified
+      (push `("If-Modified-Since" . ,last-modified) headers))
+    (elfeed-curl-enqueue url cb :headers headers)))
 
 (defun elfeed--fetch-url-queue (url cb)
   "See `elfeed-fetch-url' for documentation of URL and CB."
