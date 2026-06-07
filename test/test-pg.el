@@ -327,14 +327,14 @@
       (unless (member (pgcon-server-variant con)
                       '(cockroachdb cratedb yugabyte ydb xata greptimedb risingwave clickhouse octodb vertica arcadedb
                                     cedardb pgsqlite datafusion stoolap picodata serenedb motherduck pgwire pgmicro
-                                    datahike))
+                                    datahike xtdb))
         (when (> (pgcon-server-version-major con) 11)
           (let* ((res (pg-exec con "SELECT current_setting('ssl_library')"))
                  (row (pg-result res :tuple 0)))
             (message "Backend compiled with SSL library %s" (cl-first row)))))
       (unless (member (pgcon-server-variant con)
                       '(questdb cratedb ydb xata greptimedb risingwave clickhouse materialize vertica arcadedb datafusion
-                                stoolap immudb serenedb picodata motherduck pgwire pgmicro))
+                                stoolap immudb serenedb picodata motherduck pgwire pgmicro xtdb))
         (let* ((res (pg-exec con "SHOW ssl"))
                (row (pg-result res :tuple 0)))
           (message "PostgreSQL connection TLS: %s" (cl-first row))))
@@ -352,6 +352,17 @@
         (setf (pgcon-server-variant con) 'doltgres))
       (when (eq 'orioledb (pgcon-server-variant con))
         (pg-exec con "CREATE EXTENSION IF NOT EXISTS orioledb"))
+      ;; Log the version number for the Timescale extension
+      (when (eq 'timescaledb (pgcon-server-variant con))
+        (let* ((res (pg-exec con "SELECT extversion FROM pg_extension WHERE extname='timescaledb'"))
+               (tuple (pg-result res :tuple 0)))
+          (message "Timescale extension version: %s" (cl-first tuple))))
+      ;; Log the version number for the Citus extension, if present (Citus is not currently detected as a variant)
+      (when (eq 'postgresql (pgcon-server-variant con))
+        (when (pg-function-p con "citus_version")
+          (let* ((res (pg-exec con "SELECT * FROM citus_version()"))
+                 (tuple (pg-result res :tuple 0)))
+            (message "CitusDB extension version: %s" (cl-first tuple)))))
       (unless (member (pgcon-server-variant con) '(clickhouse alloydb risingwave stoolap pgsqlite datafusion))
         (pg-setup-postgis con))
       (unless (member (pgcon-server-variant con) '(clickhouse risingwave stoolap arcadedb pgsqlite picodata))
@@ -366,7 +377,7 @@
       ;; RisingWave is not able to parse a TZ value of "UTC-01:00" (POSIX format). QuestDB does not
       ;; support the timestamptz type. CedarDB des not support the timetz data type.
       (pgtest-add #'pg-test-date
-                  :skip-variants '(cratedb risingwave materialize ydb questdb cedardb clickhouse picodata serenedb)
+                  :skip-variants '(cratedb risingwave materialize ydb questdb cedardb clickhouse picodata serenedb h2)
                   :need-emacs "29.1")
       ;; QuestDB does not support the timestamptz column type.
       (pgtest-add #'pg-run-tz-tests
@@ -377,7 +388,7 @@
       (pgtest-add #'pg-test-numeric-range
                   :skip-variants '(xata cratedb cockroachdb ydb risingwave questdb clickhouse greptimedb spanner octodb
                                         vertica cedardb datafusion immudb stoolap pgsqlite serenedb picodata motherduck
-                                        doltgres datahike))
+                                        doltgres datahike xtdb h2))
       (pgtest-add #'pg-test-prepared
                   :skip-variants '(ydb cratedb picodata serenedb)
                   :need-emacs "28")
@@ -396,19 +407,19 @@
                   :need-emacs "28")
       (pgtest-add #'pg-test-collation
                   :skip-variants '(xata cratedb questdb clickhouse greptimedb octodb vertica yellowbrick
-                                        datafusion immudb picodata))
+                                        datafusion immudb picodata xtdb h2))
       (pgtest-add #'pg-test-xml
                   :skip-variants '(xata ydb cockroachdb yugabyte clickhouse alloydb vertica opengauss
                                         datafusion greptimedb picodata serenedb doltgres))
       (pgtest-add #'pg-test-uuid
                   :skip-variants '(cratedb risingwave ydb clickhouse greptimedb spanner octodb vertica
-                                           yellowbrick datafusion serenedb))
+                                           yellowbrick datafusion serenedb h2))
       ;; Risingwave doesn't support VARCHAR(N) type. YDB and Vertica don't support SELECT generate_series().
       (pgtest-add #'pg-test-result
                   :skip-variants  '(risingwave ydb spanner clickhouse vertica))
       (pgtest-add #'pg-test-cursors
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner octodb
-                                        cedardb yellowbrick datafusion picodata motherduck))
+                                        cedardb yellowbrick datafusion picodata motherduck h2))
       ;; CrateDB does not support the BYTEA type (!), nor sequences. Spanner does not support the encode() function.
       (pgtest-add #'pg-test-bytea
                   :skip-variants '(cratedb risingwave spanner materialize picodata doltgres datahike))
@@ -416,14 +427,14 @@
       ;; implement the pg_sequences system table.
       (pgtest-add #'pg-test-sequence
                   :skip-variants '(cratedb risingwave questdb materialize greptimedb ydb spanner clickhouse thenile
-                                           vertica yellowbrick opengauss datafusion immudb picodata))
+                                           vertica yellowbrick opengauss datafusion immudb picodata h2))
       (pgtest-add #'pg-test-array
                   :skip-variants '(cratedb risingwave questdb materialize clickhouse octodb))
       (pgtest-add #'pg-test-enums
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb materialize spanner octodb clickhouse
                                            vertica cedardb yellowbrick datafusion immudb picodata serenedb datahike))
       (pgtest-add #'pg-test-rowtype
-                  :skip-variants '(cratedb ydb cedardb spanner serenedb greptimedb risingwave picodata datahike))
+                  :skip-variants '(cratedb ydb cedardb spanner serenedb greptimedb risingwave picodata datahike h2))
       (pgtest-add #'pg-test-server-prepare
                   :skip-variants '(cratedb risingwave questdb greptimedb ydb octodb datafusion picodata serenedb
                                            motherduck))
@@ -431,11 +442,11 @@
                    :skip-variants '(ydb cratedb questdb thenile cedardb datafusion))
       (pgtest-add #'pg-test-metadata ;;  cockroachdb
                   :skip-variants '(cratedb risingwave materialize questdb greptimedb ydb spanner
-                                           vertica datafusion picodata))
+                                           vertica datafusion picodata h2))
       ;; CrateDB doesn't support the JSONB type. CockroachDB doesn't support casting to JSON.
       (pgtest-add #'pg-test-json
                   :skip-variants '(xata cratedb risingwave questdb greptimedb ydb materialize spanner octodb
-                                        vertica cedardb datafusion immudb picodata serenedb motherduck))
+                                        vertica cedardb datafusion immudb picodata serenedb motherduck h2 xtdb))
       (pgtest-add #'pg-test-schemas
                   :skip-variants '(xata cratedb risingwave questdb ydb materialize yellowbrick))
       (pgtest-add #'pg-test-hstore
@@ -446,35 +457,36 @@
                   :skip-variants '(xata cratedb materialize octodb vertica picodata serenedb))
       (pgtest-add #'pg-test-tsvector
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb greptimedb ydb materialize spanner
-                                        octodb vertica cedardb yellowbrick datafusion picodata serenedb doltgres motherduck))
+                                        octodb vertica cedardb yellowbrick datafusion picodata serenedb doltgres
+                                        motherduck h2 xtdb))
       (pgtest-add #'pg-test-bm25
                   :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb vertica))
       (pgtest-add #'pg-test-geometric
                   :skip-variants '(xata cratedb cockroachdb risingwave questdb materialize spanner octodb vertica cedardb
-                                        yellowbrick datafusion picodata greptimedb serenedb doltgres motherduck))
+                                        yellowbrick datafusion picodata greptimedb serenedb doltgres motherduck xtdb h2))
       (pgtest-add #'pg-test-gis
-                  :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb datafusion))
+                  :skip-variants '(xata cratedb cockroachdb risingwave materialize octodb datafusion h2))
       (pgtest-add #'pg-test-copy
                   :skip-variants '(spanner ydb cratedb risingwave materialize questdb xata vertica yellowbrick
-                                           datafusion picodata serenedb motherduck doltgres datahike))
+                                           datafusion picodata serenedb motherduck doltgres datahike xtdb h2))
       ;; QuestDB fails due to lack of support for the NUMERIC type
       (pgtest-add #'pg-test-copy-large
                   :skip-variants '(spanner ydb cratedb risingwave questdb materialize datafusion serenedb motherduck
-                                           datahike))
+                                           datahike xtdb h2))
       (pgtest-add #'pg-test-clone-connection)
       ;; Apparently Xata does not support CREATE DATABASE
       (pgtest-add #'pg-test-createdb
-                  :skip-variants '(xata cratedb questdb ydb vertica immudb picodata))
+                  :skip-variants '(xata cratedb questdb ydb vertica immudb picodata h2))
       ;; Many PostgreSQL variants only support UTF8 as the client encoding.
       (pgtest-add #'pg-test-client-encoding
                   :skip-variants '(cratedb cockroachdb ydb risingwave materialize spanner greptimedb questdb xata
-                                           vertica datafusion picodata))
+                                           vertica datafusion picodata xtdb))
       (pgtest-add #'pg-test-unicode-names
-                  :skip-variants '(xata cratedb risingwave questdb ydb spanner vertica immudb))
+                  :skip-variants '(xata cratedb risingwave questdb ydb spanner vertica immudb h2 xtdb))
       (pgtest-add #'pg-test-returning
-                  :skip-variants '(risingwave questdb datafusion immudb picodata))
+                  :skip-variants '(risingwave questdb datafusion immudb picodata h2))
       (pgtest-add #'pg-test-parameter-change-handlers
-                  :skip-variants '(cratedb risingwave))
+                  :skip-variants '(cratedb risingwave h2))
       (pgtest-add #'pg-test-errors)
       ;; CrateDB and Risingwave signal all errors as SQLSTATE XX000 meaning "internal error", rather
       ;; than returning a more granular error code.
@@ -482,13 +494,15 @@
                   :skip-variants '(cratedb risingwave))
       ;; As of 2025-08, CedarDB does not implement DO.
       (pgtest-add #'pg-test-notice
-                  :skip-variants '(cedardb datafusion picodata serenedb))
+                  :skip-variants '(cedardb datafusion picodata serenedb h2 xtdb))
       (pgtest-add #'pg-test-notify
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica cedardb
-                                           yellowbrick opengauss datafusion picodata serenedb doltgres motherduck datahike))
+                                           yellowbrick opengauss datafusion picodata serenedb doltgres motherduck datahike
+                                           h2 xtdb))
       (pgtest-add #'pg-test-lo
                   :skip-variants '(cratedb cockroachdb risingwave materialize greptimedb ydb questdb spanner vertica greenplum
-                                           cedardb yellowbrick opengauss datafusion picodata serenedb doltgres motherduck datahike))
+                                           cedardb yellowbrick opengauss datafusion picodata serenedb doltgres motherduck
+                                           datahike h2))
       (dolist (test (reverse tests))
         (message "== Running test %s" test)
         (condition-case err
@@ -1153,7 +1167,7 @@ bar$$"))))
                for sql = (format "INSERT INTO count_test VALUES(%s, %s)"
                                  i (* i i))
                do (pg-exec con sql))
-      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave materialize xata thenile))
+      (unless (member (pgcon-server-variant con) '(cratedb cockroachdb ydb risingwave materialize xata thenile h2))
         (pg-exec con "VACUUM ANALYZE count_test"))
       (pgtest-flush-table con "count_test")
       (should (eql count (scalar "SELECT count(*) FROM count_test")))
