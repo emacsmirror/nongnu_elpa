@@ -4243,6 +4243,15 @@ Queries legacy internal PostgreSQL tables."
      unless (string-prefix-p "_pico_" name)
      collect name)))
 
+(defun pg--tables-serenedb (con)
+  (let* ((sql "SELECT c.relname as name FROM pg_catalog.pg_class c
+               JOIN pg_namespace n ON n.oid = c.relnamespace
+               WHERE c.relkind IN ('r', 'p')
+               AND n.nspname NOT LIKE 'pg_%'
+               AND n.nspname <> 'information_schema'")
+         (res (pg-exec con sql)))
+    (mapcar #'cl-first (pg-result res :tuples))))
+
 (defun pg-tables (con)
   "List of the tables present in the database we are connected to via CON.
 Only tables to which the current user has access are listed."
