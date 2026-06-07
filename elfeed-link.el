@@ -11,7 +11,6 @@
 
 ;;; Code:
 
-(require 'elfeed-db)
 (require 'elfeed-search)
 (require 'elfeed-show)
 (require 'org)

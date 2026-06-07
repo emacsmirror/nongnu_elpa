@@ -12,7 +12,6 @@
 
 (eval-when-compile (require 'subr-x))
 
-(require 'elfeed)
 (require 'elfeed-search)
 
 (defgroup elfeed-show ()

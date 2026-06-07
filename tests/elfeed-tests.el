@@ -4,7 +4,6 @@
 
 (require 'ert)
 (require 'elfeed)
-(require 'elfeed-lib)
 (require 'xml-query-tests)
 (require 'elfeed-db-tests)
 (require 'elfeed-lib-tests)

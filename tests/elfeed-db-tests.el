@@ -2,10 +2,7 @@
 
 (require 'cl-lib)
 (require 'ert)
-(require 'url-parse)
 (require 'elfeed)
-(require 'elfeed-db)
-(require 'elfeed-lib)
 (require 'jka-compr)
 
 (defvar elfeed-test-random-state (record 'cl--random-state -1 30 267466518)

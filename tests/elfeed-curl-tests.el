@@ -1,7 +1,6 @@
 ;;; elfeed-curl-tests.el --- curl tests -*- lexical-binding: t; -*-
 
 (require 'ert)
-(require 'elfeed-lib)
 (require 'elfeed-curl)
 
 (ert-deftest elfeed-curl--protocol-type ()

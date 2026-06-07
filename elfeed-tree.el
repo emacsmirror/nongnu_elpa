@@ -43,7 +43,6 @@
 
 (eval-when-compile (require 'subr-x))
 
-(require 'elfeed)
 (require 'elfeed-search)
 (require 'outline)
 
