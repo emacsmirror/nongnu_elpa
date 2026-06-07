@@ -402,26 +402,6 @@ test-hummingbird: test-pg.el
 	${DOCKER} stop hummingbird
 
 
-# https://hub.docker.com/r/stagex/user-postgresql
-#
-# This image is buggy: crun: executable file `/bin/sh` not found
-test-stagex: test-pg.el
-	${DOCKER} run --rm --name pgsql \
-           --pull=newer \
-           --publish 127.0.0.1:5317:5317 \
-           -e TZ=UTC-7:00 \
-           -e LANG=en_US.UTF8 \
-           -e LC_CTYPE=en_US.UTF8 \
-           -e POSTGRES_DB=pgeltestdb \
-           -e POSTGRES_USER=pgeltestuser \
-           -e POSTGRES_PASSWORD=pgeltest \
-           -e PGPORT=5317 \
-           -d quay.io/stagex/user-postgresql:latest
-	sleep 5
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5317/pgeltestdb $(MAKE) test
-	${DOCKER} stop pgsql
-
-
 # Supabase (https://supabase.com) provide hosted PostgreSQL instances with convenient web
 # dashboards, management APIs and integrations with authentication libraries. They have a free tier.
 # As of 2026-04, they are running PostgreSQL 17.6 on Aarch64.
@@ -571,6 +551,7 @@ test-paradedb: test-pg.el
 	PGEL_PORT=5441 $(MAKE) test
 	${DOCKER} stop paradedb
 
+
 # Another ElasticSearch alternative, built as a PostgreSQL extension, implementing the BM25 algorithm.
 #
 # https://github.com/tensorchord/VectorChord-bm25/
@@ -585,26 +566,6 @@ test-vectorchord: test-pg.el
 	sleep 5
 	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5778/pgeltestdb $(MAKE) test
 	${DOCKER} stop vectorchord
-
-# Hydra Columnar database
-# https://github.com/hydradatabase/columnar
-#
-# This seems to have been abandoned for the past 2 years, with the developers moving to pg_duckdb.
-test-hydra: test-pg.el
-	${DOCKER} run --rm --name hydra \
-          --pull=newer \
-          --publish 127.0.0.1:5167:5167 \
-          -e POSTGRES_DB=pgeltestdb \
-          -e POSTGRESQL_PORT_NUMBER=5167 \
-          -e PGPORT=5167 \
-          -e POSTGRESQL_MASTER_PORT_NUMBER=5167 \
-          -e POSTGRES_USER=pgeltestuser \
-          -e POSTGRES_PASSWORD=pgeltest \
-          -e POSTGRESQL_POSTGRES_PASSWORD=pgeltest \
-          -d ghcr.io/hydradatabase/hydra:15-5a258d26896de0f47b08658dc8fa914ad453eeab
-	sleep 5
-	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5167/pgeltestdb $(MAKE) test
-	${DOCKER} stop hydra
 
 
 # https://babelfishpg.org/
@@ -740,7 +701,7 @@ test-pgbouncer: test-pg.el
           -v ./pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini \
           -v ./pgbouncer-auth-file.txt:/etc/pgbouncer/pgbouncer-auth-file.txt \
           --net host \
-          -d ghcr.io/icoretech/pgbouncer-docker:1.25.0
+          -d ghcr.io/icoretech/pgbouncer-docker:1.25.1
 	sleep 5
 	PGEL_PORT=6432 $(MAKE) test
 	${DOCKER} stop pgbouncer
@@ -863,18 +824,20 @@ test-xdatabase: test-pg.el
 	${DOCKER} stop xdatabase
 
 
-# TODO: add test recipe for ProxySQL (https://proxysql.com/) and pgagroal (https://github.com/pgagroal/pgagroal) proxies.
+# TODO: add test recipes for
+#
+# - Hoop.dev security-scanning proxy, https://github.com/hoophq/hoop
+# - ProxySQL (https://proxysql.com/) and pgagroal (https://github.com/pgagroal/pgagroal) proxies.
 
 
-# https://www.xtdb.com/
+# An open-source immutable database with time-travel features. https://www.xtdb.com/
 test-xtdb: test-pg.el
 	${DOCKER} run --rm --name xtdb --pull=newer \
            --publish 127.0.0.1:5439:5432 \
            -d ghcr.io/xtdb/xtdb:latest
-	sleep 5
+	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5439/xtdb $(MAKE) test
 	${DOCKER} stop xtdb
-
 
 
 # https://github.com/multigres/multigres
@@ -1206,7 +1169,6 @@ test-gpdb: test-pg.el
 	${DOCKER} stop gpdb
 
 
-
 # The Cloudberry fork of Greenplum, incubated at Apache.
 # https://github.com/apache/cloudberry/
 # https://github.com/woblerr/docker-cloudberry
@@ -1331,7 +1293,7 @@ test-opengauss: test-pg.el
            -e GS_PASSWORD="PGelt44^" \
            -e GS_USERNAME=pgeltestuser \
            -e GS_PORT=5488 \
-           docker.io/opengauss/opengauss:7.0.0-RC3.B016
+           docker.io/opengauss/opengauss:latest
 	sleep 20
 	PGURI=postgresql://pgeltestuser:PGelt44^@127.0.0.1:5488/postgres $(MAKE) test
 	${DOCKER} stop opengauss
@@ -1479,6 +1441,16 @@ test-doltgres: test-pg.el
 	${DOCKER} stop doltgres
 
 
+# The H2 database has basic support for the PostgreSQL protocol.
+# https://github.com/h2database/h2database
+# 
+# commandline options: java -cp h2*.jar org.h2.tools.Server -?
+test-h2: test-pg.el
+	java -cp h2*.jar org.h2.tools.Server -pg -pgAllowOthers -pgPort 5618 -baseDir /tmp -ifNotExists &
+	sleep 1
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5618/pgeltestdb $(MAKE) test
+
+
 # https://datahike.io/notes/datahike-speaks-postgres/
 # https://github.com/replikativ/pg-datahike/releases
 # Doesn't seem to be a public container image currently
@@ -1517,35 +1489,6 @@ test-puzzledb: test-pg.el
 	${DOCKER} stop puzzledb
 
 
-
-# CMU NoisePage, which seems to have been abandoned in 2023
-# https://github.com/cmu-db/noisepage/blob/master/docs/tech_docker.md
-# https://hub.docker.com/r/wwfalcon/noisepage
-#
-# This Docker image is not working.
-test-noisepage: test-pg.el
-	${DOCKER} run --rm --name noisepage \
-          --net host \
-          docker.io/wwfalcon/noisepage:latest
-	sleep 10
-	PGURI=postgresql://noisepage@127.0.0.1:15721/noisepage $(MAKE) test
-	${DOCKER} stop noisepage
-
-
-
-# https://seafowl.io/docs/guides/querying-postgresql
-# https://hub.docker.com/r/splitgraph/seafowl/
-# No longer under active development following aquisition by EDB
-test-seafowl: test-pg.el
-	${DOCKER} run --rm --name seafowl \
-           --publish 127.0.0.1:6432 \
-           -v "./seafowl.toml:/etc/seafowl.toml" \
-           -d docker.io/splitgraph/seafowl:nightly -c /etc/seafowl.toml
-	sleep 10
-	PGURI=postgresql://seafowl@127.0.0.1:6432/pgeltestdb $(MAKE) test
-	${DOCKER} stop seafowl
-
-
 # Apache Datafusion with PostgreSQL protocol frontend
 #
 # https://github.com/datafusion-contrib/datafusion-postgres
@@ -1562,65 +1505,6 @@ test-datafusion: test-pg.el
 	sleep 5
 	PGURI=postgresql://postgres@127.0.0.1:5666/pgeltestdb $(MAKE) test
 	rm -rf ${TMPBDIR}
-
-
-# https://hub.docker.com/r/clockworklabs/spacetime
-# https://spacetimedb.com/docs/sql/pg-wire
-# apparently also hosted on registry.digitalocean.com/clockwork/spacetimedb:latest
-#
-# Missing: user authentication
-# https://spacetimedb.com/docs/http/identity
-test-spacetimedb: test-pg.el
-	${DOCKER} run --rm --name spacetimedb \
-           --publish 127.0.0.1:5981:5981 \
-           --publish 127.0.0.1:3000:3000 \
-           -d docker.io/clockworklabs/spacetime:latest start --listen-addr 127.0.0.1:3000 --pg-port 5981
-	sleep 2
-	podman exec spacetimedb spacetime init --lang rust my_module
-	podman exec spacetimedb spacetime publish --yes --project-path my_module pgeltestdb
-#        @json=$(shell curl -X POST http://localhost:3000/v1/identity);
-	curl http://localhost:3000/v1/ping  # check whether we can connect
-	curl -X POST http://localhost:3000/v1/identity
-	sleep 1
-	PGURI=postgresql://pgeltestuser:foo@127.0.0.1:5981/pgeltestdb $(MAKE) test
-	${DOCKER} stop spacetimedb
-
-
-# https://hub.docker.com/r/ravendb/ravendb/
-# https://docs.ravendb.net/7.2/integrations/postgresql-protocol/overview/#enabling-postgresql-support
-#
-# It seems that the PostgreSQL protocol support requires a licence, so this doesn't work.
-test-ravendb: test-pg.el
-	${DOCKER} run --rm --name ravendb --pull=newer --net=host \
-          -e RAVEN_Setup_Mode=None \
-          -e RAVEN_Features_Availability=Experimental \
-          -e RAVEN_Integrations_PostgreSQL_Enabled=true \
-          -e RAVEN_Integrations_PostgreSQL_Port=5433 \
-          -v ./ravendb_settings.json:/etc/ravendb_settings.json \
-          -e RAVEN_ARGS="--log-to-console --non-interactive -c=/etc/ravendb_settings.json" \
-          docker.io/ravendb/ravendb-nightly:ubuntu-latest
-	sleep 5
-	PGURI=postgresql://ravendb@127.0.0.1:5433/ravendb $(MAKE) test
-	${DOCKER} stop ravendb
-
-
-# https://docs.mindsdb.com/setup/self-hosted/docker
-#
-# As of 2025-09 the PostgreSQL wire protocol support does not seem fully working. We can connect to
-# the database, but any query triggers an error "AttributeError: 'list' object has no attribute
-# 'columns'".
-test-mindsdb: test-pg.el
-	${DOCKER} run --rm --name mindsdb \
-          --pull=newer \
-          --net host \
-          -e MINDSDB_USERNAME=pgeltestuser \
-          -e MINDSDB_PASSWORD=pgeltest \
-          -e MINDSDB_NO_STUDIO=true \
-          docker.io/mindsdb/mindsdb:latest --api http,mysql,postgres
-	sleep 10
-	echo 'CREATE DATABASE pgeltestdb WITH ENGINE = "postgres", PARAMETERS = { "user": "pgeltestuser", "password": "pgeltest", "host": "localhost", "port": "5432", "database": "pgeltestdb" };' | psql postgresql://pgeltestuser:pgeltest@127.0.0.1:55432/pgeltestdb
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:55432/pgeltestdb $(MAKE) test
-	${DOCKER} stop mindsdb
 
 
 # YottaDB Octo
@@ -1645,25 +1529,6 @@ test-octodb: test-pg.el
 	${DOCKER} stop octodb
 
 
-# https://hub.docker.com/r/opentext/vertica-ce
-#
-# As of 2025-09 it seems that OpenText have deleted all references to their community edition from
-# Dockerhub and from their website...
-#
-# https://github.com/vertica/vertica-containers/blob/main/one-node-ce/Dockerfile_Ubuntu
-test-vertica: test-pg.el
-	${DOCKER} run --rm --name vertica \
-           --pull=newer \
-           --publish 127.0.0.1:5433:5433 --publish 127.0.0.1:5444:5444 \
-           -e VERTICA_DB_NAME=pgeltestdb \
-           -e VERTICA_DB_USER=pgeltestuser \
-           -e VERTICA_DB_PASSWORD=pgeltest \
-           -d docker.io/opentext/vertica-ce:latest
-	sleep 10
-	PGURI=postgresql://dbadmin:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
-	${DOCKER} stop vertica
-
-
 # https://docs.arcadedb.com/#postgres-driver
 # https://github.com/ArcadeData/arcadedb
 #
@@ -1679,41 +1544,6 @@ test-arcadedb: test-pg.el
 	sleep 10
 	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5600/pgeltestdb $(MAKE) test
 	${DOCKER} stop arcadedb
-
-
-# https://stoolap.io/
-# https://github.com/stoolap/stoolap
-#
-# We don't currently bother recognizing this as a PostgreSQL variant, because its PostgreSQL
-# compatibility at the SQL level is very low. For instance, it doesn't recognize schema-qualified
-# names such as schema.table.
-test-stoolap-old: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t stoolap-buildXXXX))
-	(cd ${TMPBDIR} && \
-         git clone --depth 1 https://github.com/stoolap/stoolap.git && \
-         cd stoolap && \
-         go build -o /tmp/stoolap-pgserver ./cmd/stoolap-pgserver)
-	/tmp/stoolap-pgserver --database memory:// --bind 127.0.0.1:5401 &
-	sleep 2
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5401/stoolap $(MAKE) test
-	rm -rf /tmp/stoolap-pgserver ${TMPBDIR}
-
-
-# https://stoolap.io/
-# https://github.com/stoolap/stoolap
-#
-# But this rewrite in Rust of the Go project doesn't currently support the PostgreSQL network protocol.
-test-stoolap: test-pg.el
-	$(eval TMPBDIR := $(shell mktemp -d -t stoolap-buildXXXX))
-	(cd ${TMPBDIR} && \
-         git clone --depth 1 https://github.com/stoolap/stoolap && \
-         cd stoolap && \
-         cargo build)
-	(cd ${TMPBDIR}/stoolap && cargo run -- --db memory:// --bind 127.0.0.1:5401 &)
-	sleep 2
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5401/stoolap $(MAKE) test
-	rm -rf ${TMPBDIR}
-
 
 
 # A Pgwire adaptor for GlueSQL. More an SQL engine than really providing PostgreSQL compatibility;
@@ -1744,21 +1574,8 @@ test-kinetica: test-pg.el
 	${DOCKER} stop kinetica
 
 
-# https://github.com/surrealdb/surrealdb?tab=readme-ov-file#run-using-docker
-#
-# It looks like PostgreSQL wire protocol support is "in development".
-test-surrealdb: test-pg.el
-	${DOCKER} run --rm --name surrealdb \
-           --pull=newer \
-           --publish 127.0.0.1:8000:8000 \
-           -d docker.io/surrealdb/surrealdb:nightly start memory \
-              --user pgeltestuser --pass pgeltest --log info --allow-experimental
-	sleep 5
-	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
-	${DOCKER} stop surrealdb
-
-
 # https://github.com/serenedb/serenedb ("distributed real-time search analytics DB")
+# https://docs.serenedb.com/reference/configuration
 # https://hub.docker.com/r/serenedb/serenedb/tags
 #
 # This should but does not work with --publish 127.0.0.1:7890:7890
@@ -1773,7 +1590,6 @@ test-serenedb: test-pg.el
 	sleep 5
 	PGURI=postgresql://postgres@127.0.0.1:7890/postgres $(MAKE) test
 	${DOCKER} stop serenedb
-
 
 
 # https://git.picodata.io/core/picodata
@@ -1869,8 +1685,160 @@ test-pgmicro: test-pg.el
 	rm -rf ${TMPBDIR}
 
 
-# to test: Hoop.dev security-scanning proxy, https://github.com/hoophq/hoop
+# https://hub.docker.com/r/opentext/vertica-ce
+#
+# As of 2025-09 it seems that OpenText have deleted all references to their community edition from
+# Dockerhub and from their website...
+#
+# https://github.com/vertica/vertica-containers/blob/main/one-node-ce/Dockerfile_Ubuntu
+test-abandoned-vertica: test-pg.el
+	${DOCKER} run --rm --name vertica \
+           --pull=newer \
+           --publish 127.0.0.1:5433:5433 --publish 127.0.0.1:5444:5444 \
+           -e VERTICA_DB_NAME=pgeltestdb \
+           -e VERTICA_DB_USER=pgeltestuser \
+           -e VERTICA_DB_PASSWORD=pgeltest \
+           -d docker.io/opentext/vertica-ce:latest
+	sleep 10
+	PGURI=postgresql://dbadmin:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
+	${DOCKER} stop vertica
 
+
+# CMU NoisePage, which seems to have been abandoned in 2023
+# https://github.com/cmu-db/noisepage/blob/master/docs/tech_docker.md
+# https://hub.docker.com/r/wwfalcon/noisepage
+#
+# This Docker image is not working.
+test-abandoned-noisepage: test-pg.el
+	${DOCKER} run --rm --name noisepage \
+          --net host \
+          docker.io/wwfalcon/noisepage:latest
+	sleep 10
+	PGURI=postgresql://noisepage@127.0.0.1:15721/noisepage $(MAKE) test
+	${DOCKER} stop noisepage
+
+
+# https://seafowl.io/docs/guides/querying-postgresql
+# https://hub.docker.com/r/splitgraph/seafowl/
+# No longer under active development following aquisition by EDB
+test-abandoned-seafowl: test-pg.el
+	${DOCKER} run --rm --name seafowl \
+           --publish 127.0.0.1:6432 \
+           -v "./seafowl.toml:/etc/seafowl.toml" \
+           -d docker.io/splitgraph/seafowl:nightly -c /etc/seafowl.toml
+	sleep 10
+	PGURI=postgresql://seafowl@127.0.0.1:6432/pgeltestdb $(MAKE) test
+	${DOCKER} stop seafowl
+
+
+# Hydra Columnar database
+# https://github.com/hydradatabase/columnar
+#
+# This seems to have been abandoned for the past 2 years, with the developers moving to pg_duckdb.
+test-abandoned-hydra: test-pg.el
+	${DOCKER} run --rm --name hydra \
+          --pull=newer \
+          --publish 127.0.0.1:5167:5167 \
+          -e POSTGRES_DB=pgeltestdb \
+          -e POSTGRESQL_PORT_NUMBER=5167 \
+          -e PGPORT=5167 \
+          -e POSTGRESQL_MASTER_PORT_NUMBER=5167 \
+          -e POSTGRES_USER=pgeltestuser \
+          -e POSTGRES_PASSWORD=pgeltest \
+          -e POSTGRESQL_POSTGRES_PASSWORD=pgeltest \
+          -d ghcr.io/hydradatabase/hydra:15-5a258d26896de0f47b08658dc8fa914ad453eeab
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@localhost:5167/pgeltestdb $(MAKE) test
+	${DOCKER} stop hydra
+
+
+# https://docs.mindsdb.com/setup/self-hosted/docker
+#
+# As of 2025-09 the PostgreSQL wire protocol support does not seem fully working. We can connect to
+# the database, but any query triggers an error "AttributeError: 'list' object has no attribute
+# 'columns'".
+test-failing-mindsdb: test-pg.el
+	${DOCKER} run --rm --name mindsdb \
+          --pull=newer \
+          --net host \
+          -e MINDSDB_USERNAME=pgeltestuser \
+          -e MINDSDB_PASSWORD=pgeltest \
+          -e MINDSDB_NO_STUDIO=true \
+          docker.io/mindsdb/mindsdb:latest --api http,mysql,postgres
+	sleep 10
+	echo 'CREATE DATABASE pgeltestdb WITH ENGINE = "postgres", PARAMETERS = { "user": "pgeltestuser", "password": "pgeltest", "host": "localhost", "port": "5432", "database": "pgeltestdb" };' | psql postgresql://pgeltestuser:pgeltest@127.0.0.1:55432/pgeltestdb
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:55432/pgeltestdb $(MAKE) test
+	${DOCKER} stop mindsdb
+
+
+# https://stoolap.io/
+# https://github.com/stoolap/stoolap
+#
+# The previous implementation in Go supported the PostgreSQL network protocol, but the rewrite in
+# Rust in 2026 seems to have dropped that feature.
+test-failing-stoolap: test-pg.el
+	$(eval TMPBDIR := $(shell mktemp -d -t stoolap-buildXXXX))
+	(cd ${TMPBDIR} && \
+         git clone --depth 1 https://github.com/stoolap/stoolap && \
+         cd stoolap && \
+         cargo build)
+	(cd ${TMPBDIR}/stoolap && cargo run -- --db memory:// --bind 127.0.0.1:5401 &)
+	sleep 2
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5401/stoolap $(MAKE) test
+	rm -rf ${TMPBDIR}
+
+# https://hub.docker.com/r/ravendb/ravendb/
+# https://docs.ravendb.net/7.2/integrations/postgresql-protocol/overview/#enabling-postgresql-support
+#
+# It seems that the PostgreSQL protocol support requires a licence, so this doesn't work.
+test-failing-ravendb: test-pg.el
+	${DOCKER} run --rm --name ravendb --pull=newer --net=host \
+          -e RAVEN_Setup_Mode=None \
+          -e RAVEN_Features_Availability=Experimental \
+          -e RAVEN_Integrations_PostgreSQL_Enabled=true \
+          -e RAVEN_Integrations_PostgreSQL_Port=5433 \
+          -v ./ravendb_settings.json:/etc/ravendb_settings.json \
+          -e RAVEN_ARGS="--log-to-console --non-interactive -c=/etc/ravendb_settings.json" \
+          docker.io/ravendb/ravendb-nightly:ubuntu-latest
+	sleep 5
+	PGURI=postgresql://ravendb@127.0.0.1:5433/ravendb $(MAKE) test
+	${DOCKER} stop ravendb
+
+
+# https://hub.docker.com/r/clockworklabs/spacetime
+# https://spacetimedb.com/docs/sql/pg-wire
+# apparently also hosted on registry.digitalocean.com/clockwork/spacetimedb:latest
+#
+# Missing: user authentication
+# https://spacetimedb.com/docs/http/identity
+test-failing-spacetimedb: test-pg.el
+	${DOCKER} run --rm --name spacetimedb \
+           --publish 127.0.0.1:5981:5981 \
+           --publish 127.0.0.1:3000:3000 \
+           -d docker.io/clockworklabs/spacetime:latest start --listen-addr 127.0.0.1:3000 --pg-port 5981
+	sleep 2
+	podman exec spacetimedb spacetime init --lang rust my_module
+	podman exec spacetimedb spacetime publish --yes --project-path my_module pgeltestdb
+#        @json=$(shell curl -X POST http://localhost:3000/v1/identity);
+	curl http://localhost:3000/v1/ping  # check whether we can connect
+	curl -X POST http://localhost:3000/v1/identity
+	sleep 1
+	PGURI=postgresql://pgeltestuser:foo@127.0.0.1:5981/pgeltestdb $(MAKE) test
+	${DOCKER} stop spacetimedb
+
+
+# https://github.com/surrealdb/surrealdb?tab=readme-ov-file#run-using-docker
+#
+# It looks like PostgreSQL wire protocol support is "in development".
+test-failing-surrealdb: test-pg.el
+	${DOCKER} run --rm --name surrealdb \
+           --pull=newer \
+           --publish 127.0.0.1:8000:8000 \
+           -d docker.io/surrealdb/surrealdb:nightly start memory \
+              --user pgeltestuser --pass pgeltest --log info --allow-experimental
+	sleep 5
+	PGURI=postgresql://pgeltestuser:pgeltest@127.0.0.1:5433/pgeltestdb $(MAKE) test
+	${DOCKER} stop surrealdb
 
 
 
