@@ -17,12 +17,12 @@
 ;;     (setq elfeed-feeds
 ;;       '(("https://yhetil.org/emacs-devel/new.atom" emacs lists devel)
 ;;         ("https://yhetil.org/emacs-bugs/new.atom" emacs lists bugs)
-;;         ("https://old.reddit.com/r/emacs.rss" emacs reddit)))
+;;         ("https://sachachua.com/blog/category/emacs-news/feed/" emacs news)))
 ;;
 ;; will lead to a tree of the following form.
 ;;
 ;;     emacs
-;;       ├─● /r/reddit
+;;       ├─● emacs-news
 ;;       lists
 ;;         ├─● emacs-devel
 ;;         ╰─● emacs-bugs
