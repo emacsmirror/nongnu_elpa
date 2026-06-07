@@ -1,5 +1,9 @@
 #+title: Elfeed Changelog
 
+* Development (upcoming 4.0.1)
+
+- Bugfixes.
+
 * Version 4.0.0 (2026-06-06)
 
 ** General
