@@ -84,6 +84,14 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   designed for better multithreading and solid state storage, works perfectly. Last tested 2026-06
   with version beta16.
 
+- The [pg_duckdb](https://github.com/duckdb/pg_duckdb) extension, which adds the DuckDB
+  columnar-vectorized analytics engine to PostgreSQL, has limited SQL-level compatibility with
+  PostgreSQL. For example, it does not support `CREATE FUNCTION`, `REINDEX`, `DO`, `now` as time,
+  does not parse timestamps that are accepted by PostgreSQL, casting `NaN` to numerical types,
+  prepared statements with runtime-resolved column types, the UUID type, hex escaping, `NOCYCLE` in
+  SQL sequences, casting strings to arrays. Last tested 2025-06 with version 1.1.0 (these
+  limitations are also present in the hosted motherduck.com instance).
+
 - The [Microsoft DocumentDB](https://github.com/microsoft/documentdb) extension for MongoDB-like
   queries (MIT licensed). Works perfectly. Note that this is not the same product as Amazon
   DocumentDB. Last tested 2026-06 with the FerretDB distribution 2.7.0.
@@ -223,13 +231,17 @@ The following PostgreSQL-compatible databases or extensions have been tested:
   DataFusion query engine (Apache license) implements quite a lot of the PostgreSQL wire protocol,
   but has more restrictions on the use of identifiers than PostgreSQL (for example, `id` is not
   accepted as a column name) and does not support data types such as `bit`. Last tested v1.0.2
-  in 2026-05.
+  in 2026-06.
 
 - The [H2](https://github.com/h2database/h2database) embeddable database implements some aspects of
-  the PostgreSQL wire protocol. It does not support the `timestamptz`, `json` and `jsonb` data
-  types, nor arrays, nor rowtypes, nor collation, nor cursors, nor the `pg_sequence` metadata table.
-  It does not support the `CREATE FUNCTION` syntax for user-defined functions. Last tested v2.4.240
-  in 2026-06.
+  the PostgreSQL wire protocol (MPL/EPL dual license). It does not support the `timestamptz`, `json`
+  and `jsonb` data types, nor arrays, nor rowtypes, nor collation, nor cursors, nor the
+  `pg_sequence` metadata table. It does not support the `CREATE FUNCTION` syntax for user-defined
+  functions. Last tested v2.4.240 in 2026-06.
+
+- The [XTDB](https://github.com/xtdb/xtdb) immutable database (MPL-2 license) can be queried using
+  SQL over the PostgreSQL wire protocol. There are currently strong limitations on the DDL syntax
+  accepted. Last tested v2.1.0 in 2026-06.
 
 - Hosted PostgreSQL services that have been tested: as of 2025-06 render.com is running a Debian
   build of PostgreSQL 16.8 and works fine (requires TLS connection), as of 2024-12
