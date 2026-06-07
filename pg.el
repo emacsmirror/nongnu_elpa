@@ -517,6 +517,11 @@ Uses PostgreSQL connection CON.")
   (pg-exec con "SET enable_full_json = true")
   (pg-exec con "SET ybd_allow_udf_creation = true"))
 
+;; https://h2database.com/html/commands.html#set_mode
+(cl-defmethod pg-do-variant-specific-setup ((con pgcon) (_variant (eql 'h2)))
+  (message "pg-el: running variant-specific setup for H2")
+  (pg-exec con "SET MODE POSTGRESQL"))
+
 (cl-defmethod pg-do-variant-specific-setup ((con pgcon) (variant t))
   ;; This statement fails on ClickHouse (and the database immediately closes the connection!).
   (unless (member variant '(clickhouse datafusion stoolap pgwire pgmicro))
@@ -568,6 +573,8 @@ Uses connection CON. The variant can be accessed by `pgcon-server-variant'."
               (setf (pgcon-server-variant con) 'serenedb))
              ((cl-search "picodata" version)
               (setf (pgcon-server-variant con) 'picodata))
+             ((cl-search " H2 " version)
+              (setf (pgcon-server-variant con) 'h2))
              ;; TODO: find a better detection method for ArcadeDB
              ((string-suffix-p "/main)" version)
               (setf (pgcon-server-variant con) 'arcadedb))
@@ -861,41 +868,48 @@ Uses database DBNAME, user USER and password PASSWORD."
                                           for c across major
                                           while (<= ?0 c ?9)
                                           collect c))))
-              (setf (pgcon-server-version-major con) (cl-parse-integer major-numeric)))
-            (cond ((cl-search "ydb stable" val)
-                   (setf (pgcon-server-variant con) 'ydb))
-                  ((cl-search "-greptimedb-" val)
-                   (setf (pgcon-server-variant con) 'greptimedb))
-                  ((cl-search "OrioleDB" val)
-                   (setf (pgcon-server-variant con) 'orioledb))
-                  ((cl-search "(ReadySet)" val)
-                   (setf (pgcon-server-variant con) 'readyset))
-                  ((cl-search "(Stoolap)" val)
-                   (setf (pgcon-server-variant con) 'stoolap))
-                  ;; 202604 this is an ugly hack, pending their inclusion of brand in version() string.
-                  ((string= "150000" val)
-                   (setf (pgcon-server-variant con) 'motherduck))
-                  ((cl-search "-pgwire-" val)
-                   (setf (pgcon-server-variant con) 'pgwire))))
-          ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL variants, to allow us
-          ;; to work around some of their behaviour that is incompatible with real PostgreSQL.
-          (when (string= "session_authorization" key)
-            ;; We could also look for the existence of the "xata" schema in pg-schemas
-            (when (string-prefix-p "xata" val)
-              (setf (pgcon-server-variant con) 'xata))
-            (when (string= "PGAdapter" val)
-              (setf (pgcon-server-variant con) 'spanner)))
-          (when (string= "khnum_version" key)
-            (setf (pgcon-server-variant con) 'thenile))
-          (when (string-prefix-p "ivorysql." key)
-            (setf (pgcon-server-variant con) 'ivorydb))
-          (when (string-prefix-p "duckdb." key)
-            (setf (pgcon-server-variant con) 'pgduckdb))
-          (when (string= "application_name" key)
-            (when (string= "datahike" val)
-              (setf (pgcon-server-variant con) 'datahike)))
-          (dolist (handler pg-parameter-change-functions)
-            (funcall handler con key val)))))
+              (setf (pgcon-server-version-major con) (cl-parse-integer major-numeric))))
+          (let ((variant (catch 'found
+                           (cond ((cl-search "ydb stable" val)
+                                  (throw 'found 'ydb))
+                                 ((cl-search "-greptimedb-" val)
+                                  (throw 'found 'greptimedb))
+                                 ((cl-search "OrioleDB" val)
+                                  (throw 'found 'orioledb))
+                                 ((cl-search "(ReadySet)" val)
+                                  (throw 'found 'readyset))
+                                 ((cl-search "(Stoolap)" val)
+                                  (throw 'found 'stoolap))
+                                 ;; 202604 this is an ugly hack, pending their inclusion of brand in version() string.
+                                 ((string= "150000" val)
+                                  (throw 'found 'motherduck))
+                                 ((cl-search "-pgwire-" val)
+                                  (throw 'found 'pgwire)))
+                           ;; Now some somewhat ugly code to detect semi-compatible PostgreSQL
+                           ;; variants, to allow us to work around some of their behaviour that is
+                           ;; incompatible with real PostgreSQL.
+                           (when (string= "session_authorization" key)
+                             ;; We could also look for the existence of the "xata" schema in pg-schemas
+                             (when (string-prefix-p "xata" val)
+                               (throw 'found 'xata))
+                             (when (string= "PGAdapter" val)
+                               (throw 'found 'spanner)))
+                           (when (string= "khnum_version" key)
+                             (throw 'found 'thenile))
+                           (when (string-prefix-p "ivorysql." key)
+                             (throw 'found 'ivorydb))
+                           (when (string-prefix-p "duckdb." key)
+                             (throw 'found 'pgduckdb))
+                           (when (string= "application_name" key)
+                             (when (string= "datahike" val)
+                               (throw 'found 'datahike)))
+                           (when (string= "database" key)
+                             (when (string= "xtdb" val)
+                               (throw 'found 'xtdb))))))
+            (when variant
+              (setf (pgcon-server-variant con) variant))))
+        (dolist (handler pg-parameter-change-functions)
+          (funcall handler con key val))))
 
      (t
       (let ((msg (format "Problem connecting: expected an authentication response, got %s" c)))
@@ -3873,6 +3887,11 @@ Uses database connection CON."
             (args `((,table-name . "text")))
             (res (pg-exec-prepared con sql args)))
        (cl-first (pg-result res :tuple 0))))
+    ;; H2 doesn't really have a concept of per-table owner
+    ('h2
+     (let* ((sql "SELECT schema_owner from information_schema.schemata WHERE schema_name='public'")
+            (res (pg-exec con sql)))
+       (cl-first (pg-result res :tuple 0))))
     (_
      (let* ((schema (when (pg-qualified-name-p table)
                       (pg-qualified-name-schema table)))
@@ -3923,6 +3942,18 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
     ('ydb nil)
     ;; As of 2025-08, CedarDB returns "Setting comments in not implemented yet" (sic).
     ('cedardb nil)
+    ('h2
+     (let* ((schema (if (pg-qualified-name-p table)
+                        (pg-qualified-name-schema table)
+                      "public"))
+            (tname (if (pg-qualified-name-p table)
+                       (pg-qualified-name-name table)
+                     table))
+            (sql "SELECT remarks FROM information_schema.tables WHERE table_schema=$1 AND table_name=$2")
+            (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text"))))
+            (tuple (pg-result res :tuple 0))
+            (maybe-comment (cl-first tuple)))
+       (if (equal maybe-comment pg-null-marker) nil maybe-comment)))
     ('risingwave
      ;; RisingWave implements the obj_description() function, but annoyingly returns empty values
      ;; even when comments are defined. Comment data is available in the rw_description table.
@@ -4007,10 +4038,18 @@ Uses database connection CON."
             (res (pg-exec-prepared con sql `((,name . "text"))))
             (rows (pg-result res :tuples)))
        (not (null rows))))
-       ;; (cl-position name rows :key #'cl-first :test #'string=)))
+       ;; (cl-position name rows :key #'cl-first :test #'string=)
+    ;; SereneDB does not populate the pg_proc table nor information_schema.routines.
+    ('serenedb nil)
     ;; Unfortunately this only includes user-defined functions, not builtins
     ('risingwave
      (let* ((sql "SELECT name FROM rw_catalog.rw_functions WHERE name=$1")
+            (res (pg-exec-prepared con sql `((,name . "text"))))
+            (rows (pg-result res :tuples)))
+       (not (null rows))))
+    ;; The routines table only includes user-defined functions (created with CREATE ALIAS), not builtins
+    ('h2
+     (let* ((sql "SELECT 1 FROM information_schema.routines WHERE routine_name=$1")
             (res (pg-exec-prepared con sql `((,name . "text"))))
             (rows (pg-result res :tuples)))
        (not (null rows))))
@@ -4217,8 +4256,9 @@ Only tables to which the current user has access are listed."
     ('arcadedb (pg--tables-arcadedb con))
     ('stoolap (pg--tables-stoolap con))
     ('picodata (pg--tables-picodata con))
+    ('serenedb (pg--tables-serenedb con))
     ('octodb (pg--tables-legacy con))
-    ('serenedb (pg--tables-legacy con))
+    ('h2 (pg--tables-information-schema con))
     ('pgmicro (list))
     (_
      (if (> (pgcon-server-version-major con) 11)
@@ -4292,6 +4332,19 @@ TABLE can be a string or a schema-qualified name. Uses database connection CON."
     ('spanner nil)
     ('questdb nil)
     ('ydb nil)
+    ('h2
+     (let* ((schema (if (pg-qualified-name-p table)
+                        (pg-qualified-name-schema table)
+                      "public"))
+            (tname (if (pg-qualified-name-p table)
+                       (pg-qualified-name-name table)
+                     table))
+            (sql "SELECT remarks FROM information_schema.columns
+                  WHERE table_schema=$1 AND table_name=$2 AND column_name=$3")
+            (res (pg-exec-prepared con sql `((,schema . "text") (,tname . "text") (,column . "text"))))
+            (tuple (pg-result res :tuple 0))
+            (maybe-comment (cl-first tuple)))
+       (if (equal maybe-comment pg-null-marker) nil maybe-comment)))
     ;; RisingWave implements the col_description() function, but annoyingly returns empty values
     ;; even when comments are defined. Comment data is available in the rw_description table.
     ('risingwave
