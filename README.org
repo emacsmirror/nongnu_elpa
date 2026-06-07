@@ -442,6 +442,9 @@ It's rough and unfinished -- no keyboard shortcuts, read-only, no
 authentication, and a narrow entry viewer. This is basically Elfeed's "mobile"
 interface. Patches welcome.
 
+There exists the [[https://github.com/areina/elfeed-cljsrn][elfeed-cljsrn]] Android application to access Elfeed via its web
+API.
+
 ** Platform Support
 
 Summary: Install curl and most problems disappear for all platforms.
@@ -510,7 +513,6 @@ for compatibility are made.
 Many more extensions can be found on MELPA - here is an non-exhaustive list:
 
 - [[https://melpa.org/#/?q=elfeed&sort=downloads&asc=false][Elfeed-related packages on MELPA]]
-- [[https://github.com/areina/elfeed-cljsrn][elfeed-cljsrn (Elfeed on Android)]]
 - [[https://github.com/rtrppl/cuckoo-search][cuckoo-search]]
 - [[https://github.com/benthamite/elfeed-ai][elfeed-ai]]
 - [[https://github.com/paulelms/elfeed-autotag][elfeed-autotag]]
