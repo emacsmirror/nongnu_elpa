@@ -154,15 +154,11 @@ SUCCESS is non-nil when the request succeeded."
 (defun jabber-vcard-avatars-presence-element (jc)
   "Return the vCard-avatar presence child element for connection JC."
   (when jabber-vcard-avatars-publish
-    (let ((hash (gethash
-		 (jabber-connection-bare-jid jc)
-		 jabber-vcard-avatars-current-hash)))
-      (list
-       `(x ((xmlns . ,jabber-vcard-update-xmlns))
-	   ;; if "not yet ready to advertise image", don't.
-	   ;; that is, we haven't yet checked what avatar we have.
-	   ,(when hash
-	      `(photo () ,hash)))))))
+    (when-let* ((hash (gethash
+                       (jabber-connection-bare-jid jc)
+                       jabber-vcard-avatars-current-hash)))
+      `((x ((xmlns . ,jabber-vcard-update-xmlns))
+           (photo () ,hash))))))
 
 (provide 'jabber-vcard-avatars)
 

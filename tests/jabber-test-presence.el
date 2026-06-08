@@ -13,10 +13,40 @@
 (defvar jabber-message-chain nil)
 (defvar jabber-presence-chain nil)
 (defvar jabber-iq-chain nil)
+(defvar *jabber-current-show*)
+(defvar *jabber-current-status*)
+(defvar *jabber-current-priority*)
 
 (require 'jabber-presence)
+(require 'jabber-xml)
 
-;;; Group 1: jabber--roster-valid-push-p
+;;; Group 1: jabber-presence-children
+
+(ert-deftest jabber-test-presence-children-default-omits-nil-elements ()
+  "Default empty status/show presence serializes no nil elements."
+  (let ((*jabber-current-status* "")
+        (*jabber-current-show* "")
+        (*jabber-current-priority* 10)
+        (jabber-presence-element-functions nil))
+    (should (equal (jabber-presence-children nil)
+                   '((priority () "10"))))
+    (should-not (string-match-p
+                 "<nil"
+                 (jabber-sexp2xml
+                  `(presence () ,@(jabber-presence-children nil)))))))
+
+(ert-deftest jabber-test-presence-children-keeps-extension-elements ()
+  "Extension elements returned by presence hooks are preserved."
+  (let ((*jabber-current-status* "")
+        (*jabber-current-show* "")
+        (*jabber-current-priority* nil)
+        (jabber-presence-element-functions
+         (list (lambda (_jc)
+                 '((c ((xmlns . "urn:xmpp:caps"))))))))
+    (should (equal (jabber-presence-children nil)
+                   '((c ((xmlns . "urn:xmpp:caps"))))))))
+
+;;; Group 2: jabber--roster-valid-push-p
 
 (ert-deftest jabber-test-presence-valid-push-nil-from ()
   "Absent from attribute is valid."

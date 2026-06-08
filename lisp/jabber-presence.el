@@ -455,15 +455,19 @@ When JC is nil, send for all connections."
 (defun jabber-presence-children (jc)
   "Return the children for a <presence/> stanza.
 JC is the Jabber connection."
-  `(,(when (> (length *jabber-current-status*) 0)
-       `(status () ,*jabber-current-status*))
-    ,(when (> (length *jabber-current-show*) 0)
-       `(show () ,*jabber-current-show*))
-    ,(when *jabber-current-priority*
-       `(priority () ,(number-to-string *jabber-current-priority*)))
-    ,@(apply #'append (mapcar (lambda (f)
-			        (funcall f jc))
-			      jabber-presence-element-functions))))
+  (append
+   (delq nil
+         (list (when (and *jabber-current-status*
+                          (> (length *jabber-current-status*) 0))
+                 `(status () ,*jabber-current-status*))
+               (when (and *jabber-current-show*
+                          (> (length *jabber-current-show*) 0))
+                 `(show () ,*jabber-current-show*))
+               (when *jabber-current-priority*
+                 `(priority () ,(number-to-string *jabber-current-priority*)))))
+   (apply #'append (mapcar (lambda (f)
+                             (funcall f jc))
+                           jabber-presence-element-functions))))
 
 (defun jabber-send-directed-presence (jc jid type)
   "Send a directed presence stanza to JID.
