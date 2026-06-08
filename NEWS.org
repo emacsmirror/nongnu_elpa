@@ -28,7 +28,7 @@
 
 ** Database
 
-- =elfeed-db-directory=: Change default to =~/.config/emacs/elfeed=. The change is
+- =elfeed-db-directory=: Change default to =~/.emacs.d/elfeed=. The change is
   backward compatible. If =~/.elfeed= is present, it will be used.
 - =elfeed-db-cache-timeout=: New option to keep archive content cache alive.
 - =elfeed-db-save=, =elfeed-db-pack=: Reduce risk for database corruptions by
