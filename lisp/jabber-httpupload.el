@@ -41,6 +41,7 @@
 (require 'cl-lib)
 (require 'fsm)
 (require 'mailcap)
+(require 'subr-x)
 (require 'jabber)
 
 (declare-function jabber-chat-send "jabber-chat.el"
@@ -227,12 +228,15 @@ CALLBACK receives two arguments: the Jabber connection and the item vector."
   (when value
     (replace-regexp-in-string "[\r\n]" "" value)))
 
-(defun jabber-httpupload--child (node child-name)
-  "Return NODE's XEP-0363 child named CHILD-NAME."
+(defun jabber-httpupload--child (node child-name &optional inherited-namespace)
+  "Return NODE's XEP-0363 child named CHILD-NAME.
+When INHERITED-NAMESPACE is non-nil, children without an explicit
+xmlns inherit it from NODE."
   (cl-find-if (lambda (child)
                 (and (eq (jabber-xml-node-name child) child-name)
-                     (string= (jabber-xml-get-attribute child 'xmlns)
-                              jabber-httpupload-xmlns)))
+                     (let ((xmlns (jabber-xml-get-attribute child 'xmlns)))
+                       (string= (or xmlns inherited-namespace)
+                                jabber-httpupload-xmlns))))
               (jabber-xml-get-children node child-name)))
 
 (defun jabber-httpupload-parse-slot-answer (xml-data)
@@ -241,8 +245,10 @@ Return ((put-url . ((header-name . header-value) ...)) get-url).
 Header names are matched case-insensitively and newlines are
 stripped from both names and values per XEP-0363 Section 11."
   (let* ((slot (jabber-httpupload--child xml-data 'slot))
-         (put (and slot (jabber-httpupload--child slot 'put)))
-         (get (and slot (jabber-httpupload--child slot 'get)))
+         (put (and slot (jabber-httpupload--child
+                         slot 'put jabber-httpupload-xmlns)))
+         (get (and slot (jabber-httpupload--child
+                         slot 'get jabber-httpupload-xmlns)))
          (put-url (jabber-xml-get-attribute put 'url))
          (get-url (jabber-xml-get-attribute get 'url)))
     (unless (and put-url get-url)
@@ -272,49 +278,114 @@ stripped from both names and values per XEP-0363 Section 11."
   (member (plist-get (fsm-get-state-data jc) :server)
           jabber-invalid-certificate-servers))
 
-(defun jabber-httpupload--curl-sentinel (process event callback callback-arg)
-  "Handle curl upload PROCESS EVENT.
-Call CALLBACK with CALLBACK-ARG only when curl exits with status zero."
+(defun jabber-httpupload--curl-header-args (headers &optional redact)
+  "Return curl -H arguments for HEADERS.
+When REDACT is non-nil, omit header values from the returned arguments."
+  (cl-loop for (name . value) in headers
+           append (list "-H" (format "%s: %s" name
+                                     (if redact "<redacted>" value)))))
+
+(defun jabber-httpupload--curl-command (curl-path filepath headers put-url
+                                                  ignore-cert-problems
+                                                  &optional redact)
+  "Return a CURL-PATH command for FILEPATH, HEADERS, and PUT-URL.
+IGNORE-CERT-PROBLEMS adds curl's insecure certificate option.
+REDACT omits header values from the command."
+  `(,curl-path
+    ,@(and ignore-cert-problems '("--insecure"))
+    "--fail" "--upload-file" ,filepath
+    ,@(jabber-httpupload--curl-header-args headers redact)
+    ,put-url))
+
+(defun jabber-httpupload--curl-buffer-tail (process)
+  "Return a short sanitized tail from PROCESS buffer, or nil."
+  (when-let* ((buffer (process-buffer process))
+              ((buffer-live-p buffer)))
+    (with-current-buffer buffer
+      (let* ((end (point-max))
+             (start (max (point-min) (- end 500)))
+             (tail (string-trim
+                    (buffer-substring-no-properties start end))))
+        (unless (string-empty-p tail)
+          (let ((case-fold-search t))
+            (replace-regexp-in-string
+             "\\(Authorization\\|Cookie\\)[[:space:]]*:[[:space:]]*.*"
+             "\\1: <redacted>" tail)))))))
+
+(defun jabber-httpupload--curl-status-message (process-status exit-status)
+  "Return a curl failure status message for PROCESS-STATUS and EXIT-STATUS."
+  (pcase process-status
+    ('exit (format "exit status %s" exit-status))
+    ('signal (format "signal status %s" exit-status))
+    (_ (format "%s status %s" process-status exit-status))))
+
+(defun jabber-httpupload--curl-failure-message (filename process-status
+                                                         exit-status event tail)
+  "Return a curl failure message.
+FILENAME, PROCESS-STATUS, EXIT-STATUS, EVENT, and TAIL describe the failure."
+  (string-join
+   (delq nil
+         (list (format "HTTP Upload failed for %s: %s"
+                       filename
+                       (jabber-httpupload--curl-status-message
+                        process-status exit-status))
+               (format "event: %s" (string-trim event))
+               (and tail (format "curl output: %s" tail))))
+   "; "))
+
+(defun jabber-httpupload--curl-log-sentinel (process event)
+  "Append curl PROCESS sentinel EVENT to its buffer."
   (when (buffer-live-p (process-buffer process))
     (with-current-buffer (process-buffer process)
       (let ((inhibit-read-only t))
         (goto-char (point-max))
-        (insert (format "Sentinel: %S\n" event)))))
-  (when (memq (process-status process) '(exit signal))
-    (let ((status (process-exit-status process)))
-      (if (zerop status)
-          (funcall callback callback-arg)
-        (message "HTTP Upload failed: curl exited with status %s (%s)"
-                 status (string-trim event))))))
+        (insert (format "Sentinel: %S\n" event))))))
+
+(defun jabber-httpupload--curl-sentinel (process event callback callback-arg)
+  "Handle curl upload PROCESS EVENT.
+Call CALLBACK with CALLBACK-ARG only when curl exits with status zero."
+  (let ((tail (jabber-httpupload--curl-buffer-tail process)))
+    (jabber-httpupload--curl-log-sentinel process event)
+    (when (memq (process-status process) '(exit signal))
+      (let ((process-status (process-status process))
+            (exit-status (process-exit-status process)))
+        (if (and (eq process-status 'exit) (zerop exit-status))
+            (funcall callback callback-arg)
+          (message "%s"
+                   (jabber-httpupload--curl-failure-message
+                    (or (process-get process :jabber-httpupload-filename)
+                        "unknown file")
+                    process-status exit-status event tail)))))))
 
 (defun jabber-httpupload-put-file-curl (filepath headers put-url
-						 callback callback-arg
-						 &optional ignore-cert-problems)
+                                                 callback callback-arg
+                                                 &optional ignore-cert-problems)
   "Upload FILEPATH to PUT-URL via curl with HEADERS.
 When done, call (funcall CALLBACK CALLBACK-ARG).
 IGNORE-CERT-PROBLEMS allows connecting to servers with invalid
 certificates.  Return the process on success, nil if curl is not found."
   (when-let* ((curl-path (executable-find "curl")))
-    (let ((buffer (get-buffer-create "*jabber-httpupload-curl*"))
-          (command
-           `("--fail" "--upload-file" ,filepath
-             ,@(cl-loop for (name . value) in headers
-                        append (list "-H" (format "%s: %s" name value)))
-             ,put-url)))
-      (when ignore-cert-problems
-        (push "--insecure" command))
-      (push curl-path command)
+    (let* ((buffer (get-buffer-create "*jabber-httpupload-curl*"))
+           (command (jabber-httpupload--curl-command
+                     curl-path filepath headers put-url ignore-cert-problems))
+           (logged-command (jabber-httpupload--curl-command
+                            curl-path filepath headers put-url
+                            ignore-cert-problems t)))
       (with-current-buffer buffer
         (let ((inhibit-read-only t))
           (goto-char (point-max))
           (insert (format "%s Uploading with curl:\n%S\n"
-                          (current-time-string) command))))
-      (make-process :name "jabber-httpupload-curl"
-                    :buffer buffer
-                    :command command
-                    :sentinel (lambda (process event)
-                                (jabber-httpupload--curl-sentinel
-                                 process event callback callback-arg))))))
+                          (current-time-string) logged-command))))
+      (let ((process
+             (make-process :name "jabber-httpupload-curl"
+                           :buffer buffer
+                           :command command
+                           :sentinel (lambda (process event)
+                                       (jabber-httpupload--curl-sentinel
+                                        process event callback callback-arg)))))
+        (process-put process :jabber-httpupload-filename
+                     (file-name-nondirectory filepath))
+        process))))
 
 ;; Core upload pipeline
 

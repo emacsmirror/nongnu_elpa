@@ -28,6 +28,19 @@
                       ("Authorization" . "Bearer token"))
                      "https://download.example.net/file")))))
 
+(ert-deftest jabber-test-httpupload-parse-slot-answer-inherited-namespace ()
+  (let* ((slot `(iq ()
+                    (slot ((xmlns . ,jabber-httpupload-xmlns))
+                          (get ((url . "https://download.example.net/file")))
+                          (put ((url . "https://upload.example.net/file"))
+                               (header ((name . "Authorization"))
+                                       "Bearer token")))))
+         (result (jabber-httpupload-parse-slot-answer slot)))
+    (should (equal result
+                   '(("https://upload.example.net/file"
+                      ("Authorization" . "Bearer token"))
+                     "https://download.example.net/file")))))
+
 (ert-deftest jabber-test-httpupload-parse-slot-rejects-wrong-namespace ()
   (let ((slot '(iq ()
                    (slot ((xmlns . "urn:xmpp:other"))
@@ -130,23 +143,90 @@
         (called nil)
         (messages nil))
     (unwind-protect
-        (cl-letf (((symbol-function 'process-buffer)
-                   (lambda (_process) buffer))
-                  ((symbol-function 'process-status)
-                   (lambda (_process) 'exit))
-                  ((symbol-function 'process-exit-status)
-                   (lambda (_process) 22))
-                  ((symbol-function 'message)
-                   (lambda (format-string &rest args)
-                     (push (apply #'format format-string args) messages))))
-          (jabber-httpupload--curl-sentinel
-           'process "exited abnormally with code 22\n"
-           (lambda (_arg)
-             (setq called t))
-           'done)
-          (should-not called)
-          (should (equal messages
-                         '("HTTP Upload failed: curl exited with status 22 (exited abnormally with code 22)"))))
+        (progn
+          (with-current-buffer buffer
+            (insert "curl: (22) upload rejected\nAuthorization: Bearer secret\n"))
+          (cl-letf (((symbol-function 'process-buffer)
+                     (lambda (_process) buffer))
+                    ((symbol-function 'process-status)
+                     (lambda (_process) 'exit))
+                    ((symbol-function 'process-exit-status)
+                     (lambda (_process) 22))
+                    ((symbol-function 'process-get)
+                     (lambda (_process prop)
+                       (and (eq prop :jabber-httpupload-filename)
+                            "file.jpg")))
+                    ((symbol-function 'message)
+                     (lambda (format-string &rest args)
+                       (push (apply #'format format-string args) messages))))
+            (jabber-httpupload--curl-sentinel
+             'process "exited abnormally with code 22\n"
+             (lambda (_arg)
+               (setq called t))
+             'done)
+            (should-not called)
+            (should (equal messages
+                           '("HTTP Upload failed for file.jpg: exit status 22; event: exited abnormally with code 22; curl output: curl: (22) upload rejected
+Authorization: <redacted>")))))
+      (kill-buffer buffer))))
+
+(ert-deftest jabber-test-httpupload-curl-sentinel-reports-signal ()
+  "Curl sentinel reports signal status without calling its callback."
+  (let ((called nil)
+        (messages nil))
+    (cl-letf (((symbol-function 'process-buffer)
+               (lambda (_process) nil))
+              ((symbol-function 'process-status)
+               (lambda (_process) 'signal))
+              ((symbol-function 'process-exit-status)
+               (lambda (_process) 15))
+              ((symbol-function 'process-get)
+               (lambda (_process prop)
+                 (and (eq prop :jabber-httpupload-filename)
+                      "file.jpg")))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (jabber-httpupload--curl-sentinel
+       'process "killed\n"
+       (lambda (_arg)
+         (setq called t))
+       'done)
+      (should-not called)
+      (should (equal messages
+                     '("HTTP Upload failed for file.jpg: signal status 15; event: killed"))))))
+
+(ert-deftest jabber-test-httpupload-curl-log-redacts-header-values ()
+  "Curl process log omits request header values."
+  (let ((buffer (generate-new-buffer " *jabber-curl-test*"))
+        command)
+    (unwind-protect
+        (cl-letf (((symbol-function 'executable-find)
+                   (lambda (_program) "/bin/curl"))
+                  ((symbol-function 'get-buffer-create)
+                   (lambda (_name) buffer))
+                  ((symbol-function 'make-process)
+                   (lambda (&rest args)
+                     (setq command (plist-get args :command))
+                     'process))
+                  ((symbol-function 'process-put)
+                   (lambda (&rest _args) nil)))
+          (should
+           (jabber-httpupload-put-file-curl
+            "/tmp/file.jpg"
+            '(("Authorization" . "Bearer secret")
+              ("Cookie" . "sid=secret")
+              ("content-type" . "image/jpeg"))
+            "https://upload.example.net/file.jpg"
+            #'ignore 'done))
+          (should (member "Authorization: Bearer secret" command))
+          (with-current-buffer buffer
+            (let ((log (buffer-string)))
+              (should (string-match-p "Authorization: <redacted>" log))
+              (should (string-match-p "Cookie: <redacted>" log))
+              (should-not (string-match-p "Bearer secret" log))
+              (should-not (string-match-p "sid=secret" log))
+              (should-not (string-match-p "image/jpeg" log)))))
       (kill-buffer buffer))))
 
 ;;; Discovery
