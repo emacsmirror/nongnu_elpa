@@ -162,6 +162,9 @@ previous sequence detect the mismatch and stop.")
 (declare-function jabber-correct-last-message "jabber-message-correct" ())
 (declare-function jabber-chat-cancel-reply "jabber-message-reply" ())
 (declare-function jabber-reactions-react-at-point-or-insert "jabber-reactions" ())
+(declare-function jabber-chat-image-enlarge-or-self-insert "jabber-chat" (n))
+(declare-function jabber-chat-image-shrink-or-self-insert "jabber-chat" (n))
+(declare-function jabber-chat-image-reset-size-or-self-insert "jabber-chat" (n))
 
 ;;
 
@@ -496,6 +499,10 @@ MAM sync in this buffer.  Set via the operations menu.")
   "C-c C-m" #'jabber-muc-menu
   "C-c C-r" #'jabber-chat-reply
   "C-c C-k" #'jabber-chat-cancel-reply
+  "+" #'jabber-chat-image-enlarge-or-self-insert
+  "=" #'jabber-chat-image-enlarge-or-self-insert
+  "-" #'jabber-chat-image-shrink-or-self-insert
+  "0" #'jabber-chat-image-reset-size-or-self-insert
   "!" #'jabber-reactions-react-at-point-or-insert)
 
 (define-derived-mode jabber-chat-mode fundamental-mode "jabber-chat"

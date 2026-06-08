@@ -431,7 +431,124 @@
   ;; The old typo should not exist
   (should-not (boundp 'jaber-chat-much-presence-patterns-history)))
 
-;;; Group 10: jabber-chat-create-buffer
+;;; Group 10: inline image resizing
+
+(defmacro jabber-test-chat-with-inline-image (&rest body)
+  "Run BODY in a temp buffer containing one inline image URL."
+  (declare (indent 0) (debug t))
+  `(let ((jabber-chat--image-recenter-timer nil))
+     (with-temp-buffer
+       (let* ((url "https://example.com/image.png")
+              (image (list 'image :type 'png :max-width 300 :max-height 200)))
+         (insert url)
+         (cl-letf (((symbol-function 'jabber-chat--schedule-image-recenter)
+                    #'ignore))
+           (jabber-chat--apply-image-display image (point-min) (point-max) url)
+           (put-text-property (point-min) (point-max) 'read-only t)
+           (goto-char (point-min))
+           ,@body)))))
+
+(ert-deftest jabber-test-chat-image-range-at-point-finds-display ()
+  "Inline image range lookup returns URL, base image, and scale."
+  (jabber-test-chat-with-inline-image
+    (let ((range (jabber-chat--image-range-at-point)))
+      (should (= (point-min) (plist-get range :beg)))
+      (should (= (point-max) (plist-get range :end)))
+      (should (equal url (plist-get range :url)))
+      (should (eq image (plist-get range :image)))
+      (should (= 1.0 (plist-get range :scale))))))
+
+(ert-deftest jabber-test-chat-image-range-at-point-supports-loaded-image ()
+  "Inline image range lookup supports images rendered before reload."
+  (jabber-test-chat-with-inline-image
+    (let ((inhibit-read-only t))
+      (remove-text-properties (point-min) (point-max)
+                              '(jabber-chat-image-base nil
+                                jabber-chat-image-scale nil)))
+    (let ((range (jabber-chat--image-range-at-point)))
+      (should (equal url (plist-get range :url)))
+      (should (eq (get-text-property (point) 'display)
+                  (plist-get range :image)))
+      (should (= 1.0 (plist-get range :scale))))))
+
+(ert-deftest jabber-test-chat-image-enlarge-shrink-and-reset ()
+  "Image resize commands update range-local scale."
+  (jabber-test-chat-with-inline-image
+    (cl-letf (((symbol-function 'message) #'ignore))
+      (jabber-chat-image-enlarge)
+      (should (= jabber-chat--image-scale-step
+                 (get-text-property (point) 'jabber-chat-image-scale)))
+      (jabber-chat-image-shrink)
+      (should (= 1.0 (get-text-property (point) 'jabber-chat-image-scale)))
+      (jabber-chat-image-shrink)
+      (should (< (get-text-property (point) 'jabber-chat-image-scale) 1.0))
+      (jabber-chat-image-reset-size)
+      (should (= 1.0 (get-text-property (point) 'jabber-chat-image-scale))))))
+
+(ert-deftest jabber-test-chat-inline-image-keys-active-at-point ()
+  "Inline image resize keys are active through text properties."
+  (jabber-test-chat-with-inline-image
+    (should (eq (key-binding (kbd "+") nil nil (point))
+                #'jabber-chat-image-enlarge))
+    (should (eq (key-binding (kbd "=") nil nil (point))
+                #'jabber-chat-image-enlarge))
+    (should (eq (key-binding (kbd "-") nil nil (point))
+                #'jabber-chat-image-shrink))
+    (should (eq (key-binding (kbd "0") nil nil (point))
+                #'jabber-chat-image-reset-size))))
+
+(defun jabber-test-chat--dispatch-key (key)
+  "Dispatch KEY using the active keymaps at point."
+  (let ((command (key-binding (kbd key) nil nil (point)))
+        (last-command-event (string-to-char key)))
+    (call-interactively command)))
+
+(ert-deftest jabber-test-chat-minus-key-shrinks-inline-image-via-command-loop ()
+  "Pressing - in `jabber-chat-mode' shrinks images via normal dispatch."
+  (jabber-test-chat-with-inline-image
+    (jabber-chat-mode)
+    (cl-letf (((symbol-function 'message) #'ignore))
+      (jabber-test-chat--dispatch-key "-")
+      (should (< (get-text-property (point) 'jabber-chat-image-scale) 1.0))
+      (should (string= url (buffer-substring-no-properties
+                            (point-min) (point-max)))))))
+
+(ert-deftest jabber-test-chat-mode-map-enlarge-and-zero-resize-inline-image ()
+  "The mode-map +, =, and 0 bindings dispatch to inline image resizing."
+  (jabber-test-chat-with-inline-image
+    (jabber-chat-mode)
+    (cl-letf (((symbol-function 'message) #'ignore))
+      (jabber-test-chat--dispatch-key "+")
+      (should (= jabber-chat--image-scale-step
+                 (get-text-property (point) 'jabber-chat-image-scale)))
+      (jabber-test-chat--dispatch-key "0")
+      (should (= 1.0 (get-text-property (point) 'jabber-chat-image-scale)))
+      (jabber-test-chat--dispatch-key "=")
+      (should (= jabber-chat--image-scale-step
+                 (get-text-property (point) 'jabber-chat-image-scale))))))
+
+(ert-deftest jabber-test-chat-mode-map-resize-keys-self-insert-off-image ()
+  "The mode-map resize keys self-insert outside inline images."
+  (with-temp-buffer
+    (jabber-chat-mode)
+    (dolist (key '("-" "+" "=" "0"))
+      (jabber-test-chat--dispatch-key key))
+    (should (string= "-+=0" (buffer-string)))
+    (let ((current-prefix-arg 3))
+      (jabber-test-chat--dispatch-key "-"))
+    (should (string= "-+=0---" (buffer-string)))))
+
+(ert-deftest jabber-test-chat-scaled-image-does-not-mutate-base ()
+  "Scaling copies the image object instead of mutating the cached image."
+  (let* ((image (list 'image :type 'png :max-width 300 :max-height 200))
+         (scaled (jabber-chat--scaled-image image 2.0)))
+    (should (not (eq image scaled)))
+    (should (= 300 (image-property image :max-width)))
+    (should (= 200 (image-property image :max-height)))
+    (should (= 600 (image-property scaled :max-width)))
+    (should (= 400 (image-property scaled :max-height)))))
+
+;;; Group 11: jabber-chat-create-buffer
 
 (ert-deftest jabber-test-chat-create-buffer-notifies-mam-on-create-and-reopen ()
   "Creating and reopening a chat buffer each notify MAM once."

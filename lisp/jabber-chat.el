@@ -1475,8 +1475,22 @@ with the created image (or nil) followed by CBARGS."
     map)
   "Keymap active on inline images and downloadable URLs in chat buffers.")
 
+(define-key jabber-chat-url-keymap "+" #'jabber-chat-image-enlarge)
+(define-key jabber-chat-url-keymap "=" #'jabber-chat-image-enlarge)
+(define-key jabber-chat-url-keymap "-" #'jabber-chat-image-shrink)
+(define-key jabber-chat-url-keymap "0" #'jabber-chat-image-reset-size)
+
 (defvar jabber-chat--image-cache (make-hash-table :test 'equal)
   "Session-local cache mapping image URLs to Emacs image objects.")
+
+(defconst jabber-chat--image-scale-step 1.25
+  "Multiplier used by inline image resize commands.")
+
+(defconst jabber-chat--image-min-scale 0.25
+  "Smallest inline image scale factor.")
+
+(defconst jabber-chat--image-max-scale 4.0
+  "Largest inline image scale factor.")
 
 (defvar-local jabber-chat--image-recenter-timer nil
   "Timer for recentering after inline image display changes.")
@@ -1589,18 +1603,45 @@ For aesgcm:// URLs, fetches via HTTPS and decrypts with AES-256-GCM."
    'silent
    'inhibit-cookies))
 
-(defun jabber-chat--apply-image-display (image beg end url)
+(defun jabber-chat--clamp-image-scale (scale)
+  "Clamp SCALE to the allowed inline image scale range."
+  (min jabber-chat--image-max-scale
+       (max jabber-chat--image-min-scale scale)))
+
+(defun jabber-chat--base-image-size (image)
+  "Return IMAGE's base max size as (WIDTH . HEIGHT)."
+  (cons (or (image-property image :max-width) jabber-image-max-width)
+        (or (image-property image :max-height) jabber-image-max-height)))
+
+(defun jabber-chat--scaled-image (image scale)
+  "Return a copy of IMAGE scaled by SCALE.
+The original IMAGE object is not modified."
+  (let* ((scaled (copy-sequence image))
+         (size (jabber-chat--base-image-size image))
+         (scale (jabber-chat--clamp-image-scale scale)))
+    (setf (image-property scaled :max-width)
+          (max 1 (round (* (car size) scale))))
+    (setf (image-property scaled :max-height)
+          (max 1 (round (* (cdr size) scale))))
+    scaled))
+
+(defun jabber-chat--apply-image-display (image beg end url &optional scale)
   "Display IMAGE over URL text from BEG to END.
-Preserve the underlying URL text so refresh/redraw can redisplay it."
-  (add-text-properties
-   beg end
-   (list 'display image
-         'jabber-chat-image-url url
-         'keymap jabber-chat-url-keymap
-         'jabber-chat-image-fetching nil
-         'rear-nonsticky t))
-  (jabber-chat--schedule-image-recenter)
-  image)
+Preserve the underlying URL text so refresh/redraw can redisplay it.
+SCALE defaults to 1.0 and is stored on the displayed range."
+  (let* ((scale (jabber-chat--clamp-image-scale (or scale 1.0)))
+         (display-image (jabber-chat--scaled-image image scale))
+         (inhibit-read-only t))
+    (add-text-properties
+     beg end
+     (list 'display display-image
+           'jabber-chat-image-url url
+           'jabber-chat-image-base image
+           'jabber-chat-image-scale scale
+           'jabber-chat-image-fetching nil))
+    (jabber-chat--add-url-keymap beg end)
+    (jabber-chat--schedule-image-recenter)
+    display-image))
 
 (defun jabber-chat--cache-image (url image)
   "Cache IMAGE for URL and return IMAGE."
@@ -1613,10 +1654,94 @@ Return non-nil when a cached image was applied."
   (when-let* ((image (gethash url jabber-chat--image-cache)))
     (jabber-chat--apply-image-display image beg end url)))
 
+(defun jabber-chat--image-range-at-point (&optional position)
+  "Return inline image data at POSITION as a plist, or nil.
+The plist contains :beg, :end, :url, :image, and :scale."
+  (let* ((position (or position (point)))
+         (url (get-text-property position 'jabber-chat-image-url))
+         (display (get-text-property position 'display))
+         (image (or (get-text-property position 'jabber-chat-image-base)
+                    display)))
+    (when (and url image display)
+      (let ((beg (or (previous-single-property-change
+                      (1+ position) 'jabber-chat-image-url)
+                     (point-min)))
+            (end (or (next-single-property-change
+                      position 'jabber-chat-image-url)
+                     (point-max))))
+        (list :beg beg
+              :end end
+              :url url
+              :image image
+              :scale (or (get-text-property position 'jabber-chat-image-scale)
+                         1.0))))))
+
+(defun jabber-chat--resize-image-at-point (scale-fn)
+  "Resize inline image at point using SCALE-FN."
+  (if-let* ((range (jabber-chat--image-range-at-point)))
+      (let* ((old-scale (plist-get range :scale))
+             (new-scale (jabber-chat--clamp-image-scale
+                         (funcall scale-fn old-scale))))
+        (jabber-chat--apply-image-display
+         (plist-get range :image)
+         (plist-get range :beg)
+         (plist-get range :end)
+         (plist-get range :url)
+         new-scale)
+        (message "Image scale: %.0f%%" (* 100 new-scale)))
+    (user-error "No inline image at point")))
+
+(defun jabber-chat-image-enlarge ()
+  "Enlarge the inline image at point."
+  (interactive)
+  (jabber-chat--resize-image-at-point
+   (lambda (scale) (* scale jabber-chat--image-scale-step))))
+
+(defun jabber-chat-image-shrink ()
+  "Shrink the inline image at point."
+  (interactive)
+  (jabber-chat--resize-image-at-point
+   (lambda (scale) (/ scale jabber-chat--image-scale-step))))
+
+(defun jabber-chat-image-reset-size ()
+  "Reset the inline image at point to its default size."
+  (interactive)
+  (jabber-chat--resize-image-at-point (lambda (_) 1.0)))
+
+(defun jabber-chat--image-command-or-self-insert (command n)
+  "Call image COMMAND at point, or fall back to `self-insert-command'.
+N is passed to `self-insert-command' when point is not on an inline image."
+  (if (jabber-chat--image-range-at-point)
+      (call-interactively command)
+    (self-insert-command n)))
+
+(defun jabber-chat-image-enlarge-or-self-insert (n)
+  "Enlarge image at point, or insert the typed character N times."
+  (interactive "p")
+  (jabber-chat--image-command-or-self-insert #'jabber-chat-image-enlarge n))
+
+(defun jabber-chat-image-shrink-or-self-insert (n)
+  "Shrink image at point, or insert the typed character N times."
+  (interactive "p")
+  (jabber-chat--image-command-or-self-insert #'jabber-chat-image-shrink n))
+
+(defun jabber-chat-image-reset-size-or-self-insert (n)
+  "Reset image at point, or insert the typed character N times."
+  (interactive "p")
+  (jabber-chat--image-command-or-self-insert #'jabber-chat-image-reset-size n))
+
 (defun jabber-chat--image-displayed-p (beg url)
   "Return non-nil when BEG already displays URL image."
   (and (get-text-property beg 'display)
        (equal (get-text-property beg 'jabber-chat-image-url) url)))
+
+(defun jabber-chat--add-url-keymap (beg end)
+  "Put the chat URL keymap on text from BEG to END."
+  (add-text-properties
+   beg end
+   (list 'local-map jabber-chat-url-keymap
+         'keymap jabber-chat-url-keymap
+         'rear-nonsticky t)))
 
 (defun jabber-chat--image-fetching-p (beg url)
   "Return non-nil when BEG is already marked as fetching URL."
@@ -1627,9 +1752,8 @@ Return non-nil when a cached image was applied."
   (add-text-properties
    beg end
    (list 'jabber-chat-image-url url
-         'jabber-chat-image-fetching url
-         'keymap jabber-chat-url-keymap
-         'rear-nonsticky t)))
+         'jabber-chat-image-fetching url))
+  (jabber-chat--add-url-keymap beg end))
 
 (defun jabber-chat--replace-url-with-image (image url beg end buffer)
   "Display fetched IMAGE over URL text between markers BEG and END.
@@ -1694,6 +1818,7 @@ Preserve URL text and restore cached images without refetching."
                 (insert "\n"))
               (setq url-beg (1+ url-beg)
                     url-end (1+ url-end)))
+            (jabber-chat--add-url-keymap url-beg url-end)
             (unless (jabber-chat--image-displayed-p url-beg url)
               (unless (jabber-chat--restore-cached-image url url-beg url-end)
                 (unless (jabber-chat--image-fetching-p url-beg url)
@@ -1751,8 +1876,7 @@ exists when we set our keymap as its parent."
                     (if ov
                         (set-keymap-parent (overlay-get ov 'keymap)
                                            jabber-chat-url-keymap)
-                      (put-text-property beg end 'keymap
-                                         jabber-chat-url-keymap))))))))))))
+                      (jabber-chat--add-url-keymap beg end))))))))))))
 
 (defconst jabber-chat--aesgcm-url-re
   "aesgcm://[^ \t\n<>\"#]+#\\(?:[[:xdigit:]]\\{88\\}\\|[[:xdigit:]]\\{96\\}\\)\\b"
@@ -1775,7 +1899,7 @@ Skips URLs already handled by the image scanner."
             (unless (or (get-text-property beg 'jabber-chat-file-url)
                         (jabber-chat--image-url-p url))
               (put-text-property beg url-end 'jabber-chat-file-url url)
-              (put-text-property beg url-end 'keymap jabber-chat-url-keymap)
+              (jabber-chat--add-url-keymap beg url-end)
               (add-face-text-property beg url-end 'link t))))))))
 
 ;; jabber-compose is autoloaded in jabber.el
