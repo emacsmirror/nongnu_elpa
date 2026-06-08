@@ -446,6 +446,7 @@ number of messages that will be affected."
       (let ((labels (vm-labels-of m)))
         (when (member label labels)
           (vm-set-labels m (delete label (copy-sequence labels)))
+          (vm-set-attribute-modflag-of m t)
           (setq count (1+ count)))))
     ;; Remove from folder's label obarray (record undo to re-intern it)
     (vm-undo-record (list 'intern label 'vm-label-obarray))
