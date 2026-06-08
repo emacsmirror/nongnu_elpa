@@ -780,10 +780,38 @@ or nil if the message was a duplicate."
         (when sid (puthash sid node jabber-chat--msg-nodes))
         node))))
 
+(defun jabber-chat-ewoc--msg-matches-id-p (msg stanza-id)
+  "Return non-nil when MSG has STANZA-ID as :id or :server-id."
+  (and (listp msg)
+       (or (equal stanza-id (plist-get msg :id))
+           (equal stanza-id (plist-get msg :server-id)))))
+
+(defun jabber-chat-ewoc--find-by-id-scan (stanza-id)
+  "Scan `jabber-chat-ewoc' for a node matching STANZA-ID."
+  (let ((node (and jabber-chat-ewoc (ewoc-nth jabber-chat-ewoc 0)))
+        found)
+    (while (and node (not found))
+      (if (jabber-chat-ewoc--msg-matches-id-p
+           (cadr (ewoc-data node)) stanza-id)
+          (setq found node)
+        (setq node (ewoc-next jabber-chat-ewoc node))))
+    found))
+
+(defun jabber-chat-ewoc--backfill-node-ids (node)
+  "Backfill non-nil message IDs from NODE into `jabber-chat--msg-nodes'."
+  (let* ((msg (cadr (ewoc-data node)))
+         (id (and (listp msg) (plist-get msg :id)))
+         (sid (and (listp msg) (plist-get msg :server-id))))
+    (when id (puthash id node jabber-chat--msg-nodes))
+    (when sid (puthash sid node jabber-chat--msg-nodes))))
+
 (defun jabber-chat-ewoc-find-by-id (stanza-id)
   "Return the ewoc node for STANZA-ID, or nil."
   (when (and stanza-id jabber-chat--msg-nodes)
-    (gethash stanza-id jabber-chat--msg-nodes)))
+    (or (gethash stanza-id jabber-chat--msg-nodes)
+        (when-let* ((node (jabber-chat-ewoc--find-by-id-scan stanza-id)))
+          (jabber-chat-ewoc--backfill-node-ids node)
+          node))))
 
 (defun jabber-chat-ewoc-invalidate (node)
   "Redraw ewoc NODE without recording undo."

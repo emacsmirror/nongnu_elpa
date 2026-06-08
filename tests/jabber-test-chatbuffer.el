@@ -131,6 +131,19 @@
            (node (jabber-chat-ewoc-enter (list :foreign msg))))
       (should (eq node (jabber-chat-ewoc-find-by-id "find-me"))))))
 
+(ert-deftest jabber-test-chatbuffer-find-by-id-scans-and-backfills-server-id ()
+  "Looking up a stale missing :server-id scans EWOC and backfills it."
+  (jabber-test-chatbuffer-with-ewoc
+    (let* ((msg (list :id "local-id" :server-id "server-id"
+                      :body "test" :timestamp (current-time)))
+           (node (jabber-chat-ewoc-enter (list :foreign msg))))
+      (remhash "server-id" jabber-chat--msg-nodes)
+      (should (gethash "local-id" jabber-chat--msg-nodes))
+      (should-not (gethash "server-id" jabber-chat--msg-nodes))
+      (should (eq node (jabber-chat-ewoc-find-by-id "server-id")))
+      (should (eq node (gethash "local-id" jabber-chat--msg-nodes)))
+      (should (eq node (gethash "server-id" jabber-chat--msg-nodes))))))
+
 (ert-deftest jabber-test-chatbuffer-find-by-id-returns-nil-for-missing ()
   "Looking up a nonexistent ID returns nil."
   (jabber-test-chatbuffer-with-ewoc
