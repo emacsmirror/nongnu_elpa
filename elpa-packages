@@ -314,9 +314,7 @@
   )
 
  (flamegraph :url "https://github.com/dgutov/emacs-flamegraph"
-             :readme "README.md"
-             :renames (("docs/" ""))
-             :ignored-files ("test" "LICENSE" "Makefile"))
+             :readme "README.md")
 
  (flx			:url "https://github.com/lewang/flx"
   :readme "README.md"
