@@ -648,7 +648,11 @@ content is stored in the entry metadata under the key :link-content."
   "Show the bookmarked entry saved in the `RECORD'."
   (let ((elfeed-show-entry-switch #'switch-to-buffer))
     (elfeed-show-entry (elfeed-db-get-entry (bookmark-prop-get record 'id))))
-  (goto-char (bookmark-get-position record)))
+  ;; Move to position and recenter. The `run-at-time' delay is needed since
+  ;; `elfeed-show-entry' scrolls to the top.
+  (run-at-time 0 nil (lambda ()
+                       (goto-char (bookmark-get-position record))
+                       (recenter))))
 (put 'elfeed-show-bookmark-handler 'bookmark-handler-type "Elfeed")
 
 (defun elfeed-show-bookmark-make-record ()
