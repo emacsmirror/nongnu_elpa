@@ -351,7 +351,7 @@ the browser defined by `browse-url-secondary-browser-function'."
   #'elfeed-show-enclosure-filename-remote
   "Function called to generate the filename for an enclosure.")
 
-(defun elfeed--download-enclosure (url path)
+(defun elfeed-show--download-enclosure (url path)
   "Download asynchronously the enclosure from URL to PATH."
   (if elfeed-use-curl
       (make-process
@@ -369,7 +369,7 @@ the browser defined by `browse-url-secondary-browser-function'."
     (url-copy-file url path t))
   nil)
 
-(defun elfeed--get-enclosure-num (prompt entry &optional multi)
+(defun elfeed-show--get-enclosure-num (prompt entry &optional multi)
   "Ask the user with PROMPT for an enclosure number for ENTRY.
 The number is [1..n] for enclosures \[0..(n-1)] in the entry.  If MULTI
 is nil, return the number for the enclosure; otherwise (MULTI is
@@ -387,7 +387,7 @@ non-nil), accept ranges of enclosure numbers, as per
       (read-string (format "%s (default %s): " prompt def)
                    nil nil def))))
 
-(defun elfeed--request-enclosure-path (fname path)
+(defun elfeed-show--request-enclosure-path (fname path)
   "Ask the user where to save FNAME (default is PATH/FNAME)."
   (let ((fpath (expand-file-name
                 (read-file-name "Save as: " path nil nil fname) path)))
@@ -395,7 +395,7 @@ non-nil), accept ranges of enclosure numbers, as per
         (expand-file-name fname fpath)
       fpath)))
 
-(defun elfeed--request-enclosures-dir (path)
+(defun elfeed-show--request-enclosures-dir (path)
   "Ask the user where to save multiple enclosures (default is PATH)."
   (let ((fpath (expand-file-name
                 (read-directory-name
@@ -418,7 +418,7 @@ If ENCLOSURE-INDEX is nil ask for the enclosure number."
   (let* ((path (expand-file-name elfeed-enclosure-default-dir))
          (entry (or entry elfeed-show-entry))
          (enclosure-index (or enclosure-index
-                              (elfeed--get-enclosure-num
+                              (elfeed-show--get-enclosure-num
                                "Enclosure to save" entry)))
          (url-enclosure (car (elt (elfeed-entry-enclosures entry)
                                   (- enclosure-index 1))))
@@ -428,10 +428,10 @@ If ENCLOSURE-INDEX is nil ask for the enclosure number."
          (retry t)
          (fpath))
     (while retry
-      (setf fpath (elfeed--request-enclosure-path fname path)
+      (setf fpath (elfeed-show--request-enclosure-path fname path)
             retry (and (file-exists-p fpath)
                        (not (y-or-n-p (format "Overwrite '%s'?" fpath))))))
-    (elfeed--download-enclosure url-enclosure fpath)))
+    (elfeed-show--download-enclosure url-enclosure fpath)))
 
 (defun elfeed-show-save-enclosure-multi (&optional entry)
   "Offer to save multiple entry enclosures from ENTRY.
@@ -445,14 +445,14 @@ Furthermore, there is a shortcut \"a\" which so means all
 enclosures, but as this is the default, you may not need it."
   (interactive nil elfeed-show-mode)
   (let* ((entry (or entry elfeed-show-entry))
-         (attachstr (elfeed--get-enclosure-num
+         (attachstr (elfeed-show--get-enclosure-num
                      "Enclosure number range (or 'a' for 'all')" entry t))
          (count (length (elfeed-entry-enclosures entry)))
          (attachnums (elfeed-split-ranges-to-numbers attachstr count))
          (path (expand-file-name elfeed-enclosure-default-dir))
          (fpath))
     (if elfeed-save-multiple-enclosures-without-asking
-        (let ((attachdir (elfeed--request-enclosures-dir path)))
+        (let ((attachdir (elfeed-show--request-enclosures-dir path)))
           (dolist (enclosure-index attachnums)
             (let* ((url-enclosure
                     (aref (elfeed-entry-enclosures entry) enclosure-index))
@@ -465,7 +465,7 @@ enclosures, but as this is the default, you may not need it."
                       retry
                       (and (file-exists-p fpath)
                            (not (y-or-n-p (format "Overwrite '%s'?" fpath))))))
-              (elfeed--download-enclosure url-enclosure fpath))))
+              (elfeed-show--download-enclosure url-enclosure fpath))))
       (dolist (enclosure-index attachnums)
         (elfeed-show-save-enclosure-single entry enclosure-index)))))
 
@@ -478,16 +478,16 @@ offer to save a range of enclosures."
       (elfeed-show-save-enclosure-multi)
     (elfeed-show-save-enclosure-single)))
 
-(defun elfeed--enclosure-maybe-prompt-index (entry)
+(defun elfeed-show--enclosure-maybe-prompt-index (entry)
   "Prompt for an enclosure if there are multiple in ENTRY."
   (if (= 1 (length (elfeed-entry-enclosures entry)))
       1
-    (elfeed--get-enclosure-num "Enclosure to play" entry)))
+    (elfeed-show--get-enclosure-num "Enclosure to play" entry)))
 
 (defun elfeed-show-play-enclosure (enclosure-index)
   "Play enclosure number ENCLOSURE-INDEX from current entry using EMMS.
 Prompts for ENCLOSURE-INDEX when called interactively."
-  (interactive (list (elfeed--enclosure-maybe-prompt-index elfeed-show-entry))
+  (interactive (list (elfeed-show--enclosure-maybe-prompt-index elfeed-show-entry))
                elfeed-show-mode)
   (elfeed-show-add-enclosure-to-playlist enclosure-index)
   (eval '(with-current-emms-playlist
@@ -498,7 +498,7 @@ Prompts for ENCLOSURE-INDEX when called interactively."
 (defun elfeed-show-add-enclosure-to-playlist (enclosure-index)
   "Add enclosure number ENCLOSURE-INDEX to current EMMS playlist.
 Prompts for ENCLOSURE-INDEX when called interactively."
-  (interactive (list (elfeed--enclosure-maybe-prompt-index elfeed-show-entry))
+  (interactive (list (elfeed-show--enclosure-maybe-prompt-index elfeed-show-entry))
                elfeed-show-mode)
   (require 'emms)
   (declare-function emms-add-url "emms")
