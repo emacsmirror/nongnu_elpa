@@ -2,7 +2,10 @@
 
 * Development (upcoming 4.0.1)
 
-- Bugfixes.
+- Bugfix: Improve shr image insertion, compatibility with =elfeed-tube=.
+- Bugfix: Prefix argument handling of =elfeed-show-next=.
+- Bugfix: Call =elfeed-update-hook= also for feeds which have not been modified.
+- Minor code cleanup (requires, private function namespacing).
 
 * Version 4.0.0 (2026-06-06)
 
