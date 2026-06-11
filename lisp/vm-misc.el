@@ -1646,8 +1646,7 @@ buttons are possible under the current windowing system."
   (or (and (featurep 'xemacs) (memq (device-type) '(x gtk mswindows)))
       (and (not (featurep 'xemacs)) window-system
 	   (or (fboundp 'image-type-available-p)
-	       (and (stringp vm-imagemagick-convert-program)
-		    (stringp vm-imagemagick-identify-program))))))
+	       (vm-imagemagick-available-p)))))
 
 (defun vm-image-type-available-p (type)
   (if (fboundp 'image-type-available-p)
@@ -1712,6 +1711,75 @@ Returns the exit status (a number) as `call-process' does."
       (when (file-exists-p stderr-file)
 	(delete-file stderr-file)))
     exit-status))
+
+;; Declare ImageMagick variables defined in vm-vars.el
+(defvar vm-imagemagick-program)
+(defvar vm-imagemagick-convert-program)
+(defvar vm-imagemagick-identify-program)
+(declare-function vm-imagemagick-program-is-v7-p "vm-vars" ())
+
+(defun vm-imagemagick-available-p ()
+  "Return non-nil if ImageMagick is available for image operations."
+  (with-suppressed-warnings ((obsolete vm-imagemagick-convert-program))
+    (stringp (or vm-imagemagick-program
+		 vm-imagemagick-convert-program))))
+
+(defun vm-imagemagick-convert-command ()
+  "Return the ImageMagick convert program path.
+Returns the program to use for convert operations.  For ImageMagick 7,
+this returns `vm-imagemagick-program' (magick); callers should prepend
+\"convert\" to the args.  For older versions, returns the convert program."
+  (with-suppressed-warnings ((obsolete vm-imagemagick-convert-program))
+    (or vm-imagemagick-convert-program
+	vm-imagemagick-program)))
+
+(defun vm-imagemagick-identify-command ()
+  "Return the ImageMagick identify program path.
+Returns the program to use for identify operations.  For ImageMagick 7,
+this returns `vm-imagemagick-program' (magick); callers should prepend
+\"identify\" to the args.  For older versions, returns the identify program."
+  (with-suppressed-warnings ((obsolete vm-imagemagick-identify-program))
+    (or vm-imagemagick-identify-program
+	vm-imagemagick-program)))
+
+(defun vm-imagemagick-program-is-magick-p (program)
+  "Return non-nil if PROGRAM is ImageMagick 7's magick command."
+  (and program
+       (string-match-p "magick\\'" program)))
+
+(defun vm-imagemagick-convert-shell-command ()
+  "Return the shell command string for ImageMagick convert.
+For ImageMagick 7, returns \"magick convert\".
+For older versions, returns the convert program path."
+  (let ((program (vm-imagemagick-convert-command)))
+    (when program
+      (if (vm-imagemagick-program-is-magick-p program)
+	  (concat program " convert")
+	program))))
+
+(defun vm-imagemagick-call-convert (infile buffer args)
+  "Call ImageMagick convert with ARGS, handling v6 vs v7 differences.
+INFILE and BUFFER are passed to `vm-call-process'.
+ARGS is a list of arguments for the convert command.
+Returns the exit status."
+  (let ((program (vm-imagemagick-convert-command)))
+    (when program
+      (vm-call-process program infile buffer
+		       (if (vm-imagemagick-program-is-magick-p program)
+			   (cons "convert" args)
+			 args)))))
+
+(defun vm-imagemagick-call-identify (infile buffer args)
+  "Call ImageMagick identify with ARGS, handling v6 vs v7 differences.
+INFILE and BUFFER are passed to `vm-call-process'.
+ARGS is a list of arguments for the identify command.
+Returns the exit status."
+  (let ((program (vm-imagemagick-identify-command)))
+    (when program
+      (vm-call-process program infile buffer
+		       (if (vm-imagemagick-program-is-magick-p program)
+			   (cons "identify" args)
+			 args)))))
 
 (provide 'vm-misc)
 ;;; vm-misc.el ends here

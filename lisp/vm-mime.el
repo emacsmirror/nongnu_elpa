@@ -61,6 +61,10 @@
 (declare-function vm-get-sender ())
 (declare-function vm-smime-get-recipient-certfiles ())
 (declare-function vm-mode "vm" (&optional read-only))
+(declare-function vm-imagemagick-available-p "vm-misc" ())
+(declare-function vm-imagemagick-call-identify "vm-misc" (infile buffer args))
+(declare-function vm-imagemagick-call-convert "vm-misc" (infile buffer args))
+(declare-function vm-imagemagick-convert-shell-command "vm-misc" ())
 
 (defvar enable-multibyte-characters)
 
@@ -3447,7 +3451,7 @@ describing the image type.                             USR, 2011-03-25"
 	  (delete-region start end))
 	(if (not (bolp))
 	    (insert "\n"))
-	(setq do-strips (and (stringp vm-imagemagick-convert-program)
+	(setq do-strips (and (vm-imagemagick-available-p)
 			     vm-mime-use-image-strips))
 	(cond (do-strips
 	       (condition-case error-data
@@ -3574,7 +3578,7 @@ describing the image type.                            USR, 2011-03-25"
 	    (and work-buffer (kill-buffer work-buffer))))
 	(if (not (bolp))
 	    (insert-char ?\n 1))
-	(setq do-strips (and (stringp vm-imagemagick-convert-program)
+	(setq do-strips (and (vm-imagemagick-available-p)
 			     vm-mime-use-image-strips))
 	(cond (do-strips
 	       (condition-case error-data
@@ -3652,7 +3656,7 @@ describing the image type.                            USR, 2011-03-25"
 	  (setq work-buffer (vm-make-work-buffer))
 	  (set-buffer work-buffer)
 	  (setq exit-status
-		(vm-call-process vm-imagemagick-identify-program nil t (list file)))
+		(vm-imagemagick-call-identify nil t (list file)))
 	  (goto-char (point-min))
 	  (or (search-forward " " nil t)
 	      (error "no spaces in 'identify' output (exit %s, file %s): %s"
@@ -3705,7 +3709,7 @@ describing the image type.                            USR, 2011-03-25"
 		(progn
 		  ;; Problem - we have no way of knowing whether these
 		  ;; calls succeed or not.  USR, 2011-02-23
-		  (insert vm-imagemagick-convert-program
+		  (insert (vm-imagemagick-convert-shell-command)
 			  " -crop"
 			  (format " %dx%d+0+%d"
 				  width
@@ -3722,21 +3726,22 @@ describing the image type.                            USR, 2011-03-25"
 		  (when incremental
 			(insert "echo XZXX" (int-to-string i) "XZXX\n"))
 		  (setq i (1+ i)))
-	      (call-process vm-imagemagick-convert-program nil nil nil
-			    "-crop"
-			    (format "%dx%d+0+%d"
-				    width
-				    (+ min-height adjustment
-				       (if (zerop remainder) 0 1))
-				    starty)
-			    "-page"
-			    (format "%dx%d+0+0"
-				    width
-				    (+ min-height adjustment
-				       (if (zerop remainder) 0 1)))
-			    "-roll"
-			    (format "+%d+%d" hroll vroll)
-			    file (concat output-type newfile)))
+	      (vm-imagemagick-call-convert
+	       nil nil
+	       (list "-crop"
+		     (format "%dx%d+0+%d"
+			     width
+			     (+ min-height adjustment
+				(if (zerop remainder) 0 1))
+			     starty)
+		     "-page"
+		     (format "%dx%d+0+0"
+			     width
+			     (+ min-height adjustment
+				(if (zerop remainder) 0 1)))
+		     "-roll"
+		     (format "+%d+%d" hroll vroll)
+		     file (concat output-type newfile))))
 	    (setq image-list (cons newfile image-list)
 		  starty (+ starty min-height adjustment
 			    (if (zerop remainder) 0 1))
@@ -3964,10 +3969,10 @@ The return value does not seem to be meaningful.     USR, 2011-03-25"
 	    ;; output by "png:"
 	    (let ((coding-system-for-read (vm-binary-coding-system)))
 	      (setq success
-		    (eq 0 (vm-call-process vm-imagemagick-convert-program
-					   tempfile t
-					   (append convert-args
-						   (list "-[0]" "png:-"))))))
+		    (eq 0 (vm-imagemagick-call-convert
+			   tempfile t
+			   (append convert-args
+				   (list "-[0]" "png:-"))))))
 	    (when success
 	      (write-region (point-min) (point-max) tempfile nil 0)
 	      (vm-set-mm-layout-image-modified layout t)))
@@ -4059,7 +4064,7 @@ Otherwise, set it to nil.                              USR, 2011-03-25"
 (defun vm-mime-display-button-image (layout)
   "Displays a button for the MIME LAYOUT and includes a thumbnail
 image when possible."
-  (if (and vm-imagemagick-convert-program
+  (if (and (vm-imagemagick-available-p)
 	   vm-mime-thumbnail-max-geometry
 	   (vm-images-possible-here-p))
       ;; create a thumbnail and display it

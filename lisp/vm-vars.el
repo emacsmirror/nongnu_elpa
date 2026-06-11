@@ -1915,23 +1915,40 @@ them all at once.  See `vm-mime-use-image-strips'."
 ;	  (vm-warn 0 2 "VM could not find executable %S!" name)
 	  nil))))
 
-(defcustom vm-imagemagick-convert-program (vm-locate-executable-file "convert")
-  "*Name of ImageMagick `convert' program.
-VM uses this program to convert between image formats and to slice up
-images for display.  Set this to nil and VM will not use the
-`convert' program."
+(defcustom vm-imagemagick-program
+  (or (vm-locate-executable-file "magick")
+      (vm-locate-executable-file "convert"))
+  "Path to ImageMagick program.
+For ImageMagick 7, this should point to the `magick' executable.
+For ImageMagick 6 or earlier, this can point to `convert'.
+VM will automatically use the appropriate subcommand (convert, identify)
+when calling ImageMagick 7's magick program."
   :group 'vm-helpers
   :type '(choice (const :tag "None" nil)
 		 file))
 
-(defcustom vm-imagemagick-identify-program
-  (vm-locate-executable-file "identify")
-  "*Name of ImageMagick `identify' program.
-VM uses this program to gather information about images.  Set this to nil
-and VM will not use the `convert' program."
+(defun vm-imagemagick-program-is-v7-p ()
+  "Return non-nil if `vm-imagemagick-program' is ImageMagick 7's magick command."
+  (and vm-imagemagick-program
+       (string-match-p "magick\\'" vm-imagemagick-program)))
+
+(defcustom vm-imagemagick-convert-program nil
+  "Obsolete. Use `vm-imagemagick-program' instead.
+If non-nil, overrides `vm-imagemagick-program' for convert operations."
   :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
+  :type '(choice (const :tag "Use vm-imagemagick-program" nil)
 		 file))
+(make-obsolete-variable 'vm-imagemagick-convert-program
+			'vm-imagemagick-program "8.4.0")
+
+(defcustom vm-imagemagick-identify-program nil
+  "Obsolete. Use `vm-imagemagick-program' instead.
+If non-nil, overrides `vm-imagemagick-program' for identify operations."
+  :group 'vm-helpers
+  :type '(choice (const :tag "Use vm-imagemagick-program" nil)
+		 file))
+(make-obsolete-variable 'vm-imagemagick-identify-program
+			'vm-imagemagick-program "8.4.0")
 
 (defvar vm-mime-image-type-converter-alist
   (if (stringp vm-imagemagick-convert-program)
