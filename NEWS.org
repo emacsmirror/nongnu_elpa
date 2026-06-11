@@ -1,6 +1,6 @@
 #+title: Elfeed Changelog
 
-* Development (upcoming 4.0.1)
+* Version 4.0.1 (2026-06-11)
 
 - Bugfix: Improve shr image insertion, compatibility with =elfeed-tube=.
 - Bugfix: Prefix argument handling of =elfeed-show-next=.
