@@ -35,8 +35,7 @@
   "Auditory and visual alerts for Jabber events."
   :group 'jabber)
 
-(defcustom jabber-alert-message-hooks '(jabber-message-echo
-					jabber-message-scroll)
+(defcustom jabber-alert-message-hooks '(jabber-message-echo)
   "Hooks run when a new message arrives.
 
 Arguments are FROM, BUFFER, TEXT and TITLE.  FROM is the JID of
@@ -47,6 +46,9 @@ so that hooks do not have to call it themselves.
 
 This hook is meant for user customization of message alerts.  For
 other uses, see `jabber-message-hooks'.
+
+`jabber-message-scroll' is available as an opt-in hook for users
+who want incoming messages to move point in nonselected windows.
 
 Desktop notifications are added by `jabber-notifications' when loaded."
   :type 'hook
@@ -76,7 +78,7 @@ and show no message if it returns nil.  Other hooks do what they do
 every time."
   :type 'function)
 
-(defcustom jabber-alert-muc-hooks '(jabber-muc-echo-personal jabber-muc-scroll)
+(defcustom jabber-alert-muc-hooks '(jabber-muc-echo-personal)
   "Hooks run when a new MUC message arrives.
 
 Arguments are NICK, GROUP, BUFFER, TEXT and TITLE.  NICK is the
@@ -89,6 +91,9 @@ not have to call it themselves.
 The default uses `jabber-muc-echo-personal' so that only messages
 mentioning your nickname are echoed.  Use `jabber-muc-echo' instead
 to be notified of all MUC messages.
+
+`jabber-muc-scroll' is available as an opt-in hook for users who
+want incoming MUC messages to move point in nonselected windows.
 
 Desktop notifications are added by `jabber-notifications' when loaded."
   :type 'hook
@@ -335,7 +340,8 @@ FROM selects the per-JID sound override; TITLE gates the action."
     (switch-to-buffer buffer)))
 
 (defun jabber-message-scroll (_from buffer _text _title)
-  "Scroll BUFFER in all nonselected windows showing it."
+  "Move point to the end of BUFFER in all nonselected windows showing it.
+This hook is opt-in; it is not enabled by default."
   ;; jabber-chat-buffer-display will DTRT with point in the buffer.
   ;; But this change will not take effect in nonselected windows.
   ;; Therefore we do that manually here.
@@ -384,7 +390,8 @@ BUFFER is the MUC buffer."
     (switch-to-buffer buffer)))
 
 (defun jabber-muc-scroll (_nick _group buffer _text _title)
-  "Scroll BUFFER even if it is in an unselected window."
+  "Move point to the end of BUFFER in nonselected windows showing it.
+This hook is opt-in; it is not enabled by default."
   (when (buffer-live-p buffer)
     (jabber-message-scroll nil buffer nil nil)))
 

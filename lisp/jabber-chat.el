@@ -1492,23 +1492,6 @@ with the created image (or nil) followed by CBARGS."
 (defconst jabber-chat--image-max-scale 4.0
   "Largest inline image scale factor.")
 
-(defvar-local jabber-chat--image-recenter-timer nil
-  "Timer for recentering after inline image display changes.")
-
-(defun jabber-chat--schedule-image-recenter ()
-  "Schedule one recenter after newly displaying inline images."
-  (when jabber-chat--image-recenter-timer
-    (cancel-timer jabber-chat--image-recenter-timer))
-  (let ((buffer (current-buffer)))
-    (setq jabber-chat--image-recenter-timer
-          (run-at-time
-           0 nil
-           (lambda ()
-             (when (buffer-live-p buffer)
-               (with-current-buffer buffer
-                 (setq jabber-chat--image-recenter-timer nil)
-                 (jabber-chat-buffer-recenter-input))))))))
-
 (defun jabber-chat-copy-url ()
   "Copy the URL at point to the kill ring and display it."
   (interactive)
@@ -1640,7 +1623,6 @@ SCALE defaults to 1.0 and is stored on the displayed range."
            'jabber-chat-image-scale scale
            'jabber-chat-image-fetching nil))
     (jabber-chat--add-url-keymap beg end)
-    (jabber-chat--schedule-image-recenter)
     display-image))
 
 (defun jabber-chat--cache-image (url image)

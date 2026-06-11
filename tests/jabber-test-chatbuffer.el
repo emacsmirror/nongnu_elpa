@@ -19,15 +19,10 @@
 (defvar jabber-group nil)
 (defvar jabber-muc-participants nil)
 (defvar jabber-scrolltobottom-all nil)
-(defvar jabber-chat-buffer--scrolltobottom-window-info nil)
 
 (declare-function jabber-chat-buffer-recenter-input "jabber-chatbuffer" ())
 (declare-function jabber-chat-buffer--recenter-input-window
                   "jabber-chatbuffer" (window))
-(declare-function jabber-chat-buffer--scrolltobottom-after-insert
-                  "jabber-chatbuffer" ())
-(declare-function jabber-chat-buffer--scrolltobottom-before-insert
-                  "jabber-chatbuffer" ())
 
 ;;; Test helpers
 
@@ -820,89 +815,20 @@ again, and the ewoc created on the first call must survive."
         (should (equal '(win-c win-b win-a) checked))
         (should (equal '(win-c win-a) recentered))))))
 
-(ert-deftest jabber-test-chatbuffer-pre-post-recenters-following-window ()
-  "Post-insert nil mode recenters only the single selected chat window."
-  (with-temp-buffer
-    (let ((jabber-scrolltobottom-all nil)
-          (seen-buffers nil)
-          (checked nil)
-          (recentered nil))
-      (cl-letf (((symbol-function 'get-buffer-window)
-                 (lambda (buffer &optional _all-frames)
-                   (push buffer seen-buffers)
-                   'win-a))
-                ((symbol-function 'get-buffer-window-list)
-                 (lambda (&rest _)
-                   (error "get-buffer-window-list should not be called")))
-                ((symbol-function 'jabber-chat-buffer--recenter-input-p)
-                 (lambda (window)
-                   (push window checked)
-                   t))
-                ((symbol-function 'window-live-p)
-                 (lambda (_window) t))
-                ((symbol-function 'jabber-chat-buffer--recenter-input-window)
-                 (lambda (window)
-                   (push window recentered))))
-        (jabber-chat-buffer--scrolltobottom-before-insert)
-        (should (equal (list (current-buffer)) seen-buffers))
-        (should (equal '((win-a . t))
-                       jabber-chat-buffer--scrolltobottom-window-info))
-        (should (equal '(win-a) checked))
-        (jabber-chat-buffer--scrolltobottom-after-insert)
-        (should (equal '(win-a) recentered))
-        (should-not jabber-chat-buffer--scrolltobottom-window-info)))))
-
-(ert-deftest jabber-test-chatbuffer-pre-post-all-records-visible-windows ()
-  "Post-insert all mode records and checks every visible chat window."
-  (with-temp-buffer
-    (let ((jabber-scrolltobottom-all t)
-          (seen-buffers nil)
-          (checked nil)
-          (recentered nil))
-      (cl-letf (((symbol-function 'get-buffer-window)
-                 (lambda (&rest _)
-                   (error "get-buffer-window should not be called")))
-                ((symbol-function 'get-buffer-window-list)
-                 (lambda (buffer &optional _minibuf _all-frames)
-                   (push buffer seen-buffers)
-                   '(win-a win-b win-c)))
-                ((symbol-function 'jabber-chat-buffer--recenter-input-p)
-                 (lambda (window)
-                   (push window checked)
-                   (memq window '(win-a win-c))))
-                ((symbol-function 'window-live-p)
-                 (lambda (_window) t))
-                ((symbol-function 'jabber-chat-buffer--recenter-input-window)
-                 (lambda (window)
-                   (push window recentered))))
-        (jabber-chat-buffer--scrolltobottom-before-insert)
-        (should (equal (list (current-buffer)) seen-buffers))
-        (should (equal '((win-a . t) (win-b) (win-c . t))
-                       jabber-chat-buffer--scrolltobottom-window-info))
-        (should (equal '(win-c win-b win-a) checked))
-        (jabber-chat-buffer--scrolltobottom-after-insert)
-        (should (equal '(win-c win-a) recentered))
-        (should-not jabber-chat-buffer--scrolltobottom-window-info)))))
-
-(ert-deftest jabber-test-chatbuffer-pre-post-preserves-history-window ()
-  "Post-insert does not move a window reading history before insertion."
-  (with-temp-buffer
-    (let ((jabber-scrolltobottom-all nil)
-          (recentered nil))
-      (cl-letf (((symbol-function 'get-buffer-window)
-                 (lambda (&rest _) 'win-a))
-                ((symbol-function 'get-buffer-window-list)
-                 (lambda (&rest _)
-                   (error "get-buffer-window-list should not be called")))
-                ((symbol-function 'jabber-chat-buffer--recenter-input-p)
-                 (lambda (_window) nil))
-                ((symbol-function 'jabber-chat-buffer--recenter-input-window)
-                 (lambda (window)
-                   (push window recentered))))
-        (jabber-chat-buffer--scrolltobottom-before-insert)
-        (jabber-chat-buffer--scrolltobottom-after-insert)
-        (should-not recentered)
-        (should-not jabber-chat-buffer--scrolltobottom-window-info)))))
+(ert-deftest jabber-test-chatbuffer-with-scrolltobottom-is-no-op-wrapper ()
+  "Scroll-to-bottom compatibility wrapper evaluates BODY only."
+  (let ((events nil))
+    (cl-letf (((symbol-function 'jabber-chat-buffer-recenter-input)
+               (lambda ()
+                 (push 'recenter events)))
+              ((symbol-function 'jabber-chat-buffer--recenter-input-window)
+               (lambda (_window)
+                 (push 'recenter-window events))))
+      (should (eq 'body-result
+                  (jabber-chat-buffer-with-scrolltobottom
+                    (push 'body events)
+                    'body-result)))
+      (should (equal '(body) events)))))
 
 (ert-deftest jabber-test-chatbuffer-recenter-input-window-preserves-point ()
   "Recentering moves temporarily to the input marker and restores point."
@@ -925,22 +851,6 @@ again, and the ewoc created on the first call must survive."
           (should (= (point) typed-point)))
       (set-window-buffer (selected-window) previous-buffer)
       (kill-buffer buffer))))
-
-(ert-deftest jabber-test-chatbuffer-after-insert-skips-dead-windows ()
-  "Post-insert does not recenter windows that are no longer live."
-  (with-temp-buffer
-    (let ((jabber-chat-buffer--scrolltobottom-window-info
-           '((win-live . t) (win-dead . t)))
-          (recentered nil))
-      (cl-letf (((symbol-function 'window-live-p)
-                 (lambda (window)
-                   (eq window 'win-live)))
-                ((symbol-function 'jabber-chat-buffer--recenter-input-window)
-                 (lambda (window)
-                   (push window recentered))))
-        (jabber-chat-buffer--scrolltobottom-after-insert)
-        (should (equal '(win-live) recentered))
-        (should-not jabber-chat-buffer--scrolltobottom-window-info)))))
 
 ;;; Group 13: HTTP Upload callback
 
