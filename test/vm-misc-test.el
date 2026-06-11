@@ -802,6 +802,81 @@
       (should (equal result "hello"))
       (should (null (text-properties-at 0 result))))))
 
+;;; vm-call-process tests
+
+(ert-deftest vm-misc-test-call-process-stdout ()
+  "Test vm-call-process captures stdout to current buffer."
+  (with-temp-buffer
+    (vm-call-process "echo" nil t '("hello world"))
+    (should (equal (string-trim (buffer-string)) "hello world"))))
+
+(ert-deftest vm-misc-test-call-process-exit-status-success ()
+  "Test vm-call-process returns exit status 0 on success."
+  (with-temp-buffer
+    (should (= (vm-call-process "true" nil t nil) 0))))
+
+(ert-deftest vm-misc-test-call-process-exit-status-failure ()
+  "Test vm-call-process returns non-zero exit status on failure."
+  (with-temp-buffer
+    (should (= (vm-call-process "false" nil t nil) 1))))
+
+(ert-deftest vm-misc-test-call-process-with-args ()
+  "Test vm-call-process passes arguments correctly."
+  (with-temp-buffer
+    (vm-call-process "printf" nil t '("%s-%s" "foo" "bar"))
+    (should (equal (buffer-string) "foo-bar"))))
+
+(ert-deftest vm-misc-test-call-process-stderr-separate ()
+  "Test vm-call-process keeps stderr separate from stdout."
+  (with-temp-buffer
+    ;; Run a command that outputs to both stdout and stderr
+    ;; sh -c 'echo stdout; echo stderr >&2'
+    (vm-call-process "sh" nil t '("-c" "echo stdout; echo stderr >&2"))
+    ;; Buffer should only contain stdout
+    (should (equal (string-trim (buffer-string)) "stdout"))))
+
+(ert-deftest vm-misc-test-call-process-stderr-to-messages ()
+  "Test vm-call-process reports stderr via message."
+  (with-temp-buffer
+    (let ((messages nil))
+      ;; Capture messages
+      (cl-letf (((symbol-function 'message)
+                 (lambda (fmt &rest args)
+                   (push (apply #'format fmt args) messages))))
+        (vm-call-process "sh" nil t '("-c" "echo stderr >&2")))
+      ;; Should have captured a message with stderr content
+      (should (cl-some (lambda (msg) (string-match "stderr" msg)) messages)))))
+
+(ert-deftest vm-misc-test-call-process-infile ()
+  "Test vm-call-process with input file."
+  (let ((tempfile (make-temp-file "vm-test")))
+    (unwind-protect
+        (progn
+          (with-temp-file tempfile
+            (insert "input data"))
+          (with-temp-buffer
+            (vm-call-process "cat" tempfile t nil)
+            (should (equal (buffer-string) "input data"))))
+      (delete-file tempfile))))
+
+(ert-deftest vm-misc-test-call-process-to-named-buffer ()
+  "Test vm-call-process with named buffer as destination."
+  (let ((buf (generate-new-buffer " *test-output*")))
+    (unwind-protect
+        (progn
+          (vm-call-process "echo" nil buf '("test output"))
+          (should (equal (string-trim (with-current-buffer buf
+                                        (buffer-string)))
+                         "test output")))
+      (kill-buffer buf))))
+
+(ert-deftest vm-misc-test-call-process-binary-safe ()
+  "Test vm-call-process handles binary data correctly."
+  (with-temp-buffer
+    ;; Output some bytes including null
+    (vm-call-process "printf" nil t '("A\\0B\\0C"))
+    (should (equal (buffer-string) "A\0B\0C"))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

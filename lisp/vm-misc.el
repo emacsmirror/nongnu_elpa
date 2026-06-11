@@ -1682,5 +1682,36 @@ Return the list of loaded features."
 don't display warnings if compiling"
   (vm-load-features feature-list (bound-and-true-p byte-compile-current-file)))
 
+(defun vm-call-process (program infile buffer args)
+  "Call PROGRAM with ARGS, separating stdout from stderr.
+PROGRAM is the program to run.
+INFILE is the input file (or nil for no input).
+BUFFER is where stdout goes (t for current buffer, or a buffer/name).
+ARGS is a list of program arguments.
+
+Stderr is captured separately and reported via `message' if non-empty,
+prefixed with the program name.
+
+Returns the exit status (a number) as `call-process' does."
+  (let ((stderr-file (make-temp-file "vm-stderr"))
+	(exit-status nil))
+    (unwind-protect
+	(progn
+	  (setq exit-status
+		(apply #'call-process program infile
+		       (list buffer stderr-file) nil args))
+	  ;; Report any stderr output as a message
+	  (when (and (file-exists-p stderr-file)
+		     (> (file-attribute-size (file-attributes stderr-file)) 0))
+	    (message "%s: %s"
+		     (file-name-nondirectory program)
+		     (string-trim
+		      (with-temp-buffer
+			(insert-file-contents stderr-file)
+			(buffer-string))))))
+      (when (file-exists-p stderr-file)
+	(delete-file stderr-file)))
+    exit-status))
+
 (provide 'vm-misc)
 ;;; vm-misc.el ends here

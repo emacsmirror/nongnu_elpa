@@ -23,6 +23,7 @@
 ;;; Code:
 
 (require 'vm-macro)
+(require 'vm-misc)
 (require 'vm-reply)                     ;vm-mail-mode-show-headers
 (require 'vm-summary)
 (require 'sendmail)
@@ -3645,16 +3646,17 @@ describing the image type.                            USR, 2011-03-25"
     nil ))
 
 (defun vm-get-image-dimensions (file)
-  (let (work-buffer width height)
+  (let (work-buffer width height exit-status)
     (unwind-protect
 	(save-excursion
 	  (setq work-buffer (vm-make-work-buffer))
 	  (set-buffer work-buffer)
-	  (call-process vm-imagemagick-identify-program nil t nil file)
+	  (setq exit-status
+		(vm-call-process vm-imagemagick-identify-program nil t (list file)))
 	  (goto-char (point-min))
 	  (or (search-forward " " nil t)
-	      (error "no spaces in 'identify' output: %s"
-		     (buffer-string)))
+	      (error "no spaces in 'identify' output (exit %s, file %s): %s"
+		     exit-status file (buffer-string)))
 	  (if (not (re-search-forward "\\b\\([0-9]+\\)x\\([0-9]+\\)\\b" nil t))
 	      (error "file dimensions missing from 'identify' output: %s"
 		     (buffer-string)))
@@ -3959,12 +3961,13 @@ The return value does not seem to be meaningful.     USR, 2011-03-25"
 	  (with-current-buffer work-buffer
 	    (set-buffer-file-coding-system (vm-binary-coding-system))
 	    ;; convert just the first page "[0]" and enforce PNG
-	    ;; output by "png:" 
+	    ;; output by "png:"
 	    (let ((coding-system-for-read (vm-binary-coding-system)))
 	      (setq success
-		    (eq 0 (apply 'call-process vm-imagemagick-convert-program
-				 tempfile t nil
-				 (append convert-args (list "-[0]" "png:-"))))))
+		    (eq 0 (vm-call-process vm-imagemagick-convert-program
+					   tempfile t
+					   (append convert-args
+						   (list "-[0]" "png:-"))))))
 	    (when success
 	      (write-region (point-min) (point-max) tempfile nil 0)
 	      (vm-set-mm-layout-image-modified layout t)))
