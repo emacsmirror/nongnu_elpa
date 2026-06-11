@@ -2,8 +2,18 @@
         do-test do-test-summary do-lint-check-declare do-lint-checkdoc \
         do-lint-native-comp
 
-ifndef EMACS_CMD
 GUIX := $(shell command -v guix 2>/dev/null)
+NIX := $(shell command -v nix-shell 2>/dev/null)
+
+ifneq ($(IN_NIX_SHELL),)
+NIX_SHELL :=
+else ifneq ($(wildcard shell.nix),)
+ifdef NIX
+NIX_SHELL := nix-shell --pure shell.nix --run
+endif
+endif
+
+ifndef EMACS_CMD
 ifdef GUIX
 GUIX_SHELL := guix shell --pure -D -f guix.scm emacs-no-x emacs-package-lint emacs-relint --
 EMACS_CMD := $(GUIX_SHELL) emacs
@@ -77,6 +87,8 @@ src/picomemo/omemo.c:
 module: src/picomemo/omemo.c
 ifdef GUIX
 	guix shell -D -f guix.scm -- $(MAKE) -C src
+else ifdef NIX_SHELL
+	$(NIX_SHELL) '$(MAKE) -C src'
 else
 	$(MAKE) -C src
 endif
@@ -213,6 +225,8 @@ clean-elc:
 clean-module:
 ifdef GUIX
 	guix shell -D -f guix.scm -- $(MAKE) -C src clean
+else ifdef NIX_SHELL
+	$(NIX_SHELL) '$(MAKE) -C src clean'
 else
 	$(MAKE) -C src clean
 endif

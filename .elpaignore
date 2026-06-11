@@ -4,3 +4,4 @@ src/picomemo/test
 src/picomemo/example
 src/picomemo/.clang-format
 guix.scm
+shell.nix

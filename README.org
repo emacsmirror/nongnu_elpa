@@ -113,6 +113,21 @@ package definition and reference it from your services:
 Re-run =guix home reconfigure= after pulling new commits and the
 package will be rebuilt from the updated checkout.
 
+** Nix
+
+The repository also ships a =shell.nix= with the native-module build
+dependencies.
+
+#+begin_src sh
+  make module
+#+end_src
+
+To enter the same environment manually:
+
+#+begin_src sh
+  nix-shell --pure shell.nix
+#+end_src
+
 * Configuration
 ** Authentication
 Accounts are configured via =jabber-account-list=.  The simplest form
