@@ -178,7 +178,40 @@
     (when-fontifying-it "fontifies the table delimiter and cell separators"
       ("|===\n|Cell A\n|==="
        ("|===" adoc-table-face)
-       ("|" adoc-table-face))))
+       ("|" adoc-table-face)))
+
+    (when-fontifying-it "fontifies CSV table delimiters and comma separators"
+      (",===\nApple,Red\nGrape,Green\n,==="
+       (",===" adoc-table-face)
+       ("," adoc-table-face)))
+
+    (when-fontifying-it "fontifies DSV table delimiters and colon separators"
+      (":===\nkey:value\n:==="
+       (":===" adoc-table-face)
+       (":" adoc-table-face)))
+
+    (when-fontifying-it "leaves commas and colons in ordinary prose alone"
+      ("See a, b and c"
+       ("," nil))
+      ("plain: text here"
+       (":" nil)))
+
+    (when-fontifying-it "does not let CSV separators bleed into prose between tables"
+      (",===\nx,y\n,===\n\nmid, prose\n\n,===\nu,v\n,==="
+       (",===" adoc-table-face)
+       ("mid" nil)
+       ("," nil)))
+
+    ;; An unclosed table must not reach across a paragraph and claim a
+    ;; later table's opening delimiter as its own close.
+    (when-fontifying-it "does not let an unclosed CSV table swallow a later one"
+      (",===\nName,Age\n\nprose, here\n\n,===\nCity,Pop\n,==="
+       ("Name" nil)
+       ("," nil)
+       ("prose" nil)
+       ("," nil)
+       ("City" nil)
+       ("," adoc-table-face))))
 
   ;; ---- Admonitions ---------------------------------------------------
 

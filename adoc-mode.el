@@ -2455,6 +2455,43 @@ for multiline constructs to be matched."
   (mark-paragraph 2)
   (forward-paragraph -1))
 
+(defvar adoc--table-cell-separator nil
+  "Quoted regexp of the separator of the CSV/DSV table being fontified.
+Bound by the cell-separator keyword's pre-match form so its anchored
+matcher knows whether to highlight commas (CSV) or colons (DSV).")
+
+(defun adoc-kw-csv-dsv-table ()
+  "Create a font-lock keyword for CSV and DSV tables.
+The modern AsciiDoc table delimiter shorthands `,===' (CSV) and
+`:===' (DSV) carry their cell separator in the delimiter itself.  The
+whole block is matched at once - opening line, data, and a closing line
+using the same shorthand - so the separators are only highlighted
+between matching delimiters, never in the surrounding prose."
+  (list
+   `(lambda (end)
+      (adoc-kwf-std
+       end
+       ;; The data span stops at a blank line so an unclosed table can't
+       ;; reach across a paragraph and steal a later table's delimiter as
+       ;; its close (which would leak separator highlighting into prose).
+       ,(concat "^\\(\\([,:]\\)=\\{3,\\}[ \t]*\\)\n"  ; 1=open line, 2=sep char
+                "\\(\\(?:[ \t]*[^ \t\n].*\n\\)*?\\)"   ; 3=cell data (no blank lines)
+                "\\(\\2=\\{3,\\}[ \t]*\\)$")           ; 4=close line
+       '(1 4)))
+   '(0 '(face nil font-lock-multiline t) t)
+   '(1 '(face adoc-table-face adoc-reserved block-del) t)  ; opening delimiter
+   '(4 '(face adoc-table-face adoc-reserved block-del) t)  ; closing delimiter
+   ;; anchored: highlight every cell separator within the data
+   (list (lambda (limit)
+           (and adoc--table-cell-separator
+                (re-search-forward adoc--table-cell-separator limit t)))
+         '(progn
+            (setq adoc--table-cell-separator (regexp-quote (match-string 2)))
+            (goto-char (match-beginning 3))
+            (match-end 3))
+         '(setq adoc--table-cell-separator nil)
+         '(0 '(face adoc-table-face adoc-reserved block-del) t))))
+
 (defun adoc-get-font-lock-keywords ()
   "Return list of keywords for `adoc-mode'."
   (list
@@ -2608,7 +2645,7 @@ for multiline constructs to be matched."
    ;; tables
    ;; ------------------------------
    ;; must come BEFORE block title, else rows starting like .2+| ... | ... are taken as
-   (list "^|=\\{3,\\}[ \t]*$" '(0 'adoc-table-face)) ; ^\|={3,}$
+   (list "^[|,:]=\\{3,\\}[ \t]*$" '(0 'adoc-table-face)) ; ^[|,:]={3,}$
    (list (concat "^\\(" (adoc-re-cell-specifier) "\\)\\(|\\)")
          '(1 '(face adoc-meta-face adoc-reserved block-del) nil t)
          '(2 '(face adoc-table-face adoc-reserved block-del) nil t)
@@ -2616,6 +2653,8 @@ for multiline constructs to be matched."
                '(save-excursion (end-of-line) (point)) nil
                '(1 '(face adoc-meta-face adoc-reserved block-del) nil t)
                '(2 '(face adoc-table-face adoc-reserved block-del) nil t)))
+   ;; CSV (,===) and DSV (:===) tables
+   (adoc-kw-csv-dsv-table)
 
 
    ;; attribute entry

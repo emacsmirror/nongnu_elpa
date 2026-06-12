@@ -300,8 +300,12 @@ Findings are graded:
 | Supported (`adoc-re-cell-specifier`)
 | -
 
-| Alternative formats (CSV `,`, DSV `:`) via `format=`
-| Verify - cell highlighting assumes the `|` PSV format
+| Alternative formats (CSV `,`, DSV `:`)
+| The modern delimiter shorthands `,===` (CSV) and `:===` (DSV) are
+  recognised: the delimiter lines and the cell separators between them are
+  highlighted (`adoc-kw-csv-dsv-table`). The older `[format=csv]` attribute on a
+  `\|===` block is not specially handled - its cells still assume the `\|` PSV
+  separator
 | Low
 |===
 
@@ -403,7 +407,8 @@ implements.
   as passthroughs.
 . [x] *Add the `icon:name[]` inline macro* to the recognised macro set.
   Done.
-. [ ] *Verify* CSV/DSV table formats and the literal-monospace `` `+text+` ``
-  enclosure, and add handling where it is missing. Counters are done -
-  `{counter:name}`, `{counter2:name}`, and `{set:name:value}` now highlight as
-  attribute references (and character-replacement refs already did).
+. [ ] *Verify* the literal-monospace `` `+text+` `` enclosure and add handling
+  where it is missing. Counters and CSV/DSV tables are done - `{counter:name}`,
+  `{counter2:name}`, and `{set:name:value}` highlight as attribute references
+  (and character-replacement refs already did), and the `,===` / `:===` table
+  shorthands are recognised with their cell separators.
