@@ -201,7 +201,19 @@
 
     (when-fontifying-it "fontifies attribute references"
       ("see {my-attr} here"
-       ("{my-attr}" adoc-replacement-face))))
+       ("{my-attr}" adoc-replacement-face)))
+
+    (when-fontifying-it "fontifies counter and set reference macros"
+      ("Item {counter:items}"
+       ("{counter:items}" adoc-replacement-face))
+      ("Item {counter2:items}"
+       ("{counter2:items}" adoc-replacement-face))
+      ("{set:foo:bar} done"
+       ("{set:foo:bar}" adoc-replacement-face)))
+
+    (when-fontifying-it "leaves brace-colon prose alone"
+      ("Send {type: error} to the server"
+       ("{type: error}" nil))))
 
   ;; ---- Directives ----------------------------------------------------
 

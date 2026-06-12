@@ -330,8 +330,11 @@ Findings are graded:
 | Medium
 
 | Counters `{counter:name}`, character-replacement refs
-| Verify
-| Low
+| Supported - `{counter:name}`, `{counter2:name}`, and `{set:name:value}`
+  highlight as attribute references (`adoc-replacement-face`), and
+  character-replacement refs (`{amp}`, `{nbsp}`, ...) already matched as plain
+  `{name}` references
+| -
 |===
 
 === subs, pass, verbatim
@@ -400,5 +403,7 @@ implements.
   as passthroughs.
 . [x] *Add the `icon:name[]` inline macro* to the recognised macro set.
   Done.
-. [ ] *Verify* CSV/DSV table formats, counters, and the literal-monospace
-  `` `+text+` `` enclosure, and add handling where it is missing.
+. [ ] *Verify* CSV/DSV table formats and the literal-monospace `` `+text+` ``
+  enclosure, and add handling where it is missing. Counters are done -
+  `{counter:name}`, `{counter2:name}`, and `{set:name:value}` now highlight as
+  attribute references (and character-replacement refs already did).

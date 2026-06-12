@@ -2776,8 +2776,10 @@ for multiline constructs to be matched."
 
    ;; attributes
    ;; ---------------------------------
-   ;; attribute reference
-   (list "{\\(\\w[[:word:]-]*\\)\\([=?!#%@$][^}\n]*\\)?}" '(0 'adoc-replacement-face))
+   ;; attribute reference, including the `:'-separated reference macros
+   ;; {counter:name}, {counter2:name}, and {set:name:value}
+   (list "{\\(?:\\(?:counter2?\\|set\\):[^}\n]*\\|\\w[[:word:]-]*\\(?:[=?!#%@$][^}\n]*\\)?\\)}"
+         '(0 'adoc-replacement-face))
 
 
    ;; inline macros (that includes anchors, links, footnotes,....)
