@@ -913,32 +913,45 @@ is reversed if ASCENDING is non-nil."
       (when ascending (setq entries (nreverse entries)))
       entries)))
 
-(defun elfeed-search--update-list ()
-  "Update the variable `elfeed-search-entries' and `elfeed-search--last-update'."
-  (setq elfeed-search-entries (elfeed-search-entries
-                               elfeed-search-filter
-                               (elfeed-search--sort-function)
-                               (eq elfeed-search-sort-order 'ascending)))
-  (cl-callf2 cl-delete-if-not
-      (lambda (x) (memq x elfeed-search-entries))
-      elfeed-search--marked)
-  (setq elfeed-search--last-update (float-time)
-        list-buffers-directory elfeed-search-filter))
+(defun elfeed-search--update-list (method)
+  "Update the variable `elfeed-search-entries' given the update METHOD.
+Returns non-nil if the list has been updated."
+  (let (list update)
+    (if (eq method :live)
+        (while-no-input
+          (setq list (elfeed-search-entries
+                      elfeed-search-filter
+                      (elfeed-search--sort-function)
+                      (eq elfeed-search-sort-order 'ascending))
+                update t))
+      (setq list (elfeed-search-entries
+                  elfeed-search-filter
+                  (elfeed-search--sort-function)
+                  (eq elfeed-search-sort-order 'ascending))
+            update t))
+    (when update
+      (cl-callf2 cl-delete-if-not (lambda (x) (memq x list))
+                 elfeed-search--marked)
+      (setq elfeed-search-entries list
+            elfeed-search--last-update (float-time)
+            list-buffers-directory elfeed-search-filter)
+      t)))
 
-(defun elfeed-search-update (&optional force)
+(defun elfeed-search-update (&optional method)
   "Update the `elfeed-search' buffer listing to match the database.
-When FORCE is non-nil, redraw even when the database hasn't changed.
+When METHOD is non-nil, redraw even when the database hasn't changed.
 Otherwise debounce by `elfeed-search-update-delay' and only redraw when
-there are changes.  When called interactively FORCE is t, and the
+there are changes.  When called interactively METHOD is :force, and the
 command behaves just like `revert-buffer'."
   (declare (completion ignore)) ;; Press "g" or M-x revert-buffer
-  (interactive (list t))
+  (interactive (list :force))
   (when elfeed-search--update-timer
     (cancel-timer elfeed-search--update-timer)
     (setq elfeed-search--update-timer nil))
   (when-let* ((buffer (get-buffer "*elfeed-search*")))
-    (if force
-        (elfeed-search--update-immediately buffer :force)
+    (if method
+        (elfeed-search--update-immediately
+         buffer (if (keywordp method) method :force))
       (setf elfeed-search--update-timer
             (run-at-time elfeed-search-update-delay nil
                          #'elfeed-search--update-immediately
@@ -956,28 +969,26 @@ METHOD can be nil, :force to force a full entry update and redraw or
 :resize to preserve the entries and redraw.  Do not use this function
 directly.  Instead use `elfeed-search-update'."
   (when (and (buffer-live-p buffer)
-             (or (eq method :force)
-                 (eq method :resize)
+             (or (memq method '(:force :resize :live))
                  (and (not elfeed-search--filter-active)
                       (< elfeed-search--last-update (elfeed-db-last-update)))))
     ;; Run inside window such that save excursion moves the window point.
     (with-selected-window (or (get-buffer-window buffer) (selected-window))
       ;; If no window is found, we still have to execute in the buffer.
       (with-current-buffer buffer
-        (elfeed-with-position elfeed-entry
-          (let ((inhibit-read-only t)
-                (standard-output (current-buffer)))
-            (erase-buffer)
-            (remove-overlays nil nil 'category 'elfeed-search-marked-overlay)
-            (unless (eq method :resize)
-              (elfeed-search--update-list))
-            (dolist (entry elfeed-search-entries)
-              (elfeed-search--print-entry entry)
-              (insert ?\n))
-            (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)))
-        ;; Highlighting gets lost due to debouncing.
-        (hl-line-highlight)
-        (run-hooks 'elfeed-search-update-hook))))
+        (when (or (eq method :resize) (elfeed-search--update-list method))
+          (elfeed-with-position elfeed-entry
+            (let ((inhibit-read-only t)
+                  (standard-output (current-buffer)))
+              (erase-buffer)
+              (remove-overlays nil nil 'category 'elfeed-search-marked-overlay)
+              (dolist (entry elfeed-search-entries)
+                (elfeed-search--print-entry entry)
+                (insert ?\n))
+              (mapc #'elfeed-search--make-marked-overlay elfeed-search--marked)))
+          ;; Highlighting gets lost due to debouncing.
+          (hl-line-highlight)
+          (run-hooks 'elfeed-search-update-hook)))))
   ;; Always force a header line update
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
@@ -1318,7 +1329,7 @@ BUFFER is the active minibuffer."
              (height (window-total-height window))
              (limiter (if window (format "#%d " height) "#1 "))
              (elfeed-search-filter (concat limiter filter)))
-        (elfeed-search-update :force)
+        (elfeed-search-update :live)
         (setf elfeed-search--filter-overflowing
               (length= elfeed-search-entries height))))))
 
