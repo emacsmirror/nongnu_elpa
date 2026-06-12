@@ -3,8 +3,8 @@
 ;; Copyright (C) 2025 Huang Feiyu
 
 ;; Author: Huang Feiyu <sibadake1@163.com>
-;; Version: 3.0.7
-;; Package-Requires: ((emacs "27.1") (posframe "1.4.0") (eglot "1.8"))
+;; Version: 3.0.8
+;; Package-Requires: ((emacs "27.1") (posframe "1.5.1") (eglot "1.23"))
 ;; Keywords: tools, languages, convenience, mouse, hover
 ;; URL: https://github.com/huangfeiyu/eldoc-mouse
 ;; SPDX-License-Identifier: GPL-3.0-or-later
@@ -67,7 +67,6 @@
 (require 'eldoc)
 (require 'posframe)
 (require 'eglot)
-(eval-when-compile (require 'cl-lib))
 
 (defgroup eldoc-mouse nil
   "Dispay document for mouse hover."
@@ -145,7 +144,7 @@ A leading space make the buffer hidden."
 The function should return nil if nothing is interested at the point.")
 
 (defvar-local eldoc-mouse-eldoc-documentation-functions
-    (list #'eldoc-mouse--eglot-eldoc-documentation-function #'eldoc-mouse--elisp-eldoc-documentation-function)
+    (list #'eldoc-mouse--elisp-eldoc-documentation-function)
   "The `eldoc-documentation-functions' for `eldoc-mouse-mode'.
 User can define their customized eldoc documentation function, and add to
 this list for specific mode.")
@@ -269,16 +268,6 @@ POS is the buffer position under the mouse cursor."
       (funcall eldoc-mouse-bounds-of-thing-at-point-function)
     (bounds-of-thing-at-point 'sexp)))
 
-(defun eldoc-mouse--eglot-eldoc-documentation-function (cb)
-  "Modify the `eglot-hover-eldoc-function'.
-So it won't call `eglot--highlight-piggyback` with `CB`."
-  (when (eglot-managed-p)
-    (if (fboundp 'eglot--highlight-piggyback)
-        (cl-letf (((symbol-function 'eglot--highlight-piggyback)
-                   (lambda (&rest _args) (message ""))))
-          (eglot-hover-eldoc-function cb))
-      (eglot-hover-eldoc-function cb))))
-
 (defun eldoc-mouse--elisp-eldoc-documentation-function (_cb)
   "The `eldoc-documentation-functions' implementation for elisp."
   (when (eq major-mode 'emacs-lisp-mode)
@@ -312,11 +301,8 @@ So it won't call `eglot--highlight-piggyback` with `CB`."
 (defun eldoc-mouse--eldoc-documentation-functions ()
   "Get the eldoc documentation functions defined by eldoc-mouse."
   (let* ((fun-list1 (seq-filter (lambda (f)
-                                  (and (not (function-equal f #'eglot-hover-eldoc-function))
-                                       (or (not (fboundp 'eglot-highlight-eldoc-function))
-                                           (not (with-no-warnings (function-equal f #'eglot-highlight-eldoc-function))))
-                                       (or (not (fboundp 'eglot-code-action-suggestion))
-                                           (not (with-no-warnings (function-equal f #'eglot-code-action-suggestion))))
+                                  (and (not (function-equal f #'eglot-highlight-eldoc-function))
+                                       (not (function-equal f #'eglot-code-action-suggestion))
                                        (not (function-equal f #'eglot-signature-eldoc-function))))
                                 eldoc-documentation-functions))
          (fun-list2 (append eldoc-mouse-eldoc-documentation-functions fun-list1)))
