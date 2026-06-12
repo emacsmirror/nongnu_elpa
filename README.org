@@ -115,17 +115,25 @@ package will be rebuilt from the updated checkout.
 
 ** Nix
 
-The repository also ships a =shell.nix= with the native-module build
-dependencies.
+The repository ships a =flake.nix= with Emacs, test, lint, and
+native-module build dependencies.  The Makefile enters the flake
+development shell automatically when Nix is available.
 
 #+begin_src sh
+  make test
   make module
 #+end_src
 
 To enter the same environment manually:
 
 #+begin_src sh
-  nix-shell --pure shell.nix
+  nix develop
+#+end_src
+
+To run the isolated Nix checks:
+
+#+begin_src sh
+  nix flake check
 #+end_src
 
 * Configuration

@@ -1,31 +1,19 @@
-.PHONY: all build clean install uninstall check test load \
-        do-test do-test-summary do-lint-check-declare do-lint-checkdoc \
-        do-lint-native-comp
+.PHONY: all build dev autoload module compile lint lint-check-declare lint-checkdoc \
+        lint-package-lint lint-relint lint-test-compile lint-native-comp \
+        clean clean-elc clean-module install uninstall check test load \
+        do-build do-dev do-lint do-module do-test do-test-summary \
+        do-lint-check-declare do-lint-checkdoc do-lint-native-comp
 
-GUIX := $(shell command -v guix 2>/dev/null)
-NIX := $(shell command -v nix-shell 2>/dev/null)
+NIX := $(shell command -v nix 2>/dev/null)
 
-ifneq ($(IN_NIX_SHELL),)
-NIX_SHELL :=
-else ifneq ($(wildcard shell.nix),)
-ifdef NIX
-NIX_SHELL := nix-shell --pure shell.nix --run
+ENV_MAKE = $(MAKE) --no-print-directory
+ifeq ($(JABBER_ENV_WRAPPED),)
+ifneq ($(NIX),)
+ENV_MAKE = nix develop path:$(CURDIR) --command env JABBER_ENV_WRAPPED=1 $(MAKE) --no-print-directory
 endif
 endif
 
-ifndef EMACS_CMD
-ifdef GUIX
-GUIX_SHELL := guix shell --pure -D -f guix.scm emacs-no-x emacs-package-lint emacs-relint --
-EMACS_CMD := $(GUIX_SHELL) emacs
-else
-GUIX_SHELL :=
-EMACS_CMD := emacs
-endif
-endif
-
-# For loop targets (test, per-file linters), enter guix shell once and
-# re-exec make so the inner loop calls plain `emacs` from the profile.
-GUIX_WRAP = $(if $(GUIX_SHELL),$(GUIX_SHELL) $(MAKE) --no-print-directory EMACS_CMD=emacs,$(MAKE) --no-print-directory)
+EMACS_CMD ?= emacs
 
 JOBS         ?= $(shell nproc 2>/dev/null || echo 4)
 TEST_RESULTS := .test-results
@@ -68,9 +56,15 @@ TEST_STAMPS := $(patsubst tests/%.el,$(TEST_RESULTS)/%.stamp,$(TESTS))
 
 all: build
 
-build: autoload compile module
+build:
+	@$(ENV_MAKE) do-build
 
-dev: autoload compile module lint test
+do-build: autoload compile do-module
+
+dev:
+	@$(ENV_MAKE) do-dev
+
+do-dev: autoload compile do-module do-lint do-test
 
 autoload:
 	$(EMACS_CMD) -q -Q --batch -L lisp \
@@ -84,14 +78,11 @@ src/picomemo/omemo.c:
 	(git clone $(PICOMEMO_REPO) src/picomemo && \
 	 git -C src/picomemo checkout $(PICOMEMO_COMMIT))
 
-module: src/picomemo/omemo.c
-ifdef GUIX
-	guix shell -D -f guix.scm -- $(MAKE) -C src
-else ifdef NIX_SHELL
-	$(NIX_SHELL) '$(MAKE) -C src'
-else
+module:
+	@$(ENV_MAKE) do-module
+
+do-module: src/picomemo/omemo.c
 	$(MAKE) -C src
-endif
 
 compile: autoload
 	$(EMACS_CMD) -q -Q -L . -L lisp --batch \
@@ -99,7 +90,7 @@ compile: autoload
 	-f batch-byte-compile lisp/*.el
 
 lint-check-declare:
-	@$(GUIX_WRAP) do-lint-check-declare
+	@$(ENV_MAKE) do-lint-check-declare
 
 do-lint-check-declare:
 	for file in lisp/*.el ; do \
@@ -107,7 +98,7 @@ do-lint-check-declare:
 	done
 
 lint-checkdoc:
-	@$(GUIX_WRAP) do-lint-checkdoc
+	@$(ENV_MAKE) do-lint-checkdoc
 
 do-lint-checkdoc:
 	for file in lisp/*.el ; do \
@@ -131,7 +122,7 @@ lint-test-compile:
 	-f batch-byte-compile tests/*.el
 
 lint-native-comp: autoload
-	@$(GUIX_WRAP) do-lint-native-comp
+	@$(ENV_MAKE) do-lint-native-comp
 
 do-lint-native-comp:
 	@fails=0; \
@@ -147,14 +138,18 @@ do-lint-native-comp:
 	done; \
 	exit $$fails
 
-lint: lint-check-declare lint-checkdoc lint-package-lint lint-relint lint-test-compile
+lint:
+	@$(ENV_MAKE) do-lint
 
-test: module
+do-lint: do-lint-check-declare do-lint-checkdoc lint-package-lint lint-relint lint-test-compile
+
+test:
+	@$(ENV_MAKE) -j$(JOBS) -Otarget do-test
+
+do-test: do-module
 	@rm -rf $(TEST_RESULTS)
 	@mkdir -p $(TEST_RESULTS)
-	@$(GUIX_WRAP) -j$(JOBS) -Otarget do-test
-
-do-test: do-test-summary
+	@$(MAKE) --no-print-directory -j$(JOBS) -Otarget do-test-summary
 
 $(TEST_RESULTS)/%.stamp: tests/%.el
 	@output=$$($(EMACS_CMD) -Q --batch -L lisp -L tests \
@@ -223,13 +218,7 @@ clean-elc:
 	find . -name '#*#' -delete
 
 clean-module:
-ifdef GUIX
-	guix shell -D -f guix.scm -- $(MAKE) -C src clean
-else ifdef NIX_SHELL
-	$(NIX_SHELL) '$(MAKE) -C src clean'
-else
 	$(MAKE) -C src clean
-endif
 
 clean: clean-elc clean-module
 	rm -rf $(TEST_RESULTS)
