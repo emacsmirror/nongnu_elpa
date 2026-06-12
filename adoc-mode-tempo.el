@@ -239,10 +239,10 @@ Is influenced by customization variables such as `adoc-title-style'."))))
 
 ;; tables
 (adoc-tempo-define "adoc-example-table"
-                   '(bol "|====================\n"
+                   '(bol "|===\n"
                          "| cell 11 | cell 12\n"
                          "| cell 21 | cell 22\n"
-                         "|====================\n" % ))
+                         "|===\n" % ))
 
 ;; Macros (inline & block)
 (adoc-tempo-define "adoc-url" '("http://foo.com") nil (bound-and-true-p adoc-help-url))

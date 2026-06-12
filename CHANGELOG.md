@@ -22,6 +22,7 @@
 - The compilation error matcher now also recognises modern `asciidoctor:` diagnostics, not just the legacy AsciiDoc.py `asciidoc:` format, so jumping to warnings and errors works with current Asciidoctor output.
 - `[source,ocaml]` code blocks now fontify with `neocaml-mode` when it is available, falling back to `tuareg-mode` and then `caml-mode`. To support this, a value in `adoc-code-lang-modes` may now be either a single major mode or a list of candidate modes tried in order (the first defined one wins).
 - Bold and emphasized text now use plain `bold` / `italic` faces instead of tinting the text with `adoc-gen-face`. This matches `asciidoc-mode` (and the convention in `markdown-mode` / `org-mode`), so switching between the modes is less jarring. Customize `adoc-bold-face` / `adoc-emphasis-face` if you preferred the tint.
+- The example-table tempo template now inserts the modern `|===` delimiter instead of the dated `|====================` run of equals.
 
 ### Bugs fixed
 

@@ -42,6 +42,7 @@ Here are some of the main features of `adoc-mode`:
 - comprehensive syntax highlighting for all AsciiDoc elements, including backslash-escaped inline formatting (e.g. `\*not bold*`)
 - native fontification of source code blocks using language-appropriate major modes
 - font-lock support for Asciidoctor inline macros (`kbd:[]`, `btn:[]`, `menu:[]`, etc.)
+- table highlighting for the PSV (`|===`), CSV (`,===`), and DSV (`:===`) formats - PSV is the most common and flexible, so reach for it unless you're pasting comma- or colon-separated data
 - inline image preview with right-click context menus and remote image support
 - ~50 tempo templates for inserting AsciiDoc markup (formatting, titles, blocks, lists, macros, etc.)
 - region-aware text-styling commands under `C-c C-s` (bold, italic, monospace, highlight, super/subscript, link) that wrap the active region or word at point and toggle the markup off when it's already there

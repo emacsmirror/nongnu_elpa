@@ -89,6 +89,12 @@
     (adoc-test--tempo-delimited-block ?* '(tempo-template-adoc-delimited-block-sidebar))
     (adoc-test--tempo-delimited-block "--" '(tempo-template-adoc-delimited-block-open-block)))
 
+  (it "inserts a table"
+    (adoc-test-trans
+     ""
+     "|===\n| cell 11 | cell 12\n| cell 21 | cell 22\n|===\n"
+     '(tempo-template-adoc-example-table)))
+
   (it "inserts list items"
     (let ((tab-width 2)
           (indent-tabs-mode nil))
