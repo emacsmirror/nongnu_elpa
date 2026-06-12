@@ -76,10 +76,9 @@ windows."
       (when (jabber-chat-buffer--recenter-input-p window)
         (jabber-chat-buffer--recenter-input-window window)))))
 
-(defmacro jabber-chat-buffer-with-scrolltobottom (&rest body)
-  "Evaluate BODY as a compatibility wrapper with no scroll side effects."
-  (declare (indent 0) (debug t))
-  `(progn ,@body))
+(defun jabber-chat-buffer-with-scrolltobottom (&rest values)
+  "Return the last of VALUES without scroll side effects."
+  (car (last values)))
 
 (defvar jabber-send-function nil
   "Function for sending a message from a chat buffer.")

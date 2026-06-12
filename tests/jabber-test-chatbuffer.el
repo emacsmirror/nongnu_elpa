@@ -830,6 +830,13 @@ again, and the ewoc created on the first call must survive."
                     'body-result)))
       (should (equal '(body) events)))))
 
+(ert-deftest jabber-test-chatbuffer-with-scrolltobottom-is-callable ()
+  "Scroll-to-bottom wrapper also works as an ordinary function."
+  (should (eq 'body-result
+              (funcall #'jabber-chat-buffer-with-scrolltobottom
+                       'ignored
+                       'body-result))))
+
 (ert-deftest jabber-test-chatbuffer-recenter-input-window-preserves-point ()
   "Recentering moves temporarily to the input marker and restores point."
   (let ((buffer (generate-new-buffer " *test-chat-recenter*"))
