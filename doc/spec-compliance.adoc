@@ -57,7 +57,9 @@ Findings are graded:
 | Low
 
 | lists
-| Checklist items (`* [ ]`, `* [x]`, `* [*]`) are not recognised.
+| [.line-through]#Checklist items (`* [ ]`, `* [x]`, `* [*]`) are not
+  recognised.# *FIXED* - the checkbox is highlighted with
+  `adoc-checkbox-face` (`adoc-kw-checkbox`).
 | Medium
 
 | blocks / sections / attributes
