@@ -1,0 +1,9 @@
+picomemo vendored source
+
+Repository: https://github.com/mierenhoop/picomemo
+Commit: b156667e922a8c518746629719e4348b6a46d84d
+Version: 1.2.0-5-gb156667
+Vendored files: omemo.c, omemo.h, hacl.c, driver.h, mbedtls.c, LICENSE
+
+This tree intentionally keeps only the files needed to build the
+emacs-jabber OMEMO native module with the HACL* and Mbed TLS drivers.

@@ -54,20 +54,7 @@
             epkgs.relint
           ]);
 
-          picomemo = pkgs.fetchFromGitHub {
-            owner = "mierenhoop";
-            repo = "picomemo";
-            rev = "7ac189ad2461d99b765abcc28e8439e81a047bc8";
-            hash = "sha256-+8tBFtbzHwVzofNs/jmeBfZiiXWkjhlcIB+0gvPfkwg=";
-          };
-
           moduleCFlags = "-I${emacs}/include -fPIC -Wall -Wno-pointer-sign -Wno-unused-function -I.";
-
-          unpackPicomemo = ''
-            rm -rf src/picomemo
-            cp -R ${picomemo} src/picomemo
-            chmod -R u+w src/picomemo
-          '';
 
           omemoModule = pkgs.stdenv.mkDerivation {
             pname = "emacs-jabber-omemo-module";
@@ -79,7 +66,6 @@
 
             buildPhase = ''
               runHook preBuild
-              ${unpackPicomemo}
               mkdir -p out
               CFLAGS="${moduleCFlags}" make -C src INSTALL_DIR="$PWD/out"
               runHook postBuild
@@ -103,7 +89,6 @@
 
             buildPhase = ''
               runHook preBuild
-              ${unpackPicomemo}
               export HOME="$TMPDIR/home"
               export XDG_CACHE_HOME="$TMPDIR/cache"
               export XDG_CONFIG_HOME="$TMPDIR/config"

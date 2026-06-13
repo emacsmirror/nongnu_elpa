@@ -128,7 +128,7 @@ the resulting module.  Signals an error on build failure."
                (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
                (yes-or-no-p
                 (concat "jabber-omemo-core module not found.  "
-                        "Fetch picomemo from github.com and build it now? ")))
+                        "Build it now from the vendored picomemo source? ")))
           (condition-case err
               (progn
                 (jabber-omemo--build-module
