@@ -165,8 +165,11 @@ Invalidated when `jabber-activity-make-name-alist' rebuilds.")
 ;; Global reference declarations
 
 (declare-function jabber-chat-find-buffer "jabber-chat.el" (chat-with))
+(declare-function jabber-chat-with "jabber-chat.el" (jc jid &optional other-window))
+(declare-function fsm-get-state-data "fsm" (fsm))
 (declare-function jabber-muc-looks-like-personal-p
                   "jabber-muc-nick-completion.el" (message &optional group))
+(defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-silent-mode)             ; jabber.el
 
 ;;
@@ -246,6 +249,47 @@ Results are cached in `jabber-activity--shortened-names'."
 	    (jabber-jid-resource jid)))
       (jabber-chat-find-buffer jid)
       (jabber-muc-find-buffer jid)))
+
+(defun jabber-activity--connection-for-jid (jid)
+  "Return a suitable connection for a 1:1 chat with JID."
+  (let ((sym (jabber-jid-symbol jid)))
+    (or (seq-find (lambda (jc)
+                    (memq sym (plist-get (fsm-get-state-data jc) :roster)))
+                  jabber-connections)
+        (and (bound-and-true-p jabber-buffer-connection)
+             (memq jabber-buffer-connection jabber-connections)
+             jabber-buffer-connection)
+        (and (null (cdr jabber-connections))
+             (car jabber-connections)))))
+
+(defun jabber-activity--switch-to-missing-private-muc (jid)
+  "Create and switch to a private MUC buffer for JID, if possible."
+  (when-let* ((group (jabber-jid-user jid))
+              (nickname (jabber-jid-resource jid))
+              (jc (jabber-muc-connection group)))
+    (switch-to-buffer (jabber-muc-private-create-buffer jc group nickname))))
+
+(defun jabber-activity--switch-to-missing-muc (jid)
+  "Create and switch to a MUC buffer for JID, if possible."
+  (let ((old-buffer (current-buffer)))
+    (jabber-muc-switch-to jid)
+    (unless (eq old-buffer (current-buffer))
+      (current-buffer))))
+
+(defun jabber-activity--switch-to-missing-chat (jid)
+  "Create and switch to a 1:1 chat buffer for JID, if possible."
+  (when-let* ((jc (jabber-activity--connection-for-jid jid)))
+    (jabber-chat-with jc jid)))
+
+(defun jabber-activity--switch-to-missing-buffer (jid)
+  "Create and switch to a missing activity buffer for JID, if possible."
+  (cond
+   ((jabber-muc-sender-p jid)
+    (jabber-activity--switch-to-missing-private-muc jid))
+   ((jabber-muc-joined-p jid)
+    (jabber-activity--switch-to-missing-muc jid))
+   (t
+    (jabber-activity--switch-to-missing-chat jid))))
 
 (defun jabber-activity-show-p-default (jid)
   "Return non-nil if JID should be shown in the mode line.
@@ -413,11 +457,12 @@ If no activity, switch back to the last non-Jabber buffer."
           (setq jabber-activity-last-buffer (current-buffer)))
         (if buf
             (switch-to-buffer buf)
-          (setq jabber-activity-jids (delete jid jabber-activity-jids)
-                jabber-activity-personal-jids
-                (delete jid jabber-activity-personal-jids))
-          (jabber-activity-mode-line-update)
-          (message "Buffer for %s no longer exists" jid))
+          (unless (jabber-activity--switch-to-missing-buffer jid)
+            (setq jabber-activity-jids (delete jid jabber-activity-jids)
+                  jabber-activity-personal-jids
+                  (delete jid jabber-activity-personal-jids))
+            (jabber-activity-mode-line-update)
+            (message "Buffer for %s no longer exists" jid)))
         (jabber-activity-clean))
     (if (eq major-mode 'jabber-chat-mode)
         (when (buffer-live-p jabber-activity-last-buffer)

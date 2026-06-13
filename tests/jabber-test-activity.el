@@ -25,6 +25,8 @@
 (defvar jabber-activity--shortened-names)
 (defvar jabber-activity-shorten-cutoff)
 (defvar jabber-activity-name-alist)
+(defvar jabber-buffer-connection)
+(defvar jabber-connections)
 (defvar *jabber-roster*)
 
 ;; Declare functions loaded at runtime via `load'.
@@ -127,7 +129,7 @@
 ;;; Group 4: compare-before-update
 
 (ert-deftest jabber-test-activity-no-update-when-unchanged ()
-  "force-mode-line-update should not fire when strings are unchanged."
+  "Do not call `force-mode-line-update' when strings are unchanged."
   (let ((jabber-activity-jids nil)
 	(jabber-activity-personal-jids nil)
 	(jabber-activity-mode-string "")
@@ -208,6 +210,99 @@
     ;; Rebuild name alist should clear cache.
     (jabber-activity-make-name-alist)
     (should (= 0 (hash-table-count jabber-activity--shortened-names)))))
+
+;;; Group 7: missing buffer recovery
+
+(ert-deftest jabber-test-activity-switch-to-recovers-missing-chat-buffer ()
+  "Missing 1:1 activity buffers are recreated through chat setup."
+  (let ((jid "friend@example.org")
+        (jc 'test-connection)
+        (jabber-connections '(test-connection))
+        (jabber-buffer-connection nil)
+        (jabber-activity-jids '("friend@example.org"))
+        (jabber-activity-personal-jids nil)
+        (created nil)
+        (cleanup-called nil))
+    (with-temp-buffer
+      (let ((target (generate-new-buffer " *jabber-test-chat*")))
+        (unwind-protect
+            (cl-letf (((symbol-function 'jabber-activity-find-buffer-name)
+                       (lambda (_jid) nil))
+                      ((symbol-function 'jabber-chat-with)
+                       (lambda (actual-jc actual-jid &optional _other-window)
+                         (setq created (list actual-jc actual-jid))
+                         (switch-to-buffer target)))
+                      ((symbol-function 'fsm-get-state-data)
+                       (lambda (_jc) nil))
+                      ((symbol-function 'jabber-muc-sender-p)
+                       (lambda (_jid) nil))
+                      ((symbol-function 'jabber-muc-joined-p)
+                       (lambda (_jid &optional _jc) nil))
+                      ((symbol-function 'jabber-activity-clean)
+                       (lambda () (setq cleanup-called t))))
+              (jabber-activity-switch-to jid)
+              (should (equal created (list jc jid)))
+              (should cleanup-called)
+              (should (equal jabber-activity-jids (list jid))))
+          (when (buffer-live-p target)
+            (kill-buffer target)))))))
+
+(ert-deftest jabber-test-activity-switch-to-recovers-missing-muc-buffer ()
+  "Missing active MUC activity buffers are recreated through MUC setup."
+  (let ((jid "room@conference.example.org")
+        (jabber-activity-jids '("room@conference.example.org"))
+        (jabber-activity-personal-jids nil)
+        (switched nil))
+    (with-temp-buffer
+      (let ((target (generate-new-buffer " *jabber-test-muc*")))
+        (unwind-protect
+            (cl-letf (((symbol-function 'jabber-activity-find-buffer-name)
+                       (lambda (_jid) nil))
+                      ((symbol-function 'jabber-muc-sender-p)
+                       (lambda (_jid) nil))
+                      ((symbol-function 'jabber-muc-joined-p)
+                       (lambda (_jid &optional _jc) t))
+                      ((symbol-function 'jabber-muc-switch-to)
+                       (lambda (actual-jid)
+                         (setq switched actual-jid)
+                         (switch-to-buffer target)))
+                      ((symbol-function 'jabber-activity-clean)
+                       (lambda () nil)))
+              (jabber-activity-switch-to jid)
+              (should (string= switched jid))
+              (should (equal jabber-activity-jids (list jid))))
+          (when (buffer-live-p target)
+            (kill-buffer target)))))))
+
+(ert-deftest jabber-test-activity-switch-to-missing-buffer-without-connection-falls-back ()
+  "Missing activity buffers still fall back when no connection can create one."
+  (let ((jid "friend@example.org")
+        (jabber-connections nil)
+        (jabber-buffer-connection nil)
+        (jabber-activity-jids '("friend@example.org"))
+        (jabber-activity-personal-jids '("friend@example.org"))
+        (message-text nil))
+    (cl-letf (((symbol-function 'jabber-activity-find-buffer-name)
+               (lambda (_jid) nil))
+              ((symbol-function 'jabber-chat-with)
+               (lambda (&rest _args)
+                 (ert-fail "jabber-chat-with should not be called")))
+              ((symbol-function 'jabber-muc-sender-p)
+               (lambda (_jid) nil))
+              ((symbol-function 'jabber-muc-joined-p)
+               (lambda (_jid &optional _jc) nil))
+              ((symbol-function 'jabber-activity-mode-line-update)
+               (lambda () nil))
+              ((symbol-function 'jabber-activity-clean)
+               (lambda () nil))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq message-text (apply #'format format-string args)))))
+      (jabber-activity-switch-to jid)
+      (should-not jabber-activity-jids)
+      (should-not jabber-activity-personal-jids)
+      (should (string= message-text
+                       "Buffer for friend@example.org no longer exists")))))
 
 (provide 'jabber-test-activity)
 
