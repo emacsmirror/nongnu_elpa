@@ -25,9 +25,8 @@
 ;; Public Elisp API for OMEMO 0.3 (eu.siacs.conversations.axolotl).
 ;; Wraps the jabber-omemo-core dynamic module (picomemo).
 ;;
-;; This file handles loading the native module, building it on demand
-;; if missing, and re-exports the core functions under the public
-;; jabber-omemo- namespace.
+;; This file handles loading the native module and re-exports the core
+;; functions under the public jabber-omemo- namespace.
 
 ;;; Code:
 
@@ -84,65 +83,24 @@ Keys older than this are deleted on connect."
 (defvar jabber-message-reply--id)       ; jabber-message-reply.el
 (defvar jabber-message-reply--jid)      ; jabber-message-reply.el
 
-(defvar jabber-omemo-build-command
-  (cond
-   ((eq system-type 'darwin)       "make module CC=clang")
-   ((eq system-type 'berkeley-unix) "gmake module CC=clang")
-   (t                               "make module"))
-  "Shell command to build the jabber-omemo-core dynamic module.
-Run from the emacs-jabber project root.")
-
-(defun jabber-omemo--build-module (project-root)
-  "Build the native module synchronously from PROJECT-ROOT.
-Compiles picomemo via `jabber-omemo-build-command', then loads
-the resulting module.  Signals an error on build failure."
-  (let ((default-directory project-root)
-        (buf (get-buffer-create "*jabber-omemo-build*")))
-    (message "Building jabber-omemo-core module...")
-    (unless (zerop (call-process-shell-command
-                    jabber-omemo-build-command nil buf t))
-      (pop-to-buffer buf)
-      (error "Failed to build jabber-omemo-core module.  See *jabber-omemo-build*"))
-    (require 'jabber-omemo-core)
-    (message "jabber-omemo-core module built and loaded.")))
-
 (defvar jabber-omemo--available nil
   "Non-nil when the jabber-omemo-core native module is loaded.")
 
 ;; Module availability check.  Runs once at load time; `defvar' above
-;; preserves `jabber-omemo--available' across repeated loads so the
-;; prompt cannot fire more than once per session.
+;; preserves `jabber-omemo--available' across repeated loads.
 (unless (or jabber-omemo--available
-            (not jabber-omemo-enable)
-            (not module-file-suffix))
+            (not jabber-omemo-enable))
   (if (require 'jabber-omemo-core nil t)
       (setq jabber-omemo--available t)
-    (let* ((this-file (or load-file-name buffer-file-name))
-           (this-dir (and this-file (file-name-directory this-file)))
-           (src-candidate (and this-dir (expand-file-name "src" this-dir)))
-           (src-dir (if (and src-candidate (file-directory-p src-candidate))
-                        src-candidate
-                      (and this-dir (expand-file-name "../src" this-dir)))))
-      (if (and (not noninteractive)
-               src-dir
-               (file-exists-p (expand-file-name "jabber-omemo-core.c" src-dir))
-               (yes-or-no-p
-                (concat "jabber-omemo-core module not found.  "
-                        "Build it now from the vendored picomemo source? ")))
-          (condition-case err
-              (progn
-                (jabber-omemo--build-module
-                 (file-name-directory (directory-file-name src-dir)))
-                (setq jabber-omemo--available t))
-            (error
-             (setq jabber-omemo--available 'failed)
-             (message "OMEMO: build failed: %s" (error-message-string err))))
-        (setq jabber-omemo--available 'unavailable)
-        (message (concat "OMEMO: native module not found, encryption disabled.  "
-                         "Clone https://git.thanosapollo.org/emacs-jabber, "
-                         "run `make module', and place the resulting "
-                         "jabber-omemo-core%s on your `load-path'.")
-                 module-file-suffix)))))
+    (setq jabber-omemo--available 'unavailable)
+    (message "OMEMO: native module not found, encryption disabled")))
+
+(defun jabber-omemo--require-module ()
+  "Return non-nil if the native OMEMO module is available.
+Signal a `user-error' otherwise."
+  (if (eq jabber-omemo--available t)
+      t
+    (user-error "OMEMO module not compiled")))
 
 ;; Declare internal C functions from the dynamic module for the byte-compiler.
 ;; "ext:" prefix tells check-declare to skip file verification.
@@ -186,37 +144,44 @@ the resulting module.  Signals an error on build failure."
 (defun jabber-omemo-setup-store ()
   "Generate a new OMEMO device store.
 Returns a serialized store as a unibyte string."
+  (jabber-omemo--require-module)
   (jabber-omemo--setup-store))
 
 (defun jabber-omemo-deserialize-store (blob)
   "Deserialize BLOB into an OMEMO store object.
 Returns a user-ptr; freed automatically by GC."
+  (jabber-omemo--require-module)
   (jabber-omemo--deserialize-store blob))
 
 (defun jabber-omemo-serialize-store (store-ptr)
   "Serialize STORE-PTR back to a unibyte string."
+  (jabber-omemo--require-module)
   (jabber-omemo--serialize-store store-ptr))
 
 (defun jabber-omemo-get-bundle (store-ptr)
   "Extract the public bundle from STORE-PTR.
 Returns a plist with keys :identity-key, :signed-pre-key,
 :signed-pre-key-id, :signature, :pre-keys."
+  (jabber-omemo--require-module)
   (jabber-omemo--get-bundle store-ptr))
 
 (defun jabber-omemo-rotate-signed-pre-key (store-ptr)
   "Rotate the signed pre-key in STORE-PTR.
 Mutates the store; caller must re-serialize."
+  (jabber-omemo--require-module)
   (jabber-omemo--rotate-signed-pre-key store-ptr))
 
 (defun jabber-omemo-refill-pre-keys (store-ptr)
   "Refill removed pre-keys in STORE-PTR.
 Mutates the store; caller must re-serialize."
+  (jabber-omemo--require-module)
   (jabber-omemo--refill-pre-keys store-ptr))
 
 (defun jabber-omemo-encrypt-message (plaintext)
   "Encrypt PLAINTEXT (a unibyte string) with OMEMO 0.3.
 Returns a plist (:key KEY :iv IV :ciphertext CT),
 all unibyte strings."
+  (jabber-omemo--require-module)
   (jabber-omemo--encrypt-message plaintext))
 
 (defun jabber-omemo-decrypt-message (key iv ciphertext)
@@ -225,12 +190,14 @@ KEY is a unibyte string (>= 32 bytes: 16 AES key + auth tag).
 IV is a 12-byte unibyte string.
 CIPHERTEXT is the encrypted payload.
 Returns the plaintext as a unibyte string."
+  (jabber-omemo--require-module)
   (jabber-omemo--decrypt-message key iv ciphertext))
 
 (defun jabber-omemo-make-session ()
   "Allocate an empty OMEMO session.
 Returns a session user-ptr; freed automatically by GC.
 Use for the receiving side of a pre-key message."
+  (jabber-omemo--require-module)
   (jabber-omemo--make-session))
 
 (defun jabber-omemo-initiate-session (store-ptr sig spk ik pk spk-id pk-id)
@@ -239,21 +206,25 @@ STORE-PTR is the local OMEMO store.
 SIG is a 64-byte signature, SPK/IK/PK are 33-byte serialized keys.
 SPK-ID and PK-ID are integer key IDs.
 Returns a session user-ptr; freed automatically by GC."
+  (jabber-omemo--require-module)
   (jabber-omemo--initiate-session store-ptr sig spk ik pk spk-id pk-id))
 
 (defun jabber-omemo-serialize-session (session-ptr)
   "Serialize SESSION-PTR to a unibyte string."
+  (jabber-omemo--require-module)
   (jabber-omemo--serialize-session session-ptr))
 
 (defun jabber-omemo-deserialize-session (blob)
   "Deserialize BLOB into an OMEMO session object.
 Returns a session user-ptr; freed automatically by GC."
+  (jabber-omemo--require-module)
   (jabber-omemo--deserialize-session blob))
 
 (defun jabber-omemo-encrypt-key (session-ptr key)
   "Encrypt KEY for a recipient using SESSION-PTR.
 KEY is a unibyte string (the message encryption key).
 Returns a plist (:data BYTES :pre-key-p BOOL)."
+  (jabber-omemo--require-module)
   (jabber-omemo--encrypt-key session-ptr key))
 
 (defun jabber-omemo-decrypt-key (session-ptr store-ptr pre-key-p msg)
@@ -263,6 +234,7 @@ STORE-PTR is the local OMEMO store.
 PRE-KEY-P is non-nil if this is a pre-key message.
 MSG is the encrypted key message as a unibyte string.
 Returns the decrypted key as a unibyte string."
+  (jabber-omemo--require-module)
   (jabber-omemo--decrypt-key session-ptr store-ptr pre-key-p msg))
 
 (defun jabber-omemo-heartbeat (session-ptr store-ptr)
@@ -270,18 +242,21 @@ Returns the decrypted key as a unibyte string."
 SESSION-PTR is the session to check.
 STORE-PTR is the local OMEMO store.
 Returns heartbeat message bytes or nil."
+  (jabber-omemo--require-module)
   (jabber-omemo--heartbeat session-ptr store-ptr))
 
 (defun jabber-omemo-aesgcm-decrypt (key iv ciphertext-with-tag)
   "Decrypt CIPHERTEXT-WITH-TAG using AES-256-GCM.
 KEY is a 32-byte unibyte string, IV is a 12-byte unibyte string.
 The last 16 bytes of CIPHERTEXT-WITH-TAG are the GCM auth tag."
+  (jabber-omemo--require-module)
   (jabber-omemo--aesgcm-decrypt key iv ciphertext-with-tag))
 
 (defun jabber-omemo-aesgcm-encrypt (plaintext)
   "Encrypt PLAINTEXT using AES-256-GCM for aesgcm:// media sharing.
 PLAINTEXT is a unibyte string.  Returns a plist
 \(:key KEY :iv IV :ciphertext CIPHERTEXT-WITH-TAG)."
+  (jabber-omemo--require-module)
   (jabber-omemo--aesgcm-encrypt plaintext))
 
 (defun jabber-omemo--build-aesgcm-url (https-url iv key)
