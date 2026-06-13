@@ -29,6 +29,7 @@
 
 (require 'jabber-core)
 (require 'jabber-disco)
+(require 'jabber-xml)
 
 
 (defvar jabber-pre-disconnect-hook)
@@ -47,8 +48,9 @@
   :type 'boolean
   :group 'jabber-csi)
 
-(defvar jabber-csi--last-state nil
-  "Last CSI state sent: `active', `inactive', or nil.")
+(defvar jabber-csi--last-state (make-hash-table :test #'eq)
+  "Last CSI state sent per connection.
+Each value is `active', `inactive', or nil.")
 
 (defvar jabber-csi--timer nil
   "Pending debounce timer for focus changes, or nil.")
@@ -67,16 +69,46 @@ Coalesces rapid focus oscillations into one stanza.")
   "Return non-nil if any Emacs frame has input focus."
   (cl-some #'frame-focus-state (frame-list)))
 
+(defun jabber-csi--supported-p (jc)
+  "Return non-nil if JC advertised CSI stream support."
+  (let ((features (plist-get (fsm-get-state-data jc) :stream-features)))
+    (and features
+         (jabber-xml-child-with-xmlns features jabber-csi-xmlns))))
+
+(defun jabber-csi--last-state-get (jc)
+  "Return last CSI state sent for JC."
+  (and (hash-table-p jabber-csi--last-state)
+       (gethash jc jabber-csi--last-state)))
+
+(defun jabber-csi--last-state-put (jc state)
+  "Record STATE as the last CSI state sent for JC."
+  (unless (hash-table-p jabber-csi--last-state)
+    (setq jabber-csi--last-state (make-hash-table :test #'eq)))
+  (puthash jc state jabber-csi--last-state))
+
+(defun jabber-csi--last-state-remove (&optional jc)
+  "Forget the last CSI state for JC, or all state when JC is nil."
+  (unless (hash-table-p jabber-csi--last-state)
+    (setq jabber-csi--last-state (make-hash-table :test #'eq)))
+  (if jc
+      (remhash jc jabber-csi--last-state)
+    (clrhash jabber-csi--last-state)))
+
+(defun jabber-csi--send-state-to-connection (jc state)
+  "Send CSI STATE to JC when supported and not already current."
+  (when (and (jabber-csi--supported-p jc)
+             (not (eq state (jabber-csi--last-state-get jc))))
+    (jabber-csi--last-state-put jc state)
+    (jabber-send-sexp-if-connected
+     jc `(,state ((xmlns . ,jabber-csi-xmlns))))))
+
 (defun jabber-csi--send-state ()
-  "Send CSI active or inactive to all connections."
+  "Send CSI active or inactive to all supporting connections."
   (setq jabber-csi--timer nil)
   (when jabber-csi-enable
     (let ((state (if (jabber-csi--focused-p) 'active 'inactive)))
-      (unless (eq state jabber-csi--last-state)
-        (setq jabber-csi--last-state state)
-        (dolist (jc jabber-connections)
-          (jabber-send-sexp-if-connected
-           jc `(,state ((xmlns . ,jabber-csi-xmlns)))))))))
+      (dolist (jc jabber-connections)
+        (jabber-csi--send-state-to-connection jc state)))))
 
 (defun jabber-csi--focus-changed ()
   "Hook for `after-focus-change-function'.
@@ -86,17 +118,19 @@ Debounces rapid focus changes into a single CSI stanza."
 	(run-with-timer jabber-csi--debounce-delay nil
 			#'jabber-csi--send-state)))
 
-(defun jabber-csi--on-connect (_jc)
-  "Send current CSI state after connection.
+(defun jabber-csi--on-connect (jc)
+  "Send current CSI state to JC after connection.
 Added to `jabber-post-connect-hooks'."
   (jabber-csi--stop-timer)
-  (setq jabber-csi--last-state nil)
-  (jabber-csi--send-state))
+  (jabber-csi--last-state-remove jc)
+  (when jabber-csi-enable
+    (jabber-csi--send-state-to-connection
+     jc (if (jabber-csi--focused-p) 'active 'inactive))))
 
-(defun jabber-csi--on-disconnect (&optional _jc)
-  "Cancel pending CSI timer and reset state on disconnect."
+(defun jabber-csi--on-disconnect (&optional jc)
+  "Cancel pending CSI timer and reset state for JC on disconnect."
   (jabber-csi--stop-timer)
-  (setq jabber-csi--last-state nil))
+  (jabber-csi--last-state-remove jc))
 
 (add-hook 'jabber-post-connect-hooks #'jabber-csi--on-connect)
 (add-hook 'jabber-post-resume-hooks #'jabber-csi--on-connect)
