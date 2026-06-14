@@ -1,0 +1,5 @@
+*.elc
+/.emacs-test-cache/
+/result
+/result-*
+/.direnv/

@@ -1,0 +1,34 @@
+#+title: emacs-hermes
+
+An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
+
++ =M-x hermes= dashboard with =keymap-popup= actions
++ ERC/emacs-jabber-style chat buffer with streaming replies
++ Slash commands, approvals, clarify/sudo/secret prompts, interrupts, and steering
++ Markdown-rendered replies; diffs open as =[View Diff]= in =diff-mode=
++ *Kanban*, sessions, MCP, cron, inventory, and rollback browsers
++ Provider onboarding (API keys) from Emacs
++ /Optional/ local eval endpoint (=hermes-exec=) for the Hermes Emacs MCP bridge
+
+* Installation
+
+** use-package
+
+#+begin_src emacs-lisp
+  (use-package hermes
+    :vc (:url "https://codeberg.org/thanosapollo/emacs-hermes" :lisp-dir "lisp")
+    :custom (hermes-dashboard-transport-url "http://127.0.0.1:9119"))
+#+end_src
+
+* Usage
+
+=M-x hermes= opens the dashboard and =M-x hermes-chat= opens a chat buffer:
+- =RET= to send.
+- =/= for slash commands.
+- =C-c C-o= for the actions menu.
+
+Point =hermes-dashboard-transport-url= at your running dashboard:
+
+#+begin_src sh
+  hermes dashboard --no-open --tui --host 127.0.0.1 --port 9119
+#+end_src
