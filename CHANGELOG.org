@@ -1,5 +1,21 @@
 #+TITLE: Changelog
 
+* [0.11.0]
+#+date: 2026-06-13
+
+** Added
+- Message reactions and MUC typing indicators
+- Nix flake development environment
+
+** Changed
+- OMEMO native module setup no longer auto-builds or auto-fetches sources
+
+** Fixes
+- Avoid Prosody disconnects by sending CSI only when the server advertises it
+- Recreate missing chat and MUC buffers from unread activity
+- Stop emitting malformed presence and vCard stanzas with nil children
+- Improve HTTP upload, message archive, reactions, receipts, and chat buffer reliability
+
 * [0.10.10]
 #+date: 2026-05-30
 
