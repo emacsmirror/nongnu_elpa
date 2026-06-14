@@ -41,8 +41,7 @@
 
 ;;;; Handling incoming events
 
-(with-eval-after-load "jabber-disco"
-  (jabber-disco-advertise-feature jabber-rtt-xmlns))
+(jabber-disco-advertise-feature jabber-rtt-xmlns)
 
 (defvar-local jabber-rtt-ewoc-node nil)
 
@@ -54,9 +53,7 @@
 
 (defvar-local jabber-rtt-timer nil)
 
-;;;###autoload
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-message-chain #'jabber-rtt-handle-message 50))
+(jabber-chain-add 'jabber-message-chain #'jabber-rtt-handle-message 50)
 
 ;;;###autoload
 (defun jabber-rtt-handle-message (jc xml-data)

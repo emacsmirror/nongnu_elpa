@@ -53,8 +53,7 @@
 ;;
 ;;; Respond to disco requests
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-presence-chain #'jabber-process-caps 10))
+(jabber-chain-add 'jabber-presence-chain #'jabber-process-caps 10)
 
 (defvar jabber-caps-cache (make-hash-table :test 'equal))
 
@@ -134,7 +133,7 @@ nil, access is always granted.")
 (declare-function jabber-send-current-presence "jabber-presence.el"
                   (&optional jc))
 (declare-function jabber-widget-xdata-formtype "jabber-widget.el" (x))
-(defvar jabber-presence-element-functions) ; jabber-presence.el
+(defvar jabber-presence-element-functions nil) ; jabber-presence.el
 
 ;;
 
@@ -449,9 +448,7 @@ the right node."
 	(node . ,jabber-caps-node)
 	(ver . ,jabber-caps-current-hash)))))
 
-;;;###autoload
-(with-eval-after-load "jabber-presence"
-  (add-to-list 'jabber-presence-element-functions #'jabber-caps-presence-element))
+(add-to-list 'jabber-presence-element-functions #'jabber-caps-presence-element)
 
 (defun jabber-return-disco-info (jc xml-data)
   "Respond to a service discovery request.
@@ -690,7 +687,7 @@ arguments and items result as third argument when result is
 available.
 On success, result is a list of items, where each
 item is [\"name\" \"jid\" \"node\"] (some values may be nil).
-On error, result is the error node, recognizable by (eq (car result) \='error).
+On error, result is the error node, recognizable by (eq (car result) \\='error).
 
 If CALLBACK is nil, just fetch data.  If FORCE is non-nil,
 invalidate cache and get fresh data."

@@ -294,16 +294,18 @@ obtained from `xml-parse-region'."
    ((eq (car xml-data) 'failure)
     (error "Command rejected by server"))))
 
-(defvar *jabber-virtual-server-function* nil
+(define-obsolete-variable-alias '*jabber-virtual-server-function*
+  'jabber-virtual-server-function "0.11.0")
+(defvar jabber-virtual-server-function nil
   "Function to use for sending stanzas on a virtual connection.
 The function should accept two arguments, the connection object
 and a string that the connection wants to send.")
 
 (defun jabber-virtual-connect (fsm _server _network-server _port)
   "Connect to a virtual \"server\".
-Use `*jabber-virtual-server-function*' as send function.
+Use `jabber-virtual-server-function' as send function.
 FSM is the finite state machine created in jabber.el library."
-  (unless (functionp *jabber-virtual-server-function*)
+  (unless (functionp jabber-virtual-server-function)
     (error "No virtual server function specified"))
   ;; We pass the fsm itself as "connection object", as that is what a
   ;; virtual server needs to send stanzas.
@@ -311,7 +313,7 @@ FSM is the finite state machine created in jabber.el library."
 
 (defun jabber-virtual-send (connection string)
   "Send STRING through CONNECTION via the virtual-server function."
-  (funcall *jabber-virtual-server-function* connection string))
+  (funcall jabber-virtual-server-function connection string))
 
 (provide 'jabber-conn)
 ;;; jabber-conn.el ends here

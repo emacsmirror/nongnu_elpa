@@ -109,7 +109,7 @@ notify for all messages, mentions only, or not at all."
      group buffer (if nick (format "%s: %s" nick text) text) title)))
 
 ;; jabber-*-notifications* requires "from" argument, so we cant use
-;; define-jabber-alert/define-personal-jabber-alert here and do the
+;; define-jabber-alert/define-jabber-personal-alert here and do the
 ;; work by hand:
 
 (cl-pushnew 'jabber-message-notifications (get 'jabber-alert-message-hooks 'custom-options))

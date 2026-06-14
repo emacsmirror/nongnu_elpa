@@ -69,13 +69,13 @@
   ;; mostly stolen from widget-color-complete
   (let* ((prefix (buffer-substring-no-properties (widget-field-start widget)
 						 (point)))
-	 (list (append (mapcar #'symbol-name *jabber-roster*)
+	 (list (append (mapcar #'symbol-name jabber-roster-list)
 		       (delq nil
 			     (mapcar #'(lambda (item)
 					 (when (jabber-jid-rostername item)
 					   (format "%s <%s>" (jabber-jid-rostername item)
 						   (symbol-name item))))
-				     *jabber-roster*))))
+				     jabber-roster-list))))
 	 (completion (try-completion prefix list)))
     (cond ((eq completion t)
 	   (message "Exact match."))

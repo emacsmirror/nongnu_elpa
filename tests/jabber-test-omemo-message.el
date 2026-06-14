@@ -556,7 +556,6 @@ Clears OMEMO in-memory caches and tears down on exit."
            (account "bob@example.com")
            (peer "alice@example.com")
            (our-did 42)
-           (peer-did 99)
            (publish-called nil))
       (puthash account store-ptr-b jabber-omemo--stores)
       (puthash account our-did jabber-omemo--device-ids)

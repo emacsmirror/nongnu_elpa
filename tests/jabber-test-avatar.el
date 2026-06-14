@@ -9,7 +9,7 @@
 ;;; Avatar display bounds
 
 (ert-deftest jabber-test-avatar-image-uses-configured-bounds ()
-  (let ((avatar (make-avatar :base64-data (base64-encode-string "data" t)
+  (let ((avatar (make-jabber-avatar :base64-data (base64-encode-string "data" t)
                              :mime-type "image/png"))
         (jabber-avatar-max-width 32)
         (jabber-avatar-max-height 48))

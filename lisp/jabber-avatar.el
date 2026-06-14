@@ -72,8 +72,22 @@
 
 ;;;; Avatar data handling
 
-(cl-defstruct avatar
+(cl-defstruct jabber-avatar
   sha1-sum mime-type url base64-data height width bytes)
+
+(define-obsolete-function-alias 'make-avatar 'make-jabber-avatar "0.11.0")
+(define-obsolete-function-alias 'copy-avatar 'copy-jabber-avatar "0.11.0")
+(define-obsolete-function-alias 'avatar-p 'jabber-avatar-p "0.11.0")
+(define-obsolete-function-alias 'avatar-sha1-sum
+  'jabber-avatar-sha1-sum "0.11.0")
+(define-obsolete-function-alias 'avatar-mime-type
+  'jabber-avatar-mime-type "0.11.0")
+(define-obsolete-function-alias 'avatar-url 'jabber-avatar-url "0.11.0")
+(define-obsolete-function-alias 'avatar-base64-data
+  'jabber-avatar-base64-data "0.11.0")
+(define-obsolete-function-alias 'avatar-height 'jabber-avatar-height "0.11.0")
+(define-obsolete-function-alias 'avatar-width 'jabber-avatar-width "0.11.0")
+(define-obsolete-function-alias 'avatar-bytes 'jabber-avatar-bytes "0.11.0")
 
 (defun jabber-avatar-from-url (url)
   "Construct an avatar structure from the given URL.
@@ -117,7 +131,7 @@ If MIME-TYPE is not specified, try to find it from the image data."
 	 (type (or mime-type
                    (when-let* ((detected (ignore-errors (image-type data nil t))))
                      (symbol-name detected)))))
-    (make-avatar :mime-type type :sha1-sum sha1-sum :base64-data base64-data :bytes bytes)))
+    (make-jabber-avatar :mime-type type :sha1-sum sha1-sum :base64-data base64-data :bytes bytes)))
 
 (defun jabber-avatar--line-height ()
   "Return the pixel height of a line, suitable for inline avatars."
@@ -130,10 +144,10 @@ Return nil if images of this type are not supported."
       (jabber-image-create
        (with-temp-buffer
          (set-buffer-multibyte nil)
-         (insert (avatar-base64-data avatar))
+         (insert (jabber-avatar-base64-data avatar))
          (base64-decode-region (point-min) (point-max))
          (buffer-string))
-       (avatar-mime-type avatar)
+       (jabber-avatar-mime-type avatar)
        jabber-avatar-max-width
        jabber-avatar-max-height)
     (error nil)))
@@ -150,8 +164,8 @@ If there is no cached image, return nil."
 
 (defun jabber-avatar-cache (avatar)
   "Cache the AVATAR."
-  (let* ((id (avatar-sha1-sum avatar))
-	 (base64-data (avatar-base64-data avatar))
+  (let* ((id (jabber-avatar-sha1-sum avatar))
+	 (base64-data (jabber-avatar-base64-data avatar))
 	 (filename (expand-file-name id jabber-avatar-cache-directory)))
     (unless (file-directory-p jabber-avatar-cache-directory)
       (make-directory jabber-avatar-cache-directory t))
@@ -180,8 +194,8 @@ AVATAR may be one of:
   (let ((jid-symbol (jabber-jid-symbol jid))
 	image hash)
     (cond
-     ((avatar-p avatar)
-      (setq hash (avatar-sha1-sum avatar))
+     ((jabber-avatar-p avatar)
+      (setq hash (jabber-avatar-sha1-sum avatar))
       (setq image (lambda () (jabber-avatar-image avatar))))
      ((stringp avatar)
       (setq hash avatar)

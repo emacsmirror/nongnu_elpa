@@ -5,7 +5,7 @@
 
 ;; Author: Magnus Henoch <mange@freemail.hu>
 ;; Maintainer: Thanos Apollo <public@thanosapollo.org>
-;; Keywords:
+;; Keywords: comm
 
 ;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

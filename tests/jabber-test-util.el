@@ -231,21 +231,21 @@
   "Decode hex-encoded UTF-8 string."
   (should (string= (jabber-unhex "hello%20world") "hello world")))
 
-(ert-deftest jabber-test-util-string>-numerical-greater ()
+(ert-deftest jabber-test-util-jabber-string>-numerical-greater ()
   "Larger number returns t."
-  (should (string>-numerical "200" "100")))
+  (should (jabber-string>-numerical "200" "100")))
 
-(ert-deftest jabber-test-util-string>-numerical-less ()
+(ert-deftest jabber-test-util-jabber-string>-numerical-less ()
   "Smaller number returns nil."
-  (should-not (string>-numerical "50" "100")))
+  (should-not (jabber-string>-numerical "50" "100")))
 
-(ert-deftest jabber-test-util-string>-numerical-equal ()
+(ert-deftest jabber-test-util-jabber-string>-numerical-equal ()
   "Equal numbers return nil."
-  (should-not (string>-numerical "100" "100")))
+  (should-not (jabber-string>-numerical "100" "100")))
 
-(ert-deftest jabber-test-util-string>-numerical-longer ()
+(ert-deftest jabber-test-util-jabber-string>-numerical-longer ()
   "Longer string (more digits) is greater."
-  (should (string>-numerical "1000" "999")))
+  (should (jabber-string>-numerical "1000" "999")))
 
 (ert-deftest jabber-test-util-signal-error ()
   "jabber-signal-error signals jabber-error condition."

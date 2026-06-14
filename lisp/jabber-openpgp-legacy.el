@@ -56,7 +56,7 @@
 (defvar jabber-muc-participants)        ; jabber-muc.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-presence-element-functions) ; jabber-presence.el
-(defvar *jabber-current-status*)        ; jabber.el
+(defvar jabber-current-status)        ; jabber.el
 (defvar jabber-jid-obarray)             ; jabber-util.el
 
 ;;; Constants
@@ -147,7 +147,7 @@ Caches the result and guards against re-entrant GPG calls."
   (when jabber-openpgp-legacy-sign-presence
     (require 'jabber-openpgp)
     (when-let* ((key (jabber-openpgp--our-key-safe jc)))
-      (let ((status (or (bound-and-true-p *jabber-current-status*) "")))
+      (let ((status (or (bound-and-true-p jabber-current-status) "")))
         (cond
          ;; Cache hit: same status and key, return cached elements.
          ((and jabber-openpgp-legacy--sign-cache
@@ -348,9 +348,8 @@ STRIPPED is the base64-armored ciphertext."
 (add-to-list 'jabber-presence-element-functions
              #'jabber-openpgp-legacy--sign-presence)
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-presence-chain
-                    #'jabber-openpgp-legacy--process-presence 30))
+(jabber-chain-add 'jabber-presence-chain
+                  #'jabber-openpgp-legacy--process-presence 30)
 
 (provide 'jabber-openpgp-legacy)
 ;;; jabber-openpgp-legacy.el ends here

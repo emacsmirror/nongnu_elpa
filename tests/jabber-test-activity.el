@@ -27,7 +27,7 @@
 (defvar jabber-activity-name-alist)
 (defvar jabber-buffer-connection)
 (defvar jabber-connections)
-(defvar *jabber-roster*)
+(defvar jabber-roster-list)
 
 ;; Declare functions loaded at runtime via `load'.
 (declare-function jabber-activity-common-prefix "jabber-activity" (s1 s2))
@@ -203,7 +203,7 @@
 	(jabber-activity-shorten-aggressively nil)
 	(jabber-activity--shortened-names (make-hash-table :test #'equal))
 	(jabber-activity-name-alist '(("foo@bar" . "foo")))
-	(*jabber-roster* nil))
+	(jabber-roster-list nil))
     ;; Populate cache.
     (jabber-activity-make-strings-shorten '("foo@bar"))
     (should (= 1 (hash-table-count jabber-activity--shortened-names)))

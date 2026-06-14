@@ -13,9 +13,9 @@
 (defvar jabber-message-chain nil)
 (defvar jabber-presence-chain nil)
 (defvar jabber-iq-chain nil)
-(defvar *jabber-current-show*)
-(defvar *jabber-current-status*)
-(defvar *jabber-current-priority*)
+(defvar jabber-current-show)
+(defvar jabber-current-status)
+(defvar jabber-current-priority)
 
 (require 'jabber-presence)
 (require 'jabber-xml)
@@ -24,9 +24,9 @@
 
 (ert-deftest jabber-test-presence-children-default-omits-nil-elements ()
   "Default empty status/show presence serializes no nil elements."
-  (let ((*jabber-current-status* "")
-        (*jabber-current-show* "")
-        (*jabber-current-priority* 10)
+  (let ((jabber-current-status "")
+        (jabber-current-show "")
+        (jabber-current-priority 10)
         (jabber-presence-element-functions nil))
     (should (equal (jabber-presence-children nil)
                    '((priority () "10"))))
@@ -37,9 +37,9 @@
 
 (ert-deftest jabber-test-presence-children-keeps-extension-elements ()
   "Extension elements returned by presence hooks are preserved."
-  (let ((*jabber-current-status* "")
-        (*jabber-current-show* "")
-        (*jabber-current-priority* nil)
+  (let ((jabber-current-status "")
+        (jabber-current-show "")
+        (jabber-current-priority nil)
         (jabber-presence-element-functions
          (list (lambda (_jc)
                  '((c ((xmlns . "urn:xmpp:caps"))))))))

@@ -852,13 +852,11 @@ depth.  Called when leaving a room to stop wasting bandwidth."
 
 (jabber-disco-advertise-feature jabber-mam-xmlns)
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-message-chain #'jabber-mam--process-message -10))
+(jabber-chain-add 'jabber-message-chain #'jabber-mam--process-message -10)
 
-(with-eval-after-load "jabber-core"
-  (add-hook 'jabber-post-connect-hooks #'jabber-mam-maybe-catchup)
-  (add-hook 'jabber-pre-disconnect-hook #'jabber-mam--cleanup-all)
-  (add-hook 'jabber-lost-connection-hooks #'jabber-mam--cleanup-connection))
+(add-hook 'jabber-post-connect-hooks #'jabber-mam-maybe-catchup)
+(add-hook 'jabber-pre-disconnect-hook #'jabber-mam--cleanup-all)
+(add-hook 'jabber-lost-connection-hooks #'jabber-mam--cleanup-connection)
 
 (provide 'jabber-mam)
 ;;; jabber-mam.el ends here

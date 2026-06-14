@@ -228,10 +228,9 @@ Legacy accounts ignore these events."
            (jabber-bookmarks2--remove-from-cache jc jid)
            (jabber-bookmarks2--maybe-leave jc jid)))))))
 
-(with-eval-after-load "jabber-pubsub"
-  (setf (alist-get jabber-bookmarks2-xmlns jabber-pubsub-node-handlers
-                   nil nil #'equal)
-        #'jabber-bookmarks2--handle-event))
+(setf (alist-get jabber-bookmarks2-xmlns jabber-pubsub-node-handlers
+                 nil nil #'equal)
+      #'jabber-bookmarks2--handle-event)
 
 ;;; Fetch bookmarks
 
@@ -444,6 +443,11 @@ CALLBACK is called with JC, XML-DATA, and t on success or nil on failure."
   "N" ("Change name" jabber-bookmarks-set-name)
   "p" ("Change password" jabber-bookmarks-set-password))
 
+(defun jabber-bookmarks--edit-menu ()
+  "Show bookmark edit menu."
+  (interactive)
+  (keymap-popup jabber-bookmarks-edit-map))
+
 (keymap-popup-define jabber-bookmarks-mode-map
   "Bookmarks commands."
   :parent tabulated-list-mode-map
@@ -451,7 +455,7 @@ CALLBACK is called with JC, XML-DATA, and t on success or nil on failure."
   "a" ("Add bookmark" jabber-bookmarks-add)
   "d" ("Delete bookmark" jabber-bookmarks-delete)
   "t" ("Toggle autojoin" jabber-bookmarks-toggle-autojoin)
-  "e" ("Edit bookmark" :keymap jabber-bookmarks-edit-map)
+  "e" ("Edit bookmark" jabber-bookmarks--edit-menu)
   "g" ("Refresh" revert-buffer))
 
 (keymap-set jabber-bookmarks-mode-map "h" #'jabber-bookmarks-menu)
@@ -711,8 +715,7 @@ NICK, if non-nil, is stored in the bookmark."
   (clrhash jabber-bookmarks)
   (clrhash jabber-bookmarks--legacy-accounts))
 
-(with-eval-after-load "jabber-core"
-  (add-hook 'jabber-pre-disconnect-hook #'jabber-bookmarks--on-disconnect))
+(add-hook 'jabber-pre-disconnect-hook #'jabber-bookmarks--on-disconnect)
 
 (provide 'jabber-bookmarks)
 

@@ -106,8 +106,7 @@ BODY is the message text.  Clears reply state after producing elements."
                 elements))
         elements))))
 
-(with-eval-after-load "jabber-chat"
-  (add-hook 'jabber-chat-send-hooks #'jabber-message-reply--send-hook))
+(add-hook 'jabber-chat-send-hooks #'jabber-message-reply--send-hook)
 
 ;;; Helpers
 

@@ -42,6 +42,8 @@
 (require 'jabber-chat)
 (require 'jabber-db)
 
+(declare-function jabber-muc-modify-participant "jabber-muc"
+                  (group nickname new-plist))
 (declare-function jabber-muc-participant-plist "jabber-muc"
                   (group nickname))
 (declare-function jabber-disco-advertise-feature "jabber-disco")
@@ -1396,7 +1398,6 @@ sessions for open chat buffers."
         (jabber-omemo--prefetch-sessions
          jc (jabber-jid-user jabber-chatting-with))))))
 
-;;;###autoload
 (defun jabber-omemo--on-disconnect ()
   "Pre-disconnect hook.  Clear OMEMO in-memory caches."
   (clrhash jabber-omemo--device-ids)
@@ -1461,20 +1462,17 @@ Returns non-nil if handled, nil to fall through to plaintext."
   (jabber-disco-advertise-feature jabber-omemo-xmlns)
   (jabber-disco-advertise-feature (concat jabber-omemo-devicelist-node "+notify"))
 
-  (with-eval-after-load "jabber-pubsub"
-    (setf (alist-get jabber-omemo-devicelist-node jabber-pubsub-node-handlers
-                     nil nil #'equal)
-          #'jabber-omemo--handle-device-list))
+  (setf (alist-get jabber-omemo-devicelist-node jabber-pubsub-node-handlers
+                   nil nil #'equal)
+        #'jabber-omemo--handle-device-list)
 
-  (with-eval-after-load "jabber-core"
-    (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
-    (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect))
+  (add-hook 'jabber-post-connect-hooks #'jabber-omemo-on-connect)
+  (add-hook 'jabber-pre-disconnect-hook #'jabber-omemo--on-disconnect)
 
-  (with-eval-after-load "jabber-httpupload"
-    (setq jabber-httpupload-pre-upload-transform
-          #'jabber-omemo--httpupload-transform)
-    (setq jabber-httpupload-send-url-function
-          #'jabber-omemo--httpupload-send-url)))
+  (setq jabber-httpupload-pre-upload-transform
+        #'jabber-omemo--httpupload-transform)
+  (setq jabber-httpupload-send-url-function
+        #'jabber-omemo--httpupload-send-url))
 
 (when (eq jabber-omemo--available t)
   (jabber-chat-register-decrypt-handler

@@ -126,13 +126,21 @@ Trailing newlines are always removed, regardless of this variable."
 (declare-function jabber-get-info "jabber-info.el" (jc to))
 (declare-function jabber-blocking-block-jid "jabber-blocking.el" (jc jid))
 (declare-function jabber-activity-switch-to "jabber-activity.el" (&optional jid-param))
+(declare-function jabber-chat-with "jabber-chat.el"
+                  (jc jid &optional other-window))
+(declare-function jabber-edit-bookmarks "jabber-bookmarks.el" (jc))
+(declare-function jabber-get-browse "jabber-browse.el" (jc to))
 (declare-function jabber-get-conference-data "jabber-bookmarks.el"
                   (jc conference-jid cont &optional key))
+(declare-function jabber-get-version "jabber-version.el" (jc to))
 (declare-function jabber-muc-active-rooms "jabber-muc.el" ())
 (declare-function jabber-muc-connection "jabber-muc.el" (group))
+(declare-function jabber-muc-join "jabber-muc.el"
+                  (jc group nickname &optional popup))
 (declare-function jabber-muc-switch-to "jabber-muc.el" (group))
+(declare-function jabber-omemo-show-fingerprints "jabber-omemo-trust.el" (jc))
 
-(defvar *jabber-current-show*)          ; jabber.el
+(defvar jabber-current-show)          ; jabber.el
 (defvar jabber-presence-strings)        ; jabber.el
 (defvar jabber-activity-jids)           ; jabber-activity.el
 (defvar jabber-muc--rooms)              ; jabber-muc.el
@@ -182,7 +190,7 @@ Only contacts and rooms belonging to this connection are shown.")
   :description (lambda ()
                  (format "Presence (current: %s)"
                          (propertize
-                          (or (cdr (assoc *jabber-current-show*
+                          (or (cdr (assoc jabber-current-show
                                           jabber-presence-strings))
                               "Offline")
                           'face 'keymap-popup-value)))
@@ -197,6 +205,16 @@ Only contacts and rooms belonging to this connection are shown.")
   "I" ("Disco info" jabber-get-disco-info)
   "b" ("Browse" jabber-get-browse)
   "v" ("Client version" jabber-get-version))
+
+(defun jabber-roster--presence-menu ()
+  "Show roster presence menu."
+  (interactive)
+  (keymap-popup jabber-roster-presence-map))
+
+(defun jabber-roster--discovery-menu ()
+  "Show roster discovery menu."
+  (interactive)
+  (keymap-popup jabber-roster-discovery-map))
 
 (defvar jabber-roster--selected-jid nil
   "JID selected by `completing-read', used by action submenu.")
@@ -266,10 +284,10 @@ Only contacts and rooms belonging to this connection are shown.")
        :if (lambda () jabber-connections))
   :row
   :group "Presence"
-  "p" ("Presence" :keymap jabber-roster-presence-map
+  "p" ("Presence" jabber-roster--presence-menu
        :if (lambda () jabber-connections))
   :group "Discovery"
-  "d" ("Discovery" :keymap jabber-roster-discovery-map
+  "d" ("Discovery" jabber-roster--discovery-menu
        :if (lambda () jabber-connections))
   :group "Connection"
   "C" ("Connect" jabber-connect-all

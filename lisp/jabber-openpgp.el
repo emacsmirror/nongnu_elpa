@@ -475,10 +475,9 @@ local GPG keyring.  Bail early if no local key is configured."
              (message "OpenPGP: failed to fetch key %s for %s"
                       fingerprint jid)))))))))
 
-(with-eval-after-load "jabber-pubsub"
-  (setf (alist-get jabber-openpgp-pubkeys-node jabber-pubsub-node-handlers
-                   nil nil #'equal)
-        #'jabber-openpgp--handle-keys-event))
+(setf (alist-get jabber-openpgp-pubkeys-node jabber-pubsub-node-handlers
+                 nil nil #'equal)
+      #'jabber-openpgp--handle-keys-event)
 
 (jabber-chat-register-decrypt-handler
  'openpgp
@@ -487,8 +486,7 @@ local GPG keyring.  Bail early if no local key is configured."
  :priority 20
  :error-label "OpenPGP")
 
-(with-eval-after-load "jabber-core"
-  (add-hook 'jabber-post-connect-hooks #'jabber-openpgp-on-connect))
+(add-hook 'jabber-post-connect-hooks #'jabber-openpgp-on-connect)
 
 (provide 'jabber-openpgp)
 ;;; jabber-openpgp.el ends here

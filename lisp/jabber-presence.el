@@ -71,9 +71,9 @@ stanza.")
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
-(defvar *jabber-current-show*)          ; jabber.el
-(defvar *jabber-current-status*)        ; jabber.el
-(defvar *jabber-current-priority*)      ; jabber.el
+(defvar jabber-current-show)          ; jabber.el
+(defvar jabber-current-status)        ; jabber.el
+(defvar jabber-current-priority)      ; jabber.el
 (defvar jabber-default-show)            ; jabber.el
 (defvar jabber-default-status)          ; jabber.el
 (defvar jabber-default-priority)        ; jabber.el
@@ -416,15 +416,15 @@ When JC is nil, send for all connections."
                                   nil t nil 'jabber-presence-history))
           (show (cdr (assoc label jabber-presence-show-alist))))
      (list show
-           (jabber-read-with-input-method "Status message: " *jabber-current-status*
-                                          '*jabber-status-history*)
-           (read-string "Priority: " (int-to-string (if *jabber-current-priority*
-                                                        *jabber-current-priority*
+           (jabber-read-with-input-method "Status message: " jabber-current-status
+                                          'jabber-status-history)
+           (read-string "Priority: " (int-to-string (if jabber-current-priority
+                                                        jabber-current-priority
                                                       jabber-default-priority)))
            jc)))
 
-  (setq *jabber-current-show* show *jabber-current-status* status)
-  (setq *jabber-current-priority*
+  (setq jabber-current-show show jabber-current-status status)
+  (setq jabber-current-priority
 	(if (numberp priority) priority (string-to-number priority)))
 
   (let ((connections (if jc (list jc) jabber-connections))
@@ -457,14 +457,14 @@ When JC is nil, send for all connections."
 JC is the Jabber connection."
   (append
    (delq nil
-         (list (when (and *jabber-current-status*
-                          (> (length *jabber-current-status*) 0))
-                 `(status () ,*jabber-current-status*))
-               (when (and *jabber-current-show*
-                          (> (length *jabber-current-show*) 0))
-                 `(show () ,*jabber-current-show*))
-               (when *jabber-current-priority*
-                 `(priority () ,(number-to-string *jabber-current-priority*)))))
+         (list (when (and jabber-current-status
+                          (> (length jabber-current-status) 0))
+                 `(status () ,jabber-current-status))
+               (when (and jabber-current-show
+                          (> (length jabber-current-show) 0))
+                 `(show () ,jabber-current-show))
+               (when jabber-current-priority
+                 `(priority () ,(number-to-string jabber-current-priority)))))
    (apply #'append (mapcar (lambda (f)
                              (funcall f jc))
                            jabber-presence-element-functions))))
@@ -514,11 +514,11 @@ JC is the Jabber connection."
 				     (type . ,type)))))
 
    (t
-    (let ((*jabber-current-show*
+    (let ((jabber-current-show
 	   (if (string= type "online")
 	       ""
 	     type))
-	  (*jabber-current-status* nil))
+	  (jabber-current-status nil))
       (jabber-send-sexp jc `(presence ((to . ,jid))
 				      ,@(jabber-presence-children jc)))))))
 
@@ -530,9 +530,9 @@ If JC is non-nil, send only for that connection."
    (list
     (when current-prefix-arg
       (jabber-read-with-input-method
-       "status message: " *jabber-current-status* '*jabber-status-history*))))
-  (jabber-send-presence "away" (if status status *jabber-current-status*)
-			*jabber-current-priority* jc))
+       "status message: " jabber-current-status 'jabber-status-history))))
+  (jabber-send-presence "away" (if status status jabber-current-status)
+			jabber-current-priority jc))
 
 ;; XXX code duplication!
 (defun jabber-send-xa-presence (&optional status jc)
@@ -543,9 +543,9 @@ If JC is non-nil, send only for that connection."
    (list
     (when current-prefix-arg
       (jabber-read-with-input-method
-       "status message: " *jabber-current-status* '*jabber-status-history*))))
-  (jabber-send-presence "xa" (if status status *jabber-current-status*)
-			*jabber-current-priority* jc))
+       "status message: " jabber-current-status 'jabber-status-history))))
+  (jabber-send-presence "xa" (if status status jabber-current-status)
+			jabber-current-priority jc))
 
 ;;;###autoload
 (defun jabber-send-default-presence (&optional jc)
@@ -563,9 +563,9 @@ That is, if presence has already been sent, use current settings,
 otherwise send defaults (see `jabber-send-default-presence').
 If JC is non-nil, send only for that connection."
   (interactive)
-  (if *jabber-current-show*
-      (jabber-send-presence *jabber-current-show* *jabber-current-status*
-			    *jabber-current-priority* jc)
+  (if jabber-current-show
+      (jabber-send-presence jabber-current-show jabber-current-status
+			    jabber-current-priority jc)
     (jabber-send-default-presence jc)))
 
 (defun jabber-send-subscription-request (jc to &optional request)

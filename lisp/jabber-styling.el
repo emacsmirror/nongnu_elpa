@@ -313,9 +313,8 @@ MODE must be :insert for styling to apply."
       (when (< start end)
         (jabber-styling--apply-region start end)))))
 
-(with-eval-after-load "jabber-chat"
-  (defvar jabber-chat-printers)
-  (add-hook 'jabber-chat-printers #'jabber-styling--post-body t))
+(defvar jabber-chat-printers)
+(add-hook 'jabber-chat-printers #'jabber-styling--post-body t)
 
 ;;; Disco
 

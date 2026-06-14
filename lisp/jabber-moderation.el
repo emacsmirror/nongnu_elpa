@@ -121,8 +121,7 @@ server id.  JC is the connection the stanza arrived on."
            stanza-id moderator reason))))
     t))
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-message-chain #'jabber-moderation--handle-message))
+(jabber-chain-add 'jabber-message-chain #'jabber-moderation--handle-message)
 
 ;; XEP-0424: clients SHOULD advertise retract support so senders know we
 ;; handle tombstones.  The moderate namespace is a MUC-service feature

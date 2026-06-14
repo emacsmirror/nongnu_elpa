@@ -30,7 +30,9 @@
 (require 'jabber-util)
 (require 'jabber-alert)
 
-(defvar *jabber-open-info-queries* nil
+(define-obsolete-variable-alias '*jabber-open-info-queries*
+  'jabber-open-info-queries "0.11.0")
+(defvar jabber-open-info-queries nil
   "Alist of open query id and their callback functions.")
 
 (defvar jabber--iq-counter 0
@@ -75,8 +77,7 @@ These fields are available at this moment:
   (setq-local outline-minor-mode-cycle t)
   (outline-minor-mode 1))
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-iq-chain #'jabber-process-iq))
+(jabber-chain-add 'jabber-iq-chain #'jabber-process-iq)
 (defun jabber-process-iq (jc xml-data)
   "Process an incoming iq stanza.
 
@@ -87,7 +88,7 @@ obtained from `xml-parse-region'."
          (type (jabber-xml-get-attribute xml-data 'type))
          (from (jabber-xml-get-attribute xml-data 'from))
 	 (query (jabber-iq-query xml-data))
-         (callback (assoc id *jabber-open-info-queries*)))
+         (callback (assoc id jabber-open-info-queries)))
     (cond
      ;; if type is "result" or "error", this is a response to a query we sent.
      ((or (string= type "result")
@@ -96,7 +97,7 @@ obtained from `xml-parse-region'."
 						   ("error" . 1)))) (cdr callback))))
 	(when (and (consp callback-cons) (car callback-cons))
 	  (funcall (car callback-cons) jc xml-data (cdr callback-cons))))
-      (setq *jabber-open-info-queries* (delq callback *jabber-open-info-queries*)))
+      (setq jabber-open-info-queries (delq callback jabber-open-info-queries)))
 
      ;; if type is "get" or "set", correct action depends on namespace of request.
      ((and (listp query)
@@ -134,11 +135,11 @@ The callback functions are called like this:
 with XML-DATA being the IQ stanza received in response."
   (let ((id (or result-id (format "emacs-iq-%d" (cl-incf jabber--iq-counter)))))
     (if (or success-callback error-callback)
-	(setq *jabber-open-info-queries* (cons (list id
+	(setq jabber-open-info-queries (cons (list id
 						     (cons success-callback success-closure-data)
 						     (cons error-callback error-closure-data))
 
-					       *jabber-open-info-queries*)))
+					       jabber-open-info-queries)))
     (jabber-send-sexp jc
 		      (list 'iq (append
 				 (if to (list (cons 'to to)))

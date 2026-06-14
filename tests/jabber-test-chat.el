@@ -436,17 +436,16 @@
 (defmacro jabber-test-chat-with-inline-image (&rest body)
   "Run BODY in a temp buffer containing one inline image URL."
   (declare (indent 0) (debug t))
-  `(let ((jabber-chat--image-recenter-timer nil))
-     (with-temp-buffer
-       (let* ((url "https://example.com/image.png")
-              (image (list 'image :type 'png :max-width 300 :max-height 200)))
-         (insert url)
-         (cl-letf (((symbol-function 'jabber-chat--schedule-image-recenter)
-                    #'ignore))
-           (jabber-chat--apply-image-display image (point-min) (point-max) url)
-           (put-text-property (point-min) (point-max) 'read-only t)
-           (goto-char (point-min))
-           ,@body)))))
+  `(with-temp-buffer
+     (let* ((url "https://example.com/image.png")
+            (image (list 'image :type 'png :max-width 300 :max-height 200)))
+       (insert url)
+       (cl-letf (((symbol-function 'jabber-chat--schedule-image-recenter)
+                  #'ignore))
+         (jabber-chat--apply-image-display image (point-min) (point-max) url)
+         (put-text-property (point-min) (point-max) 'read-only t)
+         (goto-char (point-min))
+         ,@body))))
 
 (ert-deftest jabber-test-chat-image-range-at-point-finds-display ()
   "Inline image range lookup returns URL, base image, and scale."

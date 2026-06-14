@@ -396,8 +396,7 @@ data from PubSub and updates the buffer."
     (when (eq (buffer-local-value 'major-mode buf) 'jabber-omemo-trust-mode)
       (kill-buffer buf))))
 
-(with-eval-after-load "jabber-core"
-  (add-hook 'jabber-post-disconnect-hook #'jabber-omemo-trust--kill-buffers))
+(add-hook 'jabber-post-disconnect-hook #'jabber-omemo-trust--kill-buffers)
 
 (provide 'jabber-omemo-trust)
 ;;; jabber-omemo-trust.el ends here

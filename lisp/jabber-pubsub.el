@@ -154,8 +154,7 @@ Per XEP-0163 s4.3, PEP events MUST come from bare JIDs."
             (funcall handler jc from node
                      (jabber-xml-node-children items-or-purge))))))))
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-message-chain #'jabber-pubsub--process-event))
+(jabber-chain-add 'jabber-message-chain #'jabber-pubsub--process-event)
 
 ;;; Disco advertisement
 

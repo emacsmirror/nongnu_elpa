@@ -30,9 +30,9 @@
 
 (require 'jabber-presence)
 (require 'jabber-ahc)
-(defvar *jabber-current-show*)
-(defvar *jabber-current-status*)
-(defvar *jabber-current-priority*)
+(defvar jabber-current-show)
+(defvar jabber-current-status)
+(defvar jabber-current-priority)
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
 
 (defconst jabber-ahc-presence-node "http://jabber.org/protocol/rc#set-status"
@@ -75,9 +75,9 @@ obtained from `xml-parse-region'."
 		   (field ((var . "status")
 			   (label . "Status")
 			   (type . "list-single"))
-			  (value nil ,(if (string= *jabber-current-show* "")
+			  (value nil ,(if (string= jabber-current-show "")
 					  "online"
-					*jabber-current-show*))
+					jabber-current-show))
 			  (option ((label . "Online")) (value nil "online"))
 			  (option ((label . "Chatty")) (value nil "chat"))
 			  (option ((label . "Away")) (value nil "away"))
@@ -86,19 +86,19 @@ obtained from `xml-parse-region'."
 		   (field ((var . "status-message")
 			   (label . "Message")
 			   (type . "text-single"))
-			  (value nil ,*jabber-current-status*))
+			  (value nil ,jabber-current-status))
 		   (field ((var . "status-priority")
 			   (label . "Priority")
 			   (type . "text-single"))
-			  (value nil ,(int-to-string *jabber-current-priority*))))))
+			  (value nil ,(int-to-string jabber-current-priority))))))
      ;; process form
      (t
       (let* ((x (car (jabber-xml-get-children query 'x)))
 	     ;; we assume that the first <x/> is the jabber:x:data one
 	     (fields (jabber-xml-get-children x 'field))
-	     (new-show *jabber-current-show*)
-	     (new-status *jabber-current-status*)
-	     (new-priority *jabber-current-priority*))
+	     (new-show jabber-current-show)
+	     (new-status jabber-current-status)
+	     (new-priority jabber-current-priority))
 	(dolist (field fields)
 	  (let ((var (jabber-xml-get-attribute field 'var))
 		;; notice that multi-value fields won't be handled properly

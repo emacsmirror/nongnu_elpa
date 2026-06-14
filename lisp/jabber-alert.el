@@ -169,7 +169,7 @@ All hooks refrain from action if this function returns nil."
   "Hooks run when an info request is completed.
 
 First argument is WHAT, a symbol telling the kind of info request completed.
-That might be \='roster, for requested roster updates, and \='browse, for
+That might be \\='roster, for requested roster updates, and \\='browse, for
 browse requests.  Second argument in BUFFER, a buffer containing the result.
 Third argument is PROPOSED-ALERT, containing the string returned by
 `jabber-alert-info-message-function' for these arguments."
@@ -479,7 +479,7 @@ PROPOSED-ALERT gates the action."
     (switch-to-buffer buffer)))
 
 ;;; Personal alert hooks
-(defmacro define-personal-jabber-alert (name)
+(defmacro define-jabber-personal-alert (name)
   "From ALERT function, make ALERT-personal function.
 
 This makes sense only for MUC.
@@ -495,11 +495,14 @@ NAME: the name of the sender."
                (,name nick group buffer text title)))
 	 (cl-pushnew (quote ,func) (get 'jabber-alert-muc-hooks 'custom-options))))))
 
-(define-personal-jabber-alert jabber-muc-beep)
-(define-personal-jabber-alert jabber-muc-wave)
-(define-personal-jabber-alert jabber-muc-echo)
-(define-personal-jabber-alert jabber-muc-switch)
-(define-personal-jabber-alert jabber-muc-display)
+(define-obsolete-function-alias 'define-personal-jabber-alert
+  'define-jabber-personal-alert "0.11.0")
+
+(define-jabber-personal-alert jabber-muc-beep)
+(define-jabber-personal-alert jabber-muc-wave)
+(define-jabber-personal-alert jabber-muc-echo)
+(define-jabber-personal-alert jabber-muc-switch)
+(define-jabber-personal-alert jabber-muc-display)
 
 (defcustom jabber-autoanswer-alist nil
   "Specific phrases to autoanswer on specific message.

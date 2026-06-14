@@ -40,6 +40,9 @@
 (require 'jabber-xml)
 (require 'fsm)
 
+(declare-function jabber-send-sexp--immediate "jabber-util.el" (jc sexp))
+(declare-function jabber-send-string "jabber-util.el" (jc string))
+
 (defvar jabber-debug-log-xml)
 
 (defconst jabber-sm-xmlns "urn:xmpp:sm:3"

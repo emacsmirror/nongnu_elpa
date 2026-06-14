@@ -126,7 +126,7 @@ Uses a custom parser instead of `sgml-skip-tag-forward'."
    ((looking-at "<\\([^[:space:]/>]+\\)\\([[:space:]]+[^=>]+=[[:space:]]*'[^']*'\\|[[:space:]]+[^=>]+=[[:space:]]*\"[^\"]*\"\\)*")
     (let ((node-name (match-string 1)))
       (goto-char (match-end 0))
-      (skip-syntax-forward "\s-") ; Skip over trailing white space.
+      (skip-syntax-forward " ") ; Skip over trailing white space.
       (cond
        ((looking-at "/>")
 	(goto-char (match-end 0))

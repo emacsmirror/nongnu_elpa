@@ -56,8 +56,7 @@
   "For each connection, SHA1 hash of current avatar.
 Keys are full JIDs.")
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-presence-chain #'jabber-vcard-avatars-presence 20))
+(jabber-chain-add 'jabber-presence-chain #'jabber-vcard-avatars-presence 20)
 (defun jabber-vcard-avatars-presence (jc xml-data)
   "Look for vCard avatar mark in <presence/> stanza.
 
@@ -108,12 +107,12 @@ IQ is the vCard result stanza.  CLOSURE is (FROM-JID . SHA1-HASH)."
 	(let ((avatar (jabber-avatar-from-base64-string (nth 2 photo)
 							(nth 1 photo))))
 	  (unless (or (null sha1-hash)
-		      (string= sha1-hash (avatar-sha1-sum avatar)))
+		      (string= sha1-hash (jabber-avatar-sha1-sum avatar)))
 	    (when jabber-avatar-verbose
 	      (message "%s's avatar should have SHA1 sum %s, but has %s"
 		       (jabber-jid-displayname from)
 		       sha1-hash
-		       (avatar-sha1-sum avatar))))
+		       (jabber-avatar-sha1-sum avatar))))
 	  (jabber-avatar-cache avatar)
 	  (jabber-avatar-set from avatar))
       (jabber-avatar-set from nil))))
@@ -138,7 +137,7 @@ SUCCESS is non-nil when the request succeeded."
 	  (when photo
 	    (let ((avatar (jabber-avatar-from-base64-string (nth 2 photo)
 							    (nth 1 photo))))
-	      (avatar-sha1-sum avatar)))))))
+	      (jabber-avatar-sha1-sum avatar)))))))
 
 (defun jabber-vcard-avatars-update-current (jc new-hash)
   "Update cached own-avatar hash for JC to NEW-HASH and resend presence."

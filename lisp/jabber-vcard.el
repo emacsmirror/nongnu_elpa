@@ -262,8 +262,8 @@ The top node should be the `vCard' node."
 	  ;; Put in photo
 	  ,@(when jabber-vcard-photo
 	      `((PHOTO ()
-		       (TYPE () ,(avatar-mime-type jabber-vcard-photo))
-		       (BINVAL () ,(avatar-base64-data jabber-vcard-photo)))))))
+		       (TYPE () ,(jabber-avatar-mime-type jabber-vcard-photo))
+		       (BINVAL () ,(jabber-avatar-base64-data jabber-vcard-photo)))))))
 
 (defun jabber-vcard-get (jc jid)
   "Request vcard from JID.
@@ -568,7 +568,7 @@ the current vCard contents."
     (when (bound-and-true-p jabber-vcard-avatars-publish)
       (jabber-vcard-avatars-update-current
        jabber-buffer-connection
-       (and jabber-vcard-photo (avatar-sha1-sum jabber-vcard-photo))))))
+       (and jabber-vcard-photo (jabber-avatar-sha1-sum jabber-vcard-photo))))))
 
 (provide 'jabber-vcard)
 

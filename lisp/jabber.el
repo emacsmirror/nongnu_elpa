@@ -187,6 +187,7 @@ One disabled account with a non-standard port:
 (require 'jabber-chatstates)
 (require 'jabber-csi)
 (require 'jabber-receipts)
+(require 'jabber-rtt)
 (require 'jabber-vcard-avatars)
 (require 'jabber-omemo-trust)
 (require 'jabber-autoaway)
@@ -195,19 +196,27 @@ One disabled account with a non-standard port:
 (when (featurep 'dbusbind)
   (require 'jabber-notifications nil t))
 
+(define-obsolete-variable-alias '*jabber-current-status*
+  'jabber-current-status "0.11.0")
 ;;;###autoload
-(defvar *jabber-current-status* nil
+(defvar jabber-current-status nil
   "The user's current presence status.")
 
+(define-obsolete-variable-alias '*jabber-current-show*
+  'jabber-current-show "0.11.0")
 ;;;###autoload
-(defvar *jabber-current-show* nil
+(defvar jabber-current-show nil
   "The user's current presence show.")
 
+(define-obsolete-variable-alias '*jabber-current-priority*
+  'jabber-current-priority "0.11.0")
 ;;;###autoload
-(defvar *jabber-current-priority* nil
+(defvar jabber-current-priority nil
   "The user's current priority.")
 
-(defvar *jabber-status-history* nil
+(define-obsolete-variable-alias '*jabber-status-history*
+  'jabber-status-history "0.11.0")
+(defvar jabber-status-history nil
   "History of status messages.")
 
 (defgroup jabber-faces nil "Faces for displaying Jabber instant messaging."

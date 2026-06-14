@@ -46,14 +46,30 @@
 ;; Global reference declarations
 
 (declare-function auth-source-search "auth-source" (&rest spec))
+(declare-function jabber-chat-buffer-switch "jabber-chatbuffer.el" ())
 (declare-function jabber-chat-with "jabber-chat.el"
                   (jc jid &optional other-window))
+(declare-function jabber-connect-all "jabber-core.el" (&optional arg))
+(declare-function jabber-disconnect "jabber-core.el"
+                  (&optional arg interactivep))
 (declare-function jabber-ahc-execute-command "jabber-ahc.el" (jc to node))
 (declare-function jabber-get-register "jabber-register.el" (jc to))
+(declare-function jabber-info-menu "jabber-disco.el" ())
+(declare-function jabber-muc-menu "jabber-muc.el" ())
 (declare-function jabber-muc-read-my-nickname "jabber-muc.el"
                   (jc group &optional default))
 (declare-function jabber-muc-join "jabber-muc.el"
                   (jc group nickname &optional popup))
+(declare-function jabber-roster-popup "jabber-roster.el" ())
+(declare-function jabber-send-away-presence "jabber-presence.el"
+                  (&optional status jc))
+(declare-function jabber-send-default-presence "jabber-presence.el"
+                  (&optional jc))
+(declare-function jabber-send-presence "jabber-presence.el"
+                  (show status priority &optional jc))
+(declare-function jabber-send-xa-presence "jabber-presence.el"
+                  (&optional status jc))
+(declare-function jabber-service-menu "jabber-disco.el" ())
 (defvar jabber-delay-xmlns)            ; jabber-xml.el
 (defvar jabber-delay-legacy-xmlns)     ; jabber-xml.el
 (defvar jabber-stanzas-xmlns)          ; jabber-xml.el
@@ -800,20 +816,24 @@ IGNORED-ARGS are ignored arguments the handler may pass."
      (t
       (jabber-chat-with (jabber-read-account) jid)))))
 
-(defun url-xmpp (url)
+(defun jabber-url-xmpp (url)
   "Handle XMPP URLs from internal Emacs functions."
-  ;; XXX: This parsing roundtrip is redundant, and the parser of the
-  ;; url package might lose information.
+  ;; URL handlers are looked up by scheme as `url-SCHEME'.
   (jabber-handle-uri (url-recreate-url url)))
 
-(defun string>-numerical (s1 s2)
+(fset 'url-xmpp #'jabber-url-xmpp)
+
+(defun jabber-string>-numerical (s1 s2)
   "Return t when S1 collates after S2 in numerical order."
   (cond ((string= s1 s2) nil)
 	((> (length s1) (length s2)) t)
 	((< (length s1) (length s2)) nil)
 	((< (string-to-number (substring s1 0 1)) (string-to-number (substring s2 0 1))) nil)
 	((> (string-to-number (substring s1 0 1)) (string-to-number (substring s2 0 1))) t)
-	(t (string>-numerical (substring s1 1) (substring s2 1)))))
+	(t (jabber-string>-numerical (substring s1 1) (substring s2 1)))))
+
+(define-obsolete-function-alias 'string>-numerical
+  'jabber-string>-numerical "0.11.0")
 
 (defun jabber-append-string-to-file (string file &optional func &rest args)
   "Append STRING (may be nil) to FILE.  Create FILE if needed.
@@ -868,13 +888,17 @@ width on redisplay."
 (defvar jabber-connections nil
   "List of jabber-connection FSMs.")
 
-(defvar *jabber-roster* nil
+(define-obsolete-variable-alias '*jabber-roster*
+  'jabber-roster-list "0.11.0")
+(defvar jabber-roster-list nil
   "The roster list.")
 
 (defvar jabber-jid-obarray (make-vector 127 0)
   "Obarray for keeping JIDs.")
 
-(defvar *jabber-disconnecting* nil
+(define-obsolete-variable-alias '*jabber-disconnecting*
+  'jabber-disconnecting "0.11.0")
+(defvar jabber-disconnecting nil
   "Non-nil if are we in the process of voluntary disconnection.")
 
 (defvar jabber-message-chain nil
@@ -1007,7 +1031,7 @@ obtained from `xml-parse-region'."
   (mapatoms (lambda (x)
 	      (unintern x jabber-jid-obarray))
 	    jabber-jid-obarray)
-  (setq *jabber-roster* nil))
+  (setq jabber-roster-list nil))
 
 ;;; SASL check
 

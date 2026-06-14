@@ -48,7 +48,7 @@ Available sections: `presence', `contacts', `activity'."
 
 ;; Global reference declarations
 
-(defvar *jabber-current-show*)          ; jabber.el
+(defvar jabber-current-show)          ; jabber.el
 (defvar jabber-presence-strings)        ; jabber.el
 
 ;; Activity variables (defined in jabber-activity.el)
@@ -85,8 +85,8 @@ Available sections: `presence', `contacts', `activity'."
 (defun jabber-mode-line-presence-update (&rest _)
   "Update `jabber-mode-line-presence' from current connection state."
   (setq jabber-mode-line-presence
-        (if (and jabber-connections (not *jabber-disconnecting*))
-            (cdr (assoc *jabber-current-show* jabber-presence-strings))
+        (if (and jabber-connections (not jabber-disconnecting))
+            (cdr (assoc jabber-current-show jabber-presence-strings))
           "Offline")))
 
 (defvar jabber-mode-line--recount-timer nil

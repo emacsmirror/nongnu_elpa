@@ -305,7 +305,7 @@ not currently visible."
 (defun jabber-activity-make-name-alist (&optional _jc)
   "Rebuild `jabber-activity-name-alist' based on currently known JIDs."
   (let ((jids (or (mapcar #'car jabber-activity-name-alist)
-		  (mapcar #'symbol-name *jabber-roster*))))
+		  (mapcar #'symbol-name jabber-roster-list))))
     (setq jabber-activity-name-alist
 	  (funcall jabber-activity-make-strings jids)))
   (clrhash jabber-activity--shortened-names))

@@ -37,7 +37,7 @@ arguments, the client FSM and the stanza.")
 
 (defun jabberd-connect ()
   (setq jabberd-sm-enabled nil)
-  (setq *jabber-virtual-server-function* #'jabberd-handle)
+  (setq jabber-virtual-server-function #'jabberd-handle)
   (jabber-connect "romeo" "montague.net" nil nil "foo" nil nil 'virtual))
 
 (defun jabberd-handle (fsm text)

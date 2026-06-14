@@ -58,7 +58,9 @@ Note that \":\" or alike not needed (it appended in other string)"
   :group 'jabber-chat)
 
 
-(defvar *jabber-muc-participant-last-speaking* nil
+(define-obsolete-variable-alias '*jabber-muc-participant-last-speaking*
+  'jabber-muc-participant-last-speaking "0.11.0")
+(defvar jabber-muc-participant-last-speaking nil
   "Global alist in form (group . ((member . time-of-last-speaking) ...) ...).")
 
 ;; Global reference declarations
@@ -97,7 +99,7 @@ Optional argument GROUP to look."
 
 (defun jabber-muc-participant-update-activity (group nick time)
   "Update NICK's time of last speaking in GROUP to TIME."
-  (let* ((room (assoc group *jabber-muc-participant-last-speaking*))
+  (let* ((room (assoc group jabber-muc-participant-last-speaking))
          (room-activity (cdr room))
          (entry (assoc nick room-activity))
          (old-time (or (cdr entry) 0)))
@@ -108,9 +110,9 @@ Optional argument GROUP to look."
           (setq room-activity
                 (cons (cons nick time) room-activity)))
         (if room (setcdr room room-activity)
-          (setq *jabber-muc-participant-last-speaking*
+          (setq jabber-muc-participant-last-speaking
                 (cons (cons group room-activity)
-                      *jabber-muc-participant-last-speaking*)))))))
+                      jabber-muc-participant-last-speaking)))))))
 
 (defun jabber-muc-track-message-time (nick group _buffer text &optional _title)
   "Track time of NICK's last speaking in GROUP.
@@ -128,7 +130,7 @@ TEXT is the message body used to detect personal-mention bonus."
   "Return list of NICKS in GROUP, sorted."
   ;; when completing word at beginning of line each nick, each element of NICKS
   ;; has a trailing completion-delimiter (usually ": ").
-  (let ((times (cdr (assoc group *jabber-muc-participant-last-speaking*))))
+  (let ((times (cdr (assoc group jabber-muc-participant-last-speaking))))
     (cl-flet ((fetch-time (nick)
                 (let ((time-entry (assoc
                                    (if (string-suffix-p
@@ -161,7 +163,7 @@ TEXT is the message body used to detect personal-mention bonus."
 
 (defun jabber-muc-active-participants (group)
   "Return nicks for speaking participants in GROUP."
-  (let ((times (cdr (assoc group *jabber-muc-participant-last-speaking*))))
+  (let ((times (cdr (assoc group jabber-muc-participant-last-speaking))))
     (cl-remove-if-not
      (lambda (nick) (assoc nick times))
      (jabber-muc-nicknames))))

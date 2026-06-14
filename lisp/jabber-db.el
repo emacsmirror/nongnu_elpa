@@ -1165,7 +1165,7 @@ files, depending on the value of `jabber-use-global-history'."
                    (when (file-readable-p jabber-global-history-filename)
                      (list jabber-global-history-filename))
                  (when (file-directory-p jabber-history-dir)
-                   (directory-files jabber-history-dir t "^[^.]"))))
+                   (directory-files jabber-history-dir t "\\`[^.]"))))
         (count 0))
     (unless files
       (user-error "No history files found"))
@@ -1213,8 +1213,7 @@ files, depending on the value of `jabber-use-global-history'."
 
 ;;; Registration
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-message-chain #'jabber-db--message-handler 90))
+(jabber-chain-add 'jabber-message-chain #'jabber-db--message-handler 90)
 (add-hook 'jabber-chat-send-hooks #'jabber-db--outgoing-handler)
 (add-hook 'jabber-post-connect-hooks #'jabber-db--on-connect)
 (add-hook 'jabber-pre-disconnect-hook #'jabber-db--on-disconnect)

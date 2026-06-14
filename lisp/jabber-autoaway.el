@@ -100,9 +100,9 @@ This is used to detect whether the user has become unidle.")
 
 ;; Global reference declarations
 
-(defvar *jabber-current-status*)        ; jabber.el
-(defvar *jabber-current-show*)          ; jabber.el
-(defvar *jabber-current-priority*)      ; jabber.el
+(defvar jabber-current-status)        ; jabber.el
+(defvar jabber-current-show)          ; jabber.el
+(defvar jabber-current-priority)      ; jabber.el
 (defvar jabber-default-show)            ; jabber.el
 (defvar jabber-default-priority)        ; jabber.el
 (defvar jabber-default-status)          ; jabber.el
@@ -158,11 +158,11 @@ Return nil on error."
   "Switch presence to away (or XA when XA is non-nil) and schedule unidle check."
   (jabber-autoaway-message "Autoaway triggered")
   ;; Send presence, unless the user has set a custom presence
-  (unless (member *jabber-current-show* '("xa" "dnd"))
+  (unless (member jabber-current-show '("xa" "dnd"))
     (jabber-send-presence
      (if xa "xa" "away")
-     (if (or (string= *jabber-current-status* jabber-default-status) (string= *jabber-current-status* jabber-autoaway-status)) (if xa jabber-autoaway-xa-status jabber-autoaway-status) *jabber-current-status*)
-     (or (if xa jabber-autoaway-priority jabber-autoaway-xa-priority) *jabber-current-priority*)))
+     (if (or (string= jabber-current-status jabber-default-status) (string= jabber-current-status jabber-autoaway-status)) (if xa jabber-autoaway-xa-status jabber-autoaway-status) jabber-current-status)
+     (or (if xa jabber-autoaway-priority jabber-autoaway-xa-priority) jabber-current-priority)))
 
   (setq jabber-autoaway-last-idle-time (jabber-autoaway-get-idle-time))
   ;; Run unidle timer every 10 seconds (if xa specified, timer already running)
@@ -174,7 +174,7 @@ Return nil on error."
   "Check idle time and return to active presence if user came back."
   (let ((idle-time (jabber-autoaway-get-idle-time)))
     (jabber-autoaway-message "Idle for %d seconds" idle-time)
-    (if (member *jabber-current-show* '("xa" "away"))
+    (if (member jabber-current-show '("xa" "away"))
         ;; As long as idle time increases monotonically, stay idle.
         (if (> idle-time jabber-autoaway-last-idle-time)
             (progn
@@ -186,11 +186,11 @@ Return nil on error."
           ;; But if it doesn't, go back to unidle state.
           (jabber-autoaway-message "Back to unidle")
           ;; But don't mess with the user's custom presence.
-          (if (or (string= *jabber-current-status* jabber-autoaway-status) (string= *jabber-current-status* jabber-autoaway-xa-status))
+          (if (or (string= jabber-current-status jabber-autoaway-status) (string= jabber-current-status jabber-autoaway-xa-status))
               (jabber-send-default-presence)
             (progn
-              (jabber-send-presence jabber-default-show *jabber-current-status* jabber-default-priority)
-              (jabber-autoaway-message "%S /= %S - not resetting presence" *jabber-current-status* jabber-autoaway-status)))
+              (jabber-send-presence jabber-default-show jabber-current-status jabber-default-priority)
+              (jabber-autoaway-message "%S /= %S - not resetting presence" jabber-current-status jabber-autoaway-status)))
           (jabber-autoaway-stop)
           (jabber-autoaway-start)))))
 

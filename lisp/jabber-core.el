@@ -979,8 +979,8 @@ INTERACTIVEP is non-nil when called interactively."
   (interactive "P\np")
   (if arg
       (jabber-disconnect-one (jabber-read-account))
-    (unless *jabber-disconnecting*	; avoid reentry
-      (let ((*jabber-disconnecting* t))
+    (unless jabber-disconnecting	; avoid reentry
+      (let ((jabber-disconnecting t))
 	(if (null jabber-connections)
 	    (message "Already disconnected")
 	  (run-hooks 'jabber-pre-disconnect-hook)
@@ -1082,8 +1082,7 @@ Call this function after disconnection."
 
        (fsm-send fsm (list :stanza
 			   (jabber-xml-resolve-namespace-prefixes
-			    (car xml-data) nil jabber-namespace-prefixes)))
-       ))))
+			    (car xml-data) nil jabber-namespace-prefixes)))))))
 
 
 (defun jabber-process-stream-error (xml-data state-data)

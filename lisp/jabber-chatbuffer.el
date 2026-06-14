@@ -400,7 +400,7 @@ MAM sync in this buffer.  Set via the operations menu.")
 					   'font-lock-constant-face))
 		     "Chat operations")))
   :group "Encryption"
-  "e" ("Encryption" :keymap jabber-chat-encryption-menu-map)
+  "e" ("Encryption" jabber-chat-encryption-menu)
   "f" ("Fingerprints" jabber-chat-show-fingerprints)
   :group "Files"
   "a" ("Attach file" jabber-chat-attach-file)
@@ -837,8 +837,7 @@ PEERS is a list of (PEER . TYPE) pairs."
 
 (add-hook 'jabber-mam-sync-complete-functions #'jabber-chat--handle-mam-sync-complete)
 
-(with-eval-after-load "jabber-core"
-  (add-hook 'jabber-post-disconnect-hook #'jabber-chatbuffer--kill-stale))
+(add-hook 'jabber-post-disconnect-hook #'jabber-chatbuffer--kill-stale)
 
 (provide 'jabber-chatbuffer)
 ;;; jabber-chatbuffer.el ends here

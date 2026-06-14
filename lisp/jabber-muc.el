@@ -336,8 +336,10 @@ The format is that of `mode-line-format' and `header-line-format'."
 (declare-function jabber-message-correct--apply "jabber-message-correct"
                   (replace-id new-body new-from muc-p buffer
                               &optional new-occupant-id))
+(declare-function jabber-get-version "jabber-version.el" (jc to))
 (declare-function jabber-reactions--reaction-only-p "jabber-reactions"
                   (xml-data))
+(declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
 (declare-function jabber-chatstates--delete-typing-node "jabber-chatstates" ())
 (declare-function jabber-chatstates--muc-reinsert-typing "jabber-chatstates" ())
 (declare-function jabber-chatstates--muc-remove-nick "jabber-chatstates"
@@ -1734,8 +1736,7 @@ messages."
                                        nick group buffer
                                        body-text)))))))
 
-(with-eval-after-load "jabber-core"
-  (jabber-chain-add 'jabber-message-chain #'jabber-muc-process-message))
+(jabber-chain-add 'jabber-message-chain #'jabber-muc-process-message)
 
 (defun jabber-muc-process-message (jc xml-data)
   "If XML-DATA is a groupchat message, handle it as such.
