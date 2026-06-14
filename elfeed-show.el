@@ -560,7 +560,7 @@ content."
         key (or key :link-content))
   (ignore-errors
     (kill-process (alist-get key elfeed-show--fetch))
-    (setf (alist-get key elfeed-show--fetch) nil))
+    (setf (alist-get key elfeed-show--fetch nil t) nil))
   (if-let* ((content (and (not force) (elfeed-deref (elfeed-meta elfeed-show-entry key)))))
       (funcall cb url content)
     (setf (alist-get key elfeed-show--fetch)
@@ -569,7 +569,7 @@ content."
            (let ((buffer (current-buffer))
                  (entry elfeed-show-entry))
              (lambda (success)
-               (setf (alist-get key elfeed-show--fetch) nil)
+               (setf (alist-get key elfeed-show--fetch nil t) nil)
                (when success
                  (let ((content (buffer-string)))
                    (setf (elfeed-meta entry key) (elfeed-ref content))
