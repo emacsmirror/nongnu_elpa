@@ -101,6 +101,9 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--queued-message nil
   "Plain message queued to send after the active Hermes turn settles.")
 
+(defvar-local hermes-chat--pending-prompts nil
+  "Hash table of pending dashboard prompt requests by prompt key.")
+
 (defvar-local hermes-chat--draining-queued-message-p nil
   "Non-nil while the queued message is being submitted.")
 
@@ -560,7 +563,9 @@ METADATA is stored as the entry's `:metadata' plist."
     ('status
      (hermes-chat--set-header-state
       :status (if (plist-get event :prompt-request-p)
-                  'approval-requested
+                  (if (equal (hermes-chat--prompt-event-type event) "approval")
+                      'approval-requested
+                    'requested)
                 (hermes-chat--transport-entry-status event))
       :activity (or (hermes-chat--header-activity-for-event event)
                     "Working")))
@@ -707,7 +712,9 @@ METADATA is stored as the entry's `:metadata' plist."
   (pcase (plist-get event :type)
     ('status
      (when-let* ((key (or (hermes-chat--transport-key-fragment
-                           event '(:status-key :status_key :key :run-id
+                           event '(:prompt-key :prompt_key
+                                               :request-id :request_id
+                                               :status-key :status_key :key :run-id
                                                :run_id :session-id :session_id
                                                :message-id :message_id))
                           (hermes-chat--transport-key-fragment
@@ -862,6 +869,7 @@ METADATA is stored as the entry's `:metadata' plist."
     (setq hermes-chat--nodes (make-hash-table :test 'equal)
           hermes-chat--pending-assistant-id nil
           hermes-chat--queued-message nil
+          hermes-chat--pending-prompts (make-hash-table :test #'equal)
           hermes-chat--draining-queued-message-p nil
           hermes-chat--transport-generation 0
           hermes-chat--process nil
@@ -1040,6 +1048,105 @@ When FINAL is non-nil, strip any trailing transport metadata."
         :content (or (hermes-chat--transport-entry-content event)
                      "Hermes dashboard WebSocket closed")))
 
+(defun hermes-chat--prompt-request-event-p (event)
+  "Return non-nil when EVENT is a dashboard prompt request."
+  (and (eq (plist-get event :type) 'status)
+       (plist-get event :prompt-request-p)))
+
+(defun hermes-chat--ensure-pending-prompts ()
+  "Return the current buffer's pending prompt table."
+  (or hermes-chat--pending-prompts
+      (setq hermes-chat--pending-prompts (make-hash-table :test #'equal))))
+
+(defun hermes-chat--prompt-event-type (event)
+  "Return EVENT's prompt type string, or nil."
+  (hermes-chat--event-string event '(:prompt-type :prompt_type)))
+
+(defun hermes-chat--prompt-event-key (event)
+  "Return the stable pending-prompt key for EVENT."
+  (or (hermes-chat--event-string event '(:request-id :request_id))
+      (when-let* ((type (hermes-chat--prompt-event-type event)))
+        (format "%s:%s" type
+                (or (hermes-chat--event-string event '(:session-id :session_id))
+                    "global")))))
+
+(defun hermes-chat--approval-prompt-p (prompt)
+  "Return non-nil when PROMPT is an approval request."
+  (equal (hermes-chat--prompt-event-type prompt) "approval"))
+
+(defun hermes-chat--prepare-prompt-request (event key assistant-id)
+  "Return EVENT prepared for prompt state under KEY and ASSISTANT-ID."
+  (let ((prompt (plist-put (copy-sequence event) :prompt-key key)))
+    (setq prompt (plist-put prompt :prompt-content
+                            (plist-get prompt :content)))
+    (when assistant-id
+      (setq prompt (plist-put prompt :assistant-id assistant-id)))
+    prompt))
+
+(defun hermes-chat--approval-prompt-with-queue (queue)
+  "Return the oldest approval prompt in QUEUE with count metadata."
+  (let* ((prompt (copy-sequence (car queue)))
+         (count (length queue))
+         (content (or (plist-get prompt :prompt-content)
+                      (plist-get prompt :content))))
+    (setq prompt (plist-put prompt :prompt-queue queue))
+    (setq prompt (plist-put prompt :prompt-count count))
+    (plist-put prompt :content
+               (if (> count 1)
+                   (format "%s (%d pending approvals)" content count)
+                 content))))
+
+(defun hermes-chat--record-prompt-request (event assistant-id)
+  "Record prompt request EVENT for ASSISTANT-ID and return display event."
+  (if-let* ((key (hermes-chat--prompt-event-key event)))
+      (let* ((prompt (hermes-chat--prepare-prompt-request
+                      event key assistant-id))
+             (table (hermes-chat--ensure-pending-prompts))
+             (existing (gethash key table))
+             (stored (if (and existing (hermes-chat--approval-prompt-p prompt))
+                         (hermes-chat--approval-prompt-with-queue
+                          (append (plist-get existing :prompt-queue)
+                                  (list prompt)))
+                       (if (hermes-chat--approval-prompt-p prompt)
+                           (hermes-chat--approval-prompt-with-queue
+                            (list prompt))
+                         prompt))))
+        (puthash key stored table)
+        stored)
+    event))
+
+(defun hermes-chat--prompt-session-match-p (prompt session-id)
+  "Return non-nil if PROMPT belongs to SESSION-ID.
+A nil SESSION-ID matches every prompt in the current buffer."
+  (or (null session-id)
+      (null (plist-get prompt :session-id))
+      (equal (plist-get prompt :session-id) session-id)))
+
+(defun hermes-chat--clear-pending-prompts (&optional session-id)
+  "Remove pending prompt requests for SESSION-ID, or all when nil."
+  (when (hash-table-p hermes-chat--pending-prompts)
+    (let (keys)
+      (maphash (lambda (key prompt)
+                 (when (hermes-chat--prompt-session-match-p prompt session-id)
+                   (push key keys)))
+               hermes-chat--pending-prompts)
+      (dolist (key keys)
+        (remhash key hermes-chat--pending-prompts)))))
+
+(defun hermes-chat--event-session-id (event)
+  "Return EVENT's dashboard session id, or nil."
+  (hermes-chat--event-string event '(:session-id :session_id)))
+
+(defun hermes-chat--clear-terminal-prompts (event)
+  "Remove pending prompt requests associated with terminal EVENT."
+  (hermes-chat--clear-pending-prompts
+   (hermes-chat--event-session-id event)))
+
+(defun hermes-chat--pending-prompt-p ()
+  "Return non-nil when the current chat has pending prompt requests."
+  (and hermes-chat--pending-prompts
+       (> (hash-table-count hermes-chat--pending-prompts) 0)))
+
 (defun hermes-chat--forget-live-dashboard-session ()
   "Forget the live dashboard session while preserving the durable session key."
   (setq hermes-chat--dashboard-session-ready-p nil
@@ -1106,6 +1213,7 @@ FALLBACK-ID is the assistant id captured by the transport callback."
 The event belongs to a resumed in-flight turn without a local assistant entry,
 so do not copy its final content into the unsubmitted retry placeholder."
   (let ((status (hermes-chat--dashboard-suppressed-terminal-status event)))
+    (hermes-chat--clear-terminal-prompts event)
     (hermes-chat--update-header-for-event
      (hermes-chat--dashboard-suppressed-header-event event))
     (hermes-chat--mark-assistant assistant-id status nil t)
@@ -1123,6 +1231,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
 (defun hermes-chat--handle-closed-status (assistant-id event)
   "Handle a transport closed status EVENT for ASSISTANT-ID."
   (hermes-chat--forget-live-dashboard-session)
+  (hermes-chat--clear-terminal-prompts event)
   (if (equal hermes-chat--pending-assistant-id assistant-id)
       (progn
         (hermes-chat--handle-transport-event
@@ -1141,12 +1250,15 @@ so do not copy its final content into the unsubmitted retry placeholder."
    ((hermes-chat--closed-status-event-p event)
     (hermes-chat--handle-closed-status assistant-id event))
    (t
+    (when (hermes-chat--prompt-request-event-p event)
+      (setq event (hermes-chat--record-prompt-request event assistant-id)))
     (hermes-chat--update-header-for-event event)
     (pcase (plist-get event :type)
       ('delta
        (hermes-chat--append-assistant-content
         assistant-id (or (plist-get event :content) "") 'streaming))
       ('done
+       (hermes-chat--clear-terminal-prompts event)
        (hermes-chat--mark-assistant
         assistant-id 'done (plist-get event :content) t)
        (hermes-chat--settle-transport-entries assistant-id 'done)
@@ -1155,6 +1267,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
              hermes-chat--process nil)
        (hermes-chat--drain-queued-message))
       ('error
+       (hermes-chat--clear-terminal-prompts event)
        (hermes-chat--append-assistant-content
         assistant-id
         (let ((content (or (plist-get event :content) "")))
@@ -1387,7 +1500,10 @@ Record asynchronous session results in BUFFER."
   "Return the user-facing busy/backpressure message."
   (concat "A Hermes reply is still pending; use C-c C-i to interrupt, "
           "C-c C-q to queue, C-c C-s to steer, C-c C-k to "
-          "interrupt+send, or C-c C-n for a new session"))
+          "interrupt+send, "
+          (and (hermes-chat--pending-prompt-p)
+               "C-c C-a to answer the prompt, C-c C-d to cancel it, ")
+          "or C-c C-n for a new session"))
 
 (defun hermes-chat--trimmed-input ()
   "Return the current input tail trimmed for sending."
@@ -1635,6 +1751,263 @@ When dashboard session bootstrap fails, call REJECT with the error message."
   "Render dashboard command error MESSAGE."
   (hermes-chat--insert-local-status message 'error)
   (hermes-chat--set-header-state :status 'error :activity message))
+
+(defun hermes-chat--pending-prompt-keys ()
+  "Return pending prompt keys in deterministic order."
+  (let (keys)
+    (when (hash-table-p hermes-chat--pending-prompts)
+      (maphash (lambda (key _prompt) (push key keys))
+               hermes-chat--pending-prompts))
+    (sort keys #'string<)))
+
+(defun hermes-chat--select-pending-prompt-key (key)
+  "Return KEY or interactively select a pending prompt key."
+  (or key
+      (pcase (hermes-chat--pending-prompt-keys)
+        ('() (user-error "No pending Hermes prompt requests"))
+        (`(,only) only)
+        (keys (completing-read "Hermes prompt: " keys nil t)))))
+
+(defun hermes-chat--pending-prompt (key)
+  "Return pending prompt for KEY, or signal a user error."
+  (or (and hermes-chat--pending-prompts
+           (gethash key hermes-chat--pending-prompts))
+      (user-error "No pending Hermes prompt request %s" key)))
+
+(defun hermes-chat--prompt-display-name (prompt)
+  "Return display name for PROMPT."
+  (pcase (hermes-chat--prompt-event-type prompt)
+    ("approval" "Approval")
+    ("clarify" "Clarify")
+    ("sudo" "Sudo")
+    ("secret" "Secret")
+    (_ "Prompt")))
+
+(defun hermes-chat--first-pending-prompt ()
+  "Return the first pending prompt in deterministic key order."
+  (when-let* ((key (car (hermes-chat--pending-prompt-keys))))
+    (gethash key hermes-chat--pending-prompts)))
+
+(defun hermes-chat--prompt-header-status (prompt)
+  "Return header status symbol for pending PROMPT."
+  (if (hermes-chat--approval-prompt-p prompt) 'approval-requested 'requested))
+
+(defun hermes-chat--prompt-header-activity (prompt)
+  "Return header activity for pending PROMPT."
+  (or (hermes-chat--header-activity-for-event prompt)
+      (format "%s requested" (hermes-chat--prompt-display-name prompt))))
+
+(defun hermes-chat--show-pending-prompt-state (&optional prompt)
+  "Show PROMPT or any pending prompt in the chat header."
+  (when-let* ((pending (or prompt (hermes-chat--first-pending-prompt))))
+    (hermes-chat--set-header-state
+     :status (hermes-chat--prompt-header-status pending)
+     :activity (hermes-chat--prompt-header-activity pending))
+    pending))
+
+(defun hermes-chat--prompt-secret-response-p (prompt)
+  "Return non-nil when PROMPT's answer must be redacted."
+  (member (hermes-chat--prompt-event-type prompt) '("sudo" "secret")))
+
+(defun hermes-chat--response-redaction-variants (response)
+  "Return string variants of RESPONSE that may appear in errors."
+  (when (and (stringp response) (not (string-empty-p response)))
+    (let ((variants (list response)))
+      (when (fboundp 'json-encode-string)
+        (let ((encoded (json-encode-string response)))
+          (push encoded variants)
+          (when (and (> (length encoded) 1)
+                     (eq (aref encoded 0) ?\")
+                     (eq (aref encoded (1- (length encoded))) ?\"))
+            (push (substring encoded 1 -1) variants))))
+      (sort (delete-dups variants)
+            (lambda (left right)
+              (> (length left) (length right)))))))
+
+(defun hermes-chat--redact-response-value (text response)
+  "Return TEXT with RESPONSE variants replaced by a redaction marker."
+  (let ((message (or text "")))
+    (dolist (variant (hermes-chat--response-redaction-variants response)
+                     message)
+      (setq message (string-replace variant "<redacted>" message)))))
+
+(defun hermes-chat--prompt-safe-error (prompt response message)
+  "Return safe error MESSAGE for PROMPT and RESPONSE."
+  (if (hermes-chat--prompt-secret-response-p prompt)
+      (hermes-chat--redact-response-value message response)
+    message))
+
+(defun hermes-chat--prompt-choices (prompt)
+  "Return PROMPT choices as strings, or nil."
+  (when-let* ((choices (hermes-chat--event-value prompt '(:choices))))
+    (delq nil (mapcar #'hermes-chat--scalar-string
+                      (if (vectorp choices) (append choices nil) choices)))))
+
+(defun hermes-chat--read-prompt-response (prompt)
+  "Read a response for PROMPT using an Emacs-native minibuffer UI."
+  (pcase (hermes-chat--prompt-event-type prompt)
+    ("approval"
+     (completing-read "Approval decision: "
+                      '("once" "session" "always" "deny") nil t nil nil
+                      "once"))
+    ("clarify"
+     (if-let* ((choices (hermes-chat--prompt-choices prompt)))
+         (completing-read "Clarify: " choices nil t)
+       (read-string (or (hermes-chat--event-string prompt '(:question :content))
+                        "Clarify: "))))
+    ("sudo" (read-passwd "Sudo password: "))
+    ("secret"
+     (read-passwd (or (hermes-chat--event-string prompt '(:prompt :content))
+                      "Secret: ")))
+    (_ (read-string "Prompt response: "))))
+
+(defun hermes-chat--approval-response-resolved-count (result)
+  "Return positive resolved approval count from RESULT, or nil."
+  (let ((resolved (hermes-transport--get result 'resolved)))
+    (and (integerp resolved) (> resolved 0) resolved)))
+
+(defun hermes-chat--prompt-response-complete (key prompt canceled all
+                                                  &optional result)
+  "Mark prompt KEY/PROMPT complete, noting CANCELED, ALL, and RESULT."
+  (let* ((approval-p (hermes-chat--approval-prompt-p prompt))
+         (current (and (hash-table-p hermes-chat--pending-prompts)
+                       (gethash key hermes-chat--pending-prompts)))
+         (queue (and approval-p
+                     (or (plist-get current :prompt-queue)
+                         (plist-get prompt :prompt-queue))))
+         (resolved-count (and approval-p
+                              (hermes-chat--approval-response-resolved-count
+                               result)))
+         (remaining (and queue
+                         (nthcdr (or resolved-count
+                                     (if all (length queue) 1))
+                                 queue)))
+         next-prompt)
+    (when (hash-table-p hermes-chat--pending-prompts)
+      (if remaining
+          (let ((next (hermes-chat--approval-prompt-with-queue remaining)))
+            (setq next-prompt next)
+            (puthash key next hermes-chat--pending-prompts)
+            (hermes-chat--upsert-transport-entry
+             (or (plist-get next :assistant-id)
+                 (plist-get prompt :assistant-id))
+             next))
+        (remhash key hermes-chat--pending-prompts)))
+    (let ((message (format "%s %s"
+                           (hermes-chat--prompt-display-name prompt)
+                           (if canceled "canceled" "response sent"))))
+      (hermes-chat--insert-local-status message (if canceled 'error 'done))
+      (unless (hermes-chat--show-pending-prompt-state next-prompt)
+        (hermes-chat--set-header-state
+         :status (if (hermes-chat--active-turn-p) 'running 'ready)
+         :activity message)))))
+
+(defun hermes-chat--approval-response-unresolved-p (prompt result)
+  "Return non-nil when approval PROMPT RESULT resolved no backend prompt."
+  (and (hermes-chat--approval-prompt-p prompt)
+       (equal (hermes-transport--get result 'resolved) 0)))
+
+(defun hermes-chat--prompt-response-stale (key prompt)
+  "Clear stale prompt KEY/PROMPT without claiming a response was sent."
+  (when (hash-table-p hermes-chat--pending-prompts)
+    (remhash key hermes-chat--pending-prompts))
+  (let ((message (format "%s request no longer pending"
+                         (hermes-chat--prompt-display-name prompt))))
+    (hermes-chat--insert-local-status message 'error)
+    (unless (hermes-chat--show-pending-prompt-state)
+      (hermes-chat--set-header-state
+       :status (if (hermes-chat--active-turn-p) 'running 'ready)
+       :activity message))))
+
+(defun hermes-chat--prompt-missing-error-p (message)
+  "Return non-nil when MESSAGE reports that the backend prompt is gone."
+  (and (stringp message)
+       (string-match-p "\\bno pending\\b" (downcase message))))
+
+(defun hermes-chat--prompt-response-rejected (key prompt response message)
+  "Render rejection MESSAGE for prompt KEY, PROMPT, and RESPONSE."
+  (when (and (hash-table-p hermes-chat--pending-prompts)
+             (hermes-chat--prompt-missing-error-p message))
+    (remhash key hermes-chat--pending-prompts))
+  (hermes-chat--command-error
+   (hermes-chat--prompt-safe-error prompt response message)))
+
+(defun hermes-chat--prompt-success-callback (buffer key prompt canceled all)
+  "Return a success callback for prompt response KEY in BUFFER."
+  (lambda (result)
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (if (hermes-chat--approval-response-unresolved-p prompt result)
+            (hermes-chat--prompt-response-stale key prompt)
+          (hermes-chat--prompt-response-complete
+           key prompt canceled all result))))))
+
+(defun hermes-chat--prompt-reject-callback (buffer key prompt response)
+  "Return an error callback for prompt KEY, PROMPT, and RESPONSE in BUFFER."
+  (lambda (message)
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (hermes-chat--prompt-response-rejected key prompt response message)))))
+
+(defun hermes-chat--approval-session-id (prompt)
+  "Return the dashboard session id for approval PROMPT."
+  (or (hermes-chat--event-string prompt '(:session-id :session_id))
+      hermes-chat--dashboard-active-session-id))
+
+(defun hermes-chat--request-prompt-id (key prompt)
+  "Return request id for prompt KEY/PROMPT."
+  (or (hermes-chat--event-string prompt '(:request-id :request_id)) key))
+
+(defun hermes-chat--send-prompt-response (key prompt response all canceled)
+  "Send RESPONSE for prompt KEY/PROMPT through the dashboard transport."
+  (let ((client (hermes-chat--dashboard-control-client))
+        (buffer (current-buffer))
+        (type (hermes-chat--prompt-event-type prompt)))
+    (condition-case err
+        (pcase type
+          ("approval"
+           (hermes-dashboard-transport-approval-respond
+            client :session-id (hermes-chat--approval-session-id prompt)
+            :choice response :all (and all t)
+            :resolve (hermes-chat--prompt-success-callback
+                      buffer key prompt canceled all)
+            :reject (hermes-chat--prompt-reject-callback
+                     buffer key prompt response)))
+          ((or "clarify" "sudo" "secret")
+           (funcall (pcase type
+                      ("clarify" #'hermes-dashboard-transport-clarify-respond)
+                      ("sudo" #'hermes-dashboard-transport-sudo-respond)
+                      ("secret" #'hermes-dashboard-transport-secret-respond))
+                    client (hermes-chat--request-prompt-id key prompt) response
+                    (hermes-chat--prompt-success-callback
+                     buffer key prompt canceled all)
+                    (hermes-chat--prompt-reject-callback
+                     buffer key prompt response)))
+          (_ (user-error "Unsupported Hermes prompt type: %s" type)))
+      (error
+       (hermes-chat--prompt-response-rejected
+        key prompt response (error-message-string err))))))
+
+(defun hermes-chat-respond-to-prompt (&optional key response all)
+  "Respond to pending prompt KEY with RESPONSE.
+When called interactively, select the prompt and read RESPONSE in the
+minibuffer.  With prefix argument ALL, approval responses apply to all pending
+approvals in the dashboard session."
+  (interactive (list nil nil current-prefix-arg))
+  (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
+         (prompt (hermes-chat--pending-prompt prompt-key))
+         (answer (or response (hermes-chat--read-prompt-response prompt))))
+    (hermes-chat--send-prompt-response prompt-key prompt answer all nil)))
+
+(defun hermes-chat-cancel-prompt (&optional key)
+  "Cancel pending prompt KEY by sending the protocol's safe empty/deny value."
+  (interactive)
+  (let* ((prompt-key (hermes-chat--select-pending-prompt-key key))
+         (prompt (hermes-chat--pending-prompt prompt-key))
+         (response (if (equal (hermes-chat--prompt-event-type prompt) "approval")
+                       "deny"
+                     "")))
+    (hermes-chat--send-prompt-response prompt-key prompt response nil t)))
 
 (defun hermes-chat--listify (value)
   "Return VALUE as a list when it is a list or vector."
@@ -2032,6 +2405,8 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
   "C-c C-k" #'hermes-chat-interrupt-and-send
   "C-c C-q" #'hermes-chat-queue-message
   "C-c C-s" #'hermes-chat-steer-message
+  "C-c C-a" #'hermes-chat-respond-to-prompt
+  "C-c C-d" #'hermes-chat-cancel-prompt
   "C-c C-/" #'hermes-chat-show-commands
   "C-c C-n" #'hermes-chat-new-session)
 

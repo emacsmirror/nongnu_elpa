@@ -619,6 +619,7 @@ TOKEN, and BASE-ENVIRONMENT override the default spawn settings."
   (hermes-transport--scalar-string
    (hermes-transport--get-any payload
                               '(text rendered content delta message context
+                                question prompt description command env_var
                                 summary result_text result preview))))
 
 (defun hermes-dashboard-transport--event-base (type params payload)
@@ -708,15 +709,59 @@ TOKEN, and BASE-ENVIRONMENT override the default spawn settings."
         (plist-put event :status status)
       event)))
 
+(defun hermes-dashboard-transport--prompt-title (prompt-type)
+  "Return human title for PROMPT-TYPE."
+  (pcase prompt-type
+    ("approval" "Approval requested")
+    ("clarify" "Clarification requested")
+    ("sudo" "Sudo password requested")
+    ("secret" "Secret requested")
+    (_ (format "%s requested" prompt-type))))
+
+(defun hermes-dashboard-transport--prompt-content (prompt-type payload)
+  "Return redacted display content for PROMPT-TYPE and PAYLOAD."
+  (let ((title (hermes-dashboard-transport--prompt-title prompt-type)))
+    (pcase prompt-type
+      ("approval"
+       (string-join
+        (delq nil (list title
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get payload 'description))
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get payload 'command))))
+        ": "))
+      ("secret"
+       (string-join
+        (delq nil (list title
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get payload 'prompt))
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get payload 'env_var))))
+        ": "))
+      (_
+       (or (hermes-dashboard-transport--payload-text payload) title)))))
+
+(defun hermes-dashboard-transport--copy-prompt-fields (event payload)
+  "Copy safe prompt request fields from PAYLOAD into EVENT."
+  (dolist (field '((question . :question) (choices . :choices)
+                   (prompt . :prompt) (env_var . :env-var)
+                   (command . :command) (description . :description)
+                   (pattern_key . :pattern-key)
+                   (pattern_keys . :pattern-keys)))
+    (when-let* ((value (hermes-transport--get payload (car field))))
+      (setq event (plist-put event (cdr field) value))))
+  event)
+
 (defun hermes-dashboard-transport--prompt-request-event (type params payload)
   "Return a redacted prompt request status event for TYPE/PARAMS/PAYLOAD."
   (let* ((prompt-type (car (split-string type "\\." t)))
          (event (hermes-dashboard-transport--status-event
                  type params payload "requested"
-                 (or (hermes-dashboard-transport--payload-text payload)
-                     (format "%s requested" prompt-type)))))
-    (plist-put (plist-put event :prompt-type prompt-type)
-               :prompt-request-p t)))
+                 (hermes-dashboard-transport--prompt-content
+                  prompt-type payload))))
+    (setq event (plist-put event :prompt-type prompt-type))
+    (setq event (plist-put event :prompt-request-p t))
+    (hermes-dashboard-transport--copy-prompt-fields event payload)))
 
 (defun hermes-dashboard-transport--payload-object (payload)
   "Return PAYLOAD as an object suitable for normalization."

@@ -105,6 +105,42 @@
   (or (member hermes-chat--queued-message candidates)
       (member (hermes-chat-input-string) candidates)))
 
+(defmacro hermes-test-with-dashboard-prompt-session (spec &rest body)
+  "Create a chat using fake dashboard SPEC's client, then run BODY."
+  (declare (indent 1) (debug t))
+  (let ((client (car spec)))
+    `(let ((,client (hermes-test--dashboard-client)))
+     (cl-letf (((symbol-function 'hermes-transport-send)
+                (lambda (&rest _args) (error "CLI fallback should not run")))
+               ((symbol-function 'hermes-dashboard-transport-start)
+                (lambda (&rest args)
+                  (setf (hermes-dashboard-transport-client-callback ,client)
+                        (plist-get args :callback))
+                  ,client))
+               ((symbol-function 'hermes-dashboard-transport-session-create)
+                (lambda (_client &rest args)
+                  (funcall (plist-get args :resolve)
+                           '((session_id . "sid-prompt")
+                             (stored_session_id . "sid-stored")))))
+               ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+                (lambda (&rest _args) 'prompt-submitted)))
+       (let ((hermes-transport-send-function #'hermes-transport-send))
+         (hermes-test-with-chat-buffer
+          (insert "trigger prompt")
+          (hermes-chat-send)
+          ,@body))))))
+
+(defun hermes-test--emit-dashboard-prompt (client type payload)
+  "Emit dashboard prompt event TYPE with PAYLOAD through CLIENT."
+  (hermes-dashboard-transport--handle-frame
+   client
+   (hermes-dashboard-transport--encode-frame
+    `((jsonrpc . "2.0")
+      (method . "event")
+      (params . ((type . ,type)
+                 (session_id . "sid-prompt")
+                 (payload . ,payload)))))))
+
 (ert-deftest hermes-dashboard-opens-special-mode-buffer-and-popup ()
   (let (shown-map)
     (cl-letf (((symbol-function 'keymap-popup)
@@ -2001,6 +2037,279 @@
                         (plist-get first-assistant :content)))
            (should (equal (plist-get second-assistant :content) "retry ok"))
            (should (equal (plist-get second-assistant :status) 'done))))))))
+
+(ert-deftest hermes-chat-handles-approval-request ()
+  (let (respond-client respond-session respond-choice respond-all)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (client &rest args)
+                 (setq respond-client client
+                       respond-session (plist-get args :session-id)
+                       respond-choice (plist-get args :choice)
+                       respond-all (plist-get args :all))
+                 (funcall (plist-get args :resolve)
+                          '((resolved . 1))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm -rf /tmp/demo")
+           (description . "dangerous delete")
+           (pattern_key . "rm-rf")))
+        (should (gethash "approval:sid-prompt" hermes-chat--pending-prompts))
+        (should (string-match-p "dangerous delete" (buffer-string)))
+        (should (string-match-p "Approval requested"
+                                (hermes-test--header-line-string)))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+        (should (eq respond-client client))
+        (should (equal respond-session "sid-prompt"))
+        (should (equal respond-choice "once"))
+        (should-not respond-all)
+        (should-not (gethash "approval:sid-prompt"
+                             hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-handles-clarify-request ()
+  (let (respond-client respond-request respond-answer)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (client request-id answer &optional resolve _reject)
+                 (setq respond-client client
+                       respond-request request-id
+                       respond-answer answer)
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-clarify")
+           (question . "Which branch should I use?")
+           (choices . ["master" "feature"])))
+        (should (gethash "req-clarify" hermes-chat--pending-prompts))
+        (should (string-match-p "Which branch should I use\\?"
+                                (buffer-string)))
+        (hermes-chat-respond-to-prompt "req-clarify" "feature")
+        (should (eq respond-client client))
+        (should (equal respond-request "req-clarify"))
+        (should (equal respond-answer "feature"))
+        (should-not (gethash "req-clarify" hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-handles-sudo-request ()
+  (let (respond-request respond-password)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-sudo-respond)
+               (lambda (_client request-id password &optional resolve _reject)
+                 (setq respond-request request-id
+                       respond-password password)
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "sudo.request" '((request_id . "req-sudo")))
+        (should (gethash "req-sudo" hermes-chat--pending-prompts))
+        (should (string-match-p "Sudo password requested" (buffer-string)))
+        (hermes-chat-respond-to-prompt "req-sudo" "sudo password 123")
+        (should (equal respond-request "req-sudo"))
+        (should (equal respond-password "sudo password 123"))
+        (should-not (string-match-p "sudo password 123" (buffer-string)))
+        (should-not (gethash "req-sudo" hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-handles-secret-request ()
+  (let (respond-request respond-value)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-secret-respond)
+               (lambda (_client request-id value &optional resolve _reject)
+                 (setq respond-request request-id
+                       respond-value value)
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "secret.request"
+         '((request_id . "req-secret")
+           (prompt . "Enter API token")
+           (env_var . "API_TOKEN")))
+        (should (gethash "req-secret" hermes-chat--pending-prompts))
+        (should (string-match-p "Enter API token" (buffer-string)))
+        (should (string-match-p "API_TOKEN" (buffer-string)))
+        (hermes-chat-respond-to-prompt "req-secret" "secret-token-abc")
+        (should (equal respond-request "req-secret"))
+        (should (equal respond-value "secret-token-abc"))
+        (should-not (string-match-p "secret-token-abc" (buffer-string)))
+        (should-not (gethash "req-secret" hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-redacts-secret-response ()
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-secret-respond)
+             (lambda (_client _request-id value &optional _resolve reject)
+               (funcall reject (format "rejected value %s" value)))))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "secret.request"
+       '((request_id . "req-secret")
+         (prompt . "Enter API token")
+         (env_var . "API_TOKEN")))
+      (hermes-chat-respond-to-prompt "req-secret" "secret-token-abc")
+      (should (gethash "req-secret" hermes-chat--pending-prompts))
+      (should (string-match-p "<redacted>" (buffer-string)))
+      (should-not (string-match-p "secret-token-abc" (buffer-string))))))
+
+(ert-deftest hermes-chat-cancels-clarify-request ()
+  (let (respond-request respond-answer)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client request-id answer &optional resolve _reject)
+                 (setq respond-request request-id
+                       respond-answer answer)
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-cancel")
+           (question . "Continue?")))
+        (hermes-chat-cancel-prompt "req-cancel")
+        (should (equal respond-request "req-cancel"))
+        (should (equal respond-answer ""))
+        (should-not (gethash "req-cancel" hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-keeps-approval-requests-fifo ()
+  (let (choices)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (push (plist-get args :choice) choices)
+                 (funcall (plist-get args :resolve)
+                          '((resolved . 1))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm first")
+           (description . "first approval")))
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm second")
+           (description . "second approval")))
+        (let ((prompt (gethash "approval:sid-prompt"
+                               hermes-chat--pending-prompts)))
+          (should (equal (plist-get prompt :prompt-count) 2))
+          (should (string-match-p "first approval" (plist-get prompt :content)))
+          (should-not (string-match-p "second approval"
+                                      (plist-get prompt :content))))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+        (let ((prompt (gethash "approval:sid-prompt"
+                               hermes-chat--pending-prompts)))
+          (should prompt)
+          (should (equal (plist-get prompt :prompt-count) 1))
+          (should (string-match-p "second approval" (plist-get prompt :content))))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "deny")
+        (should (equal (nreverse choices) '("once" "deny")))
+        (should-not (gethash "approval:sid-prompt"
+                             hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-keeps-new-approval-while-response-pending ()
+  (let (resolve-first)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (setq resolve-first (plist-get args :resolve)))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm first")
+           (description . "first approval")))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm second")
+           (description . "second approval")))
+        (funcall resolve-first '((resolved . 1)))
+        (let ((prompt (gethash "approval:sid-prompt"
+                               hermes-chat--pending-prompts))
+              (header (hermes-test--header-line-string)))
+          (should prompt)
+          (should (equal (plist-get prompt :prompt-count) 1))
+          (should (string-match-p "second approval"
+                                  (plist-get prompt :content)))
+          (should (string-match-p "Approval requested" header))
+          (should (string-match-p "second approval" header))
+          (should-not (string-match-p "Approval response sent" header)))))))
+
+(ert-deftest hermes-chat-keeps-new-approval-when-all-response-resolves-one ()
+  (let (resolve-first)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (setq resolve-first (plist-get args :resolve)))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm first")
+           (description . "first approval")))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once" t)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm second")
+           (description . "second approval")))
+        (funcall resolve-first '((resolved . 1)))
+        (let ((prompt (gethash "approval:sid-prompt"
+                               hermes-chat--pending-prompts))
+              (header (hermes-test--header-line-string)))
+          (should prompt)
+          (should (equal (plist-get prompt :prompt-count) 1))
+          (should (string-match-p "second approval"
+                                  (plist-get prompt :content)))
+          (should (string-match-p "Approval requested" header))
+          (should (string-match-p "second approval" header))
+          (should-not (string-match-p "Approval response sent" header)))))))
+
+(ert-deftest hermes-chat-treats-unresolved-approval-response-as-stale ()
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+             (lambda (_client &rest args)
+               (funcall (plist-get args :resolve) '((resolved . 0))))))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "approval.request"
+       '((command . "rm stale")
+         (description . "stale approval")))
+      (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+      (should-not (gethash "approval:sid-prompt" hermes-chat--pending-prompts))
+      (should (string-match-p "Approval request no longer pending"
+                              (buffer-string)))
+      (should-not (string-match-p "Approval response sent" (buffer-string)))
+      (should (string-match-p "Approval request no longer pending"
+                              (hermes-test--header-line-string))))))
+
+(ert-deftest hermes-chat-clears-prompt-request-on-terminal-event ()
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt
+     client "secret.request"
+     '((request_id . "req-timeout")
+       (prompt . "Enter API token")
+       (env_var . "API_TOKEN")))
+    (should (gethash "req-timeout" hermes-chat--pending-prompts))
+    (funcall (hermes-dashboard-transport-client-callback client)
+             '(:type done :session-id "sid-prompt"))
+    (should-not (gethash "req-timeout" hermes-chat--pending-prompts))))
+
+(ert-deftest hermes-chat-redacts-synchronous-secret-response-error ()
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-secret-respond)
+             (lambda (_client _request-id value &optional _resolve _reject)
+               (error "encoded frame contained %s" value))))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "secret.request"
+       '((request_id . "req-secret")
+         (prompt . "Enter API token")
+         (env_var . "API_TOKEN")))
+      (hermes-chat-respond-to-prompt "req-secret" "secret-token-abc")
+      (should (gethash "req-secret" hermes-chat--pending-prompts))
+      (should (string-match-p "<redacted>" (buffer-string)))
+      (should-not (string-match-p "secret-token-abc" (buffer-string))))))
+
+(ert-deftest hermes-chat-redacts-encoded-secret-response-error ()
+  (let* ((secret "secret token with \\\"quotes\\\" and newline\nnext")
+         (encoded-secret (json-encode-string secret)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-secret-respond)
+               (lambda (_client _request-id value &optional _resolve _reject)
+                 (error "encoded frame contained %s"
+                        (json-encode-string value)))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "secret.request"
+         '((request_id . "req-secret")
+           (prompt . "Enter API token")
+           (env_var . "API_TOKEN")))
+        (hermes-chat-respond-to-prompt "req-secret" secret)
+        (should (string-match-p "<redacted>" (buffer-string)))
+        (should-not (string-match-p (regexp-quote secret) (buffer-string)))
+        (should-not (string-match-p (regexp-quote encoded-secret)
+                                    (buffer-string)))))))
 
 (ert-deftest hermes-transport-send-emits-start-status ()
   (let (events)
