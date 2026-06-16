@@ -5,7 +5,7 @@ NIX := $(shell command -v nix 2>/dev/null)
 ENV_MAKE = $(MAKE) --no-print-directory
 ifeq ($(HERMES_ENV_WRAPPED),)
 ifneq ($(NIX),)
-ENV_MAKE = nix develop path:$(CURDIR) --command env HERMES_ENV_WRAPPED=1 $(MAKE) --no-print-directory
+ENV_MAKE = nix develop --no-write-lock-file path:$(CURDIR) --command env HERMES_ENV_WRAPPED=1 $(MAKE) --no-print-directory
 endif
 endif
 
@@ -22,7 +22,7 @@ ERT_OPTS ?=
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 
-.PHONY: all compile do-compile test do-test lint do-lint dev check load clean
+.PHONY: all compile do-compile test do-test lint do-lint dev check pre-handoff-check load clean
 
 all: compile
 
@@ -58,6 +58,14 @@ dev:
 	@$(ENV_MAKE) do-compile do-lint do-test
 
 check: dev
+
+pre-handoff-check:
+	git status --short --branch
+	git diff --check
+	nix --extra-experimental-features 'nix-command flakes' \
+	  develop --no-write-lock-file path:$(CURDIR) --command env HERMES_ENV_WRAPPED=1 $(MAKE) --no-print-directory check
+	nix --extra-experimental-features 'nix-command flakes' \
+	  flake check --no-write-lock-file
 
 load: clean
 	@emacsclient --eval "(progn \

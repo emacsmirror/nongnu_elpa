@@ -53,6 +53,9 @@ which keeps tests and user custom transports working."
   :type 'string
   :group 'hermes)
 
+(defvar hermes-chat-state-change-hook nil
+  "Hook run in a Hermes chat buffer when dashboard-visible state changes.")
+
 (defvar-local hermes-chat--ewoc nil
   "EWOC displaying chat transcript entries in the current Hermes chat buffer.")
 
@@ -425,22 +428,25 @@ METADATA is stored as the entry's `:metadata' plist."
 (defun hermes-chat--active-status-p (status)
   "Return non-nil when STATUS denotes an unsettled transport entry."
   (member (hermes-chat--status-name status)
-          '("pending" "waiting" "queued" "streaming" "started" "running"
-            "progress" "in-progress" "preparing" "requested"
-            "approval-requested")))
+          '("pending" "waiting" "queued" "streaming" "started" "starting"
+            "loading" "connecting" "reconnecting" "running" "progress"
+            "in-progress" "preparing" "requested" "approval-requested")))
 
 (defun hermes-chat--finished-status-p (status)
   "Return non-nil when STATUS denotes a settled transport entry."
   (member (hermes-chat--status-name status)
           '("done" "completed" "complete" "success" "succeeded"
-            "ready" "error" "failed" "failure" "cancelled" "canceled")))
+            "ready" "closed" "error" "failed" "failure" "cancelled"
+            "canceled" "interrupted")))
 
 (defun hermes-chat--status-icon (status)
   "Return compact icon for transport STATUS."
   (pcase (hermes-chat--status-name status)
     ((or "done" "completed" "complete" "success" "succeeded" "ready") "✓")
-    ((or "error" "failed" "failure" "cancelled" "canceled" "interrupted") "!")
-    ((or "pending" "waiting" "queued" "streaming" "started" "running" "progress"
+    ((or "error" "failed" "failure" "cancelled" "canceled" "interrupted"
+         "closed") "!")
+    ((or "pending" "waiting" "queued" "streaming" "started" "starting"
+         "loading" "connecting" "reconnecting" "running" "progress"
          "in-progress" "preparing" "requested" "approval-requested") "…")
     (_ "·")))
 
@@ -448,12 +454,16 @@ METADATA is stored as the entry's `:metadata' plist."
   "Return compact header label for STATUS."
   (pcase (hermes-chat--status-name status)
     ((or "done" "completed" "complete" "success" "succeeded" "ready") "Ready")
-    ((or "error" "failed" "failure" "cancelled" "canceled") "Error")
+    ((or "error" "failed" "failure") "Error")
+    ((or "cancelled" "canceled") "Cancelled")
+    ((or "closed") "Disconnected")
     ((or "interrupted") "Interrupted")
     ((or "approval-requested") "Approval requested")
     ((or "requested") "Input requested")
     ((or "queued") "Queued")
     ((or "pending" "waiting") "Waiting")
+    ((or "starting" "loading") "Loading")
+    ((or "connecting" "reconnecting") "Connecting")
     ((or "streaming") "Streaming")
     ((or "started" "running" "progress" "in-progress" "preparing") "Running")
     (_ "Idle")))
@@ -463,7 +473,9 @@ METADATA is stored as the entry's `:metadata' plist."
   (pcase (hermes-chat--status-name status)
     ((or "done" "completed" "complete" "success" "succeeded" "ready") 'success)
     ((or "error" "failed" "failure" "cancelled" "canceled" "interrupted") 'error)
-    ((or "pending" "waiting" "queued" "streaming" "started" "running" "progress"
+    ((or "closed") 'warning)
+    ((or "pending" "waiting" "queued" "streaming" "started" "starting"
+         "loading" "connecting" "reconnecting" "running" "progress"
          "in-progress" "preparing" "requested" "approval-requested") 'font-lock-keyword-face)
     (_ 'shadow)))
 
@@ -473,20 +485,26 @@ METADATA is stored as the entry's `:metadata' plist."
        (not (string-empty-p value))
        value))
 
+(defun hermes-chat--notify-state-change ()
+  "Run `hermes-chat-state-change-hook' in the current chat buffer."
+  (run-hooks 'hermes-chat-state-change-hook))
+
 (defun hermes-chat--set-header-state (&rest props)
   "Merge PROPS into `hermes-chat--status-state' and refresh the header."
   (setq hermes-chat--status-state
         (apply #'hermes-chat--entry-with
                hermes-chat--status-state
                (append props (list :updated (current-time)))))
-  (force-mode-line-update))
+  (force-mode-line-update)
+  (hermes-chat--notify-state-change))
 
 (defun hermes-chat--reset-header-state ()
   "Reset live header state for the current chat buffer."
   (setq hermes-chat--active-tools (make-hash-table :test 'equal)
         hermes-chat--status-state
         (list :status 'ready :activity "Ready" :updated (current-time)))
-  (force-mode-line-update))
+  (force-mode-line-update)
+  (hermes-chat--notify-state-change))
 
 (defun hermes-chat--clear-active-tools ()
   "Forget currently active tools in the chat header."
@@ -544,6 +562,10 @@ METADATA is stored as the entry's `:metadata' plist."
    (or (hermes-chat--transport-entry-content event)
        (hermes-chat--event-string event '(:content :text :preview :event)))))
 
+(defun hermes-chat--error-status (event)
+  "Return terminal status to display for an error-like transport EVENT."
+  (or (hermes-chat--event-value event '(:status)) 'error))
+
 (defun hermes-chat--update-header-for-event (event)
   "Update chat header state from transport EVENT."
   (pcase (plist-get event :type)
@@ -557,7 +579,7 @@ METADATA is stored as the entry's `:metadata' plist."
     ('error
      (hermes-chat--clear-active-tools)
      (hermes-chat--set-header-state
-      :status 'error
+      :status (hermes-chat--error-status event)
       :activity (or (hermes-chat--event-string event '(:content :error))
                     "Transport error")))
     ('status
@@ -899,11 +921,13 @@ METADATA is stored as the entry's `:metadata' plist."
 
 (defun hermes-chat--insert-entry (entry)
   "Insert ENTRY into the current chat EWOC and return its node."
-  (hermes-chat--preserve-input-point
-   (let ((node (let ((inhibit-read-only t)
-                     (buffer-undo-list t))
-                 (ewoc-enter-last hermes-chat--ewoc entry))))
-     (hermes-chat--register-node entry node))))
+  (let ((node (hermes-chat--preserve-input-point
+               (let ((node (let ((inhibit-read-only t)
+                             (buffer-undo-list t))
+                         (ewoc-enter-last hermes-chat--ewoc entry))))
+                 (hermes-chat--register-node entry node)))))
+    (hermes-chat--notify-state-change)
+    node))
 
 (defun hermes-chat--entries ()
   "Return chat entries from the current buffer in display order."
@@ -916,13 +940,15 @@ METADATA is stored as the entry's `:metadata' plist."
   (let ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
     (unless node
       (user-error "No Hermes chat entry with id %s" id))
-    (hermes-chat--preserve-input-point
-     (let ((inhibit-read-only t)
-           (buffer-undo-list t)
-           (entry (funcall function (ewoc-data node))))
-       (ewoc-set-data node entry)
-       (ewoc-invalidate hermes-chat--ewoc node)
-       entry))))
+    (let ((entry (hermes-chat--preserve-input-point
+                  (let ((inhibit-read-only t)
+                        (buffer-undo-list t)
+                        (entry (funcall function (ewoc-data node))))
+                    (ewoc-set-data node entry)
+                    (ewoc-invalidate hermes-chat--ewoc node)
+                    entry))))
+      (hermes-chat--notify-state-change)
+      entry)))
 
 (defun hermes-chat--toggle-entry-expanded (id)
   "Toggle detail expansion for entry ID."
@@ -1131,7 +1157,9 @@ A nil SESSION-ID matches every prompt in the current buffer."
                    (push key keys)))
                hermes-chat--pending-prompts)
       (dolist (key keys)
-        (remhash key hermes-chat--pending-prompts)))))
+        (remhash key hermes-chat--pending-prompts))
+      (when keys
+        (hermes-chat--notify-state-change)))))
 
 (defun hermes-chat--event-session-id (event)
   "Return EVENT's dashboard session id, or nil."
@@ -1147,10 +1175,62 @@ A nil SESSION-ID matches every prompt in the current buffer."
   (and hermes-chat--pending-prompts
        (> (hash-table-count hermes-chat--pending-prompts) 0)))
 
+(defun hermes-chat--pending-prompt-count ()
+  "Return the number of pending prompt requests in the current chat."
+  (let ((count 0))
+    (when (hash-table-p hermes-chat--pending-prompts)
+      (maphash (lambda (_key prompt)
+                 (setq count
+                       (+ count
+                          (or (plist-get prompt :prompt-count)
+                              (and (plist-get prompt :prompt-queue)
+                                   (length (plist-get prompt :prompt-queue)))
+                              1))))
+               hermes-chat--pending-prompts))
+    count))
+
+(defun hermes-chat--dashboard-connection-label ()
+  "Return a compact dashboard connection label for the current chat."
+  (cond
+   ((hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+    "connected")
+   ((and hermes-chat--dashboard-client (hermes-chat--active-turn-p))
+    "connecting")
+   (hermes-chat--dashboard-client "disconnected")
+   (hermes-chat--process "transport active")
+   (t nil)))
+
+(defun hermes-chat--dashboard-snapshot ()
+  "Return display-safe dashboard state for the current chat buffer."
+  (list :buffer (current-buffer)
+        :title (buffer-name)
+        :session-id hermes-chat--session-id
+        :connection (hermes-chat--dashboard-connection-label)
+        :status (or (plist-get hermes-chat--status-state :status) 'ready)
+        :activity (plist-get hermes-chat--status-state :activity)
+        :active-tools (hermes-chat--active-tool-summaries)
+        :pending-prompts (hermes-chat--pending-prompt-count)
+        :pending-assistant-p (and hermes-chat--pending-assistant-id t)
+        :updated (plist-get hermes-chat--status-state :updated)))
+
 (defun hermes-chat--forget-live-dashboard-session ()
   "Forget the live dashboard session while preserving the durable session key."
   (setq hermes-chat--dashboard-session-ready-p nil
         hermes-chat--dashboard-active-session-id nil))
+
+(defun hermes-chat--stop-dashboard-client ()
+  "Release this buffer's dashboard client resources, if any."
+  (when-let* ((client hermes-chat--dashboard-client))
+    (hermes-dashboard-transport-stop client "Hermes dashboard transport stopped")
+    (when (eq hermes-chat--process client)
+      (setq hermes-chat--process nil))
+    (setq hermes-chat--dashboard-client nil)
+    (hermes-chat--forget-live-dashboard-session)))
+
+(defun hermes-chat--cleanup-buffer ()
+  "Release per-buffer Hermes chat resources before killing the buffer."
+  (hermes-chat--stop-dashboard-client)
+  (hermes-chat--notify-state-change))
 
 (defun hermes-chat--next-transport-generation ()
   "Advance and return this buffer's transport callback generation."
@@ -1172,7 +1252,9 @@ A nil SESSION-ID matches every prompt in the current buffer."
 
 (defun hermes-chat--dashboard-suppressed-terminal-status (event)
   "Return assistant status for suppressed dashboard terminal EVENT."
-  (if (eq (plist-get event :type) 'error) 'error 'done))
+  (if (eq (plist-get event :type) 'error)
+      (hermes-chat--error-status event)
+    'done))
 
 (defun hermes-chat--dashboard-suppressed-header-event (event)
   "Return a safe header event for suppressed dashboard terminal EVENT."
@@ -1267,17 +1349,18 @@ so do not copy its final content into the unsubmitted retry placeholder."
              hermes-chat--process nil)
        (hermes-chat--drain-queued-message))
       ('error
-       (hermes-chat--clear-terminal-prompts event)
-       (hermes-chat--append-assistant-content
-        assistant-id
-        (let ((content (or (plist-get event :content) "")))
-          (if (string-empty-p content) "Transport error" content))
-        'error)
-       (hermes-chat--settle-transport-entries assistant-id 'error)
-       (hermes-chat--dashboard-finish-assistant assistant-id)
-       (setq hermes-chat--pending-assistant-id nil
-             hermes-chat--process nil)
-       (hermes-chat--drain-queued-message))
+       (let ((status (hermes-chat--error-status event)))
+         (hermes-chat--clear-terminal-prompts event)
+         (hermes-chat--append-assistant-content
+          assistant-id
+          (let ((content (or (plist-get event :content) "")))
+            (if (string-empty-p content) "Transport error" content))
+          status)
+         (hermes-chat--settle-transport-entries assistant-id status)
+         (hermes-chat--dashboard-finish-assistant assistant-id)
+         (setq hermes-chat--pending-assistant-id nil
+               hermes-chat--process nil)
+         (hermes-chat--drain-queued-message)))
       ((or 'status 'progress 'tool 'commentary 'diff)
        (hermes-chat--upsert-transport-entry assistant-id event))
       (_
@@ -1331,7 +1414,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
               stored-id)))))
 
 (defun hermes-chat--dashboard-result-live-turn-p (result)
-  "Return non-nil when RESULT says the resumed session is still busy."
+  "Return non-nil when RESULT reports the resumed session is still busy."
   (or (hermes-transport--get result 'running)
       (hermes-transport--get result 'inflight)))
 
@@ -1416,6 +1499,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
                hermes-chat--dashboard-client)
               callback)
         hermes-chat--dashboard-client)
+    (hermes-chat--stop-dashboard-client)
     (setq hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-active-session-id nil
           hermes-chat--dashboard-client
@@ -1578,6 +1662,7 @@ Record asynchronous session results in BUFFER."
    ((hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
     hermes-chat--dashboard-client)
    ((hermes-chat--dashboard-default-transport-p)
+    (hermes-chat--stop-dashboard-client)
     (setq hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-active-session-id nil
           hermes-chat--dashboard-client
@@ -1586,7 +1671,7 @@ Record asynchronous session results in BUFFER."
     (user-error "Hermes dashboard transport controls are unavailable"))))
 
 (defun hermes-chat--dashboard-action-resolver (buffer client action)
-  "Return a resolver that records CLIENT's session in BUFFER, then runs ACTION."
+  "Return a resolver to record CLIENT's session in BUFFER, then call ACTION."
   (lambda (result)
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
@@ -1598,7 +1683,7 @@ Record asynchronous session results in BUFFER."
         (funcall action client)))))
 
 (defun hermes-chat--dashboard-action-rejecter (buffer reject)
-  "Return a reject callback for BUFFER that runs REJECT visibly."
+  "Return a reject callback to run REJECT visibly in BUFFER."
   (lambda (message)
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
@@ -1641,7 +1726,7 @@ When dashboard session bootstrap fails, call REJECT with the error message."
     (hermes-chat--submit-content content)))
 
 (defun hermes-chat--dashboard-queue-or-submit (content buffer)
-  "Resume stored dashboard session before queuing or submitting CONTENT."
+  "Resume stored dashboard session in BUFFER before queuing or submitting CONTENT."
   (if (hermes-chat--dashboard-stored-session-needs-resume-p)
       (hermes-chat--call-with-dashboard-bootstrap-error
        content
@@ -1726,7 +1811,7 @@ When dashboard session bootstrap fails, call REJECT with the error message."
   (hermes-chat--prefill-input message))
 
 (defun hermes-chat--handle-command-result (result &optional arg)
-  "Render or act on a dashboard command RESULT."
+  "Render or act on a dashboard command RESULT using optional ARG."
   (pcase (hermes-chat--result-type result)
     ("alias"
      (hermes-chat--handle-alias-result
@@ -2165,7 +2250,7 @@ approvals in the dashboard session."
 
 (defun hermes-chat--transport-callback
     (buffer assistant-id dashboard-p generation)
-  "Return transport callback for BUFFER and ASSISTANT-ID."
+  "Return transport callback for BUFFER, ASSISTANT-ID, DASHBOARD-P, and GENERATION."
   (lambda (event)
     (when (buffer-live-p buffer)
       (with-current-buffer buffer
@@ -2282,7 +2367,7 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
   (hermes-chat--queue-content content "Queued next message after steer fallback"))
 
 (defun hermes-chat--steer-active-turn (content buffer)
-  "Steer active dashboard turn with CONTENT, or queue when unsupported."
+  "Steer active dashboard turn with CONTENT in BUFFER, or queue when unsupported."
   (if (not (hermes-chat--dashboard-session-attached-p))
       (hermes-chat--queue-content content "Steer unavailable; queued next message")
     (hermes-dashboard-transport-session-steer
@@ -2305,13 +2390,13 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
                    (hermes-chat--steer-rejected content err)))))))
 
 (defun hermes-chat--steer-or-submit (content buffer)
-  "Steer active turn with CONTENT, or submit CONTENT when idle."
+  "Steer active turn with CONTENT in BUFFER, or submit CONTENT when idle."
   (if (hermes-chat--active-turn-p)
       (hermes-chat--steer-active-turn content buffer)
     (hermes-chat--submit-content content)))
 
 (defun hermes-chat--dashboard-steer-or-submit (content buffer)
-  "Resume a stored dashboard session before steering or submitting CONTENT."
+  "Resume stored dashboard session in BUFFER before steering or submitting CONTENT."
   (if (hermes-chat--dashboard-stored-session-needs-resume-p)
       (hermes-chat--call-with-dashboard-bootstrap-error
        content
@@ -2419,6 +2504,7 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
   (setq-local scroll-conservatively 5)
   (when (fboundp 'display-line-numbers-mode)
     (display-line-numbers-mode 0))
+  (add-hook 'kill-buffer-hook #'hermes-chat--cleanup-buffer nil t)
   (hermes-chat--setup-buffer))
 
 ;;;###autoload

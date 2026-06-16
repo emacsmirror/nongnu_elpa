@@ -35,6 +35,7 @@
 (declare-function websocket-open "ext:websocket")
 (declare-function websocket-send-text "ext:websocket")
 (declare-function websocket-frame-text "ext:websocket")
+(declare-function websocket-close "ext:websocket")
 
 (defgroup hermes-dashboard-transport nil
   "Dashboard/TUI transport for Hermes Agent."
@@ -65,6 +66,19 @@
   :type 'number
   :group 'hermes-dashboard-transport)
 
+(defcustom hermes-dashboard-transport-ready-timeout 15
+  "Seconds to wait for `gateway.ready' after the WebSocket opens.
+Use nil to skip this wait.  The dashboard accepts the WebSocket before the TUI
+gateway is ready to process JSON-RPC requests, so callers must not submit the
+first request until the ready event arrives."
+  :type '(choice (const :tag "Do not wait" nil) number)
+  :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-ready-wait-interval 0.05
+  "Seconds to wait between dashboard `gateway.ready' checks."
+  :type 'number
+  :group 'hermes-dashboard-transport)
+
 (cl-defstruct hermes-dashboard-transport-client
   "State for one dashboard/TUI JSON-RPC WebSocket connection."
   process
@@ -82,7 +96,7 @@
 (defun hermes-dashboard-transport--command (host port &optional command)
   "Return dashboard startup argv for HOST, PORT, and optional COMMAND."
   (list (or command hermes-dashboard-transport-command)
-        "dashboard" "--no-open" "--tui"
+        "dashboard" "--no-open" "--tui" "--isolated"
         "--host" host "--port" (number-to-string port)))
 
 (defun hermes-dashboard-transport--env-name (entry)
@@ -98,7 +112,8 @@
    environment))
 
 (defun hermes-dashboard-transport--environment (token &optional base-environment)
-  "Return dashboard process environment with TOKEN injected."
+  "Return dashboard process environment with TOKEN injected.
+Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
   (append (hermes-dashboard-transport--without-dashboard-env
            (or base-environment process-environment))
           (list (concat "HERMES_DASHBOARD_SESSION_TOKEN=" token)
@@ -187,7 +202,7 @@
 
 (defun hermes-dashboard-transport--call-with-redacted-websocket-state
     (url redacted-url thunk)
-  "Call THUNK while redacting URL in websocket.el-visible state."
+  "Call THUNK while redacting URL as REDACTED-URL in websocket.el-visible state."
   (let* ((names (hermes-dashboard-transport--redacted-websocket-name
                  url redacted-url))
          (token-name (car names))
@@ -216,6 +231,73 @@
   "Mark CLIENT's WebSocket connection closed."
   (setf (hermes-dashboard-transport-client-websocket client) nil
         (hermes-dashboard-transport-client-ready-p client) nil))
+
+(defun hermes-dashboard-transport--close-websocket (client)
+  "Close CLIENT's WebSocket resource and clear its live fields."
+  (when-let* ((websocket (hermes-dashboard-transport-client-websocket client)))
+    (when (fboundp 'websocket-close)
+      (ignore-errors (websocket-close websocket))))
+  (hermes-dashboard-transport--mark-websocket-closed client))
+
+(defun hermes-dashboard-transport--delete-process (client)
+  "Delete CLIENT's spawned dashboard process and clear the field."
+  (when-let* ((process (hermes-dashboard-transport-client-process client)))
+    (ignore-errors (delete-process process)))
+  (setf (hermes-dashboard-transport-client-process client) nil))
+
+(defun hermes-dashboard-transport--normalized-error-message (client message)
+  "Return redacted dashboard error MESSAGE for CLIENT."
+  (hermes-dashboard-transport--redact-secret
+   (or message "Hermes dashboard request failed")
+   (hermes-dashboard-transport-client-token client)))
+
+(defun hermes-dashboard-transport--safe-reject (client reject message method)
+  "Call REJECT with MESSAGE, reporting callback failures for METHOD on CLIENT."
+  (condition-case error
+      (funcall reject message)
+    (error
+     (hermes-dashboard-transport--emit-error
+      client
+      (format "Hermes dashboard reject callback failed: %s"
+              (hermes-dashboard-transport--condition-message client error))
+      method))))
+
+(defun hermes-dashboard-transport--reject-pending-request
+    (client request message)
+  "Reject one pending REQUEST on CLIENT with normalized MESSAGE."
+  (let ((method (plist-get request :method))
+        (reject (plist-get request :reject)))
+    (if reject
+        (hermes-dashboard-transport--safe-reject client reject message method)
+      (hermes-dashboard-transport--emit-error client message method))))
+
+(defun hermes-dashboard-transport--reject-pending-requests
+    (client message)
+  "Reject and clear every pending request on CLIENT with MESSAGE."
+  (let ((message (hermes-dashboard-transport--normalized-error-message
+                  client message))
+        (pending (hermes-dashboard-transport-client-pending client)))
+    (when (hash-table-p pending)
+      (maphash
+       (lambda (_id request)
+         (hermes-dashboard-transport--reject-pending-request
+          client request message))
+       pending)
+      (clrhash pending))))
+
+(defun hermes-dashboard-transport-stop (client &optional message)
+  "Release CLIENT's dashboard WebSocket, process, and pending requests.
+MESSAGE is reported to pending request reject callbacks, or as a normalized
+transport error when a pending request has no reject callback."
+  (when (hermes-dashboard-transport-client-p client)
+    (hermes-dashboard-transport--reject-pending-requests
+     client (or message "Hermes dashboard transport stopped"))
+    (setf (hermes-dashboard-transport-client-callback client) #'ignore)
+    (hermes-dashboard-transport--close-websocket client)
+    (hermes-dashboard-transport--delete-process client)
+    (setf (hermes-dashboard-transport-client-session-id client) nil
+          (hermes-dashboard-transport-client-stored-session-id client) nil)
+    client))
 
 (defun hermes-dashboard-transport--default-websocket-open (url client)
   "Open URL for CLIENT using websocket.el."
@@ -267,6 +349,16 @@ It is called with the tokenized URL and the dashboard client.")
 (defvar hermes-dashboard-transport-sleep-function #'sleep-for
   "Function used to wait between dashboard connection attempts.")
 
+(defun hermes-dashboard-transport--default-ready-wait (_client seconds)
+  "Wait SECONDS for dashboard WebSocket input."
+  (accept-process-output nil seconds)
+  (sit-for 0))
+
+(defvar hermes-dashboard-transport-ready-wait-function
+  #'hermes-dashboard-transport--default-ready-wait
+  "Function used to wait for dashboard `gateway.ready'.
+It receives the dashboard client and a number of seconds.")
+
 (defun hermes-dashboard-transport--encode-frame (frame)
   "Encode JSON-RPC FRAME as a JSON string."
   (json-serialize frame))
@@ -300,6 +392,14 @@ It is called with the tokenized URL and the dashboard client.")
       (setf (hermes-dashboard-transport-client-pending client)
             (make-hash-table :test #'equal))))
 
+(defun hermes-dashboard-transport--send-failure-message
+    (client method condition)
+  "Return redacted send failure text for CLIENT, METHOD, and CONDITION."
+  (hermes-dashboard-transport--normalized-error-message
+   client
+   (format "Hermes dashboard request %s failed before send: %s"
+           method (error-message-string condition))))
+
 (defun hermes-dashboard-transport-request (client method &optional params resolve reject)
   "Send METHOD with PARAMS for CLIENT and correlate response callbacks.
 RESOLVE is called with the JSON-RPC result.  REJECT is called with the error
@@ -308,9 +408,16 @@ message when provided.  Return the request id."
          (pending (hermes-dashboard-transport--ensure-pending client))
          (frame (hermes-dashboard-transport--jsonrpc-request id method params)))
     (puthash id (list :method method :resolve resolve :reject reject) pending)
-    (funcall hermes-dashboard-transport-websocket-send-function
-             (hermes-dashboard-transport-client-websocket client)
-             (hermes-dashboard-transport--encode-frame frame))
+    (condition-case error
+        (funcall hermes-dashboard-transport-websocket-send-function
+                 (hermes-dashboard-transport-client-websocket client)
+                 (hermes-dashboard-transport--encode-frame frame))
+      (error
+       (remhash id pending)
+       (hermes-dashboard-transport--reject-pending-request
+        client (list :method method :reject reject)
+        (hermes-dashboard-transport--send-failure-message
+         client method error))))
     id))
 
 (defun hermes-dashboard-transport--alist-without-nil (alist)
@@ -323,7 +430,9 @@ message when provided.  Return the request id."
 
 (cl-defun hermes-dashboard-transport-session-create
     (client &key cols messages title profile cwd resolve reject)
-  "Send a `session.create' request for CLIENT."
+  "Send a `session.create' request for CLIENT.
+COLS, MESSAGES, TITLE, PROFILE, and CWD become request parameters.  RESOLVE
+and REJECT receive the asynchronous result or error."
   (hermes-dashboard-transport-request
    client "session.create"
    (hermes-dashboard-transport--alist-without-nil
@@ -352,7 +461,8 @@ message when provided.  Return the request id."
 
 (cl-defun hermes-dashboard-transport-session-interrupt
     (client &key session-id resolve reject)
-  "Send `session.interrupt' for CLIENT's active session."
+  "Send `session.interrupt' for CLIENT's SESSION-ID or active session.
+RESOLVE and REJECT receive the asynchronous result or error."
   (hermes-dashboard-transport-request
    client "session.interrupt"
    (hermes-dashboard-transport--alist-without-nil
@@ -371,13 +481,16 @@ message when provided.  Return the request id."
 
 (cl-defun hermes-dashboard-transport-commands-catalog
     (client &key resolve reject)
-  "Request the dashboard `commands.catalog' for CLIENT."
+  "Request the dashboard `commands.catalog' for CLIENT.
+RESOLVE and REJECT receive the asynchronous result or error."
   (hermes-dashboard-transport-request
    client "commands.catalog" nil resolve reject))
 
 (cl-defun hermes-dashboard-transport-command-dispatch
     (client name arg &key session-id resolve reject)
-  "Dispatch slash command NAME with ARG through `command.dispatch'."
+  "Dispatch slash command NAME with ARG through CLIENT's `command.dispatch'.
+SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
+asynchronous result or error."
   (hermes-dashboard-transport-request
    client "command.dispatch"
    (hermes-dashboard-transport--alist-without-nil
@@ -388,7 +501,9 @@ message when provided.  Return the request id."
 
 (cl-defun hermes-dashboard-transport-slash-exec
     (client command &key session-id resolve reject)
-  "Run COMMAND through dashboard `slash.exec'."
+  "Run COMMAND through CLIENT's dashboard `slash.exec'.
+SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
+asynchronous result or error."
   (hermes-dashboard-transport-request
    client "slash.exec"
    (hermes-dashboard-transport--alist-without-nil
@@ -398,7 +513,9 @@ message when provided.  Return the request id."
 
 (cl-defun hermes-dashboard-transport-approval-respond
     (client &key session-id choice all resolve reject)
-  "Send an `approval.respond' CHOICE for CLIENT."
+  "Send an `approval.respond' CHOICE for CLIENT.
+SESSION-ID selects the live dashboard session.  ALL applies CHOICE broadly when
+non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
   (hermes-dashboard-transport-request
    client "approval.respond"
    (hermes-dashboard-transport--alist-without-nil
@@ -494,11 +611,30 @@ message when provided.  Return the request id."
     (setf (hermes-dashboard-transport-client-websocket client) websocket)
     websocket))
 
+(defun hermes-dashboard-transport--ready-timeout-error (client)
+  "Return a redacted `gateway.ready' timeout message for CLIENT."
+  (format "Hermes dashboard did not become ready at %s"
+          (hermes-dashboard-transport--redacted-websocket-url
+           (hermes-dashboard-transport-client-host client)
+           (hermes-dashboard-transport-client-port client))))
+
+(defun hermes-dashboard-transport--await-ready (client)
+  "Wait for CLIENT to receive `gateway.ready', or signal `user-error'."
+  (when hermes-dashboard-transport-ready-timeout
+    (let ((deadline (+ (float-time) hermes-dashboard-transport-ready-timeout)))
+      (while (and (not (hermes-dashboard-transport-client-ready-p client))
+                  (< (float-time) deadline))
+        (funcall hermes-dashboard-transport-ready-wait-function
+                 client hermes-dashboard-transport-ready-wait-interval))
+      (unless (hermes-dashboard-transport-client-ready-p client)
+        (let ((message (hermes-dashboard-transport--ready-timeout-error client)))
+          (hermes-dashboard-transport--emit-error client message)
+          (signal 'user-error (list message)))))))
+
 (defun hermes-dashboard-transport--cleanup-start-failure (client)
   "Release CLIENT resources after a failed dashboard start."
-  (when-let* ((process (hermes-dashboard-transport-client-process client)))
-    (ignore-errors (delete-process process))
-    (setf (hermes-dashboard-transport-client-process client) nil)))
+  (hermes-dashboard-transport-stop
+   client "Hermes dashboard transport stopped during startup"))
 
 (cl-defun hermes-dashboard-transport-start
     (&key callback host port command token base-environment)
@@ -521,6 +657,7 @@ TOKEN, and BASE-ENVIRONMENT override the default spawn settings."
           (setf (hermes-dashboard-transport-client-process client)
                 (hermes-dashboard-transport--start-process client argv env))
           (hermes-dashboard-transport-connect client)
+          (hermes-dashboard-transport--await-ready client)
           client)
       (error
        (hermes-dashboard-transport--cleanup-start-failure client)
@@ -694,7 +831,7 @@ TOKEN, and BASE-ENVIRONMENT override the default spawn settings."
                  (or (hermes-transport--scalar-string
                       (hermes-transport--get payload 'status))
                      "complete"))))
-    (if (member status '("complete" "completed" "success" "ok"))
+    (if (member status '("complete" "completed" "done" "success" "ok"))
         'done
       'error)))
 
@@ -770,6 +907,31 @@ TOKEN, and BASE-ENVIRONMENT override the default spawn settings."
    ((null payload) nil)
    (t `((content . ,payload)))))
 
+(defun hermes-dashboard-transport--session-info-content (payload)
+  "Return a compact display string for a `session.info' PAYLOAD."
+  (let ((model (hermes-transport--scalar-string
+                (hermes-transport--get payload 'model)))
+        (provider (hermes-transport--scalar-string
+                   (hermes-transport--get payload 'provider)))
+        (warning (hermes-transport--scalar-string
+                  (hermes-transport--get payload 'config_warning))))
+    (string-join
+     (delq nil
+           (list (cond
+                  ((and model provider)
+                   (format "Session ready: %s via %s" model provider))
+                  (model (format "Session ready: %s" model))
+                  (provider (format "Session ready via %s" provider))
+                  (t "Session ready"))
+                 warning))
+     " — ")))
+
+(defun hermes-dashboard-transport--session-info-event (type params payload)
+  "Return a normalized `session.info' status event for TYPE/PARAMS/PAYLOAD."
+  (hermes-dashboard-transport--status-event
+   type params payload "ready"
+   (hermes-dashboard-transport--session-info-content payload)))
+
 (defun hermes-dashboard-transport--generic-event (type params payload)
   "Return generic normalized event for TYPE/PARAMS/PAYLOAD."
   (let* ((object (or (hermes-dashboard-transport--payload-object payload) '()))
@@ -789,6 +951,9 @@ TOKEN, and BASE-ENVIRONMENT override the default spawn settings."
       ("gateway.ready"
        (list (hermes-dashboard-transport--status-event
               type params payload "ready" "Hermes dashboard connected")))
+      ("session.info"
+       (list (hermes-dashboard-transport--session-info-event
+              type params payload)))
       ("message.delta"
        (list (hermes-dashboard-transport--payload-event type params payload 'delta)))
       ("message.complete"

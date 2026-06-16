@@ -3,7 +3,9 @@
 (require 'ert)
 (require 'button)
 (require 'cl-lib)
+(require 'ewoc)
 (require 'subr-x)
+(require 'timer)
 
 (let ((root (expand-file-name ".." (file-name-directory (or load-file-name buffer-file-name)))))
   (add-to-list 'load-path (expand-file-name "lisp" root)))
@@ -48,6 +50,10 @@
   "Return a fresh chat buffer name for tests."
   (generate-new-buffer-name "*Hermes Chat Test*"))
 
+(defun hermes-test--dashboard-buffer-name ()
+  "Return a fresh dashboard buffer name for tests."
+  (generate-new-buffer-name "*Hermes Dashboard Test*"))
+
 (defmacro hermes-test-with-chat-buffer (&rest body)
   "Create a fresh Hermes chat buffer and run BODY in it."
   (declare (indent 0) (debug t))
@@ -59,6 +65,34 @@
              ,@body))
        (when-let* ((buffer (get-buffer hermes-chat-buffer-name)))
          (kill-buffer buffer)))))
+
+(defmacro hermes-test-with-dashboard-buffer (&rest body)
+  "Create a fresh Hermes dashboard buffer and run BODY in it."
+  (declare (indent 0) (debug t))
+  `(let ((hermes-dashboard-buffer-name (hermes-test--dashboard-buffer-name)))
+     (unwind-protect
+         (with-current-buffer (get-buffer-create hermes-dashboard-buffer-name)
+           (hermes-dashboard-mode)
+           (hermes-dashboard--render)
+           ,@body)
+       (when-let* ((buffer (get-buffer hermes-dashboard-buffer-name)))
+         (kill-buffer buffer)))))
+
+(defun hermes-test--dashboard-node-data (id)
+  "Return dashboard node data for ID in the current dashboard buffer."
+  (when-let* ((node (gethash id hermes-dashboard--nodes)))
+    (ewoc-data node)))
+
+(defun hermes-test--dashboard-stale-refresh-timers (&optional buffer)
+  "Return dashboard stale-refresh timers, optionally for BUFFER."
+  (let (timers)
+    (dolist (timer timer-list (nreverse timers))
+      (when (and (timerp timer)
+                 (eq (timer--function timer)
+                     #'hermes-dashboard--stale-refresh)
+                 (or (null buffer)
+                     (equal (timer--args timer) (list buffer))))
+        (push timer timers)))))
 
 (defun hermes-test--face-includes-p (value face)
   "Return non-nil if text face VALUE includes FACE."
@@ -150,12 +184,26 @@
             (hermes)
             (should (eq major-mode 'hermes-dashboard-mode))
             (should (eq shown-map hermes-dashboard-mode-map))
-            (should (string-match-p "Hermes" (buffer-string))))
+            (should hermes-dashboard--ewoc)
+            (let ((text (buffer-string)))
+              (should (string-match-p "Hermes" text))
+              (should (string-match-p "Chat" text))
+              (should (string-match-p "New session" text))))
         (when-let* ((buffer (get-buffer hermes-dashboard-buffer-name)))
           (kill-buffer buffer))))))
 
 (ert-deftest hermes-dashboard-chat-action-is-keymap-popup-binding ()
   (should (eq (keymap-lookup hermes-dashboard-mode-map "c") #'hermes-chat))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "N") #'hermes-chat-new-session))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "g") #'hermes-dashboard-refresh))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "n") #'hermes-dashboard-next))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "p") #'hermes-dashboard-previous))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "RET") #'hermes-dashboard-open))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "i") #'hermes-dashboard-interrupt))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "s") #'hermes-dashboard-steer))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "a") #'hermes-dashboard-respond))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "?") #'hermes-dashboard-popup))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "h") #'hermes-dashboard-popup))
   (let* ((rows (keymap-popup--meta hermes-dashboard-mode-map 'descriptions))
          (entries (mapcan (lambda (row)
                             (mapcan (lambda (group)
@@ -164,6 +212,111 @@
                           rows)))
     (should (cl-find "c" entries :key (lambda (entry) (plist-get entry :key))
                      :test #'equal))))
+
+(ert-deftest hermes-dashboard-status-symbol-does-not-intern-unknown-strings ()
+  (let* ((normalized "hermes-unknown-status-from-test")
+         (status (replace-regexp-in-string "-" " " normalized)))
+    (should-not (intern-soft normalized))
+    (should-not (hermes-dashboard--status-symbol status))
+    (should-not (intern-soft normalized))
+    (should (eq (hermes-dashboard--status-symbol "input requested")
+                'input-requested))
+    (should (eq (hermes-dashboard--status-symbol "In_Progress")
+                'in-progress))))
+
+(ert-deftest hermes-dashboard-repeated-open-cleans-stale-refresh-timers ()
+  (let ((hermes-dashboard-buffer-name (hermes-test--dashboard-buffer-name))
+        (hermes-dashboard-stale-refresh-interval 3600)
+        buffer)
+    (cl-letf (((symbol-function 'keymap-popup)
+               (lambda (&rest _args) nil)))
+      (unwind-protect
+          (progn
+            (dotimes (_ 3)
+              (hermes))
+            (setq buffer (get-buffer hermes-dashboard-buffer-name))
+            (should (buffer-live-p buffer))
+            (should (= 1 (length (hermes-test--dashboard-stale-refresh-timers
+                                  buffer))))
+            (kill-buffer buffer)
+            (should (= 0 (length (hermes-test--dashboard-stale-refresh-timers
+                                  buffer)))))
+        (when (and buffer (buffer-live-p buffer))
+          (kill-buffer buffer))))))
+
+(ert-deftest hermes-dashboard-renders-ewoc-actions-and-empty-state ()
+  (hermes-test-with-dashboard-buffer
+   (should (eq major-mode 'hermes-dashboard-mode))
+   (should hermes-dashboard--ewoc)
+   (should (equal (hermes-dashboard--current-ids)
+                  '("action:chat" "action:new-session" "empty:chats")))
+   (let ((text (buffer-string)))
+     (should (string-match-p "Chat" text))
+     (should (string-match-p "New session" text))
+     (should (string-match-p "No live Hermes chat buffers" text)))
+   (should (eq (plist-get (hermes-test--dashboard-node-data "action:chat") :action)
+               #'hermes-chat))
+   (goto-char (point-min))
+   (search-forward "Chat")
+   (should (equal (get-text-property (point) 'hermes-dashboard-node-id)
+                  "action:chat"))))
+
+(ert-deftest hermes-dashboard-lists-open-chat-buffers-with-status ()
+  (let (chat-buffer chat-name)
+    (hermes-test-with-chat-buffer
+     (setq chat-buffer (current-buffer)
+           chat-name (buffer-name))
+     (setq hermes-chat--session-id "sid-dashboard-test")
+     (puthash "tool-1" "terminal: make check" hermes-chat--active-tools)
+     (puthash "prompt-1" '(:prompt-type "approval") hermes-chat--pending-prompts)
+     (hermes-chat--set-header-state
+      :status 'running :activity "terminal: make check")
+     (hermes-test-with-dashboard-buffer
+      (let ((id (format "chat:%s" chat-name))
+            (text (buffer-string)))
+        (should (member id (hermes-dashboard--current-ids)))
+        (should (string-match-p (regexp-quote chat-name) text))
+        (should (string-match-p "Running" text))
+        (should (string-match-p "terminal: make check" text))
+        (should (string-match-p "1 pending prompt" text))
+        (should (string-match-p "session sid-dashboard-test" text))
+        (should (eq (plist-get (hermes-test--dashboard-node-data id) :buffer)
+                    chat-buffer)))))))
+
+(ert-deftest hermes-dashboard-refresh-updates-chat-node ()
+  (let (chat-name)
+    (hermes-test-with-chat-buffer
+     (setq chat-name (buffer-name))
+     (hermes-test-with-dashboard-buffer
+      (should (string-match-p "Ready" (buffer-string)))
+      (with-current-buffer chat-name
+        (hermes-chat--set-header-state :status 'error :activity "boom"))
+      (hermes-dashboard-refresh)
+      (let ((text (buffer-string))
+            (chat-id (format "chat:%s" chat-name)))
+        (should (string-match-p "Error" text))
+        (should (string-match-p "boom" text))
+        (should (= 1 (cl-count chat-id (hermes-dashboard--current-ids)
+                               :test #'equal))))))))
+
+(ert-deftest hermes-dashboard-open-at-point-switches-to-chat-buffer ()
+  (let (chat-buffer chat-name)
+    (hermes-test-with-chat-buffer
+     (setq chat-buffer (current-buffer)
+           chat-name (buffer-name))
+     (hermes-test-with-dashboard-buffer
+      (search-forward chat-name)
+      (hermes-dashboard-open)
+      (should (eq (current-buffer) chat-buffer))
+      (should (= (point) hermes-chat--input-marker))))))
+
+(ert-deftest hermes-dashboard-selected-chat-actions-error-without-chat-node ()
+  (hermes-test-with-dashboard-buffer
+   (goto-char (point-min))
+   (search-forward "Chat")
+   (should-error (hermes-dashboard-interrupt) :type 'user-error)
+   (should-error (hermes-dashboard-steer) :type 'user-error)
+   (should-error (hermes-dashboard-respond) :type 'user-error)))
 
 (ert-deftest hermes-chat-opens-ewoc-buffer-with-writable-input-tail ()
   (hermes-test-with-chat-buffer
@@ -181,6 +334,47 @@
   (should (eq (keymap-lookup hermes-chat-mode-map "RET") #'hermes-chat-send))
   (should (eq (keymap-lookup hermes-chat-mode-map "C-j") #'hermes-chat-newline))
   (should (eq (keymap-lookup hermes-chat-mode-map "S-<return>") #'hermes-chat-newline)))
+
+(ert-deftest hermes-chat-parses-slash-commands-with-arguments ()
+  (should (equal (hermes-chat--parse-slash "/QUEUE next message")
+                 '("queue" . "next message")))
+  (should (equal (hermes-chat--parse-slash "/Goal\nstatus")
+                 '("goal" . "status")))
+  (should (equal (hermes-chat--parse-slash "/commands")
+                 '("commands" . "")))
+  (should-not (hermes-chat--parse-slash " /queue not-a-command")))
+
+(ert-deftest hermes-chat-status-helpers-classify-parity-states ()
+  (dolist (case '(("in_progress" "Running" "…" font-lock-keyword-face t nil)
+                  ("approval-requested" "Approval requested" "…"
+                   font-lock-keyword-face t nil)
+                  ("queued" "Queued" "…" font-lock-keyword-face t nil)
+                  ("succeeded" "Ready" "✓" success nil t)
+                  ("interrupted" "Interrupted" "!" error nil t)
+                  ("cancelled" "Cancelled" "!" error nil t)
+                  ("closed" "Disconnected" "!" warning nil t)))
+    (pcase-let ((`(,status ,label ,icon ,face ,active ,finished) case))
+      (should (equal (hermes-chat--header-status-label status) label))
+      (should (equal (hermes-chat--status-icon status) icon))
+      (should (eq (hermes-chat--header-status-face status) face))
+      (should (eq (not (null (hermes-chat--active-status-p status))) active))
+      (should (eq (not (null (hermes-chat--finished-status-p status)))
+                  finished)))))
+
+(ert-deftest hermes-dashboard-status-helpers-classify-parity-states ()
+  (dolist (case '(("in_progress" "Running" hermes-dashboard-status-running)
+                  ("approval requested" "Approval requested"
+                   hermes-dashboard-status-waiting)
+                  ("input.requested" "Input requested"
+                   hermes-dashboard-status-waiting)
+                  ("succeeded" "Ready" hermes-dashboard-status-ready)
+                  ("interrupted" "Interrupted" hermes-dashboard-status-error)
+                  ("disconnected" "Disconnected"
+                   hermes-dashboard-status-error)
+                  ("backend paused" "Backend Paused" hermes-dashboard-muted)))
+    (pcase-let ((`(,status ,label ,face) case))
+      (should (equal (hermes-dashboard--status-label status) label))
+      (should (eq (hermes-dashboard--status-face status) face)))))
 
 (ert-deftest hermes-chat-renders-user-entry-with-prompt-prefix ()
   (hermes-test-with-chat-buffer
@@ -881,6 +1075,38 @@
          (should (equal hermes-chat--queued-message "cite files"))
          (should (string-match-p "Steer unavailable" (buffer-string))))))))
 
+(ert-deftest hermes-chat-interrupt-requests-dashboard-session-interrupt ()
+  (let ((client (hermes-test--dashboard-client))
+        interrupt-session submit-text)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _args) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")
+                            (stored_session_id . "sid-stored")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest _args)
+                 (setq submit-text text)))
+              ((symbol-function 'hermes-dashboard-transport-session-interrupt)
+               (lambda (_client &rest args)
+                 (setq interrupt-session (plist-get args :session-id))
+                 (funcall (plist-get args :resolve) '((status . "ok"))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "long running prompt")
+         (hermes-chat-send)
+         (should (equal submit-text "long running prompt"))
+         (hermes-chat-interrupt)
+         (should (equal interrupt-session "sid-active"))
+         (should (eq (plist-get hermes-chat--status-state :status)
+                     'interrupted))
+         (should (string-match-p "Interrupt requested" (buffer-string)))
+         (should (string-match-p "Interrupted"
+                                 (hermes-test--header-line-string))))))))
+
 (ert-deftest hermes-chat-control-error-keeps-active-turn ()
   (let ((client (hermes-test--dashboard-client))
         callback last-frame submits first-assistant)
@@ -1463,6 +1689,32 @@
        (should (equal dispatch-name "foo"))
        (should (equal dispatch-arg "dispatch output"))
        (should (string-match-p "dispatch output" (buffer-string)))))))
+
+(ert-deftest hermes-chat-command-dispatch-rejection-renders-error ()
+  (let ((client (hermes-test--dashboard-client)) dispatch-name dispatch-arg)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _args) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (_client _command &rest args)
+                 (funcall (plist-get args :reject)
+                          "pending-input command: use command.dispatch")))
+              ((symbol-function 'hermes-dashboard-transport-command-dispatch)
+               (lambda (_client name arg &rest args)
+                 (setq dispatch-name name
+                       dispatch-arg arg)
+                 (funcall (plist-get args :reject)
+                          "unknown command: nope"))))
+      (hermes-test-with-chat-buffer
+       (insert "/nope argument")
+       (hermes-chat-send)
+       (should (equal dispatch-name "nope"))
+       (should (equal dispatch-arg "argument"))
+       (should (equal (plist-get hermes-chat--status-state :status) 'error))
+       (should (string-match-p "unknown command: nope" (buffer-string)))))))
 
 (ert-deftest hermes-chat-dashboard-creates-session ()
   (let ((client (hermes-test--dashboard-client))
@@ -2337,7 +2589,7 @@
          (start-event (hermes-dashboard-transport--start-event
                        "127.0.0.1" 4567 "secret-token")))
     (should (equal (hermes-dashboard-transport--command "127.0.0.1" 4567)
-                   '("hermes" "dashboard" "--no-open" "--tui"
+                   '("hermes" "dashboard" "--no-open" "--tui" "--isolated"
                      "--host" "127.0.0.1" "--port" "4567")))
     (should (member "PATH=/bin" env))
     (should (member "HERMES_DASHBOARD_SESSION_TOKEN=secret-token" env))
@@ -2567,6 +2819,150 @@
                  hermes-dashboard-transport-connect-retry-delay)
               45)))
 
+(ert-deftest hermes-transport-dashboard-start-waits-for-gateway-ready ()
+  (let (waits events)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
+               (lambda () "secret-token"))
+              ((symbol-function 'hermes-dashboard-transport--pick-port)
+               (lambda () 4567)))
+      (let ((hermes-dashboard-transport-command "hermes")
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest _plist) 'fake-process))
+            (hermes-dashboard-transport-ready-timeout 1)
+            (hermes-dashboard-transport-ready-wait-interval 0.01)
+            (hermes-dashboard-transport-ready-wait-function
+             (lambda (client seconds)
+               (push seconds waits)
+               (hermes-dashboard-transport--handle-frame
+                client (hermes-dashboard-transport--encode-frame
+                        '((jsonrpc . "2.0")
+                          (method . "event")
+                          (params . ((type . "gateway.ready"))))))))
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (_url _client) 'fake-websocket)))
+        (let ((client (hermes-dashboard-transport-start
+                      :callback (lambda (event) (push event events)))))
+          (should (hermes-dashboard-transport-client-ready-p client))
+          (should (equal waits '(0.01)))
+          (should (cl-find "gateway.ready" events
+                           :key (lambda (event) (plist-get event :event))
+                           :test #'equal)))))))
+
+(ert-deftest hermes-transport-dashboard-start-timeout-cleans-websocket ()
+  (let (closed deleted opened-client)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
+               (lambda () "secret-token"))
+              ((symbol-function 'hermes-dashboard-transport--pick-port)
+               (lambda () 4567))
+              ((symbol-function 'websocket-close)
+               (lambda (websocket) (setq closed websocket)))
+              ((symbol-function 'delete-process)
+               (lambda (process) (setq deleted process))))
+      (let ((hermes-dashboard-transport-make-process-function
+             (lambda (&rest _plist) 'fake-process))
+            (hermes-dashboard-transport-ready-timeout 0)
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (_url client)
+               (setq opened-client client)
+               'fake-websocket)))
+        (should-error (hermes-dashboard-transport-start) :type 'user-error)
+        (should (eq closed 'fake-websocket))
+        (should (eq deleted 'fake-process))
+        (should opened-client)
+        (should-not (hermes-dashboard-transport-client-websocket opened-client))
+        (should-not (hermes-dashboard-transport-client-ready-p opened-client))
+        (should-not (hermes-dashboard-transport-client-process opened-client))))))
+
+(ert-deftest hermes-transport-dashboard-stop-releases-resources-and-rejects-pending ()
+  (let (closed deleted rejected events)
+    (cl-letf (((symbol-function 'websocket-close)
+               (lambda (websocket) (setq closed websocket)))
+              ((symbol-function 'delete-process)
+               (lambda (process) (setq deleted process))))
+      (let* ((pending (make-hash-table :test #'equal))
+             (client (make-hermes-dashboard-transport-client
+                      :process 'fake-process
+                      :websocket 'fake-websocket
+                      :ready-p t
+                      :token "secret-token"
+                      :pending pending
+                      :callback (lambda (event) (push event events)))))
+        (puthash "req-1"
+                 (list :method "session.create"
+                       :reject (lambda (message) (setq rejected message)))
+                 pending)
+        (hermes-dashboard-transport-stop client "stopped secret-token")
+        (should (eq closed 'fake-websocket))
+        (should (eq deleted 'fake-process))
+        (should-not (hermes-dashboard-transport-client-websocket client))
+        (should-not (hermes-dashboard-transport-client-process client))
+        (should-not (hermes-dashboard-transport-client-ready-p client))
+        (should (= (hash-table-count
+                    (hermes-dashboard-transport-client-pending client))
+                   0))
+        (should (string-match-p "stopped" rejected))
+        (should (string-match-p "<redacted>" rejected))
+        (should-not (string-match-p "secret-token" rejected))
+        (should-not events)))))
+
+(ert-deftest hermes-chat-kill-stops-dashboard-client ()
+  (let (closed deleted rejected)
+    (cl-letf (((symbol-function 'websocket-close)
+               (lambda (websocket) (setq closed websocket)))
+              ((symbol-function 'delete-process)
+               (lambda (process) (setq deleted process))))
+      (let* ((pending (make-hash-table :test #'equal))
+             (client (make-hermes-dashboard-transport-client
+                      :process 'fake-process
+                      :websocket 'fake-websocket
+                      :ready-p t
+                      :pending pending
+                      :callback #'ignore))
+             (buffer (generate-new-buffer (hermes-test--chat-buffer-name))))
+        (puthash "req-1"
+                 (list :method "prompt.submit"
+                       :reject (lambda (message) (setq rejected message)))
+                 pending)
+        (unwind-protect
+            (progn
+              (with-current-buffer buffer
+                (hermes-chat-mode)
+                (setq hermes-chat--dashboard-client client))
+              (kill-buffer buffer)
+              (should (eq closed 'fake-websocket))
+              (should (eq deleted 'fake-process))
+              (should (string-match-p "stopped" rejected))
+              (should-not (hermes-dashboard-transport-client-websocket client))
+              (should-not (hermes-dashboard-transport-client-process client))
+              (should (= (hash-table-count
+                          (hermes-dashboard-transport-client-pending client))
+                         0)))
+          (when (buffer-live-p buffer)
+            (kill-buffer buffer)))))))
+
+(ert-deftest hermes-chat-dashboard-start-stops-stale-client-before-replacing ()
+  (let ((old-client (make-hermes-dashboard-transport-client
+                     :process 'old-process
+                     :websocket nil
+                     :ready-p nil
+                     :pending (make-hash-table :test #'equal)
+                     :callback #'ignore))
+        (new-client (make-hermes-dashboard-transport-client
+                     :websocket 'new-websocket
+                     :pending (make-hash-table :test #'equal)
+                     :callback #'ignore))
+        deleted)
+    (cl-letf (((symbol-function 'delete-process)
+               (lambda (process) (setq deleted process)))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _args) new-client)))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client old-client)
+       (should (eq (hermes-chat--dashboard-start #'ignore) new-client))
+       (should (eq deleted 'old-process))
+       (should (eq hermes-chat--dashboard-client new-client))
+       (should-not (hermes-dashboard-transport-client-process old-client))))))
+
 (ert-deftest hermes-transport-dashboard-jsonrpc-correlates-responses ()
   (let* ((sent nil)
          (first-result nil)
@@ -2599,6 +2995,65 @@
                 (hermes-dashboard-transport-client-pending client))
                0))))
 
+(ert-deftest hermes-transport-dashboard-jsonrpc-error-rejects-pending-request ()
+  (let* ((sent nil)
+         rejected
+         (client (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket
+                  :pending (make-hash-table :test #'equal)
+                  :callback #'ignore))
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_websocket text)
+            (push (hermes-dashboard-transport--decode-frame text) sent))))
+    (hermes-dashboard-transport-command-dispatch
+     client "nope" "arg"
+     :reject (lambda (message) (setq rejected message)))
+    (should (= (hash-table-count
+                (hermes-dashboard-transport-client-pending client))
+               1))
+    (hermes-dashboard-transport--handle-frame
+     client (hermes-dashboard-transport--encode-frame
+             '((jsonrpc . "2.0")
+               (id . "hermes-el-1")
+               (error . ((code . -32601)
+                         (message . "unknown command"))))))
+    (should (equal rejected "unknown command"))
+    (should (= (hash-table-count
+                (hermes-dashboard-transport-client-pending client))
+               0))))
+
+(ert-deftest hermes-transport-dashboard-jsonrpc-send-failure-clears-pending ()
+  (let (rejected events)
+    (let* ((client (make-hermes-dashboard-transport-client
+                    :websocket 'fake-websocket
+                    :pending (make-hash-table :test #'equal)
+                    :token "secret-token"
+                    :callback (lambda (event) (push event events))))
+           (hermes-dashboard-transport-websocket-send-function
+            (lambda (_websocket _text)
+              (error "send failed for secret-token"))))
+      (hermes-dashboard-transport-request
+       client "session.create" nil nil
+       (lambda (message) (setq rejected message)))
+      (should (= (hash-table-count
+                  (hermes-dashboard-transport-client-pending client))
+                 0))
+      (should (string-match-p "send failed" rejected))
+      (should (string-match-p "<redacted>" rejected))
+      (should-not (string-match-p "secret-token" rejected))
+      (should-not events)
+      (hermes-dashboard-transport-request client "prompt.submit" nil)
+      (should (= (hash-table-count
+                  (hermes-dashboard-transport-client-pending client))
+                 0))
+      (let ((event (car events)))
+        (should (eq (plist-get event :type) 'error))
+        (should (equal (plist-get event :method) "prompt.submit"))
+        (should (string-match-p "send failed" (plist-get event :content)))
+        (should (string-match-p "<redacted>" (plist-get event :content)))
+        (should-not (string-match-p "secret-token"
+                                    (plist-get event :content)))))))
+
 (ert-deftest hermes-transport-dashboard-connects-with-fakes ()
   (let (process-plist opened-url sent events sleeps
                       (open-attempts 0))
@@ -2622,6 +3077,12 @@
                (should (hermes-dashboard-transport-client-p client))
                (if (= open-attempts 1)
                    (error "dashboard not ready")
+                 (hermes-dashboard-transport--handle-frame
+                  client (hermes-dashboard-transport--encode-frame
+                          '((jsonrpc . "2.0")
+                            (method . "event")
+                            (params . ((type . "gateway.ready")
+                                       (session_id . "sid"))))))
                  'fake-websocket)))
             (hermes-dashboard-transport-websocket-send-function
              (lambda (_websocket text)
@@ -2635,19 +3096,13 @@
           (should (= open-attempts 2))
           (should (equal sleeps '(0.05)))
           (should (equal (plist-get process-plist :command)
-                         '("hermes" "dashboard" "--no-open" "--tui"
+                         '("hermes" "dashboard" "--no-open" "--tui" "--isolated"
                            "--host" "127.0.0.1" "--port" "4567")))
           (should (member "HERMES_DASHBOARD_SESSION_TOKEN=secret-token"
                           (plist-get process-plist :env)))
           (should (equal opened-url
                          "ws://127.0.0.1:4567/api/ws?token=secret-token"))
           (should-not (string-match-p "secret-token" (format "%S" events)))
-          (hermes-dashboard-transport--handle-frame
-           client (hermes-dashboard-transport--encode-frame
-                   '((jsonrpc . "2.0")
-                     (method . "event")
-                     (params . ((type . "gateway.ready")
-                                (session_id . "sid"))))))
           (should (hermes-dashboard-transport-client-ready-p client))
           (hermes-dashboard-transport-session-create client :cols 90 :title "Chat")
           (hermes-dashboard-transport-session-resume client "sid" :cols 90)
@@ -2703,6 +3158,83 @@
       (should (equal (plist-get event :event) "message.complete"))
       (should (equal (plist-get event :status) "interrupted"))
       (should (equal (plist-get event :content) "Stopped")))))
+
+(ert-deftest hermes-transport-dashboard-complete-status-done-is-terminal ()
+  (let (events)
+    (let ((client (make-hermes-dashboard-transport-client
+                   :callback (lambda (event) (push event events)))))
+      (hermes-dashboard-transport--handle-frame
+       client (hermes-dashboard-transport--encode-frame
+               '((jsonrpc . "2.0")
+                 (method . "event")
+                 (params . ((type . "message.complete")
+                            (session_id . "sid")
+                            (payload . ((text . "Done")
+                                        (status . "done")))))))))
+    (let ((event (car events)))
+      (should (eq (plist-get event :type) 'done))
+      (should (equal (plist-get event :event) "message.complete"))
+      (should (equal (plist-get event :status) "done"))
+      (should (equal (plist-get event :content) "Done")))))
+
+(ert-deftest hermes-chat-dashboard-complete-interrupted-preserves-status ()
+  (let ((client (hermes-test--dashboard-client)) callback submit-text)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setq callback (plist-get args :callback))
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       callback)
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest _args)
+                 (setq submit-text text))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "long prompt")
+         (hermes-chat-send)
+         (should (equal submit-text "long prompt"))
+         (hermes-dashboard-transport--handle-frame
+          client (hermes-dashboard-transport--encode-frame
+                  '((jsonrpc . "2.0")
+                    (method . "event")
+                    (params . ((type . "message.complete")
+                               (session_id . "sid-active")
+                               (payload . ((text . "Stopped")
+                                           (status . "interrupted"))))))))
+         (let ((assistant (cadr (hermes-chat--entries))))
+           (should (equal (plist-get assistant :status) "interrupted"))
+           (should (equal (plist-get assistant :content) "Stopped")))
+         (should-not hermes-chat--pending-assistant-id)
+         (should (string-match-p "Interrupted"
+                                 (hermes-test--header-line-string)))
+         (should-not (string-match-p "Error"
+                                     (hermes-test--header-line-string))))))))
+
+(ert-deftest hermes-transport-dashboard-normalizes-session-info ()
+  (let (events)
+    (let ((client (make-hermes-dashboard-transport-client
+                   :callback (lambda (event) (push event events)))))
+      (hermes-dashboard-transport--handle-frame
+       client (hermes-dashboard-transport--encode-frame
+               '((jsonrpc . "2.0")
+                 (method . "event")
+                 (params . ((type . "session.info")
+                            (session_id . "sid")
+                            (payload . ((model . "gpt-5.5")
+                                        (provider . "openai-codex")))))))))
+    (let ((event (car events)))
+      (should (eq (plist-get event :type) 'status))
+      (should (equal (plist-get event :event) "session.info"))
+      (should (equal (plist-get event :session-id) "sid"))
+      (should (equal (plist-get event :status) "ready"))
+      (should (equal (plist-get event :content)
+                     "Session ready: gpt-5.5 via openai-codex")))))
 
 (ert-deftest hermes-transport-dashboard-normalizes-reasoning-events ()
   (let (events)

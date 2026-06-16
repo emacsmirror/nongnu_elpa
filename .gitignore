@@ -3,3 +3,7 @@
 /result
 /result-*
 /.direnv/
+/.hermes/
+/.eca/
+/.test-results/
+docs/
