@@ -119,6 +119,9 @@ which keeps tests and user custom transports working."
 (defconst hermes-chat--transient-entry-roles '(status progress tool)
   "Entry roles used for compact transport status/progress lines.")
 
+(defconst hermes-chat--unknown-event-raw-preview-width 180
+  "Maximum width for raw unknown transport event previews.")
+
 (defun hermes-chat--next-id (role)
   "Return a new local entry ID for ROLE."
   (format "%s-%d" role (cl-incf hermes-chat--entry-counter)))
@@ -414,6 +417,20 @@ METADATA is stored as the entry's `:metadata' plist."
   (when-let* ((name (hermes-chat--event-string event '(:event))))
     (car (last (split-string name "\\." t)))))
 
+(defun hermes-chat--unknown-event-content (event)
+  "Return visible diagnostic text for unknown transport EVENT."
+  (let* ((name (or (hermes-chat--event-string event '(:event)) "unnamed"))
+         (raw (plist-get event :raw))
+         (preview (and raw
+                       (truncate-string-to-width
+                        (format "%S" raw)
+                        hermes-chat--unknown-event-raw-preview-width
+                        nil nil "…"))))
+    (string-join
+     (delq nil (list (format "Unknown Hermes transport event: %s" name)
+                     (and preview (format "raw: %s" preview))))
+     "\n")))
+
 (defun hermes-chat--humanize-event-name (name)
   "Return NAME as a compact human-readable event label."
   (when name
@@ -596,7 +613,11 @@ METADATA is stored as the entry's `:metadata' plist."
     ('commentary
      (hermes-chat--set-header-state :status 'running :activity "Thinking..."))
     ('diff
-     (hermes-chat--set-header-state :status 'running :activity "Reviewing diff"))))
+     (hermes-chat--set-header-state :status 'running :activity "Reviewing diff"))
+    ('unknown
+     (hermes-chat--set-header-state
+      :status 'error
+      :activity (hermes-chat--unknown-event-content event)))))
 
 (defun hermes-chat--header-state-text ()
   "Return propertized state text for the chat header."
@@ -682,7 +703,8 @@ METADATA is stored as the entry's `:metadata' plist."
     ('progress 'progress)
     ('tool 'tool)
     ('commentary 'commentary)
-    ('diff 'assistant)))
+    ('diff 'assistant)
+    ('unknown 'status)))
 
 (defun hermes-chat--commentary-event-name (event)
   "Return EVENT's commentary event name in lowercase, or nil."
@@ -708,6 +730,7 @@ METADATA is stored as the entry's `:metadata' plist."
 (defun hermes-chat--transport-entry-status (event)
   "Return EWOC entry status for transport EVENT."
   (or (hermes-chat--event-value event '(:status))
+      (and (eq (plist-get event :type) 'unknown) 'error)
       (and (eq (plist-get event :type) 'commentary) 'running)
       (hermes-chat--event-phase event)
       (pcase (plist-get event :type)
@@ -721,6 +744,7 @@ METADATA is stored as the entry's `:metadata' plist."
     ('progress (hermes-chat--format-progress-event event))
     ('tool (hermes-chat--format-tool-event event))
     ((or 'commentary 'diff) (hermes-chat--event-string event '(:content :text)))
+    ('unknown (hermes-chat--unknown-event-content event))
     (_ nil)))
 
 (defun hermes-chat--transport-key-fragment (event keys)
@@ -752,7 +776,11 @@ METADATA is stored as the entry's `:metadata' plist."
                            event '(:event)))))
        (concat "tool:" key)))
     ('commentary
-     (concat "commentary:" (hermes-chat--commentary-key event)))))
+     (concat "commentary:" (hermes-chat--commentary-key event)))
+    ('unknown
+     (when-let* ((key (hermes-chat--transport-key-fragment
+                       event '(:event :session-id :session_id))))
+       (concat "unknown:" key)))))
 
 (defun hermes-chat--transport-entry-metadata (assistant-id event)
   "Return metadata plist for transport EVENT tied to ASSISTANT-ID."
@@ -1362,6 +1390,9 @@ so do not copy its final content into the unsubmitted retry placeholder."
                hermes-chat--process nil)
          (hermes-chat--drain-queued-message)))
       ((or 'status 'progress 'tool 'commentary 'diff)
+       (hermes-chat--upsert-transport-entry assistant-id event))
+      ('unknown
+       (message "%s" (hermes-chat--unknown-event-content event))
        (hermes-chat--upsert-transport-entry assistant-id event))
       (_
        (message "Unknown Hermes transport event: %S" event))))))

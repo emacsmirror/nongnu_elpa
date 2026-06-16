@@ -172,10 +172,13 @@
       'error)
      ((member name '("status" "run.started" "message.start" "message.started"
                      "response.created" "response.in_progress"
-                     "gatewaynotice" "gateway_notice" "approval.request"))
+                     "gatewaynotice" "gateway_notice" "approval.request"
+                     "subagent.start" "subagent.spawn_requested"
+                     "subagent.complete"))
       'status)
      ((or (member name '("tool" "tool.started" "tool.completed" "tool.failed"
                          "hermes.tool.progress"
+                         "subagent.tool"
                          "toolcallchunk" "tool_call_chunk"
                          "toolcallfinished" "tool_call_finished"))
           (member kind '("toolcallchunk" "toolcallfinished"))
@@ -186,13 +189,16 @@
                              (hermes-transport--get item 'type))))
                  (member kind '("function_call" "function_call_output")))))
       'tool)
-     ((member name '("progress" "tool.progress"
+     ((member name '("progress" "tool.progress" "subagent.progress"
                      "longtoolhint" "long_tool_hint"))
       'progress)
-     ((member name '("commentary" "message.commentary" "reasoning.available"))
+     ((member name '("commentary" "message.commentary" "reasoning.available"
+                     "subagent.thinking"))
       'commentary)
      ((string= name "diff")
       'diff)
+     ((string-prefix-p "subagent." name)
+      'status)
      ((string-empty-p name)
       nil)
      (t 'unknown))))
@@ -211,8 +217,14 @@
     (dolist (field '((run_id . :run-id)
                      (session_id . :session-id)
                      (message_id . :message-id)
+                     (subagent_id . :subagent-id)
+                     (parent_id . :parent-id)
+                     (child_session_id . :child-session-id)
                      (seq . :seq)
                      (index . :index)
+                     (task_index . :task-index)
+                     (task_count . :task-count)
+                     (tool_count . :tool-count)
                      (sequence_number . :seq)
                      (timestamp . :timestamp)
                      (ts . :timestamp)))
@@ -244,7 +256,7 @@
        (or (hermes-transport--get raw 'status)
            (hermes-transport--get item 'status)))
       (pcase (hermes-transport--event-kind event-name)
-        ("toolcallchunk" "running")
+        ((or "toolcallchunk" "subagenttool") "running")
         ("toolcallfinished"
          (if (and (hermes-transport--field-present-p raw 'ok)
                   (not (hermes-transport--get raw 'ok)))
@@ -255,7 +267,8 @@
 (defun hermes-transport--content (raw)
   "Return RAW's primary text payload, or nil."
   (hermes-transport--scalar-string
-   (hermes-transport--get-any raw '(content delta text output preview))))
+   (hermes-transport--get-any raw '(content delta text output preview summary
+                                            tool_preview))))
 
 (defun hermes-transport--invalid-event (raw reason &optional event-name)
   "Return an error event for invalid RAW with REASON and EVENT-NAME."

@@ -3260,6 +3260,120 @@
                              events)
                      '("inspect first" "inspect first"))))))
 
+(ert-deftest hermes-transport-dashboard-normalizes-subagent-events ()
+  (let (events)
+    (let ((client (make-hermes-dashboard-transport-client
+                   :callback (lambda (event) (push event events)))))
+      (dolist (spec '(("subagent.thinking"
+                       ((subagent_id . "sa-1")
+                        (text . "(°ロ°) brainstorming...")))
+                      ("subagent.tool"
+                       ((subagent_id . "sa-1")
+                        (tool_name . "terminal")
+                        (tool_preview . "git status")
+                        (text . "git status")))
+                      ("subagent.progress"
+                       ((subagent_id . "sa-1")
+                        (text . "🔀 terminal, read_file")))
+                      ("subagent.complete"
+                       ((subagent_id . "sa-1")
+                        (status . "completed")
+                        (summary . "no merge recommended")))))
+        (pcase-let ((`(,type ,payload) spec))
+          (hermes-dashboard-transport--handle-frame
+           client (hermes-dashboard-transport--encode-frame
+                   `((jsonrpc . "2.0")
+                     (method . "event")
+                     (params . ((type . ,type)
+                                (session_id . "sid")
+                                (payload . ,payload)))))))))
+    (pcase-let ((`(,thinking ,tool ,progress ,complete) (nreverse events)))
+      (should (eq (plist-get thinking :type) 'commentary))
+      (should (equal (plist-get thinking :event) "subagent.thinking"))
+      (should (equal (plist-get thinking :subagent-id) "sa-1"))
+      (should (equal (plist-get thinking :content)
+                     "(°ロ°) brainstorming..."))
+      (should (eq (plist-get tool :type) 'tool))
+      (should (equal (plist-get tool :event) "subagent.tool"))
+      (should (equal (plist-get tool :name) "terminal"))
+      (should (equal (plist-get tool :status) "running"))
+      (should (equal (plist-get tool :preview) "git status"))
+      (should (equal (plist-get tool :subagent-id) "sa-1"))
+      (should (eq (plist-get progress :type) 'progress))
+      (should (equal (plist-get progress :content)
+                     "🔀 terminal, read_file"))
+      (should (equal (plist-get progress :subagent-id) "sa-1"))
+      (should (eq (plist-get complete :type) 'status))
+      (should (equal (plist-get complete :status) "completed"))
+      (should (equal (plist-get complete :content)
+                     "no merge recommended")))))
+
+(ert-deftest hermes-chat-renders-subagent-events-without-unknown-log ()
+  (let (callback messages)
+    (cl-letf (((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format-message format-string args) messages))))
+      (hermes-test-with-chat-buffer
+       (let ((hermes-transport-send-function
+              (lambda (_prompt cb)
+                (setq callback cb)
+                'fake-process)))
+         (insert "inspect branches")
+         (hermes-chat-send)
+         (dolist (event '((:type commentary
+                           :event "subagent.thinking"
+                           :subagent-id "sa-1"
+                           :content "(⌐■_■) synthesizing...")
+                          (:type tool
+                           :event "subagent.tool"
+                           :subagent-id "sa-1"
+                           :name "terminal"
+                           :status "running"
+                           :preview "git status")))
+           (funcall callback event))
+         (let ((entries (hermes-chat--entries)))
+           (should (equal (mapcar (lambda (entry) (plist-get entry :role))
+                                  entries)
+                          '(user assistant commentary tool)))
+           (should (equal (plist-get (nth 2 entries) :content)
+                          "(⌐■_■) synthesizing..."))
+           (should (equal (plist-get (nth 3 entries) :content)
+                          "terminal: git status")))
+         (should-not (cl-some (lambda (line)
+                                (string-match-p "Unknown Hermes transport event"
+                                                line))
+                              messages)))))))
+
+(ert-deftest hermes-chat-surfaces-unknown-transport-events ()
+  (let (callback messages)
+    (cl-letf (((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format-message format-string args) messages))))
+      (hermes-test-with-chat-buffer
+       (let ((hermes-transport-send-function
+              (lambda (_prompt cb)
+                (setq callback cb)
+                'fake-process)))
+         (insert "inspect")
+         (hermes-chat-send)
+         (funcall callback '(:type unknown
+                             :event "alien.signal"
+                             :raw ((payload . 1))))
+         (let ((entries (hermes-chat--entries))
+               (header (hermes-test--header-line-string)))
+           (should (equal (mapcar (lambda (entry) (plist-get entry :role))
+                                  entries)
+                          '(user assistant status)))
+           (should (string-match-p "Unknown Hermes transport event: alien.signal"
+                                   (plist-get (nth 2 entries) :content)))
+           (should (eq (plist-get (nth 2 entries) :status) 'error))
+           (should (string-match-p "Error" header))
+           (should (string-match-p "alien.signal" header)))
+         (should (cl-some (lambda (line)
+                            (string-match-p "Unknown Hermes transport event: alien.signal"
+                                            line))
+                          messages)))))))
+
 (ert-deftest hermes-transport-dashboard-normalizes-tool-payloads-and-inline-diff ()
   (let (events)
     (let ((client (make-hermes-dashboard-transport-client
