@@ -890,9 +890,11 @@ METADATA is stored as the entry's `:metadata' plist."
     (and pos (>= (point) pos))))
 
 (defun hermes-chat--protect-transcript ()
-  "Make transcript and prompt read-only while keeping input tail writable."
+  "Make transcript and prompt read-only while keeping input tail writable.
+Do not record these internal text-property changes in the undo list."
   (when-let* ((pos (hermes-chat--input-position)))
-    (let ((inhibit-read-only t))
+    (let ((inhibit-read-only t)
+          (buffer-undo-list t))
       (remove-text-properties (point-min) (point-max)
                               '(read-only nil front-sticky nil rear-nonsticky nil))
       (add-text-properties (point-min) pos

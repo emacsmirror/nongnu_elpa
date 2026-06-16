@@ -271,19 +271,31 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
         (hermes-dashboard-transport--safe-reject client reject message method)
       (hermes-dashboard-transport--emit-error client message method))))
 
+(defun hermes-dashboard-transport--pending-requests (client)
+  "Return CLIENT's pending request plists."
+  (let (requests)
+    (when-let* ((pending (hermes-dashboard-transport-client-pending client)))
+      (maphash (lambda (_id request) (push request requests)) pending))
+    (nreverse requests)))
+
 (defun hermes-dashboard-transport--reject-pending-requests
     (client message)
-  "Reject and clear every pending request on CLIENT with MESSAGE."
+  "Reject and clear every pending request on CLIENT with MESSAGE.
+Return non-nil when any pending request had no reject callback and therefore
+emitted its own transport error event."
   (let ((message (hermes-dashboard-transport--normalized-error-message
                   client message))
-        (pending (hermes-dashboard-transport-client-pending client)))
+        (pending (hermes-dashboard-transport-client-pending client))
+        (requests (hermes-dashboard-transport--pending-requests client))
+        emitted-unhandled)
     (when (hash-table-p pending)
-      (maphash
-       (lambda (_id request)
-         (hermes-dashboard-transport--reject-pending-request
-          client request message))
-       pending)
-      (clrhash pending))))
+      (clrhash pending))
+    (dolist (request requests)
+      (unless (plist-get request :reject)
+        (setq emitted-unhandled t))
+      (hermes-dashboard-transport--reject-pending-request
+       client request message))
+    emitted-unhandled))
 
 (defun hermes-dashboard-transport-stop (client &optional message)
   "Release CLIENT's dashboard WebSocket, process, and pending requests.
@@ -314,18 +326,24 @@ transport error when a pending request has no reject callback."
                       (hermes-dashboard-transport--handle-frame
                        client (websocket-frame-text frame)))
         :on-error (lambda (_websocket _type error)
-                    (hermes-dashboard-transport--mark-websocket-closed client)
-                    (hermes-dashboard-transport--emit-error
-                     client (format "Hermes dashboard WebSocket error: %s"
-                                    (hermes-dashboard-transport--redact-secret
-                                     (format "%s" error)
-                                     (hermes-dashboard-transport-client-token
-                                      client)))))
+                    (let ((message
+                           (format "Hermes dashboard WebSocket error: %s"
+                                   (hermes-dashboard-transport--redact-secret
+                                    (format "%s" error)
+                                    (hermes-dashboard-transport-client-token
+                                     client)))))
+                      (hermes-dashboard-transport--mark-websocket-closed client)
+                      (unless (hermes-dashboard-transport--reject-pending-requests
+                               client message)
+                        (hermes-dashboard-transport--emit-error
+                         client message))))
         :on-close (lambda (_websocket)
-                    (hermes-dashboard-transport--mark-websocket-closed client)
-                    (hermes-dashboard-transport--emit-status
-                     client "closed"
-                     "Hermes dashboard WebSocket closed")))))))
+                    (let ((message "Hermes dashboard WebSocket closed"))
+                      (hermes-dashboard-transport--mark-websocket-closed client)
+                      (hermes-dashboard-transport--reject-pending-requests
+                       client message)
+                      (hermes-dashboard-transport--emit-status
+                       client "closed" message))))))))
 
 (defun hermes-dashboard-transport--default-websocket-send (websocket text)
   "Send TEXT on WEBSOCKET using websocket.el."

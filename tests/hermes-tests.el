@@ -426,6 +426,27 @@
          (should (equal (plist-get assistant :status) 'done))
          (should-not hermes-chat--pending-assistant-id))))))
 
+(ert-deftest hermes-chat-transport-updates-do-not-record-transcript-undo ()
+  (let (callback)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (_prompt cb)
+              (setq callback cb)
+              'fake-process)))
+       (insert "hi")
+       (hermes-chat-send)
+       (setq buffer-undo-list nil)
+       (dotimes (_ 3)
+         (funcall callback '(:type delta :content "streamed chunk ")))
+       (funcall callback '(:type status
+                           :status-key "lifecycle"
+                           :status "running"
+                           :content "Thinking…"))
+       (funcall callback '(:type done))
+       (should-not buffer-undo-list)
+       (insert "draft")
+       (should buffer-undo-list)))))
+
 (ert-deftest hermes-chat-renders-status-and-progress-events ()
   (let (callback)
     (hermes-test-with-chat-buffer
@@ -2683,6 +2704,115 @@
         (should-not (hermes-dashboard-transport-client-websocket client))
         (should-not (hermes-dashboard-transport-client-ready-p client))
         (should (equal (plist-get (car events) :type) 'error))))))
+
+(ert-deftest hermes-transport-dashboard-close-rejects-pending-requests ()
+  (let (on-close rejects events)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)
+               #'ignore)
+              ((symbol-function 'websocket-open)
+               (lambda (_url &rest args)
+                 (setq on-close (plist-get args :on-close))
+                 'fake-websocket)))
+      (let ((client (make-hermes-dashboard-transport-client
+                     :host "127.0.0.1"
+                     :port 4567
+                     :token "secret-token"
+                     :websocket 'fake-websocket
+                     :ready-p t
+                     :pending (make-hash-table :test #'equal)
+                     :callback (lambda (event) (push event events)))))
+        (hermes-dashboard-transport--default-websocket-open
+         "ws://127.0.0.1:4567/api/ws?token=secret-token" client)
+        (let ((hermes-dashboard-transport-websocket-send-function #'ignore))
+          (hermes-dashboard-transport-command-dispatch
+           client "queue" "next"
+           :reject (lambda (message)
+                     (push (cons 'control message) rejects)))
+          (hermes-dashboard-transport-approval-respond
+           client :choice "deny"
+           :reject (lambda (message)
+                     (push (cons 'prompt message) rejects))))
+        (should (= (hash-table-count
+                    (hermes-dashboard-transport-client-pending client))
+                   2))
+        (funcall on-close 'fake-websocket)
+        (should-not (hermes-dashboard-transport-client-websocket client))
+        (should-not (hermes-dashboard-transport-client-ready-p client))
+        (should (= (hash-table-count
+                    (hermes-dashboard-transport-client-pending client))
+                   0))
+        (dolist (kind '(control prompt))
+          (should (string-match-p "WebSocket closed"
+                                  (alist-get kind rejects))))
+        (should (equal (plist-get (car events) :status) "closed"))))))
+
+(ert-deftest hermes-transport-dashboard-error-rejects-pending-requests ()
+  (let (on-error rejected events)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)
+               #'ignore)
+              ((symbol-function 'websocket-open)
+               (lambda (_url &rest args)
+                 (setq on-error (plist-get args :on-error))
+                 'fake-websocket)))
+      (let ((client (make-hermes-dashboard-transport-client
+                     :host "127.0.0.1"
+                     :port 4567
+                     :token "secret-token"
+                     :websocket 'fake-websocket
+                     :ready-p t
+                     :pending (make-hash-table :test #'equal)
+                     :callback (lambda (event) (push event events)))))
+        (hermes-dashboard-transport--default-websocket-open
+         "ws://127.0.0.1:4567/api/ws?token=secret-token" client)
+        (let ((hermes-dashboard-transport-websocket-send-function #'ignore))
+          (hermes-dashboard-transport-session-interrupt
+           client
+           :reject (lambda (message) (setq rejected message))))
+        (should (= (hash-table-count
+                    (hermes-dashboard-transport-client-pending client))
+                   1))
+        (funcall on-error 'fake-websocket 'error "socket died")
+        (should-not (hermes-dashboard-transport-client-websocket client))
+        (should-not (hermes-dashboard-transport-client-ready-p client))
+        (should (= (hash-table-count
+                    (hermes-dashboard-transport-client-pending client))
+                   0))
+        (should (string-match-p "socket died" rejected))
+        (should (= (cl-count 'error events
+                             :key (lambda (event) (plist-get event :type)))
+                   1))))))
+
+(ert-deftest hermes-transport-dashboard-error-with-unhandled-pending-emits-once ()
+  (let (on-error events)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)
+               #'ignore)
+              ((symbol-function 'websocket-open)
+               (lambda (_url &rest args)
+                 (setq on-error (plist-get args :on-error))
+                 'fake-websocket)))
+      (let ((client (make-hermes-dashboard-transport-client
+                     :host "127.0.0.1"
+                     :port 4567
+                     :token "secret-token"
+                     :websocket 'fake-websocket
+                     :ready-p t
+                     :pending (make-hash-table :test #'equal)
+                     :callback (lambda (event) (push event events)))))
+        (hermes-dashboard-transport--default-websocket-open
+         "ws://127.0.0.1:4567/api/ws?token=secret-token" client)
+        (let ((hermes-dashboard-transport-websocket-send-function #'ignore))
+          (hermes-dashboard-transport-prompt-submit client "hello"))
+        (funcall on-error 'fake-websocket 'error "socket died")
+        (should (= (hash-table-count
+                    (hermes-dashboard-transport-client-pending client))
+                   0))
+        (should (= (cl-count 'error events
+                             :key (lambda (event) (plist-get event :type)))
+                   1))
+        (let ((event (car events)))
+          (should (equal (plist-get event :method) "prompt.submit"))
+          (should (string-match-p "socket died"
+                                  (plist-get event :content))))))))
 
 (ert-deftest hermes-transport-dashboard-resume-stores-durable-session-id ()
   (let ((client (make-hermes-dashboard-transport-client
