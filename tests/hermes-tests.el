@@ -346,6 +346,7 @@
 
 (ert-deftest hermes-chat-status-helpers-classify-parity-states ()
   (dolist (case '(("in_progress" "Running" "…" font-lock-keyword-face t nil)
+                  ("busy" "Running" "…" font-lock-keyword-face t nil)
                   ("approval-requested" "Approval requested" "…"
                    font-lock-keyword-face t nil)
                   ("queued" "Queued" "…" font-lock-keyword-face t nil)
@@ -363,6 +364,7 @@
 
 (ert-deftest hermes-dashboard-status-helpers-classify-parity-states ()
   (dolist (case '(("in_progress" "Running" hermes-dashboard-status-running)
+                  ("busy" "Running" hermes-dashboard-status-running)
                   ("approval requested" "Approval requested"
                    hermes-dashboard-status-waiting)
                   ("input.requested" "Input requested"
@@ -2656,20 +2658,26 @@
     (should-not (string-match-p "secret-token" websocket-url))))
 
 (ert-deftest hermes-transport-dashboard-close-marks-client-not-live ()
-  (let (on-close events)
+  (let (on-close events rejected)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)
                #'ignore)
               ((symbol-function 'websocket-open)
                (lambda (_url &rest args)
                  (setq on-close (plist-get args :on-close))
                  'fake-websocket)))
-      (let ((client (make-hermes-dashboard-transport-client
-                     :host "127.0.0.1"
-                     :port 4567
-                     :token "secret-token"
-                     :websocket 'fake-websocket
-                     :ready-p t
-                     :callback (lambda (event) (push event events)))))
+      (let* ((pending (make-hash-table :test #'equal))
+             (client (make-hermes-dashboard-transport-client
+                      :host "127.0.0.1"
+                      :port 4567
+                      :token "secret-token"
+                      :websocket 'fake-websocket
+                      :ready-p t
+                      :pending pending
+                      :callback (lambda (event) (push event events)))))
+        (puthash "req-1"
+                 (list :method "prompt.submit"
+                       :reject (lambda (message) (setq rejected message)))
+                 pending)
         (should (eq (hermes-dashboard-transport--default-websocket-open
                      "ws://127.0.0.1:4567/api/ws?token=secret-token"
                      client)
@@ -2678,32 +2686,52 @@
         (funcall on-close 'fake-websocket)
         (should-not (hermes-dashboard-transport-client-websocket client))
         (should-not (hermes-dashboard-transport-client-ready-p client))
+        (should (= (hash-table-count
+                    (hermes-dashboard-transport-client-pending client))
+                   0))
+        (should (string-match-p "closed" rejected))
         (should (equal (plist-get (car events) :status) "closed"))))))
 
 (ert-deftest hermes-transport-dashboard-error-marks-client-not-live ()
-  (let (on-error events)
+  (let (on-error events rejected)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)
                #'ignore)
               ((symbol-function 'websocket-open)
                (lambda (_url &rest args)
                  (setq on-error (plist-get args :on-error))
                  'fake-websocket)))
-      (let ((client (make-hermes-dashboard-transport-client
-                     :host "127.0.0.1"
-                     :port 4567
-                     :token "secret-token"
-                     :websocket 'fake-websocket
-                     :ready-p t
-                     :callback (lambda (event) (push event events)))))
+      (let* ((pending (make-hash-table :test #'equal))
+             (client (make-hermes-dashboard-transport-client
+                      :host "127.0.0.1"
+                      :port 4567
+                      :token "secret-token"
+                      :websocket 'fake-websocket
+                      :ready-p t
+                      :pending pending
+                      :callback (lambda (event) (push event events)))))
+        (puthash "req-1"
+                 (list :method "prompt.submit"
+                       :reject (lambda (message) (setq rejected message)))
+                 pending)
         (should (eq (hermes-dashboard-transport--default-websocket-open
                      "ws://127.0.0.1:4567/api/ws?token=secret-token"
                      client)
                     'fake-websocket))
         (should (functionp on-error))
-        (funcall on-error 'fake-websocket 'error "socket died")
+        (funcall on-error 'fake-websocket 'error "socket died secret-token")
         (should-not (hermes-dashboard-transport-client-websocket client))
         (should-not (hermes-dashboard-transport-client-ready-p client))
-        (should (equal (plist-get (car events) :type) 'error))))))
+        (should (= (hash-table-count
+                    (hermes-dashboard-transport-client-pending client))
+                   0))
+        (should (string-match-p "Hermes dashboard WebSocket error" rejected))
+        (should (string-match-p "<redacted>" rejected))
+        (should-not (string-match-p "secret-token" rejected))
+        (should (equal (plist-get (car events) :type) 'error))
+        (should (string-match-p "<redacted>"
+                                (plist-get (car events) :content)))
+        (should-not (string-match-p "secret-token"
+                                    (plist-get (car events) :content)))))))
 
 (ert-deftest hermes-transport-dashboard-close-rejects-pending-requests ()
   (let (on-close rejects events)

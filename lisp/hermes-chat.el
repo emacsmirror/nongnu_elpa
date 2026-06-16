@@ -446,8 +446,9 @@ METADATA is stored as the entry's `:metadata' plist."
   "Return non-nil when STATUS denotes an unsettled transport entry."
   (member (hermes-chat--status-name status)
           '("pending" "waiting" "queued" "streaming" "started" "starting"
-            "loading" "connecting" "reconnecting" "running" "progress"
-            "in-progress" "preparing" "requested" "approval-requested")))
+            "loading" "connecting" "reconnecting" "running" "busy"
+            "progress" "in-progress" "preparing" "requested"
+            "approval-requested")))
 
 (defun hermes-chat--finished-status-p (status)
   "Return non-nil when STATUS denotes a settled transport entry."
@@ -463,8 +464,9 @@ METADATA is stored as the entry's `:metadata' plist."
     ((or "error" "failed" "failure" "cancelled" "canceled" "interrupted"
          "closed") "!")
     ((or "pending" "waiting" "queued" "streaming" "started" "starting"
-         "loading" "connecting" "reconnecting" "running" "progress"
-         "in-progress" "preparing" "requested" "approval-requested") "…")
+         "loading" "connecting" "reconnecting" "running" "busy"
+         "progress" "in-progress" "preparing" "requested"
+         "approval-requested") "…")
     (_ "·")))
 
 (defun hermes-chat--header-status-label (status)
@@ -482,7 +484,7 @@ METADATA is stored as the entry's `:metadata' plist."
     ((or "starting" "loading") "Loading")
     ((or "connecting" "reconnecting") "Connecting")
     ((or "streaming") "Streaming")
-    ((or "started" "running" "progress" "in-progress" "preparing") "Running")
+    ((or "started" "running" "busy" "progress" "in-progress" "preparing") "Running")
     (_ "Idle")))
 
 (defun hermes-chat--header-status-face (status)
@@ -492,8 +494,9 @@ METADATA is stored as the entry's `:metadata' plist."
     ((or "error" "failed" "failure" "cancelled" "canceled" "interrupted") 'error)
     ((or "closed") 'warning)
     ((or "pending" "waiting" "queued" "streaming" "started" "starting"
-         "loading" "connecting" "reconnecting" "running" "progress"
-         "in-progress" "preparing" "requested" "approval-requested") 'font-lock-keyword-face)
+         "loading" "connecting" "reconnecting" "running" "busy"
+         "progress" "in-progress" "preparing" "requested"
+         "approval-requested") 'font-lock-keyword-face)
     (_ 'shadow)))
 
 (defun hermes-chat--nonempty-string (value)
