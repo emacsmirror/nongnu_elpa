@@ -30,6 +30,9 @@
 (require 'cl-lib)
 (require 'json)
 (require 'subr-x)
+(require 'url)
+(require 'url-parse)
+(require 'url-util)
 (require 'hermes-transport)
 
 (declare-function websocket-open "ext:websocket")
@@ -54,6 +57,37 @@
 (defcustom hermes-dashboard-transport-port nil
   "Port used for spawn-owned dashboard connections, or nil to pick one."
   :type '(choice (const :tag "Pick an available port" nil) integer)
+  :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-start-mode 'auto
+  "How dashboard transport startup chooses between spawn and remote attach.
+`auto' spawns for loopback hosts unless
+`hermes-dashboard-transport-remote-url' is set, and attaches remotely for
+non-loopback hosts.  `spawn' always starts a local dashboard process.  `remote'
+always attaches to an externally managed dashboard."
+  :type '(choice (const :tag "Auto" auto)
+                 (const :tag "Spawn local dashboard" spawn)
+                 (const :tag "Attach to remote dashboard" remote))
+  :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-remote-url nil
+  "Base URL for an externally managed Hermes dashboard.
+When nil, remote attach derives an HTTP URL from
+`hermes-dashboard-transport-host' and `hermes-dashboard-transport-port'.  The
+value may include a reverse-proxy path prefix, for example
+`https://example.test/hermes'."
+  :type '(choice (const :tag "Derive from host and port" nil) string)
+  :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-remote-auth-method 'auto
+  "Authentication method for remote dashboard attach.
+`auto' probes /api/status, using a legacy session token when the dashboard is
+not gated and username/password login with a WebSocket ticket when a basic
+provider is available.  `token' forces the legacy /api/ws?token= path.  `basic'
+forces username/password login and a single-use WebSocket ticket."
+  :type '(choice (const :tag "Auto" auto)
+                 (const :tag "Legacy session token" token)
+                 (const :tag "Basic/password gated auth" basic))
   :group 'hermes-dashboard-transport)
 
 (defcustom hermes-dashboard-transport-connect-retries 451
@@ -86,6 +120,10 @@ first request until the ready event arrives."
   (host hermes-dashboard-transport-host)
   port
   token
+  base-url
+  websocket-url
+  redacted-websocket-url
+  secrets
   ready-p
   (next-id 0)
   (pending (make-hash-table :test #'equal))
@@ -119,34 +157,141 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
           (list (concat "HERMES_DASHBOARD_SESSION_TOKEN=" token)
                 "HERMES_DASHBOARD_TUI=1")))
 
-(defun hermes-dashboard-transport--websocket-url (host port token)
-  "Return authenticated dashboard WebSocket URL for HOST, PORT, and TOKEN."
-  (format "ws://%s:%d/api/ws?token=%s" host port token))
+(defun hermes-dashboard-transport--loopback-host-p (host)
+  "Return non-nil when HOST names a loopback dashboard bind."
+  (member (downcase (or host "")) '("localhost" "127.0.0.1" "::1" "[::1]")))
 
-(defun hermes-dashboard-transport--redacted-websocket-url (host port)
-  "Return a user-displayable dashboard WebSocket URL for HOST and PORT."
-  (format "ws://%s:%d/api/ws?token=<redacted>" host port))
+(defun hermes-dashboard-transport--resolved-start-mode
+    (mode host remote-url)
+  "Return concrete start mode for MODE, HOST, and REMOTE-URL."
+  (pcase (or mode hermes-dashboard-transport-start-mode)
+    ('spawn 'spawn)
+    ('remote 'remote)
+    ('auto (if (or (and (stringp remote-url)
+                        (not (string-empty-p (string-trim remote-url))))
+                   (not (hermes-dashboard-transport--loopback-host-p host)))
+               'remote
+             'spawn))
+    (_ (user-error "Unknown Hermes dashboard start mode: %S" mode))))
 
-(defun hermes-dashboard-transport--redact-secret (text &optional token)
-  "Return TEXT with dashboard URL tokens and TOKEN redacted."
+(defun hermes-dashboard-transport--host-for-url (host)
+  "Return HOST formatted for inclusion in a URL authority."
+  (if (and (stringp host)
+           (string-match-p ":" host)
+           (not (string-prefix-p "[" host)))
+      (format "[%s]" host)
+    host))
+
+(defun hermes-dashboard-transport--normalize-base-url (base-url)
+  "Return normalized dashboard BASE-URL, or nil when BASE-URL is empty."
+  (when-let* ((url (and (stringp base-url) (string-trim base-url))))
+    (unless (string-empty-p url)
+      (let* ((parsed (url-generic-parse-url url))
+             (path-and-query (url-path-and-query parsed)))
+        (unless (member (url-type parsed) '("http" "https"))
+          (user-error "Hermes remote dashboard URL must start with http:// or https://"))
+        (unless (url-host parsed)
+          (user-error "Hermes remote dashboard URL must include a host"))
+        (when (or (url-user parsed) (url-password parsed))
+          (user-error "Hermes remote dashboard URL must not include username or password"))
+        (when (or (cdr path-and-query) (url-target parsed))
+          (user-error "Hermes remote dashboard URL must not include query string or fragment")))
+      (replace-regexp-in-string "/+\\'" "" url))))
+
+(defun hermes-dashboard-transport--base-url (host port &optional remote-url)
+  "Return dashboard HTTP base URL from HOST, PORT, or REMOTE-URL."
+  (or (hermes-dashboard-transport--normalize-base-url remote-url)
+      (progn
+        (unless port
+          (user-error
+           "Set `hermes-dashboard-transport-port' or `hermes-dashboard-transport-remote-url' for remote dashboard attach"))
+        (format "http://%s:%d"
+                (hermes-dashboard-transport--host-for-url host) port))))
+
+(defun hermes-dashboard-transport--api-url (base-url path)
+  "Return dashboard API URL by appending PATH to BASE-URL."
+  (concat (hermes-dashboard-transport--normalize-base-url base-url) path))
+
+(defun hermes-dashboard-transport--websocket-endpoint
+    (host port &optional remote-url)
+  "Return dashboard WebSocket endpoint from HOST, PORT, or REMOTE-URL."
+  (let ((base-url (hermes-dashboard-transport--base-url host port remote-url)))
+    (concat (cond
+             ((string-prefix-p "https://" base-url)
+              (concat "wss://" (substring base-url 8)))
+             ((string-prefix-p "http://" base-url)
+              (concat "ws://" (substring base-url 7)))
+             (t (user-error "Hermes remote dashboard URL must use http or https")))
+            "/api/ws")))
+
+(defun hermes-dashboard-transport--websocket-url
+    (host port secret &optional remote-url query-param)
+  "Return authenticated dashboard WebSocket URL for SECRET.
+HOST and PORT derive the default base URL.  REMOTE-URL overrides that base.
+QUERY-PARAM defaults to `token'."
+  (format "%s?%s=%s"
+          (hermes-dashboard-transport--websocket-endpoint host port remote-url)
+          (or query-param "token")
+          (url-hexify-string secret)))
+
+(defun hermes-dashboard-transport--redacted-websocket-url
+    (host port &optional remote-url query-param)
+  "Return a safe WebSocket URL for HOST, PORT, REMOTE-URL, and QUERY-PARAM."
+  (format "%s?%s=<redacted>"
+          (hermes-dashboard-transport--websocket-endpoint host port remote-url)
+          (or query-param "token")))
+
+(defun hermes-dashboard-transport--secret-list (secrets)
+  "Return non-empty string secrets from SECRETS."
+  (cl-remove-if
+   (lambda (secret) (or (not (stringp secret)) (string-empty-p secret)))
+   (if (listp secrets) secrets (list secrets))))
+
+(defun hermes-dashboard-transport--non-empty-string (value)
+  "Return VALUE when it is a non-empty string."
+  (and (stringp value) (not (string-empty-p value)) value))
+
+(defun hermes-dashboard-transport--redact-secret (text &optional secrets)
+  "Return TEXT with dashboard URL credentials and SECRETS redacted."
   (let ((message (if (stringp text) text (format "%s" text))))
     (setq message
           (replace-regexp-in-string
-           "\\([?&]token=\\)[^&[:space:])\"']+" "\\1<redacted>"
-           message t nil))
+           "\\([?&]\\(?:token\\|ticket\\|internal\\)=\\)[^&[:space:])\"']+"
+           "\\1<redacted>" message t nil))
     (setq message
           (replace-regexp-in-string
            "\\(HERMES_DASHBOARD_SESSION_TOKEN=\\)[^[:space:])\"']+"
            "\\1<redacted>" message t nil))
-    (if (and (stringp token) (not (string-empty-p token)))
-        (string-replace token "<redacted>" message)
-      message)))
+    (dolist (secret (hermes-dashboard-transport--secret-list secrets))
+      (setq message (string-replace secret "<redacted>" message)))
+    message))
+
+(defun hermes-dashboard-transport--client-secrets (client)
+  "Return all known secret strings currently associated with CLIENT."
+  (hermes-dashboard-transport--secret-list
+   (append (list (hermes-dashboard-transport-client-token client))
+           (hermes-dashboard-transport-client-secrets client))))
+
+(defun hermes-dashboard-transport--client-redacted-websocket-url (client)
+  "Return a safe display WebSocket URL for CLIENT."
+  (or (hermes-dashboard-transport-client-redacted-websocket-url client)
+      (hermes-dashboard-transport--redacted-websocket-url
+       (hermes-dashboard-transport-client-host client)
+       (hermes-dashboard-transport-client-port client))))
+
+(defun hermes-dashboard-transport--client-websocket-url (client)
+  "Return the tokenized WebSocket URL for CLIENT."
+  (or (hermes-dashboard-transport-client-websocket-url client)
+      (hermes-dashboard-transport--websocket-url
+       (hermes-dashboard-transport-client-host client)
+       (hermes-dashboard-transport-client-port client)
+       (hermes-dashboard-transport-client-token client))))
 
 (defun hermes-dashboard-transport--condition-message (client condition)
   "Return a user-displayable CONDITION message for CLIENT."
   (hermes-dashboard-transport--redact-secret
    (error-message-string condition)
-   (hermes-dashboard-transport-client-token client)))
+   (hermes-dashboard-transport--client-secrets client)))
 
 (defun hermes-dashboard-transport--start-event (host port _token)
   "Return a redacted dashboard startup status event for HOST and PORT."
@@ -155,6 +300,22 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
         :status "starting"
         :content (format "Starting Hermes dashboard on %s:%d" host port)
         :url (hermes-dashboard-transport--redacted-websocket-url host port)))
+
+(defun hermes-dashboard-transport--remote-connect-event (redacted-url)
+  "Return remote dashboard connecting status event for REDACTED-URL."
+  (list :type 'status
+        :event "dashboard.connecting"
+        :status "connecting"
+        :content (format "Connecting to Hermes dashboard at %s" redacted-url)
+        :url redacted-url))
+
+(defun hermes-dashboard-transport--remote-connected-event (redacted-url)
+  "Return remote dashboard connected status event for REDACTED-URL."
+  (list :type 'status
+        :event "dashboard.connected"
+        :status "connected"
+        :content (format "Connected to Hermes dashboard at %s" redacted-url)
+        :url redacted-url))
 
 (defun hermes-dashboard-transport--generate-token ()
   "Return a fresh dashboard session token."
@@ -249,7 +410,7 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
   "Return redacted dashboard error MESSAGE for CLIENT."
   (hermes-dashboard-transport--redact-secret
    (or message "Hermes dashboard request failed")
-   (hermes-dashboard-transport-client-token client)))
+   (hermes-dashboard-transport--client-secrets client)))
 
 (defun hermes-dashboard-transport--safe-reject (client reject message method)
   "Call REJECT with MESSAGE, reporting callback failures for METHOD on CLIENT."
@@ -314,9 +475,8 @@ transport error when a pending request has no reject callback."
 (defun hermes-dashboard-transport--default-websocket-open (url client)
   "Open URL for CLIENT using websocket.el."
   (hermes-dashboard-transport--require-websocket)
-  (let ((redacted-url (hermes-dashboard-transport--redacted-websocket-url
-                       (hermes-dashboard-transport-client-host client)
-                       (hermes-dashboard-transport-client-port client))))
+  (let ((redacted-url
+         (hermes-dashboard-transport--client-redacted-websocket-url client)))
     (hermes-dashboard-transport--call-with-redacted-websocket-state
      url redacted-url
      (lambda ()
@@ -330,7 +490,7 @@ transport error when a pending request has no reject callback."
                            (format "Hermes dashboard WebSocket error: %s"
                                    (hermes-dashboard-transport--redact-secret
                                     (format "%s" error)
-                                    (hermes-dashboard-transport-client-token
+                                    (hermes-dashboard-transport--client-secrets
                                      client)))))
                       (hermes-dashboard-transport--mark-websocket-closed client)
                       (unless (hermes-dashboard-transport--reject-pending-requests
@@ -376,6 +536,264 @@ It is called with the tokenized URL and the dashboard client.")
   #'hermes-dashboard-transport--default-ready-wait
   "Function used to wait for dashboard `gateway.ready'.
 It receives the dashboard client and a number of seconds.")
+
+(defun hermes-dashboard-transport--json-body (text)
+  "Return JSON object parsed from TEXT, or nil for an empty body."
+  (unless (string-empty-p (string-trim (or text "")))
+    (json-parse-string text
+                       :object-type 'alist
+                       :array-type 'list
+                       :null-object nil
+                       :false-object nil)))
+
+(defun hermes-dashboard-transport--parse-http-response-buffer (buffer)
+  "Return plist parsed from url.el response BUFFER."
+  (with-current-buffer buffer
+    (goto-char (point-min))
+    (let ((status (and (looking-at "HTTP/[0-9.]+ \\([0-9]+\\)")
+                       (string-to-number (match-string 1))))
+          headers header-end body-start body)
+      (if (re-search-forward "\r?\n\r?\n" nil t)
+          (setq header-end (match-beginning 0)
+                body-start (point))
+        (setq header-end (point-max)
+              body-start (point-max)))
+      (dolist (line (split-string
+                     (buffer-substring-no-properties (point-min) header-end)
+                     "\r?\n" t))
+        (when (string-match "\\`\\([^:]+\\):[ \t]*\\(.*\\)\\'" line)
+          (push (cons (downcase (match-string 1 line))
+                      (match-string 2 line))
+                headers)))
+      (setq body (buffer-substring-no-properties body-start (point-max)))
+      (list :status status
+            :headers (nreverse headers)
+            :body-text body))))
+
+(cl-defun hermes-dashboard-transport--default-http-request
+    (url &key (method "GET") headers data secrets)
+  "Fetch URL with METHOD, HEADERS, and DATA using url.el.
+SECRETS are redacted from any user-visible error."
+  (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
+        (url-request-method method)
+        (url-request-extra-headers headers)
+        (url-request-data data))
+    (let ((buffer (url-retrieve-synchronously url t t 30)))
+      (unless buffer
+        (user-error "Hermes dashboard request failed at %s" safe-url))
+      (unwind-protect
+          (let* ((response (hermes-dashboard-transport--parse-http-response-buffer
+                            buffer))
+                 (status (plist-get response :status)))
+            (unless (and status (<= 200 status 299))
+              (user-error "Hermes dashboard request failed at %s (HTTP %s)"
+                          safe-url (or status "unknown")))
+            (plist-put response :body
+                       (hermes-dashboard-transport--json-body
+                        (plist-get response :body-text))))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(defvar hermes-dashboard-transport-http-request-function
+  #'hermes-dashboard-transport--default-http-request
+  "Function used for remote dashboard HTTP requests.
+It is called with URL and keyword arguments :method, :headers, :data, and
+:secrets, and returns a plist with :status, :headers, and :body.")
+
+(cl-defun hermes-dashboard-transport--http-json
+    (url &key (method "GET") headers body secrets)
+  "Request URL as JSON using METHOD, HEADERS, BODY, and SECRETS."
+  (funcall hermes-dashboard-transport-http-request-function
+           url
+           :method method
+           :headers (append '(("Accept" . "application/json")) headers)
+           :data (and body (json-serialize body))
+           :secrets secrets))
+
+(defun hermes-dashboard-transport--response-header-values (response name)
+  "Return all header values named NAME in RESPONSE."
+  (let ((needle (downcase name)))
+    (delq nil
+          (mapcar (lambda (header)
+                    (and (equal (car header) needle) (cdr header)))
+                  (plist-get response :headers)))))
+
+(defun hermes-dashboard-transport--response-cookie-header (response)
+  "Return Cookie header value assembled from RESPONSE Set-Cookie headers."
+  (let ((cookies (delq nil
+                       (mapcar (lambda (header)
+                                 (when-let* ((pair (car (split-string
+                                                         header ";" t))))
+                                   (string-trim pair)))
+                               (hermes-dashboard-transport--response-header-values
+                                response "set-cookie")))))
+    (and cookies (string-join cookies "; "))))
+
+(defun hermes-dashboard-transport--remote-status (base-url)
+  "Return /api/status object from dashboard BASE-URL."
+  (plist-get (hermes-dashboard-transport--http-json
+              (hermes-dashboard-transport--api-url base-url "/api/status"))
+             :body))
+
+(defun hermes-dashboard-transport--status-auth-required-p (status)
+  "Return non-nil when STATUS reports a gated dashboard."
+  (eq (hermes-transport--get status 'auth_required) t))
+
+(defun hermes-dashboard-transport--status-auth-providers (status)
+  "Return auth provider names from STATUS as strings."
+  (mapcar #'hermes-transport--scalar-string
+          (or (hermes-transport--get status 'auth_providers) '())))
+
+(defun hermes-dashboard-transport--status-basic-provider (status)
+  "Return the basic/password auth provider name from STATUS, if present."
+  (cl-find "basic"
+           (hermes-dashboard-transport--status-auth-providers status)
+           :test #'equal))
+
+(defun hermes-dashboard-transport--auth-source-hosts (base-url)
+  "Return auth-source host aliases for dashboard BASE-URL."
+  (let* ((parsed (url-generic-parse-url base-url))
+         (scheme (url-type parsed))
+         (host (url-host parsed))
+         (port (url-port parsed))
+         (origin (and scheme host
+                      (format "%s://%s%s"
+                              scheme
+                              (hermes-dashboard-transport--host-for-url host)
+                              (if port (format ":%d" port) "")))))
+    (cl-remove-duplicates
+     (delq nil (list base-url origin
+                     (and host port (format "%s:%d" host port))
+                     host))
+     :test #'equal)))
+
+(defun hermes-dashboard-transport--require-auth-source ()
+  "Ensure auth-source is available for remote credential lookup."
+  (unless (or (fboundp 'auth-source-search)
+              (require 'auth-source nil t))
+    (user-error "Remote Hermes dashboard credentials require auth-source")))
+
+(defun hermes-dashboard-transport--auth-source-entry (base-url &rest args)
+  "Return first auth-source entry for BASE-URL using ARGS."
+  (hermes-dashboard-transport--require-auth-source)
+  (catch 'entry
+    (dolist (host (hermes-dashboard-transport--auth-source-hosts base-url))
+      (when-let* ((entries (apply #'auth-source-search
+                                  :host host :max 1 args)))
+        (throw 'entry (car entries))))
+    nil))
+
+(defun hermes-dashboard-transport--auth-source-secret (entry)
+  "Return secret string from auth-source ENTRY."
+  (when-let* ((secret (plist-get entry :secret)))
+    (if (functionp secret) (funcall secret) secret)))
+
+(defun hermes-dashboard-transport--remote-token-secret (base-url &optional token)
+  "Return legacy dashboard session token for BASE-URL, preferring TOKEN."
+  (or (hermes-dashboard-transport--non-empty-string token)
+      (when-let* ((entry (hermes-dashboard-transport--auth-source-entry
+                         base-url
+                         :user "hermes-dashboard-token"
+                         :port "hermes-dashboard-token"
+                         :require '(:secret))))
+        (hermes-dashboard-transport--non-empty-string
+         (hermes-dashboard-transport--auth-source-secret entry)))
+      (hermes-dashboard-transport--non-empty-string
+       (getenv "HERMES_DASHBOARD_SESSION_TOKEN"))
+      (user-error
+       "No Hermes dashboard session token found; add auth-source login hermes-dashboard-token with port hermes-dashboard-token, or set HERMES_DASHBOARD_SESSION_TOKEN for legacy token attach")))
+
+(defun hermes-dashboard-transport--remote-basic-credentials (base-url)
+  "Return plist with username and password from auth-source for BASE-URL."
+  (let* ((entry (hermes-dashboard-transport--auth-source-entry
+                 base-url :port "hermes-dashboard-basic"
+                 :require '(:user :secret)))
+         (username (and entry (plist-get entry :user)))
+         (password (and entry
+                        (hermes-dashboard-transport--auth-source-secret entry))))
+    (unless (and (stringp username) (not (string-empty-p username))
+                 (stringp password) (not (string-empty-p password)))
+      (user-error
+       "No Hermes dashboard basic credentials found; add auth-source port hermes-dashboard-basic with login and password"))
+    (list :username username :password password)))
+
+(defun hermes-dashboard-transport--unsupported-remote-auth (base-url)
+  "Signal an actionable unsupported gated auth error for BASE-URL."
+  (user-error
+   (concat "Hermes dashboard at %s requires gated auth, but this Emacs client "
+           "currently supports basic/password gated dashboards or legacy "
+           "session tokens only; OAuth-only remote attach is not implemented")
+   base-url))
+
+(defun hermes-dashboard-transport--remote-token-auth
+    (host port base-url &optional token)
+  "Return legacy-token auth plist for HOST, PORT, BASE-URL, and TOKEN."
+  (let* ((token (hermes-dashboard-transport--remote-token-secret base-url token))
+         (url (hermes-dashboard-transport--websocket-url
+               host port token base-url "token"))
+         (redacted-url (hermes-dashboard-transport--redacted-websocket-url
+                        host port base-url "token")))
+    (list :token token :url url :redacted-url redacted-url
+          :secrets (list token))))
+
+(defun hermes-dashboard-transport--remote-basic-auth
+    (host port base-url status)
+  "Return basic-auth plist for HOST, PORT, BASE-URL, and STATUS."
+  (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
+    (unless provider
+      (hermes-dashboard-transport--unsupported-remote-auth base-url))
+    (let* ((credentials (hermes-dashboard-transport--remote-basic-credentials
+                         base-url))
+           (username (plist-get credentials :username))
+           (password (plist-get credentials :password))
+           (login-response
+            (hermes-dashboard-transport--http-json
+             (hermes-dashboard-transport--api-url base-url "/auth/password-login")
+             :method "POST"
+             :headers '(("Content-Type" . "application/json"))
+             :body `((provider . ,provider)
+                     (username . ,username)
+                     (password . ,password)
+                     (next . ""))
+             :secrets (list password)))
+           (cookies (hermes-dashboard-transport--response-cookie-header
+                     login-response)))
+      (unless cookies
+        (user-error "Hermes dashboard basic login did not return session cookies"))
+      (let* ((ticket-response
+              (hermes-dashboard-transport--http-json
+               (hermes-dashboard-transport--api-url base-url
+                                                    "/api/auth/ws-ticket")
+               :method "POST"
+               :headers `(("Cookie" . ,cookies))
+               :secrets (list password cookies)))
+             (ticket (hermes-transport--scalar-string
+                      (hermes-transport--get (plist-get ticket-response :body)
+                                             'ticket))))
+        (unless (and ticket (not (string-empty-p ticket)))
+          (user-error "Hermes dashboard did not return a WebSocket ticket"))
+        (list :url (hermes-dashboard-transport--websocket-url
+                    host port ticket base-url "ticket")
+              :redacted-url (hermes-dashboard-transport--redacted-websocket-url
+                             host port base-url "ticket")
+              :secrets (list password cookies ticket))))))
+
+(defun hermes-dashboard-transport--remote-auth
+    (host port base-url method &optional token)
+  "Return auth plist for HOST, PORT, BASE-URL, METHOD, and TOKEN."
+  (pcase method
+    ('token (hermes-dashboard-transport--remote-token-auth
+             host port base-url token))
+    ('basic (hermes-dashboard-transport--remote-basic-auth
+             host port base-url
+             (hermes-dashboard-transport--remote-status base-url)))
+    ('auto (let ((status (hermes-dashboard-transport--remote-status base-url)))
+             (if (hermes-dashboard-transport--status-auth-required-p status)
+                 (hermes-dashboard-transport--remote-basic-auth
+                  host port base-url status)
+               (hermes-dashboard-transport--remote-token-auth
+                host port base-url token))))
+    (_ (user-error "Unknown Hermes dashboard remote auth method: %S" method))))
 
 (defun hermes-dashboard-transport--encode-frame (frame)
   "Encode JSON-RPC FRAME as a JSON string."
@@ -576,9 +994,7 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
 (defun hermes-dashboard-transport--connection-error (client)
   "Return a redacted connection failure message for CLIENT."
   (format "Hermes dashboard WebSocket did not become ready at %s"
-          (hermes-dashboard-transport--redacted-websocket-url
-           (hermes-dashboard-transport-client-host client)
-           (hermes-dashboard-transport-client-port client))))
+          (hermes-dashboard-transport--client-redacted-websocket-url client)))
 
 (defun hermes-dashboard-transport--connection-error-message
     (client &optional condition)
@@ -622,19 +1038,14 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
   "Open CLIENT's dashboard WebSocket and return the WebSocket object."
   (let ((websocket (hermes-dashboard-transport--open-websocket-with-retries
                     client
-                    (hermes-dashboard-transport--websocket-url
-                     (hermes-dashboard-transport-client-host client)
-                     (hermes-dashboard-transport-client-port client)
-                     (hermes-dashboard-transport-client-token client)))))
+                    (hermes-dashboard-transport--client-websocket-url client))))
     (setf (hermes-dashboard-transport-client-websocket client) websocket)
     websocket))
 
 (defun hermes-dashboard-transport--ready-timeout-error (client)
   "Return a redacted `gateway.ready' timeout message for CLIENT."
   (format "Hermes dashboard did not become ready at %s"
-          (hermes-dashboard-transport--redacted-websocket-url
-           (hermes-dashboard-transport-client-host client)
-           (hermes-dashboard-transport-client-port client))))
+          (hermes-dashboard-transport--client-redacted-websocket-url client)))
 
 (defun hermes-dashboard-transport--await-ready (client)
   "Wait for CLIENT to receive `gateway.ready', or signal `user-error'."
@@ -654,11 +1065,10 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
   (hermes-dashboard-transport-stop
    client "Hermes dashboard transport stopped during startup"))
 
-(cl-defun hermes-dashboard-transport-start
+(cl-defun hermes-dashboard-transport--start-spawn
     (&key callback host port command token base-environment)
-  "Start a spawn-owned dashboard process and connect its WebSocket.
-CALLBACK receives normalized `hermes-transport' events.  HOST, PORT, COMMAND,
-TOKEN, and BASE-ENVIRONMENT override the default spawn settings."
+  "Start spawn-owned dashboard with CALLBACK and override settings.
+HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
   (let* ((host (or host hermes-dashboard-transport-host))
          (port (or port hermes-dashboard-transport-port
                    (hermes-dashboard-transport--pick-port)))
@@ -682,6 +1092,64 @@ TOKEN, and BASE-ENVIRONMENT override the default spawn settings."
        (signal 'user-error
                (list (hermes-dashboard-transport--condition-message
                       client error)))))))
+
+(cl-defun hermes-dashboard-transport--start-remote
+    (&key callback host port token remote-url remote-auth-method)
+  "Attach to a remote dashboard with CALLBACK and override settings.
+HOST, PORT, TOKEN, REMOTE-URL, and REMOTE-AUTH-METHOD override defaults."
+  (let* ((host (or host hermes-dashboard-transport-host))
+         (port (or port hermes-dashboard-transport-port))
+         (base-url (hermes-dashboard-transport--base-url host port remote-url))
+         (auth (hermes-dashboard-transport--remote-auth
+                host port base-url
+                (or remote-auth-method
+                    hermes-dashboard-transport-remote-auth-method)
+                token))
+         (client (make-hermes-dashboard-transport-client
+                  :host host
+                  :port port
+                  :token (plist-get auth :token)
+                  :base-url base-url
+                  :websocket-url (plist-get auth :url)
+                  :redacted-websocket-url (plist-get auth :redacted-url)
+                  :secrets (plist-get auth :secrets)
+                  :callback (or callback #'ignore))))
+    (funcall (hermes-dashboard-transport-client-callback client)
+             (hermes-dashboard-transport--remote-connect-event
+              (plist-get auth :redacted-url)))
+    (condition-case error
+        (progn
+          (hermes-dashboard-transport-connect client)
+          (hermes-dashboard-transport--await-ready client)
+          (funcall (hermes-dashboard-transport-client-callback client)
+                   (hermes-dashboard-transport--remote-connected-event
+                    (plist-get auth :redacted-url)))
+          client)
+      (error
+       (hermes-dashboard-transport--cleanup-start-failure client)
+       (signal 'user-error
+               (list (hermes-dashboard-transport--condition-message
+                      client error)))))))
+
+(cl-defun hermes-dashboard-transport-start
+    (&key callback host port command token base-environment
+          start-mode remote-url remote-auth-method)
+  "Start or attach to a dashboard transport and connect its WebSocket.
+CALLBACK receives normalized `hermes-transport' events.  HOST, PORT, COMMAND,
+TOKEN, BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override
+customized defaults."
+  (let* ((host (or host hermes-dashboard-transport-host))
+         (remote-url (or remote-url hermes-dashboard-transport-remote-url))
+         (mode (hermes-dashboard-transport--resolved-start-mode
+                start-mode host remote-url)))
+    (pcase mode
+      ('spawn (hermes-dashboard-transport--start-spawn
+               :callback callback :host host :port port :command command
+               :token token :base-environment base-environment))
+      ('remote (hermes-dashboard-transport--start-remote
+                :callback callback :host host :port port :token token
+                :remote-url remote-url
+                :remote-auth-method remote-auth-method)))))
 
 (defun hermes-dashboard-transport--emit-status (client status content)
   "Emit a status event with STATUS and CONTENT for CLIENT."

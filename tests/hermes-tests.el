@@ -6,6 +6,7 @@
 (require 'ewoc)
 (require 'subr-x)
 (require 'timer)
+(require 'auth-source)
 
 (let ((root (expand-file-name ".." (file-name-directory (or load-file-name buffer-file-name)))))
   (add-to-list 'load-path (expand-file-name "lisp" root)))
@@ -2629,6 +2630,264 @@
                   "127.0.0.1" 4567)
                  "ws://127.0.0.1:4567/api/ws?token=<redacted>")))
 
+(ert-deftest hermes-transport-dashboard-builds-prefixed-remote-urls ()
+  (should (equal (hermes-dashboard-transport--api-url
+                  "https://dash.example/hermes/" "/api/status")
+                 "https://dash.example/hermes/api/status"))
+  (should (equal (hermes-dashboard-transport--websocket-url
+                  "ignored" nil "ticket-secret"
+                  "https://dash.example/hermes/" "ticket")
+                 "wss://dash.example/hermes/api/ws?ticket=ticket-secret"))
+  (should (equal (hermes-dashboard-transport--redacted-websocket-url
+                  "ignored" nil "https://dash.example/hermes/" "ticket")
+                 "wss://dash.example/hermes/api/ws?ticket=<redacted>")))
+
+(ert-deftest hermes-transport-dashboard-rejects-remote-url-credentials ()
+  (dolist (url '("https://user:password@dash.example/hermes"
+                 "https://dash.example/hermes?token=secret-token"
+                 "https://dash.example/hermes#secret-fragment"))
+    (let ((message (condition-case error
+                       (progn
+                         (hermes-dashboard-transport--base-url
+                          "ignored" nil url)
+                         nil)
+                     (user-error (error-message-string error)))))
+      (should message)
+      (should-not (string-match-p "secret-token" message))
+      (should-not (string-match-p "secret-fragment" message)))))
+
+(ert-deftest hermes-transport-dashboard-parses-set-cookie-headers ()
+  (let ((buffer (generate-new-buffer " *hermes-test-http*")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (insert "HTTP/1.1 200 OK\r\n"
+                  "Set-Cookie: access=access-cookie; Path=/; HttpOnly\r\n"
+                  "Set-Cookie: refresh=refresh-cookie; Path=/; HttpOnly\r\n"
+                  "Content-Type: application/json\r\n\r\n"
+                  "{\"ok\": true}")
+          (let ((response (hermes-dashboard-transport--parse-http-response-buffer
+                           buffer)))
+            (should (= (plist-get response :status) 200))
+            (should (equal (hermes-dashboard-transport--response-cookie-header
+                            response)
+                           "access=access-cookie; refresh=refresh-cookie"))
+            (should (string-match-p "\"ok\""
+                                    (plist-get response :body-text)))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest hermes-transport-dashboard-http-error-skips-json-body-parse ()
+  (let (buffer message)
+    (cl-letf (((symbol-function 'url-retrieve-synchronously)
+               (lambda (&rest _args)
+                 (setq buffer (generate-new-buffer " *hermes-test-http*"))
+                 (with-current-buffer buffer
+                   (insert "HTTP/1.1 401 Unauthorized\r\n\r\nnot json secret-token"))
+                 buffer)))
+      (setq message
+            (condition-case error
+                (progn
+                  (hermes-dashboard-transport--default-http-request
+                   "http://dash.example/api/status?token=secret-token"
+                   :secrets '("secret-token"))
+                  nil)
+              (user-error (error-message-string error))))
+      (should (string-match-p "HTTP 401" message))
+      (should (string-match-p "token=<redacted>" message))
+      (should-not (string-match-p "secret-token" message))
+      (should-not (buffer-live-p buffer)))))
+
+(ert-deftest hermes-transport-dashboard-start-auto-localhost-spawns ()
+  (let (process-plist opened-url events)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
+               (lambda () "secret-token"))
+              ((symbol-function 'hermes-dashboard-transport--pick-port)
+               (lambda () 4567)))
+      (let ((hermes-dashboard-transport-start-mode 'auto)
+            (hermes-dashboard-transport-remote-url nil)
+            (hermes-dashboard-transport-command "hermes")
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest plist)
+               (setq process-plist plist)
+               'fake-process))
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (url _client)
+               (setq opened-url url)
+               'fake-websocket)))
+        (let ((client (hermes-dashboard-transport-start
+                       :callback (lambda (event) (push event events)))))
+          (should (eq (hermes-dashboard-transport-client-process client)
+                      'fake-process))
+          (should (equal (plist-get process-plist :name) "hermes-dashboard"))
+          (should (member "HERMES_DASHBOARD_SESSION_TOKEN=secret-token"
+                          (plist-get process-plist :env)))
+          (should (equal opened-url
+                         "ws://127.0.0.1:4567/api/ws?token=secret-token"))
+          (should (string-match-p "Starting Hermes dashboard"
+                                  (format "%S" events)))
+          (should-not (string-match-p "secret-token" (format "%S" events))))))))
+
+(ert-deftest hermes-transport-dashboard-auto-remote-does-not-spawn ()
+  (let (opened-url events)
+    (let ((hermes-dashboard-transport-start-mode 'auto)
+          (hermes-dashboard-transport-ready-timeout nil)
+          (hermes-dashboard-transport-make-process-function
+           (lambda (&rest _plist) (error "remote attach must not spawn")))
+          (hermes-dashboard-transport-websocket-open-function
+           (lambda (url _client)
+             (setq opened-url url)
+             'fake-websocket)))
+      (let ((client (hermes-dashboard-transport-start
+                     :host "100.64.0.10"
+                     :port 9119
+                     :token "remote-token"
+                     :remote-auth-method 'token
+                     :callback (lambda (event) (push event events)))))
+        (should-not (hermes-dashboard-transport-client-process client))
+        (should (equal opened-url
+                       "ws://100.64.0.10:9119/api/ws?token=remote-token"))
+        (should-not (string-match-p "remote-token" (format "%S" events)))
+        (should (string-match-p "token=<redacted>" (format "%S" events)))))))
+
+(ert-deftest hermes-transport-dashboard-token-auth-source-and-env-fallback ()
+  (let (searches)
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest args)
+                 (push args searches)
+                 (when (equal (plist-get args :host)
+                              "http://100.64.0.10:9119")
+                   (list (list :secret (lambda () "auth-token")))))))
+      (should (equal (hermes-dashboard-transport--remote-token-secret
+                      "http://100.64.0.10:9119")
+                     "auth-token"))
+      (should (plist-get (car searches) :user))
+      (should (equal (plist-get (car searches) :port)
+                     "hermes-dashboard-token"))))
+  (let ((process-environment
+         '("HERMES_DASHBOARD_SESSION_TOKEN=env-token")))
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest _args) nil)))
+      (should (equal (hermes-dashboard-transport--remote-token-secret
+                      "http://100.64.0.10:9119")
+                     "env-token"))))
+  (let ((process-environment
+         '("HERMES_DASHBOARD_SESSION_TOKEN=")))
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest _args) nil)))
+      (should-error (hermes-dashboard-transport--remote-token-secret
+                     "http://100.64.0.10:9119" "")
+                    :type 'user-error))))
+
+(ert-deftest hermes-transport-dashboard-normalized-error-redacts-remote-secrets ()
+  (let* ((client (make-hermes-dashboard-transport-client
+                  :secrets '("cookie-secret" "ticket-secret")))
+         (message (hermes-dashboard-transport--normalized-error-message
+                   client "failed with cookie-secret and ticket-secret")))
+    (should (string-match-p "<redacted>" message))
+    (should-not (string-match-p "cookie-secret" message))
+    (should-not (string-match-p "ticket-secret" message))))
+
+(ert-deftest hermes-transport-dashboard-missing-token-error-actionable ()
+  (let ((process-environment nil))
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest _args) nil)))
+      (let ((message (condition-case error
+                         (progn
+                           (hermes-dashboard-transport--remote-token-secret
+                            "http://100.64.0.10:9119")
+                           nil)
+                       (user-error (error-message-string error)))))
+        (should (string-match-p "hermes-dashboard-token" message))
+        (should (string-match-p "HERMES_DASHBOARD_SESSION_TOKEN" message))))))
+
+(ert-deftest hermes-transport-dashboard-basic-auth-uses-ticket-and-redacts ()
+  (let ((password "basic-password-secret")
+        (cookie-a "access=access-cookie-secret")
+        (cookie-b "refresh=refresh-cookie-secret")
+        (ticket "ticket-secret-abc")
+        requests opened-url events)
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest args)
+                 (when (equal (plist-get args :port)
+                              "hermes-dashboard-basic")
+                   (list (list :user "admin"
+                               :secret (lambda () password)))))))
+      (let ((hermes-dashboard-transport-start-mode 'auto)
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (url _client)
+               (setq opened-url url)
+               'fake-websocket))
+            (hermes-dashboard-transport-make-process-function
+             (lambda (&rest _plist) (error "remote attach must not spawn")))
+            (hermes-dashboard-transport-http-request-function
+             (lambda (url &rest args)
+               (push (list :url url
+                           :method (plist-get args :method)
+                           :headers (plist-get args :headers)
+                           :data (plist-get args :data))
+                     requests)
+               (cond
+                ((string-suffix-p "/api/status" url)
+                 '(:status 200 :headers nil
+                   :body ((auth_required . t)
+                          (auth_providers . ("basic")))))
+                ((string-suffix-p "/auth/password-login" url)
+                 `(:status 200
+                   :headers (("set-cookie" . ,(concat cookie-a "; Path=/"))
+                             ("set-cookie" . ,(concat cookie-b "; Path=/")))
+                   :body ((ok . t))))
+                ((string-suffix-p "/api/auth/ws-ticket" url)
+                 `(:status 200 :headers nil
+                   :body ((ticket . ,ticket) (ttl_seconds . 30))))))))
+        (hermes-dashboard-transport-start
+         :host "100.64.0.10"
+         :port 9119
+         :callback (lambda (event) (push event events)))
+        (setq requests (nreverse requests))
+        (should (equal opened-url
+                       "ws://100.64.0.10:9119/api/ws?ticket=ticket-secret-abc"))
+        (let* ((login (nth 1 requests))
+               (ticket-request (nth 2 requests))
+               (login-body (json-parse-string (plist-get login :data)
+                                              :object-type 'alist)))
+          (should (equal (hermes-transport--get login-body 'username) "admin"))
+          (should (equal (hermes-transport--get login-body 'password) password))
+          (should-not (string-match-p password (format "%S" ticket-request)))
+          (should (equal (alist-get "Cookie" (plist-get ticket-request :headers)
+                                    nil nil #'equal)
+                         (concat cookie-a "; " cookie-b))))
+        (let ((visible (format "%S" events)))
+          (dolist (secret (list password cookie-a cookie-b ticket))
+            (should-not (string-match-p (regexp-quote secret) visible)))
+          (should (string-match-p "ticket=<redacted>" visible)))))))
+
+(ert-deftest hermes-transport-dashboard-oauth-only-remote-is-unsupported ()
+  (let (requests auth-source-called)
+    (cl-letf (((symbol-function 'auth-source-search)
+               (lambda (&rest _args) (setq auth-source-called t) nil)))
+      (let ((hermes-dashboard-transport-start-mode 'auto)
+            (hermes-dashboard-transport-http-request-function
+             (lambda (url &rest _args)
+               (push url requests)
+               '(:status 200 :headers nil
+                 :body ((auth_required . t)
+                        (auth_providers . ("oauth"))))))
+            (hermes-dashboard-transport-websocket-open-function
+             (lambda (&rest _args) (error "must not open websocket"))))
+        (let ((message (condition-case error
+                           (progn
+                             (hermes-dashboard-transport-start
+                              :host "100.64.0.10" :port 9119)
+                             nil)
+                         (user-error (error-message-string error)))))
+          (should (string-match-p "OAuth-only remote attach" message))
+          (should-not (string-match-p "token=" message))
+          (should-not auth-source-called)
+          (should (equal (nreverse requests)
+                         '("http://100.64.0.10:9119/api/status"))))))))
+
 (ert-deftest hermes-transport-dashboard-redacts-websocket-process-name ()
   (let* ((token-url "ws://127.0.0.1:4567/api/ws?token=secret-token")
          (safe-url "ws://127.0.0.1:4567/api/ws?token=<redacted>")
@@ -2656,6 +2915,34 @@
     (should (equal websocket-url safe-url))
     (should-not (string-match-p "secret-token" process-name))
     (should-not (string-match-p "secret-token" websocket-url))))
+
+(ert-deftest hermes-transport-dashboard-redacts-ticket-websocket-name ()
+  (let* ((ticket-url "wss://dash.example/hermes/api/ws?ticket=ticket-secret")
+         (safe-url "wss://dash.example/hermes/api/ws?ticket=<redacted>")
+         (ticket-name (format "websocket to %s" ticket-url))
+         process-name websocket-url)
+    (cl-letf (((symbol-function 'make-network-process)
+               (lambda (&rest plist)
+                 (setq process-name (plist-get plist :name))
+                 'fake-process))
+              ((symbol-function 'websocket-inner-create)
+               (lambda (&rest plist)
+                 (setq websocket-url (plist-get plist :url))
+                 'fake-websocket)))
+      (should (eq (hermes-dashboard-transport--call-with-redacted-websocket-state
+                   ticket-url safe-url
+                   (lambda ()
+                     (let ((conn (make-network-process
+                                  :name ticket-name
+                                  :buffer nil
+                                  :host "dash.example"
+                                  :service 443)))
+                       (websocket-inner-create :conn conn :url ticket-url))))
+                  'fake-websocket)))
+    (should (equal process-name (format "websocket to %s" safe-url)))
+    (should (equal websocket-url safe-url))
+    (should-not (string-match-p "ticket-secret" process-name))
+    (should-not (string-match-p "ticket-secret" websocket-url))))
 
 (ert-deftest hermes-transport-dashboard-close-marks-client-not-live ()
   (let (on-close events rejected)
