@@ -30,6 +30,7 @@
 (require 'button)
 (require 'diff-mode)
 (require 'ewoc)
+(require 'goto-addr)
 (require 'subr-x)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
@@ -2520,6 +2521,73 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
       (hermes-chat--delete-input-tail)
       (hermes-chat--submit-content content))))
 
+;;; Attachments view
+
+(defun hermes-chat--text-urls (text)
+  "Return the URLs found in TEXT, in order of appearance."
+  (let ((case-fold-search t) (start 0) urls)
+    (while (and text (string-match goto-address-url-regexp text start))
+      (push (match-string 0 text) urls)
+      (setq start (match-end 0)))
+    (nreverse urls)))
+
+(defun hermes-chat--collect-urls (entries)
+  "Return ordered, de-duplicated URLs from ENTRIES' content."
+  (seq-uniq
+   (mapcan (lambda (entry) (hermes-chat--text-urls (plist-get entry :content)))
+           entries)))
+
+(defvar-local hermes-chat-attachments--source nil
+  "Chat buffer whose links populate this attachments buffer.")
+
+(defun hermes-chat-attachments--follow (button)
+  "Open BUTTON's URL in a browser."
+  (browse-url (button-label button)))
+
+(defun hermes-chat--attachments-revert (&rest _)
+  "Re-collect links from the source chat buffer."
+  (let ((source hermes-chat-attachments--source))
+    (unless (buffer-live-p source)
+      (user-error "Source chat buffer is gone"))
+    (hermes-chat--render-attachments
+     (with-current-buffer source
+       (hermes-chat--collect-urls (hermes-chat--entries)))
+     source)))
+
+(define-derived-mode hermes-chat-attachments-mode special-mode "Hermes Attachments"
+  "Major mode listing links collected from a Hermes chat transcript."
+  :interactive nil
+  (setq-local revert-buffer-function #'hermes-chat--attachments-revert))
+
+(defun hermes-chat--render-attachments (urls source)
+  "Render URLS gathered from the SOURCE chat buffer, returning the buffer."
+  (with-current-buffer (get-buffer-create "*Hermes Attachments*")
+    (hermes-chat-attachments-mode)
+    (setq hermes-chat-attachments--source source)
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert (format "Links from %s\n\n" (buffer-name source)))
+      (if (null urls)
+          (insert "No links found.\n")
+        (dolist (url urls)
+          (insert-text-button url
+                              'action #'hermes-chat-attachments--follow
+                              'help-echo "Open link in browser"
+                              'follow-link t)
+          (insert "\n"))))
+    (goto-char (point-min))
+    (current-buffer)))
+
+(defun hermes-chat-view-attachments ()
+  "Display a buffer listing every link from the current chat transcript."
+  (interactive)
+  (unless (derived-mode-p 'hermes-chat-mode)
+    (user-error "Not in a Hermes chat buffer"))
+  (pop-to-buffer
+   (hermes-chat--render-attachments
+    (hermes-chat--collect-urls (hermes-chat--entries))
+    (current-buffer))))
+
 (defvar-keymap hermes-chat-mode-map
   :doc "Keymap for `hermes-chat-mode'."
   "RET" #'hermes-chat-send
@@ -2532,6 +2600,7 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
   "C-c C-a" #'hermes-chat-respond-to-prompt
   "C-c C-d" #'hermes-chat-cancel-prompt
   "C-c C-/" #'hermes-chat-show-commands
+  "C-c C-l" #'hermes-chat-view-attachments
   "C-c C-n" #'hermes-chat-new-session)
 
 (define-derived-mode hermes-chat-mode fundamental-mode "Hermes Chat"

@@ -4039,5 +4039,24 @@
       (should (equal (plist-get event :status) "started"))
       (should (hermes-chat--active-status-p (plist-get event :status))))))
 
+(ert-deftest hermes-chat-collect-urls-extracts-in-order ()
+  "URLs are returned in transcript order across entries."
+  (should (equal '("https://a.example" "https://b.example")
+                 (hermes-chat--collect-urls
+                  (list '(:content "see https://a.example now")
+                        '(:content "then https://b.example end"))))))
+
+(ert-deftest hermes-chat-collect-urls-dedupes ()
+  "Repeated URLs collapse to a single entry."
+  (should (equal '("https://a.example")
+                 (hermes-chat--collect-urls
+                  (list '(:content "https://a.example")
+                        '(:content "again https://a.example"))))))
+
+(ert-deftest hermes-chat-collect-urls-handles-empty-and-nil-content ()
+  "Entries without links or with nil content yield no URLs and no error."
+  (should-not (hermes-chat--collect-urls
+               (list '(:content "no links here") '(:content nil)))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here
