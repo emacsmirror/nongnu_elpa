@@ -1037,6 +1037,18 @@ RESOLVE and REJECT receive the result or error."
     `((subagent_id . ,subagent-id)))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-cron-manage
+    (client &key action name schedule prompt resolve reject)
+  "Send a `cron.manage' request for CLIENT.
+ACTION is one of list, add, remove, pause, or resume; NAME identifies the job;
+SCHEDULE and PROMPT are used by add.  RESOLVE and REJECT receive the result
+or error."
+  (hermes-dashboard-transport-request
+   client "cron.manage"
+   (hermes-dashboard-transport--alist-without-nil
+    `((action . ,action) (name . ,name) (schedule . ,schedule) (prompt . ,prompt)))
+   resolve reject))
+
 (cl-defun hermes-dashboard-transport-prompt-submit
     (client text &key session-id resolve reject)
   "Send TEXT through `prompt.submit' on CLIENT."

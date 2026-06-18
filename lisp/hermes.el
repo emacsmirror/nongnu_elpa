@@ -34,6 +34,7 @@
 (require 'hermes-inventory)
 (require 'hermes-rollback)
 (require 'hermes-subagents)
+(require 'hermes-cron)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -129,6 +130,7 @@ arrives."
   "I" ("Inventory" hermes-list-inventory)
   "R" ("Rollbacks" hermes-list-rollbacks)
   "A" ("Subagents" hermes-list-subagents)
+  "C" ("Cron jobs" hermes-list-crons)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)

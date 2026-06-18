@@ -4389,5 +4389,61 @@
         (when (get-buffer "*Hermes Subagents*")
           (kill-buffer "*Hermes Subagents*"))))))
 
+(ert-deftest hermes-cron-rows-from-list ()
+  "Cron rows map name/schedule/state/next/prompt."
+  (let ((rows (hermes-cron--rows
+               '((jobs . (((job_id . "j1") (name . "nightly") (schedule . "0 0 * * *")
+                           (state . "scheduled") (next_run_at . "2026-01-02")
+                           (prompt_preview . "do it"))))))))
+    (should (equal (caar rows) "j1"))
+    (should (equal (aref (cadr (car rows)) 0) "nightly"))
+    (should (equal (aref (cadr (car rows)) 1) "0 0 * * *"))
+    (should (equal (aref (cadr (car rows)) 2) "scheduled"))
+    (should (equal (aref (cadr (car rows)) 4) "do it"))))
+
+(ert-deftest hermes-cron-list-fetches-and-renders ()
+  "Listing fetches cron.manage list and renders the jobs."
+  (let (action)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-cron-manage)
+               (lambda (_client &rest args)
+                 (setq action (plist-get args :action))
+                 (funcall (plist-get args :resolve)
+                          '((jobs . (((job_id . "j1") (name . "nightly")))))))))
+      (unwind-protect
+          (progn
+            (hermes-list-crons)
+            (should (equal action "list"))
+            (with-current-buffer "*Hermes Cron*"
+              (should (derived-mode-p 'hermes-cron-mode))
+              (should (equal (caar tabulated-list-entries) "j1"))))
+        (when (get-buffer "*Hermes Cron*") (kill-buffer "*Hermes Cron*"))))))
+
+(ert-deftest hermes-cron-toggle-resumes-paused-job ()
+  "Toggling a paused job sends the resume action."
+  (let (actions)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-cron-manage)
+               (lambda (_client &rest args)
+                 (push (plist-get args :action) actions)
+                 (funcall (plist-get args :resolve)
+                          (if (equal (plist-get args :action) "list")
+                              '((jobs . (((job_id . "j1") (name . "n") (state . "paused")))))
+                            '((ok . t)))))))
+      (unwind-protect
+          (progn
+            (hermes-list-crons)
+            (with-current-buffer "*Hermes Cron*"
+              (goto-char (point-min))
+              (hermes-cron-toggle))
+            (should (member "resume" actions)))
+        (when (get-buffer "*Hermes Cron*") (kill-buffer "*Hermes Cron*"))))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here
