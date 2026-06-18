@@ -61,7 +61,7 @@ the latest release or clone the repository, and install
 Add the following to your `init.el` (after calling `package-initialize`):
 
 ```el
-(when (memq window-system '(mac ns x))
+(when (memq window-system '(mac ns x pgtk))
   (exec-path-from-shell-initialize))
 ```
 
