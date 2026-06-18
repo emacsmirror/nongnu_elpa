@@ -2704,7 +2704,7 @@
               ((symbol-function 'hermes-dashboard-transport--pick-port)
                (lambda () 4567)))
       (let ((hermes-dashboard-transport-start-mode 'auto)
-            (hermes-dashboard-transport-remote-url nil)
+            (hermes-dashboard-transport-url "http://127.0.0.1:9119")
             (hermes-dashboard-transport-command "hermes")
             (hermes-dashboard-transport-ready-timeout nil)
             (hermes-dashboard-transport-make-process-function
@@ -2723,7 +2723,7 @@
           (should (member "HERMES_DASHBOARD_SESSION_TOKEN=secret-token"
                           (plist-get process-plist :env)))
           (should (equal opened-url
-                         "ws://127.0.0.1:4567/api/ws?token=secret-token"))
+                         "ws://127.0.0.1:9119/api/ws?token=secret-token"))
           (should (string-match-p "Starting Hermes dashboard"
                                   (format "%S" events)))
           (should-not (string-match-p "secret-token" (format "%S" events))))))))
@@ -3535,6 +3535,7 @@
               ((symbol-function 'hermes-dashboard-transport--pick-port)
                (lambda () 4567)))
       (let ((hermes-dashboard-transport-command "hermes")
+            (hermes-dashboard-transport-url "http://127.0.0.1:4567")
             (hermes-dashboard-transport-make-process-function
              (lambda (&rest plist)
                (setq process-plist plist)
@@ -4120,6 +4121,28 @@
         (should (eq deleted 'fake-process))
         (should-not (hermes-dashboard-transport-client-websocket client))
         (should-not (hermes-dashboard-transport-client-process client))))))
+
+(ert-deftest hermes-transport-dashboard-parse-url-host-and-port ()
+  "Dashboard URL parsing yields host and effective port."
+  (should (equal '(:host "127.0.0.1" :port 9119)
+                 (hermes-dashboard-transport--parse-url "http://127.0.0.1:9119")))
+  (should (equal '(:host "example.test" :port 443)
+                 (hermes-dashboard-transport--parse-url "https://example.test/hermes"))))
+
+(ert-deftest hermes-transport-dashboard-url-drives-remote-attach ()
+  "A non-loopback `hermes-dashboard-transport-url' attaches remotely."
+  (let (opened-url)
+    (let ((hermes-dashboard-transport-url "http://100.64.0.10:9119")
+          (hermes-dashboard-transport-start-mode 'auto)
+          (hermes-dashboard-transport-remote-auth-method 'token)
+          (hermes-dashboard-transport-ready-timeout nil)
+          (hermes-dashboard-transport-make-process-function
+           (lambda (&rest _) (error "remote attach must not spawn")))
+          (hermes-dashboard-transport-websocket-open-function
+           (lambda (url _client) (setq opened-url url) 'fake-websocket)))
+      (hermes-dashboard-transport-start :token "remote-token" :callback #'ignore)
+      (should (equal opened-url
+                     "ws://100.64.0.10:9119/api/ws?token=remote-token")))))
 
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

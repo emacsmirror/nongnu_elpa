@@ -49,34 +49,32 @@
   :type 'string
   :group 'hermes-dashboard-transport)
 
-(defcustom hermes-dashboard-transport-host "127.0.0.1"
-  "Host used for spawn-owned dashboard connections."
-  :type 'string
-  :group 'hermes-dashboard-transport)
+(define-obsolete-variable-alias 'hermes-dashboard-transport-remote-url
+  'hermes-dashboard-transport-url "0.1.0")
 
-(defcustom hermes-dashboard-transport-port nil
-  "Port used for spawn-owned dashboard connections, or nil to pick one."
-  :type '(choice (const :tag "Pick an available port" nil) integer)
+(defcustom hermes-dashboard-transport-url "http://127.0.0.1:9119"
+  "Address of the Hermes dashboard used for chat sessions.
+One URL covers both local and remote dashboards:
+
+- A loopback URL (the default `http://127.0.0.1:9119', the Hermes dashboard's
+  standard port) makes `auto' start mode spawn a local dashboard bound to that
+  host and port.
+- A non-loopback URL makes `auto' attach to that already-running dashboard.
+  `https://' and a reverse-proxy path prefix are supported, for example
+  `https://example.test/hermes'.
+
+Use `hermes-dashboard-transport-start-mode' to force spawn or remote attach."
+  :type 'string
   :group 'hermes-dashboard-transport)
 
 (defcustom hermes-dashboard-transport-start-mode 'auto
   "How dashboard transport startup chooses between spawn and remote attach.
-`auto' spawns for loopback hosts unless
-`hermes-dashboard-transport-remote-url' is set, and attaches remotely for
-non-loopback hosts.  `spawn' always starts a local dashboard process.  `remote'
-always attaches to an externally managed dashboard."
+`auto' spawns when `hermes-dashboard-transport-url' is a loopback address and
+attaches remotely otherwise.  `spawn' always starts a local dashboard process.
+`remote' always attaches to an externally managed dashboard."
   :type '(choice (const :tag "Auto" auto)
                  (const :tag "Spawn local dashboard" spawn)
                  (const :tag "Attach to remote dashboard" remote))
-  :group 'hermes-dashboard-transport)
-
-(defcustom hermes-dashboard-transport-remote-url nil
-  "Base URL for an externally managed Hermes dashboard.
-When nil, remote attach derives an HTTP URL from
-`hermes-dashboard-transport-host' and `hermes-dashboard-transport-port'.  The
-value may include a reverse-proxy path prefix, for example
-`https://example.test/hermes'."
-  :type '(choice (const :tag "Derive from host and port" nil) string)
   :group 'hermes-dashboard-transport)
 
 (defcustom hermes-dashboard-transport-remote-auth-method 'auto
@@ -125,7 +123,7 @@ nil to disable the per-request timeout."
   "State for one dashboard/TUI JSON-RPC WebSocket connection."
   process
   websocket
-  (host hermes-dashboard-transport-host)
+  (host "127.0.0.1")
   port
   token
   base-url
@@ -212,13 +210,21 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
       (progn
         (unless port
           (user-error
-           "Set `hermes-dashboard-transport-port' or `hermes-dashboard-transport-remote-url' for remote dashboard attach"))
+           "Set `hermes-dashboard-transport-url' for remote dashboard attach"))
         (format "http://%s:%d"
                 (hermes-dashboard-transport--host-for-url host) port))))
 
 (defun hermes-dashboard-transport--api-url (base-url path)
   "Return dashboard API URL by appending PATH to BASE-URL."
   (concat (hermes-dashboard-transport--normalize-base-url base-url) path))
+
+(defun hermes-dashboard-transport--parse-url (url)
+  "Return a plist of :host and :port parsed from dashboard URL."
+  (let ((normalized (hermes-dashboard-transport--normalize-base-url url)))
+    (unless normalized
+      (user-error "Set `hermes-dashboard-transport-url' to an http(s) dashboard URL"))
+    (let ((parsed (url-generic-parse-url normalized)))
+      (list :host (url-host parsed) :port (url-port parsed)))))
 
 (defun hermes-dashboard-transport--websocket-endpoint
     (host port &optional remote-url)
@@ -1124,9 +1130,8 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
     (&key callback host port command token base-environment)
   "Start spawn-owned dashboard with CALLBACK and override settings.
 HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
-  (let* ((host (or host hermes-dashboard-transport-host))
-         (port (or port hermes-dashboard-transport-port
-                   (hermes-dashboard-transport--pick-port)))
+  (let* ((host (or host "127.0.0.1"))
+         (port (or port (hermes-dashboard-transport--pick-port)))
          (token (or token (hermes-dashboard-transport--generate-token)))
          (client (make-hermes-dashboard-transport-client
                   :host host :port port :token token
@@ -1152,8 +1157,7 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
     (&key callback host port token remote-url remote-auth-method)
   "Attach to a remote dashboard with CALLBACK and override settings.
 HOST, PORT, TOKEN, REMOTE-URL, and REMOTE-AUTH-METHOD override defaults."
-  (let* ((host (or host hermes-dashboard-transport-host))
-         (port (or port hermes-dashboard-transport-port))
+  (let* ((host (or host "127.0.0.1"))
          (base-url (hermes-dashboard-transport--base-url host port remote-url))
          (auth (hermes-dashboard-transport--remote-auth
                 host port base-url
@@ -1190,11 +1194,19 @@ HOST, PORT, TOKEN, REMOTE-URL, and REMOTE-AUTH-METHOD override defaults."
     (&key callback host port command token base-environment
           start-mode remote-url remote-auth-method)
   "Start or attach to a dashboard transport and connect its WebSocket.
-CALLBACK receives normalized `hermes-transport' events.  HOST, PORT, COMMAND,
-TOKEN, BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override
-customized defaults."
-  (let* ((host (or host hermes-dashboard-transport-host))
-         (remote-url (or remote-url hermes-dashboard-transport-remote-url))
+CALLBACK receives normalized `hermes-transport' events.  By default the target
+is `hermes-dashboard-transport-url'; HOST, PORT, COMMAND, TOKEN,
+BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
+  (let* ((from-url (not (or host port remote-url)))
+         (target (and from-url
+                      (hermes-dashboard-transport--parse-url
+                       hermes-dashboard-transport-url)))
+         (host (or host (plist-get target :host)))
+         (port (or port (plist-get target :port)))
+         (remote-url (or remote-url
+                         (and from-url
+                              (not (hermes-dashboard-transport--loopback-host-p host))
+                              hermes-dashboard-transport-url)))
          (mode (hermes-dashboard-transport--resolved-start-mode
                 start-mode host remote-url)))
     (pcase mode
