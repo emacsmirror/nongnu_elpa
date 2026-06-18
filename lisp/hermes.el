@@ -106,17 +106,20 @@ arrives."
   "Hermes Dashboard"
   :parent special-mode-map
   :description "Hermes Dashboard"
-  :group "Actions"
-  "c" ("Chat" hermes-chat)
-  "N" ("New session" hermes-chat-new-session)
-  "g" ("Refresh" hermes-dashboard-refresh)
+  :group "Navigate"
   "n" ("Next card" hermes-dashboard-next)
   "p" ("Previous card" hermes-dashboard-previous)
   "RET" ("Open" hermes-dashboard-open)
   "<mouse-1>" ("Open with mouse" hermes-dashboard-mouse-open)
-  "i" ("Interrupt selected chat" hermes-dashboard-interrupt)
-  "s" ("Steer selected chat" hermes-dashboard-steer)
+  :group "Session"
+  "c" ("Chat" hermes-chat)
+  "N" ("New session" hermes-chat-new-session)
+  :group "Selected chat"
+  "i" ("Interrupt" hermes-dashboard-interrupt)
+  "s" ("Steer" hermes-dashboard-steer)
   "a" ("Respond to prompt" hermes-dashboard-respond)
+  :group "View"
+  "g" ("Refresh" hermes-dashboard-refresh)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
