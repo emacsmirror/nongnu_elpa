@@ -32,6 +32,7 @@
 (require 'hermes-chat)
 (require 'hermes-sessions)
 (require 'hermes-inventory)
+(require 'hermes-rollback)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -125,6 +126,7 @@ arrives."
   :group "View"
   "g" ("Refresh" hermes-dashboard-refresh)
   "I" ("Inventory" hermes-list-inventory)
+  "R" ("Rollbacks" hermes-list-rollbacks)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)

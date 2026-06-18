@@ -1,0 +1,159 @@
+;;; hermes-rollback.el --- Checkpoint rollback browser for Hermes  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Keywords: tools, convenience
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; A `tabulated-list' browser over the dashboard checkpoint methods
+;; (`rollback.list'/`rollback.diff'/`rollback.restore').  RET shows a
+;; checkpoint diff rendered through `diff-mode'; `x' restores the working tree.
+
+;;; Code:
+
+(require 'tabulated-list)
+(require 'hermes-transport)
+(require 'hermes-dashboard-transport)
+(require 'hermes-sessions)
+(require 'hermes-chat)
+
+(defun hermes-rollback--short (hash)
+  "Return an abbreviated form of checkpoint HASH."
+  (if (and hash (> (length hash) 8)) (substring hash 0 8) (or hash "")))
+
+(defun hermes-rollback--rows (result)
+  "Return `tabulated-list' entries for a `rollback.list' RESULT."
+  (mapcar
+   (lambda (checkpoint)
+     (let ((hash (hermes-transport--scalar-string
+                  (hermes-transport--get checkpoint 'hash))))
+       (list hash
+             (vector (hermes-rollback--short hash)
+                     (or (hermes-transport--scalar-string
+                          (hermes-transport--get checkpoint 'timestamp)) "")
+                     (or (hermes-transport--scalar-string
+                          (hermes-transport--get checkpoint 'message)) "")))))
+   (hermes-transport--get result 'checkpoints)))
+
+(defun hermes-rollback--with-client (fn)
+  "Call FN with a connected client and a DONE thunk.
+FN receives (CLIENT DONE); DONE stops a transient client when one was started.
+Reuses a live chat connection when one exists."
+  (let* ((existing (hermes-sessions--existing-client))
+         (client (or existing
+                     (hermes-dashboard-transport-start :callback #'ignore)))
+         (done (lambda ()
+                 (unless existing
+                   (hermes-dashboard-transport-stop client)))))
+    (funcall fn client done)))
+
+(defun hermes-rollback--revert (&rest _)
+  "Refresh the checkpoint list."
+  (hermes-list-rollbacks))
+
+(defvar-keymap hermes-rollback-mode-map
+  :doc "Keymap for `hermes-rollback-mode'."
+  :parent tabulated-list-mode-map
+  "RET" #'hermes-rollback-show-diff
+  "d" #'hermes-rollback-show-diff
+  "x" #'hermes-rollback-restore)
+
+(define-derived-mode hermes-rollback-mode tabulated-list-mode "Hermes Rollbacks"
+  "Major mode listing Hermes session checkpoints."
+  :interactive nil
+  (setq tabulated-list-format
+        [("Checkpoint" 10 t) ("When" 22 t) ("Message" 50 nil)])
+  (setq-local revert-buffer-function #'hermes-rollback--revert)
+  (tabulated-list-init-header))
+
+(defun hermes-rollback--render (result)
+  "Display checkpoints from RESULT in the rollbacks buffer."
+  (with-current-buffer (get-buffer-create "*Hermes Rollbacks*")
+    (unless (derived-mode-p 'hermes-rollback-mode)
+      (hermes-rollback-mode))
+    (setq tabulated-list-entries (hermes-rollback--rows result))
+    (tabulated-list-print t)
+    (pop-to-buffer (current-buffer))))
+
+(defun hermes-rollback--display-diff (hash result)
+  "Render the diff for checkpoint HASH from RESULT through `diff-mode'."
+  (let ((diff (hermes-transport--scalar-string
+               (hermes-transport--get result 'diff))))
+    (if (or (null diff) (string-empty-p diff))
+        (message "Hermes: no diff for %s" (hermes-rollback--short hash))
+      (with-current-buffer (get-buffer-create "*Hermes Rollback Diff*")
+        (unless (derived-mode-p 'special-mode)
+          (special-mode))
+        (let ((inhibit-read-only t))
+          (erase-buffer)
+          (insert (hermes-chat--fontified-diff-string diff)))
+        (goto-char (point-min))
+        (pop-to-buffer (current-buffer))))))
+
+(defun hermes-rollback-show-diff ()
+  "Show the diff for the checkpoint at point."
+  (interactive)
+  (let ((hash (tabulated-list-get-id)))
+    (unless hash (user-error "No checkpoint on this line"))
+    (hermes-rollback--with-client
+     (lambda (client done)
+       (hermes-dashboard-transport-rollback-diff
+        client hash
+        :resolve (lambda (result)
+                   (funcall done)
+                   (hermes-rollback--display-diff hash result))
+        :reject (lambda (message)
+                  (funcall done)
+                  (message "Hermes: %s" message)))))))
+
+(defun hermes-rollback-restore ()
+  "Restore the working tree to the checkpoint at point."
+  (interactive)
+  (let ((hash (tabulated-list-get-id)))
+    (unless hash (user-error "No checkpoint on this line"))
+    (when (yes-or-no-p
+           (format "Restore working tree to checkpoint %s? "
+                   (hermes-rollback--short hash)))
+      (hermes-rollback--with-client
+       (lambda (client done)
+         (hermes-dashboard-transport-rollback-restore
+          client hash
+          :resolve (lambda (_result)
+                     (funcall done)
+                     (message "Hermes: restored %s" (hermes-rollback--short hash)))
+          :reject (lambda (message)
+                    (funcall done)
+                    (message "Hermes: %s" message))))))))
+
+;;;###autoload
+(defun hermes-list-rollbacks ()
+  "Browse Hermes checkpoint history for the active session."
+  (interactive)
+  (hermes-rollback--with-client
+   (lambda (client done)
+     (hermes-dashboard-transport-rollback-list
+      client
+      :resolve (lambda (result)
+                 (funcall done)
+                 (hermes-rollback--render result))
+      :reject (lambda (message)
+                (funcall done)
+                (message "Hermes: %s" message))))))
+
+(provide 'hermes-rollback)
+;;; hermes-rollback.el ends here

@@ -30,6 +30,7 @@
             "lisp/hermes-chat.el"
             "lisp/hermes-sessions.el"
             "lisp/hermes-inventory.el"
+            "lisp/hermes-rollback.el"
             "lisp/hermes.el"
           ];
           elispFileArgs = lib.concatStringsSep " " elispFiles;

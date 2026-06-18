@@ -4310,5 +4310,49 @@
               (should (equal (caar tabulated-list-entries) "files"))))
         (when (get-buffer "*Hermes Toolsets*") (kill-buffer "*Hermes Toolsets*"))))))
 
+(ert-deftest hermes-rollback-rows-from-list ()
+  "Rollback rows abbreviate the hash and map timestamp/message."
+  (let ((rows (hermes-rollback--rows
+               '((checkpoints . (((hash . "abcdef1234567890")
+                                  (timestamp . "2026-01-01") (message . "edit foo"))))))))
+    (should (equal (caar rows) "abcdef1234567890"))
+    (should (equal (aref (cadr (car rows)) 0) "abcdef12"))
+    (should (equal (aref (cadr (car rows)) 1) "2026-01-01"))
+    (should (equal (aref (cadr (car rows)) 2) "edit foo"))))
+
+(ert-deftest hermes-rollback-list-fetches-and-renders ()
+  "Listing fetches rollback.list and renders the checkpoints."
+  (let (stopped)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'hermes-dashboard-transport-rollback-list)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((checkpoints . (((hash . "h1") (message . "m1")))))))))
+      (unwind-protect
+          (progn
+            (hermes-list-rollbacks)
+            (should (eq stopped 'fake-client))
+            (with-current-buffer "*Hermes Rollbacks*"
+              (should (derived-mode-p 'hermes-rollback-mode))
+              (should (equal (caar tabulated-list-entries) "h1"))))
+        (when (get-buffer "*Hermes Rollbacks*") (kill-buffer "*Hermes Rollbacks*"))))))
+
+(ert-deftest hermes-rollback-display-diff-fontifies ()
+  "The diff view renders the unified diff through diff-mode."
+  (unwind-protect
+      (progn
+        (hermes-rollback--display-diff
+         "abc1234567"
+         '((diff . "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n")))
+        (with-current-buffer "*Hermes Rollback Diff*"
+          (should (derived-mode-p 'special-mode))
+          (should (string-match-p "\\+new" (buffer-string)))))
+    (when (get-buffer "*Hermes Rollback Diff*")
+      (kill-buffer "*Hermes Rollback Diff*"))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

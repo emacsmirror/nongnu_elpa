@@ -989,6 +989,38 @@ asynchronous result or error."
       (confirm_expensive_model . ,confirm-expensive-model)))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-rollback-list
+    (client &key session-id resolve reject)
+  "Send a `rollback.list' request for CLIENT.
+SESSION-ID scopes the checkpoints.  RESOLVE and REJECT receive the result
+or error."
+  (hermes-dashboard-transport-request
+   client "rollback.list"
+   (hermes-dashboard-transport--alist-without-nil `((session_id . ,session-id)))
+   resolve reject))
+
+(cl-defun hermes-dashboard-transport-rollback-diff
+    (client hash &key session-id resolve reject)
+  "Send a `rollback.diff' request for checkpoint HASH on CLIENT.
+SESSION-ID scopes the checkpoint.  RESOLVE and REJECT receive the result
+or error."
+  (hermes-dashboard-transport-request
+   client "rollback.diff"
+   (hermes-dashboard-transport--alist-without-nil
+    `((session_id . ,session-id) (hash . ,hash)))
+   resolve reject))
+
+(cl-defun hermes-dashboard-transport-rollback-restore
+    (client hash &key session-id file-path resolve reject)
+  "Send a `rollback.restore' request for checkpoint HASH on CLIENT.
+FILE-PATH restores a single file; SESSION-ID scopes the checkpoint.  RESOLVE
+and REJECT receive the result or error."
+  (hermes-dashboard-transport-request
+   client "rollback.restore"
+   (hermes-dashboard-transport--alist-without-nil
+    `((session_id . ,session-id) (hash . ,hash) (file_path . ,file-path)))
+   resolve reject))
+
 (cl-defun hermes-dashboard-transport-prompt-submit
     (client text &key session-id resolve reject)
   "Send TEXT through `prompt.submit' on CLIENT."
