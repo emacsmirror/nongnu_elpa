@@ -192,7 +192,7 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
 
 (defun hermes-dashboard-transport--normalize-base-url (base-url)
   "Return normalized dashboard BASE-URL, or nil when BASE-URL is empty."
-  (when-let* ((url (and (stringp base-url) (string-trim base-url))))
+  (and-let* ((url (and (stringp base-url) (string-trim base-url))))
     (unless (string-empty-p url)
       (let* ((parsed (url-generic-parse-url url))
              (path-and-query (url-path-and-query parsed)))
@@ -631,8 +631,8 @@ It is called with URL and keyword arguments :method, :headers, :data, and
   "Return Cookie header value assembled from RESPONSE Set-Cookie headers."
   (let ((cookies (delq nil
                        (mapcar (lambda (header)
-                                 (when-let* ((pair (car (split-string
-                                                         header ";" t))))
+                                 (and-let* ((pair (car (split-string
+                                                        header ";" t))))
                                    (string-trim pair)))
                                (hermes-dashboard-transport--response-header-values
                                 response "set-cookie")))))
@@ -694,7 +694,7 @@ It is called with URL and keyword arguments :method, :headers, :data, and
 
 (defun hermes-dashboard-transport--auth-source-secret (entry)
   "Return secret string from auth-source ENTRY."
-  (when-let* ((secret (plist-get entry :secret)))
+  (and-let* ((secret (plist-get entry :secret)))
     (if (functionp secret) (funcall secret) secret)))
 
 (defun hermes-dashboard-transport--remote-token-secret (base-url &optional token)

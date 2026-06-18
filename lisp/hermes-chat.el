@@ -414,7 +414,7 @@ METADATA is stored as the entry's `:metadata' plist."
 
 (defun hermes-chat--event-phase (event)
   "Return EVENT's trailing event-name phase, if any."
-  (when-let* ((name (hermes-chat--event-string event '(:event))))
+  (and-let* ((name (hermes-chat--event-string event '(:event))))
     (car (last (split-string name "\\." t)))))
 
 (defun hermes-chat--unknown-event-content (event)
@@ -433,13 +433,13 @@ METADATA is stored as the entry's `:metadata' plist."
 
 (defun hermes-chat--humanize-event-name (name)
   "Return NAME as a compact human-readable event label."
-  (when name
+  (and name
     (string-trim
      (replace-regexp-in-string "[._-]+" " " name))))
 
 (defun hermes-chat--status-name (status)
   "Return normalized display/comparison name for STATUS."
-  (when-let* ((name (hermes-chat--scalar-string status)))
+  (and-let* ((name (hermes-chat--scalar-string status)))
     (downcase (replace-regexp-in-string "_" "-" name))))
 
 (defun hermes-chat--active-status-p (status)
@@ -711,7 +711,7 @@ METADATA is stored as the entry's `:metadata' plist."
 
 (defun hermes-chat--commentary-event-name (event)
   "Return EVENT's commentary event name in lowercase, or nil."
-  (when-let* ((name (hermes-chat--event-string event '(:event))))
+  (and-let* ((name (hermes-chat--event-string event '(:event))))
     (downcase name)))
 
 (defun hermes-chat--commentary-delta-p (event)
@@ -2183,7 +2183,7 @@ approvals in the dashboard session."
 
 (defun hermes-chat--subcommand-name (value)
   "Return VALUE as a slash command name without leading slash."
-  (when-let* ((name (hermes-chat--scalar-string value)))
+  (and-let* ((name (hermes-chat--scalar-string value)))
     (string-remove-prefix "/" name)))
 
 (defun hermes-chat--format-subcommand-entry (entry)

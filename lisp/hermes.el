@@ -179,9 +179,9 @@ arrives."
 
 (defun hermes-dashboard--status-name (status)
   "Return STATUS as a normalized comparison string."
-  (when-let* ((name (cond
-                     ((symbolp status) (symbol-name status))
-                     ((stringp status) status))))
+  (and-let* ((name (cond
+                    ((symbolp status) (symbol-name status))
+                    ((stringp status) status))))
     (let ((trimmed (string-trim name)))
       (unless (string-empty-p trimmed)
         (replace-regexp-in-string "[[:space:]_.]+" "-"
