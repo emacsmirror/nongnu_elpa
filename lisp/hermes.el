@@ -31,70 +31,62 @@
 (require 'subr-x)
 (require 'hermes-chat)
 
+(defgroup hermes nil
+  "Emacs frontend for Hermes Agent."
+  :group 'applications)
+
 (defcustom hermes-dashboard-buffer-name "*Hermes Dashboard*"
   "Name of the Hermes dashboard buffer."
-  :type 'string
-  :group 'hermes)
+  :type 'string)
 
 (defcustom hermes-dashboard-refresh-delay 0.2
   "Seconds to debounce dashboard refreshes after chat state changes."
-  :type 'number
-  :group 'hermes)
+  :type 'number)
 
 (defcustom hermes-dashboard-stale-after 30
   "Seconds before an active chat without updates is shown as stale.
 A nil value disables stale status display."
   :type '(choice (const :tag "Never mark stale" nil)
-                 (number :tag "Seconds"))
-  :group 'hermes)
+                 (number :tag "Seconds")))
 
 (defcustom hermes-dashboard-stale-refresh-interval 2
   "Seconds between dashboard refreshes while live chats are active.
 This lets stale dashboard statuses appear even when no new transport event
 arrives."
   :type '(choice (const :tag "Do not refresh for stale status" nil)
-                 (number :tag "Seconds"))
-  :group 'hermes)
+                 (number :tag "Seconds")))
 
 (defface hermes-dashboard-heading
   '((t :inherit (bold font-lock-constant-face)))
-  "Face used for the Hermes dashboard heading."
-  :group 'hermes)
+  "Face used for the Hermes dashboard heading.")
 
 (defface hermes-dashboard-title
   '((t :inherit bold))
-  "Face used for dashboard card titles."
-  :group 'hermes)
+  "Face used for dashboard card titles.")
 
 (defface hermes-dashboard-muted
   '((t :inherit shadow))
-  "Face used for muted dashboard details."
-  :group 'hermes)
+  "Face used for muted dashboard details.")
 
 (defface hermes-dashboard-status-ready
   '((t :inherit success))
-  "Face used for ready dashboard statuses."
-  :group 'hermes)
+  "Face used for ready dashboard statuses.")
 
 (defface hermes-dashboard-status-running
   '((t :inherit font-lock-keyword-face))
-  "Face used for running dashboard statuses."
-  :group 'hermes)
+  "Face used for running dashboard statuses.")
 
 (defface hermes-dashboard-status-waiting
   '((t :inherit warning))
-  "Face used for waiting dashboard statuses."
-  :group 'hermes)
+  "Face used for waiting dashboard statuses.")
 
 (defface hermes-dashboard-status-stale
   '((t :inherit warning))
-  "Face used for stale dashboard statuses."
-  :group 'hermes)
+  "Face used for stale dashboard statuses.")
 
 (defface hermes-dashboard-status-error
   '((t :inherit error))
-  "Face used for error dashboard statuses."
-  :group 'hermes)
+  "Face used for error dashboard statuses.")
 
 (defvar-local hermes-dashboard--ewoc nil
   "EWOC displaying dashboard cards in the current dashboard buffer.")

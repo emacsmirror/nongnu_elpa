@@ -30,10 +30,6 @@
 (require 'json)
 (require 'subr-x)
 
-(defgroup hermes nil
-  "Emacs frontend for Hermes Agent."
-  :group 'applications)
-
 (defconst hermes-transport-event-types
   '(delta done error status tool progress commentary diff unknown)
   "Event types emitted by `hermes-transport-normalize-event'.")
