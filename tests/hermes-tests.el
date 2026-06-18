@@ -3061,6 +3061,34 @@
                                   (alist-get kind rejects))))
         (should (equal (plist-get (car events) :status) "closed"))))))
 
+(ert-deftest hermes-transport-dashboard-request-timeout-rejects-pending ()
+  "An unanswered request is rejected once its timeout timer fires."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :token "secret-token"
+                 :websocket 'fake-websocket
+                 :ready-p t
+                 :pending (make-hash-table :test #'equal)))
+        (hermes-dashboard-transport-websocket-send-function #'ignore)
+        (hermes-dashboard-transport-request-timeout 30)
+        timer-callback rejected)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (_secs _repeat fn &rest args)
+                 (setq timer-callback (cons fn args))
+                 'fake-timer))
+              ((symbol-function 'cancel-timer) #'ignore))
+      (hermes-dashboard-transport-request
+       client "session.create" nil nil
+       (lambda (message) (setq rejected message)))
+      (should (= (hash-table-count
+                  (hermes-dashboard-transport-client-pending client))
+                 1))
+      (apply (car timer-callback) (cdr timer-callback))
+      (should (= (hash-table-count
+                  (hermes-dashboard-transport-client-pending client))
+                 0))
+      (should (string-match-p "timed out" rejected))
+      (should (string-match-p "session.create" rejected)))))
+
 (ert-deftest hermes-transport-dashboard-error-rejects-pending-requests ()
   (let (on-error rejected events)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)

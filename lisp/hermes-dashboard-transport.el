@@ -108,6 +108,14 @@ first request until the ready event arrives."
   :type '(choice (const :tag "Do not wait" nil) number)
   :group 'hermes-dashboard-transport)
 
+(defcustom hermes-dashboard-transport-request-timeout 30
+  "Seconds before an unanswered dashboard request is rejected.
+A pending JSON-RPC request whose response never arrives would otherwise leak
+its callbacks forever, so it is rejected once this many seconds elapse.  Use
+nil to disable the per-request timeout."
+  :type '(choice (const :tag "No timeout" nil) number)
+  :group 'hermes-dashboard-transport)
+
 (defcustom hermes-dashboard-transport-ready-wait-interval 0.05
   "Seconds to wait between dashboard `gateway.ready' checks."
   :type 'number
@@ -452,6 +460,7 @@ emitted its own transport error event."
     (when (hash-table-p pending)
       (clrhash pending))
     (dolist (request requests)
+      (hermes-dashboard-transport--cancel-request-timer request)
       (unless (plist-get request :reject)
         (setq emitted-unhandled t))
       (hermes-dashboard-transport--reject-pending-request
@@ -836,20 +845,52 @@ It is called with URL and keyword arguments :method, :headers, :data, and
    (format "Hermes dashboard request %s failed before send: %s"
            method (error-message-string condition))))
 
+(defun hermes-dashboard-transport--cancel-request-timer (request)
+  "Cancel the timeout timer stored in pending REQUEST, if any."
+  (when-let* ((timer (plist-get request :timer)))
+    (cancel-timer timer)))
+
+(defun hermes-dashboard-transport--take-pending (client id)
+  "Remove and return CLIENT's pending request ID, cancelling its timer."
+  (and-let* ((pending (hermes-dashboard-transport-client-pending client))
+             (request (gethash id pending)))
+    (remhash id pending)
+    (hermes-dashboard-transport--cancel-request-timer request)
+    request))
+
+(defun hermes-dashboard-transport--on-request-timeout (client id)
+  "Reject CLIENT's pending request ID after its timeout elapses."
+  (when-let* ((request (hermes-dashboard-transport--take-pending client id)))
+    (hermes-dashboard-transport--reject-pending-request
+     client request
+     (hermes-dashboard-transport--normalized-error-message
+      client
+      (format "Hermes dashboard request %s timed out"
+              (plist-get request :method))))))
+
+(defun hermes-dashboard-transport--arm-request-timer (client id)
+  "Return a timeout timer for CLIENT's request ID, or nil when disabled."
+  (and hermes-dashboard-transport-request-timeout
+       (run-at-time hermes-dashboard-transport-request-timeout nil
+                    #'hermes-dashboard-transport--on-request-timeout
+                    client id)))
+
 (defun hermes-dashboard-transport-request (client method &optional params resolve reject)
   "Send METHOD with PARAMS for CLIENT and correlate response callbacks.
 RESOLVE is called with the JSON-RPC result.  REJECT is called with the error
 message when provided.  Return the request id."
   (let* ((id (hermes-dashboard-transport--next-id client))
          (pending (hermes-dashboard-transport--ensure-pending client))
-         (frame (hermes-dashboard-transport--jsonrpc-request id method params)))
-    (puthash id (list :method method :resolve resolve :reject reject) pending)
+         (frame (hermes-dashboard-transport--jsonrpc-request id method params))
+         (timer (hermes-dashboard-transport--arm-request-timer client id)))
+    (puthash id (list :method method :resolve resolve :reject reject :timer timer)
+             pending)
     (condition-case err
         (funcall hermes-dashboard-transport-websocket-send-function
                  (hermes-dashboard-transport-client-websocket client)
                  (hermes-dashboard-transport--encode-frame frame))
       (error
-       (remhash id pending)
+       (hermes-dashboard-transport--take-pending client id)
        (hermes-dashboard-transport--reject-pending-request
         client (list :method method :reject reject)
         (hermes-dashboard-transport--send-failure-message
@@ -1211,10 +1252,9 @@ customized defaults."
 (defun hermes-dashboard-transport--resolve-response (client frame)
   "Resolve CLIENT's pending request represented by response FRAME."
   (let* ((id (hermes-dashboard-transport--frame-id frame))
-         (pending (and id (gethash id (hermes-dashboard-transport-client-pending client))))
+         (pending (and id (hermes-dashboard-transport--take-pending client id)))
          (method (plist-get pending :method)))
     (when pending
-      (remhash id (hermes-dashboard-transport-client-pending client))
       (let ((result (hermes-transport--get frame 'result))
             (resolve (plist-get pending :resolve)))
         (hermes-dashboard-transport--store-session-result client method result)
@@ -1224,13 +1264,12 @@ customized defaults."
 (defun hermes-dashboard-transport--reject-response (client frame)
   "Reject CLIENT's pending request represented by error response FRAME."
   (let* ((id (hermes-dashboard-transport--frame-id frame))
-         (pending (and id (gethash id (hermes-dashboard-transport-client-pending client))))
+         (pending (and id (hermes-dashboard-transport--take-pending client id)))
          (method (plist-get pending :method))
          (message (hermes-dashboard-transport--response-error-message frame))
          (code (hermes-dashboard-transport--response-error-code frame))
          handled)
     (when pending
-      (remhash id (hermes-dashboard-transport-client-pending client))
       (when-let* ((reject (plist-get pending :reject)))
         (setq handled t)
         (funcall reject message)))
