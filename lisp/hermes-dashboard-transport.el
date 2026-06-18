@@ -414,13 +414,13 @@ QUERY-PARAM defaults to `token'."
 
 (defun hermes-dashboard-transport--safe-reject (client reject message method)
   "Call REJECT with MESSAGE, reporting callback failures for METHOD on CLIENT."
-  (condition-case error
+  (condition-case err
       (funcall reject message)
     (error
      (hermes-dashboard-transport--emit-error
       client
       (format "Hermes dashboard reject callback failed: %s"
-              (hermes-dashboard-transport--condition-message client error))
+              (hermes-dashboard-transport--condition-message client err))
       method))))
 
 (defun hermes-dashboard-transport--reject-pending-request
@@ -844,7 +844,7 @@ message when provided.  Return the request id."
          (pending (hermes-dashboard-transport--ensure-pending client))
          (frame (hermes-dashboard-transport--jsonrpc-request id method params)))
     (puthash id (list :method method :resolve resolve :reject reject) pending)
-    (condition-case error
+    (condition-case err
         (funcall hermes-dashboard-transport-websocket-send-function
                  (hermes-dashboard-transport-client-websocket client)
                  (hermes-dashboard-transport--encode-frame frame))
@@ -853,7 +853,7 @@ message when provided.  Return the request id."
        (hermes-dashboard-transport--reject-pending-request
         client (list :method method :reject reject)
         (hermes-dashboard-transport--send-failure-message
-         client method error))))
+         client method err))))
     id))
 
 (defun hermes-dashboard-transport--alist-without-nil (alist)
@@ -1016,16 +1016,16 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
         last-error)
     (catch 'connected
       (dotimes (attempt attempts)
-        (condition-case error
+        (condition-case err
             (throw 'connected
                    (hermes-dashboard-transport--open-websocket-once
                     client url))
           (user-error
            (signal 'user-error
                    (list (hermes-dashboard-transport--condition-message
-                          client error))))
+                          client err))))
           (error
-           (setq last-error error)
+           (setq last-error err)
            (when (< (1+ attempt) attempts)
              (funcall hermes-dashboard-transport-sleep-function
                       hermes-dashboard-transport-connect-retry-delay)))))
@@ -1080,7 +1080,7 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
          (env (hermes-dashboard-transport--environment token base-environment)))
     (funcall (hermes-dashboard-transport-client-callback client)
              (hermes-dashboard-transport--start-event host port token))
-    (condition-case error
+    (condition-case err
         (progn
           (setf (hermes-dashboard-transport-client-process client)
                 (hermes-dashboard-transport--start-process client argv env))
@@ -1091,7 +1091,7 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
        (hermes-dashboard-transport--cleanup-start-failure client)
        (signal 'user-error
                (list (hermes-dashboard-transport--condition-message
-                      client error)))))))
+                      client err)))))))
 
 (cl-defun hermes-dashboard-transport--start-remote
     (&key callback host port token remote-url remote-auth-method)
@@ -1117,7 +1117,7 @@ HOST, PORT, TOKEN, REMOTE-URL, and REMOTE-AUTH-METHOD override defaults."
     (funcall (hermes-dashboard-transport-client-callback client)
              (hermes-dashboard-transport--remote-connect-event
               (plist-get auth :redacted-url)))
-    (condition-case error
+    (condition-case err
         (progn
           (hermes-dashboard-transport-connect client)
           (hermes-dashboard-transport--await-ready client)
@@ -1129,7 +1129,7 @@ HOST, PORT, TOKEN, REMOTE-URL, and REMOTE-AUTH-METHOD override defaults."
        (hermes-dashboard-transport--cleanup-start-failure client)
        (signal 'user-error
                (list (hermes-dashboard-transport--condition-message
-                      client error)))))))
+                      client err)))))))
 
 (cl-defun hermes-dashboard-transport-start
     (&key callback host port command token base-environment
@@ -1483,7 +1483,7 @@ customized defaults."
 
 (defun hermes-dashboard-transport--handle-frame (client text)
   "Handle inbound JSON-RPC TEXT or frame alist for CLIENT."
-  (condition-case error
+  (condition-case err
       (let ((frame (hermes-dashboard-transport--decode-frame text)))
         (pcase (hermes-dashboard-transport--frame-kind frame)
           ('response (hermes-dashboard-transport--resolve-response client frame))
@@ -1493,7 +1493,7 @@ customized defaults."
               client "Unknown Hermes dashboard frame"))))
     (error
      (hermes-dashboard-transport--emit-error
-      client (format "Invalid Hermes dashboard frame: %s" error)))))
+      client (format "Invalid Hermes dashboard frame: %s" err)))))
 
 (provide 'hermes-dashboard-transport)
 ;;; hermes-dashboard-transport.el ends here
