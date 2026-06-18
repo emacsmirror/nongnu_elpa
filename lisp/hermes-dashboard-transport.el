@@ -1406,16 +1406,26 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
         'done
       'error)))
 
+(defun hermes-dashboard-transport--usage-plist (payload)
+  "Return an :input/:output token usage plist from PAYLOAD, or nil.
+Only positive token counts are reported, so an empty turn shows no gauge."
+  (let ((input (hermes-transport--get payload 'input_tokens))
+        (output (hermes-transport--get payload 'output_tokens)))
+    (and (or (and (numberp input) (> input 0))
+             (and (numberp output) (> output 0)))
+         (list :input input :output output))))
+
 (defun hermes-dashboard-transport--message-complete-event (type params payload)
   "Return a normalized `message.complete' event for TYPE/PARAMS/PAYLOAD."
   (let* ((status (hermes-transport--scalar-string
                   (hermes-transport--get payload 'status)))
+         (usage (hermes-dashboard-transport--usage-plist payload))
          (event (hermes-dashboard-transport--payload-event
                  type params payload
                  (hermes-dashboard-transport--message-complete-kind payload))))
-    (if status
-        (plist-put event :status status)
-      event)))
+    (when usage (setq event (plist-put event :usage usage)))
+    (when status (setq event (plist-put event :status status)))
+    event))
 
 (defun hermes-dashboard-transport--prompt-title (prompt-type)
   "Return human title for PROMPT-TYPE."

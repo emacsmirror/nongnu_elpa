@@ -4191,5 +4191,32 @@
         (when (get-buffer "*Hermes Sessions*")
           (kill-buffer "*Hermes Sessions*"))))))
 
+(ert-deftest hermes-transport-dashboard-message-complete-carries-usage ()
+  "A `message.complete' event carries input/output token usage."
+  (let* ((frame '((jsonrpc . "2.0") (method . "event")
+                  (params . ((type . "message.complete")
+                             (payload . ((status . "complete")
+                                         (input_tokens . 1200)
+                                         (output_tokens . 340)))))))
+         (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
+    (should (eq (plist-get event :type) 'done))
+    (should (equal (plist-get event :usage) '(:input 1200 :output 340)))))
+
+(ert-deftest hermes-chat-format-usage ()
+  "Usage formatting is compact and omits empty counts."
+  (should (equal (hermes-chat--format-usage '(:input 1200 :output 340))
+                 "1200↑ 340↓ tok"))
+  (should (equal (hermes-chat--format-usage '(:input 5 :output 0)) "5↑ 0↓ tok"))
+  (should-not (hermes-chat--format-usage '(:input 0 :output 0)))
+  (should-not (hermes-chat--format-usage nil)))
+
+(ert-deftest hermes-chat-done-event-shows-usage-in-header ()
+  "A done event records usage in header state and renders the gauge."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--update-header-for-event
+    '(:type done :usage (:input 1200 :output 340)))
+   (should (equal (plist-get hermes-chat--status-state :usage) '(:input 1200 :output 340)))
+   (should (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

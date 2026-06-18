@@ -601,7 +601,9 @@ METADATA is stored as the entry's `:metadata' plist."
         :status 'streaming :activity "Writing response")))
     ('done
      (hermes-chat--clear-active-tools)
-     (hermes-chat--set-header-state :status 'ready :activity "Ready"))
+     (hermes-chat--set-header-state
+      :status 'ready :activity "Ready"
+      :usage (plist-get event :usage)))
     ('error
      (hermes-chat--clear-active-tools)
      (hermes-chat--set-header-state
@@ -652,10 +654,21 @@ METADATA is stored as the entry's `:metadata' plist."
                                 active-tool
                                 activity
                                 (and tool (format "last tool: %s" tool))
+                                (hermes-chat--format-usage
+                                 (plist-get hermes-chat--status-state :usage))
                                 session)))
          (text (concat " " (string-join parts "  | ") " "))
          (width (max 20 (window-total-width))))
     (truncate-string-to-width text width nil nil "…")))
+
+(defun hermes-chat--format-usage (usage)
+  "Return a compact token-usage string for USAGE, or nil.
+USAGE is a plist of :input and :output token counts."
+  (and usage
+       (let ((in (or (plist-get usage :input) 0))
+             (out (or (plist-get usage :output) 0)))
+         (and (or (> in 0) (> out 0))
+              (format "%d↑ %d↓ tok" in out)))))
 
 (defun hermes-chat--format-duration (duration)
   "Return DURATION as a compact seconds string, or nil."
