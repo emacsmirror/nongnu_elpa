@@ -2520,6 +2520,24 @@ session key is preserved, so the conversation can still be resumed."
     (goto-char (or (hermes-chat--input-position) (point-max)))
     buffer))
 
+(defun hermes-chat-resume-session (session-id &optional title)
+  "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
+TITLE, when given, names the buffer.  Resume happens on the next interaction,
+like any chat buffer holding a durable session key."
+  (interactive (list (read-string "Resume Hermes session id: ")))
+  (when (or (null session-id) (string-empty-p session-id))
+    (user-error "No Hermes session id to resume"))
+  (let ((buffer (generate-new-buffer
+                 (if (and title (not (string-empty-p title)))
+                     (format "*Hermes: %s*" title)
+                   hermes-chat-buffer-name))))
+    (with-current-buffer buffer
+      (hermes-chat-mode)
+      (setq hermes-chat--session-id session-id))
+    (pop-to-buffer-same-window buffer)
+    (goto-char (or (hermes-chat--input-position) (point-max)))
+    buffer))
+
 (defun hermes-chat-send ()
   "Send the current Hermes chat input."
   (interactive)

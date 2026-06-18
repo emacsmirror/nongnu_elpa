@@ -30,6 +30,7 @@
 (require 'keymap-popup)
 (require 'subr-x)
 (require 'hermes-chat)
+(require 'hermes-sessions)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -114,6 +115,7 @@ arrives."
   :group "Session"
   "c" ("Chat" hermes-chat)
   "N" ("New session" hermes-chat-new-session)
+  "S" ("Sessions" hermes-list-sessions)
   :group "Selected chat"
   "i" ("Interrupt" hermes-dashboard-interrupt)
   "s" ("Steer" hermes-dashboard-steer)

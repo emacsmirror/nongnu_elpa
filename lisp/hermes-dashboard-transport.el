@@ -946,6 +946,26 @@ and REJECT receive the asynchronous result or error."
     `((session_id . ,session-id) (cols . ,cols) (profile . ,profile)))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-session-list
+    (client &key limit resolve reject)
+  "Send a `session.list' request for CLIENT.
+LIMIT caps the number of sessions returned.  RESOLVE and REJECT receive the
+asynchronous result or error."
+  (hermes-dashboard-transport-request
+   client "session.list"
+   (hermes-dashboard-transport--alist-without-nil `((limit . ,limit)))
+   resolve reject))
+
+(cl-defun hermes-dashboard-transport-session-history
+    (client session-id &key offset limit resolve reject)
+  "Send a `session.history' request for SESSION-ID on CLIENT.
+OFFSET and LIMIT page the returned messages."
+  (hermes-dashboard-transport-request
+   client "session.history"
+   (hermes-dashboard-transport--alist-without-nil
+    `((session_id . ,session-id) (offset . ,offset) (limit . ,limit)))
+   resolve reject))
+
 (cl-defun hermes-dashboard-transport-prompt-submit
     (client text &key session-id resolve reject)
   "Send TEXT through `prompt.submit' on CLIENT."

@@ -4144,5 +4144,52 @@
       (should (equal opened-url
                      "ws://100.64.0.10:9119/api/ws?token=remote-token")))))
 
+(ert-deftest hermes-sessions-rows-from-session-list ()
+  "Session rows map the `session.list' result fields to columns."
+  (let* ((rows (hermes-sessions--rows
+                '(((id . "s1") (title . "First") (message_count . 3) (source . "tui")))))
+         (entry (cadr (car rows))))
+    (should (equal (caar rows) "s1"))
+    (should (equal (aref entry 0) "s1"))
+    (should (equal (aref entry 1) "First"))
+    (should (equal (aref entry 2) "3"))
+    (should (equal (aref entry 3) "tui"))))
+
+(ert-deftest hermes-chat-resume-session-presets-session-id ()
+  "Resuming a session opens a chat buffer bound to that durable id."
+  (let ((buffer (hermes-chat-resume-session "sid-42" "My chat")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should (derived-mode-p 'hermes-chat-mode))
+          (should (equal hermes-chat--session-id "sid-42")))
+      (kill-buffer buffer))))
+
+(ert-deftest hermes-sessions-list-renders-and-stops-transient-client ()
+  "Listing connects a transient client, renders rows, then stops it."
+  (let (listed stopped)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'hermes-dashboard-transport-session-list)
+               (lambda (client &rest args)
+                 (setq listed client)
+                 (funcall (plist-get args :resolve)
+                          '((sessions
+                             . (((id . "s1") (title . "First") (message_count . 3))
+                                ((id . "s2") (title . "Second") (message_count . 0)))))))))
+      (unwind-protect
+          (progn
+            (hermes-list-sessions)
+            (should (eq listed 'fake-client))
+            (should (eq stopped 'fake-client))
+            (with-current-buffer "*Hermes Sessions*"
+              (should (derived-mode-p 'hermes-sessions-mode))
+              (should (equal (sort (mapcar #'car tabulated-list-entries) #'string<)
+                             '("s1" "s2")))))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here
