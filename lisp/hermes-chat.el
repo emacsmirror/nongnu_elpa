@@ -86,6 +86,9 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--session-id nil
   "Durable Hermes session key used for future dashboard `session.resume'.")
 
+(defvar-local hermes-chat--profile nil
+  "Profile name for this chat's dashboard session, or nil for the default.")
+
 (defvar-local hermes-chat--pending-assistant-id nil
   "ID of the assistant entry awaiting transport completion.")
 
@@ -1609,6 +1612,7 @@ Record asynchronous session results in BUFFER."
      client
      :cols (hermes-chat--dashboard-cols)
      :title hermes-chat-dashboard-session-title
+     :profile hermes-chat--profile
      :resolve (hermes-chat--dashboard-session-resolver buffer client prompt)))))
 
 (defun hermes-chat--dashboard-event-for-session-p (event)
@@ -2608,6 +2612,17 @@ Models from authenticated providers are listed first."
       (hermes-chat-mode))
     (pop-to-buffer-same-window buffer)
     (goto-char (or (hermes-chat--input-position) (point-max)))
+    buffer))
+
+(defun hermes-chat-new-profile-session (profile)
+  "Open a new Hermes chat buffer for a dashboard session under PROFILE.
+A blank PROFILE keeps the dashboard's default profile.  The profile applies
+when the session is created on the first interaction."
+  (interactive (list (read-string "Profile (blank for default): ")))
+  (let ((buffer (hermes-chat-new-session)))
+    (with-current-buffer buffer
+      (setq hermes-chat--profile
+            (and (not (string-empty-p profile)) profile)))
     buffer))
 
 (defun hermes-chat-resume-session (session-id &optional title)

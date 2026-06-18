@@ -119,6 +119,7 @@ arrives."
   :group "Session"
   "c" ("Chat" hermes-chat)
   "N" ("New session" hermes-chat-new-session)
+  "P" ("New profile session" hermes-chat-new-profile-session)
   "S" ("Sessions" hermes-list-sessions)
   :group "Selected chat"
   "i" ("Interrupt" hermes-dashboard-interrupt)

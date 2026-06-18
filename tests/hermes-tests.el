@@ -4445,5 +4445,37 @@
             (should (member "resume" actions)))
         (when (get-buffer "*Hermes Cron*") (kill-buffer "*Hermes Cron*"))))))
 
+(ert-deftest hermes-chat-new-profile-session-sets-profile ()
+  "A profile session records the profile; a blank one stays nil."
+  (let ((buffer (hermes-chat-new-profile-session "work")))
+    (unwind-protect
+        (with-current-buffer buffer (should (equal hermes-chat--profile "work")))
+      (kill-buffer buffer)))
+  (let ((buffer (hermes-chat-new-profile-session "")))
+    (unwind-protect
+        (with-current-buffer buffer (should-not hermes-chat--profile))
+      (kill-buffer buffer))))
+
+(ert-deftest hermes-chat-send-passes-profile-to-session-create ()
+  "The buffer's profile is threaded into session.create."
+  (let (create-profile)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (hermes-test--dashboard-client)))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (setq create-profile (plist-get args :profile))
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid") (stored_session_id . "stored")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) nil)))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--profile "work")
+         (insert "hello")
+         (hermes-chat-send)
+         (should (equal create-profile "work")))))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here
