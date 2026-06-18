@@ -119,7 +119,7 @@ arrives."
   "a" ("Respond to prompt" hermes-dashboard-respond)
   "?" ("Help" hermes-dashboard-popup))
 
-(define-key hermes-dashboard-mode-map (kbd "h") #'hermes-dashboard-popup)
+(keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
 
 (defun hermes-dashboard--header-line ()
   "Return the dashboard header line."
@@ -239,7 +239,7 @@ arrives."
 
 (defun hermes-dashboard--time-age (time)
   "Return age of TIME in seconds, or nil."
-  (and time (float-time (time-subtract (current-time) time))))
+  (and time (float-time (time-since time))))
 
 (defun hermes-dashboard--stale-chat-p (snapshot)
   "Return non-nil when SNAPSHOT describes a stale active chat."

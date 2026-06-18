@@ -969,9 +969,7 @@ Do not record these internal text-property changes in the undo list."
 
 (defun hermes-chat--entries ()
   "Return chat entries from the current buffer in display order."
-  (let (entries)
-    (ewoc-map (lambda (entry) (push entry entries)) hermes-chat--ewoc)
-    (nreverse entries)))
+  (ewoc-collect hermes-chat--ewoc #'identity))
 
 (defun hermes-chat--update-entry (id function)
   "Update entry ID by applying FUNCTION to its entry plist."
