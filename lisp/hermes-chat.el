@@ -2257,7 +2257,7 @@ approvals in the dashboard session."
 (defun hermes-chat--submit-content (content)
   "Submit CONTENT as a new user turn."
   (when (hermes-chat--active-turn-p)
-    (user-error (hermes-chat--busy-message)))
+    (user-error "%s" (hermes-chat--busy-message)))
   (let* ((user-entry (hermes-chat--make-entry 'user content 'done))
          (assistant-entry (hermes-chat--make-entry 'assistant "" 'pending))
          (assistant-id (plist-get assistant-entry :id))
@@ -2513,7 +2513,7 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
     (if (hermes-chat--parse-slash content)
         (hermes-chat--handle-slash-content content)
       (when (hermes-chat--active-turn-p)
-        (user-error (hermes-chat--busy-message)))
+        (user-error "%s" (hermes-chat--busy-message)))
       (hermes-chat--delete-input-tail)
       (hermes-chat--submit-content content))))
 
