@@ -4091,5 +4091,16 @@
   (hermes-test-with-chat-buffer
    (should-error (hermes-chat-disconnect) :type 'user-error)))
 
+(ert-deftest hermes-transport-dashboard-secret-list-tolerates-malformed ()
+  "Secret collection filters strings and never aborts on a malformed slot."
+  (should (equal '("a" "b")
+                 (hermes-dashboard-transport--secret-list '("a" "" nil 7 "b"))))
+  ;; An improper list is what `append' builds when the secrets slot holds a
+  ;; bare string (e.g. a stale struct); it must not signal.
+  (should (equal '("tok" "sid")
+                 (hermes-dashboard-transport--secret-list '("tok" . "sid"))))
+  (should (equal '("tok") (hermes-dashboard-transport--secret-list "tok")))
+  (should-not (hermes-dashboard-transport--secret-list nil)))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

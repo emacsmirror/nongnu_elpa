@@ -250,10 +250,18 @@ QUERY-PARAM defaults to `token'."
           (or query-param "token")))
 
 (defun hermes-dashboard-transport--secret-list (secrets)
-  "Return non-empty string secrets from SECRETS."
-  (cl-remove-if
-   (lambda (secret) (or (not (stringp secret)) (string-empty-p secret)))
-   (if (listp secrets) secrets (list secrets))))
+  "Return the non-empty string secrets contained in SECRETS.
+SECRETS may be a proper list, an improper list, or a single value, so a
+malformed slot never aborts the teardown-path redaction this guards."
+  (let (result)
+    (while (consp secrets)
+      (let ((secret (car secrets)))
+        (when (and (stringp secret) (not (string-empty-p secret)))
+          (push secret result)))
+      (setq secrets (cdr secrets)))
+    (when (and (stringp secrets) (not (string-empty-p secrets)))
+      (push secrets result))
+    (nreverse result)))
 
 (defun hermes-dashboard-transport--non-empty-string (value)
   "Return VALUE when it is a non-empty string."
