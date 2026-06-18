@@ -4058,5 +4058,38 @@
   (should-not (hermes-chat--collect-urls
                (list '(:content "no links here") '(:content nil)))))
 
+(ert-deftest hermes-chat-disconnect-stops-dashboard-session ()
+  "Disconnect tears down the live client and marks the chat disconnected."
+  (let ((client (hermes-test--dashboard-client))
+        stopped)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _args) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")
+                            (stored_session_id . "sid-stored")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (c &rest _args) (setq stopped c))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "hello")
+         (hermes-chat-send)
+         (should hermes-chat--dashboard-client)
+         (hermes-chat-disconnect)
+         (should (eq stopped client))
+         (should-not hermes-chat--dashboard-client)
+         (should (eq (plist-get hermes-chat--status-state :status) 'disconnected))
+         (should (string-match-p "Session disconnected" (buffer-string))))))))
+
+(ert-deftest hermes-chat-disconnect-without-session-errors ()
+  "Disconnect signals a user error when there is no live session."
+  (hermes-test-with-chat-buffer
+   (should-error (hermes-chat-disconnect) :type 'user-error)))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

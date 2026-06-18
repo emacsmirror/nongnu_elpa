@@ -118,6 +118,7 @@ arrives."
   "i" ("Interrupt" hermes-dashboard-interrupt)
   "s" ("Steer" hermes-dashboard-steer)
   "a" ("Respond to prompt" hermes-dashboard-respond)
+  "d" ("Disconnect" hermes-dashboard-disconnect)
   :group "View"
   "g" ("Refresh" hermes-dashboard-refresh)
   "?" ("Help" hermes-dashboard-popup))
@@ -574,6 +575,12 @@ arrives."
   (interactive)
   (with-current-buffer (hermes-dashboard--selected-chat-buffer)
     (call-interactively #'hermes-chat-respond-to-prompt)))
+
+(defun hermes-dashboard-disconnect ()
+  "Disconnect the Hermes chat session selected by the dashboard card at point."
+  (interactive)
+  (with-current-buffer (hermes-dashboard--selected-chat-buffer)
+    (call-interactively #'hermes-chat-disconnect)))
 
 (defun hermes-dashboard-refresh-visible ()
   "Refresh the visible Hermes dashboard buffer, when it exists."

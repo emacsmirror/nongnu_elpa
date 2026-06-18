@@ -2494,6 +2494,16 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
   (hermes-chat-queue-message message)
   (hermes-chat-interrupt))
 
+(defun hermes-chat-disconnect ()
+  "Disconnect this chat's live dashboard session.
+The durable session key is preserved, so the session can be resumed later."
+  (interactive)
+  (unless hermes-chat--dashboard-client
+    (user-error "This Hermes chat has no live dashboard session"))
+  (hermes-chat--stop-dashboard-client)
+  (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
+  (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected"))
+
 (defun hermes-chat-new-session ()
   "Open a new Hermes chat buffer with a fresh dashboard session."
   (interactive)
