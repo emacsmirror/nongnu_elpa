@@ -1493,7 +1493,9 @@ customized defaults."
               client "Unknown Hermes dashboard frame"))))
     (error
      (hermes-dashboard-transport--emit-error
-      client (format "Invalid Hermes dashboard frame: %s" err)))))
+      client
+      (format "Invalid Hermes dashboard frame: %s"
+              (hermes-dashboard-transport--condition-message client err))))))
 
 (provide 'hermes-dashboard-transport)
 ;;; hermes-dashboard-transport.el ends here
