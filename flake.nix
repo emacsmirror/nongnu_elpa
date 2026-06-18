@@ -33,6 +33,7 @@
             "lisp/hermes-rollback.el"
             "lisp/hermes-subagents.el"
             "lisp/hermes-cron.el"
+            "lisp/hermes-kanban.el"
             "lisp/hermes.el"
           ];
           elispFileArgs = lib.concatStringsSep " " elispFiles;

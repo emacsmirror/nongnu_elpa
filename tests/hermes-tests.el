@@ -4477,5 +4477,52 @@
          (hermes-chat-send)
          (should (equal create-profile "work")))))))
 
+(ert-deftest hermes-kanban-rows-from-list ()
+  "Kanban rows map status/priority/assignee/title."
+  (let ((rows (hermes-kanban--rows
+               '(((id . "t1") (status . "ready") (priority . 2)
+                  (assignee . "elisp-dev") (title . "Do thing"))))))
+    (should (equal (caar rows) "t1"))
+    (should (equal (aref (cadr (car rows)) 0) "ready"))
+    (should (equal (aref (cadr (car rows)) 1) "2"))
+    (should (equal (aref (cadr (car rows)) 2) "elisp-dev"))
+    (should (equal (aref (cadr (car rows)) 3) "Do thing"))))
+
+(ert-deftest hermes-kanban-list-renders-tasks ()
+  "Listing runs the CLI and renders the tasks."
+  (cl-letf (((symbol-function 'hermes-kanban--run-json)
+             (lambda (args)
+               (should (member "list" args))
+               '(((id . "t1") (status . "ready") (title . "Do thing"))))))
+    (unwind-protect
+        (progn
+          (hermes-list-kanban)
+          (with-current-buffer "*Hermes Kanban*"
+            (should (derived-mode-p 'hermes-kanban-mode))
+            (should (equal (caar tabulated-list-entries) "t1"))))
+      (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*")))))
+
+(ert-deftest hermes-kanban-show-fetches-task-at-point ()
+  "Showing fetches and renders the task on the current row."
+  (let (show-args)
+    (cl-letf (((symbol-function 'hermes-kanban--run-json)
+               (lambda (args)
+                 (if (member "list" args)
+                     '(((id . "t1") (title . "Do thing")))
+                   (setq show-args args)
+                   '((title . "Do thing") (status . "ready") (body . "details here"))))))
+      (unwind-protect
+          (progn
+            (hermes-list-kanban)
+            (with-current-buffer "*Hermes Kanban*"
+              (goto-char (point-min))
+              (hermes-kanban-show))
+            (should (member "show" show-args))
+            (should (member "t1" show-args))
+            (with-current-buffer "*Hermes Kanban Task*"
+              (should (string-match-p "details here" (buffer-string)))))
+        (dolist (b '("*Hermes Kanban*" "*Hermes Kanban Task*"))
+          (when (get-buffer b) (kill-buffer b)))))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

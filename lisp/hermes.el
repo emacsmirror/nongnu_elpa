@@ -35,6 +35,7 @@
 (require 'hermes-rollback)
 (require 'hermes-subagents)
 (require 'hermes-cron)
+(require 'hermes-kanban)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -132,6 +133,7 @@ arrives."
   "R" ("Rollbacks" hermes-list-rollbacks)
   "A" ("Subagents" hermes-list-subagents)
   "C" ("Cron jobs" hermes-list-crons)
+  "K" ("Kanban" hermes-list-kanban)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
