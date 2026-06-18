@@ -4354,5 +4354,40 @@
     (when (get-buffer "*Hermes Rollback Diff*")
       (kill-buffer "*Hermes Rollback Diff*"))))
 
+(ert-deftest hermes-subagents-rows-indents-by-depth ()
+  "Subagent rows indent the goal by spawn depth."
+  (let ((rows (hermes-subagents--rows
+               '((active . (((subagent_id . "s0") (depth . 0) (goal . "root")
+                             (status . "running") (model . "m") (tool_count . 2))
+                            ((subagent_id . "s1") (depth . 2) (goal . "child")
+                             (status . "running") (model . "m") (tool_count . 0))))))))
+    (should (equal (caar rows) "s0"))
+    (should (equal (aref (cadr (car rows)) 0) "root"))
+    (should (equal (aref (cadr (nth 1 rows)) 0) "    child"))
+    (should (equal (aref (cadr (car rows)) 3) "2"))))
+
+(ert-deftest hermes-subagents-list-fetches-and-renders ()
+  "Listing fetches delegation.status and renders active subagents."
+  (let (stopped)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'hermes-dashboard-transport-delegation-status)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((active . (((subagent_id . "s0") (depth . 0)
+                                        (goal . "root")))))))))
+      (unwind-protect
+          (progn
+            (hermes-list-subagents)
+            (should (eq stopped 'fake-client))
+            (with-current-buffer "*Hermes Subagents*"
+              (should (derived-mode-p 'hermes-subagents-mode))
+              (should (equal (caar tabulated-list-entries) "s0"))))
+        (when (get-buffer "*Hermes Subagents*")
+          (kill-buffer "*Hermes Subagents*"))))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

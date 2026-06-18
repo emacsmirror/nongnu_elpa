@@ -1021,6 +1021,22 @@ and REJECT receive the result or error."
     `((session_id . ,session-id) (hash . ,hash) (file_path . ,file-path)))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-delegation-status
+    (client &key resolve reject)
+  "Send a `delegation.status' request for CLIENT.
+RESOLVE and REJECT receive the result or error."
+  (hermes-dashboard-transport-request client "delegation.status" nil resolve reject))
+
+(cl-defun hermes-dashboard-transport-subagent-interrupt
+    (client subagent-id &key resolve reject)
+  "Send a `subagent.interrupt' request for SUBAGENT-ID on CLIENT.
+RESOLVE and REJECT receive the result or error."
+  (hermes-dashboard-transport-request
+   client "subagent.interrupt"
+   (hermes-dashboard-transport--alist-without-nil
+    `((subagent_id . ,subagent-id)))
+   resolve reject))
+
 (cl-defun hermes-dashboard-transport-prompt-submit
     (client text &key session-id resolve reject)
   "Send TEXT through `prompt.submit' on CLIENT."

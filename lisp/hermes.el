@@ -33,6 +33,7 @@
 (require 'hermes-sessions)
 (require 'hermes-inventory)
 (require 'hermes-rollback)
+(require 'hermes-subagents)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -127,6 +128,7 @@ arrives."
   "g" ("Refresh" hermes-dashboard-refresh)
   "I" ("Inventory" hermes-list-inventory)
   "R" ("Rollbacks" hermes-list-rollbacks)
+  "A" ("Subagents" hermes-list-subagents)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
