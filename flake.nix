@@ -29,6 +29,7 @@
             "lisp/hermes-dashboard-transport.el"
             "lisp/hermes-chat.el"
             "lisp/hermes-sessions.el"
+            "lisp/hermes-inventory.el"
             "lisp/hermes.el"
           ];
           elispFileArgs = lib.concatStringsSep " " elispFiles;

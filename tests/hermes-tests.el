@@ -4256,5 +4256,59 @@
        (should (equal set-session "sid-1"))
        (should (string-match-p "Model set to beta" (buffer-string)))))))
 
+(ert-deftest hermes-inventory-toolset-rows ()
+  "Toolset rows map name/enabled/count/description."
+  (let ((rows (hermes-inventory--toolset-rows
+               '((toolsets . (((name . "files") (enabled . t) (tool_count . 5)
+                               (description . "File ops"))))))))
+    (should (equal (caar rows) "files"))
+    (should (equal (aref (cadr (car rows)) 1) "on"))
+    (should (equal (aref (cadr (car rows)) 2) "5"))
+    (should (equal (aref (cadr (car rows)) 3) "File ops"))))
+
+(ert-deftest hermes-inventory-skill-rows-flattens-categories ()
+  "Skill rows flatten the category->names map into per-skill rows."
+  (let ((rows (hermes-inventory--skill-rows
+               '((skills . ((coding . ("refactor" "review")) (writing . ("draft"))))))))
+    (should (equal (mapcar (lambda (r) (aref (cadr r) 1)) rows)
+                   '("refactor" "review" "draft")))
+    (should (equal (aref (cadr (car rows)) 0) "coding"))))
+
+(ert-deftest hermes-inventory-agent-and-plugin-rows ()
+  "Agent and plugin rows map their fields."
+  (let ((agents (hermes-inventory--agent-rows
+                 '((processes . (((session_id . "a1") (status . "running")
+                                  (uptime . 42) (command . "do x")))))))
+        (plugins (hermes-inventory--plugin-rows
+                  '((plugins . (((name . "p1") (version . "1.2") (enabled . nil))))))))
+    (should (equal (aref (cadr (car agents)) 0) "a1"))
+    (should (equal (aref (cadr (car agents)) 2) "42"))
+    (should (equal (aref (cadr (car plugins)) 1) "1.2"))
+    (should (equal (aref (cadr (car plugins)) 2) "off"))))
+
+(ert-deftest hermes-inventory-list-fetches-and-renders ()
+  "Choosing a category fetches its method and renders the rows."
+  (let (requested-method stopped)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'completing-read) (lambda (&rest _) "Toolsets"))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method _params resolve _reject)
+                 (setq requested-method method)
+                 (funcall resolve '((toolsets . (((name . "files") (enabled . t)
+                                                  (tool_count . 5)))))))))
+      (unwind-protect
+          (progn
+            (hermes-list-inventory)
+            (should (equal requested-method "tools.list"))
+            (should (eq stopped 'fake-client))
+            (with-current-buffer "*Hermes Toolsets*"
+              (should (derived-mode-p 'hermes-inventory-mode))
+              (should (equal (caar tabulated-list-entries) "files"))))
+        (when (get-buffer "*Hermes Toolsets*") (kill-buffer "*Hermes Toolsets*"))))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

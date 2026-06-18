@@ -31,6 +31,7 @@
 (require 'subr-x)
 (require 'hermes-chat)
 (require 'hermes-sessions)
+(require 'hermes-inventory)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -123,6 +124,7 @@ arrives."
   "d" ("Disconnect" hermes-dashboard-disconnect)
   :group "View"
   "g" ("Refresh" hermes-dashboard-refresh)
+  "I" ("Inventory" hermes-list-inventory)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)

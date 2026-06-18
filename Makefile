@@ -13,7 +13,7 @@ EMACS ?= emacs
 EMACS_CMD ?= $(EMACS)
 KEYMAP_POPUP ?=
 
-SRCS = lisp/hermes-transport.el lisp/hermes-dashboard-transport.el lisp/hermes-chat.el lisp/hermes-sessions.el lisp/hermes.el
+SRCS = lisp/hermes-transport.el lisp/hermes-dashboard-transport.el lisp/hermes-chat.el lisp/hermes-sessions.el lisp/hermes-inventory.el lisp/hermes.el
 TESTS = tests/hermes-tests.el
 
 SELECTOR ?= t
