@@ -50,18 +50,6 @@ Each active subagent's goal is indented by its spawn depth."
                      (format "%s" (or (hermes-transport--get subagent 'tool_count) 0))))))
    (hermes-transport--get result 'active)))
 
-(defun hermes-subagents--with-client (fn)
-  "Call FN with a connected CLIENT and a DONE cleanup thunk.
-Reuses a live chat connection when one exists; otherwise connects a transient
-client that DONE stops."
-  (let* ((existing (hermes-sessions--existing-client))
-         (client (or existing
-                     (hermes-dashboard-transport-start :callback #'ignore)))
-         (done (lambda ()
-                 (unless existing
-                   (hermes-dashboard-transport-stop client)))))
-    (funcall fn client done)))
-
 (defun hermes-subagents--revert (&rest _)
   "Refresh the active subagent list."
   (hermes-list-subagents))
@@ -94,7 +82,7 @@ client that DONE stops."
   (let ((id (tabulated-list-get-id)))
     (unless id (user-error "No subagent on this line"))
     (when (yes-or-no-p (format "Interrupt subagent %s? " id))
-      (hermes-subagents--with-client
+      (hermes-sessions--with-client
        (lambda (client done)
          (hermes-dashboard-transport-subagent-interrupt
           client id
@@ -109,7 +97,7 @@ client that DONE stops."
 (defun hermes-list-subagents ()
   "Browse active Hermes subagents as a delegation tree."
   (interactive)
-  (hermes-subagents--with-client
+  (hermes-sessions--with-client
    (lambda (client done)
      (hermes-dashboard-transport-delegation-status
       client

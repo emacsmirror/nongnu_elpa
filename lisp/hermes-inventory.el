@@ -121,20 +121,16 @@ The result groups skill names by category."
   "Fetch and render the inventory described by SPEC.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client for the listing."
-  (let* ((existing (hermes-sessions--existing-client))
-         (client (or existing
-                     (hermes-dashboard-transport-start :callback #'ignore)))
-         (cleanup (lambda ()
-                    (unless existing
-                      (hermes-dashboard-transport-stop client)))))
-    (hermes-dashboard-transport-request
-     client (nth 1 spec) (nth 2 spec)
-     (lambda (result)
-       (funcall cleanup)
-       (hermes-inventory--render spec (funcall (nth 4 spec) result)))
-     (lambda (message)
-       (funcall cleanup)
-       (message "Hermes: %s" message)))))
+  (hermes-sessions--with-client
+   (lambda (client done)
+     (hermes-dashboard-transport-request
+      client (nth 1 spec) (nth 2 spec)
+      (lambda (result)
+        (funcall done)
+        (hermes-inventory--render spec (funcall (nth 4 spec) result)))
+      (lambda (message)
+        (funcall done)
+        (message "Hermes: %s" message))))))
 
 ;;;###autoload
 (defun hermes-list-inventory ()

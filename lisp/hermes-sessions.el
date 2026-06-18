@@ -41,6 +41,18 @@
                     hermes-chat--dashboard-client)))
            (buffer-list)))
 
+(defun hermes-sessions--with-client (fn)
+  "Call FN with a connected CLIENT and a DONE cleanup thunk.
+Reuses a live chat connection when one exists; otherwise connects a transient
+client that DONE stops.  Shared by the dashboard browser commands."
+  (let* ((existing (hermes-sessions--existing-client))
+         (client (or existing
+                     (hermes-dashboard-transport-start :callback #'ignore)))
+         (done (lambda ()
+                 (unless existing
+                   (hermes-dashboard-transport-stop client)))))
+    (funcall fn client done)))
+
 (defun hermes-sessions--field (session key)
   "Return SESSION's KEY as a display string."
   (or (hermes-transport--scalar-string (hermes-transport--get session key)) ""))
@@ -98,20 +110,16 @@
 Reuses a live chat connection when one exists; otherwise connects a transient
 client just for the listing."
   (interactive)
-  (let* ((existing (hermes-sessions--existing-client))
-         (client (or existing
-                     (hermes-dashboard-transport-start :callback #'ignore)))
-         (cleanup (lambda ()
-                    (unless existing
-                      (hermes-dashboard-transport-stop client)))))
-    (hermes-dashboard-transport-session-list
-     client
-     :resolve (lambda (result)
-                (funcall cleanup)
-                (hermes-sessions--render (hermes-transport--get result 'sessions)))
-     :reject (lambda (message)
-               (funcall cleanup)
-               (message "Hermes: %s" message)))))
+  (hermes-sessions--with-client
+   (lambda (client done)
+     (hermes-dashboard-transport-session-list
+      client
+      :resolve (lambda (result)
+                 (funcall done)
+                 (hermes-sessions--render (hermes-transport--get result 'sessions)))
+      :reject (lambda (message)
+                (funcall done)
+                (message "Hermes: %s" message))))))
 
 (provide 'hermes-sessions)
 ;;; hermes-sessions.el ends here

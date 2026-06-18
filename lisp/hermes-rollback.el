@@ -50,18 +50,6 @@
                           (hermes-transport--get checkpoint 'message)) "")))))
    (hermes-transport--get result 'checkpoints)))
 
-(defun hermes-rollback--with-client (fn)
-  "Call FN with a connected client and a DONE thunk.
-FN receives (CLIENT DONE); DONE stops a transient client when one was started.
-Reuses a live chat connection when one exists."
-  (let* ((existing (hermes-sessions--existing-client))
-         (client (or existing
-                     (hermes-dashboard-transport-start :callback #'ignore)))
-         (done (lambda ()
-                 (unless existing
-                   (hermes-dashboard-transport-stop client)))))
-    (funcall fn client done)))
-
 (defun hermes-rollback--revert (&rest _)
   "Refresh the checkpoint list."
   (hermes-list-rollbacks))
@@ -110,7 +98,7 @@ Reuses a live chat connection when one exists."
   (interactive)
   (let ((hash (tabulated-list-get-id)))
     (unless hash (user-error "No checkpoint on this line"))
-    (hermes-rollback--with-client
+    (hermes-sessions--with-client
      (lambda (client done)
        (hermes-dashboard-transport-rollback-diff
         client hash
@@ -129,7 +117,7 @@ Reuses a live chat connection when one exists."
     (when (yes-or-no-p
            (format "Restore working tree to checkpoint %s? "
                    (hermes-rollback--short hash)))
-      (hermes-rollback--with-client
+      (hermes-sessions--with-client
        (lambda (client done)
          (hermes-dashboard-transport-rollback-restore
           client hash
@@ -144,7 +132,7 @@ Reuses a live chat connection when one exists."
 (defun hermes-list-rollbacks ()
   "Browse Hermes checkpoint history for the active session."
   (interactive)
-  (hermes-rollback--with-client
+  (hermes-sessions--with-client
    (lambda (client done)
      (hermes-dashboard-transport-rollback-list
       client

@@ -46,18 +46,6 @@
                    (hermes-cron--field job 'prompt_preview))))
    (hermes-transport--get result 'jobs)))
 
-(defun hermes-cron--with-client (fn)
-  "Call FN with a connected CLIENT and a DONE cleanup thunk.
-Reuses a live chat connection when one exists; otherwise connects a transient
-client that DONE stops."
-  (let* ((existing (hermes-sessions--existing-client))
-         (client (or existing
-                     (hermes-dashboard-transport-start :callback #'ignore)))
-         (done (lambda ()
-                 (unless existing
-                   (hermes-dashboard-transport-stop client)))))
-    (funcall fn client done)))
-
 (defun hermes-cron--revert (&rest _)
   "Refresh the cron job list."
   (hermes-list-crons))
@@ -89,7 +77,7 @@ client that DONE stops."
 
 (defun hermes-cron--act (action name done-message)
   "Run cron ACTION on job NAME, report DONE-MESSAGE, then refresh the list."
-  (hermes-cron--with-client
+  (hermes-sessions--with-client
    (lambda (client done)
      (hermes-dashboard-transport-cron-manage
       client :action action :name name
@@ -128,7 +116,7 @@ client that DONE stops."
             (string-empty-p schedule)
             (string-empty-p prompt))
     (user-error "Name, schedule and prompt are required"))
-  (hermes-cron--with-client
+  (hermes-sessions--with-client
    (lambda (client done)
      (hermes-dashboard-transport-cron-manage
       client :action "add" :name name :schedule schedule :prompt prompt
@@ -143,7 +131,7 @@ client that DONE stops."
 (defun hermes-list-crons ()
   "Browse Hermes scheduled (cron) jobs."
   (interactive)
-  (hermes-cron--with-client
+  (hermes-sessions--with-client
    (lambda (client done)
      (hermes-dashboard-transport-cron-manage
       client :action "list"
