@@ -966,6 +966,29 @@ OFFSET and LIMIT page the returned messages."
     `((session_id . ,session-id) (offset . ,offset) (limit . ,limit)))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-model-options
+    (client &key session-id resolve reject)
+  "Send a `model.options' request for CLIENT.
+SESSION-ID scopes the current-model hints to that session.  RESOLVE and REJECT
+receive the asynchronous result or error."
+  (hermes-dashboard-transport-request
+   client "model.options"
+   (hermes-dashboard-transport--alist-without-nil `((session_id . ,session-id)))
+   resolve reject))
+
+(cl-defun hermes-dashboard-transport-config-set
+    (client key value &key session-id confirm-expensive-model resolve reject)
+  "Send a `config.set' request setting KEY to VALUE on CLIENT.
+SESSION-ID scopes the change; CONFIRM-EXPENSIVE-MODEL acknowledges a pricier
+model when `config.set' asks for confirmation.  RESOLVE and REJECT receive the
+asynchronous result or error."
+  (hermes-dashboard-transport-request
+   client "config.set"
+   (hermes-dashboard-transport--alist-without-nil
+    `((session_id . ,session-id) (key . ,key) (value . ,value)
+      (confirm_expensive_model . ,confirm-expensive-model)))
+   resolve reject))
+
 (cl-defun hermes-dashboard-transport-prompt-submit
     (client text &key session-id resolve reject)
   "Send TEXT through `prompt.submit' on CLIENT."

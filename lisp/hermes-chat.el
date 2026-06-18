@@ -2523,6 +2523,83 @@ session key is preserved, so the conversation can still be resumed."
   (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
   (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected"))
 
+(defun hermes-chat--model-id (model)
+  "Return the model id string from a `model.options' MODEL entry."
+  (or (hermes-transport--scalar-string model)
+      (hermes-transport--scalar-string (hermes-transport--get model 'id))))
+
+(defun hermes-chat--model-candidates (payload)
+  "Return de-duplicated selectable model ids from `model.options' PAYLOAD.
+Models from authenticated providers are listed first."
+  (let (authed other)
+    (dolist (row (hermes-transport--get payload 'providers))
+      (let ((authenticated (hermes-transport--get row 'authenticated)))
+        (dolist (model (hermes-transport--get row 'models))
+          (when-let* ((id (hermes-chat--model-id model)))
+            (if authenticated (push id authed) (push id other))))))
+    (delete-dups (append (nreverse authed) (nreverse other)))))
+
+(defun hermes-chat--apply-model (buffer client model confirm)
+  "Set MODEL on BUFFER's session via CLIENT, passing expensive-model CONFIRM."
+  (with-current-buffer buffer
+    (hermes-dashboard-transport-config-set
+     client "model" model
+     :session-id hermes-chat--dashboard-active-session-id
+     :confirm-expensive-model confirm
+     :resolve (lambda (result)
+                (hermes-chat--model-set-result buffer client model result))
+     :reject (lambda (message)
+               (when (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (hermes-chat--command-error message)))))))
+
+(defun hermes-chat--model-set-result (buffer client model result)
+  "Report MODEL switch RESULT for BUFFER, re-confirming through CLIENT when asked."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (if (hermes-transport--get result 'confirm_required)
+          (if (yes-or-no-p
+               (or (hermes-transport--scalar-string
+                    (hermes-transport--get result 'confirm_message))
+                   "Confirm switching to this model? "))
+              (hermes-chat--apply-model buffer client model t)
+            (hermes-chat--insert-local-status "Model switch cancelled" 'ready))
+        (hermes-chat--insert-local-status
+         (format "Model set to %s" model) 'ready)))))
+
+(defun hermes-chat--prompt-and-set-model (buffer client result)
+  "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
+  (when (buffer-live-p buffer)
+    (let ((candidates (hermes-chat--model-candidates result))
+          (current (hermes-transport--scalar-string
+                    (hermes-transport--get result 'model))))
+      (if (null candidates)
+          (message "Hermes: no models available to switch to")
+        (let ((choice (completing-read
+                       (format "Switch model (current %s): " (or current "?"))
+                       candidates nil t)))
+          (unless (string-empty-p choice)
+            (hermes-chat--apply-model buffer client choice nil)))))))
+
+(defun hermes-chat-switch-model ()
+  "Switch the model used by the current Hermes chat session."
+  (interactive)
+  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+    (user-error "Connect this chat (send a message) before switching models"))
+  (when (hermes-chat--active-turn-p)
+    (user-error "Interrupt the active turn before switching models"))
+  (let ((buffer (current-buffer))
+        (client hermes-chat--dashboard-client))
+    (hermes-dashboard-transport-model-options
+     client
+     :session-id hermes-chat--dashboard-active-session-id
+     :resolve (lambda (result)
+                (hermes-chat--prompt-and-set-model buffer client result))
+     :reject (lambda (message)
+               (when (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (hermes-chat--command-error message)))))))
+
 (defun hermes-chat-new-session ()
   "Open a new Hermes chat buffer with a fresh dashboard session."
   (interactive)

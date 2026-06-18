@@ -4218,5 +4218,43 @@
    (should (equal (plist-get hermes-chat--status-state :usage) '(:input 1200 :output 340)))
    (should (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))
 
+(ert-deftest hermes-chat-model-candidates-auth-first-dedup ()
+  "Model candidates list authenticated providers first and de-duplicate."
+  (should (equal
+           (hermes-chat--model-candidates
+            '((providers
+               . (((authenticated . nil) (models . ("z")))
+                  ((authenticated . t) (models . ("a" "b" ((id . "c")))))
+                  ((authenticated . t) (models . ("a")))))))
+           '("a" "b" "c" "z"))))
+
+(ert-deftest hermes-chat-switch-model-sets-chosen-model ()
+  "Switching prompts from model.options and applies the choice via config.set."
+  (let (set-key set-value set-session)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((model . "old-model")
+                            (providers
+                             . (((slug . "p1") (authenticated . t)
+                                 (models . ("alpha" "beta")))))))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt coll &rest _)
+                 (should (member "alpha" coll))
+                 "beta"))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client key value &rest args)
+                 (setq set-key key set-value value
+                       set-session (plist-get args :session-id))
+                 (funcall (plist-get args :resolve) '((key . "model") (value . "beta"))))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+             hermes-chat--dashboard-active-session-id "sid-1")
+       (hermes-chat-switch-model)
+       (should (equal set-key "model"))
+       (should (equal set-value "beta"))
+       (should (equal set-session "sid-1"))
+       (should (string-match-p "Model set to beta" (buffer-string)))))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here
