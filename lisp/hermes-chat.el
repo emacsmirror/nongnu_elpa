@@ -53,6 +53,11 @@ which keeps tests and user custom transports working."
   :type 'string
   :group 'hermes)
 
+(defface hermes-chat-user-input
+  '((t :inherit highlight))
+  "Face for submitted user turns in the chat transcript."
+  :group 'hermes)
+
 (defvar hermes-chat-state-change-hook nil
   "Hook run in a Hermes chat buffer when dashboard-visible state changes.")
 
@@ -857,7 +862,7 @@ METADATA is stored as the entry's `:metadata' plist."
 (defun hermes-chat--insert-user-content (content)
   "Insert user CONTENT with a compact prompt prefix."
   (insert (propertize "> " 'face 'font-lock-keyword-face)
-          (propertize content 'face 'region)
+          (propertize content 'face 'hermes-chat-user-input)
           "\n"))
 
 (defun hermes-chat--insert-entry-content (content)
