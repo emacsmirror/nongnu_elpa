@@ -4102,5 +4102,24 @@
   (should (equal '("tok") (hermes-dashboard-transport--secret-list "tok")))
   (should-not (hermes-dashboard-transport--secret-list nil)))
 
+(ert-deftest hermes-transport-dashboard-stop-tolerates-teardown-errors ()
+  "Stop never throws and still closes resources when a teardown step errors."
+  (let (closed deleted)
+    (cl-letf (((symbol-function 'websocket-close)
+               (lambda (ws) (setq closed ws)))
+              ((symbol-function 'delete-process)
+               (lambda (p) (setq deleted p)))
+              ((symbol-function 'hermes-dashboard-transport--reject-pending-requests)
+               (lambda (&rest _) (error "boom"))))
+      (let ((client (make-hermes-dashboard-transport-client
+                     :process 'fake-process
+                     :websocket 'fake-websocket
+                     :pending (make-hash-table :test #'equal))))
+        (should (hermes-dashboard-transport-stop client))
+        (should (eq closed 'fake-websocket))
+        (should (eq deleted 'fake-process))
+        (should-not (hermes-dashboard-transport-client-websocket client))
+        (should-not (hermes-dashboard-transport-client-process client))))))
+
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here

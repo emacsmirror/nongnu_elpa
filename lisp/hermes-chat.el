@@ -1256,13 +1256,15 @@ A nil SESSION-ID matches every prompt in the current buffer."
         hermes-chat--dashboard-active-session-id nil))
 
 (defun hermes-chat--stop-dashboard-client ()
-  "Release this buffer's dashboard client resources, if any."
+  "Release this buffer's dashboard client and live-session state.
+The buffer-local client and session state are always cleared, even after a
+partial or failed teardown, so a new session can be started afterwards."
   (when-let* ((client hermes-chat--dashboard-client))
     (hermes-dashboard-transport-stop client "Hermes dashboard transport stopped")
     (when (eq hermes-chat--process client)
       (setq hermes-chat--process nil))
-    (setq hermes-chat--dashboard-client nil)
-    (hermes-chat--forget-live-dashboard-session)))
+    (setq hermes-chat--dashboard-client nil))
+  (hermes-chat--forget-live-dashboard-session))
 
 (defun hermes-chat--cleanup-buffer ()
   "Release per-buffer Hermes chat resources before killing the buffer."
@@ -2495,11 +2497,15 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
   (hermes-chat-interrupt))
 
 (defun hermes-chat-disconnect ()
-  "Disconnect this chat's live dashboard session.
-The durable session key is preserved, so the session can be resumed later."
+  "End this chat's dashboard session so a new one can be started.
+Tears down the live client when present (best effort, even when it is stale
+or in an error state) and clears the live session state.  The durable
+session key is preserved, so the conversation can still be resumed."
   (interactive)
-  (unless hermes-chat--dashboard-client
-    (user-error "This Hermes chat has no live dashboard session"))
+  (unless (or hermes-chat--dashboard-client
+              hermes-chat--process
+              hermes-chat--dashboard-active-session-id)
+    (user-error "This Hermes chat has no session to disconnect"))
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
   (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected"))

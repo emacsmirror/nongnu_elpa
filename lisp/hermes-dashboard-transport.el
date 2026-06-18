@@ -477,16 +477,22 @@ emitted its own transport error event."
 
 (defun hermes-dashboard-transport-stop (client &optional message)
   "Release CLIENT's dashboard WebSocket, process, and pending requests.
+Teardown is best effort: a stale or corrupt CLIENT (for example one left over
+from a reload after a struct change) still has its socket and process closed
+and its session ended, so the caller can always start a new session.
 MESSAGE is reported to pending request reject callbacks, or as a normalized
 transport error when a pending request has no reject callback."
   (when (hermes-dashboard-transport-client-p client)
-    (hermes-dashboard-transport--reject-pending-requests
-     client (or message "Hermes dashboard transport stopped"))
-    (setf (hermes-dashboard-transport-client-callback client) #'ignore)
-    (hermes-dashboard-transport--close-websocket client)
-    (hermes-dashboard-transport--delete-process client)
-    (setf (hermes-dashboard-transport-client-session-id client) nil
-          (hermes-dashboard-transport-client-stored-session-id client) nil)
+    (ignore-errors
+      (hermes-dashboard-transport--reject-pending-requests
+       client (or message "Hermes dashboard transport stopped")))
+    (ignore-errors
+      (setf (hermes-dashboard-transport-client-callback client) #'ignore))
+    (ignore-errors (hermes-dashboard-transport--close-websocket client))
+    (ignore-errors (hermes-dashboard-transport--delete-process client))
+    (ignore-errors
+      (setf (hermes-dashboard-transport-client-session-id client) nil
+            (hermes-dashboard-transport-client-stored-session-id client) nil))
     client))
 
 (defun hermes-dashboard-transport--default-websocket-open (url client)
