@@ -820,6 +820,14 @@
          (should (equal (plist-get assistant :content) ""))
          (should-not (string-match-p "session_id:" (buffer-string))))))))
 
+(ert-deftest hermes-chat-markdown-keeps-markup-visible ()
+  "Markdown markers keep their faces but are never hidden, for easy copying."
+  (let ((s (hermes-chat--fontify-markdown-string "say *hello* and `code`")))
+    (should (string-match-p "\\*hello\\*" s))
+    (should (string-match-p "`code`" s))
+    (dotimes (i (length s))
+      (should-not (get-text-property i 'invisible s)))))
+
 (ert-deftest hermes-chat-shows-inline-diff-as-view-diff-link ()
   "An inline unified diff is replaced by a View Diff link that opens the diff."
   (hermes-test-with-chat-buffer

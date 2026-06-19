@@ -385,13 +385,16 @@ block spanning the whole region to replace with a link."
              (hermes-chat--inline-diff-blocks)))))
 
 (defun hermes-chat--fontify-markdown-string (text)
-  "Return TEXT fontified with `markdown-mode', or TEXT on failure."
+  "Return TEXT fontified with `markdown-mode', or TEXT on failure.
+Markup markers (* _ ` # ...) keep their faces but are never hidden, so the raw
+markdown stays visible and easy to copy."
   (condition-case nil
       (with-temp-buffer
         (insert text)
         (delay-mode-hooks (markdown-mode))
         (font-lock-mode 1)
         (font-lock-ensure (point-min) (point-max))
+        (remove-text-properties (point-min) (point-max) '(invisible nil))
         (buffer-string))
     (error text)))
 
