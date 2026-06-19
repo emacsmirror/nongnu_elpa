@@ -619,7 +619,7 @@
        (funcall callback '(:type done))
        (let ((header (hermes-test--header-line-string)))
          (should (string-match-p "Ready" header))
-         (should (string-match-p "last tool: terminal completed" header)))))))
+         (should-not (string-match-p "last tool" header)))))))
 
 (ert-deftest hermes-chat-progress-updates-preserve-draft-and-streaming ()
   (let (callback)
@@ -3701,12 +3701,15 @@
                  (params . ((type . "session.info")
                             (session_id . "sid")
                             (payload . ((model . "gpt-5.5")
-                                        (provider . "openai-codex")))))))))
+                                        (provider . "openai-codex")
+                                        (profile_name . "planner")))))))))
     (let ((event (car events)))
       (should (eq (plist-get event :type) 'status))
       (should (equal (plist-get event :event) "session.info"))
       (should (equal (plist-get event :session-id) "sid"))
       (should (equal (plist-get event :status) "ready"))
+      (should (equal (plist-get event :model) "gpt-5.5"))
+      (should (equal (plist-get event :agent-name) "planner"))
       (should (equal (plist-get event :content)
                      "Session ready: gpt-5.5 via openai-codex")))))
 
@@ -4211,13 +4214,31 @@
   (should-not (hermes-chat--format-usage '(:input 0 :output 0)))
   (should-not (hermes-chat--format-usage nil)))
 
-(ert-deftest hermes-chat-done-event-shows-usage-in-header ()
-  "A done event records usage in header state and renders the gauge."
+(ert-deftest hermes-chat-header-shows-agent-status-model ()
+  "The header renders agent name, status, and model from `session.info'."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--update-header-for-event
+    '(:type status :event "session.info" :status "ready"
+            :model "claude-opus-4-8" :agent-name "planner"))
+   (let ((header (hermes-test--header-line-string)))
+     (should (string-match-p "planner" header))
+     (should (string-match-p "claude-opus-4-8" header))
+     (should (string-match-p "Ready" header))
+     (should-not (string-match-p "Hermes" header))
+     (should-not (string-match-p "session " header)))))
+
+(ert-deftest hermes-chat-header-falls-back-to-hermes-without-agent ()
+  "Without an agent name the header still shows Hermes."
+  (hermes-test-with-chat-buffer
+   (should (string-match-p "Hermes" (hermes-test--header-line-string)))))
+
+(ert-deftest hermes-chat-done-event-records-usage ()
+  "A done event records usage in header state; the compact header omits the gauge."
   (hermes-test-with-chat-buffer
    (hermes-chat--update-header-for-event
     '(:type done :usage (:input 1200 :output 340)))
    (should (equal (plist-get hermes-chat--status-state :usage) '(:input 1200 :output 340)))
-   (should (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))
+   (should-not (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))
 
 (ert-deftest hermes-chat-model-candidates-auth-first-dedup ()
   "Model candidates list authenticated providers first and de-duplicate."

@@ -89,6 +89,12 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--profile nil
   "Profile name for this chat's dashboard session, or nil for the default.")
 
+(defvar-local hermes-chat--model nil
+  "Model id reported by the live dashboard session, for the header.")
+
+(defvar-local hermes-chat--agent-name nil
+  "Agent/profile name reported by the live dashboard session, for the header.")
+
 (defvar-local hermes-chat--pending-assistant-id nil
   "ID of the assistant entry awaiting transport completion.")
 
@@ -443,8 +449,8 @@ METADATA is stored as the entry's `:metadata' plist."
 (defun hermes-chat--humanize-event-name (name)
   "Return NAME as a compact human-readable event label."
   (and name
-    (string-trim
-     (replace-regexp-in-string "[._-]+" " " name))))
+       (string-trim
+	(replace-regexp-in-string "[._-]+" " " name))))
 
 (defun hermes-chat--status-name (status)
   "Return normalized display/comparison name for STATUS."
@@ -595,8 +601,24 @@ METADATA is stored as the entry's `:metadata' plist."
   "Return terminal status to display for an error-like transport EVENT."
   (or (hermes-chat--event-value event '(:status)) 'error))
 
+(defun hermes-chat--capture-session-identity (event)
+  "Record the model and agent name carried by a `session.info' EVENT."
+  (when-let* ((model (plist-get event :model)))
+    (setq hermes-chat--model model))
+  (when-let* ((agent (plist-get event :agent-name)))
+    (setq hermes-chat--agent-name agent)))
+
+(defun hermes-chat--status-event-activity (event)
+  "Return the header activity for a status EVENT.
+`session.info' carries the model/provider, now shown in their own header
+fields, so it collapses to a plain ready state instead of repeating them."
+  (if (equal (hermes-chat--event-string event '(:event)) "session.info")
+      "Ready"
+    (or (hermes-chat--header-activity-for-event event) "Working")))
+
 (defun hermes-chat--update-header-for-event (event)
   "Update chat header state from transport EVENT."
+  (hermes-chat--capture-session-identity event)
   (pcase (plist-get event :type)
     ('delta
      (unless (hermes-chat--active-tool-summary)
@@ -620,8 +642,7 @@ METADATA is stored as the entry's `:metadata' plist."
                       'approval-requested
                     'requested)
                 (hermes-chat--transport-entry-status event))
-      :activity (or (hermes-chat--header-activity-for-event event)
-                    "Working")))
+      :activity (hermes-chat--status-event-activity event)))
     ((or 'progress 'tool)
      (hermes-chat--remember-header-tool event))
     ('commentary
@@ -633,34 +654,44 @@ METADATA is stored as the entry's `:metadata' plist."
       :status 'error
       :activity (hermes-chat--unknown-event-content event)))))
 
-(defun hermes-chat--header-state-text ()
-  "Return propertized state text for the chat header."
-  (let ((status (plist-get hermes-chat--status-state :status)))
+(defun hermes-chat--header-agent-name ()
+  "Return the agent/profile name shown in the chat header."
+  (or (hermes-chat--nonempty-string hermes-chat--agent-name)
+      (hermes-chat--nonempty-string hermes-chat--profile)
+      "Hermes"))
+
+(defun hermes-chat--header-detail (label)
+  "Return the live detail to append after LABEL in the header, or nil.
+An active tool wins; otherwise the activity is used, with a leading copy of
+LABEL stripped so a label-prefixed activity is not shown twice."
+  (or (hermes-chat--active-tool-summary)
+      (when-let* ((activity (hermes-chat--nonempty-string
+                             (plist-get hermes-chat--status-state :activity))))
+        (if (string-prefix-p (downcase label) (downcase activity))
+            (hermes-chat--nonempty-string
+             (string-trim (substring activity (length label)) "[-: ]+"))
+          activity))))
+
+(defun hermes-chat--header-status-segment ()
+  "Return the propertized status segment: icon, label, and live detail.
+The label carries the high-level state (Ready/Running/...) and an active tool
+or distinct activity is appended so the live detail is not lost."
+  (let* ((status (plist-get hermes-chat--status-state :status))
+         (label (hermes-chat--header-status-label status))
+         (detail (hermes-chat--header-detail label)))
     (propertize
      (format "%s %s" (hermes-chat--status-icon status)
-             (hermes-chat--header-status-label status))
+             (if detail (format "%s: %s" label detail) label))
      'face (hermes-chat--header-status-face status))))
 
 (defun hermes-chat--header-line ()
-  "Return the chat buffer header line."
-  (let* ((raw-activity (plist-get hermes-chat--status-state :activity))
-         (active-tool (hermes-chat--active-tool-summary))
-         (activity (and (not (equal raw-activity active-tool)) raw-activity))
-         (last-tool (plist-get hermes-chat--status-state :last-tool))
-         (tool (and (not active-tool)
-                    (not (equal activity last-tool))
-                    last-tool))
-         (session (and hermes-chat--session-id
-                       (format "session %s" hermes-chat--session-id)))
-         (parts (delq nil (list (propertize "Hermes" 'face 'mode-line-emphasis)
-                                (hermes-chat--header-state-text)
-                                active-tool
-                                activity
-                                (and tool (format "last tool: %s" tool))
-                                (hermes-chat--format-usage
-                                 (plist-get hermes-chat--status-state :usage))
-                                session)))
-         (text (concat " " (string-join parts "  | ") " "))
+  "Return the chat buffer header line: agent, status, and model."
+  (let* ((parts (delq nil
+                      (list (propertize (hermes-chat--header-agent-name)
+                                        'face 'mode-line-emphasis)
+                            (hermes-chat--header-status-segment)
+                            (hermes-chat--nonempty-string hermes-chat--model))))
+         (text (concat " " (string-join parts "  |  ") " "))
          (width (max 20 (window-total-width))))
     (truncate-string-to-width text width nil nil "…")))
 
@@ -978,8 +1009,8 @@ Do not record these internal text-property changes in the undo list."
   "Insert ENTRY into the current chat EWOC and return its node."
   (let ((node (hermes-chat--preserve-input-point
                (let ((node (let ((inhibit-read-only t)
-                             (buffer-undo-list t))
-                         (ewoc-enter-last hermes-chat--ewoc entry))))
+				 (buffer-undo-list t))
+                             (ewoc-enter-last hermes-chat--ewoc entry))))
                  (hermes-chat--register-node entry node)))))
     (hermes-chat--notify-state-change)
     node))
@@ -1315,7 +1346,7 @@ partial or failed teardown, so a new session can be started afterwards."
   "Return a safe header event for suppressed dashboard terminal EVENT."
   (if (eq (plist-get event :type) 'error)
       '(:type error
-        :content "Hermes session ended; prompt was not submitted")
+              :content "Hermes session ended; prompt was not submitted")
     '(:type done)))
 
 (defun hermes-chat--dashboard-control-error-event-p (event)
@@ -1519,9 +1550,9 @@ so do not copy its final content into the unsubmitted retry placeholder."
       (hermes-chat--handle-transport-event
        stream-id
        '(:type status
-         :status-key "session.resume"
-         :status "running"
-         :content "Hermes session is still running; reattached")))
+               :status-key "session.resume"
+               :status "running"
+               :content "Hermes session is still running; reattached")))
      (retry-id
       (hermes-chat--clear-active-tools)
       (hermes-chat--mark-assistant
@@ -1545,9 +1576,9 @@ so do not copy its final content into the unsubmitted retry placeholder."
         (hermes-chat--handle-transport-event
          assistant-id
          '(:type status
-           :status-key "session.resume"
-           :status "running"
-           :content "Hermes session is still running; reattached")))))))
+		 :status-key "session.resume"
+		 :status "running"
+		 :content "Hermes session is still running; reattached")))))))
 
 (defun hermes-chat--dashboard-start (callback)
   "Return a dashboard client whose events are sent to CALLBACK."
@@ -1713,7 +1744,7 @@ Record asynchronous session results in BUFFER."
       (funcall thunk)
     (error
      (hermes-chat--dashboard-bootstrap-error (error-message-string err)
-                                            content))))
+                                             content))))
 
 (defun hermes-chat--dashboard-control-client ()
   "Return a dashboard client for control RPCs without replacing live callbacks."
@@ -1825,7 +1856,7 @@ When dashboard session bootstrap fails, call REJECT with the error message."
 (defun hermes-chat--alias-content (target arg)
   "Return slash content for alias TARGET with original ARG."
   (when-let* ((command (hermes-chat--nonempty-string
-                       (string-trim (or target "")))))
+			(string-trim (or target "")))))
     (string-join
      (delq nil (list (concat "/" (string-remove-prefix "/" command))
                      (hermes-chat--nonempty-string arg)))

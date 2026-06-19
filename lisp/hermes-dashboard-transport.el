@@ -721,10 +721,10 @@ It is called with URL and keyword arguments :method, :headers, :data, and
   "Return legacy dashboard session token for BASE-URL, preferring TOKEN."
   (or (hermes-dashboard-transport--non-empty-string token)
       (when-let* ((entry (hermes-dashboard-transport--auth-source-entry
-                         base-url
-                         :user "hermes-dashboard-token"
-                         :port "hermes-dashboard-token"
-                         :require '(:secret))))
+                          base-url
+                          :user "hermes-dashboard-token"
+                          :port "hermes-dashboard-token"
+                          :require '(:secret))))
         (hermes-dashboard-transport--non-empty-string
          (hermes-dashboard-transport--auth-source-secret entry)))
       (hermes-dashboard-transport--non-empty-string
@@ -1371,10 +1371,10 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
       (when session-id
         (setf (hermes-dashboard-transport-client-session-id client) session-id))
       (when-let* ((stored-id (or (hermes-transport--get result 'stored_session_id)
-                                (hermes-transport--get result 'resumed)
-                                (hermes-transport--get result 'session_key)
-                                (and (equal method "session.create")
-                                     session-id))))
+                                 (hermes-transport--get result 'resumed)
+                                 (hermes-transport--get result 'session_key)
+                                 (and (equal method "session.create")
+                                      session-id))))
         (setf (hermes-dashboard-transport-client-stored-session-id client)
               stored-id)))))
 
@@ -1410,8 +1410,8 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
   (hermes-transport--scalar-string
    (hermes-transport--get-any payload
                               '(text rendered content delta message context
-                                question prompt description command env_var
-                                summary result_text result preview))))
+                                     question prompt description command env_var
+                                     summary result_text result preview))))
 
 (defun hermes-dashboard-transport--event-base (type params payload)
   "Return base event plist for TYPE, PARAMS, and PAYLOAD."
@@ -1454,7 +1454,7 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
 (defun hermes-dashboard-transport--inline-diff-event (type params payload)
   "Return a normalized inline diff event for TYPE/PARAMS/PAYLOAD, if any."
   (when-let* ((content (hermes-transport--scalar-string
-                       (hermes-transport--get payload 'inline_diff))))
+			(hermes-transport--get payload 'inline_diff))))
     (plist-put
      (plist-put (hermes-dashboard-transport--event-base type params payload)
                 :type 'diff)
@@ -1465,7 +1465,7 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
   (let ((events (list (hermes-dashboard-transport--tool-event
                        type params payload "completed"))))
     (if-let* ((diff (hermes-dashboard-transport--inline-diff-event
-                    type params payload)))
+                     type params payload)))
         (append events (list diff))
       events)))
 
@@ -1591,10 +1591,19 @@ Only positive token counts are reported, so an empty turn shows no gauge."
      " — ")))
 
 (defun hermes-dashboard-transport--session-info-event (type params payload)
-  "Return a normalized `session.info' status event for TYPE/PARAMS/PAYLOAD."
-  (hermes-dashboard-transport--status-event
-   type params payload "ready"
-   (hermes-dashboard-transport--session-info-content payload)))
+  "Return a normalized `session.info' status event for TYPE/PARAMS/PAYLOAD.
+Surface the session's model and profile (agent) name so the chat header can
+show them."
+  (let ((event (hermes-dashboard-transport--status-event
+                type params payload "ready"
+                (hermes-dashboard-transport--session-info-content payload)))
+        (model (hermes-transport--scalar-string
+                (hermes-transport--get payload 'model)))
+        (agent (hermes-transport--scalar-string
+                (hermes-transport--get payload 'profile_name))))
+    (when model (setq event (plist-put event :model model)))
+    (when agent (setq event (plist-put event :agent-name agent)))
+    event))
 
 (defun hermes-dashboard-transport--generic-event (type params payload)
   "Return generic normalized event for TYPE/PARAMS/PAYLOAD."
