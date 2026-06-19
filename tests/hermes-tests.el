@@ -4214,6 +4214,38 @@
   (should-not (hermes-chat--format-usage '(:input 0 :output 0)))
   (should-not (hermes-chat--format-usage nil)))
 
+(ert-deftest hermes-chat-drops-thinking-that-echoes-reply ()
+  "A reasoning block identical to the final reply is dropped on completion."
+  (let (callback)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (_p cb) (setq callback cb) 'fake-process)))
+       (insert "hi")
+       (hermes-chat-send)
+       (funcall callback '(:type delta :content "ok"))
+       (funcall callback '(:type commentary :event "reasoning.available" :content "ok"))
+       (funcall callback '(:type done :content "ok"))
+       (let ((roles (mapcar (lambda (e) (plist-get e :role)) (hermes-chat--entries))))
+         (should-not (memq 'commentary roles))
+         (should (memq 'assistant roles)))))))
+
+(ert-deftest hermes-chat-keeps-thinking-that-differs-from-reply ()
+  "Reasoning that genuinely differs from the reply is retained."
+  (let (callback)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (_p cb) (setq callback cb) 'fake-process)))
+       (insert "hi")
+       (hermes-chat-send)
+       (funcall callback
+                '(:type commentary :event "reasoning.delta"
+                        :content "Let me weigh the options first."))
+       (funcall callback '(:type delta :content "The answer is 42."))
+       (funcall callback '(:type done :content "The answer is 42."))
+       (let ((roles (mapcar (lambda (e) (plist-get e :role)) (hermes-chat--entries))))
+         (should (memq 'commentary roles))
+         (should (memq 'assistant roles)))))))
+
 (ert-deftest hermes-chat-header-shows-agent-status-model ()
   "The header renders agent name, status, and model from `session.info'."
   (hermes-test-with-chat-buffer

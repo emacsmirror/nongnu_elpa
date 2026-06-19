@@ -1034,6 +1034,16 @@ Do not record these internal text-property changes in the undo list."
       (hermes-chat--notify-state-change)
       entry)))
 
+(defun hermes-chat--remove-entry (id)
+  "Remove chat entry ID from the EWOC and node table."
+  (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
+    (hermes-chat--preserve-input-point
+     (let ((inhibit-read-only t)
+           (buffer-undo-list t))
+       (ewoc-delete hermes-chat--ewoc node)))
+    (remhash id hermes-chat--nodes)
+    (hermes-chat--notify-state-change)))
+
 (defun hermes-chat--toggle-entry-expanded (id)
   "Toggle detail expansion for entry ID."
   (hermes-chat--update-entry
@@ -1085,6 +1095,32 @@ When FINAL is non-nil, strip any trailing transport metadata."
             :status status
             :content (hermes-chat--sanitize-assistant-content text final))
          (hermes-chat--entry-with entry :status status))))))
+
+(defun hermes-chat--normalize-for-dedup (text)
+  "Return TEXT with whitespace collapsed for echo comparison."
+  (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " (or text ""))))
+
+(defun hermes-chat--text-echoes-p (a b)
+  "Return non-nil when normalized A and B duplicate each other."
+  (let ((a (hermes-chat--normalize-for-dedup a))
+        (b (hermes-chat--normalize-for-dedup b)))
+    (and (not (string-empty-p a))
+         (not (string-empty-p b))
+         (or (string= a b)
+             (string-prefix-p a b)
+             (string-prefix-p b a)))))
+
+(defun hermes-chat--drop-duplicate-thinking (assistant-id)
+  "Remove ASSISTANT-ID's reasoning entry when it only repeats the reply.
+Some providers emit `reasoning.available' equal to the final message; that is
+noise, not a thinking process.  Reasoning that genuinely differs is kept."
+  (when-let* ((tid (format "%s:commentary:thinking" assistant-id))
+              (tnode (and hermes-chat--nodes (gethash tid hermes-chat--nodes)))
+              (anode (gethash assistant-id hermes-chat--nodes)))
+    (when (hermes-chat--text-echoes-p
+           (plist-get (ignore-errors (ewoc-data tnode)) :content)
+           (plist-get (ignore-errors (ewoc-data anode)) :content))
+      (hermes-chat--remove-entry tid))))
 
 (defun hermes-chat--updated-transport-content (entry event content)
   "Return updated display CONTENT for ENTRY from transport EVENT."
@@ -1429,6 +1465,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
        (hermes-chat--clear-terminal-prompts event)
        (hermes-chat--mark-assistant
         assistant-id 'done (plist-get event :content) t)
+       (hermes-chat--drop-duplicate-thinking assistant-id)
        (hermes-chat--settle-transport-entries assistant-id 'done)
        (hermes-chat--dashboard-finish-assistant assistant-id)
        (setq hermes-chat--pending-assistant-id nil
