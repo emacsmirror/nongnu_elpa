@@ -484,13 +484,17 @@
 			:tool-call-id "tool-1"
 			:name "terminal"
 			:status "completed"
+			:args ((command . "make test"))
 			:duration 1.2))
        (let* ((entries (hermes-chat--entries))
               (roles (mapcar (lambda (entry) (plist-get entry :role)) entries))
               (text (buffer-string)))
          (should (equal roles '(user assistant status tool)))
          (should-not (string-match-p "running make test" text))
-         (should (string-match-p "terminal completed (1.2s)" text))
+         ;; The command survives completion; the status icon shows done.
+         (should (string-match-p "terminal: make test" text))
+         (should (string-match-p "1.2s" text))
+         (should (string-match-p "💻" text))
          (should (equal (plist-get (nth 2 entries) :content) "Thinking…"))
          (should (equal (plist-get (nth 3 entries) :status) "completed")))))))
 
@@ -581,7 +585,7 @@
          (should (= (length tools) 2))
          (should (equal (plist-get (car tools) :status) "completed"))
          (should (equal (plist-get (cadr tools) :status) "running"))
-         (should (string-match-p "read_file completed (0.4s)"
+         (should (string-match-p "📖 read_file  0.4s"
                                  (buffer-string))))))))
 
 (ert-deftest hermes-chat-header-shows-status-and-tool-activity ()
@@ -613,9 +617,11 @@
 			:tool-call-id "tool-1"
 			:name "terminal"
 			:status "completed"
+			:args ((command . "make test"))
 			:duration 1.0))
-       (should (string-match-p "terminal completed (1.0s)"
-                               (hermes-test--header-line-string)))
+       (let ((header (hermes-test--header-line-string)))
+         (should (string-match-p "terminal: make test" header))
+         (should (string-match-p "1.0s" header)))
        (funcall callback '(:type done))
        (let ((header (hermes-test--header-line-string)))
          (should (string-match-p "Ready" header))
@@ -656,7 +662,7 @@
                                  :key (lambda (entry)
                                         (plist-get entry :role)))))
          (should (equal (plist-get progress :status) 'done))
-         (should (string-match-p "✓ read_file: read 40 lines"
+         (should (string-match-p "✓ 📖 read_file: read 40 lines"
                                  (buffer-string))))))))
 
 (ert-deftest hermes-chat-progress-keys-are-turn-local ()
@@ -722,7 +728,7 @@
                                         (plist-get entry :role)))))
          (should (equal (plist-get assistant :status) 'error))
          (should (equal (plist-get progress :status) 'error))
-         (should (string-match-p "! terminal: running" (buffer-string))))))))
+         (should (string-match-p "! 💻 terminal: running" (buffer-string))))))))
 
 (ert-deftest hermes-chat-transport-removes-control-bytes-from-assistant-output ()
   (let (callback)
@@ -3820,7 +3826,7 @@
            (should (equal (plist-get (nth 2 entries) :content)
                           "(⌐■_■) synthesizing..."))
            (should (equal (plist-get (nth 3 entries) :content)
-                          "terminal: git status")))
+                          "💻 terminal: git status")))
          (should-not (cl-some (lambda (line)
                                 (string-match-p "Unknown Hermes transport event"
                                                 line))
@@ -4267,6 +4273,24 @@
   "Without an agent name the header still shows Hermes."
   (hermes-test-with-chat-buffer
    (should (string-match-p "Hermes" (hermes-test--header-line-string)))))
+
+(ert-deftest hermes-chat-format-tool-event-keeps-detail-and-emoji ()
+  "Tool lines keep the command/skill detail and carry the tool emoji."
+  (should (equal (hermes-chat--format-tool-event
+                  '(:type tool :name "terminal" :status "running"
+                          :context "make test"))
+                 "💻 terminal: make test"))
+  (should (equal (hermes-chat--format-tool-event
+                  '(:type tool :name "terminal" :status "completed"
+                          :args ((command . "make test")) :duration 0.2))
+                 "💻 terminal: make test  0.2s"))
+  (should (equal (hermes-chat--format-tool-event
+                  '(:type tool :name "skill_view" :status "completed"
+                          :args ((name . "elisp-review")) :duration 0.1))
+                 "📚 skill_view: elisp-review  0.1s"))
+  (should (string-prefix-p "⚡ mystery"
+                           (hermes-chat--format-tool-event
+                            '(:type tool :name "mystery" :status "running")))))
 
 (ert-deftest hermes-chat-format-context ()
   "Context usage renders abbreviated tokens and a percentage."

@@ -748,33 +748,95 @@ USAGE is a plist of :input and :output token counts."
   "Return tool name from transport EVENT, if present."
   (hermes-chat--event-string event '(:name :tool-name :tool_name :tool :kind)))
 
+(defconst hermes-chat--tool-emojis
+  '(("terminal" . "💻") ("read_file" . "📖") ("write_file" . "✍️")
+    ("patch" . "🔧") ("search_files" . "🔎") ("web_search" . "🔍")
+    ("web_extract" . "📄") ("todo" . "📋") ("session_search" . "🔍")
+    ("memory" . "🧠") ("skill_view" . "📚") ("skills_list" . "📚")
+    ("skill_manage" . "📝") ("read_terminal" . "🖥️") ("send_message" . "📨")
+    ("process" . "⚙️") ("browser_navigate" . "🌐") ("image_generate" . "🎨")
+    ("text_to_speech" . "🔊") ("vision_analyze" . "👁️")
+    ("mixture_of_agents" . "🧠") ("delegate_task" . "🧠") ("clarify" . "❓"))
+  "Tool name to display emoji, mirroring the Hermes tool registry.")
+
+(defconst hermes-chat--tool-primary-args
+  '(("terminal" . command) ("web_search" . query) ("web_extract" . urls)
+    ("read_file" . path) ("write_file" . path) ("patch" . path)
+    ("search_files" . pattern) ("browser_navigate" . url)
+    ("browser_click" . ref) ("browser_type" . text) ("image_generate" . prompt)
+    ("text_to_speech" . text) ("vision_analyze" . question)
+    ("mixture_of_agents" . user_prompt) ("skill_view" . name)
+    ("skills_list" . category) ("cronjob" . action) ("execute_code" . code)
+    ("delegate_task" . goal) ("clarify" . question) ("skill_manage" . name)
+    ("session_search" . query) ("memory" . content))
+  "Tool name to its primary argument key, mirroring `build_tool_preview'.")
+
+(defconst hermes-chat--tool-detail-keys
+  '(command path query pattern name skill url goal code prompt content question text)
+  "Fallback argument keys to derive a tool detail string.")
+
+(defun hermes-chat--tool-emoji (name)
+  "Return the display emoji for tool NAME."
+  (or (and name (cdr (assoc name hermes-chat--tool-emojis))) "⚡"))
+
+(defun hermes-chat--first-arg-detail (args keys)
+  "Return the first non-empty scalar value among KEYS in ARGS."
+  (catch 'found
+    (dolist (key keys)
+      (when-let* ((value (hermes-chat--nonempty-string
+                          (hermes-transport--scalar-string
+                           (hermes-transport--get args key)))))
+        (throw 'found value)))))
+
+(defun hermes-chat--tool-args-detail (event name)
+  "Return a detail string from EVENT's args for tool NAME, or nil.
+Args arrive as a structured map on `tool.complete' and as text when verbose."
+  (let ((args (hermes-chat--event-value event '(:args))))
+    (cond
+     ((stringp args) (hermes-chat--nonempty-string args))
+     ((or (consp args) (hash-table-p args))
+      (hermes-chat--first-arg-detail
+       args (delq nil (cons (cdr (assoc name hermes-chat--tool-primary-args))
+                            hermes-chat--tool-detail-keys)))))))
+
+(defun hermes-chat--tool-detail (event name)
+  "Return the best command/path detail string for tool EVENT named NAME.
+Prefers the gateway preview, then the call arguments, so the command survives
+a `tool.complete' that omits the start preview."
+  (or (hermes-chat--nonempty-string (hermes-chat--event-string event '(:context)))
+      (hermes-chat--tool-args-detail event name)
+      (hermes-chat--nonempty-string
+       (hermes-chat--event-string event '(:preview :summary)))))
+
+(defun hermes-chat--tool-head (name detail)
+  "Return the emoji-prefixed head for tool NAME with optional DETAIL."
+  (if detail
+      (format "%s %s: %s" (hermes-chat--tool-emoji name) name detail)
+    (format "%s %s" (hermes-chat--tool-emoji name) name)))
+
 (defun hermes-chat--format-progress-event (event)
   "Return display content for a tool progress EVENT."
-  (let ((name (hermes-chat--tool-name event))
-        (content (hermes-chat--event-string event '(:content :delta :text :preview)))
-        (progress (hermes-chat--event-string event '(:progress))))
-    (string-join (delq nil (list name (or content progress))) ": ")))
+  (let* ((name (or (hermes-chat--tool-name event) "tool"))
+         (detail (or (hermes-chat--event-string
+                      event '(:content :delta :text :preview))
+                     (hermes-chat--tool-detail event name)
+                     (hermes-chat--event-string event '(:progress)))))
+    (hermes-chat--tool-head name detail)))
 
 (defun hermes-chat--format-tool-event (event)
-  "Return display content for a tool lifecycle EVENT."
-  (let* ((name (hermes-chat--tool-name event))
-         (status (or (hermes-chat--event-string event '(:status))
-                     (hermes-chat--event-phase event)))
-         (preview (hermes-chat--event-string event '(:preview :content :delta :text)))
+  "Return display content for a tool lifecycle EVENT.
+Shows the tool emoji, name, and its command/path detail, plus a duration or
+error.  The entry's status icon conveys running/done/failed separately, so the
+detail is kept rather than replaced by a bare \"completed\" line."
+  (let* ((name (or (hermes-chat--tool-name event) "tool"))
+         (head (hermes-chat--tool-head name (hermes-chat--tool-detail event name)))
          (duration (hermes-chat--format-duration
                     (hermes-chat--event-value event '(:duration))))
          (error (hermes-chat--event-string event '(:error))))
     (cond
-     (error
-      (string-join (delq nil (list name "failed" error)) ": "))
-     (preview
-      (string-join (delq nil (list name preview)) ": "))
-     ((and status duration)
-      (string-join (delq nil (list name (format "%s (%s)" status duration)))
-                   " "))
-     (status
-      (string-join (delq nil (list name status)) " "))
-     (name name))))
+     (error (format "%s  %s" head error))
+     (duration (format "%s  %s" head duration))
+     (t head))))
 
 (defun hermes-chat--transport-entry-role (event)
   "Return EWOC entry role for transport EVENT."
