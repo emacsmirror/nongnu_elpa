@@ -1418,7 +1418,8 @@
        (should (equal submit-text "use demo skill"))
        (let ((text (buffer-string)))
          (should (string-match-p "loading skill: demo" text))
-         (should (string-match-p "use demo skill" text)))))))
+         ;; the full skill payload is sent to the agent but never echoed
+         (should-not (string-match-p "use demo skill" text)))))))
 
 (ert-deftest hermes-chat-command-skill-queues-while-active ()
   (let ((client (hermes-test--dashboard-client)) callback submits)

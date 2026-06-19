@@ -130,6 +130,9 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--queued-message nil
   "Plain message queued to send after the active Hermes turn settles.")
 
+(defvar-local hermes-chat--queued-display nil
+  "Compact display text for the queued message's user turn, or nil.")
+
 (defvar-local hermes-chat--pending-prompts nil
   "Hash table of pending dashboard prompt requests by prompt key.")
 
@@ -1197,6 +1200,7 @@ Do not record these internal text-property changes in the undo list."
     (setq hermes-chat--nodes (make-hash-table :test 'equal)
           hermes-chat--pending-assistant-id nil
           hermes-chat--queued-message nil
+          hermes-chat--queued-display nil
           hermes-chat--pending-prompts (make-hash-table :test #'equal)
           hermes-chat--draining-queued-message-p nil
           hermes-chat--transport-generation 0
@@ -1980,13 +1984,16 @@ Record asynchronous session results in BUFFER."
   (hermes-chat--insert-entry
    (hermes-chat--make-entry 'status content (or status 'done))))
 
-(defun hermes-chat--queue-content (content &optional note)
-  "Queue CONTENT for the next turn, inserting NOTE when non-nil."
+(defun hermes-chat--queue-content (content &optional note display)
+  "Queue CONTENT for the next turn, inserting NOTE when non-nil.
+DISPLAY is the compact user-turn text shown when the queued message is sent."
   (when hermes-chat--queued-message
     (user-error "A Hermes message is already queued"))
-  (setq hermes-chat--queued-message content)
+  (setq hermes-chat--queued-message content
+        hermes-chat--queued-display display)
   (hermes-chat--insert-local-status
-   (or note (format "Queued next message: %s" (hermes-chat--preview content)))
+   (or note (format "Queued next message: %s"
+                    (hermes-chat--preview (or display content))))
    'queued)
   (hermes-chat--set-header-state
    :status 'queued :activity "Queued next message"))
@@ -2080,14 +2087,16 @@ When dashboard session bootstrap fails, call REJECT with the error message."
        (not (hermes-chat--dashboard-session-attached-p))
        (not (hermes-chat--active-turn-p))))
 
-(defun hermes-chat--queue-or-submit-content (content)
-  "Queue CONTENT during an active turn, otherwise submit it now."
+(defun hermes-chat--queue-or-submit-content (content &optional display)
+  "Queue CONTENT during an active turn, otherwise submit it now.
+DISPLAY is the compact user-turn text to show instead of CONTENT."
   (if (hermes-chat--active-turn-p)
-      (hermes-chat--queue-content content)
-    (hermes-chat--submit-content content)))
+      (hermes-chat--queue-content content nil display)
+    (hermes-chat--submit-content content display)))
 
-(defun hermes-chat--dashboard-queue-or-submit (content buffer)
-  "Resume stored dashboard session in BUFFER before queuing or submitting CONTENT."
+(defun hermes-chat--dashboard-queue-or-submit (content buffer &optional display)
+  "Resume stored dashboard session in BUFFER before queuing or submitting CONTENT.
+DISPLAY is the compact user-turn text shown instead of CONTENT."
   (if (hermes-chat--dashboard-stored-session-needs-resume-p)
       (hermes-chat--call-with-dashboard-bootstrap-error
        content
@@ -2096,10 +2105,10 @@ When dashboard session bootstrap fails, call REJECT with the error message."
            (hermes-chat--dashboard-ensure-session-action
             client buffer
             (lambda (_live-client)
-              (hermes-chat--queue-or-submit-content content))
+              (hermes-chat--queue-or-submit-content content display))
             (lambda (message)
               (hermes-chat--dashboard-bootstrap-error message content))))))
-    (hermes-chat--queue-or-submit-content content)))
+    (hermes-chat--queue-or-submit-content content display)))
 
 (defun hermes-chat--result-string (result key)
   "Return RESULT's scalar value for KEY as a string."
@@ -2154,11 +2163,14 @@ When dashboard session bootstrap fails, call REJECT with the error message."
     (hermes-chat--dashboard-queue-or-submit message (current-buffer)))))
 
 (defun hermes-chat--handle-skill-result (message name)
-  "Handle command-dispatch skill MESSAGE named NAME."
-  (let ((skill-name (or (hermes-chat--nonempty-string name) "skill")))
-    (hermes-chat--insert-local-status
-     (format "⚡ loading skill: %s" skill-name) 'done))
-  (hermes-chat--handle-send-result message))
+  "Send skill MESSAGE to the agent, echoing a compact loading line for NAME.
+The dispatch returns the full skill payload (the agent needs it); the
+transcript shows only \"loading skill: NAME\", not the whole skill."
+  (unless (hermes-chat--nonempty-string message)
+    (user-error "Skill returned no content to load"))
+  (let ((display (format "⚡ loading skill: %s"
+                         (or (hermes-chat--nonempty-string name) "skill"))))
+    (hermes-chat--dashboard-queue-or-submit message (current-buffer) display)))
 
 (defun hermes-chat--prefill-input (message)
   "Replace the input tail with MESSAGE."
@@ -2601,18 +2613,21 @@ approvals in the dashboard session."
   (when (and hermes-chat--queued-message
              (not hermes-chat--pending-assistant-id)
              (not hermes-chat--draining-queued-message-p))
-    (let ((content hermes-chat--queued-message))
+    (let ((content hermes-chat--queued-message)
+          (display hermes-chat--queued-display))
       (setq hermes-chat--queued-message nil
+            hermes-chat--queued-display nil
             hermes-chat--draining-queued-message-p t)
       (unwind-protect
-          (hermes-chat--submit-content content)
+          (hermes-chat--submit-content content display)
         (setq hermes-chat--draining-queued-message-p nil)))))
 
-(defun hermes-chat--submit-content (content)
-  "Submit CONTENT as a new user turn."
+(defun hermes-chat--submit-content (content &optional display)
+  "Submit CONTENT as a new user turn, echoing DISPLAY when non-nil.
+DISPLAY lets a slash skill send its full payload while showing a compact line."
   (when (hermes-chat--active-turn-p)
     (user-error "%s" (hermes-chat--busy-message)))
-  (let* ((user-entry (hermes-chat--make-entry 'user content 'done))
+  (let* ((user-entry (hermes-chat--make-entry 'user (or display content) 'done))
          (assistant-entry (hermes-chat--make-entry 'assistant "" 'pending))
          (assistant-id (plist-get assistant-entry :id))
          (buffer (current-buffer))
