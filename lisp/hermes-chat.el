@@ -60,6 +60,12 @@ which keeps tests and user custom transports working."
   "Face for submitted user turns in the chat transcript."
   :group 'hermes)
 
+(defface hermes-chat-separator
+  '((((background light)) :strike-through "gray70" :foreground "gray70")
+    (t :strike-through "gray30" :foreground "gray30"))
+  "Face for the full-width rule above the Hermes chat input area."
+  :group 'hermes)
+
 (defvar hermes-chat-state-change-hook nil
   "Hook run in a Hermes chat buffer when dashboard-visible state changes.")
 
@@ -1173,6 +1179,10 @@ Do not record these internal text-property changes in the undo list."
          (goto-char (min (point-max)
                          (+ (hermes-chat--input-position) offset)))))))
 
+(defun hermes-chat--separator ()
+  "Return a full-width rule string separating the transcript from the input."
+  (propertize " " 'display '(space :width text) 'face 'hermes-chat-separator))
+
 (defun hermes-chat--setup-buffer ()
   "Initialize the current buffer as an empty Hermes chat buffer."
   (let ((inhibit-read-only t)
@@ -1196,7 +1206,9 @@ Do not record these internal text-property changes in the undo list."
           hermes-chat--ansi-fragments (make-hash-table :test #'equal)
           hermes-chat--session-id nil
           hermes-chat--ewoc (ewoc-create #'hermes-chat--print-entry
-                                         nil "\n> " 'nosep))
+                                         nil
+                                         (concat "\n" (hermes-chat--separator) "\n")
+                                         'nosep))
     (goto-char (point-max))
     ;; Keep the marker at the beginning of the editable input tail.  With an
     ;; insertion-type marker, normal typing moves the marker after the inserted

@@ -820,6 +820,18 @@
          (should (equal (plist-get assistant :content) ""))
          (should-not (string-match-p "session_id:" (buffer-string))))))))
 
+(ert-deftest hermes-chat-input-uses-separator-not-prompt ()
+  "The input area sits below a separator rule, with no `> ' prompt prefix."
+  (hermes-test-with-chat-buffer
+   (let ((footer (buffer-substring-no-properties
+                  (point-min) (hermes-chat--input-position))))
+     (should-not (string-match-p "> \\'" footer)))
+   (should (eq (get-text-property (- (hermes-chat--input-position) 2) 'face)
+               'hermes-chat-separator))
+   (goto-char (point-max))
+   (insert "hello")
+   (should (equal (hermes-chat-input-string) "hello"))))
+
 (ert-deftest hermes-chat-markdown-keeps-markup-visible ()
   "Markdown markers keep their faces but are never hidden, for easy copying."
   (let ((s (hermes-chat--fontify-markdown-string "say *hello* and `code`")))
