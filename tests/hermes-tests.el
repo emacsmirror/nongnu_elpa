@@ -820,6 +820,48 @@
          (should (equal (plist-get assistant :content) ""))
          (should-not (string-match-p "session_id:" (buffer-string))))))))
 
+(ert-deftest hermes-chat-actions-popup-bound ()
+  "C-c C-o opens the in-chat actions popup, which lists turn actions."
+  (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-o")
+              #'hermes-chat-actions-map-popup))
+  (should (fboundp 'hermes-chat-actions-map-popup))
+  (should (eq (keymap-lookup hermes-chat-actions-map "s")
+              #'hermes-chat-steer-message))
+  (should (eq (keymap-lookup hermes-chat-actions-map "i")
+              #'hermes-chat-interrupt)))
+
+(ert-deftest hermes-chat-catalog-candidates-extracts-names ()
+  "Catalog candidates extract bare command names and descriptions."
+  (let ((cands (hermes-chat--catalog-candidates
+                '((categories . (((name . "Session")
+                                  (pairs . (("/steer" "Steer the run")
+                                            ("/model" "Switch model"))))))))))
+    (should (equal (assoc "steer" cands) '("steer" . "Steer the run")))
+    (should (assoc "model" cands))))
+
+(ert-deftest hermes-chat-slash-capf-completes-in-input ()
+  "The slash capf offers command names while typing /cmd in the input."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--commands-cache '(("steer" . "Steer") ("model" . "Switch")))
+   (goto-char (point-max))
+   (insert "/st")
+   (let ((capf (hermes-chat--slash-capf)))
+     (should capf)
+     (should (member "steer" (nth 2 capf)))
+     (should (= (nth 0 capf) (1+ (hermes-chat--input-position))))
+     (should (= (nth 1 capf) (point))))))
+
+(ert-deftest hermes-chat-slash-capf-inactive-off-command ()
+  "The slash capf is inactive for non-slash input or inside arguments."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--commands-cache '(("steer" . "Steer")))
+   (goto-char (point-max))
+   (insert "hello")
+   (should-not (hermes-chat--slash-capf))
+   (hermes-chat--delete-input-tail)
+   (insert "/steer now")
+   (should-not (hermes-chat--slash-capf))))
+
 (ert-deftest hermes-chat-input-uses-separator-not-prompt ()
   "The input area sits below a separator rule, with no `> ' prompt prefix."
   (hermes-test-with-chat-buffer

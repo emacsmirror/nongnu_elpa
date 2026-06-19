@@ -31,6 +31,7 @@
 (require 'diff-mode)
 (require 'ewoc)
 (require 'goto-addr)
+(require 'keymap-popup)
 (require 'markdown-mode)
 (require 'subr-x)
 (require 'hermes-transport)
@@ -137,6 +138,9 @@ which keeps tests and user custom transports working."
 
 (defvar-local hermes-chat--ansi-fragments nil
   "Hash table of partial ANSI escape sequences by stream key.")
+
+(defvar-local hermes-chat--commands-cache nil
+  "Cached slash command catalog as an alist of (NAME . DESCRIPTION).")
 
 (defvar hermes-chat--entry-counter 0
   "Counter used to generate local chat entry IDs.")
@@ -2528,6 +2532,35 @@ approvals in the dashboard session."
     (when lines
       (string-join (cons "Subcommands" lines) "\n"))))
 
+(defun hermes-chat--command-name (value)
+  "Return VALUE as a bare slash command name, or nil."
+  (and-let* ((name (hermes-chat--scalar-string value)))
+    (hermes-chat--nonempty-string (string-remove-prefix "/" name))))
+
+(defun hermes-chat--catalog-pairs-candidates (pairs)
+  "Return (NAME . DESCRIPTION) cells for catalog PAIRS."
+  (delq nil
+        (mapcar
+         (lambda (pair)
+           (when-let* ((name (hermes-chat--command-name
+                              (hermes-chat--pair-command pair))))
+             (cons name (hermes-chat--scalar-string
+                         (hermes-chat--pair-description pair)))))
+         (hermes-chat--listify pairs))))
+
+(defun hermes-chat--catalog-candidates (result)
+  "Return an alist of (NAME . DESCRIPTION) slash commands from catalog RESULT."
+  (let ((candidates
+         (append
+          (mapcan (lambda (category)
+                    (hermes-chat--catalog-pairs-candidates
+                     (hermes-transport--get category 'pairs)))
+                  (hermes-chat--listify
+                   (hermes-transport--get result 'categories)))
+          (hermes-chat--catalog-pairs-candidates
+           (hermes-transport--get result 'pairs)))))
+    (cl-delete-duplicates candidates :key #'car :test #'equal :from-end t)))
+
 (defun hermes-chat--commands-catalog-content (result)
   "Return readable command catalog RESULT content."
   (let ((warning (hermes-chat--result-string result 'warning)))
@@ -2679,6 +2712,57 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
           (lambda (message)
             (hermes-chat--dashboard-bootstrap-error
              message preserve-content))))))))
+
+(defun hermes-chat--fetch-commands-catalog ()
+  "Fetch the slash command catalog into the buffer cache, when connected."
+  (when (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+    (let ((buffer (current-buffer)))
+      (hermes-dashboard-transport-commands-catalog
+       hermes-chat--dashboard-client
+       :resolve (lambda (result)
+                  (when (buffer-live-p buffer)
+                    (with-current-buffer buffer
+                      (setq hermes-chat--commands-cache
+                            (hermes-chat--catalog-candidates result)))))))))
+
+(defun hermes-chat--command-candidates ()
+  "Return cached slash command candidates, fetching the catalog if needed."
+  (unless hermes-chat--commands-cache
+    (hermes-chat--fetch-commands-catalog))
+  hermes-chat--commands-cache)
+
+(defun hermes-chat-refresh-commands ()
+  "Refresh the cached slash command catalog from the dashboard."
+  (interactive)
+  (setq hermes-chat--commands-cache nil)
+  (hermes-chat--fetch-commands-catalog))
+
+(defun hermes-chat--slash-completion-bounds ()
+  "Return (START . END) of the slash command name at point, or nil.
+Only matches while typing the /command word in the writable input tail."
+  (let ((input (hermes-chat--input-position)))
+    (and input
+         (hermes-chat--point-in-input-p)
+         (> (point) input)
+         (eq (char-after input) ?/)
+         (let ((name-start (1+ input)))
+           (and (>= (point) name-start)
+                (not (string-match-p
+                      "[ \t\n]"
+                      (buffer-substring-no-properties name-start (point))))
+                (cons name-start (point)))))))
+
+(defun hermes-chat--slash-capf ()
+  "Completion-at-point for Hermes slash commands in the input tail."
+  (when-let* ((bounds (hermes-chat--slash-completion-bounds))
+              (candidates (hermes-chat--command-candidates)))
+    (list (car bounds) (cdr bounds)
+          (mapcar #'car candidates)
+          :exclusive 'no
+          :annotation-function
+          (lambda (cand)
+            (when-let* ((desc (cdr (assoc cand candidates))))
+              (concat "  " desc))))))
 
 (defun hermes-chat-show-commands ()
   "Fetch and display the dashboard slash command catalog."
@@ -3074,17 +3158,43 @@ messages are fetched and rendered; the durable session continues on send."
     (hermes-chat--collect-urls (hermes-chat--entries))
     (current-buffer))))
 
+(declare-function hermes-list-sessions "hermes-sessions")
+
+(defvar hermes-chat-actions-map)
+
+(keymap-popup-define hermes-chat-actions-map
+  "In-chat action menu for `hermes-chat-mode'."
+  :description "Hermes Chat Actions"
+  :group "Turn"
+  "s" ("Steer" hermes-chat-steer-message)
+  "i" ("Interrupt" hermes-chat-interrupt)
+  "k" ("Interrupt + send" hermes-chat-interrupt-and-send)
+  "q" ("Queue message" hermes-chat-queue-message)
+  :group "Prompt"
+  "a" ("Answer prompt" hermes-chat-respond-to-prompt)
+  "d" ("Cancel prompt" hermes-chat-cancel-prompt)
+  :group "Session"
+  "n" ("New session" hermes-chat-new-session)
+  "N" ("New profile session" hermes-chat-new-profile-session)
+  "m" ("Switch model" hermes-chat-switch-model)
+  "S" ("Sessions" hermes-list-sessions)
+  :group "Commands"
+  "c" ("Show commands" hermes-chat-show-commands)
+  "r" ("Refresh commands" hermes-chat-refresh-commands))
+
 (defvar-keymap hermes-chat-mode-map
   :doc "Keymap for `hermes-chat-mode'."
   "RET" #'hermes-chat-send
   "C-j" #'hermes-chat-newline
   "S-<return>" #'hermes-chat-newline
+  "TAB" #'completion-at-point
   "C-c C-i" #'hermes-chat-interrupt
   "C-c C-k" #'hermes-chat-interrupt-and-send
   "C-c C-q" #'hermes-chat-queue-message
   "C-c C-s" #'hermes-chat-steer-message
   "C-c C-a" #'hermes-chat-respond-to-prompt
   "C-c C-d" #'hermes-chat-cancel-prompt
+  "C-c C-o" #'hermes-chat-actions-map-popup
   "C-c C-/" #'hermes-chat-show-commands
   "C-c C-l" #'hermes-chat-view-attachments
   "C-c C-n" #'hermes-chat-new-session)
@@ -3099,6 +3209,7 @@ messages are fetched and rendered; the durable session continues on send."
   (when (fboundp 'display-line-numbers-mode)
     (display-line-numbers-mode 0))
   (add-hook 'kill-buffer-hook #'hermes-chat--cleanup-buffer nil t)
+  (add-hook 'completion-at-point-functions #'hermes-chat--slash-capf nil t)
   (hermes-chat--setup-buffer))
 
 ;;;###autoload
