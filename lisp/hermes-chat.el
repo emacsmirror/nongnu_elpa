@@ -95,6 +95,9 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--agent-name nil
   "Agent/profile name reported by the live dashboard session, for the header.")
 
+(defvar-local hermes-chat--context nil
+  "Context-window usage plist (:used :max :percent) for the header.")
+
 (defvar-local hermes-chat--pending-assistant-id nil
   "ID of the assistant entry awaiting transport completion.")
 
@@ -602,11 +605,13 @@ METADATA is stored as the entry's `:metadata' plist."
   (or (hermes-chat--event-value event '(:status)) 'error))
 
 (defun hermes-chat--capture-session-identity (event)
-  "Record the model and agent name carried by a `session.info' EVENT."
+  "Record the model, agent name, and context usage carried by EVENT."
   (when-let* ((model (plist-get event :model)))
     (setq hermes-chat--model model))
   (when-let* ((agent (plist-get event :agent-name)))
-    (setq hermes-chat--agent-name agent)))
+    (setq hermes-chat--agent-name agent))
+  (when-let* ((context (plist-get event :context)))
+    (setq hermes-chat--context context)))
 
 (defun hermes-chat--status-event-activity (event)
   "Return the header activity for a status EVENT.
@@ -684,13 +689,31 @@ or distinct activity is appended so the live detail is not lost."
              (if detail (format "%s: %s" label detail) label))
      'face (hermes-chat--header-status-face status))))
 
+(defun hermes-chat--abbrev-tokens (n)
+  "Return token count N abbreviated, e.g. 45k."
+  (cond
+   ((not (numberp n)) "?")
+   ((>= n 1000) (format "%dk" (round (/ n 1000.0))))
+   (t (number-to-string n))))
+
+(defun hermes-chat--format-context (context)
+  "Return a compact context-window string for CONTEXT, or nil.
+CONTEXT is a plist of :used, :max, and :percent."
+  (when-let* ((max (plist-get context :max))
+              ((and (numberp max) (> max 0))))
+    (format "%s/%s ctx (%d%%)"
+            (hermes-chat--abbrev-tokens (plist-get context :used))
+            (hermes-chat--abbrev-tokens max)
+            (or (plist-get context :percent) 0))))
+
 (defun hermes-chat--header-line ()
-  "Return the chat buffer header line: agent, status, and model."
+  "Return the chat buffer header line: agent, status, model, and context."
   (let* ((parts (delq nil
                       (list (propertize (hermes-chat--header-agent-name)
                                         'face 'mode-line-emphasis)
                             (hermes-chat--header-status-segment)
-                            (hermes-chat--nonempty-string hermes-chat--model))))
+                            (hermes-chat--nonempty-string hermes-chat--model)
+                            (hermes-chat--format-context hermes-chat--context))))
          (text (concat " " (string-join parts "  |  ") " "))
          (width (max 20 (window-total-width))))
     (truncate-string-to-width text width nil nil "…")))

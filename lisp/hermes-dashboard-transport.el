@@ -1498,15 +1498,27 @@ Only positive token counts are reported, so an empty turn shows no gauge."
              (and (numberp output) (> output 0)))
          (list :input input :output output))))
 
+(defun hermes-dashboard-transport--context-plist (payload)
+  "Return a context-window plist from PAYLOAD's usage, or nil.
+The plist holds :used, :max, and :percent for the model's context window."
+  (when-let* ((usage (hermes-transport--get payload 'usage))
+              (max (hermes-transport--get usage 'context_max))
+              ((and (numberp max) (> max 0))))
+    (list :used (or (hermes-transport--get usage 'context_used) 0)
+          :max max
+          :percent (or (hermes-transport--get usage 'context_percent) 0))))
+
 (defun hermes-dashboard-transport--message-complete-event (type params payload)
   "Return a normalized `message.complete' event for TYPE/PARAMS/PAYLOAD."
   (let* ((status (hermes-transport--scalar-string
                   (hermes-transport--get payload 'status)))
          (usage (hermes-dashboard-transport--usage-plist payload))
+         (context (hermes-dashboard-transport--context-plist payload))
          (event (hermes-dashboard-transport--payload-event
                  type params payload
                  (hermes-dashboard-transport--message-complete-kind payload))))
     (when usage (setq event (plist-put event :usage usage)))
+    (when context (setq event (plist-put event :context context)))
     (when status (setq event (plist-put event :status status)))
     event))
 
@@ -1600,9 +1612,11 @@ show them."
         (model (hermes-transport--scalar-string
                 (hermes-transport--get payload 'model)))
         (agent (hermes-transport--scalar-string
-                (hermes-transport--get payload 'profile_name))))
+                (hermes-transport--get payload 'profile_name)))
+        (context (hermes-dashboard-transport--context-plist payload)))
     (when model (setq event (plist-put event :model model)))
     (when agent (setq event (plist-put event :agent-name agent)))
+    (when context (setq event (plist-put event :context context)))
     event))
 
 (defun hermes-dashboard-transport--generic-event (type params payload)

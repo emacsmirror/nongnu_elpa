@@ -3702,7 +3702,10 @@
                             (session_id . "sid")
                             (payload . ((model . "gpt-5.5")
                                         (provider . "openai-codex")
-                                        (profile_name . "planner")))))))))
+                                        (profile_name . "planner")
+                                        (usage . ((context_used . 45000)
+                                                  (context_max . 200000)
+                                                  (context_percent . 22)))))))))))
     (let ((event (car events)))
       (should (eq (plist-get event :type) 'status))
       (should (equal (plist-get event :event) "session.info"))
@@ -3710,6 +3713,7 @@
       (should (equal (plist-get event :status) "ready"))
       (should (equal (plist-get event :model) "gpt-5.5"))
       (should (equal (plist-get event :agent-name) "planner"))
+      (should (equal (plist-get event :context) '(:used 45000 :max 200000 :percent 22)))
       (should (equal (plist-get event :content)
                      "Session ready: gpt-5.5 via openai-codex")))))
 
@@ -4263,6 +4267,22 @@
   "Without an agent name the header still shows Hermes."
   (hermes-test-with-chat-buffer
    (should (string-match-p "Hermes" (hermes-test--header-line-string)))))
+
+(ert-deftest hermes-chat-format-context ()
+  "Context usage renders abbreviated tokens and a percentage."
+  (should (equal (hermes-chat--format-context '(:used 45000 :max 200000 :percent 22))
+                 "45k/200k ctx (22%)"))
+  (should-not (hermes-chat--format-context '(:used 0 :max 0 :percent 0)))
+  (should-not (hermes-chat--format-context nil)))
+
+(ert-deftest hermes-chat-header-shows-context-window ()
+  "The header surfaces context-window usage from `session.info'."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--update-header-for-event
+    '(:type status :event "session.info" :status "ready"
+            :model "gpt-5.5" :agent-name "planner"
+            :context (:used 45000 :max 200000 :percent 22)))
+   (should (string-match-p "45k/200k ctx (22%)" (hermes-test--header-line-string)))))
 
 (ert-deftest hermes-chat-done-event-records-usage ()
   "A done event records usage in header state; the compact header omits the gauge."
