@@ -2,6 +2,8 @@
 
 NIX := $(shell command -v nix 2>/dev/null)
 
+-include local.mk
+
 ENV_MAKE = $(MAKE) --no-print-directory
 ifeq ($(HERMES_ENV_WRAPPED),)
 ifneq ($(NIX),)

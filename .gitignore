@@ -7,3 +7,5 @@
 /.eca/
 /.test-results/
 docs/
+/local.mk
+__pycache__/
