@@ -706,6 +706,34 @@ The buffer is captured by object so teardown still kills it after a rename."
          (call-interactively #'hermes-switch-to-chat))
        (should (eq (current-buffer) target))))))
 
+(ert-deftest hermes-transport-dashboard-shows-review-summary ()
+  "`review.summary' becomes a status event carrying its text, not an Unknown event."
+  (let (events)
+    (let ((client (make-hermes-dashboard-transport-client
+                   :callback (lambda (event) (push event events)))))
+      (hermes-dashboard-transport--handle-frame
+       client (hermes-dashboard-transport--encode-frame
+               '((jsonrpc . "2.0")
+                 (method . "event")
+                 (params . ((type . "review.summary")
+                            (session_id . "sid")
+                            (payload . ((text . "Self-improvement review: profile updated")))))))))
+    (let ((event (car events)))
+      (should event)
+      (should (eq (plist-get event :type) 'status))
+      (should (equal (plist-get event :content)
+                     "Self-improvement review: profile updated")))))
+
+(ert-deftest hermes-chat-session-info-updates-header-without-entry ()
+  "`session.info' sets the header model but adds no transcript entry."
+  (hermes-test-with-chat-buffer
+   (let ((before (length (ewoc-collect hermes-chat--ewoc #'identity))))
+     (hermes-chat--handle-transport-event
+      "a1" '(:type status :event "session.info" :status "ready"
+             :model "gpt-5.5" :agent-name "openai-codex"))
+     (should (string-match-p "gpt-5.5" (hermes-test--header-line-string)))
+     (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
+
 (ert-deftest hermes-chat-progress-updates-preserve-draft-and-streaming ()
   (let (callback)
     (hermes-test-with-chat-buffer

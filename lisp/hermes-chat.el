@@ -710,9 +710,13 @@ per-session tool list via `hermes-chat--dashboard-snapshot'."
   "Return the header activity for a status EVENT.
 `session.info' carries the model/provider, now shown in their own header
 fields, so it collapses to a plain ready state instead of repeating them."
-  (if (equal (hermes-chat--event-string event '(:event)) "session.info")
+  (if (hermes-chat--session-info-event-p event)
       "Ready"
     (or (hermes-chat--header-activity-for-event event) "Working")))
+
+(defun hermes-chat--session-info-event-p (event)
+  "Return non-nil when EVENT is a `session.info' status event."
+  (equal (hermes-chat--event-string event '(:event)) "session.info"))
 
 (defun hermes-chat--thinking-activity (content)
   "Return a header label from a `thinking.delta' CONTENT string.
@@ -1743,7 +1747,12 @@ so do not copy its final content into the unsubmitted retry placeholder."
       ;; `thinking' is the kawaii spinner verb: it updates the header above and
       ;; never becomes a transcript entry.
       ('thinking nil)
-      ((or 'status 'progress 'tool 'commentary 'diff)
+      ('status
+       ;; `session.info' identity (model/provider) shows in the header, so it
+       ;; updates the header above without a redundant "Session ready" entry.
+       (unless (hermes-chat--session-info-event-p event)
+         (hermes-chat--upsert-transport-entry assistant-id event)))
+      ((or 'progress 'tool 'commentary 'diff)
        (hermes-chat--upsert-transport-entry assistant-id event))
       ('unknown
        (message "%s" (hermes-chat--unknown-event-content event))

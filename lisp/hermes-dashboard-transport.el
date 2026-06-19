@@ -1687,6 +1687,12 @@ show them."
       ((or "approval.request" "clarify.request" "sudo.request" "secret.request")
        (list (hermes-dashboard-transport--prompt-request-event
               type params payload)))
+      ;; `review.summary' is a self-improvement notification; show it as a status
+      ;; line in the transcript rather than as an Unknown event.
+      ("review.summary"
+       (list (hermes-dashboard-transport--status-event
+              type params payload "notification"
+              (hermes-dashboard-transport--payload-text payload))))
       (_
        (if (and type (string-prefix-p "notification." type))
            (list (hermes-dashboard-transport--status-event
