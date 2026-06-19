@@ -409,8 +409,10 @@ markdown stays visible and easy to copy."
     (insert (propertize text 'face 'shadow))))
 
 (defun hermes-chat--show-diff (diff &optional buffer-name)
-  "Show DIFF in a dedicated read-only `diff-mode' buffer.
-BUFFER-NAME overrides the default \"*Hermes Diff*\" buffer."
+  "Show DIFF in a dedicated `diff-mode' buffer.
+BUFFER-NAME overrides the default \"*Hermes Diff*\" buffer.  The buffer is made
+read-only so `diff-mode' installs its navigation keymap (n/p hunks, q quits)
+instead of `view-mode' shadowing those keys."
   (let ((buffer (get-buffer-create (or buffer-name "*Hermes Diff*"))))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
@@ -421,7 +423,7 @@ BUFFER-NAME overrides the default \"*Hermes Diff*\" buffer."
       (delay-mode-hooks (diff-mode))
       (font-lock-mode 1)
       (font-lock-ensure (point-min) (point-max))
-      (view-mode 1))
+      (read-only-mode 1))
     (pop-to-buffer buffer)))
 
 (defun hermes-chat--view-diff-button (button)
