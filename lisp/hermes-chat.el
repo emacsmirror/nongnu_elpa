@@ -1005,16 +1005,54 @@ detail is kept rather than replaced by a bare \"completed\" line."
   "Return metadata plist for transport EVENT tied to ASSISTANT-ID."
   (list :assistant-id assistant-id :event event))
 
+(defconst hermes-chat--transient-summary-width 100
+  "Maximum width of a collapsed transient summary line.")
+
+(defun hermes-chat--first-line (text)
+  "Return TEXT's first line, trimmed and truncated for a one-line summary."
+  (truncate-string-to-width
+   (string-trim (car (split-string text "\n")))
+   hermes-chat--transient-summary-width nil nil "…"))
+
+(defun hermes-chat--multiline-content-p (text)
+  "Return non-nil when TEXT spans more than one line."
+  (string-match-p "\n" (string-trim-right text)))
+
+(defun hermes-chat--insert-transient-toggle (entry summary expanded)
+  "Insert a toggle labeled SUMMARY for transient ENTRY in EXPANDED state."
+  (let ((start (point)))
+    (insert (if expanded "▾ " "▸ ") summary)
+    (make-text-button start (point)
+                      'face 'shadow
+                      'mouse-face 'highlight
+                      'follow-link t
+                      'help-echo "Toggle full output"
+                      'hermes-chat-entry-id (plist-get entry :id)
+                      'action #'hermes-chat--toggle-entry-button)))
+
 (defun hermes-chat--insert-transient-content (entry)
-  "Insert compact transient transport ENTRY, showing diffs as View Diff links."
+  "Insert a compact transient transport ENTRY.
+Multiline content collapses to a one-line summary with a `▸'/`▾' toggle, like
+the thinking disclosure; diffs become View Diff links."
   (let ((content (or (plist-get entry :content) "")))
     (unless (string-empty-p content)
       (insert (propertize (format "  %s "
                                   (hermes-chat--status-icon
                                    (plist-get entry :status)))
                           'face 'shadow))
-      (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow)
-      (insert "\n"))))
+      (if (and (memq (plist-get entry :role) '(tool progress))
+               (hermes-chat--multiline-content-p content)
+               (null (hermes-chat--diff-blocks content)))
+          (let ((expanded (hermes-chat--entry-expanded-p entry)))
+            (hermes-chat--insert-transient-toggle
+             entry (hermes-chat--first-line content) expanded)
+            (insert "\n")
+            (when expanded
+              (hermes-chat--insert-shadow content)
+              (insert "\n")))
+        (progn
+          (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow)
+          (insert "\n"))))))
 
 (defun hermes-chat--compact-commentary-paragraph (paragraph)
   "Return PARAGRAPH with token-stream line noise collapsed."
@@ -1052,7 +1090,7 @@ detail is kept rather than replaced by a bare \"completed\" line."
                       'follow-link t
                       'help-echo "Toggle Hermes thinking"
                       'hermes-chat-entry-id (plist-get entry :id)
-                      'action #'hermes-chat--toggle-thinking-button))
+                      'action #'hermes-chat--toggle-entry-button))
   (insert "\n"))
 
 (defun hermes-chat--insert-commentary-content (entry)
@@ -1226,8 +1264,8 @@ agent's reply can stay last while tool/status/diff entries land above it."
         (plist-put metadata :expanded
                    (not (hermes-chat--entry-expanded-p entry))))))))
 
-(defun hermes-chat--toggle-thinking-button (button)
-  "Toggle the thinking entry attached to BUTTON."
+(defun hermes-chat--toggle-entry-button (button)
+  "Toggle the collapsible entry attached to BUTTON."
   (when-let* ((id (button-get button 'hermes-chat-entry-id)))
     (hermes-chat--toggle-entry-expanded id)))
 

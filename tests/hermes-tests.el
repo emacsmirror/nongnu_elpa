@@ -520,6 +520,26 @@
          (should (equal (plist-get (nth 1 entries) :content) "Thinking…"))
          (should (equal (plist-get (nth 2 entries) :status) "completed")))))))
 
+(ert-deftest hermes-chat-collapses-multiline-transient-output ()
+  "A multiline tool/status entry collapses to a one-line toggle, like thinking."
+  (let (callback)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (_p cb) (setq callback cb) 'fake-process)))
+       (insert "run script")
+       (hermes-chat-send)
+       (funcall callback
+                '(:type tool :tool-call-id "t1" :name "terminal" :status "running"
+                        :context "set -e\ncd /repo\ngit status"))
+       (let ((text (buffer-string)))
+         (should (string-match-p "▸" text))
+         (should (string-match-p "terminal: set -e" text))
+         (should-not (string-match-p "git status" text)))
+       (hermes-test--push-button-labeled "terminal: set -e")
+       (let ((text (buffer-string)))
+         (should (string-match-p "▾" text))
+         (should (string-match-p "git status" text)))))))
+
 (ert-deftest hermes-chat-collapses-and-toggles-commentary-events ()
   (let (callback)
     (hermes-test-with-chat-buffer
