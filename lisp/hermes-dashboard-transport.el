@@ -1638,9 +1638,14 @@ Only positive token counts are reported, so an empty turn shows no gauge."
       ("tool.complete"
        (hermes-dashboard-transport--tool-complete-events
         type params payload))
-      ((or "reasoning.delta" "thinking.delta")
+      ("reasoning.delta"
        (list (hermes-dashboard-transport--payload-event
               type params payload 'commentary)))
+      ;; `thinking.delta' carries the kawaii spinner status (face + verb), not
+      ;; real reasoning.  The header already shows a "Thinking..." activity, so
+      ;; drop it rather than render a duplicative transcript block.  Matches the
+      ;; Hermes Desktop web UI, which ignores thinking.delta for this reason.
+      ("thinking.delta" nil)
       ((or "approval.request" "clarify.request" "sudo.request" "secret.request")
        (list (hermes-dashboard-transport--prompt-request-event
               type params payload)))

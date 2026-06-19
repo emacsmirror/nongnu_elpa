@@ -540,7 +540,7 @@
        (dolist (chunk '("I\n" " need\n" " to\n" " respond\n" " to\n" " \"hello.\""))
          (funcall callback
                   (list :type 'commentary
-                        :event "thinking.delta"
+                        :event "reasoning.delta"
                         :content chunk)))
        (hermes-test--push-button-labeled "Thinking...")
        (let ((text (buffer-string)))
@@ -923,7 +923,7 @@
                   :content "Diff:\n--- a/interleaved.txt\n+++ b/interleaved.txt\n@@ -1 +1,2 @@\n existing line\n\e[38;2;255;255"))
        (funcall callback
                 '(:type commentary
-                  :event "thinking.delta"
+                  :event "reasoning.delta"
                   :content "Thinking"))
        (funcall callback
                 '(:type delta
@@ -3711,6 +3711,7 @@
                      "Session ready: gpt-5.5 via openai-codex")))))
 
 (ert-deftest hermes-transport-dashboard-normalizes-reasoning-events ()
+  "`reasoning.delta' becomes commentary; `thinking.delta' (spinner status) is dropped."
   (let (events)
     (let ((client (make-hermes-dashboard-transport-client
                    :callback (lambda (event) (push event events)))))
@@ -3724,15 +3725,15 @@
                               (payload . ((text . "inspect first"))))))))))
     (let ((events (nreverse events)))
       (should (equal (mapcar (lambda (event) (plist-get event :type)) events)
-                     '(commentary commentary)))
+                     '(commentary)))
       (should (equal (mapcar (lambda (event) (plist-get event :event)) events)
-                     '("reasoning.delta" "thinking.delta")))
+                     '("reasoning.delta")))
       (should (equal (mapcar (lambda (event) (plist-get event :session-id))
                              events)
-                     '("sid" "sid")))
+                     '("sid")))
       (should (equal (mapcar (lambda (event) (plist-get event :content))
                              events)
-                     '("inspect first" "inspect first"))))))
+                     '("inspect first"))))))
 
 (ert-deftest hermes-transport-dashboard-normalizes-subagent-events ()
   (let (events)
