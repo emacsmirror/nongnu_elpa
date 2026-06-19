@@ -1665,10 +1665,12 @@ show them."
        (list (hermes-dashboard-transport--payload-event
               type params payload 'commentary)))
       ;; `thinking.delta' carries the kawaii spinner status (face + verb), not
-      ;; real reasoning.  The header already shows a "Thinking..." activity, so
-      ;; drop it rather than render a duplicative transcript block.  Matches the
-      ;; Hermes Desktop web UI, which ignores thinking.delta for this reason.
-      ("thinking.delta" nil)
+      ;; real reasoning.  Surface it as a header-only `thinking' event so the
+      ;; live verb (e.g. "Pondering...") rotates in the status line; the chat
+      ;; layer never turns a `thinking' event into a transcript entry.
+      ("thinking.delta"
+       (list (hermes-dashboard-transport--payload-event
+              type params payload 'thinking)))
       ((or "approval.request" "clarify.request" "sudo.request" "secret.request")
        (list (hermes-dashboard-transport--prompt-request-event
               type params payload)))

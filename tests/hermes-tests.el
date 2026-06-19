@@ -630,7 +630,8 @@
          (should (string-match-p "📖 read_file  0.4s"
                                  (buffer-string))))))))
 
-(ert-deftest hermes-chat-header-shows-status-and-tool-activity ()
+(ert-deftest hermes-chat-header-shows-status-and-omits-tool-activity ()
+  "The header keeps the status detail and never surfaces tool commands."
   (let (callback)
     (hermes-test-with-chat-buffer
      (let ((hermes-transport-send-function
@@ -652,22 +653,16 @@
 			:name "terminal"
 			:status "running"
 			:preview "make test"))
-       (should (string-match-p "terminal: make test"
-                               (hermes-test--header-line-string)))
-       (funcall callback
-                '(:type tool
-			:tool-call-id "tool-1"
-			:name "terminal"
-			:status "completed"
-			:args ((command . "make test"))
-			:duration 1.0))
        (let ((header (hermes-test--header-line-string)))
-         (should (string-match-p "terminal: make test" header))
-         (should (string-match-p "1.0s" header)))
+         (should (string-match-p "Thinking" header))
+         (should-not (string-match-p "terminal: make test" header)))
+       ;; The tool stays out of the header but is still tracked for the
+       ;; dashboard's per-session tool list.
+       (should (hermes-chat--active-tool-summaries))
        (funcall callback '(:type done))
        (let ((header (hermes-test--header-line-string)))
          (should (string-match-p "Ready" header))
-         (should-not (string-match-p "last tool" header)))))))
+         (should-not (string-match-p "terminal: make test" header)))))))
 
 (ert-deftest hermes-chat-progress-updates-preserve-draft-and-streaming ()
   (let (callback)
@@ -3866,7 +3861,7 @@
                      "Session ready: gpt-5.5 via openai-codex")))))
 
 (ert-deftest hermes-transport-dashboard-normalizes-reasoning-events ()
-  "`reasoning.delta' becomes commentary; `thinking.delta' (spinner status) is dropped."
+  "`reasoning.delta' becomes commentary; `thinking.delta' becomes a `thinking' event."
   (let (events)
     (let ((client (make-hermes-dashboard-transport-client
                    :callback (lambda (event) (push event events)))))
@@ -3880,15 +3875,36 @@
                               (payload . ((text . "inspect first"))))))))))
     (let ((events (nreverse events)))
       (should (equal (mapcar (lambda (event) (plist-get event :type)) events)
-                     '(commentary)))
+                     '(commentary thinking)))
       (should (equal (mapcar (lambda (event) (plist-get event :event)) events)
-                     '("reasoning.delta")))
+                     '("reasoning.delta" "thinking.delta")))
       (should (equal (mapcar (lambda (event) (plist-get event :session-id))
                              events)
-                     '("sid")))
+                     '("sid" "sid")))
       (should (equal (mapcar (lambda (event) (plist-get event :content))
                              events)
-                     '("inspect first"))))))
+                     '("inspect first" "inspect first"))))))
+
+(ert-deftest hermes-chat-thinking-activity-keeps-face-titlecases-verb ()
+  "`thinking.delta' content keeps the kawaii face, drops dots, title-cases the verb."
+  (should (equal (hermes-chat--thinking-activity "(◔_◔) pondering...")
+                 "(◔_◔) Pondering"))
+  (should (equal (hermes-chat--thinking-activity "( ͡° ͜ʖ ͡°) cogitating…")
+                 "( ͡° ͜ʖ ͡°) Cogitating"))
+  (should (equal (hermes-chat--thinking-activity "reasoning") "Reasoning"))
+  (should (equal (hermes-chat--thinking-activity "") "Thinking"))
+  (should (equal (hermes-chat--thinking-activity nil) "Thinking")))
+
+(ert-deftest hermes-chat-thinking-event-updates-header-without-entry ()
+  "A `thinking' event shows the face plus verb bare and adds no transcript entry."
+  (hermes-test-with-chat-buffer
+   (let ((before (length (ewoc-collect hermes-chat--ewoc #'identity))))
+     (hermes-chat--handle-transport-event
+      "a1" '(:type thinking :content "(◔_◔) musing..."))
+     (let ((header (hermes-test--header-line-string)))
+       (should (string-match-p "(◔_◔) Musing" header))
+       (should-not (string-match-p "Running" header)))
+     (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
 
 (ert-deftest hermes-transport-dashboard-normalizes-subagent-events ()
   (let (events)

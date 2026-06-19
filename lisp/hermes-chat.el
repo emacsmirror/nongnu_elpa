@@ -655,14 +655,6 @@ METADATA is stored as the entry's `:metadata' plist."
                hermes-chat--active-tools))
     (nreverse summaries)))
 
-(defun hermes-chat--active-tool-summary ()
-  "Return one compact active-tool summary for the chat header."
-  (let ((summaries (hermes-chat--active-tool-summaries)))
-    (pcase (length summaries)
-      (0 nil)
-      (1 (car summaries))
-      (count (format "%d tools: %s" count (string-join summaries "; "))))))
-
 (defun hermes-chat--header-tool-key (event)
   "Return stable header key for EVENT's tool-like activity."
   (or (hermes-chat--transport-entry-id event)
@@ -678,19 +670,17 @@ METADATA is stored as the entry's `:metadata' plist."
      (_ nil))))
 
 (defun hermes-chat--remember-header-tool (event)
-  "Update chat header tool state from EVENT."
+  "Track EVENT's tool in `hermes-chat--active-tools' for the dashboard.
+The chat header itself never shows tools; this only feeds the dashboard's
+per-session tool list via `hermes-chat--dashboard-snapshot'."
   (when-let* ((summary (hermes-chat--header-tool-summary event)))
     (unless (hash-table-p hermes-chat--active-tools)
       (setq hermes-chat--active-tools (make-hash-table :test 'equal)))
-    (let* ((key (or (hermes-chat--header-tool-key event) summary))
-           (status (hermes-chat--transport-entry-status event)))
+    (let ((key (or (hermes-chat--header-tool-key event) summary))
+          (status (hermes-chat--transport-entry-status event)))
       (if (hermes-chat--finished-status-p status)
           (remhash key hermes-chat--active-tools)
-        (puthash key summary hermes-chat--active-tools))
-      (hermes-chat--set-header-state
-       :status (if (hermes-chat--active-tool-summary) 'running status)
-       :activity (or (hermes-chat--active-tool-summary) summary)
-       :last-tool summary))))
+        (puthash key summary hermes-chat--active-tools)))))
 
 (defun hermes-chat--header-activity-for-event (event)
   "Return a compact activity string for transport EVENT."
@@ -719,14 +709,23 @@ fields, so it collapses to a plain ready state instead of repeating them."
       "Ready"
     (or (hermes-chat--header-activity-for-event event) "Working")))
 
+(defun hermes-chat--thinking-activity (content)
+  "Return a header label from a `thinking.delta' CONTENT string.
+CONTENT looks like \"(◔_◔) pondering...\"; keep the kawaii face, drop the
+trailing dots, and title-case the verb.  Fall back to \"Thinking\" when CONTENT
+carries no verb."
+  (let ((text (string-trim-right (or content "") "[.…[:space:]]+")))
+    (if (string-match-p "[A-Za-z]" text)
+        (replace-regexp-in-string "[A-Za-z]+" #'capitalize text t)
+      "Thinking")))
+
 (defun hermes-chat--update-header-for-event (event)
   "Update chat header state from transport EVENT."
   (hermes-chat--capture-session-identity event)
   (pcase (plist-get event :type)
-    ('delta
-     (unless (hermes-chat--active-tool-summary)
-       (hermes-chat--set-header-state
-        :status 'streaming :activity "Writing response")))
+    ;; Keep the kawaii thinking face visible while the answer streams rather
+    ;; than switching to a separate "Writing response" status.
+    ('delta nil)
     ('done
      (hermes-chat--clear-active-tools)
      (hermes-chat--set-header-state
@@ -746,10 +745,16 @@ fields, so it collapses to a plain ready state instead of repeating them."
                     'requested)
                 (hermes-chat--transport-entry-status event))
       :activity (hermes-chat--status-event-activity event)))
+    ;; Track tools for the dashboard's per-session list, but keep them out of
+    ;; the chat header (the kawaii thinking status is the only header detail).
     ((or 'progress 'tool)
      (hermes-chat--remember-header-tool event))
     ('commentary
      (hermes-chat--set-header-state :status 'running :activity "Thinking..."))
+    ('thinking
+     (hermes-chat--set-header-state
+      :status 'thinking
+      :activity (hermes-chat--thinking-activity (plist-get event :content))))
     ('diff
      (hermes-chat--set-header-state :status 'running :activity "Reviewing diff"))
     ('unknown
@@ -765,27 +770,35 @@ fields, so it collapses to a plain ready state instead of repeating them."
 
 (defun hermes-chat--header-detail (label)
   "Return the live detail to append after LABEL in the header, or nil.
-An active tool wins; otherwise the activity is used, with a leading copy of
-LABEL stripped so a label-prefixed activity is not shown twice."
-  (or (hermes-chat--active-tool-summary)
-      (when-let* ((activity (hermes-chat--nonempty-string
-                             (plist-get hermes-chat--status-state :activity))))
-        (if (string-prefix-p (downcase label) (downcase activity))
-            (hermes-chat--nonempty-string
-             (string-trim (substring activity (length label)) "[-: ]+"))
-          activity))))
+The activity is used, with a leading copy of LABEL stripped so a label-prefixed
+activity is not shown twice.  Tool commands are deliberately not surfaced here:
+the header keeps the kawaii thinking status as its only live detail, while the
+transcript carries the full tool detail."
+  (when-let* ((activity (hermes-chat--nonempty-string
+                         (plist-get hermes-chat--status-state :activity))))
+    (if (string-prefix-p (downcase label) (downcase activity))
+        (hermes-chat--nonempty-string
+         (string-trim (substring activity (length label)) "[-: ]+"))
+      activity)))
 
 (defun hermes-chat--header-status-segment ()
   "Return the propertized status segment: icon, label, and live detail.
 The label carries the high-level state (Ready/Running/...) and an active tool
-or distinct activity is appended so the live detail is not lost."
-  (let* ((status (plist-get hermes-chat--status-state :status))
-         (label (hermes-chat--header-status-label status))
-         (detail (hermes-chat--header-detail label)))
-    (propertize
-     (format "%s %s" (hermes-chat--status-icon status)
-             (if detail (format "%s: %s" label detail) label))
-     'face (hermes-chat--header-status-face status))))
+or distinct activity is appended so the live detail is not lost.  The `thinking'
+state is shown bare (kawaii face plus verb, no icon or label) since the face is
+self-explanatory."
+  (let ((status (plist-get hermes-chat--status-state :status)))
+    (if (eq status 'thinking)
+        (propertize (or (hermes-chat--nonempty-string
+                         (plist-get hermes-chat--status-state :activity))
+                        "Thinking")
+                    'face (hermes-chat--header-status-face 'running))
+      (let* ((label (hermes-chat--header-status-label status))
+             (detail (hermes-chat--header-detail label)))
+        (propertize
+         (format "%s %s" (hermes-chat--status-icon status)
+                 (if detail (format "%s: %s" label detail) label))
+         'face (hermes-chat--header-status-face status))))))
 
 (defun hermes-chat--abbrev-tokens (n)
   "Return token count N abbreviated, e.g. 45k."
@@ -1722,6 +1735,9 @@ so do not copy its final content into the unsubmitted retry placeholder."
          (setq hermes-chat--pending-assistant-id nil
                hermes-chat--process nil)
          (hermes-chat--drain-queued-message)))
+      ;; `thinking' is the kawaii spinner verb: it updates the header above and
+      ;; never becomes a transcript entry.
+      ('thinking nil)
       ((or 'status 'progress 'tool 'commentary 'diff)
        (hermes-chat--upsert-transport-entry assistant-id event))
       ('unknown
