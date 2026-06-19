@@ -56,15 +56,15 @@
   (generate-new-buffer-name "*Hermes Dashboard Test*"))
 
 (defmacro hermes-test-with-chat-buffer (&rest body)
-  "Create a fresh Hermes chat buffer and run BODY in it."
+  "Create a fresh Hermes chat buffer and run BODY in it.
+The buffer is captured by object so teardown still kills it after a rename."
   (declare (indent 0) (debug t))
-  `(let ((hermes-chat-buffer-name (hermes-test--chat-buffer-name)))
+  `(let* ((hermes-chat-buffer-name (hermes-test--chat-buffer-name))
+          (buffer (progn (hermes-chat)
+                         (get-buffer hermes-chat-buffer-name))))
      (unwind-protect
-         (progn
-           (hermes-chat)
-           (with-current-buffer hermes-chat-buffer-name
-             ,@body))
-       (when-let* ((buffer (get-buffer hermes-chat-buffer-name)))
+         (with-current-buffer buffer ,@body)
+       (when (buffer-live-p buffer)
          (kill-buffer buffer)))))
 
 (defmacro hermes-test-with-dashboard-buffer (&rest body)
@@ -663,6 +663,48 @@
        (let ((header (hermes-test--header-line-string)))
          (should (string-match-p "Ready" header))
          (should-not (string-match-p "terminal: make test" header)))))))
+
+(ert-deftest hermes-chat-rename-updates-buffer-and-title ()
+  "Renaming sets the title and the buffer name, trimming whitespace."
+  (hermes-test-with-chat-buffer
+   (hermes-chat-rename "  My Project  ")
+   (should (equal hermes-chat--title "My Project"))
+   (should (equal (buffer-name) "*Hermes: My Project*"))))
+
+(ert-deftest hermes-chat-rename-rejects-empty-title ()
+  (hermes-test-with-chat-buffer
+   (should-error (hermes-chat-rename "   ") :type 'user-error)))
+
+(ert-deftest hermes-chat-rename-pushes-server-title-when-attached ()
+  "An attached session pushes `session.title' with the live session id."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--dashboard-active-session-id "sid-1")
+   (let (sent)
+     (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+                (lambda () t))
+               ((symbol-function 'hermes-dashboard-transport-session-title)
+                (lambda (_client &rest args) (setq sent args))))
+       (hermes-chat-rename "Renamed"))
+     (should (equal (plist-get sent :session-id) "sid-1"))
+     (should (equal (plist-get sent :title) "Renamed")))))
+
+(ert-deftest hermes-chat-snapshot-prefers-title ()
+  "The dashboard snapshot uses the chat title over the buffer name."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--title "Pinned")
+   (should (equal (plist-get (hermes-chat--dashboard-snapshot) :title)
+                  "Pinned"))))
+
+(ert-deftest hermes-chat-switch-offers-and-selects-live-buffer ()
+  "The switcher lists live chat buffers and switches to the chosen one."
+  (hermes-test-with-chat-buffer
+   (let ((target (current-buffer)))
+     (should (memq target (hermes-chat--live-buffers)))
+     (with-temp-buffer
+       (cl-letf (((symbol-function 'completing-read)
+                  (lambda (&rest _) (buffer-name target))))
+         (call-interactively #'hermes-switch-to-chat))
+       (should (eq (current-buffer) target))))))
 
 (ert-deftest hermes-chat-progress-updates-preserve-draft-and-streaming ()
   (let (callback)

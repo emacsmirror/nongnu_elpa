@@ -90,7 +90,8 @@ load: clean
 	  (dolist (sym '(hermes-dashboard-mode-map hermes-chat-mode-map \
 	                 hermes-sessions-mode-map hermes-cron-mode-map \
 	                 hermes-subagents-mode-map hermes-rollback-mode-map \
-	                 hermes-kanban-mode-map hermes-kanban-boards-mode-map)) \
+	                 hermes-kanban-mode-map hermes-kanban-boards-mode-map \
+	                 hermes-chat-actions-map)) \
 	    (when (boundp sym) (makunbound sym))))" > /dev/null
 	@for f in $(SRCS); do \
 	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \

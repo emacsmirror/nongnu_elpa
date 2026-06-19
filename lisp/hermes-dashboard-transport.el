@@ -1069,6 +1069,19 @@ RESOLVE and REJECT receive the asynchronous result or error."
     `((session_id . ,(hermes-dashboard-transport--session-param client session-id))))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-session-title
+    (client &key session-id title resolve reject)
+  "Set CLIENT's SESSION-ID title to TITLE via `session.title'.
+RESOLVE and REJECT receive the asynchronous result or error.  The gateway
+resolves the session from the live SESSION-ID and may reply with a pending
+title when the session row does not exist yet."
+  (hermes-dashboard-transport-request
+   client "session.title"
+   (hermes-dashboard-transport--alist-without-nil
+    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))
+      (title . ,title)))
+   resolve reject))
+
 (cl-defun hermes-dashboard-transport-session-steer
     (client text &key session-id resolve reject)
   "Send TEXT through `session.steer' for CLIENT's active session."

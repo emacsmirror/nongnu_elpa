@@ -124,6 +124,11 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--status-state nil
   "Plist describing the live status shown in the chat header.")
 
+(defvar-local hermes-chat--title nil
+  "Human title for this chat session.
+Set by `hermes-chat-rename'.  Shown in the buffer name and reported to the
+dashboard; nil falls back to the buffer name.")
+
 (defvar-local hermes-chat--active-tools nil
   "Hash table of active tool summaries shown in the chat header.")
 
@@ -1574,7 +1579,7 @@ A nil SESSION-ID matches every prompt in the current buffer."
 (defun hermes-chat--dashboard-snapshot ()
   "Return display-safe dashboard state for the current chat buffer."
   (list :buffer (current-buffer)
-        :title (buffer-name)
+        :title (or hermes-chat--title (buffer-name))
         :session-id hermes-chat--session-id
         :connection (hermes-chat--dashboard-connection-label)
         :status (or (plist-get hermes-chat--status-state :status) 'ready)
@@ -3189,6 +3194,82 @@ messages are fetched and rendered; the durable session continues on send."
     (hermes-chat--collect-urls (hermes-chat--entries))
     (current-buffer))))
 
+;;; Renaming and switching chat buffers
+
+(defun hermes-chat--buffer-name-for-title (title)
+  "Return a chat buffer name derived from TITLE."
+  (format "*Hermes: %s*" title))
+
+(defun hermes-chat--push-session-title (title)
+  "Push TITLE to the server with `session.title' when a session is attached.
+With no live session the rename stays buffer-local; report that instead."
+  (if (and (hermes-chat--dashboard-session-attached-p)
+           hermes-chat--dashboard-active-session-id)
+      (let ((buffer (current-buffer)))
+        (hermes-dashboard-transport-session-title
+         hermes-chat--dashboard-client
+         :session-id hermes-chat--dashboard-active-session-id
+         :title title
+         :resolve (lambda (result)
+                    (when (and (buffer-live-p buffer)
+                               (eq (hermes-transport--get result 'pending) t))
+                      (message "Title queued; applies once the session is saved")))
+         :reject (lambda (message)
+                   (when (buffer-live-p buffer)
+                     (with-current-buffer buffer
+                       (hermes-chat--command-error message))))))
+    (message "Renamed buffer; no live session to update on the server")))
+
+(defun hermes-chat-rename (title)
+  "Rename this chat session to TITLE.
+Always rename the buffer to a TITLE-derived name; when a live dashboard session
+is attached, also update the server title via `session.title' so the dashboard
+and web reflect it."
+  (interactive
+   (list (read-string "Hermes chat title: " (or hermes-chat--title ""))))
+  (let ((title (string-trim title)))
+    (when (string-empty-p title)
+      (user-error "Title must not be empty"))
+    (setq hermes-chat--title title)
+    (let ((newname (hermes-chat--buffer-name-for-title title)))
+      (unless (equal (buffer-name) newname)
+        (rename-buffer newname t)))
+    (hermes-chat--push-session-title title)
+    (force-mode-line-update)))
+
+(defun hermes-chat--live-buffers ()
+  "Return all live Hermes chat buffers in `buffer-list' order."
+  (cl-remove-if-not
+   (lambda (buffer)
+     (with-current-buffer buffer (derived-mode-p 'hermes-chat-mode)))
+   (buffer-list)))
+
+(defun hermes-chat--switch-annotation (name)
+  "Return a shadowed status annotation for chat buffer NAME in the switcher."
+  (when-let* ((buffer (get-buffer name)))
+    (with-current-buffer buffer
+      (let ((detail (string-join
+                     (delq nil
+                           (list (hermes-chat--dashboard-connection-label)
+                                 (hermes-chat--nonempty-string
+                                  (plist-get hermes-chat--status-state :activity))))
+                     " · ")))
+        (and (not (string-empty-p detail))
+             (concat "  " (propertize detail 'face 'shadow)))))))
+
+(defun hermes-switch-to-chat (buffer)
+  "Switch to a Hermes chat BUFFER chosen with completion."
+  (interactive
+   (let ((buffers (hermes-chat--live-buffers)))
+     (unless buffers
+       (user-error "No Hermes chat buffers"))
+     (let ((completion-extra-properties
+            (list :annotation-function #'hermes-chat--switch-annotation)))
+       (list (get-buffer
+              (completing-read "Hermes chat: "
+                               (mapcar #'buffer-name buffers) nil t))))))
+  (pop-to-buffer-same-window buffer))
+
 (declare-function hermes-list-sessions "hermes-sessions")
 
 (defvar hermes-chat-actions-map)
@@ -3208,6 +3289,8 @@ messages are fetched and rendered; the durable session continues on send."
   "n" ("New session" hermes-chat-new-session)
   "N" ("New profile session" hermes-chat-new-profile-session)
   "m" ("Switch model" hermes-chat-switch-model)
+  "R" ("Rename session" hermes-chat-rename)
+  "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)
   :group "Commands"
   "c" ("Show commands" hermes-chat-show-commands)
@@ -3228,7 +3311,9 @@ messages are fetched and rendered; the durable session continues on send."
   "C-c C-o" #'hermes-chat-actions-map-popup
   "C-c C-/" #'hermes-chat-show-commands
   "C-c C-l" #'hermes-chat-view-attachments
-  "C-c C-n" #'hermes-chat-new-session)
+  "C-c C-n" #'hermes-chat-new-session
+  "C-c C-r" #'hermes-chat-rename
+  "C-c C-b" #'hermes-switch-to-chat)
 
 (define-derived-mode hermes-chat-mode fundamental-mode "Hermes Chat"
   "Major mode for Hermes chat buffers."
