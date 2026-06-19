@@ -432,21 +432,23 @@ BUFFER-NAME overrides the default \"*Hermes Diff*\" buffer."
   "Return PATH without a leading a/ or b/ diff prefix."
   (replace-regexp-in-string "\\`[ab]/" "" path))
 
+(defun hermes-chat--diff-header-match (regexp)
+  "Return the first capture group of REGEXP in the current buffer, or nil."
+  (goto-char (point-min))
+  (and (re-search-forward regexp nil t) (match-string 1)))
+
 (defun hermes-chat--diff-label (diff)
   "Return a compact target-file label for DIFF, or nil.
-Handles standard `+++ b/path' headers, `diff --git' lines, and the gateway's
-pre-rendered `a/path -> b/path' header."
+A standard `+++ b/path' or `diff --git' header wins; otherwise fall back to the
+gateway's pre-rendered `a/path -> b/path' header."
   (with-temp-buffer
     (insert diff)
-    (goto-char (point-min))
-    (when (re-search-forward
-           (concat "^\\(?:.* → \\(.+\\)$\\|"
-                   "\\+\\+\\+ \\(.+\\)$\\|"
-                   "diff --git a/.+? b/\\(.+\\)$\\)")
-           nil t)
+    (when-let* ((path (or (hermes-chat--diff-header-match "^\\+\\+\\+ \\(.+\\)$")
+                          (hermes-chat--diff-header-match
+                           "^diff --git a/.+? b/\\(.+\\)$")
+                          (hermes-chat--diff-header-match "^.* → \\(.+\\)$"))))
       (hermes-chat--nonempty-string
-       (hermes-chat--diff-strip-prefix
-        (string-trim (or (match-string 1) (match-string 2) (match-string 3))))))))
+       (hermes-chat--diff-strip-prefix (string-trim path))))))
 
 (defun hermes-chat--insert-diff-button (diff)
   "Insert a shadow file label and a View Diff link that opens DIFF."
@@ -466,10 +468,11 @@ pre-rendered `a/path -> b/path' header."
   "Insert a whole-diff CONTENT (a `diff' event) as a labeled View Diff link."
   (hermes-chat--insert-diff-button content))
 
-(defun hermes-chat--insert-diffed (content insert-text)
+(defun hermes-chat--insert-diffed (content insert-text &optional blocks)
   "Insert CONTENT, replacing diff blocks with View Diff links.
-INSERT-TEXT inserts each non-diff text segment (markdown or shadow text)."
-  (let ((blocks (hermes-chat--diff-blocks content))
+INSERT-TEXT inserts each non-diff text segment (markdown or shadow text).
+BLOCKS, when given, is a precomputed `hermes-chat--diff-blocks' result."
+  (let ((blocks (or blocks (hermes-chat--diff-blocks content)))
         (pos 0))
     (dolist (block blocks)
       (funcall insert-text (substring content pos (nth 0 block)))
@@ -1043,18 +1046,18 @@ the thinking disclosure; diffs become View Diff links."
                                   (hermes-chat--status-icon
                                    (plist-get entry :status)))
                           'face 'shadow))
-      (if (and (memq (plist-get entry :role) '(tool progress))
-               (hermes-chat--multiline-content-p content)
-               (null (hermes-chat--diff-blocks content)))
-          (let ((expanded (hermes-chat--entry-expanded-p entry)))
-            (hermes-chat--insert-transient-toggle
-             entry (hermes-chat--first-line content) expanded)
-            (insert "\n")
-            (when expanded
-              (hermes-chat--insert-shadow content)
-              (insert "\n")))
-        (progn
-          (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow)
+      (let ((blocks (hermes-chat--diff-blocks content)))
+        (if (and (memq (plist-get entry :role) '(tool progress))
+                 (hermes-chat--multiline-content-p content)
+                 (null blocks))
+            (let ((expanded (hermes-chat--entry-expanded-p entry)))
+              (hermes-chat--insert-transient-toggle
+               entry (hermes-chat--first-line content) expanded)
+              (insert "\n")
+              (when expanded
+                (hermes-chat--insert-shadow content)
+                (insert "\n")))
+          (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow blocks)
           (insert "\n"))))))
 
 (defun hermes-chat--compact-commentary-paragraph (paragraph)
