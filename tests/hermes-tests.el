@@ -4477,48 +4477,92 @@
          (hermes-chat-send)
          (should (equal create-profile "work")))))))
 
-(ert-deftest hermes-kanban-rows-from-list ()
-  "Kanban rows map status/priority/assignee/title."
-  (let ((rows (hermes-kanban--rows
-               '(((id . "t1") (status . "ready") (priority . 2)
-                  (assignee . "elisp-dev") (title . "Do thing"))))))
+(ert-deftest hermes-kanban-board-rows-from-boards ()
+  "Board rows map name/total/per-status counts and mark the current board."
+  (let ((rows (hermes-kanban--board-rows
+               '(((slug . "emacs-lisp") (name . "Emacs Lisp") (is_current . t)
+                  (total . 3) (counts . ((todo . 1) (running . 2))))))))
+    (should (equal (caar rows) (cons "emacs-lisp" "Emacs Lisp")))
+    (should (equal (aref (cadr (car rows)) 0) "●"))
+    (should (equal (aref (cadr (car rows)) 1) "Emacs Lisp"))
+    (should (equal (aref (cadr (car rows)) 2) "3"))
+    (should (equal (aref (cadr (car rows)) 3) "1"))
+    (should (equal (aref (cadr (car rows)) 5) "2"))))
+
+(ert-deftest hermes-kanban-task-rows-from-columns ()
+  "Task rows flatten dashboard status columns into status/pri/assignee/title."
+  (let ((rows (hermes-kanban--task-rows
+               '(((name . "todo")
+                  (tasks . (((id . "t1") (status . "todo") (priority . 2)
+                             (assignee . "elisp-dev") (title . "Do thing")))))
+                 ((name . "running") (tasks . nil))))))
     (should (equal (caar rows) "t1"))
-    (should (equal (aref (cadr (car rows)) 0) "ready"))
+    (should (equal (aref (cadr (car rows)) 0) "todo"))
     (should (equal (aref (cadr (car rows)) 1) "2"))
     (should (equal (aref (cadr (car rows)) 2) "elisp-dev"))
     (should (equal (aref (cadr (car rows)) 3) "Do thing"))))
 
-(ert-deftest hermes-kanban-list-renders-tasks ()
-  "Listing runs the CLI and renders the tasks."
-  (cl-letf (((symbol-function 'hermes-kanban--run-json)
-             (lambda (args)
-               (should (member "list" args))
-               '(((id . "t1") (status . "ready") (title . "Do thing"))))))
+(ert-deftest hermes-kanban-render-boards-lists-boards ()
+  "The boards overview fetches /boards and renders one row per board."
+  (cl-letf (((symbol-function 'hermes-kanban--api)
+             (lambda (method path &optional _body _query)
+               (should (equal method "GET"))
+               (should (equal path "/boards"))
+               '((boards . (((slug . "emacs-lisp") (name . "Emacs Lisp")
+                             (is_current . t) (total . 1)
+                             (counts . ((ready . 1))))))))))
     (unwind-protect
         (progn
           (hermes-list-kanban)
+          (with-current-buffer "*Hermes Kanban Boards*"
+            (should (derived-mode-p 'hermes-kanban-boards-mode))
+            (should (equal (caar tabulated-list-entries)
+                           (cons "emacs-lisp" "Emacs Lisp")))))
+      (when (get-buffer "*Hermes Kanban Boards*")
+        (kill-buffer "*Hermes Kanban Boards*")))))
+
+(ert-deftest hermes-kanban-open-board-renders-tasks ()
+  "Opening a board fetches /board with its slug and flattens the columns."
+  (cl-letf (((symbol-function 'hermes-kanban--api)
+             (lambda (method path &optional _body query)
+               (should (equal method "GET"))
+               (should (equal path "/board"))
+               (should (equal (cdr (assq 'board query)) "emacs-lisp"))
+               '((columns . (((name . "todo")
+                              (tasks . (((id . "t1") (status . "todo")
+                                         (title . "Do thing")))))))
+                 (assignees . ("elisp-dev"))))))
+    (unwind-protect
+        (progn
+          (hermes-kanban--render-board "emacs-lisp" "Emacs Lisp")
           (with-current-buffer "*Hermes Kanban*"
             (should (derived-mode-p 'hermes-kanban-mode))
+            (should (equal hermes-kanban--slug "emacs-lisp"))
+            (should (equal hermes-kanban--assignees '("elisp-dev")))
             (should (equal (caar tabulated-list-entries) "t1"))))
       (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*")))))
 
 (ert-deftest hermes-kanban-show-fetches-task-at-point ()
-  "Showing fetches and renders the task on the current row."
-  (let (show-args)
-    (cl-letf (((symbol-function 'hermes-kanban--run-json)
-               (lambda (args)
-                 (if (member "list" args)
-                     '(((id . "t1") (title . "Do thing")))
-                   (setq show-args args)
-                   '((title . "Do thing") (status . "ready") (body . "details here"))))))
+  "Showing fetches the task on the current row and renders its body."
+  (let (show-path)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (_method path &optional _body _query)
+                 (cond
+                  ((equal path "/board")
+                   '((columns . (((name . "todo")
+                                  (tasks . (((id . "t1") (status . "todo")
+                                             (title . "Do thing")))))))
+                     (assignees)))
+                  (t (setq show-path path)
+                     '((task . ((title . "Do thing") (status . "todo")
+                                (body . "details here")))))))))
       (unwind-protect
           (progn
-            (hermes-list-kanban)
+            (hermes-kanban--render-board "emacs-lisp" "Emacs Lisp")
             (with-current-buffer "*Hermes Kanban*"
               (goto-char (point-min))
               (hermes-kanban-show))
-            (should (member "show" show-args))
-            (should (member "t1" show-args))
+            (should (equal show-path "/tasks/t1"))
             (with-current-buffer "*Hermes Kanban Task*"
               (should (string-match-p "details here" (buffer-string)))))
         (dolist (b '("*Hermes Kanban*" "*Hermes Kanban Task*"))
