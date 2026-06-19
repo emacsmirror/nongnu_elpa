@@ -22,7 +22,7 @@ ERT_OPTS ?=
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 
-.PHONY: all compile do-compile test do-test lint do-lint dev check pre-handoff-check load clean
+.PHONY: all compile do-compile test do-test lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load clean
 
 all: compile
 
@@ -32,7 +32,8 @@ compile:
 do-compile:
 	@for f in $(SRCS); do \
 	  echo "Compiling $$f..."; \
-	  $(BATCH) -f batch-byte-compile $$f || exit 1; \
+	  $(BATCH) --eval '(setq byte-compile-error-on-warn t)' \
+	    -f batch-byte-compile $$f || exit 1; \
 	done
 
 test:
@@ -51,13 +52,29 @@ lint:
 do-lint:
 	@echo "Running checkdoc..."
 	@for f in $(SRCS); do \
-	  $(BATCH) --eval "(checkdoc-file \"$$f\")" || exit 1; \
+	  out=$$($(BATCH) --eval "(checkdoc-file \"$$f\")" 2>&1); \
+	  if [ -n "$$out" ]; then echo "$$out"; echo "checkdoc warnings in $$f"; exit 1; fi; \
+	done
+
+native-comp:
+	@$(ENV_MAKE) do-native-comp
+
+do-native-comp:
+	@for f in $(SRCS); do \
+	  echo "Native-compiling $$f..."; \
+	  out=$$($(BATCH) --eval "(native-compile \"$$f\")" 2>&1); \
+	  warn=$$(printf '%s\n' "$$out" | grep -E "Warning:|is not known to be defined" || true); \
+	  if [ -n "$$warn" ]; then echo "$$warn"; echo "native-comp warnings in $$f"; exit 1; fi; \
 	done
 
 dev:
 	@$(ENV_MAKE) do-compile do-lint do-test
 
 check: dev
+
+pre-commit:
+	git diff --check
+	@$(ENV_MAKE) do-compile do-lint do-native-comp do-test
 
 pre-handoff-check:
 	git status --short --branch
