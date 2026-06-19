@@ -1022,6 +1022,30 @@
        (should (equal (plist-get (hermes-test--assistant-entry) :content)
                       "hello"))))))
 
+(ert-deftest hermes-chat-resume-renders-prior-messages ()
+  "Resuming a session renders its prior user/assistant/tool messages."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+             (lambda (&rest _) (hermes-test--dashboard-client)))
+            ((symbol-function 'hermes-dashboard-transport-session-resume)
+             (lambda (_client _sid &rest args)
+               (funcall (plist-get args :resolve)
+                        '((session_id . "live-1")
+                          (messages . (((role . "user") (text . "hi there"))
+                                       ((role . "assistant") (text . "hello back"))
+                                       ((role . "tool") (name . "terminal")
+                                        (context . "make test")))))))))
+    (let ((buffer (hermes-chat-resume-session "sid-stored" "My Session")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (should (equal (mapcar (lambda (entry) (plist-get entry :role))
+                                   (hermes-chat--entries))
+                           '(user assistant tool)))
+            (should (string-match-p "hi there" (buffer-string)))
+            (should (string-match-p "hello back" (buffer-string)))
+            (should (string-match-p "terminal: make test" (buffer-string)))
+            (should (equal hermes-chat--dashboard-active-session-id "live-1")))
+        (kill-buffer buffer)))))
+
 (ert-deftest hermes-chat-rejects-concurrent-send-in-same-buffer ()
   (hermes-test-with-chat-buffer
    (let ((hermes-transport-send-function (lambda (_prompt _cb) 'fake-process)))
@@ -4234,12 +4258,16 @@
 
 (ert-deftest hermes-chat-resume-session-presets-session-id ()
   "Resuming a session opens a chat buffer bound to that durable id."
-  (let ((buffer (hermes-chat-resume-session "sid-42" "My chat")))
-    (unwind-protect
-        (with-current-buffer buffer
-          (should (derived-mode-p 'hermes-chat-mode))
-          (should (equal hermes-chat--session-id "sid-42")))
-      (kill-buffer buffer))))
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+             (lambda (&rest _) (hermes-test--dashboard-client)))
+            ((symbol-function 'hermes-dashboard-transport-session-resume)
+             (lambda (_client _sid &rest _args) nil)))
+    (let ((buffer (hermes-chat-resume-session "sid-42" "My chat")))
+      (unwind-protect
+          (with-current-buffer buffer
+            (should (derived-mode-p 'hermes-chat-mode))
+            (should (equal hermes-chat--session-id "sid-42")))
+        (kill-buffer buffer)))))
 
 (ert-deftest hermes-sessions-list-renders-and-stops-transient-client ()
   "Listing connects a transient client, renders rows, then stops it."

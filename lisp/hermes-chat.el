@@ -2906,10 +2906,56 @@ when the session is created on the first interaction."
             (and (not (string-empty-p profile)) profile)))
     buffer))
 
+(defun hermes-chat--history-entry (message)
+  "Return a chat entry for a resumed history MESSAGE, or nil to skip it."
+  (let ((role (hermes-transport--scalar-string
+               (hermes-transport--get message 'role)))
+        (text (hermes-transport--scalar-string
+               (hermes-transport--get message 'text))))
+    (pcase role
+      ("user" (and text (hermes-chat--make-entry 'user text 'done)))
+      ("assistant" (and text (hermes-chat--make-entry 'assistant text 'done)))
+      ("tool"
+       (hermes-chat--make-entry
+        'tool
+        (hermes-chat--tool-head
+         (or (hermes-transport--scalar-string
+              (hermes-transport--get message 'name))
+             "tool")
+         (hermes-transport--scalar-string
+          (hermes-transport--get message 'context)))
+        'done)))))
+
+(defun hermes-chat--render-history (messages)
+  "Insert prior MESSAGES (from `session.resume') into the transcript."
+  (dolist (message messages)
+    (when-let* ((entry (hermes-chat--history-entry message)))
+      (hermes-chat--insert-entry entry))))
+
+(defun hermes-chat--load-session-history (buffer)
+  "Resume BUFFER's session over the dashboard and render its prior messages."
+  (with-current-buffer buffer
+    (let ((client (hermes-chat--dashboard-start #'ignore)))
+      (hermes-dashboard-transport-session-resume
+       client hermes-chat--session-id
+       :cols (hermes-chat--dashboard-cols)
+       :resolve (lambda (result)
+                  (when (buffer-live-p buffer)
+                    (with-current-buffer buffer
+                      (hermes-chat--dashboard-record-session client result)
+                      (hermes-chat--render-history
+                       (hermes-transport--get result 'messages)))))
+       :reject (lambda (message)
+                 (when (buffer-live-p buffer)
+                   (with-current-buffer buffer
+                     (hermes-chat--insert-local-status
+                      (format "Could not load Hermes session history: %s" message)
+                      'error))))))))
+
 (defun hermes-chat-resume-session (session-id &optional title)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
-TITLE, when given, names the buffer.  Resume happens on the next interaction,
-like any chat buffer holding a durable session key."
+TITLE, when given, names the buffer.  Over the dashboard transport the prior
+messages are fetched and rendered; the durable session continues on send."
   (interactive (list (read-string "Resume Hermes session id: ")))
   (when (or (null session-id) (string-empty-p session-id))
     (user-error "No Hermes session id to resume"))
@@ -2921,7 +2967,10 @@ like any chat buffer holding a durable session key."
       (hermes-chat-mode)
       (setq hermes-chat--session-id session-id))
     (pop-to-buffer-same-window buffer)
-    (goto-char (or (hermes-chat--input-position) (point-max)))
+    (when (hermes-chat--dashboard-default-transport-p)
+      (hermes-chat--load-session-history buffer))
+    (with-current-buffer buffer
+      (goto-char (or (hermes-chat--input-position) (point-max))))
     buffer))
 
 (defun hermes-chat-send ()
