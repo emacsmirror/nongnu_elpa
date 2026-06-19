@@ -4282,7 +4282,9 @@
     '(:type status :event "session.info" :status "ready"
             :model "gpt-5.5" :agent-name "planner"
             :context (:used 45000 :max 200000 :percent 22)))
-   (should (string-match-p "45k/200k ctx (22%)" (hermes-test--header-line-string)))))
+   ;; The header doubles % so the redisplay engine renders a literal "22%"
+   ;; instead of eating "%)" as a mode-line spec.
+   (should (string-match-p "45k/200k ctx (22%%)" (hermes-chat--header-line)))))
 
 (ert-deftest hermes-chat-done-event-records-usage ()
   "A done event records usage in header state; the compact header omits the gauge."

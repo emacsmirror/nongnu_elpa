@@ -716,7 +716,8 @@ CONTEXT is a plist of :used, :max, and :percent."
                             (hermes-chat--format-context hermes-chat--context))))
          (text (concat " " (string-join parts "  |  ") " "))
          (width (max 20 (window-total-width))))
-    (truncate-string-to-width text width nil nil "…")))
+    ;; Double % so the context percentage is not read as a mode-line %-spec.
+    (string-replace "%" "%%" (truncate-string-to-width text width nil nil "…"))))
 
 (defun hermes-chat--format-usage (usage)
   "Return a compact token-usage string for USAGE, or nil.
