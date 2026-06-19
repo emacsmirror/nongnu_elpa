@@ -70,7 +70,10 @@ pre-handoff-check:
 load: clean
 	@emacsclient --eval "(progn \
 	  (add-to-list 'load-path \"$(CURDIR)/lisp\") \
-	  (dolist (sym '(hermes-dashboard-mode-map hermes-chat-mode-map)) \
+	  (dolist (sym '(hermes-dashboard-mode-map hermes-chat-mode-map \
+	                 hermes-sessions-mode-map hermes-cron-mode-map \
+	                 hermes-subagents-mode-map hermes-rollback-mode-map \
+	                 hermes-kanban-mode-map hermes-kanban-boards-mode-map)) \
 	    (when (boundp sym) (makunbound sym))))" > /dev/null
 	@for f in $(SRCS); do \
 	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
@@ -81,7 +84,19 @@ load: clean
 	    (cond ((derived-mode-p 'hermes-dashboard-mode) \
 	           (use-local-map hermes-dashboard-mode-map)) \
 	          ((derived-mode-p 'hermes-chat-mode) \
-	           (use-local-map hermes-chat-mode-map)))))" > /dev/null
+	           (use-local-map hermes-chat-mode-map)) \
+	          ((derived-mode-p 'hermes-sessions-mode) \
+	           (use-local-map hermes-sessions-mode-map)) \
+	          ((derived-mode-p 'hermes-cron-mode) \
+	           (use-local-map hermes-cron-mode-map)) \
+	          ((derived-mode-p 'hermes-subagents-mode) \
+	           (use-local-map hermes-subagents-mode-map)) \
+	          ((derived-mode-p 'hermes-rollback-mode) \
+	           (use-local-map hermes-rollback-mode-map)) \
+	          ((derived-mode-p 'hermes-kanban-boards-mode) \
+	           (use-local-map hermes-kanban-boards-mode-map)) \
+	          ((derived-mode-p 'hermes-kanban-mode) \
+	           (use-local-map hermes-kanban-mode-map)))))" > /dev/null
 	@printf "\033[32mLoaded all modules into Emacs\033[0m\n"
 
 clean:
