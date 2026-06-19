@@ -69,12 +69,13 @@
             packageRequires = [ ];
           };
           websocket = emacsPackages.websocket;
+          markdownMode = emacsPackages.markdown-mode;
 
           hermesEl = emacsPackages.trivialBuild {
             pname = "hermes-el";
             inherit version;
             src = source;
-            packageRequires = [ keymapPopup websocket ];
+            packageRequires = [ keymapPopup websocket markdownMode ];
 
             buildPhase = ''
               runHook preBuild
@@ -99,7 +100,7 @@
             };
           };
 
-          devEmacs = emacsPackages.emacsWithPackages (_: [ keymapPopup websocket ]);
+          devEmacs = emacsPackages.emacsWithPackages (_: [ keymapPopup websocket markdownMode ]);
           emacsWithHermes = emacsPackages.emacsWithPackages (_: [ hermesEl ]);
 
           mkCheck =

@@ -128,6 +128,23 @@
   "Return the current chat header line as plain text."
   (substring-no-properties (hermes-chat--header-line)))
 
+(defun hermes-test--count-buttons-labeled (label)
+  "Return the number of buttons whose text is LABEL in the current buffer."
+  (let ((count 0)
+        (search (concat "[" label "]")))
+    (save-excursion
+      (goto-char (point-min))
+      (while (search-forward search nil t)
+        (when (button-at (1- (point)))
+          (setq count (1+ count)))))
+    count))
+
+(defun hermes-test--view-diff-content ()
+  "Push the first View Diff link and return the diff buffer text."
+  (hermes-test--push-button-labeled "View Diff")
+  (with-current-buffer "*Hermes Diff*"
+    (buffer-substring-no-properties (point-min) (point-max))))
+
 (defun hermes-test--dashboard-client ()
   "Return a fake dashboard transport client for chat integration tests."
   (make-hermes-dashboard-transport-client
@@ -778,7 +795,8 @@
          (should (equal (plist-get assistant :content) ""))
          (should-not (string-match-p "session_id:" (buffer-string))))))))
 
-(ert-deftest hermes-chat-fontifies-inline-diff-with-diff-mode-faces ()
+(ert-deftest hermes-chat-shows-inline-diff-as-view-diff-link ()
+  "An inline unified diff is replaced by a View Diff link that opens the diff."
   (hermes-test-with-chat-buffer
    (hermes-chat--insert-entry
     (hermes-chat--make-entry
@@ -792,12 +810,14 @@
              "+new-inline\n"
              "Done.")
      'done))
-   (hermes-test--should-have-face "-old-inline" 'diff-removed)
-   (hermes-test--should-have-face "+new-inline" 'diff-added)
-   (hermes-test--should-not-have-face "Done." 'diff-added)
-   (hermes-test--should-not-have-face "Done." 'diff-removed)))
+   (should-not (string-match-p "-old-inline" (buffer-string)))
+   (should (string-match-p "Done." (buffer-string)))
+   (hermes-test--should-have-face "View Diff" 'link)
+   (let ((diff (hermes-test--view-diff-content)))
+     (should (string-match-p "-old-inline" diff))
+     (should (string-match-p "+new-inline" diff)))))
 
-(ert-deftest hermes-chat-fontifies-inline-diff-without-final-newline ()
+(ert-deftest hermes-chat-shows-inline-diff-without-final-newline-as-link ()
   (hermes-test-with-chat-buffer
    (hermes-chat--insert-entry
     (hermes-chat--make-entry
@@ -807,10 +827,13 @@
              "-old-no-final-newline\n"
              "+new-no-final-newline")
      'done))
-   (hermes-test--should-have-face "-old-no-final-newline" 'diff-removed)
-   (hermes-test--should-have-face "+new-no-final-newline" 'diff-added)))
+   (should-not (string-match-p "-old-no-final-newline" (buffer-string)))
+   (let ((diff (hermes-test--view-diff-content)))
+     (should (string-match-p "-old-no-final-newline" diff))
+     (should (string-match-p "+new-no-final-newline" diff)))))
 
-(ert-deftest hermes-chat-stops-inline-diff-at-hunk-counts ()
+(ert-deftest hermes-chat-stops-inline-diff-link-at-hunk-counts ()
+  "The trailing non-diff line stays in the transcript, out of the diff."
   (hermes-test-with-chat-buffer
    (hermes-chat--insert-entry
     (hermes-chat--make-entry
@@ -821,11 +844,12 @@
              "+new-counted\n"
              "+ ordinary follow-up")
      'done))
-   (hermes-test--should-have-face "-old-counted" 'diff-removed)
-   (hermes-test--should-have-face "+new-counted" 'diff-added)
-   (hermes-test--should-not-have-face "+ ordinary follow-up" 'diff-added)))
+   (should (string-match-p "ordinary follow-up" (buffer-string)))
+   (let ((diff (hermes-test--view-diff-content)))
+     (should (string-match-p "-old-counted" diff))
+     (should-not (string-match-p "ordinary follow-up" diff)))))
 
-(ert-deftest hermes-chat-fontifies-markdown-diff-and-patch-fences ()
+(ert-deftest hermes-chat-shows-fenced-diffs-as-view-diff-links ()
   (hermes-test-with-chat-buffer
    (hermes-chat--insert-entry
     (hermes-chat--make-entry
@@ -841,24 +865,25 @@
              "```\n"
              "after fences")
      'done))
-   (hermes-test--should-have-face "-old-diff-fence" 'diff-removed)
-   (hermes-test--should-have-face "+new-diff-fence" 'diff-added)
-   (hermes-test--should-have-face "-old-patch-fence" 'diff-removed)
-   (hermes-test--should-have-face "+new-patch-fence" 'diff-added)
-   (hermes-test--should-not-have-face "after fences" 'diff-added)
-   (hermes-test--should-not-have-face "after fences" 'diff-removed)))
+   (should-not (string-match-p "-old-diff-fence" (buffer-string)))
+   (should-not (string-match-p "```" (buffer-string)))
+   (should (string-match-p "after fences" (buffer-string)))
+   (should (= 2 (hermes-test--count-buttons-labeled "View Diff")))
+   (let ((diff (hermes-test--view-diff-content)))
+     (should (string-match-p "-old-diff-fence" diff)))))
 
-(ert-deftest hermes-chat-does-not-fontify-ordinary-plus-minus-lines ()
+(ert-deftest hermes-chat-does-not-linkify-ordinary-plus-minus-lines ()
   (hermes-test-with-chat-buffer
    (hermes-chat--insert-entry
     (hermes-chat--make-entry
      'assistant
      "Ordinary chat:\n- remove clutter\n+ add clarity\nNo hunk header."
      'done))
-   (hermes-test--should-not-have-face "- remove clutter" 'diff-removed)
-   (hermes-test--should-not-have-face "+ add clarity" 'diff-added)))
+   (should-not (string-match-p "View Diff" (buffer-string)))
+   (should (string-match-p "remove clutter" (buffer-string)))
+   (should (string-match-p "add clarity" (buffer-string)))))
 
-(ert-deftest hermes-chat-fontifies-structured-diff-and-status-events ()
+(ert-deftest hermes-chat-shows-structured-diff-and-status-events-as-links ()
   (let (callback)
     (hermes-test-with-chat-buffer
      (let ((hermes-transport-send-function
@@ -875,12 +900,13 @@
 			:status-key "patch-preview"
 			:status "running"
 			:content "--- a/status-event\n+++ b/status-event\n@@ -1 +1 @@\n-status-event-old\n+status-event-new\n"))
-       (hermes-test--should-have-face "-diff-event-old" 'diff-removed)
-       (hermes-test--should-have-face "+diff-event-new" 'diff-added)
-       (hermes-test--should-have-face "-status-event-old" 'diff-removed)
-       (hermes-test--should-have-face "+status-event-new" 'diff-added)))))
+       (should-not (string-match-p "diff-event-old" (buffer-string)))
+       (should-not (string-match-p "status-event-old" (buffer-string)))
+       (should (= 2 (hermes-test--count-buttons-labeled "View Diff")))
+       (let ((diff (hermes-test--view-diff-content)))
+         (should (string-match-p "diff-event-old" diff)))))))
 
-(ert-deftest hermes-chat-strips-ansi-before-diff-fontification ()
+(ert-deftest hermes-chat-strips-ansi-before-diff-link ()
   (hermes-test-with-chat-buffer
    (hermes-chat--insert-entry
     (hermes-chat--make-entry
@@ -894,9 +920,11 @@
      'done))
    (should-not (string-match-p "38;2" (buffer-string)))
    (should-not (string-match-p "\\[0m" (buffer-string)))
-   (hermes-test--should-have-face "+ansi-added" 'diff-added)))
+   (let ((diff (hermes-test--view-diff-content)))
+     (should (string-match-p "+ansi-added" diff))
+     (should-not (string-match-p "38;2" diff)))))
 
-(ert-deftest hermes-chat-strips-split-ansi-before-diff-fontification ()
+(ert-deftest hermes-chat-strips-split-ansi-before-diff-link ()
   (let (callback)
     (hermes-test-with-chat-buffer
      (let ((hermes-transport-send-function
@@ -913,7 +941,8 @@
                   :content ";255;48;2;19;87;20m+split-ansi-added\e[0m"))
        (should-not (string-match-p "38;2" (buffer-string)))
        (should-not (string-match-p "\\[0m" (buffer-string)))
-       (hermes-test--should-have-face "+split-ansi-added" 'diff-added)))))
+       (let ((diff (hermes-test--view-diff-content)))
+         (should (string-match-p "+split-ansi-added" diff)))))))
 
 (ert-deftest hermes-chat-scopes-split-ansi-to-assistant-stream ()
   (let (callback)
@@ -943,7 +972,8 @@
                                  (plist-get assistant :content)))
          (should-not (string-match-p "38;2" (plist-get assistant :content)))
          (should (equal (plist-get commentary :content) "Thinking")))
-       (hermes-test--should-have-face "+interleaved-added" 'diff-added)))))
+       (let ((diff (hermes-test--view-diff-content)))
+         (should (string-match-p "+interleaved-added" diff)))))))
 
 (ert-deftest hermes-chat-clears-split-ansi-before-terminal-event ()
   (let (callback)
@@ -4449,7 +4479,7 @@
          "abc1234567"
          '((diff . "--- a/x\n+++ b/x\n@@ -1 +1 @@\n-old\n+new\n")))
         (with-current-buffer "*Hermes Rollback Diff*"
-          (should (derived-mode-p 'special-mode))
+          (should (derived-mode-p 'diff-mode))
           (should (string-match-p "\\+new" (buffer-string)))))
     (when (get-buffer "*Hermes Rollback Diff*")
       (kill-buffer "*Hermes Rollback Diff*"))))

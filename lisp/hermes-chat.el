@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: tools, convenience
-;; Package-Requires: ((emacs "29.1") (keymap-popup "0.3.1") (websocket "1.15"))
+;; Package-Requires: ((emacs "29.1") (keymap-popup "0.3.1") (websocket "1.15") (markdown-mode "2.6"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -31,6 +31,7 @@
 (require 'diff-mode)
 (require 'ewoc)
 (require 'goto-addr)
+(require 'markdown-mode)
 (require 'subr-x)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
@@ -242,18 +243,25 @@ When FINAL is non-nil, strip trailing transport metadata too."
   "Return zero-based half-open range for buffer positions START and END."
   (cons (1- start) (1- end)))
 
-(defun hermes-chat--markdown-diff-ranges ()
-  "Return diff-fence ranges in the current buffer as zero-based offsets."
+(defun hermes-chat--fenced-diff-blocks ()
+  "Return fenced ```diff/```patch blocks as (START END TEXT) zero-based.
+START and END span the whole fenced block to replace; TEXT is its inner diff."
   (let ((case-fold-search t)
-        ranges)
+        blocks)
     (goto-char (point-min))
     (while (re-search-forward "^```[ \t]*\\(?:diff\\|patch\\)\\(?:[ \t].*\\)?\n" nil t)
-      (let ((start (point)))
+      (let ((block-start (match-beginning 0))
+            (inner-start (point)))
         (if (re-search-forward "^```[ \t]*$" nil t)
-            (push (hermes-chat--offset-range start (match-beginning 0))
-                  ranges)
-          (push (hermes-chat--offset-range start (point-max)) ranges))))
-    ranges))
+            (push (list (1- block-start)
+                        (1- (min (point-max) (1+ (line-end-position))))
+                        (buffer-substring-no-properties inner-start
+                                                        (match-beginning 0)))
+                  blocks)
+          (push (list (1- block-start) (1- (point-max))
+                      (buffer-substring-no-properties inner-start (point-max)))
+                blocks))))
+    blocks))
 
 (defun hermes-chat--unified-diff-hunk-counts ()
   "Return old/new line counts for a unified diff hunk at point."
@@ -340,62 +348,105 @@ Return non-nil when the consumed hunk contains an added or removed line."
       (when (and saw-hunk saw-change (< start (point)))
         (hermes-chat--offset-range start (point))))))
 
-(defun hermes-chat--inline-diff-ranges ()
-  "Return inline unified diff ranges as zero-based offsets."
-  (let (ranges)
+(defun hermes-chat--inline-diff-blocks ()
+  "Return inline unified diff blocks as (START END TEXT) zero-based."
+  (let (blocks)
     (goto-char (point-min))
     (while (not (eobp))
       (if-let* ((range (hermes-chat--unified-diff-range-at-point)))
           (progn
-            (push range ranges)
+            (push (list (car range) (cdr range)
+                        (buffer-substring-no-properties
+                         (1+ (car range)) (1+ (cdr range))))
+                  blocks)
             (goto-char (1+ (cdr range))))
         (forward-line 1)))
-    ranges))
+    blocks))
 
-(defun hermes-chat--merge-ranges (ranges)
-  "Return RANGES sorted and merged."
-  (let (merged)
-    (dolist (range (sort (copy-sequence ranges)
-                         (lambda (left right) (< (car left) (car right))))
-                   (nreverse merged))
-      (when (< (car range) (cdr range))
-        (if (and merged (<= (car range) (cdar merged)))
-            (setcdr (car merged) (max (cdr range) (cdar merged)))
-          (push (cons (car range) (cdr range)) merged))))))
+(defun hermes-chat--merge-diff-blocks (blocks)
+  "Return BLOCKS sorted by start, dropping empty and overlapping ranges."
+  (let ((sorted (sort (copy-sequence blocks)
+                      (lambda (left right) (< (nth 0 left) (nth 0 right)))))
+        result last-end)
+    (dolist (block sorted (nreverse result))
+      (when (and (< (nth 0 block) (nth 1 block))
+                 (or (null last-end) (>= (nth 0 block) last-end)))
+        (push block result)
+        (setq last-end (nth 1 block))))))
 
-(defun hermes-chat--diff-ranges (content)
-  "Return diff-like ranges in CONTENT as zero-based offsets."
+(defun hermes-chat--diff-blocks (content)
+  "Return diff blocks in CONTENT as (START END TEXT), sorted and non-overlapping.
+A fenced block subsumes the inline diff it contains, so each diff yields one
+block spanning the whole region to replace with a link."
   (with-temp-buffer
     (insert content)
-    (hermes-chat--merge-ranges
-     (append (hermes-chat--markdown-diff-ranges)
-             (hermes-chat--inline-diff-ranges)))))
+    (hermes-chat--merge-diff-blocks
+     (append (hermes-chat--fenced-diff-blocks)
+             (hermes-chat--inline-diff-blocks)))))
 
-(defun hermes-chat--fontified-diff-string (content)
-  "Return CONTENT fontified with `diff-mode'."
-  (with-temp-buffer
-    (let ((needs-final-newline (not (string-suffix-p "\n" content))))
-      (insert content)
-      (when needs-final-newline
-        (insert "\n"))
+(defun hermes-chat--fontify-markdown-string (text)
+  "Return TEXT fontified with `markdown-mode', or TEXT on failure."
+  (condition-case nil
+      (with-temp-buffer
+        (insert text)
+        (delay-mode-hooks (markdown-mode))
+        (font-lock-mode 1)
+        (font-lock-ensure (point-min) (point-max))
+        (buffer-string))
+    (error text)))
+
+(defun hermes-chat--insert-markdown (text)
+  "Insert TEXT fontified as markdown when it is non-empty."
+  (unless (string-empty-p text)
+    (insert (hermes-chat--fontify-markdown-string text))))
+
+(defun hermes-chat--insert-shadow (text)
+  "Insert TEXT with the `shadow' face when it is non-empty."
+  (unless (string-empty-p text)
+    (insert (propertize text 'face 'shadow))))
+
+(defun hermes-chat--show-diff (diff &optional buffer-name)
+  "Show DIFF in a dedicated read-only `diff-mode' buffer.
+BUFFER-NAME overrides the default \"*Hermes Diff*\" buffer."
+  (let ((buffer (get-buffer-create (or buffer-name "*Hermes Diff*"))))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert diff)
+        (unless (string-suffix-p "\n" diff) (insert "\n")))
+      (goto-char (point-min))
       (delay-mode-hooks (diff-mode))
       (font-lock-mode 1)
       (font-lock-ensure (point-min) (point-max))
-      (buffer-substring (point-min)
-                        (if needs-final-newline
-                            (1- (point-max))
-                          (point-max))))))
+      (view-mode 1))
+    (pop-to-buffer buffer)))
 
-(defun hermes-chat--fontify-diff-ranges (start content)
-  "Fontify diff-like ranges from CONTENT inserted at START."
-  (dolist (range (reverse (hermes-chat--diff-ranges content)))
-    (let* ((begin (+ start (car range)))
-           (end (+ start (cdr range)))
-           (fontified (hermes-chat--fontified-diff-string
-                       (buffer-substring-no-properties begin end))))
-      (delete-region begin end)
-      (goto-char begin)
-      (insert fontified))))
+(defun hermes-chat--view-diff-button (button)
+  "Open the diff stored on BUTTON in its own buffer."
+  (hermes-chat--show-diff (button-get button 'hermes-chat-diff)))
+
+(defun hermes-chat--insert-diff-button (diff)
+  "Insert a View Diff link that opens DIFF in a separate buffer."
+  (insert-text-button
+   "[View Diff]"
+   'face 'link
+   'mouse-face 'highlight
+   'follow-link t
+   'help-echo "Open this diff in a separate buffer"
+   'hermes-chat-diff (string-trim diff)
+   'action #'hermes-chat--view-diff-button)
+  (insert "\n"))
+
+(defun hermes-chat--insert-diffed (content insert-text)
+  "Insert CONTENT, replacing diff blocks with View Diff links.
+INSERT-TEXT inserts each non-diff text segment (markdown or shadow text)."
+  (let ((blocks (hermes-chat--diff-blocks content))
+        (pos 0))
+    (dolist (block blocks)
+      (funcall insert-text (substring content pos (nth 0 block)))
+      (hermes-chat--insert-diff-button (nth 2 block))
+      (setq pos (nth 1 block)))
+    (funcall insert-text (substring content pos))))
 
 (defun hermes-chat--make-entry (role content &optional status id metadata)
   "Return a chat entry plist for ROLE and CONTENT.
@@ -929,17 +980,14 @@ detail is kept rather than replaced by a bare \"completed\" line."
   (list :assistant-id assistant-id :event event))
 
 (defun hermes-chat--insert-transient-content (entry)
-  "Insert compact transient transport ENTRY."
+  "Insert compact transient transport ENTRY, showing diffs as View Diff links."
   (let ((content (or (plist-get entry :content) "")))
     (unless (string-empty-p content)
       (insert (propertize (format "  %s "
                                   (hermes-chat--status-icon
                                    (plist-get entry :status)))
                           'face 'shadow))
-      (let ((content-start (point)))
-        (insert (propertize content 'face 'shadow))
-        (hermes-chat--fontify-diff-ranges content-start content)
-        (goto-char (+ content-start (length content))))
+      (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow)
       (insert "\n"))))
 
 (defun hermes-chat--compact-commentary-paragraph (paragraph)
@@ -1000,12 +1048,9 @@ detail is kept rather than replaced by a bare \"completed\" line."
           "\n"))
 
 (defun hermes-chat--insert-entry-content (content)
-  "Insert assistant or system CONTENT."
-  (let ((content-start (point)))
-    (insert content)
-    (hermes-chat--fontify-diff-ranges content-start content)
-    (goto-char (+ content-start (length content)))
-    (insert "\n")))
+  "Insert assistant or system CONTENT as markdown, diffs as View Diff links."
+  (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)
+  (insert "\n"))
 
 (defun hermes-chat--print-entry (entry)
   "Insert a display representation of chat ENTRY at point."

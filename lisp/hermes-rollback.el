@@ -84,14 +84,7 @@
                (hermes-transport--get result 'diff))))
     (if (or (null diff) (string-empty-p diff))
         (message "Hermes: no diff for %s" (hermes-rollback--short hash))
-      (with-current-buffer (get-buffer-create "*Hermes Rollback Diff*")
-        (unless (derived-mode-p 'special-mode)
-          (special-mode))
-        (let ((inhibit-read-only t))
-          (erase-buffer)
-          (insert (hermes-chat--fontified-diff-string diff)))
-        (goto-char (point-min))
-        (pop-to-buffer (current-buffer))))))
+      (hermes-chat--show-diff diff "*Hermes Rollback Diff*"))))
 
 (defun hermes-rollback-show-diff ()
   "Show the diff for the checkpoint at point."
