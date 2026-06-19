@@ -425,8 +425,30 @@ BUFFER-NAME overrides the default \"*Hermes Diff*\" buffer."
   "Open the diff stored on BUTTON in its own buffer."
   (hermes-chat--show-diff (button-get button 'hermes-chat-diff)))
 
+(defun hermes-chat--diff-strip-prefix (path)
+  "Return PATH without a leading a/ or b/ diff prefix."
+  (replace-regexp-in-string "\\`[ab]/" "" path))
+
+(defun hermes-chat--diff-label (diff)
+  "Return a compact target-file label for DIFF, or nil.
+Handles standard `+++ b/path' headers, `diff --git' lines, and the gateway's
+pre-rendered `a/path -> b/path' header."
+  (with-temp-buffer
+    (insert diff)
+    (goto-char (point-min))
+    (when (re-search-forward
+           (concat "^\\(?:.* → \\(.+\\)$\\|"
+                   "\\+\\+\\+ \\(.+\\)$\\|"
+                   "diff --git a/.+? b/\\(.+\\)$\\)")
+           nil t)
+      (hermes-chat--nonempty-string
+       (hermes-chat--diff-strip-prefix
+        (string-trim (or (match-string 1) (match-string 2) (match-string 3))))))))
+
 (defun hermes-chat--insert-diff-button (diff)
-  "Insert a View Diff link that opens DIFF in a separate buffer."
+  "Insert a shadow file label and a View Diff link that opens DIFF."
+  (when-let* ((label (hermes-chat--diff-label diff)))
+    (insert (propertize (concat label "  ") 'face 'shadow)))
   (insert-text-button
    "[View Diff]"
    'face 'link
@@ -436,6 +458,10 @@ BUFFER-NAME overrides the default \"*Hermes Diff*\" buffer."
    'hermes-chat-diff (string-trim diff)
    'action #'hermes-chat--view-diff-button)
   (insert "\n"))
+
+(defun hermes-chat--insert-diff-entry (content)
+  "Insert a whole-diff CONTENT (a `diff' event) as a labeled View Diff link."
+  (hermes-chat--insert-diff-button content))
 
 (defun hermes-chat--insert-diffed (content insert-text)
   "Insert CONTENT, replacing diff blocks with View Diff links.
@@ -896,7 +922,7 @@ detail is kept rather than replaced by a bare \"completed\" line."
     ('progress 'progress)
     ('tool 'tool)
     ('commentary 'commentary)
-    ('diff 'assistant)
+    ('diff 'diff)
     ('unknown 'status)))
 
 (defun hermes-chat--commentary-event-name (event)
@@ -1061,6 +1087,9 @@ detail is kept rather than replaced by a bare \"completed\" line."
       (hermes-chat--insert-user-content content))
      ((eq role 'commentary)
       (hermes-chat--insert-commentary-content entry))
+     ((eq role 'diff)
+      (unless (string-empty-p content)
+        (hermes-chat--insert-diff-entry content)))
      ((memq role hermes-chat--transient-entry-roles)
       (hermes-chat--insert-transient-content entry))
      ((not (string-empty-p content))
@@ -1136,12 +1165,23 @@ Do not record these internal text-property changes in the undo list."
     (puthash id node hermes-chat--nodes))
   node)
 
-(defun hermes-chat--insert-entry (entry)
-  "Insert ENTRY into the current chat EWOC and return its node."
+(defun hermes-chat--pending-assistant-node ()
+  "Return the EWOC node of the pending assistant reply, if any."
+  (and hermes-chat--pending-assistant-id
+       hermes-chat--nodes
+       (gethash hermes-chat--pending-assistant-id hermes-chat--nodes)))
+
+(defun hermes-chat--insert-entry (entry &optional before-node)
+  "Insert ENTRY into the current chat EWOC and return its node.
+With BEFORE-NODE, insert ENTRY before that node instead of at the end, so the
+agent's reply can stay last while tool/status/diff entries land above it."
   (let ((node (hermes-chat--preserve-input-point
                (let ((node (let ((inhibit-read-only t)
 				 (buffer-undo-list t))
-                             (ewoc-enter-last hermes-chat--ewoc entry))))
+                             (if before-node
+                                 (ewoc-enter-before hermes-chat--ewoc
+                                                    before-node entry)
+                               (ewoc-enter-last hermes-chat--ewoc entry)))))
                  (hermes-chat--register-node entry node)))))
     (hermes-chat--notify-state-change)
     node))
@@ -1284,7 +1324,8 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
                 :metadata metadata
                 :updated (current-time)))))
         (hermes-chat--insert-entry
-         (hermes-chat--make-entry role content status id metadata))))))
+         (hermes-chat--make-entry role content status id metadata)
+         (hermes-chat--pending-assistant-node))))))
 
 (defun hermes-chat--transient-entry-p (entry)
   "Return non-nil if ENTRY is a compact transport activity entry."

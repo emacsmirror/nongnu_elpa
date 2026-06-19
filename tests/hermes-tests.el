@@ -145,6 +145,11 @@
   (with-current-buffer "*Hermes Diff*"
     (buffer-substring-no-properties (point-min) (point-max))))
 
+(defun hermes-test--assistant-entry ()
+  "Return the chat entry whose role is `assistant' (the agent reply)."
+  (cl-find-if (lambda (entry) (eq (plist-get entry :role) 'assistant))
+              (hermes-chat--entries)))
+
 (defun hermes-test--dashboard-client ()
   "Return a fake dashboard transport client for chat integration tests."
   (make-hermes-dashboard-transport-client
@@ -438,11 +443,11 @@
        (insert "draft survives")
        (funcall callback '(:type delta :content " there"))
        (should (equal (hermes-chat-input-string) "draft survives"))
-       (let ((assistant (cadr (hermes-chat--entries))))
+       (let ((assistant (hermes-test--assistant-entry)))
          (should (equal (plist-get assistant :status) 'streaming))
          (should (equal (plist-get assistant :content) "hello there")))
        (funcall callback '(:type done))
-       (let ((assistant (cadr (hermes-chat--entries))))
+       (let ((assistant (hermes-test--assistant-entry)))
          (should (equal (plist-get assistant :status) 'done))
          (should-not hermes-chat--pending-assistant-id))))))
 
@@ -506,14 +511,14 @@
        (let* ((entries (hermes-chat--entries))
               (roles (mapcar (lambda (entry) (plist-get entry :role)) entries))
               (text (buffer-string)))
-         (should (equal roles '(user assistant status tool)))
+         (should (equal roles '(user status tool assistant)))
          (should-not (string-match-p "running make test" text))
          ;; The command survives completion; the status icon shows done.
          (should (string-match-p "terminal: make test" text))
          (should (string-match-p "1.2s" text))
          (should (string-match-p "💻" text))
-         (should (equal (plist-get (nth 2 entries) :content) "Thinking…"))
-         (should (equal (plist-get (nth 3 entries) :status) "completed")))))))
+         (should (equal (plist-get (nth 1 entries) :content) "Thinking…"))
+         (should (equal (plist-get (nth 2 entries) :status) "completed")))))))
 
 (ert-deftest hermes-chat-collapses-and-toggles-commentary-events ()
   (let (callback)
@@ -538,8 +543,8 @@
          (should-not (string-match-p "I need" text))
          (should (equal (mapcar (lambda (entry) (plist-get entry :role))
                                 entries)
-                        '(user assistant commentary)))
-         (should (equal (plist-get (nth 2 entries) :content) "I need")))
+                        '(user commentary assistant)))
+         (should (equal (plist-get (nth 1 entries) :content) "I need")))
        (hermes-test--should-have-face "Thinking..." 'shadow)
        (hermes-test--push-button-labeled "Thinking...")
        (let ((text (buffer-string)))
@@ -670,7 +675,7 @@
        (should (equal (hermes-chat-input-string) "draft survives"))
        (insert " more")
        (should (equal (hermes-chat-input-string) "draft survives more"))
-       (let ((assistant (cadr (hermes-chat--entries))))
+       (let ((assistant (hermes-test--assistant-entry)))
          (should (equal (plist-get assistant :status) 'streaming))
          (should (equal (plist-get assistant :content) "answer")))
        (funcall callback '(:type done))
@@ -760,7 +765,7 @@
                                :content (concat "\r\0hello"
                                                 (string #x85)
                                                 "\nλ\r")))
-       (let ((assistant (cadr (hermes-chat--entries))))
+       (let ((assistant (hermes-test--assistant-entry)))
          (should (equal (plist-get assistant :content) "hello\nλ"))
          (should-not (string-match-p "\r" (buffer-string))))))))
 
@@ -776,7 +781,7 @@
        (funcall callback
                 (list :type 'delta
                       :content "session_id: 20260614_223306_254697\nhello"))
-       (let ((assistant (cadr (hermes-chat--entries))))
+       (let ((assistant (hermes-test--assistant-entry)))
          (should (equal (plist-get assistant :content) "hello"))
          (should-not (string-match-p "session_id:" (buffer-string))))))))
 
@@ -791,7 +796,7 @@
        (hermes-chat-send)
        (funcall callback '(:type delta :content "session_id: trailing"))
        (funcall callback '(:type done))
-       (let ((assistant (cadr (hermes-chat--entries))))
+       (let ((assistant (hermes-test--assistant-entry)))
          (should (equal (plist-get assistant :content) ""))
          (should-not (string-match-p "session_id:" (buffer-string))))))))
 
@@ -963,7 +968,7 @@
        (funcall callback
                 '(:type delta
                   :content ";255;48;2;19;87;20m+interleaved-added\e[0m"))
-       (let ((assistant (cadr (hermes-chat--entries)))
+       (let ((assistant (hermes-test--assistant-entry))
              (commentary (cl-find-if
                           (lambda (entry)
                             (eq (plist-get entry :role) 'commentary))
@@ -986,7 +991,7 @@
        (hermes-chat-send)
        (funcall callback '(:type delta :content "\e[38;2;255;255"))
        (funcall callback '(:type done :content "hello"))
-       (should (equal (plist-get (cadr (hermes-chat--entries)) :content)
+       (should (equal (plist-get (hermes-test--assistant-entry) :content)
                       "hello"))))))
 
 (ert-deftest hermes-chat-rejects-concurrent-send-in-same-buffer ()
@@ -1947,10 +1952,10 @@
          (let* ((entries (hermes-chat--entries))
                 (roles (mapcar (lambda (entry) (plist-get entry :role))
                                entries))
-                (assistant (cadr entries))
-                (status (nth 2 entries))
-                (tool (nth 3 entries)))
-           (should (equal roles '(user assistant status tool)))
+                (assistant (nth 3 entries))
+                (status (nth 1 entries))
+                (tool (nth 2 entries)))
+           (should (equal roles '(user status tool assistant)))
            (should (equal (plist-get assistant :content) "hello world"))
            (should (equal (plist-get assistant :status) 'done))
            (should (equal (plist-get status :content) "Still thinking"))
@@ -2013,9 +2018,9 @@
          (let* ((entries (hermes-chat--entries))
                 (roles (mapcar (lambda (entry) (plist-get entry :role))
                                entries))
-                (assistant (cadr entries))
-                (commentary (nth 2 entries)))
-           (should (equal roles '(user assistant commentary)))
+                (assistant (nth 2 entries))
+                (commentary (nth 1 entries)))
+           (should (equal roles '(user commentary assistant)))
            (should (= (cl-count 'commentary roles) 1))
            (should (equal (plist-get assistant :content) "Clean answer"))
            (should-not (string-match-p "inspect repo" (plist-get assistant :content)))
@@ -2050,7 +2055,7 @@
                     :content "Thinking"))
          (funcall callback '(:type delta :content " continues"))
          (should (equal (hermes-chat-input-string) "draft survives"))
-         (let ((assistant (cadr (hermes-chat--entries))))
+         (let ((assistant (hermes-test--assistant-entry)))
            (should (equal (plist-get assistant :content)
                           "answer continues"))
            (should (equal (plist-get assistant :status) 'streaming)))
@@ -2095,7 +2100,7 @@
                   '(:type status
                     :status "closed"
                     :content "Hermes dashboard WebSocket closed"))
-         (let ((assistant (cadr (hermes-chat--entries))))
+         (let ((assistant (hermes-test--assistant-entry)))
            (should (equal (plist-get assistant :status) 'error))
            (should (string-match-p "WebSocket closed"
                                    (plist-get assistant :content))))
@@ -2178,7 +2183,7 @@
                     :session-id "sid-live-1"
                     :content "old inflight"))
          (let* ((entries (hermes-chat--entries))
-                (first-assistant (nth 1 entries))
+                (first-assistant (nth 2 entries))
                 (second-assistant (nth 3 entries)))
            (should (equal (plist-get first-assistant :content)
                           "old inflight"))
@@ -2227,7 +2232,7 @@
                   '(:type delta
                     :session-id "sid-live"
                     :content "old inflight"))
-         (let ((assistant (cadr (hermes-chat--entries))))
+         (let ((assistant (hermes-test--assistant-entry)))
            (should (equal (plist-get assistant :id) assistant-id))
            (should-not (string-match-p
                         "old inflight"
@@ -2274,13 +2279,13 @@
                     '(:type delta
                       :session-id "sid-live"
                       :content "old inflight"))
-           (let ((assistant (cadr (hermes-chat--entries))))
+           (let ((assistant (hermes-test--assistant-entry)))
              (should (equal (plist-get assistant :id) assistant-id))
              (should-not (string-match-p
                           "old inflight"
                           (plist-get assistant :content))))
            (funcall callback terminal)
-           (let ((assistant (cadr (hermes-chat--entries))))
+           (let ((assistant (hermes-test--assistant-entry)))
              (should-not (string-match-p
                           (regexp-quote (plist-get terminal :content))
                           (plist-get assistant :content))))
@@ -3717,7 +3722,7 @@
                                (session_id . "sid-active")
                                (payload . ((text . "Stopped")
                                            (status . "interrupted"))))))))
-         (let ((assistant (cadr (hermes-chat--entries))))
+         (let ((assistant (hermes-test--assistant-entry)))
            (should (equal (plist-get assistant :status) "interrupted"))
            (should (equal (plist-get assistant :content) "Stopped")))
          (should-not hermes-chat--pending-assistant-id)
@@ -3852,10 +3857,10 @@
          (let ((entries (hermes-chat--entries)))
            (should (equal (mapcar (lambda (entry) (plist-get entry :role))
                                   entries)
-                          '(user assistant commentary tool)))
-           (should (equal (plist-get (nth 2 entries) :content)
+                          '(user commentary tool assistant)))
+           (should (equal (plist-get (nth 1 entries) :content)
                           "(⌐■_■) synthesizing..."))
-           (should (equal (plist-get (nth 3 entries) :content)
+           (should (equal (plist-get (nth 2 entries) :content)
                           "💻 terminal: git status")))
          (should-not (cl-some (lambda (line)
                                 (string-match-p "Unknown Hermes transport event"
@@ -3881,10 +3886,10 @@
                (header (hermes-test--header-line-string)))
            (should (equal (mapcar (lambda (entry) (plist-get entry :role))
                                   entries)
-                          '(user assistant status)))
+                          '(user status assistant)))
            (should (string-match-p "Unknown Hermes transport event: alien.signal"
-                                   (plist-get (nth 2 entries) :content)))
-           (should (eq (plist-get (nth 2 entries) :status) 'error))
+                                   (plist-get (nth 1 entries) :content)))
+           (should (eq (plist-get (nth 1 entries) :status) 'error))
            (should (string-match-p "Error" header))
            (should (string-match-p "alien.signal" header)))
          (should (cl-some (lambda (line)
