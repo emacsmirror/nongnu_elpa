@@ -4498,6 +4498,23 @@ The buffer is captured by object so teardown still kills it after a rename."
          (should-not (memq 'commentary roles))
          (should (memq 'assistant roles)))))))
 
+(ert-deftest hermes-chat-suppresses-thinking-echo-delta ()
+  "Streaming content that only echoes thinking is not shown as assistant text."
+  (let (callback)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (_p cb) (setq callback cb) 'fake-process)))
+       (insert "hi")
+       (hermes-chat-send)
+       (funcall callback
+                '(:type commentary :event "reasoning.delta"
+                        :content "I will inspect the repo first."))
+       (funcall callback
+                '(:type delta :content "I will inspect the repo first."))
+       (let ((assistant (hermes-test--assistant-entry)))
+         (should assistant)
+         (should (string-empty-p (or (plist-get assistant :content) ""))))))))
+
 (ert-deftest hermes-chat-suppresses-thinking-only-final-message ()
   "Final content that only echoes thinking is not promoted to assistant text."
   (let (callback)

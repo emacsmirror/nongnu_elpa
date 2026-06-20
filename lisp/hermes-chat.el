@@ -1411,6 +1411,18 @@ When FINAL is non-nil, strip any trailing transport metadata."
          (string= content thinking)
          (string-empty-p assistant))))
 
+(defun hermes-chat--thinking-echo-delta-p (assistant-id content)
+  "Return non-nil when CONTENT is a transient echo of ASSISTANT-ID thinking."
+  (let ((content (hermes-chat--normalize-for-dedup
+                  (hermes-chat--sanitize-assistant-content content nil)))
+        (thinking (hermes-chat--normalize-for-dedup
+                   (hermes-chat--thinking-entry-content assistant-id)))
+        (assistant (hermes-chat--normalize-for-dedup
+                    (hermes-chat--entry-content-by-id assistant-id))))
+    (and (string-empty-p assistant)
+         (not (string-empty-p content))
+         (string= content thinking))))
+
 (defun hermes-chat--assistant-done-content (assistant-id content)
   "Return ASSISTANT-ID final CONTENT, suppressing thinking-only echo."
   (unless (hermes-chat--thinking-only-final-content-p assistant-id content)
@@ -1767,8 +1779,10 @@ so do not copy its final content into the unsubmitted retry placeholder."
     (hermes-chat--update-header-for-event event)
     (pcase (plist-get event :type)
       ('delta
-       (hermes-chat--append-assistant-content
-        assistant-id (or (plist-get event :content) "") 'streaming))
+       (unless (hermes-chat--thinking-echo-delta-p
+                assistant-id (or (plist-get event :content) ""))
+         (hermes-chat--append-assistant-content
+          assistant-id (or (plist-get event :content) "") 'streaming)))
       ('done
        (hermes-chat--clear-terminal-prompts event)
        (hermes-chat--mark-assistant
