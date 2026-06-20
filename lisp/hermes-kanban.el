@@ -33,6 +33,8 @@
 ;;; Code:
 
 (require 'tabulated-list)
+(require 'json)
+(require 'subr-x)
 (require 'url-util)
 (require 'keymap-popup)
 (require 'hermes-transport)
@@ -43,6 +45,9 @@
 (defvar hermes-kanban--auth nil
   "Cached auth plist: (:base-url URL :headers HEADERS :secrets SECRETS).
 Invalidated and re-resolved when a GET fails, covering expired cookies.")
+
+(defconst hermes-kanban-log-tail-bytes 100000
+  "Number of worker-log bytes fetched for `hermes-kanban-show-log'.")
 
 (defun hermes-kanban--base-url ()
   "Return the normalized dashboard base URL, or signal a `user-error'."
@@ -278,6 +283,7 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
   "D" ("Delete task" hermes-kanban-delete)
   :group "View"
   "g" ("Refresh" revert-buffer)
+  "l" ("View selected task log" hermes-kanban-show-log)
   "?" ("Help" hermes-kanban-mode-map-popup))
 
 (define-derived-mode hermes-kanban-mode tabulated-list-mode "Hermes Kanban"
@@ -328,18 +334,75 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
   "Return the kanban tasks path for ID extended by SEGMENTS."
   (concat "/tasks/" (url-hexify-string id) (apply #'concat segments)))
 
-;;; Task detail view
+;;; Task detail and log views
+
+(defvar-local hermes-kanban-task--task-id nil
+  "Task id displayed in the current task detail buffer.")
+
+(defvar-local hermes-kanban-task--board-slug nil
+  "Board slug displayed in the current task detail buffer.")
+
+(defun hermes-kanban--items (value)
+  "Return VALUE as a list of response items."
+  (cond
+   ((null value) nil)
+   ((vectorp value) (append value nil))
+   ((listp value) value)))
+
+(defun hermes-kanban--truthy-p (value)
+  "Return non-nil when VALUE is a JSON true-ish value."
+  (and value (not (memq value '(false :false :json-false)))))
+
+(defun hermes-kanban--object-string (object)
+  "Return OBJECT as a compact display string."
+  (when object
+    (string-trim
+     (condition-case nil
+         (json-serialize object)
+       (error (pp-to-string object))))))
+
+(defun hermes-kanban--format-size (bytes)
+  "Return BYTES as a small human-readable size string."
+  (cond
+   ((not (numberp bytes)) "")
+   ((< bytes 1024) (format "%d B" bytes))
+   ((< bytes (* 1024 1024)) (format "%.1f KiB" (/ bytes 1024.0)))
+   (t (format "%.1f MiB" (/ bytes 1048576.0)))))
+
+(defun hermes-kanban--format-section (title items empty-name formatter)
+  "Return a drawer section TITLE for ITEMS using FORMATTER.
+EMPTY-NAME is inserted in the explicit empty-state line."
+  (let ((rows (hermes-kanban--items items)))
+    (concat "\n" title " (" (number-to-string (length rows)) "):\n"
+            (if rows
+                (string-join (mapcar formatter rows) "\n")
+              (format "  — no %s —" empty-name))
+            "\n")))
 
 (defun hermes-kanban--format-task (task)
   "Return TASK's header and body as a display string."
-  (format "Title:    %s\nID:       %s\nStatus:   %s   Priority: %s   Assignee: %s\nCreated:  %s\n\n%s\n"
-          (hermes-kanban--field task 'title)
-          (hermes-kanban--field task 'id)
-          (hermes-kanban--field task 'status)
-          (hermes-kanban--field task 'priority)
-          (or (hermes-kanban--non-empty (hermes-kanban--field task 'assignee)) "-")
-          (hermes-kanban--format-time (hermes-transport--get task 'created_at))
-          (hermes-kanban--field task 'body)))
+  (let ((latest-summary (hermes-kanban--non-empty
+                         (hermes-kanban--field task 'latest_summary))))
+    (concat
+     (format "Title:    %s\nID:       %s\nStatus:   %s   Priority: %s   Assignee: %s\nCreated:  %s\n"
+             (hermes-kanban--field task 'title)
+             (hermes-kanban--field task 'id)
+             (hermes-kanban--field task 'status)
+             (hermes-kanban--field task 'priority)
+             (or (hermes-kanban--non-empty (hermes-kanban--field task 'assignee)) "-")
+             (hermes-kanban--format-time (hermes-transport--get task 'created_at)))
+     (when-let* ((workspace (hermes-kanban--non-empty
+                             (hermes-kanban--field task 'workspace_kind))))
+       (format "Workspace: %s%s\n" workspace
+               (if-let* ((path (hermes-kanban--non-empty
+                                (hermes-kanban--field task 'workspace_path))))
+                   (concat ": " path)
+                 "")))
+     (when latest-summary
+       (format "Summary:  %s\n" latest-summary))
+     "\n"
+     (hermes-kanban--field task 'body)
+     "\n")))
 
 (defun hermes-kanban--format-comments (comments)
   "Return COMMENTS as a display string, or an empty string."
@@ -368,27 +431,255 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
              events "\n")
             "\n")))
 
-(defun hermes-kanban--display-task (payload)
-  "Render task PAYLOAD (task plus comments and events) in a detail buffer."
-  (with-current-buffer (get-buffer-create "*Hermes Kanban Task*")
-    (unless (derived-mode-p 'special-mode)
-      (special-mode))
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert (hermes-kanban--format-task (hermes-transport--get payload 'task)))
-      (insert (hermes-kanban--format-comments
-               (hermes-transport--get payload 'comments)))
-      (insert (hermes-kanban--format-events
-               (hermes-transport--get payload 'events))))
-    (goto-char (point-min))
-    (pop-to-buffer (current-buffer))))
+(defun hermes-kanban--format-comment-row (comment)
+  "Return COMMENT as one drawer row."
+  (format "  [%s] %s: %s"
+          (hermes-kanban--format-time (hermes-transport--get comment 'created_at))
+          (or (hermes-kanban--non-empty (hermes-kanban--field comment 'author))
+              "anon")
+          (hermes-kanban--field comment 'body)))
+
+(defun hermes-kanban--format-event-row (event)
+  "Return EVENT as one drawer row."
+  (let ((payload (hermes-transport--get event 'payload)))
+    (concat
+     (format "  [%s] %s"
+             (hermes-kanban--format-time (hermes-transport--get event 'created_at))
+             (hermes-kanban--field event 'kind))
+     (when payload
+       (format "\n    Payload: %s" (hermes-kanban--object-string payload))))))
+
+(defun hermes-kanban--format-attachment (attachment)
+  "Return ATTACHMENT as one drawer row."
+  (let ((size (hermes-kanban--format-size
+               (hermes-transport--get attachment 'size)))
+        (content-type (hermes-kanban--non-empty
+                       (hermes-kanban--field attachment 'content_type)))
+        (uploaded-by (hermes-kanban--non-empty
+                      (hermes-kanban--field attachment 'uploaded_by)))
+        (path (hermes-kanban--non-empty
+               (hermes-kanban--field attachment 'stored_path))))
+    (concat
+     (format "  #%s %s%s"
+             (hermes-kanban--field attachment 'id)
+             (hermes-kanban--field attachment 'filename)
+             (if (string-empty-p size) "" (format " (%s)" size)))
+     (when content-type (format "\n    Type: %s" content-type))
+     (when uploaded-by (format "\n    Uploaded by: %s" uploaded-by))
+     (when path (format "\n    Path: %s" path)))))
+
+(defun hermes-kanban--format-diagnostic-action (action)
+  "Return ACTION as a short diagnostic action label."
+  (let ((label (or (hermes-kanban--non-empty (hermes-kanban--field action 'label))
+                   (hermes-kanban--field action 'kind))))
+    (if (hermes-kanban--truthy-p (hermes-transport--get action 'suggested))
+        (concat label " (suggested)")
+      label)))
+
+(defun hermes-kanban--format-diagnostic (diagnostic)
+  "Return DIAGNOSTIC as one drawer row."
+  (let ((actions (hermes-kanban--items
+                  (hermes-transport--get diagnostic 'actions)))
+        (data (hermes-transport--get diagnostic 'data)))
+    (concat
+     (format "  [%s] %s: %s"
+             (hermes-kanban--field diagnostic 'severity)
+             (hermes-kanban--field diagnostic 'kind)
+             (hermes-kanban--field diagnostic 'title))
+     (when-let* ((detail (hermes-kanban--non-empty
+                          (hermes-kanban--field diagnostic 'detail))))
+       (format "\n    %s" detail))
+     (when (or (hermes-transport--get diagnostic 'run_id)
+               (hermes-transport--get diagnostic 'count))
+       (format "\n    Run: %s   Count: %s"
+               (or (hermes-kanban--field diagnostic 'run_id) "-")
+               (or (hermes-kanban--field diagnostic 'count) "-")))
+     (when data
+       (format "\n    Data: %s" (hermes-kanban--object-string data)))
+     (when actions
+       (format "\n    Actions: %s"
+               (string-join (mapcar #'hermes-kanban--format-diagnostic-action
+                                    actions)
+                            ", "))))))
+
+(defun hermes-kanban--format-run (run)
+  "Return RUN as one drawer row."
+  (let* ((outcome (hermes-kanban--non-empty
+                   (hermes-kanban--field run 'outcome)))
+         (status (hermes-kanban--non-empty
+                  (hermes-kanban--field run 'status)))
+         (state (or outcome status "-"))
+         (profile (or (hermes-kanban--non-empty
+                       (hermes-kanban--field run 'profile))
+                      "-"))
+         (started (hermes-transport--get run 'started_at))
+         (ended (hermes-transport--get run 'ended_at))
+         (metadata (hermes-transport--get run 'metadata)))
+    (concat
+     (format "  #%s %s @%s"
+             (hermes-kanban--field run 'id) state profile)
+     (when (and (numberp started) (numberp ended))
+       (format " (%ss)" (max 0 (- ended started))))
+     (when (numberp started)
+       (format "\n    Started: %s" (hermes-kanban--format-time started)))
+     (when (numberp ended)
+       (format "   Ended: %s" (hermes-kanban--format-time ended)))
+     (when-let* ((pid (hermes-kanban--non-empty
+                       (hermes-kanban--field run 'worker_pid))))
+       (format "\n    PID: %s" pid))
+     (when-let* ((summary (hermes-kanban--non-empty
+                           (hermes-kanban--field run 'summary))))
+       (format "\n    Summary: %s" summary))
+     (when-let* ((error (hermes-kanban--non-empty
+                         (hermes-kanban--field run 'error))))
+       (format "\n    Error: %s" error))
+     (when metadata
+       (format "\n    Metadata: %s" (hermes-kanban--object-string metadata))))))
+
+(defun hermes-kanban--format-task-detail (payload)
+  "Return rich task detail text for PAYLOAD from GET /tasks/:id."
+  (let* ((task (hermes-transport--get payload 'task))
+         (diagnostics (or (hermes-transport--get task 'diagnostics)
+                          (hermes-transport--get payload 'diagnostics))))
+    (concat
+     (hermes-kanban--format-task task)
+     (hermes-kanban--format-section
+      "Diagnostics" diagnostics "diagnostics"
+      #'hermes-kanban--format-diagnostic)
+     (hermes-kanban--format-section
+      "Attachments" (hermes-transport--get payload 'attachments) "attachments"
+      #'hermes-kanban--format-attachment)
+     (hermes-kanban--format-section
+      "Comments" (hermes-transport--get payload 'comments) "comments"
+      #'hermes-kanban--format-comment-row)
+     (hermes-kanban--format-section
+      "Events" (hermes-transport--get payload 'events) "events"
+      #'hermes-kanban--format-event-row)
+     (hermes-kanban--format-section
+      "Run history" (hermes-transport--get payload 'runs) "runs"
+      #'hermes-kanban--format-run))))
+
+(defvar hermes-kanban-task-mode-map)
+
+(keymap-popup-define hermes-kanban-task-mode-map
+  "Keymap for `hermes-kanban-task-mode'."
+  :parent special-mode-map
+  :description "Hermes Kanban Task"
+  :group "View"
+  "g" ("Refresh" revert-buffer)
+  "l" ("View worker log" hermes-kanban-show-log)
+  "?" ("Help" hermes-kanban-task-mode-map-popup))
+
+(define-derived-mode hermes-kanban-task-mode special-mode "Hermes Task"
+  "Major mode for a Hermes Kanban task detail drawer."
+  :interactive nil
+  (setq-local revert-buffer-function #'hermes-kanban--task-revert))
+
+(defun hermes-kanban--query-for-board (slug)
+  "Return a board query alist for SLUG, or nil."
+  (and slug `((board . ,slug))))
+
+(defun hermes-kanban--task-revert (&rest _)
+  "Refresh the current task detail buffer in place."
+  (unless hermes-kanban-task--task-id
+    (user-error "No task id for this detail buffer"))
+  (hermes-kanban--display-task
+   (hermes-kanban--api "GET" (hermes-kanban--task-path hermes-kanban-task--task-id)
+                       nil (hermes-kanban--query-for-board
+                            hermes-kanban-task--board-slug))
+   hermes-kanban-task--board-slug))
+
+(defun hermes-kanban--display-task (payload &optional board-slug)
+  "Render task PAYLOAD in a read-only detail buffer.
+BOARD-SLUG is remembered for refreshes and log requests."
+  (let* ((task (hermes-transport--get payload 'task))
+         (task-id (hermes-kanban--field task 'id)))
+    (with-current-buffer (get-buffer-create "*Hermes Kanban Task*")
+      (unless (derived-mode-p 'hermes-kanban-task-mode)
+        (hermes-kanban-task-mode))
+      (setq hermes-kanban-task--task-id task-id
+            hermes-kanban-task--board-slug board-slug
+            mode-line-process (format " [%s]" (or task-id "task")))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (hermes-kanban--format-task-detail payload)))
+      (goto-char (point-min))
+      (pop-to-buffer (current-buffer)))))
 
 (defun hermes-kanban-show ()
   "Show the kanban task at point."
   (interactive)
-  (hermes-kanban--display-task
-   (hermes-kanban--api "GET" (hermes-kanban--task-path (hermes-kanban--id-at-point))
-                       nil (hermes-kanban--board-query))))
+  (let ((board-slug hermes-kanban--slug))
+    (hermes-kanban--display-task
+     (hermes-kanban--api "GET" (hermes-kanban--task-path (hermes-kanban--id-at-point))
+                         nil (hermes-kanban--query-for-board board-slug))
+     board-slug)))
+
+(defun hermes-kanban--task-id-for-command ()
+  "Return the current task id for a board or task-detail command."
+  (if (derived-mode-p 'hermes-kanban-task-mode)
+      (or hermes-kanban-task--task-id
+          (user-error "No task for this detail buffer"))
+    (hermes-kanban--id-at-point)))
+
+(defun hermes-kanban--board-slug-for-command ()
+  "Return the current board slug for a board or task-detail command."
+  (if (derived-mode-p 'hermes-kanban-task-mode)
+      hermes-kanban-task--board-slug
+    hermes-kanban--slug))
+
+(defun hermes-kanban--log-query (board-slug)
+  "Return the query alist for fetching a task log on BOARD-SLUG."
+  (append (hermes-kanban--query-for-board board-slug)
+          `((tail . ,hermes-kanban-log-tail-bytes))))
+
+(defun hermes-kanban--format-log (payload)
+  "Return worker-log text for PAYLOAD from GET /tasks/:id/log."
+  (let ((task-id (hermes-kanban--field payload 'task_id))
+        (path (hermes-kanban--field payload 'path))
+        (size (hermes-transport--get payload 'size_bytes))
+        (content (hermes-kanban--field payload 'content))
+        (error (hermes-kanban--non-empty (hermes-kanban--field payload 'error))))
+    (concat
+     (format "Worker log for %s\n" (or (hermes-kanban--non-empty task-id) "task"))
+     (unless (string-empty-p path)
+       (format "Path: %s\n" path))
+     (when (numberp size)
+       (format "Size: %s\n" (hermes-kanban--format-size size)))
+     "\n"
+     (cond
+      (error (format "failed to load worker log: %s\n" error))
+      ((not (hermes-kanban--truthy-p (hermes-transport--get payload 'exists)))
+       "— no worker log yet (task has not spawned or the log was rotated away) —\n")
+      ((string-empty-p content) "(empty)\n")
+      (t content))
+     (when (hermes-kanban--truthy-p (hermes-transport--get payload 'truncated))
+       (format "\n\n(showing last %s; full log path above)\n"
+               (hermes-kanban--format-size hermes-kanban-log-tail-bytes))))))
+
+(defun hermes-kanban--display-log (payload)
+  "Render worker log PAYLOAD in a read-only buffer."
+  (with-current-buffer (get-buffer-create "*Hermes Kanban Log*")
+    (unless (derived-mode-p 'special-mode)
+      (special-mode))
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert (hermes-kanban--format-log payload)))
+    (goto-char (point-min))
+    (pop-to-buffer (current-buffer))))
+
+(defun hermes-kanban-show-log ()
+  "Fetch and display the worker log for the task at point or current detail."
+  (interactive)
+  (let* ((id (hermes-kanban--task-id-for-command))
+         (board-slug (hermes-kanban--board-slug-for-command))
+         (query (hermes-kanban--log-query board-slug)))
+    (hermes-kanban--display-log
+     (condition-case err
+         (hermes-kanban--api "GET" (hermes-kanban--task-path id "/log")
+                             nil query)
+       (error `((task_id . ,id)
+                (error . ,(error-message-string err))))))))
 
 ;;; Task mutations
 
