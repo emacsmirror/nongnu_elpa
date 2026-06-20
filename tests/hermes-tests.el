@@ -2573,6 +2573,75 @@ The buffer is captured by object so teardown still kills it after a rename."
         (should-not (gethash "approval:sid-prompt"
                              hermes-chat--pending-prompts))))))
 
+(ert-deftest hermes-chat-approval-candidates-follow-backend-choices ()
+  (let* ((prompt '(:prompt-type "approval"
+                   :choices ["once" "deny"]
+                   :allow-permanent nil))
+         (candidates (hermes-chat--approval-response-candidates prompt)))
+    (should (equal (mapcar #'cdr candidates) '("once" "deny" nil)))
+    (should (equal (mapcar #'car candidates)
+                   '("Approve once" "Deny" "Cancel / ignore")))))
+
+(ert-deftest hermes-chat-read-approval-response-omits-unavailable-always ()
+  (let (seen-candidates)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt candidates &rest _args)
+                 (setq seen-candidates candidates)
+                 "Deny")))
+      (should (equal (hermes-chat--read-prompt-response
+                      '(:prompt-type "approval" :allow-permanent nil))
+                     "deny"))
+      (should (member "Approve once" seen-candidates))
+      (should (member "Approve for session" seen-candidates))
+      (should (member "Deny" seen-candidates))
+      (should (member "Cancel / ignore" seen-candidates))
+      (should-not (member "Always approve" seen-candidates)))))
+
+(ert-deftest hermes-chat-read-approval-response-can-cancel ()
+  (let (seen-candidates cancelled)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt candidates &rest _args)
+                 (setq seen-candidates candidates)
+                 "Cancel / ignore")))
+      (condition-case nil
+          (hermes-chat--read-prompt-response '(:prompt-type "approval"))
+        (quit (setq cancelled t)))
+      (should cancelled)
+      (should (member "Always approve" seen-candidates))
+      (should (member "Cancel / ignore" seen-candidates)))))
+
+(ert-deftest hermes-chat-parses-approval-allow-permanent-flag ()
+  (hermes-test-with-dashboard-prompt-session (client)
+    (hermes-test--emit-dashboard-prompt
+     client "approval.request"
+     '((command . "python risky.py")
+       (description . "execute_code script execution")
+       (allow_permanent . nil)))
+    (let ((prompt (gethash "approval:sid-prompt" hermes-chat--pending-prompts)))
+      (should prompt)
+      (should (plist-member prompt :allow-permanent))
+      (should-not (plist-get prompt :allow-permanent))
+      (should-not (member "always"
+                          (mapcar #'cdr
+                                  (hermes-chat--approval-response-candidates
+                                   prompt)))))))
+
+(ert-deftest hermes-transport-dashboard-approval-respond-payload ()
+  (let ((client (hermes-test--dashboard-client))
+        (hermes-dashboard-transport-request-timeout nil)
+        sent-frame)
+    (let ((hermes-dashboard-transport-websocket-send-function
+           (lambda (_websocket text)
+             (setq sent-frame (hermes-dashboard-transport--decode-frame text)))))
+      (hermes-dashboard-transport-approval-respond
+       client :session-id "sid-approval" :choice "session" :all t))
+    (should (equal (alist-get 'method sent-frame) "approval.respond"))
+    (should (equal (alist-get 'session_id (alist-get 'params sent-frame))
+                   "sid-approval"))
+    (should (equal (alist-get 'choice (alist-get 'params sent-frame))
+                   "session"))
+    (should (eq (alist-get 'all (alist-get 'params sent-frame)) t))))
+
 (ert-deftest hermes-chat-handles-clarify-request ()
   (let (respond-client respond-request respond-answer)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)

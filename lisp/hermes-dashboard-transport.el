@@ -1576,6 +1576,9 @@ The plist holds :used, :max, and :percent for the model's context window."
                    (pattern_keys . :pattern-keys)))
     (when-let* ((value (hermes-transport--get payload (car field))))
       (setq event (plist-put event (cdr field) value))))
+  (when (hermes-transport--field-present-p payload 'allow_permanent)
+    (setq event (plist-put event :allow-permanent
+                           (hermes-transport--get payload 'allow_permanent))))
   event)
 
 (defun hermes-dashboard-transport--prompt-request-event (type params payload)

@@ -2396,13 +2396,51 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
     (delq nil (mapcar #'hermes-chat--scalar-string
                       (if (vectorp choices) (append choices nil) choices)))))
 
+(defun hermes-chat--approval-permanent-allowed-p (prompt)
+  "Return non-nil if PROMPT may offer permanent approval."
+  (let ((tail (or (plist-member prompt :allow-permanent)
+                  (plist-member prompt :allow_permanent))))
+    (not (and tail (null (cadr tail))))))
+
+(defun hermes-chat--approval-choice-label (choice)
+  "Return a minibuffer label for approval CHOICE."
+  (pcase choice
+    ("once" "Approve once")
+    ("session" "Approve for session")
+    ("always" "Always approve")
+    ("deny" "Deny")
+    (_ choice)))
+
+(defun hermes-chat--approval-response-candidates (prompt)
+  "Return completion candidates for responding to approval PROMPT."
+  (let* ((choices (or (hermes-chat--prompt-choices prompt)
+                      '("once" "session" "always" "deny")))
+         (available (if (hermes-chat--approval-permanent-allowed-p prompt)
+                        choices
+                      (cl-remove-if (lambda (choice)
+                                      (equal choice "always"))
+                                    choices))))
+    (append (mapcar (lambda (choice)
+                      (cons (hermes-chat--approval-choice-label choice) choice))
+                    available)
+            '(("Cancel / ignore" . nil)))))
+
+(defun hermes-chat--read-approval-response (prompt)
+  "Read an approval response for PROMPT."
+  (let* ((candidates (hermes-chat--approval-response-candidates prompt))
+         (choice (completing-read "Approval decision: "
+                                  (mapcar #'car candidates) nil t nil nil
+                                  (caar candidates)))
+         (candidate (assoc choice candidates)))
+    (unless candidate
+      (user-error "Unknown approval decision: %s" choice))
+    (or (cdr candidate) (keyboard-quit))))
+
 (defun hermes-chat--read-prompt-response (prompt)
   "Read a response for PROMPT using an Emacs-native minibuffer UI."
   (pcase (hermes-chat--prompt-event-type prompt)
     ("approval"
-     (completing-read "Approval decision: "
-                      '("once" "session" "always" "deny") nil t nil nil
-                      "once"))
+     (hermes-chat--read-approval-response prompt))
     ("clarify"
      (if-let* ((choices (hermes-chat--prompt-choices prompt)))
          (completing-read "Clarify: " choices nil t)
