@@ -166,7 +166,8 @@
       'done)
      ((member name '("error" "run.failed" "run.cancelled" "response.failed"))
       'error)
-     ((member name '("status" "run.started" "message.start" "message.started"
+     ((member name '("status" "run.started" "message.start" "message_start"
+                     "message.started" "message_started"
                      "response.created" "response.in_progress"
                      "gatewaynotice" "gateway_notice" "approval.request"
                      "subagent.start" "subagent.spawn_requested"
@@ -318,7 +319,9 @@
          (status (or (hermes-transport--scalar-string
                       (hermes-transport--get raw 'status))
                      (pcase (downcase (or event-name ""))
-                       ("message.start" "started")
+                       ((or "message.start" "message_start"
+                            "message.started" "message_started")
+                        "started")
                        (_ (hermes-transport--phase event-name)))))
          (content (hermes-transport--content raw)))
     (when status

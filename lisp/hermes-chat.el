@@ -718,6 +718,25 @@ fields, so it collapses to a plain ready state instead of repeating them."
   "Return non-nil when EVENT is a `session.info' status event."
   (equal (hermes-chat--event-string event '(:event)) "session.info"))
 
+(defun hermes-chat--message-start-noise-content-p (content)
+  "Return non-nil when CONTENT is only message-start status boilerplate."
+  (let ((content (downcase (string-trim (or content "")))))
+    (or (string-empty-p content)
+        (member content
+                '("started" "message start: started"
+                  "message.start: started" "message_start: started")))))
+
+(defun hermes-chat--message-start-status-event-p (event)
+  "Return non-nil when EVENT is low-value message-start status noise."
+  (and (eq (plist-get event :type) 'status)
+       (when-let* ((name (hermes-chat--event-string event '(:event))))
+         (member (downcase name)
+                 '("message.start" "message_start"
+                   "message.started" "message_started")))
+       (equal (hermes-chat--status-name (plist-get event :status)) "started")
+       (hermes-chat--message-start-noise-content-p
+        (hermes-chat--event-string event '(:content :text :preview)))))
+
 (defun hermes-chat--thinking-activity (content)
   "Return a header label from a `thinking.delta' CONTENT string.
 CONTENT looks like \"(◔_◔) pondering...\"; keep the kawaii face, drop the
@@ -1369,6 +1388,34 @@ When FINAL is non-nil, strip any trailing transport metadata."
              (string-prefix-p a b)
              (string-prefix-p b a)))))
 
+(defun hermes-chat--entry-content-by-id (id)
+  "Return entry ID's content in the current chat buffer, or nil."
+  (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
+    (plist-get (ignore-errors (ewoc-data node)) :content)))
+
+(defun hermes-chat--thinking-entry-content (assistant-id)
+  "Return ASSISTANT-ID's thinking/commentary content, or nil."
+  (hermes-chat--entry-content-by-id
+   (format "%s:commentary:thinking" assistant-id)))
+
+(defun hermes-chat--thinking-only-final-content-p (assistant-id content)
+  "Return non-nil when CONTENT only repeats ASSISTANT-ID's thinking entry."
+  (let ((content (hermes-chat--normalize-for-dedup
+                  (and content
+                       (hermes-chat--sanitize-assistant-content content t))))
+        (thinking (hermes-chat--normalize-for-dedup
+                   (hermes-chat--thinking-entry-content assistant-id)))
+        (assistant (hermes-chat--normalize-for-dedup
+                    (hermes-chat--entry-content-by-id assistant-id))))
+    (and (not (string-empty-p content))
+         (string= content thinking)
+         (string-empty-p assistant))))
+
+(defun hermes-chat--assistant-done-content (assistant-id content)
+  "Return ASSISTANT-ID final CONTENT, suppressing thinking-only echo."
+  (unless (hermes-chat--thinking-only-final-content-p assistant-id content)
+    content))
+
 (defun hermes-chat--drop-duplicate-thinking (assistant-id)
   "Remove ASSISTANT-ID's reasoning entry when it only repeats the reply.
 Some providers emit `reasoning.available' equal to the final message; that is
@@ -1713,6 +1760,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
    ((hermes-chat--stale-assistant-event-p assistant-id) nil)
    ((hermes-chat--closed-status-event-p event)
     (hermes-chat--handle-closed-status assistant-id event))
+   ((hermes-chat--message-start-status-event-p event) nil)
    (t
     (when (hermes-chat--prompt-request-event-p event)
       (setq event (hermes-chat--record-prompt-request event assistant-id)))
@@ -1724,7 +1772,10 @@ so do not copy its final content into the unsubmitted retry placeholder."
       ('done
        (hermes-chat--clear-terminal-prompts event)
        (hermes-chat--mark-assistant
-        assistant-id 'done (plist-get event :content) t)
+        assistant-id 'done
+        (hermes-chat--assistant-done-content
+         assistant-id (plist-get event :content))
+        t)
        (hermes-chat--drop-duplicate-thinking assistant-id)
        (hermes-chat--settle-transport-entries assistant-id 'done)
        (hermes-chat--dashboard-finish-assistant assistant-id)

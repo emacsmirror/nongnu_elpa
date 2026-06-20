@@ -734,6 +734,24 @@ The buffer is captured by object so teardown still kills it after a rename."
      (should (string-match-p "gpt-5.5" (hermes-test--header-line-string)))
      (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
 
+(ert-deftest hermes-chat-message-start-status-adds-no-entry ()
+  "Low-value `message.start' status updates do not enter the transcript."
+  (hermes-test-with-chat-buffer
+   (let ((before (length (ewoc-collect hermes-chat--ewoc #'identity))))
+     (dolist (event '(("message.start")
+                     ("message_start")
+                     ("message.start" "started")
+                     ("message_start" "message_start: started")))
+       (pcase-let ((`(,name ,content) event))
+         (hermes-chat--handle-transport-event
+          "a1" `(:type status :event ,name :status "started"
+                         ,@(and content (list :content content))))))
+     (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity))))
+     (should-not (string-match-p "message[ _]start"
+                                 (downcase (buffer-string))))
+     (should-not (string-match-p "message start"
+                                 (downcase (hermes-test--header-line-string)))))))
+
 (ert-deftest hermes-chat-progress-updates-preserve-draft-and-streaming ()
   (let (callback)
     (hermes-test-with-chat-buffer
@@ -4265,6 +4283,15 @@ The buffer is captured by object so teardown still kills it after a rename."
     (should (equal (plist-get event :status) "started"))
     (should (hermes-chat--active-status-p (plist-get event :status)))))
 
+(ert-deftest hermes-transport-normalizes-message-start-underscore-as-status ()
+  (let ((event (hermes-transport-normalize-event
+                '((event . "message_start")
+                  (session_id . "sid-live")))))
+    (should (eq (plist-get event :type) 'status))
+    (should (equal (plist-get event :event) "message_start"))
+    (should (equal (plist-get event :session-id) "sid-live"))
+    (should (equal (plist-get event :status) "started"))))
+
 (ert-deftest hermes-transport-dashboard-normalizes-message-start-as-status ()
   (let (events)
     (let ((client (make-hermes-dashboard-transport-client
@@ -4470,6 +4497,33 @@ The buffer is captured by object so teardown still kills it after a rename."
        (let ((roles (mapcar (lambda (e) (plist-get e :role)) (hermes-chat--entries))))
          (should-not (memq 'commentary roles))
          (should (memq 'assistant roles)))))))
+
+(ert-deftest hermes-chat-suppresses-thinking-only-final-message ()
+  "Final content that only echoes thinking is not promoted to assistant text."
+  (let (callback)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (_p cb) (setq callback cb) 'fake-process)))
+       (insert "hi")
+       (hermes-chat-send)
+       (funcall callback
+                '(:type commentary :event "reasoning.available"
+                        :content "I will inspect the repo first."))
+       (funcall callback
+                '(:type done :content "I will inspect the repo first.\nsession_id: sid"))
+       (let* ((entries (hermes-chat--entries))
+              (assistant (cl-find-if
+                          (lambda (entry)
+                            (eq (plist-get entry :role) 'assistant))
+                          entries))
+              (commentary (cl-find-if
+                           (lambda (entry)
+                             (eq (plist-get entry :role) 'commentary))
+                           entries)))
+         (should assistant)
+         (should (string-empty-p (or (plist-get assistant :content) "")))
+         (should commentary)
+         (should (equal (plist-get commentary :status) 'done)))))))
 
 (ert-deftest hermes-chat-keeps-thinking-that-differs-from-reply ()
   "Reasoning that genuinely differs from the reply is retained."
