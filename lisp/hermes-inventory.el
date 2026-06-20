@@ -20,12 +20,15 @@
 
 ;;; Commentary:
 
-;; Read-only `tabulated-list' browsers over the dashboard inventory methods:
-;; toolsets (`tools.list'), skills (`skills.manage'), running agents
-;; (`agents.list'), and plugins (`plugins.list').
+;; `tabulated-list' browsers over dashboard inventory methods and safe
+;; dashboard actions.  Toolsets and skills can be enabled or disabled from the
+;; list; memory status is shown in a separate buffer that displays only provider
+;; names and built-in store sizes, never memory contents.
 
 ;;; Code:
 
+(require 'cl-lib)
+(require 'subr-x)
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
@@ -35,28 +38,75 @@
   "Return OBJECT's KEY as a display string."
   (or (hermes-transport--scalar-string (hermes-transport--get object key)) ""))
 
+(defun hermes-inventory--bool-cell (value &optional unknown)
+  "Return an on/off display cell for VALUE.
+When VALUE is nil and UNKNOWN is non-nil, return `?' instead
+of the string \"off\"."
+  (cond
+   ((eq value t) "on")
+   ((and (null value) unknown) "?")
+   (t "off")))
+
+(defun hermes-inventory--json-bool (value)
+  "Return VALUE encoded for `json-serialize' as a JSON boolean."
+  (if value t :false))
+
 (defun hermes-inventory--toolset-rows (result)
-  "Return inventory rows for a `tools.list' RESULT."
+  "Return inventory rows for a `tools.list' or toolset list RESULT."
   (mapcar (lambda (toolset)
-            (list (hermes-inventory--str toolset 'name)
-                  (vector (hermes-inventory--str toolset 'name)
-                          (if (hermes-transport--get toolset 'enabled) "on" "off")
-                          (format "%s" (or (hermes-transport--get toolset 'tool_count) 0))
-                          (hermes-inventory--str toolset 'description))))
+            (let ((name (hermes-inventory--str toolset 'name))
+                  (tool-count (or (hermes-transport--get toolset 'tool_count)
+                                  (length (or (hermes-transport--get toolset 'tools)
+                                              '())))))
+              (list name
+                    (vector name
+                            (hermes-inventory--bool-cell
+                             (hermes-transport--get toolset 'enabled))
+                            (format "%s" tool-count)
+                            (hermes-inventory--str toolset 'description)))))
           (hermes-transport--get result 'toolsets)))
 
-(defun hermes-inventory--skill-rows (result)
-  "Return inventory rows for a `skills.manage' list RESULT.
-The result groups skill names by category."
+(defun hermes-inventory--skill-object-p (entry)
+  "Return non-nil if ENTRY is a dashboard skill object."
+  (and (consp entry)
+       (or (hermes-transport--get entry 'name)
+           (hermes-transport--get entry "name"))))
+
+(defun hermes-inventory--skill-object-row (skill)
+  "Return a tabulated-list row for dashboard SKILL metadata."
+  (let ((name (hermes-inventory--str skill 'name)))
+    (list name
+          (vector (hermes-inventory--str skill 'category)
+                  name
+                  (hermes-inventory--bool-cell
+                   (hermes-transport--get skill 'enabled))
+                  (hermes-inventory--str skill 'description)))))
+
+(defun hermes-inventory--skill-group-rows (skills)
+  "Return rows for legacy SKILLS grouped by category."
   (let (rows)
-    (dolist (entry (hermes-transport--get result 'skills))
+    (dolist (entry skills)
       (let ((category (format "%s" (car entry))))
         (dolist (name (cdr entry))
-          (let ((name (hermes-transport--scalar-string name)))
-            (push (list (concat category "/" (or name ""))
-                        (vector category (or name "")))
-                  rows)))))
+          (let ((name (or (hermes-transport--scalar-string name) "")))
+            (push (list name (vector category name "?" "")) rows)))))
     (nreverse rows)))
+
+(defun hermes-inventory--skill-rows (result)
+  "Return inventory rows for a skill list RESULT.
+RESULT may come from dashboard REST `/api/skills' or legacy `skills.manage'."
+  (let ((skills (hermes-transport--get result 'skills)))
+    (if (and skills (hermes-inventory--skill-object-p (car skills)))
+        (mapcar #'hermes-inventory--skill-object-row skills)
+      (hermes-inventory--skill-group-rows skills))))
+
+(defun hermes-inventory--skills-result (payload)
+  "Return a `skills' result object for REST PAYLOAD.
+The dashboard REST endpoint currently returns a raw list; accept an object with
+a `skills' field too so older/newer dashboard shapes render the same way."
+  (if (hermes-transport--get payload 'skills)
+      payload
+    `((skills . ,payload))))
 
 (defun hermes-inventory--agent-rows (result)
   "Return inventory rows for an `agents.list' RESULT."
@@ -74,39 +124,56 @@ The result groups skill names by category."
             (list (hermes-inventory--str plugin 'name)
                   (vector (hermes-inventory--str plugin 'name)
                           (hermes-inventory--str plugin 'version)
-                          (if (hermes-transport--get plugin 'enabled) "on" "off"))))
+                          (hermes-inventory--bool-cell
+                           (hermes-transport--get plugin 'enabled)))))
           (hermes-transport--get result 'plugins)))
 
 (defconst hermes-inventory--specs
   `(("Toolsets" "tools.list" nil
      [("Toolset" 24 t) ("On" 4 t) ("Tools" 6 t) ("Description" 50 nil)]
-     ,#'hermes-inventory--toolset-rows)
+     ,#'hermes-inventory--toolset-rows toolsets)
     ("Skills" "skills.manage" ((action . "list"))
-     [("Category" 20 t) ("Skill" 48 t)]
-     ,#'hermes-inventory--skill-rows)
+     [("Category" 20 t) ("Skill" 32 t) ("On" 4 t) ("Description" 50 nil)]
+     ,#'hermes-inventory--skill-rows skills)
     ("Agents" "agents.list" nil
      [("Session" 18 t) ("Status" 10 t) ("Uptime" 8 t) ("Command" 50 nil)]
-     ,#'hermes-inventory--agent-rows)
+     ,#'hermes-inventory--agent-rows agents)
     ("Plugins" "plugins.list" nil
      [("Plugin" 30 t) ("Version" 12 t) ("On" 4 t)]
-     ,#'hermes-inventory--plugin-rows))
-  "Inventory categories as (LABEL METHOD PARAMS FORMAT ROW-FN).")
+     ,#'hermes-inventory--plugin-rows plugins))
+  "Inventory categories as (LABEL METHOD PARAMS FORMAT ROW-FN KIND).")
 
 (defvar-local hermes-inventory--spec nil
-  "The inventory spec backing the current buffer, for refresh.")
+  "The inventory spec backing the current buffer, for refresh and actions.")
+
+(defun hermes-inventory--spec-kind (spec)
+  "Return SPEC's inventory kind."
+  (nth 5 spec))
 
 (defun hermes-inventory--revert (&rest _)
   "Re-fetch the inventory shown in the current buffer."
   (when hermes-inventory--spec
     (hermes-inventory--fetch hermes-inventory--spec)))
 
+(defvar-keymap hermes-inventory-mode-map
+  :doc "Keymap for `hermes-inventory-mode'."
+  :parent tabulated-list-mode-map
+  "e" #'hermes-inventory-enable
+  "d" #'hermes-inventory-disable
+  "t" #'hermes-inventory-toggle
+  "R" #'hermes-inventory-reload-skills)
+
 (define-derived-mode hermes-inventory-mode tabulated-list-mode "Hermes Inventory"
-  "Major mode for read-only Hermes inventory listings."
+  "Major mode for Hermes inventory listings.
+\<hermes-inventory-mode-map>
+Toolsets and skills support `\[hermes-inventory-enable]' and
+`\[hermes-inventory-disable]'.  Skill reload is available with
+`\[hermes-inventory-reload-skills]'."
   :interactive nil
   (setq-local revert-buffer-function #'hermes-inventory--revert))
 
 (defun hermes-inventory--render (spec rows)
-  "Display ROWS for inventory SPEC, wiring `g' to re-fetch."
+  "Display ROWS for inventory SPEC."
   (with-current-buffer (get-buffer-create (format "*Hermes %s*" (car spec)))
     (unless (derived-mode-p 'hermes-inventory-mode)
       (hermes-inventory-mode))
@@ -117,29 +184,255 @@ The result groups skill names by category."
     (tabulated-list-print t)
     (pop-to-buffer (current-buffer))))
 
+(defun hermes-inventory--render-result (spec result)
+  "Render inventory SPEC from dashboard RESULT."
+  (hermes-inventory--render spec (funcall (nth 4 spec) result)))
+
+(defun hermes-inventory--fetch-via-jsonrpc (client done spec)
+  "Fetch SPEC over JSON-RPC using CLIENT, then call DONE."
+  (hermes-dashboard-transport-request
+   client (nth 1 spec) (nth 2 spec)
+   (lambda (result)
+     (funcall done)
+     (hermes-inventory--render-result spec result))
+   (lambda (message)
+     (funcall done)
+     (message "Hermes: %s" message))))
+
+(defun hermes-inventory--fetch-skills (client done spec)
+  "Fetch skill inventory for CLIENT into SPEC, then call DONE.
+Use REST when available, falling back to JSON-RPC."
+  (condition-case err
+      (let ((skills (hermes-dashboard-transport-api-request
+                     "GET" "/api/skills")))
+        (funcall done)
+        (hermes-inventory--render-result
+         spec (hermes-inventory--skills-result skills)))
+    (error
+     (message "Hermes: skill status unavailable over REST (%s); using read-only list"
+              (error-message-string err))
+     (hermes-inventory--fetch-via-jsonrpc client done spec))))
+
 (defun hermes-inventory--fetch (spec)
   "Fetch and render the inventory described by SPEC.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client for the listing."
   (hermes-sessions--with-client
    (lambda (client done)
-     (hermes-dashboard-transport-request
-      client (nth 1 spec) (nth 2 spec)
-      (lambda (result)
-        (funcall done)
-        (hermes-inventory--render spec (funcall (nth 4 spec) result)))
-      (lambda (message)
-        (funcall done)
-        (message "Hermes: %s" message))))))
+     (if (eq (hermes-inventory--spec-kind spec) 'skills)
+         (hermes-inventory--fetch-skills client done spec)
+       (hermes-inventory--fetch-via-jsonrpc client done spec)))))
+
+(defun hermes-inventory--row-name ()
+  "Return the current inventory row name, or signal `user-error'."
+  (or (tabulated-list-get-id)
+      (user-error "No Hermes inventory row on this line")))
+
+(defun hermes-inventory--row-enabled-p ()
+  "Return whether the current row appears enabled, or nil when unknown/off."
+  (let* ((entry (tabulated-list-get-entry))
+         (kind (and hermes-inventory--spec
+                    (hermes-inventory--spec-kind hermes-inventory--spec)))
+         (index (pcase kind
+                  ('toolsets 1)
+                  ('skills 2)
+                  (_ nil))))
+    (and entry index (equal (aref entry index) "on"))))
+
+(defun hermes-inventory--action-kind ()
+  "Return the current inventory kind for actions, or signal `user-error'."
+  (or (and hermes-inventory--spec
+           (hermes-inventory--spec-kind hermes-inventory--spec))
+      (user-error "This buffer is not backed by a Hermes inventory action")))
+
+(defun hermes-inventory--toolset-done-message (name enabled result)
+  "Return completion message for toolset NAME set to ENABLED with RESULT."
+  (let ((reset (hermes-transport--get result 'reset)))
+    (concat (format "%s toolset %s" (if enabled "Enabled" "Disabled") name)
+            (if reset
+                "; current dashboard session was reset"
+              "; new sessions use this setting after reset/restart"))))
+
+(defun hermes-inventory--set-toolset-enabled (name enabled)
+  "Set toolset NAME to ENABLED through dashboard RPC."
+  (hermes-sessions--with-client
+   (lambda (client done)
+     (hermes-dashboard-transport-tools-configure
+      client (list name) (if enabled "enable" "disable")
+      :session-id (hermes-dashboard-transport-client-session-id client)
+      :resolve (lambda (result)
+                 (funcall done)
+                 (message "Hermes: %s"
+                          (hermes-inventory--toolset-done-message
+                           name enabled result))
+                 (hermes-inventory--revert))
+      :reject (lambda (message)
+                (funcall done)
+                (message "Hermes: %s" message))))))
+
+(defun hermes-inventory--set-skill-enabled (name enabled)
+  "Set skill NAME to ENABLED through the dashboard REST API."
+  (condition-case err
+      (progn
+        (hermes-dashboard-transport-api-request
+         "PUT" "/api/skills/toggle"
+         :body `((name . ,name) (enabled . ,(hermes-inventory--json-bool enabled))))
+        (message "Hermes: %s skill %s; new sessions use this setting, or press R to reload skills"
+                 (if enabled "enabled" "disabled") name)
+        (hermes-inventory--revert))
+    (error
+     (message "Hermes: %s" (error-message-string err)))))
+
+(defun hermes-inventory--set-enabled (enabled)
+  "Set the toolset or skill at point to ENABLED."
+  (let ((name (hermes-inventory--row-name)))
+    (pcase (hermes-inventory--action-kind)
+      ('toolsets (hermes-inventory--set-toolset-enabled name enabled))
+      ('skills (hermes-inventory--set-skill-enabled name enabled))
+      (_ (user-error "Enable/disable is available only for toolsets and skills")))))
+
+(defun hermes-inventory-enable ()
+  "Enable the toolset or skill at point."
+  (interactive)
+  (hermes-inventory--set-enabled t))
+
+(defun hermes-inventory-disable ()
+  "Disable the toolset or skill at point."
+  (interactive)
+  (hermes-inventory--set-enabled nil))
+
+(defun hermes-inventory-toggle ()
+  "Toggle the toolset or skill at point."
+  (interactive)
+  (hermes-inventory--set-enabled (not (hermes-inventory--row-enabled-p))))
+
+(defun hermes-inventory-reload-skills ()
+  "Reload dashboard skills, reporting added/removed skills when supported."
+  (interactive)
+  (hermes-sessions--with-client
+   (lambda (client done)
+     (hermes-dashboard-transport-skills-reload
+      client
+      :resolve (lambda (result)
+                 (funcall done)
+                 (message "Hermes: %s"
+                          (or (hermes-transport--scalar-string
+                               (hermes-transport--get result 'output))
+                              "skills reloaded"))
+                 (when (and hermes-inventory--spec
+                            (eq (hermes-inventory--spec-kind hermes-inventory--spec)
+                                'skills))
+                   (hermes-inventory--revert)))
+      :reject (lambda (message)
+                (funcall done)
+                (message "Hermes: %s" message))))))
+
+;;; Memory status
+
+(defun hermes-inventory--safe-memory-name (value)
+  "Return a safe provider name for VALUE, redacting secret-shaped strings."
+  (let ((text (or (hermes-transport--scalar-string value) "")))
+    (cond
+     ((string-empty-p text) "built-in")
+     ((or (string-match-p "token\\|secret\\|password\\|api[_-]?key"
+                          (downcase text))
+          (string-match-p "[A-Za-z0-9_-]\\{48,\\}" text))
+      "<redacted>")
+     (t text))))
+
+(defun hermes-inventory--memory-size (status key)
+  "Return built-in memory STATUS size for KEY as a number."
+  (let ((value (hermes-transport--get
+                (hermes-transport--get status 'builtin_files) key)))
+    (if (numberp value) value 0)))
+
+(defun hermes-inventory--memory-status-text (status)
+  "Return redacted display text for memory STATUS.
+The text intentionally omits memory contents, provider lists, paths, and
+unknown backend fields so secrets cannot leak through this buffer."
+  (string-join
+   (list "Hermes Memory"
+         ""
+         (format "Active provider: %s"
+                 (hermes-inventory--safe-memory-name
+                  (hermes-transport--get status 'active)))
+         ""
+         "Built-in store sizes:"
+         (format "  MEMORY.md: %d bytes"
+                 (hermes-inventory--memory-size status 'memory))
+         (format "  USER.md: %d bytes"
+                 (hermes-inventory--memory-size status 'user))
+         ""
+         "Keys: g refresh, D reset built-in memory (asks yes-or-no-p).")
+   "\n"))
+
+(defun hermes-inventory--render-memory-status (status)
+  "Render memory STATUS in the memory buffer."
+  (with-current-buffer (get-buffer-create "*Hermes Memory*")
+    (unless (derived-mode-p 'hermes-memory-status-mode)
+      (hermes-memory-status-mode))
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert (hermes-inventory--memory-status-text status))
+      (goto-char (point-min)))
+    (pop-to-buffer (current-buffer))))
+
+(defvar-keymap hermes-memory-status-mode-map
+  :doc "Keymap for `hermes-memory-status-mode'."
+  :parent special-mode-map
+  "g" #'hermes-memory-status
+  "D" #'hermes-memory-reset)
+
+(define-derived-mode hermes-memory-status-mode special-mode "Hermes Memory"
+  "Major mode for redacted Hermes memory provider status."
+  :interactive nil)
+
+;;;###autoload
+(defun hermes-memory-status ()
+  "Show Hermes memory provider and built-in store sizes.
+The buffer never displays memory contents or secret material."
+  (interactive)
+  (condition-case err
+      (hermes-inventory--render-memory-status
+       (hermes-dashboard-transport-api-request "GET" "/api/memory"))
+    (error
+     (message "Hermes: %s" (error-message-string err)))))
+
+;;;###autoload
+(defun hermes-memory-reset (target)
+  "Reset built-in Hermes memory TARGET after confirmation.
+TARGET is one of all, memory, or user.  External providers are not reset."
+  (interactive
+   (list (completing-read "Reset built-in memory store: "
+                          '("all" "memory" "user") nil t nil nil "all")))
+  (unless (member target '("all" "memory" "user"))
+    (user-error "Memory reset target must be all, memory, or user"))
+  (when (yes-or-no-p
+         (format "Erase built-in Hermes %s memory?  This deletes only MEMORY.md/USER.md data.  Continue?"
+                 target))
+    (condition-case err
+        (let ((result (hermes-dashboard-transport-api-request
+                       "POST" "/api/memory/reset"
+                       :body `((target . ,target)))))
+          (message "Hermes: reset %s memory (%s)"
+                   target
+                   (string-join
+                    (mapcar #'identity
+                            (or (hermes-transport--get result 'deleted) '()))
+                    ", "))
+          (hermes-memory-status))
+      (error
+       (message "Hermes: %s" (error-message-string err))))))
 
 ;;;###autoload
 (defun hermes-list-inventory ()
-  "Browse a Hermes inventory: toolsets, skills, agents, or plugins."
+  "Browse Hermes inventory: toolsets, skills, agents, plugins, or memory."
   (interactive)
-  (hermes-inventory--fetch
-   (assoc (completing-read "Hermes inventory: "
-                           (mapcar #'car hermes-inventory--specs) nil t)
-          hermes-inventory--specs)))
+  (let* ((labels (append (mapcar #'car hermes-inventory--specs) '("Memory")))
+         (choice (completing-read "Hermes inventory: " labels nil t)))
+    (if (equal choice "Memory")
+        (hermes-memory-status)
+      (hermes-inventory--fetch (assoc choice hermes-inventory--specs)))))
 
 (provide 'hermes-inventory)
 ;;; hermes-inventory.el ends here

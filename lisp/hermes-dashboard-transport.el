@@ -639,6 +639,182 @@ It is called with URL and keyword arguments :method, :headers, :data, and
            :data (and body (json-serialize body))
            :secrets secrets))
 
+
+(defvar hermes-dashboard-transport--api-auth nil
+  "Cached dashboard REST auth plist.
+The value is `(:base-url URL :headers HEADERS :secrets SECRETS)'.")
+
+(defun hermes-dashboard-transport--api-base-url ()
+  "Return the configured dashboard REST base URL."
+  (or (hermes-dashboard-transport--normalize-base-url
+       hermes-dashboard-transport-url)
+      (user-error "Set `hermes-dashboard-transport-url' to a Hermes dashboard URL")))
+
+(defun hermes-dashboard-transport--api-token-auth (base-url)
+  "Return REST token auth for dashboard BASE-URL."
+  (let ((token (hermes-dashboard-transport--remote-token-secret base-url)))
+    (list :headers (list (cons "X-Hermes-Session-Token" token))
+          :secrets (list token))))
+
+(defun hermes-dashboard-transport--api-basic-auth (base-url status)
+  "Return REST cookie auth for dashboard BASE-URL described by STATUS."
+  (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
+    (unless provider
+      (hermes-dashboard-transport--unsupported-remote-auth base-url))
+    (let* ((credentials (hermes-dashboard-transport--remote-basic-credentials
+                         base-url))
+           (password (plist-get credentials :password))
+           (response
+            (hermes-dashboard-transport--http-json
+             (hermes-dashboard-transport--api-url base-url "/auth/password-login")
+             :method "POST"
+             :headers '(("Content-Type" . "application/json"))
+             :body `((provider . ,provider)
+                     (username . ,(plist-get credentials :username))
+                     (password . ,password)
+                     (next . ""))
+             :secrets (list password)))
+           (cookies (hermes-dashboard-transport--response-cookie-header response)))
+      (unless cookies
+        (user-error "Hermes dashboard basic login returned no session cookies"))
+      (list :headers (list (cons "Cookie" cookies))
+            :secrets (list password cookies)))))
+
+(defun hermes-dashboard-transport--api-authenticate ()
+  "Resolve dashboard REST auth for `hermes-dashboard-transport-url'."
+  (let ((base-url (hermes-dashboard-transport--api-base-url)))
+    (append
+     (list :base-url base-url)
+     (pcase hermes-dashboard-transport-remote-auth-method
+       ('token (hermes-dashboard-transport--api-token-auth base-url))
+       ('basic (hermes-dashboard-transport--api-basic-auth
+                base-url (hermes-dashboard-transport--remote-status base-url)))
+       (_ (let ((status (hermes-dashboard-transport--remote-status base-url)))
+            (if (hermes-dashboard-transport--status-auth-required-p status)
+                (hermes-dashboard-transport--api-basic-auth base-url status)
+              (hermes-dashboard-transport--api-token-auth base-url))))))))
+
+(defun hermes-dashboard-transport-api-auth (&optional refresh)
+  "Return dashboard REST auth, resolving it when REFRESH is non-nil."
+  (when refresh
+    (setq hermes-dashboard-transport--api-auth nil))
+  (or hermes-dashboard-transport--api-auth
+      (setq hermes-dashboard-transport--api-auth
+            (hermes-dashboard-transport--api-authenticate))))
+
+(defun hermes-dashboard-transport--query-string (query)
+  "Return a URL query string for QUERY, an alist of (KEY . VALUE)."
+  (if query
+      (concat "?" (string-join
+                   (mapcar (lambda (entry)
+                             (format "%s=%s"
+                                     (url-hexify-string
+                                      (format "%s" (car entry)))
+                                     (url-hexify-string
+                                      (format "%s" (cdr entry)))))
+                           query)
+                   "&"))
+    ""))
+
+(defun hermes-dashboard-transport--api-client-token (client)
+  "Return CLIENT's dashboard session token, or nil."
+  (and (hermes-dashboard-transport-client-p client)
+       (hermes-dashboard-transport--non-empty-string
+        (hermes-dashboard-transport-client-token client))))
+
+(defun hermes-dashboard-transport--api-client-base-url (client)
+  "Return CLIENT's dashboard HTTP base URL, or the configured REST URL."
+  (or (and (hermes-dashboard-transport-client-p client)
+           (hermes-dashboard-transport-client-base-url client))
+      (and (hermes-dashboard-transport-client-p client)
+           (hermes-dashboard-transport-client-port client)
+           (hermes-dashboard-transport--base-url
+            (hermes-dashboard-transport-client-host client)
+            (hermes-dashboard-transport-client-port client)))
+      (hermes-dashboard-transport--api-base-url)))
+
+(cl-defun hermes-dashboard-transport--api-request-with-client
+    (client method path &key body query headers secrets)
+  "Call dashboard REST METHOD PATH using CLIENT's live session token."
+  (let* ((token (hermes-dashboard-transport--api-client-token client))
+         (all-secrets (append secrets (and token (list token))))
+         (url (concat (hermes-dashboard-transport--api-url
+                       (hermes-dashboard-transport--api-client-base-url client)
+                       path)
+                      (hermes-dashboard-transport--query-string query)))
+         (all-headers (append (and token
+                                   (list (cons "X-Hermes-Session-Token" token)))
+                              headers
+                              (and body
+                                   '(("Content-Type" . "application/json"))))))
+    (condition-case err
+        (plist-get (hermes-dashboard-transport--http-json
+                    url :method method :headers all-headers :body body
+                    :secrets all-secrets)
+                   :body)
+      (error
+       (signal (car err)
+               (list (hermes-dashboard-transport--redact-secret
+                      (error-message-string err) all-secrets)))))))
+
+(cl-defun hermes-dashboard-transport--api-request-1
+    (method path &key body query headers secrets retry)
+  "Call dashboard REST METHOD PATH with BODY and QUERY.
+HEADERS and SECRETS extend the resolved dashboard auth.  RETRY refreshes auth
+once when the request fails."
+  (let* ((auth (hermes-dashboard-transport-api-auth))
+         (all-secrets (append secrets (plist-get auth :secrets)))
+         (url (concat (hermes-dashboard-transport--api-url
+                       (plist-get auth :base-url) path)
+                      (hermes-dashboard-transport--query-string query)))
+         (all-headers (append (plist-get auth :headers)
+                              headers
+                              (and body
+                                   '(("Content-Type" . "application/json"))))))
+    (condition-case err
+        (plist-get (hermes-dashboard-transport--http-json
+                    url :method method :headers all-headers :body body
+                    :secrets all-secrets)
+                   :body)
+      (error
+       (if retry
+           (progn
+             (hermes-dashboard-transport-api-auth t)
+             (hermes-dashboard-transport--api-request-1
+              method path :body body :query query :headers headers
+              :secrets secrets :retry nil))
+         (signal (car err)
+                 (list (hermes-dashboard-transport--redact-secret
+                        (error-message-string err) all-secrets))))))))
+
+(cl-defun hermes-dashboard-transport-api-request
+    (method path &key body query headers secrets client)
+  "Call authenticated dashboard REST METHOD PATH.
+PATH is appended to `hermes-dashboard-transport-url'.  BODY is JSON-encoded,
+QUERY is an alist encoded as a query string, and HEADERS/SECRETS extend the
+authenticated request.  CLIENT, when it has a live session token, supplies the
+spawned dashboard base URL and `X-Hermes-Session-Token'.  GET requests using
+cached auth retry once with refreshed auth."
+  (if (hermes-dashboard-transport--api-client-token client)
+      (hermes-dashboard-transport--api-request-with-client
+       client method path :body body :query query :headers headers
+       :secrets secrets)
+    (hermes-dashboard-transport--api-request-1
+     method path :body body :query query :headers headers :secrets secrets
+     :retry (equal method "GET"))))
+
+(defun hermes-dashboard-transport-profile-list (&optional client)
+  "Return dashboard profile metadata from REST `/api/profiles'.
+When CLIENT is non-nil, authenticate with its live dashboard session token."
+  (hermes-dashboard-transport-api-request
+   "GET" "/api/profiles" :client client))
+
+(defun hermes-dashboard-transport-active-profile (&optional client)
+  "Return dashboard active-profile metadata from REST `/api/profiles/active'.
+When CLIENT is non-nil, authenticate with its live dashboard session token."
+  (hermes-dashboard-transport-api-request
+   "GET" "/api/profiles/active" :client client))
+
 (defun hermes-dashboard-transport--response-header-values (response name)
   "Return all header values named NAME in RESPONSE."
   (let ((needle (downcase name)))
@@ -966,6 +1142,16 @@ OFFSET and LIMIT page the returned messages."
     `((session_id . ,session-id) (offset . ,offset) (limit . ,limit)))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-session-delete
+    (client session-id &key resolve reject)
+  "Send a `session.delete' request for SESSION-ID on CLIENT.
+RESOLVE and REJECT receive the asynchronous result or error."
+  (hermes-dashboard-transport-request
+   client "session.delete"
+   (hermes-dashboard-transport--alist-without-nil
+    `((session_id . ,session-id)))
+   resolve reject))
+
 (cl-defun hermes-dashboard-transport-model-options
     (client &key session-id resolve reject)
   "Send a `model.options' request for CLIENT.
@@ -988,6 +1174,28 @@ asynchronous result or error."
     `((session_id . ,session-id) (key . ,key) (value . ,value)
       (confirm_expensive_model . ,confirm-expensive-model)))
    resolve reject))
+
+(cl-defun hermes-dashboard-transport-tools-configure
+    (client names action &key session-id resolve reject)
+  "Send a `tools.configure' request for NAMES and ACTION on CLIENT.
+ACTION is `enable' or `disable'.  SESSION-ID scopes a live session reset when
+the dashboard backend supports it.  RESOLVE and REJECT receive the result or
+error."
+  (hermes-dashboard-transport-request
+   client "tools.configure"
+   (hermes-dashboard-transport--alist-without-nil
+    `((names . ,names)
+      (action . ,action)
+      (session_id . ,(hermes-dashboard-transport--session-param
+                      client session-id))))
+   resolve reject))
+
+(cl-defun hermes-dashboard-transport-skills-reload
+    (client &key resolve reject)
+  "Send a `skills.reload' request for CLIENT.
+RESOLVE and REJECT receive the result or error."
+  (hermes-dashboard-transport-request
+   client "skills.reload" nil resolve reject))
 
 (cl-defun hermes-dashboard-transport-rollback-list
     (client &key session-id resolve reject)
