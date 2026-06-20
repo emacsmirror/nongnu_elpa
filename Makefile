@@ -15,7 +15,7 @@ EMACS ?= emacs
 EMACS_CMD ?= $(EMACS)
 KEYMAP_POPUP ?=
 
-SRCS = lisp/hermes-transport.el lisp/hermes-dashboard-transport.el lisp/hermes-chat.el lisp/hermes-sessions.el lisp/hermes-inventory.el lisp/hermes-rollback.el lisp/hermes-subagents.el lisp/hermes-cron.el lisp/hermes-kanban.el lisp/hermes-exec.el lisp/hermes.el
+SRCS = lisp/hermes-transport.el lisp/hermes-dashboard-transport.el lisp/hermes-chat.el lisp/hermes-sessions.el lisp/hermes-inventory.el lisp/hermes-rollback.el lisp/hermes-subagents.el lisp/hermes-cron.el lisp/hermes-kanban.el lisp/hermes-mcp.el lisp/hermes-exec.el lisp/hermes.el
 TESTS = tests/hermes-tests.el tests/hermes-exec-tests.el
 
 SELECTOR ?= t
@@ -93,7 +93,7 @@ load: clean
 	                 hermes-sessions-mode-map hermes-cron-mode-map \
 	                 hermes-subagents-mode-map hermes-rollback-mode-map \
 	                 hermes-kanban-mode-map hermes-kanban-boards-mode-map \
-	                 hermes-chat-actions-map)) \
+	                 hermes-mcp-mode-map hermes-chat-actions-map)) \
 	    (when (boundp sym) (makunbound sym))))" > /dev/null
 	@for f in $(SRCS); do \
 	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
@@ -115,6 +115,8 @@ load: clean
 	           (use-local-map hermes-rollback-mode-map)) \
 	          ((derived-mode-p 'hermes-kanban-boards-mode) \
 	           (use-local-map hermes-kanban-boards-mode-map)) \
+	          ((derived-mode-p 'hermes-mcp-mode) \
+	           (use-local-map hermes-mcp-mode-map)) \
 	          ((derived-mode-p 'hermes-kanban-mode) \
 	           (use-local-map hermes-kanban-mode-map)))))" > /dev/null
 	@printf "\033[32mLoaded all modules into Emacs\033[0m\n"

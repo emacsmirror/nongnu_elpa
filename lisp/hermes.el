@@ -36,6 +36,7 @@
 (require 'hermes-subagents)
 (require 'hermes-cron)
 (require 'hermes-kanban)
+(require 'hermes-mcp)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -126,6 +127,7 @@ arrives."
   "i" ("Interrupt" hermes-dashboard-interrupt)
   "s" ("Steer" hermes-dashboard-steer)
   "a" ("Respond to prompt" hermes-dashboard-respond)
+  "m" ("Switch model" hermes-dashboard-switch-model)
   "d" ("Disconnect" hermes-dashboard-disconnect)
   :group "View"
   "g" ("Refresh" hermes-dashboard-refresh)
@@ -134,6 +136,7 @@ arrives."
   "A" ("Subagents" hermes-list-subagents)
   "C" ("Cron jobs" hermes-list-crons)
   "K" ("Kanban" hermes-list-kanban)
+  "X" ("MCP servers" hermes-list-mcp)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
@@ -588,6 +591,12 @@ arrives."
   (interactive)
   (with-current-buffer (hermes-dashboard--selected-chat-buffer)
     (call-interactively #'hermes-chat-respond-to-prompt)))
+
+(defun hermes-dashboard-switch-model ()
+  "Switch the model for the Hermes chat selected at point."
+  (interactive)
+  (with-current-buffer (hermes-dashboard--selected-chat-buffer)
+    (call-interactively #'hermes-chat-switch-model)))
 
 (defun hermes-dashboard-disconnect ()
   "Disconnect the Hermes chat session selected by the dashboard card at point."

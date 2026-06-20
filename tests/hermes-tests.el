@@ -46,6 +46,7 @@
 (require 'hermes-chat)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-mcp)
 
 (defun hermes-test--chat-buffer-name ()
   "Return a fresh chat buffer name for tests."
@@ -218,6 +219,9 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-dashboard-chat-action-is-keymap-popup-binding ()
   (should (eq (keymap-lookup hermes-dashboard-mode-map "c") #'hermes-chat))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "N") #'hermes-chat-new-session))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "P") #'hermes-chat-new-profile-session))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "m") #'hermes-dashboard-switch-model))
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "X") #'hermes-list-mcp))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "g") #'hermes-dashboard-refresh))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "n") #'hermes-dashboard-next))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "p") #'hermes-dashboard-previous))
@@ -233,8 +237,10 @@ The buffer is captured by object so teardown still kills it after a rename."
                                       (plist-get group :entries))
                                     row))
                           rows)))
-    (should (cl-find "c" entries :key (lambda (entry) (plist-get entry :key))
-                     :test #'equal))))
+    (dolist (key '("c" "P" "m"))
+      (should (cl-find key entries :key (lambda (entry)
+                                         (plist-get entry :key))
+                       :test #'equal)))))
 
 (ert-deftest hermes-dashboard-status-symbol-does-not-intern-unknown-strings ()
   (let* ((normalized "hermes-unknown-status-from-test")
@@ -911,7 +917,21 @@ The buffer is captured by object so teardown still kills it after a rename."
   (should (eq (keymap-lookup hermes-chat-actions-map "s")
               #'hermes-chat-steer-message))
   (should (eq (keymap-lookup hermes-chat-actions-map "i")
-              #'hermes-chat-interrupt)))
+              #'hermes-chat-interrupt))
+  (should (eq (keymap-lookup hermes-chat-actions-map "m")
+              #'hermes-chat-switch-model))
+  (should (eq (keymap-lookup hermes-chat-actions-map "N")
+              #'hermes-chat-new-profile-session))
+  (let* ((rows (keymap-popup--meta hermes-chat-actions-map 'descriptions))
+         (entries (mapcan (lambda (row)
+                            (mapcan (lambda (group)
+                                      (plist-get group :entries))
+                                    row))
+                          rows)))
+    (dolist (key '("N" "m"))
+      (should (cl-find key entries :key (lambda (entry)
+                                         (plist-get entry :key))
+                       :test #'equal)))))
 
 (ert-deftest hermes-chat-catalog-candidates-extracts-names ()
   "Catalog candidates extract bare command names and descriptions."
@@ -4493,6 +4513,359 @@ The buffer is captured by object so teardown still kills it after a rename."
     (should (equal (aref entry 2) "3"))
     (should (equal (aref entry 3) "tui"))))
 
+(ert-deftest hermes-sessions-mode-keymap-keeps-ret-and-adds-actions ()
+  "The browser keeps RET resume and exposes native history/actions."
+  (should (eq (keymap-lookup hermes-sessions-mode-map "RET")
+              #'hermes-sessions-open))
+  (should (eq (keymap-lookup hermes-sessions-mode-map "v")
+              #'hermes-sessions-view))
+  (should (eq (keymap-lookup hermes-sessions-mode-map "r")
+              #'hermes-sessions-rename))
+  (should (eq (keymap-lookup hermes-sessions-mode-map "d")
+              #'hermes-sessions-delete)))
+
+(ert-deftest hermes-sessions-detail-renders-history-messages ()
+  "The detail buffer renders user, assistant, and tool history readably."
+  (let ((buffer (hermes-sessions--render-detail
+                 '((id . "s1") (title . "First") (source . "tui"))
+                 '(((role . "user") (text . "hi there"))
+                   ((role . "assistant") (text . "hello back"))
+                   ((role . "tool") (name . "terminal")
+                    (context . "make test")))
+                 3)))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should (derived-mode-p 'hermes-session-detail-mode))
+          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+            (should (string-match-p "Session: First" text))
+            (should (string-match-p "ID: s1" text))
+            (should (string-match-p "Messages: 3" text))
+            (should (string-match-p "\\[user\\]" text))
+            (should (string-match-p "hi there" text))
+            (should (string-match-p "\\[assistant\\]" text))
+            (should (string-match-p "hello back" text))
+            (should (string-match-p "\\[tool: terminal\\]" text))
+            (should (string-match-p "make test" text))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest hermes-sessions-display-string-renders-structured-fallbacks ()
+  "Structured history values render type or object fallback text."
+  (should (equal (hermes-sessions--display-string '((type . "image_url")))
+                 "[image_url]"))
+  (should (string-match-p "foo"
+                          (hermes-sessions--display-string
+                           '((foo . "bar"))))))
+
+(ert-deftest hermes-sessions-detail-renders-tool-name-fallbacks ()
+  "Tool messages and tool calls use alternate name fields."
+  (let ((buffer (hermes-sessions--render-detail
+                 '((id . "s1") (title . "First"))
+                 '(((role . "tool") (tool_name . "terminal")
+                    (output . "done"))
+                   ((role . "assistant") (text . "running")
+                    (tool_calls . [((id . "call-1")
+                                    (name . "terminal")
+                                    (arguments . "make test"))])))
+                 2)))
+    (unwind-protect
+        (with-current-buffer buffer
+          (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+            (should (string-match-p "\\[tool: terminal\\]" text))
+            (should (string-match-p "tool-call: terminal" text))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest hermes-sessions-view-fetches-history-and-renders-detail ()
+  "Viewing a row requests `session.history' and renders the result."
+  (let ((history-result '((count . 2)
+                          (messages . (((role . "user") (text . "question"))
+                                       ((role . "assistant")
+                                        (text . "answer"))))))
+        history-session stopped)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'hermes-dashboard-transport-session-history)
+               (lambda (client session-id &rest args)
+                 (should (eq client 'fake-client))
+                 (setq history-session session-id)
+                 (funcall (plist-get args :resolve) history-result))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render
+             '(((id . "s1") (title . "First") (message_count . 2))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-view))
+            (should (equal history-session "s1"))
+            (should (eq stopped 'fake-client))
+            (with-current-buffer "*Hermes Session: s1*"
+              (should (string-match-p "question" (buffer-string)))
+              (should (string-match-p "answer" (buffer-string)))))
+        (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))
+          (when (get-buffer name)
+            (kill-buffer name)))))))
+
+(ert-deftest hermes-sessions-view-stale-detail-live-id-resumes-durable-id ()
+  "Detail refresh resumes the durable id after stale live history fails."
+  (let ((history-result '((count . 1)
+                          (messages . (((role . "assistant")
+                                        (text . "resumed"))))))
+        history-session resume-session stopped)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'hermes-dashboard-transport-session-history)
+               (lambda (client session-id &rest args)
+                 (should (eq client 'fake-client))
+                 (setq history-session session-id)
+                 (funcall (plist-get args :reject) "session not found")))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (client session-id &rest args)
+                 (should (eq client 'fake-client))
+                 (setq resume-session session-id)
+                 (funcall (plist-get args :resolve) history-result))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render-detail
+             '((id . "durable-1") (live_session_id . "dead-live")
+               (title . "Stored"))
+             nil 0)
+            (with-current-buffer "*Hermes Session: durable-1*"
+              (hermes-sessions-view))
+            (should (equal history-session "dead-live"))
+            (should (equal resume-session "durable-1"))
+            (should (eq stopped 'fake-client))
+            (with-current-buffer "*Hermes Session: durable-1*"
+              (should (string-match-p "resumed" (buffer-string)))))
+        (when (get-buffer "*Hermes Session: durable-1*")
+          (kill-buffer "*Hermes Session: durable-1*"))))))
+
+(ert-deftest hermes-sessions-view-rejects-with-message ()
+  "A failed history request reports the gateway error without rendering detail."
+  (let (shown)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'hermes-dashboard-transport-session-history)
+               (lambda (_client _session-id &rest args)
+                 (funcall (plist-get args :reject) "history failed")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (setq shown (apply #'format fmt args)))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render
+             '(((id . "s1") (title . "First") (message_count . 2))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-view))
+            (should (equal shown "Hermes: history failed"))
+            (should-not (get-buffer "*Hermes Session: s1*")))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-sessions-rename-prompts-and-dispatches-title ()
+  "Renaming a selected row prompts and dispatches `session.title'."
+  (let (sent stopped)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'read-string)
+               (lambda (&rest _) "Renamed"))
+              ((symbol-function 'hermes-dashboard-transport-session-title)
+               (lambda (client &rest args)
+                 (setq sent (cons client args))
+                 (funcall (plist-get args :resolve)
+                          '((pending . :json-false) (title . "Renamed"))))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render
+             '(((id . "s1") (title . "First") (message_count . 2))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-rename))
+            (should (eq (car sent) 'fake-client))
+            (should (equal (plist-get (cdr sent) :session-id) "s1"))
+            (should (equal (plist-get (cdr sent) :title) "Renamed"))
+            (should (eq stopped 'fake-client)))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-sessions-rename-from-detail-updates-open-browser ()
+  "Renaming from detail keeps an open browser row in sync."
+  (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+            ((symbol-function 'hermes-dashboard-transport-start)
+             (lambda (&rest _) 'fake-client))
+            ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+            ((symbol-function 'read-string)
+             (lambda (&rest _) "Renamed"))
+            ((symbol-function 'hermes-dashboard-transport-session-title)
+             (lambda (_client &rest args)
+               (funcall (plist-get args :resolve)
+                        '((pending . :json-false) (title . "Renamed"))))))
+    (unwind-protect
+        (progn
+          (hermes-sessions--render
+           '(((id . "s1") (title . "First") (message_count . 2))))
+          (hermes-sessions--render-detail
+           '((id . "s1") (title . "First") (message_count . 2))
+           '(((role . "user") (text . "question")))
+           1)
+          (with-current-buffer "*Hermes Session: s1*"
+            (hermes-sessions-rename))
+          (with-current-buffer "*Hermes Sessions*"
+            (should (equal (aref (cadr (assoc "s1" tabulated-list-entries)) 1)
+                           "Renamed")))
+          (with-current-buffer "*Hermes Session: s1*"
+            (should (string-match-p "Session: Renamed" (buffer-string)))))
+      (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))
+        (when (get-buffer name)
+          (kill-buffer name))))))
+
+(ert-deftest hermes-sessions-rename-rejects-empty-title-before-dispatch ()
+  "Empty rename input is rejected locally before an RPC is sent."
+  (let (sent)
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "  "))
+              ((symbol-function 'hermes-dashboard-transport-session-title)
+               (lambda (&rest _) (setq sent t))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render
+             '(((id . "s1") (title . "First") (message_count . 2))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (should-error (hermes-sessions-rename) :type 'user-error))
+            (should-not sent))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-sessions-rename-rejects-with-message ()
+  "A failed rename request reports the gateway error without updating the row."
+  (let (shown)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'read-string) (lambda (&rest _) "Renamed"))
+              ((symbol-function 'hermes-dashboard-transport-session-title)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :reject) "rename failed")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (setq shown (apply #'format fmt args)))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render
+             '(((id . "s1") (title . "First") (message_count . 2))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-rename)
+              (should (equal (aref (cadr (assoc "s1" tabulated-list-entries)) 1)
+                             "First")))
+            (should (equal shown "Hermes: rename failed")))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-sessions-delete-prompts-and-dispatches-delete ()
+  "Deleting a selected row asks for confirmation before `session.delete'."
+  (let (deleted stopped)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-dashboard-transport-session-delete)
+               (lambda (client session-id &rest args)
+                 (setq deleted (list client session-id))
+                 (funcall (plist-get args :resolve)
+                          '((deleted . "s1"))))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render
+             '(((id . "s1") (title . "First") (message_count . 2))))
+            (hermes-sessions--render-detail
+             '((id . "s1") (title . "First") (message_count . 2))
+             '(((role . "user") (text . "question")))
+             1)
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-delete)
+              (should-not (assoc "s1" tabulated-list-entries)))
+            (should-not (get-buffer "*Hermes Session: s1*"))
+            (should (equal deleted '(fake-client "s1")))
+            (should (eq stopped 'fake-client)))
+        (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))
+          (when (get-buffer name)
+            (kill-buffer name)))))))
+
+(ert-deftest hermes-sessions-delete-cancel-does-not-dispatch ()
+  "Answering no to the delete prompt leaves the session untouched."
+  (let (deleted)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+              ((symbol-function 'hermes-dashboard-transport-session-delete)
+               (lambda (&rest _) (setq deleted t))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render
+             '(((id . "s1") (title . "First") (message_count . 2))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-delete))
+            (should-not deleted))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-sessions-delete-rejects-with-message ()
+  "A failed delete request reports the gateway error."
+  (let (shown)
+    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-dashboard-transport-session-delete)
+               (lambda (_client _session-id &rest args)
+                 (funcall (plist-get args :reject) "delete failed")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (setq shown (apply #'format fmt args)))))
+      (unwind-protect
+          (progn
+            (hermes-sessions--render
+             '(((id . "s1") (title . "First") (message_count . 2))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-delete))
+            (should (equal shown "Hermes: delete failed")))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
 (ert-deftest hermes-chat-resume-session-presets-session-id ()
   "Resuming a session opens a chat buffer bound to that durable id."
   (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
@@ -4691,41 +5064,103 @@ The buffer is captured by object so teardown still kills it after a rename."
    (should-not (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))
 
 (ert-deftest hermes-chat-model-candidates-auth-first-dedup ()
-  "Model candidates list authenticated providers first and de-duplicate."
-  (should (equal
-           (hermes-chat--model-candidates
-            '((providers
-               . (((authenticated . nil) (models . ("z")))
-                  ((authenticated . t) (models . ("a" "b" ((id . "c")))))
-                  ((authenticated . t) (models . ("a")))))))
-           '("a" "b" "c" "z"))))
+  "Model candidates list authenticated providers first and keep provider identity."
+  (let* ((cands (hermes-chat--model-candidates
+                 '((providers
+                    . (((slug . "openai") (name . "OpenAI")
+                        (authenticated . nil) (models . ("gpt")))
+                       ((slug . "anthropic") (name . "Anthropic")
+                        (authenticated . t)
+                        (models . ("claude"))
+                        (pricing . ((claude . ((input . "$3") (output . "$15")))))
+                        (capabilities . ((claude . ((reasoning . t)
+                                                    (fast . t)
+                                                    (context_window . 200000))))))
+                       ((slug . "openrouter") (name . "OpenRouter")
+                        (authenticated . t) (models . ("claude" ((id . "gemini"))))))))))
+         (labels (mapcar #'car cands))
+         (providers (mapcar (lambda (cand)
+                              (plist-get (cdr cand) :provider))
+                            cands)))
+    (should (equal providers '("anthropic" "openrouter" "openrouter" "openai")))
+    (should (string-match-p "Anthropic" (car labels)))
+    (should (string-match-p "(anthropic)" (car labels)))
+    (should (string-match-p "claude" (car labels)))
+    (should (string-match-p "\$3" (car labels)))
+    (should (string-match-p "reasoning" (car labels)))
+    (should (equal (hermes-chat--model-config-value (cdar cands))
+                   "claude --provider anthropic"))))
 
 (ert-deftest hermes-chat-switch-model-sets-chosen-model ()
   "Switching prompts from model.options and applies the choice via config.set."
-  (let (set-key set-value set-session)
+  (let (set-key set-value set-session set-confirm)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
                (lambda (_client &rest args)
                  (funcall (plist-get args :resolve)
                           '((model . "old-model")
                             (providers
                              . (((slug . "p1") (authenticated . t)
+                                 (name . "Provider One")
                                  (models . ("alpha" "beta")))))))))
               ((symbol-function 'completing-read)
                (lambda (_prompt coll &rest _)
-                 (should (member "alpha" coll))
-                 "beta"))
+                 (let ((choice (cl-find "beta" coll :test #'string-match-p)))
+                   (should choice)
+                   choice)))
               ((symbol-function 'hermes-dashboard-transport-config-set)
                (lambda (_client key value &rest args)
                  (setq set-key key set-value value
-                       set-session (plist-get args :session-id))
-                 (funcall (plist-get args :resolve) '((key . "model") (value . "beta"))))))
+                       set-session (plist-get args :session-id)
+                       set-confirm (plist-get args :confirm-expensive-model))
+                 (funcall (plist-get args :resolve)
+                          '((key . "model") (value . "beta --provider p1"))))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
              hermes-chat--dashboard-active-session-id "sid-1")
        (hermes-chat-switch-model)
        (should (equal set-key "model"))
-       (should (equal set-value "beta"))
+       (should (equal set-value "beta --provider p1"))
        (should (equal set-session "sid-1"))
+       (should-not set-confirm)
+       (should (string-match-p "Model set to beta" (buffer-string)))))))
+
+(ert-deftest hermes-chat-switch-model-confirms-expensive-choice ()
+  "Expensive model confirmation retries config.set with confirmation enabled."
+  (let ((calls 0)
+        confirms prompt)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((model . "old-model")
+                            (providers
+                             . (((slug . "p1") (authenticated . t)
+                                 (name . "Provider One")
+                                 (models . ("beta")))))))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt coll &rest _)
+                 (cl-find "beta" coll :test #'string-match-p)))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (text)
+                 (setq prompt text)
+                 t))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key value &rest args)
+                 (should (equal value "beta --provider p1"))
+                 (setq calls (1+ calls))
+                 (push (plist-get args :confirm-expensive-model) confirms)
+                 (funcall (plist-get args :resolve)
+                          (if (= calls 1)
+                              '((confirm_required . t)
+                                (confirm_message . "This model may be expensive"))
+                            '((key . "model")
+                              (value . "beta --provider p1")))))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+             hermes-chat--dashboard-active-session-id "sid-1")
+       (hermes-chat-switch-model)
+       (should (equal calls 2))
+       (should (equal (nreverse confirms) '(nil t)))
+       (should (equal prompt "This model may be expensive"))
        (should (string-match-p "Model set to beta" (buffer-string)))))))
 
 (ert-deftest hermes-inventory-toolset-rows ()
@@ -4781,6 +5216,203 @@ The buffer is captured by object so teardown still kills it after a rename."
               (should (derived-mode-p 'hermes-inventory-mode))
               (should (equal (caar tabulated-list-entries) "files"))))
         (when (get-buffer "*Hermes Toolsets*") (kill-buffer "*Hermes Toolsets*"))))))
+
+(ert-deftest hermes-inventory-skill-rows-map-dashboard-skill-list ()
+  "Skill rows map dashboard REST skill metadata, including enabled state."
+  (let ((rows (hermes-inventory--skill-rows
+               '((skills . (((name . "review") (category . "coding")
+                              (description . "Review code") (enabled . t))
+                             ((name . "draft") (category . "writing")
+                              (description . "Draft text") (enabled . nil))))))))
+    (should (equal (mapcar #'car rows) '("review" "draft")))
+    (should (equal (aref (cadr (car rows)) 0) "coding"))
+    (should (equal (aref (cadr (car rows)) 2) "on"))
+    (should (equal (aref (cadr (nth 1 rows)) 2) "off"))
+    (should (equal (aref (cadr (car rows)) 3) "Review code"))))
+
+(ert-deftest hermes-inventory-skills-result-normalizes-rest-shapes ()
+  "Skill REST payloads normalize raw-list and object response shapes."
+  (let ((raw '(((name . "review") (enabled . t))))
+        (wrapped '((skills . (((name . "draft") (enabled . nil)))))))
+    (should (equal (hermes-inventory--skills-result raw)
+                   `((skills . ,raw))))
+    (should (equal (hermes-inventory--skills-result wrapped) wrapped))))
+
+(ert-deftest hermes-inventory-fetch-skills-prefers-rest ()
+  "Skill inventory fetch uses dashboard REST when `/api/skills' is available."
+  (let (method path rendered done-called)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
+               (lambda (m p &rest _args)
+                 (setq method m path p)
+                 '(((name . "review") (enabled . t)))))
+              ((symbol-function 'hermes-inventory--render-result)
+               (lambda (_spec result) (setq rendered result))))
+      (hermes-inventory--fetch-skills
+       'fake-client (lambda () (setq done-called t))
+       (assoc "Skills" hermes-inventory--specs))
+      (should done-called)
+      (should (equal method "GET"))
+      (should (equal path "/api/skills"))
+      (should (equal rendered '((skills . (((name . "review") (enabled . t))))))))))
+
+(ert-deftest hermes-inventory-fetch-skills-falls-back-to-jsonrpc ()
+  "Skill inventory fetch falls back to read-only JSON-RPC when REST fails."
+  (let (fallback-spec message-text)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
+               (lambda (&rest _) (user-error "missing endpoint")))
+              ((symbol-function 'hermes-inventory--fetch-via-jsonrpc)
+               (lambda (_client _done spec) (setq fallback-spec spec)))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (setq message-text (apply #'format fmt args)))))
+      (let ((spec (assoc "Skills" hermes-inventory--specs)))
+        (hermes-inventory--fetch-skills 'fake-client #'ignore spec)
+        (should (eq fallback-spec spec))
+        (should (string-match-p "using read-only list" message-text))))))
+
+(ert-deftest hermes-dashboard-transport-tools-configure-sends-action-payload ()
+  "The transport wrapper sends `tools.configure' names/action/session_id."
+  (let (method params)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client m p resolve _reject)
+                 (setq method m params p)
+                 (funcall resolve '((ok . t))))))
+      (let ((client (hermes-test--dashboard-client)))
+        (setf (hermes-dashboard-transport-client-session-id client) "sid-1")
+        (hermes-dashboard-transport-tools-configure
+         client '("terminal") "disable" :resolve #'ignore :reject #'ignore))
+      (should (equal method "tools.configure"))
+      (should (equal (cdr (assq 'names params)) '("terminal")))
+      (should (equal (cdr (assq 'action params)) "disable"))
+      (should (equal (cdr (assq 'session_id params)) "sid-1")))))
+
+(ert-deftest hermes-dashboard-transport-skills-reload-sends-rpc ()
+  "The transport wrapper sends `skills.reload' without shelling out."
+  (let (method params resolved)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client m p resolve _reject)
+                 (setq method m params p)
+                 (funcall resolve '((output . "ok"))))))
+      (hermes-dashboard-transport-skills-reload
+       'fake-client
+       :resolve (lambda (result) (setq resolved result))
+       :reject #'ignore)
+      (should (equal method "skills.reload"))
+      (should-not params)
+      (should (equal resolved '((output . "ok")))))))
+
+(ert-deftest hermes-inventory-toolset-toggle-sends-tools-configure ()
+  "Inventory toolset actions go through `tools.configure' with safe actions."
+  (let (names action session done-called reverted)
+    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+               (lambda (fn)
+                 (let ((client (hermes-test--dashboard-client)))
+                   (setf (hermes-dashboard-transport-client-session-id client) "sid-2")
+                   (funcall fn client (lambda () (setq done-called t))))))
+              ((symbol-function 'hermes-dashboard-transport-tools-configure)
+               (lambda (_client ns act &rest args)
+                 (setq names ns action act session (plist-get args :session-id))
+                 (funcall (plist-get args :resolve) '((reset . t)))))
+              ((symbol-function 'hermes-inventory--revert)
+               (lambda (&rest _) (setq reverted t)))
+              ((symbol-function 'message) #'ignore))
+      (hermes-inventory--set-toolset-enabled "terminal" nil)
+      (should done-called)
+      (should reverted)
+      (should (equal names '("terminal")))
+      (should (equal action "disable"))
+      (should (equal session "sid-2")))))
+
+(ert-deftest hermes-inventory-skill-toggle-posts-rest-json-boolean ()
+  "Inventory skill actions use the dashboard REST toggle endpoint, no CLI shellout."
+  (let (method path body reverted)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
+               (lambda (m p &rest args)
+                 (setq method m path p body (plist-get args :body))
+                 '((ok . t))))
+              ((symbol-function 'hermes-inventory--revert)
+               (lambda (&rest _) (setq reverted t)))
+              ((symbol-function 'message) #'ignore))
+      (hermes-inventory--set-skill-enabled "review" nil)
+      (should reverted)
+      (should (equal method "PUT"))
+      (should (equal path "/api/skills/toggle"))
+      (should (equal body '((name . "review") (enabled . :false)))))))
+
+(ert-deftest hermes-inventory-reload-skills-dispatches-rpc-and-refreshes ()
+  "Skill reload uses dashboard RPC and refreshes skill inventory buffers."
+  (let (done-called reloaded-client message-text reverted)
+    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+               (lambda (fn)
+                 (funcall fn 'fake-client (lambda () (setq done-called t)))))
+              ((symbol-function 'hermes-dashboard-transport-skills-reload)
+               (lambda (client &rest args)
+                 (setq reloaded-client client)
+                 (funcall (plist-get args :resolve) '((output . "Reloaded skills")))))
+              ((symbol-function 'hermes-inventory--revert)
+               (lambda (&rest _) (setq reverted t)))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (setq message-text (apply #'format fmt args)))))
+      (let ((hermes-inventory--spec (assoc "Skills" hermes-inventory--specs)))
+        (hermes-inventory-reload-skills))
+      (should done-called)
+      (should (eq reloaded-client 'fake-client))
+      (should (equal message-text "Hermes: Reloaded skills"))
+      (should reverted))))
+
+(ert-deftest hermes-inventory-memory-status-redacts-secrets-and-contents ()
+  "Memory status displays only provider names/sizes, never contents or secrets."
+  (let* ((secret "token-secret-value-that-is-long-enough-to-redact-1234567890")
+         (text (hermes-inventory--memory-status-text
+                `((active . ,secret)
+                  (providers . (((name . "built-in")
+                                 (description . "contains-private-detail")
+                                 (configured . t))
+                                ((name . ,secret)
+                                 (description . "contains-private-token")
+                                 (configured . nil))))
+                  (builtin_files . ((memory . 12) (user . 34)))
+                  (memory_contents . "do not show this")))))
+    (should (string-match-p "Active provider: <redacted>" text))
+    (should (string-match-p "MEMORY.md: 12 bytes" text))
+    (should (string-match-p "USER.md: 34 bytes" text))
+    (should (string-match-p "<redacted>" text))
+    (should-not (string-match-p (regexp-quote secret) text))
+    (should-not (string-match-p "External providers" text))
+    (should-not (string-match-p "built-in (configured)" text))
+    (should-not (string-match-p "contains-private" text))
+    (should-not (string-match-p "do not show this" text))))
+
+(ert-deftest hermes-memory-reset-confirms-and-posts-target ()
+  "Memory reset is gated by yes-or-no-p and posts the chosen target to REST."
+  (let (prompt method path body refreshed)
+    (cl-letf (((symbol-function 'yes-or-no-p)
+               (lambda (p) (setq prompt p) t))
+              ((symbol-function 'hermes-dashboard-transport-api-request)
+               (lambda (m p &rest args)
+                 (setq method m path p body (plist-get args :body))
+                 '((ok . t) (deleted . ("USER.md")))))
+              ((symbol-function 'hermes-memory-status)
+               (lambda () (setq refreshed t)))
+              ((symbol-function 'message) #'ignore))
+      (hermes-memory-reset "user")
+      (should (string-match-p "Erase built-in Hermes user memory" prompt))
+      (should (equal method "POST"))
+      (should (equal path "/api/memory/reset"))
+      (should (equal body '((target . "user"))))
+      (should refreshed))))
+
+(ert-deftest hermes-memory-status-reports-rest-errors ()
+  "Memory status reports REST errors."
+  (let (message-text)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
+               (lambda (&rest _) (user-error "backend unavailable")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (setq message-text (apply #'format fmt args)))))
+      (hermes-memory-status)
+      (should (equal message-text "Hermes: backend unavailable")))))
 
 (ert-deftest hermes-rollback-rows-from-list ()
   "Rollback rows abbreviate the hash and map timestamp/message."
@@ -4861,17 +5493,70 @@ The buffer is captured by object so teardown still kills it after a rename."
         (when (get-buffer "*Hermes Subagents*")
           (kill-buffer "*Hermes Subagents*"))))))
 
+(defmacro hermes-test-with-cron-buffer (entries &rest body)
+  "Create a cron buffer with ENTRIES and run BODY on its first row."
+  (declare (indent 1) (debug t))
+  `(unwind-protect
+       (with-current-buffer (get-buffer-create "*Hermes Cron*")
+         (hermes-cron-mode)
+         (setq tabulated-list-entries ,entries)
+         (tabulated-list-print t)
+         (goto-char (point-min))
+         (search-forward "nightly" nil t)
+         (beginning-of-line)
+         ,@body)
+     (when (get-buffer "*Hermes Cron*")
+       (kill-buffer "*Hermes Cron*"))))
+
+(defun hermes-test--cron-entry (&optional state)
+  "Return one rich cron tabulated-list entry with optional STATE."
+  (list "j1" (vector "nightly" "0 0 * * *" (or state "scheduled")
+                     "work" "telegram" "2026-01-01" "2026-01-02"
+                     "do it")))
+
 (ert-deftest hermes-cron-rows-from-list ()
-  "Cron rows map name/schedule/state/next/prompt."
+  "Cron rows map rich job fields into the tabulated list."
   (let ((rows (hermes-cron--rows
-               '((jobs . (((job_id . "j1") (name . "nightly") (schedule . "0 0 * * *")
-                           (state . "scheduled") (next_run_at . "2026-01-02")
-                           (prompt_preview . "do it"))))))))
+               '((jobs . (((id . "j1") (name . "nightly")
+                           (schedule . ((expr . "0 0 * * *") (display . "daily")))
+                           (state . "scheduled") (profile . "work")
+                           (deliver . "telegram") (last_run_at . "2026-01-01")
+                           (next_run_at . "2026-01-02") (prompt . "do it"))))))))
     (should (equal (caar rows) "j1"))
     (should (equal (aref (cadr (car rows)) 0) "nightly"))
-    (should (equal (aref (cadr (car rows)) 1) "0 0 * * *"))
+    (should (equal (aref (cadr (car rows)) 1) "daily"))
     (should (equal (aref (cadr (car rows)) 2) "scheduled"))
-    (should (equal (aref (cadr (car rows)) 4) "do it"))))
+    (should (equal (aref (cadr (car rows)) 3) "work"))
+    (should (equal (aref (cadr (car rows)) 4) "telegram"))
+    (should (equal (aref (cadr (car rows)) 5) "2026-01-01"))
+    (should (equal (aref (cadr (car rows)) 6) "2026-01-02"))
+    (should (equal (aref (cadr (car rows)) 7) "do it"))
+    (should (equal (aref (cadr (car (hermes-cron--rows '((jobs . (((id . "j2")))))))) 2)
+                   "scheduled"))
+    (should (equal (aref (cadr (car (hermes-cron--rows
+                                     '((jobs . (((id . "j3") (enabled . nil)))))))) 2)
+                   "disabled"))))
+
+(ert-deftest hermes-cron-client-api-sends-session-token ()
+  "Cron REST calls authenticate with a live dashboard client's session token."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :host "127.0.0.1" :port 9119 :token "[REDACTED]"))
+        request)
+    (let ((hermes-dashboard-transport-http-request-function
+           (lambda (url &rest args)
+             (setq request (list :url url :headers (plist-get args :headers)
+                                 :method (plist-get args :method)
+                                 :data (plist-get args :data)))
+             '(:status 200 :headers nil :body ((ok . t))))))
+      (should (equal (hermes-cron--client-api
+                      client "POST" "/jobs/j1/trigger" nil '((profile . "work")))
+                     '((ok . t))))
+      (should (equal (plist-get request :url)
+                     "http://127.0.0.1:9119/api/cron/jobs/j1/trigger?profile=work"))
+      (should (equal (alist-get "X-Hermes-Session-Token"
+                                (plist-get request :headers) nil nil #'equal)
+                     "[REDACTED]"))
+      (should (equal (plist-get request :method) "POST")))))
 
 (ert-deftest hermes-cron-list-fetches-and-renders ()
   "Listing fetches cron.manage list and renders the jobs."
@@ -4895,7 +5580,7 @@ The buffer is captured by object so teardown still kills it after a rename."
         (when (get-buffer "*Hermes Cron*") (kill-buffer "*Hermes Cron*"))))))
 
 (ert-deftest hermes-cron-toggle-resumes-paused-job ()
-  "Toggling a paused job sends the resume action."
+  "Toggling a paused or disabled job sends the resume action."
   (let (actions)
     (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
@@ -4915,7 +5600,147 @@ The buffer is captured by object so teardown still kills it after a rename."
               (goto-char (point-min))
               (hermes-cron-toggle))
             (should (member "resume" actions)))
-        (when (get-buffer "*Hermes Cron*") (kill-buffer "*Hermes Cron*"))))))
+        (when (get-buffer "*Hermes Cron*") (kill-buffer "*Hermes Cron*")))))
+  (let (actions)
+    (cl-letf (((symbol-function 'hermes-cron--act)
+               (lambda (action _id _message)
+                 (push action actions))))
+      (hermes-test-with-cron-buffer (list (hermes-test--cron-entry "disabled"))
+        (hermes-cron-toggle))
+      (should (equal actions '("resume"))))))
+
+(ert-deftest hermes-cron-edit-updates-job-at-point ()
+  "Editing sends the update payload for the selected cron job."
+  (let (calls refreshed messages)
+    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
+              ((symbol-function 'hermes-cron--client-api)
+               (lambda (_client method path &optional body query)
+                 (push (list method path body query) calls)
+                 (cond
+                  ((and (equal method "GET") (equal path "/jobs/j1"))
+                   '((id . "j1") (profile . "work") (name . "nightly")
+                     (schedule . ((expr . "0 0 * * *"))) (prompt . "old")
+                     (deliver . "local") (skills . ("old-skill"))))
+                  ((equal method "PUT") '((id . "j1"))))))
+              ((symbol-function 'read-string)
+               (lambda (prompt &optional _initial &rest _)
+                 (cond
+                  ((string-prefix-p "Name" prompt) "edited")
+                  ((string-prefix-p "Schedule" prompt) "*/5 * * * *")
+                  ((string-prefix-p "Prompt" prompt) "new prompt")
+                  ((string-prefix-p "Deliver" prompt) "telegram")
+                  ((string-prefix-p "Skills" prompt) "emacs, cron")
+                  (t ""))))
+              ((symbol-function 'hermes-list-crons)
+               (lambda () (setq refreshed t)))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) messages))))
+      (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+        (hermes-cron-edit))
+      (let* ((put (car (last (nreverse calls))))
+             (updates (hermes-transport--get (nth 2 put) 'updates)))
+        (should (equal (nth 0 put) "PUT"))
+        (should (equal (nth 1 put) "/jobs/j1"))
+        (should (equal (cdr (assq 'profile (nth 3 put))) "work"))
+        (should (equal (hermes-transport--get updates 'name) "edited"))
+        (should (equal (hermes-transport--get updates 'schedule) "*/5 * * * *"))
+        (should (equal (hermes-transport--get updates 'prompt) "new prompt"))
+        (should (equal (hermes-transport--get updates 'deliver) "telegram"))
+        (should (equal (hermes-transport--get updates 'skills) '("emacs" "cron")))
+        (should refreshed)
+        (should (member "Hermes: updated j1" messages))))))
+
+(ert-deftest hermes-cron-trigger-posts-job-at-point ()
+  "Trigger-now posts to the selected cron job endpoint."
+  (let (call refreshed)
+    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
+              ((symbol-function 'hermes-cron--client-api)
+               (lambda (_client method path &optional body query)
+                 (setq call (list method path body query))
+                 '((id . "j1"))))
+              ((symbol-function 'hermes-list-crons)
+               (lambda () (setq refreshed t))))
+      (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+        (hermes-cron-trigger))
+      (should (equal (nth 0 call) "POST"))
+      (should (equal (nth 1 call) "/jobs/j1/trigger"))
+      (should-not (nth 2 call))
+      (should (equal (cdr (assq 'profile (nth 3 call))) "work"))
+      (should refreshed))))
+
+(ert-deftest hermes-cron-trigger-refreshes-after-transient-client-cleanup ()
+  "Trigger-now cleans up a transient client before refreshing the list."
+  (let (events)
+    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+               (lambda (fn)
+                 (funcall fn 'fake-client
+                          (lambda ()
+                            (setq events (append events '(done)))))))
+              ((symbol-function 'hermes-cron--client-api)
+               (lambda (&rest _)
+                 (setq events (append events '(trigger)))
+                 '((id . "j1"))))
+              ((symbol-function 'hermes-list-crons)
+               (lambda ()
+                 (setq events (append events '(refresh)))))
+              ((symbol-function 'message) #'ignore))
+      (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+        (hermes-cron-trigger))
+      (should (equal events '(trigger done refresh))))))
+
+(ert-deftest hermes-cron-show-fetches-job-and-run-history ()
+  "Detail view fetches the job and run history, then renders both."
+  (let (calls)
+    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
+              ((symbol-function 'hermes-cron--client-api)
+               (lambda (_client method path &optional _body query)
+                 (push (list method path query) calls)
+                 (cond
+                  ((equal path "/jobs/j1")
+                   '((id . "j1") (profile . "work") (name . "nightly")
+                     (schedule . ((display . "Daily at midnight")))
+                     (state . "scheduled") (deliver . "telegram")
+                     (prompt . "do it")))
+                  ((equal path "/jobs/j1/runs")
+                   '((runs . (((id . "cron_j1_1") (title . "Run one")
+                               (message_count . 3) (source . "cron")
+                               (started_at . 1780000000) (ended_at . 1780000030))))))))))
+      (unwind-protect
+          (progn
+            (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+              (hermes-cron-show))
+            (with-current-buffer "*Hermes Cron Job*"
+              (let ((text (buffer-string)))
+                (should (string-match-p "nightly" text))
+                (should (string-match-p "Daily at midnight" text))
+                (should (string-match-p "Runs:" text))
+                (should (string-match-p "Run one" text))))
+            (should (member '("GET" "/jobs/j1" ((profile . "work"))) calls))
+            (should (member '("GET" "/jobs/j1/runs" ((profile . "work") (limit . 20)))
+                            calls)))
+        (when (get-buffer "*Hermes Cron Job*")
+          (kill-buffer "*Hermes Cron Job*"))))))
+
+(ert-deftest hermes-cron-trigger-reports-api-errors ()
+  "Trigger-now reports REST failures without refreshing the list."
+  (let (messages refreshed)
+    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
+              ((symbol-function 'hermes-cron--client-api)
+               (lambda (&rest _) (error "boom")))
+              ((symbol-function 'hermes-list-crons)
+               (lambda () (setq refreshed t)))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) messages))))
+      (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+        (hermes-cron-trigger))
+      (should (cl-some (lambda (message) (string-match-p "boom" message)) messages))
+      (should-not refreshed))))
 
 (ert-deftest hermes-chat-new-profile-session-sets-profile ()
   "A profile session records the profile; a blank one stays nil."
@@ -4927,6 +5752,87 @@ The buffer is captured by object so teardown still kills it after a rename."
     (unwind-protect
         (with-current-buffer buffer (should-not hermes-chat--profile))
       (kill-buffer buffer))))
+
+(ert-deftest hermes-chat-profile-candidates-describe-dashboard-profiles ()
+  "Profile candidates parse dashboard profile data into readable choices."
+  (let ((cands (hermes-chat--profile-candidates
+                '((profiles
+                   . (((name . "default") (is_default . t)
+                       (provider . "openai") (model . "gpt-5.5")
+                       (description . "Main profile")
+                       (gateway_running . t))
+                      ((name . "elisp-dev") (is_default . nil)
+                       (provider . "anthropic") (model . "claude-sonnet")
+                       (description . "Emacs Lisp work"))))))))
+    (should (equal (mapcar #'cdr cands) '("default" "elisp-dev")))
+    (should (string-match-p "default" (caar cands)))
+    (should (string-match-p "openai/gpt-5.5" (caar cands)))
+    (should (string-match-p "gateway" (caar cands)))
+    (should (string-match-p "Emacs Lisp work" (caadr cands)))))
+
+(ert-deftest hermes-chat-read-profile-falls-back-when-dashboard-unavailable ()
+  "The profile chooser falls back to a raw prompt when dashboard data is missing."
+  (let (prompt messages)
+    (cl-letf (((symbol-function 'hermes-chat--existing-dashboard-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-profile-list)
+               (lambda (_client) (user-error "404 not found")))
+              ((symbol-function 'read-string)
+               (lambda (text &rest _)
+                 (setq prompt text)
+                 "manual-profile"))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) messages))))
+      (should (equal (hermes-chat--read-profile) "manual-profile"))
+      (should (string-match-p "blank for default" prompt))
+      (should (string-match-p "profile list unavailable: 404 not found"
+                              (car messages))))))
+
+(ert-deftest hermes-chat-read-profile-uses-transient-client ()
+  "The profile chooser can fetch profiles through a transient dashboard client."
+  (let (listed-client stopped-client choices)
+    (cl-letf (((symbol-function 'hermes-chat--existing-dashboard-client)
+               (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'transient-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client) (setq stopped-client client)))
+              ((symbol-function 'hermes-dashboard-transport-profile-list)
+               (lambda (client)
+                 (setq listed-client client)
+                 '((profiles . (((name . "default") (is_default . t))
+                                ((name . "elisp-dev")))))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt collection &rest _)
+                 (setq choices collection)
+                 (cl-find "elisp-dev" collection :test #'string-match-p))))
+      (should (equal (hermes-chat--read-profile) "elisp-dev"))
+      (should (eq listed-client 'transient-client))
+      (should (eq stopped-client 'transient-client))
+      (should (cl-find "default" choices :test #'string-match-p)))))
+
+(ert-deftest hermes-chat-new-profile-session-completes-dashboard-profile ()
+  "Interactively creating a profile session chooses from dashboard profiles."
+  (let (choices)
+    (cl-letf (((symbol-function 'hermes-chat--existing-dashboard-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-profile-list)
+               (lambda (_client)
+                 '((profiles . (((name . "default") (is_default . t))
+                                ((name . "elisp-dev")
+                                 (description . "Emacs Lisp work")))))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt collection &rest _)
+                 (setq choices collection)
+                 (cl-find "elisp-dev" collection :test #'string-match-p))))
+      (let ((buffer (call-interactively #'hermes-chat-new-profile-session)))
+        (unwind-protect
+            (progn
+              (should (cl-find "default" choices :test #'string-match-p))
+              (with-current-buffer buffer
+                (should (equal hermes-chat--profile "elisp-dev"))))
+          (kill-buffer buffer))))))
 
 (ert-deftest hermes-chat-send-passes-profile-to-session-create ()
   "The buffer's profile is threaded into session.create."
@@ -5039,6 +5945,238 @@ The buffer is captured by object so teardown still kills it after a rename."
               (should (string-match-p "details here" (buffer-string)))))
         (dolist (b '("*Hermes Kanban*" "*Hermes Kanban Task*"))
           (when (get-buffer b) (kill-buffer b)))))))
+
+(ert-deftest hermes-kanban-format-task-detail-renders-drawer-sections ()
+  "Task detail formatting includes runs, diagnostics, attachments, comments, events."
+  (let* ((payload
+          '((task . ((id . "t1") (title . "Do thing") (status . "running")
+                     (priority . 5) (assignee . "elisp-dev")
+                     (created_at . 1700000000)
+                     (body . "details here")
+                     (diagnostics . (((kind . "stale_running")
+                                      (severity . "error")
+                                      (title . "Stale worker")
+                                      (detail . "No heartbeat")
+                                      (count . 2)
+                                      (run_id . 7)
+                                      (actions . (((kind . "reclaim")
+                                                   (label . "Reclaim")
+                                                   (suggested . t)))))))))
+            (comments . (((id . 1) (author . "thanos")
+                          (body . "needs eyes") (created_at . 1700000010))))
+            (events . (((id . 2) (kind . "claimed")
+                        (created_at . 1700000020)
+                        (payload . ((run_id . 7))))))
+            (attachments . (((id . 5) (filename . "report.txt")
+                             (content_type . "text/plain") (size . 42)
+                             (uploaded_by . "dashboard")
+                             (stored_path . "/tmp/report.txt"))))
+            (runs . (((id . 7) (profile . "elisp-dev")
+                      (status . "finished") (outcome . "blocked")
+                      (worker_pid . 1234)
+                      (started_at . 1700000000) (ended_at . 1700000060)
+                      (summary . "needs review")
+                      (metadata . ((tests . 3)))
+                      (error . "review-required"))))))
+         (text (hermes-kanban--format-task-detail payload)))
+    (should (string-match-p "Run history (1)" text))
+    (should (string-match-p "#7 blocked @elisp-dev" text))
+    (should (string-match-p "needs review" text))
+    (should (string-match-p "tests" text))
+    (should (string-match-p "Diagnostics (1)" text))
+    (should (string-match-p (regexp-quote "[error] stale_running: Stale worker") text))
+    (should (string-match-p "Reclaim" text))
+    (should (string-match-p "Attachments (1)" text))
+    (should (string-match-p "report.txt" text))
+    (should (string-match-p "/tmp/report.txt" text))
+    (should (string-match-p "Comments (1)" text))
+    (should (string-match-p "needs eyes" text))
+    (should (string-match-p "Events (1)" text))
+    (should (string-match-p "claimed" text))))
+
+(ert-deftest hermes-kanban-format-task-detail-renders-empty-states ()
+  "Task detail formatting names empty drawer sections instead of omitting them."
+  (let ((text (hermes-kanban--format-task-detail
+               '((task . ((id . "t-empty") (title . "Empty task")
+                          (status . "todo") (body . "")))
+                 (comments) (events) (attachments) (runs)))))
+    (should (string-match-p "Diagnostics (0)" text))
+    (should (string-match-p "— no diagnostics —" text))
+    (should (string-match-p "Attachments (0)" text))
+    (should (string-match-p "— no attachments —" text))
+    (should (string-match-p "Comments (0)" text))
+    (should (string-match-p "— no comments —" text))
+    (should (string-match-p "Events (0)" text))
+    (should (string-match-p "— no events —" text))
+    (should (string-match-p "Run history (0)" text))
+    (should (string-match-p "— no runs —" text))))
+
+(ert-deftest hermes-kanban-show-log-fetches-selected-task-log ()
+  "Log viewing goes through the dashboard REST endpoint for the selected task."
+  (let (log-path log-query)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional _body query)
+                 (should (equal method "GET"))
+                 (cond
+                  ((equal path "/board")
+                   '((columns . (((name . "running")
+                                  (tasks . (((id . "t1") (status . "running")
+                                             (title . "Do thing")))))))
+                     (assignees . ("elisp-dev"))))
+                  ((equal path "/tasks/t1/log")
+                   (setq log-path path
+                         log-query query)
+                   '((task_id . "t1") (path . "/logs/t1.log")
+                     (exists . t) (size_bytes . 12)
+                     (content . "hello from worker\n")
+                     (truncated . :json-false)))
+                  (t (error "unexpected path: %s" path))))))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-board "emacs-lisp" "Emacs Lisp")
+            (with-current-buffer "*Hermes Kanban*"
+              (goto-char (point-min))
+              (hermes-kanban-show-log))
+            (should (equal log-path "/tasks/t1/log"))
+            (should (equal (cdr (assq 'board log-query)) "emacs-lisp"))
+            (should (equal (cdr (assq 'tail log-query)) 100000))
+            (with-current-buffer "*Hermes Kanban Log*"
+              (let ((text (buffer-string)))
+                (should (string-match-p "Worker log for t1" text))
+                (should (string-match-p "/logs/t1.log" text))
+                (should (string-match-p "hello from worker" text)))))
+        (dolist (b '("*Hermes Kanban*" "*Hermes Kanban Log*"))
+          (when (get-buffer b) (kill-buffer b)))))))
+
+(ert-deftest hermes-kanban-format-log-renders-empty-and-error-states ()
+  "Worker log formatting is explicit when the backend reports no log or an error."
+  (should (string-match-p "no worker log"
+                          (hermes-kanban--format-log
+                           '((task_id . "t1") (exists . :json-false)
+                             (content . "")))))
+  (should (string-match-p "failed to load worker log: boom"
+                          (hermes-kanban--format-log
+                           '((task_id . "t1") (error . "boom"))))))
+
+(ert-deftest hermes-mcp-rows-parse-server-response-and-test-results ()
+  "MCP rows show type, enabled state, status, and known tool count."
+  (let* ((test-results (let ((table (make-hash-table :test #'equal)))
+                         (puthash "ctx" '((ok . t)
+                                           (tools . (((name . "read")
+                                                     (description . "Read"))
+                                                    ((name . "write")
+                                                     (description . "Write")))))
+                                  table)
+                         (puthash "broken" '((ok . nil) (error . "boom")
+                                             (tools . nil))
+                                  table)
+                         table))
+         (rows (hermes-mcp--rows
+                '((servers . (((name . "ctx") (transport . "stdio")
+                               (enabled . t) (tools . nil))
+                              ((name . "broken") (transport . "http")
+                               (enabled . t) (tools . ("a")))
+                              ((name . "off") (transport . "http")
+                               (enabled . nil) (tools . ("x" "y"))))))
+                test-results)))
+    (should (equal (mapcar #'car rows) '("ctx" "broken" "off")))
+    (should (equal (aref (cadr (car rows)) 1) "stdio"))
+    (should (equal (aref (cadr (car rows)) 2) "on"))
+    (should (equal (aref (cadr (car rows)) 3) "ok"))
+    (should (equal (aref (cadr (car rows)) 4) "2"))
+    (should (equal (aref (cadr (nth 1 rows)) 3) "failed"))
+    (should (equal (aref (cadr (nth 2 rows)) 2) "off"))
+    (should (equal (aref (cadr (nth 2 rows)) 3) "disabled"))
+    (should (equal (aref (cadr (nth 2 rows)) 4) "2"))))
+
+(ert-deftest hermes-mcp-test-and-toggle-dispatch-rest-actions ()
+  "Testing and toggling dispatch to MCP dashboard REST endpoints."
+  (let (calls)
+    (cl-letf (((symbol-function 'hermes-mcp--with-client)
+               (lambda (fn) (funcall fn 'fake-client)))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (method path &optional body _query &rest _args)
+                 (push (list method path body) calls)
+                 (cond
+                  ((equal path "/servers")
+                   '((servers . (((name . "ctx") (transport . "stdio")
+                                  (enabled . t) (tools . nil))))))
+                  ((equal path "/servers/ctx/test")
+                   '((ok . t) (tools . (((name . "read")
+                                         (description . "Read"))))))
+                  ((equal path "/servers/ctx/enabled")
+                   (should (equal body '((enabled . :false))))
+                   '((ok . t) (name . "ctx") (enabled . nil)))
+                  (t (error "unexpected MCP API call %S" path))))))
+      (unwind-protect
+          (progn
+            (hermes-list-mcp)
+            (with-current-buffer "*Hermes MCP Servers*"
+              (should (derived-mode-p 'hermes-mcp-mode))
+              (goto-char (point-min))
+              (hermes-mcp-test)
+              (should (equal (hermes-mcp--test-tool-count "ctx") "1"))
+              (hermes-mcp-toggle))
+            (should (member '("POST" "/servers/ctx/test" nil) calls))
+            (should (member '("PUT" "/servers/ctx/enabled" ((enabled . :false)))
+                            calls)))
+        (when (get-buffer "*Hermes MCP Servers*")
+          (kill-buffer "*Hermes MCP Servers*"))))))
+
+(ert-deftest hermes-mcp-api-uses-live-client-session-token ()
+  "MCP REST requests use a live dashboard client's session token when present."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :host "127.0.0.1" :port 32123 :token "session-token"))
+        seen-url seen-method seen-headers seen-secrets)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--http-json)
+               (cl-function
+                (lambda (url &key method headers body secrets)
+                 (ignore body)
+                 (setq seen-url url
+                       seen-method method
+                       seen-headers headers
+                       seen-secrets secrets)
+                 '(:body ((servers . nil)))))))
+      (should (equal (hermes-mcp--api "GET" "/servers" nil '((profile . "work"))
+                                      :client client)
+                     '((servers . nil))))
+      (should (equal seen-method "GET"))
+      (should (string-match-p (regexp-quote "/api/mcp/servers?profile=work")
+                              seen-url))
+      (should (equal (cdr (assoc "X-Hermes-Session-Token" seen-headers))
+                     "session-token"))
+      (should (member "session-token" seen-secrets)))))
+
+(ert-deftest hermes-mcp-api-redacts-secret-shaped-errors ()
+  "MCP API errors do not leak token, ticket, internal, or env secrets."
+  (let ((secret "sk-test-secret"))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
+               (lambda (_method _path &rest args)
+                 (signal 'user-error
+                         (list (hermes-dashboard-transport--redact-secret
+                                (format "bad token=%s env SECRET=%s" secret secret)
+                                (plist-get args :secrets)))))))
+      (should-error (hermes-mcp--api "GET" "/servers" nil nil
+                                      :secrets (list secret))
+                    :type 'user-error)
+      (condition-case err
+          (hermes-mcp--api "GET" "/servers" nil nil :secrets (list secret))
+        (user-error
+         (let ((message (error-message-string err)))
+           (should-not (string-match-p (regexp-quote secret) message))
+           (should (string-match-p "<redacted>" message))))))))
+
+(ert-deftest hermes-mcp-api-reports-unsupported-backend ()
+  "A missing MCP REST endpoint is reported as an unsupported backend."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
+             (lambda (&rest _)
+               (user-error "Hermes dashboard request failed at /api/mcp/servers (HTTP 404)"))))
+    (should-error (hermes-mcp--api "GET" "/servers") :type 'user-error)
+    (condition-case err
+        (hermes-mcp--api "GET" "/servers")
+      (user-error
+       (should (string-match-p "MCP REST API is unavailable"
+                               (error-message-string err)))))))
 
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here
