@@ -3162,6 +3162,31 @@ The buffer is captured by object so teardown still kills it after a rename."
       (should-not (string-match-p "secret-token" message))
       (should-not (buffer-live-p buffer)))))
 
+(ert-deftest hermes-transport-dashboard-http-error-includes-json-detail ()
+  "REST errors include backend JSON detail and still redact secrets."
+  (let (buffer message)
+    (cl-letf (((symbol-function 'url-retrieve-synchronously)
+               (lambda (&rest _args)
+                 (setq buffer (generate-new-buffer " *hermes-test-http*"))
+                 (with-current-buffer buffer
+                   (insert "HTTP/1.1 400 Bad Request\r\n"
+                           "Content-Type: application/json\r\n\r\n"
+                           "{\"detail\": \"the 'default' board cannot be removed secret-token\"}"))
+                 buffer)))
+      (setq message
+            (condition-case error
+                (progn
+                  (hermes-dashboard-transport--default-http-request
+                   "http://dash.example/api/plugins/kanban/boards/default?token=secret-token"
+                   :secrets '("secret-token"))
+                  nil)
+              (user-error (error-message-string error))))
+      (should (string-match-p "HTTP 400" message))
+      (should (string-match-p "default.*cannot be removed" message))
+      (should (string-match-p "token=<redacted>" message))
+      (should-not (string-match-p "secret-token" message))
+      (should-not (buffer-live-p buffer)))))
+
 (ert-deftest hermes-transport-dashboard-start-auto-localhost-spawns ()
   (let (process-plist opened-url events)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
@@ -6491,6 +6516,36 @@ The buffer is captured by object so teardown still kills it after a rename."
         (when (get-buffer "*Hermes Kanban Boards*")
           (kill-buffer "*Hermes Kanban Boards*"))))))
 
+(ert-deftest hermes-kanban-archive-default-board-stops-before-prompt ()
+  "The protected default board is rejected before prompts or DELETE."
+  (let (calls prompted)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (push (list method path body query) calls)
+                 (should (equal path "/boards"))
+                 '((boards . (((slug . "default") (name . "Default")
+                               (is_current . t) (total . 1)))))))
+              ((symbol-function 'yes-or-no-p)
+               (lambda (&rest _)
+                 (setq prompted t)
+                 t))
+              ((symbol-function 'message)
+               (lambda (&rest _) nil)))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-boards)
+            (setq calls nil)
+            (with-current-buffer "*Hermes Kanban Boards*"
+              (goto-char (point-min))
+              (let ((err (should-error (hermes-kanban-archive-board)
+                                       :type 'user-error)))
+                (should (string-match-p "protected.*cannot be archived"
+                                        (error-message-string err)))))
+            (should-not calls)
+            (should-not prompted))
+        (when (get-buffer "*Hermes Kanban Boards*")
+          (kill-buffer "*Hermes Kanban Boards*"))))))
+
 (ert-deftest hermes-kanban-archive-board-cancel-skips-delete ()
   "Declining the normal archive prompt skips DELETE and refresh."
   (let (calls prompts)
@@ -6679,6 +6734,9 @@ The buffer is captured by object so teardown still kills it after a rename."
             (should (equal (cdr (assq 'board log-query)) "emacs-lisp"))
             (should (equal (cdr (assq 'tail log-query)) 100000))
             (with-current-buffer "*Hermes Kanban Log*"
+              (should (derived-mode-p 'hermes-kanban-log-mode))
+              (should (equal hermes-kanban-log--task-id "t1"))
+              (should (equal hermes-kanban-log--board-slug "emacs-lisp"))
               (let ((text (buffer-string)))
                 (should (string-match-p "Worker log for t1" text))
                 (should (string-match-p "/logs/t1.log" text))
@@ -6695,6 +6753,18 @@ The buffer is captured by object so teardown still kills it after a rename."
   (should (string-match-p "failed to load worker log: boom"
                           (hermes-kanban--format-log
                            '((task_id . "t1") (error . "boom"))))))
+
+(ert-deftest hermes-kanban-format-log-sanitizes-control-output ()
+  "Worker log formatting renders CR and ANSI control output readably."
+  (let* ((text (hermes-kanban--format-log
+                `((task_id . "t1") (exists . t)
+                  (content . ,(concat "start\rprogress\r\ndone\n"
+                                      "\33[31merror\33[0m\n")))))
+         (plain (substring-no-properties text)))
+    (should-not (string-match-p "\r" plain))
+    (should-not (string-match-p (regexp-quote "\33[") plain))
+    (should (string-match-p "start\nprogress\ndone" plain))
+    (should (string-match-p "error" plain))))
 
 (ert-deftest hermes-mcp-rows-parse-read-only-server-response ()
   "MCP rows show backend name, type, enabled state, status, and tool count."

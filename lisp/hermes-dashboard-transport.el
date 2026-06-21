@@ -575,6 +575,29 @@ It receives the dashboard client and a number of seconds.")
                        :null-object nil
                        :false-object nil)))
 
+(defun hermes-dashboard-transport--json-error-message (value)
+  "Return a human-facing error message extracted from JSON VALUE."
+  (cond
+   ((hermes-transport--scalar-string value))
+   ((hermes-transport--object-p value)
+    (hermes-dashboard-transport--json-error-message
+     (hermes-transport--get-any value '(detail message error msg title))))
+   ((consp value)
+    (when-let* ((messages (delq nil
+                                (mapcar #'hermes-dashboard-transport--json-error-message
+                                        value))))
+      (string-join messages "; ")))))
+
+(defun hermes-dashboard-transport--http-error-detail (body-text)
+  "Return backend error detail parsed from HTTP BODY-TEXT, or nil."
+  (when-let* ((body (condition-case nil
+                        (hermes-dashboard-transport--json-body body-text)
+                      (error nil)))
+              (message (hermes-dashboard-transport--json-error-message body))
+              (trimmed (string-trim message)))
+    (unless (string-empty-p trimmed)
+      trimmed)))
+
 (defun hermes-dashboard-transport--parse-http-response-buffer (buffer)
   "Return plist parsed from url.el response BUFFER."
   (with-current-buffer buffer
@@ -615,8 +638,15 @@ SECRETS are redacted from any user-visible error."
                             buffer))
                  (status (plist-get response :status)))
             (unless (and status (<= 200 status 299))
-              (user-error "Hermes dashboard request failed at %s (HTTP %s)"
-                          safe-url (or status "unknown")))
+              (let ((detail (hermes-dashboard-transport--http-error-detail
+                             (plist-get response :body-text))))
+                (if detail
+                    (user-error "Hermes dashboard request failed at %s (HTTP %s): %s"
+                                safe-url (or status "unknown")
+                                (hermes-dashboard-transport--redact-secret
+                                 detail secrets))
+                  (user-error "Hermes dashboard request failed at %s (HTTP %s)"
+                              safe-url (or status "unknown")))))
             (plist-put response :body
                        (hermes-dashboard-transport--json-body
                         (plist-get response :body-text))))

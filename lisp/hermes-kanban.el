@@ -32,6 +32,7 @@
 
 ;;; Code:
 
+(require 'ansi-color)
 (require 'tabulated-list)
 (require 'json)
 (require 'outline)
@@ -169,6 +170,9 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
 
 (defconst hermes-kanban--current-board-marker "📍"
   "Marker used for the current Hermes Kanban board.")
+
+(defconst hermes-kanban--protected-board-slugs '("default")
+  "Board slugs protected from archive/delete by the Hermes backend.")
 
 (defconst hermes-kanban--status-display
   '(("todo" :icon "📝" :label "todo" :face nil)
@@ -401,7 +405,7 @@ when WIDTH can hold one character per column plus padding."
   "+" ("New board" hermes-kanban-create-board)
   "s" ("Switch current board" hermes-kanban-switch-board)
   "r" ("Rename board" hermes-kanban-rename-board)
-  "D" ("Archive board" hermes-kanban-archive-board)
+  "D" ("Archive non-default board" hermes-kanban-archive-board)
   :group "View"
   "g" ("Refresh" revert-buffer)
   "?" ("Help" hermes-kanban-boards-mode-map-popup))
@@ -452,6 +456,10 @@ when WIDTH can hold one character per column plus padding."
 (defun hermes-kanban--board-path (slug &rest segments)
   "Return the kanban boards path for SLUG extended by SEGMENTS."
   (concat "/boards/" (url-hexify-string slug) (apply #'concat segments)))
+
+(defun hermes-kanban--protected-board-p (slug)
+  "Return non-nil when SLUG names a backend-protected board."
+  (member slug hermes-kanban--protected-board-slugs))
 
 (defun hermes-kanban--current-board-row-p ()
   "Return non-nil when the selected board row is marked current."
@@ -510,6 +518,8 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
          (slug (car board))
          (name (or (cdr board) slug))
          (current-p (hermes-kanban--current-board-row-p)))
+    (when (hermes-kanban--protected-board-p slug)
+      (user-error "Board %s is protected and cannot be archived" slug))
     (when (and current-p
                (not (yes-or-no-p
                      (format "Archive current board %s and fall back to default?"
@@ -631,6 +641,12 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
 
 (defvar-local hermes-kanban-task--board-slug nil
   "Board slug displayed in the current task detail buffer.")
+
+(defvar-local hermes-kanban-log--task-id nil
+  "Task id displayed in the current worker-log buffer.")
+
+(defvar-local hermes-kanban-log--board-slug nil
+  "Board slug displayed in the current worker-log buffer.")
 
 (defun hermes-kanban--items (value)
   "Return VALUE as a list of response items."
@@ -957,6 +973,22 @@ BOARD-SLUG is remembered for refreshes and log requests."
   (append (hermes-kanban--query-for-board board-slug)
           `((tail . ,hermes-kanban-log-tail-bytes))))
 
+(defun hermes-kanban--fetch-log (id board-slug)
+  "Return the worker log payload for task ID on BOARD-SLUG."
+  (condition-case err
+      (hermes-kanban--api "GET" (hermes-kanban--task-path id "/log")
+                          nil (hermes-kanban--log-query board-slug))
+    (error `((task_id . ,id)
+             (error . ,(error-message-string err))))))
+
+(defun hermes-kanban--sanitize-log-content (content)
+  "Return CONTENT normalized for human-readable log display."
+  (replace-regexp-in-string "\r\n?" "\n" (or content "") t t))
+
+(defun hermes-kanban--render-log-content (content)
+  "Return CONTENT normalized and ANSI-colored for log display."
+  (ansi-color-apply (hermes-kanban--sanitize-log-content content)))
+
 (defun hermes-kanban--format-log (payload)
   "Return worker-log text for PAYLOAD from GET /tasks/:id/log."
   (let ((task-id (hermes-kanban--field payload 'task_id))
@@ -976,34 +1008,61 @@ BOARD-SLUG is remembered for refreshes and log requests."
       ((not (hermes-kanban--truthy-p (hermes-transport--get payload 'exists)))
        "— no worker log yet (task has not spawned or the log was rotated away) —\n")
       ((string-empty-p content) "(empty)\n")
-      (t content))
+      (t (hermes-kanban--render-log-content content)))
      (when (hermes-kanban--truthy-p (hermes-transport--get payload 'truncated))
        (format "\n\n(showing last %s; full log path above)\n"
                (hermes-kanban--format-size hermes-kanban-log-tail-bytes))))))
 
-(defun hermes-kanban--display-log (payload)
-  "Render worker log PAYLOAD in a read-only buffer."
-  (with-current-buffer (get-buffer-create "*Hermes Kanban Log*")
-    (unless (derived-mode-p 'special-mode)
-      (special-mode))
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert (hermes-kanban--format-log payload)))
-    (goto-char (point-min))
-    (pop-to-buffer (current-buffer))))
+(defvar hermes-kanban-log-mode-map)
+
+(keymap-popup-define hermes-kanban-log-mode-map
+  "Keymap for `hermes-kanban-log-mode'."
+  :parent special-mode-map
+  :description "Hermes Kanban Log"
+  :group "View"
+  "g" ("Refresh" revert-buffer)
+  "?" ("Help" hermes-kanban-log-mode-map-popup))
+
+(defun hermes-kanban--log-revert (&rest _)
+  "Refresh the current worker-log buffer in place."
+  (unless hermes-kanban-log--task-id
+    (user-error "No task id for this log buffer"))
+  (hermes-kanban--display-log
+   (hermes-kanban--fetch-log hermes-kanban-log--task-id
+                             hermes-kanban-log--board-slug)
+   hermes-kanban-log--board-slug))
+
+(define-derived-mode hermes-kanban-log-mode special-mode "Hermes Log"
+  "Major mode for a Hermes Kanban worker log buffer."
+  :interactive nil
+  (setq-local revert-buffer-function #'hermes-kanban--log-revert)
+  (setq-local truncate-lines nil)
+  (visual-line-mode 1))
+
+(defun hermes-kanban--display-log (payload &optional board-slug)
+  "Render worker log PAYLOAD for BOARD-SLUG in a read-only buffer."
+  (let ((task-id (hermes-kanban--non-empty
+                  (hermes-kanban--field payload 'task_id))))
+    (with-current-buffer (get-buffer-create "*Hermes Kanban Log*")
+      (unless (derived-mode-p 'hermes-kanban-log-mode)
+        (hermes-kanban-log-mode))
+      (setq hermes-kanban-log--task-id task-id
+            hermes-kanban-log--board-slug board-slug
+            mode-line-process (format " [%s]" (or (hermes-kanban--non-empty task-id)
+                                                  "task")))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (hermes-kanban--format-log payload)))
+      (goto-char (point-min))
+      (pop-to-buffer (current-buffer)))))
 
 (defun hermes-kanban-show-log ()
   "Fetch and display the worker log for the task at point or current detail."
   (interactive)
   (let* ((id (hermes-kanban--task-id-for-command))
          (board-slug (hermes-kanban--board-slug-for-command))
-         (query (hermes-kanban--log-query board-slug)))
-    (hermes-kanban--display-log
-     (condition-case err
-         (hermes-kanban--api "GET" (hermes-kanban--task-path id "/log")
-                             nil query)
-       (error `((task_id . ,id)
-                (error . ,(error-message-string err))))))))
+         (payload (hermes-kanban--fetch-log id board-slug)))
+    (hermes-kanban--display-log payload board-slug)))
 
 ;;; Task mutations
 
