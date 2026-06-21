@@ -6338,7 +6338,7 @@ The buffer is captured by object so teardown still kills it after a rename."
       (funcall mode)
       (let (printed)
         (cl-letf (((symbol-function 'window-body-width)
-                   (lambda (_window) 120))
+                   (lambda (_window &optional _pixelwise) 120))
                   ((symbol-function 'tabulated-list-print)
                    (lambda (&rest _) (setq printed t))))
           (setq tabulated-list-format
@@ -6577,7 +6577,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-kanban-open-board-renders-tasks ()
   "Opening a board fetches /board with its slug and flattens the columns."
   (cl-letf (((symbol-function 'window-body-width)
-             (lambda (&optional _window) 80))
+             (lambda (&optional _window _pixelwise) 80))
             ((symbol-function 'hermes-kanban--api)
              (lambda (method path &optional _body query)
                (should (equal method "GET"))
