@@ -51,76 +51,152 @@
 (defvar-local hermes-mcp--test-results nil
   "Hash table mapping MCP server names to their latest test-result alist.")
 
+(defun hermes-mcp--secret-like-value-p (text)
+  "Return non-nil for secret-bearing display value TEXT."
+  (let ((case-fold-search t))
+    (or (string-match-p "\\b[A-Za-z0-9_-]\\{48,\\}\\b" text)
+        (string-match-p
+         "\\b[A-Za-z0-9_.-]*\\(?:token\\|secret\\|password\\|api[_-]?key\\)[A-Za-z0-9_.-]*[=:]"
+         text))))
+
+(defun hermes-mcp--redact-display (text)
+  "Return TEXT with secret-shaped material redacted for display."
+  (let ((case-fold-search t)
+        (safe (hermes-dashboard-transport--redact-secret text)))
+    (setq safe
+          (replace-regexp-in-string
+           "\\b\\([A-Za-z0-9_.-]*\\(?:token\\|secret\\|password\\|api[_-]?key\\)[A-Za-z0-9_.-]*[=:]\\)[^[:space:],;)\"']+"
+           "\\1<redacted>" safe t nil))
+    (if (hermes-mcp--secret-like-value-p safe)
+        (replace-regexp-in-string
+         "\\b[A-Za-z0-9_-]\\{48,\\}\\b" "<redacted>" safe t nil)
+      safe)))
+
+(defun hermes-mcp--raw-field (object key)
+  "Return OBJECT's KEY as an unredacted scalar string, or nil."
+  (hermes-transport--scalar-string (hermes-transport--get object key)))
+
 (defun hermes-mcp--field (object key)
-  "Return OBJECT's KEY as a display string."
-  (or (hermes-transport--scalar-string (hermes-transport--get object key)) ""))
+  "Return OBJECT's KEY as a redacted display string."
+  (if-let* ((text (hermes-mcp--raw-field object key)))
+      (hermes-mcp--redact-display text)
+    ""))
+
+(defun hermes-mcp--has-key-p (object key)
+  "Return non-nil if OBJECT has KEY."
+  (let ((sentinel (make-symbol "hermes-mcp-missing")))
+    (catch 'found
+      (dolist (candidate (hermes-transport--key-candidates key))
+        (cond
+         ((hash-table-p object)
+          (unless (eq (gethash candidate object sentinel) sentinel)
+            (throw 'found t)))
+         ((hermes-transport--plist-p object)
+          (when (plist-member object candidate)
+            (throw 'found t)))
+         ((hermes-transport--alist-p object)
+          (when (assoc candidate object)
+            (throw 'found t)))))
+      nil)))
+
+(defun hermes-mcp--enabled-label (server)
+  "Return SERVER's enabled state as a short display label."
+  (cond
+   ((not (hermes-mcp--has-key-p server 'enabled)) "?")
+   ((eq (hermes-transport--get server 'enabled) t) "on")
+   (t "off")))
 
 (defun hermes-mcp--enabled-p (server)
   "Return non-nil when SERVER is enabled."
   (eq (hermes-transport--get server 'enabled) t))
 
-(defun hermes-mcp--enabled-label (server)
-  "Return SERVER's enabled state as a short label."
-  (if (hermes-mcp--enabled-p server) "on" "off"))
+(defun hermes-mcp--server-type (server)
+  "Return SERVER's transport/type display string."
+  (or (and-let* ((transport (hermes-mcp--field server 'transport))
+                 ((not (string-empty-p transport))))
+        transport)
+      (hermes-mcp--field server 'type)))
 
-(defun hermes-mcp--result-for (name test-results)
+(defun hermes-mcp--tools (server)
+  "Return SERVER's configured tools list, or nil."
+  (let ((tools (hermes-transport--get server 'tools)))
+    (and (listp tools) tools)))
+
+(defun hermes-mcp--explicit-tool-count (object)
+  "Return OBJECT's explicit tool-count display string, or empty."
+  (let ((count (hermes-transport--get-any
+                object '(tool_count tool-count toolCount tools_count tools-count
+                                     toolsCount)))
+        (tools (hermes-transport--get object 'tools)))
+    (cond
+     ((numberp count) (number-to-string count))
+     ((stringp count) (hermes-mcp--redact-display count))
+     ((and (hermes-mcp--has-key-p object 'tools) (listp tools))
+      (number-to-string (length tools)))
+     (t ""))))
+
+(defun hermes-mcp--result-for (name &optional test-results)
   "Return NAME's stored test result from TEST-RESULTS."
   (and (hash-table-p test-results) (gethash name test-results)))
-
-(defun hermes-mcp--tools (object)
-  "Return OBJECT's tools list, or nil."
-  (let ((tools (hermes-transport--get object 'tools)))
-    (and (listp tools) tools)))
 
 (defun hermes-mcp--test-tool-count (name &optional test-results)
   "Return NAME's latest test tool count from TEST-RESULTS.
 Use `hermes-mcp--test-results' when TEST-RESULTS is nil; return an empty
 string when no test result exists."
   (if-let* ((result (hermes-mcp--result-for
-                    name (or test-results hermes-mcp--test-results)))
-            (tools (hermes-mcp--tools result)))
-      (number-to-string (length tools))
+                    name (or test-results hermes-mcp--test-results))))
+      (hermes-mcp--explicit-tool-count result)
     ""))
 
-(defun hermes-mcp--configured-tool-count (server)
-  "Return SERVER's configured selected-tool count as a string, or empty."
-  (if-let* ((tools (hermes-mcp--tools server)))
-      (number-to-string (length tools))
-    ""))
+(defun hermes-mcp--tool-count (server &optional test-results)
+  "Return SERVER's best available tool-count display string.
+Prefer TEST-RESULTS over the server summary when present."
+  (let* ((tested (and-let* ((name (hermes-mcp--raw-field server 'name)))
+                   (hermes-mcp--test-tool-count name test-results)))
+         (summary (hermes-mcp--explicit-tool-count server)))
+    (if (and tested (not (string-empty-p tested)))
+        tested
+      summary)))
 
-(defun hermes-mcp--tool-count (server test-results)
-  "Return SERVER's best available tool count using TEST-RESULTS."
-  (let ((tested (hermes-mcp--test-tool-count
-                 (hermes-mcp--field server 'name) test-results)))
-    (if (string-empty-p tested)
-        (hermes-mcp--configured-tool-count server)
-      tested)))
-
-(defun hermes-mcp--status (server test-results)
+(defun hermes-mcp--status (server &optional test-results)
   "Return SERVER's display status using TEST-RESULTS when present."
   (cond
-   ((not (hermes-mcp--enabled-p server)) "disabled")
-   ((when-let* ((result (hermes-mcp--result-for
-                         (hermes-mcp--field server 'name) test-results)))
+   ((and-let* ((name (hermes-mcp--raw-field server 'name))
+               (result (hermes-mcp--result-for name test-results)))
       (if (eq (hermes-transport--get result 'ok) t) "ok" "failed")))
    ((and-let* ((status (hermes-mcp--field server 'status))
                ((not (string-empty-p status))))
       status))
-   (t "configured")))
+   (t (pcase (hermes-mcp--enabled-label server)
+        ("on" "configured")
+        ("off" "disabled")
+        (_ "unknown")))))
+
+(defun hermes-mcp--server-list (result)
+  "Return the MCP server list from RESULT."
+  (let ((servers (hermes-transport--get result 'servers)))
+    (cond
+     ((and (listp servers)
+           (or (null servers)
+               (cl-every #'hermes-transport--object-p servers)))
+      servers)
+     ((hermes-transport--event-list-p result) result)
+     (t nil))))
 
 (defun hermes-mcp--rows (result &optional test-results)
   "Return `tabulated-list' rows for an MCP servers RESULT.
 TEST-RESULTS maps server names to `test' endpoint responses."
   (mapcar
    (lambda (server)
-     (let ((name (hermes-mcp--field server 'name)))
-       (list name
-             (vector name
-                     (hermes-mcp--field server 'transport)
+     (let* ((raw-name (or (hermes-mcp--raw-field server 'name) ""))
+            (display-name (hermes-mcp--redact-display raw-name)))
+       (list raw-name
+             (vector display-name
+                     (hermes-mcp--server-type server)
                      (hermes-mcp--enabled-label server)
                      (hermes-mcp--status server test-results)
                      (hermes-mcp--tool-count server test-results)))))
-   (hermes-transport--get result 'servers)))
+   (hermes-mcp--server-list result)))
 
 (defun hermes-mcp--unsupported-api-error-p (message)
   "Return non-nil when MESSAGE indicates the dashboard lacks MCP REST APIs."
@@ -139,8 +215,9 @@ session token when available."
        method (concat "/api/mcp" path) :body body :query query :secrets secrets
        :client client)
     (error
-     (let ((message (hermes-dashboard-transport--redact-secret
-                     (error-message-string err) secrets)))
+     (let ((message (hermes-mcp--redact-display
+                     (hermes-dashboard-transport--redact-secret
+                      (error-message-string err) secrets))))
        (if (hermes-mcp--unsupported-api-error-p message)
            (user-error
             "Hermes dashboard MCP REST API is unavailable; update Hermes Agent/dashboard")
@@ -157,8 +234,8 @@ session token when available."
   "Remember server objects from RESULT in `hermes-mcp--servers'."
   (hermes-mcp--ensure-state)
   (clrhash hermes-mcp--servers)
-  (dolist (server (hermes-transport--get result 'servers))
-    (when-let* ((name (hermes-mcp--field server 'name))
+  (dolist (server (hermes-mcp--server-list result))
+    (when-let* ((name (hermes-mcp--raw-field server 'name))
                 ((not (string-empty-p name))))
       (puthash name server hermes-mcp--servers))))
 
@@ -167,18 +244,16 @@ session token when available."
   (hermes-sessions--with-client
    (lambda (client done)
      (let ((cleaned nil))
-       (condition-case err
-           (let ((after (funcall fn client)))
-             (unless cleaned
-               (setq cleaned t)
-               (funcall done))
-             (when (functionp after)
-               (funcall after)))
-         (error
-          (unless cleaned
-            (setq cleaned t)
-            (funcall done))
-          (message "Hermes: %s" (error-message-string err))))))))
+       (cl-labels ((cleanup ()
+                    (unless cleaned
+                      (setq cleaned t)
+                      (funcall done))))
+         (condition-case err
+             (unwind-protect
+                 (funcall fn client)
+               (cleanup))
+           (error
+            (message "Hermes: %s" (error-message-string err)))))))))
 
 (defun hermes-mcp--render (result)
   "Render MCP servers from RESULT in `hermes-mcp-buffer-name'."
@@ -211,11 +286,25 @@ session token when available."
   (let ((name (hermes-mcp--name-at-point)))
     (or (and (hash-table-p hermes-mcp--servers)
              (gethash name hermes-mcp--servers))
-        (user-error "No MCP server details for %s" name))))
+        (user-error "No MCP server details for %s"
+                    (hermes-mcp--redact-display name)))))
 
 (defun hermes-mcp--server-path (name &rest segments)
   "Return the MCP server REST path for NAME extended by SEGMENTS."
   (concat "/servers/" (url-hexify-string name) (apply #'concat segments)))
+
+(defun hermes-mcp--message-test-result (name result)
+  "Report NAME's MCP test RESULT to the minibuffer."
+  (let ((display-name (hermes-mcp--redact-display name)))
+    (if (eq (hermes-transport--get result 'ok) t)
+        (message "Hermes: %s has %s MCP tool(s)"
+                 display-name (hermes-mcp--explicit-tool-count result))
+      (message "Hermes: %s test failed: %s"
+               display-name
+               (or (and-let* ((error (hermes-mcp--field result 'error))
+                              ((not (string-empty-p error))))
+                     error)
+                   "unknown error")))))
 
 (defun hermes-mcp-test ()
   "Test the MCP server at point and update its status/tool count."
@@ -225,38 +314,35 @@ session token when available."
         (buffer (current-buffer)))
     (hermes-mcp--with-client
      (lambda (client)
-       (with-current-buffer buffer
-         (let ((result (hermes-mcp--api
-                        "POST" (hermes-mcp--server-path name "/test")
-                        nil nil :client client)))
-           (puthash name result hermes-mcp--test-results)
-           (if (eq (hermes-transport--get result 'ok) t)
-               (message "Hermes: %s has %s MCP tool(s)"
-                        name (hermes-mcp--test-tool-count name))
-             (message "Hermes: %s test failed: %s"
-                      name
-                      (hermes-dashboard-transport--redact-secret
-                       (or (hermes-mcp--field result 'error) "unknown error")
-                       (and (hermes-dashboard-transport-client-p client)
-                            (list (hermes-dashboard-transport-client-token
-                                   client)))))
-           (hermes-mcp--fetch client))))))))
+       (let ((result (hermes-mcp--api
+                      "POST" (hermes-mcp--server-path name "/test")
+                      nil nil :client client)))
+         (when (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (hermes-mcp--ensure-state)
+             (puthash name result hermes-mcp--test-results)
+             (hermes-mcp--message-test-result name result)))
+         (hermes-mcp--fetch client))))))
 
 (defun hermes-mcp-toggle ()
   "Enable or disable the MCP server at point through the dashboard API."
   (interactive)
   (let* ((server (hermes-mcp--server-at-point))
-         (name (hermes-mcp--field server 'name))
-         (enabled (hermes-mcp--enabled-p server))
-         (next (not enabled)))
-    (hermes-mcp--with-client
-     (lambda (client)
-       (hermes-mcp--api
-        "PUT" (hermes-mcp--server-path name "/enabled")
-        `((enabled . ,(if next t :false))) nil :client client)
-       (message "Hermes: %s %s; change applies to new sessions/gateway reload"
-                (if next "enabled" "disabled") name)
-       (hermes-mcp--fetch client)))))
+         (name (or (hermes-mcp--raw-field server 'name)
+                   (hermes-mcp--name-at-point))))
+    (unless (hermes-mcp--has-key-p server 'enabled)
+      (user-error "MCP server %s has no enabled state; refresh or update Hermes Agent/dashboard"
+                  (hermes-mcp--redact-display name)))
+    (let ((next (not (hermes-mcp--enabled-p server))))
+      (hermes-mcp--with-client
+       (lambda (client)
+         (hermes-mcp--api
+          "PUT" (hermes-mcp--server-path name "/enabled")
+          `((enabled . ,(if next t :false))) nil :client client)
+         (message "Hermes: %s %s; change applies to new sessions/gateway reload"
+                  (if next "enabled" "disabled")
+                  (hermes-mcp--redact-display name))
+         (hermes-mcp--fetch client))))))
 
 (defvar hermes-mcp-mode-map)
 
