@@ -204,7 +204,7 @@ Toolsets and skills support `\[hermes-inventory-enable]' and
 Use REST when available, falling back to JSON-RPC."
   (condition-case err
       (let ((skills (hermes-dashboard-transport-api-request
-                     "GET" "/api/skills")))
+                     "GET" "/api/skills" :client client)))
         (funcall done)
         (hermes-inventory--render-result
          spec (hermes-inventory--skills-result skills)))
@@ -272,16 +272,27 @@ client for the listing."
 
 (defun hermes-inventory--set-skill-enabled (name enabled)
   "Set skill NAME to ENABLED through the dashboard REST API."
-  (condition-case err
-      (progn
-        (hermes-dashboard-transport-api-request
-         "PUT" "/api/skills/toggle"
-         :body `((name . ,name) (enabled . ,(hermes-inventory--json-bool enabled))))
-        (message "Hermes: %s skill %s; new sessions use this setting, or press R to reload skills"
-                 (if enabled "enabled" "disabled") name)
-        (hermes-inventory--revert))
-    (error
-     (message "Hermes: %s" (error-message-string err)))))
+  (hermes-sessions--with-client
+   (lambda (client done)
+     (let ((cleaned nil))
+       (cl-labels ((cleanup ()
+                    (unless cleaned
+                      (setq cleaned t)
+                      (funcall done))))
+         (condition-case err
+             (progn
+               (hermes-dashboard-transport-api-request
+                "PUT" "/api/skills/toggle"
+                :body `((name . ,name)
+                        (enabled . ,(hermes-inventory--json-bool enabled)))
+                :client client)
+               (cleanup)
+               (message "Hermes: %s skill %s; new sessions use this setting, or press R to reload skills"
+                        (if enabled "enabled" "disabled") name)
+               (hermes-inventory--revert))
+           (error
+            (cleanup)
+            (message "Hermes: %s" (error-message-string err)))))))))
 
 (defun hermes-inventory--set-enabled (enabled)
   "Set the toolset or skill at point to ENABLED."
@@ -392,11 +403,16 @@ unknown backend fields so secrets cannot leak through this buffer."
   "Show Hermes memory provider and built-in store sizes.
 The buffer never displays memory contents or secret material."
   (interactive)
-  (condition-case err
-      (hermes-inventory--render-memory-status
-       (hermes-dashboard-transport-api-request "GET" "/api/memory"))
-    (error
-     (message "Hermes: %s" (error-message-string err)))))
+  (hermes-sessions--with-client
+   (lambda (client done)
+     (unwind-protect
+         (condition-case err
+             (hermes-inventory--render-memory-status
+              (hermes-dashboard-transport-api-request
+               "GET" "/api/memory" :client client))
+           (error
+            (message "Hermes: %s" (error-message-string err))))
+       (funcall done)))))
 
 ;;;###autoload
 (defun hermes-memory-reset (target)
@@ -410,19 +426,29 @@ TARGET is one of all, memory, or user.  External providers are not reset."
   (when (yes-or-no-p
          (format "Erase built-in Hermes %s memory?  This deletes only MEMORY.md/USER.md data.  Continue?"
                  target))
-    (condition-case err
-        (let ((result (hermes-dashboard-transport-api-request
-                       "POST" "/api/memory/reset"
-                       :body `((target . ,target)))))
-          (message "Hermes: reset %s memory (%s)"
-                   target
-                   (string-join
-                    (mapcar #'identity
-                            (or (hermes-transport--get result 'deleted) '()))
-                    ", "))
-          (hermes-memory-status))
-      (error
-       (message "Hermes: %s" (error-message-string err))))))
+    (hermes-sessions--with-client
+     (lambda (client done)
+       (let ((cleaned nil))
+         (cl-labels ((cleanup ()
+                      (unless cleaned
+                        (setq cleaned t)
+                        (funcall done))))
+           (condition-case err
+               (let ((result (hermes-dashboard-transport-api-request
+                              "POST" "/api/memory/reset"
+                              :body `((target . ,target))
+                              :client client)))
+                 (cleanup)
+                 (message "Hermes: reset %s memory (%s)"
+                          target
+                          (string-join
+                           (mapcar #'identity
+                                   (or (hermes-transport--get result 'deleted) '()))
+                           ", "))
+                 (hermes-memory-status))
+             (error
+              (cleanup)
+              (message "Hermes: %s" (error-message-string err))))))))))
 
 ;;;###autoload
 (defun hermes-list-inventory ()
