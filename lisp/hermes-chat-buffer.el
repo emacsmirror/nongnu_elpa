@@ -1,0 +1,631 @@
+;;; hermes-chat-buffer.el --- EWOC buffer spine for Hermes chat  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Keywords: tools, convenience
+;; Package-Requires: ((emacs "29.1") (markdown-mode "2.6"))
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; Stateful EWOC rendering and editable-tail buffer helpers for `hermes-chat'.
+;; This module keeps the transcript spine separate from dashboard session,
+;; prompt, slash command, selector, and public mode code.
+
+;;; Code:
+
+(require 'button)
+(require 'ewoc)
+(require 'subr-x)
+(require 'hermes-chat-format)
+
+(declare-function hermes-chat--active-status-p "hermes-chat-format" (status))
+(declare-function hermes-chat--event-phase "hermes-chat-format" (event))
+(declare-function hermes-chat--event-string "hermes-chat-format" (event keys))
+(declare-function hermes-chat--event-value "hermes-chat-format" (event keys))
+(declare-function hermes-chat--format-progress-event "hermes-chat-format" (event))
+(declare-function hermes-chat--format-status-event "hermes-chat-format" (event))
+(declare-function hermes-chat--format-tool-event "hermes-chat-format" (event))
+(declare-function hermes-chat--sanitize-assistant-content "hermes-chat-format" (content &optional final))
+(declare-function hermes-chat--sanitize-content "hermes-chat-format" (content &optional ansi-key))
+(declare-function hermes-chat--status-face "hermes-chat-format" (status))
+(declare-function hermes-chat--status-icon "hermes-chat-format" (status))
+(declare-function hermes-chat--strip-session-id-lines "hermes-chat-format" (content &optional final))
+(declare-function hermes-chat--tool-name "hermes-chat-format" (event))
+(declare-function hermes-chat--unknown-event-content "hermes-chat-format" (event))
+
+(declare-function hermes-chat--clear-ansi-fragment "hermes-chat" (key))
+(declare-function hermes-chat--diff-blocks "hermes-chat" (content))
+(declare-function hermes-chat--entry-expanded-p "hermes-chat" (entry))
+(declare-function hermes-chat--entry-with "hermes-chat" (entry &rest props))
+(declare-function hermes-chat--header-line "hermes-chat" ())
+(declare-function hermes-chat--insert-diff-entry "hermes-chat" (content))
+(declare-function hermes-chat--insert-diffed "hermes-chat" (content insert-text &optional blocks))
+(declare-function hermes-chat--insert-markdown "hermes-chat" (text))
+(declare-function hermes-chat--insert-shadow "hermes-chat" (text))
+(declare-function hermes-chat--make-entry "hermes-chat" (role content &optional status id metadata))
+(declare-function hermes-chat--metadata-preserve-expanded "hermes-chat" (entry metadata))
+(declare-function hermes-chat--notify-state-change "hermes-chat" ())
+(declare-function hermes-chat--reset-header-state "hermes-chat" ())
+
+(defvar-local hermes-chat--ansi-fragments nil
+  "Partial ANSI escape sequences by stream key, from `hermes-chat'.")
+(defvar-local hermes-chat--auto-prompt-keys nil
+  "Scheduled auto-prompt keys for the current chat buffer.")
+(defvar-local hermes-chat--dashboard-active-session-id nil
+  "Live dashboard session id for the current chat buffer.")
+(defvar-local hermes-chat--dashboard-client nil
+  "Dashboard transport client for the current chat buffer.")
+(defvar-local hermes-chat--dashboard-detached-assistant-id nil
+  "Detached dashboard assistant entry id for the current chat buffer.")
+(defvar-local hermes-chat--dashboard-session-ready-p nil
+  "Non-nil when a dashboard session is ready for the current chat buffer.")
+(defvar-local hermes-chat--dashboard-stream-assistant-id nil
+  "Assistant entry id receiving live dashboard stream events.")
+(defvar-local hermes-chat--dashboard-suppress-stream-p nil
+  "Non-nil when live dashboard stream events are suppressed.")
+(defvar-local hermes-chat--draining-queued-message-p nil
+  "Non-nil while the queued chat message is being drained.")
+(defvar-local hermes-chat--ewoc nil
+  "EWOC displaying chat transcript entries.")
+(defvar-local hermes-chat--input-marker nil
+  "Marker at the beginning of the writable chat input tail.")
+(defvar-local hermes-chat--nodes nil
+  "Hash table mapping Hermes entry ids to EWOC nodes.")
+(defvar-local hermes-chat--pending-assistant-id nil
+  "ID of the assistant entry awaiting transport completion.")
+(defvar-local hermes-chat--pending-prompts nil
+  "Pending dashboard prompt requests by prompt key.")
+(defvar-local hermes-chat--process nil
+  "Current Hermes transport process or token.")
+(defvar-local hermes-chat--queued-display nil
+  "Compact display text for the queued message's user turn.")
+(defvar-local hermes-chat--queued-message nil
+  "Plain message queued to send after the active Hermes turn settles.")
+(defvar-local hermes-chat--session-id nil
+  "Durable Hermes session key for the current chat buffer.")
+(defvar-local hermes-chat--transport-generation nil
+  "Transport callback generation for the current chat buffer.")
+(defvar hermes-chat--transient-entry-roles)
+
+(defun hermes-chat--transport-entry-role (event)
+  "Return EWOC entry role for transport EVENT."
+  (pcase (plist-get event :type)
+    ('status 'status)
+    ('progress 'progress)
+    ('tool 'tool)
+    ('commentary 'commentary)
+    ('diff 'diff)
+    ('unknown 'status)))
+
+(defun hermes-chat--commentary-event-name (event)
+  "Return EVENT's commentary event name in lowercase, or nil."
+  (and-let* ((name (hermes-chat--event-string event '(:event))))
+    (downcase name)))
+
+(defun hermes-chat--commentary-delta-p (event)
+  "Return non-nil when EVENT is a commentary/thinking delta."
+  (and (eq (plist-get event :type) 'commentary)
+       (when-let* ((name (hermes-chat--commentary-event-name event)))
+         (or (member name '("reasoning.delta" "thinking.delta"))
+             (string-suffix-p ".delta" name)))))
+
+(defun hermes-chat--commentary-key (event)
+  "Return stable EWOC key for commentary EVENT."
+  (let ((name (hermes-chat--commentary-event-name event)))
+    (if (or (null name)
+            (member name '("reasoning.delta" "thinking.delta"
+                           "reasoning.available")))
+        "thinking"
+      name)))
+
+(defun hermes-chat--transport-entry-status (event)
+  "Return EWOC entry status for transport EVENT."
+  (or (hermes-chat--event-value event '(:status))
+      (and (eq (plist-get event :type) 'unknown) 'error)
+      (and (eq (plist-get event :type) 'commentary) 'running)
+      (hermes-chat--event-phase event)
+      (pcase (plist-get event :type)
+        ((or 'status 'progress 'tool) 'running)
+        (_ 'done))))
+
+(defun hermes-chat--transport-entry-content (event)
+  "Return display content for transport EVENT."
+  (pcase (plist-get event :type)
+    ('status (hermes-chat--format-status-event event))
+    ('progress (hermes-chat--format-progress-event event))
+    ('tool (hermes-chat--format-tool-event event))
+    ((or 'commentary 'diff) (hermes-chat--event-string event '(:content :text)))
+    ('unknown (hermes-chat--unknown-event-content event))
+    (_ nil)))
+
+(defun hermes-chat--transport-key-fragment (event keys)
+  "Return a stable key fragment from EVENT using KEYS."
+  (when-let* ((value (hermes-chat--event-string event keys)))
+    (unless (string-empty-p value)
+      value)))
+
+(defun hermes-chat--transport-entry-id (event)
+  "Return stable EWOC entry id for keyed transport EVENT, or nil."
+  (pcase (plist-get event :type)
+    ('status
+     (when-let* ((key (or (hermes-chat--transport-key-fragment
+                           event '(:prompt-key :prompt_key
+                                               :request-id :request_id
+                                               :status-key :status_key :key :run-id
+                                               :run_id :session-id :session_id
+                                               :message-id :message_id))
+                          (hermes-chat--transport-key-fragment
+                           event '(:event)))))
+       (concat "status:" key)))
+    ((or 'progress 'tool)
+     (when-let* ((key (or (hermes-chat--transport-key-fragment
+                           event '(:tool-call-id :tool_call_id :call-id
+						 :call_id :id :message-id
+						 :message_id :index :seq))
+                          (hermes-chat--tool-name event)
+                          (hermes-chat--transport-key-fragment
+                           event '(:event)))))
+       (concat "tool:" key)))
+    ('commentary
+     (concat "commentary:" (hermes-chat--commentary-key event)))
+    ('unknown
+     (when-let* ((key (hermes-chat--transport-key-fragment
+                       event '(:event :session-id :session_id))))
+       (concat "unknown:" key)))))
+
+(defun hermes-chat--transport-entry-metadata (assistant-id event)
+  "Return metadata plist for transport EVENT tied to ASSISTANT-ID."
+  (list :assistant-id assistant-id :event event))
+
+(defconst hermes-chat--transient-summary-width 100
+  "Maximum width of a collapsed transient summary line.")
+
+(defun hermes-chat--first-line (text)
+  "Return TEXT's first line, trimmed and truncated for a one-line summary."
+  (truncate-string-to-width
+   (string-trim (car (split-string text "\n")))
+   hermes-chat--transient-summary-width nil nil "…"))
+
+(defun hermes-chat--multiline-content-p (text)
+  "Return non-nil when TEXT spans more than one line."
+  (string-match-p "\n" (string-trim-right text)))
+
+(defun hermes-chat--insert-transient-toggle (entry summary expanded)
+  "Insert a toggle labeled SUMMARY for transient ENTRY in EXPANDED state."
+  (let ((start (point)))
+    (insert (if expanded "▾ " "▸ ") summary)
+    (make-text-button start (point)
+                      'face 'shadow
+                      'mouse-face 'highlight
+                      'follow-link t
+                      'help-echo "Toggle full output"
+                      'hermes-chat-entry-id (plist-get entry :id)
+                      'action #'hermes-chat--toggle-entry-button)))
+
+(defun hermes-chat--insert-transient-content (entry)
+  "Insert a compact transient transport ENTRY.
+Multiline content collapses to a one-line summary with a `▸'/`▾' toggle, like
+the thinking disclosure; diffs become View Diff links."
+  (let ((content (or (plist-get entry :content) "")))
+    (unless (string-empty-p content)
+      (insert (propertize (format "  %s "
+                                  (hermes-chat--status-icon
+                                   (plist-get entry :status)))
+                          'face (hermes-chat--status-face
+                                 (plist-get entry :status))))
+      (let ((blocks (hermes-chat--diff-blocks content)))
+        (if (and (memq (plist-get entry :role) '(tool progress))
+                 (hermes-chat--multiline-content-p content)
+                 (null blocks))
+            (let ((expanded (hermes-chat--entry-expanded-p entry)))
+              (hermes-chat--insert-transient-toggle
+               entry (hermes-chat--first-line content) expanded)
+              (insert "\n")
+              (when expanded
+                (hermes-chat--insert-shadow content)
+                (insert "\n")))
+          (hermes-chat--insert-diffed content #'hermes-chat--insert-shadow blocks)
+          (insert "\n"))))))
+
+(defun hermes-chat--compact-commentary-paragraph (paragraph)
+  "Return PARAGRAPH with token-stream line noise collapsed."
+  (replace-regexp-in-string
+   "[ \t]+" " "
+   (string-trim
+    (replace-regexp-in-string "[ \t]*\n[ \t]*" " " paragraph))))
+
+(defun hermes-chat--commentary-normalize-line-endings (content)
+  "Return CONTENT with escaped newline artifacts normalized."
+  (let ((text (hermes-chat--sanitize-content content)))
+    (dolist (artifact '(("\\r\\n" . "\n") ("\\n" . "\n")
+                        ("\\r" . "\n") ("^J" . "\n")))
+      (setq text (replace-regexp-in-string
+                  (regexp-quote (car artifact)) (cdr artifact) text t t)))
+    text))
+
+(defun hermes-chat--commentary-display-content (content)
+  "Return CONTENT formatted for expanded thinking display."
+  (let* ((text (hermes-chat--commentary-normalize-line-endings content))
+         (paragraphs (split-string
+                      (string-trim text) "[ \t]*\n[ \t]*\n[ \t\n]*" t)))
+    (string-join
+     (mapcar #'hermes-chat--compact-commentary-paragraph paragraphs)
+     "\n\n")))
+
+(defun hermes-chat--insert-commentary-toggle (entry expanded)
+  "Insert a toggle button for commentary ENTRY in EXPANDED state."
+  (insert "  ")
+  (let ((start (point)))
+    (insert (if expanded "▾ Thinking..." "▸ Thinking..."))
+    (make-text-button start (point)
+                      'face 'shadow
+                      'mouse-face 'highlight
+                      'follow-link t
+                      'help-echo "Toggle Hermes thinking"
+                      'hermes-chat-entry-id (plist-get entry :id)
+                      'action #'hermes-chat--toggle-entry-button))
+  (insert "\n"))
+
+(defun hermes-chat--insert-commentary-content (entry)
+  "Insert collapsed or expanded commentary ENTRY."
+  (let ((expanded (hermes-chat--entry-expanded-p entry)))
+    (hermes-chat--insert-commentary-toggle entry expanded)
+    (when expanded
+      (let ((content (hermes-chat--commentary-display-content
+                      (or (plist-get entry :content) ""))))
+        (unless (string-empty-p content)
+          (let ((start (point)))
+            (insert content "\n")
+            (add-text-properties start (point) '(face shadow))))))))
+
+(defun hermes-chat--insert-user-content (content)
+  "Insert user CONTENT with a compact prompt prefix."
+  (insert (propertize "> " 'face 'font-lock-keyword-face)
+          (propertize content 'face 'hermes-chat-user-input)
+          "\n"))
+
+(defun hermes-chat--insert-entry-content (content)
+  "Insert assistant or system CONTENT as markdown, diffs as View Diff links."
+  (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)
+  (insert "\n"))
+
+(defun hermes-chat--print-entry (entry)
+  "Insert a display representation of chat ENTRY at point."
+  (let ((role (plist-get entry :role))
+        (content (or (plist-get entry :content) "")))
+    (cond
+     ((eq role 'user)
+      (hermes-chat--insert-user-content content))
+     ((eq role 'commentary)
+      (hermes-chat--insert-commentary-content entry))
+     ((eq role 'diff)
+      (unless (string-empty-p content)
+        (hermes-chat--insert-diff-entry content)))
+     ((memq role hermes-chat--transient-entry-roles)
+      (hermes-chat--insert-transient-content entry))
+     ((not (string-empty-p content))
+      (hermes-chat--insert-entry-content content)))))
+
+(defun hermes-chat--input-position ()
+  "Return the numeric input marker position."
+  (and (markerp hermes-chat--input-marker)
+       (marker-position hermes-chat--input-marker)))
+
+(defun hermes-chat--point-in-input-p ()
+  "Return non-nil if point is in the writable input tail."
+  (let ((pos (hermes-chat--input-position)))
+    (and pos (>= (point) pos))))
+
+(defun hermes-chat--protect-transcript ()
+  "Make transcript and prompt read-only while keeping input tail writable.
+Do not record these internal text-property changes in the undo list."
+  (when-let* ((pos (hermes-chat--input-position)))
+    (let ((inhibit-read-only t)
+          (buffer-undo-list t))
+      (remove-text-properties (point-min) (point-max)
+                              '(read-only nil front-sticky nil rear-nonsticky nil))
+      (add-text-properties (point-min) pos
+                           '(read-only t front-sticky t rear-nonsticky t)))))
+
+(defmacro hermes-chat--preserve-input-point (&rest body)
+  "Run BODY preserving point's offset into the writable input tail."
+  (declare (indent 0) (debug t))
+  `(let ((offset (and (hermes-chat--point-in-input-p)
+                      (- (point) (hermes-chat--input-position)))))
+     (prog1 (progn ,@body)
+       (hermes-chat--protect-transcript)
+       (when offset
+         (goto-char (min (point-max)
+                         (+ (hermes-chat--input-position) offset)))))))
+
+(defun hermes-chat--separator ()
+  "Return a full-width rule string separating the transcript from the input."
+  (propertize " " 'display '(space :width text) 'face 'hermes-chat-separator))
+
+(defun hermes-chat--setup-buffer ()
+  "Initialize the current buffer as an empty Hermes chat buffer."
+  (let ((inhibit-read-only t)
+        (buffer-undo-list t))
+    (erase-buffer)
+    (setq-local header-line-format '(:eval (hermes-chat--header-line)))
+    (hermes-chat--reset-header-state)
+    (setq hermes-chat--nodes (make-hash-table :test 'equal)
+          hermes-chat--pending-assistant-id nil
+          hermes-chat--queued-message nil
+          hermes-chat--queued-display nil
+          hermes-chat--pending-prompts (make-hash-table :test #'equal)
+          hermes-chat--auto-prompt-keys (make-hash-table :test #'equal)
+          hermes-chat--draining-queued-message-p nil
+          hermes-chat--transport-generation 0
+          hermes-chat--process nil
+          hermes-chat--dashboard-client nil
+          hermes-chat--dashboard-session-ready-p nil
+          hermes-chat--dashboard-active-session-id nil
+          hermes-chat--dashboard-detached-assistant-id nil
+          hermes-chat--dashboard-stream-assistant-id nil
+          hermes-chat--dashboard-suppress-stream-p nil
+          hermes-chat--ansi-fragments (make-hash-table :test #'equal)
+          hermes-chat--session-id nil
+          hermes-chat--ewoc (ewoc-create #'hermes-chat--print-entry
+                                         nil
+                                         (concat "\n" (hermes-chat--separator) "\n")
+                                         'nosep))
+    (goto-char (point-max))
+    ;; Keep the marker at the beginning of the editable input tail.  With an
+    ;; insertion-type marker, normal typing moves the marker after the inserted
+    ;; text, making the input appear empty to `hermes-chat-input-string'.
+    (setq hermes-chat--input-marker (copy-marker (point) nil))
+    (hermes-chat--protect-transcript)
+    (goto-char hermes-chat--input-marker)))
+
+(defun hermes-chat--register-node (entry node)
+  "Register ENTRY's ID for NODE and return NODE."
+  (when-let* ((id (plist-get entry :id)))
+    (puthash id node hermes-chat--nodes))
+  node)
+
+(defun hermes-chat--pending-assistant-node ()
+  "Return the EWOC node of the pending assistant reply, if any."
+  (and hermes-chat--pending-assistant-id
+       hermes-chat--nodes
+       (gethash hermes-chat--pending-assistant-id hermes-chat--nodes)))
+
+(defun hermes-chat--insert-entry (entry &optional before-node)
+  "Insert ENTRY into the current chat EWOC and return its node.
+With BEFORE-NODE, insert ENTRY before that node instead of at the end, so the
+agent's reply can stay last while tool/status/diff entries land above it."
+  (let ((node (hermes-chat--preserve-input-point
+               (let ((node (let ((inhibit-read-only t)
+				 (buffer-undo-list t))
+                             (if before-node
+                                 (ewoc-enter-before hermes-chat--ewoc
+                                                    before-node entry)
+                               (ewoc-enter-last hermes-chat--ewoc entry)))))
+                 (hermes-chat--register-node entry node)))))
+    (hermes-chat--notify-state-change)
+    node))
+
+(defun hermes-chat--entries ()
+  "Return chat entries from the current buffer in display order."
+  (ewoc-collect hermes-chat--ewoc #'identity))
+
+(defun hermes-chat--update-entry (id function)
+  "Update entry ID by applying FUNCTION to its entry plist."
+  (let ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
+    (unless node
+      (user-error "No Hermes chat entry with id %s" id))
+    (let ((entry (hermes-chat--preserve-input-point
+                  (let ((inhibit-read-only t)
+                        (buffer-undo-list t)
+                        (entry (funcall function (ewoc-data node))))
+                    (ewoc-set-data node entry)
+                    (ewoc-invalidate hermes-chat--ewoc node)
+                    entry))))
+      (hermes-chat--notify-state-change)
+      entry)))
+
+(defun hermes-chat--remove-entry (id)
+  "Remove chat entry ID from the EWOC and node table."
+  (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
+    (hermes-chat--preserve-input-point
+     (let ((inhibit-read-only t)
+           (buffer-undo-list t))
+       (ewoc-delete hermes-chat--ewoc node)))
+    (remhash id hermes-chat--nodes)
+    (hermes-chat--notify-state-change)))
+
+(defun hermes-chat--toggle-entry-expanded (id)
+  "Toggle detail expansion for entry ID."
+  (hermes-chat--update-entry
+   id
+   (lambda (entry)
+     (let ((metadata (copy-sequence (plist-get entry :metadata))))
+       (hermes-chat--entry-with
+        entry :metadata
+        (plist-put metadata :expanded
+                   (not (hermes-chat--entry-expanded-p entry))))))))
+
+(defun hermes-chat--toggle-entry-button (button)
+  "Toggle the collapsible entry attached to BUTTON."
+  (when-let* ((id (button-get button 'hermes-chat-entry-id)))
+    (hermes-chat--toggle-entry-expanded id)))
+
+(defun hermes-chat--assistant-ansi-key (assistant-id)
+  "Return ANSI-fragment key for ASSISTANT-ID stream chunks."
+  (list 'assistant assistant-id))
+
+(defun hermes-chat--append-assistant-content (assistant-id content status)
+  "Append CONTENT to ASSISTANT-ID and set STATUS."
+  (let ((ansi-key (hermes-chat--assistant-ansi-key assistant-id)))
+    (unless (eq status 'streaming)
+      (hermes-chat--clear-ansi-fragment ansi-key))
+    (hermes-chat--update-entry
+     assistant-id
+     (lambda (entry)
+       (let ((text (concat (or (plist-get entry :content) "")
+                           (hermes-chat--sanitize-content
+                            content (and (eq status 'streaming) ansi-key)))))
+         (hermes-chat--entry-with
+          entry
+          :status status
+          :content (hermes-chat--strip-session-id-lines text)))))))
+
+(defun hermes-chat--mark-assistant (assistant-id status &optional content final)
+  "Set ASSISTANT-ID to STATUS, optionally replacing CONTENT.
+When FINAL is non-nil, strip any trailing transport metadata."
+  (hermes-chat--clear-ansi-fragment
+   (hermes-chat--assistant-ansi-key assistant-id))
+  (hermes-chat--update-entry
+   assistant-id
+   (lambda (entry)
+     (let ((text (if content content (or (plist-get entry :content) ""))))
+       (if (or content final)
+           (hermes-chat--entry-with
+            entry
+            :status status
+            :content (hermes-chat--sanitize-assistant-content text final))
+         (hermes-chat--entry-with entry :status status))))))
+
+(defun hermes-chat--normalize-for-dedup (text)
+  "Return TEXT with whitespace collapsed for echo comparison."
+  (string-trim (replace-regexp-in-string "[ \t\n\r]+" " " (or text ""))))
+
+(defun hermes-chat--text-echoes-p (a b)
+  "Return non-nil when normalized A and B duplicate each other."
+  (let ((a (hermes-chat--normalize-for-dedup a))
+        (b (hermes-chat--normalize-for-dedup b)))
+    (and (not (string-empty-p a))
+         (not (string-empty-p b))
+         (or (string= a b)
+             (string-prefix-p a b)
+             (string-prefix-p b a)))))
+
+(defun hermes-chat--entry-content-by-id (id)
+  "Return entry ID's content in the current chat buffer, or nil."
+  (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
+    (plist-get (ignore-errors (ewoc-data node)) :content)))
+
+(defun hermes-chat--thinking-entry-content (assistant-id)
+  "Return ASSISTANT-ID's thinking/commentary content, or nil."
+  (hermes-chat--entry-content-by-id
+   (format "%s:commentary:thinking" assistant-id)))
+
+(defun hermes-chat--thinking-only-final-content-p (assistant-id content)
+  "Return non-nil when CONTENT only repeats ASSISTANT-ID's thinking entry."
+  (let ((content (hermes-chat--normalize-for-dedup
+                  (and content
+                       (hermes-chat--sanitize-assistant-content content t))))
+        (thinking (hermes-chat--normalize-for-dedup
+                   (hermes-chat--thinking-entry-content assistant-id)))
+        (assistant (hermes-chat--normalize-for-dedup
+                    (hermes-chat--entry-content-by-id assistant-id))))
+    (and (not (string-empty-p content))
+         (string= content thinking)
+         (string-empty-p assistant))))
+
+(defun hermes-chat--thinking-echo-delta-p (assistant-id content)
+  "Return non-nil when CONTENT is a transient echo of ASSISTANT-ID thinking."
+  (let ((content (hermes-chat--normalize-for-dedup
+                  (hermes-chat--sanitize-assistant-content content nil)))
+        (thinking (hermes-chat--normalize-for-dedup
+                   (hermes-chat--thinking-entry-content assistant-id)))
+        (assistant (hermes-chat--normalize-for-dedup
+                    (hermes-chat--entry-content-by-id assistant-id))))
+    (and (string-empty-p assistant)
+         (not (string-empty-p content))
+         (string= content thinking))))
+
+(defun hermes-chat--assistant-done-content (assistant-id content)
+  "Return ASSISTANT-ID final CONTENT, suppressing thinking-only echo."
+  (unless (hermes-chat--thinking-only-final-content-p assistant-id content)
+    content))
+
+(defun hermes-chat--drop-duplicate-thinking (assistant-id)
+  "Remove ASSISTANT-ID's reasoning entry when it only repeats the reply.
+Some providers emit `reasoning.available' equal to the final message; that is
+noise, not a thinking process.  Reasoning that genuinely differs is kept."
+  (when-let* ((tid (format "%s:commentary:thinking" assistant-id))
+              (tnode (and hermes-chat--nodes (gethash tid hermes-chat--nodes)))
+              (anode (gethash assistant-id hermes-chat--nodes)))
+    (when (hermes-chat--text-echoes-p
+           (plist-get (ignore-errors (ewoc-data tnode)) :content)
+           (plist-get (ignore-errors (ewoc-data anode)) :content))
+      (hermes-chat--remove-entry tid))))
+
+(defun hermes-chat--updated-transport-content (entry event content)
+  "Return updated display CONTENT for ENTRY from transport EVENT."
+  (let ((clean-content (hermes-chat--sanitize-content content)))
+    (if (and entry (hermes-chat--commentary-delta-p event))
+        (concat (or (plist-get entry :content) "") clean-content)
+      clean-content)))
+
+(defun hermes-chat--upsert-transport-entry (assistant-id event)
+  "Insert or update a compact transport EVENT for ASSISTANT-ID."
+  (let* ((role (hermes-chat--transport-entry-role event))
+         (event-id (hermes-chat--transport-entry-id event))
+         (id (and event-id (format "%s:%s" assistant-id event-id)))
+         (status (hermes-chat--transport-entry-status event))
+         (content (or (hermes-chat--transport-entry-content event) ""))
+         (metadata (hermes-chat--transport-entry-metadata assistant-id event)))
+    (when (and role (not (string-empty-p content)))
+      (if (and id (gethash id hermes-chat--nodes))
+          (hermes-chat--update-entry
+           id
+           (lambda (entry)
+             (let ((metadata (hermes-chat--metadata-preserve-expanded
+                              entry metadata)))
+               (hermes-chat--entry-with
+                entry
+                :role role
+                :status status
+                :content (hermes-chat--updated-transport-content
+                          entry event content)
+                :metadata metadata
+                :updated (current-time)))))
+        (hermes-chat--insert-entry
+         (hermes-chat--make-entry role content status id metadata)
+         (hermes-chat--pending-assistant-node))))))
+
+(defun hermes-chat--transient-entry-p (entry)
+  "Return non-nil if ENTRY is a compact transport activity entry."
+  (memq (plist-get entry :role)
+        (cons 'commentary hermes-chat--transient-entry-roles)))
+
+(defun hermes-chat--entry-assistant-id (entry)
+  "Return ENTRY's owning assistant id from metadata, if any."
+  (plist-get (plist-get entry :metadata) :assistant-id))
+
+(defun hermes-chat--settle-transport-entries (assistant-id status)
+  "Set active transport entries for ASSISTANT-ID to STATUS."
+  (hermes-chat--preserve-input-point
+   (let ((inhibit-read-only t)
+         (buffer-undo-list t))
+     (maphash
+      (lambda (_id node)
+        (when-let* ((entry (ignore-errors (ewoc-data node))))
+          (when (and (hermes-chat--transient-entry-p entry)
+                     (equal (hermes-chat--entry-assistant-id entry)
+                            assistant-id)
+                     (hermes-chat--active-status-p
+                      (plist-get entry :status)))
+            (ewoc-set-data node (hermes-chat--entry-with entry :status status))
+            (ewoc-invalidate hermes-chat--ewoc node))))
+      hermes-chat--nodes))))
+
+
+(provide 'hermes-chat-buffer)
+;;; hermes-chat-buffer.el ends here
