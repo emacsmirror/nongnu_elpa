@@ -34,11 +34,15 @@
 
 (require 'tabulated-list)
 (require 'json)
+(require 'outline)
 (require 'subr-x)
 (require 'url-util)
 (require 'keymap-popup)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+
+(declare-function markdown-mode "markdown-mode")
+(declare-function hermes-kanban-task-mode "hermes-kanban")
 
 ;;; HTTP + auth against the dashboard kanban plugin
 
@@ -161,6 +165,207 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
       (format-time-string "%Y-%m-%d %H:%M" value)
     ""))
 
+;;; Shared status display helpers
+
+(defconst hermes-kanban--current-board-marker "📍"
+  "Marker used for the current Hermes Kanban board.")
+
+(defconst hermes-kanban--status-display
+  '(("todo" :icon "📝" :label "todo" :face nil)
+    ("ready" :icon "✅" :label "ready" :face nil)
+    ("running" :icon "⚙️" :label "running" :face nil)
+    ("blocked" :icon "⛔" :label "blocked" :face nil)
+    ("done" :icon "🏁" :label "done" :face nil)
+    ("archived" :icon "🗄️" :label "archived" :face nil))
+  "User-facing display metadata for Kanban task statuses.
+Each entry maps a status string to :icon, :label, and optional :face.")
+
+(defconst hermes-kanban--board-count-statuses
+  '("todo" "ready" "running" "blocked" "done" "archived")
+  "Statuses displayed as count columns in the boards overview.")
+
+(defconst hermes-kanban--task-title-column-max-width 64
+  "Maximum width used for task titles in `hermes-kanban-mode'.")
+
+(defun hermes-kanban--status-info (status)
+  "Return display metadata for STATUS, or nil when STATUS is unknown."
+  (alist-get (hermes-transport--scalar-string status)
+             hermes-kanban--status-display nil nil #'equal))
+
+(defun hermes-kanban--status-icon (status)
+  "Return the shared icon for STATUS, or an empty string."
+  (or (plist-get (hermes-kanban--status-info status) :icon) ""))
+
+(defun hermes-kanban--status-label (status)
+  "Return the shared label for STATUS, falling back to STATUS itself."
+  (let ((raw (or (hermes-transport--scalar-string status) "")))
+    (or (plist-get (hermes-kanban--status-info raw) :label) raw)))
+
+(defun hermes-kanban--format-status (status)
+  "Return STATUS as a user-facing icon plus label.
+The returned string carries the raw status as the `hermes-kanban-status'
+text property, so commands can keep using backend status values."
+  (let* ((raw (or (hermes-transport--scalar-string status) ""))
+         (info (hermes-kanban--status-info raw))
+         (icon (plist-get info :icon))
+         (label (or (plist-get info :label) raw))
+         (face (plist-get info :face))
+         (text (copy-sequence
+                (if (and icon (not (string-empty-p icon)))
+                    (format "%s %s" icon label)
+                  label))))
+    (when (and face (not (string-empty-p text)))
+      (setq text (propertize text 'face face)))
+    (when (not (string-empty-p text))
+      (add-text-properties 0 (length text) `(hermes-kanban-status ,raw) text))
+    text))
+
+(defun hermes-kanban--format-status-indicator (status)
+  "Return STATUS as a compact task-table indicator.
+Known statuses use only their icon.  Unknown statuses fall back to their
+raw label.  The returned string carries the raw status as the
+`hermes-kanban-status' text property, so commands can keep using backend
+status values."
+  (let* ((raw (or (hermes-transport--scalar-string status) ""))
+         (info (hermes-kanban--status-info raw))
+         (icon (plist-get info :icon))
+         (face (plist-get info :face))
+         (text (copy-sequence
+                (or (hermes-kanban--non-empty icon) raw))))
+    (when (and face (not (string-empty-p text)))
+      (setq text (propertize text 'face face)))
+    (when (not (string-empty-p text))
+      (add-text-properties 0 (length text) `(hermes-kanban-status ,raw) text))
+    text))
+
+(defun hermes-kanban--format-status-count (counts status)
+  "Return COUNTS' tally for STATUS."
+  (hermes-kanban--count counts status))
+
+(defun hermes-kanban--status-column-heading (status)
+  "Return the boards-overview heading for STATUS."
+  (or (hermes-kanban--non-empty (hermes-kanban--status-icon status))
+      (capitalize (hermes-kanban--status-label status))))
+
+(defun hermes-kanban--status-count-column (status)
+  "Return one `tabulated-list-format' count column for STATUS."
+  (let ((heading (hermes-kanban--status-column-heading status)))
+    (list heading 5 t)))
+
+(defun hermes-kanban--display-status-value (display)
+  "Return the backend status represented by DISPLAY."
+  (let* ((plain (substring-no-properties display))
+         (parts (split-string plain " " t)))
+    (if parts (car (last parts)) plain)))
+
+(defun hermes-kanban--entry-status (entry)
+  "Return ENTRY's raw task status from its display cell."
+  (let ((status (and (vectorp entry)
+                     (> (length entry) 0)
+                     (aref entry 0))))
+    (or (and (stringp status)
+             (> (length status) 0)
+             (get-text-property 0 'hermes-kanban-status status))
+        (and (stringp status) (hermes-kanban--display-status-value status))
+        "")))
+
+(defun hermes-kanban--visible-window-width ()
+  "Return the current buffer's visible text width, or nil if not visible."
+  (and-let* ((window (get-buffer-window (current-buffer) t)))
+    (window-body-width window)))
+
+(defun hermes-kanban--display-width (&optional width)
+  "Return WIDTH or the visible text width, clamped to a positive value."
+  (max 1 (or width
+             (hermes-kanban--visible-window-width)
+             (window-body-width))))
+
+(defun hermes-kanban--sum (numbers)
+  "Return the sum of NUMBERS."
+  (let ((sum 0))
+    (dolist (number numbers sum)
+      (setq sum (+ sum number)))))
+
+(defun hermes-kanban--shrink-widths (widths target)
+  "Return WIDTHS reduced to fit TARGET while keeping columns positive."
+  (let ((widths (copy-sequence widths)))
+    (while (> (hermes-kanban--sum widths) target)
+      (let ((max-width 1)
+            max-cell)
+        (dotimes (i (length widths))
+          (let ((width (nth i widths)))
+            (when (> width max-width)
+              (setq max-width width
+                    max-cell i))))
+        (if max-cell
+            (setcar (nthcdr max-cell widths) (1- max-width))
+          (setq target (hermes-kanban--sum widths)))))
+    widths))
+
+(defun hermes-kanban--allocate-column-widths (width specs)
+  "Return column widths fitting WIDTH for SPECS.
+Each item in SPECS is (MINIMUM WEIGHT).  The returned widths account for
+one character of `tabulated-list' padding between columns and fit WIDTH
+when WIDTH can hold one character per column plus padding."
+  (let* ((column-count (length specs))
+         (separator-width (max 0 (1- column-count)))
+         (available (max column-count
+                         (- (hermes-kanban--display-width width)
+                            separator-width)))
+         (minimums (mapcar #'car specs))
+         (minimum-total (hermes-kanban--sum minimums)))
+    (if (> minimum-total available)
+        (hermes-kanban--shrink-widths minimums available)
+      (let* ((weights (mapcar #'cadr specs))
+             (weight-total (hermes-kanban--sum weights))
+             (remaining (- available minimum-total))
+             (widths (copy-sequence minimums))
+             (assigned 0))
+        (when (> weight-total 0)
+          (dotimes (i column-count)
+            (let ((share (/ (* remaining (nth i weights)) weight-total)))
+              (setq assigned (+ assigned share))
+              (setcar (nthcdr i widths) (+ (nth i widths) share))))
+          (let ((left (- remaining assigned))
+                (i 0))
+            (while (> left 0)
+              (when (> (nth i weights) 0)
+                (setcar (nthcdr i widths) (1+ (nth i widths)))
+                (setq left (1- left)))
+              (setq i (% (1+ i) column-count)))))
+        widths))))
+
+(defun hermes-kanban--boards-tabulated-list-format (&optional width)
+  "Return the dynamic boards `tabulated-list-format' for WIDTH."
+  (let* ((widths (hermes-kanban--allocate-column-widths
+                  width
+                  (append '((2 0) (12 7) (4 1))
+                          (mapcar (lambda (_) '(4 1))
+                                  hermes-kanban--board-count-statuses))))
+         (fixed-columns (vector (list "" (nth 0 widths) t)
+                                (list "📋" (nth 1 widths) t)
+                                (list "Σ" (nth 2 widths) t))))
+    (vconcat fixed-columns
+             (let ((statuses hermes-kanban--board-count-statuses)
+                   (status-widths (nthcdr 3 widths))
+                   columns)
+               (while statuses
+                 (let ((column (hermes-kanban--status-count-column (car statuses))))
+                   (setcar (cdr column) (car status-widths))
+                   (push column columns))
+                 (setq statuses (cdr statuses)
+                       status-widths (cdr status-widths)))
+               (nreverse columns)))))
+
+(defun hermes-kanban--tasks-tabulated-list-format (&optional width)
+  "Return the dynamic task `tabulated-list-format' for WIDTH."
+  (let* ((widths (hermes-kanban--allocate-column-widths
+                  width '((6 0) (4 0) (10 2) (20 6))))
+         (title-width (min (nth 3 widths)
+                           hermes-kanban--task-title-column-max-width)))
+    `[("Status" ,(nth 0 widths) t) ("Pri" ,(nth 1 widths) t)
+      ("Assignee" ,(nth 2 widths) t) ("Title" ,title-width t)]))
+
 ;;; Boards overview buffer
 
 (defun hermes-kanban--board-rows (boards)
@@ -171,15 +376,17 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
            (counts (hermes-transport--get board 'counts))
            (total (hermes-transport--get board 'total)))
        (list (cons slug (hermes-kanban--non-empty (hermes-kanban--field board 'name)))
-             (vector (if (eq (hermes-transport--get board 'is_current) t) "●" "")
-                     (or (hermes-kanban--non-empty (hermes-kanban--field board 'name)) slug)
-                     (if (numberp total) (number-to-string total) "0")
-                     (hermes-kanban--count counts "todo")
-                     (hermes-kanban--count counts "ready")
-                     (hermes-kanban--count counts "running")
-                     (hermes-kanban--count counts "review")
-                     (hermes-kanban--count counts "blocked")
-                     (hermes-kanban--count counts "done")))))
+             (vconcat
+              (vector (if (eq (hermes-transport--get board 'is_current) t)
+                          hermes-kanban--current-board-marker
+                        "")
+                      (or (hermes-kanban--non-empty
+                           (hermes-kanban--field board 'name))
+                          slug)
+                      (if (numberp total) (number-to-string total) "0"))
+              (mapcar (lambda (status)
+                        (hermes-kanban--format-status-count counts status))
+                      hermes-kanban--board-count-statuses)))))
    boards))
 
 (defvar hermes-kanban-boards-mode-map)
@@ -192,18 +399,36 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
   "RET" ("Open board" hermes-kanban-open-board)
   :group "Board"
   "+" ("New board" hermes-kanban-create-board)
+  "s" ("Switch current board" hermes-kanban-switch-board)
+  "r" ("Rename board" hermes-kanban-rename-board)
+  "D" ("Archive board" hermes-kanban-archive-board)
   :group "View"
   "g" ("Refresh" revert-buffer)
   "?" ("Help" hermes-kanban-boards-mode-map-popup))
 
+(defun hermes-kanban--init-boards-header (&optional width)
+  "Refresh the boards buffer `tabulated-list' header for WIDTH."
+  (setq tabulated-list-format (hermes-kanban--boards-tabulated-list-format width))
+  (tabulated-list-init-header))
+
+(defun hermes-kanban--window-size-change (window)
+  "Refresh Kanban tabulated-list columns for resized WINDOW."
+  (when (derived-mode-p 'hermes-kanban-boards-mode 'hermes-kanban-mode)
+    (let ((old-format tabulated-list-format)
+          (width (window-body-width window)))
+      (if (derived-mode-p 'hermes-kanban-boards-mode)
+          (hermes-kanban--init-boards-header width)
+        (hermes-kanban--init-board-header width))
+      (unless (equal old-format tabulated-list-format)
+        (tabulated-list-print t)))))
+
 (define-derived-mode hermes-kanban-boards-mode tabulated-list-mode "Hermes Boards"
   "Major mode for the Hermes Kanban boards overview."
   :interactive nil
-  (setq tabulated-list-format
-        [("Cur" 3 t) ("Board" 22 t) ("Total" 6 t) ("Todo" 6 t) ("Ready" 6 t)
-         ("Run" 5 t) ("Review" 7 t) ("Block" 6 t) ("Done" 6 t)])
   (setq-local revert-buffer-function #'hermes-kanban--boards-revert)
-  (tabulated-list-init-header))
+  (add-hook 'window-size-change-functions
+            #'hermes-kanban--window-size-change nil t)
+  (hermes-kanban--init-boards-header))
 
 (defun hermes-kanban--render-boards ()
   "Fetch and render the dashboard boards overview."
@@ -212,18 +437,31 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
       (unless (derived-mode-p 'hermes-kanban-boards-mode)
         (hermes-kanban-boards-mode))
       (setq tabulated-list-entries (hermes-kanban--board-rows boards))
-      (tabulated-list-print t)
-      (pop-to-buffer (current-buffer)))))
+      (pop-to-buffer (current-buffer))
+      (hermes-kanban--init-boards-header (hermes-kanban--visible-window-width))
+      (tabulated-list-print t))))
 
 (defun hermes-kanban--boards-revert (&rest _)
   "Refresh the boards overview."
   (hermes-kanban--render-boards))
 
+(defun hermes-kanban--board-at-point ()
+  "Return the selected board as (SLUG . NAME), or signal a `user-error'."
+  (or (tabulated-list-get-id) (user-error "No board on this line")))
+
+(defun hermes-kanban--board-path (slug &rest segments)
+  "Return the kanban boards path for SLUG extended by SEGMENTS."
+  (concat "/boards/" (url-hexify-string slug) (apply #'concat segments)))
+
+(defun hermes-kanban--current-board-row-p ()
+  "Return non-nil when the selected board row is marked current."
+  (and-let* ((entry (tabulated-list-get-entry)))
+    (equal (aref entry 0) hermes-kanban--current-board-marker)))
+
 (defun hermes-kanban-open-board ()
   "Open the board at point in the detail buffer."
   (interactive)
-  (let ((id (tabulated-list-get-id)))
-    (unless id (user-error "No board on this line"))
+  (let ((id (hermes-kanban--board-at-point)))
     (hermes-kanban--render-board (car id) (cdr id))))
 
 (defun hermes-kanban-create-board ()
@@ -238,6 +476,51 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
                           (name . ,(if (string-empty-p name) slug name))
                           (switch . :false)))
     (hermes-kanban--render-boards)))
+
+(defun hermes-kanban-switch-board ()
+  "Make the selected board the current Hermes Kanban board."
+  (interactive)
+  (let* ((board (hermes-kanban--board-at-point))
+         (slug (car board)))
+    (hermes-kanban--api "POST" (hermes-kanban--board-path slug "/switch"))
+    (hermes-kanban--render-boards)
+    (message "Current Hermes Kanban board: %s" slug)))
+
+(defun hermes-kanban-rename-board (name)
+  "Rename the selected board's display NAME."
+  (interactive
+   (let* ((board (hermes-kanban--board-at-point))
+          (current-name (or (cdr board) (car board))))
+     (list (read-string "New board display name: " current-name))))
+  (let* ((board (hermes-kanban--board-at-point))
+         (slug (car board))
+         (trimmed (string-trim name)))
+    (when (string-empty-p trimmed)
+      (user-error "Board name cannot be empty"))
+    (hermes-kanban--api "PATCH" (hermes-kanban--board-path slug)
+                        `((name . ,trimmed)))
+    (hermes-kanban--render-boards)
+    (message "Renamed board %s to %s" slug trimmed)))
+
+(defun hermes-kanban-archive-board ()
+  "Archive the selected board after confirmation.
+This uses the dashboard's recoverable archive endpoint and never hard-deletes."
+  (interactive)
+  (let* ((board (hermes-kanban--board-at-point))
+         (slug (car board))
+         (name (or (cdr board) slug))
+         (current-p (hermes-kanban--current-board-row-p)))
+    (when (and current-p
+               (not (yes-or-no-p
+                     (format "Archive current board %s and fall back to default?"
+                             slug))))
+      (user-error "Archive cancelled"))
+    (when (yes-or-no-p
+           (format "Archive board %s (%s) recoverably, without hard delete?"
+                   slug name))
+      (hermes-kanban--api "DELETE" (hermes-kanban--board-path slug))
+      (hermes-kanban--render-boards)
+      (message "Archived board %s" slug))))
 
 ;;; Board detail buffer
 
@@ -256,7 +539,8 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
     (dolist (column columns (nreverse rows))
       (dolist (task (hermes-transport--get column 'tasks))
         (push (list (hermes-kanban--field task 'id)
-                    (vector (hermes-kanban--field task 'status)
+                    (vector (hermes-kanban--format-status-indicator
+                             (hermes-kanban--field task 'status))
                             (hermes-kanban--field task 'priority)
                             (or (hermes-kanban--non-empty
                                  (hermes-kanban--field task 'assignee))
@@ -286,13 +570,18 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
   "l" ("View selected task log" hermes-kanban-show-log)
   "?" ("Help" hermes-kanban-mode-map-popup))
 
+(defun hermes-kanban--init-board-header (&optional width)
+  "Refresh the board detail `tabulated-list' header for WIDTH."
+  (setq tabulated-list-format (hermes-kanban--tasks-tabulated-list-format width))
+  (tabulated-list-init-header))
+
 (define-derived-mode hermes-kanban-mode tabulated-list-mode "Hermes Kanban"
   "Major mode for browsing a single Hermes Kanban board."
   :interactive nil
-  (setq tabulated-list-format
-        [("Status" 10 t) ("Pri" 4 t) ("Assignee" 16 t) ("Title" 60 t)])
   (setq-local revert-buffer-function #'hermes-kanban--revert)
-  (tabulated-list-init-header))
+  (add-hook 'window-size-change-functions
+            #'hermes-kanban--window-size-change nil t)
+  (hermes-kanban--init-board-header))
 
 (defun hermes-kanban--render-board (slug name)
   "Fetch and render board SLUG (display NAME) in the detail buffer."
@@ -310,8 +599,9 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
             tabulated-list-sort-key nil
             tabulated-list-entries (hermes-kanban--task-rows
                                     (hermes-transport--get payload 'columns)))
-      (tabulated-list-print t)
-      (pop-to-buffer (current-buffer)))))
+      (pop-to-buffer (current-buffer))
+      (hermes-kanban--init-board-header (hermes-kanban--visible-window-width))
+      (tabulated-list-print t))))
 
 (defun hermes-kanban--revert (&rest _)
   "Refresh the current board detail buffer in place."
@@ -361,6 +651,24 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
          (json-serialize object)
        (error (pp-to-string object))))))
 
+(defun hermes-kanban--fontify-markdown-string (text)
+  "Return TEXT fontified with `markdown-mode', or TEXT on failure."
+  (condition-case nil
+      (if (not (require 'markdown-mode nil t))
+          text
+        (with-temp-buffer
+          (insert text)
+          (delay-mode-hooks (markdown-mode))
+          (font-lock-mode 1)
+          (font-lock-ensure (point-min) (point-max))
+          (remove-text-properties (point-min) (point-max) '(invisible nil))
+          (buffer-string)))
+    (error text)))
+
+(defun hermes-kanban--outline-level ()
+  "Return the Markdown heading level for `outline-minor-mode'."
+  (length (match-string 1)))
+
 (defun hermes-kanban--format-size (bytes)
   "Return BYTES as a small human-readable size string."
   (cond
@@ -370,38 +678,39 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
    (t (format "%.1f MiB" (/ bytes 1048576.0)))))
 
 (defun hermes-kanban--format-section (title items empty-name formatter)
-  "Return a drawer section TITLE for ITEMS using FORMATTER.
+  "Return a Markdown section TITLE for ITEMS using FORMATTER.
 EMPTY-NAME is inserted in the explicit empty-state line."
   (let ((rows (hermes-kanban--items items)))
-    (concat "\n" title " (" (number-to-string (length rows)) "):\n"
+    (concat "\n## " title " (" (number-to-string (length rows)) ")\n\n"
             (if rows
-                (string-join (mapcar formatter rows) "\n")
-              (format "  — no %s —" empty-name))
+                (string-join (mapcar formatter rows) "\n\n")
+              (format "— no %s —" empty-name))
             "\n")))
 
 (defun hermes-kanban--format-task (task)
   "Return TASK's header and body as a display string."
   (let ((latest-summary (hermes-kanban--non-empty
-                         (hermes-kanban--field task 'latest_summary))))
+                         (hermes-kanban--field task 'latest_summary)))
+        (body (hermes-kanban--non-empty (hermes-kanban--field task 'body))))
     (concat
-     (format "Title:    %s\nID:       %s\nStatus:   %s   Priority: %s   Assignee: %s\nCreated:  %s\n"
+     (format "# %s\n\n- ID: `%s`\n- Status: `%s`\n- Priority: `%s`\n- Assignee: `%s`\n- Created: %s\n"
              (hermes-kanban--field task 'title)
              (hermes-kanban--field task 'id)
-             (hermes-kanban--field task 'status)
+             (hermes-kanban--format-status (hermes-kanban--field task 'status))
              (hermes-kanban--field task 'priority)
              (or (hermes-kanban--non-empty (hermes-kanban--field task 'assignee)) "-")
              (hermes-kanban--format-time (hermes-transport--get task 'created_at)))
      (when-let* ((workspace (hermes-kanban--non-empty
                              (hermes-kanban--field task 'workspace_kind))))
-       (format "Workspace: %s%s\n" workspace
+       (format "- Workspace: %s%s\n" workspace
                (if-let* ((path (hermes-kanban--non-empty
                                 (hermes-kanban--field task 'workspace_path))))
                    (concat ": " path)
                  "")))
      (when latest-summary
-       (format "Summary:  %s\n" latest-summary))
-     "\n"
-     (hermes-kanban--field task 'body)
+       (format "- Summary: %s\n" latest-summary))
+     "\n## Description\n\n"
+     (or body "— no description —")
      "\n")))
 
 (defun hermes-kanban--format-comments (comments)
@@ -432,25 +741,25 @@ EMPTY-NAME is inserted in the explicit empty-state line."
             "\n")))
 
 (defun hermes-kanban--format-comment-row (comment)
-  "Return COMMENT as one drawer row."
-  (format "  [%s] %s: %s"
+  "Return COMMENT as one Markdown row."
+  (format "### %s — %s\n\n%s"
           (hermes-kanban--format-time (hermes-transport--get comment 'created_at))
           (or (hermes-kanban--non-empty (hermes-kanban--field comment 'author))
               "anon")
           (hermes-kanban--field comment 'body)))
 
 (defun hermes-kanban--format-event-row (event)
-  "Return EVENT as one drawer row."
+  "Return EVENT as one Markdown row."
   (let ((payload (hermes-transport--get event 'payload)))
     (concat
-     (format "  [%s] %s"
+     (format "### %s — %s"
              (hermes-kanban--format-time (hermes-transport--get event 'created_at))
              (hermes-kanban--field event 'kind))
      (when payload
-       (format "\n    Payload: %s" (hermes-kanban--object-string payload))))))
+       (format "\n\n- Payload: %s" (hermes-kanban--object-string payload))))))
 
 (defun hermes-kanban--format-attachment (attachment)
-  "Return ATTACHMENT as one drawer row."
+  "Return ATTACHMENT as one Markdown row."
   (let ((size (hermes-kanban--format-size
                (hermes-transport--get attachment 'size)))
         (content-type (hermes-kanban--non-empty
@@ -460,13 +769,13 @@ EMPTY-NAME is inserted in the explicit empty-state line."
         (path (hermes-kanban--non-empty
                (hermes-kanban--field attachment 'stored_path))))
     (concat
-     (format "  #%s %s%s"
-             (hermes-kanban--field attachment 'id)
+     (format "### %s (#%s)%s"
              (hermes-kanban--field attachment 'filename)
+             (hermes-kanban--field attachment 'id)
              (if (string-empty-p size) "" (format " (%s)" size)))
-     (when content-type (format "\n    Type: %s" content-type))
-     (when uploaded-by (format "\n    Uploaded by: %s" uploaded-by))
-     (when path (format "\n    Path: %s" path)))))
+     (when content-type (format "\n\n- Type: %s" content-type))
+     (when uploaded-by (format "\n- Uploaded by: %s" uploaded-by))
+     (when path (format "\n- Path: %s" path)))))
 
 (defun hermes-kanban--format-diagnostic-action (action)
   "Return ACTION as a short diagnostic action label."
@@ -477,33 +786,33 @@ EMPTY-NAME is inserted in the explicit empty-state line."
       label)))
 
 (defun hermes-kanban--format-diagnostic (diagnostic)
-  "Return DIAGNOSTIC as one drawer row."
+  "Return DIAGNOSTIC as one Markdown row."
   (let ((actions (hermes-kanban--items
                   (hermes-transport--get diagnostic 'actions)))
         (data (hermes-transport--get diagnostic 'data)))
     (concat
-     (format "  [%s] %s: %s"
+     (format "### [%s] %s: %s"
              (hermes-kanban--field diagnostic 'severity)
              (hermes-kanban--field diagnostic 'kind)
              (hermes-kanban--field diagnostic 'title))
      (when-let* ((detail (hermes-kanban--non-empty
                           (hermes-kanban--field diagnostic 'detail))))
-       (format "\n    %s" detail))
+       (format "\n\n%s" detail))
      (when (or (hermes-transport--get diagnostic 'run_id)
                (hermes-transport--get diagnostic 'count))
-       (format "\n    Run: %s   Count: %s"
+       (format "\n\n- Run: %s\n- Count: %s"
                (or (hermes-kanban--field diagnostic 'run_id) "-")
                (or (hermes-kanban--field diagnostic 'count) "-")))
      (when data
-       (format "\n    Data: %s" (hermes-kanban--object-string data)))
+       (format "\n- Data: %s" (hermes-kanban--object-string data)))
      (when actions
-       (format "\n    Actions: %s"
+       (format "\n- Actions: %s"
                (string-join (mapcar #'hermes-kanban--format-diagnostic-action
                                     actions)
                             ", "))))))
 
 (defun hermes-kanban--format-run (run)
-  "Return RUN as one drawer row."
+  "Return RUN as one Markdown row."
   (let* ((outcome (hermes-kanban--non-empty
                    (hermes-kanban--field run 'outcome)))
          (status (hermes-kanban--non-empty
@@ -516,25 +825,25 @@ EMPTY-NAME is inserted in the explicit empty-state line."
          (ended (hermes-transport--get run 'ended_at))
          (metadata (hermes-transport--get run 'metadata)))
     (concat
-     (format "  #%s %s @%s"
+     (format "### Run #%s — %s @%s"
              (hermes-kanban--field run 'id) state profile)
      (when (and (numberp started) (numberp ended))
        (format " (%ss)" (max 0 (- ended started))))
      (when (numberp started)
-       (format "\n    Started: %s" (hermes-kanban--format-time started)))
+       (format "\n\n- Started: %s" (hermes-kanban--format-time started)))
      (when (numberp ended)
-       (format "   Ended: %s" (hermes-kanban--format-time ended)))
+       (format "\n- Ended: %s" (hermes-kanban--format-time ended)))
      (when-let* ((pid (hermes-kanban--non-empty
                        (hermes-kanban--field run 'worker_pid))))
-       (format "\n    PID: %s" pid))
+       (format "\n- PID: %s" pid))
      (when-let* ((summary (hermes-kanban--non-empty
                            (hermes-kanban--field run 'summary))))
-       (format "\n    Summary: %s" summary))
+       (format "\n- Summary: %s" summary))
      (when-let* ((error (hermes-kanban--non-empty
                          (hermes-kanban--field run 'error))))
-       (format "\n    Error: %s" error))
+       (format "\n- Error: %s" error))
      (when metadata
-       (format "\n    Metadata: %s" (hermes-kanban--object-string metadata))))))
+       (format "\n- Metadata: %s" (hermes-kanban--object-string metadata))))))
 
 (defun hermes-kanban--format-task-detail (payload)
   "Return rich task detail text for PAYLOAD from GET /tasks/:id."
@@ -570,10 +879,23 @@ EMPTY-NAME is inserted in the explicit empty-state line."
   "l" ("View worker log" hermes-kanban-show-log)
   "?" ("Help" hermes-kanban-task-mode-map-popup))
 
-(define-derived-mode hermes-kanban-task-mode special-mode "Hermes Task"
-  "Major mode for a Hermes Kanban task detail drawer."
-  :interactive nil
-  (setq-local revert-buffer-function #'hermes-kanban--task-revert))
+(defun hermes-kanban--task-mode-setup ()
+  "Set up buffer-local state for `hermes-kanban-task-mode'."
+  (setq-local revert-buffer-function #'hermes-kanban--task-revert)
+  (setq-local outline-regexp "^\\(#+\\) ")
+  (setq-local outline-level #'hermes-kanban--outline-level)
+  (outline-minor-mode 1)
+  (read-only-mode 1))
+
+(if (require 'markdown-mode nil t)
+    (define-derived-mode hermes-kanban-task-mode markdown-mode "Hermes Task"
+      "Major mode for a Hermes Kanban task detail buffer."
+      :interactive nil
+      (hermes-kanban--task-mode-setup))
+  (define-derived-mode hermes-kanban-task-mode special-mode "Hermes Task"
+    "Major mode for a Hermes Kanban task detail buffer."
+    :interactive nil
+    (hermes-kanban--task-mode-setup)))
 
 (defun hermes-kanban--query-for-board (slug)
   "Return a board query alist for SLUG, or nil."
@@ -602,7 +924,9 @@ BOARD-SLUG is remembered for refreshes and log requests."
             mode-line-process (format " [%s]" (or task-id "task")))
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (insert (hermes-kanban--format-task-detail payload)))
+        (insert (hermes-kanban--fontify-markdown-string
+                 (hermes-kanban--format-task-detail payload)))
+        (read-only-mode 1))
       (goto-char (point-min))
       (pop-to-buffer (current-buffer)))))
 
@@ -702,7 +1026,8 @@ BOARD-SLUG is remembered for refreshes and log requests."
 Running tasks are reassigned with a reclaim; others are assigned directly."
   (interactive)
   (let* ((id (hermes-kanban--id-at-point))
-         (status (aref (tabulated-list-get-entry) 0))
+         (entry (tabulated-list-get-entry))
+         (status (hermes-kanban--entry-status entry))
          (who (completing-read "Assignee (empty to unassign): "
                                hermes-kanban--assignees nil nil)))
     (if (equal status "running")
