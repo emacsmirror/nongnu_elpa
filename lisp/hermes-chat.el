@@ -56,6 +56,16 @@ which keeps tests and user custom transports working."
   :type 'string
   :group 'hermes)
 
+(defcustom hermes-chat-auto-prompt-requests t
+  "Whether visible chat buffers should prompt for backend input requests.
+When non-nil, dashboard prompt events such as approvals, clarifications, sudo
+passwords, and secrets automatically open the usual minibuffer prompt when the
+chat buffer is visible in an interactive Emacs.  Invisible buffers and batch
+sessions still record the prompt and show a message; respond later with
+`hermes-chat-respond-to-prompt'."
+  :type 'boolean
+  :group 'hermes)
+
 (defface hermes-chat-user-input
   '((t :inherit highlight))
   "Face for submitted user turns in the chat transcript."
@@ -140,6 +150,12 @@ dashboard; nil falls back to the buffer name.")
 
 (defvar-local hermes-chat--pending-prompts nil
   "Hash table of pending dashboard prompt requests by prompt key.")
+
+(defvar-local hermes-chat--auto-prompt-keys nil
+  "Hash table of pending prompt keys already scheduled for minibuffer display.")
+
+(defvar hermes-chat--auto-prompting-p nil
+  "Non-nil while an automatic minibuffer prompt is reading a response.")
 
 (defvar-local hermes-chat--draining-queued-message-p nil
   "Non-nil while the queued message is being submitted.")
@@ -587,7 +603,7 @@ METADATA is stored as the entry's `:metadata' plist."
     ((or "pending" "waiting" "queued" "streaming" "started" "starting"
          "loading" "connecting" "reconnecting" "running" "busy"
          "progress" "in-progress" "preparing" "requested"
-         "approval-requested") "…")
+         "approval-requested") "✓")
     (_ "·")))
 
 (defun hermes-chat--header-status-label (status)
@@ -608,8 +624,8 @@ METADATA is stored as the entry's `:metadata' plist."
     ((or "started" "running" "busy" "progress" "in-progress" "preparing") "Running")
     (_ "Idle")))
 
-(defun hermes-chat--header-status-face (status)
-  "Return face for STATUS in the chat header."
+(defun hermes-chat--status-face (status)
+  "Return face for transport STATUS."
   (pcase (hermes-chat--status-name status)
     ((or "done" "completed" "complete" "success" "succeeded" "ready") 'success)
     ((or "error" "failed" "failure" "cancelled" "canceled" "interrupted") 'error)
@@ -617,8 +633,12 @@ METADATA is stored as the entry's `:metadata' plist."
     ((or "pending" "waiting" "queued" "streaming" "started" "starting"
          "loading" "connecting" "reconnecting" "running" "busy"
          "progress" "in-progress" "preparing" "requested"
-         "approval-requested") 'font-lock-keyword-face)
+         "approval-requested") 'shadow)
     (_ 'shadow)))
+
+(defun hermes-chat--header-status-face (status)
+  "Return face for STATUS in the chat header."
+  (hermes-chat--status-face status))
 
 (defun hermes-chat--nonempty-string (value)
   "Return VALUE when it is a non-empty string."
@@ -1101,7 +1121,8 @@ the thinking disclosure; diffs become View Diff links."
       (insert (propertize (format "  %s "
                                   (hermes-chat--status-icon
                                    (plist-get entry :status)))
-                          'face 'shadow))
+                          'face (hermes-chat--status-face
+                                 (plist-get entry :status))))
       (let ((blocks (hermes-chat--diff-blocks content)))
         (if (and (memq (plist-get entry :role) '(tool progress))
                  (hermes-chat--multiline-content-p content)
@@ -1243,6 +1264,7 @@ Do not record these internal text-property changes in the undo list."
           hermes-chat--queued-message nil
           hermes-chat--queued-display nil
           hermes-chat--pending-prompts (make-hash-table :test #'equal)
+          hermes-chat--auto-prompt-keys (make-hash-table :test #'equal)
           hermes-chat--draining-queued-message-p nil
           hermes-chat--transport-generation 0
           hermes-chat--process nil
@@ -1580,6 +1602,65 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
         stored)
     event))
 
+(defun hermes-chat--ensure-auto-prompt-keys ()
+  "Return the current buffer's scheduled auto-prompt key table."
+  (or hermes-chat--auto-prompt-keys
+      (setq hermes-chat--auto-prompt-keys (make-hash-table :test #'equal))))
+
+(defun hermes-chat--prompt-notice-text (prompt)
+  "Return a safe one-line notice for PROMPT."
+  (let ((summary (or (plist-get prompt :content)
+                     (hermes-chat--prompt-display-name prompt))))
+    (format "Hermes %s pending: %s"
+            (downcase (hermes-chat--prompt-display-name prompt))
+            (string-trim
+             (truncate-string-to-width (or summary "") 96 nil nil "…")))))
+
+(defun hermes-chat--auto-prompt-schedulable-p (buffer)
+  "Return non-nil if BUFFER may schedule an automatic prompt."
+  (and hermes-chat-auto-prompt-requests
+       (not noninteractive)
+       (get-buffer-window buffer t)))
+
+(defun hermes-chat--run-auto-prompt (buffer key)
+  "Prompt for pending prompt KEY in BUFFER, when it is still safe to do so."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (hash-table-p hermes-chat--auto-prompt-keys)
+        (remhash key hermes-chat--auto-prompt-keys))
+      (when-let* ((prompt (and hermes-chat--pending-prompts
+                               (gethash key hermes-chat--pending-prompts))))
+        (cond
+         ((not (hermes-chat--auto-prompt-schedulable-p buffer)) nil)
+         ((not (zerop (minibuffer-depth)))
+          (hermes-chat--schedule-auto-prompt prompt t 0.25))
+         (t
+          (condition-case err
+              (let ((hermes-chat--auto-prompting-p t))
+                (hermes-chat-respond-to-prompt key))
+            (quit
+             (message "Hermes prompt left pending: %s" key))
+            (user-error
+             (message "%s" (error-message-string err)))
+            (error
+             (message "Hermes auto prompt failed: %s"
+                      (error-message-string err))))))))))
+
+(defun hermes-chat--schedule-auto-prompt (prompt &optional quiet delay)
+  "Announce PROMPT and schedule an automatic minibuffer response prompt.
+When QUIET is non-nil, do not emit another echo-area notice.  DELAY is the
+number of seconds to wait before trying to prompt."
+  (when-let* ((key (plist-get prompt :prompt-key)))
+    (unless quiet
+      (message "%s (respond with C-c C-a)"
+               (hermes-chat--prompt-notice-text prompt)))
+    (when (hermes-chat--auto-prompt-schedulable-p (current-buffer))
+      (let ((scheduled (hermes-chat--ensure-auto-prompt-keys)))
+        (unless (gethash key scheduled)
+          (puthash key t scheduled)
+          (run-at-time (or delay 0) nil #'hermes-chat--run-auto-prompt
+                       (current-buffer) key))))))
+
 (defun hermes-chat--prompt-session-match-p (prompt session-id)
   "Return non-nil if PROMPT belongs to SESSION-ID.
 A nil SESSION-ID matches every prompt in the current buffer."
@@ -1775,7 +1856,8 @@ so do not copy its final content into the unsubmitted retry placeholder."
    ((hermes-chat--message-start-status-event-p event) nil)
    (t
     (when (hermes-chat--prompt-request-event-p event)
-      (setq event (hermes-chat--record-prompt-request event assistant-id)))
+      (setq event (hermes-chat--record-prompt-request event assistant-id))
+      (hermes-chat--schedule-auto-prompt event))
     (hermes-chat--update-header-for-event event)
     (pcase (plist-get event :type)
       ('delta
@@ -2428,9 +2510,12 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
 (defun hermes-chat--read-approval-response (prompt)
   "Read an approval response for PROMPT."
   (let* ((candidates (hermes-chat--approval-response-candidates prompt))
+         (default (if hermes-chat--auto-prompting-p
+                      (or (car (rassoc nil candidates)) (caar candidates))
+                    (caar candidates)))
          (choice (completing-read "Approval decision: "
                                   (mapcar #'car candidates) nil t nil nil
-                                  (caar candidates)))
+                                  default))
          (candidate (assoc choice candidates)))
     (unless candidate
       (user-error "Unknown approval decision: %s" choice))
@@ -2491,7 +2576,9 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
       (unless (hermes-chat--show-pending-prompt-state next-prompt)
         (hermes-chat--set-header-state
          :status (if (hermes-chat--active-turn-p) 'running 'ready)
-         :activity message)))))
+         :activity message))
+      (when next-prompt
+        (hermes-chat--schedule-auto-prompt next-prompt)))))
 
 (defun hermes-chat--approval-response-unresolved-p (prompt result)
   "Return non-nil when approval PROMPT RESULT resolved no backend prompt."
@@ -3101,7 +3188,7 @@ session key is preserved, so the conversation can still be resumed."
      ((and name slug (not (equal name slug))) (format "%s (%s)" name slug))
      (name name)
      (slug slug)
-     ("provider"))))
+     (t "provider"))))
 
 (defun hermes-chat--model-label (provider model)
   "Return completion label for MODEL in PROVIDER row."
@@ -3172,23 +3259,32 @@ CONFIRM acknowledges an expensive-model confirmation prompt."
      :session-id hermes-chat--dashboard-active-session-id
      :confirm-expensive-model confirm
      :resolve (lambda (result)
-                (hermes-chat--model-set-result buffer client candidate result))
+                (hermes-chat--model-set-result
+                 buffer client candidate result confirm))
      :reject (lambda (message)
                (when (buffer-live-p buffer)
                  (with-current-buffer buffer
                    (hermes-chat--command-error message)))))))
 
-(defun hermes-chat--model-set-result (buffer client candidate result)
-  "Report CANDIDATE switch RESULT for BUFFER, re-confirming through CLIENT."
+(defun hermes-chat--model-set-result (buffer client candidate result confirmed)
+  "Report CANDIDATE switch RESULT for BUFFER, re-confirming through CLIENT.
+CONFIRMED is non-nil after the user has already accepted an expensive-model
+confirmation prompt."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
       (if (hermes-transport--get result 'confirm_required)
-          (if (yes-or-no-p
-               (or (hermes-transport--scalar-string
-                    (hermes-transport--get result 'confirm_message))
-                   "Confirm switching to this model? "))
-              (hermes-chat--apply-model buffer client candidate t)
-            (hermes-chat--insert-local-status "Model switch cancelled" 'ready))
+          (if confirmed
+              (hermes-chat--command-error
+               (format "Model switch still requires confirmation: %s"
+                       (or (hermes-transport--scalar-string
+                            (hermes-transport--get result 'confirm_message))
+                           "backend repeated confirmation request")))
+            (if (yes-or-no-p
+                 (or (hermes-transport--scalar-string
+                      (hermes-transport--get result 'confirm_message))
+                     "Confirm switching to this model? "))
+                (hermes-chat--apply-model buffer client candidate t)
+              (hermes-chat--insert-local-status "Model switch cancelled" 'ready)))
         (hermes-chat--insert-local-status
          (format "Model set to %s"
                  (hermes-chat--model-display-name candidate))
@@ -3239,6 +3335,19 @@ CONFIRM acknowledges an expensive-model confirmation prompt."
     (goto-char (or (hermes-chat--input-position) (point-max)))
     buffer))
 
+(defun hermes-chat--profile-name (profile)
+  "Return PROFILE's non-empty profile name, or nil."
+  (and-let* ((name (hermes-transport--scalar-string
+                    (hermes-transport--get profile 'name)))
+             (trimmed (string-trim name))
+             ((not (string-empty-p trimmed))))
+    trimmed))
+
+(defun hermes-chat--profile-default-p (profile)
+  "Return non-nil when PROFILE denotes the dashboard default profile."
+  (or (hermes-transport--get profile 'is_default)
+      (equal (hermes-chat--profile-name profile) "default")))
+
 (defun hermes-chat--profile-model-label (profile)
   "Return provider/model label for PROFILE, or nil."
   (let ((provider (hermes-transport--scalar-string
@@ -3251,12 +3360,11 @@ CONFIRM acknowledges an expensive-model confirmation prompt."
 
 (defun hermes-chat--profile-label (profile)
   "Return completion label for dashboard PROFILE metadata."
-  (let ((name (hermes-transport--scalar-string
-               (hermes-transport--get profile 'name))))
+  (let ((name (hermes-chat--profile-name profile)))
     (string-join
      (delq nil
            (list name
-                 (and (hermes-transport--get profile 'is_default) "default")
+                 (and (hermes-chat--profile-default-p profile) "default")
                  (and (hermes-transport--get profile 'has_alias) "alias")
                  (and (hermes-transport--get profile 'gateway_running)
                       "gateway")
@@ -3265,14 +3373,25 @@ CONFIRM acknowledges an expensive-model confirmation prompt."
                   (hermes-transport--get profile 'description))))
      " · ")))
 
+(defun hermes-chat--profile-less-p (left right)
+  "Return non-nil when LEFT dashboard profile should sort before RIGHT."
+  (let ((left-default (hermes-chat--profile-default-p left))
+        (right-default (hermes-chat--profile-default-p right)))
+    (cond
+     ((and left-default (not right-default)) t)
+     ((and right-default (not left-default)) nil)
+     (t (string-lessp (downcase (hermes-chat--profile-name left))
+                      (downcase (hermes-chat--profile-name right)))))))
+
 (defun hermes-chat--profile-candidates (payload)
-  "Return completion candidates from dashboard profiles PAYLOAD."
-  (delq nil
-        (mapcar (lambda (profile)
-                  (when-let* ((name (hermes-transport--scalar-string
-                                     (hermes-transport--get profile 'name))))
-                    (cons (hermes-chat--profile-label profile) name)))
-                (hermes-transport--get payload 'profiles))))
+  "Return sorted completion candidates from dashboard profiles PAYLOAD."
+  (mapcar (lambda (profile)
+            (cons (hermes-chat--profile-label profile)
+                  (hermes-chat--profile-name profile)))
+          (sort (cl-remove-if-not
+                 #'hermes-chat--profile-name
+                 (or (hermes-transport--get payload 'profiles) '()))
+                #'hermes-chat--profile-less-p)))
 
 (defun hermes-chat--existing-dashboard-client ()
   "Return a live dashboard client from any Hermes chat buffer, or nil."
@@ -3297,6 +3416,14 @@ CONFIRM acknowledges an expensive-model confirmation prompt."
         (when client
           (hermes-dashboard-transport-stop client))))))
 
+(defun hermes-chat--read-raw-profile (&optional notice)
+  "Read a raw Hermes profile name with the default-profile prompt.
+When NOTICE is non-nil, include it in the prompt so fallback context remains
+visible while reading."
+  (read-string (if notice
+                   (format "%s; profile (blank for default): " notice)
+                 "Profile (blank for default): ")))
+
 (defun hermes-chat--read-profile ()
   "Read a Hermes profile name, using dashboard metadata when available."
   (condition-case err
@@ -3310,11 +3437,14 @@ CONFIRM acknowledges an expensive-model confirmation prompt."
               (and profile
                    (not (string-empty-p (string-trim profile)))
                    (string-trim profile)))
-          (read-string "Profile (blank for default): ")))
+          (let ((notice "No dashboard profiles available"))
+            (message "Hermes: %s; enter a profile name manually" notice)
+            (hermes-chat--read-raw-profile notice))))
     (error
-     (message "Hermes: profile list unavailable: %s"
-              (error-message-string err))
-     (read-string "Profile (blank for default): "))))
+     (let ((notice (format "Profile list unavailable: %s"
+                           (error-message-string err))))
+       (message "Hermes: %s" notice)
+       (hermes-chat--read-raw-profile notice)))))
 
 (defun hermes-chat-new-profile-session (profile)
   "Open a new Hermes chat buffer for a dashboard session under PROFILE.
@@ -3407,10 +3537,15 @@ messages are fetched and rendered; the durable session continues on send."
       (user-error "No Hermes input to send"))
     (if (hermes-chat--parse-slash content)
         (hermes-chat--handle-slash-content content)
-      (when (hermes-chat--active-turn-p)
-        (user-error "%s" (hermes-chat--busy-message)))
-      (hermes-chat--delete-input-tail)
-      (hermes-chat--submit-content content))))
+      (cond
+       ((and (hermes-chat--active-turn-p) hermes-chat--queued-message)
+        (user-error "A Hermes message is already queued"))
+       ((hermes-chat--active-turn-p)
+        (hermes-chat--delete-input-tail)
+        (hermes-chat--queue-content content))
+       (t
+        (hermes-chat--delete-input-tail)
+        (hermes-chat--submit-content content))))))
 
 ;;; Attachments view
 
