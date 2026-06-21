@@ -78,6 +78,13 @@ The endpoint never binds \"0.0.0.0\" or all interfaces."
 Longer printed results are truncated to this length before being sent back."
   :type 'integer)
 
+(defcustom hermes-exec-max-request-bytes 1048576
+  "Maximum size in bytes of a single incoming HTTP request.
+Once a connection's accumulated bytes exceed this the endpoint answers 413 and
+closes, so a partial or oversized request cannot grow the per-connection buffer
+without bound."
+  :type 'integer)
+
 (defcustom hermes-exec-timeout 30
   "Seconds an evaluation may run before `with-timeout' aborts it."
   :type 'number)
@@ -258,17 +265,31 @@ without evaluating anything."
     (ignore-errors (process-send-string proc response))
     (ignore-errors (delete-process proc))))
 
+(defun hermes-exec--request-response (buffer)
+  "Return the HTTP response for accumulated BUFFER, or nil for more bytes.
+A 413 is returned once BUFFER exceeds `hermes-exec-max-request-bytes' so the
+accumulator can never grow without bound; otherwise a complete request is
+dispatched and an incomplete one yields nil."
+  (if (> (string-bytes buffer) hermes-exec-max-request-bytes)
+      (hermes-exec--http-response
+       413 "Payload Too Large"
+       (json-serialize '((ok . :false) (error . "request too large"))))
+    (and-let* ((request (hermes-exec--parse-request buffer)))
+      (hermes-exec--dispatch request))))
+
 ;; Input may arrive in chunks, so each connection accumulates bytes in its
 ;; `hermes-buffer' process property.  After every chunk the buffer is reparsed;
-;; `hermes-exec--parse-request' returns nil until both the header terminator and
-;; the full Content-Length body are present, and only then is the request
-;; dispatched.  This keeps partial reads from triggering a premature eval.
+;; `hermes-exec--request-response' returns nil until both the header terminator
+;; and the full Content-Length body are present, rejects with 413 once the
+;; accumulated bytes exceed `hermes-exec-max-request-bytes', and otherwise
+;; dispatches.  This bounds memory and keeps partial reads from a premature eval.
 (defun hermes-exec--filter (proc chunk)
-  "Accumulate CHUNK on PROC and dispatch once a full request has arrived."
+  "Accumulate CHUNK on PROC; answer once a full or oversized request arrives."
   (let ((buffer (concat (process-get proc 'hermes-buffer) chunk)))
     (process-put proc 'hermes-buffer buffer)
-    (when-let* ((request (hermes-exec--parse-request buffer)))
-      (hermes-exec--send-response proc (hermes-exec--dispatch request)))))
+    (when-let* ((response (hermes-exec--request-response buffer)))
+      (process-put proc 'hermes-buffer nil)
+      (hermes-exec--send-response proc response))))
 
 (defun hermes-exec--sentinel (proc _event)
   "Drop PROC's accumulated input buffer when the connection ends."

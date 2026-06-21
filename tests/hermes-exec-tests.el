@@ -97,7 +97,30 @@
     (should (eq t (cdr (assq 'ok object))))
     (should (equal "3" (cdr (assq 'result object))))))
 
-;;; Group 4: host resolution
+;;; Group 4: request-size cap
+
+(ert-deftest hermes-exec-test-oversized-request-gets-413 ()
+  "A request past `hermes-exec-max-request-bytes' yields a 413 before parsing."
+  (let* ((hermes-exec-max-request-bytes 64)
+         (buffer (concat "POST /eval HTTP/1.1\r\n" (make-string 200 ?x)))
+         (response (hermes-exec--request-response buffer)))
+    (should (string-prefix-p "HTTP/1.1 413 Payload Too Large" response))
+    (should (string-match-p "request too large" response))))
+
+(ert-deftest hermes-exec-test-incomplete-request-under-cap-waits ()
+  "An incomplete request under the cap returns nil so more bytes are read."
+  (let ((hermes-exec-max-request-bytes 1048576))
+    (should-not (hermes-exec--request-response "POST /eval HTTP/1.1\r\nHost: x"))))
+
+(ert-deftest hermes-exec-test-complete-request-under-cap-dispatches ()
+  "A complete request under the cap dispatches to a 200 response."
+  (let* ((hermes-exec-require-approval nil)
+         (hermes-exec-max-request-bytes 1048576)
+         (raw (hermes-exec-test--raw-request "{\"code\":\"(+ 1 2)\"}"))
+         (response (hermes-exec--request-response raw)))
+    (should (string-prefix-p "HTTP/1.1 200 OK" response))))
+
+;;; Group 5: host resolution
 
 (ert-deftest hermes-exec-test-resolve-host-loopback ()
   "A loopback dashboard URL resolves to 127.0.0.1 when no host is set."
