@@ -112,8 +112,8 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--pending-assistant-id nil
   "ID of the assistant entry awaiting transport completion.")
 
-(defvar-local hermes-chat--transport-generation 0
-  "Monotonic generation used to ignore stale transport callbacks.")
+;; Owned by `hermes-chat-buffer'; declared here for the byte-compiler.
+(defvar hermes-chat--transport-generation)
 
 (defvar-local hermes-chat--dashboard-detached-assistant-id nil
   "Assistant entry that was pending when the dashboard transport detached.")

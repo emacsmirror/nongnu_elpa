@@ -97,8 +97,10 @@
   "Plain message queued to send after the active Hermes turn settles.")
 (defvar-local hermes-chat--session-id nil
   "Durable Hermes session key for the current chat buffer.")
-(defvar-local hermes-chat--transport-generation nil
-  "Transport callback generation for the current chat buffer.")
+(defvar-local hermes-chat--transport-generation 0
+  "Monotonic transport-callback generation for the current chat buffer.
+Bumped per turn so stale async callbacks can detect they are obsolete.
+Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
 (defvar hermes-chat--transient-entry-roles)
 
 (defun hermes-chat--transport-entry-role (event)

@@ -61,6 +61,7 @@
 (defvar hermes-chat--session-id)
 (defvar hermes-chat--status-state)
 (defvar hermes-chat--title)
+(defvar hermes-chat--transport-generation)
 
 (defvar-local hermes-chat--dashboard-active-session-id nil)
 (defvar-local hermes-chat--dashboard-client nil)
@@ -68,7 +69,6 @@
 (defvar-local hermes-chat--dashboard-session-ready-p nil)
 (defvar-local hermes-chat--dashboard-stream-assistant-id nil)
 (defvar-local hermes-chat--dashboard-suppress-stream-p nil)
-(defvar-local hermes-chat--transport-generation nil)
 
 (defun hermes-chat--closed-status-event-p (event)
   "Return non-nil when EVENT reports a closed live transport."
