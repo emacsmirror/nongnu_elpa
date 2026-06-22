@@ -3645,6 +3645,71 @@ The buffer is captured by object so teardown still kills it after a rename."
     (should (equal (plist-get (cdr captured) :method) "POST"))
     (should (assoc "Accept" (plist-get (cdr captured) :headers)))))
 
+(ert-deftest hermes-transport-dashboard-api-request-async-token-auth ()
+  (let* ((hermes-dashboard-transport--api-auth nil)
+         (hermes-dashboard-transport-remote-auth-method 'token)
+         (calls nil)
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (url &rest args)
+            (push (cons url args) calls)
+            (hermes--promise-resolved (list :status 200 :body '((ok . t))))))
+         result)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-token-secret)
+               (lambda (&rest _) "tok"))
+              ((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example")))
+      (hermes--promise-then
+       (hermes-dashboard-transport-api-request-async "GET" "/api/profiles")
+       (lambda (body) (setq result body))))
+    (should (equal result '((ok . t))))
+    (should-not (cl-find-if (lambda (c) (string-match-p "/api/status" (car c)))
+                            calls))
+    (let ((headers (plist-get (cdr (car calls)) :headers)))
+      (should (equal (cdr (assoc "X-Hermes-Session-Token" headers)) "tok")))))
+
+(ert-deftest hermes-transport-dashboard-api-request-async-with-client ()
+  (let* ((client (make-hermes-dashboard-transport-client
+                  :host "127.0.0.1" :port 9119 :token "ctok"
+                  :base-url "http://127.0.0.1:9119"))
+         (calls nil)
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (url &rest args)
+            (push (cons url args) calls)
+            (hermes--promise-resolved (list :status 200 :body '((ok . t))))))
+         result)
+    (hermes--promise-then
+     (hermes-dashboard-transport-api-request-async
+      "GET" "/api/profiles" :client client)
+     (lambda (body) (setq result body)))
+    (should (equal result '((ok . t))))
+    (let ((headers (plist-get (cdr (car calls)) :headers)))
+      (should (equal (cdr (assoc "X-Hermes-Session-Token" headers)) "ctok")))))
+
+(ert-deftest hermes-transport-dashboard-api-request-async-retries-get-once ()
+  (let* ((hermes-dashboard-transport--api-auth nil)
+         (hermes-dashboard-transport-remote-auth-method 'token)
+         (n 0)
+         (auth-count 0)
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (&rest _)
+            (setq n (1+ n))
+            (if (= n 1)
+                (hermes--promise-rejected "boom")
+              (hermes--promise-resolved (list :status 200 :body '((ok . t)))))))
+         result reason)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-token-secret)
+               (lambda (&rest _) (setq auth-count (1+ auth-count)) "tok"))
+              ((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example")))
+      (hermes--promise-then
+       (hermes-dashboard-transport-api-request-async "GET" "/x")
+       (lambda (b) (setq result b))
+       (lambda (r) (setq reason r))))
+    (should (equal result '((ok . t))))
+    (should (null reason))
+    (should (= n 2))
+    (should (>= auth-count 2))))
+
 (ert-deftest hermes-transport-dashboard-start-auto-localhost-spawns ()
   (let (process-plist opened-url events)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)

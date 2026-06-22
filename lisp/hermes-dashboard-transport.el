@@ -919,6 +919,155 @@ cached auth retry once with refreshed auth."
      method path :body body :query query :headers headers :secrets secrets
      :retry (equal method "GET"))))
 
+(defun hermes-dashboard-transport--remote-status-async (base-url)
+  "Return a promise of the /api/status object from dashboard BASE-URL."
+  (hermes--promise-map
+   (hermes-dashboard-transport--http-json-async
+    (hermes-dashboard-transport--api-url base-url "/api/status"))
+   (lambda (response) (plist-get response :body))))
+
+(defun hermes-dashboard-transport--api-token-auth-async (base-url)
+  "Return a promise of REST token auth for dashboard BASE-URL.
+Token resolution is local (auth-source or environment) and never blocks on the
+network; a missing token rejects the promise."
+  (condition-case err
+      (hermes--promise-resolved
+       (hermes-dashboard-transport--api-token-auth base-url))
+    (error (hermes--promise-rejected (error-message-string err)))))
+
+(defun hermes-dashboard-transport--api-basic-auth-async (base-url status)
+  "Return a promise of REST cookie auth for BASE-URL described by STATUS."
+  (condition-case err
+      (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
+        (unless provider
+          (hermes-dashboard-transport--unsupported-remote-auth base-url))
+        (let* ((credentials (hermes-dashboard-transport--remote-basic-credentials
+                             base-url))
+               (password (plist-get credentials :password)))
+          (hermes--promise-then
+           (hermes-dashboard-transport--http-json-async
+            (hermes-dashboard-transport--api-url base-url "/auth/password-login")
+            :method "POST"
+            :headers '(("Content-Type" . "application/json"))
+            :body `((provider . ,provider)
+                    (username . ,(plist-get credentials :username))
+                    (password . ,password)
+                    (next . ""))
+            :secrets (list password))
+           (lambda (response)
+             (let ((cookies (hermes-dashboard-transport--response-cookie-header
+                             response)))
+               (if cookies
+                   (list :headers (list (cons "Cookie" cookies))
+                         :secrets (list password cookies))
+                 (hermes--promise-rejected
+                  "Hermes dashboard basic login returned no session cookies")))))))
+    (error (hermes--promise-rejected (error-message-string err)))))
+
+(defun hermes-dashboard-transport--api-authenticate-async ()
+  "Return a promise of dashboard REST auth for `hermes-dashboard-transport-url'."
+  (condition-case err
+      (let ((base-url (hermes-dashboard-transport--api-base-url)))
+        (hermes--promise-map
+         (pcase hermes-dashboard-transport-remote-auth-method
+           ('token (hermes-dashboard-transport--api-token-auth-async base-url))
+           ('basic (hermes--promise-then
+                    (hermes-dashboard-transport--remote-status-async base-url)
+                    (lambda (status)
+                      (hermes-dashboard-transport--api-basic-auth-async
+                       base-url status))))
+           (_ (hermes--promise-then
+               (hermes-dashboard-transport--remote-status-async base-url)
+               (lambda (status)
+                 (if (hermes-dashboard-transport--status-auth-required-p status)
+                     (hermes-dashboard-transport--api-basic-auth-async
+                      base-url status)
+                   (hermes-dashboard-transport--api-token-auth-async
+                    base-url))))))
+         (lambda (auth) (append (list :base-url base-url) auth))))
+    (error (hermes--promise-rejected (error-message-string err)))))
+
+(defun hermes-dashboard-transport-api-auth-async (&optional refresh)
+  "Return a promise of dashboard REST auth, re-resolving when REFRESH is non-nil.
+The resolved auth is cached in `hermes-dashboard-transport--api-auth', shared
+with the synchronous path."
+  (when refresh
+    (setq hermes-dashboard-transport--api-auth nil))
+  (if hermes-dashboard-transport--api-auth
+      (hermes--promise-resolved hermes-dashboard-transport--api-auth)
+    (hermes--promise-map
+     (hermes-dashboard-transport--api-authenticate-async)
+     (lambda (auth)
+       (setq hermes-dashboard-transport--api-auth auth)
+       auth))))
+
+(cl-defun hermes-dashboard-transport--api-request-1-async
+    (method path &key body query headers secrets retry)
+  "Return a promise of dashboard REST METHOD PATH using resolved auth.
+BODY, QUERY, HEADERS, and SECRETS extend the request; RETRY refreshes auth and
+retries once when the request fails."
+  (hermes--promise-then
+   (hermes-dashboard-transport-api-auth-async)
+   (lambda (auth)
+     (let* ((all-secrets (append secrets (plist-get auth :secrets)))
+            (url (concat (hermes-dashboard-transport--api-url
+                          (plist-get auth :base-url) path)
+                         (hermes-dashboard-transport--query-string query)))
+            (all-headers (append (plist-get auth :headers)
+                                 headers
+                                 (and body
+                                      '(("Content-Type" . "application/json"))))))
+       (hermes--promise-catch
+        (hermes--promise-map
+         (hermes-dashboard-transport--http-json-async
+          url :method method :headers all-headers :body body
+          :secrets all-secrets)
+         (lambda (response) (plist-get response :body)))
+        (lambda (reason)
+          (if retry
+              (progn
+                (setq hermes-dashboard-transport--api-auth nil)
+                (hermes-dashboard-transport--api-request-1-async
+                 method path :body body :query query :headers headers
+                 :secrets secrets :retry nil))
+            (hermes--promise-rejected
+             (hermes-dashboard-transport--redact-secret reason all-secrets)))))))))
+
+(cl-defun hermes-dashboard-transport--api-request-with-client-async
+    (client method path &key body query headers secrets)
+  "Return a promise of dashboard REST METHOD PATH using CLIENT's session token.
+BODY, QUERY, HEADERS, and SECRETS extend the request."
+  (let* ((token (hermes-dashboard-transport--api-client-token client))
+         (all-secrets (append secrets (and token (list token))))
+         (url (concat (hermes-dashboard-transport--api-url
+                       (hermes-dashboard-transport--api-client-base-url client)
+                       path)
+                      (hermes-dashboard-transport--query-string query)))
+         (all-headers (append (and token
+                                   (list (cons "X-Hermes-Session-Token" token)))
+                              headers
+                              (and body
+                                   '(("Content-Type" . "application/json"))))))
+    (hermes--promise-map
+     (hermes-dashboard-transport--http-json-async
+      url :method method :headers all-headers :body body :secrets all-secrets)
+     (lambda (response) (plist-get response :body)))))
+
+(cl-defun hermes-dashboard-transport-api-request-async
+    (method path &key body query headers secrets client)
+  "Return a promise of authenticated dashboard REST METHOD PATH.
+Mirrors `hermes-dashboard-transport-api-request' but resolves asynchronously so
+callers never block Emacs.  BODY, QUERY, HEADERS, and SECRETS extend the
+request.  CLIENT, when it carries a live session token, supplies the spawned
+dashboard base URL and `X-Hermes-Session-Token'."
+  (if (hermes-dashboard-transport--api-client-token client)
+      (hermes-dashboard-transport--api-request-with-client-async
+       client method path :body body :query query :headers headers
+       :secrets secrets)
+    (hermes-dashboard-transport--api-request-1-async
+     method path :body body :query query :headers headers :secrets secrets
+     :retry (equal method "GET"))))
+
 (defun hermes-dashboard-transport-profile-list (&optional client)
   "Return dashboard profile metadata from REST `/api/profiles'.
 When CLIENT is non-nil, authenticate with its live dashboard session token."
