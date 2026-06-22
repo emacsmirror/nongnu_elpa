@@ -5233,45 +5233,51 @@ The buffer is captured by object so teardown still kills it after a rename."
    (should (equal (plist-get hermes-chat--status-state :usage) '(:input 1200 :output 340)))
    (should-not (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))
 
-(ert-deftest hermes-chat-turn-reduce-status-family-stamps-state-no-effects ()
-  "Status-family events thread a NOW-stamped :status-state and emit no effects."
+(ert-deftest hermes-chat-turn-reduce-status-family-stamps-state ()
+  "Status-family events stamp :status-state at NOW; transcript types add upsert."
   (let ((now '(100 200)))
     (dolist (case
              (list
               (list '(:status-state (:status running :activity "old"))
                     '(:type thinking :content "pondering...")
                     '(:status-state (:status thinking :activity "Pondering"
-                                             :updated (100 200))))
+                                             :updated (100 200)))
+                    nil)
               (list '(:status-state (:status thinking :activity "x"))
                     '(:type commentary)
                     '(:status-state (:status running :activity "Thinking..."
-                                             :updated (100 200))))
+                                             :updated (100 200)))
+                    (list (cons 'upsert-entry '(:type commentary))))
               (list '(:status-state nil)
                     '(:type diff)
                     '(:status-state (:status running :activity "Reviewing diff"
-                                             :updated (100 200))))))
-      (cl-destructuring-bind (state event expected-state) case
+                                             :updated (100 200)))
+                    (list (cons 'upsert-entry '(:type diff))))))
+      (cl-destructuring-bind (state event expected-state expected-effects) case
         (let ((result (hermes-chat--turn-reduce state event now)))
           (should (equal (car result) expected-state))
-          (should-not (cdr result)))))))
+          (should (equal (cdr result) expected-effects)))))))
 
-(ert-deftest hermes-chat-turn-reduce-status-stamps-clock-purely ()
-  "A status event bakes the injected NOW into the threaded :status-state."
+(ert-deftest hermes-chat-turn-reduce-status-stamps-clock-and-upserts ()
+  "A non-session-info status stamps NOW and upserts; session.info adds no entry."
   (let* ((now '(7 7))
          (state '(:status-state (:status idle :activity "x")))
          (event '(:type status :status "running" :content "Searching"))
          (result (hermes-chat--turn-reduce state event now))
          (status-state (plist-get (car result) :status-state)))
-    (should-not (cdr result))
+    (should (equal (cdr result) (list (cons 'upsert-entry event))))
     (should (equal (plist-get status-state :updated) now))
     (should (equal status-state
                    (apply #'hermes-chat--entry-with
                           '(:status idle :activity "x")
                           (append (hermes-chat--turn-header-props event)
-                                  (list :updated now)))))))
+                                  (list :updated now)))))
+    (let ((r (hermes-chat--turn-reduce
+              state '(:type status :event "session.info" :status "ready") now)))
+      (should-not (cdr r)))))
 
 (ert-deftest hermes-chat-turn-reduce-terminal-and-noop-events ()
-  "done/error stamp status and clear tools; unknown sets error; delta is a no-op."
+  "done/error clear tools; unknown emits message+upsert; delta is a no-op."
   (let ((now '(5 5))
         (state '(:status-state (:status running :activity "x"))))
     (let ((r (hermes-chat--turn-reduce
@@ -5287,15 +5293,19 @@ The buffer is captured by object so teardown still kills it after a rename."
                   (hermes-chat--error-status event)))
       (should (equal (plist-get status-state :activity) "boom"))
       (should (equal (cdr r) '((clear-tools)))))
-    (let ((r (hermes-chat--turn-reduce state '(:type unknown :event "weird") now)))
+    (let* ((event '(:type unknown :event "weird"))
+           (r (hermes-chat--turn-reduce state event now)))
       (should (eq (plist-get (plist-get (car r) :status-state) :status) 'error))
-      (should-not (cdr r)))
+      (should (equal (cdr r)
+                     (list (cons 'message
+                                 (hermes-chat--unknown-event-content event))
+                           (cons 'upsert-entry event)))))
     (let ((r (hermes-chat--turn-reduce state '(:type delta :content "hi") now)))
       (should (eq (car r) state))
       (should-not (cdr r)))))
 
-(ert-deftest hermes-chat-turn-reduce-tool-family-emits-pure-delta ()
-  "Tool-like events leave the state untouched and emit a pure tool delta."
+(ert-deftest hermes-chat-turn-reduce-tool-family-delta-and-transcript ()
+  "Tool-like events leave the state and emit a tool delta plus an upsert-entry."
   (let ((running '(:type tool :name "terminal" :status "running" :context "make test"))
         (done '(:type tool :name "terminal" :status "completed" :context "make test"))
         (state '(:status-state (:status running))))
@@ -5304,12 +5314,13 @@ The buffer is captured by object so teardown still kills it after a rename."
       (should (equal (cdr result)
                      (list (cons 'tool-put
                                  (cons (hermes-chat--header-tool-key running)
-                                       (hermes-chat--header-tool-summary running)))))))
+                                       (hermes-chat--header-tool-summary running)))
+                           (cons 'upsert-entry running)))))
     (let ((result (hermes-chat--turn-reduce state done '(0 0))))
       (should (equal (cdr result)
-                     (list (cons 'tool-remove
-                                 (hermes-chat--header-tool-key done))))))
-    ;; No summary -> no delta.
+                     (list (cons 'tool-remove (hermes-chat--header-tool-key done))
+                           (cons 'upsert-entry done)))))
+    ;; No summary -> no tool delta.
     (should-not (hermes-chat--turn-tool-effect '(:type status)))))
 
 (ert-deftest hermes-chat-turn-reduce-out-of-scope-is-noop ()

@@ -622,49 +622,79 @@ fields, so it collapses to a plain ready state instead of repeating them."
           (append (hermes-chat--turn-header-props event)
                   (list :updated now)))))
 
+(defun hermes-chat--transcript-event-p (event)
+  "Return non-nil when EVENT should render a compact transcript entry."
+  (pcase (plist-get event :type)
+    ('status (not (hermes-chat--session-info-event-p event)))
+    ((or 'progress 'tool 'commentary 'diff 'unknown) t)))
+
+(defun hermes-chat--turn-entry-effect (event)
+  "Return an (upsert-entry . EVENT) transcript effect for EVENT, or nil.  Pure."
+  (and (hermes-chat--transcript-event-p event)
+       (cons 'upsert-entry event)))
+
 (defun hermes-chat--turn-reduce (state event now)
   "Return (NEW-STATE . EFFECTS) for domain EVENT applied to STATE at time NOW.
 Pure: no buffer, EWOC, process, header, or message side effects.  A
-header-family event threads a complete, NOW-stamped :status-state into
-NEW-STATE; `done'/`error' also clear the active tools, and a tool-like event
-emits a tool delta.  `delta' and unhandled types return (cons STATE nil)."
+header-family event threads a complete :status-state stamped at NOW into
+NEW-STATE; `done'/`error' also clear tools, tool events emit a tool delta, and a
+transcript event emits an `upsert-entry' effect.  Other types return (STATE)."
   (pcase (plist-get event :type)
-    ((or 'status 'commentary 'thinking 'diff 'unknown)
-     (cons (hermes-chat--turn-set-status state event now) nil))
+    ((or 'status 'commentary 'thinking 'diff)
+     (cons (hermes-chat--turn-set-status state event now)
+           (delq nil (list (hermes-chat--turn-entry-effect event)))))
+    ('unknown
+     (cons (hermes-chat--turn-set-status state event now)
+           (list (cons 'message (hermes-chat--unknown-event-content event))
+                 (cons 'upsert-entry event))))
     ((or 'done 'error)
      (cons (hermes-chat--turn-set-status state event now) '((clear-tools))))
     ((or 'progress 'tool)
-     (cons state (delq nil (list (hermes-chat--turn-tool-effect event)))))
+     (cons state (delq nil (list (hermes-chat--turn-tool-effect event)
+                                 (hermes-chat--turn-entry-effect event)))))
     (_ (cons state nil))))
 
-(defun hermes-chat--apply-turn-effect (effect)
-  "Apply one boundary EFFECT: an active-tool hash operation."
+(defun hermes-chat--apply-turn-effect (assistant-id effect)
+  "Apply one boundary EFFECT for ASSISTANT-ID.
+Transcript and diagnostic effects render only when ASSISTANT-ID is non-nil, so a
+header-only reduction leaves the transcript untouched."
   (pcase (car effect)
     ('tool-put
      (puthash (cadr effect) (cddr effect) (hermes-chat--active-tools-table)))
     ('tool-remove
      (remhash (cdr effect) (hermes-chat--active-tools-table)))
     ('clear-tools
-     (hermes-chat--clear-active-tools))))
+     (hermes-chat--clear-active-tools))
+    ('upsert-entry
+     (when assistant-id
+       (hermes-chat--upsert-transport-entry assistant-id (cdr effect))))
+    ('message
+     (when assistant-id (message "%s" (cdr effect))))))
 
-(defun hermes-chat--run-turn-reducer (event)
-  "Reduce EVENT against the live turn state, replay effects, then persist it.
-Effects run before the status write-back so a `clear-tools' settles the active
-tools before `hermes-chat--notify-state-change' snapshots them."
+(defun hermes-chat--run-turn-reducer (assistant-id event)
+  "Capture identity, reduce EVENT, replay effects, then persist header state.
+Transcript effects render only when ASSISTANT-ID is non-nil.  Effects run before
+the status write-back so a `clear-tools' settles the active tools before
+`hermes-chat--notify-state-change' snapshots them."
+  (hermes-chat--capture-session-identity event)
   (let* ((state (hermes-chat--turn-state :status-state hermes-chat--status-state))
          (result (hermes-chat--turn-reduce state event (current-time)))
          (status (hermes-chat--turn-state-get (car result) :status-state)))
-    (mapc #'hermes-chat--apply-turn-effect (cdr result))
+    (dolist (effect (cdr result))
+      (hermes-chat--apply-turn-effect assistant-id effect))
     (unless (eq status (hermes-chat--turn-state-get state :status-state))
       (setq hermes-chat--status-state status)
       (force-mode-line-update)
       (hermes-chat--notify-state-change))))
 
 (defun hermes-chat--update-header-for-event (event)
-  "Update chat header and active-tool state from transport EVENT.
-Captures session identity, then routes the event through the pure turn reducer."
-  (hermes-chat--capture-session-identity event)
-  (hermes-chat--run-turn-reducer event))
+  "Update only header and tool state from transport EVENT, leaving the transcript.
+Used where a synthesized header event must not insert a transcript entry."
+  (hermes-chat--run-turn-reducer nil event))
+
+(defun hermes-chat--render-turn-event (assistant-id event)
+  "Render transport EVENT for ASSISTANT-ID: header, tools, and transcript entry."
+  (hermes-chat--run-turn-reducer assistant-id event))
 
 (defun hermes-chat--header-agent-name ()
   "Return the agent/profile name shown in the chat header."

@@ -50,6 +50,7 @@
 (declare-function hermes-chat--set-header-state "hermes-chat" (&rest props))
 (declare-function hermes-chat--unknown-event-content "hermes-chat" (event))
 (declare-function hermes-chat--update-header-for-event "hermes-chat" (event))
+(declare-function hermes-chat--render-turn-event "hermes-chat" (assistant-id event))
 
 (defvar hermes-chat-dashboard-session-title)
 (defvar hermes-chat-use-dashboard-transport)
@@ -226,9 +227,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
         (setq hermes-chat--dashboard-detached-assistant-id assistant-id
               hermes-chat--dashboard-stream-assistant-id nil
               hermes-chat--dashboard-suppress-stream-p nil))
-    (progn
-      (hermes-chat--update-header-for-event event)
-      (hermes-chat--upsert-transport-entry assistant-id event))))
+    (hermes-chat--render-turn-event assistant-id event)))
 
 (defun hermes-chat--handle-transport-event (assistant-id event)
   "Apply transport EVENT to ASSISTANT-ID in the current chat buffer."
@@ -241,7 +240,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
     (when (hermes-chat--prompt-request-event-p event)
       (setq event (hermes-chat--record-prompt-request event assistant-id))
       (hermes-chat--schedule-auto-prompt event))
-    (hermes-chat--update-header-for-event event)
+    (hermes-chat--render-turn-event assistant-id event)
     (pcase (plist-get event :type)
       ('delta
        (unless (hermes-chat--thinking-echo-delta-p
@@ -274,19 +273,10 @@ so do not copy its final content into the unsubmitted retry placeholder."
          (setq hermes-chat--pending-assistant-id nil
                hermes-chat--process nil)
          (hermes-chat--drain-queued-message)))
-      ;; `thinking' is the kawaii spinner verb: it updates the header above and
-      ;; never becomes a transcript entry.
-      ('thinking nil)
-      ('status
-       ;; `session.info' identity (model/provider) shows in the header, so it
-       ;; updates the header above without a redundant "Session ready" entry.
-       (unless (hermes-chat--session-info-event-p event)
-         (hermes-chat--upsert-transport-entry assistant-id event)))
-      ((or 'progress 'tool 'commentary 'diff)
-       (hermes-chat--upsert-transport-entry assistant-id event))
-      ('unknown
-       (message "%s" (hermes-chat--unknown-event-content event))
-       (hermes-chat--upsert-transport-entry assistant-id event))
+      ;; Header, tool, and transcript rendering for the remaining event types
+      ;; (thinking/status/progress/tool/commentary/diff/unknown) happens via the
+      ;; reducer effects in `hermes-chat--render-turn-event' above.
+      ((or 'thinking 'status 'progress 'tool 'commentary 'diff 'unknown) nil)
       (_
        (message "Unknown Hermes transport event: %S" event))))))
 
