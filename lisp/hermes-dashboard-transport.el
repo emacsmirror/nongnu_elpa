@@ -1339,6 +1339,15 @@ RESOLVE and REJECT receive the asynchronous result or error."
     `((session_id . ,(hermes-dashboard-transport--session-param client session-id))))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-process-stop
+    (client &key resolve reject)
+  "Send `process.stop' for CLIENT to terminate running background processes.
+RESOLVE and REJECT receive the asynchronous result or error.  This stops
+background/tool processes; it does not interrupt the current model turn -- use
+`hermes-dashboard-transport-session-interrupt' for that."
+  (hermes-dashboard-transport-request
+   client "process.stop" nil resolve reject))
+
 (cl-defun hermes-dashboard-transport-session-title
     (client &key session-id title resolve reject)
   "Set CLIENT's SESSION-ID title to TITLE via `session.title'.
