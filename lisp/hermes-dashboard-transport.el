@@ -1136,6 +1136,21 @@ compose with `hermes--promise-then' instead of nesting RESOLVE/REJECT."
      (lambda (reason) (hermes--promise-reject promise reason)))
     promise))
 
+(defun hermes-dashboard-transport-call-fn (fn &rest args)
+  "Call RPC wrapper FN with ARGS and return a promise of its result.
+FN must accept trailing :resolve/:reject keywords, as the typed
+`hermes-dashboard-transport-*' wrappers do, letting callers compose with
+`hermes--promise-then' instead of nesting RESOLVE/REJECT."
+  (let ((promise (hermes--promise-make)))
+    (apply fn (append args
+                      (list :resolve
+                            (lambda (result)
+                              (hermes--promise-resolve promise result))
+                            :reject
+                            (lambda (message)
+                              (hermes--promise-reject promise message)))))
+    promise))
+
 (defun hermes-dashboard-transport--alist-without-nil (alist)
   "Return ALIST without nil-valued cells."
   (cl-remove-if (lambda (cell) (null (cdr cell))) alist))

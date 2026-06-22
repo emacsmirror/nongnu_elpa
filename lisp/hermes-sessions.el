@@ -68,20 +68,6 @@ client that DONE stops.  Shared by the dashboard browser commands."
                    (hermes-dashboard-transport-stop client)))))
     (funcall fn client done)))
 
-(defun hermes-sessions--call (fn &rest args)
-  "Call dashboard RPC wrapper FN with ARGS and return a promise of its result.
-FN must accept trailing :resolve/:reject keywords, as the
-`hermes-dashboard-transport-session-*' wrappers do."
-  (let ((promise (hermes--promise-make)))
-    (apply fn (append args
-                      (list :resolve
-                            (lambda (result)
-                              (hermes--promise-resolve promise result))
-                            :reject
-                            (lambda (message)
-                              (hermes--promise-reject promise message)))))
-    promise))
-
 (defun hermes-sessions--field (session key)
   "Return SESSION's KEY as a display string."
   (or (hermes-transport--scalar-string (hermes-transport--get session key)) ""))
@@ -342,12 +328,12 @@ The dashboard `session.history' RPC is live-session scoped in older gateways;
 when it reports a missing live session, resume RESUME-ID and resolve with the
 returned messages instead."
   (hermes--promise-catch
-   (hermes-sessions--call #'hermes-dashboard-transport-session-history
+   (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-history
                           client history-id)
    (lambda (message)
      (if (and (hermes-sessions--session-not-found-message-p message)
               (not (string-empty-p resume-id)))
-         (hermes-sessions--call #'hermes-dashboard-transport-session-resume
+         (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-resume
                                 client resume-id)
        (hermes--promise-rejected message)))))
 
@@ -392,16 +378,16 @@ returned messages instead."
 On a missing-session error, resume SESSION-ID and retry the title on the live
 id it returns."
   (hermes--promise-catch
-   (hermes-sessions--call #'hermes-dashboard-transport-session-title
+   (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-title
                           client :session-id session-id :title title)
    (lambda (message)
      (if (hermes-sessions--session-not-found-message-p message)
          (hermes--promise-then
-          (hermes-sessions--call #'hermes-dashboard-transport-session-resume
+          (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-resume
                                  client session-id)
           (lambda (result)
             (let ((live-id (hermes-sessions--field result 'session_id)))
-              (hermes-sessions--call
+              (hermes-dashboard-transport-call-fn
                #'hermes-dashboard-transport-session-title
                client
                :session-id (if (string-empty-p live-id) session-id live-id)
@@ -504,7 +490,7 @@ id it returns."
            (hermes--promise-catch
             (hermes--promise-then
              (hermes--promise-finally
-              (hermes-sessions--call #'hermes-dashboard-transport-session-delete
+              (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-delete
                                      client id)
               done)
              (lambda (_result)
@@ -524,7 +510,7 @@ client just for the listing."
      (hermes--promise-catch
       (hermes--promise-then
        (hermes--promise-finally
-        (hermes-sessions--call #'hermes-dashboard-transport-session-list client)
+        (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-list client)
         done)
        (lambda (result)
          (hermes-sessions--render (hermes-transport--get result 'sessions))))
