@@ -5267,8 +5267,32 @@ The buffer is captured by object so teardown still kills it after a rename."
     (should (equal status-state
                    (apply #'hermes-chat--entry-with
                           '(:status idle :activity "x")
-                          (append (hermes-chat--turn-status-props event)
+                          (append (hermes-chat--turn-header-props event)
                                   (list :updated now)))))))
+
+(ert-deftest hermes-chat-turn-reduce-terminal-and-noop-events ()
+  "done/error stamp status and clear tools; unknown sets error; delta is a no-op."
+  (let ((now '(5 5))
+        (state '(:status-state (:status running :activity "x"))))
+    (let ((r (hermes-chat--turn-reduce
+              state '(:type done :usage (:input 1 :output 2)) now)))
+      (should (equal (plist-get (car r) :status-state)
+                     '(:status ready :activity "Ready"
+                               :usage (:input 1 :output 2) :updated (5 5))))
+      (should (equal (cdr r) '((clear-tools)))))
+    (let* ((event '(:type error :content "boom"))
+           (r (hermes-chat--turn-reduce state event now))
+           (status-state (plist-get (car r) :status-state)))
+      (should (eq (plist-get status-state :status)
+                  (hermes-chat--error-status event)))
+      (should (equal (plist-get status-state :activity) "boom"))
+      (should (equal (cdr r) '((clear-tools)))))
+    (let ((r (hermes-chat--turn-reduce state '(:type unknown :event "weird") now)))
+      (should (eq (plist-get (plist-get (car r) :status-state) :status) 'error))
+      (should-not (cdr r)))
+    (let ((r (hermes-chat--turn-reduce state '(:type delta :content "hi") now)))
+      (should (eq (car r) state))
+      (should-not (cdr r)))))
 
 (ert-deftest hermes-chat-turn-reduce-tool-family-emits-pure-delta ()
   "Tool-like events leave the state untouched and emit a pure tool delta."
@@ -5289,9 +5313,9 @@ The buffer is captured by object so teardown still kills it after a rename."
     (should-not (hermes-chat--turn-tool-effect '(:type status)))))
 
 (ert-deftest hermes-chat-turn-reduce-out-of-scope-is-noop ()
-  "Out-of-scope events return the same state object and no effects."
+  "An unhandled event type returns the same state object and no effects."
   (let ((state '(:status-state (:status running))))
-    (should (equal (hermes-chat--turn-reduce state '(:type done) '(0 0))
+    (should (equal (hermes-chat--turn-reduce state '(:type bogus) '(0 0))
                    (cons state nil)))))
 
 (ert-deftest hermes-chat-model-candidates-auth-first-dedup ()
