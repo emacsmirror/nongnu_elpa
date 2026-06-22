@@ -1497,6 +1497,52 @@ The buffer is captured by object so teardown still kills it after a rename."
          (funcall callback '(:type done :session-id "sid-active"))
          (should (equal submits '("cite files" "first"))))))))
 
+(ert-deftest hermes-dashboard-transport-call-resolves-on-result ()
+  "A call resolves its promise with the JSON-RPC result for the matching id."
+  (let* ((client (hermes-test--dashboard-client))
+         last-frame resolved
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text)
+            (setq last-frame (hermes-dashboard-transport--decode-frame text)))))
+    (hermes--promise-then
+     (hermes-dashboard-transport-call client "session.list" '((cols . 80)))
+     (lambda (result) (setq resolved result)))
+    (should (equal (alist-get 'method last-frame) "session.list"))
+    (hermes-dashboard-transport--handle-frame
+     client
+     `((jsonrpc . "2.0") (id . ,(alist-get 'id last-frame)) (result . "ok")))
+    (should (equal resolved "ok"))))
+
+(ert-deftest hermes-dashboard-transport-call-rejects-on-error ()
+  "A call rejects its promise with the error message for the matching id."
+  (let* ((client (hermes-test--dashboard-client))
+         last-frame rejected
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text)
+            (setq last-frame (hermes-dashboard-transport--decode-frame text)))))
+    (hermes--promise-catch
+     (hermes-dashboard-transport-call client "session.create" nil)
+     (lambda (reason) (setq rejected reason)))
+    (hermes-dashboard-transport--handle-frame
+     client
+     `((jsonrpc . "2.0") (id . ,(alist-get 'id last-frame))
+       (error . ((message . "boom")))))
+    (should (string-match-p "boom" rejected))))
+
+(ert-deftest hermes-dashboard-transport-call-rejects-on-timeout ()
+  "A call rejects its promise when the request times out."
+  (let* ((client (hermes-test--dashboard-client))
+         last-frame rejected
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text)
+            (setq last-frame (hermes-dashboard-transport--decode-frame text)))))
+    (hermes--promise-catch
+     (hermes-dashboard-transport-call client "session.list" nil)
+     (lambda (reason) (setq rejected reason)))
+    (hermes-dashboard-transport--on-request-timeout
+     client (alist-get 'id last-frame))
+    (should (string-match-p "timed out" rejected))))
+
 (ert-deftest hermes-chat-slash-queue-drains-once ()
   (let ((client (hermes-test--dashboard-client))
         first-callback submits dispatch-name dispatch-arg)

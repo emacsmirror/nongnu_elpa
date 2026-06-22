@@ -34,6 +34,7 @@
 (require 'url-parse)
 (require 'url-util)
 (require 'hermes-transport)
+(require 'hermes-promise)
 
 (declare-function websocket-open "ext:websocket")
 (declare-function websocket-send-text "ext:websocket")
@@ -1122,6 +1123,18 @@ message when provided.  Return the request id."
         (hermes-dashboard-transport--send-failure-message
          client method err))))
     id))
+
+(defun hermes-dashboard-transport-call (client method &optional params)
+  "Send METHOD with PARAMS for CLIENT and return a promise of its response.
+The promise resolves with the JSON-RPC result and rejects with the error
+message, adapting `hermes-dashboard-transport-request' callbacks so callers can
+compose with `hermes--promise-then' instead of nesting RESOLVE/REJECT."
+  (let ((promise (hermes--promise-make)))
+    (hermes-dashboard-transport-request
+     client method params
+     (lambda (result) (hermes--promise-resolve promise result))
+     (lambda (reason) (hermes--promise-reject promise reason)))
+    promise))
 
 (defun hermes-dashboard-transport--alist-without-nil (alist)
   "Return ALIST without nil-valued cells."
