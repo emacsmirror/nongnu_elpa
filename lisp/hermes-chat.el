@@ -510,18 +510,13 @@ METADATA is stored as the entry's `:metadata' plist."
      ('tool (hermes-chat--format-tool-event event))
      (_ nil))))
 
-(defun hermes-chat--remember-header-tool (event)
-  "Track EVENT's tool in `hermes-chat--active-tools' for the dashboard.
-The chat header itself never shows tools; this only feeds the dashboard's
-per-session tool list via `hermes-chat--dashboard-snapshot'."
-  (when-let* ((summary (hermes-chat--header-tool-summary event)))
-    (unless (hash-table-p hermes-chat--active-tools)
-      (setq hermes-chat--active-tools (make-hash-table :test 'equal)))
-    (let ((key (or (hermes-chat--header-tool-key event) summary))
-          (status (hermes-chat--transport-entry-status event)))
-      (if (hermes-chat--finished-status-p status)
-          (remhash key hermes-chat--active-tools)
-        (puthash key summary hermes-chat--active-tools)))))
+(defun hermes-chat--active-tools-table ()
+  "Return the active-tools hash for this buffer, creating it when absent.
+This feeds the dashboard's per-session tool list via
+`hermes-chat--dashboard-snapshot'; the chat header itself never shows tools."
+  (unless (hash-table-p hermes-chat--active-tools)
+    (setq hermes-chat--active-tools (make-hash-table :test 'equal)))
+  hermes-chat--active-tools)
 
 (defun hermes-chat--header-activity-for-event (event)
   "Return a compact activity string for transport EVENT."
@@ -564,10 +559,11 @@ fields, so it collapses to a plain ready state instead of repeating them."
 ;;; Turn-state reducer
 ;;
 ;; The header-affecting state of a turn -- the status line and the active-tool
-;; set -- is computed by the pure `hermes-chat--turn-reduce' and applied at the
-;; boundary.  Keeping the event -> state transition pure makes it testable
-;; without a live buffer; the side effects (header refresh, tool-hash mutation)
-;; live only in the applier.
+;; set -- is computed by the pure `hermes-chat--turn-reduce'.  The reducer takes
+;; the wall-clock NOW as data so it can stamp the status line itself, and returns
+;; (NEW-STATE . EFFECTS) where each effect is a uniform (TYPE . PAYLOAD) tool
+;; delta.  The boundary only persists NEW-STATE and replays the deltas; it makes
+;; no decisions of its own.
 
 (defun hermes-chat--turn-state (&rest kvs)
   "Return a turn-state plist built from KVS."
@@ -600,11 +596,21 @@ fields, so it collapses to a plain ready state instead of repeating them."
                                 (plist-get event :content))))
     ('diff '(:status running :activity "Reviewing diff"))))
 
-(defun hermes-chat--turn-reduce (state event)
-  "Return (NEW-STATE . EFFECTS) for domain EVENT applied to turn-state STATE.
+(defun hermes-chat--turn-tool-effect (event)
+  "Return a (TYPE . PAYLOAD) active-tool delta for tool-like EVENT, or nil.
+`tool-put' carries (KEY . SUMMARY) and `tool-remove' carries KEY.  Pure."
+  (when-let* ((summary (hermes-chat--header-tool-summary event)))
+    (let ((key (or (hermes-chat--header-tool-key event) summary)))
+      (if (hermes-chat--finished-status-p
+           (hermes-chat--transport-entry-status event))
+          (cons 'tool-remove key)
+        (cons 'tool-put (cons key summary))))))
+
+(defun hermes-chat--turn-reduce (state event now)
+  "Return (NEW-STATE . EFFECTS) for domain EVENT applied to STATE at time NOW.
 Pure: no buffer, EWOC, process, header, or message side effects.  A
-status-family event threads a merged :status-state into NEW-STATE and emits a
-`refresh-header' effect; a tool-like event emits a `remember-tool' effect.
+status-family event threads a complete, NOW-stamped :status-state into
+NEW-STATE; a tool-like event emits a `tool-put'/`tool-remove' delta in EFFECTS.
 Out-of-scope events return (cons STATE nil)."
   (pcase (plist-get event :type)
     ((or 'status 'commentary 'thinking 'diff)
@@ -612,30 +618,31 @@ Out-of-scope events return (cons STATE nil)."
             state :status-state
             (apply #'hermes-chat--entry-with
                    (hermes-chat--turn-state-get state :status-state)
-                   (hermes-chat--turn-status-props event)))
-           '((refresh-header))))
+                   (append (hermes-chat--turn-status-props event)
+                           (list :updated now))))
+           nil))
     ((or 'progress 'tool)
-     (cons state (list (cons 'remember-tool event))))
+     (cons state (delq nil (list (hermes-chat--turn-tool-effect event)))))
     (_ (cons state nil))))
 
-(defun hermes-chat--apply-turn-effect (new-state effect)
-  "Apply one reducer EFFECT at the boundary, reading NEW-STATE for header writes."
+(defun hermes-chat--apply-turn-effect (effect)
+  "Apply one boundary EFFECT: an active-tool hash delta."
   (pcase (car effect)
-    ('refresh-header
-     (setq hermes-chat--status-state
-           (plist-put (hermes-chat--turn-state-get new-state :status-state)
-                      :updated (current-time)))
-     (force-mode-line-update)
-     (hermes-chat--notify-state-change))
-    ('remember-tool
-     (hermes-chat--remember-header-tool (cdr effect)))))
+    ('tool-put
+     (puthash (cadr effect) (cddr effect) (hermes-chat--active-tools-table)))
+    ('tool-remove
+     (remhash (cdr effect) (hermes-chat--active-tools-table)))))
 
 (defun hermes-chat--run-turn-reducer (event)
-  "Reduce EVENT against the live turn state and apply the resulting effects."
+  "Reduce EVENT against the live turn state, persist it, and replay effects."
   (let* ((state (hermes-chat--turn-state :status-state hermes-chat--status-state))
-         (result (hermes-chat--turn-reduce state event)))
-    (dolist (effect (cdr result))
-      (hermes-chat--apply-turn-effect (car result) effect))))
+         (result (hermes-chat--turn-reduce state event (current-time)))
+         (status (hermes-chat--turn-state-get (car result) :status-state)))
+    (unless (eq status (hermes-chat--turn-state-get state :status-state))
+      (setq hermes-chat--status-state status)
+      (force-mode-line-update)
+      (hermes-chat--notify-state-change))
+    (mapc #'hermes-chat--apply-turn-effect (cdr result))))
 
 (defun hermes-chat--update-header-for-event (event)
   "Update chat header state from transport EVENT.

@@ -5233,54 +5233,66 @@ The buffer is captured by object so teardown still kills it after a rename."
    (should (equal (plist-get hermes-chat--status-state :usage) '(:input 1200 :output 340)))
    (should-not (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))
 
-(ert-deftest hermes-chat-turn-reduce-maps-events-to-state-and-effects ()
-  "The pure reducer maps in-scope events to (new-state . effects) with no IO."
-  (let ((tool-event '(:type tool :event "e1" :name "terminal" :status "running")))
+(ert-deftest hermes-chat-turn-reduce-status-family-stamps-state-no-effects ()
+  "Status-family events thread a NOW-stamped :status-state and emit no effects."
+  (let ((now '(100 200)))
     (dolist (case
              (list
               (list '(:status-state (:status running :activity "old"))
                     '(:type thinking :content "pondering...")
-                    '(:status-state (:status thinking :activity "Pondering"))
-                    '((refresh-header)))
+                    '(:status-state (:status thinking :activity "Pondering"
+                                             :updated (100 200))))
               (list '(:status-state (:status thinking :activity "x"))
                     '(:type commentary)
-                    '(:status-state (:status running :activity "Thinking..."))
-                    '((refresh-header)))
+                    '(:status-state (:status running :activity "Thinking..."
+                                             :updated (100 200))))
               (list '(:status-state nil)
                     '(:type diff)
-                    '(:status-state (:status running :activity "Reviewing diff"))
-                    '((refresh-header)))
-              (list '(:status-state (:status running))
-                    '(:type progress :event "p1" :name "search")
-                    '(:status-state (:status running))
-                    (list (cons 'remember-tool
-                                '(:type progress :event "p1" :name "search"))))
-              (list '(:status-state (:status running))
-                    tool-event
-                    '(:status-state (:status running))
-                    (list (cons 'remember-tool tool-event)))
-              (list '(:status-state (:status running))
-                    '(:type done :usage (:input 1 :output 2))
-                    '(:status-state (:status running))
-                    nil)))
-      (cl-destructuring-bind (state event expected-state expected-effects) case
-        (let ((result (hermes-chat--turn-reduce state event)))
+                    '(:status-state (:status running :activity "Reviewing diff"
+                                             :updated (100 200))))))
+      (cl-destructuring-bind (state event expected-state) case
+        (let ((result (hermes-chat--turn-reduce state event now)))
           (should (equal (car result) expected-state))
-          (should (equal (cdr result) expected-effects)))))))
+          (should-not (cdr result)))))))
 
-(ert-deftest hermes-chat-turn-reduce-status-threads-header-purely ()
-  "A status event threads merged header props and emits `refresh-header'."
-  (let* ((state '(:status-state (:status idle :activity "x")))
+(ert-deftest hermes-chat-turn-reduce-status-stamps-clock-purely ()
+  "A status event bakes the injected NOW into the threaded :status-state."
+  (let* ((now '(7 7))
+         (state '(:status-state (:status idle :activity "x")))
          (event '(:type status :status "running" :content "Searching"))
-         (result (hermes-chat--turn-reduce state event))
+         (result (hermes-chat--turn-reduce state event now))
          (status-state (plist-get (car result) :status-state)))
-    (should (equal (cdr result) '((refresh-header))))
+    (should-not (cdr result))
+    (should (equal (plist-get status-state :updated) now))
     (should (equal status-state
                    (apply #'hermes-chat--entry-with
                           '(:status idle :activity "x")
-                          (hermes-chat--turn-status-props event))))
-    ;; Purity: the reducer must not stamp :updated; that is a boundary effect.
-    (should-not (plist-get status-state :updated))))
+                          (append (hermes-chat--turn-status-props event)
+                                  (list :updated now)))))))
+
+(ert-deftest hermes-chat-turn-reduce-tool-family-emits-pure-delta ()
+  "Tool-like events leave the state untouched and emit a pure tool delta."
+  (let ((running '(:type tool :name "terminal" :status "running" :context "make test"))
+        (done '(:type tool :name "terminal" :status "completed" :context "make test"))
+        (state '(:status-state (:status running))))
+    (let ((result (hermes-chat--turn-reduce state running '(0 0))))
+      (should (eq (car result) state))
+      (should (equal (cdr result)
+                     (list (cons 'tool-put
+                                 (cons (hermes-chat--header-tool-key running)
+                                       (hermes-chat--header-tool-summary running)))))))
+    (let ((result (hermes-chat--turn-reduce state done '(0 0))))
+      (should (equal (cdr result)
+                     (list (cons 'tool-remove
+                                 (hermes-chat--header-tool-key done))))))
+    ;; No summary -> no delta.
+    (should-not (hermes-chat--turn-tool-effect '(:type status)))))
+
+(ert-deftest hermes-chat-turn-reduce-out-of-scope-is-noop ()
+  "Out-of-scope events return the same state object and no effects."
+  (let ((state '(:status-state (:status running))))
+    (should (equal (hermes-chat--turn-reduce state '(:type done) '(0 0))
+                   (cons state nil)))))
 
 (ert-deftest hermes-chat-model-candidates-auth-first-dedup ()
   "Model candidates list authenticated providers first and keep provider identity."
