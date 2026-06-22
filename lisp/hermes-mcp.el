@@ -34,6 +34,7 @@
 (require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-promise)
 (require 'hermes-browser)
 
 (defgroup hermes-mcp nil
@@ -185,22 +186,20 @@ TEST-RESULTS maps server names to `test' endpoint responses."
            (string-match-p "HTTP 501" message))))
 
 (cl-defun hermes-mcp--api (method path &optional body query &key secrets client)
-  "Call the dashboard MCP REST API METHOD PATH.
-BODY and QUERY are passed to `hermes-dashboard-transport-api-request'.
-SECRETS are redacted from any surfaced error.  CLIENT supplies a live dashboard
-session token when available."
-  (condition-case err
-      (hermes-dashboard-transport-api-request
-       method (concat "/api/mcp" path) :body body :query query :secrets secrets
-       :client client)
-    (error
+  "Return a promise of the dashboard MCP REST API METHOD PATH.
+BODY and QUERY extend the request.  SECRETS are redacted from any surfaced
+error.  CLIENT supplies a live dashboard session token when available."
+  (hermes--promise-catch
+   (hermes-dashboard-transport-api-request-async
+    method (concat "/api/mcp" path) :body body :query query :secrets secrets
+    :client client)
+   (lambda (reason)
      (let ((message (hermes-mcp--redact-display
-                     (hermes-dashboard-transport--redact-secret
-                      (error-message-string err) secrets))))
-       (if (hermes-mcp--unsupported-api-error-p message)
-           (user-error
-            "Hermes dashboard MCP REST API is unavailable; update Hermes Agent/dashboard")
-         (signal (car err) (list message)))))))
+                     (hermes-dashboard-transport--redact-secret reason secrets))))
+       (hermes--promise-rejected
+        (if (hermes-mcp--unsupported-api-error-p message)
+            "Hermes dashboard MCP REST API is unavailable; update Hermes Agent/dashboard"
+          message))))))
 
 (defun hermes-mcp--ensure-state ()
   "Ensure the current MCP buffer has state tables."
@@ -218,22 +217,6 @@ session token when available."
                 ((not (string-empty-p name))))
       (puthash name server hermes-mcp--servers))))
 
-(defun hermes-mcp--with-client (fn)
-  "Call FN with a dashboard client, reporting MCP REST errors."
-  (hermes-browser--with-client
-   (lambda (client done)
-     (let ((cleaned nil))
-       (cl-labels ((cleanup ()
-                    (unless cleaned
-                      (setq cleaned t)
-                      (funcall done))))
-         (condition-case err
-             (unwind-protect
-                 (funcall fn client)
-               (cleanup))
-           (error
-            (message "Hermes: %s" (error-message-string err)))))))))
-
 (defun hermes-mcp--render (result)
   "Render MCP servers from RESULT in `hermes-mcp-buffer-name'."
   (with-current-buffer (get-buffer-create hermes-mcp-buffer-name)
@@ -245,12 +228,11 @@ session token when available."
     (tabulated-list-print t)
     (pop-to-buffer (current-buffer))))
 
-(defun hermes-mcp--fetch (&optional client)
-  "Fetch and render the MCP server list, optionally through CLIENT."
-  (if client
-      (hermes-mcp--render
-       (hermes-mcp--api "GET" "/servers" nil nil :client client))
-    (hermes-mcp--with-client #'hermes-mcp--fetch)))
+(defun hermes-mcp--fetch ()
+  "Fetch and render the MCP server list asynchronously."
+  (hermes-browser--run-on-client
+   (lambda (client) (hermes-mcp--api "GET" "/servers" nil nil :client client))
+   #'hermes-mcp--render))
 
 (defun hermes-mcp--revert (&rest _)
   "Refresh the MCP server list."
@@ -291,17 +273,19 @@ session token when available."
   (hermes-mcp--ensure-state)
   (let ((name (hermes-mcp--name-at-point))
         (buffer (current-buffer)))
-    (hermes-mcp--with-client
+    (hermes-browser--run-on-client
      (lambda (client)
-       (let ((result (hermes-mcp--api
-                      "POST" (hermes-mcp--server-path name "/test")
-                      nil nil :client client)))
-         (when (buffer-live-p buffer)
-           (with-current-buffer buffer
-             (hermes-mcp--ensure-state)
-             (puthash name result hermes-mcp--test-results)
-             (hermes-mcp--message-test-result name result)))
-         (hermes-mcp--fetch client))))))
+       (hermes--promise-then
+        (hermes-mcp--api "POST" (hermes-mcp--server-path name "/test")
+                         nil nil :client client)
+        (lambda (result)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (hermes-mcp--ensure-state)
+              (puthash name result hermes-mcp--test-results)
+              (hermes-mcp--message-test-result name result)))
+          (hermes-mcp--api "GET" "/servers" nil nil :client client))))
+     #'hermes-mcp--render)))
 
 (defun hermes-mcp-toggle ()
   "Enable or disable the MCP server at point through the dashboard API."
@@ -313,15 +297,17 @@ session token when available."
       (user-error "MCP server %s has no enabled state; refresh or update Hermes Agent/dashboard"
                   (hermes-mcp--redact-display name)))
     (let ((next (not (hermes-mcp--enabled-p server))))
-      (hermes-mcp--with-client
+      (hermes-browser--run-on-client
        (lambda (client)
-         (hermes-mcp--api
-          "PUT" (hermes-mcp--server-path name "/enabled")
-          `((enabled . ,(if next t :false))) nil :client client)
-         (message "Hermes: %s %s; change applies to new sessions/gateway reload"
-                  (if next "enabled" "disabled")
-                  (hermes-mcp--redact-display name))
-         (hermes-mcp--fetch client))))))
+         (hermes--promise-then
+          (hermes-mcp--api "PUT" (hermes-mcp--server-path name "/enabled")
+                           `((enabled . ,(if next t :false))) nil :client client)
+          (lambda (_result)
+            (message "Hermes: %s %s; change applies to new sessions/gateway reload"
+                     (if next "enabled" "disabled")
+                     (hermes-mcp--redact-display name))
+            (hermes-mcp--api "GET" "/servers" nil nil :client client))))
+       #'hermes-mcp--render))))
 
 (defvar hermes-mcp-mode-map)
 

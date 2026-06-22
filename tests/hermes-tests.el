@@ -7535,22 +7535,24 @@ This is the contract that replaces hand-mirroring every event name: an invented
 (ert-deftest hermes-mcp-test-and-toggle-dispatch-rest-actions ()
   "Testing and toggling dispatch to MCP dashboard REST endpoints."
   (let (calls messages)
-    (cl-letf (((symbol-function 'hermes-mcp--with-client)
-               (lambda (fn) (funcall fn 'fake-client)))
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (let ((p (funcall make-promise 'fake-client)))
+                   (if on-success (hermes--promise-then p on-success) p))))
               ((symbol-function 'hermes-mcp--api)
                (lambda (method path &optional body query &rest _args)
                  (push (list method path body query) calls)
-                 (cond
-                  ((equal path "/servers")
-                   '((servers . (((name . "ctx") (transport . "stdio")
-                                  (enabled . t) (tool_count . 0))))))
-                  ((equal path "/servers/ctx/test")
-                   '((ok . t) (tools . (((name . "read")
-                                         (description . "Read"))))))
-                  ((equal path "/servers/ctx/enabled")
-                   (should (equal body '((enabled . :false))))
-                   '((ok . t) (name . "ctx") (enabled . nil)))
-                  (t (error "unexpected MCP API call %S" path)))))
+                 (hermes--promise-resolved (cond
+					    ((equal path "/servers")
+					     '((servers . (((name . "ctx") (transport . "stdio")
+							    (enabled . t) (tool_count . 0))))))
+					    ((equal path "/servers/ctx/test")
+					     '((ok . t) (tools . (((name . "read")
+								   (description . "Read"))))))
+					    ((equal path "/servers/ctx/enabled")
+					     (should (equal body '((enabled . :false))))
+					     '((ok . t) (name . "ctx") (enabled . nil)))
+					    (t (error "unexpected MCP API call %S" path))))))
               ((symbol-function 'message)
                (lambda (format-string &rest args)
                  (push (apply #'format format-string args) messages))))
@@ -7594,18 +7596,20 @@ This is the contract that replaces hand-mirroring every event name: an invented
   "MCP test failure messages redact secret-shaped backend errors."
   (let ((secret "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")
         messages)
-    (cl-letf (((symbol-function 'hermes-mcp--with-client)
-               (lambda (fn) (funcall fn 'fake-client)))
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (let ((p (funcall make-promise 'fake-client)))
+                   (if on-success (hermes--promise-then p on-success) p))))
               ((symbol-function 'hermes-mcp--api)
                (lambda (_method path &optional _body _query &rest _args)
-                 (cond
-                  ((equal path "/servers")
-                   '((servers . (((name . "ctx") (transport . "stdio")
-                                  (enabled . t))))))
-                  ((equal path "/servers/ctx/test")
-                   `((ok . nil) (error . ,(concat "failed token=" secret))
-                     (tools . nil)))
-                  (t (error "unexpected MCP API call %S" path)))))
+                 (hermes--promise-resolved (cond
+					    ((equal path "/servers")
+					     '((servers . (((name . "ctx") (transport . "stdio")
+							    (enabled . t))))))
+					    ((equal path "/servers/ctx/test")
+					     `((ok . nil) (error . ,(concat "failed token=" secret))
+					       (tools . nil)))
+					    (t (error "unexpected MCP API call %S" path))))))
               ((symbol-function 'message)
                (lambda (format-string &rest args)
                  (push (apply #'format format-string args) messages))))
@@ -7623,15 +7627,22 @@ This is the contract that replaces hand-mirroring every event name: an invented
           (kill-buffer "*Hermes MCP Servers*"))))))
 
 (ert-deftest hermes-mcp-action-reports-unsupported-backend ()
-  "MCP actions surface unsupported REST backends clearly."
-  (let (called)
-    (cl-letf (((symbol-function 'hermes-mcp--with-client)
-               (lambda (fn) (funcall fn 'fake-client)))
-              ((symbol-function 'hermes-dashboard-transport-api-request)
+  "MCP actions surface unsupported REST backends as a Hermes message."
+  (let (called messages)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-catch
+                  (hermes--promise-then (funcall make-promise 'fake-client)
+                                        on-success)
+                  (lambda (m) (message "Hermes: %s" m)))))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (method path &rest _args)
                  (setq called (list method path))
-                 (user-error
-                  "Hermes dashboard request failed at /api/mcp/servers/ctx/test (HTTP 404)"))))
+                 (hermes--promise-rejected
+                  "Hermes dashboard request failed at /api/mcp/servers/ctx/test (HTTP 404)")))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
       (unwind-protect
           (progn
             (hermes-mcp--render
@@ -7639,10 +7650,11 @@ This is the contract that replaces hand-mirroring every event name: an invented
                             (enabled . t))))))
             (with-current-buffer "*Hermes MCP Servers*"
               (goto-char (point-min))
-              (let ((error (should-error (hermes-mcp-test) :type 'user-error)))
-                (should (equal called '("POST" "/api/mcp/servers/ctx/test")))
-                (should (string-match-p "MCP REST API is unavailable"
-                                        (error-message-string error))))))
+              (hermes-mcp-test))
+            (should (equal called '("POST" "/api/mcp/servers/ctx/test")))
+            (should (cl-some (lambda (m)
+                               (string-match-p "MCP REST API is unavailable" m))
+                             messages)))
         (when (get-buffer "*Hermes MCP Servers*")
           (kill-buffer "*Hermes MCP Servers*"))))))
 
@@ -7650,19 +7662,20 @@ This is the contract that replaces hand-mirroring every event name: an invented
   "MCP REST requests use a live dashboard client's session token when present."
   (let ((client (make-hermes-dashboard-transport-client
                  :host "127.0.0.1" :port 32123 :token "session-token"))
-        seen-url seen-method seen-headers seen-secrets)
-    (cl-letf (((symbol-function 'hermes-dashboard-transport--http-json)
+        seen-url seen-method seen-headers seen-secrets result)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--http-json-async)
                (cl-function
                 (lambda (url &key method headers body secrets)
-                 (ignore body)
-                 (setq seen-url url
-                       seen-method method
-                       seen-headers headers
-                       seen-secrets secrets)
-                 '(:body ((servers . nil)))))))
-      (should (equal (hermes-mcp--api "GET" "/servers" nil '((profile . "work"))
-                                      :client client)
-                     '((servers . nil))))
+                  (ignore body)
+                  (setq seen-url url
+                        seen-method method
+                        seen-headers headers
+                        seen-secrets secrets)
+                  (hermes--promise-resolved '(:body ((servers . nil))))))))
+      (hermes--promise-then
+       (hermes-mcp--api "GET" "/servers" nil '((profile . "work")) :client client)
+       (lambda (body) (setq result body)))
+      (should (equal result '((servers . nil))))
       (should (equal seen-method "GET"))
       (should (string-match-p (regexp-quote "/api/mcp/servers?profile=work")
                               seen-url))
@@ -7672,34 +7685,31 @@ This is the contract that replaces hand-mirroring every event name: an invented
 
 (ert-deftest hermes-mcp-api-redacts-secret-shaped-errors ()
   "MCP API errors do not leak token, ticket, internal, or env secrets."
-  (let ((secret "sk-test-secret"))
-    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
+  (let ((secret "sk-test-secret") reason)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
                (lambda (_method _path &rest args)
-                 (signal 'user-error
-                         (list (hermes-dashboard-transport--redact-secret
-                                (format "bad token=%s env SECRET=%s" secret secret)
-                                (plist-get args :secrets)))))))
-      (should-error (hermes-mcp--api "GET" "/servers" nil nil
-                                      :secrets (list secret))
-                    :type 'user-error)
-      (condition-case err
-          (hermes-mcp--api "GET" "/servers" nil nil :secrets (list secret))
-        (user-error
-         (let ((message (error-message-string err)))
-           (should-not (string-match-p (regexp-quote secret) message))
-           (should (string-match-p "<redacted>" message))))))))
+                 (hermes--promise-rejected
+                  (hermes-dashboard-transport--redact-secret
+                   (format "bad token=%s env SECRET=%s" secret secret)
+                   (plist-get args :secrets))))))
+      (hermes--promise-catch
+       (hermes-mcp--api "GET" "/servers" nil nil :secrets (list secret))
+       (lambda (r) (setq reason r)))
+      (should reason)
+      (should-not (string-match-p (regexp-quote secret) reason))
+      (should (string-match-p "<redacted>" reason)))))
 
 (ert-deftest hermes-mcp-api-reports-unsupported-backend ()
   "A missing MCP REST endpoint is reported as an unsupported backend."
-  (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request)
-             (lambda (&rest _)
-               (user-error "Hermes dashboard request failed at /api/mcp/servers (HTTP 404)"))))
-    (should-error (hermes-mcp--api "GET" "/servers") :type 'user-error)
-    (condition-case err
-        (hermes-mcp--api "GET" "/servers")
-      (user-error
-       (should (string-match-p "MCP REST API is unavailable"
-                               (error-message-string err)))))))
+  (let (reason)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _)
+                 (hermes--promise-rejected
+                  "Hermes dashboard request failed at /api/mcp/servers (HTTP 404)"))))
+      (hermes--promise-catch
+       (hermes-mcp--api "GET" "/servers")
+       (lambda (r) (setq reason r)))
+      (should (string-match-p "MCP REST API is unavailable" reason)))))
 
 (provide 'hermes-tests)
 ;;; hermes-tests.el ends here
