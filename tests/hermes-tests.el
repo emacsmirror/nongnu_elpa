@@ -874,6 +874,45 @@ The buffer is captured by object so teardown still kills it after a rename."
          (should (equal (plist-get progress :status) 'error))
          (should (string-match-p "! 💻 terminal: running" (buffer-string))))))))
 
+(ert-deftest hermes-chat-done-settles-active-progress-and-clears-process ()
+  "A done event settles active transport entries and clears the process handle."
+  (let (callback)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (_prompt cb)
+              (setq callback cb)
+              'fake-process)))
+       (insert "hi")
+       (hermes-chat-send)
+       (should (eq hermes-chat--process 'fake-process))
+       (funcall callback
+                '(:type progress :tool-call-id "tool-1" :name "terminal"
+                        :status "running" :content "running"))
+       (funcall callback '(:type done))
+       (let* ((entries (hermes-chat--entries))
+              (assistant (cadr entries))
+              (progress (cl-find 'progress entries
+                                 :key (lambda (entry) (plist-get entry :role)))))
+         (should (equal (plist-get assistant :status) 'done))
+         (should (equal (plist-get progress :status) 'done)))
+       (should-not hermes-chat--process)
+       (should-not hermes-chat--pending-assistant-id)))))
+
+(ert-deftest hermes-chat-error-clears-process-handle ()
+  "An error event clears the transport process handle and the pending id."
+  (let (callback)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (_prompt cb)
+              (setq callback cb)
+              'fake-process)))
+       (insert "hi")
+       (hermes-chat-send)
+       (should (eq hermes-chat--process 'fake-process))
+       (funcall callback '(:type error :content "boom"))
+       (should-not hermes-chat--process)
+       (should-not hermes-chat--pending-assistant-id)))))
+
 (ert-deftest hermes-chat-transport-removes-control-bytes-from-assistant-output ()
   (let (callback)
     (hermes-test-with-chat-buffer
