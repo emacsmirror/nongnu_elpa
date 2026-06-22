@@ -1361,6 +1361,17 @@ title when the session row does not exist yet."
       (title . ,title)))
    resolve reject))
 
+(cl-defun hermes-dashboard-transport-session-title-fetch
+    (client &key session-id resolve reject)
+  "Fetch CLIENT's current SESSION-ID title via `session.title' without setting it.
+Omitting the title makes the gateway return the stored or auto-generated title.
+RESOLVE and REJECT receive the asynchronous result or error."
+  (hermes-dashboard-transport-request
+   client "session.title"
+   (hermes-dashboard-transport--alist-without-nil
+    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))))
+   resolve reject))
+
 (cl-defun hermes-dashboard-transport-session-steer
     (client text &key session-id resolve reject)
   "Send TEXT through `session.steer' for CLIENT's active session."
