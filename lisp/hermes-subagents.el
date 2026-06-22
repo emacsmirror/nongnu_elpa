@@ -29,6 +29,7 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-promise)
 (require 'hermes-sessions)
 
 (defun hermes-subagents--rows (result)
@@ -84,14 +85,14 @@ Each active subagent's goal is indented by its spawn depth."
     (when (yes-or-no-p (format "Interrupt subagent %s? " id))
       (hermes-sessions--with-client
        (lambda (client done)
-         (hermes-dashboard-transport-subagent-interrupt
-          client id
-          :resolve (lambda (_result)
-                     (funcall done)
-                     (message "Hermes: interrupted %s" id))
-          :reject (lambda (message)
-                    (funcall done)
-                    (message "Hermes: %s" message))))))))
+         (hermes--promise-catch
+          (hermes--promise-then
+           (hermes--promise-finally
+            (hermes-dashboard-transport-call-fn
+             #'hermes-dashboard-transport-subagent-interrupt client id)
+            done)
+           (lambda (_result) (message "Hermes: interrupted %s" id)))
+          (lambda (message) (message "Hermes: %s" message))))))))
 
 ;;;###autoload
 (defun hermes-list-subagents ()
@@ -99,14 +100,14 @@ Each active subagent's goal is indented by its spawn depth."
   (interactive)
   (hermes-sessions--with-client
    (lambda (client done)
-     (hermes-dashboard-transport-delegation-status
-      client
-      :resolve (lambda (result)
-                 (funcall done)
-                 (hermes-subagents--render result))
-      :reject (lambda (message)
-                (funcall done)
-                (message "Hermes: %s" message))))))
+     (hermes--promise-catch
+      (hermes--promise-then
+       (hermes--promise-finally
+        (hermes-dashboard-transport-call-fn
+         #'hermes-dashboard-transport-delegation-status client)
+        done)
+       (lambda (result) (hermes-subagents--render result)))
+      (lambda (message) (message "Hermes: %s" message))))))
 
 (provide 'hermes-subagents)
 ;;; hermes-subagents.el ends here
