@@ -247,36 +247,12 @@ so do not copy its final content into the unsubmitted retry placeholder."
                 assistant-id (or (plist-get event :content) ""))
          (hermes-chat--append-assistant-content
           assistant-id (or (plist-get event :content) "") 'streaming)))
-      ('done
-       (hermes-chat--clear-terminal-prompts event)
-       (hermes-chat--mark-assistant
-        assistant-id 'done
-        (hermes-chat--assistant-done-content
-         assistant-id (plist-get event :content))
-        t)
-       (hermes-chat--drop-duplicate-thinking assistant-id)
-       (hermes-chat--settle-transport-entries assistant-id 'done)
-       (hermes-chat--dashboard-finish-assistant assistant-id)
-       (setq hermes-chat--pending-assistant-id nil
-             hermes-chat--process nil)
-       (hermes-chat--drain-queued-message))
-      ('error
-       (let ((status (hermes-chat--error-status event)))
-         (hermes-chat--clear-terminal-prompts event)
-         (hermes-chat--append-assistant-content
-          assistant-id
-          (let ((content (or (plist-get event :content) "")))
-            (if (string-empty-p content) "Transport error" content))
-          status)
-         (hermes-chat--settle-transport-entries assistant-id status)
-         (hermes-chat--dashboard-finish-assistant assistant-id)
-         (setq hermes-chat--pending-assistant-id nil
-               hermes-chat--process nil)
-         (hermes-chat--drain-queued-message)))
-      ;; Header, tool, and transcript rendering for the remaining event types
-      ;; (thinking/status/progress/tool/commentary/diff/unknown) happens via the
-      ;; reducer effects in `hermes-chat--render-turn-event' above.
-      ((or 'thinking 'status 'progress 'tool 'commentary 'diff 'unknown) nil)
+      ;; Header, tool, transcript, and the done/error turn lifecycle for the
+      ;; remaining event types are rendered by the reducer effects in
+      ;; `hermes-chat--render-turn-event' above.
+      ((or 'done 'error 'thinking 'status 'progress 'tool 'commentary 'diff
+           'unknown)
+       nil)
       (_
        (message "Unknown Hermes transport event: %S" event))))))
 

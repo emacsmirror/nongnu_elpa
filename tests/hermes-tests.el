@@ -5272,39 +5272,40 @@ The buffer is captured by object so teardown still kills it after a rename."
    (should (equal (plist-get hermes-chat--status-state :usage) '(:input 1200 :output 340)))
    (should-not (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))
 
-(ert-deftest hermes-chat-turn-reduce-status-family-stamps-state ()
-  "Status-family events stamp :status-state at NOW; transcript types add upsert."
+(ert-deftest hermes-chat-turn-reduce-status-family-stamps-and-refreshes ()
+  "Status-family events stamp :status-state and lead with a refresh-header effect."
   (let ((now '(100 200)))
     (dolist (case
              (list
               (list '(:status-state (:status running :activity "old"))
                     '(:type thinking :content "pondering...")
-                    '(:status-state (:status thinking :activity "Pondering"
-                                             :updated (100 200)))
-                    nil)
+                    '(:status thinking :activity "Pondering" :updated (100 200))
+                    '(refresh-header))
               (list '(:status-state (:status thinking :activity "x"))
                     '(:type commentary)
-                    '(:status-state (:status running :activity "Thinking..."
-                                             :updated (100 200)))
-                    (list (cons 'upsert-entry '(:type commentary))))
+                    '(:status running :activity "Thinking..." :updated (100 200))
+                    '(refresh-header upsert-entry))
               (list '(:status-state nil)
                     '(:type diff)
-                    '(:status-state (:status running :activity "Reviewing diff"
-                                             :updated (100 200)))
-                    (list (cons 'upsert-entry '(:type diff))))))
-      (cl-destructuring-bind (state event expected-state expected-effects) case
+                    '(:status running :activity "Reviewing diff" :updated (100 200))
+                    '(refresh-header upsert-entry))))
+      (cl-destructuring-bind (state event expected-status effect-types) case
         (let ((result (hermes-chat--turn-reduce state event now)))
-          (should (equal (car result) expected-state))
-          (should (equal (cdr result) expected-effects)))))))
+          (should (equal (plist-get (car result) :status-state) expected-status))
+          (should (equal (mapcar #'car (cdr result)) effect-types))
+          ;; refresh-header carries the same status-state threaded into NEW-STATE.
+          (should (equal (cdr (assq 'refresh-header (cdr result)))
+                         expected-status)))))))
 
 (ert-deftest hermes-chat-turn-reduce-status-stamps-clock-and-upserts ()
-  "A non-session-info status stamps NOW and upserts; session.info adds no entry."
+  "A non-session-info status stamps NOW, refreshes, and upserts; info skips upsert."
   (let* ((now '(7 7))
          (state '(:status-state (:status idle :activity "x")))
          (event '(:type status :status "running" :content "Searching"))
          (result (hermes-chat--turn-reduce state event now))
          (status-state (plist-get (car result) :status-state)))
-    (should (equal (cdr result) (list (cons 'upsert-entry event))))
+    (should (equal (mapcar #'car (cdr result)) '(refresh-header upsert-entry)))
+    (should (equal (cdr (assq 'upsert-entry (cdr result))) event))
     (should (equal (plist-get status-state :updated) now))
     (should (equal status-state
                    (apply #'hermes-chat--entry-with
@@ -5313,32 +5314,35 @@ The buffer is captured by object so teardown still kills it after a rename."
                                   (list :updated now)))))
     (let ((r (hermes-chat--turn-reduce
               state '(:type status :event "session.info" :status "ready") now)))
-      (should-not (cdr r)))))
+      (should (equal (mapcar #'car (cdr r)) '(refresh-header))))))
 
 (ert-deftest hermes-chat-turn-reduce-terminal-and-noop-events ()
-  "done/error clear tools; unknown emits message+upsert; delta is a no-op."
+  "done/error reduce to the ordered turn-lifecycle effects; delta is a no-op."
   (let ((now '(5 5))
         (state '(:status-state (:status running :activity "x"))))
-    (let ((r (hermes-chat--turn-reduce
-              state '(:type done :usage (:input 1 :output 2)) now)))
+    (let* ((event '(:type done :usage (:input 1 :output 2)))
+           (r (hermes-chat--turn-reduce state event now)))
       (should (equal (plist-get (car r) :status-state)
                      '(:status ready :activity "Ready"
                                :usage (:input 1 :output 2) :updated (5 5))))
-      (should (equal (cdr r) '((clear-tools)))))
+      ;; refresh-header precedes drain so the header settles before re-submit.
+      (should (equal (mapcar #'car (cdr r))
+                     '(clear-tools refresh-header clear-prompts mark-done
+                       drop-thinking settle finish clear-pending drain)))
+      (should (eq (cdr (assq 'settle (cdr r))) 'done)))
     (let* ((event '(:type error :content "boom"))
-           (r (hermes-chat--turn-reduce state event now))
-           (status-state (plist-get (car r) :status-state)))
-      (should (eq (plist-get status-state :status)
-                  (hermes-chat--error-status event)))
-      (should (equal (plist-get status-state :activity) "boom"))
-      (should (equal (cdr r) '((clear-tools)))))
+           (estatus (hermes-chat--error-status event))
+           (r (hermes-chat--turn-reduce state event now)))
+      (should (equal (mapcar #'car (cdr r))
+                     '(clear-tools refresh-header clear-prompts append-error
+                       settle finish clear-pending drain)))
+      (should (equal (cdr (assq 'append-error (cdr r))) (cons "boom" estatus)))
+      (should (eq (cdr (assq 'settle (cdr r))) estatus)))
     (let* ((event '(:type unknown :event "weird"))
            (r (hermes-chat--turn-reduce state event now)))
       (should (eq (plist-get (plist-get (car r) :status-state) :status) 'error))
-      (should (equal (cdr r)
-                     (list (cons 'message
-                                 (hermes-chat--unknown-event-content event))
-                           (cons 'upsert-entry event)))))
+      (should (equal (mapcar #'car (cdr r))
+                     '(refresh-header message upsert-entry))))
     (let ((r (hermes-chat--turn-reduce state '(:type delta :content "hi") now)))
       (should (eq (car r) state))
       (should-not (cdr r)))))

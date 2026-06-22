@@ -613,14 +613,12 @@ fields, so it collapses to a plain ready state instead of repeating them."
           (cons 'tool-remove key)
         (cons 'tool-put (cons key summary))))))
 
-(defun hermes-chat--turn-set-status (state event now)
-  "Return STATE with a complete :status-state merged for EVENT, stamped at NOW."
-  (hermes-chat--turn-state-put
-   state :status-state
-   (apply #'hermes-chat--entry-with
-          (hermes-chat--turn-state-get state :status-state)
-          (append (hermes-chat--turn-header-props event)
-                  (list :updated now)))))
+(defun hermes-chat--turn-status-state (state event now)
+  "Return the merged :status-state for header EVENT at NOW, given turn-state STATE."
+  (apply #'hermes-chat--entry-with
+         (hermes-chat--turn-state-get state :status-state)
+         (append (hermes-chat--turn-header-props event)
+                 (list :updated now))))
 
 (defun hermes-chat--transcript-event-p (event)
   "Return non-nil when EVENT should render a compact transcript entry."
@@ -633,22 +631,60 @@ fields, so it collapses to a plain ready state instead of repeating them."
   (and (hermes-chat--transcript-event-p event)
        (cons 'upsert-entry event)))
 
+(defun hermes-chat--turn-done-effects (event status)
+  "Return the ordered effect list for a `done' EVENT with header STATUS.
+`refresh-header' precedes the lifecycle so the header settles before `drain'
+re-submits any queued turn."
+  (list '(clear-tools)
+        (cons 'refresh-header status)
+        (cons 'clear-prompts event)
+        (cons 'mark-done (plist-get event :content))
+        '(drop-thinking)
+        '(settle . done)
+        '(finish)
+        '(clear-pending)
+        '(drain)))
+
+(defun hermes-chat--turn-error-effects (event status)
+  "Return the ordered effect list for an `error' EVENT with header STATUS."
+  (let ((estatus (hermes-chat--error-status event))
+        (content (let ((c (or (plist-get event :content) "")))
+                   (if (string-empty-p c) "Transport error" c))))
+    (list '(clear-tools)
+          (cons 'refresh-header status)
+          (cons 'clear-prompts event)
+          (cons 'append-error (cons content estatus))
+          (cons 'settle estatus)
+          '(finish)
+          '(clear-pending)
+          '(drain))))
+
 (defun hermes-chat--turn-reduce (state event now)
   "Return (NEW-STATE . EFFECTS) for domain EVENT applied to STATE at time NOW.
-Pure: no buffer, EWOC, process, header, or message side effects.  A
-header-family event threads a complete :status-state stamped at NOW into
-NEW-STATE; `done'/`error' also clear tools, tool events emit a tool delta, and a
-transcript event emits an `upsert-entry' effect.  Other types return (STATE)."
+Pure: no buffer, EWOC, process, header, or message side effects.  EFFECTS is an
+ordered list the boundary replays: a header change leads with `refresh-header',
+`done'/`error' append the turn lifecycle, and tool/transcript events emit deltas
+and `upsert-entry'.  Other types return (STATE)."
   (pcase (plist-get event :type)
     ((or 'status 'commentary 'thinking 'diff)
-     (cons (hermes-chat--turn-set-status state event now)
-           (delq nil (list (hermes-chat--turn-entry-effect event)))))
+     (let ((status (hermes-chat--turn-status-state state event now)))
+       (cons (hermes-chat--turn-state-put state :status-state status)
+             (delq nil (list (cons 'refresh-header status)
+                             (hermes-chat--turn-entry-effect event))))))
     ('unknown
-     (cons (hermes-chat--turn-set-status state event now)
-           (list (cons 'message (hermes-chat--unknown-event-content event))
-                 (cons 'upsert-entry event))))
-    ((or 'done 'error)
-     (cons (hermes-chat--turn-set-status state event now) '((clear-tools))))
+     (let ((status (hermes-chat--turn-status-state state event now)))
+       (cons (hermes-chat--turn-state-put state :status-state status)
+             (list (cons 'refresh-header status)
+                   (cons 'message (hermes-chat--unknown-event-content event))
+                   (cons 'upsert-entry event)))))
+    ('done
+     (let ((status (hermes-chat--turn-status-state state event now)))
+       (cons (hermes-chat--turn-state-put state :status-state status)
+             (hermes-chat--turn-done-effects event status))))
+    ('error
+     (let ((status (hermes-chat--turn-status-state state event now)))
+       (cons (hermes-chat--turn-state-put state :status-state status)
+             (hermes-chat--turn-error-effects event status))))
     ((or 'progress 'tool)
      (cons state (delq nil (list (hermes-chat--turn-tool-effect event)
                                  (hermes-chat--turn-entry-effect event)))))
@@ -656,36 +692,47 @@ transcript event emits an `upsert-entry' effect.  Other types return (STATE)."
 
 (defun hermes-chat--apply-turn-effect (assistant-id effect)
   "Apply one boundary EFFECT for ASSISTANT-ID.
-Transcript and diagnostic effects render only when ASSISTANT-ID is non-nil, so a
-header-only reduction leaves the transcript untouched."
+Header and tool effects always apply; transcript, message, and turn-lifecycle
+effects apply only when ASSISTANT-ID is non-nil, so a header-only reduction
+stays side-effect-light."
   (pcase (car effect)
+    ('refresh-header
+     (setq hermes-chat--status-state (cdr effect))
+     (force-mode-line-update)
+     (hermes-chat--notify-state-change))
+    ('clear-tools (hermes-chat--clear-active-tools))
     ('tool-put
      (puthash (cadr effect) (cddr effect) (hermes-chat--active-tools-table)))
-    ('tool-remove
-     (remhash (cdr effect) (hermes-chat--active-tools-table)))
-    ('clear-tools
-     (hermes-chat--clear-active-tools))
-    ('upsert-entry
-     (when assistant-id
-       (hermes-chat--upsert-transport-entry assistant-id (cdr effect))))
-    ('message
-     (when assistant-id (message "%s" (cdr effect))))))
+    ('tool-remove (remhash (cdr effect) (hermes-chat--active-tools-table)))
+    ((guard (null assistant-id)) nil)
+    ('upsert-entry (hermes-chat--upsert-transport-entry assistant-id (cdr effect)))
+    ('message (message "%s" (cdr effect)))
+    ('clear-prompts (hermes-chat--clear-terminal-prompts (cdr effect)))
+    ('mark-done
+     (hermes-chat--mark-assistant
+      assistant-id 'done
+      (hermes-chat--assistant-done-content assistant-id (cdr effect)) t))
+    ('append-error
+     (hermes-chat--append-assistant-content
+      assistant-id (cadr effect) (cddr effect)))
+    ('drop-thinking (hermes-chat--drop-duplicate-thinking assistant-id))
+    ('settle (hermes-chat--settle-transport-entries assistant-id (cdr effect)))
+    ('finish (hermes-chat--dashboard-finish-assistant assistant-id))
+    ('clear-pending
+     (setq hermes-chat--pending-assistant-id nil
+           hermes-chat--process nil))
+    ('drain (hermes-chat--drain-queued-message))))
 
 (defun hermes-chat--run-turn-reducer (assistant-id event)
-  "Capture identity, reduce EVENT, replay effects, then persist header state.
-Transcript effects render only when ASSISTANT-ID is non-nil.  Effects run before
-the status write-back so a `clear-tools' settles the active tools before
-`hermes-chat--notify-state-change' snapshots them."
+  "Reduce EVENT and apply its effects in order for ASSISTANT-ID.
+Captures session identity first.  The reducer puts `refresh-header' in sequence
+so the boundary only replays effects, with no separate write-back."
   (hermes-chat--capture-session-identity event)
-  (let* ((state (hermes-chat--turn-state :status-state hermes-chat--status-state))
-         (result (hermes-chat--turn-reduce state event (current-time)))
-         (status (hermes-chat--turn-state-get (car result) :status-state)))
+  (let ((result (hermes-chat--turn-reduce
+                 (hermes-chat--turn-state :status-state hermes-chat--status-state)
+                 event (current-time))))
     (dolist (effect (cdr result))
-      (hermes-chat--apply-turn-effect assistant-id effect))
-    (unless (eq status (hermes-chat--turn-state-get state :status-state))
-      (setq hermes-chat--status-state status)
-      (force-mode-line-update)
-      (hermes-chat--notify-state-change))))
+      (hermes-chat--apply-turn-effect assistant-id effect))))
 
 (defun hermes-chat--update-header-for-event (event)
   "Update only header and tool state from transport EVENT, leaving the transcript.
