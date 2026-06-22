@@ -594,7 +594,7 @@ fields, so it collapses to a plain ready state instead of repeating them."
 (defun hermes-chat--turn-tool-effect (event)
   "Return a (TYPE . PAYLOAD) active-tool delta for tool-like EVENT, or nil.
 `tool-put' carries (KEY . SUMMARY) and `tool-remove' carries KEY.  Pure."
-  (when-let* ((summary (hermes-chat--header-tool-summary event)))
+  (and-let* ((summary (hermes-chat--header-tool-summary event)))
     (let ((key (or (hermes-chat--header-tool-key event) summary)))
       (if (hermes-chat--finished-status-p
            (hermes-chat--transport-entry-status event))
@@ -685,37 +685,37 @@ and `upsert-entry'.  Other types return (STATE)."
 Header and tool effects always apply; transcript, message, and turn-lifecycle
 effects apply only when ASSISTANT-ID is non-nil, so a header-only reduction
 stays side-effect-light."
-  (pcase (car effect)
-    ('refresh-header
-     (setq hermes-chat--status-state (cdr effect))
+  (pcase effect
+    (`(refresh-header . ,status)
+     (setq hermes-chat--status-state status)
      (force-mode-line-update)
      (hermes-chat--notify-state-change))
-    ('clear-tools (hermes-chat--clear-active-tools))
-    ('tool-put
-     (puthash (cadr effect) (cddr effect) (hermes-chat--active-tools-table)))
-    ('tool-remove (remhash (cdr effect) (hermes-chat--active-tools-table)))
+    ('(clear-tools) (hermes-chat--clear-active-tools))
+    (`(tool-put ,key . ,summary)
+     (puthash key summary (hermes-chat--active-tools-table)))
+    (`(tool-remove . ,key) (remhash key (hermes-chat--active-tools-table)))
     ((guard (null assistant-id)) nil)
-    ('upsert-entry (hermes-chat--upsert-transport-entry assistant-id (cdr effect)))
-    ('message (message "%s" (cdr effect)))
-    ('clear-prompts (hermes-chat--clear-terminal-prompts (cdr effect)))
-    ('mark-done
+    (`(upsert-entry . ,event)
+     (hermes-chat--upsert-transport-entry assistant-id event))
+    (`(message . ,text) (message "%s" text))
+    (`(clear-prompts . ,event) (hermes-chat--clear-terminal-prompts event))
+    (`(mark-done . ,content)
      (hermes-chat--mark-assistant
       assistant-id 'done
-      (hermes-chat--assistant-done-content assistant-id (cdr effect)) t))
-    ('append-error
-     (hermes-chat--append-assistant-content
-      assistant-id (cadr effect) (cddr effect)))
-    ('drop-thinking (hermes-chat--drop-duplicate-thinking assistant-id))
-    ('settle (hermes-chat--settle-transport-entries assistant-id (cdr effect)))
-    ('finish (hermes-chat--dashboard-finish-assistant assistant-id))
-    ('clear-pending
+      (hermes-chat--assistant-done-content assistant-id content) t))
+    (`(append-error ,content . ,status)
+     (hermes-chat--append-assistant-content assistant-id content status))
+    ('(drop-thinking) (hermes-chat--drop-duplicate-thinking assistant-id))
+    (`(settle . ,status)
+     (hermes-chat--settle-transport-entries assistant-id status))
+    ('(finish) (hermes-chat--dashboard-finish-assistant assistant-id))
+    ('(clear-pending)
      (setq hermes-chat--pending-assistant-id nil
            hermes-chat--process nil))
-    ('drain (hermes-chat--drain-queued-message))
-    ('append-delta
-     (unless (hermes-chat--thinking-echo-delta-p assistant-id (cdr effect))
-       (hermes-chat--append-assistant-content
-        assistant-id (cdr effect) 'streaming)))))
+    ('(drain) (hermes-chat--drain-queued-message))
+    (`(append-delta . ,content)
+     (unless (hermes-chat--thinking-echo-delta-p assistant-id content)
+       (hermes-chat--append-assistant-content assistant-id content 'streaming)))))
 
 (defun hermes-chat--run-turn-reducer (assistant-id event)
   "Reduce EVENT and apply its effects in order for ASSISTANT-ID.
