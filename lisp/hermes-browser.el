@@ -75,14 +75,16 @@ NAME is the short browser name; the macro defines `hermes-NAME-mode',
 `hermes-NAME-mode-map', `hermes-NAME--render', `hermes-NAME--revert', and the
 command `hermes-list-NAME'.  BODY is a plist:
 
-  :title    display/mode-line name (string)
-  :buffer   browser buffer name (string)
-  :columns  `tabulated-list-format' vector
-  :sort     initial sort column name (string), optional
-  :command  list-command symbol, when it is not `hermes-list-NAME' (optional)
-  :fetch    function (CLIENT -> promise) issuing the dashboard RPC
-  :rows     pure function (RESULT -> list of `tabulated-list' entries)
-  :keys     extra bindings, spliced into `defvar-keymap'
+  :title        display/mode-line name (string)
+  :buffer       browser buffer name (string)
+  :columns      `tabulated-list-format' vector
+  :command      list-command symbol when it differs from `hermes-list-NAME';
+                it must match the caller's `(autoload ...)' cookie
+  :fetch        function (CLIENT -> promise) issuing the dashboard RPC
+  :rows         pure function (RESULT -> list of `tabulated-list' entries)
+  :keys         extra bindings, spliced into `defvar-keymap'
+  :doc          major-mode docstring, optional
+  :command-doc  list-command docstring, optional
 
 `:fetch' and `:rows' must be pure: this macro owns the only side effects -- the
 buffer render and the dashboard client plumbing."
@@ -96,20 +98,20 @@ buffer render and the dashboard client plumbing."
         (title (plist-get body :title))
         (buffer (plist-get body :buffer))
         (columns (plist-get body :columns))
-        (sort (plist-get body :sort))
         (fetch (plist-get body :fetch))
         (rows (plist-get body :rows))
-        (keys (plist-get body :keys)))
+        (keys (plist-get body :keys))
+        (doc (plist-get body :doc))
+        (command-doc (plist-get body :command-doc)))
     `(progn
        (defvar-keymap ,map
          :doc ,(format "Keymap for `%s'." mode)
          :parent tabulated-list-mode-map
          ,@keys)
        (define-derived-mode ,mode tabulated-list-mode ,title
-         ,(format "Major mode for the %s browser." title)
+         ,(or doc (format "Major mode for the %s browser." title))
          :interactive nil
          (setq tabulated-list-format ,columns)
-         ,@(and sort `((setq tabulated-list-sort-key (cons ,sort nil))))
          (setq-local revert-buffer-function #',revert)
          (tabulated-list-init-header))
        (defun ,render (result)
@@ -124,7 +126,7 @@ buffer render and the dashboard client plumbing."
          ,(format "Refresh the %s browser." title)
          (,command))
        (defun ,command ()
-         ,(format "Browse %s from the Hermes dashboard." title)
+         ,(or command-doc (format "Browse %s from the Hermes dashboard." title))
          (interactive)
          (hermes-browser--run-on-client ,fetch #',render)))))
 

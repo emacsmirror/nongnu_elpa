@@ -89,6 +89,8 @@
   :title "Hermes Rollbacks"
   :buffer "*Hermes Rollbacks*"
   :command hermes-list-rollbacks
+  :doc "Major mode listing Hermes session checkpoints."
+  :command-doc "Browse Hermes checkpoint history for the active session."
   :columns [("Checkpoint" 10 t) ("When" 22 t) ("Message" 50 nil)]
   :fetch (lambda (client)
            (hermes-dashboard-transport-call-fn

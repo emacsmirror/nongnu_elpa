@@ -66,6 +66,8 @@ Each active subagent's goal is indented by its spawn depth."
 (hermes-define-list-browser subagents
   :title "Hermes Subagents"
   :buffer "*Hermes Subagents*"
+  :doc "Major mode listing active Hermes subagents."
+  :command-doc "Browse active Hermes subagents as a delegation tree."
   :columns [("Subagent" 44 t) ("Status" 12 t) ("Model" 18 t) ("Tools" 6 t)]
   :fetch (lambda (client)
            (hermes-dashboard-transport-call-fn

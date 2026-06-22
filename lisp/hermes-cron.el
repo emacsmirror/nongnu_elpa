@@ -409,6 +409,8 @@ RUNS is the detail run list."
   :title "Hermes Cron"
   :command hermes-list-crons
   :buffer "*Hermes Cron*"
+  :doc "Major mode listing Hermes scheduled jobs."
+  :command-doc "Browse Hermes scheduled (cron) jobs."
   :columns [("Name" 22 t) ("Schedule" 18 t) ("State" 10 t) ("Profile" 12 t)
             ("Deliver" 12 t) ("Last run" 18 t) ("Next run" 18 t)
             ("Prompt" 40 nil)]
