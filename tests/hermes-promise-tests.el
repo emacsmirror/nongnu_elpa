@@ -116,5 +116,37 @@
     (should settled)
     (should-not result)))
 
+;;; Group 4: settled constructors and finally
+
+(ert-deftest hermes-promise-test-resolved-and-rejected-constructors ()
+  "`hermes--promise-resolved'/`-rejected' build pre-settled promises."
+  (let (resolved rejected)
+    (hermes--promise-then (hermes--promise-resolved 5)
+                          (lambda (v) (setq resolved v)))
+    (hermes--promise-catch (hermes--promise-rejected "no")
+                           (lambda (m) (setq rejected m)))
+    (should (= resolved 5))
+    (should (equal rejected "no"))))
+
+(ert-deftest hermes-promise-test-finally-runs-on-resolve-and-passes-through ()
+  "`hermes--promise-finally' runs its thunk on resolve and forwards the value."
+  (let ((ran 0) value)
+    (hermes--promise-then
+     (hermes--promise-finally (hermes--promise-resolved 9)
+                              (lambda () (cl-incf ran)))
+     (lambda (v) (setq value v)))
+    (should (= ran 1))
+    (should (= value 9))))
+
+(ert-deftest hermes-promise-test-finally-runs-on-reject-and-passes-through ()
+  "`hermes--promise-finally' runs its thunk on reject and forwards the reason."
+  (let ((ran 0) reason)
+    (hermes--promise-catch
+     (hermes--promise-finally (hermes--promise-rejected "boom")
+                              (lambda () (cl-incf ran)))
+     (lambda (m) (setq reason m)))
+    (should (= ran 1))
+    (should (equal reason "boom"))))
+
 (provide 'hermes-promise-tests)
 ;;; hermes-promise-tests.el ends here

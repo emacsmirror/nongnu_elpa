@@ -139,5 +139,27 @@ It rejects with the reason of the first of PROMISES to reject."
         (setq index (1+ index))))
     next))
 
+(defun hermes--promise-resolved (value)
+  "Return a promise already resolved with VALUE."
+  (let ((promise (hermes--promise-make)))
+    (hermes--promise-resolve promise value)
+    promise))
+
+(defun hermes--promise-rejected (reason)
+  "Return a promise already rejected with REASON."
+  (let ((promise (hermes--promise-make)))
+    (hermes--promise-reject promise reason)
+    promise))
+
+(defun hermes--promise-finally (promise fn)
+  "Run FN for its side effect when PROMISE settles, passing the settlement on.
+Return a new promise that mirrors PROMISE's resolution or rejection after FN."
+  (let ((next (hermes--promise-make)))
+    (hermes--promise-subscribe
+     promise
+     (lambda (value) (funcall fn) (hermes--promise-resolve next value))
+     (lambda (reason) (funcall fn) (hermes--promise-reject next reason)))
+    next))
+
 (provide 'hermes-promise)
 ;;; hermes-promise.el ends here
