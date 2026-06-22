@@ -102,8 +102,8 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--context nil
   "Context-window usage plist (:used :max :percent) for the header.")
 
-(defvar-local hermes-chat--pending-assistant-id nil
-  "ID of the assistant entry awaiting transport completion.")
+;; Owned by `hermes-chat-buffer'; declared here for the byte-compiler.
+(defvar hermes-chat--pending-assistant-id)
 
 ;; Owned by `hermes-chat-buffer'; declared here for the byte-compiler.
 (defvar hermes-chat--transport-generation)
