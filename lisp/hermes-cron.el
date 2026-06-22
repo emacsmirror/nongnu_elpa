@@ -31,6 +31,7 @@
 (require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-promise)
 (require 'hermes-sessions)
 
 ;;; Fields
@@ -340,15 +341,17 @@ RUNS is the detail run list."
   "Run cron ACTION on job NAME, report DONE-MESSAGE, then refresh the list."
   (hermes-sessions--with-client
    (lambda (client done)
-     (hermes-dashboard-transport-cron-manage
-      client :action action :name name
-      :resolve (lambda (_result)
-                 (funcall done)
-                 (message "Hermes: %s" done-message)
-                 (hermes-list-crons))
-      :reject (lambda (message)
-                (funcall done)
-                (message "Hermes: %s" message))))))
+     (hermes--promise-catch
+      (hermes--promise-then
+       (hermes--promise-finally
+        (hermes-dashboard-transport-call-fn
+         #'hermes-dashboard-transport-cron-manage
+         client :action action :name name)
+        done)
+       (lambda (_result)
+         (message "Hermes: %s" done-message)
+         (hermes-list-crons)))
+      (lambda (message) (message "Hermes: %s" message))))))
 
 (defun hermes-cron-toggle ()
   "Pause or resume the cron job at point."
@@ -435,14 +438,15 @@ RUNS is the detail run list."
     (user-error "Name, schedule and prompt are required"))
   (hermes-sessions--with-client
    (lambda (client done)
-     (hermes-dashboard-transport-cron-manage
-      client :action "add" :name name :schedule schedule :prompt prompt
-      :resolve (lambda (_result)
-                 (funcall done)
-                 (message "Hermes: created cron job %s" name))
-      :reject (lambda (message)
-                (funcall done)
-                (message "Hermes: %s" message))))))
+     (hermes--promise-catch
+      (hermes--promise-then
+       (hermes--promise-finally
+        (hermes-dashboard-transport-call-fn
+         #'hermes-dashboard-transport-cron-manage
+         client :action "add" :name name :schedule schedule :prompt prompt)
+        done)
+       (lambda (_result) (message "Hermes: created cron job %s" name)))
+      (lambda (message) (message "Hermes: %s" message))))))
 
 ;;;###autoload
 (defun hermes-list-crons ()
@@ -450,14 +454,14 @@ RUNS is the detail run list."
   (interactive)
   (hermes-sessions--with-client
    (lambda (client done)
-     (hermes-dashboard-transport-cron-manage
-      client :action "list"
-      :resolve (lambda (result)
-                 (funcall done)
-                 (hermes-cron--render result))
-      :reject (lambda (message)
-                (funcall done)
-                (message "Hermes: %s" message))))))
+     (hermes--promise-catch
+      (hermes--promise-then
+       (hermes--promise-finally
+        (hermes-dashboard-transport-call-fn
+         #'hermes-dashboard-transport-cron-manage client :action "list")
+        done)
+       (lambda (result) (hermes-cron--render result)))
+      (lambda (message) (message "Hermes: %s" message))))))
 
 (provide 'hermes-cron)
 ;;; hermes-cron.el ends here
