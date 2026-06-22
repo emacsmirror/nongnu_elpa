@@ -41,98 +41,30 @@
 (require 'keymap-popup)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-promise)
 
 (declare-function markdown-mode "markdown-mode")
 (declare-function hermes-kanban-task-mode "hermes-kanban")
 
-;;; HTTP + auth against the dashboard kanban plugin
-
-(defvar hermes-kanban--auth nil
-  "Cached auth plist: (:base-url URL :headers HEADERS :secrets SECRETS).
-Invalidated and re-resolved when a GET fails, covering expired cookies.")
+;;; HTTP against the dashboard kanban plugin
 
 (defconst hermes-kanban-log-tail-bytes 100000
   "Number of worker-log bytes fetched for `hermes-kanban-show-log'.")
 
-(defun hermes-kanban--base-url ()
-  "Return the normalized dashboard base URL, or signal a `user-error'."
-  (or (hermes-dashboard-transport--normalize-base-url
-       hermes-dashboard-transport-url)
-      (user-error "Set `hermes-dashboard-transport-url' to your Hermes dashboard URL")))
-
-(defun hermes-kanban--token-auth (base-url)
-  "Return legacy session-token auth headers for BASE-URL."
-  (let ((token (hermes-dashboard-transport--remote-token-secret base-url)))
-    (list :headers (list (cons "X-Hermes-Session-Token" token))
-          :secrets (list token))))
-
-(defun hermes-kanban--basic-auth (base-url status)
-  "Return cookie auth headers for gated BASE-URL described by STATUS."
-  (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
-    (unless provider
-      (hermes-dashboard-transport--unsupported-remote-auth base-url))
-    (let* ((creds (hermes-dashboard-transport--remote-basic-credentials base-url))
-           (password (plist-get creds :password))
-           (response (hermes-dashboard-transport--http-json
-                      (hermes-dashboard-transport--api-url
-                       base-url "/auth/password-login")
-                      :method "POST"
-                      :headers '(("Content-Type" . "application/json"))
-                      :body `((provider . ,provider)
-                              (username . ,(plist-get creds :username))
-                              (password . ,password)
-                              (next . ""))
-                      :secrets (list password)))
-           (cookies (hermes-dashboard-transport--response-cookie-header response)))
-      (unless cookies
-        (user-error "Hermes dashboard basic login returned no session cookies"))
-      (list :headers (list (cons "Cookie" cookies))
-            :secrets (list password cookies)))))
-
-(defun hermes-kanban--authenticate ()
-  "Resolve dashboard auth per `hermes-dashboard-transport-remote-auth-method'."
-  (let ((base-url (hermes-kanban--base-url)))
-    (append
-     (list :base-url base-url)
-     (pcase hermes-dashboard-transport-remote-auth-method
-       ('token (hermes-kanban--token-auth base-url))
-       ('basic (hermes-kanban--basic-auth
-                base-url (hermes-dashboard-transport--remote-status base-url)))
-       (_ (let ((status (hermes-dashboard-transport--remote-status base-url)))
-            (if (hermes-dashboard-transport--status-auth-required-p status)
-                (hermes-kanban--basic-auth base-url status)
-              (hermes-kanban--token-auth base-url))))))))
-
-(defun hermes-kanban--auth ()
-  "Return cached auth, resolving it on first use."
-  (or hermes-kanban--auth
-      (setq hermes-kanban--auth (hermes-kanban--authenticate))))
-
-(defun hermes-kanban--api-1 (method path body query retry)
-  "Call kanban plugin METHOD PATH with BODY and QUERY; retry once when RETRY."
-  (let* ((auth (hermes-kanban--auth))
-         (url (concat (hermes-dashboard-transport--api-url
-                       (plist-get auth :base-url)
-                       (concat "/api/plugins/kanban" path))
-                      (hermes-dashboard-transport--query-string query)))
-         (headers (append (plist-get auth :headers)
-                          (and body '(("Content-Type" . "application/json"))))))
-    (condition-case err
-        (plist-get
-         (hermes-dashboard-transport--http-json
-          url :method method :headers headers :body body
-          :secrets (plist-get auth :secrets))
-         :body)
-      (error
-       (if retry
-           (progn (setq hermes-kanban--auth nil)
-                  (hermes-kanban--api-1 method path body query nil))
-         (signal (car err) (cdr err)))))))
-
 (defun hermes-kanban--api (method path &optional body query)
-  "Call the kanban plugin: METHOD PATH with optional BODY and QUERY alist.
-Return the parsed JSON body.  GET requests retry once after re-authenticating."
-  (hermes-kanban--api-1 method path body query (equal method "GET")))
+  "Return a promise of the kanban plugin response for METHOD PATH.
+BODY and QUERY extend the request.  Authentication and a single retry on a
+failed GET come from the shared dashboard transport, which talks only to
+`hermes-dashboard-transport-url'."
+  (hermes-dashboard-transport-api-request-async
+   method (concat "/api/plugins/kanban" path)
+   :body body :query query))
+
+(defun hermes-kanban--then (promise on-ok)
+  "Run ON-OK on PROMISE's resolved value, reporting any rejection."
+  (hermes--promise-then
+   promise on-ok
+   (lambda (reason) (message "Hermes: %s" reason))))
 
 ;;; Field helpers
 
@@ -416,15 +348,19 @@ when WIDTH can hold one character per column plus padding."
   (hermes-kanban--init-boards-header))
 
 (defun hermes-kanban--render-boards ()
-  "Fetch and render the dashboard boards overview."
-  (let ((boards (hermes-transport--get (hermes-kanban--api "GET" "/boards") 'boards)))
-    (with-current-buffer (get-buffer-create "*Hermes Kanban Boards*")
-      (unless (derived-mode-p 'hermes-kanban-boards-mode)
-        (hermes-kanban-boards-mode))
-      (setq tabulated-list-entries (hermes-kanban--board-rows boards))
-      (pop-to-buffer (current-buffer))
-      (hermes-kanban--init-boards-header (hermes-kanban--visible-window-width))
-      (tabulated-list-print t))))
+  "Fetch and render the dashboard boards overview asynchronously."
+  (hermes-kanban--then
+   (hermes-kanban--api "GET" "/boards")
+   (lambda (payload)
+     (let ((boards (hermes-transport--get payload 'boards)))
+       (with-current-buffer (get-buffer-create "*Hermes Kanban Boards*")
+         (unless (derived-mode-p 'hermes-kanban-boards-mode)
+           (hermes-kanban-boards-mode))
+         (setq tabulated-list-entries (hermes-kanban--board-rows boards))
+         (pop-to-buffer (current-buffer))
+         (hermes-kanban--init-boards-header
+          (hermes-kanban--visible-window-width))
+         (tabulated-list-print t))))))
 
 (defun hermes-kanban--boards-revert (&rest _)
   "Refresh the boards overview."
@@ -460,20 +396,23 @@ when WIDTH can hold one character per column plus padding."
         (name (read-string "Display name: ")))
     (when (string-empty-p slug)
       (user-error "Board slug is required"))
-    (hermes-kanban--api "POST" "/boards"
-                        `((slug . ,slug)
-                          (name . ,(if (string-empty-p name) slug name))
-                          (switch . :false)))
-    (hermes-kanban--render-boards)))
+    (hermes-kanban--then
+     (hermes-kanban--api "POST" "/boards"
+                         `((slug . ,slug)
+                           (name . ,(if (string-empty-p name) slug name))
+                           (switch . :false)))
+     (lambda (_) (hermes-kanban--render-boards)))))
 
 (defun hermes-kanban-switch-board ()
   "Make the selected board the current Hermes Kanban board."
   (interactive)
   (let* ((board (hermes-kanban--board-at-point))
          (slug (car board)))
-    (hermes-kanban--api "POST" (hermes-kanban--board-path slug "/switch"))
-    (hermes-kanban--render-boards)
-    (message "Current Hermes Kanban board: %s" slug)))
+    (hermes-kanban--then
+     (hermes-kanban--api "POST" (hermes-kanban--board-path slug "/switch"))
+     (lambda (_)
+       (hermes-kanban--render-boards)
+       (message "Current Hermes Kanban board: %s" slug)))))
 
 (defun hermes-kanban-rename-board (name)
   "Rename the selected board's display NAME."
@@ -486,10 +425,12 @@ when WIDTH can hold one character per column plus padding."
          (trimmed (string-trim name)))
     (when (string-empty-p trimmed)
       (user-error "Board name cannot be empty"))
-    (hermes-kanban--api "PATCH" (hermes-kanban--board-path slug)
-                        `((name . ,trimmed)))
-    (hermes-kanban--render-boards)
-    (message "Renamed board %s to %s" slug trimmed)))
+    (hermes-kanban--then
+     (hermes-kanban--api "PATCH" (hermes-kanban--board-path slug)
+                         `((name . ,trimmed)))
+     (lambda (_)
+       (hermes-kanban--render-boards)
+       (message "Renamed board %s to %s" slug trimmed)))))
 
 (defun hermes-kanban-archive-board ()
   "Archive the selected board after confirmation.
@@ -509,9 +450,11 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
     (when (yes-or-no-p
            (format "Archive board %s (%s) recoverably, without hard delete?"
                    slug name))
-      (hermes-kanban--api "DELETE" (hermes-kanban--board-path slug))
-      (hermes-kanban--render-boards)
-      (message "Archived board %s" slug))))
+      (hermes-kanban--then
+       (hermes-kanban--api "DELETE" (hermes-kanban--board-path slug))
+       (lambda (_)
+         (hermes-kanban--render-boards)
+         (message "Archived board %s" slug))))))
 
 ;;; Board detail buffer
 
@@ -576,23 +519,26 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
 
 (defun hermes-kanban--render-board (slug name)
   "Fetch and render board SLUG (display NAME) in the detail buffer."
-  (let* ((payload (hermes-kanban--api "GET" "/board" nil
-                                      (and slug `((board . ,slug)))))
-         (assignees (delq nil (mapcar #'hermes-transport--scalar-string
-                                      (hermes-transport--get payload 'assignees)))))
-    (with-current-buffer (get-buffer-create "*Hermes Kanban*")
-      (unless (derived-mode-p 'hermes-kanban-mode)
-        (hermes-kanban-mode))
-      (setq hermes-kanban--slug slug
-            hermes-kanban--name name
-            hermes-kanban--assignees assignees
-            mode-line-process (format " [%s]" (or name slug "board"))
-            tabulated-list-sort-key nil
-            tabulated-list-entries (hermes-kanban--task-rows
-                                    (hermes-transport--get payload 'columns)))
-      (pop-to-buffer (current-buffer))
-      (hermes-kanban--init-board-header (hermes-kanban--visible-window-width))
-      (tabulated-list-print t))))
+  (hermes-kanban--then
+   (hermes-kanban--api "GET" "/board" nil (and slug `((board . ,slug))))
+   (lambda (payload)
+     (let ((assignees (delq nil (mapcar #'hermes-transport--scalar-string
+                                        (hermes-transport--get payload
+                                                               'assignees)))))
+       (with-current-buffer (get-buffer-create "*Hermes Kanban*")
+         (unless (derived-mode-p 'hermes-kanban-mode)
+           (hermes-kanban-mode))
+         (setq hermes-kanban--slug slug
+               hermes-kanban--name name
+               hermes-kanban--assignees assignees
+               mode-line-process (format " [%s]" (or name slug "board"))
+               tabulated-list-sort-key nil
+               tabulated-list-entries (hermes-kanban--task-rows
+                                       (hermes-transport--get payload 'columns)))
+         (pop-to-buffer (current-buffer))
+         (hermes-kanban--init-board-header
+          (hermes-kanban--visible-window-width))
+         (tabulated-list-print t))))))
 
 (defun hermes-kanban--revert (&rest _)
   "Refresh the current board detail buffer in place."
@@ -902,11 +848,12 @@ EMPTY-NAME is inserted in the explicit empty-state line."
   "Refresh the current task detail buffer in place."
   (unless hermes-kanban-task--task-id
     (user-error "No task id for this detail buffer"))
-  (hermes-kanban--display-task
-   (hermes-kanban--api "GET" (hermes-kanban--task-path hermes-kanban-task--task-id)
-                       nil (hermes-kanban--query-for-board
-                            hermes-kanban-task--board-slug))
-   hermes-kanban-task--board-slug))
+  (let ((task-id hermes-kanban-task--task-id)
+        (board-slug hermes-kanban-task--board-slug))
+    (hermes-kanban--then
+     (hermes-kanban--api "GET" (hermes-kanban--task-path task-id)
+                         nil (hermes-kanban--query-for-board board-slug))
+     (lambda (payload) (hermes-kanban--display-task payload board-slug)))))
 
 (defun hermes-kanban--display-task (payload &optional board-slug)
   "Render task PAYLOAD in a read-only detail buffer.
@@ -930,11 +877,12 @@ BOARD-SLUG is remembered for refreshes and log requests."
 (defun hermes-kanban-show ()
   "Show the kanban task at point."
   (interactive)
-  (let ((board-slug hermes-kanban--slug))
-    (hermes-kanban--display-task
-     (hermes-kanban--api "GET" (hermes-kanban--task-path (hermes-kanban--id-at-point))
+  (let ((board-slug hermes-kanban--slug)
+        (id (hermes-kanban--id-at-point)))
+    (hermes-kanban--then
+     (hermes-kanban--api "GET" (hermes-kanban--task-path id)
                          nil (hermes-kanban--query-for-board board-slug))
-     board-slug)))
+     (lambda (payload) (hermes-kanban--display-task payload board-slug)))))
 
 (defun hermes-kanban--task-id-for-command ()
   "Return the current task id for a board or task-detail command."
@@ -955,12 +903,13 @@ BOARD-SLUG is remembered for refreshes and log requests."
           `((tail . ,hermes-kanban-log-tail-bytes))))
 
 (defun hermes-kanban--fetch-log (id board-slug)
-  "Return the worker log payload for task ID on BOARD-SLUG."
-  (condition-case err
-      (hermes-kanban--api "GET" (hermes-kanban--task-path id "/log")
-                          nil (hermes-kanban--log-query board-slug))
-    (error `((task_id . ,id)
-             (error . ,(error-message-string err))))))
+  "Return a promise of the worker log payload for task ID on BOARD-SLUG.
+A request failure resolves to an error payload so the log buffer shows it
+instead of surfacing a transport error."
+  (hermes--promise-catch
+   (hermes-kanban--api "GET" (hermes-kanban--task-path id "/log")
+                       nil (hermes-kanban--log-query board-slug))
+   (lambda (reason) `((task_id . ,id) (error . ,reason)))))
 
 (defun hermes-kanban--sanitize-log-content (content)
   "Return CONTENT normalized for human-readable log display."
@@ -1008,10 +957,11 @@ BOARD-SLUG is remembered for refreshes and log requests."
   "Refresh the current worker-log buffer in place."
   (unless hermes-kanban-log--task-id
     (user-error "No task id for this log buffer"))
-  (hermes-kanban--display-log
-   (hermes-kanban--fetch-log hermes-kanban-log--task-id
-                             hermes-kanban-log--board-slug)
-   hermes-kanban-log--board-slug))
+  (let ((id hermes-kanban-log--task-id)
+        (board-slug hermes-kanban-log--board-slug))
+    (hermes-kanban--then
+     (hermes-kanban--fetch-log id board-slug)
+     (lambda (payload) (hermes-kanban--display-log payload board-slug)))))
 
 (define-derived-mode hermes-kanban-log-mode special-mode "Hermes Log"
   "Major mode for a Hermes Kanban worker log buffer."
@@ -1040,10 +990,11 @@ BOARD-SLUG is remembered for refreshes and log requests."
 (defun hermes-kanban-show-log ()
   "Fetch and display the worker log for the task at point or current detail."
   (interactive)
-  (let* ((id (hermes-kanban--task-id-for-command))
-         (board-slug (hermes-kanban--board-slug-for-command))
-         (payload (hermes-kanban--fetch-log id board-slug)))
-    (hermes-kanban--display-log payload board-slug)))
+  (let ((id (hermes-kanban--task-id-for-command))
+        (board-slug (hermes-kanban--board-slug-for-command)))
+    (hermes-kanban--then
+     (hermes-kanban--fetch-log id board-slug)
+     (lambda (payload) (hermes-kanban--display-log payload board-slug)))))
 
 ;;; Task mutations
 
@@ -1053,13 +1004,16 @@ BOARD-SLUG is remembered for refreshes and log requests."
   (let* ((id (hermes-kanban--id-at-point))
          (entry (tabulated-list-get-entry))
          (title (read-string "Title: " (aref entry 3)))
-         (priority (read-number "Priority: " (string-to-number (aref entry 1)))))
+         (priority (read-number "Priority: " (string-to-number (aref entry 1))))
+         (slug hermes-kanban--slug)
+         (name hermes-kanban--name))
     (when (string-empty-p (string-trim title))
       (user-error "Title cannot be empty"))
-    (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
-                        `((title . ,title) (priority . ,priority))
-                        (hermes-kanban--board-query))
-    (hermes-kanban--revert)))
+    (hermes-kanban--then
+     (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
+                         `((title . ,title) (priority . ,priority))
+                         (hermes-kanban--board-query))
+     (lambda (_) (hermes-kanban--render-board slug name)))))
 
 (defun hermes-kanban-assign ()
   "Assign or reassign the task at point.
@@ -1069,14 +1023,17 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
          (entry (tabulated-list-get-entry))
          (status (hermes-kanban--entry-status entry))
          (who (completing-read "Assignee (empty to unassign): "
-                               hermes-kanban--assignees nil nil)))
-    (if (equal status "running")
-        (hermes-kanban--api "POST" (hermes-kanban--task-path id "/reassign")
-                            `((profile . ,who) (reclaim_first . t))
-                            (hermes-kanban--board-query))
-      (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
-                          `((assignee . ,who)) (hermes-kanban--board-query)))
-    (hermes-kanban--revert)))
+                               hermes-kanban--assignees nil nil))
+         (slug hermes-kanban--slug)
+         (name hermes-kanban--name)
+         (query (hermes-kanban--board-query)))
+    (hermes-kanban--then
+     (if (equal status "running")
+         (hermes-kanban--api "POST" (hermes-kanban--task-path id "/reassign")
+                             `((profile . ,who) (reclaim_first . t)) query)
+       (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
+                           `((assignee . ,who)) query))
+     (lambda (_) (hermes-kanban--render-board slug name)))))
 
 (defconst hermes-kanban--statuses
   '("todo" "ready" "blocked" "scheduled" "done" "archived" "triage")
@@ -1086,10 +1043,13 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
   "Set the status of the task at point."
   (interactive)
   (let* ((id (hermes-kanban--id-at-point))
-         (status (completing-read "Status: " hermes-kanban--statuses nil t)))
-    (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
-                        `((status . ,status)) (hermes-kanban--board-query))
-    (hermes-kanban--revert)))
+         (status (completing-read "Status: " hermes-kanban--statuses nil t))
+         (slug hermes-kanban--slug)
+         (name hermes-kanban--name))
+    (hermes-kanban--then
+     (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
+                         `((status . ,status)) (hermes-kanban--board-query))
+     (lambda (_) (hermes-kanban--render-board slug name)))))
 
 (defun hermes-kanban-comment ()
   "Append a comment to the task at point."
@@ -1098,9 +1058,10 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
         (body (read-string "Comment: ")))
     (when (string-empty-p (string-trim body))
       (user-error "Comment cannot be empty"))
-    (hermes-kanban--api "POST" (hermes-kanban--task-path id "/comments")
-                        `((body . ,body)) (hermes-kanban--board-query))
-    (message "Comment added")))
+    (hermes-kanban--then
+     (hermes-kanban--api "POST" (hermes-kanban--task-path id "/comments")
+                         `((body . ,body)) (hermes-kanban--board-query))
+     (lambda (_) (message "Comment added")))))
 
 (defun hermes-kanban-create-task ()
   "Create a task on the current board."
@@ -1108,23 +1069,29 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
   (let ((title (read-string "Title: "))
         (who (completing-read "Assignee (optional): "
                               hermes-kanban--assignees nil nil))
-        (priority (read-number "Priority: " 0)))
+        (priority (read-number "Priority: " 0))
+        (slug hermes-kanban--slug)
+        (name hermes-kanban--name))
     (when (string-empty-p (string-trim title))
       (user-error "Title is required"))
     (let ((body `((title . ,title) (priority . ,priority))))
       (unless (string-empty-p who)
         (setq body (append body `((assignee . ,who)))))
-      (hermes-kanban--api "POST" "/tasks" body (hermes-kanban--board-query)))
-    (hermes-kanban--revert)))
+      (hermes-kanban--then
+       (hermes-kanban--api "POST" "/tasks" body (hermes-kanban--board-query))
+       (lambda (_) (hermes-kanban--render-board slug name))))))
 
 (defun hermes-kanban-delete ()
   "Delete the task at point after confirmation."
   (interactive)
-  (let ((id (hermes-kanban--id-at-point)))
+  (let ((id (hermes-kanban--id-at-point))
+        (slug hermes-kanban--slug)
+        (name hermes-kanban--name))
     (when (yes-or-no-p (format "Delete task %s? " id))
-      (hermes-kanban--api "DELETE" (hermes-kanban--task-path id)
-                          nil (hermes-kanban--board-query))
-      (hermes-kanban--revert))))
+      (hermes-kanban--then
+       (hermes-kanban--api "DELETE" (hermes-kanban--task-path id)
+                           nil (hermes-kanban--board-query))
+       (lambda (_) (hermes-kanban--render-board slug name))))))
 
 ;;;###autoload
 (defun hermes-list-kanban ()
