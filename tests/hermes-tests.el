@@ -2512,6 +2512,10 @@ The buffer is captured by object so teardown still kills it after a rename."
          (should (equal resumed-session "sid-stored"))
          (should (equal submit-sessions '("sid-live-1")))
          (should (equal hermes-chat--pending-assistant-id first-assistant-id))
+         ;; restore-inflight stream branch: reattach to the live turn, no suppress.
+         (should (equal hermes-chat--dashboard-stream-assistant-id
+                        first-assistant-id))
+         (should-not hermes-chat--dashboard-suppress-stream-p)
          (funcall second-callback
                   '(:type delta
                     :session-id "sid-live-1"
@@ -2565,6 +2569,9 @@ The buffer is captured by object so teardown still kills it after a rename."
          (should (equal resumed-session "sid-stored"))
          (should-not submit-sessions)
          (should hermes-chat--pending-assistant-id)
+         ;; restore-inflight retry branch: suppress the live stream, no stream id.
+         (should hermes-chat--dashboard-suppress-stream-p)
+         (should-not hermes-chat--dashboard-stream-assistant-id)
          (funcall callback
                   '(:type delta
                     :session-id "sid-live"
@@ -2627,6 +2634,43 @@ The buffer is captured by object so teardown still kills it after a rename."
                           (regexp-quote (plist-get terminal :content))
                           (plist-get assistant :content))))
            (should-not hermes-chat--pending-assistant-id)))))))
+
+(ert-deftest hermes-chat-finish-assistant-clears-only-matching-bookkeeping ()
+  "Finishing an assistant clears stream/suppress/detached only when they match it."
+  (with-temp-buffer
+    (setq hermes-chat--dashboard-stream-assistant-id "a1"
+          hermes-chat--dashboard-suppress-stream-p t
+          hermes-chat--dashboard-detached-assistant-id "a1"
+          hermes-chat--pending-assistant-id "a1")
+    (hermes-chat--dashboard-finish-assistant "other")
+    (should (equal hermes-chat--dashboard-stream-assistant-id "a1"))
+    (should hermes-chat--dashboard-suppress-stream-p)
+    (should (equal hermes-chat--dashboard-detached-assistant-id "a1"))
+    (hermes-chat--dashboard-finish-assistant "a1")
+    (should-not hermes-chat--dashboard-stream-assistant-id)
+    (should-not hermes-chat--dashboard-suppress-stream-p)
+    (should-not hermes-chat--dashboard-detached-assistant-id)))
+
+(ert-deftest hermes-chat-forget-live-session-preserves-durable-key ()
+  "Forgetting the live session clears ready/active id but keeps the durable key."
+  (with-temp-buffer
+    (setq hermes-chat--dashboard-session-ready-p t
+          hermes-chat--dashboard-active-session-id "live-1"
+          hermes-chat--session-id "durable-1")
+    (hermes-chat--forget-live-dashboard-session)
+    (should-not hermes-chat--dashboard-session-ready-p)
+    (should-not hermes-chat--dashboard-active-session-id)
+    (should (equal hermes-chat--session-id "durable-1"))))
+
+(ert-deftest hermes-chat-restore-inflight-fresh-branch-binds-live-stream ()
+  "Restoring with no prior turn inserts an assistant and binds the live stream."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--dashboard-restore-inflight-turn 'fake-client)
+   (should hermes-chat--pending-assistant-id)
+   (should (eq hermes-chat--process 'fake-client))
+   (should (equal hermes-chat--dashboard-stream-assistant-id
+                  hermes-chat--pending-assistant-id))
+   (should-not hermes-chat--dashboard-suppress-stream-p)))
 
 (ert-deftest hermes-chat-dashboard-ignores-stale-no-session-close-after-settled ()
   (let* ((client-1 (hermes-test--dashboard-client))
