@@ -1128,7 +1128,11 @@ message when provided.  Return the request id."
   "Send METHOD with PARAMS for CLIENT and return a promise of its response.
 The promise resolves with the JSON-RPC result and rejects with the error
 message, adapting `hermes-dashboard-transport-request' callbacks so callers can
-compose with `hermes--promise-then' instead of nesting RESOLVE/REJECT."
+compose with `hermes--promise-then' instead of nesting RESOLVE/REJECT.
+
+This is the low-level promise primitive for a raw method/params call; callers
+with a typed wrapper (`hermes-dashboard-transport-session-*' and friends) use
+`hermes-dashboard-transport-call-fn' to reuse the wrapper's parameter building."
   (let ((promise (hermes--promise-make)))
     (hermes-dashboard-transport-request
      client method params
