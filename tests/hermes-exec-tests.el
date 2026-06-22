@@ -120,6 +120,14 @@
          (response (hermes-exec--request-response raw)))
     (should (string-prefix-p "HTTP/1.1 200 OK" response))))
 
+(ert-deftest hermes-exec-test-request-at-exact-cap-is-allowed ()
+  "A request whose size equals the cap is allowed; the bound is `>', not `>='."
+  (let* ((hermes-exec-require-approval nil)
+         (raw (hermes-exec-test--raw-request "{\"code\":\"(+ 1 2)\"}"))
+         (hermes-exec-max-request-bytes (string-bytes raw))
+         (response (hermes-exec--request-response raw)))
+    (should (string-prefix-p "HTTP/1.1 200 OK" response))))
+
 ;;; Group 5: host resolution
 
 (ert-deftest hermes-exec-test-resolve-host-loopback ()
