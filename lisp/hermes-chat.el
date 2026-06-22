@@ -561,8 +561,86 @@ fields, so it collapses to a plain ready state instead of repeating them."
        (hermes-chat--message-start-noise-content-p
         (hermes-chat--event-string event '(:content :text :preview)))))
 
+;;; Turn-state reducer
+;;
+;; The header-affecting state of a turn -- the status line and the active-tool
+;; set -- is computed by the pure `hermes-chat--turn-reduce' and applied at the
+;; boundary.  Keeping the event -> state transition pure makes it testable
+;; without a live buffer; the side effects (header refresh, tool-hash mutation)
+;; live only in the applier.
+
+(defun hermes-chat--turn-state (&rest kvs)
+  "Return a turn-state plist built from KVS."
+  kvs)
+
+(defun hermes-chat--turn-state-get (state key)
+  "Return KEY from turn-state STATE."
+  (plist-get state key))
+
+(defun hermes-chat--turn-state-put (state key value)
+  "Return a copy of turn-state STATE with KEY set to VALUE."
+  (plist-put (copy-sequence state) key value))
+
+(defun hermes-chat--status-header-props (event)
+  "Return the (:status :activity) header props for a status EVENT."
+  (list :status (if (plist-get event :prompt-request-p)
+                    (if (equal (hermes-chat--prompt-event-type event) "approval")
+                        'approval-requested
+                      'requested)
+                  (hermes-chat--transport-entry-status event))
+        :activity (hermes-chat--status-event-activity event)))
+
+(defun hermes-chat--turn-status-props (event)
+  "Return header props for a status-family EVENT."
+  (pcase (plist-get event :type)
+    ('status (hermes-chat--status-header-props event))
+    ('commentary '(:status running :activity "Thinking..."))
+    ('thinking (list :status 'thinking
+                     :activity (hermes-chat--thinking-activity
+                                (plist-get event :content))))
+    ('diff '(:status running :activity "Reviewing diff"))))
+
+(defun hermes-chat--turn-reduce (state event)
+  "Return (NEW-STATE . EFFECTS) for domain EVENT applied to turn-state STATE.
+Pure: no buffer, EWOC, process, header, or message side effects.  A
+status-family event threads a merged :status-state into NEW-STATE and emits a
+`refresh-header' effect; a tool-like event emits a `remember-tool' effect.
+Out-of-scope events return (cons STATE nil)."
+  (pcase (plist-get event :type)
+    ((or 'status 'commentary 'thinking 'diff)
+     (cons (hermes-chat--turn-state-put
+            state :status-state
+            (apply #'hermes-chat--entry-with
+                   (hermes-chat--turn-state-get state :status-state)
+                   (hermes-chat--turn-status-props event)))
+           '((refresh-header))))
+    ((or 'progress 'tool)
+     (cons state (list (cons 'remember-tool event))))
+    (_ (cons state nil))))
+
+(defun hermes-chat--apply-turn-effect (new-state effect)
+  "Apply one reducer EFFECT at the boundary, reading NEW-STATE for header writes."
+  (pcase (car effect)
+    ('refresh-header
+     (setq hermes-chat--status-state
+           (plist-put (hermes-chat--turn-state-get new-state :status-state)
+                      :updated (current-time)))
+     (force-mode-line-update)
+     (hermes-chat--notify-state-change))
+    ('remember-tool
+     (hermes-chat--remember-header-tool (cdr effect)))))
+
+(defun hermes-chat--run-turn-reducer (event)
+  "Reduce EVENT against the live turn state and apply the resulting effects."
+  (let* ((state (hermes-chat--turn-state :status-state hermes-chat--status-state))
+         (result (hermes-chat--turn-reduce state event)))
+    (dolist (effect (cdr result))
+      (hermes-chat--apply-turn-effect (car result) effect))))
+
 (defun hermes-chat--update-header-for-event (event)
-  "Update chat header state from transport EVENT."
+  "Update chat header state from transport EVENT.
+Status- and tool-family events route through the pure reducer; terminal and
+streaming events keep their direct header writes."
   (hermes-chat--capture-session-identity event)
   (pcase (plist-get event :type)
     ;; Keep the kawaii thinking face visible while the answer streams rather
@@ -579,30 +657,14 @@ fields, so it collapses to a plain ready state instead of repeating them."
       :status (hermes-chat--error-status event)
       :activity (or (hermes-chat--event-string event '(:content :error))
                     "Transport error")))
-    ('status
-     (hermes-chat--set-header-state
-      :status (if (plist-get event :prompt-request-p)
-                  (if (equal (hermes-chat--prompt-event-type event) "approval")
-                      'approval-requested
-                    'requested)
-                (hermes-chat--transport-entry-status event))
-      :activity (hermes-chat--status-event-activity event)))
-    ;; Track tools for the dashboard's per-session list, but keep them out of
-    ;; the chat header (the kawaii thinking status is the only header detail).
-    ((or 'progress 'tool)
-     (hermes-chat--remember-header-tool event))
-    ('commentary
-     (hermes-chat--set-header-state :status 'running :activity "Thinking..."))
-    ('thinking
-     (hermes-chat--set-header-state
-      :status 'thinking
-      :activity (hermes-chat--thinking-activity (plist-get event :content))))
-    ('diff
-     (hermes-chat--set-header-state :status 'running :activity "Reviewing diff"))
     ('unknown
      (hermes-chat--set-header-state
       :status 'error
-      :activity (hermes-chat--unknown-event-content event)))))
+      :activity (hermes-chat--unknown-event-content event)))
+    ;; Track tools for the dashboard's per-session list, but keep them out of
+    ;; the chat header (the kawaii thinking status is the only header detail).
+    ((or 'status 'commentary 'thinking 'diff 'progress 'tool)
+     (hermes-chat--run-turn-reducer event))))
 
 (defun hermes-chat--header-agent-name ()
   "Return the agent/profile name shown in the chat header."
