@@ -358,6 +358,20 @@ The buffer is captured by object so teardown still kills it after a rename."
    (insert "draft")
    (should (equal (hermes-chat-input-string) "draft"))))
 
+(ert-deftest hermes-chat-in-buffer-runs-only-when-live ()
+  (let ((buffer (generate-new-buffer " *hermes-in-buffer-test*"))
+        ran)
+    (unwind-protect
+        (progn
+          (hermes-chat--in-buffer buffer
+            (setq ran (current-buffer)))
+          (should (eq ran buffer)))
+      (kill-buffer buffer))
+    (setq ran 'untouched)
+    (hermes-chat--in-buffer buffer
+      (setq ran 'should-not-run))
+    (should (eq ran 'untouched))))
+
 (ert-deftest hermes-chat-mode-map-sends-and-inserts-newlines ()
   (should (eq (keymap-lookup hermes-chat-mode-map "RET") #'hermes-chat-send))
   (should (eq (keymap-lookup hermes-chat-mode-map "C-j") #'hermes-chat-newline))

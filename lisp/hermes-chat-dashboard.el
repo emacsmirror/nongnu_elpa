@@ -326,23 +326,22 @@ so do not copy its final content into the unsubmitted retry placeholder."
     (buffer assistant-id dashboard-p generation)
   "Return transport callback for BUFFER, ASSISTANT-ID, DASHBOARD-P, and GENERATION."
   (lambda (event)
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (when (and (hermes-chat--current-transport-generation-p generation)
-                   (or (not dashboard-p)
-                       (and (not (hermes-chat--dashboard-control-error-event-p
-                                  event))
-                            (hermes-chat--dashboard-event-for-session-p event))))
-          (when-let* ((target-id (if dashboard-p
-                                     (hermes-chat--dashboard-event-assistant-id
-                                      assistant-id event)
-                                   assistant-id)))
-            (if (and dashboard-p
-                     (hermes-chat--dashboard-suppressed-content-event-p
-                      event))
-                (hermes-chat--handle-suppressed-dashboard-terminal-event
-                 target-id event)
-              (hermes-chat--handle-transport-event target-id event))))))))
+    (hermes-chat--in-buffer buffer
+      (when (and (hermes-chat--current-transport-generation-p generation)
+                 (or (not dashboard-p)
+                     (and (not (hermes-chat--dashboard-control-error-event-p
+                                event))
+                          (hermes-chat--dashboard-event-for-session-p event))))
+        (when-let* ((target-id (if dashboard-p
+                                   (hermes-chat--dashboard-event-assistant-id
+                                    assistant-id event)
+                                 assistant-id)))
+          (if (and dashboard-p
+                   (hermes-chat--dashboard-suppressed-content-event-p
+                    event))
+              (hermes-chat--handle-suppressed-dashboard-terminal-event
+               target-id event)
+            (hermes-chat--handle-transport-event target-id event)))))))
 
 (defun hermes-chat--dashboard-bind-stream-callback (client assistant-id)
   "Bind CLIENT events to ASSISTANT-ID in the current buffer."
@@ -439,10 +438,9 @@ state instead of submitting another prompt into that durable session."
   "Return a callback that records CLIENT's session in BUFFER and sends PROMPT.
 RESUME-P means the callback handles a `session.resume' response."
   (lambda (result)
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (hermes-chat--dashboard-after-session
-         client prompt result resume-p)))))
+    (hermes-chat--in-buffer buffer
+      (hermes-chat--dashboard-after-session
+       client prompt result resume-p))))
 
 (defun hermes-chat--dashboard-session-attached-p ()
   "Return non-nil when the current buffer has a live dashboard session."
@@ -519,23 +517,21 @@ Record asynchronous session results in BUFFER."
 (defun hermes-chat--dashboard-action-resolver (buffer client action)
   "Return a resolver to record CLIENT's session in BUFFER, then call ACTION."
   (lambda (result)
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (hermes-chat--dashboard-record-session client result)
-        (when (hermes-chat--dashboard-result-live-turn-p result)
-          (hermes-chat--dashboard-restore-inflight-turn client)
-          (hermes-chat--dashboard-bind-stream-callback
-           client hermes-chat--pending-assistant-id))
-        (funcall action client)))))
+    (hermes-chat--in-buffer buffer
+      (hermes-chat--dashboard-record-session client result)
+      (when (hermes-chat--dashboard-result-live-turn-p result)
+        (hermes-chat--dashboard-restore-inflight-turn client)
+        (hermes-chat--dashboard-bind-stream-callback
+         client hermes-chat--pending-assistant-id))
+      (funcall action client))))
 
 (defun hermes-chat--dashboard-action-rejecter (buffer reject)
   "Return a reject callback to run REJECT visibly in BUFFER."
   (lambda (message)
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (if reject
-            (funcall reject message)
-          (hermes-chat--command-error message))))))
+    (hermes-chat--in-buffer buffer
+      (if reject
+          (funcall reject message)
+        (hermes-chat--command-error message)))))
 
 (defun hermes-chat--dashboard-ensure-session-action
     (client buffer action &optional reject)

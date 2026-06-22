@@ -1188,13 +1188,11 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
              live-client name arg
              :session-id hermes-chat--dashboard-active-session-id
              :resolve (lambda (result)
-                        (when (buffer-live-p buffer)
-                          (with-current-buffer buffer
-                            (hermes-chat--handle-command-result result arg))))
+                        (hermes-chat--in-buffer buffer
+                          (hermes-chat--handle-command-result result arg)))
              :reject (lambda (message)
-                       (when (buffer-live-p buffer)
-                         (with-current-buffer buffer
-                           (hermes-chat--command-error message))))))
+                       (hermes-chat--in-buffer buffer
+                         (hermes-chat--command-error message)))))
           (lambda (message)
             (hermes-chat--dashboard-bootstrap-error message raw))))))))
 
@@ -1213,14 +1211,12 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
              live-client raw
              :session-id hermes-chat--dashboard-active-session-id
              :resolve (lambda (result)
-                        (when (buffer-live-p buffer)
-                          (with-current-buffer buffer
-                            (hermes-chat--handle-command-result result arg))))
+                        (hermes-chat--in-buffer buffer
+                          (hermes-chat--handle-command-result result arg)))
              :reject (lambda (_message)
-                       (when (buffer-live-p buffer)
-                         (with-current-buffer buffer
-                           (hermes-chat--dashboard-dispatch-command
-                            name arg preserve-content))))))
+                       (hermes-chat--in-buffer buffer
+                         (hermes-chat--dashboard-dispatch-command
+                          name arg preserve-content)))))
           (lambda (message)
             (hermes-chat--dashboard-bootstrap-error
              message preserve-content))))))))
@@ -1232,10 +1228,9 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
       (hermes-dashboard-transport-commands-catalog
        hermes-chat--dashboard-client
        :resolve (lambda (result)
-                  (when (buffer-live-p buffer)
-                    (with-current-buffer buffer
-                      (setq hermes-chat--commands-cache
-                            (hermes-chat--catalog-candidates result)))))))))
+                  (hermes-chat--in-buffer buffer
+                    (setq hermes-chat--commands-cache
+                          (hermes-chat--catalog-candidates result))))))))
 
 (defun hermes-chat--command-candidates ()
   "Return cached slash command candidates, fetching the catalog if needed."
@@ -1284,14 +1279,12 @@ Only matches while typing the /command word in the writable input tail."
     (hermes-dashboard-transport-commands-catalog
      client
      :resolve (lambda (result)
-                (when (buffer-live-p buffer)
-                  (with-current-buffer buffer
-                    (hermes-chat--insert-local-status
-                     (hermes-chat--commands-catalog-content result) 'done))))
+                (hermes-chat--in-buffer buffer
+                  (hermes-chat--insert-local-status
+                   (hermes-chat--commands-catalog-content result) 'done)))
      :reject (lambda (message)
-               (when (buffer-live-p buffer)
-                 (with-current-buffer buffer
-                   (hermes-chat--command-error message)))))))
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
 
 (defconst hermes-chat--native-slash-commands
   (list
@@ -1358,20 +1351,18 @@ via `hermes-chat--dashboard-slash-exec'."
      hermes-chat--dashboard-client content
      :session-id hermes-chat--dashboard-active-session-id
      :resolve (lambda (result)
-                (when (buffer-live-p buffer)
-                  (with-current-buffer buffer
-                    (if (equal (hermes-chat--status-name
-                                (hermes-chat--result-string result 'status))
-                               "rejected")
-                        (hermes-chat--steer-rejected content "rejected")
-                      (hermes-chat--insert-local-status
-                       (format "Steer queued: %s"
-                               (hermes-chat--preview content))
-                       'queued)))))
+                (hermes-chat--in-buffer buffer
+                  (if (equal (hermes-chat--status-name
+                              (hermes-chat--result-string result 'status))
+                             "rejected")
+                      (hermes-chat--steer-rejected content "rejected")
+                    (hermes-chat--insert-local-status
+                     (format "Steer queued: %s"
+                             (hermes-chat--preview content))
+                     'queued))))
      :reject (lambda (err)
-               (when (buffer-live-p buffer)
-                 (with-current-buffer buffer
-                   (hermes-chat--steer-rejected content err)))))))
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--steer-rejected content err))))))
 
 (defun hermes-chat--steer-or-submit (content buffer)
   "Steer active turn with CONTENT in BUFFER, or submit CONTENT when idle."
@@ -1417,16 +1408,14 @@ via `hermes-chat--dashboard-slash-exec'."
      hermes-chat--dashboard-client
      :session-id hermes-chat--dashboard-active-session-id
      :resolve (lambda (_result)
-                (when (buffer-live-p buffer)
-                  (with-current-buffer buffer
-                    (hermes-chat--insert-local-status
-                     "Interrupt requested" 'interrupted)
-                    (hermes-chat--set-header-state
-                     :status 'interrupted :activity "Interrupt requested"))))
+                (hermes-chat--in-buffer buffer
+                  (hermes-chat--insert-local-status
+                   "Interrupt requested" 'interrupted)
+                  (hermes-chat--set-header-state
+                   :status 'interrupted :activity "Interrupt requested")))
      :reject (lambda (message)
-               (when (buffer-live-p buffer)
-                 (with-current-buffer buffer
-                   (hermes-chat--command-error message)))))))
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
 
 (defun hermes-chat-interrupt-and-send (&optional message)
   "Interrupt the active run, then queue MESSAGE for the next turn when non-empty.
@@ -1467,16 +1456,14 @@ for that."
     (hermes-dashboard-transport-process-stop
      hermes-chat--dashboard-client
      :resolve (lambda (result)
-                (when (buffer-live-p buffer)
-                  (with-current-buffer buffer
-                    (hermes-chat--insert-local-status
-                     (format "Stopped %s background process(es)"
-                             (or (hermes-transport--get result 'killed) 0))
-                     'done))))
+                (hermes-chat--in-buffer buffer
+                  (hermes-chat--insert-local-status
+                   (format "Stopped %s background process(es)"
+                           (or (hermes-transport--get result 'killed) 0))
+                   'done)))
      :reject (lambda (message)
-               (when (buffer-live-p buffer)
-                 (with-current-buffer buffer
-                   (hermes-chat--command-error message)))))))
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
 
 (defun hermes-chat--reset-transcript ()
   "Tear down the live session and re-initialize this chat buffer empty.
@@ -1610,33 +1597,31 @@ CONFIRM acknowledges an expensive-model confirmation prompt."
                 (hermes-chat--model-set-result
                  buffer client candidate result confirm))
      :reject (lambda (message)
-               (when (buffer-live-p buffer)
-                 (with-current-buffer buffer
-                   (hermes-chat--command-error message)))))))
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
 
 (defun hermes-chat--model-set-result (buffer client candidate result confirmed)
   "Report CANDIDATE switch RESULT for BUFFER, re-confirming through CLIENT.
 CONFIRMED is non-nil after the user has already accepted an expensive-model
 confirmation prompt."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (if (hermes-transport--get result 'confirm_required)
-          (if confirmed
-              (hermes-chat--command-error
-               (format "Model switch still requires confirmation: %s"
-                       (or (hermes-transport--scalar-string
-                            (hermes-transport--get result 'confirm_message))
-                           "backend repeated confirmation request")))
-            (if (yes-or-no-p
-                 (or (hermes-transport--scalar-string
-                      (hermes-transport--get result 'confirm_message))
-                     "Confirm switching to this model? "))
-                (hermes-chat--apply-model buffer client candidate t)
-              (hermes-chat--insert-local-status "Model switch cancelled" 'ready)))
-        (hermes-chat--insert-local-status
-         (format "Model set to %s"
-                 (hermes-chat--model-display-name candidate))
-         'ready)))))
+  (hermes-chat--in-buffer buffer
+    (if (hermes-transport--get result 'confirm_required)
+        (if confirmed
+            (hermes-chat--command-error
+             (format "Model switch still requires confirmation: %s"
+                     (or (hermes-transport--scalar-string
+                          (hermes-transport--get result 'confirm_message))
+                         "backend repeated confirmation request")))
+          (if (yes-or-no-p
+               (or (hermes-transport--scalar-string
+                    (hermes-transport--get result 'confirm_message))
+                   "Confirm switching to this model? "))
+              (hermes-chat--apply-model buffer client candidate t)
+            (hermes-chat--insert-local-status "Model switch cancelled" 'ready)))
+      (hermes-chat--insert-local-status
+       (format "Model set to %s"
+               (hermes-chat--model-display-name candidate))
+       'ready))))
 
 (defun hermes-chat--prompt-and-set-model (buffer client result)
   "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
@@ -1669,9 +1654,8 @@ confirmation prompt."
      :resolve (lambda (result)
                 (hermes-chat--prompt-and-set-model buffer client result))
      :reject (lambda (message)
-               (when (buffer-live-p buffer)
-                 (with-current-buffer buffer
-                   (hermes-chat--command-error message)))))))
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
 
 (defun hermes-chat-new-session (&optional title)
   "Open a new Hermes chat buffer with a fresh dashboard session.
@@ -1841,17 +1825,15 @@ A blank PROFILE keeps the dashboard's default profile."
        client hermes-chat--session-id
        :cols (hermes-chat--dashboard-cols)
        :resolve (lambda (result)
-                  (when (buffer-live-p buffer)
-                    (with-current-buffer buffer
-                      (hermes-chat--dashboard-record-session client result)
-                      (hermes-chat--render-history
-                       (hermes-transport--get result 'messages)))))
+                  (hermes-chat--in-buffer buffer
+                    (hermes-chat--dashboard-record-session client result)
+                    (hermes-chat--render-history
+                     (hermes-transport--get result 'messages))))
        :reject (lambda (message)
-                 (when (buffer-live-p buffer)
-                   (with-current-buffer buffer
-                     (hermes-chat--insert-local-status
-                      (format "Could not load Hermes session history: %s" message)
-                      'error))))))))
+                 (hermes-chat--in-buffer buffer
+                   (hermes-chat--insert-local-status
+                    (format "Could not load Hermes session history: %s" message)
+                    'error)))))))
 
 (defun hermes-chat-resume-session (session-id &optional title)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
@@ -1995,9 +1977,8 @@ With no live session the rename stays buffer-local; report that instead."
                                (eq (hermes-transport--get result 'pending) t))
                       (message "Title queued; applies once the session is saved")))
          :reject (lambda (message)
-                   (when (buffer-live-p buffer)
-                     (with-current-buffer buffer
-                       (hermes-chat--command-error message))))))
+                   (hermes-chat--in-buffer buffer
+                     (hermes-chat--command-error message)))))
     (message "Renamed buffer; no live session to update on the server")))
 
 (defun hermes-chat--apply-session-title (title)
@@ -2020,31 +2001,29 @@ MANUAL-P is nil (the user has not pinned a title)."
 
 (defun hermes-chat--apply-fetched-title (buffer result)
   "Apply the session title carried by RESULT to BUFFER when it should change."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (let ((title (string-trim
-                    (or (hermes-transport--scalar-string
-                         (hermes-transport--get result 'title))
-                        ""))))
-        (when (hermes-chat--should-apply-title-p
-               title hermes-chat--title hermes-chat--title-manual-p)
-          (hermes-chat--apply-session-title title))))))
+  (hermes-chat--in-buffer buffer
+    (let ((title (string-trim
+                  (or (hermes-transport--scalar-string
+                       (hermes-transport--get result 'title))
+                      ""))))
+      (when (hermes-chat--should-apply-title-p
+             title hermes-chat--title hermes-chat--title-manual-p)
+        (hermes-chat--apply-session-title title)))))
 
 (defun hermes-chat--fetch-session-title (buffer)
   "Fetch BUFFER's server session title and apply it to the buffer name.
 Guards are re-checked here since this runs after the turn settles."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (when (and (hermes-chat--dashboard-session-attached-p)
-                 (not hermes-chat--title-manual-p))
-        (hermes-dashboard-transport-session-title-fetch
-         hermes-chat--dashboard-client
-         :session-id hermes-chat--dashboard-active-session-id
-         :resolve (lambda (result)
-                    (hermes-chat--apply-fetched-title buffer result))
-         ;; A background title fetch must never surface as a chat error; swallow
-         ;; failures rather than letting them reach the transport callback.
-         :reject #'ignore)))))
+  (hermes-chat--in-buffer buffer
+    (when (and (hermes-chat--dashboard-session-attached-p)
+               (not hermes-chat--title-manual-p))
+      (hermes-dashboard-transport-session-title-fetch
+       hermes-chat--dashboard-client
+       :session-id hermes-chat--dashboard-active-session-id
+       :resolve (lambda (result)
+                  (hermes-chat--apply-fetched-title buffer result))
+       ;; A background title fetch must never surface as a chat error; swallow
+       ;; failures rather than letting them reach the transport callback.
+       :reject #'ignore))))
 
 (defun hermes-chat--maybe-refresh-session-title ()
   "Schedule a server session-title refresh for this buffer after a turn settles.

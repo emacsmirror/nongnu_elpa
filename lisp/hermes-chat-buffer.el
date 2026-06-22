@@ -32,6 +32,15 @@
 (require 'subr-x)
 (require 'hermes-chat-format)
 
+(defmacro hermes-chat--in-buffer (buffer &rest body)
+  "Evaluate BODY in BUFFER when it is live, else do nothing.
+Lets asynchronous transport callbacks run in their originating chat buffer
+without each one repeating the liveness guard."
+  (declare (indent 1) (debug (form body)))
+  `(when (buffer-live-p ,buffer)
+     (with-current-buffer ,buffer
+       ,@body)))
+
 (declare-function hermes-chat--active-status-p "hermes-chat-format" (status))
 (declare-function hermes-chat--event-phase "hermes-chat-format" (event))
 (declare-function hermes-chat--event-string "hermes-chat-format" (event keys))

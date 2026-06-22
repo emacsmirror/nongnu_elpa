@@ -150,27 +150,26 @@ sessions still record the prompt and show a message; respond later with
 
 (defun hermes-chat--run-auto-prompt (buffer key)
   "Prompt for pending prompt KEY in BUFFER, when it is still safe to do so."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (when (hash-table-p hermes-chat--auto-prompt-keys)
-        (remhash key hermes-chat--auto-prompt-keys))
-      (when-let* ((prompt (and hermes-chat--pending-prompts
-                               (gethash key hermes-chat--pending-prompts))))
-        (cond
-         ((not (hermes-chat--auto-prompt-schedulable-p buffer)) nil)
-         ((not (zerop (minibuffer-depth)))
-          (hermes-chat--schedule-auto-prompt prompt t 0.25))
-         (t
-          (condition-case err
-              (let ((hermes-chat--auto-prompting-p t))
-                (hermes-chat-respond-to-prompt key))
-            (quit
-             (message "Hermes prompt left pending: %s" key))
-            (user-error
-             (message "%s" (error-message-string err)))
-            (error
-             (message "Hermes auto prompt failed: %s"
-                      (error-message-string err))))))))))
+  (hermes-chat--in-buffer buffer
+    (when (hash-table-p hermes-chat--auto-prompt-keys)
+      (remhash key hermes-chat--auto-prompt-keys))
+    (when-let* ((prompt (and hermes-chat--pending-prompts
+                             (gethash key hermes-chat--pending-prompts))))
+      (cond
+       ((not (hermes-chat--auto-prompt-schedulable-p buffer)) nil)
+       ((not (zerop (minibuffer-depth)))
+        (hermes-chat--schedule-auto-prompt prompt t 0.25))
+       (t
+        (condition-case err
+            (let ((hermes-chat--auto-prompting-p t))
+              (hermes-chat-respond-to-prompt key))
+          (quit
+           (message "Hermes prompt left pending: %s" key))
+          (user-error
+           (message "%s" (error-message-string err)))
+          (error
+           (message "Hermes auto prompt failed: %s"
+                    (error-message-string err)))))))))
 
 (defun hermes-chat--schedule-auto-prompt (prompt &optional quiet delay)
   "Announce PROMPT and schedule an automatic minibuffer response prompt.
@@ -453,19 +452,17 @@ A nil SESSION-ID matches every prompt in the current buffer."
 (defun hermes-chat--prompt-success-callback (buffer key prompt canceled all)
   "Return a success callback for prompt response KEY in BUFFER."
   (lambda (result)
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (if (hermes-chat--approval-response-unresolved-p prompt result)
-            (hermes-chat--prompt-response-stale key prompt)
-          (hermes-chat--prompt-response-complete
-           key prompt canceled all result))))))
+    (hermes-chat--in-buffer buffer
+      (if (hermes-chat--approval-response-unresolved-p prompt result)
+          (hermes-chat--prompt-response-stale key prompt)
+        (hermes-chat--prompt-response-complete
+         key prompt canceled all result)))))
 
 (defun hermes-chat--prompt-reject-callback (buffer key prompt response)
   "Return an error callback for prompt KEY, PROMPT, and RESPONSE in BUFFER."
   (lambda (message)
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        (hermes-chat--prompt-response-rejected key prompt response message)))))
+    (hermes-chat--in-buffer buffer
+      (hermes-chat--prompt-response-rejected key prompt response message))))
 
 (defun hermes-chat--approval-session-id (prompt)
   "Return the dashboard session id for approval PROMPT."
