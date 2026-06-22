@@ -61,8 +61,7 @@
 The buffer is captured by object so teardown still kills it after a rename."
   (declare (indent 0) (debug t))
   `(let* ((hermes-chat-buffer-name (hermes-test--chat-buffer-name))
-          (buffer (progn (hermes-chat)
-                         (get-buffer hermes-chat-buffer-name))))
+          (buffer (hermes-chat)))
      (unwind-protect
          (with-current-buffer buffer ,@body)
        (when (buffer-live-p buffer)
@@ -684,11 +683,12 @@ The buffer is captured by object so teardown still kills it after a rename."
          (should-not (string-match-p "terminal: make test" header)))))))
 
 (ert-deftest hermes-chat-rename-updates-buffer-and-title ()
-  "Renaming sets the title and the buffer name, trimming whitespace."
+  "Renaming sets the title and the profile-qualified buffer name, trimming space."
   (hermes-test-with-chat-buffer
    (hermes-chat-rename "  My Project  ")
    (should (equal hermes-chat--title "My Project"))
-   (should (equal (buffer-name) "*Hermes: My Project*"))))
+   (should hermes-chat--title-manual-p)
+   (should (equal (buffer-name) "*Hermes: default: My Project*"))))
 
 (ert-deftest hermes-chat-rename-rejects-empty-title ()
   (hermes-test-with-chat-buffer
@@ -706,6 +706,37 @@ The buffer is captured by object so teardown still kills it after a rename."
        (hermes-chat-rename "Renamed"))
      (should (equal (plist-get sent :session-id) "sid-1"))
      (should (equal (plist-get sent :title) "Renamed")))))
+
+(ert-deftest hermes-chat-buffer-name-for-title-formats ()
+  "Buffer names carry the profile, plus the title once present."
+  (should (equal (hermes-chat--buffer-name-for-title "coder" nil)
+                 "*Hermes: coder*"))
+  (should (equal (hermes-chat--buffer-name-for-title "coder" "Fix bug")
+                 "*Hermes: coder: Fix bug*"))
+  (should (equal (hermes-chat--buffer-name-for-title nil "Fix bug")
+                 "*Hermes: default: Fix bug*"))
+  (should (equal (hermes-chat--buffer-name-for-title nil "")
+                 "*Hermes: default*")))
+
+(ert-deftest hermes-chat-prompts-profile-and-names-buffer ()
+  "M-x hermes-chat reads a profile and names the buffer after it."
+  (cl-letf (((symbol-function 'hermes-chat--read-profile)
+             (lambda () "coder")))
+    (let ((buffer (call-interactively #'hermes-chat)))
+      (unwind-protect
+          (with-current-buffer buffer
+            (should (equal hermes-chat--profile "coder"))
+            (should (string-prefix-p "*Hermes: coder" (buffer-name))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-chat-blank-profile-names-buffer-default ()
+  "A blank profile yields the default profile name and no stored profile."
+  (let ((buffer (hermes-chat "")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should-not hermes-chat--profile)
+          (should (string-prefix-p "*Hermes: default" (buffer-name))))
+      (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 (ert-deftest hermes-chat-snapshot-prefers-title ()
   "The dashboard snapshot uses the chat title over the buffer name."

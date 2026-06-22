@@ -393,7 +393,7 @@ arrives."
               :kind 'action
               :key "c"
               :title "Chat"
-              :subtitle "Open the default Hermes chat buffer"
+              :subtitle "Open a new Hermes chat (prompts for a profile)"
               :action #'hermes-chat)
         (list :id "action:new-session"
               :kind 'action
