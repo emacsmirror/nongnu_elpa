@@ -79,6 +79,7 @@ command `hermes-list-NAME'.  BODY is a plist:
   :buffer   browser buffer name (string)
   :columns  `tabulated-list-format' vector
   :sort     initial sort column name (string), optional
+  :command  list-command symbol, when it is not `hermes-list-NAME' (optional)
   :fetch    function (CLIENT -> promise) issuing the dashboard RPC
   :rows     pure function (RESULT -> list of `tabulated-list' entries)
   :keys     extra bindings, spliced into `defvar-keymap'
@@ -90,7 +91,8 @@ buffer render and the dashboard client plumbing."
         (map (intern (format "hermes-%s-mode-map" name)))
         (render (intern (format "hermes-%s--render" name)))
         (revert (intern (format "hermes-%s--revert" name)))
-        (command (intern (format "hermes-list-%s" name)))
+        (command (or (plist-get body :command)
+                     (intern (format "hermes-list-%s" name))))
         (title (plist-get body :title))
         (buffer (plist-get body :buffer))
         (columns (plist-get body :columns))

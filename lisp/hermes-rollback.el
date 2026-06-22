@@ -50,34 +50,6 @@
                           (hermes-transport--get checkpoint 'message)) "")))))
    (hermes-transport--get result 'checkpoints)))
 
-(defun hermes-rollback--revert (&rest _)
-  "Refresh the checkpoint list."
-  (hermes-list-rollbacks))
-
-(defvar-keymap hermes-rollback-mode-map
-  :doc "Keymap for `hermes-rollback-mode'."
-  :parent tabulated-list-mode-map
-  "RET" #'hermes-rollback-show-diff
-  "d" #'hermes-rollback-show-diff
-  "x" #'hermes-rollback-restore)
-
-(define-derived-mode hermes-rollback-mode tabulated-list-mode "Hermes Rollbacks"
-  "Major mode listing Hermes session checkpoints."
-  :interactive nil
-  (setq tabulated-list-format
-        [("Checkpoint" 10 t) ("When" 22 t) ("Message" 50 nil)])
-  (setq-local revert-buffer-function #'hermes-rollback--revert)
-  (tabulated-list-init-header))
-
-(defun hermes-rollback--render (result)
-  "Display checkpoints from RESULT in the rollbacks buffer."
-  (with-current-buffer (get-buffer-create "*Hermes Rollbacks*")
-    (unless (derived-mode-p 'hermes-rollback-mode)
-      (hermes-rollback-mode))
-    (setq tabulated-list-entries (hermes-rollback--rows result))
-    (tabulated-list-print t)
-    (pop-to-buffer (current-buffer))))
-
 (defun hermes-rollback--display-diff (hash result)
   "Render the diff for checkpoint HASH from RESULT through `diff-mode'."
   (let ((diff (hermes-transport--scalar-string
@@ -112,15 +84,19 @@
        (lambda (_result)
          (message "Hermes: restored %s" (hermes-rollback--short hash)))))))
 
-;;;###autoload
-(defun hermes-list-rollbacks ()
-  "Browse Hermes checkpoint history for the active session."
-  (interactive)
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes-dashboard-transport-call-fn
-      #'hermes-dashboard-transport-rollback-list client))
-   (lambda (result) (hermes-rollback--render result))))
+;;;###autoload (autoload 'hermes-list-rollbacks "hermes-rollback" nil t)
+(hermes-define-list-browser rollback
+  :title "Hermes Rollbacks"
+  :buffer "*Hermes Rollbacks*"
+  :command hermes-list-rollbacks
+  :columns [("Checkpoint" 10 t) ("When" 22 t) ("Message" 50 nil)]
+  :fetch (lambda (client)
+           (hermes-dashboard-transport-call-fn
+            #'hermes-dashboard-transport-rollback-list client))
+  :rows #'hermes-rollback--rows
+  :keys ("RET" #'hermes-rollback-show-diff
+         "d" #'hermes-rollback-show-diff
+         "x" #'hermes-rollback-restore))
 
 (provide 'hermes-rollback)
 ;;; hermes-rollback.el ends here
