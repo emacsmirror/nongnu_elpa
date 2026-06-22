@@ -64,12 +64,14 @@
 (defvar hermes-chat--title)
 (defvar hermes-chat--transport-generation)
 
-(defvar-local hermes-chat--dashboard-active-session-id nil)
-(defvar-local hermes-chat--dashboard-client nil)
-(defvar-local hermes-chat--dashboard-detached-assistant-id nil)
-(defvar-local hermes-chat--dashboard-session-ready-p nil)
-(defvar-local hermes-chat--dashboard-stream-assistant-id nil)
-(defvar-local hermes-chat--dashboard-suppress-stream-p nil)
+;; Connection state owned by `hermes-chat-buffer'; declared here for the
+;; byte-compiler.
+(defvar hermes-chat--dashboard-active-session-id)
+(defvar hermes-chat--dashboard-client)
+(defvar hermes-chat--dashboard-detached-assistant-id)
+(defvar hermes-chat--dashboard-session-ready-p)
+(defvar hermes-chat--dashboard-stream-assistant-id)
+(defvar hermes-chat--dashboard-suppress-stream-p)
 
 (defun hermes-chat--closed-status-event-p (event)
   "Return non-nil when EVENT reports a closed live transport."

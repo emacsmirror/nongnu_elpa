@@ -82,20 +82,13 @@ which keeps tests and user custom transports working."
 (defvar-local hermes-chat--nodes nil
   "Hash table mapping Hermes entry IDs to EWOC nodes.")
 
-(defvar-local hermes-chat--process nil
-  "Current Hermes transport process or token for this buffer.")
-
-(defvar-local hermes-chat--dashboard-client nil
-  "Dashboard transport client associated with this buffer, if any.")
-
-(defvar-local hermes-chat--dashboard-session-ready-p nil
-  "Non-nil when the dashboard client has a live session for this buffer.")
-
-(defvar-local hermes-chat--dashboard-active-session-id nil
-  "Live dashboard/TUI session ID used for submit requests and event filtering.")
-
-(defvar-local hermes-chat--session-id nil
-  "Durable Hermes session key used for future dashboard `session.resume'.")
+;; Connection state owned by `hermes-chat-buffer'; re-declared here for the
+;; byte-compiler.  See that file for the authoritative defvar-locals and docs.
+(defvar hermes-chat--process)
+(defvar hermes-chat--dashboard-client)
+(defvar hermes-chat--dashboard-session-ready-p)
+(defvar hermes-chat--dashboard-active-session-id)
+(defvar hermes-chat--session-id)
 
 (defvar-local hermes-chat--profile nil
   "Profile name for this chat's dashboard session, or nil for the default.")
@@ -115,14 +108,9 @@ which keeps tests and user custom transports working."
 ;; Owned by `hermes-chat-buffer'; declared here for the byte-compiler.
 (defvar hermes-chat--transport-generation)
 
-(defvar-local hermes-chat--dashboard-detached-assistant-id nil
-  "Assistant entry that was pending when the dashboard transport detached.")
-
-(defvar-local hermes-chat--dashboard-stream-assistant-id nil
-  "Assistant entry that should receive live dashboard stream events.")
-
-(defvar-local hermes-chat--dashboard-suppress-stream-p nil
-  "Non-nil when a resumed live turn has no local stream target.")
+(defvar hermes-chat--dashboard-detached-assistant-id)
+(defvar hermes-chat--dashboard-stream-assistant-id)
+(defvar hermes-chat--dashboard-suppress-stream-p)
 
 (defvar-local hermes-chat--status-state nil
   "Plist describing the live status shown in the chat header.")
