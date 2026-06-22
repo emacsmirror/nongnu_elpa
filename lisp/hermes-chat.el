@@ -1289,15 +1289,46 @@ Only matches while typing the /command word in the writable input tail."
                  (with-current-buffer buffer
                    (hermes-chat--command-error message)))))))
 
+(defconst hermes-chat--native-slash-commands
+  (list
+   (cons '("commands") (lambda (_arg) (hermes-chat-show-commands)))
+   (cons '("queue" "q")
+         (lambda (arg) (hermes-chat--dashboard-dispatch-command "queue" arg)))
+   (cons '("steer") (lambda (arg) (hermes-chat-steer-message arg)))
+   (cons '("stop") (lambda (_arg) (hermes-chat-stop-processes)))
+   (cons '("interrupt" "int") (lambda (_arg) (hermes-chat-interrupt)))
+   (cons '("clear" "reset") (lambda (_arg) (hermes-chat-clear)))
+   (cons '("new") (lambda (arg) (hermes-chat-new-session arg)))
+   (cons '("model") (lambda (_arg) (hermes-chat-switch-model)))
+   (cons '("title" "rename")
+         (lambda (arg)
+           (if (string-empty-p arg)
+               (call-interactively #'hermes-chat-rename)
+             (hermes-chat-rename arg))))
+   (cons '("sessions") (lambda (_arg) (hermes-list-sessions))))
+  "Native in-client slash commands as (NAMES . HANDLER) entries.
+NAMES is a list of aliases; HANDLER takes the command's ARG string (empty when
+none).  Control commands handled here run as dedicated RPCs or local actions
+instead of being forwarded to the agent; names absent here fall through to the
+gateway via `hermes-chat--dashboard-slash-exec'.")
+
+(defun hermes-chat--native-slash-handler (name)
+  "Return the native handler for slash command NAME, or nil when none.
+NAME is matched against each alias list in `hermes-chat--native-slash-commands'."
+  (and name
+       (cdr (cl-find-if (lambda (entry) (member name (car entry)))
+                        hermes-chat--native-slash-commands))))
+
 (defun hermes-chat--handle-slash-content (content)
-  "Handle slash command CONTENT from the input tail."
+  "Handle slash command CONTENT from the input tail.
+Native control commands run in-client through
+`hermes-chat--native-slash-commands'; everything else dispatches to the gateway
+via `hermes-chat--dashboard-slash-exec'."
   (pcase-let ((`(,name . ,arg) (hermes-chat--parse-slash content)))
     (hermes-chat--delete-input-tail)
-    (pcase name
-      ("commands" (hermes-chat-show-commands))
-      ((or "queue" "q") (hermes-chat--dashboard-dispatch-command name arg))
-      ("steer" (hermes-chat-steer-message arg))
-      (_ (hermes-chat--dashboard-slash-exec name arg (substring content 1))))))
+    (if-let* ((handler (hermes-chat--native-slash-handler name)))
+        (funcall handler (or arg ""))
+      (hermes-chat--dashboard-slash-exec name arg (substring content 1)))))
 
 (defun hermes-chat-queue-message (&optional message)
   "Queue MESSAGE to send after the active Hermes turn, or send now if idle."
@@ -1420,6 +1451,42 @@ session key is preserved, so the conversation can still be resumed."
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
   (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected"))
+
+(defun hermes-chat-stop-processes ()
+  "Stop background/tool processes for this chat via `process.stop'.
+This does not interrupt the current model turn -- use `hermes-chat-interrupt'
+for that."
+  (interactive)
+  (unless (hermes-chat--dashboard-session-attached-p)
+    (user-error "Current Hermes transport does not support stopping processes"))
+  (let ((buffer (current-buffer)))
+    (hermes-dashboard-transport-process-stop
+     hermes-chat--dashboard-client
+     :resolve (lambda (result)
+                (when (buffer-live-p buffer)
+                  (with-current-buffer buffer
+                    (hermes-chat--insert-local-status
+                     (format "Stopped %s background process(es)"
+                             (or (hermes-transport--get result 'killed) 0))
+                     'done))))
+     :reject (lambda (message)
+               (when (buffer-live-p buffer)
+                 (with-current-buffer buffer
+                   (hermes-chat--command-error message)))))))
+
+(defun hermes-chat--reset-transcript ()
+  "Tear down the live session and re-initialize this chat buffer empty.
+Stops any live dashboard client, clears the EWOC transcript and header, and
+forgets both the live and durable session ids so the next send starts fresh."
+  (hermes-chat--stop-dashboard-client)
+  (hermes-chat--setup-buffer))
+
+(defun hermes-chat-clear ()
+  "Clear this chat's transcript and start a fresh Hermes session in place."
+  (interactive)
+  (when (y-or-n-p "Clear this Hermes conversation and transcript? ")
+    (hermes-chat--reset-transcript)
+    (hermes-chat--insert-local-status "Session cleared" 'done)))
 
 (defun hermes-chat--model-id (model)
   "Return the model id string from a `model.options' MODEL entry."
@@ -1602,12 +1669,16 @@ confirmation prompt."
                  (with-current-buffer buffer
                    (hermes-chat--command-error message)))))))
 
-(defun hermes-chat-new-session ()
-  "Open a new Hermes chat buffer with a fresh dashboard session."
+(defun hermes-chat-new-session (&optional title)
+  "Open a new Hermes chat buffer with a fresh dashboard session.
+With TITLE non-empty, name the new session accordingly."
   (interactive)
   (let ((buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
-      (hermes-chat-mode))
+      (hermes-chat-mode)
+      (when-let* ((name (hermes-chat--nonempty-string
+                         (and title (string-trim title)))))
+        (hermes-chat-rename name)))
     (pop-to-buffer-same-window buffer)
     (goto-char (or (hermes-chat--input-position) (point-max)))
     buffer))
