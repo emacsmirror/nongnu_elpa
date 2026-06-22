@@ -31,6 +31,7 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-promise)
 (require 'hermes-chat)
 
 (defvar-local hermes-sessions--session-map nil
@@ -66,6 +67,20 @@ client that DONE stops.  Shared by the dashboard browser commands."
                  (unless existing
                    (hermes-dashboard-transport-stop client)))))
     (funcall fn client done)))
+
+(defun hermes-sessions--call (fn &rest args)
+  "Call dashboard RPC wrapper FN with ARGS and return a promise of its result.
+FN must accept trailing :resolve/:reject keywords, as the
+`hermes-dashboard-transport-session-*' wrappers do."
+  (let ((promise (hermes--promise-make)))
+    (apply fn (append args
+                      (list :resolve
+                            (lambda (result)
+                              (hermes--promise-resolve promise result))
+                            :reject
+                            (lambda (message)
+                              (hermes--promise-reject promise message)))))
+    promise))
 
 (defun hermes-sessions--field (session key)
   "Return SESSION's KEY as a display string."
@@ -321,22 +336,20 @@ COUNT, when non-nil, is the total history count reported by the gateway."
       (let ((id (hermes-sessions--id session)))
         (and (not (string-empty-p id)) id))))
 
-(defun hermes-sessions--fetch-history (client history-id resume-id resolve reject)
-  "Fetch HISTORY-ID history on CLIENT, then call RESOLVE or REJECT.
+(defun hermes-sessions--history-promise (client history-id resume-id)
+  "Return a promise of HISTORY-ID history on CLIENT.
 The dashboard `session.history' RPC is live-session scoped in older gateways;
-when it reports a missing live session, resume RESUME-ID and render the
+when it reports a missing live session, resume RESUME-ID and resolve with the
 returned messages instead."
-  (hermes-dashboard-transport-session-history
-   client history-id
-   :resolve resolve
-   :reject (lambda (message)
-             (if (and (hermes-sessions--session-not-found-message-p message)
-                      (not (string-empty-p resume-id)))
-                 (hermes-dashboard-transport-session-resume
-                  client resume-id
-                  :resolve resolve
-                  :reject reject)
-               (funcall reject message)))))
+  (hermes--promise-catch
+   (hermes-sessions--call #'hermes-dashboard-transport-session-history
+                          client history-id)
+   (lambda (message)
+     (if (and (hermes-sessions--session-not-found-message-p message)
+              (not (string-empty-p resume-id)))
+         (hermes-sessions--call #'hermes-dashboard-transport-session-resume
+                                client resume-id)
+       (hermes--promise-rejected message)))))
 
 (defun hermes-sessions-view ()
   "Show a native detail/history buffer for the selected Hermes session."
@@ -348,17 +361,17 @@ returned messages instead."
       (user-error "No Hermes session id to view"))
     (hermes-sessions--with-client
      (lambda (client done)
-       (hermes-sessions--fetch-history
-        client history-id resume-id
-        (lambda (result)
-          (funcall done)
-          (hermes-sessions--render-detail
-           (hermes-sessions--session-with-result session result)
-           (hermes-transport--get result 'messages)
-           (hermes-transport--get result 'count)))
-        (lambda (message)
-          (funcall done)
-          (message "Hermes: %s" message)))))))
+       (hermes--promise-catch
+        (hermes--promise-then
+         (hermes--promise-finally
+          (hermes-sessions--history-promise client history-id resume-id)
+          done)
+         (lambda (result)
+           (hermes-sessions--render-detail
+            (hermes-sessions--session-with-result session result)
+            (hermes-transport--get result 'messages)
+            (hermes-transport--get result 'count))))
+        (lambda (message) (message "Hermes: %s" message)))))))
 
 (defun hermes-sessions-open ()
   "Resume the selected Hermes session in a chat buffer."
@@ -374,29 +387,26 @@ returned messages instead."
   "Return non-nil when TITLE is blank."
   (string-empty-p (string-trim (or title ""))))
 
-(defun hermes-sessions--set-title (client session-id title resolve reject)
-  "Set SESSION-ID's TITLE on CLIENT, calling RESOLVE or REJECT."
-  (hermes-dashboard-transport-session-title
-   client
-   :session-id session-id
-   :title title
-   :resolve resolve
-   :reject (lambda (message)
-             (if (hermes-sessions--session-not-found-message-p message)
-                 (hermes-dashboard-transport-session-resume
-                  client session-id
-                  :resolve (lambda (result)
-                             (let ((live-id (hermes-sessions--field result 'session_id)))
-                               (hermes-dashboard-transport-session-title
-                                client
-                                :session-id (if (string-empty-p live-id)
-                                                session-id
-                                              live-id)
-                                :title title
-                                :resolve resolve
-                                :reject reject)))
-                  :reject reject)
-               (funcall reject message)))))
+(defun hermes-sessions--set-title-promise (client session-id title)
+  "Return a promise setting SESSION-ID's TITLE on CLIENT.
+On a missing-session error, resume SESSION-ID and retry the title on the live
+id it returns."
+  (hermes--promise-catch
+   (hermes-sessions--call #'hermes-dashboard-transport-session-title
+                          client :session-id session-id :title title)
+   (lambda (message)
+     (if (hermes-sessions--session-not-found-message-p message)
+         (hermes--promise-then
+          (hermes-sessions--call #'hermes-dashboard-transport-session-resume
+                                 client session-id)
+          (lambda (result)
+            (let ((live-id (hermes-sessions--field result 'session_id)))
+              (hermes-sessions--call
+               #'hermes-dashboard-transport-session-title
+               client
+               :session-id (if (string-empty-p live-id) session-id live-id)
+               :title title))))
+       (hermes--promise-rejected message)))))
 
 (defun hermes-sessions--session-with-title (session title)
   "Return SESSION with TITLE shadowing its previous title field."
@@ -449,15 +459,15 @@ returned messages instead."
         (user-error "Session title required"))
       (hermes-sessions--with-client
        (lambda (client done)
-         (hermes-sessions--set-title
-          client id (string-trim title)
-          (lambda (_result)
-            (funcall done)
-            (message "Hermes: renamed session %s" id)
-            (hermes-sessions--after-rename origin id (string-trim title)))
-          (lambda (message)
-            (funcall done)
-            (message "Hermes: %s" message))))))))
+         (hermes--promise-catch
+          (hermes--promise-then
+           (hermes--promise-finally
+            (hermes-sessions--set-title-promise client id (string-trim title))
+            done)
+           (lambda (_result)
+             (message "Hermes: renamed session %s" id)
+             (hermes-sessions--after-rename origin id (string-trim title))))
+          (lambda (message) (message "Hermes: %s" message))))))))
 
 (defun hermes-sessions--remove-browser-row (id)
   "Remove browser row ID from the current buffer."
@@ -491,15 +501,16 @@ returned messages instead."
                  (if (string-empty-p title) "" (format " (%s)" title))))
         (hermes-sessions--with-client
          (lambda (client done)
-           (hermes-dashboard-transport-session-delete
-            client id
-            :resolve (lambda (_result)
-                       (funcall done)
-                       (message "Hermes: deleted session %s" id)
-                       (hermes-sessions--after-delete origin id))
-            :reject (lambda (message)
-                      (funcall done)
-                      (message "Hermes: %s" message)))))
+           (hermes--promise-catch
+            (hermes--promise-then
+             (hermes--promise-finally
+              (hermes-sessions--call #'hermes-dashboard-transport-session-delete
+                                     client id)
+              done)
+             (lambda (_result)
+               (message "Hermes: deleted session %s" id)
+               (hermes-sessions--after-delete origin id)))
+            (lambda (message) (message "Hermes: %s" message)))))
       (message "Hermes: delete cancelled"))))
 
 ;;;###autoload
@@ -510,14 +521,14 @@ client just for the listing."
   (interactive)
   (hermes-sessions--with-client
    (lambda (client done)
-     (hermes-dashboard-transport-session-list
-      client
-      :resolve (lambda (result)
-                 (funcall done)
-                 (hermes-sessions--render (hermes-transport--get result 'sessions)))
-      :reject (lambda (message)
-                (funcall done)
-                (message "Hermes: %s" message))))))
+     (hermes--promise-catch
+      (hermes--promise-then
+       (hermes--promise-finally
+        (hermes-sessions--call #'hermes-dashboard-transport-session-list client)
+        done)
+       (lambda (result)
+         (hermes-sessions--render (hermes-transport--get result 'sessions))))
+      (lambda (message) (message "Hermes: %s" message))))))
 
 (provide 'hermes-sessions)
 ;;; hermes-sessions.el ends here
