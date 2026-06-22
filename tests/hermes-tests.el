@@ -4548,6 +4548,63 @@ The buffer is captured by object so teardown still kills it after a rename."
         (should (equal (plist-get diff :session-id) "sid"))
         (should (equal (plist-get diff :content) inline-diff))))))
 
+(defun hermes-test--dashboard-events (&rest frames)
+  "Return events emitted by handling each event FRAMES alist on a fresh client.
+Each entry of FRAMES is a (TYPE . PAYLOAD-ALIST) cons turned into a JSON-RPC
+event frame."
+  (let (events)
+    (let ((client (make-hermes-dashboard-transport-client
+                   :callback (lambda (event) (push event events)))))
+      (dolist (frame frames)
+        (hermes-dashboard-transport--handle-frame
+         client (hermes-dashboard-transport--encode-frame
+                 `((jsonrpc . "2.0")
+                   (method . "event")
+                   (params . ((type . ,(car frame))
+                              (session_id . "sid")
+                              (payload . ,(cdr frame)))))))))
+    (nreverse events)))
+
+(ert-deftest hermes-transport-dashboard-tool-generating-is-header-thinking ()
+  "`tool.generating' becomes a header-only thinking hint naming the tool."
+  (let ((event (car (hermes-test--dashboard-events
+                     '("tool.generating" . ((name . "skill_view")))))))
+    (should (eq (plist-get event :type) 'thinking))
+    (should (equal (plist-get event :content) "Calling skill_view"))))
+
+(ert-deftest hermes-transport-dashboard-progress-events ()
+  "`browser.progress' and `preview.restart.progress' become progress events."
+  (pcase-let ((`(,browser ,preview)
+               (hermes-test--dashboard-events
+                '("browser.progress" . ((message . "Navigating to example.com")
+                                        (level . "info")))
+                '("preview.restart.progress" . ((task_id . "t1")
+                                                (text . "Restarting preview"))))))
+    (should (eq (plist-get browser :type) 'progress))
+    (should (equal (plist-get browser :content) "Navigating to example.com"))
+    (should (eq (plist-get preview :type) 'progress))
+    (should (equal (plist-get preview :content) "Restarting preview"))))
+
+(ert-deftest hermes-transport-dashboard-preview-complete-and-terminal-read ()
+  "`preview.restart.complete' and `terminal.read.request' become status lines."
+  (pcase-let ((`(,complete ,terminal)
+               (hermes-test--dashboard-events
+                '("preview.restart.complete" . ((task_id . "t1")
+                                                (text . "Preview ready")))
+                '("terminal.read.request" . ((request_id . "r1"))))))
+    (should (eq (plist-get complete :type) 'status))
+    (should (equal (plist-get complete :content) "Preview ready"))
+    (should (eq (plist-get terminal :type) 'status))
+    (should (equal (plist-get terminal :content)
+                   "Hermes requested a terminal read"))))
+
+(ert-deftest hermes-transport-dashboard-drops-voice-and-skin-events ()
+  "Voice and skin events are dropped, not surfaced as Unknown events."
+  (should-not (hermes-test--dashboard-events
+               '("voice.status" . ((state . "listening")))
+               '("voice.transcript" . ((text . "hello")))
+               '("skin.changed" . ((name . "dark"))))))
+
 (ert-deftest hermes-transport-normalizes-legacy-events ()
   (should (equal (hermes-transport-normalize-event
                   '(:type delta :content "hello"))

@@ -1914,6 +1914,21 @@ show them."
                 object)))
     (list (hermes-transport-normalize-event raw type))))
 
+(defun hermes-dashboard-transport--tool-generating-event (type params payload)
+  "Return a header-only `thinking' event for a `tool.generating' PAYLOAD.
+TYPE and PARAMS supply event metadata.  The gateway emits `tool.generating'
+once when the model starts streaming a tool call, before the authoritative
+`tool.start'; surface it as transient header activity so a large tool payload
+does not look like a frozen screen.  It is intentionally not a transcript
+entry."
+  (let ((event (plist-put
+                (hermes-dashboard-transport--event-base type params payload)
+                :type 'thinking))
+        (name (hermes-transport--scalar-string
+               (hermes-transport--get payload 'name))))
+    (plist-put event :content
+               (if name (format "Calling %s" name) "Calling tool"))))
+
 (defun hermes-dashboard-transport--normalize-event-frame (frame)
   "Return normalized transport events for JSON-RPC event FRAME."
   (let* ((params (hermes-transport--get frame 'params))
@@ -1947,6 +1962,9 @@ show them."
       ("tool.complete"
        (hermes-dashboard-transport--tool-complete-events
         type params payload))
+      ("tool.generating"
+       (list (hermes-dashboard-transport--tool-generating-event
+              type params payload)))
       ("reasoning.delta"
        (list (hermes-dashboard-transport--payload-event
               type params payload 'commentary)))
@@ -1960,6 +1978,26 @@ show them."
       ((or "approval.request" "clarify.request" "sudo.request" "secret.request")
        (list (hermes-dashboard-transport--prompt-request-event
               type params payload)))
+      ;; Browser navigation and preview-restart progress carry transient text
+      ;; updates; render them as compact progress lines.
+      ((or "browser.progress" "preview.restart.progress")
+       (list (hermes-dashboard-transport--payload-event
+              type params payload 'progress)))
+      ("preview.restart.complete"
+       (list (hermes-dashboard-transport--status-event
+              type params payload "notification"
+              (hermes-dashboard-transport--payload-text payload))))
+      ;; `read_terminal' blocks on a `terminal.read.respond'; the respond flow is
+      ;; not wired in Emacs yet, so at least surface the request as a status line.
+      ("terminal.read.request"
+       (list (hermes-dashboard-transport--status-event
+              type params payload "notification"
+              (or (hermes-dashboard-transport--payload-text payload)
+                  "Hermes requested a terminal read"))))
+      ;; Voice mode and skin changes are client-UI concerns, not chat transcript
+      ;; content; drop them so they do not render as Unknown events.
+      ((or "voice.status" "voice.transcript" "skin.changed")
+       nil)
       ;; `review.summary' is a self-improvement notification; show it as a status
       ;; line in the transcript rather than as an Unknown event.
       ("review.summary"
