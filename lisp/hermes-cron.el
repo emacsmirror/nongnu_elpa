@@ -35,70 +35,49 @@
 
 ;;; Fields
 
-(defun hermes-cron--field (job key)
-  "Return JOB's KEY as a display string."
-  (or (hermes-transport--scalar-string (hermes-transport--get job key)) ""))
-
-(defun hermes-cron--non-empty (string)
-  "Return STRING when it is non-empty after trimming."
-  (and (stringp string)
-       (let ((trimmed (string-trim string)))
-         (and (not (string-empty-p trimmed)) trimmed))))
-
-(defun hermes-cron--has-key-p (object key)
-  "Return non-nil when OBJECT has KEY."
-  (cond
-   ((hash-table-p object)
-    (let ((missing (make-symbol "missing")))
-      (or (not (eq (gethash key object missing) missing))
-          (not (eq (gethash (symbol-name key) object missing) missing)))))
-   ((listp object)
-    (or (assq key object)
-        (assoc (symbol-name key) object)))))
-
 (defun hermes-cron--job-id (job)
   "Return JOB's stable identifier."
-  (or (hermes-cron--non-empty (hermes-cron--field job 'id))
-      (hermes-cron--non-empty (hermes-cron--field job 'job_id))
-      (hermes-cron--non-empty (hermes-cron--field job 'name))
+  (or (hermes-transport--non-blank-string (hermes-transport--display-field job 'id))
+      (hermes-transport--non-blank-string (hermes-transport--display-field job 'job_id))
+      (hermes-transport--non-blank-string (hermes-transport--display-field job 'name))
       ""))
 
 (defun hermes-cron--profile (job)
   "Return JOB's profile name, or an empty string."
-  (or (hermes-cron--non-empty (hermes-cron--field job 'profile))
-      (hermes-cron--non-empty (hermes-cron--field job 'profile_name))
+  (or (hermes-transport--non-blank-string (hermes-transport--display-field job 'profile))
+      (hermes-transport--non-blank-string (hermes-transport--display-field job 'profile_name))
       ""))
 
 (defun hermes-cron--schedule (job)
   "Return JOB's schedule display string."
   (let ((schedule (hermes-transport--get job 'schedule)))
-    (or (hermes-cron--non-empty (hermes-cron--field job 'schedule_display))
-        (hermes-cron--non-empty (hermes-cron--field schedule 'display))
-        (hermes-cron--non-empty (hermes-cron--field schedule 'expr))
-        (hermes-cron--non-empty (hermes-cron--field job 'schedule))
+    (or (hermes-transport--non-blank-string (hermes-transport--display-field job 'schedule_display))
+        (hermes-transport--non-blank-string (hermes-transport--display-field schedule 'display))
+        (hermes-transport--non-blank-string (hermes-transport--display-field schedule 'expr))
+        (hermes-transport--non-blank-string (hermes-transport--display-field job 'schedule))
         "")))
 
 (defun hermes-cron--schedule-expr (job)
   "Return JOB's raw schedule expression for editing."
   (let ((schedule (hermes-transport--get job 'schedule)))
-    (or (hermes-cron--non-empty (hermes-cron--field schedule 'expr))
-        (hermes-cron--non-empty (hermes-cron--field job 'schedule))
-        (hermes-cron--non-empty (hermes-cron--field job 'schedule_display))
+    (or (hermes-transport--non-blank-string (hermes-transport--display-field schedule 'expr))
+        (hermes-transport--non-blank-string (hermes-transport--display-field job 'schedule))
+        (hermes-transport--non-blank-string (hermes-transport--display-field job 'schedule_display))
         "")))
 
 (defun hermes-cron--state (job)
   "Return JOB's state string."
-  (or (hermes-cron--non-empty (hermes-cron--field job 'state))
-      (and (hermes-cron--has-key-p job 'enabled)
+  (or (hermes-transport--non-blank-string (hermes-transport--display-field job 'state))
+      (and (hermes-transport--field-present-p job 'enabled)
            (not (hermes-transport--get job 'enabled))
            "disabled")
       "scheduled"))
 
 (defun hermes-cron--prompt (job)
   "Return JOB's prompt or prompt preview."
-  (or (hermes-cron--non-empty (hermes-cron--field job 'prompt))
-      (hermes-cron--non-empty (hermes-cron--field job 'prompt_preview))
-      (hermes-cron--non-empty (hermes-cron--field job 'script))
+  (or (hermes-transport--non-blank-string (hermes-transport--display-field job 'prompt))
+      (hermes-transport--non-blank-string (hermes-transport--display-field job 'prompt_preview))
+      (hermes-transport--non-blank-string (hermes-transport--display-field job 'script))
       ""))
 
 (defun hermes-cron--skills (job)
@@ -116,13 +95,13 @@
   (mapcar
    (lambda (job)
      (list (hermes-cron--job-id job)
-           (vector (hermes-cron--field job 'name)
+           (vector (hermes-transport--display-field job 'name)
                    (hermes-cron--schedule job)
                    (hermes-cron--state job)
                    (hermes-cron--profile job)
-                   (hermes-cron--field job 'deliver)
-                   (hermes-cron--field job 'last_run_at)
-                   (hermes-cron--field job 'next_run_at)
+                   (hermes-transport--display-field job 'deliver)
+                   (hermes-transport--display-field job 'last_run_at)
+                   (hermes-transport--display-field job 'next_run_at)
                    (hermes-cron--prompt job))))
    (hermes-transport--get result 'jobs)))
 
@@ -142,7 +121,7 @@
 (defun hermes-cron--client-token (client)
   "Return CLIENT's session token, if any."
   (and (hermes-dashboard-transport-client-p client)
-       (hermes-cron--non-empty
+       (hermes-transport--non-blank-string
         (hermes-dashboard-transport-client-token client))))
 
 (defun hermes-cron--client-api (client method path &optional body query)
@@ -168,7 +147,7 @@
 
 (defun hermes-cron--query (profile &optional extra)
   "Return a REST query for PROFILE plus EXTRA query entries."
-  (append (and (hermes-cron--non-empty profile)
+  (append (and (hermes-transport--non-blank-string profile)
                `((profile . ,profile)))
           extra))
 
@@ -176,7 +155,7 @@
   "Return the profile shown on the current tabulated-list row, or nil."
   (and-let* ((entry (tabulated-list-get-entry))
              ((> (length entry) 3)))
-    (hermes-cron--non-empty (aref entry 3))))
+    (hermes-transport--non-blank-string (aref entry 3))))
 
 (defun hermes-cron--id-at-point ()
   "Return the cron job id at point, or signal a `user-error'."
@@ -229,27 +208,27 @@ UPDATES is the payload sent to the dashboard."
 (defun hermes-cron--format-job (job)
   "Return detail text for cron JOB."
   (string-join
-   (list (format "Name:     %s" (hermes-cron--field job 'name))
+   (list (format "Name:     %s" (hermes-transport--display-field job 'name))
          (format "ID:       %s" (hermes-cron--job-id job))
-         (format "Profile:  %s" (or (hermes-cron--non-empty
+         (format "Profile:  %s" (or (hermes-transport--non-blank-string
                                       (hermes-cron--profile job))
                                      "default"))
          (format "State:    %s" (hermes-cron--state job))
          (format "Schedule: %s" (hermes-cron--schedule job))
-         (format "Deliver:  %s" (or (hermes-cron--non-empty
-                                      (hermes-cron--field job 'deliver))
+         (format "Deliver:  %s" (or (hermes-transport--non-blank-string
+                                      (hermes-transport--display-field job 'deliver))
                                      "local"))
-         (format "Skills:   %s" (or (hermes-cron--non-empty
+         (format "Skills:   %s" (or (hermes-transport--non-blank-string
                                       (hermes-cron--skills-string job))
                                      "-"))
-         (format "Last:     %s" (hermes-cron--field job 'last_run_at))
-         (format "Next:     %s" (hermes-cron--field job 'next_run_at))
-         (format "Error:    %s" (or (hermes-cron--non-empty
-                                      (hermes-cron--field job 'last_error))
+         (format "Last:     %s" (hermes-transport--display-field job 'last_run_at))
+         (format "Next:     %s" (hermes-transport--display-field job 'next_run_at))
+         (format "Error:    %s" (or (hermes-transport--non-blank-string
+                                      (hermes-transport--display-field job 'last_error))
                                      "-"))
          ""
          "Prompt:"
-         (or (hermes-cron--non-empty (hermes-cron--prompt job)) "-"))
+         (or (hermes-transport--non-blank-string (hermes-cron--prompt job)) "-"))
    "\n"))
 
 (defun hermes-cron--format-run (run)
@@ -257,12 +236,12 @@ UPDATES is the payload sent to the dashboard."
   (format "  %s  %s  %s msg%s  %s%s"
           (hermes-cron--time (or (hermes-transport--get run 'started_at)
                                  (hermes-transport--get run 'created_at)))
-          (or (hermes-cron--non-empty (hermes-cron--field run 'title))
-              (hermes-cron--field run 'id))
-          (or (hermes-cron--non-empty (hermes-cron--field run 'message_count))
+          (or (hermes-transport--non-blank-string (hermes-transport--display-field run 'title))
+              (hermes-transport--display-field run 'id))
+          (or (hermes-transport--non-blank-string (hermes-transport--display-field run 'message_count))
               "0")
-          (if (equal (hermes-cron--field run 'message_count) "1") "" "s")
-          (hermes-cron--field run 'source)
+          (if (equal (hermes-transport--display-field run 'message_count) "1") "" "s")
+          (hermes-transport--display-field run 'source)
           (if (eq (hermes-transport--get run 'is_active) t) " active" "")))
 
 (defun hermes-cron--format-runs (runs)
@@ -294,7 +273,7 @@ RUNS is the detail run list."
     (hermes-cron--with-client
      (lambda (client)
        (let* ((job (hermes-cron--fetch-job client id profile))
-              (job-profile (or (hermes-cron--non-empty
+              (job-profile (or (hermes-transport--non-blank-string
                                 (hermes-cron--profile job))
                                profile))
               (runs (hermes-transport--get
@@ -335,16 +314,16 @@ RUNS is the detail run list."
 (defun hermes-cron--split-skills (text)
   "Return comma-separated skill names from TEXT."
   (delq nil
-        (mapcar #'hermes-cron--non-empty
+        (mapcar #'hermes-transport--non-blank-string
                 (split-string (or text "") ","))))
 
 (defun hermes-cron--read-updates (job)
   "Read and return update fields for JOB."
-  (let* ((name (read-string "Name: " (hermes-cron--field job 'name)))
+  (let* ((name (read-string "Name: " (hermes-transport--display-field job 'name)))
          (schedule (read-string "Schedule: " (hermes-cron--schedule-expr job)))
          (prompt (read-string "Prompt: " (hermes-cron--prompt job)))
-         (deliver (read-string "Deliver: " (or (hermes-cron--non-empty
-                                                (hermes-cron--field job 'deliver))
+         (deliver (read-string "Deliver: " (or (hermes-transport--non-blank-string
+                                                (hermes-transport--display-field job 'deliver))
                                                "local")))
          (skills (hermes-cron--split-skills
                   (read-string "Skills (comma-separated): "
@@ -355,7 +334,7 @@ RUNS is the detail run list."
     `((name . ,(string-trim name))
       (schedule . ,(string-trim schedule))
       (prompt . ,(string-trim prompt))
-      (deliver . ,(or (hermes-cron--non-empty deliver) "local"))
+      (deliver . ,(or (hermes-transport--non-blank-string deliver) "local"))
       (skills . ,skills))))
 
 (defun hermes-cron-edit ()
@@ -366,7 +345,7 @@ RUNS is the detail run list."
     (hermes-cron--with-client
      (lambda (client)
        (let* ((job (hermes-cron--fetch-job client id profile))
-              (job-profile (or (hermes-cron--non-empty
+              (job-profile (or (hermes-transport--non-blank-string
                                 (hermes-cron--profile job))
                                profile))
               (updates (hermes-cron--read-updates job)))

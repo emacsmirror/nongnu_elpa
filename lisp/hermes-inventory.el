@@ -34,10 +34,6 @@
 (require 'hermes-dashboard-transport)
 (require 'hermes-browser)
 
-(defun hermes-inventory--str (object key)
-  "Return OBJECT's KEY as a display string."
-  (or (hermes-transport--scalar-string (hermes-transport--get object key)) ""))
-
 (defun hermes-inventory--bool-cell (value &optional unknown)
   "Return an on/off display cell for VALUE.
 When VALUE is nil and UNKNOWN is non-nil, return `?' instead
@@ -54,7 +50,7 @@ of the string \"off\"."
 (defun hermes-inventory--toolset-rows (result)
   "Return inventory rows for a `tools.list' or toolset list RESULT."
   (mapcar (lambda (toolset)
-            (let ((name (hermes-inventory--str toolset 'name))
+            (let ((name (hermes-transport--display-field toolset 'name))
                   (tool-count (or (hermes-transport--get toolset 'tool_count)
                                   (length (or (hermes-transport--get toolset 'tools)
                                               '())))))
@@ -63,7 +59,7 @@ of the string \"off\"."
                             (hermes-inventory--bool-cell
                              (hermes-transport--get toolset 'enabled))
                             (format "%s" tool-count)
-                            (hermes-inventory--str toolset 'description)))))
+                            (hermes-transport--display-field toolset 'description)))))
           (hermes-transport--get result 'toolsets)))
 
 (defun hermes-inventory--skill-object-p (entry)
@@ -74,13 +70,13 @@ of the string \"off\"."
 
 (defun hermes-inventory--skill-object-row (skill)
   "Return a tabulated-list row for dashboard SKILL metadata."
-  (let ((name (hermes-inventory--str skill 'name)))
+  (let ((name (hermes-transport--display-field skill 'name)))
     (list name
-          (vector (hermes-inventory--str skill 'category)
+          (vector (hermes-transport--display-field skill 'category)
                   name
                   (hermes-inventory--bool-cell
                    (hermes-transport--get skill 'enabled))
-                  (hermes-inventory--str skill 'description)))))
+                  (hermes-transport--display-field skill 'description)))))
 
 (defun hermes-inventory--skill-group-rows (skills)
   "Return rows for legacy SKILLS grouped by category."
@@ -111,19 +107,19 @@ a `skills' field too so older/newer dashboard shapes render the same way."
 (defun hermes-inventory--agent-rows (result)
   "Return inventory rows for an `agents.list' RESULT."
   (mapcar (lambda (process)
-            (list (hermes-inventory--str process 'session_id)
-                  (vector (hermes-inventory--str process 'session_id)
-                          (hermes-inventory--str process 'status)
+            (list (hermes-transport--display-field process 'session_id)
+                  (vector (hermes-transport--display-field process 'session_id)
+                          (hermes-transport--display-field process 'status)
                           (format "%s" (or (hermes-transport--get process 'uptime) 0))
-                          (hermes-inventory--str process 'command))))
+                          (hermes-transport--display-field process 'command))))
           (hermes-transport--get result 'processes)))
 
 (defun hermes-inventory--plugin-rows (result)
   "Return inventory rows for a `plugins.list' RESULT."
   (mapcar (lambda (plugin)
-            (list (hermes-inventory--str plugin 'name)
-                  (vector (hermes-inventory--str plugin 'name)
-                          (hermes-inventory--str plugin 'version)
+            (list (hermes-transport--display-field plugin 'name)
+                  (vector (hermes-transport--display-field plugin 'name)
+                          (hermes-transport--display-field plugin 'version)
                           (hermes-inventory--bool-cell
                            (hermes-transport--get plugin 'enabled)))))
           (hermes-transport--get result 'plugins)))

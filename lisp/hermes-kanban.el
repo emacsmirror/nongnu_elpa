@@ -108,24 +108,13 @@ Invalidated and re-resolved when a GET fails, covering expired cookies.")
   (or hermes-kanban--auth
       (setq hermes-kanban--auth (hermes-kanban--authenticate))))
 
-(defun hermes-kanban--query-string (query)
-  "Return a URL query string for QUERY, an alist of (KEY . VALUE)."
-  (if query
-      (concat "?" (string-join
-                   (mapcar (lambda (kv)
-                             (format "%s=%s" (car kv)
-                                     (url-hexify-string (format "%s" (cdr kv)))))
-                           query)
-                   "&"))
-    ""))
-
 (defun hermes-kanban--api-1 (method path body query retry)
   "Call kanban plugin METHOD PATH with BODY and QUERY; retry once when RETRY."
   (let* ((auth (hermes-kanban--auth))
          (url (concat (hermes-dashboard-transport--api-url
                        (plist-get auth :base-url)
                        (concat "/api/plugins/kanban" path))
-                      (hermes-kanban--query-string query)))
+                      (hermes-dashboard-transport--query-string query)))
          (headers (append (plist-get auth :headers)
                           (and body '(("Content-Type" . "application/json"))))))
     (condition-case err
@@ -146,14 +135,6 @@ Return the parsed JSON body.  GET requests retry once after re-authenticating."
   (hermes-kanban--api-1 method path body query (equal method "GET")))
 
 ;;; Field helpers
-
-(defun hermes-kanban--field (object key)
-  "Return OBJECT's KEY as a display string."
-  (or (hermes-transport--scalar-string (hermes-transport--get object key)) ""))
-
-(defun hermes-kanban--non-empty (string)
-  "Return STRING when it is a non-empty string."
-  (and (stringp string) (not (string-empty-p string)) string))
 
 (defun hermes-kanban--count (counts status)
   "Return COUNTS' tally for STATUS as a string."
@@ -235,7 +216,7 @@ status values."
          (icon (plist-get info :icon))
          (face (plist-get info :face))
          (text (copy-sequence
-                (or (hermes-kanban--non-empty icon) raw))))
+                (or (hermes-transport--non-empty-string icon) raw))))
     (when (and face (not (string-empty-p text)))
       (setq text (propertize text 'face face)))
     (when (not (string-empty-p text))
@@ -248,7 +229,7 @@ status values."
 
 (defun hermes-kanban--status-column-heading (status)
   "Return the boards-overview heading for STATUS."
-  (or (hermes-kanban--non-empty (hermes-kanban--status-icon status))
+  (or (hermes-transport--non-empty-string (hermes-kanban--status-icon status))
       (capitalize (hermes-kanban--status-label status))))
 
 (defun hermes-kanban--status-count-column (status)
@@ -376,16 +357,16 @@ when WIDTH can hold one character per column plus padding."
   "Return `tabulated-list' entries for BOARDS, the dashboard board list."
   (mapcar
    (lambda (board)
-     (let ((slug (hermes-kanban--field board 'slug))
+     (let ((slug (hermes-transport--display-field board 'slug))
            (counts (hermes-transport--get board 'counts))
            (total (hermes-transport--get board 'total)))
-       (list (cons slug (hermes-kanban--non-empty (hermes-kanban--field board 'name)))
+       (list (cons slug (hermes-transport--non-empty-string (hermes-transport--display-field board 'name)))
              (vconcat
               (vector (if (eq (hermes-transport--get board 'is_current) t)
                           hermes-kanban--current-board-marker
                         "")
-                      (or (hermes-kanban--non-empty
-                           (hermes-kanban--field board 'name))
+                      (or (hermes-transport--non-empty-string
+                           (hermes-transport--display-field board 'name))
                           slug)
                       (if (numberp total) (number-to-string total) "0"))
               (mapcar (lambda (status)
@@ -548,14 +529,14 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
   (let (rows)
     (dolist (column columns (nreverse rows))
       (dolist (task (hermes-transport--get column 'tasks))
-        (push (list (hermes-kanban--field task 'id)
+        (push (list (hermes-transport--display-field task 'id)
                     (vector (hermes-kanban--format-status-indicator
-                             (hermes-kanban--field task 'status))
-                            (hermes-kanban--field task 'priority)
-                            (or (hermes-kanban--non-empty
-                                 (hermes-kanban--field task 'assignee))
+                             (hermes-transport--display-field task 'status))
+                            (hermes-transport--display-field task 'priority)
+                            (or (hermes-transport--non-empty-string
+                                 (hermes-transport--display-field task 'assignee))
                                 "-")
-                            (hermes-kanban--field task 'title)))
+                            (hermes-transport--display-field task 'title)))
               rows)))))
 
 (defvar hermes-kanban-mode-map)
@@ -705,22 +686,22 @@ EMPTY-NAME is inserted in the explicit empty-state line."
 
 (defun hermes-kanban--format-task (task)
   "Return TASK's header and body as a display string."
-  (let ((latest-summary (hermes-kanban--non-empty
-                         (hermes-kanban--field task 'latest_summary)))
-        (body (hermes-kanban--non-empty (hermes-kanban--field task 'body))))
+  (let ((latest-summary (hermes-transport--non-empty-string
+                         (hermes-transport--display-field task 'latest_summary)))
+        (body (hermes-transport--non-empty-string (hermes-transport--display-field task 'body))))
     (concat
      (format "# %s\n\n- ID: `%s`\n- Status: `%s`\n- Priority: `%s`\n- Assignee: `%s`\n- Created: %s\n"
-             (hermes-kanban--field task 'title)
-             (hermes-kanban--field task 'id)
-             (hermes-kanban--format-status (hermes-kanban--field task 'status))
-             (hermes-kanban--field task 'priority)
-             (or (hermes-kanban--non-empty (hermes-kanban--field task 'assignee)) "-")
+             (hermes-transport--display-field task 'title)
+             (hermes-transport--display-field task 'id)
+             (hermes-kanban--format-status (hermes-transport--display-field task 'status))
+             (hermes-transport--display-field task 'priority)
+             (or (hermes-transport--non-empty-string (hermes-transport--display-field task 'assignee)) "-")
              (hermes-kanban--format-time (hermes-transport--get task 'created_at)))
-     (when-let* ((workspace (hermes-kanban--non-empty
-                             (hermes-kanban--field task 'workspace_kind))))
+     (when-let* ((workspace (hermes-transport--non-empty-string
+                             (hermes-transport--display-field task 'workspace_kind))))
        (format "- Workspace: %s%s\n" workspace
-               (if-let* ((path (hermes-kanban--non-empty
-                                (hermes-kanban--field task 'workspace_path))))
+               (if-let* ((path (hermes-transport--non-empty-string
+                                (hermes-transport--display-field task 'workspace_path))))
                    (concat ": " path)
                  "")))
      (when latest-summary
@@ -738,8 +719,8 @@ EMPTY-NAME is inserted in the explicit empty-state line."
                (format "  [%s] %s: %s"
                        (hermes-kanban--format-time
                         (hermes-transport--get comment 'created_at))
-                       (hermes-kanban--field comment 'author)
-                       (hermes-kanban--field comment 'body)))
+                       (hermes-transport--display-field comment 'author)
+                       (hermes-transport--display-field comment 'body)))
              comments "\n")
             "\n")))
 
@@ -752,7 +733,7 @@ EMPTY-NAME is inserted in the explicit empty-state line."
                (format "  [%s] %s"
                        (hermes-kanban--format-time
                         (hermes-transport--get event 'created_at))
-                       (hermes-kanban--field event 'kind)))
+                       (hermes-transport--display-field event 'kind)))
              events "\n")
             "\n")))
 
@@ -760,9 +741,9 @@ EMPTY-NAME is inserted in the explicit empty-state line."
   "Return COMMENT as one Markdown row."
   (format "### %s — %s\n\n%s"
           (hermes-kanban--format-time (hermes-transport--get comment 'created_at))
-          (or (hermes-kanban--non-empty (hermes-kanban--field comment 'author))
+          (or (hermes-transport--non-empty-string (hermes-transport--display-field comment 'author))
               "anon")
-          (hermes-kanban--field comment 'body)))
+          (hermes-transport--display-field comment 'body)))
 
 (defun hermes-kanban--format-event-row (event)
   "Return EVENT as one Markdown row."
@@ -770,7 +751,7 @@ EMPTY-NAME is inserted in the explicit empty-state line."
     (concat
      (format "### %s — %s"
              (hermes-kanban--format-time (hermes-transport--get event 'created_at))
-             (hermes-kanban--field event 'kind))
+             (hermes-transport--display-field event 'kind))
      (when payload
        (format "\n\n- Payload: %s" (hermes-kanban--object-string payload))))))
 
@@ -778,16 +759,16 @@ EMPTY-NAME is inserted in the explicit empty-state line."
   "Return ATTACHMENT as one Markdown row."
   (let ((size (hermes-kanban--format-size
                (hermes-transport--get attachment 'size)))
-        (content-type (hermes-kanban--non-empty
-                       (hermes-kanban--field attachment 'content_type)))
-        (uploaded-by (hermes-kanban--non-empty
-                      (hermes-kanban--field attachment 'uploaded_by)))
-        (path (hermes-kanban--non-empty
-               (hermes-kanban--field attachment 'stored_path))))
+        (content-type (hermes-transport--non-empty-string
+                       (hermes-transport--display-field attachment 'content_type)))
+        (uploaded-by (hermes-transport--non-empty-string
+                      (hermes-transport--display-field attachment 'uploaded_by)))
+        (path (hermes-transport--non-empty-string
+               (hermes-transport--display-field attachment 'stored_path))))
     (concat
      (format "### %s (#%s)%s"
-             (hermes-kanban--field attachment 'filename)
-             (hermes-kanban--field attachment 'id)
+             (hermes-transport--display-field attachment 'filename)
+             (hermes-transport--display-field attachment 'id)
              (if (string-empty-p size) "" (format " (%s)" size)))
      (when content-type (format "\n\n- Type: %s" content-type))
      (when uploaded-by (format "\n- Uploaded by: %s" uploaded-by))
@@ -795,8 +776,8 @@ EMPTY-NAME is inserted in the explicit empty-state line."
 
 (defun hermes-kanban--format-diagnostic-action (action)
   "Return ACTION as a short diagnostic action label."
-  (let ((label (or (hermes-kanban--non-empty (hermes-kanban--field action 'label))
-                   (hermes-kanban--field action 'kind))))
+  (let ((label (or (hermes-transport--non-empty-string (hermes-transport--display-field action 'label))
+                   (hermes-transport--display-field action 'kind))))
     (if (hermes-kanban--truthy-p (hermes-transport--get action 'suggested))
         (concat label " (suggested)")
       label)))
@@ -808,17 +789,17 @@ EMPTY-NAME is inserted in the explicit empty-state line."
         (data (hermes-transport--get diagnostic 'data)))
     (concat
      (format "### [%s] %s: %s"
-             (hermes-kanban--field diagnostic 'severity)
-             (hermes-kanban--field diagnostic 'kind)
-             (hermes-kanban--field diagnostic 'title))
-     (when-let* ((detail (hermes-kanban--non-empty
-                          (hermes-kanban--field diagnostic 'detail))))
+             (hermes-transport--display-field diagnostic 'severity)
+             (hermes-transport--display-field diagnostic 'kind)
+             (hermes-transport--display-field diagnostic 'title))
+     (when-let* ((detail (hermes-transport--non-empty-string
+                          (hermes-transport--display-field diagnostic 'detail))))
        (format "\n\n%s" detail))
      (when (or (hermes-transport--get diagnostic 'run_id)
                (hermes-transport--get diagnostic 'count))
        (format "\n\n- Run: %s\n- Count: %s"
-               (or (hermes-kanban--field diagnostic 'run_id) "-")
-               (or (hermes-kanban--field diagnostic 'count) "-")))
+               (or (hermes-transport--display-field diagnostic 'run_id) "-")
+               (or (hermes-transport--display-field diagnostic 'count) "-")))
      (when data
        (format "\n- Data: %s" (hermes-kanban--object-string data)))
      (when actions
@@ -829,34 +810,34 @@ EMPTY-NAME is inserted in the explicit empty-state line."
 
 (defun hermes-kanban--format-run (run)
   "Return RUN as one Markdown row."
-  (let* ((outcome (hermes-kanban--non-empty
-                   (hermes-kanban--field run 'outcome)))
-         (status (hermes-kanban--non-empty
-                  (hermes-kanban--field run 'status)))
+  (let* ((outcome (hermes-transport--non-empty-string
+                   (hermes-transport--display-field run 'outcome)))
+         (status (hermes-transport--non-empty-string
+                  (hermes-transport--display-field run 'status)))
          (state (or outcome status "-"))
-         (profile (or (hermes-kanban--non-empty
-                       (hermes-kanban--field run 'profile))
+         (profile (or (hermes-transport--non-empty-string
+                       (hermes-transport--display-field run 'profile))
                       "-"))
          (started (hermes-transport--get run 'started_at))
          (ended (hermes-transport--get run 'ended_at))
          (metadata (hermes-transport--get run 'metadata)))
     (concat
      (format "### Run #%s — %s @%s"
-             (hermes-kanban--field run 'id) state profile)
+             (hermes-transport--display-field run 'id) state profile)
      (when (and (numberp started) (numberp ended))
        (format " (%ss)" (max 0 (- ended started))))
      (when (numberp started)
        (format "\n\n- Started: %s" (hermes-kanban--format-time started)))
      (when (numberp ended)
        (format "\n- Ended: %s" (hermes-kanban--format-time ended)))
-     (when-let* ((pid (hermes-kanban--non-empty
-                       (hermes-kanban--field run 'worker_pid))))
+     (when-let* ((pid (hermes-transport--non-empty-string
+                       (hermes-transport--display-field run 'worker_pid))))
        (format "\n- PID: %s" pid))
-     (when-let* ((summary (hermes-kanban--non-empty
-                           (hermes-kanban--field run 'summary))))
+     (when-let* ((summary (hermes-transport--non-empty-string
+                           (hermes-transport--display-field run 'summary))))
        (format "\n- Summary: %s" summary))
-     (when-let* ((error (hermes-kanban--non-empty
-                         (hermes-kanban--field run 'error))))
+     (when-let* ((error (hermes-transport--non-empty-string
+                         (hermes-transport--display-field run 'error))))
        (format "\n- Error: %s" error))
      (when metadata
        (format "\n- Metadata: %s" (hermes-kanban--object-string metadata))))))
@@ -931,7 +912,7 @@ EMPTY-NAME is inserted in the explicit empty-state line."
   "Render task PAYLOAD in a read-only detail buffer.
 BOARD-SLUG is remembered for refreshes and log requests."
   (let* ((task (hermes-transport--get payload 'task))
-         (task-id (hermes-kanban--field task 'id)))
+         (task-id (hermes-transport--display-field task 'id)))
     (with-current-buffer (get-buffer-create "*Hermes Kanban Task*")
       (unless (derived-mode-p 'hermes-kanban-task-mode)
         (hermes-kanban-task-mode))
@@ -991,13 +972,13 @@ BOARD-SLUG is remembered for refreshes and log requests."
 
 (defun hermes-kanban--format-log (payload)
   "Return worker-log text for PAYLOAD from GET /tasks/:id/log."
-  (let ((task-id (hermes-kanban--field payload 'task_id))
-        (path (hermes-kanban--field payload 'path))
+  (let ((task-id (hermes-transport--display-field payload 'task_id))
+        (path (hermes-transport--display-field payload 'path))
         (size (hermes-transport--get payload 'size_bytes))
-        (content (hermes-kanban--field payload 'content))
-        (error (hermes-kanban--non-empty (hermes-kanban--field payload 'error))))
+        (content (hermes-transport--display-field payload 'content))
+        (error (hermes-transport--non-empty-string (hermes-transport--display-field payload 'error))))
     (concat
-     (format "Worker log for %s\n" (or (hermes-kanban--non-empty task-id) "task"))
+     (format "Worker log for %s\n" (or (hermes-transport--non-empty-string task-id) "task"))
      (unless (string-empty-p path)
        (format "Path: %s\n" path))
      (when (numberp size)
@@ -1041,14 +1022,14 @@ BOARD-SLUG is remembered for refreshes and log requests."
 
 (defun hermes-kanban--display-log (payload &optional board-slug)
   "Render worker log PAYLOAD for BOARD-SLUG in a read-only buffer."
-  (let ((task-id (hermes-kanban--non-empty
-                  (hermes-kanban--field payload 'task_id))))
+  (let ((task-id (hermes-transport--non-empty-string
+                  (hermes-transport--display-field payload 'task_id))))
     (with-current-buffer (get-buffer-create "*Hermes Kanban Log*")
       (unless (derived-mode-p 'hermes-kanban-log-mode)
         (hermes-kanban-log-mode))
       (setq hermes-kanban-log--task-id task-id
             hermes-kanban-log--board-slug board-slug
-            mode-line-process (format " [%s]" (or (hermes-kanban--non-empty task-id)
+            mode-line-process (format " [%s]" (or (hermes-transport--non-empty-string task-id)
                                                   "task")))
       (let ((inhibit-read-only t))
         (erase-buffer)

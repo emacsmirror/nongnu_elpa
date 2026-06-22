@@ -47,22 +47,18 @@
 (defvar-local hermes-sessions--detail-count nil
   "Total history message count reported for the current detail buffer.")
 
-(defun hermes-sessions--field (session key)
-  "Return SESSION's KEY as a display string."
-  (or (hermes-transport--scalar-string (hermes-transport--get session key)) ""))
-
 (defun hermes-sessions--non-empty-field (session key)
   "Return SESSION's KEY as a non-empty display string, or nil."
-  (let ((value (hermes-sessions--field session key)))
-    (and (not (string-empty-p value)) value)))
+  (hermes-transport--non-empty-string
+   (hermes-transport--display-field session key)))
 
 (defun hermes-sessions--id (session)
   "Return SESSION's durable id."
-  (hermes-sessions--field session 'id))
+  (hermes-transport--display-field session 'id))
 
 (defun hermes-sessions--live-id (session)
   "Return SESSION's live dashboard id, or nil."
-  (let ((id (hermes-sessions--field session 'live_session_id)))
+  (let ((id (hermes-transport--display-field session 'live_session_id)))
     (and (not (string-empty-p id)) id)))
 
 (defun hermes-sessions--message-count (session)
@@ -84,9 +80,9 @@
      (let ((id (hermes-sessions--id session)))
        (list id
              (vector id
-                     (hermes-sessions--field session 'title)
+                     (hermes-transport--display-field session 'title)
                      (hermes-sessions--message-count session)
-                     (hermes-sessions--field session 'source)))))
+                     (hermes-transport--display-field session 'source)))))
    sessions))
 
 (defun hermes-sessions--revert (&rest _)
@@ -174,7 +170,7 @@
    ((hermes-transport--object-p value)
     (or (hermes-sessions--display-string
          (hermes-transport--get-any value '(text content output preview summary)))
-        (let ((kind (hermes-sessions--field value 'type)))
+        (let ((kind (hermes-transport--display-field value 'type)))
           (and (not (string-empty-p kind))
                (format "[%s]" kind)))
         (prin1-to-string value)))
@@ -221,7 +217,7 @@
          (name (or (hermes-sessions--non-empty-field function 'name)
                    (hermes-sessions--non-empty-field tool-call 'name)
                    "tool"))
-         (id (hermes-sessions--field tool-call 'id))
+         (id (hermes-transport--display-field tool-call 'id))
          (args (hermes-sessions--display-string
                 (or (hermes-transport--get function 'arguments)
                     (hermes-transport--get tool-call 'arguments)))))
@@ -260,9 +256,9 @@ COUNT, when non-nil, is the total history count reported by the gateway."
         hermes-sessions--detail-count count)
   (let ((inhibit-read-only t))
     (erase-buffer)
-    (let ((title (hermes-sessions--field session 'title))
+    (let ((title (hermes-transport--display-field session 'title))
           (id (hermes-sessions--id session))
-          (source (hermes-sessions--field session 'source)))
+          (source (hermes-transport--display-field session 'source)))
       (insert (format "Session: %s\n" (if (string-empty-p title) id title)))
       (insert (format "ID: %s\n" id))
       (unless (string-empty-p source)
@@ -290,7 +286,7 @@ COUNT, when non-nil, is the total history count reported by the gateway."
 
 (defun hermes-sessions--session-with-result (session result)
   "Return SESSION annotated with live ids from RESULT."
-  (let ((live-id (hermes-sessions--field result 'session_id)))
+  (let ((live-id (hermes-transport--display-field result 'session_id)))
     (if (string-empty-p live-id)
         session
       (append `((live_session_id . ,live-id)) session))))
@@ -338,7 +334,7 @@ returned messages instead."
   (interactive)
   (let* ((session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
-         (title (hermes-sessions--field session 'title)))
+         (title (hermes-transport--display-field session 'title)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to resume"))
     (hermes-chat-resume-session id title)))
@@ -360,7 +356,7 @@ id it returns."
           (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-resume
                                  client session-id)
           (lambda (result)
-            (let ((live-id (hermes-sessions--field result 'session_id)))
+            (let ((live-id (hermes-transport--display-field result 'session_id)))
               (hermes-dashboard-transport-call-fn
                #'hermes-dashboard-transport-session-title
                client
@@ -411,7 +407,7 @@ id it returns."
          (id (hermes-sessions--id session)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to rename"))
-    (let* ((current-title (hermes-sessions--field session 'title))
+    (let* ((current-title (hermes-transport--display-field session 'title))
            (title (read-string (format "Rename Hermes session %s to: " id)
                                current-title))
            (origin (current-buffer)))
@@ -446,7 +442,7 @@ id it returns."
   (interactive)
   (let* ((session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
-         (title (hermes-sessions--field session 'title))
+         (title (hermes-transport--display-field session 'title))
          (origin (current-buffer)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to delete"))

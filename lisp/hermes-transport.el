@@ -86,46 +86,40 @@
     (when name
       (list key name (intern name) (intern (concat ":" name))))))
 
+(defconst hermes-transport--missing (make-symbol "hermes-transport-missing")
+  "Unique marker returned when an object has no value for a field key.")
+
+(defun hermes-transport--member-value (object candidate)
+  "Return OBJECT's value for the single CANDIDATE key.
+OBJECT may be a hash table, plist, or alist.  Return
+`hermes-transport--missing' when CANDIDATE is absent."
+  (cond
+   ((hash-table-p object)
+    (gethash candidate object hermes-transport--missing))
+   ((hermes-transport--plist-p object)
+    (let ((tail (plist-member object candidate)))
+      (if tail (cadr tail) hermes-transport--missing)))
+   ((hermes-transport--alist-p object)
+    (let ((cell (assoc candidate object)))
+      (if cell (cdr cell) hermes-transport--missing)))
+   (t hermes-transport--missing)))
+
 (defun hermes-transport--get (object key)
   "Return OBJECT's value for KEY across plist, alist, or hash forms."
-  (let ((sentinel (make-symbol "hermes-transport-missing")))
-    (catch 'found
-      (dolist (candidate (hermes-transport--key-candidates key))
-        (cond
-         ((hash-table-p object)
-          (let ((value (gethash candidate object sentinel)))
-            (unless (eq value sentinel)
-              (throw 'found value))))
-         ((hermes-transport--plist-p object)
-          (let ((tail (plist-member object candidate)))
-            (when tail
-              (throw 'found (cadr tail)))))
-         ((hermes-transport--alist-p object)
-          (let ((cell (assoc candidate object)))
-            (when cell
-              (throw 'found (cdr cell)))))))
-      nil)))
+  (catch 'found
+    (dolist (candidate (hermes-transport--key-candidates key))
+      (let ((value (hermes-transport--member-value object candidate)))
+        (unless (eq value hermes-transport--missing)
+          (throw 'found value))))))
 
 (defun hermes-transport--get-any (object keys)
   "Return the first present value in OBJECT for KEYS."
   (catch 'found
     (dolist (key keys)
-      (let ((sentinel (make-symbol "hermes-transport-missing")))
-        (dolist (candidate (hermes-transport--key-candidates key))
-          (cond
-           ((hash-table-p object)
-            (let ((value (gethash candidate object sentinel)))
-              (unless (eq value sentinel)
-                (throw 'found value))))
-           ((hermes-transport--plist-p object)
-            (let ((tail (plist-member object candidate)))
-              (when tail
-                (throw 'found (cadr tail)))))
-           ((hermes-transport--alist-p object)
-            (let ((cell (assoc candidate object)))
-              (when cell
-                (throw 'found (cdr cell)))))))))
-    nil))
+      (dolist (candidate (hermes-transport--key-candidates key))
+        (let ((value (hermes-transport--member-value object candidate)))
+          (unless (eq value hermes-transport--missing)
+            (throw 'found value)))))))
 
 (defun hermes-transport--scalar-string (value)
   "Return VALUE as a display string when VALUE is scalar."
@@ -134,6 +128,24 @@
    ((stringp value) value)
    ((symbolp value) (symbol-name value))
    ((numberp value) (number-to-string value))))
+
+(defun hermes-transport--field (object key)
+  "Return OBJECT's KEY as a scalar string, or nil when absent."
+  (hermes-transport--scalar-string (hermes-transport--get object key)))
+
+(defun hermes-transport--display-field (object key)
+  "Return OBJECT's KEY as a display string, or an empty string when absent."
+  (or (hermes-transport--field object key) ""))
+
+(defun hermes-transport--non-empty-string (value)
+  "Return VALUE when it is a non-empty string, else nil."
+  (and (stringp value) (not (string-empty-p value)) value))
+
+(defun hermes-transport--non-blank-string (value)
+  "Return VALUE trimmed when it is non-blank, else nil."
+  (and (stringp value)
+       (let ((trimmed (string-trim value)))
+         (and (not (string-empty-p trimmed)) trimmed))))
 
 (defun hermes-transport--event-name (raw event-name)
   "Return RAW's event name, preferring EVENT-NAME."
@@ -234,18 +246,9 @@
   "Return non-nil if OBJECT has KEY, even when its value is nil."
   (catch 'found
     (dolist (candidate (hermes-transport--key-candidates key))
-      (cond
-       ((hash-table-p object)
-        (let ((sentinel (make-symbol "hermes-transport-missing")))
-          (unless (eq (gethash candidate object sentinel) sentinel)
-            (throw 'found t))))
-       ((hermes-transport--plist-p object)
-        (when (plist-member object candidate)
-          (throw 'found t)))
-       ((hermes-transport--alist-p object)
-        (when (assoc candidate object)
-          (throw 'found t)))))
-    nil))
+      (unless (eq (hermes-transport--member-value object candidate)
+                  hermes-transport--missing)
+        (throw 'found t)))))
 
 (defun hermes-transport--tool-event-status (raw item event-name)
   "Return normalized tool status for RAW, ITEM, and EVENT-NAME."

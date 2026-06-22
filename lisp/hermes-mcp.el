@@ -72,37 +72,16 @@
          "\\b[A-Za-z0-9_-]\\{48,\\}\\b" "<redacted>" safe t nil)
       safe)))
 
-(defun hermes-mcp--raw-field (object key)
-  "Return OBJECT's KEY as an unredacted scalar string, or nil."
-  (hermes-transport--scalar-string (hermes-transport--get object key)))
-
 (defun hermes-mcp--field (object key)
   "Return OBJECT's KEY as a redacted display string."
-  (if-let* ((text (hermes-mcp--raw-field object key)))
+  (if-let* ((text (hermes-transport--field object key)))
       (hermes-mcp--redact-display text)
     ""))
-
-(defun hermes-mcp--has-key-p (object key)
-  "Return non-nil if OBJECT has KEY."
-  (let ((sentinel (make-symbol "hermes-mcp-missing")))
-    (catch 'found
-      (dolist (candidate (hermes-transport--key-candidates key))
-        (cond
-         ((hash-table-p object)
-          (unless (eq (gethash candidate object sentinel) sentinel)
-            (throw 'found t)))
-         ((hermes-transport--plist-p object)
-          (when (plist-member object candidate)
-            (throw 'found t)))
-         ((hermes-transport--alist-p object)
-          (when (assoc candidate object)
-            (throw 'found t)))))
-      nil)))
 
 (defun hermes-mcp--enabled-label (server)
   "Return SERVER's enabled state as a short display label."
   (cond
-   ((not (hermes-mcp--has-key-p server 'enabled)) "?")
+   ((not (hermes-transport--field-present-p server 'enabled)) "?")
    ((eq (hermes-transport--get server 'enabled) t) "on")
    (t "off")))
 
@@ -131,7 +110,7 @@
     (cond
      ((numberp count) (number-to-string count))
      ((stringp count) (hermes-mcp--redact-display count))
-     ((and (hermes-mcp--has-key-p object 'tools) (listp tools))
+     ((and (hermes-transport--field-present-p object 'tools) (listp tools))
       (number-to-string (length tools)))
      (t ""))))
 
@@ -151,7 +130,7 @@ string when no test result exists."
 (defun hermes-mcp--tool-count (server &optional test-results)
   "Return SERVER's best available tool-count display string.
 Prefer TEST-RESULTS over the server summary when present."
-  (let* ((tested (and-let* ((name (hermes-mcp--raw-field server 'name)))
+  (let* ((tested (and-let* ((name (hermes-transport--field server 'name)))
                    (hermes-mcp--test-tool-count name test-results)))
          (summary (hermes-mcp--explicit-tool-count server)))
     (if (and tested (not (string-empty-p tested)))
@@ -161,7 +140,7 @@ Prefer TEST-RESULTS over the server summary when present."
 (defun hermes-mcp--status (server &optional test-results)
   "Return SERVER's display status using TEST-RESULTS when present."
   (cond
-   ((and-let* ((name (hermes-mcp--raw-field server 'name))
+   ((and-let* ((name (hermes-transport--field server 'name))
                (result (hermes-mcp--result-for name test-results)))
       (if (eq (hermes-transport--get result 'ok) t) "ok" "failed")))
    ((and-let* ((status (hermes-mcp--field server 'status))
@@ -188,7 +167,7 @@ Prefer TEST-RESULTS over the server summary when present."
 TEST-RESULTS maps server names to `test' endpoint responses."
   (mapcar
    (lambda (server)
-     (let* ((raw-name (or (hermes-mcp--raw-field server 'name) ""))
+     (let* ((raw-name (or (hermes-transport--field server 'name) ""))
             (display-name (hermes-mcp--redact-display raw-name)))
        (list raw-name
              (vector display-name
@@ -235,7 +214,7 @@ session token when available."
   (hermes-mcp--ensure-state)
   (clrhash hermes-mcp--servers)
   (dolist (server (hermes-mcp--server-list result))
-    (when-let* ((name (hermes-mcp--raw-field server 'name))
+    (when-let* ((name (hermes-transport--field server 'name))
                 ((not (string-empty-p name))))
       (puthash name server hermes-mcp--servers))))
 
@@ -328,9 +307,9 @@ session token when available."
   "Enable or disable the MCP server at point through the dashboard API."
   (interactive)
   (let* ((server (hermes-mcp--server-at-point))
-         (name (or (hermes-mcp--raw-field server 'name)
+         (name (or (hermes-transport--field server 'name)
                    (hermes-mcp--name-at-point))))
-    (unless (hermes-mcp--has-key-p server 'enabled)
+    (unless (hermes-transport--field-present-p server 'enabled)
       (user-error "MCP server %s has no enabled state; refresh or update Hermes Agent/dashboard"
                   (hermes-mcp--redact-display name)))
     (let ((next (not (hermes-mcp--enabled-p server))))
