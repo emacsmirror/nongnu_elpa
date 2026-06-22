@@ -29,6 +29,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'tabulated-list)
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
 (require 'hermes-chat)
@@ -67,6 +68,63 @@ Shared by the dashboard browser commands."
        (hermes--promise-finally (funcall make-promise client) done)
        on-success)
       (lambda (message) (message "Hermes: %s" message))))))
+
+(defmacro hermes-define-list-browser (name &rest body)
+  "Define a `tabulated-list' browser NAME backed by a dashboard RPC.
+NAME is the short browser name; the macro defines `hermes-NAME-mode',
+`hermes-NAME-mode-map', `hermes-NAME--render', `hermes-NAME--revert', and the
+command `hermes-list-NAME'.  BODY is a plist:
+
+  :title    display/mode-line name (string)
+  :buffer   browser buffer name (string)
+  :columns  `tabulated-list-format' vector
+  :sort     initial sort column name (string), optional
+  :fetch    function (CLIENT -> promise) issuing the dashboard RPC
+  :rows     pure function (RESULT -> list of `tabulated-list' entries)
+  :keys     extra bindings, spliced into `defvar-keymap'
+
+`:fetch' and `:rows' must be pure: this macro owns the only side effects -- the
+buffer render and the dashboard client plumbing."
+  (declare (indent 1))
+  (let ((mode (intern (format "hermes-%s-mode" name)))
+        (map (intern (format "hermes-%s-mode-map" name)))
+        (render (intern (format "hermes-%s--render" name)))
+        (revert (intern (format "hermes-%s--revert" name)))
+        (command (intern (format "hermes-list-%s" name)))
+        (title (plist-get body :title))
+        (buffer (plist-get body :buffer))
+        (columns (plist-get body :columns))
+        (sort (plist-get body :sort))
+        (fetch (plist-get body :fetch))
+        (rows (plist-get body :rows))
+        (keys (plist-get body :keys)))
+    `(progn
+       (defvar-keymap ,map
+         :doc ,(format "Keymap for `%s'." mode)
+         :parent tabulated-list-mode-map
+         ,@keys)
+       (define-derived-mode ,mode tabulated-list-mode ,title
+         ,(format "Major mode for the %s browser." title)
+         :interactive nil
+         (setq tabulated-list-format ,columns)
+         ,@(and sort `((setq tabulated-list-sort-key (cons ,sort nil))))
+         (setq-local revert-buffer-function #',revert)
+         (tabulated-list-init-header))
+       (defun ,render (result)
+         ,(format "Render dashboard RESULT in the %s buffer." title)
+         (with-current-buffer (get-buffer-create ,buffer)
+           (unless (derived-mode-p ',mode)
+             (,mode))
+           (setq tabulated-list-entries (funcall ,rows result))
+           (tabulated-list-print t)
+           (pop-to-buffer (current-buffer))))
+       (defun ,revert (&rest _)
+         ,(format "Refresh the %s browser." title)
+         (,command))
+       (defun ,command ()
+         ,(format "Browse %s from the Hermes dashboard." title)
+         (interactive)
+         (hermes-browser--run-on-client ,fetch #',render)))))
 
 (provide 'hermes-browser)
 ;;; hermes-browser.el ends here

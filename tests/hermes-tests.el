@@ -6063,6 +6063,29 @@ The buffer is captured by object so teardown still kills it after a rename."
         (when (get-buffer "*Hermes Subagents*")
           (kill-buffer "*Hermes Subagents*"))))))
 
+(ert-deftest hermes-browser-list-browser-macro-defines-working-browser ()
+  "`hermes-define-list-browser' defines a mode, keymap, render, and command."
+  (hermes-define-list-browser browsertest
+    :title "Hermes Browser Test"
+    :buffer "*Hermes Browser Test*"
+    :columns [("Name" 20 t)]
+    :fetch (lambda (_client) (hermes--promise-resolved '("a" "b")))
+    :rows (lambda (result)
+            (mapcar (lambda (name) (list name (vector name))) result))
+    :keys ("g" #'ignore))
+  (unwind-protect
+      (progn
+        (should (fboundp 'hermes-browsertest-mode))
+        (should (fboundp 'hermes-list-browsertest))
+        (should (eq (keymap-lookup hermes-browsertest-mode-map "g") #'ignore))
+        (hermes-browsertest--render '("x" "y"))
+        (with-current-buffer "*Hermes Browser Test*"
+          (should (derived-mode-p 'hermes-browsertest-mode))
+          (should (equal tabulated-list-format [("Name" 20 t)]))
+          (should (equal (mapcar #'car tabulated-list-entries) '("x" "y")))))
+    (when (get-buffer "*Hermes Browser Test*")
+      (kill-buffer "*Hermes Browser Test*"))))
+
 (defmacro hermes-test-with-cron-buffer (entries &rest body)
   "Create a cron buffer with ENTRIES and run BODY on its first row."
   (declare (indent 1) (debug t))
