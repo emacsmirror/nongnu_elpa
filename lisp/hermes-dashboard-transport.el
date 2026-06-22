@@ -1929,6 +1929,42 @@ entry."
     (plist-put event :content
                (if name (format "Calling %s" name) "Calling tool"))))
 
+(defun hermes-dashboard-transport--prettify-event-name (type)
+  "Return a human label for gateway event TYPE, e.g. \"Background Complete\"."
+  (let ((words (replace-regexp-in-string "[._]" " " (or type ""))))
+    (if (string-empty-p words) "Event" (capitalize words))))
+
+(defun hermes-dashboard-transport--display-fallback-event (type params payload)
+  "Return a status or progress event for an unclassified TYPE/PARAMS/PAYLOAD.
+The trailing phase of TYPE picks the channel and PAYLOAD's text -- or a label
+derived from TYPE when it carries none -- is the body, so any event the gateway
+adds still renders as a labelled line instead of an error."
+  (let* ((kind (if (member (hermes-transport--phase type)
+                           '("progress" "generating"))
+                   'progress
+                 'status))
+         (text (hermes-dashboard-transport--payload-text payload))
+         (event (plist-put
+                 (hermes-dashboard-transport--event-base type params payload)
+                 :type kind)))
+    (when (eq kind 'status)
+      (setq event (plist-put event :status "notification")))
+    (plist-put event :content
+               (or text (hermes-dashboard-transport--prettify-event-name type)))))
+
+(defun hermes-dashboard-transport--generic-display-event (type params payload)
+  "Return display events for an otherwise-unhandled TYPE/PARAMS/PAYLOAD.
+Try the structured classifier first so `subagent.*' and SSE-style events keep
+their rich typing; fall back to a labelled status/progress line for anything it
+cannot classify, so a newly added gateway event renders instead of surfacing as
+an Unknown error."
+  (let ((event (car (hermes-dashboard-transport--generic-event
+                     type params payload))))
+    (if (and event (not (eq (plist-get event :type) 'unknown)))
+        (list event)
+      (list (hermes-dashboard-transport--display-fallback-event
+             type params payload)))))
+
 (defun hermes-dashboard-transport--normalize-event-frame (frame)
   "Return normalized transport events for JSON-RPC event FRAME."
   (let* ((params (hermes-transport--get frame 'params))
@@ -1978,24 +2014,8 @@ entry."
       ((or "approval.request" "clarify.request" "sudo.request" "secret.request")
        (list (hermes-dashboard-transport--prompt-request-event
               type params payload)))
-      ;; Browser navigation and preview-restart progress carry transient text
-      ;; updates; render them as compact progress lines.
-      ((or "browser.progress" "preview.restart.progress")
-       (list (hermes-dashboard-transport--payload-event
-              type params payload 'progress)))
-      ("preview.restart.complete"
-       (list (hermes-dashboard-transport--status-event
-              type params payload "notification"
-              (hermes-dashboard-transport--payload-text payload))))
-      ;; `read_terminal' blocks on a `terminal.read.respond'; the respond flow is
-      ;; not wired in Emacs yet, so at least surface the request as a status line.
-      ("terminal.read.request"
-       (list (hermes-dashboard-transport--status-event
-              type params payload "notification"
-              (or (hermes-dashboard-transport--payload-text payload)
-                  "Hermes requested a terminal read"))))
       ;; Voice mode and skin changes are client-UI concerns, not chat transcript
-      ;; content; drop them so they do not render as Unknown events.
+      ;; content; drop them so they do not render at all.
       ((or "voice.status" "voice.transcript" "skin.changed")
        nil)
       ;; `review.summary' is a self-improvement notification; show it as a status
@@ -2009,7 +2029,8 @@ entry."
            (list (hermes-dashboard-transport--status-event
                   type params payload "notification"
                   (hermes-dashboard-transport--payload-text payload)))
-         (hermes-dashboard-transport--generic-event type params payload))))))
+         (hermes-dashboard-transport--generic-display-event
+          type params payload))))))
 
 (defun hermes-dashboard-transport--handle-event-frame (client frame)
   "Dispatch JSON-RPC event FRAME to CLIENT's callback."

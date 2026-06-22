@@ -4585,18 +4585,32 @@ event frame."
     (should (eq (plist-get preview :type) 'progress))
     (should (equal (plist-get preview :content) "Restarting preview"))))
 
-(ert-deftest hermes-transport-dashboard-preview-complete-and-terminal-read ()
-  "`preview.restart.complete' and `terminal.read.request' become status lines."
-  (pcase-let ((`(,complete ,terminal)
+(ert-deftest hermes-transport-dashboard-status-fallback-uses-text-then-label ()
+  "Unclassified events become status lines: payload text, else a derived label."
+  (pcase-let ((`(,complete ,background ,terminal)
                (hermes-test--dashboard-events
                 '("preview.restart.complete" . ((task_id . "t1")
                                                 (text . "Preview ready")))
+                '("background.complete" . ((task_id . "t2")
+                                           (text . "Task finished")))
                 '("terminal.read.request" . ((request_id . "r1"))))))
     (should (eq (plist-get complete :type) 'status))
     (should (equal (plist-get complete :content) "Preview ready"))
+    (should (eq (plist-get background :type) 'status))
+    (should (equal (plist-get background :content) "Task finished"))
+    ;; No text payload, so the event name is prettified into the body.
     (should (eq (plist-get terminal :type) 'status))
-    (should (equal (plist-get terminal :content)
-                   "Hermes requested a terminal read"))))
+    (should (equal (plist-get terminal :content) "Terminal Read Request"))))
+
+(ert-deftest hermes-transport-dashboard-unmapped-event-renders-not-unknown ()
+  "A gateway event the client never heard of still renders as a labelled line.
+This is the contract that replaces hand-mirroring every event name: an invented
+`future.thing' is displayed, never surfaced as an Unknown error."
+  (let ((event (car (hermes-test--dashboard-events
+                     '("future.thing" . ((text . "hello from the future")))))))
+    (should (eq (plist-get event :type) 'status))
+    (should-not (eq (plist-get event :type) 'unknown))
+    (should (equal (plist-get event :content) "hello from the future"))))
 
 (ert-deftest hermes-transport-dashboard-drops-voice-and-skin-events ()
   "Voice and skin events are dropped, not surfaced as Unknown events."
