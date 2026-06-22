@@ -126,39 +126,6 @@
                    (hermes-cron--prompt job))))
    (hermes-transport--get result 'jobs)))
 
-(defun hermes-cron--revert (&rest _)
-  "Refresh the cron job list."
-  (hermes-list-crons))
-
-(defvar-keymap hermes-cron-mode-map
-  :doc "Keymap for `hermes-cron-mode'."
-  :parent tabulated-list-mode-map
-  "RET" #'hermes-cron-show
-  "e" #'hermes-cron-edit
-  "!" #'hermes-cron-trigger
-  "t" #'hermes-cron-toggle
-  "D" #'hermes-cron-remove
-  "c" #'hermes-cron-create)
-
-(define-derived-mode hermes-cron-mode tabulated-list-mode "Hermes Cron"
-  "Major mode listing Hermes scheduled jobs."
-  :interactive nil
-  (setq tabulated-list-format
-        [("Name" 22 t) ("Schedule" 18 t) ("State" 10 t) ("Profile" 12 t)
-         ("Deliver" 12 t) ("Last run" 18 t) ("Next run" 18 t)
-         ("Prompt" 40 nil)])
-  (setq-local revert-buffer-function #'hermes-cron--revert)
-  (tabulated-list-init-header))
-
-(defun hermes-cron--render (result)
-  "Display cron jobs from RESULT in the cron buffer."
-  (with-current-buffer (get-buffer-create "*Hermes Cron*")
-    (unless (derived-mode-p 'hermes-cron-mode)
-      (hermes-cron-mode))
-    (setq tabulated-list-entries (hermes-cron--rows result))
-    (tabulated-list-print t)
-    (pop-to-buffer (current-buffer))))
-
 ;;; Dashboard REST API
 
 (defun hermes-cron--client-base-url (client)
@@ -437,15 +404,24 @@ RUNS is the detail run list."
       client :action "add" :name name :schedule schedule :prompt prompt))
    (lambda (_result) (message "Hermes: created cron job %s" name))))
 
-;;;###autoload
-(defun hermes-list-crons ()
-  "Browse Hermes scheduled (cron) jobs."
-  (interactive)
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes-dashboard-transport-call-fn
-      #'hermes-dashboard-transport-cron-manage client :action "list"))
-   (lambda (result) (hermes-cron--render result))))
+;;;###autoload (autoload 'hermes-list-crons "hermes-cron" nil t)
+(hermes-define-list-browser cron
+  :title "Hermes Cron"
+  :command hermes-list-crons
+  :buffer "*Hermes Cron*"
+  :columns [("Name" 22 t) ("Schedule" 18 t) ("State" 10 t) ("Profile" 12 t)
+            ("Deliver" 12 t) ("Last run" 18 t) ("Next run" 18 t)
+            ("Prompt" 40 nil)]
+  :fetch (lambda (client)
+           (hermes-dashboard-transport-call-fn
+            #'hermes-dashboard-transport-cron-manage client :action "list"))
+  :rows #'hermes-cron--rows
+  :keys ("RET" #'hermes-cron-show
+         "e" #'hermes-cron-edit
+         "!" #'hermes-cron-trigger
+         "t" #'hermes-cron-toggle
+         "D" #'hermes-cron-remove
+         "c" #'hermes-cron-create))
 
 (provide 'hermes-cron)
 ;;; hermes-cron.el ends here
