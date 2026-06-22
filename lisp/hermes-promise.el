@@ -54,7 +54,7 @@ A no-op when PROMISE is already settled, giving resolve-once semantics."
           (hermes--promise-value promise) value
           (hermes--promise-on-resolve promise) nil
           (hermes--promise-on-reject promise) nil)
-    (dolist (cb (nreverse callbacks))
+    (dolist (cb (reverse callbacks))
       (funcall cb value))))
 
 (defun hermes--promise-resolve (promise value)
