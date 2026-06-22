@@ -1394,14 +1394,18 @@ Only matches while typing the /command word in the writable input tail."
                    (hermes-chat--command-error message)))))))
 
 (defun hermes-chat-interrupt-and-send (&optional message)
-  "Queue MESSAGE from the input tail and interrupt the active run."
+  "Interrupt the active run, then queue MESSAGE for the next turn when non-empty.
+MESSAGE defaults to the input tail.  The interrupt fires first and
+unconditionally, so an empty input still stops the run instead of erroring."
   (interactive)
   (unless (hermes-chat--active-turn-p)
     (user-error "No active Hermes run to interrupt"))
   (unless (hermes-chat--dashboard-session-attached-p)
     (user-error "Current Hermes transport does not support interrupt"))
-  (hermes-chat-queue-message message)
-  (hermes-chat-interrupt))
+  (let ((content (string-trim (or message (hermes-chat-input-string)))))
+    (hermes-chat-interrupt)
+    (unless (string-empty-p content)
+      (hermes-chat-queue-message message))))
 
 (defun hermes-chat-disconnect ()
   "End this chat's dashboard session so a new one can be started.
