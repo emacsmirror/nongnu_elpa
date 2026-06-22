@@ -1710,21 +1710,6 @@ With TITLE non-empty, name the new session accordingly."
      ((and provider model) (format "%s/%s" provider model))
      (model model))))
 
-(defun hermes-chat--profile-label (profile)
-  "Return completion label for dashboard PROFILE metadata."
-  (let ((name (hermes-chat--profile-name profile)))
-    (string-join
-     (delq nil
-           (list name
-                 (and (hermes-chat--profile-default-p profile) "default")
-                 (and (hermes-transport--get profile 'has_alias) "alias")
-                 (and (hermes-transport--get profile 'gateway_running)
-                      "gateway")
-                 (hermes-chat--profile-model-label profile)
-                 (hermes-transport--scalar-string
-                  (hermes-transport--get profile 'description))))
-     " · ")))
-
 (defun hermes-chat--profile-less-p (left right)
   "Return non-nil when LEFT dashboard profile should sort before RIGHT."
   (let ((left-default (hermes-chat--profile-default-p left))
@@ -1736,14 +1721,22 @@ With TITLE non-empty, name the new session accordingly."
                       (downcase (hermes-chat--profile-name right)))))))
 
 (defun hermes-chat--profile-candidates (payload)
-  "Return sorted completion candidates from dashboard profiles PAYLOAD."
+  "Return sorted (NAME . MODEL-LABEL) candidates from dashboard PAYLOAD.
+MODEL-LABEL is the profile's provider/model string, or nil when unknown."
   (mapcar (lambda (profile)
-            (cons (hermes-chat--profile-label profile)
-                  (hermes-chat--profile-name profile)))
+            (cons (hermes-chat--profile-name profile)
+                  (hermes-chat--profile-model-label profile)))
           (sort (cl-remove-if-not
                  #'hermes-chat--profile-name
                  (or (hermes-transport--get payload 'profiles) '()))
                 #'hermes-chat--profile-less-p)))
+
+(defun hermes-chat--profile-annotation-function (candidates)
+  "Return a completion `:annotation-function' over CANDIDATES.
+CANDIDATES is a (NAME . MODEL-LABEL) alist; the annotation shows the model."
+  (lambda (name)
+    (when-let* ((model (cdr (assoc name candidates))))
+      (concat "  " (propertize model 'face 'shadow)))))
 
 (defun hermes-chat--existing-dashboard-client ()
   "Return a live dashboard client from any Hermes chat buffer, or nil."
@@ -1779,16 +1772,15 @@ visible while reading."
 (defun hermes-chat--read-profile ()
   "Read a Hermes profile name, using dashboard metadata when available."
   (condition-case err
-      (let* ((candidates (hermes-chat--profile-candidates
-                          (hermes-chat--profile-list-payload)))
-             (labels (mapcar #'car candidates)))
+      (let ((candidates (hermes-chat--profile-candidates
+                         (hermes-chat--profile-list-payload))))
         (if candidates
-            (let* ((choice (completing-read
-                            "Profile (blank for default): " labels nil nil))
-                   (profile (or (cdr (assoc choice candidates)) choice)))
-              (and profile
-                   (not (string-empty-p (string-trim profile)))
-                   (string-trim profile)))
+            (let ((completion-extra-properties
+                   (list :annotation-function
+                         (hermes-chat--profile-annotation-function candidates))))
+              (hermes-chat--clean-profile
+               (completing-read "Profile (blank for default): "
+                                (mapcar #'car candidates) nil nil)))
           (let ((notice "No dashboard profiles available"))
             (message "Hermes: %s; enter a profile name manually" notice)
             (hermes-chat--read-raw-profile notice))))

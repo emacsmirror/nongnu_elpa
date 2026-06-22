@@ -6662,7 +6662,7 @@ This is the contract that replaces hand-mirroring every event name: an invented
       (kill-buffer buffer))))
 
 (ert-deftest hermes-chat-profile-candidates-describe-dashboard-profiles ()
-  "Profile candidates parse, sort, and display dashboard profile data."
+  "Profile candidates parse and sort to (NAME . MODEL-LABEL) pairs."
   (let ((cands (hermes-chat--profile-candidates
                 '((profiles
                    . (((name . "zeta"))
@@ -6675,13 +6675,19 @@ This is the contract that replaces hand-mirroring every event name: an invented
                        (description . "Main profile")
                        (gateway_running . t))
                       ((name . "alpha") (has_alias . t))))))))
-    (should (equal (mapcar #'cdr cands)
+    (should (equal (mapcar #'car cands)
                    '("default" "alpha" "elisp-dev" "zeta")))
-    (should (string-match-p "default" (caar cands)))
-    (should (string-match-p "openai/gpt-5.5" (caar cands)))
-    (should (string-match-p "gateway" (caar cands)))
-    (should (string-match-p "alias" (caadr cands)))
-    (should (string-match-p "Emacs Lisp work" (car (nth 2 cands))))))
+    (should (equal (cdr (assoc "default" cands)) "openai/gpt-5.5"))
+    (should (equal (cdr (assoc "elisp-dev" cands)) "anthropic/claude-sonnet"))
+    (should-not (cdr (assoc "alpha" cands)))))
+
+(ert-deftest hermes-chat-profile-annotation-shows-model ()
+  "The profile annotation shows the model, and nothing when none is known."
+  (let* ((cands '(("default" . "openai/gpt-5.5") ("alpha" . nil)))
+         (annotate (hermes-chat--profile-annotation-function cands)))
+    (should (string-match-p "openai/gpt-5.5" (funcall annotate "default")))
+    (should-not (funcall annotate "alpha"))
+    (should-not (funcall annotate "unknown"))))
 
 (ert-deftest hermes-chat-read-profile-falls-back-when-dashboard-unavailable ()
   "The profile chooser falls back to a raw prompt when dashboard data is missing."
