@@ -49,7 +49,7 @@
 
 (defconst easycrypt-goal-command-regexp
   (concat "^\\(?:local\\s-+\\)?\\(?:" (proof-ids-to-regexp easycrypt-keywords-proof-goal) "\\)"
-          "\\s-+\\(?:nosmt\\s-+\\)?\\(\\sw+\\)"))
+          "\\s-+\\([[:word:]_]\\)"))
 
 (defun easycrypt-save-command-p (span str)
   "Decide whether argument is a [save|qed] command or not."
