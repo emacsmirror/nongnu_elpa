@@ -3612,6 +3612,39 @@ The buffer is captured by object so teardown still kills it after a rename."
       (should-not (string-match-p "secret-token" message))
       (should-not (buffer-live-p buffer)))))
 
+(ert-deftest hermes-transport-dashboard-http-result-ok-on-2xx ()
+  (let ((response (list :status 200 :headers nil
+                        :body-text "{\"ok\": true}")))
+    (pcase (hermes-dashboard-transport--http-result response "http://x" nil)
+      (`(ok . ,r) (should (equal (hermes-transport--get (plist-get r :body) 'ok) t)))
+      (other (ert-fail (format "expected ok, got %S" other))))))
+
+(ert-deftest hermes-transport-dashboard-http-result-error-redacts ()
+  (let ((response (list :status 404 :headers nil
+                        :body-text "{\"detail\": \"no board secret-token\"}")))
+    (pcase (hermes-dashboard-transport--http-result
+            response "http://x?token=<redacted>" '("secret-token"))
+      (`(error . ,message)
+       (should (string-match-p "HTTP 404" message))
+       (should (string-match-p "no board <redacted>" message))
+       (should-not (string-match-p "secret-token" message)))
+      (other (ert-fail (format "expected error, got %S" other))))))
+
+(ert-deftest hermes-transport-dashboard-http-json-async-returns-promise ()
+  (let* ((captured nil)
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (url &rest args)
+            (setq captured (cons url args))
+            (hermes--promise-resolved (list :status 200 :body '((ok . t))))))
+         (result nil))
+    (hermes--promise-then
+     (hermes-dashboard-transport--http-json-async
+      "http://x" :method "POST" :body '((a . 1)))
+     (lambda (response) (setq result response)))
+    (should (equal (plist-get result :body) '((ok . t))))
+    (should (equal (plist-get (cdr captured) :method) "POST"))
+    (should (assoc "Accept" (plist-get (cdr captured) :headers)))))
+
 (ert-deftest hermes-transport-dashboard-start-auto-localhost-spawns ()
   (let (process-plist opened-url events)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)

@@ -120,6 +120,13 @@ nil to disable the per-request timeout."
   :type 'number
   :group 'hermes-dashboard-transport)
 
+(defcustom hermes-dashboard-transport-http-timeout 30
+  "Seconds before a dashboard REST/HTTP request gives up.
+Bounds both the synchronous fallback and the asynchronous request path so a
+slow or unreachable dashboard cannot hang a chat or list buffer forever."
+  :type 'number
+  :group 'hermes-dashboard-transport)
+
 (cl-defstruct hermes-dashboard-transport-client
   "State for one dashboard/TUI JSON-RPC WebSocket connection."
   process
@@ -623,36 +630,97 @@ It receives the dashboard client and a number of seconds.")
             :headers (nreverse headers)
             :body-text body))))
 
+(defun hermes-dashboard-transport--http-result (response safe-url secrets)
+  "Interpret parsed RESPONSE from SAFE-URL, redacting SECRETS in errors.
+Return (ok . RESPONSE) with the JSON `:body' filled in on a 2xx status, or
+\(error . MESSAGE) otherwise."
+  (let ((status (plist-get response :status)))
+    (if (and status (<= 200 status 299))
+        (cons 'ok (plist-put response :body
+                             (hermes-dashboard-transport--json-body
+                              (plist-get response :body-text))))
+      (let ((detail (hermes-dashboard-transport--http-error-detail
+                     (plist-get response :body-text))))
+        (cons 'error
+              (if detail
+                  (format "Hermes dashboard request failed at %s (HTTP %s): %s"
+                          safe-url (or status "unknown")
+                          (hermes-dashboard-transport--redact-secret
+                           detail secrets))
+                (format "Hermes dashboard request failed at %s (HTTP %s)"
+                        safe-url (or status "unknown"))))))))
+
+(defun hermes-dashboard-transport--settle-http-response
+    (promise status buffer safe-url secrets)
+  "Settle PROMISE from url.el STATUS and response BUFFER for SAFE-URL.
+SECRETS are redacted from any error message."
+  (if-let* ((error-data (plist-get status :error)))
+      (hermes--promise-reject
+       promise (format "Hermes dashboard request failed at %s: %s"
+                       safe-url
+                       (hermes-dashboard-transport--redact-secret
+                        (error-message-string error-data) secrets)))
+    (pcase (hermes-dashboard-transport--http-result
+            (hermes-dashboard-transport--parse-http-response-buffer buffer)
+            safe-url secrets)
+      (`(ok . ,response) (hermes--promise-resolve promise response))
+      (`(error . ,message) (hermes--promise-reject promise message)))))
+
 (cl-defun hermes-dashboard-transport--default-http-request
     (url &key (method "GET") headers data secrets)
-  "Fetch URL with METHOD, HEADERS, and DATA using url.el.
+  "Fetch URL with METHOD, HEADERS, and DATA using url.el synchronously.
 SECRETS are redacted from any user-visible error."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
         (url-request-extra-headers headers)
         (url-request-data data))
-    (let ((buffer (url-retrieve-synchronously url t t 30)))
+    (let ((buffer (url-retrieve-synchronously
+                   url t t hermes-dashboard-transport-http-timeout)))
       (unless buffer
         (user-error "Hermes dashboard request failed at %s" safe-url))
       (unwind-protect
-          (let* ((response (hermes-dashboard-transport--parse-http-response-buffer
-                            buffer))
-                 (status (plist-get response :status)))
-            (unless (and status (<= 200 status 299))
-              (let ((detail (hermes-dashboard-transport--http-error-detail
-                             (plist-get response :body-text))))
-                (if detail
-                    (user-error "Hermes dashboard request failed at %s (HTTP %s): %s"
-                                safe-url (or status "unknown")
-                                (hermes-dashboard-transport--redact-secret
-                                 detail secrets))
-                  (user-error "Hermes dashboard request failed at %s (HTTP %s)"
-                              safe-url (or status "unknown")))))
-            (plist-put response :body
-                       (hermes-dashboard-transport--json-body
-                        (plist-get response :body-text))))
+          (pcase (hermes-dashboard-transport--http-result
+                  (hermes-dashboard-transport--parse-http-response-buffer buffer)
+                  safe-url secrets)
+            (`(ok . ,response) response)
+            (`(error . ,message) (user-error "%s" message)))
         (when (buffer-live-p buffer)
           (kill-buffer buffer))))))
+
+(cl-defun hermes-dashboard-transport--default-http-request-async
+    (url &key (method "GET") headers data secrets)
+  "Fetch URL with METHOD, HEADERS, and DATA asynchronously using url.el.
+Return a promise of the response plist; SECRETS are redacted from any error."
+  (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
+        (url-request-method method)
+        (url-request-extra-headers headers)
+        (url-request-data data)
+        (promise (hermes--promise-make))
+        timer)
+    (setq timer (run-at-time
+                 hermes-dashboard-transport-http-timeout nil
+                 (lambda ()
+                   (hermes--promise-reject
+                    promise (format "Hermes dashboard request timed out at %s"
+                                    safe-url)))))
+    (condition-case err
+        (url-retrieve
+         url
+         (lambda (status)
+           (cancel-timer timer)
+           (let ((buffer (current-buffer)))
+             (unwind-protect
+                 (hermes-dashboard-transport--settle-http-response
+                  promise status buffer safe-url secrets)
+               (when (buffer-live-p buffer)
+                 (kill-buffer buffer)))))
+         nil t t)
+      (error
+       (cancel-timer timer)
+       (hermes--promise-reject
+        promise (hermes-dashboard-transport--redact-secret
+                 (error-message-string err) secrets))))
+    promise))
 
 (defvar hermes-dashboard-transport-http-request-function
   #'hermes-dashboard-transport--default-http-request
@@ -660,10 +728,27 @@ SECRETS are redacted from any user-visible error."
 It is called with URL and keyword arguments :method, :headers, :data, and
 :secrets, and returns a plist with :status, :headers, and :body.")
 
+(defvar hermes-dashboard-transport-http-request-async-function
+  #'hermes-dashboard-transport--default-http-request-async
+  "Function used for asynchronous remote dashboard HTTP requests.
+Called like `hermes-dashboard-transport-http-request-function' but returns a
+promise of the response plist instead of blocking.")
+
 (cl-defun hermes-dashboard-transport--http-json
     (url &key (method "GET") headers body secrets)
   "Request URL as JSON using METHOD, HEADERS, BODY, and SECRETS."
   (funcall hermes-dashboard-transport-http-request-function
+           url
+           :method method
+           :headers (append '(("Accept" . "application/json")) headers)
+           :data (and body (json-serialize body))
+           :secrets secrets))
+
+(cl-defun hermes-dashboard-transport--http-json-async
+    (url &key (method "GET") headers body secrets)
+  "Request URL as JSON asynchronously using METHOD, HEADERS, BODY, and SECRETS.
+Return a promise of the response plist."
+  (funcall hermes-dashboard-transport-http-request-async-function
            url
            :method method
            :headers (append '(("Accept" . "application/json")) headers)
