@@ -31,7 +31,6 @@
 (require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
-(require 'hermes-promise)
 (require 'hermes-sessions)
 
 ;;; Fields
@@ -339,19 +338,14 @@ RUNS is the detail run list."
 
 (defun hermes-cron--act (action name done-message)
   "Run cron ACTION on job NAME, report DONE-MESSAGE, then refresh the list."
-  (hermes-sessions--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (hermes--promise-finally
-        (hermes-dashboard-transport-call-fn
-         #'hermes-dashboard-transport-cron-manage
-         client :action action :name name)
-        done)
-       (lambda (_result)
-         (message "Hermes: %s" done-message)
-         (hermes-list-crons)))
-      (lambda (message) (message "Hermes: %s" message))))))
+  (hermes-sessions--run-on-client
+   (lambda (client)
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-cron-manage
+      client :action action :name name))
+   (lambda (_result)
+     (message "Hermes: %s" done-message)
+     (hermes-list-crons))))
 
 (defun hermes-cron-toggle ()
   "Pause or resume the cron job at point."
@@ -436,32 +430,22 @@ RUNS is the detail run list."
             (string-empty-p schedule)
             (string-empty-p prompt))
     (user-error "Name, schedule and prompt are required"))
-  (hermes-sessions--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (hermes--promise-finally
-        (hermes-dashboard-transport-call-fn
-         #'hermes-dashboard-transport-cron-manage
-         client :action "add" :name name :schedule schedule :prompt prompt)
-        done)
-       (lambda (_result) (message "Hermes: created cron job %s" name)))
-      (lambda (message) (message "Hermes: %s" message))))))
+  (hermes-sessions--run-on-client
+   (lambda (client)
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-cron-manage
+      client :action "add" :name name :schedule schedule :prompt prompt))
+   (lambda (_result) (message "Hermes: created cron job %s" name))))
 
 ;;;###autoload
 (defun hermes-list-crons ()
   "Browse Hermes scheduled (cron) jobs."
   (interactive)
-  (hermes-sessions--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (hermes--promise-finally
-        (hermes-dashboard-transport-call-fn
-         #'hermes-dashboard-transport-cron-manage client :action "list")
-        done)
-       (lambda (result) (hermes-cron--render result)))
-      (lambda (message) (message "Hermes: %s" message))))))
+  (hermes-sessions--run-on-client
+   (lambda (client)
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-cron-manage client :action "list"))
+   (lambda (result) (hermes-cron--render result))))
 
 (provide 'hermes-cron)
 ;;; hermes-cron.el ends here

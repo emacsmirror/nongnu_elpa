@@ -29,7 +29,6 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
-(require 'hermes-promise)
 (require 'hermes-sessions)
 (require 'hermes-chat)
 
@@ -92,16 +91,11 @@
   (interactive)
   (let ((hash (tabulated-list-get-id)))
     (unless hash (user-error "No checkpoint on this line"))
-    (hermes-sessions--with-client
-     (lambda (client done)
-       (hermes--promise-catch
-        (hermes--promise-then
-         (hermes--promise-finally
-          (hermes-dashboard-transport-call-fn
-           #'hermes-dashboard-transport-rollback-diff client hash)
-          done)
-         (lambda (result) (hermes-rollback--display-diff hash result)))
-        (lambda (message) (message "Hermes: %s" message)))))))
+    (hermes-sessions--run-on-client
+     (lambda (client)
+       (hermes-dashboard-transport-call-fn
+        #'hermes-dashboard-transport-rollback-diff client hash))
+     (lambda (result) (hermes-rollback--display-diff hash result)))))
 
 (defun hermes-rollback-restore ()
   "Restore the working tree to the checkpoint at point."
@@ -111,32 +105,22 @@
     (when (yes-or-no-p
            (format "Restore working tree to checkpoint %s? "
                    (hermes-rollback--short hash)))
-      (hermes-sessions--with-client
-       (lambda (client done)
-         (hermes--promise-catch
-          (hermes--promise-then
-           (hermes--promise-finally
-            (hermes-dashboard-transport-call-fn
-             #'hermes-dashboard-transport-rollback-restore client hash)
-            done)
-           (lambda (_result)
-             (message "Hermes: restored %s" (hermes-rollback--short hash))))
-          (lambda (message) (message "Hermes: %s" message))))))))
+      (hermes-sessions--run-on-client
+       (lambda (client)
+         (hermes-dashboard-transport-call-fn
+          #'hermes-dashboard-transport-rollback-restore client hash))
+       (lambda (_result)
+         (message "Hermes: restored %s" (hermes-rollback--short hash)))))))
 
 ;;;###autoload
 (defun hermes-list-rollbacks ()
   "Browse Hermes checkpoint history for the active session."
   (interactive)
-  (hermes-sessions--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (hermes--promise-finally
-        (hermes-dashboard-transport-call-fn
-         #'hermes-dashboard-transport-rollback-list client)
-        done)
-       (lambda (result) (hermes-rollback--render result)))
-      (lambda (message) (message "Hermes: %s" message))))))
+  (hermes-sessions--run-on-client
+   (lambda (client)
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-rollback-list client))
+   (lambda (result) (hermes-rollback--render result))))
 
 (provide 'hermes-rollback)
 ;;; hermes-rollback.el ends here

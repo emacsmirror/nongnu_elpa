@@ -68,6 +68,19 @@ client that DONE stops.  Shared by the dashboard browser commands."
                    (hermes-dashboard-transport-stop client)))))
     (funcall fn client done)))
 
+(defun hermes-sessions--run-on-client (make-promise &optional on-success)
+  "Run MAKE-PROMISE on a dashboard client, releasing it when its promise settles.
+MAKE-PROMISE receives the CLIENT and returns a promise.  ON-SUCCESS, when given,
+receives the resolved result; rejections are reported with a `Hermes:' message.
+Shared by the dashboard browser commands."
+  (hermes-sessions--with-client
+   (lambda (client done)
+     (hermes--promise-catch
+      (hermes--promise-then
+       (hermes--promise-finally (funcall make-promise client) done)
+       on-success)
+      (lambda (message) (message "Hermes: %s" message))))))
+
 (defun hermes-sessions--field (session key)
   "Return SESSION's KEY as a display string."
   (or (hermes-transport--scalar-string (hermes-transport--get session key)) ""))
@@ -345,19 +358,14 @@ returned messages instead."
          (resume-id (hermes-sessions--id session)))
     (unless history-id
       (user-error "No Hermes session id to view"))
-    (hermes-sessions--with-client
-     (lambda (client done)
-       (hermes--promise-catch
-        (hermes--promise-then
-         (hermes--promise-finally
-          (hermes-sessions--history-promise client history-id resume-id)
-          done)
-         (lambda (result)
-           (hermes-sessions--render-detail
-            (hermes-sessions--session-with-result session result)
-            (hermes-transport--get result 'messages)
-            (hermes-transport--get result 'count))))
-        (lambda (message) (message "Hermes: %s" message)))))))
+    (hermes-sessions--run-on-client
+     (lambda (client)
+       (hermes-sessions--history-promise client history-id resume-id))
+     (lambda (result)
+       (hermes-sessions--render-detail
+        (hermes-sessions--session-with-result session result)
+        (hermes-transport--get result 'messages)
+        (hermes-transport--get result 'count))))))
 
 (defun hermes-sessions-open ()
   "Resume the selected Hermes session in a chat buffer."
@@ -443,17 +451,12 @@ id it returns."
            (origin (current-buffer)))
       (when (hermes-sessions--title-empty-p title)
         (user-error "Session title required"))
-      (hermes-sessions--with-client
-       (lambda (client done)
-         (hermes--promise-catch
-          (hermes--promise-then
-           (hermes--promise-finally
-            (hermes-sessions--set-title-promise client id (string-trim title))
-            done)
-           (lambda (_result)
-             (message "Hermes: renamed session %s" id)
-             (hermes-sessions--after-rename origin id (string-trim title))))
-          (lambda (message) (message "Hermes: %s" message))))))))
+      (hermes-sessions--run-on-client
+       (lambda (client)
+         (hermes-sessions--set-title-promise client id (string-trim title)))
+       (lambda (_result)
+         (message "Hermes: renamed session %s" id)
+         (hermes-sessions--after-rename origin id (string-trim title)))))))
 
 (defun hermes-sessions--remove-browser-row (id)
   "Remove browser row ID from the current buffer."
@@ -485,18 +488,13 @@ id it returns."
          (format "Delete Hermes session %s%s? "
                  id
                  (if (string-empty-p title) "" (format " (%s)" title))))
-        (hermes-sessions--with-client
-         (lambda (client done)
-           (hermes--promise-catch
-            (hermes--promise-then
-             (hermes--promise-finally
-              (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-delete
-                                     client id)
-              done)
-             (lambda (_result)
-               (message "Hermes: deleted session %s" id)
-               (hermes-sessions--after-delete origin id)))
-            (lambda (message) (message "Hermes: %s" message)))))
+        (hermes-sessions--run-on-client
+         (lambda (client)
+           (hermes-dashboard-transport-call-fn
+            #'hermes-dashboard-transport-session-delete client id))
+         (lambda (_result)
+           (message "Hermes: deleted session %s" id)
+           (hermes-sessions--after-delete origin id)))
       (message "Hermes: delete cancelled"))))
 
 ;;;###autoload
@@ -505,16 +503,12 @@ id it returns."
 Reuses a live chat connection when one exists; otherwise connects a transient
 client just for the listing."
   (interactive)
-  (hermes-sessions--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (hermes--promise-finally
-        (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-list client)
-        done)
-       (lambda (result)
-         (hermes-sessions--render (hermes-transport--get result 'sessions))))
-      (lambda (message) (message "Hermes: %s" message))))))
+  (hermes-sessions--run-on-client
+   (lambda (client)
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-session-list client))
+   (lambda (result)
+     (hermes-sessions--render (hermes-transport--get result 'sessions)))))
 
 (provide 'hermes-sessions)
 ;;; hermes-sessions.el ends here

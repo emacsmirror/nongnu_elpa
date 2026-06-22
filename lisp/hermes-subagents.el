@@ -29,7 +29,6 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
-(require 'hermes-promise)
 (require 'hermes-sessions)
 
 (defun hermes-subagents--rows (result)
@@ -83,31 +82,21 @@ Each active subagent's goal is indented by its spawn depth."
   (let ((id (tabulated-list-get-id)))
     (unless id (user-error "No subagent on this line"))
     (when (yes-or-no-p (format "Interrupt subagent %s? " id))
-      (hermes-sessions--with-client
-       (lambda (client done)
-         (hermes--promise-catch
-          (hermes--promise-then
-           (hermes--promise-finally
-            (hermes-dashboard-transport-call-fn
-             #'hermes-dashboard-transport-subagent-interrupt client id)
-            done)
-           (lambda (_result) (message "Hermes: interrupted %s" id)))
-          (lambda (message) (message "Hermes: %s" message))))))))
+      (hermes-sessions--run-on-client
+       (lambda (client)
+         (hermes-dashboard-transport-call-fn
+          #'hermes-dashboard-transport-subagent-interrupt client id))
+       (lambda (_result) (message "Hermes: interrupted %s" id))))))
 
 ;;;###autoload
 (defun hermes-list-subagents ()
   "Browse active Hermes subagents as a delegation tree."
   (interactive)
-  (hermes-sessions--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (hermes--promise-finally
-        (hermes-dashboard-transport-call-fn
-         #'hermes-dashboard-transport-delegation-status client)
-        done)
-       (lambda (result) (hermes-subagents--render result)))
-      (lambda (message) (message "Hermes: %s" message))))))
+  (hermes-sessions--run-on-client
+   (lambda (client)
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-delegation-status client))
+   (lambda (result) (hermes-subagents--render result))))
 
 (provide 'hermes-subagents)
 ;;; hermes-subagents.el ends here
