@@ -43,6 +43,7 @@
 (declare-function hermes-chat--drain-queued-message "hermes-chat" ())
 (declare-function hermes-chat--message-start-status-event-p "hermes-chat" (event))
 (declare-function hermes-chat--make-entry "hermes-chat" (role content &optional status id metadata))
+(declare-function hermes-chat--maybe-refresh-session-title "hermes-chat" ())
 (declare-function hermes-chat--notify-state-change "hermes-chat" ())
 (declare-function hermes-chat--preserve-control-content "hermes-chat" (content))
 (declare-function hermes-chat--queue-or-submit-content "hermes-chat" (content &optional display))
@@ -246,6 +247,8 @@ so do not copy its final content into the unsubmitted retry placeholder."
     ;; the done/error turn lifecycle -- is rendered by the reducer effects in
     ;; `hermes-chat--render-turn-event'.  Only a truly unknown type warns here.
     (hermes-chat--render-turn-event assistant-id event)
+    (when (eq (plist-get event :type) 'done)
+      (hermes-chat--maybe-refresh-session-title))
     (pcase (plist-get event :type)
       ((or 'delta 'done 'error 'thinking 'status 'progress 'tool 'commentary
            'diff 'unknown)

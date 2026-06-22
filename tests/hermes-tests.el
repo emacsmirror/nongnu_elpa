@@ -738,6 +738,62 @@ The buffer is captured by object so teardown still kills it after a rename."
           (should (string-prefix-p "*Hermes: default" (buffer-name))))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
+(ert-deftest hermes-chat-should-apply-title-p-rules ()
+  "A fetched title applies only when non-empty, changed, and not manual."
+  (should (hermes-chat--should-apply-title-p "New" "Old" nil))
+  (should-not (hermes-chat--should-apply-title-p "New" "Old" t))
+  (should-not (hermes-chat--should-apply-title-p "" "Old" nil))
+  (should-not (hermes-chat--should-apply-title-p "Same" "Same" nil))
+  (should-not (hermes-chat--should-apply-title-p nil "Old" nil)))
+
+(ert-deftest hermes-chat-done-refreshes-session-title ()
+  "A completed turn fetches the server title and renames the buffer, no push."
+  (let ((client (hermes-test--dashboard-client))
+        callback (pushes 0))
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _a) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setq callback (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_c &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_c _t &rest _a) nil))
+              ((symbol-function 'hermes-dashboard-transport-session-title-fetch)
+               (lambda (_c &rest args)
+                 (funcall (plist-get args :resolve) '((title . "Auto Title")))))
+              ((symbol-function 'hermes-dashboard-transport-session-title)
+               (lambda (&rest _a) (setq pushes (1+ pushes)))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "hi")
+         (hermes-chat-send)
+         (funcall callback '(:type done))
+         ;; The title fetch is deferred off the event handler; let it run.
+         (sit-for 0.05)
+         (should (equal (buffer-name) "*Hermes: default: Auto Title*"))
+         (should (= pushes 0)))))))
+
+(ert-deftest hermes-chat-manual-title-survives-refresh ()
+  "A manually set title is not overwritten by the automatic refresh."
+  (let ((fetches 0))
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+               (lambda () t))
+              ((symbol-function 'hermes-dashboard-transport-session-title)
+               (lambda (&rest _a) nil))
+              ((symbol-function 'hermes-dashboard-transport-session-title-fetch)
+               (lambda (&rest _a) (setq fetches (1+ fetches)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-active-session-id "sid")
+       (hermes-chat-rename "Pinned")
+       (should hermes-chat--title-manual-p)
+       (hermes-chat--maybe-refresh-session-title)
+       (should (= fetches 0))
+       (should (equal hermes-chat--title "Pinned"))))))
+
 (ert-deftest hermes-chat-snapshot-prefers-title ()
   "The dashboard snapshot uses the chat title over the buffer name."
   (hermes-test-with-chat-buffer

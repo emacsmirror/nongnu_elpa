@@ -2017,6 +2017,51 @@ With no live session the rename stays buffer-local; report that instead."
       (rename-buffer newname t)))
   (force-mode-line-update))
 
+(defun hermes-chat--should-apply-title-p (title current manual-p)
+  "Return non-nil when TITLE should replace CURRENT in the buffer name.
+TITLE applies only when it is a non-empty string, differs from CURRENT, and
+MANUAL-P is nil (the user has not pinned a title)."
+  (and (not manual-p)
+       (stringp title)
+       (not (string-empty-p title))
+       (not (equal title current))))
+
+(defun hermes-chat--apply-fetched-title (buffer result)
+  "Apply the session title carried by RESULT to BUFFER when it should change."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (let ((title (string-trim
+                    (or (hermes-transport--scalar-string
+                         (hermes-transport--get result 'title))
+                        ""))))
+        (when (hermes-chat--should-apply-title-p
+               title hermes-chat--title hermes-chat--title-manual-p)
+          (hermes-chat--apply-session-title title))))))
+
+(defun hermes-chat--fetch-session-title (buffer)
+  "Fetch BUFFER's server session title and apply it to the buffer name.
+Guards are re-checked here since this runs after the turn settles."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when (and (hermes-chat--dashboard-session-attached-p)
+                 (not hermes-chat--title-manual-p))
+        (hermes-dashboard-transport-session-title-fetch
+         hermes-chat--dashboard-client
+         :session-id hermes-chat--dashboard-active-session-id
+         :resolve (lambda (result)
+                    (hermes-chat--apply-fetched-title buffer result))
+         ;; A background title fetch must never surface as a chat error; swallow
+         ;; failures rather than letting them reach the transport callback.
+         :reject #'ignore)))))
+
+(defun hermes-chat--maybe-refresh-session-title ()
+  "Schedule a server session-title refresh for this buffer after a turn settles.
+Deferred to the next idle moment so no network I/O runs inside the transport
+event handler.  A no-op without a live dashboard session or with a manual title."
+  (when (and (hermes-chat--dashboard-session-attached-p)
+             (not hermes-chat--title-manual-p))
+    (run-at-time 0 nil #'hermes-chat--fetch-session-title (current-buffer))))
+
 (defun hermes-chat-rename (title)
   "Rename this chat session to TITLE.
 Renames the buffer and, when a live dashboard session is attached, updates the
