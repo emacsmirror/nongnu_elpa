@@ -32,6 +32,7 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-promise)
 (require 'hermes-sessions)
 
 (defun hermes-inventory--str (object key)
@@ -257,18 +258,19 @@ client for the listing."
   "Set toolset NAME to ENABLED through dashboard RPC."
   (hermes-sessions--with-client
    (lambda (client done)
-     (hermes-dashboard-transport-tools-configure
-      client (list name) (if enabled "enable" "disable")
-      :session-id (hermes-dashboard-transport-client-session-id client)
-      :resolve (lambda (result)
-                 (funcall done)
-                 (message "Hermes: %s"
-                          (hermes-inventory--toolset-done-message
-                           name enabled result))
-                 (hermes-inventory--revert))
-      :reject (lambda (message)
-                (funcall done)
-                (message "Hermes: %s" message))))))
+     (hermes--promise-catch
+      (hermes--promise-then
+       (hermes--promise-finally
+        (hermes-dashboard-transport-call-fn
+         #'hermes-dashboard-transport-tools-configure
+         client (list name) (if enabled "enable" "disable")
+         :session-id (hermes-dashboard-transport-client-session-id client))
+        done)
+       (lambda (result)
+         (message "Hermes: %s"
+                  (hermes-inventory--toolset-done-message name enabled result))
+         (hermes-inventory--revert)))
+      (lambda (message) (message "Hermes: %s" message))))))
 
 (defun hermes-inventory--set-skill-enabled (name enabled)
   "Set skill NAME to ENABLED through the dashboard REST API."
@@ -322,21 +324,22 @@ client for the listing."
   (interactive)
   (hermes-sessions--with-client
    (lambda (client done)
-     (hermes-dashboard-transport-skills-reload
-      client
-      :resolve (lambda (result)
-                 (funcall done)
-                 (message "Hermes: %s"
-                          (or (hermes-transport--scalar-string
-                               (hermes-transport--get result 'output))
-                              "skills reloaded"))
-                 (when (and hermes-inventory--spec
-                            (eq (hermes-inventory--spec-kind hermes-inventory--spec)
-                                'skills))
-                   (hermes-inventory--revert)))
-      :reject (lambda (message)
-                (funcall done)
-                (message "Hermes: %s" message))))))
+     (hermes--promise-catch
+      (hermes--promise-then
+       (hermes--promise-finally
+        (hermes-dashboard-transport-call-fn
+         #'hermes-dashboard-transport-skills-reload client)
+        done)
+       (lambda (result)
+         (message "Hermes: %s"
+                  (or (hermes-transport--scalar-string
+                       (hermes-transport--get result 'output))
+                      "skills reloaded"))
+         (when (and hermes-inventory--spec
+                    (eq (hermes-inventory--spec-kind hermes-inventory--spec)
+                        'skills))
+           (hermes-inventory--revert))))
+      (lambda (message) (message "Hermes: %s" message))))))
 
 ;;; Memory status
 
