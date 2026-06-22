@@ -5316,8 +5316,8 @@ The buffer is captured by object so teardown still kills it after a rename."
               state '(:type status :event "session.info" :status "ready") now)))
       (should (equal (mapcar #'car (cdr r)) '(refresh-header))))))
 
-(ert-deftest hermes-chat-turn-reduce-terminal-and-noop-events ()
-  "done/error reduce to the ordered turn-lifecycle effects; delta is a no-op."
+(ert-deftest hermes-chat-turn-reduce-terminal-events ()
+  "done/error reduce to the ordered turn-lifecycle effects; unknown adds a message."
   (let ((now '(5 5))
         (state '(:status-state (:status running :activity "x"))))
     (let* ((event '(:type done :usage (:input 1 :output 2)))
@@ -5342,10 +5342,17 @@ The buffer is captured by object so teardown still kills it after a rename."
            (r (hermes-chat--turn-reduce state event now)))
       (should (eq (plist-get (plist-get (car r) :status-state) :status) 'error))
       (should (equal (mapcar #'car (cdr r))
-                     '(refresh-header message upsert-entry))))
-    (let ((r (hermes-chat--turn-reduce state '(:type delta :content "hi") now)))
+                     '(refresh-header message upsert-entry))))))
+
+(ert-deftest hermes-chat-turn-reduce-delta-emits-append-effect ()
+  "A delta event leaves the state and emits append-delta carrying its content."
+  (let ((state '(:status-state (:status running))))
+    (let ((r (hermes-chat--turn-reduce state '(:type delta :content "hi") '(0 0))))
       (should (eq (car r) state))
-      (should-not (cdr r)))))
+      (should (equal (cdr r) '((append-delta . "hi")))))
+    ;; Missing content becomes the empty string.
+    (let ((r (hermes-chat--turn-reduce state '(:type delta) '(0 0))))
+      (should (equal (cdr r) '((append-delta . "")))))))
 
 (ert-deftest hermes-chat-turn-reduce-tool-family-delta-and-transcript ()
   "Tool-like events leave the state and emit a tool delta plus an upsert-entry."

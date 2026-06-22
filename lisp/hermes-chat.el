@@ -688,6 +688,8 @@ and `upsert-entry'.  Other types return (STATE)."
     ((or 'progress 'tool)
      (cons state (delq nil (list (hermes-chat--turn-tool-effect event)
                                  (hermes-chat--turn-entry-effect event)))))
+    ('delta
+     (cons state (list (cons 'append-delta (or (plist-get event :content) "")))))
     (_ (cons state nil))))
 
 (defun hermes-chat--apply-turn-effect (assistant-id effect)
@@ -721,7 +723,11 @@ stays side-effect-light."
     ('clear-pending
      (setq hermes-chat--pending-assistant-id nil
            hermes-chat--process nil))
-    ('drain (hermes-chat--drain-queued-message))))
+    ('drain (hermes-chat--drain-queued-message))
+    ('append-delta
+     (unless (hermes-chat--thinking-echo-delta-p assistant-id (cdr effect))
+       (hermes-chat--append-assistant-content
+        assistant-id (cdr effect) 'streaming)))))
 
 (defun hermes-chat--run-turn-reducer (assistant-id event)
   "Reduce EVENT and apply its effects in order for ASSISTANT-ID.

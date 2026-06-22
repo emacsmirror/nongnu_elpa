@@ -240,18 +240,13 @@ so do not copy its final content into the unsubmitted retry placeholder."
     (when (hermes-chat--prompt-request-event-p event)
       (setq event (hermes-chat--record-prompt-request event assistant-id))
       (hermes-chat--schedule-auto-prompt event))
+    ;; Every recognized event -- header, tool, transcript, streaming delta, and
+    ;; the done/error turn lifecycle -- is rendered by the reducer effects in
+    ;; `hermes-chat--render-turn-event'.  Only a truly unknown type warns here.
     (hermes-chat--render-turn-event assistant-id event)
     (pcase (plist-get event :type)
-      ('delta
-       (unless (hermes-chat--thinking-echo-delta-p
-                assistant-id (or (plist-get event :content) ""))
-         (hermes-chat--append-assistant-content
-          assistant-id (or (plist-get event :content) "") 'streaming)))
-      ;; Header, tool, transcript, and the done/error turn lifecycle for the
-      ;; remaining event types are rendered by the reducer effects in
-      ;; `hermes-chat--render-turn-event' above.
-      ((or 'done 'error 'thinking 'status 'progress 'tool 'commentary 'diff
-           'unknown)
+      ((or 'delta 'done 'error 'thinking 'status 'progress 'tool 'commentary
+           'diff 'unknown)
        nil)
       (_
        (message "Unknown Hermes transport event: %S" event))))))
