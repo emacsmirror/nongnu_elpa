@@ -29,7 +29,7 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
-(require 'hermes-sessions)
+(require 'hermes-browser)
 (require 'hermes-chat)
 
 (defun hermes-rollback--short (hash)
@@ -91,7 +91,7 @@
   (interactive)
   (let ((hash (tabulated-list-get-id)))
     (unless hash (user-error "No checkpoint on this line"))
-    (hermes-sessions--run-on-client
+    (hermes-browser--run-on-client
      (lambda (client)
        (hermes-dashboard-transport-call-fn
         #'hermes-dashboard-transport-rollback-diff client hash))
@@ -105,7 +105,7 @@
     (when (yes-or-no-p
            (format "Restore working tree to checkpoint %s? "
                    (hermes-rollback--short hash)))
-      (hermes-sessions--run-on-client
+      (hermes-browser--run-on-client
        (lambda (client)
          (hermes-dashboard-transport-call-fn
           #'hermes-dashboard-transport-rollback-restore client hash))
@@ -116,7 +116,7 @@
 (defun hermes-list-rollbacks ()
   "Browse Hermes checkpoint history for the active session."
   (interactive)
-  (hermes-sessions--run-on-client
+  (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-rollback-list client))

@@ -32,6 +32,7 @@
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
+(require 'hermes-browser)
 (require 'hermes-chat)
 
 (defvar-local hermes-sessions--session-map nil
@@ -45,41 +46,6 @@
 
 (defvar-local hermes-sessions--detail-count nil
   "Total history message count reported for the current detail buffer.")
-
-(defun hermes-sessions--existing-client ()
-  "Return a live dashboard client from any Hermes chat buffer, or nil."
-  (cl-some (lambda (buffer)
-             (with-current-buffer buffer
-               (and (derived-mode-p 'hermes-chat-mode)
-                    (hermes-chat--dashboard-client-live-p
-                     hermes-chat--dashboard-client)
-                    hermes-chat--dashboard-client)))
-           (buffer-list)))
-
-(defun hermes-sessions--with-client (fn)
-  "Call FN with a connected CLIENT and a DONE cleanup thunk.
-Reuses a live chat connection when one exists; otherwise connects a transient
-client that DONE stops.  Shared by the dashboard browser commands."
-  (let* ((existing (hermes-sessions--existing-client))
-         (client (or existing
-                     (hermes-dashboard-transport-start :callback #'ignore)))
-         (done (lambda ()
-                 (unless existing
-                   (hermes-dashboard-transport-stop client)))))
-    (funcall fn client done)))
-
-(defun hermes-sessions--run-on-client (make-promise &optional on-success)
-  "Run MAKE-PROMISE on a dashboard client, releasing it when its promise settles.
-MAKE-PROMISE receives the CLIENT and returns a promise.  ON-SUCCESS, when given,
-receives the resolved result; rejections are reported with a `Hermes:' message.
-Shared by the dashboard browser commands."
-  (hermes-sessions--with-client
-   (lambda (client done)
-     (hermes--promise-catch
-      (hermes--promise-then
-       (hermes--promise-finally (funcall make-promise client) done)
-       on-success)
-      (lambda (message) (message "Hermes: %s" message))))))
 
 (defun hermes-sessions--field (session key)
   "Return SESSION's KEY as a display string."
@@ -358,7 +324,7 @@ returned messages instead."
          (resume-id (hermes-sessions--id session)))
     (unless history-id
       (user-error "No Hermes session id to view"))
-    (hermes-sessions--run-on-client
+    (hermes-browser--run-on-client
      (lambda (client)
        (hermes-sessions--history-promise client history-id resume-id))
      (lambda (result)
@@ -451,7 +417,7 @@ id it returns."
            (origin (current-buffer)))
       (when (hermes-sessions--title-empty-p title)
         (user-error "Session title required"))
-      (hermes-sessions--run-on-client
+      (hermes-browser--run-on-client
        (lambda (client)
          (hermes-sessions--set-title-promise client id (string-trim title)))
        (lambda (_result)
@@ -488,7 +454,7 @@ id it returns."
          (format "Delete Hermes session %s%s? "
                  id
                  (if (string-empty-p title) "" (format " (%s)" title))))
-        (hermes-sessions--run-on-client
+        (hermes-browser--run-on-client
          (lambda (client)
            (hermes-dashboard-transport-call-fn
             #'hermes-dashboard-transport-session-delete client id))
@@ -503,7 +469,7 @@ id it returns."
 Reuses a live chat connection when one exists; otherwise connects a transient
 client just for the listing."
   (interactive)
-  (hermes-sessions--run-on-client
+  (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-session-list client))

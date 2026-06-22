@@ -32,7 +32,7 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
-(require 'hermes-sessions)
+(require 'hermes-browser)
 
 (defun hermes-inventory--str (object key)
   "Return OBJECT's KEY as a display string."
@@ -217,7 +217,7 @@ Use REST when available, falling back to JSON-RPC."
   "Fetch and render the inventory described by SPEC.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client for the listing."
-  (hermes-sessions--with-client
+  (hermes-browser--with-client
    (lambda (client done)
      (if (eq (hermes-inventory--spec-kind spec) 'skills)
          (hermes-inventory--fetch-skills client done spec)
@@ -255,7 +255,7 @@ client for the listing."
 
 (defun hermes-inventory--set-toolset-enabled (name enabled)
   "Set toolset NAME to ENABLED through dashboard RPC."
-  (hermes-sessions--run-on-client
+  (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-tools-configure
@@ -268,7 +268,7 @@ client for the listing."
 
 (defun hermes-inventory--set-skill-enabled (name enabled)
   "Set skill NAME to ENABLED through the dashboard REST API."
-  (hermes-sessions--with-client
+  (hermes-browser--with-client
    (lambda (client done)
      (let ((cleaned nil))
        (cl-labels ((cleanup ()
@@ -316,7 +316,7 @@ client for the listing."
 (defun hermes-inventory-reload-skills ()
   "Reload dashboard skills, reporting added/removed skills when supported."
   (interactive)
-  (hermes-sessions--run-on-client
+  (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-skills-reload client))
@@ -395,7 +395,7 @@ unknown backend fields so secrets cannot leak through this buffer."
   "Show Hermes memory provider and built-in store sizes.
 The buffer never displays memory contents or secret material."
   (interactive)
-  (hermes-sessions--with-client
+  (hermes-browser--with-client
    (lambda (client done)
      (unwind-protect
          (condition-case err
@@ -418,7 +418,7 @@ TARGET is one of all, memory, or user.  External providers are not reset."
   (when (yes-or-no-p
          (format "Erase built-in Hermes %s memory?  This deletes only MEMORY.md/USER.md data.  Continue?"
                  target))
-    (hermes-sessions--with-client
+    (hermes-browser--with-client
      (lambda (client done)
        (let ((cleaned nil))
          (cl-labels ((cleanup ()

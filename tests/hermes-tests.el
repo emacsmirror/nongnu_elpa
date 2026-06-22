@@ -4882,7 +4882,7 @@ The buffer is captured by object so teardown still kills it after a rename."
                                        ((role . "assistant")
                                         (text . "answer"))))))
         history-session stopped)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop)
@@ -4916,7 +4916,7 @@ The buffer is captured by object so teardown still kills it after a rename."
                           (messages . (((role . "assistant")
                                         (text . "resumed"))))))
         history-session resume-session stopped)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop)
@@ -4950,7 +4950,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-sessions-view-rejects-with-message ()
   "A failed history request reports the gateway error without rendering detail."
   (let (shown)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
@@ -4977,7 +4977,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-sessions-rename-prompts-and-dispatches-title ()
   "Renaming a selected row prompts and dispatches `session.title'."
   (let (sent stopped)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop)
@@ -5007,7 +5007,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 
 (ert-deftest hermes-sessions-rename-from-detail-updates-open-browser ()
   "Renaming from detail keeps an open browser row in sync."
-  (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+  (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
             ((symbol-function 'hermes-dashboard-transport-start)
              (lambda (&rest _) 'fake-client))
             ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
@@ -5058,7 +5058,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-sessions-rename-rejects-with-message ()
   "A failed rename request reports the gateway error without updating the row."
   (let (shown)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
@@ -5087,7 +5087,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-sessions-delete-prompts-and-dispatches-delete ()
   "Deleting a selected row asks for confirmation before `session.delete'."
   (let (deleted stopped)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop)
@@ -5141,7 +5141,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-sessions-delete-rejects-with-message ()
   "A failed delete request reports the gateway error."
   (let (shown)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
@@ -5181,7 +5181,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-sessions-list-renders-and-stops-transient-client ()
   "Listing connects a transient client, renders rows, then stops it."
   (let (listed stopped)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop)
@@ -5686,7 +5686,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-inventory-list-fetches-and-renders ()
   "Choosing a category fetches its method and renders the rows."
   (let (requested-method stopped)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'completing-read) (lambda (&rest _) "Toolsets"))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
@@ -5797,7 +5797,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-inventory-toolset-toggle-sends-tools-configure ()
   "Inventory toolset actions go through `tools.configure' with safe actions."
   (let (names action session done-called reverted)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (let ((client (hermes-test--dashboard-client)))
                    (setf (hermes-dashboard-transport-client-session-id client) "sid-2")
@@ -5819,7 +5819,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-inventory-skill-toggle-posts-rest-json-boolean ()
   "Inventory skill actions use the dashboard REST toggle endpoint, no CLI shellout."
   (let (method path body requested-client done-called reverted)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'fake-client (lambda () (setq done-called t)))))
               ((symbol-function 'hermes-dashboard-transport-api-request)
@@ -5843,7 +5843,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-inventory-skill-toggle-cleans-up-on-rest-error ()
   "Skill toggle stops transient clients when REST toggle fails."
   (let (done-called message-text reverted)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'fake-client (lambda () (setq done-called t)))))
               ((symbol-function 'hermes-dashboard-transport-api-request)
@@ -5861,7 +5861,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-inventory-reload-skills-dispatches-rpc-and-refreshes ()
   "Skill reload uses dashboard RPC and refreshes skill inventory buffers."
   (let (done-called reloaded-client message-text reverted)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'fake-client (lambda () (setq done-called t)))))
               ((symbol-function 'hermes-dashboard-transport-skills-reload)
@@ -5906,7 +5906,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-memory-status-fetches-rest-with-client ()
   "Memory status passes the live dashboard client to REST."
   (let (method path requested-client rendered done-called)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'fake-client (lambda () (setq done-called t)))))
               ((symbol-function 'hermes-dashboard-transport-api-request)
@@ -5930,7 +5930,7 @@ The buffer is captured by object so teardown still kills it after a rename."
   (let (prompt method path body requested-client done-called refreshed)
     (cl-letf (((symbol-function 'yes-or-no-p)
                (lambda (p) (setq prompt p) t))
-              ((symbol-function 'hermes-sessions--with-client)
+              ((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'fake-client (lambda () (setq done-called t)))))
               ((symbol-function 'hermes-dashboard-transport-api-request)
@@ -5956,7 +5956,7 @@ The buffer is captured by object so teardown still kills it after a rename."
   "Declining memory reset stops before client startup or REST calls."
   (let (with-client-called request-called)
     (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
-              ((symbol-function 'hermes-sessions--with-client)
+              ((symbol-function 'hermes-browser--with-client)
                (lambda (&rest _)
                  (setq with-client-called t)))
               ((symbol-function 'hermes-dashboard-transport-api-request)
@@ -5969,7 +5969,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-memory-status-reports-rest-errors ()
   "Memory status reports REST errors."
   (let (message-text requested-client done-called)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'fake-client (lambda () (setq done-called t)))))
               ((symbol-function 'hermes-dashboard-transport-api-request)
@@ -5997,7 +5997,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-rollback-list-fetches-and-renders ()
   "Listing fetches rollback.list and renders the checkpoints."
   (let (stopped)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop)
@@ -6043,7 +6043,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-subagents-list-fetches-and-renders ()
   "Listing fetches delegation.status and renders active subagents."
   (let (stopped)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop)
@@ -6131,7 +6131,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-cron-list-fetches-and-renders ()
   "Listing fetches cron.manage list and renders the jobs."
   (let (action)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
@@ -6152,7 +6152,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-cron-toggle-resumes-paused-job ()
   "Toggling a paused or disabled job sends the resume action."
   (let (actions)
-    (cl-letf (((symbol-function 'hermes-sessions--existing-client) (lambda () nil))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
@@ -6182,7 +6182,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-cron-edit-updates-job-at-point ()
   "Editing sends the update payload for the selected cron job."
   (let (calls refreshed messages)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--client-api)
                (lambda (_client method path &optional body query)
@@ -6225,7 +6225,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-cron-trigger-posts-job-at-point ()
   "Trigger-now posts to the selected cron job endpoint."
   (let (call refreshed)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--client-api)
                (lambda (_client method path &optional body query)
@@ -6244,7 +6244,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-cron-trigger-refreshes-after-transient-client-cleanup ()
   "Trigger-now cleans up a transient client before refreshing the list."
   (let (events)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (funcall fn 'fake-client
                           (lambda ()
@@ -6264,7 +6264,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-cron-show-fetches-job-and-run-history ()
   "Detail view fetches the job and run history, then renders both."
   (let (calls)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--client-api)
                (lambda (_client method path &optional _body query)
@@ -6298,7 +6298,7 @@ The buffer is captured by object so teardown still kills it after a rename."
 (ert-deftest hermes-cron-trigger-reports-api-errors ()
   "Trigger-now reports REST failures without refreshing the list."
   (let (messages refreshed)
-    (cl-letf (((symbol-function 'hermes-sessions--with-client)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-cron--client-api)
                (lambda (&rest _) (error "boom")))

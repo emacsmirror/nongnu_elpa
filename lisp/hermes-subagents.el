@@ -29,7 +29,7 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
-(require 'hermes-sessions)
+(require 'hermes-browser)
 
 (defun hermes-subagents--rows (result)
   "Return `tabulated-list' entries for a `delegation.status' RESULT.
@@ -82,7 +82,7 @@ Each active subagent's goal is indented by its spawn depth."
   (let ((id (tabulated-list-get-id)))
     (unless id (user-error "No subagent on this line"))
     (when (yes-or-no-p (format "Interrupt subagent %s? " id))
-      (hermes-sessions--run-on-client
+      (hermes-browser--run-on-client
        (lambda (client)
          (hermes-dashboard-transport-call-fn
           #'hermes-dashboard-transport-subagent-interrupt client id))
@@ -92,7 +92,7 @@ Each active subagent's goal is indented by its spawn depth."
 (defun hermes-list-subagents ()
   "Browse active Hermes subagents as a delegation tree."
   (interactive)
-  (hermes-sessions--run-on-client
+  (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-delegation-status client))

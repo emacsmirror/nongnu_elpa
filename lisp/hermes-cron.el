@@ -31,7 +31,7 @@
 (require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
-(require 'hermes-sessions)
+(require 'hermes-browser)
 
 ;;; Fields
 
@@ -218,7 +218,7 @@
 (defun hermes-cron--with-client (fn)
   "Call FN with a dashboard client, reporting REST errors as messages.
 When FN returns a function, call it after the transient client cleanup thunk."
-  (hermes-sessions--with-client
+  (hermes-browser--with-client
    (lambda (client done)
      (let ((cleaned nil))
        (condition-case err
@@ -338,7 +338,7 @@ RUNS is the detail run list."
 
 (defun hermes-cron--act (action name done-message)
   "Run cron ACTION on job NAME, report DONE-MESSAGE, then refresh the list."
-  (hermes-sessions--run-on-client
+  (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-cron-manage
@@ -430,7 +430,7 @@ RUNS is the detail run list."
             (string-empty-p schedule)
             (string-empty-p prompt))
     (user-error "Name, schedule and prompt are required"))
-  (hermes-sessions--run-on-client
+  (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-cron-manage
@@ -441,7 +441,7 @@ RUNS is the detail run list."
 (defun hermes-list-crons ()
   "Browse Hermes scheduled (cron) jobs."
   (interactive)
-  (hermes-sessions--run-on-client
+  (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-cron-manage client :action "list"))

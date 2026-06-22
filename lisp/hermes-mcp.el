@@ -34,7 +34,7 @@
 (require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
-(require 'hermes-sessions)
+(require 'hermes-browser)
 
 (defgroup hermes-mcp nil
   "MCP server browser for Hermes Agent."
@@ -241,7 +241,7 @@ session token when available."
 
 (defun hermes-mcp--with-client (fn)
   "Call FN with a dashboard client, reporting MCP REST errors."
-  (hermes-sessions--with-client
+  (hermes-browser--with-client
    (lambda (client done)
      (let ((cleaned nil))
        (cl-labels ((cleanup ()
