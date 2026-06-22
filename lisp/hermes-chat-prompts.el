@@ -366,7 +366,9 @@ A nil SESSION-ID matches every prompt in the current buffer."
      (hermes-chat--read-approval-response prompt))
     ("clarify"
      (if-let* ((choices (hermes-chat--prompt-choices prompt)))
-         (completing-read "Clarify: " choices nil t)
+         ;; Choices are suggestions, not a closed set: the agent's clarify tool
+         ;; always lets the user type their own answer, so do not require a match.
+         (completing-read "Clarify: " choices)
        (read-string (or (hermes-chat--event-string prompt '(:question :content))
                         "Clarify: "))))
     ("sudo" (read-passwd "Sudo password: "))

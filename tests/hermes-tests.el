@@ -2904,6 +2904,18 @@ The buffer is captured by object so teardown still kills it after a rename."
       (should (member "Always approve" seen-candidates))
       (should (member "Cancel / ignore" seen-candidates)))))
 
+(ert-deftest hermes-chat-read-clarify-allows-free-text-answer ()
+  "Clarify choices are suggestions: completion does not require a match."
+  (let (require-match)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt _choices &optional _pred match &rest _)
+                 (setq require-match match)
+                 "my own answer")))
+      (should (equal (hermes-chat--read-prompt-response
+                      '(:prompt-type "clarify" :choices ["a" "b"]))
+                     "my own answer"))
+      (should-not require-match))))
+
 (ert-deftest hermes-chat-parses-approval-allow-permanent-flag ()
   (hermes-test-with-dashboard-prompt-session (client)
     (hermes-test--emit-dashboard-prompt
