@@ -394,7 +394,16 @@ malformed slot never aborts the teardown-path redaction this guards."
 
 (defun hermes-dashboard-transport--call-with-redacted-websocket-state
     (url redacted-url thunk)
-  "Call THUNK while redacting URL as REDACTED-URL in websocket.el-visible state."
+  "Call THUNK while redacting URL as REDACTED-URL in websocket.el-visible state.
+The session token must ride in URL's query string -- the gateway only reads it
+there, since browsers cannot set WebSocket request headers -- and websocket.el
+derives both the connection's process name and the websocket object's stored
+URL from it.  Redaction must therefore happen at creation time: Emacs process
+names are immutable once created, and the websocket struct's URL slot is
+read-only, so neither can be rewritten after the fact.  That is why all three
+creation points (`make-network-process', `open-network-stream', and
+websocket.el's `websocket-inner-create') are interposed for the duration of
+THUNK rather than cleaned up afterward."
   (let* ((names (hermes-dashboard-transport--redacted-websocket-name
                  url redacted-url))
          (token-name (car names))
