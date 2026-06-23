@@ -143,6 +143,22 @@ a `skills' field too so older/newer dashboard shapes render the same way."
 (defvar-local hermes-inventory--spec nil
   "The inventory spec backing the current buffer, for refresh and actions.")
 
+(defun hermes-inventory--spec-method (spec)
+  "Return SPEC's dashboard JSON-RPC method."
+  (nth 1 spec))
+
+(defun hermes-inventory--spec-params (spec)
+  "Return SPEC's dashboard JSON-RPC params."
+  (nth 2 spec))
+
+(defun hermes-inventory--spec-format (spec)
+  "Return SPEC's `tabulated-list-format' vector."
+  (nth 3 spec))
+
+(defun hermes-inventory--spec-rows (spec)
+  "Return SPEC's pure rows function."
+  (nth 4 spec))
+
 (defun hermes-inventory--spec-kind (spec)
   "Return SPEC's inventory kind."
   (nth 5 spec))
@@ -175,7 +191,7 @@ Toolsets and skills support `\[hermes-inventory-enable]' and
     (unless (derived-mode-p 'hermes-inventory-mode)
       (hermes-inventory-mode))
     (setq hermes-inventory--spec spec)
-    (setq tabulated-list-format (nth 3 spec))
+    (setq tabulated-list-format (hermes-inventory--spec-format spec))
     (tabulated-list-init-header)
     (setq tabulated-list-entries rows)
     (tabulated-list-print t)
@@ -183,7 +199,8 @@ Toolsets and skills support `\[hermes-inventory-enable]' and
 
 (defun hermes-inventory--render-result (spec result)
   "Render inventory SPEC from dashboard RESULT."
-  (hermes-inventory--render spec (funcall (nth 4 spec) result)))
+  (hermes-inventory--render spec (funcall (hermes-inventory--spec-rows spec)
+                                          result)))
 
 (defun hermes-inventory--skills-promise (client spec)
   "Return a promise of the skill inventory for CLIENT.
@@ -197,7 +214,7 @@ REST is unavailable."
    (lambda (reason)
      (message "Hermes: skill status unavailable over REST (%s); using read-only list"
               reason)
-     (hermes-dashboard-transport-call client (nth 1 spec) (nth 2 spec)))))
+     (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec)))))
 
 (defun hermes-inventory--fetch (spec)
   "Fetch and render the inventory described by SPEC asynchronously.
@@ -207,7 +224,7 @@ client for the listing."
    (lambda (client)
      (if (eq (hermes-inventory--spec-kind spec) 'skills)
          (hermes-inventory--skills-promise client spec)
-       (hermes-dashboard-transport-call client (nth 1 spec) (nth 2 spec))))
+       (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec))))
    (lambda (result) (hermes-inventory--render-result spec result))))
 
 (defun hermes-inventory--row-name ()
