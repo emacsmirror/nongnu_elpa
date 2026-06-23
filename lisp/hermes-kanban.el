@@ -345,8 +345,10 @@ when WIDTH can hold one character per column plus padding."
             #'hermes-kanban--window-size-change nil t)
   (hermes-kanban--init-boards-header))
 
-(defun hermes-kanban--render-boards ()
-  "Fetch and render the dashboard boards overview asynchronously."
+(defun hermes-kanban--render-boards (&optional in-place)
+  "Fetch and render the dashboard boards overview asynchronously.
+With IN-PLACE non-nil, refresh without re-displaying the buffer (used by revert,
+which already runs in the displayed window)."
   (hermes-kanban--then
    (hermes-kanban--api "GET" "/boards")
    (lambda (payload)
@@ -355,14 +357,14 @@ when WIDTH can hold one character per column plus padding."
          (unless (derived-mode-p 'hermes-kanban-boards-mode)
            (hermes-kanban-boards-mode))
          (setq tabulated-list-entries (hermes-kanban--board-rows boards))
-         (pop-to-buffer (current-buffer))
+         (unless in-place (pop-to-buffer (current-buffer)))
          (hermes-kanban--init-boards-header
           (hermes-kanban--visible-window-width))
          (tabulated-list-print t))))))
 
 (defun hermes-kanban--boards-revert (&rest _)
-  "Refresh the boards overview."
-  (hermes-kanban--render-boards))
+  "Refresh the boards overview in place."
+  (hermes-kanban--render-boards t))
 
 (defun hermes-kanban--board-at-point ()
   "Return the selected board as (SLUG . NAME), or signal a `user-error'."
@@ -515,8 +517,10 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
             #'hermes-kanban--window-size-change nil t)
   (hermes-kanban--init-board-header))
 
-(defun hermes-kanban--render-board (slug name)
-  "Fetch and render board SLUG (display NAME) in the detail buffer."
+(defun hermes-kanban--render-board (slug name &optional in-place)
+  "Fetch and render board SLUG (display NAME) in the detail buffer.
+With IN-PLACE non-nil, refresh without re-displaying the buffer (used by revert,
+which already runs in the displayed window)."
   (hermes-kanban--then
    (hermes-kanban--api "GET" "/board" nil (and slug `((board . ,slug))))
    (lambda (payload)
@@ -533,14 +537,14 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
                tabulated-list-sort-key nil
                tabulated-list-entries (hermes-kanban--task-rows
                                        (hermes-transport--get payload 'columns)))
-         (pop-to-buffer (current-buffer))
+         (unless in-place (pop-to-buffer (current-buffer)))
          (hermes-kanban--init-board-header
           (hermes-kanban--visible-window-width))
          (tabulated-list-print t))))))
 
 (defun hermes-kanban--revert (&rest _)
   "Refresh the current board detail buffer in place."
-  (hermes-kanban--render-board hermes-kanban--slug hermes-kanban--name))
+  (hermes-kanban--render-board hermes-kanban--slug hermes-kanban--name t))
 
 (defun hermes-kanban-boards ()
   "Return to the boards overview."
@@ -851,11 +855,12 @@ EMPTY-NAME is inserted in the explicit empty-state line."
     (hermes-kanban--then
      (hermes-kanban--api "GET" (hermes-kanban--task-path task-id)
                          nil (hermes-kanban--query-for-board board-slug))
-     (lambda (payload) (hermes-kanban--display-task payload board-slug)))))
+     (lambda (payload) (hermes-kanban--display-task payload board-slug t)))))
 
-(defun hermes-kanban--display-task (payload &optional board-slug)
+(defun hermes-kanban--display-task (payload &optional board-slug in-place)
   "Render task PAYLOAD in a read-only detail buffer.
-BOARD-SLUG is remembered for refreshes and log requests."
+BOARD-SLUG is remembered for refreshes and log requests.  With IN-PLACE non-nil,
+refresh without re-displaying the buffer (used by revert)."
   (let* ((task (hermes-transport--get payload 'task))
          (task-id (hermes-transport--display-field task 'id)))
     (with-current-buffer (get-buffer-create "*Hermes Kanban Task*")
@@ -870,7 +875,7 @@ BOARD-SLUG is remembered for refreshes and log requests."
                  (hermes-kanban--format-task-detail payload)))
         (read-only-mode 1))
       (goto-char (point-min))
-      (pop-to-buffer (current-buffer)))))
+      (unless in-place (pop-to-buffer (current-buffer))))))
 
 (defun hermes-kanban-show ()
   "Show the kanban task at point."
@@ -959,7 +964,7 @@ instead of surfacing a transport error."
         (board-slug hermes-kanban-log--board-slug))
     (hermes-kanban--then
      (hermes-kanban--fetch-log id board-slug)
-     (lambda (payload) (hermes-kanban--display-log payload board-slug)))))
+     (lambda (payload) (hermes-kanban--display-log payload board-slug t)))))
 
 (define-derived-mode hermes-kanban-log-mode special-mode "Hermes Log"
   "Major mode for a Hermes Kanban worker log buffer."
@@ -968,8 +973,9 @@ instead of surfacing a transport error."
   (setq-local truncate-lines nil)
   (visual-line-mode 1))
 
-(defun hermes-kanban--display-log (payload &optional board-slug)
-  "Render worker log PAYLOAD for BOARD-SLUG in a read-only buffer."
+(defun hermes-kanban--display-log (payload &optional board-slug in-place)
+  "Render worker log PAYLOAD for BOARD-SLUG in a read-only buffer.
+With IN-PLACE non-nil, refresh without re-displaying (used by revert)."
   (let ((task-id (hermes-transport--non-empty-string
                   (hermes-transport--display-field payload 'task_id))))
     (with-current-buffer (get-buffer-create "*Hermes Kanban Log*")
@@ -983,7 +989,7 @@ instead of surfacing a transport error."
         (erase-buffer)
         (insert (hermes-kanban--format-log payload)))
       (goto-char (point-min))
-      (pop-to-buffer (current-buffer)))))
+      (unless in-place (pop-to-buffer (current-buffer))))))
 
 (defun hermes-kanban-show-log ()
   "Fetch and display the worker log for the task at point or current detail."

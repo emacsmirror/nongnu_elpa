@@ -164,6 +164,29 @@
       (when (get-buffer "*Hermes Kanban Boards*")
         (kill-buffer "*Hermes Kanban Boards*")))))
 
+(ert-deftest hermes-kanban-boards-revert-refreshes-without-display ()
+  "Reverting the boards overview refreshes in place; the command displays."
+  (let (displayed)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '((boards . (((slug . "emacs-lisp") (name . "Emacs Lisp")
+                                (is_current . t) (total . 1)
+                                (counts . ((ready . 1))))))))))
+              ((symbol-function 'pop-to-buffer)
+               (lambda (&rest _) (setq displayed t))))
+      (unwind-protect
+          (progn
+            (hermes-kanban--boards-revert)
+            (should-not displayed)
+            (with-current-buffer "*Hermes Kanban Boards*"
+              (should (equal (caar tabulated-list-entries)
+                             (cons "emacs-lisp" "Emacs Lisp"))))
+            (hermes-list-kanban)
+            (should displayed))
+        (when (get-buffer "*Hermes Kanban Boards*")
+          (kill-buffer "*Hermes Kanban Boards*"))))))
+
 (ert-deftest hermes-kanban-board-actions-dispatch-rest-calls ()
   "Board overview actions use REST endpoints, safe archive, and refresh."
   (let (calls prompts)
