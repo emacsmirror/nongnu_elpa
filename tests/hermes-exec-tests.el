@@ -70,6 +70,29 @@
         (should (equal "Evaluation declined by user" (plist-get result :error))))))
   (should (null hermes-exec-test--canary)))
 
+(ert-deftest hermes-exec-test-skips-eval-when-client-disconnected ()
+  "A dead connection after approval skips the eval and reports it."
+  (setq hermes-exec-test--canary nil)
+  (let ((hermes-exec-enabled t)
+        (hermes-exec-require-approval nil)
+        (hermes-exec--connection 'fake-conn))
+    (cl-letf (((symbol-function 'process-live-p)
+               (lambda (p) (not (eq p 'fake-conn)))))
+      (let ((result (hermes-exec--maybe-evaluate
+                     "(setq hermes-exec-test--canary 'ran)")))
+        (should-not (plist-get result :ok))
+        (should (string-match-p "disconnected" (plist-get result :error))))))
+  (should (null hermes-exec-test--canary)))
+
+(ert-deftest hermes-exec-test-evaluate-runs-multiple-forms ()
+  "Several top-level forms all run; the last value is returned."
+  (setq hermes-exec-test--canary nil)
+  (let ((result (hermes-exec--evaluate
+                 "(setq hermes-exec-test--canary 'first) (+ 40 2)")))
+    (should (plist-get result :ok))
+    (should (equal "42" (plist-get result :result)))
+    (should (eq hermes-exec-test--canary 'first))))
+
 (ert-deftest hermes-exec-test-approval-disabled-runs-unprompted ()
   "With approval disabled, eval runs and no prompt is shown."
   (setq hermes-exec-test--canary nil)
@@ -264,6 +287,28 @@
          (hermes-exec-host "100.64.0.1")
          (hermes-exec--process nil))
      (should-error (hermes-exec-start) :type 'user-error))))
+
+;;; Group 7: server lifecycle helpers
+
+(ert-deftest hermes-exec-test-bound-host-prefers-process-contact ()
+  "While live, the bound host comes from the process, not re-resolution.
+The resolver would say 100.64.0.9, so reading 127.0.0.1 proves the bound host
+wins."
+  (let* ((hermes-exec-host "100.64.0.9")
+         (hermes-exec-port t)
+         (hermes-exec--process (hermes-exec--start-server "127.0.0.1")))
+    (unwind-protect
+        (should (equal "127.0.0.1" (hermes-exec--bound-host)))
+      (delete-process hermes-exec--process))))
+
+(ert-deftest hermes-exec-test-accept-tags-connection ()
+  "The accept handler tags a connection so teardown can match it."
+  (let ((conn (make-pipe-process :name "hermes-exec-test" :noquery t)))
+    (unwind-protect
+        (progn
+          (hermes-exec--accept nil conn nil)
+          (should (process-get conn 'hermes-exec-connection)))
+      (delete-process conn))))
 
 (provide 'hermes-exec-tests)
 ;;; hermes-exec-tests.el ends here

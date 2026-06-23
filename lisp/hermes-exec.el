@@ -103,6 +103,12 @@ this endpoint can share one secret without duplicating it in config."
 (defvar hermes-exec--process nil
   "The live eval endpoint server process, or nil when stopped.")
 
+(defvar hermes-exec--connection nil
+  "Connection served in the current filter call, or nil.
+Bound by `hermes-exec--filter' so the eval path can skip evaluation when the
+client has already disconnected -- e.g. when a slow approval outlives the
+bridge timeout -- rather than running the side effect on a dead socket.")
+
 ;;; Host resolution
 
 (defun hermes-exec--dashboard-loopback-p ()
@@ -224,11 +230,14 @@ request must carry a matching `Authorization: Bearer' header."
        printed))))
 
 (defun hermes-exec--eval-code (code)
-  "Read and evaluate CODE under a timeout, returning the value."
+  "Read and evaluate every top-level form in CODE under a timeout.
+CODE may carry more than one form; all run in order and the last value is
+returned.  Wrapping in `progn' avoids silently dropping every form after the
+first the way a single `read-from-string' would."
   (with-timeout (hermes-exec-timeout
                  (error "Hermes eval timed out after %s seconds"
                         hermes-exec-timeout))
-    (eval (car (read-from-string code)) t)))
+    (eval (car (read-from-string (format "(progn %s\n)" code))) t)))
 
 (defun hermes-exec--evaluate (code)
   "Evaluate CODE and return a result plist.
@@ -256,6 +265,9 @@ the user declines the `hermes-exec-require-approval' prompt."
    ((and hermes-exec-require-approval
          (not (y-or-n-p (hermes-exec--approval-prompt code))))
     (list :ok nil :error "Evaluation declined by user"))
+   ((and hermes-exec--connection
+         (not (process-live-p hermes-exec--connection)))
+    (list :ok nil :error "Client disconnected before evaluation"))
    (t (hermes-exec--evaluate code))))
 
 ;;; JSON request/response
@@ -339,7 +351,8 @@ dispatched and an incomplete one yields nil."
 ;; dispatches.  This bounds memory and keeps partial reads from a premature eval.
 (defun hermes-exec--filter (proc chunk)
   "Accumulate CHUNK on PROC; answer once a full or oversized request arrives."
-  (let ((buffer (concat (process-get proc 'hermes-buffer) chunk)))
+  (let ((buffer (concat (process-get proc 'hermes-buffer) chunk))
+        (hermes-exec--connection proc))
     (process-put proc 'hermes-buffer buffer)
     (when-let* ((response (hermes-exec--request-response buffer)))
       (process-put proc 'hermes-buffer nil)
@@ -350,6 +363,12 @@ dispatched and an incomplete one yields nil."
   (unless (process-live-p proc)
     (process-put proc 'hermes-buffer nil)))
 
+(defun hermes-exec--accept (_server connection _message)
+  "Tag an accepted CONNECTION so `hermes-exec--live-connections' can find it.
+Marking each connection with a process property is more robust than matching by
+the filter it inherits from the server."
+  (process-put connection 'hermes-exec-connection t))
+
 (defun hermes-exec--start-server (host)
   "Return a new eval endpoint server process bound to HOST."
   (make-network-process
@@ -358,6 +377,7 @@ dispatched and an incomplete one yields nil."
    :host host
    :service hermes-exec-port
    :family 'ipv4
+   :log #'hermes-exec--accept
    ;; utf-8-unix, not plain utf-8: a bare coding system auto-detects EOL and
    ;; rewrites CRLF to LF on read, which would strip the "\r\n\r\n" header
    ;; terminator the parser looks for.  -unix decodes UTF-8 without touching
@@ -391,13 +411,13 @@ public interface, and store the listening process for `hermes-exec-stop'."
 
 (defun hermes-exec--live-connections (server)
   "Return live connection processes accepted by SERVER.
-Emacs sets no back-pointer to the listener on accepted connections, so match
-them by the filter they inherit from SERVER instead, excluding SERVER itself."
+Connections are tagged at accept time by `hermes-exec--accept', so match that
+process property rather than the inherited filter, excluding SERVER itself."
   (and (process-live-p server)
        (cl-remove-if-not
         (lambda (conn)
           (and (not (eq conn server))
-               (eq (process-filter conn) #'hermes-exec--filter)))
+               (process-get conn 'hermes-exec-connection)))
         (process-list))))
 
 (defun hermes-exec-stop ()
@@ -410,12 +430,22 @@ them by the filter they inherit from SERVER instead, excluding SERVER itself."
   (setq hermes-exec--process nil)
   (message "Hermes eval endpoint stopped"))
 
+(defun hermes-exec--bound-host ()
+  "Return the host the endpoint is actually bound to.
+While the listener is live, read its bound host from `process-contact' rather
+than re-resolving, which could disagree if the config changed after start.  Fall
+back to `hermes-exec--resolve-host' once the process is gone."
+  (or (and (process-live-p hermes-exec--process)
+           (process-contact hermes-exec--process :host))
+      (hermes-exec--resolve-host)
+      "?"))
+
 (defun hermes-exec-status ()
   "Report whether the eval endpoint is running, and on which host and port."
   (interactive)
   (if (process-live-p hermes-exec--process)
       (message "Hermes eval endpoint running on %s:%d"
-               (or (hermes-exec--resolve-host) "?") hermes-exec-port)
+               (hermes-exec--bound-host) hermes-exec-port)
     (message "Hermes eval endpoint not running")))
 
 ;;; Bridge registration helper
