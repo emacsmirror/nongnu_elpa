@@ -2067,10 +2067,13 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
       'error)))
 
 (defun hermes-dashboard-transport--usage-plist (payload)
-  "Return an :input/:output token usage plist from PAYLOAD, or nil.
-Only positive token counts are reported, so an empty turn shows no gauge."
-  (let ((input (hermes-transport--get payload 'input_tokens))
-        (output (hermes-transport--get payload 'output_tokens)))
+  "Return an :input/:output token usage plist from PAYLOAD's usage, or nil.
+The backend nests per-turn token counts under PAYLOAD's `usage' object, like
+`hermes-dashboard-transport--context-plist' reads the context fields.  Only
+positive token counts are reported, so an empty turn shows no gauge."
+  (let* ((usage (hermes-transport--get payload 'usage))
+         (input (hermes-transport--get usage 'input))
+         (output (hermes-transport--get usage 'output)))
     (and (or (and (numberp input) (> input 0))
              (and (numberp output) (> output 0)))
          (list :input input :output output))))
