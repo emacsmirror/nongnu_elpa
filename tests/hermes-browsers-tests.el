@@ -107,5 +107,30 @@
     (when (get-buffer "*Hermes Browser Test*")
       (kill-buffer "*Hermes Browser Test*"))))
 
+(ert-deftest hermes-browser-list-browser-revert-refreshes-without-display ()
+  "Revert refreshes rows in place; only the command displays the buffer."
+  (hermes-define-list-browser browserrevert
+    :title "Hermes Browser Revert"
+    :buffer "*Hermes Browser Revert*"
+    :columns [("Name" 20 t)]
+    :fetch (lambda (_client) (hermes--promise-resolved '("a" "b")))
+    :rows (lambda (result)
+            (mapcar (lambda (name) (list name (vector name))) result)))
+  (let (displayed)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore)))
+              ((symbol-function 'pop-to-buffer)
+               (lambda (&rest _) (setq displayed t))))
+      (unwind-protect
+          (progn
+            (hermes-browserrevert--revert)
+            (should-not displayed)
+            (with-current-buffer "*Hermes Browser Revert*"
+              (should (equal (mapcar #'car tabulated-list-entries) '("a" "b"))))
+            (hermes-list-browserrevert)
+            (should displayed))
+        (when (get-buffer "*Hermes Browser Revert*")
+          (kill-buffer "*Hermes Browser Revert*"))))))
+
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here
