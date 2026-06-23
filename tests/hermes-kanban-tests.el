@@ -513,6 +513,85 @@
                  (hermes-kanban--format-failure-fields
                   '((branch_name . "main") (consecutive_failures . 0))))))
 
+;;; Group N: recovery actions
+
+(ert-deftest hermes-kanban-run-id-for-task-reads-current-run ()
+  "The run id comes off the task's current_run_id; absent ids yield nil."
+  (should (equal 7 (hermes-kanban--run-id-for-task '((current_run_id . 7)))))
+  (should-not (hermes-kanban--run-id-for-task '((current_run_id))))
+  (should-not (hermes-kanban--run-id-for-task '((id . "t1")))))
+
+(ert-deftest hermes-kanban-reason-body-omits-empty-reason ()
+  "A nil reason drops the body; a reason becomes a one-key alist."
+  (should-not (hermes-kanban--reason-body nil))
+  (should (equal '((reason . "stuck")) (hermes-kanban--reason-body "stuck"))))
+
+(ert-deftest hermes-kanban-read-reason-trims-and-nils-blank ()
+  "A blank reason reads as nil; surrounding whitespace is trimmed."
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "   ")))
+    (should-not (hermes-kanban--read-reason "Reason: ")))
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "  boom ")))
+    (should (equal "boom" (hermes-kanban--read-reason "Reason: ")))))
+
+(ert-deftest hermes-kanban-terminate-run-without-run-reports-and-skips ()
+  "A task with no active run is reported and never hits the terminate endpoint."
+  (let (calls msgs)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (push (list method path body query) calls)
+                 (hermes--promise-resolved nil)))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args) (push (apply #'format fmt args) msgs))))
+      (hermes-kanban--terminate-run-for-task '((id . "t1")) "t1" nil #'ignore)
+      (should-not calls)
+      (should (cl-some (lambda (m) (string-match-p "no active run" m)) msgs)))))
+
+(ert-deftest hermes-kanban-terminate-run-posts-to-run-endpoint ()
+  "Confirming terminates the resolved run id, omitting an empty reason."
+  (let (calls refreshed)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (push (list method path body query) calls)
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'read-string) (lambda (&rest _) ""))
+              ((symbol-function 'message) (lambda (&rest _) nil)))
+      (hermes-kanban--terminate-run-for-task
+       '((id . "t1") (current_run_id . 42)) "t1" '((board . "emacs-lisp"))
+       (lambda () (setq refreshed t)))
+      (should (member '("POST" "/runs/42/terminate" nil ((board . "emacs-lisp")))
+                      calls))
+      (should refreshed))))
+
+(ert-deftest hermes-kanban-reclaim-posts-to-reclaim-endpoint ()
+  "Reclaiming the task at point POSTs reclaim with the board query and reason."
+  (let (calls)
+    (cl-letf (((symbol-function 'window-body-width)
+               (lambda (&optional _w _p) 80))
+              ((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (push (list method path body query) calls)
+                 (hermes--promise-resolved
+                  (if (equal path "/board")
+                      '((columns . (((name . "running")
+                                     (tasks . (((id . "t1") (status . "running")
+                                                (title . "Do thing")))))))
+                        (assignees))
+                    '((ok . t))))))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'read-string) (lambda (&rest _) "stuck"))
+              ((symbol-function 'message) (lambda (&rest _) nil)))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-board "emacs-lisp" "Emacs Lisp")
+            (with-current-buffer "*Hermes Kanban*"
+              (goto-char (point-min))
+              (hermes-kanban-reclaim))
+            (should (member '("POST" "/tasks/t1/reclaim"
+                              ((reason . "stuck")) ((board . "emacs-lisp")))
+                            calls)))
+        (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*"))))))
+
 (ert-deftest hermes-kanban-show-log-fetches-selected-task-log ()
   "Log viewing goes through the dashboard REST endpoint for the selected task."
   (let (log-path log-query)

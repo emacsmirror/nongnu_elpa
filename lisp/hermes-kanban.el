@@ -502,6 +502,9 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
   :group "Board"
   "+" ("New task" hermes-kanban-create-task)
   "D" ("Delete task" hermes-kanban-delete)
+  :group "Recovery"
+  "R" ("Reclaim task" hermes-kanban-reclaim)
+  "K" ("Terminate run" hermes-kanban-terminate-run)
   :group "View"
   "g" ("Refresh" revert-buffer)
   "l" ("View selected task log" hermes-kanban-show-log)
@@ -844,6 +847,9 @@ and an absent branch or run id is omitted."
   "Keymap for `hermes-kanban-task-mode'."
   :parent special-mode-map
   :description "Hermes Kanban Task"
+  :group "Recovery"
+  "R" ("Reclaim task" hermes-kanban-reclaim)
+  "K" ("Terminate run" hermes-kanban-terminate-run)
   :group "View"
   "g" ("Refresh" revert-buffer)
   "l" ("View worker log" hermes-kanban-show-log)
@@ -1121,6 +1127,90 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
        (hermes-kanban--api "DELETE" (hermes-kanban--task-path id)
                            nil (hermes-kanban--board-query))
        (lambda (_) (hermes-kanban--render-board slug name))))))
+
+;;; Recovery actions
+
+(defun hermes-kanban--run-id-for-task (task)
+  "Return TASK's current run id as a number, or nil when there is no live run."
+  (let ((run (hermes-transport--get task 'current_run_id)))
+    (and (numberp run) run)))
+
+(defun hermes-kanban--read-reason (prompt)
+  "Read an optional reason string with PROMPT; return nil when blank."
+  (let ((reason (string-trim (read-string prompt))))
+    (and (not (string-empty-p reason)) reason)))
+
+(defun hermes-kanban--reason-body (reason)
+  "Return a request-body alist carrying REASON, or nil when REASON is nil."
+  (and reason `((reason . ,reason))))
+
+(defun hermes-kanban--context-task-id ()
+  "Return the task id for the current board or task-detail buffer."
+  (if (derived-mode-p 'hermes-kanban-task-mode)
+      (or hermes-kanban-task--task-id (user-error "No task in this buffer"))
+    (hermes-kanban--id-at-point)))
+
+(defun hermes-kanban--context-board-slug ()
+  "Return the board slug for the current board or task-detail buffer."
+  (if (derived-mode-p 'hermes-kanban-task-mode)
+      hermes-kanban-task--board-slug
+    hermes-kanban--slug))
+
+(defun hermes-kanban--context-refresher ()
+  "Return a thunk that re-renders the current Kanban buffer in place.
+The buffer is captured now so the thunk is safe to call from an async callback
+whose then-current buffer may differ."
+  (let ((buffer (current-buffer)))
+    (lambda ()
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (revert-buffer nil t))))))
+
+(defun hermes-kanban-reclaim ()
+  "Release the worker claim on the task at point after confirmation.
+Reads an optional reason and refreshes the buffer on success.  Maps to the
+dashboard `POST /tasks/:id/reclaim'; a 409 (task no longer claimable) is
+reported as-is."
+  (interactive)
+  (let ((id (hermes-kanban--context-task-id))
+        (query (hermes-kanban--query-for-board
+                (hermes-kanban--context-board-slug)))
+        (refresh (hermes-kanban--context-refresher)))
+    (when (yes-or-no-p (format "Reclaim task %s? " id))
+      (let ((reason (hermes-kanban--read-reason "Reclaim reason (optional): ")))
+        (hermes-kanban--then
+         (hermes-kanban--api "POST" (hermes-kanban--task-path id "/reclaim")
+                             (hermes-kanban--reason-body reason) query)
+         (lambda (_) (message "Reclaimed task %s" id) (funcall refresh)))))))
+
+(defun hermes-kanban--terminate-run-for-task (task task-id query refresh)
+  "Confirm and terminate TASK's current run, then call REFRESH.
+TASK-ID labels the prompts and QUERY pins the board for the terminate call.
+A task with no active run is reported and left untouched."
+  (let ((run (hermes-kanban--run-id-for-task task)))
+    (cond
+     ((not run) (message "Task %s has no active run to terminate" task-id))
+     ((yes-or-no-p (format "Terminate run #%d of task %s? " run task-id))
+      (let ((reason (hermes-kanban--read-reason
+                     "Terminate reason (optional): ")))
+        (hermes-kanban--then
+         (hermes-kanban--api "POST" (format "/runs/%d/terminate" run)
+                             (hermes-kanban--reason-body reason) query)
+         (lambda (_) (message "Terminated run #%d" run) (funcall refresh))))))))
+
+(defun hermes-kanban-terminate-run ()
+  "Terminate the worker process backing the task at point's current run.
+Fetches the task to resolve its run id, confirms, then POSTs the terminate.
+A task with no active run is reported; a 404/409 surfaces as a message."
+  (interactive)
+  (let ((id (hermes-kanban--context-task-id))
+        (query (hermes-kanban--query-for-board
+                (hermes-kanban--context-board-slug)))
+        (refresh (hermes-kanban--context-refresher)))
+    (hermes-kanban--then
+     (hermes-kanban--api "GET" (hermes-kanban--task-path id) nil query)
+     (lambda (payload)
+       (hermes-kanban--terminate-run-for-task
+        (hermes-transport--get payload 'task) id query refresh)))))
 
 ;;;###autoload
 (defun hermes-list-kanban ()
