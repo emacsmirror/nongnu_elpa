@@ -21,9 +21,16 @@
 
 ;;; Commentary:
 
-;; Stateful EWOC rendering and editable-tail buffer helpers for `hermes-chat'.
-;; This module keeps the transcript spine separate from dashboard session,
-;; prompt, slash command, selector, and public mode code.
+;; Stateful EWOC rendering and editable-tail buffer helpers for the Hermes
+;; chat UI.  This file is one area of a single logical chat module split for
+;; size across hermes-chat.el (entry model, markdown/diff rendering, command
+;; surface), this file (the EWOC spine and writable input tail),
+;; hermes-chat-prompts.el (approval/clarify/sudo/secret dialogs), and
+;; hermes-chat-dashboard.el (per-session transport state).  The split is by
+;; area, not a strict bottom-up layering: this spine calls back into
+;; hermes-chat.el for entry/markdown/diff rendering (declared with
+;; `declare-function'), which is why hermes-chat.el `require's these files
+;; mid-file, after those helpers are defined, rather than at its top.
 
 ;;; Code:
 

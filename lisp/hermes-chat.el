@@ -793,6 +793,9 @@ self-explanatory."
     (string-replace "%" "%%" (truncate-string-to-width text width nil nil "…"))))
 
 
+;; These files are sibling areas of one logical chat module; they call back
+;; into the entry/markdown/diff helpers defined above via `declare-function',
+;; so they are required here, after those definitions, rather than at the top.
 (require 'hermes-chat-buffer)
 (require 'hermes-chat-prompts)
 (require 'hermes-chat-dashboard)
