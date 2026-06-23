@@ -137,7 +137,7 @@ Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
 (defun hermes-chat--commentary-delta-p (event)
   "Return non-nil when EVENT is a commentary/thinking delta."
   (and (eq (plist-get event :type) 'commentary)
-       (when-let* ((name (hermes-chat--commentary-event-name event)))
+       (and-let* ((name (hermes-chat--commentary-event-name event)))
          (or (member name '("reasoning.delta" "thinking.delta"))
              (string-suffix-p ".delta" name)))))
 
@@ -326,9 +326,8 @@ re-fontified on every delta.  Once the entry settles, render CONTENT as
 markdown with diff blocks replaced by View Diff links."
   (if streaming
       (insert content "\n")
-    (progn
-      (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)
-      (insert "\n"))))
+    (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)
+    (insert "\n")))
 
 (defun hermes-chat--print-entry (entry)
   "Insert a display representation of chat ENTRY at point."

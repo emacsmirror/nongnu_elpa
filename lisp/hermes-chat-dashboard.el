@@ -175,7 +175,7 @@ partial or failed teardown, so a new session can be started afterwards."
 (defun hermes-chat--dashboard-control-error-event-p (event)
   "Return non-nil when EVENT is an error from a control RPC."
   (and (eq (plist-get event :type) 'error)
-       (when-let* ((method (hermes-chat--event-string event '(:method))))
+       (and-let* ((method (hermes-chat--event-string event '(:method))))
          (not (member method '("prompt.submit" "session.create"
                                "session.resume"))))))
 

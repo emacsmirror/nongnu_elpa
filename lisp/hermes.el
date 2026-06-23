@@ -675,8 +675,7 @@ arrives."
             #'hermes-dashboard--cancel-stale-refresh-timer nil t)
   (setq hermes-dashboard--nodes (make-hash-table :test #'equal)
         hermes-dashboard--ewoc nil)
-  (when (fboundp 'display-line-numbers-mode)
-    (display-line-numbers-mode 0))
+  (setq-local display-line-numbers nil)
   (hermes-dashboard--start-stale-refresh-timer))
 
 (defun hermes-dashboard--render ()

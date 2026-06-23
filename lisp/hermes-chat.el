@@ -540,7 +540,7 @@ fields, so it collapses to a plain ready state instead of repeating them."
 (defun hermes-chat--message-start-status-event-p (event)
   "Return non-nil when EVENT is low-value message-start status noise."
   (and (eq (plist-get event :type) 'status)
-       (when-let* ((name (hermes-chat--event-string event '(:event))))
+       (and-let* ((name (hermes-chat--event-string event '(:event))))
          (member (downcase name)
                  '("message.start" "message_start"
                    "message.started" "message_started")))
@@ -2130,8 +2130,7 @@ session-title refresh."
   (visual-line-mode 1)
   (setq-local word-wrap t)
   (setq-local scroll-conservatively 5)
-  (when (fboundp 'display-line-numbers-mode)
-    (display-line-numbers-mode 0))
+  (setq-local display-line-numbers nil)
   (add-hook 'kill-buffer-hook #'hermes-chat--cleanup-buffer nil t)
   (add-hook 'completion-at-point-functions #'hermes-chat--slash-capf nil t)
   (hermes-chat--setup-buffer))

@@ -1712,7 +1712,7 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
            :env env
            :connection-type 'pipe
            :noquery t
-           :sentinel (lambda (_process _event))))
+           :sentinel #'ignore))
 
 (defun hermes-dashboard-transport--connection-error (client)
   "Return a redacted connection failure message for CLIENT."
