@@ -235,9 +235,9 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
     (let ((parsed (url-generic-parse-url normalized)))
       (list :host (url-host parsed) :port (url-port parsed)))))
 
-(defun hermes-dashboard-transport--websocket-endpoint
-    (host port &optional remote-url)
-  "Return dashboard WebSocket endpoint from HOST, PORT, or REMOTE-URL."
+(defun hermes-dashboard-transport--websocket-endpoint-for
+    (host port path &optional remote-url)
+  "Return the dashboard WebSocket endpoint for PATH from HOST, PORT, or REMOTE-URL."
   (let ((base-url (hermes-dashboard-transport--base-url host port remote-url)))
     (concat (cond
              ((string-prefix-p "https://" base-url)
@@ -245,7 +245,13 @@ Use BASE-ENVIRONMENT when non-nil, otherwise start from `process-environment'."
              ((string-prefix-p "http://" base-url)
               (concat "ws://" (substring base-url 7)))
              (t (user-error "Hermes remote dashboard URL must use http or https")))
-            "/api/ws")))
+            path)))
+
+(defun hermes-dashboard-transport--websocket-endpoint
+    (host port &optional remote-url)
+  "Return the JSON-RPC dashboard WebSocket endpoint from HOST, PORT, or REMOTE-URL."
+  (hermes-dashboard-transport--websocket-endpoint-for
+   host port "/api/ws" remote-url))
 
 (defun hermes-dashboard-transport--websocket-url
     (host port secret &optional remote-url query-param)
@@ -263,6 +269,27 @@ QUERY-PARAM defaults to `token'."
   (format "%s?%s=<redacted>"
           (hermes-dashboard-transport--websocket-endpoint host port remote-url)
           (or query-param "token")))
+
+(defconst hermes-dashboard-transport--kanban-events-path
+  "/api/plugins/kanban/events"
+  "Dashboard WebSocket path for the kanban live-events tail.")
+
+(defun hermes-dashboard-transport--swap-websocket-path (url path)
+  "Return URL with its `/api/ws' endpoint segment replaced by PATH.
+The credential query string after the endpoint is preserved untouched, so the
+token or ticket is never reconstructed."
+  (replace-regexp-in-string "/api/ws\\(\\?\\|\\'\\)"
+                            (concat path "\\1") url t))
+
+(defun hermes-dashboard-transport--append-url-query (url params)
+  "Return URL with PARAMS, an alist, appended as `&key=value' query pairs.
+Pairs whose value is nil are dropped; values are percent-encoded."
+  (concat url
+          (mapconcat
+           (lambda (kv)
+             (format "&%s=%s" (car kv)
+                     (url-hexify-string (format "%s" (cdr kv)))))
+           (seq-filter #'cdr params) "")))
 
 (defun hermes-dashboard-transport--secret-list (secrets)
   "Return the non-empty string secrets contained in SECRETS.
@@ -1321,6 +1348,55 @@ and the basic password/ticket exchange resolve through promises."
                  host port base-url token)))))
     (_ (hermes--promise-rejected
         (format "Unknown Hermes dashboard remote auth method: %S" method)))))
+
+(defun hermes-dashboard-transport--kanban-events-plist (auth since board)
+  "Return the kanban events URL plist derived from AUTH for SINCE and BOARD.
+AUTH is a (:url :redacted-url :secrets) plist; the events path is swapped onto
+both URLs and SINCE/BOARD are appended as query parameters."
+  (let* ((params `((since . ,since) (board . ,board)))
+         (path hermes-dashboard-transport--kanban-events-path)
+         (events-url (lambda (key)
+                       (hermes-dashboard-transport--append-url-query
+                        (hermes-dashboard-transport--swap-websocket-path
+                         (plist-get auth key) path)
+                        params))))
+    (list :url (funcall events-url :url)
+          :redacted-url (funcall events-url :redacted-url)
+          :secrets (plist-get auth :secrets))))
+
+(defun hermes-dashboard-transport--client-auth-plist (client)
+  "Return a (:url :redacted-url :secrets) auth plist from live CLIENT, or nil."
+  (when-let* ((url (hermes-dashboard-transport-client-websocket-url client)))
+    (list :url url
+          :redacted-url
+          (or (hermes-dashboard-transport-client-redacted-websocket-url client)
+              url)
+          :secrets (hermes-dashboard-transport-client-secrets client))))
+
+(cl-defun hermes-dashboard-transport-kanban-events-url-async
+    (&key since board client)
+  "Return a promise of the kanban live-events WebSocket URL plist.
+The plist is (:url :redacted-url :secrets).  When CLIENT already has a resolved
+WebSocket URL it is reused; otherwise auth resolves against
+`hermes-dashboard-transport-url' exactly as the chat client does.  The events
+path is swapped onto the resolved URL -- the credential is never rebuilt -- and
+SINCE and BOARD are appended as query parameters."
+  (if-let* ((auth (and client
+                       (hermes-dashboard-transport--client-auth-plist client))))
+      (hermes--promise-resolved
+       (hermes-dashboard-transport--kanban-events-plist auth since board))
+    (let* ((target (hermes-dashboard-transport--parse-url
+                    hermes-dashboard-transport-url))
+           (host (or (plist-get target :host) "127.0.0.1"))
+           (port (plist-get target :port))
+           (remote-url (and (not (hermes-dashboard-transport--loopback-host-p host))
+                            hermes-dashboard-transport-url))
+           (base-url (hermes-dashboard-transport--base-url host port remote-url))
+           (method (or hermes-dashboard-transport-remote-auth-method 'auto)))
+      (hermes--promise-map
+       (hermes-dashboard-transport--remote-auth-async host port base-url method)
+       (lambda (auth)
+         (hermes-dashboard-transport--kanban-events-plist auth since board))))))
 
 (defun hermes-dashboard-transport--encode-frame (frame)
   "Encode JSON-RPC FRAME as a JSON string."

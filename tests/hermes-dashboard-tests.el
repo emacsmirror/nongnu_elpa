@@ -312,5 +312,89 @@
       (hermes-dashboard--check-auth)
       (should-not hermes-dashboard--needs-onboarding))))
 
+;;; Group: kanban events WS-URL plumbing
+
+(ert-deftest hermes-dashboard-websocket-endpoint-for-parameterizes-path ()
+  "The path-parameterized endpoint builds ws/wss URLs; the legacy one is /api/ws."
+  (should (equal "ws://127.0.0.1:8765/api/plugins/kanban/events"
+                 (hermes-dashboard-transport--websocket-endpoint-for
+                  "127.0.0.1" 8765 "/api/plugins/kanban/events")))
+  (should (string-prefix-p
+           "wss://example.com"
+           (hermes-dashboard-transport--websocket-endpoint-for
+            "example.com" nil "/api/plugins/kanban/events" "https://example.com")))
+  (should (equal "ws://127.0.0.1:8765/api/ws"
+                 (hermes-dashboard-transport--websocket-endpoint
+                  "127.0.0.1" 8765))))
+
+(ert-deftest hermes-dashboard-swap-websocket-path-preserves-query ()
+  "Swapping the endpoint path leaves the credential query untouched."
+  (should (equal "ws://h:1/api/plugins/kanban/events?token=ABC"
+                 (hermes-dashboard-transport--swap-websocket-path
+                  "ws://h:1/api/ws?token=ABC" "/api/plugins/kanban/events")))
+  (should (equal "ws://h:1/api/plugins/kanban/events?ticket=XYZ"
+                 (hermes-dashboard-transport--swap-websocket-path
+                  "ws://h:1/api/ws?ticket=XYZ" "/api/plugins/kanban/events"))))
+
+(ert-deftest hermes-dashboard-append-url-query-drops-nil-and-escapes ()
+  "Nil-valued params are dropped; values are percent-encoded."
+  (should (equal "u&since=5&board=emacs%20lisp"
+                 (hermes-dashboard-transport--append-url-query
+                  "u" '((since . 5) (board . "emacs lisp")))))
+  (should (equal "u&since=0"
+                 (hermes-dashboard-transport--append-url-query
+                  "u" '((since . 0) (board . nil))))))
+
+(ert-deftest hermes-dashboard-kanban-events-plist-swaps-and-redacts ()
+  "The events plist swaps the path, appends since/board, and never leaks a secret."
+  (let ((plist (hermes-dashboard-transport--kanban-events-plist
+                '(:url "ws://h:1/api/ws?token=SEKRIT"
+                  :redacted-url "ws://h:1/api/ws?token=<redacted>"
+                  :secrets ("SEKRIT"))
+                5 "emacs-lisp")))
+    (should (equal (concat "ws://h:1/api/plugins/kanban/events?token=SEKRIT"
+                           "&since=5&board=emacs-lisp")
+                   (plist-get plist :url)))
+    (should-not (string-match-p "SEKRIT" (plist-get plist :redacted-url)))
+    (should (string-search "kanban/events?token=<redacted>"
+                           (plist-get plist :redacted-url)))
+    (should (equal '("SEKRIT") (plist-get plist :secrets)))))
+
+(ert-deftest hermes-dashboard-kanban-events-url-async-reuses-client ()
+  "A live client's resolved URL is reused without a fresh auth round-trip."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket-url "ws://127.0.0.1:8765/api/ws?token=SEKRIT"
+                 :redacted-websocket-url "ws://127.0.0.1:8765/api/ws?token=<redacted>"
+                 :secrets '("SEKRIT")))
+        result)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-auth-async)
+               (lambda (&rest _) (error "must not resolve fresh auth"))))
+      (hermes--promise-then
+       (hermes-dashboard-transport-kanban-events-url-async
+        :since 9 :board "emacs-lisp" :client client)
+       (lambda (v) (setq result v))))
+    (should (equal (concat "ws://127.0.0.1:8765/api/plugins/kanban/events"
+                           "?token=SEKRIT&since=9&board=emacs-lisp")
+                   (plist-get result :url)))
+    (should (equal '("SEKRIT") (plist-get result :secrets)))))
+
+(ert-deftest hermes-dashboard-kanban-events-url-async-resolves-fresh ()
+  "Without a client, auth resolves against the configured URL and is path-swapped."
+  (let ((hermes-dashboard-transport-url "http://127.0.0.1:8765")
+        result)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-auth-async)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '(:url "ws://127.0.0.1:8765/api/ws?token=SEKRIT"
+                    :redacted-url "ws://127.0.0.1:8765/api/ws?token=<redacted>"
+                    :secrets ("SEKRIT"))))))
+      (hermes--promise-then
+       (hermes-dashboard-transport-kanban-events-url-async :board "emacs-lisp")
+       (lambda (v) (setq result v))))
+    (should (string-search "/api/plugins/kanban/events?token=SEKRIT"
+                           (plist-get result :url)))
+    (should (string-match-p "board=emacs-lisp" (plist-get result :url)))
+    (should-not (string-match-p "SEKRIT" (plist-get result :redacted-url)))))
+
 (provide 'hermes-dashboard-tests)
 ;;; hermes-dashboard-tests.el ends here
