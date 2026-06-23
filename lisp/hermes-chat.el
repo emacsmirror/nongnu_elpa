@@ -396,7 +396,7 @@ gateway's pre-rendered `a/path -> b/path' header."
                           (hermes-chat--diff-header-match
                            "^diff --git a/.+? b/\\(.+\\)$")
                           (hermes-chat--diff-header-match "^.* → \\(.+\\)$"))))
-      (hermes-chat--nonempty-string
+      (hermes-transport--non-empty-string
        (hermes-chat--diff-strip-prefix (string-trim path))))))
 
 (defun hermes-chat--insert-diff-button (diff)
@@ -496,7 +496,7 @@ METADATA is stored as the entry's `:metadata' plist."
 
 (defun hermes-chat--header-tool-summary (event)
   "Return compact header summary for tool-like EVENT."
-  (hermes-chat--nonempty-string
+  (hermes-transport--non-empty-string
    (pcase (plist-get event :type)
      ('progress (hermes-chat--format-progress-event event))
      ('tool (hermes-chat--format-tool-event event))
@@ -512,7 +512,7 @@ This feeds the dashboard's per-session tool list via
 
 (defun hermes-chat--header-activity-for-event (event)
   "Return a compact activity string for transport EVENT."
-  (hermes-chat--nonempty-string
+  (hermes-transport--non-empty-string
    (or (hermes-chat--transport-entry-content event)
        (hermes-chat--event-string event '(:content :text :preview :event)))))
 
@@ -743,8 +743,8 @@ Used where a synthesized header event must not insert a transcript entry."
 
 (defun hermes-chat--header-agent-name ()
   "Return the agent/profile name shown in the chat header."
-  (or (hermes-chat--nonempty-string hermes-chat--agent-name)
-      (hermes-chat--nonempty-string hermes-chat--profile)
+  (or (hermes-transport--non-empty-string hermes-chat--agent-name)
+      (hermes-transport--non-empty-string hermes-chat--profile)
       "Hermes"))
 
 (defun hermes-chat--header-detail (label)
@@ -753,10 +753,10 @@ The activity is used, with a leading copy of LABEL stripped so a label-prefixed
 activity is not shown twice.  Tool commands are deliberately not surfaced here:
 the header keeps the kawaii thinking status as its only live detail, while the
 transcript carries the full tool detail."
-  (when-let* ((activity (hermes-chat--nonempty-string
+  (when-let* ((activity (hermes-transport--non-empty-string
                          (plist-get hermes-chat--status-state :activity))))
     (if (string-prefix-p (downcase label) (downcase activity))
-        (hermes-chat--nonempty-string
+        (hermes-transport--non-empty-string
          (string-trim (substring activity (length label)) "[-: ]+"))
       activity)))
 
@@ -768,7 +768,7 @@ state is shown bare (kawaii face plus verb, no icon or label) since the face is
 self-explanatory."
   (let ((status (plist-get hermes-chat--status-state :status)))
     (if (eq status 'thinking)
-        (propertize (or (hermes-chat--nonempty-string
+        (propertize (or (hermes-transport--non-empty-string
                          (plist-get hermes-chat--status-state :activity))
                         "Thinking")
                     'face (hermes-chat--header-status-face 'running))
@@ -785,7 +785,7 @@ self-explanatory."
                       (list (propertize (hermes-chat--header-agent-name)
                                         'face 'mode-line-emphasis)
                             (hermes-chat--header-status-segment)
-                            (hermes-chat--nonempty-string hermes-chat--model)
+                            (hermes-transport--non-empty-string hermes-chat--model)
                             (hermes-chat--format-context hermes-chat--context))))
          (text (concat " " (string-join parts "  |  ") " "))
          (width (max 20 (window-total-width))))
@@ -874,7 +874,7 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
 
 (defun hermes-chat--preserve-control-content (content)
   "Keep busy-control CONTENT recoverable after a dashboard bootstrap error."
-  (when-let* ((text (hermes-chat--nonempty-string content)))
+  (when-let* ((text (hermes-transport--non-empty-string content)))
     (if (string-empty-p (string-trim (hermes-chat-input-string)))
         (hermes-chat--replace-input-tail text)
       (if (not hermes-chat--queued-message)
@@ -901,11 +901,11 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
 
 (defun hermes-chat--result-output (result)
   "Return display output from command RESULT."
-  (let ((warning (hermes-chat--nonempty-string
+  (let ((warning (hermes-transport--non-empty-string
                   (hermes-chat--result-string result 'warning)))
         (body (cl-some
                (lambda (key)
-                 (hermes-chat--nonempty-string
+                 (hermes-transport--non-empty-string
                   (hermes-chat--result-string result key)))
                '(output notice message target))))
     (cond
@@ -915,11 +915,11 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
 
 (defun hermes-chat--alias-content (target arg)
   "Return slash content for alias TARGET with original ARG."
-  (when-let* ((command (hermes-chat--nonempty-string
+  (when-let* ((command (hermes-transport--non-empty-string
 			(string-trim (or target "")))))
     (string-join
      (delq nil (list (concat "/" (string-remove-prefix "/" command))
-                     (hermes-chat--nonempty-string arg)))
+                     (hermes-transport--non-empty-string arg)))
      " ")))
 
 (defun hermes-chat--handle-alias-result (target arg)
@@ -932,10 +932,10 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
 
 (defun hermes-chat--handle-send-result (message &optional notice)
   "Handle command-dispatch MESSAGE with optional NOTICE."
-  (when (hermes-chat--nonempty-string notice)
+  (when (hermes-transport--non-empty-string notice)
     (hermes-chat--insert-local-status notice 'done))
   (cond
-   ((not (hermes-chat--nonempty-string message))
+   ((not (hermes-transport--non-empty-string message))
     (user-error "Command returned no message to send"))
    ((hermes-chat--active-turn-p)
     (hermes-chat--queue-content message))
@@ -946,10 +946,10 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
   "Send skill MESSAGE to the agent, echoing a compact loading line for NAME.
 The dispatch returns the full skill payload (the agent needs it); the
 transcript shows only \"loading skill: NAME\", not the whole skill."
-  (unless (hermes-chat--nonempty-string message)
+  (unless (hermes-transport--non-empty-string message)
     (user-error "Skill returned no content to load"))
   (let ((display (format "⚡ loading skill: %s"
-                         (or (hermes-chat--nonempty-string name) "skill"))))
+                         (or (hermes-transport--non-empty-string name) "skill"))))
     (hermes-chat--dashboard-queue-or-submit message (current-buffer) display)))
 
 (defun hermes-chat--prefill-input (message)
@@ -959,7 +959,7 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
 
 (defun hermes-chat--handle-prefill-result (message notice)
   "Handle command-dispatch prefill MESSAGE with optional NOTICE."
-  (when (hermes-chat--nonempty-string notice)
+  (when (hermes-transport--non-empty-string notice)
     (hermes-chat--insert-local-status notice 'done))
   (hermes-chat--prefill-input message))
 
@@ -1055,7 +1055,7 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
                                (when-let* ((sub (hermes-chat--scalar-string item)))
                                  (format "/%s %s" command sub)))
                              items))))
-    (when (and (hermes-chat--nonempty-string command) subs)
+    (when (and (hermes-transport--non-empty-string command) subs)
       (concat "  " (string-join subs ", ")))))
 
 (defun hermes-chat--commands-subcommands-content (result)
@@ -1070,7 +1070,7 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
 (defun hermes-chat--command-name (value)
   "Return VALUE as a bare slash command name, or nil."
   (and-let* ((name (hermes-chat--scalar-string value)))
-    (hermes-chat--nonempty-string (string-remove-prefix "/" name))))
+    (hermes-transport--non-empty-string (string-remove-prefix "/" name))))
 
 (defun hermes-chat--catalog-pairs-candidates (pairs)
   "Return (NAME . DESCRIPTION) cells for catalog PAIRS."
@@ -1101,7 +1101,7 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
   (let ((warning (hermes-chat--result-string result 'warning)))
     (string-join
      (delq nil
-           (list (and (hermes-chat--nonempty-string warning)
+           (list (and (hermes-transport--non-empty-string warning)
                       (format "Warning: %s" warning))
                  (hermes-chat--commands-categories-content result)
                  (hermes-chat--commands-subcommands-content result)))
@@ -1667,7 +1667,7 @@ With TITLE non-empty, name the new session accordingly."
   (let ((buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
       (hermes-chat-mode)
-      (when-let* ((name (hermes-chat--nonempty-string
+      (when-let* ((name (hermes-transport--non-empty-string
                          (and title (string-trim title)))))
         (hermes-chat-rename name)))
     (pop-to-buffer-same-window buffer)
@@ -2059,7 +2059,7 @@ session-title refresh."
       (let ((detail (string-join
                      (delq nil
                            (list (hermes-chat--dashboard-connection-label)
-                                 (hermes-chat--nonempty-string
+                                 (hermes-transport--non-empty-string
                                   (plist-get hermes-chat--status-state :activity))))
                      " · ")))
         (and (not (string-empty-p detail))

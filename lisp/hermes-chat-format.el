@@ -107,13 +107,11 @@ When FINAL is non-nil, strip trailing transport metadata too."
   (cons (1- start) (1- end)))
 
 (defun hermes-chat--scalar-string (value)
-  "Return VALUE as a display string, or nil for nil."
-  (cond
-   ((null value) nil)
-   ((stringp value) value)
-   ((symbolp value) (symbol-name value))
-   ((numberp value) (number-to-string value))
-   (t (format "%s" value))))
+  "Return VALUE as a display string, stringifying non-scalar values.
+Extends `hermes-transport--scalar-string', which returns nil for compound
+values, with a `format' fallback the chat renderer relies on."
+  (or (hermes-transport--scalar-string value)
+      (and value (format "%s" value))))
 
 (defun hermes-chat--event-value (event keys)
   "Return the first non-nil plist value in EVENT for KEYS."
@@ -210,12 +208,6 @@ Active statuses show a neutral dot rather than the settled checkmark."
 (defun hermes-chat--header-status-face (status)
   "Return face for STATUS in the chat header."
   (hermes-chat--status-face status))
-
-(defun hermes-chat--nonempty-string (value)
-  "Return VALUE when it is a non-empty string."
-  (and (stringp value)
-       (not (string-empty-p value))
-       value))
 
 (defun hermes-chat--error-status (event)
   "Return terminal status to display for an error-like transport EVENT."
@@ -320,7 +312,7 @@ USAGE is a plist of :input and :output token counts."
   "Return the first non-empty scalar value among KEYS in ARGS."
   (catch 'found
     (dolist (key keys)
-      (when-let* ((value (hermes-chat--nonempty-string
+      (when-let* ((value (hermes-transport--non-empty-string
                           (hermes-transport--scalar-string
                            (hermes-transport--get args key)))))
         (throw 'found value)))))
@@ -330,7 +322,7 @@ USAGE is a plist of :input and :output token counts."
 Args arrive as a structured map on `tool.complete' and as text when verbose."
   (let ((args (hermes-chat--event-value event '(:args))))
     (cond
-     ((stringp args) (hermes-chat--nonempty-string args))
+     ((stringp args) (hermes-transport--non-empty-string args))
      ((or (consp args) (hash-table-p args))
       (hermes-chat--first-arg-detail
        args (delq nil (cons (cdr (assoc name hermes-chat--tool-primary-args))
@@ -340,9 +332,9 @@ Args arrive as a structured map on `tool.complete' and as text when verbose."
   "Return the best command/path detail string for tool EVENT named NAME.
 Prefers the gateway preview, then the call arguments, so the command survives
 a `tool.complete' that omits the start preview."
-  (or (hermes-chat--nonempty-string (hermes-chat--event-string event '(:context)))
+  (or (hermes-transport--non-empty-string (hermes-chat--event-string event '(:context)))
       (hermes-chat--tool-args-detail event name)
-      (hermes-chat--nonempty-string
+      (hermes-transport--non-empty-string
        (hermes-chat--event-string event '(:preview :summary)))))
 
 (defun hermes-chat--tool-head (name detail)
