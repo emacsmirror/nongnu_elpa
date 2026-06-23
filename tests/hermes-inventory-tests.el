@@ -242,7 +242,7 @@
                  (hermes--promise-resolved
                   '((active . "built-in") (builtin_files . ((memory . 1)))))))
               ((symbol-function 'hermes-inventory--render-memory-status)
-               (lambda (status) (setq rendered status))))
+               (lambda (status &optional _display) (setq rendered status))))
       (hermes-memory-status)
       (should done-called)
       (should (equal method "GET"))

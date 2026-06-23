@@ -365,8 +365,9 @@ unknown backend fields so secrets cannot leak through this buffer."
          "Keys: g refresh, D reset built-in memory (asks yes-or-no-p).")
    "\n"))
 
-(defun hermes-inventory--render-memory-status (status)
-  "Render memory STATUS in the memory buffer."
+(defun hermes-inventory--render-memory-status (status &optional display)
+  "Render memory STATUS in the memory buffer.
+DISPLAY pops the buffer when non-nil; a `g' refresh from within it omits that."
   (with-current-buffer (get-buffer-create "*Hermes Memory*")
     (unless (derived-mode-p 'hermes-memory-status-mode)
       (hermes-memory-status-mode))
@@ -374,7 +375,7 @@ unknown backend fields so secrets cannot leak through this buffer."
       (erase-buffer)
       (insert (hermes-inventory--memory-status-text status))
       (goto-char (point-min)))
-    (pop-to-buffer (current-buffer))))
+    (when display (pop-to-buffer (current-buffer)))))
 
 (defvar-keymap hermes-memory-status-mode-map
   :doc "Keymap for `hermes-memory-status-mode'."
@@ -391,11 +392,13 @@ unknown backend fields so secrets cannot leak through this buffer."
   "Show Hermes memory provider and built-in store sizes.
 The buffer never displays memory contents or secret material."
   (interactive)
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes-dashboard-transport-api-request-async
-      "GET" "/api/memory" :client client))
-   #'hermes-inventory--render-memory-status))
+  (let ((display (not (derived-mode-p 'hermes-memory-status-mode))))
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-dashboard-transport-api-request-async
+        "GET" "/api/memory" :client client))
+     (lambda (status)
+       (hermes-inventory--render-memory-status status display)))))
 
 ;;;###autoload
 (defun hermes-memory-reset (target)

@@ -280,13 +280,14 @@ COUNT, when non-nil, is the total history count reported by the gateway."
       (insert "No messages.\n"))
     (goto-char (point-min))))
 
-(defun hermes-sessions--render-detail (session messages &optional count)
+(defun hermes-sessions--render-detail (session messages &optional count display)
   "Display SESSION's MESSAGES in a native detail buffer.
-COUNT, when non-nil, is the total history count reported by the gateway."
+COUNT, when non-nil, is the total history count reported by the gateway.
+DISPLAY pops the buffer when non-nil; a `g' refresh from within it omits that."
   (let ((buffer (get-buffer-create (hermes-sessions--detail-buffer-name session))))
     (with-current-buffer buffer
       (hermes-sessions--render-detail-contents session messages count))
-    (pop-to-buffer buffer)
+    (when display (pop-to-buffer buffer))
     buffer))
 
 (defun hermes-sessions--session-not-found-message-p (message)
@@ -327,7 +328,8 @@ returned messages instead."
   (interactive)
   (let* ((session (hermes-sessions--selected-session))
          (history-id (hermes-sessions--history-id session))
-         (resume-id (hermes-sessions--id session)))
+         (resume-id (hermes-sessions--id session))
+         (display (not (derived-mode-p 'hermes-session-detail-mode))))
     (unless history-id
       (user-error "No Hermes session id to view"))
     (hermes-browser--run-on-client
@@ -337,7 +339,8 @@ returned messages instead."
        (hermes-sessions--render-detail
         (hermes-sessions--session-with-result session result)
         (hermes-transport--get result 'messages)
-        (hermes-transport--get result 'count))))))
+        (hermes-transport--get result 'count)
+        display)))))
 
 (defun hermes-sessions-open ()
   "Resume the selected Hermes session in a chat buffer."
