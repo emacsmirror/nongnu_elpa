@@ -1226,64 +1226,101 @@ When CLIENT is non-nil, authenticate with its live dashboard session token."
     (list :token token :url url :redacted-url redacted-url
           :secrets (list token))))
 
-(defun hermes-dashboard-transport--remote-basic-auth
-    (host port base-url status)
-  "Return basic-auth plist for HOST, PORT, BASE-URL, and STATUS."
-  (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
-    (unless provider
-      (hermes-dashboard-transport--unsupported-remote-auth base-url))
-    (let* ((credentials (hermes-dashboard-transport--remote-basic-credentials
-                         base-url))
-           (username (plist-get credentials :username))
-           (password (plist-get credentials :password))
-           (login-response
-            (hermes-dashboard-transport--http-json
-             (hermes-dashboard-transport--api-url base-url "/auth/password-login")
-             :method "POST"
-             :headers '(("Content-Type" . "application/json"))
-             :body `((provider . ,provider)
-                     (username . ,username)
-                     (password . ,password)
-                     (next . ""))
-             :secrets (list password)))
-           (cookies (hermes-dashboard-transport--response-cookie-header
-                     login-response)))
-      (unless cookies
-        (user-error "Hermes dashboard basic login did not return session cookies"))
-      (let* ((ticket-response
-              (hermes-dashboard-transport--http-json
-               (hermes-dashboard-transport--api-url base-url
-                                                    "/api/auth/ws-ticket")
-               :method "POST"
-               :headers `(("Cookie" . ,cookies))
-               :secrets (list password cookies)))
-             (ticket (hermes-transport--scalar-string
-                      (hermes-transport--get (plist-get ticket-response :body)
-                                             'ticket))))
-        (unless (and ticket (not (string-empty-p ticket)))
-          (user-error "Hermes dashboard did not return a WebSocket ticket"))
-        (list :url (hermes-dashboard-transport--websocket-url
-                    host port ticket base-url "ticket")
-              :redacted-url (hermes-dashboard-transport--redacted-websocket-url
-                             host port base-url "ticket")
-              :secrets (list password cookies ticket))))))
+(defun hermes-dashboard-transport--basic-ticket-auth
+    (host port base-url password cookies ticket-response)
+  "Return ticket WebSocket auth plist built from TICKET-RESPONSE.
+HOST, PORT, and BASE-URL build the URL; PASSWORD and COOKIES extend the
+redacted secret list."
+  (let ((ticket (hermes-transport--scalar-string
+                 (hermes-transport--get (plist-get ticket-response :body)
+                                        'ticket))))
+    (unless (and ticket (not (string-empty-p ticket)))
+      (user-error "Hermes dashboard did not return a WebSocket ticket"))
+    (list :url (hermes-dashboard-transport--websocket-url
+                host port ticket base-url "ticket")
+          :redacted-url (hermes-dashboard-transport--redacted-websocket-url
+                         host port base-url "ticket")
+          :secrets (list password cookies ticket))))
 
-(defun hermes-dashboard-transport--remote-auth
+(defun hermes-dashboard-transport--remote-basic-ticket-async
+    (host port base-url password login-response)
+  "Return a promise of ticket WebSocket auth from LOGIN-RESPONSE cookies.
+HOST, PORT, and BASE-URL build the URL; PASSWORD is redacted from errors."
+  (let ((cookies (hermes-dashboard-transport--response-cookie-header
+                  login-response)))
+    (if (not cookies)
+        (hermes--promise-rejected
+         "Hermes dashboard basic login did not return session cookies")
+      (hermes--promise-map
+       (hermes-dashboard-transport--http-json-async
+        (hermes-dashboard-transport--api-url base-url "/api/auth/ws-ticket")
+        :method "POST"
+        :headers `(("Cookie" . ,cookies))
+        :secrets (list password cookies))
+       (lambda (ticket-response)
+         (hermes-dashboard-transport--basic-ticket-auth
+          host port base-url password cookies ticket-response))))))
+
+(defun hermes-dashboard-transport--remote-basic-auth-async
+    (host port base-url status)
+  "Return a promise of basic-auth WebSocket auth for HOST, PORT, BASE-URL, STATUS.
+A rejected promise reports any failure, so the password login and WebSocket
+ticket round-trips never block Emacs."
+  (condition-case err
+      (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
+        (unless provider
+          (hermes-dashboard-transport--unsupported-remote-auth base-url))
+        (let* ((credentials (hermes-dashboard-transport--remote-basic-credentials
+                             base-url))
+               (password (plist-get credentials :password)))
+          (hermes--promise-then
+           (hermes-dashboard-transport--http-json-async
+            (hermes-dashboard-transport--api-url base-url "/auth/password-login")
+            :method "POST"
+            :headers '(("Content-Type" . "application/json"))
+            :body `((provider . ,provider)
+                    (username . ,(plist-get credentials :username))
+                    (password . ,password)
+                    (next . ""))
+            :secrets (list password))
+           (lambda (login-response)
+             (hermes-dashboard-transport--remote-basic-ticket-async
+              host port base-url password login-response)))))
+    (error (hermes--promise-rejected (error-message-string err)))))
+
+(defun hermes-dashboard-transport--remote-token-auth-async
+    (host port base-url &optional token)
+  "Return a promise of legacy-token WebSocket auth for HOST, PORT, BASE-URL, TOKEN.
+Token resolution is local (auth-source or environment) and never blocks on the
+network; a missing token rejects the promise."
+  (condition-case err
+      (hermes--promise-resolved
+       (hermes-dashboard-transport--remote-token-auth host port base-url token))
+    (error (hermes--promise-rejected (error-message-string err)))))
+
+(defun hermes-dashboard-transport--remote-auth-async
     (host port base-url method &optional token)
-  "Return auth plist for HOST, PORT, BASE-URL, METHOD, and TOKEN."
+  "Return a promise of WebSocket auth for HOST, PORT, BASE-URL, METHOD, and TOKEN.
+Mirrors the previous synchronous resolution without blocking: the status probe
+and the basic password/ticket exchange resolve through promises."
   (pcase method
-    ('token (hermes-dashboard-transport--remote-token-auth
+    ('token (hermes-dashboard-transport--remote-token-auth-async
              host port base-url token))
-    ('basic (hermes-dashboard-transport--remote-basic-auth
-             host port base-url
-             (hermes-dashboard-transport--remote-status base-url)))
-    ('auto (let ((status (hermes-dashboard-transport--remote-status base-url)))
-             (if (hermes-dashboard-transport--status-auth-required-p status)
-                 (hermes-dashboard-transport--remote-basic-auth
-                  host port base-url status)
-               (hermes-dashboard-transport--remote-token-auth
-                host port base-url token))))
-    (_ (user-error "Unknown Hermes dashboard remote auth method: %S" method))))
+    ('basic (hermes--promise-then
+             (hermes-dashboard-transport--remote-status-async base-url)
+             (lambda (status)
+               (hermes-dashboard-transport--remote-basic-auth-async
+                host port base-url status))))
+    ('auto (hermes--promise-then
+            (hermes-dashboard-transport--remote-status-async base-url)
+            (lambda (status)
+              (if (hermes-dashboard-transport--status-auth-required-p status)
+                  (hermes-dashboard-transport--remote-basic-auth-async
+                   host port base-url status)
+                (hermes-dashboard-transport--remote-token-auth-async
+                 host port base-url token)))))
+    (_ (hermes--promise-rejected
+        (format "Unknown Hermes dashboard remote auth method: %S" method)))))
 
 (defun hermes-dashboard-transport--encode-frame (frame)
   "Encode JSON-RPC FRAME as a JSON string."
@@ -1785,38 +1822,52 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
     (hermes-dashboard-transport--arm-ready-timeout client)
     client))
 
+(defun hermes-dashboard-transport--remote-connect (client auth)
+  "Store AUTH on CLIENT, announce connecting, and open its WebSocket.
+AUTH is the plist resolved by `hermes-dashboard-transport--remote-auth-async'."
+  (setf (hermes-dashboard-transport-client-token client)
+        (plist-get auth :token)
+        (hermes-dashboard-transport-client-websocket-url client)
+        (plist-get auth :url)
+        (hermes-dashboard-transport-client-redacted-websocket-url client)
+        (plist-get auth :redacted-url)
+        (hermes-dashboard-transport-client-secrets client)
+        (plist-get auth :secrets))
+  (funcall (hermes-dashboard-transport-client-callback client)
+           (hermes-dashboard-transport--remote-connect-event
+            (plist-get auth :redacted-url)))
+  (hermes-dashboard-transport--connect-async client)
+  (hermes-dashboard-transport--arm-ready-timeout client))
+
 (cl-defun hermes-dashboard-transport--start-remote
     (&key callback host port token remote-url remote-auth-method)
   "Attach to a remote dashboard with CALLBACK and override settings.
-HOST, PORT, TOKEN, REMOTE-URL, and REMOTE-AUTH-METHOD override defaults."
+HOST, PORT, TOKEN, REMOTE-URL, and REMOTE-AUTH-METHOD override defaults.  The
+auth handshake -- the status probe and any password/ticket exchange -- resolves
+asynchronously, so this returns before the WebSocket opens and never blocks
+Emacs."
   (let* ((host (or host "127.0.0.1"))
          (base-url (hermes-dashboard-transport--base-url host port remote-url))
-         (auth (hermes-dashboard-transport--remote-auth
-                host port base-url
-                (or remote-auth-method
-                    hermes-dashboard-transport-remote-auth-method)
-                token))
+         (method (or remote-auth-method
+                     hermes-dashboard-transport-remote-auth-method))
          (client (make-hermes-dashboard-transport-client
-                  :host host
-                  :port port
-                  :token (plist-get auth :token)
-                  :base-url base-url
-                  :websocket-url (plist-get auth :url)
-                  :redacted-websocket-url (plist-get auth :redacted-url)
-                  :secrets (plist-get auth :secrets)
+                  :host host :port port :base-url base-url
                   :ready-promise (hermes--promise-make)
-                  :callback (or callback #'ignore)))
-         (redacted-url (plist-get auth :redacted-url)))
-    (funcall (hermes-dashboard-transport-client-callback client)
-             (hermes-dashboard-transport--remote-connect-event redacted-url))
+                  :callback (or callback #'ignore))))
     (hermes--promise-then
      (hermes-dashboard-transport-client-ready-promise client)
      (lambda (_value)
        (funcall (hermes-dashboard-transport-client-callback client)
                 (hermes-dashboard-transport--remote-connected-event
-                 redacted-url))))
-    (hermes-dashboard-transport--connect-async client)
-    (hermes-dashboard-transport--arm-ready-timeout client)
+                 (hermes-dashboard-transport--client-redacted-websocket-url
+                  client)))))
+    (hermes--promise-then
+     (hermes-dashboard-transport--remote-auth-async host port base-url method
+                                                     token)
+     (lambda (auth) (hermes-dashboard-transport--remote-connect client auth))
+     (lambda (reason)
+       (hermes-dashboard-transport--fail-ready
+        client (hermes-dashboard-transport--redact-secret reason))))
     client))
 
 (cl-defun hermes-dashboard-transport-start

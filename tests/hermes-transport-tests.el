@@ -467,26 +467,27 @@
                'fake-websocket))
             (hermes-dashboard-transport-make-process-function
              (lambda (&rest _plist) (error "remote attach must not spawn")))
-            (hermes-dashboard-transport-http-request-function
+            (hermes-dashboard-transport-http-request-async-function
              (lambda (url &rest args)
                (push (list :url url
                            :method (plist-get args :method)
                            :headers (plist-get args :headers)
                            :data (plist-get args :data))
                      requests)
-               (cond
-                ((string-suffix-p "/api/status" url)
-                 '(:status 200 :headers nil
-                   :body ((auth_required . t)
-                          (auth_providers . ("basic")))))
-                ((string-suffix-p "/auth/password-login" url)
-                 `(:status 200
-                   :headers (("set-cookie" . ,(concat cookie-a "; Path=/"))
-                             ("set-cookie" . ,(concat cookie-b "; Path=/")))
-                   :body ((ok . t))))
-                ((string-suffix-p "/api/auth/ws-ticket" url)
-                 `(:status 200 :headers nil
-                   :body ((ticket . ,ticket) (ttl_seconds . 30))))))))
+               (hermes--promise-resolved
+                (cond
+                 ((string-suffix-p "/api/status" url)
+                  '(:status 200 :headers nil
+                    :body ((auth_required . t)
+                           (auth_providers . ("basic")))))
+                 ((string-suffix-p "/auth/password-login" url)
+                  `(:status 200
+                    :headers (("set-cookie" . ,(concat cookie-a "; Path=/"))
+                              ("set-cookie" . ,(concat cookie-b "; Path=/")))
+                    :body ((ok . t))))
+                 ((string-suffix-p "/api/auth/ws-ticket" url)
+                  `(:status 200 :headers nil
+                    :body ((ticket . ,ticket) (ttl_seconds . 30)))))))))
         (hermes-dashboard-transport-start
          :host "100.64.0.10"
          :port 9119
@@ -510,29 +511,32 @@
           (should (string-match-p "ticket=<redacted>" visible)))))))
 
 (ert-deftest hermes-transport-dashboard-oauth-only-remote-is-unsupported ()
-  (let (requests auth-source-called)
+  (let (requests auth-source-called reason)
     (cl-letf (((symbol-function 'auth-source-search)
                (lambda (&rest _args) (setq auth-source-called t) nil)))
       (let ((hermes-dashboard-transport-start-mode 'auto)
-            (hermes-dashboard-transport-http-request-function
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-http-request-async-function
              (lambda (url &rest _args)
                (push url requests)
-               '(:status 200 :headers nil
-                 :body ((auth_required . t)
-                        (auth_providers . ("oauth"))))))
+               (hermes--promise-resolved
+                '(:status 200 :headers nil
+                  :body ((auth_required . t)
+                         (auth_providers . ("oauth")))))))
             (hermes-dashboard-transport-websocket-open-function
              (lambda (&rest _args) (error "must not open websocket"))))
-        (let ((message (condition-case error
-                           (progn
-                             (hermes-dashboard-transport-start
-                              :host "100.64.0.10" :port 9119)
-                             nil)
-                         (user-error (error-message-string error)))))
-          (should (string-match-p "OAuth-only remote attach" message))
-          (should-not (string-match-p "token=" message))
-          (should-not auth-source-called)
-          (should (equal (nreverse requests)
-                         '("http://100.64.0.10:9119/api/status"))))))))
+        (let ((client (hermes-dashboard-transport-start
+                       :host "100.64.0.10" :port 9119 :callback #'ignore)))
+          ;; The fake request resolves synchronously, so the auth chain has
+          ;; already rejected the ready promise by the time we subscribe.
+          (hermes--promise-catch
+           (hermes-dashboard-transport-client-ready-promise client)
+           (lambda (r) (setq reason r))))
+        (should (string-match-p "OAuth-only remote attach" reason))
+        (should-not (string-match-p "token=" reason))
+        (should-not auth-source-called)
+        (should (equal (nreverse requests)
+                       '("http://100.64.0.10:9119/api/status")))))))
 
 (ert-deftest hermes-transport-dashboard-redacts-websocket-process-name ()
   (let* ((token-url "ws://127.0.0.1:4567/api/ws?token=secret-token")
