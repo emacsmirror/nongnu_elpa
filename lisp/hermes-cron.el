@@ -31,6 +31,7 @@
 (require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-promise)
 (require 'hermes-browser)
 
 ;;; Fields
@@ -107,39 +108,12 @@
 
 ;;; Dashboard REST API
 
-(defun hermes-cron--client-base-url (client)
-  "Return CLIENT's dashboard HTTP base URL."
-  (or (and (hermes-dashboard-transport-client-p client)
-           (hermes-dashboard-transport-client-base-url client))
-      (and (hermes-dashboard-transport-client-p client)
-           (hermes-dashboard-transport--base-url
-            (hermes-dashboard-transport-client-host client)
-            (hermes-dashboard-transport-client-port client)))
-      (hermes-dashboard-transport--normalize-base-url
-       hermes-dashboard-transport-url)))
-
-(defun hermes-cron--client-token (client)
-  "Return CLIENT's session token, if any."
-  (and (hermes-dashboard-transport-client-p client)
-       (hermes-transport--non-blank-string
-        (hermes-dashboard-transport-client-token client))))
-
-(defun hermes-cron--client-api (client method path &optional body query)
-  "Call cron REST METHOD PATH with BODY and QUERY using CLIENT when possible."
-  (if-let* ((token (hermes-cron--client-token client)))
-      (let* ((base-url (hermes-cron--client-base-url client))
-             (url (concat (hermes-dashboard-transport--api-url
-                           base-url (concat "/api/cron" path))
-                          (hermes-dashboard-transport--query-string query)))
-             (headers (append (list (cons "X-Hermes-Session-Token" token))
-                              (and body
-                                   '(("Content-Type" . "application/json"))))))
-        (plist-get (hermes-dashboard-transport--http-json
-                    url :method method :headers headers :body body
-                    :secrets (list token))
-                   :body))
-    (hermes-dashboard-transport-api-request
-     method (concat "/api/cron" path) :body body :query query)))
+(defun hermes-cron--api (client method path &optional body query)
+  "Return a promise of the cron REST METHOD PATH through CLIENT.
+BODY and QUERY extend the request; authentication comes from CLIENT's session
+token when present, otherwise the configured dashboard URL."
+  (hermes-dashboard-transport-api-request-async
+   method (concat "/api/cron" path) :body body :query query :client client))
 
 (defun hermes-cron--job-path (id &rest segments)
   "Return the cron jobs path for ID extended by SEGMENTS."
@@ -161,41 +135,21 @@
   "Return the cron job id at point, or signal a `user-error'."
   (or (tabulated-list-get-id) (user-error "No cron job on this line")))
 
-(defun hermes-cron--with-client (fn)
-  "Call FN with a dashboard client, reporting REST errors as messages.
-When FN returns a function, call it after the transient client cleanup thunk."
-  (hermes-browser--with-client
-   (lambda (client done)
-     (let ((cleaned nil))
-       (condition-case err
-           (let ((after (funcall fn client)))
-             (unless cleaned
-               (setq cleaned t)
-               (funcall done))
-             (when (functionp after)
-               (funcall after)))
-         (error
-          (unless cleaned
-            (setq cleaned t)
-            (funcall done))
-          (message "Hermes: %s" (error-message-string err))))))))
-
 (defun hermes-cron--fetch-job (client id profile)
-  "Fetch cron job ID for PROFILE through CLIENT."
-  (hermes-cron--client-api client "GET" (hermes-cron--job-path id)
-                           nil (hermes-cron--query profile)))
+  "Return a promise of cron job ID for PROFILE through CLIENT."
+  (hermes-cron--api client "GET" (hermes-cron--job-path id)
+                    nil (hermes-cron--query profile)))
 
 (defun hermes-cron--fetch-runs (client id profile)
-  "Fetch recent run history for cron job ID and PROFILE through CLIENT."
-  (hermes-cron--client-api client "GET" (hermes-cron--job-path id "/runs")
-                           nil (hermes-cron--query profile '((limit . 20)))))
+  "Return a promise of recent run history for cron job ID and PROFILE via CLIENT."
+  (hermes-cron--api client "GET" (hermes-cron--job-path id "/runs")
+                    nil (hermes-cron--query profile '((limit . 20)))))
 
-(defun hermes-cron--update-job (client id profile updates)
-  "Update cron job ID for PROFILE through CLIENT.
-UPDATES is the payload sent to the dashboard."
-  (hermes-cron--client-api client "PUT" (hermes-cron--job-path id)
-                           `((updates . ,updates))
-                           (hermes-cron--query profile)))
+(defun hermes-cron--update-job (client id profile payload)
+  "Return a promise that sends PAYLOAD for cron job ID and PROFILE via CLIENT."
+  (hermes-cron--api client "PUT" (hermes-cron--job-path id)
+                    `((updates . ,payload))
+                    (hermes-cron--query profile)))
 
 ;;; Job detail view
 
@@ -270,15 +224,19 @@ RUNS is the detail run list."
   (interactive)
   (let ((id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile)))
-    (hermes-cron--with-client
+    (hermes-browser--run-on-client
      (lambda (client)
-       (let* ((job (hermes-cron--fetch-job client id profile))
-              (job-profile (or (hermes-transport--non-blank-string
-                                (hermes-cron--profile job))
-                               profile))
-              (runs (hermes-transport--get
-                     (hermes-cron--fetch-runs client id job-profile) 'runs)))
-         (hermes-cron--display-detail job runs))))))
+       (hermes--promise-then
+        (hermes-cron--fetch-job client id profile)
+        (lambda (job)
+          (let ((job-profile (or (hermes-transport--non-blank-string
+                                  (hermes-cron--profile job))
+                                 profile)))
+            (hermes--promise-map
+             (hermes-cron--fetch-runs client id job-profile)
+             (lambda (runs-result)
+               (hermes-cron--display-detail
+                job (hermes-transport--get runs-result 'runs)))))))))))
 
 ;;; Job mutations
 
@@ -342,30 +300,32 @@ RUNS is the detail run list."
   (interactive)
   (let ((id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile)))
-    (hermes-cron--with-client
+    (hermes-browser--run-on-client
      (lambda (client)
-       (let* ((job (hermes-cron--fetch-job client id profile))
-              (job-profile (or (hermes-transport--non-blank-string
-                                (hermes-cron--profile job))
-                               profile))
-              (updates (hermes-cron--read-updates job)))
-         (hermes-cron--update-job client id job-profile updates)
-         (lambda ()
-           (message "Hermes: updated %s" id)
-           (hermes-list-crons)))))))
+       (hermes--promise-then
+        (hermes-cron--fetch-job client id profile)
+        (lambda (job)
+          (let* ((job-profile (or (hermes-transport--non-blank-string
+                                   (hermes-cron--profile job))
+                                  profile))
+                 (updates (hermes-cron--read-updates job)))
+            (hermes-cron--update-job client id job-profile updates)))))
+     (lambda (_result)
+       (message "Hermes: updated %s" id)
+       (hermes-list-crons)))))
 
 (defun hermes-cron-trigger ()
   "Trigger the cron job at point immediately."
   (interactive)
   (let ((id (hermes-cron--id-at-point))
         (profile (hermes-cron--entry-profile)))
-    (hermes-cron--with-client
+    (hermes-browser--run-on-client
      (lambda (client)
-       (hermes-cron--client-api client "POST" (hermes-cron--job-path id "/trigger")
-                                nil (hermes-cron--query profile))
-       (lambda ()
-         (message "Hermes: triggered %s" id)
-         (hermes-list-crons))))))
+       (hermes-cron--api client "POST" (hermes-cron--job-path id "/trigger")
+                         nil (hermes-cron--query profile)))
+     (lambda (_result)
+       (message "Hermes: triggered %s" id)
+       (hermes-list-crons)))))
 
 (defun hermes-cron-create (name schedule prompt)
   "Create a cron job NAME running PROMPT on SCHEDULE."
