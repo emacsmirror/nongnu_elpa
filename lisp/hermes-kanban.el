@@ -508,6 +508,7 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
   :group "View"
   "g" ("Refresh" revert-buffer)
   "l" ("View selected task log" hermes-kanban-show-log)
+  "d" ("Diagnostics overview" hermes-kanban-diagnostics)
   "?" ("Help" hermes-kanban-mode-map-popup))
 
 (defun hermes-kanban--init-board-header (&optional width)
@@ -853,6 +854,7 @@ and an absent branch or run id is omitted."
   :group "View"
   "g" ("Refresh" revert-buffer)
   "l" ("View worker log" hermes-kanban-show-log)
+  "d" ("Diagnostics overview" hermes-kanban-diagnostics)
   "?" ("Help" hermes-kanban-task-mode-map-popup))
 
 (defun hermes-kanban--task-mode-setup ()
@@ -1127,6 +1129,94 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
        (hermes-kanban--api "DELETE" (hermes-kanban--task-path id)
                            nil (hermes-kanban--board-query))
        (lambda (_) (hermes-kanban--render-board slug name))))))
+
+;;; Diagnostics overview
+
+(defconst hermes-kanban--diagnostics-format
+  [("Sev" 10 t) ("Task" 30 t) ("Assignee" 14 t) ("Diagnostic" 50 t)]
+  "Column format for the Hermes Kanban diagnostics overview.")
+
+(defun hermes-kanban--diagnostic-summary (top count)
+  "Return TOP diagnostic's title, suffixed with COUNT when more than one exists."
+  (let ((title (hermes-transport--display-field top 'title)))
+    (if (> count 1) (format "%s (+%d more)" title (1- count)) title)))
+
+(defun hermes-kanban--diagnostic-row (group)
+  "Return a tabulated-list entry (TASK-ID . [cells]) for one task GROUP.
+The cells are the top diagnostic's severity, the task title, its assignee, and a
+summary of the top diagnostic; absent fields fall back to placeholders."
+  (let* ((task-id (hermes-transport--display-field group 'task_id))
+         (diagnostics (hermes-kanban--items
+                       (hermes-transport--get group 'diagnostics)))
+         (top (car diagnostics)))
+    (list task-id
+          (vector
+           (hermes-transport--display-field top 'severity)
+           (or (hermes-transport--non-empty-string
+                (hermes-transport--display-field group 'task_title))
+               task-id)
+           (or (hermes-transport--non-empty-string
+                (hermes-transport--display-field group 'task_assignee))
+               "-")
+           (hermes-kanban--diagnostic-summary top (length diagnostics))))))
+
+(defun hermes-kanban--diagnostic-rows (groups)
+  "Return tabulated-list entries for diagnostic GROUPS from GET /diagnostics."
+  (mapcar #'hermes-kanban--diagnostic-row (hermes-kanban--items groups)))
+
+(defvar hermes-kanban-diagnostics-mode-map)
+
+(keymap-popup-define hermes-kanban-diagnostics-mode-map
+  "Keymap for `hermes-kanban-diagnostics-mode'."
+  :parent tabulated-list-mode-map
+  :description "Hermes Kanban Diagnostics"
+  :group "Navigate"
+  "RET" ("Show task" hermes-kanban-show)
+  :group "View"
+  "g" ("Refresh" revert-buffer)
+  "?" ("Help" hermes-kanban-diagnostics-mode-map-popup))
+
+(define-derived-mode hermes-kanban-diagnostics-mode tabulated-list-mode
+  "Hermes Diagnostics"
+  "Major mode for the Hermes Kanban diagnostics overview."
+  :interactive nil
+  (setq-local revert-buffer-function #'hermes-kanban--diagnostics-revert)
+  (setq tabulated-list-format hermes-kanban--diagnostics-format)
+  (tabulated-list-init-header))
+
+(defun hermes-kanban--diagnostics-revert (&rest _)
+  "Refresh the diagnostics overview in place."
+  (hermes-kanban--render-diagnostics hermes-kanban--slug hermes-kanban--name t))
+
+(defun hermes-kanban--render-diagnostics (slug name &optional in-place)
+  "Fetch and render board SLUG's diagnostics overview asynchronously.
+NAME is remembered for refreshes.  With IN-PLACE non-nil, refresh without
+re-displaying the buffer (used by revert)."
+  (hermes-kanban--then
+   (hermes-kanban--api "GET" "/diagnostics"
+                       nil (hermes-kanban--query-for-board slug))
+   (lambda (payload)
+     (let ((groups (hermes-transport--get payload 'diagnostics)))
+       (with-current-buffer (get-buffer-create "*Hermes Kanban Diagnostics*")
+         (unless (derived-mode-p 'hermes-kanban-diagnostics-mode)
+           (hermes-kanban-diagnostics-mode))
+         (setq hermes-kanban--slug slug
+               hermes-kanban--name name
+               mode-line-process (and slug (format " [%s]" slug))
+               tabulated-list-entries (hermes-kanban--diagnostic-rows groups))
+         (tabulated-list-print t)
+         (unless in-place (pop-to-buffer (current-buffer)))
+         (unless tabulated-list-entries
+           (message "No active diagnostics on this board")))))))
+
+;;;###autoload
+(defun hermes-kanban-diagnostics ()
+  "Show the dashboard diagnostics overview for the current board.
+Lists every task with an active diagnostic, highest severity first; RET opens
+the task and `g' refreshes."
+  (interactive)
+  (hermes-kanban--render-diagnostics
+   (hermes-kanban--board-slug-for-command) hermes-kanban--name))
 
 ;;; Recovery actions
 

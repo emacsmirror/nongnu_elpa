@@ -592,6 +592,83 @@
                             calls)))
         (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*"))))))
 
+;;; Group N: diagnostics overview
+
+(ert-deftest hermes-kanban-diagnostic-summary-counts-extra ()
+  "A single diagnostic shows its title; extras add a (+N more) suffix."
+  (should (equal "No heartbeat"
+                 (hermes-kanban--diagnostic-summary '((title . "No heartbeat")) 1)))
+  (should (equal "No heartbeat (+2 more)"
+                 (hermes-kanban--diagnostic-summary '((title . "No heartbeat")) 3))))
+
+(ert-deftest hermes-kanban-diagnostic-row-uses-top-and-falls-back ()
+  "A row carries the task id, top severity, title, assignee, and summary."
+  (let ((row (hermes-kanban--diagnostic-row
+              '((task_id . "t1") (task_title . "Stuck task")
+                (task_assignee . "elisp-dev")
+                (diagnostics . [((severity . "critical") (title . "No heartbeat"))
+                                ((severity . "warning") (title . "Retried"))])))))
+    (should (equal "t1" (car row)))
+    (should (equal ["critical" "Stuck task" "elisp-dev" "No heartbeat (+1 more)"]
+                   (cadr row))))
+  (let ((row (hermes-kanban--diagnostic-row
+              '((task_id . "t2") (task_title . "")
+                (diagnostics . [((severity . "warning") (title . "Slow"))])))))
+    (should (equal ["warning" "t2" "-" "Slow"] (cadr row)))))
+
+(ert-deftest hermes-kanban-diagnostic-rows-tolerates-missing-optionals ()
+  "Rows build from groups whose diagnostics omit run_id and data."
+  (let ((rows (hermes-kanban--diagnostic-rows
+               [((task_id . "t1") (task_title . "A")
+                 (diagnostics . [((severity . "error") (title . "X"))]))
+                ((task_id . "t2") (task_title . "B")
+                 (diagnostics . [((severity . "warning") (title . "Y"))]))])))
+    (should (equal '("t1" "t2") (mapcar #'car rows)))))
+
+(ert-deftest hermes-kanban-render-diagnostics-lists-tasks ()
+  "Rendering fetches /diagnostics with the board query and lists distressed tasks."
+  (let (query)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional _body q)
+                 (should (equal method "GET"))
+                 (should (equal path "/diagnostics"))
+                 (setq query q)
+                 (hermes--promise-resolved
+                  '((diagnostics . [((task_id . "t1") (task_title . "Stuck")
+                                     (task_assignee . "elisp-dev")
+                                     (diagnostics . [((severity . "critical")
+                                                      (title . "No heartbeat"))]))])
+                    (count . 1)))))
+              ((symbol-function 'message) (lambda (&rest _) nil)))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-diagnostics "emacs-lisp" "Emacs Lisp")
+            (should (equal (cdr (assq 'board query)) "emacs-lisp"))
+            (with-current-buffer "*Hermes Kanban Diagnostics*"
+              (should (derived-mode-p 'hermes-kanban-diagnostics-mode))
+              (should (equal hermes-kanban--slug "emacs-lisp"))
+              (should (equal (caar tabulated-list-entries) "t1"))))
+        (when (get-buffer "*Hermes Kanban Diagnostics*")
+          (kill-buffer "*Hermes Kanban Diagnostics*"))))))
+
+(ert-deftest hermes-kanban-render-diagnostics-reports-empty-board ()
+  "An empty board renders no rows and reports the empty state."
+  (let (msgs)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (_m _p &optional _b _q)
+                 (hermes--promise-resolved '((diagnostics . []) (count . 0)))))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args) (push (apply #'format fmt args) msgs))))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-diagnostics "emacs-lisp" "Emacs Lisp")
+            (with-current-buffer "*Hermes Kanban Diagnostics*"
+              (should-not tabulated-list-entries))
+            (should (cl-some (lambda (m) (string-match-p "No active diagnostics" m))
+                             msgs)))
+        (when (get-buffer "*Hermes Kanban Diagnostics*")
+          (kill-buffer "*Hermes Kanban Diagnostics*"))))))
+
 (ert-deftest hermes-kanban-show-log-fetches-selected-task-log ()
   "Log viewing goes through the dashboard REST endpoint for the selected task."
   (let (log-path log-query)
