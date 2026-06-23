@@ -199,9 +199,7 @@ status values."
 
 (defun hermes-kanban--sum (numbers)
   "Return the sum of NUMBERS."
-  (let ((sum 0))
-    (dolist (number numbers sum)
-      (setq sum (+ sum number)))))
+  (apply #'+ numbers))
 
 (defun hermes-kanban--shrink-widths (widths target)
   "Return WIDTHS reduced to fit TARGET while keeping columns positive."

@@ -262,6 +262,9 @@ the thinking disclosure; diffs become View Diff links."
 (defun hermes-chat--commentary-normalize-line-endings (content)
   "Return CONTENT with escaped newline artifacts normalized."
   (let ((text (hermes-chat--sanitize-content content)))
+    ;; The gateway double-encodes reasoning newlines as the literal "^J"
+    ;; artifact (see the reasoning-collapse test), so it is un-escaped here.
+    ;; This is scoped to commentary content only, where the artifact occurs.
     (dolist (artifact '(("\\r\\n" . "\n") ("\\n" . "\n")
                         ("\\r" . "\n") ("^J" . "\n")))
       (setq text (replace-regexp-in-string
