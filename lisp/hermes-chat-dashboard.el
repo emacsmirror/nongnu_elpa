@@ -351,6 +351,15 @@ so do not copy its final content into the unsubmitted retry placeholder."
            (current-buffer) assistant-id t
            (hermes-chat--next-transport-generation)))))
 
+(defun hermes-chat--dashboard-reattach-status-event ()
+  "Return a fresh status event announcing a reattached running session.
+Built with `list' so each call yields its own plist; the result is handed to
+`hermes-chat--handle-transport-event', which may destructively extend it."
+  (list :type 'status
+        :status-key "session.resume"
+        :status "running"
+        :content "Hermes session is still running; reattached"))
+
 (defun hermes-chat--dashboard-restore-inflight-turn (client)
   "Restore local busy state for CLIENT's resumed in-flight turn."
   (let* ((retry-id hermes-chat--pending-assistant-id)
@@ -371,10 +380,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
             hermes-chat--dashboard-suppress-stream-p nil)
       (hermes-chat--handle-transport-event
        stream-id
-       '(:type status
-               :status-key "session.resume"
-               :status "running"
-               :content "Hermes session is still running; reattached")))
+       (hermes-chat--dashboard-reattach-status-event)))
      (retry-id
       (hermes-chat--clear-active-tools)
       (hermes-chat--mark-assistant
@@ -397,10 +403,7 @@ so do not copy its final content into the unsubmitted retry placeholder."
               hermes-chat--dashboard-suppress-stream-p nil)
         (hermes-chat--handle-transport-event
          assistant-id
-         '(:type status
-                 :status-key "session.resume"
-                 :status "running"
-                 :content "Hermes session is still running; reattached")))))))
+         (hermes-chat--dashboard-reattach-status-event)))))))
 
 (defun hermes-chat--dashboard-start (callback)
   "Return a dashboard client whose events are sent to CALLBACK."
