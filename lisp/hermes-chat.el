@@ -627,15 +627,18 @@ fields, so it collapses to a plain ready state instead of repeating them."
   "Return the ordered effect list for a `done' EVENT with header STATUS.
 `refresh-header' precedes the lifecycle so the header settles before `drain'
 re-submits any queued turn."
-  (list '(clear-tools)
-        (cons 'refresh-header status)
-        (cons 'clear-prompts event)
-        (cons 'mark-done (plist-get event :content))
-        '(drop-thinking)
-        '(settle . done)
-        '(finish)
-        '(clear-pending)
-        '(drain)))
+  (delq nil
+        (list '(clear-tools)
+              (cons 'refresh-header status)
+              (cons 'clear-prompts event)
+              (cons 'mark-done (plist-get event :content))
+              (and-let* ((warning (plist-get event :warning)))
+                (cons 'warning warning))
+              '(drop-thinking)
+              '(settle . done)
+              '(finish)
+              '(clear-pending)
+              '(drain))))
 
 (defun hermes-chat--turn-error-effects (event status)
   "Return the ordered effect list for an `error' EVENT with header STATUS."
@@ -702,6 +705,8 @@ stays side-effect-light."
     (`(upsert-entry . ,event)
      (hermes-chat--upsert-transport-entry assistant-id event))
     (`(message . ,text) (message "%s" text))
+    (`(warning . ,text)
+     (hermes-chat--insert-local-status (format "warning: %s" text) 'done))
     (`(clear-prompts . ,event) (hermes-chat--clear-terminal-prompts event))
     (`(mark-done . ,content)
      (hermes-chat--mark-assistant

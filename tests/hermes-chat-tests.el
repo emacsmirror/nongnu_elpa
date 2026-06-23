@@ -3482,6 +3482,16 @@
       (should (equal (mapcar #'car (cdr r))
                      '(refresh-header message upsert-entry))))))
 
+(ert-deftest hermes-chat-turn-reduce-done-surfaces-warning ()
+  "A done event with a warning emits a warning effect after mark-done."
+  (let* ((state '(:status-state (:status running)))
+         (event '(:type done :warning "not saved to history"))
+         (r (hermes-chat--turn-reduce state event '(5 5))))
+    (should (equal (mapcar #'car (cdr r))
+                   '(clear-tools refresh-header clear-prompts mark-done
+                     warning drop-thinking settle finish clear-pending drain)))
+    (should (equal (cdr (assq 'warning (cdr r))) "not saved to history"))))
+
 (ert-deftest hermes-chat-turn-reduce-delta-emits-append-effect ()
   "A delta event leaves the state and emits append-delta carrying its content."
   (let ((state '(:status-state (:status running))))

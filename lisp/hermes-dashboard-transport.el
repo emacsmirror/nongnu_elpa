@@ -2094,12 +2094,15 @@ The plist holds :used, :max, and :percent for the model's context window."
                   (hermes-transport--get payload 'status)))
          (usage (hermes-dashboard-transport--usage-plist payload))
          (context (hermes-dashboard-transport--context-plist payload))
+         (warning (hermes-transport--non-empty-string
+                   (hermes-transport--get payload 'warning)))
          (event (hermes-dashboard-transport--payload-event
                  type params payload
                  (hermes-dashboard-transport--message-complete-kind payload))))
     (when usage (setq event (plist-put event :usage usage)))
     (when context (setq event (plist-put event :context context)))
     (when status (setq event (plist-put event :status status)))
+    (when warning (setq event (plist-put event :warning warning)))
     event))
 
 (defun hermes-dashboard-transport--prompt-title (prompt-type)

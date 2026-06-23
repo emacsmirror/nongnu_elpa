@@ -1696,5 +1696,14 @@ This is the contract that replaces hand-mirroring every event name: an invented
     (should (eq (plist-get event :type) 'done))
     (should (equal (plist-get event :usage) '(:input 1200 :output 340)))))
 
+(ert-deftest hermes-transport-dashboard-message-complete-carries-warning ()
+  "A `message.complete' event carries its history-desync warning."
+  (let* ((frame '((jsonrpc . "2.0") (method . "event")
+                  (params . ((type . "message.complete")
+                             (payload . ((status . "complete")
+                                         (warning . "not saved to history")))))))
+         (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
+    (should (equal (plist-get event :warning) "not saved to history"))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here
