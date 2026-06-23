@@ -309,10 +309,16 @@ the thinking disclosure; diffs become View Diff links."
           (propertize content 'face 'hermes-chat-user-input)
           "\n"))
 
-(defun hermes-chat--insert-entry-content (content)
-  "Insert assistant or system CONTENT as markdown, diffs as View Diff links."
-  (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)
-  (insert "\n"))
+(defun hermes-chat--insert-entry-content (content &optional streaming)
+  "Insert assistant or system CONTENT.
+While STREAMING, insert CONTENT as plain text so a long reply is not
+re-fontified on every delta.  Once the entry settles, render CONTENT as
+markdown with diff blocks replaced by View Diff links."
+  (if streaming
+      (insert content "\n")
+    (progn
+      (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)
+      (insert "\n"))))
 
 (defun hermes-chat--print-entry (entry)
   "Insert a display representation of chat ENTRY at point."
@@ -329,7 +335,8 @@ the thinking disclosure; diffs become View Diff links."
      ((memq role hermes-chat--transient-entry-roles)
       (hermes-chat--insert-transient-content entry))
      ((not (string-empty-p content))
-      (hermes-chat--insert-entry-content content)))))
+      (hermes-chat--insert-entry-content
+       content (eq (plist-get entry :status) 'streaming))))))
 
 (defun hermes-chat--input-position ()
   "Return the numeric input marker position."

@@ -1160,6 +1160,17 @@ The buffer is captured by object so teardown still kills it after a rename."
      (should (string-match-p "-old-inline" diff))
      (should (string-match-p "+new-inline" diff)))))
 
+(ert-deftest hermes-chat-streaming-content-skips-markdown-and-diff ()
+  "A streaming entry stays raw; only a settled entry renders diffs/markdown."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--insert-entry
+    (hermes-chat--make-entry
+     'assistant
+     (concat "--- a/file.txt\n+++ b/file.txt\n@@ -1 +1 @@\n-old\n+new\n")
+     'streaming))
+   (should (string-match-p "-old" (buffer-string)))
+   (should-not (string-match-p "View Diff" (buffer-string)))))
+
 (ert-deftest hermes-chat-shows-inline-diff-without-final-newline-as-link ()
   (hermes-test-with-chat-buffer
    (hermes-chat--insert-entry
@@ -1282,6 +1293,7 @@ The buffer is captured by object so teardown still kills it after a rename."
        (funcall callback
                 '(:type delta
                   :content ";255;48;2;19;87;20m+split-ansi-added\e[0m"))
+       (funcall callback '(:type done))
        (should-not (string-match-p "38;2" (buffer-string)))
        (should-not (string-match-p "\\[0m" (buffer-string)))
        (let ((diff (hermes-test--view-diff-content)))
@@ -1315,6 +1327,7 @@ The buffer is captured by object so teardown still kills it after a rename."
                                  (plist-get assistant :content)))
          (should-not (string-match-p "38;2" (plist-get assistant :content)))
          (should (equal (plist-get commentary :content) "Thinking")))
+       (funcall callback '(:type done))
        (let ((diff (hermes-test--view-diff-content)))
          (should (string-match-p "+interleaved-added" diff)))))))
 
