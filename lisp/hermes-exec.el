@@ -250,10 +250,37 @@ reading or evaluation signals.  Errors are captured, never thrown."
                  :error (hermes-dashboard-transport--redact-secret
                          (error-message-string err))))))
 
-(defun hermes-exec--approval-prompt (code)
-  "Return a single-line prompt asking whether to evaluate CODE."
-  (let ((shown (if (> (length code) 200) (substring code 0 200) code)))
-    (format "Hermes eval request:\n%s\nEvaluate? " shown)))
+(defconst hermes-exec--approval-buffer-name "*Hermes Eval Request*"
+  "Name of the transient buffer that shows code awaiting eval approval.")
+
+(defun hermes-exec--approval-buffer (code)
+  "Return a read-only, fontified buffer showing CODE for eval approval."
+  (let ((buffer (get-buffer-create hermes-exec--approval-buffer-name)))
+    (with-current-buffer buffer
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert code)
+        (delay-mode-hooks (emacs-lisp-mode))
+        (ignore-errors (font-lock-ensure))
+        (goto-char (point-min)))
+      (setq-local header-line-format
+                  "Hermes eval request; answer y/n in the minibuffer")
+      (setq buffer-read-only t))
+    buffer))
+
+(defun hermes-exec--confirm-eval (code)
+  "Pop a buffer showing CODE, ask whether to evaluate, then restore windows.
+Return non-nil when the user approves.  The prior window configuration is
+restored and the buffer killed whether the prompt is answered or quit."
+  (let ((config (current-window-configuration))
+        (buffer (hermes-exec--approval-buffer code)))
+    (unwind-protect
+        (progn
+          (pop-to-buffer buffer)
+          (y-or-n-p "Evaluate this Hermes eval request? "))
+      (set-window-configuration config)
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
 
 (defun hermes-exec--maybe-evaluate (code)
   "Evaluate CODE behind the endpoint's enable and approval gates.
@@ -263,7 +290,7 @@ the user declines the `hermes-exec-require-approval' prompt."
    ((not hermes-exec-enabled)
     (list :ok nil :error "Hermes eval endpoint is disabled"))
    ((and hermes-exec-require-approval
-         (not (y-or-n-p (hermes-exec--approval-prompt code))))
+         (not (hermes-exec--confirm-eval code)))
     (list :ok nil :error "Evaluation declined by user"))
    ((and hermes-exec--connection
          (not (process-live-p hermes-exec--connection)))

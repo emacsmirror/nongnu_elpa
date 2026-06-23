@@ -105,6 +105,26 @@
         (should (plist-get result :ok)))))
   (should (eq hermes-exec-test--canary 'ran)))
 
+(ert-deftest hermes-exec-test-confirm-eval-shows-code-then-cleans-up ()
+  "Approval pops a buffer holding the code, returns t, then kills the buffer."
+  (let (shown)
+    (cl-letf (((symbol-function 'y-or-n-p)
+               (lambda (&rest _)
+                 (setq shown (with-current-buffer
+                                 hermes-exec--approval-buffer-name
+                               (buffer-substring-no-properties
+                                (point-min) (point-max))))
+                 t)))
+      (should (hermes-exec--confirm-eval "(message \"hi\")"))
+      (should (equal "(message \"hi\")" shown))
+      (should-not (get-buffer hermes-exec--approval-buffer-name)))))
+
+(ert-deftest hermes-exec-test-confirm-eval-declined-cleans-up ()
+  "Declining returns nil and still kills the approval buffer."
+  (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
+    (should-not (hermes-exec--confirm-eval "(+ 1 2)"))
+    (should-not (get-buffer hermes-exec--approval-buffer-name))))
+
 (ert-deftest hermes-exec-test-start-refuses-when-disabled ()
   "`hermes-exec-start' refuses to bind while `hermes-exec-enabled' is nil."
   (let ((hermes-exec-enabled nil)
