@@ -47,7 +47,13 @@
 
 (defun hermes-chat--strip-ansi-escape-sequences (content &optional fragment)
   "Return (TEXT . FRAGMENT) for CONTENT after stripping ANSI escapes.
-FRAGMENT is a partial escape sequence from the same stream, or nil."
+FRAGMENT is a partial escape sequence carried over from the same stream, or
+nil.  This is deliberately not `ansi-color-filter-apply': besides SGR/CSI
+color codes it also strips OSC sequences (terminal-title and the like) that
+`ansi-color' leaves in place, and it carries a trailing partial escape -- a
+CSI, an OSC, or a lone ESC -- across stream chunks through FRAGMENT, which
+`hermes-chat--sanitize-content' keys per stream.  `ansi-color''s single global
+context models neither."
   (let ((text (concat (or fragment "") (or content "")))
         next-fragment)
     (setq text (replace-regexp-in-string
