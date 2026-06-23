@@ -357,6 +357,9 @@ which already runs in the displayed window)."
          (unless (derived-mode-p 'hermes-kanban-boards-mode)
            (hermes-kanban-boards-mode))
          (setq tabulated-list-entries (hermes-kanban--board-rows boards))
+         ;; Pop before --init-boards-header: it sizes columns from the live
+         ;; window width, so the buffer must be displayed first.  Revert skips
+         ;; the pop -- it already runs in the displayed window.
          (unless in-place (pop-to-buffer (current-buffer)))
          (hermes-kanban--init-boards-header
           (hermes-kanban--visible-window-width))
@@ -537,6 +540,9 @@ which already runs in the displayed window)."
                tabulated-list-sort-key nil
                tabulated-list-entries (hermes-kanban--task-rows
                                        (hermes-transport--get payload 'columns)))
+         ;; Pop before --init-board-header: it sizes columns from the live
+         ;; window width, so the buffer must be displayed first.  Revert skips
+         ;; the pop -- it already runs in the displayed window.
          (unless in-place (pop-to-buffer (current-buffer)))
          (hermes-kanban--init-board-header
           (hermes-kanban--visible-window-width))
