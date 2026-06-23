@@ -540,9 +540,12 @@ arrives."
   (interactive "p")
   (unless hermes-dashboard--ewoc
     (user-error "No dashboard EWOC in this buffer"))
-  (condition-case nil
-      (ewoc-goto-prev hermes-dashboard--ewoc (or arg 1))
-    (error (user-error "No previous dashboard card"))))
+  ;; `ewoc-goto-prev' clamps at the first element instead of signalling (unlike
+  ;; `ewoc-goto-next'), so detect a no-op move to report it like its sibling.
+  (let ((before (ewoc-locate hermes-dashboard--ewoc)))
+    (ewoc-goto-prev hermes-dashboard--ewoc (or arg 1))
+    (when (eq before (ewoc-locate hermes-dashboard--ewoc))
+      (user-error "No previous dashboard card"))))
 
 (defun hermes-dashboard-open ()
   "Activate the dashboard card at point."

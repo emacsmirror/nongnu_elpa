@@ -48,6 +48,22 @@
                                          (plist-get entry :key))
                        :test #'equal)))))
 
+(ert-deftest hermes-dashboard-previous-reports-at-the-top ()
+  "`hermes-dashboard-previous' signals at the first card and moves otherwise."
+  (with-temp-buffer
+    (let ((hermes-dashboard--ewoc
+           (ewoc-create (lambda (x) (insert (format "%s" x))))))
+      (ewoc-enter-last hermes-dashboard--ewoc 'a)
+      (ewoc-enter-last hermes-dashboard--ewoc 'b)
+      (ewoc-goto-node hermes-dashboard--ewoc
+                      (ewoc-nth hermes-dashboard--ewoc 0))
+      (should-error (hermes-dashboard-previous) :type 'user-error)
+      (ewoc-goto-node hermes-dashboard--ewoc
+                      (ewoc-nth hermes-dashboard--ewoc 1))
+      (hermes-dashboard-previous)
+      (should (eq (ewoc-locate hermes-dashboard--ewoc)
+                  (ewoc-nth hermes-dashboard--ewoc 0))))))
+
 (ert-deftest hermes-dashboard-status-symbol-does-not-intern-unknown-strings ()
   (let* ((normalized "hermes-unknown-status-from-test")
          (status (replace-regexp-in-string "-" " " normalized)))
