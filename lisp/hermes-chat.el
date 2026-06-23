@@ -1645,7 +1645,12 @@ confirmation prompt."
                         labels nil t))
                (candidate (cdr (assoc choice candidates))))
           (unless (or (string-empty-p choice) (null candidate))
-            (hermes-chat--apply-model buffer client candidate nil)))))))
+            (if (plist-get candidate :authenticated)
+                (hermes-chat--apply-model buffer client candidate nil)
+              (hermes-chat--connect-provider-candidate
+               buffer client
+               (hermes-chat--find-provider result (plist-get candidate :provider))
+               (lambda () (hermes-chat--apply-model buffer client candidate nil))))))))))
 
 (defun hermes-chat-switch-model ()
   "Switch the model used by the current Hermes chat session."
@@ -1661,6 +1666,66 @@ confirmation prompt."
      :session-id hermes-chat--dashboard-active-session-id
      :resolve (lambda (result)
                 (hermes-chat--prompt-and-set-model buffer client result))
+     :reject (lambda (message)
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
+
+;; Reused from `hermes-onboarding'.  That module requires `hermes-browser',
+;; which requires this file, so it is loaded lazily inside the commands below to
+;; avoid a load-time cycle; by then this file is already provided.
+(declare-function hermes-onboarding--read-key "hermes-onboarding")
+(declare-function hermes-onboarding--choose-provider "hermes-onboarding")
+
+(defun hermes-chat--find-provider (result slug)
+  "Return the provider row in `model.options' RESULT whose slug is SLUG."
+  (cl-find slug (hermes-transport--get result 'providers)
+           :key (lambda (provider)
+                  (hermes-transport--scalar-string
+                   (hermes-transport--get provider 'slug)))
+           :test #'equal))
+
+(defun hermes-chat--connect-provider-candidate (buffer client provider
+                                                       &optional on-connected)
+  "Read a key for PROVIDER and save it on CLIENT scoped to BUFFER's session.
+ON-CONNECTED, when given, runs after a successful save -- the model picker uses
+it to apply the model the user originally chose."
+  (require 'hermes-onboarding)
+  (let* ((slug (hermes-transport--scalar-string
+                (hermes-transport--get provider 'slug)))
+         (name (or (hermes-transport--scalar-string
+                    (hermes-transport--get provider 'name))
+                   slug))
+         (key (hermes-onboarding--read-key provider)))
+    (with-current-buffer buffer
+      (hermes-dashboard-transport-model-save-key
+       client slug key
+       :session-id hermes-chat--dashboard-active-session-id
+       :resolve (lambda (_result)
+                  (hermes-chat--in-buffer buffer
+                    (hermes-chat--insert-local-status
+                     (format "Connected provider %s" name) 'ready)
+                    (when on-connected (funcall on-connected))))
+       :reject (lambda (message)
+                 (hermes-chat--in-buffer buffer
+                   (hermes-chat--command-error message)))))))
+
+(defun hermes-chat-connect-provider ()
+  "Connect an API-key provider to the current Hermes chat session.
+Pick an unauthenticated provider and paste its key; the dashboard saves it
+against this session's live agent."
+  (interactive)
+  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+    (user-error "Connect this chat (send a message) before connecting a provider"))
+  (require 'hermes-onboarding)
+  (let ((buffer (current-buffer))
+        (client hermes-chat--dashboard-client))
+    (hermes-dashboard-transport-model-options
+     client
+     :session-id hermes-chat--dashboard-active-session-id
+     :resolve (lambda (result)
+                (hermes-chat--in-buffer buffer
+                  (hermes-chat--connect-provider-candidate
+                   buffer client (hermes-onboarding--choose-provider result))))
      :reject (lambda (message)
                (hermes-chat--in-buffer buffer
                  (hermes-chat--command-error message))))))
@@ -2102,6 +2167,7 @@ session-title refresh."
   "n" ("New session" hermes-chat-new-session)
   "N" ("New profile session" hermes-chat-new-profile-session)
   "m" ("Switch model" hermes-chat-switch-model)
+  "K" ("Connect provider" hermes-chat-connect-provider)
   "R" ("Rename session" hermes-chat-rename)
   "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)

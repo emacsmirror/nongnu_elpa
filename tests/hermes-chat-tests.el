@@ -3879,5 +3879,60 @@
               (should-not create-profile))
           (kill-buffer buffer))))))
 
+;;; Group: provider onboarding from chat
+
+(ert-deftest hermes-chat-find-provider-matches-slug ()
+  "`hermes-chat--find-provider' returns the provider row for a slug, or nil."
+  (let ((result '((providers . (((slug . "openai"))
+                                ((slug . "deepseek") (name . "DeepSeek")))))))
+    (should (equal (hermes-transport--get
+                    (hermes-chat--find-provider result "deepseek") 'name)
+                   "DeepSeek"))
+    (should-not (hermes-chat--find-provider result "nope"))))
+
+(ert-deftest hermes-chat-connect-provider-candidate-saves-then-runs-on-connected ()
+  "Connecting reads a key and saves it scoped to the session, then continues."
+  (let (saved on-ran)
+    (cl-letf (((symbol-function 'read-passwd) (lambda (&rest _) "sk-secret"))
+              ((symbol-function 'hermes-dashboard-transport-model-save-key)
+               (lambda (_client slug key &rest args)
+                 (setq saved (list slug key (plist-get args :session-id)))
+                 (funcall (plist-get args :resolve)
+                          '((provider . ((slug . "deepseek"))))))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-active-session-id "sid-1")
+        (hermes-chat--connect-provider-candidate
+         (current-buffer) 'fake-client
+         '((slug . "deepseek") (name . "DeepSeek")
+           (auth_type . "api_key") (key_env . "DEEPSEEK_API_KEY"))
+         (lambda () (setq on-ran t)))))
+    (should (equal saved '("deepseek" "sk-secret" "sid-1")))
+    (should on-ran)))
+
+(ert-deftest hermes-chat-model-picker-connects-unauthed-then-applies ()
+  "Picking an unauthenticated provider's model connects it, then applies it."
+  (let (saved applied)
+    (cl-letf (((symbol-function 'completing-read)
+               (lambda (_prompt labels &rest _) (car labels)))
+              ((symbol-function 'read-passwd) (lambda (&rest _) "sk-secret"))
+              ((symbol-function 'hermes-dashboard-transport-model-save-key)
+               (lambda (_client slug _key &rest args)
+                 (setq saved slug)
+                 (funcall (plist-get args :resolve)
+                          '((provider . ((slug . "deepseek")))))))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client key value &rest args)
+                 (setq applied (cons key value))
+                 (funcall (plist-get args :resolve) '((ok . t))))))
+      (hermes-test-with-chat-buffer
+        (setq hermes-chat--dashboard-active-session-id "sid-1")
+        (hermes-chat--prompt-and-set-model
+         (current-buffer) 'fake-client
+         '((providers . (((slug . "deepseek") (name . "DeepSeek")
+                          (auth_type . "api_key") (key_env . "DEEPSEEK_API_KEY")
+                          (models . ("deepseek-chat")))))))))
+    (should (equal saved "deepseek"))
+    (should (equal (car applied) "model"))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here
