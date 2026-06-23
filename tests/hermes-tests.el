@@ -3707,7 +3707,8 @@ The buffer is captured by object so teardown still kills it after a rename."
           (lambda (&rest _)
             (setq n (1+ n))
             (if (= n 1)
-                (hermes--promise-rejected "boom")
+                (hermes--promise-rejected
+                 "Hermes dashboard request failed at x (HTTP 401)")
               (hermes--promise-resolved (list :status 200 :body '((ok . t)))))))
          result reason)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-token-secret)
@@ -3722,6 +3723,38 @@ The buffer is captured by object so teardown still kills it after a rename."
     (should (null reason))
     (should (= n 2))
     (should (>= auth-count 2))))
+
+(ert-deftest hermes-transport-dashboard-api-request-async-no-retry-on-404 ()
+  "A non-auth failure is not retried through re-authentication."
+  (let* ((hermes-dashboard-transport--api-auth nil)
+         (hermes-dashboard-transport-remote-auth-method 'token)
+         (n 0)
+         (hermes-dashboard-transport-http-request-async-function
+          (lambda (&rest _)
+            (setq n (1+ n))
+            (hermes--promise-rejected
+             "Hermes dashboard request failed at x (HTTP 404)")))
+         reason)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--remote-token-secret)
+               (lambda (&rest _) "tok"))
+              ((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example")))
+      (hermes--promise-catch
+       (hermes-dashboard-transport-api-request-async "GET" "/x")
+       (lambda (r) (setq reason r))))
+    (should (= n 1))
+    (should (string-match-p "HTTP 404" reason))))
+
+(ert-deftest hermes-transport-dashboard-api-auth-invalidates-on-url-change ()
+  "Cached REST auth is dropped when the configured dashboard URL changes."
+  (let ((hermes-dashboard-transport--api-auth
+         '(:base-url "http://old.example" :headers nil :secrets nil)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://new.example")))
+      (should (hermes-dashboard-transport--api-auth-stale-p)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://old.example")))
+      (should-not (hermes-dashboard-transport--api-auth-stale-p)))))
 
 (ert-deftest hermes-transport-dashboard-start-auto-localhost-spawns ()
   (let (process-plist opened-url events)

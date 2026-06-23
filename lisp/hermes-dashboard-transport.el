@@ -812,9 +812,26 @@ The value is `(:base-url URL :headers HEADERS :secrets SECRETS)'.")
                 (hermes-dashboard-transport--api-basic-auth base-url status)
               (hermes-dashboard-transport--api-token-auth base-url))))))))
 
+(defun hermes-dashboard-transport--auth-error-p (reason)
+  "Return non-nil when REASON is an HTTP 401/403 authentication failure.
+Only an expired or rejected credential justifies dropping cached auth and
+retrying; other failures (404, 5xx, network) must not loop through
+re-authentication."
+  (and (stringp reason)
+       (string-match-p "(HTTP 40[13])" reason)))
+
+(defun hermes-dashboard-transport--api-auth-stale-p ()
+  "Return non-nil when cached REST auth no longer matches the configured URL.
+Keeps `hermes-dashboard-transport--api-auth' from serving credentials for a
+previous `hermes-dashboard-transport-url' after the user switches dashboards."
+  (and hermes-dashboard-transport--api-auth
+       (not (equal (plist-get hermes-dashboard-transport--api-auth :base-url)
+                   (ignore-errors (hermes-dashboard-transport--api-base-url))))))
+
 (defun hermes-dashboard-transport-api-auth (&optional refresh)
-  "Return dashboard REST auth, resolving it when REFRESH is non-nil."
-  (when refresh
+  "Return dashboard REST auth, resolving it when REFRESH is non-nil.
+Cached auth is also re-resolved when `hermes-dashboard-transport-url' changes."
+  (when (or refresh (hermes-dashboard-transport--api-auth-stale-p))
     (setq hermes-dashboard-transport--api-auth nil))
   (or hermes-dashboard-transport--api-auth
       (setq hermes-dashboard-transport--api-auth
@@ -895,7 +912,8 @@ once when the request fails."
                     :secrets all-secrets)
                    :body)
       (error
-       (if retry
+       (if (and retry (hermes-dashboard-transport--auth-error-p
+                       (error-message-string err)))
            (progn
              (hermes-dashboard-transport-api-auth t)
              (hermes-dashboard-transport--api-request-1
@@ -992,8 +1010,8 @@ network; a missing token rejects the promise."
 (defun hermes-dashboard-transport-api-auth-async (&optional refresh)
   "Return a promise of dashboard REST auth, re-resolving when REFRESH is non-nil.
 The resolved auth is cached in `hermes-dashboard-transport--api-auth', shared
-with the synchronous path."
-  (when refresh
+with the synchronous path, and re-resolved when the configured URL changes."
+  (when (or refresh (hermes-dashboard-transport--api-auth-stale-p))
     (setq hermes-dashboard-transport--api-auth nil))
   (if hermes-dashboard-transport--api-auth
       (hermes--promise-resolved hermes-dashboard-transport--api-auth)
@@ -1026,7 +1044,7 @@ retries once when the request fails."
           :secrets all-secrets)
          (lambda (response) (plist-get response :body)))
         (lambda (reason)
-          (if retry
+          (if (and retry (hermes-dashboard-transport--auth-error-p reason))
               (progn
                 (setq hermes-dashboard-transport--api-auth nil)
                 (hermes-dashboard-transport--api-request-1-async
