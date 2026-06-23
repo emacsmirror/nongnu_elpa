@@ -30,6 +30,22 @@
     (should-not (string-match-p "supersecret" (plist-get result :result)))
     (should (string-match-p "<redacted>" (plist-get result :result)))))
 
+(ert-deftest hermes-exec-test-evaluate-redacts-error ()
+  "A token-bearing error message is redacted, like the success path."
+  (let ((result (hermes-exec--evaluate
+                 "(error \"ws://h/api/ws?token=supersecret\")")))
+    (should-not (plist-get result :ok))
+    (should-not (string-match-p "supersecret" (plist-get result :error)))
+    (should (string-match-p "<redacted>" (plist-get result :error)))))
+
+(ert-deftest hermes-exec-test-eval-response-body-redacts-error ()
+  "A token-bearing error in the response body is redacted."
+  (let* ((hermes-exec-require-approval nil)
+         (json (hermes-exec--eval-response-body
+                "{\"code\":\"(error \\\"ws://h/api/ws?token=supersecret\\\")\"}")))
+    (should-not (string-match-p "supersecret" json))
+    (should (string-match-p "<redacted>" json))))
+
 (ert-deftest hermes-exec-test-evaluate-caps-output ()
   "An oversized result is truncated to `hermes-exec-max-output'."
   (let* ((hermes-exec-max-output 50)

@@ -190,7 +190,9 @@ reading or evaluation signals.  Errors are captured, never thrown."
   (condition-case err
       (list :ok t :result (hermes-exec--format-result
                            (hermes-exec--eval-code code)))
-    (error (list :ok nil :error (error-message-string err)))))
+    (error (list :ok nil
+                 :error (hermes-dashboard-transport--redact-secret
+                         (error-message-string err))))))
 
 (defun hermes-exec--approval-prompt (code)
   "Return a single-line prompt asking whether to evaluate CODE."
@@ -228,8 +230,10 @@ without evaluating anything."
   (condition-case err
       (hermes-exec--result-json
        (hermes-exec--maybe-evaluate (hermes-exec--code-from-body body)))
-    (error (json-serialize `((ok . :false)
-                             (error . ,(error-message-string err)))))))
+    (error (json-serialize
+            `((ok . :false)
+              (error . ,(hermes-dashboard-transport--redact-secret
+                         (error-message-string err))))))))
 
 ;;; HTTP response building (pure)
 
