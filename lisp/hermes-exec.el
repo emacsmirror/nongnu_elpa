@@ -89,6 +89,17 @@ without bound."
   "Seconds an evaluation may run before `with-timeout' aborts it."
   :type 'number)
 
+(defcustom hermes-exec-token nil
+  "Shared bearer token the eval endpoint requires, or nil for loopback-only.
+When nil the endpoint trusts its bind host: `hermes-exec-start' refuses to bind
+anything but a loopback interface and every request is served.  When set to a
+string, the endpoint may bind a private non-loopback host (a Tailscale IP) and
+each request must present a matching `Authorization: Bearer' header.  Falls back
+to the EMACS_EXEC_TOKEN environment variable when nil, so the Python bridge and
+this endpoint can share one secret without duplicating it in config."
+  :type '(choice (const :tag "Loopback-only, no token" nil)
+                 (string :tag "Required bearer token")))
+
 (defvar hermes-exec--process nil
   "The live eval endpoint server process, or nil when stopped.")
 
@@ -150,17 +161,53 @@ needed: the header terminator or the full Content-Length body is still missing."
       (when (or (null length) (>= (string-bytes body) length))
         (append request-line (list :headers headers :body body))))))
 
-;;; Authentication seam
+;;; Authentication
 ;;
-;; Bearer-token auth is deliberately not implemented yet.  When it lands it
-;; belongs here, checked against the parsed request before evaluation.  This
-;; predicate is the single seam the IO path consults so the rest of the file
-;; stays unchanged when auth is added.
+;; Network reachability is the primary control: the endpoint binds loopback or a
+;; private Tailscale interface and never a public one.  A shared bearer token is
+;; the enforced second layer for the non-loopback case, checked here against the
+;; parsed request before evaluation.  Over plain HTTP the token authenticates but
+;; does not encrypt, so it adds nothing on loopback and is redundant with
+;; WireGuard on Tailscale; its job is to keep other tailnet devices or local
+;; users off the endpoint.
 
-(defun hermes-exec--request-authorized-p (_request)
-  "Return non-nil when REQUEST is authorized to run.
-Always true for now; this is the seam for future bearer-token validation."
-  t)
+(defun hermes-exec--expected-token ()
+  "Return the configured bearer token as a non-empty string, or nil.
+Prefer `hermes-exec-token'; fall back to the EMACS_EXEC_TOKEN environment
+variable so the bridge and endpoint can share one secret."
+  (let ((token (or (and (stringp hermes-exec-token) hermes-exec-token)
+                   (getenv "EMACS_EXEC_TOKEN"))))
+    (and (stringp token)
+         (not (string-empty-p (string-trim token)))
+         (string-trim token))))
+
+(defun hermes-exec--secure-equal (a b)
+  "Return non-nil when strings A and B are equal, compared in constant time.
+Scan the whole of A regardless of where bytes differ, so the comparison time
+does not reveal how much of a guessed token was correct."
+  (and (stringp a) (stringp b)
+       (= (length a) (length b))
+       (let ((diff 0))
+         (dotimes (i (length a))
+           (setq diff (logior diff (logxor (aref a i) (aref b i)))))
+         (zerop diff))))
+
+(defun hermes-exec--request-bearer (request)
+  "Return the bearer token from REQUEST's Authorization header, or nil."
+  (and-let* ((value (cdr (assoc "authorization" (plist-get request :headers))))
+             (trimmed (string-trim value))
+             ((string-match "\\`[Bb]earer[ \t]+\\(.+\\)\\'" trimmed)))
+    (string-trim (match-string 1 trimmed))))
+
+(defun hermes-exec--request-authorized-p (request)
+  "Return non-nil when REQUEST may run.
+With no token configured the endpoint is loopback-only and every request passes;
+the bind host is the trust boundary.  With `hermes-exec--expected-token' set the
+request must carry a matching `Authorization: Bearer' header."
+  (let ((expected (hermes-exec--expected-token)))
+    (or (null expected)
+        (and-let* ((presented (hermes-exec--request-bearer request)))
+          (hermes-exec--secure-equal expected presented)))))
 
 ;;; Eval path (pure-ish)
 ;;
@@ -334,6 +381,11 @@ public interface, and store the listening process for `hermes-exec-stop'."
     (unless host
       (user-error
        "Set `hermes-exec-host' to your Tailscale IP; refusing to bind a public interface for a remote dashboard"))
+    (when (and (not (hermes-dashboard-transport--loopback-host-p host))
+               (not (hermes-exec--expected-token)))
+      (user-error
+       "Refusing to bind non-loopback host %s without a token; set `hermes-exec-token' or EMACS_EXEC_TOKEN"
+       host))
     (setq hermes-exec--process (hermes-exec--start-server host))
     (message "Hermes eval endpoint listening on %s:%d" host hermes-exec-port)))
 
@@ -375,11 +427,15 @@ them by the filter they inherit from SERVER instead, excluding SERVER itself."
       "<your-host>"))
 
 (defun hermes-exec-show-bridge-command ()
-  "Show the ready-to-paste `hermes mcp add' line registering this endpoint."
+  "Show the ready-to-paste `hermes mcp add' line registering this endpoint.
+Includes EMACS_EXEC_TOKEN when a token is configured, since the bridge needs the
+same secret the endpoint enforces."
   (interactive)
-  (let ((command (format
-                  "hermes mcp add emacs --command <venv>/bin/python --args server.py --env EMACS_EXEC_HOST=%s EMACS_EXEC_PORT=%d"
-                  (hermes-exec--detect-host) hermes-exec-port)))
+  (let* ((token (hermes-exec--expected-token))
+         (command (format
+                   "hermes mcp add emacs --command <venv>/bin/python --args server.py --env EMACS_EXEC_HOST=%s EMACS_EXEC_PORT=%d%s"
+                   (hermes-exec--detect-host) hermes-exec-port
+                   (if token (format " EMACS_EXEC_TOKEN=%s" token) ""))))
     (if (called-interactively-p 'interactive)
         (progn (kill-new command) (message "%s" command))
       command)))

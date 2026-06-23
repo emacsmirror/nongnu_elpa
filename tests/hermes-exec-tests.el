@@ -189,5 +189,81 @@
         (hermes-dashboard-transport-url "http://127.0.0.1:9119"))
     (should (equal "100.64.0.1" (hermes-exec--resolve-host)))))
 
+;;; Group 6: authentication
+
+(defun hermes-exec-tests--request (&optional authorization)
+  "Return a parsed-request plist carrying an optional AUTHORIZATION header."
+  (list :method "POST" :path "/eval"
+        :headers (and authorization (list (cons "authorization" authorization)))
+        :body "{}"))
+
+(defmacro hermes-exec-tests--without-env-token (&rest body)
+  "Run BODY with the EMACS_EXEC_TOKEN environment variable removed."
+  `(let ((process-environment
+          (cl-remove-if (lambda (e) (string-prefix-p "EMACS_EXEC_TOKEN=" e))
+                        process-environment)))
+     ,@body))
+
+(ert-deftest hermes-exec-test-secure-equal ()
+  "Constant-time compare matches equal strings and rejects others."
+  (should (hermes-exec--secure-equal "abc123" "abc123"))
+  (should-not (hermes-exec--secure-equal "abc123" "abc124"))
+  (should-not (hermes-exec--secure-equal "abc" "abcdef"))
+  (should-not (hermes-exec--secure-equal "abc" nil)))
+
+(ert-deftest hermes-exec-test-request-bearer ()
+  "The bearer token is parsed from the Authorization header, case-insensitively."
+  (should (equal "tok"
+                 (hermes-exec--request-bearer
+                  (hermes-exec-tests--request "Bearer tok"))))
+  (should (equal "tok"
+                 (hermes-exec--request-bearer
+                  (hermes-exec-tests--request "bearer   tok"))))
+  (should (null (hermes-exec--request-bearer (hermes-exec-tests--request))))
+  (should (null (hermes-exec--request-bearer
+                 (hermes-exec-tests--request "Basic abc")))))
+
+(ert-deftest hermes-exec-test-authorized-without-token ()
+  "With no token configured every request is authorized."
+  (hermes-exec-tests--without-env-token
+   (let ((hermes-exec-token nil))
+     (should (hermes-exec--request-authorized-p (hermes-exec-tests--request)))
+     (should (hermes-exec--request-authorized-p
+              (hermes-exec-tests--request "Bearer anything"))))))
+
+(ert-deftest hermes-exec-test-authorized-with-token ()
+  "A configured token requires a matching bearer header."
+  (let ((hermes-exec-token "s3cret"))
+    (should (hermes-exec--request-authorized-p
+             (hermes-exec-tests--request "Bearer s3cret")))
+    (should-not (hermes-exec--request-authorized-p
+                 (hermes-exec-tests--request "Bearer wrong")))
+    (should-not (hermes-exec--request-authorized-p
+                 (hermes-exec-tests--request)))))
+
+(ert-deftest hermes-exec-test-token-from-env ()
+  "EMACS_EXEC_TOKEN is used when `hermes-exec-token' is nil."
+  (let ((hermes-exec-token nil)
+        (process-environment (cons "EMACS_EXEC_TOKEN=envtok" process-environment)))
+    (should (equal "envtok" (hermes-exec--expected-token)))
+    (should (hermes-exec--request-authorized-p
+             (hermes-exec-tests--request "Bearer envtok")))))
+
+(ert-deftest hermes-exec-test-dispatch-rejects-bad-token ()
+  "Dispatch answers 401 when a configured token is not matched."
+  (let ((hermes-exec-token "s3cret"))
+    (should (string-prefix-p
+             "HTTP/1.1 401 Unauthorized"
+             (hermes-exec--dispatch (hermes-exec-tests--request "Bearer wrong"))))))
+
+(ert-deftest hermes-exec-test-start-refuses-non-loopback-without-token ()
+  "Starting on a non-loopback host without a token is refused."
+  (hermes-exec-tests--without-env-token
+   (let ((hermes-exec-enabled t)
+         (hermes-exec-token nil)
+         (hermes-exec-host "100.64.0.1")
+         (hermes-exec--process nil))
+     (should-error (hermes-exec-start) :type 'user-error))))
+
 (provide 'hermes-exec-tests)
 ;;; hermes-exec-tests.el ends here
