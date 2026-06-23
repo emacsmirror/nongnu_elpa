@@ -396,5 +396,27 @@
     (should (string-match-p "board=emacs-lisp" (plist-get result :url)))
     (should-not (string-match-p "SEKRIT" (plist-get result :redacted-url)))))
 
+(ert-deftest hermes-dashboard-open-websocket-delivers-text-and-redacts-errors ()
+  "The opener hands frame text to :on-message and scrubs secrets from errors."
+  (let (msg err)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)
+               #'ignore)
+              ((symbol-function 'websocket-frame-text) (lambda (f) f))
+              ((symbol-function 'websocket-open)
+               (lambda (_url &rest args)
+                 (funcall (plist-get args :on-message) nil "{\"events\":[]}")
+                 (funcall (plist-get args :on-error) nil 'on-error "boom SEKRIT")
+                 'fake-socket)))
+      (let ((socket (hermes-dashboard-transport-open-websocket
+                     "ws://h/api/plugins/kanban/events?token=SEKRIT"
+                     "ws://h/api/plugins/kanban/events?token=<redacted>"
+                     '("SEKRIT")
+                     :on-message (lambda (text) (setq msg text))
+                     :on-error (lambda (m) (setq err m)))))
+        (should (eq socket 'fake-socket))
+        (should (equal msg "{\"events\":[]}"))
+        (should (stringp err))
+        (should-not (string-match-p "SEKRIT" err))))))
+
 (provide 'hermes-dashboard-tests)
 ;;; hermes-dashboard-tests.el ends here

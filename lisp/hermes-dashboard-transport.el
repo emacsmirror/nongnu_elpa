@@ -584,6 +584,32 @@ transport error when a pending request has no reject callback."
                       (hermes-dashboard-transport--emit-status
                        client "closed" message))))))))
 
+(cl-defun hermes-dashboard-transport-open-websocket
+    (url redacted-url secrets &key on-message on-close on-error)
+  "Open a raw dashboard WebSocket to URL with credential redaction.
+REDACTED-URL hides the credential in the process name and the websocket's stored
+URL; SECRETS are scrubbed from any error text.  ON-MESSAGE is called with each
+frame's text, ON-CLOSE with no arguments, and ON-ERROR with a redacted message.
+Return the websocket object.  This is the generic counterpart to the chat
+client's own connect path, for callers (e.g. the kanban events tail) that own a
+separate socket carrying plain JSON frames."
+  (hermes-dashboard-transport--require-websocket)
+  (hermes-dashboard-transport--call-with-redacted-websocket-state
+   url redacted-url
+   (lambda ()
+     (websocket-open
+      url
+      :on-message (lambda (_ws frame)
+                    (when on-message
+                      (funcall on-message (websocket-frame-text frame))))
+      :on-error (lambda (_ws _type err)
+                  (when on-error
+                    (funcall on-error
+                             (hermes-dashboard-transport--redact-secret
+                              (format "%s" err) secrets))))
+      :on-close (lambda (_ws)
+                  (when on-close (funcall on-close)))))))
+
 (defun hermes-dashboard-transport--default-websocket-send (websocket text)
   "Send TEXT on WEBSOCKET using websocket.el."
   (hermes-dashboard-transport--require-websocket)
