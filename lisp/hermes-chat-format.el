@@ -138,32 +138,41 @@ When FINAL is non-nil, strip trailing transport metadata too."
   (and-let* ((name (hermes-chat--scalar-string status)))
     (downcase (replace-regexp-in-string "_" "-" name))))
 
+(defconst hermes-chat--ready-statuses
+  '("done" "completed" "complete" "success" "succeeded" "ready")
+  "Status names that read as a successful, settled turn.")
+
+(defconst hermes-chat--error-statuses
+  '("error" "failed" "failure" "cancelled" "canceled" "interrupted")
+  "Status names that read as a failed or aborted turn.")
+
+(defconst hermes-chat--active-statuses
+  '("pending" "waiting" "queued" "streaming" "started" "starting"
+    "loading" "connecting" "reconnecting" "running" "busy"
+    "progress" "in-progress" "preparing" "requested" "approval-requested")
+  "Status names denoting an unsettled transport entry.")
+
 (defun hermes-chat--active-status-p (status)
   "Return non-nil when STATUS denotes an unsettled transport entry."
-  (member (hermes-chat--status-name status)
-          '("pending" "waiting" "queued" "streaming" "started" "starting"
-            "loading" "connecting" "reconnecting" "running" "busy"
-            "progress" "in-progress" "preparing" "requested"
-            "approval-requested")))
+  (and (member (hermes-chat--status-name status) hermes-chat--active-statuses)
+       t))
 
 (defun hermes-chat--finished-status-p (status)
   "Return non-nil when STATUS denotes a settled transport entry."
-  (member (hermes-chat--status-name status)
-          '("done" "completed" "complete" "success" "succeeded"
-            "ready" "closed" "error" "failed" "failure" "cancelled"
-            "canceled" "interrupted")))
+  (and (member (hermes-chat--status-name status)
+               (append hermes-chat--ready-statuses
+                       hermes-chat--error-statuses
+                       '("closed")))
+       t))
 
 (defun hermes-chat--status-icon (status)
-  "Return compact icon for transport STATUS."
-  (pcase (hermes-chat--status-name status)
-    ((or "done" "completed" "complete" "success" "succeeded" "ready") "✓")
-    ((or "error" "failed" "failure" "cancelled" "canceled" "interrupted"
-         "closed") "!")
-    ((or "pending" "waiting" "queued" "streaming" "started" "starting"
-         "loading" "connecting" "reconnecting" "running" "busy"
-         "progress" "in-progress" "preparing" "requested"
-         "approval-requested") "✓")
-    (_ "·")))
+  "Return compact icon for transport STATUS.
+Active statuses show a neutral dot rather than the settled checkmark."
+  (let ((name (hermes-chat--status-name status)))
+    (cond
+     ((member name hermes-chat--ready-statuses) "✓")
+     ((or (member name hermes-chat--error-statuses) (equal name "closed")) "!")
+     (t "·"))))
 
 (defun hermes-chat--header-status-label (status)
   "Return compact header label for STATUS."
@@ -185,15 +194,12 @@ When FINAL is non-nil, strip trailing transport metadata too."
 
 (defun hermes-chat--status-face (status)
   "Return face for transport STATUS."
-  (pcase (hermes-chat--status-name status)
-    ((or "done" "completed" "complete" "success" "succeeded" "ready") 'success)
-    ((or "error" "failed" "failure" "cancelled" "canceled" "interrupted") 'error)
-    ((or "closed") 'warning)
-    ((or "pending" "waiting" "queued" "streaming" "started" "starting"
-         "loading" "connecting" "reconnecting" "running" "busy"
-         "progress" "in-progress" "preparing" "requested"
-         "approval-requested") 'shadow)
-    (_ 'shadow)))
+  (let ((name (hermes-chat--status-name status)))
+    (cond
+     ((member name hermes-chat--ready-statuses) 'success)
+     ((member name hermes-chat--error-statuses) 'error)
+     ((equal name "closed") 'warning)
+     (t 'shadow))))
 
 (defun hermes-chat--header-status-face (status)
   "Return face for STATUS in the chat header."

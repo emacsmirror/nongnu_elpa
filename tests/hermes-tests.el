@@ -387,11 +387,11 @@ The buffer is captured by object so teardown still kills it after a rename."
   (should-not (hermes-chat--parse-slash " /queue not-a-command")))
 
 (ert-deftest hermes-chat-status-helpers-classify-parity-states ()
-  (dolist (case '(("in_progress" "Running" "✓" shadow t nil)
-                  ("busy" "Running" "✓" shadow t nil)
-                  ("approval-requested" "Approval requested" "✓"
+  (dolist (case '(("in_progress" "Running" "·" shadow t nil)
+                  ("busy" "Running" "·" shadow t nil)
+                  ("approval-requested" "Approval requested" "·"
                    shadow t nil)
-                  ("queued" "Queued" "✓" shadow t nil)
+                  ("queued" "Queued" "·" shadow t nil)
                   ("succeeded" "Ready" "✓" success nil t)
                   ("interrupted" "Interrupted" "!" error nil t)
                   ("cancelled" "Cancelled" "!" error nil t)
@@ -405,16 +405,16 @@ The buffer is captured by object so teardown still kills it after a rename."
       (should (eq (not (null (hermes-chat--finished-status-p status)))
                   finished)))))
 
-(ert-deftest hermes-chat-transient-status-marker-uses-check-faces ()
-  "Transient execution markers use a checkmark with pending/done faces."
-  (dolist (case '(("running" shadow)
-                  ("completed" success)))
-    (pcase-let ((`(,status ,face) case))
+(ert-deftest hermes-chat-transient-status-marker-uses-status-icon-faces ()
+  "Transient markers show the status icon (dot while active, check when done)."
+  (dolist (case '(("running" "·" shadow)
+                  ("completed" "✓" success)))
+    (pcase-let ((`(,status ,icon ,face) case))
       (with-temp-buffer
         (hermes-chat--insert-transient-content
          (list :id status :role 'progress :status status :content "doing work"))
         (goto-char (point-min))
-        (search-forward "✓")
+        (search-forward icon)
         (should (eq (get-text-property (1- (point)) 'face) face))))))
 
 (ert-deftest hermes-dashboard-status-helpers-classify-parity-states ()
