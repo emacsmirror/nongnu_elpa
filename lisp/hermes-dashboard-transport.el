@@ -1444,268 +1444,206 @@ FN must accept trailing :resolve/:reject keywords, as the typed
   "Return explicit SESSION-ID or CLIENT's active session id."
   (or session-id (hermes-dashboard-transport-client-session-id client)))
 
-(cl-defun hermes-dashboard-transport-session-create
-    (client &key cols messages title profile cwd resolve reject)
+(defmacro hermes-dashboard-transport-define-rpc (name method docstring &rest spec)
+  "Define NAME as a wrapper sending METHOD over the dashboard WebSocket.
+DOCSTRING documents the generated `cl-defun'.  SPEC is a plist: :args lists
+positional arguments after CLIENT, :keys lists `&key' parameters, :session when
+non-nil sends the resolved session id, and :params adds extra
+\(REQUEST-KEY . VALUE-FORM) cells.  Each :args and :keys symbol contributes a
+request parameter keyed by its snake_case name with the symbol as the value;
+nil values are dropped.  RESOLVE and REJECT keys are always added."
+  (declare (indent 2))
+  (let* ((args (plist-get spec :args))
+         (keys (plist-get spec :keys))
+         (session (plist-get spec :session))
+         (extra (plist-get spec :params))
+         (snake (lambda (sym)
+                  (intern (replace-regexp-in-string "-" "_" (symbol-name sym)))))
+         (cells (append
+                 (and session
+                      (list `(cons 'session_id
+                                   (hermes-dashboard-transport--session-param
+                                    client session-id))))
+                 (mapcar (lambda (s) `(cons ',(funcall snake s) ,s))
+                         (append args keys))
+                 (mapcar (lambda (c) `(cons ',(car c) ,(cdr c))) extra)))
+         (params (and cells
+                      `(hermes-dashboard-transport--alist-without-nil
+                        (list ,@cells)))))
+    `(cl-defun ,name (client ,@args &key ,@keys
+                             ,@(and session '(session-id)) resolve reject)
+       ,docstring
+       (hermes-dashboard-transport-request
+        client ,method ,params resolve reject))))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-create "session.create"
   "Send a `session.create' request for CLIENT.
 COLS, MESSAGES, TITLE, PROFILE, and CWD become request parameters.  RESOLVE
 and REJECT receive the asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "session.create"
-   (hermes-dashboard-transport--alist-without-nil
-    `((cols . ,cols) (messages . ,messages) (title . ,title)
-      (profile . ,profile) (cwd . ,cwd)))
-   resolve reject))
+  :keys (cols messages title profile cwd))
 
-(cl-defun hermes-dashboard-transport-session-resume
-    (client session-id &key cols profile resolve reject)
-  "Send a `session.resume' request for SESSION-ID on CLIENT."
-  (hermes-dashboard-transport-request
-   client "session.resume"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,session-id) (cols . ,cols) (profile . ,profile)))
-   resolve reject))
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-resume "session.resume"
+  "Send a `session.resume' request for SESSION-ID on CLIENT.
+COLS and PROFILE are optional; RESOLVE and REJECT receive the result or error."
+  :args (session-id) :keys (cols profile))
 
-(cl-defun hermes-dashboard-transport-session-list
-    (client &key limit resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-list "session.list"
   "Send a `session.list' request for CLIENT.
 LIMIT caps the number of sessions returned.  RESOLVE and REJECT receive the
 asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "session.list"
-   (hermes-dashboard-transport--alist-without-nil `((limit . ,limit)))
-   resolve reject))
+  :keys (limit))
 
-(cl-defun hermes-dashboard-transport-session-history
-    (client session-id &key offset limit resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-history "session.history"
   "Send a `session.history' request for SESSION-ID on CLIENT.
-OFFSET and LIMIT page the returned messages."
-  (hermes-dashboard-transport-request
-   client "session.history"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,session-id) (offset . ,offset) (limit . ,limit)))
-   resolve reject))
+OFFSET and LIMIT page the returned messages; RESOLVE and REJECT receive the
+result or error."
+  :args (session-id) :keys (offset limit))
 
-(cl-defun hermes-dashboard-transport-session-delete
-    (client session-id &key resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-delete "session.delete"
   "Send a `session.delete' request for SESSION-ID on CLIENT.
 RESOLVE and REJECT receive the asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "session.delete"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,session-id)))
-   resolve reject))
+  :args (session-id))
 
-(cl-defun hermes-dashboard-transport-model-options
-    (client &key session-id resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-model-options "model.options"
   "Send a `model.options' request for CLIENT.
 SESSION-ID scopes the current-model hints to that session.  RESOLVE and REJECT
 receive the asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "model.options"
-   (hermes-dashboard-transport--alist-without-nil `((session_id . ,session-id)))
-   resolve reject))
+  :keys (session-id))
 
-(cl-defun hermes-dashboard-transport-config-set
-    (client key value &key session-id confirm-expensive-model resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-config-set "config.set"
   "Send a `config.set' request setting KEY to VALUE on CLIENT.
 SESSION-ID scopes the change; CONFIRM-EXPENSIVE-MODEL acknowledges a pricier
 model when `config.set' asks for confirmation.  RESOLVE and REJECT receive the
 asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "config.set"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,session-id) (key . ,key) (value . ,value)
-      (confirm_expensive_model . ,confirm-expensive-model)))
-   resolve reject))
+  :args (key value) :keys (session-id confirm-expensive-model))
 
-(cl-defun hermes-dashboard-transport-tools-configure
-    (client names action &key session-id resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-tools-configure "tools.configure"
   "Send a `tools.configure' request for NAMES and ACTION on CLIENT.
 ACTION is `enable' or `disable'.  SESSION-ID scopes a live session reset when
 the dashboard backend supports it.  RESOLVE and REJECT receive the result or
 error."
-  (hermes-dashboard-transport-request
-   client "tools.configure"
-   (hermes-dashboard-transport--alist-without-nil
-    `((names . ,names)
-      (action . ,action)
-      (session_id . ,(hermes-dashboard-transport--session-param
-                      client session-id))))
-   resolve reject))
+  :args (names action) :session t)
 
-(cl-defun hermes-dashboard-transport-skills-reload
-    (client &key resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-skills-reload "skills.reload"
   "Send a `skills.reload' request for CLIENT.
-RESOLVE and REJECT receive the result or error."
-  (hermes-dashboard-transport-request
-   client "skills.reload" nil resolve reject))
+RESOLVE and REJECT receive the result or error.")
 
-(cl-defun hermes-dashboard-transport-rollback-list
-    (client &key session-id resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-rollback-list "rollback.list"
   "Send a `rollback.list' request for CLIENT.
 SESSION-ID scopes the checkpoints.  RESOLVE and REJECT receive the result
 or error."
-  (hermes-dashboard-transport-request
-   client "rollback.list"
-   (hermes-dashboard-transport--alist-without-nil `((session_id . ,session-id)))
-   resolve reject))
+  :keys (session-id))
 
-(cl-defun hermes-dashboard-transport-rollback-diff
-    (client hash &key session-id resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-rollback-diff "rollback.diff"
   "Send a `rollback.diff' request for checkpoint HASH on CLIENT.
 SESSION-ID scopes the checkpoint.  RESOLVE and REJECT receive the result
 or error."
-  (hermes-dashboard-transport-request
-   client "rollback.diff"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,session-id) (hash . ,hash)))
-   resolve reject))
+  :args (hash) :keys (session-id))
 
-(cl-defun hermes-dashboard-transport-rollback-restore
-    (client hash &key session-id file-path resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-rollback-restore "rollback.restore"
   "Send a `rollback.restore' request for checkpoint HASH on CLIENT.
 FILE-PATH restores a single file; SESSION-ID scopes the checkpoint.  RESOLVE
 and REJECT receive the result or error."
-  (hermes-dashboard-transport-request
-   client "rollback.restore"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,session-id) (hash . ,hash) (file_path . ,file-path)))
-   resolve reject))
+  :args (hash) :keys (session-id file-path))
 
-(cl-defun hermes-dashboard-transport-delegation-status
-    (client &key resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-delegation-status "delegation.status"
   "Send a `delegation.status' request for CLIENT.
-RESOLVE and REJECT receive the result or error."
-  (hermes-dashboard-transport-request client "delegation.status" nil resolve reject))
+RESOLVE and REJECT receive the result or error.")
 
-(cl-defun hermes-dashboard-transport-subagent-interrupt
-    (client subagent-id &key resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-subagent-interrupt "subagent.interrupt"
   "Send a `subagent.interrupt' request for SUBAGENT-ID on CLIENT.
 RESOLVE and REJECT receive the result or error."
-  (hermes-dashboard-transport-request
-   client "subagent.interrupt"
-   (hermes-dashboard-transport--alist-without-nil
-    `((subagent_id . ,subagent-id)))
-   resolve reject))
+  :args (subagent-id))
 
-(cl-defun hermes-dashboard-transport-cron-manage
-    (client &key action name schedule prompt resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-cron-manage "cron.manage"
   "Send a `cron.manage' request for CLIENT.
 ACTION is one of list, add, remove, pause, or resume; NAME identifies the job;
 SCHEDULE and PROMPT are used by add.  RESOLVE and REJECT receive the result
 or error."
-  (hermes-dashboard-transport-request
-   client "cron.manage"
-   (hermes-dashboard-transport--alist-without-nil
-    `((action . ,action) (name . ,name) (schedule . ,schedule) (prompt . ,prompt)))
-   resolve reject))
+  :keys (action name schedule prompt))
 
-(cl-defun hermes-dashboard-transport-prompt-submit
-    (client text &key session-id resolve reject)
-  "Send TEXT through `prompt.submit' on CLIENT."
-  (hermes-dashboard-transport-request
-   client "prompt.submit"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))
-      (text . ,text)))
-   resolve reject))
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-prompt-submit "prompt.submit"
+  "Send TEXT through `prompt.submit' on CLIENT.
+SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
+result or error."
+  :args (text) :session t)
 
-(cl-defun hermes-dashboard-transport-session-interrupt
-    (client &key session-id resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-interrupt "session.interrupt"
   "Send `session.interrupt' for CLIENT's SESSION-ID or active session.
 RESOLVE and REJECT receive the asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "session.interrupt"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))))
-   resolve reject))
+  :session t)
 
-(cl-defun hermes-dashboard-transport-process-stop
-    (client &key resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-process-stop "process.stop"
   "Send `process.stop' for CLIENT to terminate running background processes.
 RESOLVE and REJECT receive the asynchronous result or error.  This stops
 background/tool processes; it does not interrupt the current model turn -- use
-`hermes-dashboard-transport-session-interrupt' for that."
-  (hermes-dashboard-transport-request
-   client "process.stop" nil resolve reject))
+`hermes-dashboard-transport-session-interrupt' for that.")
 
-(cl-defun hermes-dashboard-transport-session-title
-    (client &key session-id title resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-title "session.title"
   "Set CLIENT's SESSION-ID title to TITLE via `session.title'.
 RESOLVE and REJECT receive the asynchronous result or error.  The gateway
 resolves the session from the live SESSION-ID and may reply with a pending
 title when the session row does not exist yet."
-  (hermes-dashboard-transport-request
-   client "session.title"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))
-      (title . ,title)))
-   resolve reject))
+  :keys (title) :session t)
 
-(cl-defun hermes-dashboard-transport-session-title-fetch
-    (client &key session-id resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-title-fetch "session.title"
   "Fetch CLIENT's current SESSION-ID title via `session.title' without setting it.
 Omitting the title makes the gateway return the stored or auto-generated title.
 RESOLVE and REJECT receive the asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "session.title"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))))
-   resolve reject))
+  :session t)
 
-(cl-defun hermes-dashboard-transport-session-steer
-    (client text &key session-id resolve reject)
-  "Send TEXT through `session.steer' for CLIENT's active session."
-  (hermes-dashboard-transport-request
-   client "session.steer"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))
-      (text . ,text)))
-   resolve reject))
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-steer "session.steer"
+  "Send TEXT through `session.steer' for CLIENT's active session.
+SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
+result or error."
+  :args (text) :session t)
 
-(cl-defun hermes-dashboard-transport-commands-catalog
-    (client &key resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-commands-catalog "commands.catalog"
   "Request the dashboard `commands.catalog' for CLIENT.
-RESOLVE and REJECT receive the asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "commands.catalog" nil resolve reject))
+RESOLVE and REJECT receive the asynchronous result or error.")
 
-(cl-defun hermes-dashboard-transport-command-dispatch
-    (client name arg &key session-id resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-command-dispatch "command.dispatch"
   "Dispatch slash command NAME with ARG through CLIENT's `command.dispatch'.
 SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
 asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "command.dispatch"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))
-      (name . ,name)
-      (arg . ,arg)))
-   resolve reject))
+  :args (name arg) :session t)
 
-(cl-defun hermes-dashboard-transport-slash-exec
-    (client command &key session-id resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-slash-exec "slash.exec"
   "Run COMMAND through CLIENT's dashboard `slash.exec'.
 SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
 asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "slash.exec"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))
-      (command . ,command)))
-   resolve reject))
+  :args (command) :session t)
 
-(cl-defun hermes-dashboard-transport-approval-respond
-    (client &key session-id choice all resolve reject)
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-approval-respond "approval.respond"
   "Send an `approval.respond' CHOICE for CLIENT.
 SESSION-ID selects the live dashboard session.  ALL applies CHOICE broadly when
 non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
-  (hermes-dashboard-transport-request
-   client "approval.respond"
-   (hermes-dashboard-transport--alist-without-nil
-    `((session_id . ,(hermes-dashboard-transport--session-param client session-id))
-      (choice . ,choice) (all . ,all)))
-   resolve reject))
+  :keys (choice all) :session t)
 
 (defun hermes-dashboard-transport-clarify-respond
     (client request-id answer &optional resolve reject)
