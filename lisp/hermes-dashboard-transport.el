@@ -1562,6 +1562,35 @@ asynchronous result or error."
   :args (key value) :keys (session-id confirm-expensive-model))
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-config-get "config.get"
+  "Send a `config.get' request reading KEY on CLIENT.
+CWD scopes the `project' key; SESSION-ID scopes the `fast' key.  RESOLVE and
+REJECT receive the asynchronous result or error."
+  :args (key) :keys (cwd session-id))
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-setup-status "setup.status"
+  "Send a `setup.status' request for CLIENT.
+The result carries `provider_configured'.  RESOLVE and REJECT receive the
+asynchronous result or error.")
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-setup-runtime-check "setup.runtime_check"
+  "Send a `setup.runtime_check' request for CLIENT.
+The result carries `ok' (nil on a credential failure -- never a JSON-RPC error)
+with provider/model/source, or an `error' string.  RESOLVE and REJECT receive
+the asynchronous result or error.")
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-model-save-key "model.save_key"
+  "Send a `model.save_key' request saving API-KEY for provider SLUG on CLIENT.
+SESSION-ID scopes the live agent update.  The result carries the updated
+provider object on success, or an error whose code is 4002 (unknown provider),
+4003 (wrong auth type), 4006 (managed install), etc.  RESOLVE and REJECT receive
+the asynchronous result or error."
+  :args (slug api-key) :keys (session-id))
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-tools-configure "tools.configure"
   "Send a `tools.configure' request for NAMES and ACTION on CLIENT.
 ACTION is `enable' or `disable'.  SESSION-ID scopes a live session reset when

@@ -739,6 +739,34 @@
       (should (string-match-p "timed out" rejected))
       (should (string-match-p "session.create" rejected)))))
 
+(ert-deftest hermes-transport-dashboard-model-save-key-sends-key-never-logs-it ()
+  "`model.save_key' sends slug/api_key/session_id; a rejection never echoes the key."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket 'fake-websocket
+                 :ready-p t
+                 :pending (make-hash-table :test #'equal)))
+        (hermes-dashboard-transport-request-timeout 30)
+        sent timer-callback rejected)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (_secs _repeat fn &rest args)
+                 (setq timer-callback (cons fn args))
+                 'fake-timer))
+              ((symbol-function 'cancel-timer) #'ignore))
+      (let ((hermes-dashboard-transport-websocket-send-function
+             (lambda (_ws text) (setq sent text))))
+        (hermes-dashboard-transport-model-save-key
+         client "deepseek" "sk-super-secret" :session-id "s1"
+         :reject (lambda (message) (setq rejected message))))
+      (let ((params (alist-get 'params (json-parse-string sent :object-type 'alist))))
+        (should (equal (alist-get 'slug params) "deepseek"))
+        (should (equal (alist-get 'api_key params) "sk-super-secret"))
+        (should (equal (alist-get 'session_id params) "s1")))
+      ;; The transport does not auto-redact api_key, so the error path must not
+      ;; interpolate request params: a rejection names the method, never the key.
+      (apply (car timer-callback) (cdr timer-callback))
+      (should (string-match-p "model.save_key" rejected))
+      (should-not (string-match-p "sk-super-secret" rejected)))))
+
 (ert-deftest hermes-transport-dashboard-error-rejects-pending-requests ()
   (let (on-error rejected events)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--require-websocket)
