@@ -225,14 +225,16 @@ error.  CLIENT supplies a live dashboard session token when available."
     (hermes-mcp--remember-servers result)
     (setq tabulated-list-entries
           (hermes-mcp--rows result hermes-mcp--test-results))
-    (tabulated-list-print t)
-    (pop-to-buffer (current-buffer))))
+    (tabulated-list-print t)))
 
-(defun hermes-mcp--fetch ()
-  "Fetch and render the MCP server list asynchronously."
+(defun hermes-mcp--fetch (&optional display)
+  "Fetch and render the MCP server list asynchronously.
+DISPLAY pops the buffer when non-nil; revert refreshes in place without it."
   (hermes-browser--run-on-client
    (lambda (client) (hermes-mcp--api "GET" "/servers" nil nil :client client))
-   #'hermes-mcp--render))
+   (lambda (result)
+     (hermes-mcp--render result)
+     (when display (pop-to-buffer hermes-mcp-buffer-name)))))
 
 (defun hermes-mcp--revert (&rest _)
   "Refresh the MCP server list."
@@ -337,7 +339,7 @@ error.  CLIENT supplies a live dashboard session token when available."
 (defun hermes-list-mcp ()
   "Browse configured Hermes MCP servers via the dashboard API."
   (interactive)
-  (hermes-mcp--fetch))
+  (hermes-mcp--fetch t))
 
 (provide 'hermes-mcp)
 ;;; hermes-mcp.el ends here

@@ -41,6 +41,31 @@
     (should-not (string-match-p (regexp-quote secret) display))
     (should (string-match-p "<redacted>" display))))
 
+(ert-deftest hermes-mcp-revert-refreshes-without-display ()
+  "Reverting the MCP list refreshes rows in place; the command displays."
+  (let (displayed)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (let ((p (funcall make-promise 'fake-client)))
+                   (if on-success (hermes--promise-then p on-success) p))))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '((servers . (((name . "ctx") (transport . "stdio")
+                                 (enabled . t) (tool_count . 0))))))))
+              ((symbol-function 'pop-to-buffer)
+               (lambda (&rest _) (setq displayed t))))
+      (unwind-protect
+          (progn
+            (hermes-mcp--revert)
+            (should-not displayed)
+            (with-current-buffer hermes-mcp-buffer-name
+              (should (equal (mapcar #'car tabulated-list-entries) '("ctx"))))
+            (hermes-list-mcp)
+            (should displayed))
+        (when (get-buffer hermes-mcp-buffer-name)
+          (kill-buffer hermes-mcp-buffer-name))))))
+
 (ert-deftest hermes-mcp-test-and-toggle-dispatch-rest-actions ()
   "Testing and toggling dispatch to MCP dashboard REST endpoints."
   (let (calls messages)

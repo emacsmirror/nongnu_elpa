@@ -86,8 +86,8 @@
    sessions))
 
 (defun hermes-sessions--revert (&rest _)
-  "Refresh the Hermes session list."
-  (hermes-list-sessions))
+  "Refresh the Hermes session list in place."
+  (hermes-sessions--refresh))
 
 (defvar-keymap hermes-sessions-mode-map
   :doc "Keymap for `hermes-sessions-mode'."
@@ -125,8 +125,18 @@
     (setq hermes-sessions--session-map
           (hermes-sessions--sessions-by-id sessions))
     (setq tabulated-list-entries (hermes-sessions--rows sessions))
-    (tabulated-list-print t)
-    (pop-to-buffer (current-buffer))))
+    (tabulated-list-print t)))
+
+(defun hermes-sessions--refresh (&optional display)
+  "Fetch the session list and render it.
+DISPLAY pops the buffer when non-nil; revert refreshes in place without it."
+  (hermes-browser--run-on-client
+   (lambda (client)
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-session-list client))
+   (lambda (result)
+     (hermes-sessions--render (hermes-transport--get result 'sessions))
+     (when display (pop-to-buffer "*Hermes Sessions*")))))
 
 (defun hermes-sessions--session-from-entry (id entry)
   "Return a session alist from row ID and tabulated ENTRY."
@@ -465,12 +475,7 @@ id it returns."
 Reuses a live chat connection when one exists; otherwise connects a transient
 client just for the listing."
   (interactive)
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes-dashboard-transport-call-fn
-      #'hermes-dashboard-transport-session-list client))
-   (lambda (result)
-     (hermes-sessions--render (hermes-transport--get result 'sessions)))))
+  (hermes-sessions--refresh t))
 
 (provide 'hermes-sessions)
 ;;; hermes-sessions.el ends here

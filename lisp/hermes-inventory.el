@@ -194,8 +194,7 @@ Toolsets and skills support `\[hermes-inventory-enable]' and
     (setq tabulated-list-format (hermes-inventory--spec-format spec))
     (tabulated-list-init-header)
     (setq tabulated-list-entries rows)
-    (tabulated-list-print t)
-    (pop-to-buffer (current-buffer))))
+    (tabulated-list-print t)))
 
 (defun hermes-inventory--render-result (spec result)
   "Render inventory SPEC from dashboard RESULT."
@@ -216,8 +215,9 @@ REST is unavailable."
               reason)
      (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec)))))
 
-(defun hermes-inventory--fetch (spec)
+(defun hermes-inventory--fetch (spec &optional display)
   "Fetch and render the inventory described by SPEC asynchronously.
+DISPLAY pops the buffer when non-nil; revert refreshes in place without it.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client for the listing."
   (hermes-browser--run-on-client
@@ -225,7 +225,9 @@ client for the listing."
      (if (eq (hermes-inventory--spec-kind spec) 'skills)
          (hermes-inventory--skills-promise client spec)
        (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec))))
-   (lambda (result) (hermes-inventory--render-result spec result))))
+   (lambda (result)
+     (hermes-inventory--render-result spec result)
+     (when display (pop-to-buffer (format "*Hermes %s*" (car spec)))))))
 
 (defun hermes-inventory--row-name ()
   "Return the current inventory row name, or signal `user-error'."
@@ -429,7 +431,7 @@ TARGET is one of all, memory, or user.  External providers are not reset."
          (choice (completing-read "Hermes inventory: " labels nil t)))
     (if (equal choice "Memory")
         (hermes-memory-status)
-      (hermes-inventory--fetch (assoc choice hermes-inventory--specs)))))
+      (hermes-inventory--fetch (assoc choice hermes-inventory--specs) t))))
 
 (provide 'hermes-inventory)
 ;;; hermes-inventory.el ends here
