@@ -479,6 +479,40 @@
     (should (string-match-p "## Run history (0)" text))
     (should (string-match-p "— no runs —" text))))
 
+(ert-deftest hermes-kanban-format-task-shows-failure-fields ()
+  "A distressed task surfaces branch, run, failure count, and last error."
+  (let ((text (hermes-kanban--format-task
+               '((id . "t9") (title . "Flaky") (status . "running")
+                 (priority . 3) (assignee . "elisp-dev")
+                 (created_at . 1700000000)
+                 (branch_name . "feat/flaky")
+                 (current_run_id . 42)
+                 (consecutive_failures . 2)
+                 (last_failure_error . "worker crashed")))))
+    (should (string-match-p (regexp-quote "- Branch: `feat/flaky`") text))
+    (should (string-match-p (regexp-quote "- Run: `#42`") text))
+    (should (string-match-p (regexp-quote "- Failures: 2") text))
+    (should (string-match-p (regexp-quote "- Last error: worker crashed") text))))
+
+(ert-deftest hermes-kanban-format-task-hides-healthy-failure-fields ()
+  "A healthy task adds no branch, run, failure, or error lines."
+  (let ((text (hermes-kanban--format-task
+               '((id . "t1") (title . "Fine") (status . "todo")
+                 (priority . 5) (created_at . 1700000000)
+                 (consecutive_failures . 0) (last_failure_error . nil)))))
+    (should-not (string-match-p "- Branch:" text))
+    (should-not (string-match-p "- Run:" text))
+    (should-not (string-match-p "- Failures:" text))
+    (should-not (string-match-p "- Last error:" text))))
+
+(ert-deftest hermes-kanban-format-failure-fields-renders-present-only ()
+  "Only present fields render; a lone branch yields just the branch line."
+  (should (equal "" (hermes-kanban--format-failure-fields
+                     '((consecutive_failures . 0)))))
+  (should (equal "- Branch: `main`\n"
+                 (hermes-kanban--format-failure-fields
+                  '((branch_name . "main") (consecutive_failures . 0))))))
+
 (ert-deftest hermes-kanban-show-log-fetches-selected-task-log ()
   "Log viewing goes through the dashboard REST endpoint for the selected task."
   (let (log-path log-query)

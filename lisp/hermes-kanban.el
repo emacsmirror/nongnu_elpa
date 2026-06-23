@@ -638,6 +638,24 @@ EMPTY-NAME is inserted in the explicit empty-state line."
               (format "— no %s —" empty-name))
             "\n")))
 
+(defun hermes-kanban--format-failure-fields (task)
+  "Return TASK's branch, run, and failure metadata as header lines.
+Healthy tasks add nothing: a zero failure count and an empty error are dropped,
+and an absent branch or run id is omitted."
+  (let* ((branch (hermes-transport--non-empty-string
+                  (hermes-transport--display-field task 'branch_name)))
+         (run (hermes-transport--get task 'current_run_id))
+         (failures (hermes-transport--get task 'consecutive_failures))
+         (error (hermes-transport--non-empty-string
+                 (hermes-transport--display-field task 'last_failure_error)))
+         (lines (delq nil
+                      (list (and branch (format "- Branch: `%s`" branch))
+                            (and (numberp run) (format "- Run: `#%s`" run))
+                            (and (numberp failures) (> failures 0)
+                                 (format "- Failures: %d" failures))
+                            (and error (format "- Last error: %s" error))))))
+    (if lines (concat (string-join lines "\n") "\n") "")))
+
 (defun hermes-kanban--format-task (task)
   "Return TASK's header and body as a display string."
   (let ((latest-summary (hermes-transport--non-empty-string
@@ -660,6 +678,7 @@ EMPTY-NAME is inserted in the explicit empty-state line."
                  "")))
      (when latest-summary
        (format "- Summary: %s\n" latest-summary))
+     (hermes-kanban--format-failure-fields task)
      "\n## Description\n\n"
      (or body "— no description —")
      "\n")))
