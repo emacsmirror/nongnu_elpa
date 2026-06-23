@@ -731,5 +731,95 @@
     (should (string-match-p "start\nprogress\ndone" plain))
     (should (string-match-p "error" plain))))
 
+;;; Group N: live events tail
+
+(ert-deftest hermes-kanban-events-handle-frame-advances-cursor-and-schedules ()
+  "A `{events,cursor}' frame advances the cursor and debounces one refresh."
+  (let ((tail (hermes-kanban--events-tail-create
+               :buffer (current-buffer) :cursor 1))
+        scheduled)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest _) (setq scheduled t) 'timer)))
+      (hermes-kanban--events-handle-frame
+       tail "{\"events\":[{\"id\":5}],\"cursor\":5}")
+      (should (= 5 (hermes-kanban--events-tail-cursor tail)))
+      (should scheduled))))
+
+(ert-deftest hermes-kanban-events-handle-frame-ignores-bad-json ()
+  "A malformed frame leaves the cursor untouched and schedules nothing."
+  (let ((tail (hermes-kanban--events-tail-create
+               :buffer (current-buffer) :cursor 3))
+        scheduled)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest _) (setq scheduled t) 'timer)))
+      (hermes-kanban--events-handle-frame tail "not json")
+      (should (= 3 (hermes-kanban--events-tail-cursor tail)))
+      (should-not scheduled))))
+
+(ert-deftest hermes-kanban-live-indicator-reflects-tail-state ()
+  "The indicator is shadow when off and success when a tail is live."
+  (with-temp-buffer
+    (should (eq 'shadow (get-text-property 0 'face (hermes-kanban--live-indicator))))
+    (setq-local hermes-kanban--events-tail (hermes-kanban--events-tail-create))
+    (let ((ind (hermes-kanban--live-indicator)))
+      (should (string-match-p "live" ind))
+      (should (eq 'success (get-text-property 1 'face ind))))))
+
+(ert-deftest hermes-kanban-events-reconnect-backs-off-and-stops-when-dead ()
+  "Reconnect doubles the backoff, never double-schedules, and stops if dead."
+  (let (scheduled
+        (tail (hermes-kanban--events-tail-create
+               :buffer (current-buffer) :backoff 2)))
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (delay &rest _) (push delay scheduled) 'timer)))
+      (hermes-kanban--events-reconnect tail)
+      (should (equal scheduled '(2)))
+      (should (= 4 (hermes-kanban--events-tail-backoff tail)))
+      (hermes-kanban--events-reconnect tail)
+      (should (equal scheduled '(2)))))
+  (let ((dead (generate-new-buffer "k")) (count 0))
+    (kill-buffer dead)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest _) (cl-incf count) 'timer)))
+      (hermes-kanban--events-reconnect
+       (hermes-kanban--events-tail-create :buffer dead))
+      (should (= 0 count)))))
+
+(ert-deftest hermes-kanban-toggle-live-requires-board-mode ()
+  "Toggling live updates outside a board buffer signals a `user-error'."
+  (with-temp-buffer
+    (should-error (hermes-kanban-toggle-live) :type 'user-error)))
+
+(ert-deftest hermes-kanban-toggle-live-on-seeds-cursor-then-off ()
+  "Toggling on seeds the cursor from the last render and installs teardown."
+  (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 80))
+            ((symbol-function 'hermes-kanban--events-connect) #'ignore))
+    (with-temp-buffer
+      (hermes-kanban-mode)
+      (setq hermes-kanban--slug "emacs-lisp"
+            hermes-kanban--latest-event-id 7)
+      (hermes-kanban-toggle-live)
+      (should hermes-kanban--events-tail)
+      (should (= 7 (hermes-kanban--events-tail-cursor
+                    hermes-kanban--events-tail)))
+      (should (memq #'hermes-kanban--events-teardown kill-buffer-hook))
+      (hermes-kanban-toggle-live)
+      (should-not hermes-kanban--events-tail))))
+
+(ert-deftest hermes-kanban-render-board-seeds-latest-event-id ()
+  "Rendering a board records its latest_event_id for live seeding."
+  (cl-letf (((symbol-function 'window-body-width) (lambda (&rest _) 80))
+            ((symbol-function 'hermes-kanban--api)
+             (lambda (_m _p &optional _b _q)
+               (hermes--promise-resolved
+                '((columns . (((name . "todo") (tasks . []))))
+                  (assignees) (latest_event_id . 42))))))
+    (unwind-protect
+        (progn
+          (hermes-kanban--render-board "emacs-lisp" "Emacs Lisp")
+          (with-current-buffer "*Hermes Kanban*"
+            (should (= 42 hermes-kanban--latest-event-id))))
+      (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*")))))
+
 (provide 'hermes-kanban-tests)
 ;;; hermes-kanban-tests.el ends here
