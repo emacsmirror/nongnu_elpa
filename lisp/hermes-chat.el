@@ -831,7 +831,7 @@ self-explanatory."
           "interrupt+send, "
           (and (hermes-chat--pending-prompt-p)
                "C-c C-a to answer the prompt, C-c C-d to cancel it, ")
-          "or C-c C-n for a new session"))
+          "or C-c C-n for a new chat"))
 
 (defun hermes-chat--trimmed-input ()
   "Return the current input tail trimmed for sending."
@@ -1303,7 +1303,7 @@ Only matches while typing the /command word in the writable input tail."
    (cons '("stop") (lambda (_arg) (hermes-chat-stop-processes)))
    (cons '("interrupt" "int") (lambda (_arg) (hermes-chat-interrupt)))
    (cons '("clear" "reset") (lambda (_arg) (hermes-chat-clear)))
-   (cons '("new") (lambda (arg) (hermes-chat-new-session arg)))
+   (cons '("new") (lambda (arg) (hermes-chat--new-buffer nil arg)))
    (cons '("model") (lambda (_arg) (hermes-chat-switch-model)))
    (cons '("title" "rename")
          (lambda (arg)
@@ -1730,16 +1730,23 @@ against this session's live agent."
                (hermes-chat--in-buffer buffer
                  (hermes-chat--command-error message))))))
 
-(defun hermes-chat-new-session (&optional title)
-  "Open a new Hermes chat buffer with a fresh dashboard session.
-With TITLE non-empty, name the new session accordingly."
-  (interactive)
-  (let ((buffer (generate-new-buffer hermes-chat-buffer-name)))
+(defun hermes-chat--new-buffer (&optional profile title)
+  "Create, display, and return a fresh chat buffer for PROFILE and TITLE.
+PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
+The buffer is named `*Hermes: PROFILE*' (or `*Hermes: PROFILE: TITLE*') so chats
+stay distinct before a server title arrives.  This is the single side-effecting
+constructor every new-chat entry point funnels through."
+  (let ((profile (hermes-chat--clean-profile profile))
+        (title (hermes-transport--non-empty-string
+                (and title (string-trim title))))
+        (buffer (generate-new-buffer hermes-chat-buffer-name)))
     (with-current-buffer buffer
       (hermes-chat-mode)
-      (when-let* ((name (hermes-transport--non-empty-string
-                         (and title (string-trim title)))))
-        (hermes-chat-rename name)))
+      (setq hermes-chat--profile profile)
+      (when title
+        (setq hermes-chat--title title
+              hermes-chat--title-manual-p t))
+      (rename-buffer (hermes-chat--buffer-name-for-title profile title) t))
     (pop-to-buffer-same-window buffer)
     (goto-char (or (hermes-chat--input-position) (point-max)))
     buffer))
@@ -1841,23 +1848,6 @@ visible while reading."
                            (error-message-string err))))
        (message "Hermes: %s" notice)
        (hermes-chat--read-raw-profile notice)))))
-
-(defun hermes-chat--open-profile-session (profile)
-  "Open a new chat buffer under PROFILE, named after it.  Return the buffer.
-PROFILE is cleaned to a non-empty string or nil (the dashboard default); it
-applies when the session is created on the first interaction."
-  (let ((profile (hermes-chat--clean-profile profile))
-        (buffer (hermes-chat-new-session)))
-    (with-current-buffer buffer
-      (setq hermes-chat--profile profile)
-      (rename-buffer (hermes-chat--buffer-name-for-title profile nil) t))
-    buffer))
-
-(defun hermes-chat-new-profile-session (profile)
-  "Open a new Hermes chat buffer for a dashboard session under PROFILE.
-A blank PROFILE keeps the dashboard's default profile."
-  (interactive (list (hermes-chat--read-profile)))
-  (hermes-chat--open-profile-session profile))
 
 (defun hermes-chat--history-entry (message)
   "Return a chat entry for a resumed history MESSAGE, or nil to skip it."
@@ -2164,8 +2154,7 @@ session-title refresh."
   "a" ("Answer prompt" hermes-chat-respond-to-prompt)
   "d" ("Cancel prompt" hermes-chat-cancel-prompt)
   :group "Session"
-  "n" ("New session" hermes-chat-new-session)
-  "N" ("New profile session" hermes-chat-new-profile-session)
+  "n" ("New chat" hermes-chat)
   "m" ("Switch model" hermes-chat-switch-model)
   "K" ("Connect provider" hermes-chat-connect-provider)
   "R" ("Rename session" hermes-chat-rename)
@@ -2190,7 +2179,7 @@ session-title refresh."
   "C-c C-o" #'hermes-chat-actions-map-popup
   "C-c C-/" #'hermes-chat-show-commands
   "C-c C-l" #'hermes-chat-view-attachments
-  "C-c C-n" #'hermes-chat-new-session
+  "C-c C-n" #'hermes-chat
   "C-c C-r" #'hermes-chat-rename
   "C-c C-b" #'hermes-switch-to-chat)
 
@@ -2214,7 +2203,7 @@ opens a distinct buffer named after the profile -- and, once the session is
 titled, after that title -- so chats stay filterable with
 `hermes-switch-to-chat'."
   (interactive (list (hermes-chat--read-profile)))
-  (hermes-chat--open-profile-session profile))
+  (hermes-chat--new-buffer profile))
 
 (provide 'hermes-chat)
 ;;; hermes-chat.el ends here

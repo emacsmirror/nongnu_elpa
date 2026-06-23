@@ -698,15 +698,15 @@
               #'hermes-chat-interrupt))
   (should (eq (keymap-lookup hermes-chat-actions-map "m")
               #'hermes-chat-switch-model))
-  (should (eq (keymap-lookup hermes-chat-actions-map "N")
-              #'hermes-chat-new-profile-session))
+  (should (eq (keymap-lookup hermes-chat-actions-map "n")
+              #'hermes-chat))
   (let* ((rows (keymap-popup--meta hermes-chat-actions-map 'descriptions))
          (entries (mapcan (lambda (row)
                             (mapcan (lambda (group)
                                       (plist-get group :entries))
                                     row))
                           rows)))
-    (dolist (key '("N" "m"))
+    (dolist (key '("n" "m"))
       (should (cl-find key entries :key (lambda (entry)
                                          (plist-get entry :key))
                        :test #'equal)))))
@@ -1040,7 +1040,7 @@
        (should (string-match-p "interrupt" message))
        (should (string-match-p "queue" message))
        (should (string-match-p "steer" message))
-       (should (string-match-p "new session" message)))
+       (should (string-match-p "new chat" message)))
      (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-i")
                  #'hermes-chat-interrupt))
      (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-q")
@@ -1048,7 +1048,7 @@
      (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-s")
                  #'hermes-chat-steer-message))
      (should (eq (keymap-lookup hermes-chat-mode-map "C-c C-n")
-                 #'hermes-chat-new-session)))))
+                 #'hermes-chat)))))
 
 (ert-deftest hermes-chat-queues-message-while-pending ()
   (let (sent callbacks)
@@ -1069,14 +1069,14 @@
                             (hermes-chat--entries))))
          (should (equal roles '(user assistant status user assistant))))))))
 
-(ert-deftest hermes-chat-new-session-while-pending ()
+(ert-deftest hermes-chat-new-buffer-while-pending ()
   (let (original new)
     (hermes-test-with-chat-buffer
      (let ((hermes-transport-send-function (lambda (_prompt _cb) 'fake-process)))
        (setq original (current-buffer))
        (insert "first")
        (hermes-chat-send)
-       (setq new (hermes-chat-new-session))
+       (setq new (hermes-chat--new-buffer))
        (unwind-protect
            (progn
              (should (buffer-live-p new))
@@ -3711,15 +3711,28 @@
      (hermes-chat-switch-model)
      (should (string-match-p "backend denied" (buffer-string))))))
 
-(ert-deftest hermes-chat-new-profile-session-sets-profile ()
-  "A profile session records the profile; a blank one stays nil."
-  (let ((buffer (hermes-chat-new-profile-session "work")))
+(ert-deftest hermes-chat-new-buffer-sets-profile ()
+  "A profile chat records the profile; a blank one stays nil."
+  (let ((buffer (hermes-chat--new-buffer "work")))
     (unwind-protect
         (with-current-buffer buffer (should (equal hermes-chat--profile "work")))
       (kill-buffer buffer)))
-  (let ((buffer (hermes-chat-new-profile-session "")))
+  (let ((buffer (hermes-chat--new-buffer "")))
     (unwind-protect
         (with-current-buffer buffer (should-not hermes-chat--profile))
+      (kill-buffer buffer))))
+
+(ert-deftest hermes-chat-new-buffer-names-after-profile-and-title ()
+  "The buffer name reflects the profile and a pinned title, never the bare name."
+  (let ((buffer (hermes-chat--new-buffer nil nil)))
+    (unwind-protect
+        (with-current-buffer buffer (should (equal (buffer-name) "*Hermes: default*")))
+      (kill-buffer buffer)))
+  (let ((buffer (hermes-chat--new-buffer "work" "deploy")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (should (equal (buffer-name) "*Hermes: work: deploy*"))
+          (should hermes-chat--title-manual-p))
       (kill-buffer buffer))))
 
 (ert-deftest hermes-chat-profile-candidates-describe-dashboard-profiles ()
@@ -3804,8 +3817,8 @@
       (should-not spawned)
       (should (string-match-p "blank for default" prompt)))))
 
-(ert-deftest hermes-chat-new-profile-session-completes-dashboard-profile ()
-  "Interactively creating a profile session chooses from dashboard profiles."
+(ert-deftest hermes-chat-completes-dashboard-profile ()
+  "Interactively creating a chat chooses from dashboard profiles."
   (let (choices)
     (cl-letf (((symbol-function 'hermes-chat--existing-dashboard-client)
                (lambda () 'fake-client))
@@ -3818,7 +3831,7 @@
                (lambda (_prompt collection &rest _)
                  (setq choices collection)
                  (cl-find "elisp-dev" collection :test #'string-match-p))))
-      (let ((buffer (call-interactively #'hermes-chat-new-profile-session)))
+      (let ((buffer (call-interactively #'hermes-chat)))
         (unwind-protect
             (progn
               (should (cl-find "default" choices :test #'string-match-p))
@@ -3870,7 +3883,7 @@
               ((symbol-function 'hermes-dashboard-transport-prompt-submit)
                (lambda (&rest _) nil)))
       (let ((hermes-transport-send-function #'hermes-transport-send)
-            (buffer (call-interactively #'hermes-chat-new-profile-session)))
+            (buffer (call-interactively #'hermes-chat)))
         (unwind-protect
             (with-current-buffer buffer
               (should-not hermes-chat--profile)

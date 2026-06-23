@@ -127,8 +127,6 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   :group "Session"
   "c" ("Chat" hermes-chat)
   "e" ("Connect provider" hermes-onboarding-connect-provider)
-  "N" ("New session" hermes-chat-new-session)
-  "P" ("New profile session" hermes-chat-new-profile-session)
   "S" ("Sessions" hermes-list-sessions)
   :group "Selected chat"
   "i" ("Interrupt" hermes-dashboard-interrupt)
@@ -414,13 +412,7 @@ The onboarding node leads when `hermes-dashboard--needs-onboarding' is set."
                :key "c"
                :title "Chat"
                :subtitle "Open a new Hermes chat (prompts for a profile)"
-               :action #'hermes-chat)
-         (list :id "action:new-session"
-               :kind 'action
-               :key "N"
-               :title "New session"
-               :subtitle "Open a fresh Hermes chat buffer"
-               :action #'hermes-chat-new-session))))
+               :action #'hermes-chat))))
 
 (defun hermes-dashboard--check-auth ()
   "Surface an onboarding card when a live connection reports no usable provider.
