@@ -1144,18 +1144,6 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
   "Return a request-body alist carrying REASON, or nil when REASON is nil."
   (and reason `((reason . ,reason))))
 
-(defun hermes-kanban--context-task-id ()
-  "Return the task id for the current board or task-detail buffer."
-  (if (derived-mode-p 'hermes-kanban-task-mode)
-      (or hermes-kanban-task--task-id (user-error "No task in this buffer"))
-    (hermes-kanban--id-at-point)))
-
-(defun hermes-kanban--context-board-slug ()
-  "Return the board slug for the current board or task-detail buffer."
-  (if (derived-mode-p 'hermes-kanban-task-mode)
-      hermes-kanban-task--board-slug
-    hermes-kanban--slug))
-
 (defun hermes-kanban--context-refresher ()
   "Return a thunk that re-renders the current Kanban buffer in place.
 The buffer is captured now so the thunk is safe to call from an async callback
@@ -1171,9 +1159,9 @@ Reads an optional reason and refreshes the buffer on success.  Maps to the
 dashboard `POST /tasks/:id/reclaim'; a 409 (task no longer claimable) is
 reported as-is."
   (interactive)
-  (let ((id (hermes-kanban--context-task-id))
+  (let ((id (hermes-kanban--task-id-for-command))
         (query (hermes-kanban--query-for-board
-                (hermes-kanban--context-board-slug)))
+                (hermes-kanban--board-slug-for-command)))
         (refresh (hermes-kanban--context-refresher)))
     (when (yes-or-no-p (format "Reclaim task %s? " id))
       (let ((reason (hermes-kanban--read-reason "Reclaim reason (optional): ")))
@@ -1202,9 +1190,9 @@ A task with no active run is reported and left untouched."
 Fetches the task to resolve its run id, confirms, then POSTs the terminate.
 A task with no active run is reported; a 404/409 surfaces as a message."
   (interactive)
-  (let ((id (hermes-kanban--context-task-id))
+  (let ((id (hermes-kanban--task-id-for-command))
         (query (hermes-kanban--query-for-board
-                (hermes-kanban--context-board-slug)))
+                (hermes-kanban--board-slug-for-command)))
         (refresh (hermes-kanban--context-refresher)))
     (hermes-kanban--then
      (hermes-kanban--api "GET" (hermes-kanban--task-path id) nil query)
