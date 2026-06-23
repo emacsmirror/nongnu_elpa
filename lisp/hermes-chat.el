@@ -1733,17 +1733,12 @@ CANDIDATES is a (NAME . MODEL-LABEL) alist; the annotation shows the model."
            (buffer-list)))
 
 (defun hermes-chat--profile-list-payload ()
-  "Return dashboard profile-list payload using live or transient client auth."
-  (let* ((existing (hermes-chat--existing-dashboard-client))
-         (client existing))
-    (unwind-protect
-        (progn
-          (unless client
-            (setq client (hermes-dashboard-transport-start :callback #'ignore)))
-          (hermes-dashboard-transport-profile-list client))
-      (unless existing
-        (when client
-          (hermes-dashboard-transport-stop client))))))
+  "Return dashboard profile metadata from a live chat client, or nil.
+Profile completion never spawns a transient dashboard: with no live chat
+connection this returns nil so the caller prompts for a profile manually,
+and opening a chat never blocks on a cold-start dashboard spawn."
+  (when-let* ((client (hermes-chat--existing-dashboard-client)))
+    (hermes-dashboard-transport-profile-list client)))
 
 (defun hermes-chat--read-raw-profile (&optional notice)
   "Read a raw Hermes profile name with the default-profile prompt.
