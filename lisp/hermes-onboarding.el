@@ -38,21 +38,15 @@
 
 ;;; Pure provider model
 
-(defun hermes-onboarding--api-key-provider-p (provider)
-  "Return non-nil when PROVIDER is an unauthenticated API-key provider.
-Such providers can be connected by pasting a key.  `auth_type'/`key_env' are
-present only on unauthenticated skeleton rows, so this predicate also bounds the
-domain to unconnected providers."
-  (and (not (eq (hermes-transport--get provider 'authenticated) t))
-       (equal (hermes-transport--scalar-string
-               (hermes-transport--get provider 'auth_type))
-              "api_key")
-       (hermes-transport--non-empty-string
-        (hermes-transport--get provider 'key_env))))
+(defun hermes-onboarding--unauthed-p (provider)
+  "Return non-nil when PROVIDER is not yet authenticated."
+  (not (eq (hermes-transport--get provider 'authenticated) t)))
 
 (defun hermes-onboarding--unauthed-providers (result)
-  "Return the connectable API-key providers in a `model.options' RESULT."
-  (seq-filter #'hermes-onboarding--api-key-provider-p
+  "Return the unauthenticated providers in a `model.options' RESULT.
+Every unconnected provider is offered with no client-side auth classification;
+the gateway accepts a pasted key or returns its own error on save."
+  (seq-filter #'hermes-onboarding--unauthed-p
               (hermes-transport--get result 'providers)))
 
 (defun hermes-onboarding--provider-name (provider)
@@ -61,26 +55,24 @@ domain to unconnected providers."
       (hermes-transport--scalar-string (hermes-transport--get provider 'slug))
       "provider"))
 
-(defun hermes-onboarding--provider-label (provider)
-  "Return a completion label for PROVIDER: its name and the env var to paste."
-  (let ((name (hermes-onboarding--provider-name provider))
-        (env (hermes-transport--scalar-string
-              (hermes-transport--get provider 'key_env))))
-    (if env (format "%s (%s)" name env) name)))
-
 ;;; User interaction
 
 (defun hermes-onboarding--choose-provider (result)
   "Return an API-key provider chosen with completion from RESULT.
+The candidate is the provider name; an `:annotation-function' tags each `API'.
 Signal a `user-error' when none are connectable."
   (let ((providers (hermes-onboarding--unauthed-providers result)))
     (unless providers
-      (user-error "No API-key providers to connect; all are authenticated or use OAuth"))
-    (let* ((labels (mapcar (lambda (p)
-                             (cons (hermes-onboarding--provider-label p) p))
-                           providers))
-           (choice (completing-read "Connect provider: " labels nil t)))
-      (or (cdr (assoc choice labels))
+      (user-error "No API-key providers to connect"))
+    (let* ((candidates (mapcar (lambda (p)
+                                 (cons (hermes-onboarding--provider-name p) p))
+                               providers))
+           (completion-extra-properties
+            (list :annotation-function
+                  (lambda (_name)
+                    (concat "  " (propertize "API" 'face 'shadow)))))
+           (choice (completing-read "Connect provider: " candidates nil t)))
+      (or (cdr (assoc choice candidates))
           (user-error "No provider selected")))))
 
 (defun hermes-onboarding--read-key (provider)

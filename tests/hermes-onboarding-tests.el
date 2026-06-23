@@ -17,23 +17,16 @@
   '((slug . "deepseek") (name . "DeepSeek")
     (auth_type . "api_key") (key_env . "DEEPSEEK_API_KEY")))
 
-(ert-deftest hermes-onboarding-api-key-provider-p-accepts-unauthed-key-provider ()
-  (should (hermes-onboarding--api-key-provider-p
-           (hermes-onboarding-test--api-key-provider))))
-
-(ert-deftest hermes-onboarding-api-key-provider-p-rejects-authed ()
-  "An authenticated provider is not offered for connection."
-  (should-not (hermes-onboarding--api-key-provider-p
+(ert-deftest hermes-onboarding-unauthed-p-accepts-unauthed-rejects-authed ()
+  (should (hermes-onboarding--unauthed-p
+           (hermes-onboarding-test--api-key-provider)))
+  (should-not (hermes-onboarding--unauthed-p
                '((slug . "openai") (name . "OpenAI") (authenticated . t)))))
 
-(ert-deftest hermes-onboarding-api-key-provider-p-rejects-oauth ()
-  "An OAuth provider cannot be connected by pasting a key."
-  (should-not (hermes-onboarding--api-key-provider-p
-               '((slug . "nous") (name . "Nous")
-                 (auth_type . "oauth_device_code") (key_env . "")))))
-
-(ert-deftest hermes-onboarding-unauthed-providers-keeps-only-connectable ()
-  "Only unauthenticated API-key providers survive the filter."
+(ert-deftest hermes-onboarding-unauthed-providers-offers-every-unconnected-one ()
+  "Every unauthenticated provider is offered; authenticated ones are dropped.
+The client does not classify by auth type -- Nous (registry-tagged OAuth) is
+listed like any other, and the gateway decides on save."
   (let ((result '((providers . (((slug . "openai") (authenticated . t))
                                 ((slug . "deepseek") (auth_type . "api_key")
                                  (key_env . "DEEPSEEK_API_KEY"))
@@ -41,12 +34,7 @@
                                  (key_env . "")))))))
     (should (equal (mapcar (lambda (p) (hermes-transport--get p 'slug))
                            (hermes-onboarding--unauthed-providers result))
-                   '("deepseek")))))
-
-(ert-deftest hermes-onboarding-provider-label-shows-name-and-env ()
-  (should (equal (hermes-onboarding--provider-label
-                  (hermes-onboarding-test--api-key-provider))
-                 "DeepSeek (DEEPSEEK_API_KEY)")))
+                   '("deepseek" "nous")))))
 
 ;;; Group 2: interaction
 
@@ -73,7 +61,7 @@
                  (funcall (plist-get args :resolve)
                           (hermes-onboarding-test--api-key-provider-result))))
               ((symbol-function 'completing-read)
-               (lambda (&rest _) "DeepSeek (DEEPSEEK_API_KEY)"))
+               (lambda (_prompt collection &rest _) (caar collection)))
               ((symbol-function 'read-passwd) (lambda (&rest _) "sk-secret"))
               ((symbol-function 'hermes-dashboard-transport-model-save-key)
                (lambda (_client slug key &rest args)
