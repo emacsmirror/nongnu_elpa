@@ -4449,6 +4449,49 @@ The buffer is captured by object so teardown still kills it after a rename."
        (should (eq hermes-chat--dashboard-client new-client))
        (should-not (hermes-dashboard-transport-client-process old-client))))))
 
+(ert-deftest hermes-transport-dashboard-request-sends-immediately-when-ready ()
+  "A client without a readiness promise sends the frame at once."
+  (let* ((client (make-hermes-dashboard-transport-client :token "t"))
+         (sent nil)
+         (hermes-dashboard-transport-request-timeout nil)
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text) (push text sent))))
+    (hermes-dashboard-transport-request client "ping")
+    (should (= (length sent) 1))))
+
+(ert-deftest hermes-transport-dashboard-request-defers-until-ready ()
+  "A request waits for the client's readiness promise before sending."
+  (let* ((client (make-hermes-dashboard-transport-client :token "t"))
+         (ready (hermes--promise-make))
+         (sent nil)
+         (rejected nil)
+         (hermes-dashboard-transport-request-timeout nil)
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text) (push text sent))))
+    (setf (hermes-dashboard-transport-client-ready-promise client) ready)
+    (hermes-dashboard-transport-request client "ping" nil #'ignore
+                                        (lambda (_m) (setq rejected t)))
+    (should (null sent))
+    (hermes--promise-resolve ready client)
+    (should (= (length sent) 1))
+    (should-not rejected)))
+
+(ert-deftest hermes-transport-dashboard-request-rejected-when-readiness-fails ()
+  "A rejected readiness promise rejects the deferred request without sending."
+  (let* ((client (make-hermes-dashboard-transport-client :token "session-secret"))
+         (ready (hermes--promise-make))
+         (sent nil)
+         (reason nil)
+         (hermes-dashboard-transport-request-timeout nil)
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text) (push text sent))))
+    (setf (hermes-dashboard-transport-client-ready-promise client) ready)
+    (hermes-dashboard-transport-request client "ping" nil #'ignore
+                                        (lambda (m) (setq reason m)))
+    (hermes--promise-reject ready "connect failed")
+    (should (null sent))
+    (should (string-match-p "connect failed" reason))))
+
 (ert-deftest hermes-transport-dashboard-jsonrpc-correlates-responses ()
   (let* ((sent nil)
          (first-result nil)

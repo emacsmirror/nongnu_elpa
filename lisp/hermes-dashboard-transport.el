@@ -139,6 +139,7 @@ slow or unreachable dashboard cannot hang a chat or list buffer forever."
   redacted-websocket-url
   secrets
   ready-p
+  ready-promise
   (next-id 0)
   (pending (make-hash-table :test #'equal))
   session-id
@@ -500,6 +501,11 @@ transport error when a pending request has no reject callback."
     (ignore-errors
       (hermes-dashboard-transport--reject-pending-requests
        client (or message "Hermes dashboard transport stopped")))
+    (ignore-errors
+      (when-let* ((promise (hermes-dashboard-transport-client-ready-promise
+                            client)))
+        (hermes--promise-reject
+         promise (or message "Hermes dashboard transport stopped"))))
     (ignore-errors
       (setf (hermes-dashboard-transport-client-callback client) #'ignore))
     (ignore-errors (hermes-dashboard-transport--close-websocket client))
@@ -1336,26 +1342,53 @@ When CLIENT is non-nil, authenticate with its live dashboard session token."
                     #'hermes-dashboard-transport--on-request-timeout
                     client id)))
 
+(defun hermes-dashboard-transport--when-ready (client on-ready on-fail)
+  "Run ON-READY once CLIENT can send, or ON-FAIL with the failure reason.
+Sends immediately when CLIENT is already ready or carries no readiness promise
+\(as in tests); otherwise defers until the readiness promise settles."
+  (let ((promise (hermes-dashboard-transport-client-ready-promise client)))
+    (if (or (hermes-dashboard-transport-client-ready-p client)
+            (not (hermes--promise-p promise)))
+        (funcall on-ready)
+      (hermes--promise-subscribe
+       promise
+       (lambda (_value) (funcall on-ready))
+       (lambda (reason) (funcall on-fail reason))))))
+
+(defun hermes-dashboard-transport--send-frame (client id method frame reject)
+  "Send FRAME for pending request ID/METHOD on CLIENT.
+Reject the pending request through REJECT when the WebSocket send fails."
+  (condition-case err
+      (funcall hermes-dashboard-transport-websocket-send-function
+               (hermes-dashboard-transport-client-websocket client)
+               (hermes-dashboard-transport--encode-frame frame))
+    (error
+     (hermes-dashboard-transport--take-pending client id)
+     (hermes-dashboard-transport--reject-pending-request
+      client (list :method method :reject reject)
+      (hermes-dashboard-transport--send-failure-message client method err)))))
+
 (defun hermes-dashboard-transport-request (client method &optional params resolve reject)
   "Send METHOD with PARAMS for CLIENT and correlate response callbacks.
 RESOLVE is called with the JSON-RPC result.  REJECT is called with the error
-message when provided.  Return the request id."
+message when provided.  The frame is deferred until CLIENT becomes ready, so
+callers never wait on the connection handshake themselves.  Return the request
+id."
   (let* ((id (hermes-dashboard-transport--next-id client))
          (pending (hermes-dashboard-transport--ensure-pending client))
          (frame (hermes-dashboard-transport--jsonrpc-request id method params))
          (timer (hermes-dashboard-transport--arm-request-timer client id)))
     (puthash id (list :method method :resolve resolve :reject reject :timer timer)
              pending)
-    (condition-case err
-        (funcall hermes-dashboard-transport-websocket-send-function
-                 (hermes-dashboard-transport-client-websocket client)
-                 (hermes-dashboard-transport--encode-frame frame))
-      (error
-       (hermes-dashboard-transport--take-pending client id)
-       (hermes-dashboard-transport--reject-pending-request
-        client (list :method method :reject reject)
-        (hermes-dashboard-transport--send-failure-message
-         client method err))))
+    (hermes-dashboard-transport--when-ready
+     client
+     (lambda ()
+       (hermes-dashboard-transport--send-frame client id method frame reject))
+     (lambda (reason)
+       (when (hermes-dashboard-transport--take-pending client id)
+         (hermes-dashboard-transport--reject-pending-request
+          client (list :method method :reject reject)
+          (hermes-dashboard-transport--normalized-error-message client reason)))))
     id))
 
 (defun hermes-dashboard-transport-call (client method &optional params)
@@ -2290,7 +2323,10 @@ an Unknown error."
   "Dispatch JSON-RPC event FRAME to CLIENT's callback."
   (let ((params (hermes-transport--get frame 'params)))
     (when (equal (hermes-transport--get params 'type) "gateway.ready")
-      (setf (hermes-dashboard-transport-client-ready-p client) t))
+      (setf (hermes-dashboard-transport-client-ready-p client) t)
+      (when-let* ((promise (hermes-dashboard-transport-client-ready-promise
+                            client)))
+        (hermes--promise-resolve promise client)))
     (dolist (event (hermes-dashboard-transport--normalize-event-frame frame))
       (funcall (hermes-dashboard-transport-client-callback client) event))))
 
