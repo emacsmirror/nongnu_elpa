@@ -184,6 +184,18 @@
         (hermes-cron-trigger))
       (should (equal events '(trigger done refresh))))))
 
+(ert-deftest hermes-cron-create-refreshes-the-list-on-success ()
+  "Creating a cron job refreshes the list so the new row appears."
+  (let (refreshed)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (_make-promise &optional on-success)
+                 (when on-success (funcall on-success '((id . "j9"))))))
+              ((symbol-function 'hermes-list-crons)
+               (lambda () (setq refreshed t)))
+              ((symbol-function 'message) #'ignore))
+      (hermes-cron-create "nightly" "0 0 * * *" "do it"))
+    (should refreshed)))
+
 (ert-deftest hermes-cron-show-fetches-job-and-run-history ()
   "Detail view fetches the job and run history, then renders both."
   (let (calls)

@@ -341,7 +341,9 @@ RUNS is the detail run list."
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-cron-manage
       client :action "add" :name name :schedule schedule :prompt prompt))
-   (lambda (_result) (message "Hermes: created cron job %s" name))))
+   (lambda (_result)
+     (message "Hermes: created cron job %s" name)
+     (hermes-list-crons))))
 
 ;;;###autoload (autoload 'hermes-list-crons "hermes-cron" nil t)
 (hermes-define-list-browser cron
