@@ -37,6 +37,8 @@
 (require 'hermes-cron)
 (require 'hermes-kanban)
 (require 'hermes-mcp)
+(require 'hermes-browser)
+(require 'hermes-onboarding)
 
 (defgroup hermes nil
   "Emacs frontend for Hermes Agent."
@@ -101,6 +103,10 @@ arrives."
 (defvar-local hermes-dashboard--nodes nil
   "Hash table mapping dashboard node ids to EWOC nodes.")
 
+(defvar-local hermes-dashboard--needs-onboarding nil
+  "Non-nil when the gateway reports no usable provider credentials.
+Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
+
 (defvar hermes-dashboard--refresh-timer nil
   "Timer used to debounce dashboard refreshes.")
 
@@ -120,6 +126,7 @@ arrives."
   "<mouse-1>" ("Open with mouse" hermes-dashboard-mouse-open)
   :group "Session"
   "c" ("Chat" hermes-chat)
+  "e" ("Connect provider" hermes-onboarding-connect-provider)
   "N" ("New session" hermes-chat-new-session)
   "P" ("New profile session" hermes-chat-new-profile-session)
   "S" ("Sessions" hermes-list-sessions)
@@ -387,20 +394,52 @@ arrives."
       (when (hermes-dashboard--chat-buffer-p buffer)
         (push buffer buffers)))))
 
+(defun hermes-dashboard--onboarding-node ()
+  "Return the provider-onboarding action node."
+  (list :id "action:onboarding"
+        :kind 'action
+        :key "e"
+        :title "Connect a provider"
+        :subtitle "No usable provider credentials -- paste an API key to connect"
+        :action #'hermes-onboarding-connect-provider))
+
 (defun hermes-dashboard--action-nodes ()
-  "Return static action nodes for the dashboard."
-  (list (list :id "action:chat"
-              :kind 'action
-              :key "c"
-              :title "Chat"
-              :subtitle "Open a new Hermes chat (prompts for a profile)"
-              :action #'hermes-chat)
-        (list :id "action:new-session"
-              :kind 'action
-              :key "N"
-              :title "New session"
-              :subtitle "Open a fresh Hermes chat buffer"
-              :action #'hermes-chat-new-session)))
+  "Return static action nodes for the dashboard.
+The onboarding node leads when `hermes-dashboard--needs-onboarding' is set."
+  (append
+   (and hermes-dashboard--needs-onboarding
+        (list (hermes-dashboard--onboarding-node)))
+   (list (list :id "action:chat"
+               :kind 'action
+               :key "c"
+               :title "Chat"
+               :subtitle "Open a new Hermes chat (prompts for a profile)"
+               :action #'hermes-chat)
+         (list :id "action:new-session"
+               :kind 'action
+               :key "N"
+               :title "New session"
+               :subtitle "Open a fresh Hermes chat buffer"
+               :action #'hermes-chat-new-session))))
+
+(defun hermes-dashboard--check-auth ()
+  "Surface an onboarding card when a live connection reports no usable provider.
+Only runs against an existing live chat client -- it never spawns a transient
+connection just to check, so opening the dashboard stays passive.  Branches on
+the result `ok' flag because `setup.runtime_check' reports a credential failure
+as `ok' nil, not a JSON-RPC error."
+  (when (hermes-browser--existing-client)
+    (let ((buffer (current-buffer)))
+      (hermes-browser--run-on-client
+       (lambda (client)
+         (hermes-dashboard-transport-call-fn
+          #'hermes-dashboard-transport-setup-runtime-check client))
+       (lambda (result)
+         (when (and (buffer-live-p buffer)
+                    (not (eq (hermes-transport--get result 'ok) t)))
+           (with-current-buffer buffer
+             (setq hermes-dashboard--needs-onboarding t)
+             (hermes-dashboard-refresh))))))))
 
 (defun hermes-dashboard--chat-node (buffer)
   "Return one chat dashboard node for BUFFER."
@@ -695,7 +734,8 @@ arrives."
     (with-current-buffer buffer
       (unless (derived-mode-p 'hermes-dashboard-mode)
         (hermes-dashboard-mode))
-      (hermes-dashboard--render))
+      (hermes-dashboard--render)
+      (hermes-dashboard--check-auth))
     (pop-to-buffer-same-window buffer)
     (with-current-buffer buffer
       (goto-char (point-min))

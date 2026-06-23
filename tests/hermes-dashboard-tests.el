@@ -262,5 +262,55 @@
       (should-not params)
       (should (equal resolved '((output . "ok")))))))
 
+;;; Group: provider-onboarding auth gate
+
+(ert-deftest hermes-dashboard-onboarding-card-bound-to-e ()
+  "The onboarding action and the `e' key both reach the connect command."
+  (should (eq (keymap-lookup hermes-dashboard-mode-map "e")
+              #'hermes-onboarding-connect-provider))
+  (should (eq (plist-get (hermes-dashboard--onboarding-node) :action)
+              #'hermes-onboarding-connect-provider)))
+
+(ert-deftest hermes-dashboard-action-nodes-gate-on-onboarding-flag ()
+  "The onboarding node appears only when the gateway lacks credentials."
+  (with-temp-buffer
+    (setq hermes-dashboard--needs-onboarding t)
+    (should (cl-find "action:onboarding" (hermes-dashboard--action-nodes)
+                     :key (lambda (n) (plist-get n :id)) :test #'equal))
+    (setq hermes-dashboard--needs-onboarding nil)
+    (should-not (cl-find "action:onboarding" (hermes-dashboard--action-nodes)
+                         :key (lambda (n) (plist-get n :id)) :test #'equal))))
+
+(ert-deftest hermes-dashboard-check-auth-surfaces-onboarding-when-unconfigured ()
+  "An `ok' nil runtime check flags onboarding and adds the card."
+  (cl-letf (((symbol-function 'hermes-browser--existing-client)
+             (lambda () 'fake-client))
+            ((symbol-function 'hermes-browser--with-client)
+             (lambda (fn) (funcall fn 'fake-client #'ignore)))
+            ((symbol-function 'hermes-dashboard-transport-setup-runtime-check)
+             (lambda (_client &rest args)
+               (funcall (plist-get args :resolve) '((error . "no provider"))))))
+    (with-temp-buffer
+      (hermes-dashboard-mode)
+      (hermes-dashboard--check-auth)
+      (should hermes-dashboard--needs-onboarding)
+      (should (cl-find "action:onboarding" (hermes-dashboard--action-nodes)
+                       :key (lambda (n) (plist-get n :id)) :test #'equal)))))
+
+(ert-deftest hermes-dashboard-check-auth-skips-card-when-authed ()
+  "An `ok' t runtime check leaves the onboarding card off."
+  (cl-letf (((symbol-function 'hermes-browser--existing-client)
+             (lambda () 'fake-client))
+            ((symbol-function 'hermes-browser--with-client)
+             (lambda (fn) (funcall fn 'fake-client #'ignore)))
+            ((symbol-function 'hermes-dashboard-transport-setup-runtime-check)
+             (lambda (_client &rest args)
+               (funcall (plist-get args :resolve)
+                        '((ok . t) (provider . "openai"))))))
+    (with-temp-buffer
+      (hermes-dashboard-mode)
+      (hermes-dashboard--check-auth)
+      (should-not hermes-dashboard--needs-onboarding))))
+
 (provide 'hermes-dashboard-tests)
 ;;; hermes-dashboard-tests.el ends here
