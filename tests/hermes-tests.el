@@ -4197,25 +4197,20 @@ The buffer is captured by object so teardown still kills it after a rename."
       (let ((hermes-dashboard-transport-make-process-function
              (lambda (&rest _plist) 'fake-process))
             (hermes-dashboard-transport-connect-retries 1)
+            (hermes-dashboard-transport-ready-timeout nil)
             (hermes-dashboard-transport-websocket-open-function
              (lambda (url _client)
                (error "connect failed: %s" url))))
-        (let ((message (condition-case error
-                           (progn
-                             (hermes-dashboard-transport-start
-                              :callback (lambda (event) (push event events)))
-                             nil)
-                         (user-error (error-message-string error)))))
-          (should message)
-          (should (string-match-p "<redacted>" message))
-          (should-not (string-match-p "secret-token" message))
-          (should-not (string-match-p "secret-token" (format "%S" events))))))))
+        (hermes-dashboard-transport-start
+         :callback (lambda (event) (push event events)))
+        (let ((text (format "%S" events)))
+          (should (string-match-p "<redacted>" text))
+          (should-not (string-match-p "secret-token" text)))))))
 
 (ert-deftest hermes-transport-dashboard-user-error-redacts-token ()
   (let ((open-attempts 0)
         (token "leaky-dashboard-token-abc123")
-        events
-        sleeps)
+        events)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
                (lambda () token))
               ((symbol-function 'hermes-dashboard-transport--pick-port)
@@ -4223,24 +4218,17 @@ The buffer is captured by object so teardown still kills it after a rename."
       (let ((hermes-dashboard-transport-make-process-function
              (lambda (&rest _plist) 'fake-process))
             (hermes-dashboard-transport-connect-retries 3)
-            (hermes-dashboard-transport-sleep-function
-             (lambda (seconds) (push seconds sleeps)))
+            (hermes-dashboard-transport-ready-timeout nil)
             (hermes-dashboard-transport-websocket-open-function
              (lambda (url _client)
                (cl-incf open-attempts)
                (user-error "bad websocket url %s" url))))
-        (let ((message (condition-case error
-                           (progn
-                             (hermes-dashboard-transport-start
-                              :callback (lambda (event) (push event events)))
-                             nil)
-                         (user-error (error-message-string error)))))
-          (should message)
-          (should (= open-attempts 1))
-          (should-not sleeps)
-          (should (string-match-p "<redacted>" message))
-          (should-not (string-match-p token message))
-          (should-not (string-match-p token (format "%S" events))))))))
+        (hermes-dashboard-transport-start
+         :callback (lambda (event) (push event events)))
+        (should (= open-attempts 1))
+        (let ((text (format "%S" events)))
+          (should (string-match-p "<redacted>" text))
+          (should-not (string-match-p token text)))))))
 
 (ert-deftest hermes-transport-dashboard-start-process-error-redacts-token ()
   (let ((token "leaky-dashboard-token-abc123")
@@ -4275,14 +4263,15 @@ The buffer is captured by object so teardown still kills it after a rename."
       (let ((hermes-dashboard-transport-make-process-function
              (lambda (&rest _plist) 'fake-process))
             (hermes-dashboard-transport-connect-retries 1)
+            (hermes-dashboard-transport-ready-timeout nil)
             (hermes-dashboard-transport-websocket-open-function
              (lambda (_url _client) (error "dashboard not ready"))))
-        (should-error (hermes-dashboard-transport-start) :type 'user-error)
+        (hermes-dashboard-transport-start)
         (should (eq deleted 'fake-process))))))
 
 (ert-deftest hermes-transport-dashboard-does-not-retry-user-errors ()
   (let ((open-attempts 0)
-        sleeps)
+        scheduled)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
                (lambda () "secret-token"))
               ((symbol-function 'hermes-dashboard-transport--pick-port)
@@ -4290,23 +4279,27 @@ The buffer is captured by object so teardown still kills it after a rename."
       (let ((hermes-dashboard-transport-make-process-function
              (lambda (&rest _plist) 'fake-process))
             (hermes-dashboard-transport-connect-retries 3)
-            (hermes-dashboard-transport-sleep-function
-             (lambda (seconds) (push seconds sleeps)))
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-schedule-function
+             (lambda (delay fn &rest args) (push delay scheduled) (apply fn args)))
             (hermes-dashboard-transport-websocket-open-function
              (lambda (_url _client)
                (cl-incf open-attempts)
                (user-error "Install websocket.el"))))
-        (should-error (hermes-dashboard-transport-start) :type 'user-error)
+        (hermes-dashboard-transport-start)
         (should (= open-attempts 1))
-        (should-not sleeps)))))
+        (should-not scheduled)))))
 
-(ert-deftest hermes-transport-dashboard-readiness-window-is-practical ()
-  (should (>= (* (1- hermes-dashboard-transport-connect-retries)
-                 hermes-dashboard-transport-connect-retry-delay)
-              45)))
+(ert-deftest hermes-transport-dashboard-readiness-window-is-bounded ()
+  "The async connect retry window covers a cold start without the old 45s budget."
+  (let ((window (* (1- hermes-dashboard-transport-connect-retries)
+                   hermes-dashboard-transport-connect-retry-delay)))
+    (should (>= window 5))
+    (should (<= window 20))))
 
-(ert-deftest hermes-transport-dashboard-start-waits-for-gateway-ready ()
-  (let (waits events)
+(ert-deftest hermes-transport-dashboard-start-resolves-on-gateway-ready ()
+  "Start returns a not-yet-ready client; `gateway.ready' marks it ready."
+  (let (events)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
                (lambda () "secret-token"))
               ((symbol-function 'hermes-dashboard-transport--pick-port)
@@ -4314,22 +4307,18 @@ The buffer is captured by object so teardown still kills it after a rename."
       (let ((hermes-dashboard-transport-command "hermes")
             (hermes-dashboard-transport-make-process-function
              (lambda (&rest _plist) 'fake-process))
-            (hermes-dashboard-transport-ready-timeout 1)
-            (hermes-dashboard-transport-ready-wait-interval 0.01)
-            (hermes-dashboard-transport-ready-wait-function
-             (lambda (client seconds)
-               (push seconds waits)
-               (hermes-dashboard-transport--handle-frame
-                client (hermes-dashboard-transport--encode-frame
-                        '((jsonrpc . "2.0")
-                          (method . "event")
-                          (params . ((type . "gateway.ready"))))))))
+            (hermes-dashboard-transport-ready-timeout nil)
             (hermes-dashboard-transport-websocket-open-function
              (lambda (_url _client) 'fake-websocket)))
         (let ((client (hermes-dashboard-transport-start
-                      :callback (lambda (event) (push event events)))))
+                       :callback (lambda (event) (push event events)))))
+          (should-not (hermes-dashboard-transport-client-ready-p client))
+          (hermes-dashboard-transport--handle-frame
+           client (hermes-dashboard-transport--encode-frame
+                   '((jsonrpc . "2.0")
+                     (method . "event")
+                     (params . ((type . "gateway.ready"))))))
           (should (hermes-dashboard-transport-client-ready-p client))
-          (should (equal waits '(0.01)))
           (should (cl-find "gateway.ready" events
                            :key (lambda (event) (plist-get event :event))
                            :test #'equal)))))))
@@ -4346,12 +4335,14 @@ The buffer is captured by object so teardown still kills it after a rename."
                (lambda (process) (setq deleted process))))
       (let ((hermes-dashboard-transport-make-process-function
              (lambda (&rest _plist) 'fake-process))
-            (hermes-dashboard-transport-ready-timeout 0)
+            (hermes-dashboard-transport-ready-timeout 1)
+            (hermes-dashboard-transport-schedule-function
+             (lambda (_delay fn &rest args) (apply fn args)))
             (hermes-dashboard-transport-websocket-open-function
              (lambda (_url client)
                (setq opened-client client)
                'fake-websocket)))
-        (should-error (hermes-dashboard-transport-start) :type 'user-error)
+        (hermes-dashboard-transport-start)
         (should (eq closed 'fake-websocket))
         (should (eq deleted 'fake-process))
         (should opened-client)
@@ -4598,8 +4589,9 @@ The buffer is captured by object so teardown still kills it after a rename."
                'fake-process))
             (hermes-dashboard-transport-connect-retries 2)
             (hermes-dashboard-transport-connect-retry-delay 0.05)
-            (hermes-dashboard-transport-sleep-function
-             (lambda (seconds) (push seconds sleeps)))
+            (hermes-dashboard-transport-ready-timeout nil)
+            (hermes-dashboard-transport-schedule-function
+             (lambda (delay fn &rest args) (push delay sleeps) (apply fn args)))
             (hermes-dashboard-transport-websocket-open-function
              (lambda (url client)
                (cl-incf open-attempts)

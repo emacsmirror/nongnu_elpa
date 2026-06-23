@@ -89,8 +89,13 @@ forces username/password login and a single-use WebSocket ticket."
                  (const :tag "Basic/password gated auth" basic))
   :group 'hermes-dashboard-transport)
 
-(defcustom hermes-dashboard-transport-connect-retries 451
-  "Number of attempts to open the dashboard WebSocket after spawning."
+(defcustom hermes-dashboard-transport-connect-retries 100
+  "Attempts to open the dashboard WebSocket while a spawn cold-starts.
+Retries are scheduled asynchronously, so this budget never blocks Emacs; it
+only bounds how long a never-arriving dashboard is tried before its readiness
+fails.  With the default `hermes-dashboard-transport-connect-retry-delay' of
+0.1s this is a 10-second window, ample for a local dashboard to bind its port
+while surfacing a dead dashboard far sooner than the old 45-second budget."
   :type 'integer
   :group 'hermes-dashboard-transport)
 
@@ -113,11 +118,6 @@ A pending JSON-RPC request whose response never arrives would otherwise leak
 its callbacks forever, so it is rejected once this many seconds elapse.  Use
 nil to disable the per-request timeout."
   :type '(choice (const :tag "No timeout" nil) number)
-  :group 'hermes-dashboard-transport)
-
-(defcustom hermes-dashboard-transport-ready-wait-interval 0.05
-  "Seconds to wait between dashboard `gateway.ready' checks."
-  :type 'number
   :group 'hermes-dashboard-transport)
 
 (defcustom hermes-dashboard-transport-http-timeout 30
@@ -566,19 +566,6 @@ It is called with the tokenized URL and the dashboard client.")
 (defvar hermes-dashboard-transport-websocket-send-function
   #'hermes-dashboard-transport--default-websocket-send
   "Function used to send an encoded JSON-RPC frame over WebSocket.")
-
-(defvar hermes-dashboard-transport-sleep-function #'sleep-for
-  "Function used to wait between dashboard connection attempts.")
-
-(defun hermes-dashboard-transport--default-ready-wait (_client seconds)
-  "Wait SECONDS for dashboard WebSocket input."
-  (accept-process-output nil seconds)
-  (sit-for 0))
-
-(defvar hermes-dashboard-transport-ready-wait-function
-  #'hermes-dashboard-transport--default-ready-wait
-  "Function used to wait for dashboard `gateway.ready'.
-It receives the dashboard client and a number of seconds.")
 
 (defun hermes-dashboard-transport--json-body (text)
   "Return JSON object parsed from TEXT, or nil for an empty body."
@@ -1744,55 +1731,62 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
   "Open CLIENT's WebSocket at URL once."
   (funcall hermes-dashboard-transport-websocket-open-function url client))
 
-(defun hermes-dashboard-transport--open-websocket-with-retries (client url)
-  "Open CLIENT's WebSocket at URL, retrying dashboard cold-start races."
-  (let ((attempts (max 1 hermes-dashboard-transport-connect-retries))
-        last-error)
-    (catch 'connected
-      (dotimes (attempt attempts)
-        (condition-case err
-            (throw 'connected
-                   (hermes-dashboard-transport--open-websocket-once
-                    client url))
-          (user-error
-           (signal 'user-error
-                   (list (hermes-dashboard-transport--condition-message
-                          client err))))
-          (error
-           (setq last-error err)
-           (when (< (1+ attempt) attempts)
-             (funcall hermes-dashboard-transport-sleep-function
-                      hermes-dashboard-transport-connect-retry-delay)))))
-      (let ((message (hermes-dashboard-transport--connection-error-message
-                      client last-error)))
-        (hermes-dashboard-transport--emit-error client message)
-        (signal 'user-error (list message))))))
+(defvar hermes-dashboard-transport-schedule-function
+  (lambda (delay fn &rest args) (apply #'run-at-time delay nil fn args))
+  "Function used to schedule deferred dashboard connection work.
+Called with DELAY seconds, a FUNCTION, and its ARGS.  Tests rebind it to drive
+the timer-based connect and readiness flow without real timers.")
 
-(defun hermes-dashboard-transport-connect (client)
-  "Open CLIENT's dashboard WebSocket and return the WebSocket object."
-  (let ((websocket (hermes-dashboard-transport--open-websocket-with-retries
-                    client
-                    (hermes-dashboard-transport--client-websocket-url client))))
-    (setf (hermes-dashboard-transport-client-websocket client) websocket)
-    websocket))
+(defun hermes-dashboard-transport--schedule (delay fn &rest args)
+  "Schedule FN with ARGS after DELAY seconds via the schedule function."
+  (apply hermes-dashboard-transport-schedule-function delay fn args))
+
+(defun hermes-dashboard-transport--fail-ready (client message)
+  "Report MESSAGE for CLIENT, reject its readiness, and release its resources.
+Used when the connection or `gateway.ready' handshake fails asynchronously."
+  (hermes-dashboard-transport--emit-error client message)
+  (hermes-dashboard-transport-stop client message))
+
+(defun hermes-dashboard-transport--connect-async (client &optional attempt)
+  "Open CLIENT's WebSocket, retrying dashboard cold-start races asynchronously.
+ATTEMPT counts retries.  This never blocks: a transient failure reschedules the
+next attempt with `hermes-dashboard-transport--schedule', a `user-error' fails
+fast, and exhausting the retries fails CLIENT's readiness.  Success leaves the
+gateway readiness flow to resolve the readiness promise."
+  (let ((attempt (or attempt 0))
+        (url (hermes-dashboard-transport--client-websocket-url client))
+        (max-attempts (max 1 hermes-dashboard-transport-connect-retries)))
+    (condition-case err
+        (setf (hermes-dashboard-transport-client-websocket client)
+              (hermes-dashboard-transport--open-websocket-once client url))
+      (user-error
+       (hermes-dashboard-transport--fail-ready
+        client (hermes-dashboard-transport--condition-message client err)))
+      (error
+       (if (< (1+ attempt) max-attempts)
+           (hermes-dashboard-transport--schedule
+            hermes-dashboard-transport-connect-retry-delay
+            #'hermes-dashboard-transport--connect-async client (1+ attempt))
+         (hermes-dashboard-transport--fail-ready
+          client (hermes-dashboard-transport--connection-error-message
+                  client err)))))))
 
 (defun hermes-dashboard-transport--ready-timeout-error (client)
   "Return a redacted `gateway.ready' timeout message for CLIENT."
   (format "Hermes dashboard did not become ready at %s"
           (hermes-dashboard-transport--client-redacted-websocket-url client)))
 
-(defun hermes-dashboard-transport--await-ready (client)
-  "Wait for CLIENT to receive `gateway.ready', or signal `user-error'."
+(defun hermes-dashboard-transport--arm-ready-timeout (client)
+  "Fail CLIENT's readiness when `gateway.ready' does not arrive in time.
+Scheduled without blocking; a no-op when CLIENT is already ready or the timeout
+is disabled."
   (when hermes-dashboard-transport-ready-timeout
-    (let ((deadline (+ (float-time) hermes-dashboard-transport-ready-timeout)))
-      (while (and (not (hermes-dashboard-transport-client-ready-p client))
-                  (< (float-time) deadline))
-        (funcall hermes-dashboard-transport-ready-wait-function
-                 client hermes-dashboard-transport-ready-wait-interval))
-      (unless (hermes-dashboard-transport-client-ready-p client)
-        (let ((message (hermes-dashboard-transport--ready-timeout-error client)))
-          (hermes-dashboard-transport--emit-error client message)
-          (signal 'user-error (list message)))))))
+    (hermes-dashboard-transport--schedule
+     hermes-dashboard-transport-ready-timeout
+     (lambda ()
+       (unless (hermes-dashboard-transport-client-ready-p client)
+         (hermes-dashboard-transport--fail-ready
+          client (hermes-dashboard-transport--ready-timeout-error client)))))))
 
 (defun hermes-dashboard-transport--cleanup-start-failure (client)
   "Release CLIENT resources after a failed dashboard start."
@@ -1808,23 +1802,23 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
          (token (or token (hermes-dashboard-transport--generate-token)))
          (client (make-hermes-dashboard-transport-client
                   :host host :port port :token token
+                  :ready-promise (hermes--promise-make)
                   :callback (or callback #'ignore)))
          (argv (hermes-dashboard-transport--command host port command))
          (env (hermes-dashboard-transport--environment token base-environment)))
     (funcall (hermes-dashboard-transport-client-callback client)
              (hermes-dashboard-transport--start-event host port token))
     (condition-case err
-        (progn
-          (setf (hermes-dashboard-transport-client-process client)
-                (hermes-dashboard-transport--start-process client argv env))
-          (hermes-dashboard-transport-connect client)
-          (hermes-dashboard-transport--await-ready client)
-          client)
+        (setf (hermes-dashboard-transport-client-process client)
+              (hermes-dashboard-transport--start-process client argv env))
       (error
        (hermes-dashboard-transport--cleanup-start-failure client)
        (signal 'user-error
                (list (hermes-dashboard-transport--condition-message
-                      client err)))))))
+                      client err)))))
+    (hermes-dashboard-transport--connect-async client)
+    (hermes-dashboard-transport--arm-ready-timeout client)
+    client))
 
 (cl-defun hermes-dashboard-transport--start-remote
     (&key callback host port token remote-url remote-auth-method)
@@ -1845,23 +1839,20 @@ HOST, PORT, TOKEN, REMOTE-URL, and REMOTE-AUTH-METHOD override defaults."
                   :websocket-url (plist-get auth :url)
                   :redacted-websocket-url (plist-get auth :redacted-url)
                   :secrets (plist-get auth :secrets)
-                  :callback (or callback #'ignore))))
+                  :ready-promise (hermes--promise-make)
+                  :callback (or callback #'ignore)))
+         (redacted-url (plist-get auth :redacted-url)))
     (funcall (hermes-dashboard-transport-client-callback client)
-             (hermes-dashboard-transport--remote-connect-event
-              (plist-get auth :redacted-url)))
-    (condition-case err
-        (progn
-          (hermes-dashboard-transport-connect client)
-          (hermes-dashboard-transport--await-ready client)
-          (funcall (hermes-dashboard-transport-client-callback client)
-                   (hermes-dashboard-transport--remote-connected-event
-                    (plist-get auth :redacted-url)))
-          client)
-      (error
-       (hermes-dashboard-transport--cleanup-start-failure client)
-       (signal 'user-error
-               (list (hermes-dashboard-transport--condition-message
-                      client err)))))))
+             (hermes-dashboard-transport--remote-connect-event redacted-url))
+    (hermes--promise-then
+     (hermes-dashboard-transport-client-ready-promise client)
+     (lambda (_value)
+       (funcall (hermes-dashboard-transport-client-callback client)
+                (hermes-dashboard-transport--remote-connected-event
+                 redacted-url))))
+    (hermes-dashboard-transport--connect-async client)
+    (hermes-dashboard-transport--arm-ready-timeout client)
+    client))
 
 (cl-defun hermes-dashboard-transport-start
     (&key callback host port command token base-environment
