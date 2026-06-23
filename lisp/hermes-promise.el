@@ -153,12 +153,20 @@ It rejects with the reason of the first of PROMISES to reject."
 
 (defun hermes--promise-finally (promise fn)
   "Run FN for its side effect when PROMISE settles, passing the settlement on.
-Return a new promise that mirrors PROMISE's resolution or rejection after FN."
+Return a new promise that mirrors PROMISE's resolution or rejection after FN.
+If FN signals, the returned promise rejects with that error rather than
+stranding the chain in a pending state."
   (let ((next (hermes--promise-make)))
     (hermes--promise-subscribe
      promise
-     (lambda (value) (funcall fn) (hermes--promise-resolve next value))
-     (lambda (reason) (funcall fn) (hermes--promise-reject next reason)))
+     (lambda (value)
+       (condition-case err
+           (progn (funcall fn) (hermes--promise-resolve next value))
+         (error (hermes--promise-reject next (error-message-string err)))))
+     (lambda (reason)
+       (condition-case err
+           (progn (funcall fn) (hermes--promise-reject next reason))
+         (error (hermes--promise-reject next (error-message-string err))))))
     next))
 
 (provide 'hermes-promise)

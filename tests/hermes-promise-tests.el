@@ -148,5 +148,15 @@
     (should (= ran 1))
     (should (equal reason "boom"))))
 
+(ert-deftest hermes-promise-test-finally-throwing-fn-rejects-next ()
+  "A signalling finally thunk settles the chain as a rejection, never strands it."
+  (let (settled reason)
+    (hermes--promise-catch
+     (hermes--promise-finally (hermes--promise-resolved 1)
+                              (lambda () (error "cleanup failed")))
+     (lambda (m) (setq settled t reason m)))
+    (should settled)
+    (should (string-match-p "cleanup failed" reason))))
+
 (provide 'hermes-promise-tests)
 ;;; hermes-promise-tests.el ends here
