@@ -41,6 +41,7 @@
 (ert-deftest hermes-exec-test-eval-response-body-redacts-error ()
   "A token-bearing error in the response body is redacted."
   (let* ((hermes-exec-require-approval nil)
+         (hermes-exec-enabled t)
          (json (hermes-exec--eval-response-body
                 "{\"code\":\"(error \\\"ws://h/api/ws?token=supersecret\\\")\"}")))
     (should-not (string-match-p "supersecret" json))
@@ -60,7 +61,8 @@
 (ert-deftest hermes-exec-test-approval-declined-skips-eval ()
   "Declining approval returns a declined plist without evaluating."
   (setq hermes-exec-test--canary nil)
-  (let ((hermes-exec-require-approval t))
+  (let ((hermes-exec-require-approval t)
+        (hermes-exec-enabled t))
     (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
       (let ((result (hermes-exec--maybe-evaluate
                      "(setq hermes-exec-test--canary 'ran)")))
@@ -71,13 +73,35 @@
 (ert-deftest hermes-exec-test-approval-disabled-runs-unprompted ()
   "With approval disabled, eval runs and no prompt is shown."
   (setq hermes-exec-test--canary nil)
-  (let ((hermes-exec-require-approval nil))
+  (let ((hermes-exec-require-approval nil)
+        (hermes-exec-enabled t))
     (cl-letf (((symbol-function 'y-or-n-p)
                (lambda (&rest _) (error "should not prompt"))))
       (let ((result (hermes-exec--maybe-evaluate
                      "(setq hermes-exec-test--canary 'ran)")))
         (should (plist-get result :ok)))))
   (should (eq hermes-exec-test--canary 'ran)))
+
+(ert-deftest hermes-exec-test-start-refuses-when-disabled ()
+  "`hermes-exec-start' refuses to bind while `hermes-exec-enabled' is nil."
+  (let ((hermes-exec-enabled nil)
+        (hermes-exec--process nil))
+    (cl-letf (((symbol-function 'hermes-exec--start-server)
+               (lambda (&rest _) (error "must not start a disabled endpoint"))))
+      (should-error (hermes-exec-start) :type 'user-error))))
+
+(ert-deftest hermes-exec-test-disabled-endpoint-refuses-to-evaluate ()
+  "A disabled endpoint returns an error result without evaluating or prompting."
+  (setq hermes-exec-test--canary nil)
+  (let ((hermes-exec-enabled nil)
+        (hermes-exec-require-approval nil))
+    (cl-letf (((symbol-function 'y-or-n-p)
+               (lambda (&rest _) (error "should not prompt"))))
+      (let ((result (hermes-exec--maybe-evaluate
+                     "(setq hermes-exec-test--canary 'ran)")))
+        (should-not (plist-get result :ok))
+        (should (string-match-p "disabled" (plist-get result :error))))))
+  (should (null hermes-exec-test--canary)))
 
 ;;; Group 3: HTTP request parsing
 
@@ -108,6 +132,7 @@
 (ert-deftest hermes-exec-test-eval-response-body-roundtrip ()
   "An /eval body parses, evaluates, and serializes to ok+result JSON."
   (let* ((hermes-exec-require-approval nil)
+         (hermes-exec-enabled t)
          (json (hermes-exec--eval-response-body "{\"code\":\"(+ 1 2)\"}"))
          (object (json-parse-string json :object-type 'alist)))
     (should (eq t (cdr (assq 'ok object))))

@@ -48,8 +48,8 @@
 
 (defcustom hermes-exec-enabled nil
   "Master switch for the Hermes eval endpoint.
-Nothing listens unless this is non-nil and `hermes-exec-start' has run, so the
-server can never come up implicitly."
+`hermes-exec-start' refuses to start while this is nil, and a running endpoint
+refuses to evaluate, so the server can never come up or run implicitly."
   :type 'boolean)
 
 (defcustom hermes-exec-require-approval t
@@ -200,13 +200,16 @@ reading or evaluation signals.  Errors are captured, never thrown."
     (format "Hermes eval request:\n%s\nEvaluate? " shown)))
 
 (defun hermes-exec--maybe-evaluate (code)
-  "Evaluate CODE, gating on `hermes-exec-require-approval' first.
-When approval is required and the user declines, return a declined result plist
-without evaluating anything."
-  (if (and hermes-exec-require-approval
-           (not (y-or-n-p (hermes-exec--approval-prompt code))))
-      (list :ok nil :error "Evaluation declined by user")
-    (hermes-exec--evaluate code)))
+  "Evaluate CODE behind the endpoint's enable and approval gates.
+Return a result plist without evaluating when `hermes-exec-enabled' is nil or
+the user declines the `hermes-exec-require-approval' prompt."
+  (cond
+   ((not hermes-exec-enabled)
+    (list :ok nil :error "Hermes eval endpoint is disabled"))
+   ((and hermes-exec-require-approval
+         (not (y-or-n-p (hermes-exec--approval-prompt code))))
+    (list :ok nil :error "Evaluation declined by user"))
+   (t (hermes-exec--evaluate code))))
 
 ;;; JSON request/response
 
@@ -320,12 +323,13 @@ dispatched and an incomplete one yields nil."
 ;;;###autoload
 (defun hermes-exec-start ()
   "Start the Hermes eval endpoint.
-Set `hermes-exec-enabled' when nil, refuse to bind a public interface, and store
-the listening process for `hermes-exec-stop'."
+Refuse to start while `hermes-exec-enabled' is nil or the host would bind a
+public interface, and store the listening process for `hermes-exec-stop'."
   (interactive)
+  (unless hermes-exec-enabled
+    (user-error "Set `hermes-exec-enabled' to enable the Hermes eval endpoint"))
   (when (process-live-p hermes-exec--process)
     (user-error "Hermes eval endpoint already running"))
-  (setq hermes-exec-enabled t)
   (let ((host (hermes-exec--resolve-host)))
     (unless host
       (user-error
