@@ -1161,7 +1161,38 @@
          (should (equal submits '("first")))
          (should (equal steer-session "sid-active"))
          (should (equal steer-text "cite files"))
-         (should (string-match-p "Steer queued" (buffer-string))))))))
+         (should (string-match-p "Steering: cite files" (buffer-string)))
+         (should-not (string-match-p "Steer queued" (buffer-string)))
+         ;; The steer line lands above the pending assistant reply.
+         (let ((roles (mapcar (lambda (e) (plist-get e :role))
+                              (hermes-chat--entries))))
+           (should (< (cl-position 'status roles)
+                      (cl-position 'assistant roles)))))))))
+
+(ert-deftest hermes-chat-steer-shows-immediate-pending-before-ack ()
+  "Steering shows an instant pending line before the gateway acknowledges it."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _args) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) nil))
+              ;; Leave the steer RPC in flight: never resolve or reject.
+              ((symbol-function 'hermes-dashboard-transport-session-steer)
+               (lambda (&rest _) nil)))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (insert "/steer cite files")
+         (hermes-chat-send)
+         (should (string-match-p "Steering… cite files" (buffer-string)))
+         (should-not (string-match-p "Steer queued" (buffer-string))))))))
 
 (ert-deftest hermes-chat-steer-rejected-result-queues-message ()
   (let ((client (hermes-test--dashboard-client))
@@ -1189,7 +1220,8 @@
          (hermes-chat-send)
          (should (equal submits '("first")))
          (should (equal hermes-chat--queued-message "cite files"))
-         (should (string-match-p "Steer unavailable" (buffer-string))))))))
+         (should (string-match-p "Steer unavailable" (buffer-string)))
+         (should-not (string-match-p "Steering" (buffer-string))))))))
 
 (ert-deftest hermes-chat-interrupt-requests-dashboard-session-interrupt ()
   (let ((client (hermes-test--dashboard-client))
@@ -1878,7 +1910,7 @@
        (should-not submit-text)
        (should (equal steer-session "sid-live"))
        (should (equal steer-text "adjust current run"))
-       (should (string-match-p "Steer queued" (buffer-string)))))))
+       (should (string-match-p "Steering: adjust current run" (buffer-string)))))))
 
 (ert-deftest hermes-chat-command-alias-dispatches-target ()
   (let ((client (hermes-test--dashboard-client)) dispatches)

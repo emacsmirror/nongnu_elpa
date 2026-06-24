@@ -1361,26 +1361,54 @@ via `hermes-chat--dashboard-slash-exec'."
    (format "Steer unavailable (%s); queued next message" message) 'error)
   (hermes-chat--queue-content content "Queued next message after steer fallback"))
 
+(defun hermes-chat--steer-pending-status (content)
+  "Insert an immediate pending steer entry for CONTENT; return its entry id.
+Gives instant feedback that the steer was sent, before the gateway acks the
+`session.steer' round-trip."
+  (let ((id (hermes-chat--next-id 'steer)))
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry
+      'status (format "Steering… %s" (hermes-chat--preview content))
+      'running id)
+     (hermes-chat--pending-assistant-node))
+    id))
+
+(defun hermes-chat--steer-acknowledged (id content)
+  "Settle the pending steer entry ID as an accepted steer of CONTENT.
+The gateway injects the text into the running turn -- it reaches the agent on
+its next step -- so this is an acknowledgment, not the deferred queue fallback.
+A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
+  (when (and hermes-chat--nodes (gethash id hermes-chat--nodes))
+    (hermes-chat--update-entry
+     id (lambda (entry)
+          (hermes-chat--entry-with
+           entry
+           :content (format "Steering: %s" (hermes-chat--preview content))
+           :status 'done)))))
+
+(defun hermes-chat--steer-failed (id content message)
+  "Drop the pending steer entry ID, then queue CONTENT after MESSAGE fallback."
+  (hermes-chat--remove-entry id)
+  (hermes-chat--steer-rejected content message))
+
 (defun hermes-chat--steer-active-turn (content buffer)
   "Steer active dashboard turn with CONTENT in BUFFER, or queue when unsupported."
   (if (not (hermes-chat--dashboard-session-attached-p))
       (hermes-chat--queue-content content "Steer unavailable; queued next message")
-    (hermes-dashboard-transport-session-steer
-     hermes-chat--dashboard-client content
-     :session-id hermes-chat--dashboard-active-session-id
-     :resolve (lambda (result)
-                (hermes-chat--in-buffer buffer
-                  (if (equal (hermes-chat--status-name
-                              (hermes-chat--result-string result 'status))
-                             "rejected")
-                      (hermes-chat--steer-rejected content "rejected")
-                    (hermes-chat--insert-local-status
-                     (format "Steer queued: %s"
-                             (hermes-chat--preview content))
-                     'queued))))
-     :reject (lambda (err)
-               (hermes-chat--in-buffer buffer
-                 (hermes-chat--steer-rejected content err))))))
+    (let ((id (hermes-chat--steer-pending-status content)))
+      (hermes-dashboard-transport-session-steer
+       hermes-chat--dashboard-client content
+       :session-id hermes-chat--dashboard-active-session-id
+       :resolve (lambda (result)
+                  (hermes-chat--in-buffer buffer
+                    (if (equal (hermes-chat--status-name
+                                (hermes-chat--result-string result 'status))
+                               "rejected")
+                        (hermes-chat--steer-failed id content "rejected")
+                      (hermes-chat--steer-acknowledged id content))))
+       :reject (lambda (err)
+                 (hermes-chat--in-buffer buffer
+                   (hermes-chat--steer-failed id content err)))))))
 
 (defun hermes-chat--steer-or-submit (content buffer)
   "Steer active turn with CONTENT in BUFFER, or submit CONTENT when idle."
