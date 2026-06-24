@@ -859,6 +859,8 @@ and an absent branch or run id is omitted."
   "Keymap for `hermes-kanban-task-mode'."
   :parent special-mode-map
   :description "Hermes Kanban Task"
+  :group "Task"
+  "c" ("Comment" hermes-kanban-comment)
   :group "Recovery"
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
@@ -1100,16 +1102,22 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
      (lambda (_) (hermes-kanban--render-board slug name)))))
 
 (defun hermes-kanban-comment ()
-  "Append a comment to the task at point."
+  "Append a comment to the current task, then refresh the buffer.
+Works from the board list and the task detail view; maps to the dashboard
+`POST /tasks/:id/comments'.  The refresh surfaces the new comment in the detail
+view."
   (interactive)
-  (let ((id (hermes-kanban--id-at-point))
+  (let ((id (hermes-kanban--task-id-for-command))
+        (query (hermes-kanban--query-for-board
+                (hermes-kanban--board-slug-for-command)))
+        (refresh (hermes-kanban--context-refresher))
         (body (read-string "Comment: ")))
     (when (string-empty-p (string-trim body))
       (user-error "Comment cannot be empty"))
     (hermes-kanban--then
      (hermes-kanban--api "POST" (hermes-kanban--task-path id "/comments")
-                         `((body . ,body)) (hermes-kanban--board-query))
-     (lambda (_) (message "Comment added")))))
+                         `((body . ,body)) query)
+     (lambda (_) (message "Comment added to task %s" id) (funcall refresh)))))
 
 (defun hermes-kanban-create-task ()
   "Create a task on the current board."

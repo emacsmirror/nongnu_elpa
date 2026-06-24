@@ -563,6 +563,26 @@
                       calls))
       (should refreshed))))
 
+(ert-deftest hermes-kanban-comment-posts-from-task-detail-buffer ()
+  "Commenting from the task detail view posts to the task and refreshes."
+  (let (calls refreshed)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (push (list method path body query) calls)
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'read-string) (lambda (&rest _) "looks good"))
+              ((symbol-function 'revert-buffer) (lambda (&rest _) (setq refreshed t)))
+              ((symbol-function 'message) (lambda (&rest _) nil)))
+      (with-temp-buffer
+        (hermes-kanban-task-mode)
+        (setq hermes-kanban-task--task-id "t1"
+              hermes-kanban-task--board-slug "emacs-lisp")
+        (hermes-kanban-comment)
+        (should (member '("POST" "/tasks/t1/comments" ((body . "looks good"))
+                          ((board . "emacs-lisp")))
+                        calls))
+        (should refreshed)))))
+
 (ert-deftest hermes-kanban-reclaim-posts-to-reclaim-endpoint ()
   "Reclaiming the task at point POSTs reclaim with the board query and reason."
   (let (calls)
