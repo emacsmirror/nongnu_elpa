@@ -53,10 +53,26 @@ refuses to evaluate, so the server can never come up or run implicitly."
   :type 'boolean)
 
 (defcustom hermes-exec-require-approval t
-  "When non-nil, confirm each eval request before running it.
-The request is shown in a dedicated buffer answered with a key; confirmation no
-longer blocks Emacs while it waits.  Set to nil to evaluate without asking."
-  :type 'boolean)
+  "Policy controlling whether an incoming eval request is confirmed.
+Modeled on `org-confirm-babel-evaluate'.  The value is one of:
+
+  t         always ask before evaluating (the default);
+  nil       evaluate without asking;
+  function  a predicate called with the request code string that returns
+            `deny' to refuse the request outright, nil to evaluate it
+            without asking, or any other non-nil value to prompt.
+
+The prompt is shown in a dedicated buffer answered with a key and no longer
+blocks Emacs while it waits.  `hermes-exec-confirm-by-risk' is a ready-made
+predicate; `hermes-exec-trust' and `hermes-exec-untrust' switch between it and
+the always-ask default."
+  :type '(choice (const :tag "Always ask" t)
+                 (const :tag "Never ask (run unsupervised)" nil)
+                 (function :tag "Predicate of the code")))
+;; Like `org-confirm-babel-evaluate', only the always-ask value may be set from
+;; a file-local or dir-local variable, so a checked-out file cannot quietly
+;; relax the gate.
+(put 'hermes-exec-require-approval 'safe-local-variable (lambda (x) (eq x t)))
 
 (defcustom hermes-exec-host nil
   "Interface the eval endpoint binds to, or nil to auto-resolve.
@@ -226,11 +242,101 @@ request must carry a matching `Authorization: Bearer' header."
         (and-let* ((presented (hermes-exec--request-bearer request)))
           (hermes-exec--secure-equal expected presented)))))
 
-;;; Approval policy
+;;; Trust policy and risk classification
+;;
+;; The approval policy mirrors `org-confirm-babel-evaluate': t always asks, nil
+;; never asks, and a function decides per request.  The classifier is an honest
+;; triage aid, not a security boundary -- it reads the request's top-level forms
+;; and flags the function symbols it can see.  Dynamic dispatch (`eval',
+;; `funcall', `apply') defeats static reading, so it is always treated as
+;; sensitive, and unreadable code fails closed to a prompt.
 
-(defun hermes-exec--approval-decision (_code)
-  "Return `ask' when `hermes-exec-require-approval' is non-nil, else `run'."
-  (if hermes-exec-require-approval 'ask 'run))
+(defcustom hermes-exec-confirm-functions
+  '(delete-file delete-directory rename-file copy-file make-symbolic-link
+                write-region append-to-file set-file-modes set-file-times
+                shell-command shell-command-to-string async-shell-command
+                call-process call-process-region start-process make-process
+                start-process-shell-command call-process-shell-command
+                url-retrieve url-retrieve-synchronously kill-emacs)
+  "Function symbols whose presence makes `hermes-exec-confirm-by-risk' prompt."
+  :type '(repeat symbol))
+
+(defcustom hermes-exec-forbidden-functions nil
+  "Function symbols `hermes-exec-confirm-by-risk' refuses to evaluate at all.
+Empty by default; add symbols you never want run through the endpoint."
+  :type '(repeat symbol))
+
+(defconst hermes-exec--dynamic-dispatch
+  '(eval funcall funcall-interactively apply macroexpand macroexpand-all)
+  "Symbols that defeat static reading and so are always treated as sensitive.")
+
+(defun hermes-exec--code-symbols (code)
+  "Return the symbols appearing in CODE's top-level forms.
+Signal a reader error when CODE cannot be parsed, so callers fail closed."
+  (let ((forms (car (read-from-string (format "(progn %s\n)" code))))
+        (seen '()))
+    (cl-labels ((walk (form)
+                  (cond
+                   ((and form (symbolp form)) (cl-pushnew form seen))
+                   ((consp form) (walk (car form)) (walk (cdr form))))))
+               (walk forms))
+    seen))
+
+(defun hermes-exec--classify-code (code)
+  "Classify CODE as `forbidden', `sensitive', or `ordinary'.
+This is a triage aid, not a security boundary: it flags every symbol it sees,
+so a quoted datum or a shadowing binding can over-classify (never under-).
+Unreadable, dynamic-dispatch, and too-deeply-nested code all fail closed to
+`sensitive' via the surrounding handler."
+  (condition-case nil
+      (let ((symbols (hermes-exec--code-symbols code)))
+        (cond
+         ((cl-intersection symbols hermes-exec-forbidden-functions) 'forbidden)
+         ((or (cl-intersection symbols hermes-exec-confirm-functions)
+              (cl-intersection symbols hermes-exec--dynamic-dispatch))
+          'sensitive)
+         (t 'ordinary)))
+    (error 'sensitive)))
+
+(defun hermes-exec-confirm-by-risk (code)
+  "Approval predicate for `hermes-exec-require-approval' keyed on CODE's risk.
+Return `deny' for forbidden forms, non-nil to prompt for sensitive forms, and
+nil to evaluate ordinary forms without asking."
+  (pcase (hermes-exec--classify-code code)
+    ('forbidden 'deny)
+    ('sensitive t)
+    (_ nil)))
+
+(defun hermes-exec--approval-decision (code)
+  "Return how to handle CODE: `run', `ask', or `deny'.
+Follow the `org-confirm-babel-evaluate' convention -- t asks, nil runs, and a
+function returns nil to run or non-nil to prompt -- extended with a `deny'
+return value that refuses the request outright.  Org expresses a hard block
+through a source block's `:eval' header rather than the confirm variable."
+  (let ((policy hermes-exec-require-approval))
+    (cond
+     ((functionp policy)
+      (pcase (funcall policy code)
+        ('deny 'deny)
+        ('nil 'run)
+        (_ 'ask)))
+     (policy 'ask)
+     (t 'run))))
+
+;;;###autoload
+(defun hermes-exec-trust ()
+  "Trust the agent for ordinary forms; still prompt for sensitive ones.
+Set `hermes-exec-require-approval' to `hermes-exec-confirm-by-risk'."
+  (interactive)
+  (setq hermes-exec-require-approval #'hermes-exec-confirm-by-risk)
+  (message "Hermes eval: trust mode (ordinary forms run, sensitive ones prompt)"))
+
+;;;###autoload
+(defun hermes-exec-untrust ()
+  "Require approval for every eval request, the default policy."
+  (interactive)
+  (setq hermes-exec-require-approval t)
+  (message "Hermes eval: every request requires approval"))
 
 ;;; Eval path
 
@@ -399,13 +505,14 @@ re-enter and advance the queue twice.  Advance to the next request afterwards."
 
 (defun hermes-exec--eval-outcome (code)
   "Return the eval result plist for CODE, or the symbol `defer'.
-Refuse when the endpoint is disabled, evaluate when approval is not required,
-and return `defer' when the request must wait for asynchronous approval."
+Refuse when the endpoint is disabled or policy denies the code, evaluate when
+policy runs it, and return `defer' when it must wait for asynchronous approval."
   (cond
    ((not hermes-exec-enabled)
     (list :ok nil :error "Hermes eval endpoint is disabled"))
    (t (pcase (hermes-exec--approval-decision code)
         ('run (hermes-exec--evaluate-guarded code))
+        ('deny (list :ok nil :error "Evaluation declined by policy"))
         ('ask 'defer)))))
 
 ;;; JSON request/response

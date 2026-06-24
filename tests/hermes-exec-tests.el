@@ -97,6 +97,17 @@
       (should (string-match-p "disabled" (plist-get result :error)))))
   (should (null hermes-exec-test--canary)))
 
+(ert-deftest hermes-exec-test-policy-deny-skips-eval ()
+  "A policy returning `deny' refuses without evaluating."
+  (setq hermes-exec-test--canary nil)
+  (let ((hermes-exec-enabled t)
+        (hermes-exec-require-approval (lambda (_code) 'deny)))
+    (let ((result (hermes-exec--eval-outcome
+                   "(setq hermes-exec-test--canary 'ran)")))
+      (should-not (plist-get result :ok))
+      (should (string-match-p "declined by policy" (plist-get result :error)))))
+  (should (null hermes-exec-test--canary)))
+
 (ert-deftest hermes-exec-test-skips-eval-when-client-disconnected ()
   "A dead connection makes the guarded evaluator skip the eval and report it."
   (setq hermes-exec-test--canary nil)
@@ -224,6 +235,55 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
       (delete-process proc)
       (when (get-buffer hermes-exec--approval-buffer-name)
         (kill-buffer hermes-exec--approval-buffer-name)))))
+
+;;; Group 2c: trust policy and risk classification
+
+(ert-deftest hermes-exec-test-classify-ordinary ()
+  "Plain computation and messaging classify as ordinary."
+  (should (eq 'ordinary (hermes-exec--classify-code "(+ 1 2)")))
+  (should (eq 'ordinary (hermes-exec--classify-code "(message \"hi\")"))))
+
+(ert-deftest hermes-exec-test-classify-sensitive ()
+  "Blocklisted functions and dynamic dispatch classify as sensitive."
+  (should (eq 'sensitive (hermes-exec--classify-code "(delete-file \"/tmp/x\")")))
+  (should (eq 'sensitive (hermes-exec--classify-code "(shell-command \"ls\")")))
+  (should (eq 'sensitive (hermes-exec--classify-code "(funcall fn)"))))
+
+(ert-deftest hermes-exec-test-classify-unreadable-fails-closed ()
+  "Code that cannot be read classifies as sensitive, not ordinary."
+  (should (eq 'sensitive (hermes-exec--classify-code "(+ 1 2"))))
+
+(ert-deftest hermes-exec-test-classify-forbidden ()
+  "A configured forbidden function classifies as forbidden."
+  (let ((hermes-exec-forbidden-functions '(kill-emacs)))
+    (should (eq 'forbidden (hermes-exec--classify-code "(kill-emacs)")))))
+
+(ert-deftest hermes-exec-test-confirm-by-risk ()
+  "The risk predicate runs ordinary, prompts sensitive, denies forbidden."
+  (should (null (hermes-exec-confirm-by-risk "(+ 1 2)")))
+  (should (hermes-exec-confirm-by-risk "(delete-file \"/tmp/x\")"))
+  (let ((hermes-exec-forbidden-functions '(kill-emacs)))
+    (should (eq 'deny (hermes-exec-confirm-by-risk "(kill-emacs)")))))
+
+(ert-deftest hermes-exec-test-approval-decision-mirrors-org-babel ()
+  "t asks, nil runs, and a function classifies into run/ask/deny."
+  (let ((hermes-exec-require-approval t))
+    (should (eq 'ask (hermes-exec--approval-decision "(+ 1 2)"))))
+  (let ((hermes-exec-require-approval nil))
+    (should (eq 'run (hermes-exec--approval-decision "(delete-file \"/x\")"))))
+  (let ((hermes-exec-require-approval #'hermes-exec-confirm-by-risk))
+    (should (eq 'run (hermes-exec--approval-decision "(+ 1 2)")))
+    (should (eq 'ask (hermes-exec--approval-decision "(shell-command \"ls\")")))
+    (let ((hermes-exec-forbidden-functions '(kill-emacs)))
+      (should (eq 'deny (hermes-exec--approval-decision "(kill-emacs)"))))))
+
+(ert-deftest hermes-exec-test-trust-untrust-set-policy ()
+  "The trust commands flip the policy between risk-based and always-ask."
+  (let ((hermes-exec-require-approval t))
+    (hermes-exec-trust)
+    (should (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk))
+    (hermes-exec-untrust)
+    (should (eq hermes-exec-require-approval t))))
 
 ;;; Group 3: HTTP request parsing
 
