@@ -53,11 +53,9 @@ refuses to evaluate, so the server can never come up or run implicitly."
   :type 'boolean)
 
 (defcustom hermes-exec-require-approval t
-  "When non-nil, prompt before evaluating each request.
-The prompt shows the incoming code and blocks Emacs on `y-or-n-p' until the user
-answers, which is intentional: a human gate is the only protection while the
-dangerous-form blocklist is deferred.  Set to nil only for full-execution
-testing where every request should run unprompted."
+  "When non-nil, confirm each eval request before running it.
+The request is shown in a dedicated buffer answered with a key; confirmation no
+longer blocks Emacs while it waits.  Set to nil to evaluate without asking."
   :type 'boolean)
 
 (defcustom hermes-exec-host nil
@@ -89,6 +87,13 @@ without bound."
   "Seconds an evaluation may run before `with-timeout' aborts it."
   :type 'number)
 
+(defcustom hermes-exec-max-pending 16
+  "Maximum number of eval requests that may await approval at once.
+A request that would exceed this is declined immediately rather than queued, so
+a misbehaving bridge cannot grow the queue and its open connections without
+bound."
+  :type 'integer)
+
 (defcustom hermes-exec-token nil
   "Shared bearer token the eval endpoint requires, or nil for loopback-only.
 When nil the endpoint trusts its bind host: `hermes-exec-start' refuses to bind
@@ -108,6 +113,12 @@ this endpoint can share one secret without duplicating it in config."
 Bound by `hermes-exec--filter' so the eval path can skip evaluation when the
 client has already disconnected -- e.g. when a slow approval outlives the
 bridge timeout -- rather than running the side effect on a dead socket.")
+
+(defvar hermes-exec--pending nil
+  "FIFO list of (:proc PROC :code CODE) eval requests awaiting approval.")
+
+(defvar hermes-exec--active nil
+  "The (:proc PROC :code CODE :buffer BUF) request whose prompt is shown, or nil.")
 
 ;;; Host resolution
 
@@ -215,11 +226,13 @@ request must carry a matching `Authorization: Bearer' header."
         (and-let* ((presented (hermes-exec--request-bearer request)))
           (hermes-exec--secure-equal expected presented)))))
 
-;;; Eval path (pure-ish)
-;;
-;; Tightening security with a dangerous-function blocklist or a static form
-;; walker is a deferred phase.  See /tmp/emacs-mcp-server/mcp-server-security.el
-;; for the intended reference when that work begins.
+;;; Approval policy
+
+(defun hermes-exec--approval-decision (_code)
+  "Return `ask' when `hermes-exec-require-approval' is non-nil, else `run'."
+  (if hermes-exec-require-approval 'ask 'run))
+
+;;; Eval path
 
 (defun hermes-exec--format-result (value)
   "Return VALUE printed, truncated, and redacted for transport."
@@ -250,52 +263,150 @@ reading or evaluation signals.  Errors are captured, never thrown."
                  :error (hermes-dashboard-transport--redact-secret
                          (error-message-string err))))))
 
+(defun hermes-exec--evaluate-guarded (code)
+  "Evaluate CODE unless `hermes-exec--connection' has already died.
+Return the declined plist when the client disconnected before evaluation -- for
+example when a slow approval outlives the bridge's request timeout."
+  (if (and hermes-exec--connection
+           (not (process-live-p hermes-exec--connection)))
+      (list :ok nil :error "Client disconnected before evaluation")
+    (hermes-exec--evaluate code)))
+
+;;; Asynchronous approval
+;;
+;; A request that needs confirmation is queued rather than answered inside the
+;; network filter, so Emacs does not block while it waits for the user.  The
+;; request's connection stays open; the response is written from the approval
+;; command once the user acts.  Evaluation itself still runs synchronously on
+;; the main thread once approved, bounded by `hermes-exec-timeout' -- only the
+;; human wait moved off the filter.  The bridge's own request timeout closes the
+;; socket if the user is too slow, which `hermes-exec--evaluate-guarded' and
+;; `hermes-exec--send-response' both detect before touching it.
+
 (defconst hermes-exec--approval-buffer-name "*Hermes Eval Request*"
   "Name of the transient buffer that shows code awaiting eval approval.")
 
+(defun hermes-exec--fontify-elisp (code)
+  "Return CODE fontified as Emacs Lisp via a throwaway buffer."
+  (with-temp-buffer
+    (insert code)
+    (delay-mode-hooks (emacs-lisp-mode))
+    (ignore-errors (font-lock-ensure))
+    (buffer-string)))
+
+(defvar-keymap hermes-exec-approval-mode-map
+  :doc "Keymap for `hermes-exec-approval-mode'."
+  "y" #'hermes-exec-approve
+  "RET" #'hermes-exec-approve
+  "n" #'hermes-exec-deny
+  "q" #'hermes-exec-deny)
+
+(define-derived-mode hermes-exec-approval-mode special-mode "Hermes-Eval"
+  "Major mode for confirming a single Hermes eval request.
+\\<hermes-exec-approval-mode-map>\\[hermes-exec-approve] evaluates the request; \
+\\[hermes-exec-deny] declines it."
+  (setq-local header-line-format
+              (substitute-command-keys
+               "Hermes eval request: \\[hermes-exec-approve] approve, \
+\\[hermes-exec-deny] deny")))
+
 (defun hermes-exec--approval-buffer (code)
-  "Return a read-only, fontified buffer showing CODE for eval approval."
+  "Return a read-only buffer showing fontified CODE for eval approval."
   (let ((buffer (get-buffer-create hermes-exec--approval-buffer-name)))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
-        (insert code)
-        (delay-mode-hooks (emacs-lisp-mode))
-        (ignore-errors (font-lock-ensure))
+        (insert (hermes-exec--fontify-elisp code))
         (goto-char (point-min)))
-      (setq-local header-line-format
-                  "Hermes eval request; answer y/n in the minibuffer")
-      (setq buffer-read-only t))
+      (hermes-exec-approval-mode))
     buffer))
 
-(defun hermes-exec--confirm-eval (code)
-  "Pop a buffer showing CODE, ask whether to evaluate, then restore windows.
-Return non-nil when the user approves.  The prior window configuration is
-restored and the buffer killed whether the prompt is answered or quit."
-  (let ((config (current-window-configuration))
-        (buffer (hermes-exec--approval-buffer code)))
-    (unwind-protect
-        (progn
-          (pop-to-buffer buffer)
-          (y-or-n-p "Evaluate this Hermes eval request? "))
-      (set-window-configuration config)
+(defun hermes-exec--finish-active ()
+  "Kill the active approval buffer and clear the active slot."
+  (when hermes-exec--active
+    (let ((buffer (plist-get hermes-exec--active :buffer)))
       (when (buffer-live-p buffer)
-        (kill-buffer buffer)))))
+        (kill-buffer buffer)))
+    (setq hermes-exec--active nil)))
 
-(defun hermes-exec--maybe-evaluate (code)
-  "Evaluate CODE behind the endpoint's enable and approval gates.
-Return a result plist without evaluating when `hermes-exec-enabled' is nil or
-the user declines the `hermes-exec-require-approval' prompt."
+(defun hermes-exec--show-next ()
+  "Display the next queued request when none is currently shown.
+Skip requests whose client has already disconnected."
+  (when (and (null hermes-exec--active) hermes-exec--pending)
+    (let* ((next (pop hermes-exec--pending))
+           (proc (plist-get next :proc)))
+      (if (not (process-live-p proc))
+          (hermes-exec--show-next)
+        (let ((buffer (hermes-exec--approval-buffer (plist-get next :code))))
+          (setq hermes-exec--active (plist-put (copy-sequence next) :buffer buffer))
+          (pop-to-buffer buffer))))))
+
+(defun hermes-exec--enqueue-approval (proc code)
+  "Queue CODE from PROC for approval and show it when nothing else is pending.
+Decline immediately when the queue is already at `hermes-exec-max-pending',
+counting the request currently shown, so the queue cannot grow without bound."
+  (if (>= (+ (length hermes-exec--pending) (if hermes-exec--active 1 0))
+          hermes-exec-max-pending)
+      (hermes-exec--send-response
+       proc (hermes-exec--http-response
+             200 "OK" (hermes-exec--result-json
+                       (list :ok nil :error "Too many pending eval requests"))))
+    (setq hermes-exec--pending
+          (append hermes-exec--pending (list (list :proc proc :code code))))
+    (hermes-exec--show-next)))
+
+(defun hermes-exec--resolve-active (approve)
+  "Evaluate the active request when APPROVE, else decline it, then respond.
+Consume the active slot before evaluating, so a sentinel that fires during the
+eval -- for instance when the approved code closes its own connection -- cannot
+re-enter and advance the queue twice.  Advance to the next request afterwards."
+  (when hermes-exec--active
+    (let* ((active hermes-exec--active)
+           (proc (plist-get active :proc))
+           (code (plist-get active :code))
+           (buffer (plist-get active :buffer)))
+      (setq hermes-exec--active nil)
+      (let ((result (if approve
+                        (let ((hermes-exec--connection proc))
+                          (hermes-exec--evaluate-guarded code))
+                      (list :ok nil :error "Evaluation declined by user"))))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))
+        (hermes-exec--send-response
+         proc (hermes-exec--http-response
+               200 "OK" (hermes-exec--result-json result)))
+        (hermes-exec--show-next)))))
+
+(defun hermes-exec--drop-pending (proc)
+  "Drop PROC from the approval queue, advancing the display if it was active."
+  (setq hermes-exec--pending
+        (cl-remove proc hermes-exec--pending
+                   :key (lambda (e) (plist-get e :proc))))
+  (when (and hermes-exec--active
+             (eq proc (plist-get hermes-exec--active :proc)))
+    (hermes-exec--finish-active)
+    (hermes-exec--show-next)))
+
+(defun hermes-exec-approve ()
+  "Approve the eval request shown in the current approval buffer."
+  (interactive)
+  (hermes-exec--resolve-active t))
+
+(defun hermes-exec-deny ()
+  "Decline the eval request shown in the current approval buffer."
+  (interactive)
+  (hermes-exec--resolve-active nil))
+
+(defun hermes-exec--eval-outcome (code)
+  "Return the eval result plist for CODE, or the symbol `defer'.
+Refuse when the endpoint is disabled, evaluate when approval is not required,
+and return `defer' when the request must wait for asynchronous approval."
   (cond
    ((not hermes-exec-enabled)
     (list :ok nil :error "Hermes eval endpoint is disabled"))
-   ((and hermes-exec-require-approval
-         (not (hermes-exec--confirm-eval code)))
-    (list :ok nil :error "Evaluation declined by user"))
-   ((and hermes-exec--connection
-         (not (process-live-p hermes-exec--connection)))
-    (list :ok nil :error "Client disconnected before evaluation"))
-   (t (hermes-exec--evaluate code))))
+   (t (pcase (hermes-exec--approval-decision code)
+        ('run (hermes-exec--evaluate-guarded code))
+        ('ask 'defer)))))
 
 ;;; JSON request/response
 
@@ -315,10 +426,15 @@ the user declines the `hermes-exec-require-approval' prompt."
      `((ok . :false) (error . ,(plist-get result :error))))))
 
 (defun hermes-exec--eval-response-body (body)
-  "Return the JSON response body for an /eval request BODY."
+  "Return the JSON response body for an /eval request BODY, or a defer signal.
+The value is a JSON string for the disabled, denied, and run-now paths, and the
+list (:defer CODE) when the request must wait for asynchronous approval."
   (condition-case err
-      (hermes-exec--result-json
-       (hermes-exec--maybe-evaluate (hermes-exec--code-from-body body)))
+      (let* ((code (hermes-exec--code-from-body body))
+             (outcome (hermes-exec--eval-outcome code)))
+        (if (eq outcome 'defer)
+            (list :defer code)
+          (hermes-exec--result-json outcome)))
     (error (json-serialize
             `((ok . :false)
               (error . ,(hermes-dashboard-transport--redact-secret
@@ -344,8 +460,13 @@ the user declines the `hermes-exec-require-approval' prompt."
      401 "Unauthorized" (json-serialize '((ok . :false) (error . "unauthorized")))))
    ((and (equal (plist-get request :method) "POST")
          (equal (plist-get request :path) "/eval"))
-    (hermes-exec--http-response
-     200 "OK" (hermes-exec--eval-response-body (plist-get request :body))))
+    (let ((outcome (hermes-exec--eval-response-body (plist-get request :body))))
+      ;; A (:defer CODE) outcome is passed up to the filter, which queues the
+      ;; request for approval and responds later; everything else is a JSON
+      ;; body wrapped here and sent immediately.
+      (if (eq (car-safe outcome) :defer)
+          outcome
+        (hermes-exec--http-response 200 "OK" outcome))))
    (t (hermes-exec--http-response
        404 "Not Found"
        (json-serialize '((ok . :false) (error . "not found")))))))
@@ -377,18 +498,21 @@ dispatched and an incomplete one yields nil."
 ;; accumulated bytes exceed `hermes-exec-max-request-bytes', and otherwise
 ;; dispatches.  This bounds memory and keeps partial reads from a premature eval.
 (defun hermes-exec--filter (proc chunk)
-  "Accumulate CHUNK on PROC; answer once a full or oversized request arrives."
+  "Accumulate CHUNK on PROC; respond or queue once a full request arrives."
   (let ((buffer (concat (process-get proc 'hermes-buffer) chunk))
         (hermes-exec--connection proc))
     (process-put proc 'hermes-buffer buffer)
-    (when-let* ((response (hermes-exec--request-response buffer)))
+    (when-let* ((outcome (hermes-exec--request-response buffer)))
       (process-put proc 'hermes-buffer nil)
-      (hermes-exec--send-response proc response))))
+      (if (eq (car-safe outcome) :defer)
+          (hermes-exec--enqueue-approval proc (cadr outcome))
+        (hermes-exec--send-response proc outcome)))))
 
 (defun hermes-exec--sentinel (proc _event)
-  "Drop PROC's accumulated input buffer when the connection ends."
+  "Drop PROC's buffered input and queued approval when its connection ends."
   (unless (process-live-p proc)
-    (process-put proc 'hermes-buffer nil)))
+    (process-put proc 'hermes-buffer nil)
+    (hermes-exec--drop-pending proc)))
 
 (defun hermes-exec--accept (_server connection _message)
   "Tag an accepted CONNECTION so `hermes-exec--live-connections' can find it.
@@ -454,7 +578,9 @@ process property rather than the inherited filter, excluding SERVER itself."
     (ignore-errors (delete-process conn)))
   (when (process-live-p hermes-exec--process)
     (ignore-errors (delete-process hermes-exec--process)))
-  (setq hermes-exec--process nil)
+  (setq hermes-exec--process nil
+        hermes-exec--pending nil)
+  (hermes-exec--finish-active)
   (message "Hermes eval endpoint stopped"))
 
 (defun hermes-exec--bound-host ()

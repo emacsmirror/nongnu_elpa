@@ -54,35 +54,9 @@
     (should (plist-get result :ok))
     (should (<= (length (plist-get result :result)) 50))))
 
-;;; Group 2: approval gate
+;;; Group 2: eval outcome and approval gate
 
 (defvar hermes-exec-test--canary nil)
-
-(ert-deftest hermes-exec-test-approval-declined-skips-eval ()
-  "Declining approval returns a declined plist without evaluating."
-  (setq hermes-exec-test--canary nil)
-  (let ((hermes-exec-require-approval t)
-        (hermes-exec-enabled t))
-    (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
-      (let ((result (hermes-exec--maybe-evaluate
-                     "(setq hermes-exec-test--canary 'ran)")))
-        (should-not (plist-get result :ok))
-        (should (equal "Evaluation declined by user" (plist-get result :error))))))
-  (should (null hermes-exec-test--canary)))
-
-(ert-deftest hermes-exec-test-skips-eval-when-client-disconnected ()
-  "A dead connection after approval skips the eval and reports it."
-  (setq hermes-exec-test--canary nil)
-  (let ((hermes-exec-enabled t)
-        (hermes-exec-require-approval nil)
-        (hermes-exec--connection 'fake-conn))
-    (cl-letf (((symbol-function 'process-live-p)
-               (lambda (p) (not (eq p 'fake-conn)))))
-      (let ((result (hermes-exec--maybe-evaluate
-                     "(setq hermes-exec-test--canary 'ran)")))
-        (should-not (plist-get result :ok))
-        (should (string-match-p "disconnected" (plist-get result :error))))))
-  (should (null hermes-exec-test--canary)))
 
 (ert-deftest hermes-exec-test-evaluate-runs-multiple-forms ()
   "Several top-level forms all run; the last value is returned."
@@ -93,37 +67,47 @@
     (should (equal "42" (plist-get result :result)))
     (should (eq hermes-exec-test--canary 'first))))
 
-(ert-deftest hermes-exec-test-approval-disabled-runs-unprompted ()
-  "With approval disabled, eval runs and no prompt is shown."
+(ert-deftest hermes-exec-test-no-approval-runs-unprompted ()
+  "With approval disabled, the eval outcome runs and returns a result plist."
   (setq hermes-exec-test--canary nil)
   (let ((hermes-exec-require-approval nil)
         (hermes-exec-enabled t))
-    (cl-letf (((symbol-function 'y-or-n-p)
-               (lambda (&rest _) (error "should not prompt"))))
-      (let ((result (hermes-exec--maybe-evaluate
-                     "(setq hermes-exec-test--canary 'ran)")))
-        (should (plist-get result :ok)))))
+    (should (plist-get (hermes-exec--eval-outcome
+                        "(setq hermes-exec-test--canary 'ran)")
+                       :ok)))
   (should (eq hermes-exec-test--canary 'ran)))
 
-(ert-deftest hermes-exec-test-confirm-eval-shows-code-then-cleans-up ()
-  "Approval pops a buffer holding the code, returns t, then kills the buffer."
-  (let (shown)
-    (cl-letf (((symbol-function 'y-or-n-p)
-               (lambda (&rest _)
-                 (setq shown (with-current-buffer
-                                 hermes-exec--approval-buffer-name
-                               (buffer-substring-no-properties
-                                (point-min) (point-max))))
-                 t)))
-      (should (hermes-exec--confirm-eval "(message \"hi\")"))
-      (should (equal "(message \"hi\")" shown))
-      (should-not (get-buffer hermes-exec--approval-buffer-name)))))
+(ert-deftest hermes-exec-test-always-ask-defers-without-evaluating ()
+  "With the always-ask policy the eval outcome defers and nothing runs."
+  (setq hermes-exec-test--canary nil)
+  (let ((hermes-exec-enabled t)
+        (hermes-exec-require-approval t))
+    (should (eq 'defer (hermes-exec--eval-outcome
+                        "(setq hermes-exec-test--canary 'ran)"))))
+  (should (null hermes-exec-test--canary)))
 
-(ert-deftest hermes-exec-test-confirm-eval-declined-cleans-up ()
-  "Declining returns nil and still kills the approval buffer."
-  (cl-letf (((symbol-function 'y-or-n-p) (lambda (&rest _) nil)))
-    (should-not (hermes-exec--confirm-eval "(+ 1 2)"))
-    (should-not (get-buffer hermes-exec--approval-buffer-name))))
+(ert-deftest hermes-exec-test-disabled-endpoint-refuses-to-evaluate ()
+  "A disabled endpoint returns an error result without evaluating."
+  (setq hermes-exec-test--canary nil)
+  (let ((hermes-exec-enabled nil)
+        (hermes-exec-require-approval nil))
+    (let ((result (hermes-exec--eval-outcome
+                   "(setq hermes-exec-test--canary 'ran)")))
+      (should-not (plist-get result :ok))
+      (should (string-match-p "disabled" (plist-get result :error)))))
+  (should (null hermes-exec-test--canary)))
+
+(ert-deftest hermes-exec-test-skips-eval-when-client-disconnected ()
+  "A dead connection makes the guarded evaluator skip the eval and report it."
+  (setq hermes-exec-test--canary nil)
+  (let ((hermes-exec--connection 'fake-conn))
+    (cl-letf (((symbol-function 'process-live-p)
+               (lambda (p) (not (eq p 'fake-conn)))))
+      (let ((result (hermes-exec--evaluate-guarded
+                     "(setq hermes-exec-test--canary 'ran)")))
+        (should-not (plist-get result :ok))
+        (should (string-match-p "disconnected" (plist-get result :error))))))
+  (should (null hermes-exec-test--canary)))
 
 (ert-deftest hermes-exec-test-start-refuses-when-disabled ()
   "`hermes-exec-start' refuses to bind while `hermes-exec-enabled' is nil."
@@ -133,18 +117,113 @@
                (lambda (&rest _) (error "must not start a disabled endpoint"))))
       (should-error (hermes-exec-start) :type 'user-error))))
 
-(ert-deftest hermes-exec-test-disabled-endpoint-refuses-to-evaluate ()
-  "A disabled endpoint returns an error result without evaluating or prompting."
+;;; Group 2b: asynchronous approval queue
+
+(defmacro hermes-exec-test--with-pending (proc-var sent-var &rest body)
+  "Run BODY with a live pipe process in PROC-VAR and captured response in SENT-VAR.
+`hermes-exec--send-response' is stubbed to store its response string in SENT-VAR
+instead of writing to the socket, and the approval queue is reset and cleaned."
+  (declare (indent 2))
+  `(let ((,proc-var (make-pipe-process :name "hermes-exec-test" :noquery t))
+         (hermes-exec--pending nil)
+         (hermes-exec--active nil)
+         (hermes-exec-enabled t)
+         ,sent-var)
+     (unwind-protect
+         (cl-letf (((symbol-function 'hermes-exec--send-response)
+                    (lambda (_proc response) (setq ,sent-var response))))
+           ,@body)
+       (delete-process ,proc-var)
+       (when (get-buffer hermes-exec--approval-buffer-name)
+         (kill-buffer hermes-exec--approval-buffer-name)))))
+
+(ert-deftest hermes-exec-test-enqueue-shows-code ()
+  "Queuing a request pops a buffer holding the request code verbatim."
+  (hermes-exec-test--with-pending proc _sent
+                                  (hermes-exec--enqueue-approval proc "(message \"hi\")")
+                                  (should (equal "(message \"hi\")"
+                                                 (with-current-buffer hermes-exec--approval-buffer-name
+                                                   (buffer-substring-no-properties (point-min) (point-max)))))))
+
+(ert-deftest hermes-exec-test-approve-evaluates-responds-and-cleans-up ()
+  "Approving evaluates the code, sends an ok response, and kills the buffer."
   (setq hermes-exec-test--canary nil)
-  (let ((hermes-exec-enabled nil)
-        (hermes-exec-require-approval nil))
-    (cl-letf (((symbol-function 'y-or-n-p)
-               (lambda (&rest _) (error "should not prompt"))))
-      (let ((result (hermes-exec--maybe-evaluate
-                     "(setq hermes-exec-test--canary 'ran)")))
-        (should-not (plist-get result :ok))
-        (should (string-match-p "disabled" (plist-get result :error))))))
+  (hermes-exec-test--with-pending proc sent
+                                  (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary 'ran)")
+                                  (hermes-exec-approve)
+                                  (should (eq hermes-exec-test--canary 'ran))
+                                  (should (string-prefix-p "HTTP/1.1 200 OK" sent))
+                                  (should (string-match-p "\"ok\":true" sent))
+                                  (should-not (get-buffer hermes-exec--approval-buffer-name))
+                                  (should-not hermes-exec--active)))
+
+(ert-deftest hermes-exec-test-deny-skips-eval-responds-and-cleans-up ()
+  "Denying skips the eval, sends a declined response, and kills the buffer."
+  (setq hermes-exec-test--canary nil)
+  (hermes-exec-test--with-pending proc sent
+                                  (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary 'ran)")
+                                  (hermes-exec-deny)
+                                  (should (null hermes-exec-test--canary))
+                                  (should (string-match-p "declined by user" sent))
+                                  (should-not (get-buffer hermes-exec--approval-buffer-name))
+                                  (should-not hermes-exec--active)))
+
+(ert-deftest hermes-exec-test-dead-client-dropped-from-queue ()
+  "A connection that dies while queued is dropped and never evaluated."
+  (setq hermes-exec-test--canary nil)
+  (hermes-exec-test--with-pending proc _sent
+                                  (hermes-exec--enqueue-approval proc "(setq hermes-exec-test--canary 'ran)")
+                                  (delete-process proc)
+                                  (hermes-exec--drop-pending proc)
+                                  (should (null hermes-exec--active))
+                                  (should (null hermes-exec--pending))
+                                  (should-not (get-buffer hermes-exec--approval-buffer-name)))
   (should (null hermes-exec-test--canary)))
+
+(ert-deftest hermes-exec-test-fifo-advances-to-next-request ()
+  "Approving the active request promotes the next queued request in order."
+  (let ((proc1 (make-pipe-process :name "hermes-exec-test-1" :noquery t))
+        (proc2 (make-pipe-process :name "hermes-exec-test-2" :noquery t))
+        (hermes-exec--pending nil)
+        (hermes-exec--active nil)
+        (hermes-exec-enabled t))
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-exec--send-response)
+                   (lambda (&rest _) nil)))
+          (hermes-exec--enqueue-approval proc1 "(+ 1 1)")
+          (hermes-exec--enqueue-approval proc2 "(+ 2 2)")
+          (should (eq proc1 (plist-get hermes-exec--active :proc)))
+          (should (= 1 (length hermes-exec--pending)))
+          (hermes-exec-approve)
+          (should (eq proc2 (plist-get hermes-exec--active :proc)))
+          (should (null hermes-exec--pending))
+          (should (equal "(+ 2 2)"
+                         (with-current-buffer hermes-exec--approval-buffer-name
+                           (buffer-substring-no-properties (point-min) (point-max))))))
+      (delete-process proc1)
+      (delete-process proc2)
+      (when (get-buffer hermes-exec--approval-buffer-name)
+        (kill-buffer hermes-exec--approval-buffer-name)))))
+
+(ert-deftest hermes-exec-test-queue-cap-declines-overflow ()
+  "A request past `hermes-exec-max-pending' is declined rather than queued."
+  (let ((proc (make-pipe-process :name "hermes-exec-test" :noquery t))
+        (hermes-exec--pending nil)
+        (hermes-exec--active nil)
+        (hermes-exec-enabled t)
+        (hermes-exec-max-pending 1)
+        sent)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-exec--send-response)
+                   (lambda (_p response) (setq sent response))))
+          (hermes-exec--enqueue-approval proc "(+ 1 1)")
+          (should hermes-exec--active)
+          (hermes-exec--enqueue-approval proc "(+ 2 2)")
+          (should (null hermes-exec--pending))
+          (should (string-match-p "Too many pending" sent)))
+      (delete-process proc)
+      (when (get-buffer hermes-exec--approval-buffer-name)
+        (kill-buffer hermes-exec--approval-buffer-name)))))
 
 ;;; Group 3: HTTP request parsing
 
