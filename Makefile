@@ -94,36 +94,20 @@ pre-handoff-check:
 load: clean
 	@emacsclient --eval "(progn \
 	  (add-to-list 'load-path \"$(CURDIR)/lisp\") \
-	  (dolist (sym '(hermes-dashboard-mode-map hermes-chat-mode-map \
-	                 hermes-sessions-mode-map hermes-cron-mode-map \
-	                 hermes-subagents-mode-map hermes-rollback-mode-map \
-	                 hermes-kanban-mode-map hermes-kanban-boards-mode-map \
-	                 hermes-mcp-mode-map hermes-chat-actions-map)) \
-	    (when (boundp sym) (makunbound sym))))" > /dev/null
+	  (mapatoms (lambda (s) \
+	    (when (and (string-prefix-p \"hermes-\" (symbol-name s)) \
+	               (boundp s) (keymapp (symbol-value s))) \
+	      (makunbound s)))))" > /dev/null
 	@for f in $(SRCS); do \
 	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
 	    printf "\033[31mFAIL\033[0m $$f\n"; \
 	done
 	@emacsclient --eval "(dolist (buf (buffer-list)) \
 	  (with-current-buffer buf \
-	    (cond ((derived-mode-p 'hermes-dashboard-mode) \
-	           (use-local-map hermes-dashboard-mode-map)) \
-	          ((derived-mode-p 'hermes-chat-mode) \
-	           (use-local-map hermes-chat-mode-map)) \
-	          ((derived-mode-p 'hermes-sessions-mode) \
-	           (use-local-map hermes-sessions-mode-map)) \
-	          ((derived-mode-p 'hermes-cron-mode) \
-	           (use-local-map hermes-cron-mode-map)) \
-	          ((derived-mode-p 'hermes-subagents-mode) \
-	           (use-local-map hermes-subagents-mode-map)) \
-	          ((derived-mode-p 'hermes-rollback-mode) \
-	           (use-local-map hermes-rollback-mode-map)) \
-	          ((derived-mode-p 'hermes-kanban-boards-mode) \
-	           (use-local-map hermes-kanban-boards-mode-map)) \
-	          ((derived-mode-p 'hermes-mcp-mode) \
-	           (use-local-map hermes-mcp-mode-map)) \
-	          ((derived-mode-p 'hermes-kanban-mode) \
-	           (use-local-map hermes-kanban-mode-map)))))" > /dev/null
+	    (let ((map (intern-soft (format \"%s-map\" major-mode)))) \
+	      (when (and (string-prefix-p \"hermes-\" (symbol-name major-mode)) \
+	                 map (boundp map) (keymapp (symbol-value map))) \
+	        (use-local-map (symbol-value map))))))" > /dev/null
 	@printf "\033[32mLoaded all modules into Emacs\033[0m\n"
 
 clean:
