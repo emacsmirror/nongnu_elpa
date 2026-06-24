@@ -234,19 +234,19 @@
                   :content " need"))
        (let ((text (buffer-string))
              (entries (hermes-chat--entries)))
-         (should (string-match-p "▸ Thinking\.\.\." text))
+         (should (string-match-p "▸ Reasoning" text))
          (should-not (string-match-p "I need" text))
          (should (equal (mapcar (lambda (entry) (plist-get entry :role))
                                 entries)
                         '(user commentary assistant)))
          (should (equal (plist-get (nth 1 entries) :content) "I need")))
-       (hermes-test--should-have-face "Thinking..." 'shadow)
-       (hermes-test--push-button-labeled "Thinking...")
+       (hermes-test--should-have-face "Reasoning" 'shadow)
+       (hermes-test--push-button-labeled "Reasoning")
        (let ((text (buffer-string)))
-         (should (string-match-p "▾ Thinking\.\.\." text))
+         (should (string-match-p "▾ Reasoning" text))
          (should (string-match-p "I need" text)))
        (hermes-test--should-have-face "I need" 'shadow)
-       (hermes-test--push-button-labeled "Thinking...")
+       (hermes-test--push-button-labeled "Reasoning")
        (should-not (string-match-p "I need" (buffer-string)))))))
 
 (ert-deftest hermes-chat-cleans-commentary-token-newline-noise ()
@@ -263,7 +263,7 @@
                   (list :type 'commentary
                         :event "reasoning.delta"
                         :content chunk)))
-       (hermes-test--push-button-labeled "Thinking...")
+       (hermes-test--push-button-labeled "Reasoning")
        (let ((text (buffer-string)))
          (should (string-match-p "I need to respond to \\\"hello\.\\\"" text))
          (should-not (string-match-p "I\n need\n to" text)))))))
@@ -277,6 +277,12 @@
                   '(:type thinking :event "thinking.delta"
                           :content "(◔_◔) pondering..."))
                  '(:status thinking :activity "(◔_◔) Pondering"))))
+
+(ert-deftest hermes-chat-commentary-header-labels-reasoning ()
+  "Streamed reasoning drives a \"Reasoning\" header activity, not \"Thinking\"."
+  (should (equal (hermes-chat--turn-header-props
+                  '(:type commentary :event "reasoning.delta" :content "x"))
+                 '(:status running :activity "Reasoning"))))
 
 (ert-deftest hermes-chat-reasoning-available-keeps-streamed-reasoning ()
   "A `reasoning.available' preview never shrinks already-streamed reasoning."
@@ -2185,11 +2191,11 @@
                           :event "reasoning.delta"
                           :content chunk)))
          (let ((collapsed (buffer-string)))
-           (should (string-match-p "▸ Thinking\.\.\." collapsed))
+           (should (string-match-p "▸ Reasoning" collapsed))
            (should-not (string-match-p "inspect repo" collapsed)))
-         (hermes-test--push-button-labeled "Thinking...")
+         (hermes-test--push-button-labeled "Reasoning")
          (let ((expanded (buffer-string)))
-           (should (string-match-p "▾ Thinking\.\.\." expanded))
+           (should (string-match-p "▾ Reasoning" expanded))
            (should (string-match-p "I need to inspect repo" expanded))
            (should-not (string-match-p "\\\\n\|\\^J" expanded)))
          (funcall callback
@@ -2198,7 +2204,7 @@
                     :event "reasoning.delta"
                     :content " and cite files"))
          (let ((expanded (buffer-string)))
-           (should (string-match-p "▾ Thinking\.\.\." expanded))
+           (should (string-match-p "▾ Reasoning" expanded))
            (should (string-match-p "I need to inspect repo and cite files"
                                    expanded)))
          (funcall callback
@@ -3442,7 +3448,7 @@
                     '(refresh-header))
               (list '(:status-state (:status thinking :activity "x"))
                     '(:type commentary)
-                    '(:status running :activity "Thinking..." :updated (100 200))
+                    '(:status running :activity "Reasoning" :updated (100 200))
                     '(refresh-header upsert-entry))
               (list '(:status-state nil)
                     '(:type diff)

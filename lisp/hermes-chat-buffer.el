@@ -291,12 +291,12 @@ the thinking disclosure; diffs become View Diff links."
   "Insert a toggle button for commentary ENTRY in EXPANDED state."
   (insert "  ")
   (let ((start (point)))
-    (insert (if expanded "▾ Thinking..." "▸ Thinking..."))
+    (insert (if expanded "▾ Reasoning" "▸ Reasoning"))
     (make-text-button start (point)
                       'face 'shadow
                       'mouse-face 'highlight
                       'follow-link t
-                      'help-echo "Toggle Hermes thinking"
+                      'help-echo "Toggle Hermes reasoning"
                       'hermes-chat-entry-id (plist-get entry :id)
                       'action #'hermes-chat--toggle-entry-button))
   (insert "\n"))

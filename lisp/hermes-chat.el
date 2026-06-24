@@ -594,7 +594,7 @@ literal \"Thinking\" label."
   "Return header props for any header-affecting EVENT, or nil for none."
   (pcase (plist-get event :type)
     ('status (hermes-chat--status-header-props event))
-    ('commentary '(:status running :activity "Thinking..."))
+    ('commentary '(:status running :activity "Reasoning"))
     ('thinking (hermes-chat--thinking-header-props event))
     ('diff '(:status running :activity "Reviewing diff"))
     ('done (list :status 'ready :activity "Ready"
