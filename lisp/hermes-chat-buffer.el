@@ -593,12 +593,24 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
            (plist-get (ignore-errors (ewoc-data anode)) :content))
       (hermes-chat--remove-entry tid))))
 
+(defun hermes-chat--reasoning-available-event-p (event)
+  "Return non-nil when EVENT is a `reasoning.available' commentary preview."
+  (and (eq (plist-get event :type) 'commentary)
+       (equal (hermes-chat--commentary-event-name event) "reasoning.available")))
+
 (defun hermes-chat--updated-transport-content (entry event content)
   "Return updated display CONTENT for ENTRY from transport EVENT."
   (let ((clean-content (hermes-chat--sanitize-content content)))
-    (if (and entry (hermes-chat--commentary-delta-p event))
-        (concat (or (plist-get entry :content) "") clean-content)
-      clean-content)))
+    (cond
+     ((and entry (hermes-chat--commentary-delta-p event))
+      (concat (or (plist-get entry :content) "") clean-content))
+     ;; `reasoning.available' is a preview of the same reasoning entry already
+     ;; built from `reasoning.delta' chunks (both key to `commentary:thinking');
+     ;; never let the shorter preview shrink the fuller streamed reasoning.
+     ((and entry (hermes-chat--reasoning-available-event-p event))
+      (let ((existing (or (plist-get entry :content) "")))
+        (if (>= (length existing) (length clean-content)) existing clean-content)))
+     (t clean-content))))
 
 (defun hermes-chat--upsert-transport-entry (assistant-id event)
   "Insert or update a compact transport EVENT for ASSISTANT-ID."

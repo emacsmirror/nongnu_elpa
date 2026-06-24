@@ -278,6 +278,17 @@
                           :content "(◔_◔) pondering..."))
                  '(:status thinking :activity "(◔_◔) Pondering"))))
 
+(ert-deftest hermes-chat-reasoning-available-keeps-streamed-reasoning ()
+  "A `reasoning.available' preview never shrinks already-streamed reasoning."
+  (let ((entry '(:role commentary :content "Step A. Step B. full reasoning"))
+        (event '(:type commentary :event "reasoning.available")))
+    (should (equal (hermes-chat--updated-transport-content entry event "short")
+                   "Step A. Step B. full reasoning")))
+  (let ((entry '(:role commentary :content ""))
+        (event '(:type commentary :event "reasoning.available")))
+    (should (equal (hermes-chat--updated-transport-content entry event "preview")
+                   "preview"))))
+
 (ert-deftest hermes-chat-renders-indexed-tool-events-as-ewoc-entries ()
   (let (callback)
     (hermes-test-with-chat-buffer
