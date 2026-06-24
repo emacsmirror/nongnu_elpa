@@ -3817,6 +3817,43 @@
       (should-not spawned)
       (should (string-match-p "blank for default" prompt)))))
 
+(ert-deftest hermes-chat-profile-list-payload-prefers-warm-cache ()
+  "A warmed profile cache feeds completion without touching a chat client."
+  (let ((hermes-dashboard-transport--profile-cache nil)
+        touched)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example"))
+              ((symbol-function 'hermes-chat--existing-dashboard-client)
+               (lambda () (setq touched 'client) nil))
+              ((symbol-function 'hermes-dashboard-transport-profile-list)
+               (lambda (&rest _) (setq touched 'fetch) nil)))
+      (hermes-dashboard-transport--store-profile-cache
+       '((profiles . (((name . "default") (is_default . t))
+                      ((name . "elisp-dev"))))))
+      (should (equal (hermes-chat--profile-candidates
+                      (hermes-chat--profile-list-payload))
+                     '(("default" . nil) ("elisp-dev" . nil))))
+      (should-not touched))))
+
+(ert-deftest hermes-chat-read-profile-completes-from-cache-without-client ()
+  "With a warm cache and no live client the picker completes, never spawning."
+  (let ((hermes-dashboard-transport--profile-cache nil)
+        spawned)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example"))
+              ((symbol-function 'hermes-chat--existing-dashboard-client)
+               (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (setq spawned t) 'transient-client))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt collection &rest _)
+                 (cl-find "elisp-dev" collection :test #'string-match-p))))
+      (hermes-dashboard-transport--store-profile-cache
+       '((profiles . (((name . "default") (is_default . t))
+                      ((name . "elisp-dev"))))))
+      (should (equal (hermes-chat--read-profile) "elisp-dev"))
+      (should-not spawned))))
+
 (ert-deftest hermes-chat-completes-dashboard-profile ()
   "Interactively creating a chat chooses from dashboard profiles."
   (let (choices)

@@ -433,6 +433,18 @@ as `ok' nil, not a JSON-RPC error."
              (setq hermes-dashboard--needs-onboarding t)
              (hermes-dashboard-refresh))))))))
 
+(defun hermes-dashboard--warm-profile-cache ()
+  "Warm the profile cache that feeds the chat picker, unless already fresh.
+Best-effort and asynchronous: opening the dashboard never blocks or errors on
+this, mirroring `hermes-dashboard--check-auth'.  A live chat client's session
+token is used when one exists, else plain REST auth.  The cache is keyed by
+dashboard URL, so it re-fetches automatically after the configured URL changes."
+  (unless (hermes-dashboard-transport-cached-profile-list)
+    (hermes--promise-catch
+     (hermes-dashboard-transport-profile-list-async
+      (hermes-chat--existing-dashboard-client))
+     #'ignore)))
+
 (defun hermes-dashboard--chat-node (buffer)
   "Return one chat dashboard node for BUFFER."
   (with-current-buffer buffer
@@ -727,7 +739,8 @@ as `ok' nil, not a JSON-RPC error."
       (unless (derived-mode-p 'hermes-dashboard-mode)
         (hermes-dashboard-mode))
       (hermes-dashboard--render)
-      (hermes-dashboard--check-auth))
+      (hermes-dashboard--check-auth)
+      (hermes-dashboard--warm-profile-cache))
     (pop-to-buffer-same-window buffer)
     (with-current-buffer buffer
       (goto-char (point-min))

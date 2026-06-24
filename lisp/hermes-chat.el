@@ -1813,12 +1813,16 @@ CANDIDATES is a (NAME . MODEL-LABEL) alist; the annotation shows the model."
            (buffer-list)))
 
 (defun hermes-chat--profile-list-payload ()
-  "Return dashboard profile metadata from a live chat client, or nil.
-Profile completion never spawns a transient dashboard: with no live chat
-connection this returns nil so the caller prompts for a profile manually,
-and opening a chat never blocks on a cold-start dashboard spawn."
-  (when-let* ((client (hermes-chat--existing-dashboard-client)))
-    (hermes-dashboard-transport-profile-list client)))
+  "Return dashboard profile metadata, preferring the warmed cache.
+`hermes' warms a per-URL profile cache on launch (see
+`hermes-dashboard-transport-profile-list-async'), so cold-start completion has
+candidates without blocking.  On a cache miss this falls back to a synchronous
+fetch only when a live chat client already supplies a cheap session token; with
+neither it returns nil so the caller prompts for a profile manually and never
+spawns a transient dashboard."
+  (or (hermes-dashboard-transport-cached-profile-list)
+      (when-let* ((client (hermes-chat--existing-dashboard-client)))
+        (hermes-dashboard-transport-profile-list client))))
 
 (defun hermes-chat--read-raw-profile (&optional notice)
   "Read a raw Hermes profile name with the default-profile prompt.

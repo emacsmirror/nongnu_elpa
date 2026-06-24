@@ -1141,11 +1141,50 @@ dashboard base URL and `X-Hermes-Session-Token'."
      method path :body body :query query :headers headers :secrets secrets
      :retry (equal method "GET"))))
 
+(defvar hermes-dashboard-transport--profile-cache nil
+  "Cached `/api/profiles' payload as `(:base-url URL :payload PAYLOAD)'.
+Keyed by base URL so switching dashboards re-fetches instead of serving a
+previous dashboard's profiles.")
+
+(defun hermes-dashboard-transport--profile-cache-stale-p ()
+  "Return non-nil when the cached profile list is for a different dashboard URL."
+  (and hermes-dashboard-transport--profile-cache
+       (not (equal (plist-get hermes-dashboard-transport--profile-cache :base-url)
+                   (ignore-errors (hermes-dashboard-transport--api-base-url))))))
+
+(defun hermes-dashboard-transport--store-profile-cache (payload)
+  "Cache PAYLOAD as the current dashboard's profile list and return it."
+  (setq hermes-dashboard-transport--profile-cache
+        (list :base-url (ignore-errors (hermes-dashboard-transport--api-base-url))
+              :payload payload))
+  payload)
+
+(defun hermes-dashboard-transport-cached-profile-list ()
+  "Return the cached `/api/profiles' payload for the current dashboard, or nil.
+The cache is warmed by `hermes-dashboard-transport-profile-list-async' and is
+discarded once `hermes-dashboard-transport-url' changes."
+  (unless (hermes-dashboard-transport--profile-cache-stale-p)
+    (plist-get hermes-dashboard-transport--profile-cache :payload)))
+
 (defun hermes-dashboard-transport-profile-list (&optional client)
   "Return dashboard profile metadata from REST `/api/profiles'.
-When CLIENT is non-nil, authenticate with its live dashboard session token."
-  (hermes-dashboard-transport-api-request
-   "GET" "/api/profiles" :client client))
+When CLIENT is non-nil, authenticate with its live dashboard session token.
+The payload is cached for the current dashboard URL so subsequent profile
+prompts can read it without blocking (see
+`hermes-dashboard-transport-cached-profile-list')."
+  (hermes-dashboard-transport--store-profile-cache
+   (hermes-dashboard-transport-api-request
+    "GET" "/api/profiles" :client client)))
+
+(defun hermes-dashboard-transport-profile-list-async (&optional client)
+  "Return a promise of `/api/profiles', warming the profile cache on success.
+When CLIENT is non-nil, authenticate with its live dashboard session token.
+Resolves without blocking Emacs, so callers can warm the cache eagerly (for
+example when the dashboard opens)."
+  (hermes--promise-map
+   (hermes-dashboard-transport-api-request-async
+    "GET" "/api/profiles" :client client)
+   #'hermes-dashboard-transport--store-profile-cache))
 
 (defun hermes-dashboard-transport-active-profile (&optional client)
   "Return dashboard active-profile metadata from REST `/api/profiles/active'.

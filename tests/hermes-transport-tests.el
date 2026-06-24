@@ -343,6 +343,36 @@
                (lambda () "http://old.example")))
       (should-not (hermes-dashboard-transport--api-auth-stale-p)))))
 
+(ert-deftest hermes-transport-dashboard-cached-profile-list-serves-current-url ()
+  "A stored profile payload is served only while the dashboard URL matches."
+  (let ((hermes-dashboard-transport--profile-cache nil))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example")))
+      (hermes-dashboard-transport--store-profile-cache
+       '((profiles . (((name . "default"))))))
+      (should (equal (hermes-dashboard-transport-cached-profile-list)
+                     '((profiles . (((name . "default"))))))))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://other.example")))
+      (should (hermes-dashboard-transport--profile-cache-stale-p))
+      (should-not (hermes-dashboard-transport-cached-profile-list)))))
+
+(ert-deftest hermes-transport-dashboard-profile-list-async-warms-cache ()
+  "Resolving the async profile list stores the payload in the cache."
+  (let ((hermes-dashboard-transport--profile-cache nil)
+        (payload '((profiles . (((name . "default")))))))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example"))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) (hermes--promise-resolved payload))))
+      (let (resolved)
+        (hermes--promise-then
+         (hermes-dashboard-transport-profile-list-async)
+         (lambda (value) (setq resolved value)))
+        (should (equal resolved payload))
+        (should (equal (hermes-dashboard-transport-cached-profile-list)
+                       payload))))))
+
 (ert-deftest hermes-transport-dashboard-start-auto-localhost-spawns ()
   (let (process-plist opened-url events)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
