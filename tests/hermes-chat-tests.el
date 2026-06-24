@@ -268,6 +268,16 @@
          (should (string-match-p "I need to respond to \\\"hello\.\\\"" text))
          (should-not (string-match-p "I\n need\n to" text)))))))
 
+(ert-deftest hermes-chat-empty-thinking-delta-clears-to-running ()
+  "An empty `thinking.delta' clears the spinner instead of showing \"Thinking\"."
+  (should (equal (hermes-chat--turn-header-props
+                  '(:type thinking :event "thinking.delta" :content ""))
+                 '(:status running :activity nil)))
+  (should (equal (hermes-chat--turn-header-props
+                  '(:type thinking :event "thinking.delta"
+                          :content "(◔_◔) pondering..."))
+                 '(:status thinking :activity "(◔_◔) Pondering"))))
+
 (ert-deftest hermes-chat-renders-indexed-tool-events-as-ewoc-entries ()
   (let (callback)
     (hermes-test-with-chat-buffer

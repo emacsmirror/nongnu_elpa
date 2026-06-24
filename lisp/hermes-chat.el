@@ -578,14 +578,24 @@ fields, so it collapses to a plain ready state instead of repeating them."
                   (hermes-chat--transport-entry-status event))
         :activity (hermes-chat--status-event-activity event)))
 
+(defun hermes-chat--thinking-header-props (event)
+  "Return header props for a `thinking.delta' EVENT.
+A non-empty kawaii spinner sets the `thinking' status with its verb.  An empty
+`thinking.delta' is the gateway's clear signal once the model starts answering
+or runs a tool, so it reverts to the running state instead of inventing a
+literal \"Thinking\" label."
+  (let ((content (or (plist-get event :content) "")))
+    (if (string-empty-p (string-trim content))
+        '(:status running :activity nil)
+      (list :status 'thinking
+            :activity (hermes-chat--thinking-activity content)))))
+
 (defun hermes-chat--turn-header-props (event)
   "Return header props for any header-affecting EVENT, or nil for none."
   (pcase (plist-get event :type)
     ('status (hermes-chat--status-header-props event))
     ('commentary '(:status running :activity "Thinking..."))
-    ('thinking (list :status 'thinking
-                     :activity (hermes-chat--thinking-activity
-                                (plist-get event :content))))
+    ('thinking (hermes-chat--thinking-header-props event))
     ('diff '(:status running :activity "Reviewing diff"))
     ('done (list :status 'ready :activity "Ready"
                  :usage (plist-get event :usage)))
