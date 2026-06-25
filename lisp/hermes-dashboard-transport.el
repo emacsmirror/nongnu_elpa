@@ -140,7 +140,9 @@ slow or unreachable dashboard cannot hang a chat or list buffer forever."
   stored-session-id
   (callback #'ignore)
   (subscribers (make-hash-table :test #'eq))
-  (session-index (make-hash-table :test #'equal)))
+  (session-index (make-hash-table :test #'equal))
+  (refcount 0)
+  endpoint-key)
 
 (defun hermes-dashboard-transport-subscribe (client fn)
   "Register FN as an event subscriber on CLIENT and return an opaque token.
@@ -214,6 +216,17 @@ keep working unchanged."
               (funcall fn event)
             (hermes-dashboard-transport--broadcast-event client event)))
       (funcall (hermes-dashboard-transport-client-callback client) event))))
+
+(defvar hermes-dashboard-transport--clients (make-hash-table :test #'equal)
+  "Hash of endpoint key to the shared dashboard client serving that endpoint.
+One client -- one WebSocket and one authentication -- is shared by every chat
+buffer attached to the same dashboard endpoint.")
+
+(defun hermes-dashboard-transport--unregister-client (client)
+  "Remove CLIENT from the shared registry when it is still the registered one."
+  (when-let* ((key (hermes-dashboard-transport-client-endpoint-key client)))
+    (when (eq (gethash key hermes-dashboard-transport--clients) client)
+      (remhash key hermes-dashboard-transport--clients))))
 
 (defun hermes-dashboard-transport--command (host port &optional command)
   "Return dashboard startup argv for HOST, PORT, and optional COMMAND."
@@ -611,6 +624,7 @@ transport error when a pending request has no reject callback."
                             client)))
         (hermes--promise-reject
          promise (or message "Hermes dashboard transport stopped"))))
+    (ignore-errors (hermes-dashboard-transport--unregister-client client))
     (ignore-errors
       (setf (hermes-dashboard-transport-client-callback client) #'ignore)
       (clrhash (hermes-dashboard-transport-client-subscribers client))
@@ -2208,13 +2222,12 @@ Emacs."
         client (hermes-dashboard-transport--redact-secret reason))))
     client))
 
-(cl-defun hermes-dashboard-transport-start
-    (&key callback host port command token base-environment
-          start-mode remote-url remote-auth-method)
-  "Start or attach to a dashboard transport and connect its WebSocket.
-CALLBACK receives normalized `hermes-transport' events.  By default the target
-is `hermes-dashboard-transport-url'; HOST, PORT, COMMAND, TOKEN,
-BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
+(cl-defun hermes-dashboard-transport--resolve-target
+    (&key host port start-mode remote-url)
+  "Resolve the dashboard target from HOST, PORT, START-MODE, and REMOTE-URL.
+Return a plist of :mode, :host, :port, and :remote-url, defaulting unset values
+from `hermes-dashboard-transport-url'.  Shared by the start and endpoint-key
+paths so they always agree on the resolved target."
   (let* ((from-url (not (or host port remote-url)))
          (target (and from-url
                       (hermes-dashboard-transport--parse-url
@@ -2224,10 +2237,25 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
          (remote-url (or remote-url
                          (and from-url
                               (not (hermes-dashboard-transport--loopback-host-p host))
-                              hermes-dashboard-transport-url)))
-         (mode (hermes-dashboard-transport--resolved-start-mode
-                start-mode host remote-url)))
-    (pcase mode
+                              hermes-dashboard-transport-url))))
+    (list :mode (hermes-dashboard-transport--resolved-start-mode
+                 start-mode host remote-url)
+          :host host :port port :remote-url remote-url)))
+
+(cl-defun hermes-dashboard-transport-start
+    (&key callback host port command token base-environment
+          start-mode remote-url remote-auth-method)
+  "Start or attach to a dashboard transport and connect its WebSocket.
+CALLBACK receives normalized `hermes-transport' events.  By default the target
+is `hermes-dashboard-transport-url'; HOST, PORT, COMMAND, TOKEN,
+BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
+  (let* ((target (hermes-dashboard-transport--resolve-target
+                  :host host :port port :start-mode start-mode
+                  :remote-url remote-url))
+         (host (plist-get target :host))
+         (port (plist-get target :port))
+         (remote-url (plist-get target :remote-url)))
+    (pcase (plist-get target :mode)
       ('spawn (hermes-dashboard-transport--start-spawn
                :callback callback :host host :port port :command command
                :token token :base-environment base-environment))
@@ -2235,6 +2263,62 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
                 :callback callback :host host :port port :token token
                 :remote-url remote-url
                 :remote-auth-method remote-auth-method)))))
+
+(cl-defun hermes-dashboard-transport--endpoint-key
+    (&key host port start-mode remote-url)
+  "Return the registry key identifying the resolved dashboard endpoint.
+HOST, PORT, START-MODE, and REMOTE-URL select the target.  Spawn-mode targets
+share the single `local-spawn' key; remote targets key on their normalized base
+URL."
+  (let ((target (hermes-dashboard-transport--resolve-target
+                 :host host :port port :start-mode start-mode
+                 :remote-url remote-url)))
+    (pcase (plist-get target :mode)
+      ('spawn 'local-spawn)
+      ('remote (hermes-dashboard-transport--base-url
+                (plist-get target :host)
+                (plist-get target :port)
+                (plist-get target :remote-url))))))
+
+(cl-defun hermes-dashboard-transport-acquire
+    (&key callback host port command token base-environment
+          start-mode remote-url remote-auth-method)
+  "Return a shared dashboard client for the resolved endpoint, refcounted.
+A live client already serving the endpoint is reused and its reference count
+incremented; otherwise a fresh client is started, registered under the endpoint
+key, and returned with a reference count of 1.  CALLBACK, HOST, PORT, COMMAND,
+TOKEN, BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD match
+`hermes-dashboard-transport-start'; CALLBACK is ignored when an existing client
+is reused, since attached buffers subscribe rather than seize the callback."
+  (let* ((key (hermes-dashboard-transport--endpoint-key
+               :host host :port port :start-mode start-mode
+               :remote-url remote-url))
+         (existing (gethash key hermes-dashboard-transport--clients)))
+    (if existing
+        (progn
+          (cl-incf (hermes-dashboard-transport-client-refcount existing))
+          existing)
+      (let ((client (hermes-dashboard-transport-start
+                     :callback callback :host host :port port :command command
+                     :token token :base-environment base-environment
+                     :start-mode start-mode :remote-url remote-url
+                     :remote-auth-method remote-auth-method)))
+        (setf (hermes-dashboard-transport-client-refcount client) 1
+              (hermes-dashboard-transport-client-endpoint-key client) key)
+        (puthash key client hermes-dashboard-transport--clients)
+        client))))
+
+(defun hermes-dashboard-transport-release (client)
+  "Drop one reference to shared CLIENT; stop and unregister it at zero.
+Return the remaining reference count, or nil when CLIENT is not a client."
+  (when (hermes-dashboard-transport-client-p client)
+    (let ((count (max 0 (1- (or (hermes-dashboard-transport-client-refcount client)
+                                0)))))
+      (setf (hermes-dashboard-transport-client-refcount client) count)
+      (when (zerop count)
+        (hermes-dashboard-transport-stop
+         client "Hermes dashboard transport released"))
+      count)))
 
 (defun hermes-dashboard-transport--emit-status (client status content)
   "Emit a status event with STATUS and CONTENT for CLIENT."

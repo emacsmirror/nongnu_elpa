@@ -586,5 +586,71 @@
     (should (equal (plist-get (car a-events) :session-id) "sid-a"))
     (should-not b-events)))
 
+;;; Group: shared client registry
+
+(ert-deftest hermes-dashboard-transport-endpoint-key-spawn-is-local ()
+  "A spawn-mode target keys on the single `local-spawn' endpoint."
+  (should (eq (hermes-dashboard-transport--endpoint-key
+               :host "127.0.0.1" :port 8765 :start-mode 'spawn)
+              'local-spawn)))
+
+(ert-deftest hermes-dashboard-transport-endpoint-key-remote-is-base-url ()
+  "A remote target keys on its normalized base URL."
+  (should (equal (hermes-dashboard-transport--endpoint-key
+                  :start-mode 'remote :remote-url "https://h.example/")
+                 "https://h.example")))
+
+(ert-deftest hermes-dashboard-transport-acquire-shares-client-by-endpoint ()
+  "Acquiring the same endpoint twice reuses one client and counts references."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (made 0))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (cl-incf made)
+                 (make-hermes-dashboard-transport-client))))
+      (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn))
+            (c2 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (should (eq c1 c2))
+        (should (= made 1))
+        (should (= (hermes-dashboard-transport-client-refcount c1) 2))))))
+
+(ert-deftest hermes-dashboard-transport-acquire-distinct-endpoints ()
+  "Different remote endpoints get distinct clients."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (make-hermes-dashboard-transport-client))))
+      (let ((c1 (hermes-dashboard-transport-acquire
+                 :start-mode 'remote :remote-url "https://a.example"))
+            (c2 (hermes-dashboard-transport-acquire
+                 :start-mode 'remote :remote-url "https://b.example")))
+        (should-not (eq c1 c2))))))
+
+(ert-deftest hermes-dashboard-transport-release-stops-and-unregisters-at-zero ()
+  "Release decrements references and tears the client down only at zero."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (make-hermes-dashboard-transport-client))))
+      (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-acquire :start-mode 'spawn)
+        (should (= (hermes-dashboard-transport-release c1) 1))
+        (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients) c1))
+        (should (= (hermes-dashboard-transport-release c1) 0))
+        (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))
+        (should-not (eq c1 (hermes-dashboard-transport-acquire
+                            :start-mode 'spawn)))))))
+
+(ert-deftest hermes-dashboard-transport-unregister-keeps-replacement ()
+  "Stopping a stale client does not evict a replacement under the same key."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (make-hermes-dashboard-transport-client))))
+      (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-release c1)
+        (let ((c2 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+          (should-not (eq c1 c2))
+          (hermes-dashboard-transport-stop c1)
+          (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients)
+                      c2)))))))
+
 (provide 'hermes-dashboard-tests)
 ;;; hermes-dashboard-tests.el ends here
