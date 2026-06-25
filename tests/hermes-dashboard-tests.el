@@ -259,6 +259,50 @@
       (should-not params)
       (should (equal resolved '((output . "ok")))))))
 
+(ert-deftest hermes-dashboard-transport-handoff-request-sends-platform ()
+  "The transport wrapper sends `handoff.request' with platform and session_id."
+  (let (method params)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client m p resolve _reject)
+                 (setq method m params p)
+                 (funcall resolve '((queued . t))))))
+      (let ((client (hermes-test--dashboard-client)))
+        (setf (hermes-dashboard-transport-client-session-id client) "sid-1")
+        (hermes-dashboard-transport-handoff-request
+         client "telegram" :resolve #'ignore :reject #'ignore))
+      (should (equal method "handoff.request"))
+      (should (equal (cdr (assq 'platform params)) "telegram"))
+      (should (equal (cdr (assq 'session_id params)) "sid-1")))))
+
+(ert-deftest hermes-dashboard-transport-handoff-state-sends-session ()
+  "The transport wrapper sends `handoff.state' scoped to the session."
+  (let (method params)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client m p resolve _reject)
+                 (setq method m params p)
+                 (funcall resolve '((state . "pending"))))))
+      (let ((client (hermes-test--dashboard-client)))
+        (setf (hermes-dashboard-transport-client-session-id client) "sid-2")
+        (hermes-dashboard-transport-handoff-state
+         client :resolve #'ignore :reject #'ignore))
+      (should (equal method "handoff.state"))
+      (should (equal (cdr (assq 'session_id params)) "sid-2")))))
+
+(ert-deftest hermes-dashboard-transport-handoff-fail-sends-error ()
+  "The transport wrapper sends `handoff.fail' with the error reason."
+  (let (method params)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client m p resolve _reject)
+                 (setq method m params p)
+                 (funcall resolve '((failed . t))))))
+      (let ((client (hermes-test--dashboard-client)))
+        (setf (hermes-dashboard-transport-client-session-id client) "sid-3")
+        (hermes-dashboard-transport-handoff-fail
+         client :error "poll timed out" :resolve #'ignore :reject #'ignore))
+      (should (equal method "handoff.fail"))
+      (should (equal (cdr (assq 'error params)) "poll timed out"))
+      (should (equal (cdr (assq 'session_id params)) "sid-3")))))
+
 ;;; Group: provider-onboarding auth gate
 
 (ert-deftest hermes-dashboard-onboarding-card-bound-to-e ()

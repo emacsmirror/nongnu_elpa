@@ -1886,6 +1886,30 @@ result or error."
   :args (text) :session t)
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-handoff-request "handoff.request"
+  "Queue a handoff of CLIENT's SESSION-ID to PLATFORM via `handoff.request'.
+The gateway validates the platform and its home channel, marks the session
+pending, and a separate watcher performs the transfer; poll
+`hermes-dashboard-transport-handoff-state' for the terminal result.  RESOLVE
+and REJECT receive the asynchronous result or error."
+  :args (platform) :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-handoff-state "handoff.state"
+  "Poll the handoff state for CLIENT's SESSION-ID via `handoff.state'.
+RESOLVE receives a result whose state is one of pending, running, completed, or
+failed, and is empty when no handoff record exists; REJECT receives any error."
+  :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-handoff-fail "handoff.fail"
+  "Mark CLIENT's SESSION-ID handoff failed via `handoff.fail' with reason ERROR.
+Called when a bounded client poll times out so the session is not left pending;
+a late gateway success is not clobbered.  RESOLVE and REJECT receive the
+asynchronous result or error."
+  :keys (error) :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-commands-catalog "commands.catalog"
   "Request the dashboard `commands.catalog' for CLIENT.
 RESOLVE and REJECT receive the asynchronous result or error.")
