@@ -69,6 +69,17 @@ Shared by the dashboard browser commands."
        on-success)
       (lambda (message) (message "Hermes: %s" message))))))
 
+(defun hermes-browser--notify (title body)
+  "Show desktop notification TITLE/BODY, falling back to the echo area.
+Uses `notifications-notify' when D-Bus notifications are available, and quietly
+degrades to a `message' on systems or builds without them."
+  (or (and (require 'notifications nil t)
+           (fboundp 'notifications-notify)
+           (ignore-errors
+             (notifications-notify :title title :body body :app-name "Hermes")
+             t))
+      (progn (message "%s: %s" title body) nil)))
+
 ;;; Dynamic column widths
 
 (defun hermes-browser--visible-window-width ()
@@ -171,6 +182,8 @@ command `hermes-list-NAME'.  BODY is a plist:
   :keys            extra bindings, spliced into `defvar-keymap'
   :doc             major-mode docstring, optional
   :command-doc     list-command docstring, optional
+  :on-result       function (RESULT) called in the buffer after each render,
+                   for side effects only (e.g. failure notifications)
 
 `:fetch' and `:rows' must be pure: this macro owns the only side effects -- the
 buffer render and the dashboard client plumbing."
@@ -191,7 +204,8 @@ buffer render and the dashboard client plumbing."
         (rows (plist-get body :rows))
         (keys (plist-get body :keys))
         (doc (plist-get body :doc))
-        (command-doc (plist-get body :command-doc)))
+        (command-doc (plist-get body :command-doc))
+        (on-result (plist-get body :on-result)))
     `(progn
        (defvar-keymap ,map
          :doc ,(format "Keymap for `%s'." mode)
@@ -228,7 +242,8 @@ buffer render and the dashboard client plumbing."
                   `((setq tabulated-list-format (,format-fn))
                     (tabulated-list-init-header)))
            (setq tabulated-list-entries (funcall ,rows result))
-           (tabulated-list-print t)))
+           (tabulated-list-print t)
+           ,@(and on-result `((funcall ,on-result result)))))
        (defun ,revert (&rest _)
          ,(format "Refresh the %s browser without re-displaying it." title)
          (hermes-browser--run-on-client ,fetch #',render))

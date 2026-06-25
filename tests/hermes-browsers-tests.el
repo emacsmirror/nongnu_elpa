@@ -174,5 +174,27 @@
       (should (equal (car (aref format 2)) "State"))
       (should (equal (car (aref format 3)) "Profile")))))
 
+;;; Group: desktop notifications
+
+(ert-deftest hermes-browser-notify-uses-notifications-when-available ()
+  "When D-Bus notifications exist, the helper forwards title and body."
+  (let (got)
+    (cl-letf (((symbol-function 'require) (lambda (&rest _) t))
+              ((symbol-function 'notifications-notify)
+               (lambda (&rest args) (setq got args) 1)))
+      (should (hermes-browser--notify "T" "B"))
+      (should (equal (plist-get got :title) "T"))
+      (should (equal (plist-get got :body) "B")))))
+
+(ert-deftest hermes-browser-notify-falls-back-to-message ()
+  "Without notifications the helper degrades to a `message' and returns nil."
+  (let (msg)
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &rest _) (not (eq feature 'notifications))))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args) (setq msg (apply #'format fmt args)))))
+      (should-not (hermes-browser--notify "T" "B"))
+      (should (string-match-p "T: B" msg)))))
+
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here

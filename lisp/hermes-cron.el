@@ -34,6 +34,22 @@
 (require 'hermes-promise)
 (require 'hermes-browser)
 
+;;; Customization
+
+(defcustom hermes-cron-notify-on-failure nil
+  "When non-nil, raise a desktop notification when a cron job newly fails.
+Failures are only detected when the cron list refreshes; pair this with
+`hermes-cron-auto-refresh-interval' to be alerted without refreshing by hand."
+  :type 'boolean
+  :group 'hermes)
+
+(defcustom hermes-cron-auto-refresh-interval nil
+  "Seconds between automatic refreshes of a cron browser buffer.
+A positive number refreshes the list on that interval; nil or zero disables
+auto-refresh.  Used to detect cron failures for `hermes-cron-notify-on-failure'."
+  :type '(choice (const :tag "Disabled" nil) (natnum :tag "Seconds"))
+  :group 'hermes)
+
 ;;; Fields
 
 (defun hermes-cron--job-id (job)
@@ -463,6 +479,59 @@ RUNS is the detail run list."
      (message "Hermes: created cron job %s" name)
      (hermes-list-crons))))
 
+;;; Failure notifications and auto-refresh
+
+(defvar-local hermes-cron--seen-runs nil
+  "Hash of cron job id to last seen (LAST-RUN-AT . OUTCOME).
+Nil until the first render records a baseline.")
+
+(defun hermes-cron--note-failures (result)
+  "Notify about newly failed cron jobs in RESULT when enabled.
+The first render only records a baseline so pre-existing failures do not alert."
+  (let ((seen hermes-cron--seen-runs)
+        (next (make-hash-table :test 'equal)))
+    (dolist (job (hermes-transport--get result 'jobs))
+      (let* ((id (hermes-cron--job-id job))
+             (stamp (hermes-transport--display-field job 'last_run_at))
+             (outcome (hermes-cron--last-status job))
+             (entry (cons stamp outcome)))
+        (puthash id entry next)
+        (when (and seen hermes-cron-notify-on-failure
+                   (eq outcome 'error)
+                   (not (equal (gethash id seen) entry)))
+          (hermes-browser--notify
+           "Hermes cron failed"
+           (format "%s failed (%s)"
+                   (hermes-transport--display-field job 'name)
+                   (or (hermes-transport--non-blank-string stamp) "just now"))))))
+    (setq hermes-cron--seen-runs next)))
+
+(defvar-local hermes-cron--auto-refresh-timer nil
+  "Per-buffer repeat timer refreshing the cron list, or nil.")
+
+(defun hermes-cron--auto-refresh-tick (buffer)
+  "Refresh the cron BUFFER in place when it is still live."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (hermes-cron--revert))))
+
+(defun hermes-cron--stop-auto-refresh ()
+  "Cancel this buffer's cron auto-refresh timer."
+  (when hermes-cron--auto-refresh-timer
+    (cancel-timer hermes-cron--auto-refresh-timer)
+    (setq hermes-cron--auto-refresh-timer nil)))
+
+(defun hermes-cron--maybe-start-auto-refresh ()
+  "Start a per-buffer cron auto-refresh timer when one is configured."
+  (when (and (natnump hermes-cron-auto-refresh-interval)
+             (> hermes-cron-auto-refresh-interval 0)
+             (not hermes-cron--auto-refresh-timer))
+    (setq hermes-cron--auto-refresh-timer
+          (run-at-time hermes-cron-auto-refresh-interval
+                       hermes-cron-auto-refresh-interval
+                       #'hermes-cron--auto-refresh-tick (current-buffer)))
+    (add-hook 'kill-buffer-hook #'hermes-cron--stop-auto-refresh nil t)))
+
 ;;;###autoload (autoload 'hermes-list-crons "hermes-cron" nil t)
 (hermes-define-list-browser cron
   :title "Hermes Cron"
@@ -477,12 +546,15 @@ RUNS is the detail run list."
            (hermes-dashboard-transport-call-fn
             #'hermes-dashboard-transport-cron-manage client :action "list"))
   :rows #'hermes-cron--rows
+  :on-result #'hermes-cron--note-failures
   :keys ("RET" #'hermes-cron-show
          "e" #'hermes-cron-edit
          "!" #'hermes-cron-trigger
          "t" #'hermes-cron-toggle
          "D" #'hermes-cron-remove
          "c" #'hermes-cron-create))
+
+(add-hook 'hermes-cron-mode-hook #'hermes-cron--maybe-start-auto-refresh)
 
 (provide 'hermes-cron)
 ;;; hermes-cron.el ends here

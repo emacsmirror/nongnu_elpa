@@ -305,5 +305,61 @@
     (should (string-match-p "## assistant" out))
     (should (string-match-p "done" out))))
 
+;;; Group: failure notifications and auto-refresh
+
+(ert-deftest hermes-cron-note-failures-baselines-then-alerts ()
+  "The first render baselines silently; a newer failure then notifies once."
+  (with-temp-buffer
+    (let ((hermes-cron-notify-on-failure t)
+          notes)
+      (cl-letf (((symbol-function 'hermes-browser--notify)
+                 (lambda (title body) (push (cons title body) notes))))
+        (hermes-cron--note-failures
+         '((jobs . (((id . "j") (name . "n") (last_status . "error")
+                     (last_run_at . "t1"))))))
+        (should-not notes)
+        (hermes-cron--note-failures
+         '((jobs . (((id . "j") (name . "n") (last_status . "error")
+                     (last_run_at . "t1"))))))
+        (should-not notes)
+        (hermes-cron--note-failures
+         '((jobs . (((id . "j") (name . "n") (last_status . "error")
+                     (last_run_at . "t2"))))))
+        (should (= (length notes) 1))))))
+
+(ert-deftest hermes-cron-note-failures-silent-when-disabled ()
+  "No notification fires while `hermes-cron-notify-on-failure' is nil."
+  (with-temp-buffer
+    (let ((hermes-cron-notify-on-failure nil)
+          notes)
+      (cl-letf (((symbol-function 'hermes-browser--notify)
+                 (lambda (&rest _) (push t notes))))
+        (hermes-cron--note-failures
+         '((jobs . (((id . "j") (last_status . "error") (last_run_at . "t1"))))))
+        (hermes-cron--note-failures
+         '((jobs . (((id . "j") (last_status . "error") (last_run_at . "t2"))))))
+        (should-not notes)))))
+
+(ert-deftest hermes-cron-auto-refresh-starts-and-stops ()
+  "A configured interval starts a per-buffer timer that stop cancels."
+  (with-temp-buffer
+    (let ((hermes-cron-auto-refresh-interval 5))
+      (cl-letf (((symbol-function 'run-at-time)
+                 (lambda (&rest _) 'timer)))
+        (hermes-cron--maybe-start-auto-refresh)
+        (should (eq hermes-cron--auto-refresh-timer 'timer)))
+      (cl-letf (((symbol-function 'cancel-timer) #'ignore))
+        (hermes-cron--stop-auto-refresh)
+        (should-not hermes-cron--auto-refresh-timer)))))
+
+(ert-deftest hermes-cron-auto-refresh-disabled-when-unset ()
+  "No timer starts when the interval is nil."
+  (with-temp-buffer
+    (let ((hermes-cron-auto-refresh-interval nil))
+      (cl-letf (((symbol-function 'run-at-time)
+                 (lambda (&rest _) (error "should not start a timer"))))
+        (hermes-cron--maybe-start-auto-refresh)
+        (should-not hermes-cron--auto-refresh-timer)))))
+
 (provide 'hermes-cron-tests)
 ;;; hermes-cron-tests.el ends here
