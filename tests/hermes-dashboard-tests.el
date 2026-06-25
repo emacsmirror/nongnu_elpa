@@ -577,6 +577,49 @@
     (should (cl-find "reconnected" events
                      :key (lambda (e) (plist-get e :status)) :test #'equal))))
 
+(ert-deftest hermes-dashboard-transport-reconnect-defers-requests-until-new-gateway-ready ()
+  "A request issued during reconnect sends no frame until the new `gateway.ready'."
+  (let* ((hermes-dashboard-transport-reconnect-max-attempts 3)
+         (hermes-dashboard-transport-reconnect-base-delay 1)
+         (hermes-dashboard-transport-ready-timeout nil)
+         (sent-frames nil)
+         (reconnect-timer nil)
+         (hermes-dashboard-transport-websocket-open-function
+          (lambda (_url _client) 'new-ws))
+         (hermes-dashboard-transport-websocket-send-function
+          (lambda (_ws text) (push text sent-frames)))
+         (hermes-dashboard-transport-schedule-function
+          (lambda (_delay fn &rest args)
+            (setq reconnect-timer (lambda () (apply fn args)))
+            'fake-timer))
+         (old-ready (hermes--promise-resolved 'first-ready))
+         (c (make-hermes-dashboard-transport-client
+             :ready-p t :ready-promise old-ready
+             :websocket 'old-ws :refcount 1
+             :websocket-url "ws://x"
+             :pending (make-hash-table :test #'equal))))
+    ;; Socket drops unexpectedly: reconnect begins, readiness resets.
+    (hermes-dashboard-transport--handle-socket-down c "dropped")
+    (should (hermes-dashboard-transport-client-reconnecting-p c))
+    (should-not (hermes-dashboard-transport-client-ready-p c))
+    (let ((promise (hermes-dashboard-transport-client-ready-promise c)))
+      (should (hermes--promise-p promise))
+      (should (eq (hermes--promise-state promise) 'pending))
+      (should-not (eq promise old-ready)))
+    ;; Request before gateway.ready: must not send.
+    (hermes-dashboard-transport-request c "ping" nil #'ignore #'ignore)
+    (should-not sent-frames)
+    ;; Reconnect attempt installs the replacement socket; still no frame.
+    (when (functionp reconnect-timer) (funcall reconnect-timer))
+    (should (eq (hermes-dashboard-transport-client-websocket c) 'new-ws))
+    (should-not sent-frames)
+    ;; New gateway.ready resolves the fresh promise; the deferred frame sends.
+    (hermes-dashboard-transport--handle-frame
+     c '((jsonrpc . "2.0") (method . "event")
+         (params . ((type . "gateway.ready")))))
+    (should (hermes-dashboard-transport-client-ready-p c))
+    (should (= (length sent-frames) 1))))
+
 ;;; Group: heartbeat keepalive
 
 (ert-deftest hermes-dashboard-transport-heartbeat-arms-on-ready-and-pings ()

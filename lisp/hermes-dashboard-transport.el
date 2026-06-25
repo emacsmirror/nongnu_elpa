@@ -608,6 +608,17 @@ CLIENT from the shared registry."
         (hermes-dashboard-transport-client-ready-p client) nil)
   (hermes-dashboard-transport--cancel-heartbeat client))
 
+(defun hermes-dashboard-transport--reset-readiness (client)
+  "Install a fresh pending readiness promise on CLIENT.
+After the first connection reaches `gateway.ready' the readiness promise is
+resolved.  An unexpected socket loss clears `ready-p' but leaves that promise
+resolved, so `hermes-dashboard-transport--when-ready' would fire immediately
+for requests issued during reconnect -- sending against a closed socket.
+Replacing the promise with a pending one ensures those requests wait for the
+replacement socket's `gateway.ready'."
+  (setf (hermes-dashboard-transport-client-ready-promise client)
+        (hermes--promise-make)))
+
 (defun hermes-dashboard-transport--close-websocket (client)
   "Close CLIENT's WebSocket resource and clear its live fields."
   (when-let* ((websocket (hermes-dashboard-transport-client-websocket client)))
@@ -768,12 +779,20 @@ socket that drops before becoming ready continues the existing backoff."
     (hermes-dashboard-transport--reject-pending-requests client message)
     (cond
      ((hermes-dashboard-transport-client-reconnecting-p client)
+      ;; Already reconnecting: keep the fresh promise installed at the first
+      ;; socket-down so requests stay deferred for the next `gateway.ready'.
       (hermes-dashboard-transport--schedule-reconnect
        client
        (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client))))
      ((hermes-dashboard-transport--should-reconnect-p client)
+      ;; Starting reconnect: install a fresh pending readiness promise so a
+      ;; request issued before the replacement socket emits `gateway.ready' is
+      ;; deferred instead of sent against the now-closed socket, then arm the
+      ;; ready timeout for this reconnect generation.
       (setf (hermes-dashboard-transport-client-reconnecting-p client) t
             (hermes-dashboard-transport-client-reconnect-attempts client) 0)
+      (hermes-dashboard-transport--reset-readiness client)
+      (hermes-dashboard-transport--arm-ready-timeout client)
       (hermes-dashboard-transport--emit-status client "closed" message)
       (hermes-dashboard-transport--schedule-reconnect client 0))
      (t
