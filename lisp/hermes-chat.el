@@ -2549,6 +2549,15 @@ session-title refresh."
   "C-c C-r" #'hermes-chat-rename
   "C-c C-b" #'hermes-switch-to-chat)
 
+(defun hermes-chat--disable-linters ()
+  "Turn off `flycheck-mode' and `flymake-mode' in the current chat buffer.
+The transcript is generated, not authored, so linting it only wastes CPU on
+every streamed delta.  Called from `after-change-major-mode-hook' at a late
+depth so a globalized linter re-enabled after the mode body is overridden."
+  (dolist (mode '(flycheck-mode flymake-mode))
+    (when (and (fboundp mode) (boundp mode) (symbol-value mode))
+      (funcall mode -1))))
+
 (define-derived-mode hermes-chat-mode fundamental-mode "Hermes Chat"
   "Major mode for Hermes chat buffers."
   :keymap hermes-chat-mode-map
@@ -2559,6 +2568,7 @@ session-title refresh."
   (setq-local display-line-numbers nil)
   (add-hook 'kill-buffer-hook #'hermes-chat--cleanup-buffer nil t)
   (add-hook 'completion-at-point-functions #'hermes-chat--slash-capf nil t)
+  (add-hook 'after-change-major-mode-hook #'hermes-chat--disable-linters 90 t)
   (hermes-chat--setup-buffer))
 
 ;;;###autoload
