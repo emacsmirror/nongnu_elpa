@@ -69,22 +69,108 @@ Shared by the dashboard browser commands."
        on-success)
       (lambda (message) (message "Hermes: %s" message))))))
 
+;;; Dynamic column widths
+
+(defun hermes-browser--visible-window-width ()
+  "Return the current buffer's visible text width, or nil if not visible."
+  (and-let* ((window (get-buffer-window (current-buffer) t)))
+    (window-body-width window)))
+
+(defun hermes-browser--display-width (&optional width)
+  "Return WIDTH or the visible text width, clamped to a positive value."
+  (max 1 (or width
+             (hermes-browser--visible-window-width)
+             (window-body-width))))
+
+(defun hermes-browser--sum (numbers)
+  "Return the sum of NUMBERS."
+  (apply #'+ numbers))
+
+(defun hermes-browser--shrink-widths (widths target)
+  "Return WIDTHS reduced to fit TARGET while keeping columns positive."
+  (let ((widths (copy-sequence widths)))
+    (while (> (hermes-browser--sum widths) target)
+      (let ((max-width 1)
+            max-cell)
+        (dotimes (i (length widths))
+          (let ((width (nth i widths)))
+            (when (> width max-width)
+              (setq max-width width
+                    max-cell i))))
+        (if max-cell
+            (setcar (nthcdr max-cell widths) (1- max-width))
+          (setq target (hermes-browser--sum widths)))))
+    widths))
+
+(defun hermes-browser--allocate-column-widths (width specs)
+  "Return column widths fitting WIDTH for SPECS.
+Each item in SPECS is (MINIMUM WEIGHT).  The returned widths account for
+one character of `tabulated-list' padding between columns and fit WIDTH
+when WIDTH can hold one character per column plus padding."
+  (let* ((column-count (length specs))
+         (separator-width (max 0 (1- column-count)))
+         (available (max column-count
+                         (- (hermes-browser--display-width width)
+                            separator-width)))
+         (minimums (mapcar #'car specs))
+         (minimum-total (hermes-browser--sum minimums)))
+    (if (> minimum-total available)
+        (hermes-browser--shrink-widths minimums available)
+      (let* ((weights (mapcar #'cadr specs))
+             (weight-total (hermes-browser--sum weights))
+             (remaining (- available minimum-total))
+             (widths (copy-sequence minimums))
+             (assigned 0))
+        (when (> weight-total 0)
+          (dotimes (i column-count)
+            (let ((share (/ (* remaining (nth i weights)) weight-total)))
+              (setq assigned (+ assigned share))
+              (setcar (nthcdr i widths) (+ (nth i widths) share))))
+          (let ((left (- remaining assigned))
+                (i 0))
+            (while (> left 0)
+              (when (> (nth i weights) 0)
+                (setcar (nthcdr i widths) (1+ (nth i widths)))
+                (setq left (1- left)))
+              (setq i (% (1+ i) column-count)))))
+        widths))))
+
+(defun hermes-browser--dynamic-format (width specs)
+  "Return a `tabulated-list-format' vector fitting WIDTH for SPECS.
+Each SPEC is (NAME MINIMUM WEIGHT &optional SORT MAX): NAME is the header,
+MINIMUM the smallest width, WEIGHT its share of leftover space, SORT the sort
+predicate, and MAX an optional width cap."
+  (let ((widths (hermes-browser--allocate-column-widths
+                 width (mapcar (lambda (spec) (list (nth 1 spec) (nth 2 spec)))
+                               specs))))
+    (apply #'vector
+           (cl-loop for spec in specs
+                    for column-width in widths
+                    for max = (nth 4 spec)
+                    collect (list (nth 0 spec)
+                                  (if max (min column-width max) column-width)
+                                  (nth 3 spec))))))
+
 (defmacro hermes-define-list-browser (name &rest body)
   "Define a `tabulated-list' browser NAME backed by a dashboard RPC.
 NAME is the short browser name; the macro defines `hermes-NAME-mode',
 `hermes-NAME-mode-map', `hermes-NAME--render', `hermes-NAME--revert', and the
 command `hermes-list-NAME'.  BODY is a plist:
 
-  :title        display/mode-line name (string)
-  :buffer       browser buffer name (string)
-  :columns      `tabulated-list-format' vector
-  :command      list-command symbol when it differs from `hermes-list-NAME';
-                it must match the caller's `(autoload ...)' cookie
-  :fetch        function (CLIENT -> promise) issuing the dashboard RPC
-  :rows         pure function (RESULT -> list of `tabulated-list' entries)
-  :keys         extra bindings, spliced into `defvar-keymap'
-  :doc          major-mode docstring, optional
-  :command-doc  list-command docstring, optional
+  :title           display/mode-line name (string)
+  :buffer          browser buffer name (string)
+  :columns         static `tabulated-list-format' vector
+  :dynamic-columns window-responsive column specs, each
+                   (NAME MINIMUM WEIGHT &optional SORT MAX); columns flex with
+                   the window width and re-fit on resize.  Mutually exclusive
+                   with `:columns'
+  :command         list-command symbol when it differs from `hermes-list-NAME';
+                   it must match the caller's `(autoload ...)' cookie
+  :fetch           function (CLIENT -> promise) issuing the dashboard RPC
+  :rows            pure function (RESULT -> list of `tabulated-list' entries)
+  :keys            extra bindings, spliced into `defvar-keymap'
+  :doc             major-mode docstring, optional
+  :command-doc     list-command docstring, optional
 
 `:fetch' and `:rows' must be pure: this macro owns the only side effects -- the
 buffer render and the dashboard client plumbing."
@@ -93,11 +179,14 @@ buffer render and the dashboard client plumbing."
         (map (intern (format "hermes-%s-mode-map" name)))
         (render (intern (format "hermes-%s--render" name)))
         (revert (intern (format "hermes-%s--revert" name)))
+        (format-fn (intern (format "hermes-%s--format" name)))
+        (size-change (intern (format "hermes-%s--window-size-change" name)))
         (command (or (plist-get body :command)
                      (intern (format "hermes-list-%s" name))))
         (title (plist-get body :title))
         (buffer (plist-get body :buffer))
         (columns (plist-get body :columns))
+        (dynamic (plist-get body :dynamic-columns))
         (fetch (plist-get body :fetch))
         (rows (plist-get body :rows))
         (keys (plist-get body :keys))
@@ -108,17 +197,36 @@ buffer render and the dashboard client plumbing."
          :doc ,(format "Keymap for `%s'." mode)
          :parent tabulated-list-mode-map
          ,@keys)
+       ,@(and dynamic
+              `((defun ,format-fn (&optional width)
+                  ,(format "Return the dynamic `tabulated-list-format' for the %s browser."
+                           title)
+                  (hermes-browser--dynamic-format width ',dynamic))
+                (defun ,size-change (window)
+                  ,(format "Re-fit %s columns when WINDOW changes size." title)
+                  (when (derived-mode-p ',mode)
+                    (let ((old-format tabulated-list-format))
+                      (setq tabulated-list-format
+                            (,format-fn (window-body-width window)))
+                      (unless (equal old-format tabulated-list-format)
+                        (tabulated-list-init-header)
+                        (tabulated-list-print t)))))))
        (define-derived-mode ,mode tabulated-list-mode ,title
          ,(or doc (format "Major mode for the %s browser." title))
          :interactive nil
-         (setq tabulated-list-format ,columns)
+         (setq tabulated-list-format ,(if dynamic `(,format-fn) columns))
          (setq-local revert-buffer-function #',revert)
+         ,@(and dynamic
+                `((add-hook 'window-size-change-functions #',size-change nil t)))
          (tabulated-list-init-header))
        (defun ,render (result)
          ,(format "Render dashboard RESULT into the %s buffer in place." title)
          (with-current-buffer (get-buffer-create ,buffer)
            (unless (derived-mode-p ',mode)
              (,mode))
+           ,@(and dynamic
+                  `((setq tabulated-list-format (,format-fn))
+                    (tabulated-list-init-header)))
            (setq tabulated-list-entries (funcall ,rows result))
            (tabulated-list-print t)))
        (defun ,revert (&rest _)
@@ -129,9 +237,13 @@ buffer render and the dashboard client plumbing."
          (interactive)
          (hermes-browser--run-on-client
           ,fetch
-          (lambda (result)
-            (,render result)
-            (pop-to-buffer ,buffer)))))))
+          ,(if dynamic
+               `(lambda (result)
+                  (pop-to-buffer (get-buffer-create ,buffer))
+                  (,render result))
+             `(lambda (result)
+                (,render result)
+                (pop-to-buffer ,buffer))))))))
 
 (provide 'hermes-browser)
 ;;; hermes-browser.el ends here

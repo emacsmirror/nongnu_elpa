@@ -132,5 +132,47 @@
         (when (get-buffer "*Hermes Browser Revert*")
           (kill-buffer "*Hermes Browser Revert*"))))))
 
+;;; Group: dynamic column widths
+
+(ert-deftest hermes-browser-dynamic-format-fits-and-flexes ()
+  "Dynamic column format fits the width and grows weighted columns."
+  (let ((specs '(("A" 6 0 t) ("B" 8 0 t) ("C" 10 3 nil))))
+    (dolist (width '(30 40 80 120))
+      (let ((format (hermes-browser--dynamic-format width specs)))
+        (should (= (hermes-test--tabulated-list-format-total-width format)
+                   width))))
+    (let ((narrow (hermes-browser--dynamic-format 40 specs))
+          (wide (hermes-browser--dynamic-format 120 specs)))
+      (should (> (cadr (aref wide 2)) (cadr (aref narrow 2))))
+      (should (= (cadr (aref wide 0)) 6)))))
+
+(ert-deftest hermes-browser-dynamic-format-preserves-sort-and-name ()
+  "Dynamic format keeps each spec's header and sort predicate."
+  (let ((format (hermes-browser--dynamic-format
+                 80 '(("A" 6 0 t) ("B" 10 5 nil)))))
+    (should (equal (car (aref format 0)) "A"))
+    (should (eq (caddr (aref format 0)) t))
+    (should (eq (caddr (aref format 1)) nil))))
+
+(ert-deftest hermes-browser-dynamic-format-honors-max-cap ()
+  "A column MAX caps its computed width even on a wide window."
+  (let ((format (hermes-browser--dynamic-format
+                 200 '(("A" 6 0 t) ("Wide" 10 5 t 20)))))
+    (should (= (cadr (aref format 1)) 20))))
+
+(ert-deftest hermes-browser-shrink-widths-fits-narrow-target ()
+  "Shrinking trims the widest column until the total fits the target."
+  (let ((widths (hermes-browser--shrink-widths '(10 20 30) 30)))
+    (should (<= (apply #'+ widths) 30))
+    (should (seq-every-p (lambda (w) (> w 0)) widths))))
+
+(ert-deftest hermes-cron-columns-scale-with-width ()
+  "Cron dynamic columns fit the display width and keep index-sensitive order."
+  (dolist (width '(40 80 120))
+    (let ((format (hermes-cron--format width)))
+      (should (= (hermes-test--tabulated-list-format-total-width format) width))
+      (should (equal (car (aref format 2)) "State"))
+      (should (equal (car (aref format 3)) "Profile")))))
+
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here

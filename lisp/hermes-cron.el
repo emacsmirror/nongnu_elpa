@@ -352,9 +352,9 @@ RUNS is the detail run list."
   :buffer "*Hermes Cron*"
   :doc "Major mode listing Hermes scheduled jobs."
   :command-doc "Browse Hermes scheduled (cron) jobs."
-  :columns [("Name" 22 t) ("Schedule" 18 t) ("State" 10 t) ("Profile" 12 t)
-            ("Deliver" 12 t) ("Last run" 18 t) ("Next run" 18 t)
-            ("Prompt" 40 nil)]
+  :dynamic-columns (("Name" 14 3 t) ("Schedule" 12 1 t) ("State" 8 0 t)
+                    ("Profile" 10 1 t) ("Deliver" 9 0 t) ("Last run" 16 0 t)
+                    ("Next run" 16 0 t) ("Prompt" 24 5 nil))
   :fetch (lambda (client)
            (hermes-dashboard-transport-call-fn
             #'hermes-dashboard-transport-cron-manage client :action "list"))

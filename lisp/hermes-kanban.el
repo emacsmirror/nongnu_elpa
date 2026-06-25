@@ -42,6 +42,7 @@
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
+(require 'hermes-browser)
 (eval-when-compile (require 'cl-lib))
 
 (declare-function markdown-mode "markdown-mode")
@@ -188,73 +189,9 @@ status values."
         (and (stringp status) (hermes-kanban--display-status-value status))
         "")))
 
-(defun hermes-kanban--visible-window-width ()
-  "Return the current buffer's visible text width, or nil if not visible."
-  (and-let* ((window (get-buffer-window (current-buffer) t)))
-    (window-body-width window)))
-
-(defun hermes-kanban--display-width (&optional width)
-  "Return WIDTH or the visible text width, clamped to a positive value."
-  (max 1 (or width
-             (hermes-kanban--visible-window-width)
-             (window-body-width))))
-
-(defun hermes-kanban--sum (numbers)
-  "Return the sum of NUMBERS."
-  (apply #'+ numbers))
-
-(defun hermes-kanban--shrink-widths (widths target)
-  "Return WIDTHS reduced to fit TARGET while keeping columns positive."
-  (let ((widths (copy-sequence widths)))
-    (while (> (hermes-kanban--sum widths) target)
-      (let ((max-width 1)
-            max-cell)
-        (dotimes (i (length widths))
-          (let ((width (nth i widths)))
-            (when (> width max-width)
-              (setq max-width width
-                    max-cell i))))
-        (if max-cell
-            (setcar (nthcdr max-cell widths) (1- max-width))
-          (setq target (hermes-kanban--sum widths)))))
-    widths))
-
-(defun hermes-kanban--allocate-column-widths (width specs)
-  "Return column widths fitting WIDTH for SPECS.
-Each item in SPECS is (MINIMUM WEIGHT).  The returned widths account for
-one character of `tabulated-list' padding between columns and fit WIDTH
-when WIDTH can hold one character per column plus padding."
-  (let* ((column-count (length specs))
-         (separator-width (max 0 (1- column-count)))
-         (available (max column-count
-                         (- (hermes-kanban--display-width width)
-                            separator-width)))
-         (minimums (mapcar #'car specs))
-         (minimum-total (hermes-kanban--sum minimums)))
-    (if (> minimum-total available)
-        (hermes-kanban--shrink-widths minimums available)
-      (let* ((weights (mapcar #'cadr specs))
-             (weight-total (hermes-kanban--sum weights))
-             (remaining (- available minimum-total))
-             (widths (copy-sequence minimums))
-             (assigned 0))
-        (when (> weight-total 0)
-          (dotimes (i column-count)
-            (let ((share (/ (* remaining (nth i weights)) weight-total)))
-              (setq assigned (+ assigned share))
-              (setcar (nthcdr i widths) (+ (nth i widths) share))))
-          (let ((left (- remaining assigned))
-                (i 0))
-            (while (> left 0)
-              (when (> (nth i weights) 0)
-                (setcar (nthcdr i widths) (1+ (nth i widths)))
-                (setq left (1- left)))
-              (setq i (% (1+ i) column-count)))))
-        widths))))
-
 (defun hermes-kanban--boards-tabulated-list-format (&optional width)
   "Return the dynamic boards `tabulated-list-format' for WIDTH."
-  (let* ((widths (hermes-kanban--allocate-column-widths
+  (let* ((widths (hermes-browser--allocate-column-widths
                   width
                   (append '((2 0) (12 7) (4 1))
                           (mapcar (lambda (_) '(4 1))
@@ -276,7 +213,7 @@ when WIDTH can hold one character per column plus padding."
 
 (defun hermes-kanban--tasks-tabulated-list-format (&optional width)
   "Return the dynamic task `tabulated-list-format' for WIDTH."
-  (let* ((widths (hermes-kanban--allocate-column-widths
+  (let* ((widths (hermes-browser--allocate-column-widths
                   width '((6 0) (4 0) (10 2) (20 6))))
          (title-width (min (nth 3 widths)
                            hermes-kanban--task-title-column-max-width)))
@@ -364,7 +301,7 @@ which already runs in the displayed window)."
          ;; the pop -- it already runs in the displayed window.
          (unless in-place (pop-to-buffer (current-buffer)))
          (hermes-kanban--init-boards-header
-          (hermes-kanban--visible-window-width))
+          (hermes-browser--visible-window-width))
          (tabulated-list-print t))))))
 
 (defun hermes-kanban--boards-revert (&rest _)
@@ -561,7 +498,7 @@ which already runs in the displayed window)."
          ;; the pop -- it already runs in the displayed window.
          (unless in-place (pop-to-buffer (current-buffer)))
          (hermes-kanban--init-board-header
-          (hermes-kanban--visible-window-width))
+          (hermes-browser--visible-window-width))
          (tabulated-list-print t))))))
 
 (defun hermes-kanban--revert (&rest _)
