@@ -71,6 +71,7 @@
 ;; byte-compiler.
 (defvar hermes-chat--dashboard-active-session-id)
 (defvar hermes-chat--dashboard-client)
+(defvar hermes-chat--dashboard-token)
 (defvar hermes-chat--dashboard-detached-assistant-id)
 (defvar hermes-chat--dashboard-session-ready-p)
 (defvar hermes-chat--dashboard-stream-assistant-id)
@@ -128,14 +129,19 @@
         hermes-chat--dashboard-active-session-id nil))
 
 (defun hermes-chat--stop-dashboard-client ()
-  "Release this buffer's dashboard client and live-session state.
-The buffer-local client and session state are always cleared, even after a
-partial or failed teardown, so a new session can be started afterwards."
+  "Drop this buffer's reference to the shared dashboard client.
+The buffer's subscriber is removed and its reference released; the shared client
+is torn down only when the last buffer detaches.  The buffer-local client,
+token, and live-session state are always cleared, even after a partial teardown,
+so a new session can be started afterwards."
   (when-let* ((client hermes-chat--dashboard-client))
-    (hermes-dashboard-transport-stop client "Hermes dashboard transport stopped")
+    (when hermes-chat--dashboard-token
+      (hermes-dashboard-transport-unsubscribe client hermes-chat--dashboard-token))
+    (hermes-dashboard-transport-release client)
     (when (eq hermes-chat--process client)
       (setq hermes-chat--process nil))
-    (setq hermes-chat--dashboard-client nil))
+    (setq hermes-chat--dashboard-client nil
+          hermes-chat--dashboard-token nil))
   (hermes-chat--forget-live-dashboard-session))
 
 (defun hermes-chat--cleanup-buffer ()
@@ -309,7 +315,10 @@ so do not copy its final content into the unsubmitted retry placeholder."
       (when (hermes-dashboard-transport-client-p client)
         (setf (hermes-dashboard-transport-client-session-id client) active-id
               (hermes-dashboard-transport-client-stored-session-id client)
-              stored-id)))))
+              stored-id)
+        (when hermes-chat--dashboard-token
+          (hermes-dashboard-transport-subscribe-session
+           client hermes-chat--dashboard-token active-id))))))
 
 (defun hermes-chat--dashboard-result-live-turn-p (result)
   "Return non-nil when RESULT reports the resumed session is still busy."
@@ -354,10 +363,11 @@ so do not copy its final content into the unsubmitted retry placeholder."
 (defun hermes-chat--dashboard-bind-stream-callback (client assistant-id)
   "Bind CLIENT events to ASSISTANT-ID in the current buffer."
   (when (and (hermes-dashboard-transport-client-p client) assistant-id)
-    (setf (hermes-dashboard-transport-client-callback client)
-          (hermes-chat--transport-callback
-           (current-buffer) assistant-id t
-           (hermes-chat--next-transport-generation)))))
+    (hermes-chat--dashboard-set-subscriber
+     client
+     (hermes-chat--transport-callback
+      (current-buffer) assistant-id t
+      (hermes-chat--next-transport-generation)))))
 
 (defun hermes-chat--background-listener-callback (buffer)
   "Return a client callback that renders background results in BUFFER.
@@ -371,16 +381,16 @@ delivered when no turn is streaming a callback of its own."
           (hermes-chat--handle-background-complete event))))))
 
 (defun hermes-chat--ensure-background-listener (client buffer)
-  "Bind a BUFFER background-result listener on CLIENT when no stream is active.
-A no-op unless CLIENT's callback is still `ignore'.  A streaming turn binds a
-real callback (which already routes background events) and a settled turn leaves
-it bound, so `ignore' means \"no turn has ever streamed\" -- exactly the case a
-fresh `/btw' must cover.  The listener filters by session, so a result for a
-since-replaced session is dropped rather than misrouted."
+  "Subscribe a BUFFER background-result listener on CLIENT when it has no token.
+A no-op once BUFFER holds a subscriber token: its turn callback already routes
+background events.  A buffer that has never streamed a turn has no token yet --
+exactly the case a fresh `/btw' must cover.  The listener filters by session, so
+a result for a since-replaced session is dropped rather than misrouted."
   (when (and (hermes-dashboard-transport-client-p client)
-             (eq (hermes-dashboard-transport-client-callback client) #'ignore))
-    (setf (hermes-dashboard-transport-client-callback client)
-          (hermes-chat--background-listener-callback buffer))))
+             (not hermes-chat--dashboard-token))
+    (setq hermes-chat--dashboard-token
+          (hermes-dashboard-transport-subscribe
+           client (hermes-chat--background-listener-callback buffer)))))
 
 (defun hermes-chat--dashboard-reattach-status-event ()
   "Return a fresh status event announcing a reattached running session.
@@ -436,21 +446,38 @@ Built with `list' so each call yields its own plist; the result is handed to
          assistant-id
          (hermes-chat--dashboard-reattach-status-event)))))))
 
-(defun hermes-chat--dashboard-start (callback)
-  "Return a dashboard client whose events are sent to CALLBACK."
+(defun hermes-chat--dashboard-ensure-client (&optional callback)
+  "Return this buffer's shared dashboard client, acquiring one when needed.
+A live attached client is reused; otherwise this buffer's stale reference is
+released and a shared client for the configured endpoint is acquired and warmed.
+CALLBACK seeds a freshly created client's fallback callback; per-buffer events
+still route through this buffer's subscriber, so the fallback only matters once
+no buffer is attached."
   (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
-      (progn
-        (setf (hermes-dashboard-transport-client-callback
-               hermes-chat--dashboard-client)
-              callback)
-        hermes-chat--dashboard-client)
+      hermes-chat--dashboard-client
     (hermes-chat--stop-dashboard-client)
     (setq hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-active-session-id nil
           hermes-chat--dashboard-client
-          (hermes-dashboard-transport-start :callback callback))
+          (hermes-dashboard-transport-acquire :callback (or callback #'ignore)))
     (hermes-chat--warm-model-options hermes-chat--dashboard-client)
     hermes-chat--dashboard-client))
+
+(defun hermes-chat--dashboard-set-subscriber (client callback)
+  "Bind CALLBACK as this buffer's subscriber function on shared CLIENT.
+Reuse this buffer's existing subscriber token when it is still valid; otherwise
+register a fresh one."
+  (unless (and hermes-chat--dashboard-token
+               (hermes-dashboard-transport-set-subscriber-fn
+                client hermes-chat--dashboard-token callback))
+    (setq hermes-chat--dashboard-token
+          (hermes-dashboard-transport-subscribe client callback))))
+
+(defun hermes-chat--dashboard-start (callback)
+  "Return this buffer's shared dashboard client, streaming events to CALLBACK."
+  (let ((client (hermes-chat--dashboard-ensure-client callback)))
+    (hermes-chat--dashboard-set-subscriber client callback)
+    client))
 
 (defun hermes-chat--warm-model-options (client)
   "Warm the shared model-options cache once CLIENT's connection is ready.
@@ -553,16 +580,12 @@ Record asynchronous session results in BUFFER."
                                              content))))
 
 (defun hermes-chat--dashboard-control-client ()
-  "Return a dashboard client for control RPCs without replacing live callbacks."
+  "Return a shared dashboard client for control RPCs without seizing callbacks."
   (cond
    ((hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
     hermes-chat--dashboard-client)
    ((hermes-chat--dashboard-default-transport-p)
-    (hermes-chat--stop-dashboard-client)
-    (setq hermes-chat--dashboard-session-ready-p nil
-          hermes-chat--dashboard-active-session-id nil
-          hermes-chat--dashboard-client
-          (hermes-dashboard-transport-start :callback #'ignore)))
+    (hermes-chat--dashboard-ensure-client))
    (t
     (user-error "Hermes dashboard transport controls are unavailable"))))
 

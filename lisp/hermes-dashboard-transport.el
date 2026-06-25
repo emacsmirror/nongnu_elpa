@@ -180,6 +180,15 @@ stop receiving them.  Re-binding moves TOKEN to the new SESSION-ID."
           (remhash session-id index)))
       (remhash token subscribers))))
 
+(defun hermes-dashboard-transport-set-subscriber-fn (client token fn)
+  "Replace subscriber TOKEN's function with FN on CLIENT, keeping its session.
+Return TOKEN on success, or nil when TOKEN is not registered on CLIENT."
+  (when-let* ((record (gethash token
+                               (hermes-dashboard-transport-client-subscribers
+                                client))))
+    (plist-put record :fn fn)
+    token))
+
 (defun hermes-dashboard-transport--event-session-id (event)
   "Return EVENT's session id, or nil."
   (and (listp event) (plist-get event :session-id)))
@@ -538,9 +547,14 @@ THUNK rather than cleaned up afterward."
       (funcall thunk))))
 
 (defun hermes-dashboard-transport--mark-websocket-closed (client)
-  "Mark CLIENT's WebSocket connection closed."
+  "Mark CLIENT's WebSocket connection closed and drop it from the registry.
+A dropped client must never be handed to a later
+`hermes-dashboard-transport-acquire'; unregistering here makes the next acquire
+rebuild a fresh connection, while buffers still attached keep their reference
+until they release it and reattach on their next send."
   (setf (hermes-dashboard-transport-client-websocket client) nil
-        (hermes-dashboard-transport-client-ready-p client) nil))
+        (hermes-dashboard-transport-client-ready-p client) nil)
+  (hermes-dashboard-transport--unregister-client client))
 
 (defun hermes-dashboard-transport--close-websocket (client)
   "Close CLIENT's WebSocket resource and clear its live fields."
@@ -2317,7 +2331,7 @@ Return the remaining reference count, or nil when CLIENT is not a client."
       (setf (hermes-dashboard-transport-client-refcount client) count)
       (when (zerop count)
         (hermes-dashboard-transport-stop
-         client "Hermes dashboard transport released"))
+         client "Hermes dashboard transport stopped"))
       count)))
 
 (defun hermes-dashboard-transport--emit-status (client status content)

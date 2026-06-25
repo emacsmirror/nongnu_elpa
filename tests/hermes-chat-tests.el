@@ -1680,7 +1680,7 @@
        (should hermes-chat--pending-assistant-id)
        (should (string-match-p "Hermes session is still running"
                                (buffer-string)))
-       (funcall (hermes-dashboard-transport-client-callback client)
+       (hermes-dashboard-transport--dispatch-event client
                 '(:type done :session-id "sid-live"))
        (should (equal submit-text
                       "use demo skill while remote turn runs"))))))
@@ -1721,10 +1721,10 @@
        (should-not submits)
        (should (equal hermes-chat--queued-message "queued prompt"))
        (should hermes-chat--pending-assistant-id)
-       (funcall (hermes-dashboard-transport-client-callback client)
+       (hermes-dashboard-transport--dispatch-event client
                 '(:type done :session-id "sid-live"))
        (should (equal submits '("queued prompt")))
-       (funcall (hermes-dashboard-transport-client-callback client)
+       (hermes-dashboard-transport--dispatch-event client
                 '(:type done :session-id "sid-live"))
        (should (equal submits '("queued prompt")))))))
 
@@ -1751,10 +1751,10 @@
        (should-not submits)
        (should (equal hermes-chat--queued-message "queued via key"))
        (should hermes-chat--pending-assistant-id)
-       (funcall (hermes-dashboard-transport-client-callback client)
+       (hermes-dashboard-transport--dispatch-event client
                 '(:type done :session-id "sid-live"))
        (should (equal submits '("queued via key")))
-       (funcall (hermes-dashboard-transport-client-callback client)
+       (hermes-dashboard-transport--dispatch-event client
                 '(:type done :session-id "sid-live"))
        (should (equal submits '("queued via key")))))))
 
@@ -3093,7 +3093,7 @@
        (prompt . "Enter API token")
        (env_var . "API_TOKEN")))
     (should (gethash "req-timeout" hermes-chat--pending-prompts))
-    (funcall (hermes-dashboard-transport-client-callback client)
+    (hermes-dashboard-transport--dispatch-event client
              '(:type done :session-id "sid-prompt"))
     (should-not (gethash "req-timeout" hermes-chat--pending-prompts))))
 
@@ -4332,6 +4332,48 @@
   (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "x")))
     (should (equal (hermes-chat--handoff-read-target '((items . [((meta . "m"))])))
                    "x"))))
+
+(ert-deftest hermes-chat-dashboard-shares-one-client-across-buffers ()
+  "Two chat buffers attach to one shared client and route events by session.
+Killing one buffer releases its reference without tearing down the other."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (made 0) a-events b-events buf-a buf-b shared)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (cl-incf made)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket
+                  :callback (plist-get args :callback)))))
+      (unwind-protect
+          (progn
+            (setq buf-a (generate-new-buffer (hermes-test--chat-buffer-name))
+                  buf-b (generate-new-buffer (hermes-test--chat-buffer-name)))
+            (with-current-buffer buf-a
+              (hermes-chat-mode)
+              (setq shared (hermes-chat--dashboard-start
+                            (lambda (event) (push event a-events))))
+              (hermes-chat--dashboard-record-session
+               shared '((session_id . "sid-a"))))
+            (with-current-buffer buf-b
+              (hermes-chat-mode)
+              (hermes-chat--dashboard-start
+               (lambda (event) (push event b-events)))
+              (hermes-chat--dashboard-record-session
+               shared '((session_id . "sid-b"))))
+            (should (= made 1))
+            (should (= (hermes-dashboard-transport-client-refcount shared) 2))
+            (hermes-dashboard-transport--dispatch-event
+             shared '(:type delta :session-id "sid-a" :content "x"))
+            (should (= (length a-events) 1))
+            (should-not b-events)
+            (kill-buffer buf-a)
+            (should (hermes-dashboard-transport-client-websocket shared))
+            (should (= (hermes-dashboard-transport-client-refcount shared) 1))
+            (hermes-dashboard-transport--dispatch-event
+             shared '(:type delta :session-id "sid-b" :content "y"))
+            (should (= (length b-events) 1)))
+        (when (buffer-live-p buf-a) (kill-buffer buf-a))
+        (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
 
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

@@ -85,7 +85,9 @@ without each one repeating the liveness guard."
 (defvar-local hermes-chat--dashboard-active-session-id nil
   "Live dashboard session id for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-client nil
-  "Dashboard transport client for the current chat buffer.")
+  "Shared dashboard transport client this chat buffer is attached to.")
+(defvar-local hermes-chat--dashboard-token nil
+  "This chat buffer's subscriber token on the shared dashboard client.")
 (defvar-local hermes-chat--dashboard-detached-assistant-id nil
   "Detached dashboard assistant entry id for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-session-ready-p nil
@@ -403,6 +405,7 @@ Do not record these internal text-property changes in the undo list."
           hermes-chat--transport-generation 0
           hermes-chat--process nil
           hermes-chat--dashboard-client nil
+          hermes-chat--dashboard-token nil
           hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-active-session-id nil
           hermes-chat--dashboard-detached-assistant-id nil

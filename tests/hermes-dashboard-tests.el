@@ -639,6 +639,19 @@
         (should-not (eq c1 (hermes-dashboard-transport-acquire
                             :start-mode 'spawn)))))))
 
+(ert-deftest hermes-dashboard-transport-acquire-rebuilds-after-close ()
+  "A dropped socket leaves the registry so the next acquire builds a fresh client."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket))))
+      (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-acquire :start-mode 'spawn)
+        (hermes-dashboard-transport--mark-websocket-closed c1)
+        (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))
+        (should-not (eq c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))))))
+
 (ert-deftest hermes-dashboard-transport-unregister-keeps-replacement ()
   "Stopping a stale client does not evict a replacement under the same key."
   (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
