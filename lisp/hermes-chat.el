@@ -1385,6 +1385,11 @@ Only matches while typing the /command word in the writable input tail."
            (if (string-empty-p arg)
                (call-interactively #'hermes-chat-rename)
              (hermes-chat-rename arg))))
+   (cons '("handoff")
+         (lambda (arg)
+           (if (string-empty-p arg)
+               (call-interactively #'hermes-chat-handoff)
+             (hermes-chat-handoff arg))))
    (cons '("sessions") (lambda (_arg) (hermes-list-sessions))))
   "Native in-client slash commands as (NAMES . HANDLER) entries.
 NAMES is a list of aliases; HANDLER takes the command's ARG string (empty when
@@ -2492,6 +2497,7 @@ session-title refresh."
   "m" ("Switch model" hermes-chat-switch-model)
   "K" ("Connect provider" hermes-chat-connect-provider)
   "R" ("Rename session" hermes-chat-rename)
+  "H" ("Hand off session" hermes-chat-handoff)
   "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)
   :group "Commands"

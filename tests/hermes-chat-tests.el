@@ -727,6 +727,8 @@
               #'hermes-chat-switch-model))
   (should (eq (keymap-lookup hermes-chat-actions-map "n")
               #'hermes-chat))
+  (should (eq (keymap-lookup hermes-chat-actions-map "H")
+              #'hermes-chat-handoff))
   (let* ((rows (keymap-popup--meta hermes-chat-actions-map 'descriptions))
          (entries (mapcan (lambda (row)
                             (mapcan (lambda (group)
@@ -4252,6 +4254,16 @@
                  (lambda (_b result) (setq handled result))))
         (hermes-chat--handoff-poll-tick (current-buffer)))
       (should (equal (cdr (assq 'state handled)) "running")))))
+
+(ert-deftest hermes-chat-handoff-slash-routes-to-command ()
+  "The /handoff slash command dispatches its argument to `hermes-chat-handoff'."
+  (let (called)
+    (cl-letf (((symbol-function 'hermes-chat-handoff)
+               (lambda (&optional arg) (setq called (or arg 'interactive)))))
+      (let ((handler (hermes-chat--native-slash-handler "handoff")))
+        (should handler)
+        (funcall handler "telegram")
+        (should (equal called "telegram"))))))
 
 (ert-deftest hermes-chat-handoff-timeout-fails-and-reports ()
   "A timed-out handoff fires `handoff.fail' and reports the error."
