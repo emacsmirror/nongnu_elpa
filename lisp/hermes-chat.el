@@ -1617,6 +1617,156 @@ unconditionally, so an empty input still stops the run instead of erroring."
     (unless (string-empty-p content)
       (hermes-chat-queue-message message))))
 
+;;; Session handoff
+
+(defcustom hermes-chat-handoff-platforms '("telegram" "discord" "slack" "whatsapp")
+  "Messaging platforms offered when handing off a session.
+Used only as completion candidates: the gateway validates the chosen platform
+and its home channel, so a value outside this list is still accepted."
+  :type '(repeat string)
+  :group 'hermes)
+
+(defconst hermes-chat--handoff-poll-initial-delay 1
+  "Seconds before the first `handoff.state' poll after a queued handoff.")
+
+(defconst hermes-chat--handoff-poll-max-delay 8
+  "Ceiling for the doubling delay between `handoff.state' polls.")
+
+(defconst hermes-chat--handoff-poll-deadline 120
+  "Seconds to keep polling `handoff.state' before marking the handoff failed.")
+
+(defvar-local hermes-chat--handoff-poll nil
+  "Active handoff poll state: a plist of :timer :backoff :platform :deadline.")
+
+(defun hermes-chat--handoff-stop ()
+  "Cancel any active handoff poll timer in the current buffer."
+  (when hermes-chat--handoff-poll
+    (when-let* ((timer (plist-get hermes-chat--handoff-poll :timer)))
+      (cancel-timer timer))
+    (setq hermes-chat--handoff-poll nil)))
+
+(defun hermes-chat--handoff-schedule (buffer delay)
+  "Schedule the next `handoff.state' poll for BUFFER after DELAY seconds."
+  (when hermes-chat--handoff-poll
+    (setq hermes-chat--handoff-poll
+          (plist-put hermes-chat--handoff-poll :timer
+                     (run-at-time delay nil
+                                  #'hermes-chat--handoff-poll-tick buffer)))))
+
+(defun hermes-chat--handoff-reschedule (buffer)
+  "Double the BUFFER handoff poll backoff (capped) and schedule the next poll."
+  (when hermes-chat--handoff-poll
+    (let ((delay (min hermes-chat--handoff-poll-max-delay
+                      (* 2 (plist-get hermes-chat--handoff-poll :backoff)))))
+      (setq hermes-chat--handoff-poll
+            (plist-put hermes-chat--handoff-poll :backoff delay))
+      (hermes-chat--handoff-schedule buffer delay))))
+
+(defun hermes-chat--handoff-report-failure (platform reason)
+  "Surface a failed handoff to PLATFORM, appending REASON when non-empty."
+  (hermes-chat--command-error
+   (if (or (null reason) (string-empty-p reason))
+       (format "Handoff to %s failed" platform)
+     (format "Handoff to %s failed: %s" platform reason))))
+
+(defun hermes-chat--handoff-handle-state (buffer result)
+  "Settle or continue the BUFFER handoff given gateway RESULT."
+  (let ((state (hermes-chat--result-string result 'state))
+        (platform (plist-get hermes-chat--handoff-poll :platform)))
+    (pcase (downcase (or state ""))
+      ("completed"
+       (hermes-chat--handoff-stop)
+       (hermes-chat--insert-local-status
+        (format "Session handed off to %s" platform) 'done)
+       (hermes-chat--set-header-state
+        :status 'done :activity (format "Handed off → %s" platform)))
+      ("failed"
+       (hermes-chat--handoff-stop)
+       (hermes-chat--handoff-report-failure
+        platform (hermes-chat--result-string result 'error)))
+      (_ (hermes-chat--handoff-reschedule buffer)))))
+
+(defun hermes-chat--handoff-timeout (buffer)
+  "Fail the BUFFER handoff after the poll deadline elapses."
+  (let ((platform (plist-get hermes-chat--handoff-poll :platform)))
+    (hermes-chat--handoff-stop)
+    (hermes-dashboard-transport-handoff-fail
+     hermes-chat--dashboard-client
+     :error "client poll timed out"
+     :session-id hermes-chat--dashboard-active-session-id
+     :resolve #'ignore :reject #'ignore)
+    (hermes-chat--in-buffer buffer
+      (hermes-chat--command-error
+       (format "Handoff to %s timed out" platform)))))
+
+(defun hermes-chat--handoff-poll-tick (buffer)
+  "Run one `handoff.state' poll for BUFFER, settling or rescheduling."
+  (hermes-chat--in-buffer buffer
+    (when hermes-chat--handoff-poll
+      (if (time-less-p (plist-get hermes-chat--handoff-poll :deadline)
+                       (current-time))
+          (hermes-chat--handoff-timeout buffer)
+        (hermes-dashboard-transport-handoff-state
+         hermes-chat--dashboard-client
+         :session-id hermes-chat--dashboard-active-session-id
+         :resolve (lambda (result)
+                    (hermes-chat--in-buffer buffer
+                      (hermes-chat--handoff-handle-state buffer result)))
+         :reject (lambda (_message)
+                   (hermes-chat--in-buffer buffer
+                     (hermes-chat--handoff-reschedule buffer))))))))
+
+(defun hermes-chat--handoff-start-poll (platform)
+  "Begin bounded polling of `handoff.state' for PLATFORM in the current buffer."
+  (hermes-chat--handoff-stop)
+  (setq hermes-chat--handoff-poll
+        (list :platform platform
+              :backoff hermes-chat--handoff-poll-initial-delay
+              :deadline (time-add (current-time)
+                                  hermes-chat--handoff-poll-deadline)))
+  (hermes-chat--handoff-schedule (current-buffer)
+                                 hermes-chat--handoff-poll-initial-delay))
+
+(defun hermes-chat--handoff-read-platform ()
+  "Read a messaging platform to hand off to.
+Completes against `hermes-chat-handoff-platforms' but accepts any value, since
+the gateway validates the platform and its home channel."
+  (completing-read "Hand off to: " hermes-chat-handoff-platforms
+                   nil nil nil nil (car hermes-chat-handoff-platforms)))
+
+(defun hermes-chat--handoff-platform-arg (platform)
+  "Return a normalized PLATFORM string, prompting when it is nil or blank."
+  (let ((value (if (and platform (not (string-empty-p (string-trim platform))))
+                   platform
+                 (hermes-chat--handoff-read-platform))))
+    (downcase (string-trim (or value "")))))
+
+(defun hermes-chat-handoff (&optional platform)
+  "Hand off the current session to a messaging PLATFORM and poll for the result.
+Interactively reads PLATFORM (for example \"telegram\").  The chat must have an
+attached, idle session; the gateway transfers it to the platform's home channel."
+  (interactive)
+  (unless (hermes-chat--dashboard-session-attached-p)
+    (user-error "This Hermes chat has no session to hand off"))
+  (when (hermes-chat--active-turn-p)
+    (user-error "Wait for the current turn to finish before handing off"))
+  (let ((platform (hermes-chat--handoff-platform-arg platform))
+        (buffer (current-buffer)))
+    (when (string-empty-p platform)
+      (user-error "No handoff platform given"))
+    (hermes-chat--insert-local-status
+     (format "Requesting handoff to %s…" platform) 'handoff)
+    (hermes-chat--set-header-state :status 'handoff :activity platform)
+    (hermes-dashboard-transport-handoff-request
+     hermes-chat--dashboard-client platform
+     :session-id hermes-chat--dashboard-active-session-id
+     :resolve (lambda (_result)
+                (hermes-chat--in-buffer buffer
+                  (hermes-chat--handoff-start-poll platform)))
+     :reject (lambda (message)
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
+
 (defun hermes-chat-disconnect ()
   "End this chat's dashboard session so a new one can be started.
 Tears down the live client when present (best effort, even when it is stale

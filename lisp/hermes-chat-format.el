@@ -153,7 +153,8 @@ values, with a `format' fallback the chat renderer relies on."
 (defconst hermes-chat--active-statuses
   '("pending" "waiting" "queued" "streaming" "started" "starting"
     "loading" "connecting" "reconnecting" "running" "busy"
-    "progress" "in-progress" "preparing" "requested" "approval-requested")
+    "progress" "in-progress" "preparing" "handoff" "requested"
+    "approval-requested")
   "Status names denoting an unsettled transport entry.")
 
 (defun hermes-chat--active-status-p (status)
@@ -193,6 +194,7 @@ Active statuses show a neutral dot rather than the settled checkmark."
     ((or "starting" "loading") "Loading")
     ((or "connecting" "reconnecting") "Connecting")
     ((or "streaming") "Streaming")
+    ((or "handoff") "Handing off")
     ((or "started" "running" "busy" "progress" "in-progress" "preparing") "Running")
     (_ "Idle")))
 

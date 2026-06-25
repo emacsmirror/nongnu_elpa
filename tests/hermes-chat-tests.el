@@ -4116,5 +4116,157 @@
     (should (equal saved "deepseek"))
     (should (equal (car applied) "model"))))
 
+;;; Group: session handoff
+
+(ert-deftest hermes-chat-handoff-status-classifies-as-active ()
+  "The `handoff' status reads as active with a distinct header label."
+  (should (hermes-chat--active-status-p 'handoff))
+  (should-not (hermes-chat--finished-status-p 'handoff))
+  (should (equal (hermes-chat--header-status-label 'handoff) "Handing off")))
+
+(ert-deftest hermes-chat-handoff-requires-attached-session ()
+  "Handoff errors when the chat has no attached dashboard session."
+  (hermes-test-with-chat-buffer
+   (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+              (lambda () nil)))
+     (should-error (hermes-chat-handoff "telegram") :type 'user-error))))
+
+(ert-deftest hermes-chat-handoff-refuses-during-active-turn ()
+  "Handoff errors while a turn is still active."
+  (hermes-test-with-chat-buffer
+   (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+              (lambda () t))
+             ((symbol-function 'hermes-chat--active-turn-p) (lambda () t)))
+     (should-error (hermes-chat-handoff "telegram") :type 'user-error))))
+
+(ert-deftest hermes-chat-handoff-sends-platform-and-session ()
+  "Handoff submits the lowercased platform and live session id."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--dashboard-active-session-id "sid-9")
+   (let (args)
+     (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+                (lambda () t))
+               ((symbol-function 'hermes-chat--active-turn-p) (lambda () nil))
+               ((symbol-function 'hermes-chat--handoff-start-poll) #'ignore)
+               ((symbol-function 'hermes-dashboard-transport-handoff-request)
+                (lambda (_client platform &rest rest)
+                  (setq args (cons platform rest)))))
+       (hermes-chat-handoff "Telegram"))
+     (should (equal (car args) "telegram"))
+     (should (equal (plist-get (cdr args) :session-id) "sid-9")))))
+
+(ert-deftest hermes-chat-handoff-handle-state-completed-stops ()
+  "A completed handoff state stops the poll and reports success."
+  (with-temp-buffer
+    (setq hermes-chat--handoff-poll (list :platform "telegram" :backoff 1))
+    (let (stopped reported)
+      (cl-letf (((symbol-function 'hermes-chat--handoff-stop)
+                 (lambda () (setq stopped t)))
+                ((symbol-function 'hermes-chat--insert-local-status)
+                 (lambda (&rest _) (setq reported t)))
+                ((symbol-function 'hermes-chat--set-header-state) #'ignore)
+                ((symbol-function 'hermes-chat--handoff-reschedule)
+                 (lambda (_b) (error "should not reschedule on completed"))))
+        (hermes-chat--handoff-handle-state
+         (current-buffer) '((state . "completed"))))
+      (should stopped)
+      (should reported))))
+
+(ert-deftest hermes-chat-handoff-handle-state-pending-reschedules ()
+  "A non-terminal handoff state reschedules another poll."
+  (with-temp-buffer
+    (setq hermes-chat--handoff-poll (list :platform "telegram" :backoff 1))
+    (let (rescheduled)
+      (cl-letf (((symbol-function 'hermes-chat--handoff-reschedule)
+                 (lambda (_b) (setq rescheduled t))))
+        (hermes-chat--handoff-handle-state
+         (current-buffer) '((state . "pending"))))
+      (should rescheduled))))
+
+(ert-deftest hermes-chat-handoff-reschedule-doubles-backoff-capped ()
+  "Reschedule doubles the poll backoff up to the configured ceiling."
+  (with-temp-buffer
+    (let (delays)
+      (cl-letf (((symbol-function 'run-at-time)
+                 (lambda (delay &rest _) (push delay delays) 'timer)))
+        (setq hermes-chat--handoff-poll (list :backoff 1))
+        (hermes-chat--handoff-reschedule (current-buffer))
+        (should (equal (plist-get hermes-chat--handoff-poll :backoff) 2))
+        (setq hermes-chat--handoff-poll (list :backoff 8))
+        (hermes-chat--handoff-reschedule (current-buffer))
+        (should (equal (plist-get hermes-chat--handoff-poll :backoff)
+                       hermes-chat--handoff-poll-max-delay)))
+      (should (equal (car (last delays)) 2)))))
+
+(ert-deftest hermes-chat-handoff-stop-cancels-timer ()
+  "Stopping the handoff cancels its timer and clears poll state."
+  (with-temp-buffer
+    (let (cancelled)
+      (cl-letf (((symbol-function 'cancel-timer)
+                 (lambda (_timer) (setq cancelled t))))
+        (setq hermes-chat--handoff-poll (list :timer 'the-timer))
+        (hermes-chat--handoff-stop))
+      (should cancelled)
+      (should-not hermes-chat--handoff-poll))))
+
+(ert-deftest hermes-chat-handoff-poll-tick-times-out-past-deadline ()
+  "A poll tick past the deadline routes to the timeout path, not a poll."
+  (with-temp-buffer
+    (setq hermes-chat--handoff-poll
+          (list :platform "telegram" :backoff 1
+                :deadline (time-subtract (current-time) 5)))
+    (let (timed-out)
+      (cl-letf (((symbol-function 'hermes-chat--handoff-timeout)
+                 (lambda (_b) (setq timed-out t)))
+                ((symbol-function 'hermes-dashboard-transport-handoff-state)
+                 (lambda (&rest _) (error "should not poll past deadline"))))
+        (hermes-chat--handoff-poll-tick (current-buffer)))
+      (should timed-out))))
+
+(ert-deftest hermes-chat-handoff-poll-tick-reject-reschedules ()
+  "A failed `handoff.state' poll reschedules rather than aborting."
+  (with-temp-buffer
+    (setq hermes-chat--handoff-poll
+          (list :platform "telegram" :backoff 1
+                :deadline (time-add (current-time) 60)))
+    (let (rescheduled)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-handoff-state)
+                 (lambda (_client &rest args)
+                   (funcall (plist-get args :reject) "boom")))
+                ((symbol-function 'hermes-chat--handoff-reschedule)
+                 (lambda (_b) (setq rescheduled t))))
+        (hermes-chat--handoff-poll-tick (current-buffer)))
+      (should rescheduled))))
+
+(ert-deftest hermes-chat-handoff-poll-tick-resolve-handles-state ()
+  "A successful poll routes its result into the state handler."
+  (with-temp-buffer
+    (setq hermes-chat--handoff-poll
+          (list :platform "telegram" :backoff 1
+                :deadline (time-add (current-time) 60)))
+    (let (handled)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-handoff-state)
+                 (lambda (_client &rest args)
+                   (funcall (plist-get args :resolve) '((state . "running")))))
+                ((symbol-function 'hermes-chat--handoff-handle-state)
+                 (lambda (_b result) (setq handled result))))
+        (hermes-chat--handoff-poll-tick (current-buffer)))
+      (should (equal (cdr (assq 'state handled)) "running")))))
+
+(ert-deftest hermes-chat-handoff-timeout-fails-and-reports ()
+  "A timed-out handoff fires `handoff.fail' and reports the error."
+  (with-temp-buffer
+    (setq hermes-chat--handoff-poll (list :platform "telegram" :backoff 8))
+    (let (failed reported)
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-handoff-fail)
+                 (lambda (_client &rest args)
+                   (setq failed (plist-get args :error))))
+                ((symbol-function 'hermes-chat--command-error)
+                 (lambda (msg) (setq reported msg))))
+        (hermes-chat--handoff-timeout (current-buffer)))
+      (should (equal failed "client poll timed out"))
+      (should (string-match-p "timed out" reported))
+      (should-not hermes-chat--handoff-poll))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

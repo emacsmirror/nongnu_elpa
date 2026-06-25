@@ -41,6 +41,7 @@
 (declare-function hermes-chat--clear-active-tools "hermes-chat" ())
 (declare-function hermes-chat--command-error "hermes-chat" (message))
 (declare-function hermes-chat--drain-queued-message "hermes-chat" ())
+(declare-function hermes-chat--handoff-stop "hermes-chat" ())
 (declare-function hermes-chat--message-start-status-event-p "hermes-chat" (event))
 (declare-function hermes-chat--make-entry "hermes-chat" (role content &optional status id metadata))
 (declare-function hermes-chat--maybe-refresh-session-title "hermes-chat" ())
@@ -139,6 +140,7 @@ partial or failed teardown, so a new session can be started afterwards."
 
 (defun hermes-chat--cleanup-buffer ()
   "Release per-buffer Hermes chat resources before killing the buffer."
+  (hermes-chat--handoff-stop)
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--notify-state-change))
 
