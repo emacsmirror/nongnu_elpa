@@ -38,6 +38,8 @@
 
 (declare-function websocket-open "ext:websocket")
 (declare-function websocket-send-text "ext:websocket")
+(declare-function websocket-send "ext:websocket")
+(declare-function make-websocket-frame "ext:websocket")
 (declare-function websocket-frame-text "ext:websocket")
 (declare-function websocket-close "ext:websocket")
 
@@ -130,6 +132,15 @@ client immediately on the last release."
   :type '(choice (const :tag "Close immediately" nil) number)
   :group 'hermes-dashboard-transport)
 
+(defcustom hermes-dashboard-transport-heartbeat-interval nil
+  "Seconds between keepalive pings on the shared dashboard WebSocket.
+websocket.el answers server pings but never initiates one, so a long-lived
+shared socket can be dropped by an idle proxy or load balancer.  A number sends
+a WebSocket ping frame this often once the gateway is ready; nil disables the
+heartbeat (a dropped socket is then rebuilt lazily on the next request)."
+  :type '(choice (const :tag "No heartbeat" nil) number)
+  :group 'hermes-dashboard-transport)
+
 (cl-defstruct hermes-dashboard-transport-client
   "State for one dashboard/TUI JSON-RPC WebSocket connection."
   process
@@ -152,7 +163,8 @@ client immediately on the last release."
   (session-index (make-hash-table :test #'equal))
   (refcount 0)
   endpoint-key
-  idle-timer)
+  idle-timer
+  heartbeat-timer)
 
 (defun hermes-dashboard-transport-subscribe (client fn)
   "Register FN as an event subscriber on CLIENT and return an opaque token.
@@ -564,6 +576,7 @@ rebuild a fresh connection, while buffers still attached keep their reference
 until they release it and reattach on their next send."
   (setf (hermes-dashboard-transport-client-websocket client) nil
         (hermes-dashboard-transport-client-ready-p client) nil)
+  (hermes-dashboard-transport--cancel-heartbeat client)
   (hermes-dashboard-transport--unregister-client client))
 
 (defun hermes-dashboard-transport--close-websocket (client)
@@ -2377,6 +2390,46 @@ remaining reference count, or nil when CLIENT is not a client."
         (hermes-dashboard-transport--release-idle-client client))
       count)))
 
+(defvar hermes-dashboard-transport-ping-function
+  (lambda (websocket)
+    (hermes-dashboard-transport--require-websocket)
+    (websocket-send websocket (make-websocket-frame :opcode 'ping :completep t)))
+  "Function sending a keepalive ping frame on a websocket.
+Called with the websocket object.  Tests rebind it to capture pings without a
+live socket.")
+
+(defun hermes-dashboard-transport--send-ping (client)
+  "Send a keepalive ping frame on CLIENT's websocket, ignoring send errors."
+  (when-let* ((websocket (hermes-dashboard-transport-client-websocket client)))
+    (ignore-errors (funcall hermes-dashboard-transport-ping-function websocket))))
+
+(defun hermes-dashboard-transport--cancel-heartbeat (client)
+  "Cancel CLIENT's pending heartbeat timer, if any."
+  (when-let* ((timer (hermes-dashboard-transport-client-heartbeat-timer client)))
+    (when (timerp timer)
+      (cancel-timer timer))
+    (setf (hermes-dashboard-transport-client-heartbeat-timer client) nil)))
+
+(defun hermes-dashboard-transport--arm-heartbeat (client)
+  "Schedule CLIENT's next keepalive ping when heartbeats are enabled.
+A no-op unless `hermes-dashboard-transport-heartbeat-interval' is a positive
+number and CLIENT still has an open WebSocket."
+  (hermes-dashboard-transport--cancel-heartbeat client)
+  (when (and (numberp hermes-dashboard-transport-heartbeat-interval)
+             (> hermes-dashboard-transport-heartbeat-interval 0)
+             (hermes-dashboard-transport-client-websocket client))
+    (setf (hermes-dashboard-transport-client-heartbeat-timer client)
+          (hermes-dashboard-transport--schedule
+           hermes-dashboard-transport-heartbeat-interval
+           #'hermes-dashboard-transport--heartbeat-tick client))))
+
+(defun hermes-dashboard-transport--heartbeat-tick (client)
+  "Send a keepalive ping on CLIENT and schedule the next one.
+Self-terminating: once CLIENT's WebSocket is gone the chain stops re-arming."
+  (when (hermes-dashboard-transport-client-websocket client)
+    (hermes-dashboard-transport--send-ping client)
+    (hermes-dashboard-transport--arm-heartbeat client)))
+
 (defun hermes-dashboard-transport--emit-status (client status content)
   "Emit a status event with STATUS and CONTENT for CLIENT."
   (hermes-dashboard-transport--dispatch-event
@@ -2837,6 +2890,7 @@ an Unknown error."
   (let ((params (hermes-transport--get frame 'params)))
     (when (equal (hermes-transport--get params 'type) "gateway.ready")
       (setf (hermes-dashboard-transport-client-ready-p client) t)
+      (hermes-dashboard-transport--arm-heartbeat client)
       (when-let* ((promise (hermes-dashboard-transport-client-ready-promise
                             client)))
         (hermes--promise-resolve promise client)))

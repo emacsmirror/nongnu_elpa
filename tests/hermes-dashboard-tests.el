@@ -471,6 +471,72 @@
         (should (stringp err))
         (should-not (string-match-p "SEKRIT" err))))))
 
+;;; Group: heartbeat keepalive
+
+(ert-deftest hermes-dashboard-transport-heartbeat-arms-on-ready-and-pings ()
+  "With an interval set, `gateway.ready' arms a heartbeat that sends pings."
+  (let* ((hermes-dashboard-transport-heartbeat-interval 30)
+         (schedules 0)
+         pings captured
+         (hermes-dashboard-transport-schedule-function
+          (lambda (delay fn &rest args)
+            (setq schedules (1+ schedules)
+                  captured (list delay fn args))
+            'fake-timer))
+         (hermes-dashboard-transport-ping-function
+          (lambda (ws) (push ws pings)))
+         (client (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket)))
+    (hermes-dashboard-transport--handle-frame
+     client '((jsonrpc . "2.0") (method . "event")
+              (params . ((type . "gateway.ready")))))
+    (should (hermes-dashboard-transport-client-ready-p client))
+    (should (equal (nth 0 captured) 30))
+    (should (= schedules 1))
+    (should (eq (hermes-dashboard-transport-client-heartbeat-timer client)
+                'fake-timer))
+    (apply (nth 1 captured) (nth 2 captured))
+    (should (equal pings '(fake-websocket)))
+    (should (= schedules 2))))
+
+(ert-deftest hermes-dashboard-transport-heartbeat-disabled-when-nil ()
+  "A nil heartbeat interval arms no timer."
+  (let* ((hermes-dashboard-transport-heartbeat-interval nil)
+         armed
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) (setq armed t) 'fake-timer))
+         (client (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket)))
+    (hermes-dashboard-transport--arm-heartbeat client)
+    (should-not armed)
+    (should-not (hermes-dashboard-transport-client-heartbeat-timer client))))
+
+(ert-deftest hermes-dashboard-transport-heartbeat-cleared-on-close ()
+  "Marking the socket closed clears the heartbeat timer."
+  (let* ((hermes-dashboard-transport-heartbeat-interval 30)
+         (hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) 'fake-timer))
+         (client (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket)))
+    (hermes-dashboard-transport--arm-heartbeat client)
+    (should (hermes-dashboard-transport-client-heartbeat-timer client))
+    (hermes-dashboard-transport--mark-websocket-closed client)
+    (should-not (hermes-dashboard-transport-client-heartbeat-timer client))))
+
+(ert-deftest hermes-dashboard-transport-heartbeat-tick-stops-without-socket ()
+  "A heartbeat tick on a closed socket sends nothing and does not re-arm."
+  (let* ((hermes-dashboard-transport-heartbeat-interval 30)
+         armed pings
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) (setq armed t) 'fake-timer))
+         (hermes-dashboard-transport-ping-function
+          (lambda (ws) (push ws pings)))
+         (client (make-hermes-dashboard-transport-client :websocket nil)))
+    (hermes-dashboard-transport--heartbeat-tick client)
+    (should-not pings)
+    (should-not armed)))
+
 ;;; Group: subscriber registry + session demux
 
 (ert-deftest hermes-dashboard-transport-subscribe-routes-tagged-event-to-owner ()
