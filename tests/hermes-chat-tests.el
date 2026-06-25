@@ -4280,5 +4280,58 @@
       (should (string-match-p "timed out" reported))
       (should-not hermes-chat--handoff-poll))))
 
+(ert-deftest hermes-chat-handoff-targets-parse-completion-items ()
+  "Completion items become (PLATFORM . META) cells, vector or list."
+  (should (equal (hermes-chat--handoff-targets
+                  '((items . [((text . "telegram") (meta . "→ Home"))
+                              ((text . "discord") (meta . ""))])))
+                 '(("telegram" . "→ Home") ("discord" . "")))))
+
+(ert-deftest hermes-chat-handoff-prompt-uses-live-targets ()
+  "The platform prompt fetches live targets via complete.slash."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--dashboard-active-session-id "sid")
+   (let (slash-text offered)
+     (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+                (lambda () t))
+               ((symbol-function 'hermes-chat--active-turn-p) (lambda () nil))
+               ((symbol-function 'hermes-dashboard-transport-complete-slash)
+                (lambda (_client text &rest args)
+                  (setq slash-text text)
+                  (funcall (plist-get args :resolve)
+                           '((items . [((text . "telegram") (meta . "→ H"))])))))
+               ((symbol-function 'completing-read)
+                (lambda (_prompt coll &rest _) (setq offered coll) ""))
+               ((symbol-function 'hermes-chat--handoff-begin) #'ignore))
+       (hermes-chat-handoff))
+     (should (equal slash-text "/handoff "))
+     (should (member "telegram" offered)))))
+
+(ert-deftest hermes-chat-handoff-given-platform-skips-prompt ()
+  "A platform argument begins the handoff without fetching live targets."
+  (hermes-test-with-chat-buffer
+   (let (began)
+     (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+                (lambda () t))
+               ((symbol-function 'hermes-chat--active-turn-p) (lambda () nil))
+               ((symbol-function 'hermes-dashboard-transport-complete-slash)
+                (lambda (&rest _) (error "should not fetch targets when given")))
+               ((symbol-function 'hermes-chat--handoff-begin)
+                (lambda (_buffer platform) (setq began platform))))
+       (hermes-chat-handoff "Telegram"))
+     (should (equal began "telegram")))))
+
+(ert-deftest hermes-chat-handoff-read-target-falls-back-without-targets ()
+  "With no live targets the picker reads a free-form platform name."
+  (cl-letf (((symbol-function 'read-string)
+             (lambda (&rest _) "  IRC ")))
+    (should (equal (hermes-chat--handoff-read-target '((items . []))) "irc"))))
+
+(ert-deftest hermes-chat-handoff-read-target-skips-blank-text ()
+  "Items without a text field are dropped rather than erroring."
+  (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "x")))
+    (should (equal (hermes-chat--handoff-read-target '((items . [((meta . "m"))])))
+                   "x"))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

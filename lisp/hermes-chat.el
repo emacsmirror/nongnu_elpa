@@ -1624,13 +1624,6 @@ unconditionally, so an empty input still stops the run instead of erroring."
 
 ;;; Session handoff
 
-(defcustom hermes-chat-handoff-platforms '("telegram" "discord" "slack" "whatsapp")
-  "Messaging platforms offered when handing off a session.
-Used only as completion candidates: the gateway validates the chosen platform
-and its home channel, so a value outside this list is still accepted."
-  :type '(repeat string)
-  :group 'hermes)
-
 (defconst hermes-chat--handoff-poll-initial-delay 1
   "Seconds before the first `handoff.state' poll after a queued handoff.")
 
@@ -1732,33 +1725,36 @@ and its home channel, so a value outside this list is still accepted."
   (hermes-chat--handoff-schedule (current-buffer)
                                  hermes-chat--handoff-poll-initial-delay))
 
-(defun hermes-chat--handoff-read-platform ()
-  "Read a messaging platform to hand off to.
-Completes against `hermes-chat-handoff-platforms' but accepts any value, since
-the gateway validates the platform and its home channel."
-  (completing-read "Hand off to: " hermes-chat-handoff-platforms
-                   nil nil nil nil (car hermes-chat-handoff-platforms)))
+(defun hermes-chat--handoff-targets (result)
+  "Return (PLATFORM . META) cells from a `complete.slash' RESULT.
+Absent text or meta become empty strings so callers never see nil."
+  (let ((items (hermes-transport--get result 'items)))
+    (mapcar (lambda (item)
+              (cons (or (hermes-chat--result-string item 'text) "")
+                    (or (hermes-chat--result-string item 'meta) "")))
+            (if (vectorp items) (append items nil) items))))
 
-(defun hermes-chat--handoff-platform-arg (platform)
-  "Return a normalized PLATFORM string, prompting when it is nil or blank."
-  (let ((value (if (and platform (not (string-empty-p (string-trim platform))))
-                   platform
-                 (hermes-chat--handoff-read-platform))))
-    (downcase (string-trim (or value "")))))
+(defun hermes-chat--handoff-read-target (result)
+  "Read a handoff platform from RESULT's live targets.
+Offers the gateway's connected platforms with their home-channel hint, and
+falls back to free-form input when the gateway reports none."
+  (let ((targets (seq-remove (lambda (cell) (string-empty-p (car cell)))
+                             (hermes-chat--handoff-targets result))))
+    (downcase
+     (string-trim
+      (if targets
+          (let ((completion-extra-properties
+                 (list :annotation-function
+                       (lambda (cand)
+                         (and-let* ((meta (cdr (assoc cand targets)))
+                                    ((not (string-empty-p meta))))
+                           (concat "  " meta))))))
+            (completing-read "Hand off to: " (mapcar #'car targets) nil nil))
+        (read-string "Hand off to (no live platforms found): "))))))
 
-(defun hermes-chat-handoff (&optional platform)
-  "Hand off the current session to a messaging PLATFORM and poll for the result.
-Interactively reads PLATFORM (for example \"telegram\").  The chat must have an
-attached, idle session; the gateway transfers it to the platform's home channel."
-  (interactive)
-  (unless (hermes-chat--dashboard-session-attached-p)
-    (user-error "This Hermes chat has no session to hand off"))
-  (when (hermes-chat--active-turn-p)
-    (user-error "Wait for the current turn to finish before handing off"))
-  (let ((platform (hermes-chat--handoff-platform-arg platform))
-        (buffer (current-buffer)))
-    (when (string-empty-p platform)
-      (user-error "No handoff platform given"))
+(defun hermes-chat--handoff-begin (buffer platform)
+  "Queue a handoff of BUFFER's session to PLATFORM and start polling."
+  (hermes-chat--in-buffer buffer
     (hermes-chat--insert-local-status
      (format "Requesting handoff to %s…" platform) 'handoff)
     (hermes-chat--set-header-state :status 'handoff :activity platform)
@@ -1771,6 +1767,36 @@ attached, idle session; the gateway transfers it to the platform's home channel.
      :reject (lambda (message)
                (hermes-chat--in-buffer buffer
                  (hermes-chat--command-error message))))))
+
+(defun hermes-chat--handoff-prompt-platform (buffer)
+  "Fetch live handoff targets for BUFFER, then prompt and begin the handoff."
+  (let ((pick (lambda (result)
+                (hermes-chat--in-buffer buffer
+                  (let ((platform (hermes-chat--handoff-read-target result)))
+                    (unless (string-empty-p platform)
+                      (hermes-chat--handoff-begin buffer platform)))))))
+    (hermes-dashboard-transport-complete-slash
+     hermes-chat--dashboard-client "/handoff "
+     :resolve pick
+     :reject (lambda (_message) (funcall pick nil)))))
+
+(defun hermes-chat-handoff (&optional platform)
+  "Hand off the current session to a messaging PLATFORM and poll for the result.
+Without PLATFORM, prompt with the gateway's live connected platforms -- the same
+targets the dashboard offers -- rather than a fixed list.  The chat must have an
+attached, idle session; the gateway transfers it to the platform's home channel."
+  (interactive)
+  (unless (hermes-chat--dashboard-session-attached-p)
+    (user-error "This Hermes chat has no session to hand off"))
+  (when (hermes-chat--active-turn-p)
+    (user-error "Wait for the current turn to finish before handing off"))
+  (let ((buffer (current-buffer))
+        (given (and platform
+                    (not (string-empty-p (string-trim platform)))
+                    (downcase (string-trim platform)))))
+    (if given
+        (hermes-chat--handoff-begin buffer given)
+      (hermes-chat--handoff-prompt-platform buffer))))
 
 (defun hermes-chat-disconnect ()
   "End this chat's dashboard session so a new one can be started.

@@ -303,6 +303,18 @@
       (should (equal (cdr (assq 'error params)) "poll timed out"))
       (should (equal (cdr (assq 'session_id params)) "sid-3")))))
 
+(ert-deftest hermes-dashboard-transport-complete-slash-sends-text ()
+  "The transport wrapper sends `complete.slash' with the partial command text."
+  (let (method params)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client m p resolve _reject)
+                 (setq method m params p)
+                 (funcall resolve '((items . []))))))
+      (hermes-dashboard-transport-complete-slash
+       'fake-client "/handoff " :resolve #'ignore :reject #'ignore)
+      (should (equal method "complete.slash"))
+      (should (equal (cdr (assq 'text params)) "/handoff ")))))
+
 ;;; Group: provider-onboarding auth gate
 
 (ert-deftest hermes-dashboard-onboarding-card-bound-to-e ()

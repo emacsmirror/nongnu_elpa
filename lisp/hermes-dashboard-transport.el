@@ -1922,6 +1922,14 @@ asynchronous result or error."
   :args (name arg) :session t)
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-complete-slash "complete.slash"
+  "Request slash-command completions for TEXT via `complete.slash'.
+TEXT is the partial command line, for example \"/handoff \" to list the
+gateway's connected handoff platforms.  RESOLVE receives a result whose `items'
+each carry text/display/meta; REJECT receives any error."
+  :args (text))
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-slash-exec "slash.exec"
   "Run COMMAND through CLIENT's dashboard `slash.exec'.
 SESSION-ID selects the live dashboard session.  RESOLVE and REJECT receive the
