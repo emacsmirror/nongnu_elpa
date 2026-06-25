@@ -138,7 +138,82 @@ slow or unreachable dashboard cannot hang a chat or list buffer forever."
   (pending (make-hash-table :test #'equal))
   session-id
   stored-session-id
-  (callback #'ignore))
+  (callback #'ignore)
+  (subscribers (make-hash-table :test #'eq))
+  (session-index (make-hash-table :test #'equal)))
+
+(defun hermes-dashboard-transport-subscribe (client fn)
+  "Register FN as an event subscriber on CLIENT and return an opaque token.
+A new subscriber owns no session, so it receives broadcast events -- untagged
+connection-level events and tagged events with no owner -- until
+`hermes-dashboard-transport-subscribe-session' binds the token to a live session
+id."
+  (let ((token (gensym "hermes-dashboard-sub-")))
+    (puthash token (list :fn fn :session-id nil)
+             (hermes-dashboard-transport-client-subscribers client))
+    token))
+
+(defun hermes-dashboard-transport-subscribe-session (client token session-id)
+  "Bind subscriber TOKEN on CLIENT to live SESSION-ID.
+Events tagged with SESSION-ID then route to TOKEN's function alone; other tokens
+stop receiving them.  Re-binding moves TOKEN to the new SESSION-ID."
+  (when-let* ((record (gethash token
+                               (hermes-dashboard-transport-client-subscribers
+                                client))))
+    (let ((index (hermes-dashboard-transport-client-session-index client)))
+      (when-let* ((previous (plist-get record :session-id)))
+        (when (eq (gethash previous index) token)
+          (remhash previous index)))
+      (plist-put record :session-id session-id)
+      (when session-id
+        (puthash session-id token index)))))
+
+(defun hermes-dashboard-transport-unsubscribe (client token)
+  "Remove subscriber TOKEN from CLIENT."
+  (let ((subscribers (hermes-dashboard-transport-client-subscribers client))
+        (index (hermes-dashboard-transport-client-session-index client)))
+    (when-let* ((record (gethash token subscribers)))
+      (when-let* ((session-id (plist-get record :session-id)))
+        (when (eq (gethash session-id index) token)
+          (remhash session-id index)))
+      (remhash token subscribers))))
+
+(defun hermes-dashboard-transport--event-session-id (event)
+  "Return EVENT's session id, or nil."
+  (and (listp event) (plist-get event :session-id)))
+
+(defun hermes-dashboard-transport--session-subscriber-fn (client session-id)
+  "Return the subscriber function bound to SESSION-ID on CLIENT, or nil."
+  (when-let* ((token (gethash session-id
+                              (hermes-dashboard-transport-client-session-index
+                               client))))
+    (plist-get (gethash token
+                         (hermes-dashboard-transport-client-subscribers client))
+               :fn)))
+
+(defun hermes-dashboard-transport--broadcast-event (client event)
+  "Send EVENT to every subscriber function on CLIENT."
+  (maphash (lambda (_token record)
+             (funcall (plist-get record :fn) event))
+           (hermes-dashboard-transport-client-subscribers client)))
+
+(defun hermes-dashboard-transport--dispatch-event (client event)
+  "Route EVENT to CLIENT's subscribers by session id, else broadcast.
+A tagged event whose session id owns a subscriber goes to that subscriber alone;
+untagged or unowned events broadcast to every subscriber.  With no subscribers
+registered, fall back to CLIENT's legacy callback so single-callback callers
+keep working unchanged."
+  (let ((subscribers (hermes-dashboard-transport-client-subscribers client)))
+    (if (and (hash-table-p subscribers)
+             (> (hash-table-count subscribers) 0))
+        (let* ((session-id (hermes-dashboard-transport--event-session-id event))
+               (fn (and session-id
+                        (hermes-dashboard-transport--session-subscriber-fn
+                         client session-id))))
+          (if fn
+              (funcall fn event)
+            (hermes-dashboard-transport--broadcast-event client event)))
+      (funcall (hermes-dashboard-transport-client-callback client) event))))
 
 (defun hermes-dashboard-transport--command (host port &optional command)
   "Return dashboard startup argv for HOST, PORT, and optional COMMAND."
@@ -537,7 +612,9 @@ transport error when a pending request has no reject callback."
         (hermes--promise-reject
          promise (or message "Hermes dashboard transport stopped"))))
     (ignore-errors
-      (setf (hermes-dashboard-transport-client-callback client) #'ignore))
+      (setf (hermes-dashboard-transport-client-callback client) #'ignore)
+      (clrhash (hermes-dashboard-transport-client-subscribers client))
+      (clrhash (hermes-dashboard-transport-client-session-index client)))
     (ignore-errors (hermes-dashboard-transport--close-websocket client))
     (ignore-errors (hermes-dashboard-transport--delete-process client))
     (ignore-errors
@@ -2069,8 +2146,8 @@ HOST, PORT, COMMAND, TOKEN, and BASE-ENVIRONMENT override defaults."
                   :callback (or callback #'ignore)))
          (argv (hermes-dashboard-transport--command host port command))
          (env (hermes-dashboard-transport--environment token base-environment)))
-    (funcall (hermes-dashboard-transport-client-callback client)
-             (hermes-dashboard-transport--start-event host port token))
+    (hermes-dashboard-transport--dispatch-event
+     client (hermes-dashboard-transport--start-event host port token))
     (condition-case err
         (setf (hermes-dashboard-transport-client-process client)
               (hermes-dashboard-transport--start-process client argv env))
@@ -2094,9 +2171,9 @@ AUTH is the plist resolved by `hermes-dashboard-transport--remote-auth-async'."
         (plist-get auth :redacted-url)
         (hermes-dashboard-transport-client-secrets client)
         (plist-get auth :secrets))
-  (funcall (hermes-dashboard-transport-client-callback client)
-           (hermes-dashboard-transport--remote-connect-event
-            (plist-get auth :redacted-url)))
+  (hermes-dashboard-transport--dispatch-event
+   client (hermes-dashboard-transport--remote-connect-event
+           (plist-get auth :redacted-url)))
   (hermes-dashboard-transport--connect-async client)
   (hermes-dashboard-transport--arm-ready-timeout client))
 
@@ -2118,10 +2195,10 @@ Emacs."
     (hermes--promise-then
      (hermes-dashboard-transport-client-ready-promise client)
      (lambda (_value)
-       (funcall (hermes-dashboard-transport-client-callback client)
-                (hermes-dashboard-transport--remote-connected-event
-                 (hermes-dashboard-transport--client-redacted-websocket-url
-                  client)))))
+       (hermes-dashboard-transport--dispatch-event
+        client (hermes-dashboard-transport--remote-connected-event
+                (hermes-dashboard-transport--client-redacted-websocket-url
+                 client)))))
     (hermes--promise-then
      (hermes-dashboard-transport--remote-auth-async host port base-url method
                                                      token)
@@ -2161,8 +2238,8 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
 
 (defun hermes-dashboard-transport--emit-status (client status content)
   "Emit a status event with STATUS and CONTENT for CLIENT."
-  (funcall (hermes-dashboard-transport-client-callback client)
-           (list :type 'status :status status :content content)))
+  (hermes-dashboard-transport--dispatch-event
+   client (list :type 'status :status status :content content)))
 
 (defun hermes-dashboard-transport--emit-error (client message &optional method code)
   "Emit a normalized dashboard error MESSAGE for CLIENT."
@@ -2171,7 +2248,7 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
       (setq event (plist-put event :method method)))
     (when code
       (setq event (plist-put event :code code)))
-    (funcall (hermes-dashboard-transport-client-callback client) event)))
+    (hermes-dashboard-transport--dispatch-event client event)))
 
 (defun hermes-dashboard-transport--frame-id (frame)
   "Return FRAME's JSON-RPC id as a string, or nil."
@@ -2623,7 +2700,7 @@ an Unknown error."
                             client)))
         (hermes--promise-resolve promise client)))
     (dolist (event (hermes-dashboard-transport--normalize-event-frame frame))
-      (funcall (hermes-dashboard-transport-client-callback client) event))))
+      (hermes-dashboard-transport--dispatch-event client event))))
 
 (defun hermes-dashboard-transport--handle-frame (client text)
   "Handle inbound JSON-RPC TEXT or frame alist for CLIENT."

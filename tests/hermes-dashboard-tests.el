@@ -471,5 +471,120 @@
         (should (stringp err))
         (should-not (string-match-p "SEKRIT" err))))))
 
+;;; Group: subscriber registry + session demux
+
+(ert-deftest hermes-dashboard-transport-subscribe-routes-tagged-event-to-owner ()
+  "A tagged event reaches only the subscriber owning its session id."
+  (let* ((client (hermes-test--dashboard-client))
+         a-events b-events
+         (a (hermes-dashboard-transport-subscribe
+             client (lambda (e) (push e a-events))))
+         (b (hermes-dashboard-transport-subscribe
+             client (lambda (e) (push e b-events)))))
+    (hermes-dashboard-transport-subscribe-session client a "sid-a")
+    (hermes-dashboard-transport-subscribe-session client b "sid-b")
+    (hermes-dashboard-transport--dispatch-event
+     client (list :type 'delta :session-id "sid-a" :content "x"))
+    (should (equal (length a-events) 1))
+    (should-not b-events)))
+
+(ert-deftest hermes-dashboard-transport-untagged-event-broadcasts ()
+  "An untagged connection-level event reaches every subscriber."
+  (let* ((client (hermes-test--dashboard-client))
+         a-events b-events
+         (a (hermes-dashboard-transport-subscribe
+             client (lambda (e) (push e a-events))))
+         (b (hermes-dashboard-transport-subscribe
+             client (lambda (e) (push e b-events)))))
+    (hermes-dashboard-transport-subscribe-session client a "sid-a")
+    (hermes-dashboard-transport-subscribe-session client b "sid-b")
+    (hermes-dashboard-transport--dispatch-event
+     client (list :type 'status :status "closed"))
+    (should (equal (length a-events) 1))
+    (should (equal (length b-events) 1))))
+
+(ert-deftest hermes-dashboard-transport-unowned-tagged-event-broadcasts ()
+  "A tagged event with no registered owner falls back to a broadcast."
+  (let* ((client (hermes-test--dashboard-client))
+         events
+         (token (hermes-dashboard-transport-subscribe
+                 client (lambda (e) (push e events)))))
+    (hermes-dashboard-transport-subscribe-session client token "sid-a")
+    (hermes-dashboard-transport--dispatch-event
+     client (list :type 'delta :session-id "other" :content "x"))
+    (should (equal (length events) 1))))
+
+(ert-deftest hermes-dashboard-transport-dispatch-falls-back-to-callback ()
+  "With no subscribers, dispatch uses the legacy single callback."
+  (let* (received
+         (client (make-hermes-dashboard-transport-client
+                  :callback (lambda (e) (setq received e)))))
+    (hermes-dashboard-transport--dispatch-event client (list :type 'done))
+    (should (equal received (list :type 'done)))))
+
+(ert-deftest hermes-dashboard-transport-unsubscribe-stops-delivery ()
+  "Unsubscribing a token stops delivery and clears the session index."
+  (let* ((client (hermes-test--dashboard-client))
+         events
+         (token (hermes-dashboard-transport-subscribe
+                 client (lambda (e) (push e events)))))
+    (hermes-dashboard-transport-subscribe-session client token "sid-a")
+    (hermes-dashboard-transport-unsubscribe client token)
+    (hermes-dashboard-transport--dispatch-event
+     client (list :type 'delta :session-id "sid-a"))
+    (hermes-dashboard-transport--dispatch-event client (list :type 'status))
+    (should-not events)
+    (should-not (hermes-dashboard-transport--session-subscriber-fn
+                 client "sid-a"))))
+
+(ert-deftest hermes-dashboard-transport-subscribe-session-rebinds-index ()
+  "Re-binding a token to a new session id moves it off the old id."
+  (let* ((client (hermes-test--dashboard-client))
+         events
+         (token (hermes-dashboard-transport-subscribe
+                 client (lambda (e) (push e events)))))
+    (hermes-dashboard-transport-subscribe-session client token "old")
+    (hermes-dashboard-transport-subscribe-session client token "new")
+    (should-not (hermes-dashboard-transport--session-subscriber-fn client "old"))
+    (should (hermes-dashboard-transport--session-subscriber-fn client "new"))
+    (hermes-dashboard-transport--dispatch-event
+     client (list :type 'delta :session-id "new"))
+    (should (equal (length events) 1))))
+
+(ert-deftest hermes-dashboard-transport-unsubscribe-preserves-other-owner ()
+  "Unsubscribing a stale token does not evict another token's session ownership."
+  (let* ((client (hermes-test--dashboard-client))
+         a-events b-events
+         (a (hermes-dashboard-transport-subscribe
+             client (lambda (e) (push e a-events))))
+         (b (hermes-dashboard-transport-subscribe
+             client (lambda (e) (push e b-events)))))
+    (hermes-dashboard-transport-subscribe-session client a "sid")
+    (hermes-dashboard-transport-subscribe-session client b "sid")
+    (hermes-dashboard-transport-unsubscribe client a)
+    (hermes-dashboard-transport--dispatch-event
+     client (list :type 'delta :session-id "sid"))
+    (should-not a-events)
+    (should (equal (length b-events) 1))))
+
+(ert-deftest hermes-dashboard-transport-handle-frame-demuxes-by-session ()
+  "An inbound event frame routes to the subscriber owning its session id."
+  (let* ((client (hermes-test--dashboard-client))
+         a-events b-events
+         (a (hermes-dashboard-transport-subscribe
+             client (lambda (e) (push e a-events))))
+         (b (hermes-dashboard-transport-subscribe
+             client (lambda (e) (push e b-events)))))
+    (hermes-dashboard-transport-subscribe-session client a "sid-a")
+    (hermes-dashboard-transport-subscribe-session client b "sid-b")
+    (hermes-dashboard-transport--handle-frame
+     client
+     '((jsonrpc . "2.0") (method . "event")
+       (params . ((type . "message.delta") (session_id . "sid-a")
+                  (payload . ((delta . "hi")))))))
+    (should (equal (length a-events) 1))
+    (should (equal (plist-get (car a-events) :session-id) "sid-a"))
+    (should-not b-events)))
+
 (provide 'hermes-dashboard-tests)
 ;;; hermes-dashboard-tests.el ends here
