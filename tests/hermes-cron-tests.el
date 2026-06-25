@@ -222,7 +222,7 @@
               (let ((text (buffer-string)))
                 (should (string-match-p "nightly" text))
                 (should (string-match-p "Daily at midnight" text))
-                (should (string-match-p "Runs:" text))
+                (should (string-match-p "Runs (RET" text))
                 (should (string-match-p "Run one" text))))
             (should (member '("GET" "/jobs/j1" ((profile . "work"))) calls))
             (should (member '("GET" "/jobs/j1/runs" ((profile . "work") (limit . 20)))
@@ -246,6 +246,64 @@
         (hermes-cron-trigger))
       (should (cl-some (lambda (message) (string-match-p "boom" message)) messages))
       (should-not refreshed))))
+
+;;; Group: failure surfacing and run logs
+
+(ert-deftest hermes-cron-rows-face-failed-runs ()
+  "A failed last run faces the last-run cell error; an ok run faces it success."
+  (let ((failed (car (hermes-cron--rows
+                      '((jobs . (((id . "j") (name . "n") (state . "scheduled")
+                                  (last_status . "error") (last_run_at . "t1"))))))))
+        (ok (car (hermes-cron--rows
+                  '((jobs . (((id . "k") (name . "m") (state . "scheduled")
+                              (last_status . "ok") (last_run_at . "t2")))))))))
+    (should (eq (get-text-property 0 'face (aref (cadr failed) 5)) 'error))
+    (should (eq (get-text-property 0 'face (aref (cadr ok) 5)) 'success))))
+
+(ert-deftest hermes-cron-state-cell-faces-error-but-keeps-text ()
+  "An error state is faced yet still equals the bare string for commands."
+  (let ((cell (hermes-cron--state-cell '((state . "error")))))
+    (should (eq (get-text-property 0 'face cell) 'error))
+    (should (equal cell "error"))
+    (should (member cell '("error")))))
+
+(ert-deftest hermes-cron-deliver-cell-faces-delivery-failure ()
+  "A recorded delivery error faces the deliver cell without changing its text."
+  (let ((cell (hermes-cron--deliver-cell
+               '((deliver . "telegram") (last_delivery_error . "boom")))))
+    (should (eq (get-text-property 0 'face cell) 'warning))
+    (should (equal cell "telegram"))))
+
+(ert-deftest hermes-cron-format-run-is-navigable ()
+  "A run line carries its session id and a RET keymap."
+  (let ((line (hermes-cron--format-run '((id . "cron_j_1") (message_count . "3")))))
+    (should (equal (get-text-property 0 'hermes-cron-run-id line) "cron_j_1"))
+    (should (keymapp (get-text-property 0 'keymap line)))))
+
+(ert-deftest hermes-cron-show-run-log-requires-run-at-point ()
+  "Opening a run log errors when point is not on a run line."
+  (with-temp-buffer
+    (insert "no run here")
+    (goto-char (point-min))
+    (should-error (hermes-cron-show-run-log) :type 'user-error)))
+
+(ert-deftest hermes-cron-message-text-handles-string-and-parts ()
+  "Run message content is read from a plain string or structured text parts."
+  (should (equal (hermes-cron--message-text '((role . "user") (content . "hi")))
+                 "hi"))
+  (should (equal (hermes-cron--message-text
+                  '((content . [((text . "a")) ((text . "b"))])))
+                 "a\nb"))
+  (should (equal (hermes-cron--message-text
+                  '((content . (((text . "x")) ((text . "y"))))))
+                 "x\ny"))
+  (should (equal (hermes-cron--message-text '((role . "user"))) "")))
+
+(ert-deftest hermes-cron-format-message-includes-role-and-text ()
+  "A formatted run message shows its role header and content."
+  (let ((out (hermes-cron--format-message '((role . "assistant") (content . "done")))))
+    (should (string-match-p "## assistant" out))
+    (should (string-match-p "done" out))))
 
 (provide 'hermes-cron-tests)
 ;;; hermes-cron-tests.el ends here

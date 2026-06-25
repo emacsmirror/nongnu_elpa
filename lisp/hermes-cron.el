@@ -91,6 +91,47 @@
   "Return JOB's skills as a comma-separated display string."
   (string-join (hermes-cron--skills job) ", "))
 
+(defun hermes-cron--last-status (job)
+  "Return JOB's last-run outcome symbol: `error', `ok', or nil when unknown."
+  (pcase (downcase (or (hermes-transport--scalar-string
+                        (hermes-transport--get job 'last_status))
+                       ""))
+    ("error" 'error)
+    ("ok" 'ok)
+    (_ nil)))
+
+(defun hermes-cron--faced (text face)
+  "Return TEXT propertized with FACE, or TEXT when FACE or TEXT is empty."
+  (if (and face (not (string-empty-p text)))
+      (propertize text 'face face)
+    text))
+
+(defun hermes-cron--state-cell (job)
+  "Return JOB's state cell, faced for an error, paused, or disabled state.
+The cell text is unchanged so commands reading it by `equal' still match."
+  (let ((state (hermes-cron--state job)))
+    (hermes-cron--faced state (pcase (downcase state)
+                                ("error" 'error)
+                                ((or "paused" "disabled") 'shadow)
+                                (_ nil)))))
+
+(defun hermes-cron--deliver-cell (job)
+  "Return JOB's deliver cell, faced `warning' when the last delivery failed."
+  (hermes-cron--faced
+   (hermes-transport--display-field job 'deliver)
+   (and (hermes-transport--non-blank-string
+         (hermes-transport--display-field job 'last_delivery_error))
+        'warning)))
+
+(defun hermes-cron--last-run-cell (job)
+  "Return JOB's last-run cell, faced by the most recent run outcome."
+  (hermes-cron--faced
+   (hermes-transport--display-field job 'last_run_at)
+   (pcase (hermes-cron--last-status job)
+     ('error 'error)
+     ('ok 'success)
+     (_ nil))))
+
 (defun hermes-cron--rows (result)
   "Return `tabulated-list' entries for a cron list RESULT."
   (mapcar
@@ -98,10 +139,10 @@
      (list (hermes-cron--job-id job)
            (vector (hermes-transport--display-field job 'name)
                    (hermes-cron--schedule job)
-                   (hermes-cron--state job)
+                   (hermes-cron--state-cell job)
                    (hermes-cron--profile job)
-                   (hermes-transport--display-field job 'deliver)
-                   (hermes-transport--display-field job 'last_run_at)
+                   (hermes-cron--deliver-cell job)
+                   (hermes-cron--last-run-cell job)
                    (hermes-transport--display-field job 'next_run_at)
                    (hermes-cron--prompt job))))
    (hermes-transport--get result 'jobs)))
@@ -177,31 +218,52 @@ token when present, otherwise the configured dashboard URL."
                                      "-"))
          (format "Last:     %s" (hermes-transport--display-field job 'last_run_at))
          (format "Next:     %s" (hermes-transport--display-field job 'next_run_at))
+         (format "Result:   %s" (or (hermes-transport--non-blank-string
+                                      (hermes-transport--display-field job 'last_status))
+                                     "-"))
          (format "Error:    %s" (or (hermes-transport--non-blank-string
                                       (hermes-transport--display-field job 'last_error))
+                                     "-"))
+         (format "Delivery: %s" (or (hermes-transport--non-blank-string
+                                      (hermes-transport--display-field job 'last_delivery_error))
                                      "-"))
          ""
          "Prompt:"
          (or (hermes-transport--non-blank-string (hermes-cron--prompt job)) "-"))
    "\n"))
 
+(defvar-keymap hermes-cron--run-line-map
+  :doc "Keymap active on cron run lines in the job detail buffer."
+  "RET" #'hermes-cron-show-run-log
+  "<mouse-1>" #'hermes-cron-show-run-log)
+
 (defun hermes-cron--format-run (run)
-  "Return one display line for cron RUN."
-  (format "  %s  %s  %s msg%s  %s%s"
-          (hermes-cron--time (or (hermes-transport--get run 'started_at)
-                                 (hermes-transport--get run 'created_at)))
-          (or (hermes-transport--non-blank-string (hermes-transport--display-field run 'title))
-              (hermes-transport--display-field run 'id))
-          (or (hermes-transport--non-blank-string (hermes-transport--display-field run 'message_count))
-              "0")
-          (if (equal (hermes-transport--display-field run 'message_count) "1") "" "s")
-          (hermes-transport--display-field run 'source)
-          (if (eq (hermes-transport--get run 'is_active) t) " active" "")))
+  "Return one display line for cron RUN, navigable to its transcript."
+  (let ((id (hermes-transport--display-field run 'id))
+        (line (format "  %s  %s  %s msg%s  %s%s"
+                      (hermes-cron--time (or (hermes-transport--get run 'started_at)
+                                             (hermes-transport--get run 'created_at)))
+                      (or (hermes-transport--non-blank-string
+                           (hermes-transport--display-field run 'title))
+                          (hermes-transport--display-field run 'id))
+                      (or (hermes-transport--non-blank-string
+                           (hermes-transport--display-field run 'message_count))
+                          "0")
+                      (if (equal (hermes-transport--display-field run 'message_count) "1") "" "s")
+                      (hermes-transport--display-field run 'source)
+                      (if (eq (hermes-transport--get run 'is_active) t) " active" ""))))
+    (if (hermes-transport--non-blank-string id)
+        (propertize line
+                    'hermes-cron-run-id id
+                    'keymap hermes-cron--run-line-map
+                    'mouse-face 'highlight
+                    'help-echo "RET: show this run's transcript")
+      line)))
 
 (defun hermes-cron--format-runs (runs)
   "Return detail text for recent cron run history.
 RUNS is the run list from the dashboard."
-  (concat "\n\nRuns:\n"
+  (concat "\n\nRuns (RET on a line for its transcript):\n"
           (if runs
               (string-join (mapcar #'hermes-cron--format-run runs) "\n")
             "  No recorded runs.")))
@@ -237,6 +299,62 @@ RUNS is the detail run list."
              (lambda (runs-result)
                (hermes-cron--display-detail
                 job (hermes-transport--get runs-result 'runs)))))))))))
+
+;;; Run transcript (log)
+
+(defun hermes-cron--fetch-run-messages (client session-id)
+  "Return a promise of run SESSION-ID's transcript messages via CLIENT."
+  (hermes-dashboard-transport-api-request-async
+   "GET" (concat "/api/sessions/" (url-hexify-string session-id) "/messages")
+   :client client))
+
+(defun hermes-cron--message-text (message)
+  "Return MESSAGE's textual content as a string."
+  (let ((content (hermes-transport--get message 'content)))
+    (or (hermes-transport--scalar-string content)
+        (and (or (listp content) (vectorp content))
+             (string-join
+              (delq nil
+                    (mapcar (lambda (part)
+                              (or (hermes-transport--scalar-string part)
+                                  (hermes-transport--non-blank-string
+                                   (hermes-transport--display-field part 'text))))
+                            (if (vectorp content) (append content nil) content)))
+              "\n"))
+        "")))
+
+(defun hermes-cron--format-message (message)
+  "Return display text for a run transcript MESSAGE."
+  (let ((role (or (hermes-transport--non-blank-string
+                   (hermes-transport--display-field message 'role))
+                  "message"))
+        (text (hermes-cron--message-text message)))
+    (concat "## " role "\n\n" (if (string-empty-p text) "(no content)" text) "\n")))
+
+(defun hermes-cron--display-run (session-id messages)
+  "Display run SESSION-ID's transcript MESSAGES in a log buffer."
+  (let ((entries (if (vectorp messages) (append messages nil) messages)))
+    (with-current-buffer (get-buffer-create "*Hermes Cron Run*")
+      (unless (derived-mode-p 'special-mode)
+        (special-mode))
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (format "Run: %s\n\n" session-id))
+        (insert (if entries
+                    (string-join (mapcar #'hermes-cron--format-message entries) "\n")
+                  "No transcript recorded.")))
+      (goto-char (point-min))
+      (pop-to-buffer (current-buffer)))))
+
+(defun hermes-cron-show-run-log ()
+  "Show the transcript of the cron run on the current detail line."
+  (interactive)
+  (let ((id (get-text-property (point) 'hermes-cron-run-id)))
+    (unless id (user-error "No cron run on this line"))
+    (hermes-browser--run-on-client
+     (lambda (client) (hermes-cron--fetch-run-messages client id))
+     (lambda (result)
+       (hermes-cron--display-run id (hermes-transport--get result 'messages))))))
 
 ;;; Job mutations
 
