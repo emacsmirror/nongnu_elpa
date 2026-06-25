@@ -639,6 +639,58 @@
         (should-not (eq c1 (hermes-dashboard-transport-acquire
                             :start-mode 'spawn)))))))
 
+(ert-deftest hermes-dashboard-transport-release-schedules-idle-close ()
+  "With an idle delay, the last release keeps the client warm and re-acquire reuses it."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-idle-close-delay 30)
+         scheduled
+         (hermes-dashboard-transport-schedule-function
+          (lambda (delay _fn &rest _args) (setq scheduled delay) 'fake-timer)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (make-hermes-dashboard-transport-client))))
+      (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-release c1)
+        (should (equal scheduled 30))
+        (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients) c1))
+        (should (eq c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (should (= (hermes-dashboard-transport-client-refcount c1) 1))
+        (should-not (hermes-dashboard-transport-client-idle-timer c1))))))
+
+(ert-deftest hermes-dashboard-transport-idle-close-stops-when-still-idle ()
+  "Firing the idle-close timer tears down a client that stayed idle."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-idle-close-delay 30)
+         captured
+         (hermes-dashboard-transport-schedule-function
+          (lambda (_delay fn &rest args) (setq captured (cons fn args)) 'fake-timer)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (make-hermes-dashboard-transport-client))))
+      (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-release c1)
+        (apply (car captured) (cdr captured))
+        (should-not (gethash 'local-spawn
+                             hermes-dashboard-transport--clients))))))
+
+(ert-deftest hermes-dashboard-transport-idle-timer-after-rebuild-is-harmless ()
+  "A stale idle timer firing after a drop and rebuild leaves the fresh client."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-idle-close-delay 30)
+         captured
+         (hermes-dashboard-transport-schedule-function
+          (lambda (_delay fn &rest args) (setq captured (cons fn args)) 'fake-timer)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket))))
+      (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-release c1)
+        (hermes-dashboard-transport--mark-websocket-closed c1)
+        (let ((c2 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+          (apply (car captured) (cdr captured))
+          (should-not (eq c1 c2))
+          (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients)
+                      c2)))))))
+
 (ert-deftest hermes-dashboard-transport-acquire-rebuilds-after-close ()
   "A dropped socket leaves the registry so the next acquire builds a fresh client."
   (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))

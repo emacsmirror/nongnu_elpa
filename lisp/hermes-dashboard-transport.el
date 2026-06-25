@@ -121,6 +121,15 @@ slow or unreachable dashboard cannot hang a chat or list buffer forever."
   :type 'number
   :group 'hermes-dashboard-transport)
 
+(defcustom hermes-dashboard-transport-idle-close-delay nil
+  "Seconds to keep a shared dashboard client alive after its last reference.
+When the last chat buffer detaches, the shared WebSocket and any spawned
+dashboard are kept warm for this many seconds so reopening a chat reuses the
+connection instead of reconnecting and re-authenticating.  nil closes the
+client immediately on the last release."
+  :type '(choice (const :tag "Close immediately" nil) number)
+  :group 'hermes-dashboard-transport)
+
 (cl-defstruct hermes-dashboard-transport-client
   "State for one dashboard/TUI JSON-RPC WebSocket connection."
   process
@@ -142,7 +151,8 @@ slow or unreachable dashboard cannot hang a chat or list buffer forever."
   (subscribers (make-hash-table :test #'eq))
   (session-index (make-hash-table :test #'equal))
   (refcount 0)
-  endpoint-key)
+  endpoint-key
+  idle-timer)
 
 (defun hermes-dashboard-transport-subscribe (client fn)
   "Register FN as an event subscriber on CLIENT and return an opaque token.
@@ -639,6 +649,7 @@ transport error when a pending request has no reject callback."
         (hermes--promise-reject
          promise (or message "Hermes dashboard transport stopped"))))
     (ignore-errors (hermes-dashboard-transport--unregister-client client))
+    (ignore-errors (hermes-dashboard-transport--cancel-idle-timer client))
     (ignore-errors
       (setf (hermes-dashboard-transport-client-callback client) #'ignore)
       (clrhash (hermes-dashboard-transport-client-subscribers client))
@@ -2310,6 +2321,7 @@ is reused, since attached buffers subscribe rather than seize the callback."
          (existing (gethash key hermes-dashboard-transport--clients)))
     (if existing
         (progn
+          (hermes-dashboard-transport--cancel-idle-timer existing)
           (cl-incf (hermes-dashboard-transport-client-refcount existing))
           existing)
       (let ((client (hermes-dashboard-transport-start
@@ -2322,16 +2334,47 @@ is reused, since attached buffers subscribe rather than seize the callback."
         (puthash key client hermes-dashboard-transport--clients)
         client))))
 
+(defun hermes-dashboard-transport--cancel-idle-timer (client)
+  "Cancel CLIENT's pending idle-close timer, if any."
+  (when-let* ((timer (hermes-dashboard-transport-client-idle-timer client)))
+    (when (timerp timer)
+      (cancel-timer timer))
+    (setf (hermes-dashboard-transport-client-idle-timer client) nil)))
+
+(defun hermes-dashboard-transport--idle-close (client)
+  "Stop CLIENT when it is still idle after the idle-close delay elapses.
+A re-acquire before the timer fires cancels it, so CLIENT is torn down only when
+no buffer reattached."
+  (when (and (hermes-dashboard-transport-client-p client)
+             (zerop (or (hermes-dashboard-transport-client-refcount client) 0)))
+    (setf (hermes-dashboard-transport-client-idle-timer client) nil)
+    (hermes-dashboard-transport-stop
+     client "Hermes dashboard transport stopped")))
+
+(defun hermes-dashboard-transport--release-idle-client (client)
+  "Stop CLIENT now, or after the idle-close delay when one is configured."
+  (if (and (numberp hermes-dashboard-transport-idle-close-delay)
+           (> hermes-dashboard-transport-idle-close-delay 0))
+      (progn
+        (hermes-dashboard-transport--cancel-idle-timer client)
+        (setf (hermes-dashboard-transport-client-idle-timer client)
+              (hermes-dashboard-transport--schedule
+               hermes-dashboard-transport-idle-close-delay
+               #'hermes-dashboard-transport--idle-close client)))
+    (hermes-dashboard-transport-stop
+     client "Hermes dashboard transport stopped")))
+
 (defun hermes-dashboard-transport-release (client)
-  "Drop one reference to shared CLIENT; stop and unregister it at zero.
-Return the remaining reference count, or nil when CLIENT is not a client."
+  "Drop one reference to shared CLIENT; tear it down at zero references.
+With `hermes-dashboard-transport-idle-close-delay' set, the last release keeps
+CLIENT warm for that delay instead of stopping immediately.  Return the
+remaining reference count, or nil when CLIENT is not a client."
   (when (hermes-dashboard-transport-client-p client)
     (let ((count (max 0 (1- (or (hermes-dashboard-transport-client-refcount client)
                                 0)))))
       (setf (hermes-dashboard-transport-client-refcount client) count)
       (when (zerop count)
-        (hermes-dashboard-transport-stop
-         client "Hermes dashboard transport stopped"))
+        (hermes-dashboard-transport--release-idle-client client))
       count)))
 
 (defun hermes-dashboard-transport--emit-status (client status content)
