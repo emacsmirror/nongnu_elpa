@@ -43,8 +43,7 @@
 
 (defcustom hermes-mcp-buffer-name "*Hermes MCP Servers*"
   "Name of the Hermes MCP server browser buffer."
-  :type 'string
-  :group 'hermes-mcp)
+  :type 'string)
 
 (defvar-local hermes-mcp--servers nil
   "Hash table mapping MCP server names to their latest server alist.")

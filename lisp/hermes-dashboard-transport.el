@@ -47,8 +47,7 @@
 
 (defcustom hermes-dashboard-transport-command (hermes-transport-default-command)
   "Hermes Agent command used to start the dashboard transport."
-  :type 'string
-  :group 'hermes-dashboard-transport)
+  :type 'string)
 
 (define-obsolete-variable-alias 'hermes-dashboard-transport-remote-url
   'hermes-dashboard-transport-url "0.1.0")
@@ -65,8 +64,7 @@ One URL covers both local and remote dashboards:
   `https://example.test/hermes'.
 
 Use `hermes-dashboard-transport-start-mode' to force spawn or remote attach."
-  :type 'string
-  :group 'hermes-dashboard-transport)
+  :type 'string)
 
 (defcustom hermes-dashboard-transport-start-mode 'auto
   "How dashboard transport startup chooses between spawn and remote attach.
@@ -75,8 +73,7 @@ attaches remotely otherwise.  `spawn' always starts a local dashboard process.
 `remote' always attaches to an externally managed dashboard."
   :type '(choice (const :tag "Auto" auto)
                  (const :tag "Spawn local dashboard" spawn)
-                 (const :tag "Attach to remote dashboard" remote))
-  :group 'hermes-dashboard-transport)
+                 (const :tag "Attach to remote dashboard" remote)))
 
 (defcustom hermes-dashboard-transport-remote-auth-method 'auto
   "Authentication method for remote dashboard attach.
@@ -86,8 +83,7 @@ provider is available.  `token' forces the legacy /api/ws?token= path.  `basic'
 forces username/password login and a single-use WebSocket ticket."
   :type '(choice (const :tag "Auto" auto)
                  (const :tag "Legacy session token" token)
-                 (const :tag "Basic/password gated auth" basic))
-  :group 'hermes-dashboard-transport)
+                 (const :tag "Basic/password gated auth" basic)))
 
 (defcustom hermes-dashboard-transport-connect-retries 100
   "Attempts to open the dashboard WebSocket while a spawn cold-starts.
@@ -96,13 +92,11 @@ only bounds how long a never-arriving dashboard is tried before its readiness
 fails.  With the default `hermes-dashboard-transport-connect-retry-delay' of
 0.1s this is a 10-second window, ample for a local dashboard to bind its port
 while surfacing a dead dashboard far sooner than the old 45-second budget."
-  :type 'integer
-  :group 'hermes-dashboard-transport)
+  :type 'integer)
 
 (defcustom hermes-dashboard-transport-connect-retry-delay 0.1
   "Seconds to wait between dashboard WebSocket connection attempts."
-  :type 'number
-  :group 'hermes-dashboard-transport)
+  :type 'number)
 
 (defcustom hermes-dashboard-transport-ready-timeout 15
   "Seconds to wait for `gateway.ready' after the WebSocket opens.

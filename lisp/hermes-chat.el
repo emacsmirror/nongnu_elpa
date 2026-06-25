@@ -959,12 +959,14 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
         (hermes-chat--insert-local-status
          "Restored busy-control text in input tail after dashboard error"
          'error)))))
+
 (defun hermes-chat--queue-or-submit-content (content &optional display)
   "Queue CONTENT during an active turn, otherwise submit it now.
 DISPLAY is the compact user-turn text to show instead of CONTENT."
   (if (hermes-chat--active-turn-p)
       (hermes-chat--queue-content content nil display)
     (hermes-chat--submit-content content display)))
+
 (defun hermes-chat--result-string (result key)
   "Return RESULT's scalar value for KEY as a string."
   (hermes-transport--scalar-string (hermes-transport--get result key)))
@@ -1130,8 +1132,8 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
                                (when-let* ((sub (hermes-chat--scalar-string item)))
                                  (format "/%s %s" command sub)))
                              items))))
-    (when (and (hermes-transport--non-empty-string command) subs)
-      (concat "  " (string-join subs ", ")))))
+    (and (hermes-transport--non-empty-string command) subs
+         (concat "  " (string-join subs ", ")))))
 
 (defun hermes-chat--commands-subcommands-content (result)
   "Return readable subcommand catalog section from RESULT."
@@ -1139,8 +1141,8 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
          (entries (hermes-chat--maplike-entries sub))
          (lines (delq nil
                       (mapcar #'hermes-chat--format-subcommand-entry entries))))
-    (when lines
-      (string-join (cons "Subcommands" lines) "\n"))))
+    (and lines
+         (string-join (cons "Subcommands" lines) "\n"))))
 
 (defun hermes-chat--command-name (value)
   "Return VALUE as a bare slash command name, or nil."
@@ -1250,6 +1252,7 @@ DISPLAY lets a slash skill send its full payload while showing a compact line."
        (hermes-chat--handle-transport-event
         assistant-id (list :type 'error :content (error-message-string err)))
        (message "Hermes transport failed: %s" (error-message-string err))))))
+
 (defun hermes-chat--dashboard-dispatch-command (name arg &optional preserve-content)
   "Dispatch dashboard command NAME with ARG and render its result.
 PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."

@@ -173,7 +173,7 @@ Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
 
 (defun hermes-chat--transport-key-fragment (event keys)
   "Return a stable key fragment from EVENT using KEYS."
-  (when-let* ((value (hermes-chat--event-string event keys)))
+  (and-let* ((value (hermes-chat--event-string event keys)))
     (unless (string-empty-p value)
       value)))
 
@@ -440,7 +440,7 @@ With BEFORE-NODE, insert ENTRY before that node instead of at the end, so the
 agent's reply can stay last while tool/status/diff entries land above it."
   (let ((node (hermes-chat--preserve-input-point
                (let ((node (let ((inhibit-read-only t)
-				 (buffer-undo-list t))
+                                 (buffer-undo-list t))
                              (if before-node
                                  (ewoc-enter-before hermes-chat--ewoc
                                                     before-node entry)
@@ -667,7 +667,6 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
             (ewoc-set-data node (hermes-chat--entry-with entry :status status))
             (ewoc-invalidate hermes-chat--ewoc node))))
       hermes-chat--nodes))))
-
 
 (provide 'hermes-chat-buffer)
 ;;; hermes-chat-buffer.el ends here

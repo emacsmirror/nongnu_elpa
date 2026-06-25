@@ -42,6 +42,7 @@
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
+(eval-when-compile (require 'cl-lib))
 
 (declare-function markdown-mode "markdown-mode")
 (declare-function hermes-kanban-task-mode "hermes-kanban")
@@ -740,8 +741,8 @@ and an absent branch or run id is omitted."
      (format "### %s — %s"
              (hermes-kanban--format-time (hermes-transport--get event 'created_at))
              (hermes-transport--display-field event 'kind))
-     (when payload
-       (format "\n\n- Payload: %s" (hermes-kanban--object-string payload))))))
+     (and payload
+          (format "\n\n- Payload: %s" (hermes-kanban--object-string payload))))))
 
 (defun hermes-kanban--format-attachment (attachment)
   "Return ATTACHMENT as one Markdown row."
@@ -758,9 +759,9 @@ and an absent branch or run id is omitted."
              (hermes-transport--display-field attachment 'filename)
              (hermes-transport--display-field attachment 'id)
              (if (string-empty-p size) "" (format " (%s)" size)))
-     (when content-type (format "\n\n- Type: %s" content-type))
-     (when uploaded-by (format "\n- Uploaded by: %s" uploaded-by))
-     (when path (format "\n- Path: %s" path)))))
+     (and content-type (format "\n\n- Type: %s" content-type))
+     (and uploaded-by (format "\n- Uploaded by: %s" uploaded-by))
+     (and path (format "\n- Path: %s" path)))))
 
 (defun hermes-kanban--format-diagnostic-action (action)
   "Return ACTION as a short diagnostic action label."

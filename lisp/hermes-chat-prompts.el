@@ -79,7 +79,7 @@ sessions still record the prompt and show a message; respond later with
 (defun hermes-chat--prompt-event-key (event)
   "Return the stable pending-prompt key for EVENT."
   (or (hermes-chat--event-string event '(:request-id :request_id))
-      (when-let* ((type (hermes-chat--prompt-event-type event)))
+      (and-let* ((type (hermes-chat--prompt-event-type event)))
         (format "%s:%s" type
                 (or (hermes-chat--event-string event '(:session-id :session_id))
                     "global")))))
@@ -206,6 +206,7 @@ A nil SESSION-ID matches every prompt in the current buffer."
         (remhash key hermes-chat--pending-prompts))
       (when keys
         (hermes-chat--notify-state-change)))))
+
 (defun hermes-chat--pending-prompt-p ()
   "Return non-nil when the current chat has pending prompt requests."
   (and hermes-chat--pending-prompts
@@ -258,7 +259,7 @@ A nil SESSION-ID matches every prompt in the current buffer."
 
 (defun hermes-chat--first-pending-prompt ()
   "Return the first pending prompt in deterministic key order."
-  (when-let* ((key (car (hermes-chat--pending-prompt-keys))))
+  (and-let* ((key (car (hermes-chat--pending-prompt-keys))))
     (gethash key hermes-chat--pending-prompts)))
 
 (defun hermes-chat--prompt-header-status (prompt)
@@ -311,7 +312,7 @@ A nil SESSION-ID matches every prompt in the current buffer."
 
 (defun hermes-chat--prompt-choices (prompt)
   "Return PROMPT choices as strings, or nil."
-  (when-let* ((choices (hermes-chat--event-value prompt '(:choices))))
+  (and-let* ((choices (hermes-chat--event-value prompt '(:choices))))
     (delq nil (mapcar #'hermes-chat--scalar-string
                       (if (vectorp choices) (append choices nil) choices)))))
 

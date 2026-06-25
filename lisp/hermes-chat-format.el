@@ -241,8 +241,8 @@ carries no verb."
 (defun hermes-chat--format-context (context)
   "Return a compact context-window string for CONTEXT, or nil.
 CONTEXT is a plist of :used, :max, and :percent."
-  (when-let* ((max (plist-get context :max))
-              ((and (numberp max) (> max 0))))
+  (and-let* ((max (plist-get context :max))
+             ((and (numberp max) (> max 0))))
     (format "%s/%s ctx (%d%%)"
             (hermes-chat--abbrev-tokens (plist-get context :used))
             (hermes-chat--abbrev-tokens max)

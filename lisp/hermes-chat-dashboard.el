@@ -626,5 +626,6 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
             (lambda (message)
               (hermes-chat--dashboard-bootstrap-error message content))))))
     (hermes-chat--queue-or-submit-content content display)))
+
 (provide 'hermes-chat-dashboard)
 ;;; hermes-chat-dashboard.el ends here

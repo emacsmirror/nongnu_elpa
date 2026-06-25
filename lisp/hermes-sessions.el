@@ -315,12 +315,12 @@ when it reports a missing live session, resume RESUME-ID and resolve with the
 returned messages instead."
   (hermes--promise-catch
    (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-history
-                          client history-id)
+				       client history-id)
    (lambda (message)
      (if (and (hermes-sessions--session-not-found-message-p message)
               (not (string-empty-p resume-id)))
          (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-resume
-                                client resume-id)
+					     client resume-id)
        (hermes--promise-rejected message)))))
 
 (defun hermes-sessions-view ()
@@ -362,12 +362,12 @@ On a missing-session error, resume SESSION-ID and retry the title on the live
 id it returns."
   (hermes--promise-catch
    (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-title
-                          client :session-id session-id :title title)
+				       client :session-id session-id :title title)
    (lambda (message)
      (if (hermes-sessions--session-not-found-message-p message)
          (hermes--promise-then
           (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-resume
-                                 client session-id)
+					      client session-id)
           (lambda (result)
             (let ((live-id (hermes-transport--display-field result 'session_id)))
               (hermes-dashboard-transport-call-fn
