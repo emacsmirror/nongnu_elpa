@@ -1849,6 +1849,14 @@ result or error."
   :args (text) :session t)
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-prompt-background "prompt.background"
+  "Run TEXT as a background task on CLIENT's SESSION-ID via `prompt.background'.
+The task runs in its own session; its answer arrives later as a
+`background.complete' event rather than in the resolve RESULT, which only
+carries the assigned task id.  RESOLVE and REJECT receive the result or error."
+  :args (text) :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-interrupt "session.interrupt"
   "Send `session.interrupt' for CLIENT's SESSION-ID or active session.
 RESOLVE and REJECT receive the asynchronous result or error."
@@ -2238,6 +2246,21 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
       (setq event (plist-put event :content content)))
     event))
 
+(defun hermes-dashboard-transport--background-complete-event (type params payload)
+  "Return a `background' event for `background.complete' TYPE/PARAMS/PAYLOAD.
+The event carries the originating `:task-id' and the agent's full response as
+`:content', so the chat layer can pair it with the launching task and render a
+persistent result entry instead of a transient status line."
+  (let ((event (plist-put
+                (hermes-dashboard-transport--event-base type params payload)
+                :type 'background))
+        (task-id (hermes-transport--scalar-string
+                  (hermes-transport--get payload 'task_id)))
+        (content (hermes-dashboard-transport--payload-text payload)))
+    (when task-id
+      (setq event (plist-put event :task-id task-id)))
+    (plist-put event :content (or content ""))))
+
 (defun hermes-dashboard-transport--tool-event (type params payload status)
   "Return a tool event for TYPE, PARAMS, PAYLOAD, and STATUS."
   (let ((event (plist-put
@@ -2551,6 +2574,12 @@ an Unknown error."
        (list (hermes-dashboard-transport--status-event
               type params payload "notification"
               (hermes-dashboard-transport--payload-text payload))))
+      ;; A `/btw' background task finishing in its own session.  Keep it as a
+      ;; dedicated `background' event so the chat layer renders a persistent
+      ;; result entry rather than letting it decay into a transient status line.
+      ("background.complete"
+       (list (hermes-dashboard-transport--background-complete-event
+              type params payload)))
       (_
        (if (and type (string-prefix-p "notification." type))
            (list (hermes-dashboard-transport--status-event

@@ -52,6 +52,7 @@
 (declare-function hermes-chat--unknown-event-content "hermes-chat" (event))
 (declare-function hermes-chat--update-header-for-event "hermes-chat" (event))
 (declare-function hermes-chat--render-turn-event "hermes-chat" (assistant-id event))
+(declare-function hermes-chat--handle-background-complete "hermes-chat" (event))
 
 (defvar hermes-chat-dashboard-session-title)
 (defvar hermes-chat-use-dashboard-transport)
@@ -235,6 +236,11 @@ so do not copy its final content into the unsubmitted retry placeholder."
 (defun hermes-chat--handle-transport-event (assistant-id event)
   "Apply transport EVENT to ASSISTANT-ID in the current chat buffer."
   (cond
+   ;; A background (`/btw') result is owned by its own session and arrives out
+   ;; of band, so handle it before the stale-turn guard would drop it and apart
+   ;; from the active turn's assistant entry.
+   ((eq (plist-get event :type) 'background)
+    (hermes-chat--handle-background-complete event))
    ((hermes-chat--stale-assistant-event-p assistant-id) nil)
    ((hermes-chat--closed-status-event-p event)
     (hermes-chat--handle-closed-status assistant-id event))
@@ -350,6 +356,29 @@ so do not copy its final content into the unsubmitted retry placeholder."
           (hermes-chat--transport-callback
            (current-buffer) assistant-id t
            (hermes-chat--next-transport-generation)))))
+
+(defun hermes-chat--background-listener-callback (buffer)
+  "Return a client callback that renders background results in BUFFER.
+Only `background.complete' events for BUFFER's session are handled; everything
+else is ignored.  Bound on an otherwise idle chat so a `/btw' result is still
+delivered when no turn is streaming a callback of its own."
+  (lambda (event)
+    (when (eq (plist-get event :type) 'background)
+      (hermes-chat--in-buffer buffer
+        (when (hermes-chat--dashboard-event-for-session-p event)
+          (hermes-chat--handle-background-complete event))))))
+
+(defun hermes-chat--ensure-background-listener (client buffer)
+  "Bind a BUFFER background-result listener on CLIENT when no stream is active.
+A no-op unless CLIENT's callback is still `ignore'.  A streaming turn binds a
+real callback (which already routes background events) and a settled turn leaves
+it bound, so `ignore' means \"no turn has ever streamed\" -- exactly the case a
+fresh `/btw' must cover.  The listener filters by session, so a result for a
+since-replaced session is dropped rather than misrouted."
+  (when (and (hermes-dashboard-transport-client-p client)
+             (eq (hermes-dashboard-transport-client-callback client) #'ignore))
+    (setf (hermes-dashboard-transport-client-callback client)
+          (hermes-chat--background-listener-callback buffer))))
 
 (defun hermes-chat--dashboard-reattach-status-event ()
   "Return a fresh status event announcing a reattached running session.

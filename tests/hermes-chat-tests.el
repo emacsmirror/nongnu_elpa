@@ -812,6 +812,61 @@
      (should (string-match-p "-old-inline" diff))
      (should (string-match-p "+new-inline" diff)))))
 
+(ert-deftest hermes-chat-background-complete-renders-view-result-link ()
+  "A `background' event renders a persistent #N notice with a View Result link."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--background-counter 1
+         hermes-chat--background-tasks
+         (list (cons "bg_x" (list :number 1 :preview "do you have x_search?"))))
+   (hermes-chat--handle-background-complete
+    (list :type 'background :task-id "bg_x"
+          :content "Yes, x_search is available."))
+   ;; The launching task is consumed once its result is delivered.
+   (should-not (assoc "bg_x" hermes-chat--background-tasks))
+   (let ((entry (cl-find-if (lambda (e) (eq (plist-get e :role) 'background))
+                            (hermes-chat--entries))))
+     (should entry)
+     (should (equal (plist-get (plist-get entry :metadata) :number) 1))
+     (should (equal (plist-get (plist-get entry :metadata) :preview)
+                    "do you have x_search?")))
+   (should (string-match-p "Background #1 done" (buffer-string)))
+   ;; The full answer is not inline; it opens in a dedicated buffer.
+   (should-not (string-match-p "x_search is available" (buffer-string)))
+   (hermes-test--should-have-face "View Result" 'link)
+   (unwind-protect
+       (progn
+         (hermes-test--push-button-labeled "View Result")
+         (should (get-buffer "*hermes-bg #1*"))
+         (with-current-buffer "*hermes-bg #1*"
+           (should (string-match-p
+                    "x_search is available"
+                    (buffer-substring-no-properties (point-min) (point-max))))))
+     (when (get-buffer "*hermes-bg #1*")
+       (kill-buffer "*hermes-bg #1*")))))
+
+(ert-deftest hermes-chat-background-complete-without-record-still-renders ()
+  "A background result with no recorded task still renders with the counter value."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--background-counter 1
+         hermes-chat--background-tasks nil)
+   (hermes-chat--handle-background-complete
+    (list :type 'background :task-id "bg_unknown" :content "done"))
+   (should (string-match-p "Background #1 done" (buffer-string)))))
+
+(ert-deftest hermes-chat-background-complete-stays-above-pending-reply ()
+  "A result arriving mid-turn is inserted above the live assistant reply."
+  (hermes-test-with-chat-buffer
+   (let* ((assistant (hermes-chat--make-entry 'assistant "" 'pending))
+          (assistant-id (plist-get assistant :id)))
+     (hermes-chat--insert-entry assistant)
+     (setq hermes-chat--pending-assistant-id assistant-id)
+     (hermes-chat--handle-background-complete
+      (list :type 'background :task-id "bg_z" :content "side result"))
+     (let ((roles (mapcar (lambda (e) (plist-get e :role))
+                          (hermes-chat--entries))))
+       (should (< (cl-position 'background roles)
+                  (cl-position 'assistant roles)))))))
+
 (ert-deftest hermes-chat-streaming-content-skips-markdown-and-diff ()
   "A streaming entry stays raw; only a settled entry renders diffs/markdown."
   (hermes-test-with-chat-buffer

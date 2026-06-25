@@ -70,6 +70,12 @@ which keeps tests and user custom transports working."
   "Face for the full-width rule above the Hermes chat input area."
   :group 'hermes)
 
+(defface hermes-chat-background
+  '((t :inherit font-lock-keyword-face :weight bold))
+  "Face for the one-line background-task result notice in the transcript.
+Distinguishes a `/btw' result that arrives out of band from ordinary turns."
+  :group 'hermes)
+
 (defvar hermes-chat-state-change-hook nil
   "Hook run in a Hermes chat buffer when dashboard-visible state changes.")
 
@@ -81,6 +87,15 @@ which keeps tests and user custom transports working."
 
 (defvar-local hermes-chat--nodes nil
   "Hash table mapping Hermes entry IDs to EWOC nodes.")
+
+(defvar-local hermes-chat--background-counter 0
+  "Number of background (`/btw') tasks launched from this chat buffer.")
+
+(defvar-local hermes-chat--background-tasks nil
+  "Alist mapping a background task id to its (:number :preview) plist.
+Populated when `prompt.background' accepts a task and consumed when the matching
+`background.complete' event arrives, so the result entry can show the task's
+number and the prompt that launched it.")
 
 ;; Connection state owned by `hermes-chat-buffer'; re-declared here for the
 ;; byte-compiler.  See that file for the authoritative defvar-locals and docs.
@@ -416,6 +431,50 @@ gateway's pre-rendered `a/path -> b/path' header."
 (defun hermes-chat--insert-diff-entry (content)
   "Insert a whole-diff CONTENT (a `diff' event) as a labeled View Diff link."
   (hermes-chat--insert-diff-button content))
+
+(defun hermes-chat--show-background-result (number content)
+  "Show background task NUMBER's CONTENT in a dedicated markdown buffer.
+The buffer renders CONTENT as markdown with diffs swapped for View Diff links,
+mirroring `hermes-chat--show-diff'.  `special-mode' makes it read-only and binds
+`q' to `quit-window', the conventional surface for a rendered read-only buffer."
+  (let ((buffer (get-buffer-create (format "*hermes-bg #%d*" number))))
+    (with-current-buffer buffer
+      (special-mode)
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)
+        (goto-char (point-min))))
+    (pop-to-buffer buffer)))
+
+(defun hermes-chat--view-background-button (button)
+  "Open the full background result stored on BUTTON in its own buffer."
+  (hermes-chat--show-background-result
+   (button-get button 'hermes-chat-background-number)
+   (button-get button 'hermes-chat-background-content)))
+
+(defun hermes-chat--insert-background-entry (entry)
+  "Insert ENTRY as a one-line background result notice with a View Result link.
+ENTRY's metadata supplies the task `:number' and prompt `:preview'; its
+`:content' is the full response opened by the link."
+  (let* ((meta (plist-get entry :metadata))
+         (number (or (plist-get meta :number) 0))
+         (preview (or (plist-get meta :preview) ""))
+         (content (or (plist-get entry :content) "")))
+    (insert (propertize (format "⚕ Background #%d done" number)
+                        'face 'hermes-chat-background))
+    (unless (string-empty-p preview)
+      (insert (propertize (format "  %s" preview) 'face 'shadow)))
+    (insert "  ")
+    (insert-text-button
+     "[View Result]"
+     'face 'link
+     'mouse-face 'highlight
+     'follow-link t
+     'help-echo "Open this background task's full result in a separate buffer"
+     'hermes-chat-background-number number
+     'hermes-chat-background-content content
+     'action #'hermes-chat--view-background-button)
+    (insert "\n")))
 
 (defun hermes-chat--insert-diffed (content insert-text &optional blocks)
   "Insert CONTENT, replacing diff blocks with View Diff links.
@@ -825,6 +884,7 @@ self-explanatory."
 (declare-function hermes-chat--dashboard-record-session "hermes-chat-dashboard" (client result))
 (declare-function hermes-chat--dashboard-session-attached-p "hermes-chat-dashboard" ())
 (declare-function hermes-chat--dashboard-start "hermes-chat-dashboard" (callback))
+(declare-function hermes-chat--ensure-background-listener "hermes-chat-dashboard" (client buffer))
 (declare-function hermes-chat--handle-transport-event "hermes-chat-dashboard" (assistant-id event))
 (declare-function hermes-chat--next-transport-generation "hermes-chat-dashboard" ())
 (declare-function hermes-chat--send-prompt "hermes-chat-dashboard" (prompt callback))
@@ -1309,6 +1369,8 @@ Only matches while typing the /command word in the writable input tail."
    (cons '("commands") (lambda (_arg) (hermes-chat-show-commands)))
    (cons '("queue" "q")
          (lambda (arg) (hermes-chat--dashboard-dispatch-command "queue" arg)))
+   (cons '("background" "bg" "btw")
+         (lambda (arg) (hermes-chat-background arg)))
    (cons '("steer") (lambda (arg) (hermes-chat-steer-message arg)))
    (cons '("stop") (lambda (_arg) (hermes-chat-stop-processes)))
    (cons '("interrupt" "int") (lambda (_arg) (hermes-chat-interrupt)))
@@ -1430,6 +1492,81 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
             (lambda (message)
               (hermes-chat--dashboard-bootstrap-error message content))))))
     (hermes-chat--steer-or-submit content buffer)))
+
+(defun hermes-chat-background (&optional prompt)
+  "Run PROMPT as a Hermes background task, delivering its result to this chat.
+With no PROMPT, use the input tail.  The task runs in its own session via
+`prompt.background', so it does not block the current turn; its answer returns
+later as a `background.complete' event rendered as a persistent [View Result]
+entry."
+  (interactive)
+  (let ((content (string-trim (or prompt (hermes-chat-input-string))))
+        (buffer (current-buffer)))
+    (when (string-empty-p content)
+      (user-error "No Hermes background prompt given"))
+    (unless prompt
+      (hermes-chat--delete-input-tail))
+    (hermes-chat--background-submit content buffer)))
+
+(defun hermes-chat--background-started (result prompt buffer)
+  "Record the background task in RESULT for PROMPT and show a started notice.
+BUFFER's client gains a result listener when no turn is streaming, so the
+`background.complete' event is delivered even on an otherwise idle chat."
+  (let ((task-id (hermes-transport--scalar-string
+                  (hermes-transport--get result 'task_id)))
+        (number (cl-incf hermes-chat--background-counter))
+        (preview (hermes-chat--preview prompt)))
+    (when task-id
+      (push (cons task-id (list :number number :preview preview))
+            hermes-chat--background-tasks))
+    (hermes-chat--ensure-background-listener hermes-chat--dashboard-client buffer)
+    ;; Insert above any pending reply so the active turn's answer stays last.
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry
+      'status (format "Background #%d started: %s" number preview) 'running)
+     (hermes-chat--pending-assistant-node))))
+
+(defun hermes-chat--background-submit (content buffer)
+  "Launch CONTENT as a background task for BUFFER's dashboard session."
+  (hermes-chat--call-with-dashboard-bootstrap-error
+   content
+   (lambda ()
+     (let ((client (hermes-chat--dashboard-control-client)))
+       (hermes-chat--dashboard-ensure-session-action
+        client buffer
+        (lambda (live-client)
+          (hermes-dashboard-transport-prompt-background
+           live-client content
+           :session-id hermes-chat--dashboard-active-session-id
+           :resolve (lambda (result)
+                      (hermes-chat--in-buffer buffer
+                        (hermes-chat--background-started result content buffer)))
+           :reject (lambda (message)
+                     (hermes-chat--in-buffer buffer
+                       (hermes-chat--command-error message)))))
+        (lambda (message)
+          (hermes-chat--dashboard-bootstrap-error message content)))))))
+
+(defun hermes-chat--handle-background-complete (event)
+  "Insert a persistent result entry for a `background' EVENT.
+EVENT's `:task-id' is paired with the launching task's number and preview.  The
+entry is inserted before any pending assistant reply -- nil before-node when the
+chat is idle, so it simply lands last -- so a result arriving mid-turn keeps the
+active turn's answer at the bottom.  The counter is owned by the launch path and
+is not advanced here; an unrecorded result falls back to its current value."
+  (let* ((task-id (plist-get event :task-id))
+         (info (and task-id (cdr (assoc task-id hermes-chat--background-tasks))))
+         (number (or (plist-get info :number) hermes-chat--background-counter))
+         (preview (or (plist-get info :preview) ""))
+         (content (or (plist-get event :content) "")))
+    (when task-id
+      (setq hermes-chat--background-tasks
+            (assoc-delete-all task-id hermes-chat--background-tasks)))
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry
+      'background content 'done nil
+      (list :number number :preview preview))
+     (hermes-chat--pending-assistant-node))))
 
 (defun hermes-chat-steer-message (&optional message)
   "Steer the active dashboard run with MESSAGE, falling back to queue."

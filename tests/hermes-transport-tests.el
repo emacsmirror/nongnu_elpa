@@ -1567,20 +1567,25 @@
 
 (ert-deftest hermes-transport-dashboard-status-fallback-uses-text-then-label ()
   "Unclassified events become status lines: payload text, else a derived label."
-  (pcase-let ((`(,complete ,background ,terminal)
+  (pcase-let ((`(,complete ,terminal)
                (hermes-test--dashboard-events
                 '("preview.restart.complete" . ((task_id . "t1")
                                                 (text . "Preview ready")))
-                '("background.complete" . ((task_id . "t2")
-                                           (text . "Task finished")))
                 '("terminal.read.request" . ((request_id . "r1"))))))
     (should (eq (plist-get complete :type) 'status))
     (should (equal (plist-get complete :content) "Preview ready"))
-    (should (eq (plist-get background :type) 'status))
-    (should (equal (plist-get background :content) "Task finished"))
     ;; No text payload, so the event name is prettified into the body.
     (should (eq (plist-get terminal :type) 'status))
     (should (equal (plist-get terminal :content) "Terminal Read Request"))))
+
+(ert-deftest hermes-transport-dashboard-background-complete-event ()
+  "`background.complete' becomes a `background' event with task id and response."
+  (let ((event (car (hermes-test--dashboard-events
+                     '("background.complete" . ((task_id . "bg_abc123")
+                                                (text . "Yes, x_search is available.")))))))
+    (should (eq (plist-get event :type) 'background))
+    (should (equal (plist-get event :task-id) "bg_abc123"))
+    (should (equal (plist-get event :content) "Yes, x_search is available."))))
 
 (ert-deftest hermes-transport-dashboard-unmapped-event-renders-not-unknown ()
   "A gateway event the client never heard of still renders as a labelled line.
