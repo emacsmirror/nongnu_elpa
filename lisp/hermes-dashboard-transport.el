@@ -141,6 +141,27 @@ heartbeat (a dropped socket is then rebuilt lazily on the next request)."
   :type '(choice (const :tag "No heartbeat" nil) number)
   :group 'hermes-dashboard-transport)
 
+(defcustom hermes-dashboard-transport-reconnect-max-attempts 10
+  "How many times to reconnect the shared socket after an unexpected close.
+While at least one chat buffer is attached, a dropped socket is reopened with
+exponential backoff up to this many times before the client is given up and torn
+down.  nil or 0 disables proactive reconnect; a dropped socket is then rebuilt
+lazily on the next request instead."
+  :type '(choice (const :tag "No proactive reconnect" nil) integer)
+  :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-reconnect-base-delay 1.0
+  "Seconds before the first shared-socket reconnect attempt.
+Each further attempt doubles the delay up to
+`hermes-dashboard-transport-reconnect-max-delay'."
+  :type 'number
+  :group 'hermes-dashboard-transport)
+
+(defcustom hermes-dashboard-transport-reconnect-max-delay 30
+  "Maximum backoff in seconds between shared-socket reconnect attempts."
+  :type 'number
+  :group 'hermes-dashboard-transport)
+
 (cl-defstruct hermes-dashboard-transport-client
   "State for one dashboard/TUI JSON-RPC WebSocket connection."
   process
@@ -164,7 +185,10 @@ heartbeat (a dropped socket is then rebuilt lazily on the next request)."
   (refcount 0)
   endpoint-key
   idle-timer
-  heartbeat-timer)
+  heartbeat-timer
+  stopping-p
+  reconnecting-p
+  (reconnect-attempts 0))
 
 (defun hermes-dashboard-transport-subscribe (client fn)
   "Register FN as an event subscriber on CLIENT and return an opaque token.
@@ -224,10 +248,17 @@ Return TOKEN on success, or nil when TOKEN is not registered on CLIENT."
                          (hermes-dashboard-transport-client-subscribers client))
                :fn)))
 
+(defun hermes-dashboard-transport--deliver (fn event)
+  "Call subscriber FN with EVENT, demoting any error so delivery continues.
+A throwing subscriber must not starve the other buffers sharing the socket or
+perturb shared transport state from inside a status broadcast."
+  (with-demoted-errors "Hermes dashboard subscriber error: %S"
+    (funcall fn event)))
+
 (defun hermes-dashboard-transport--broadcast-event (client event)
   "Send EVENT to every subscriber function on CLIENT."
   (maphash (lambda (_token record)
-             (funcall (plist-get record :fn) event))
+             (hermes-dashboard-transport--deliver (plist-get record :fn) event))
            (hermes-dashboard-transport-client-subscribers client)))
 
 (defun hermes-dashboard-transport--dispatch-event (client event)
@@ -244,7 +275,7 @@ keep working unchanged."
                         (hermes-dashboard-transport--session-subscriber-fn
                          client session-id))))
           (if fn
-              (funcall fn event)
+              (hermes-dashboard-transport--deliver fn event)
             (hermes-dashboard-transport--broadcast-event client event)))
       (funcall (hermes-dashboard-transport-client-callback client) event))))
 
@@ -569,15 +600,13 @@ THUNK rather than cleaned up afterward."
       (funcall thunk))))
 
 (defun hermes-dashboard-transport--mark-websocket-closed (client)
-  "Mark CLIENT's WebSocket connection closed and drop it from the registry.
-A dropped client must never be handed to a later
-`hermes-dashboard-transport-acquire'; unregistering here makes the next acquire
-rebuild a fresh connection, while buffers still attached keep their reference
-until they release it and reattach on their next send."
+  "Mark CLIENT's WebSocket connection closed and stop its heartbeat.
+This is pure state: the close handler decides whether to reconnect the client in
+place or finalize it, so this neither rejects pending requests nor unregisters
+CLIENT from the shared registry."
   (setf (hermes-dashboard-transport-client-websocket client) nil
         (hermes-dashboard-transport-client-ready-p client) nil)
-  (hermes-dashboard-transport--cancel-heartbeat client)
-  (hermes-dashboard-transport--unregister-client client))
+  (hermes-dashboard-transport--cancel-heartbeat client))
 
 (defun hermes-dashboard-transport--close-websocket (client)
   "Close CLIENT's WebSocket resource and clear its live fields."
@@ -653,6 +682,7 @@ and its session ended, so the caller can always start a new session.
 MESSAGE is reported to pending request reject callbacks, or as a normalized
 transport error when a pending request has no reject callback."
   (when (hermes-dashboard-transport-client-p client)
+    (setf (hermes-dashboard-transport-client-stopping-p client) t)
     (ignore-errors
       (hermes-dashboard-transport--reject-pending-requests
        client (or message "Hermes dashboard transport stopped")))
@@ -663,6 +693,7 @@ transport error when a pending request has no reject callback."
          promise (or message "Hermes dashboard transport stopped"))))
     (ignore-errors (hermes-dashboard-transport--unregister-client client))
     (ignore-errors (hermes-dashboard-transport--cancel-idle-timer client))
+    (ignore-errors (hermes-dashboard-transport--cancel-heartbeat client))
     (ignore-errors
       (setf (hermes-dashboard-transport-client-callback client) #'ignore)
       (clrhash (hermes-dashboard-transport-client-subscribers client))
@@ -673,6 +704,81 @@ transport error when a pending request has no reject callback."
       (setf (hermes-dashboard-transport-client-session-id client) nil
             (hermes-dashboard-transport-client-stored-session-id client) nil))
     client))
+
+(defun hermes-dashboard-transport--reconnect-enabled-p ()
+  "Return non-nil when proactive shared-socket reconnect is configured."
+  (and (numberp hermes-dashboard-transport-reconnect-max-attempts)
+       (> hermes-dashboard-transport-reconnect-max-attempts 0)))
+
+(defun hermes-dashboard-transport--should-reconnect-p (client)
+  "Return non-nil when CLIENT should reconnect after an unexpected close.
+Reconnect only while at least one buffer is attached and reconnect is enabled."
+  (and (hermes-dashboard-transport--reconnect-enabled-p)
+       (> (or (hermes-dashboard-transport-client-refcount client) 0) 0)))
+
+(defun hermes-dashboard-transport--reconnect-backoff (attempt)
+  "Return the backoff delay in seconds for reconnect ATTEMPT, 0-based."
+  (min hermes-dashboard-transport-reconnect-max-delay
+       (* hermes-dashboard-transport-reconnect-base-delay
+          (expt 2 attempt))))
+
+(defun hermes-dashboard-transport--schedule-reconnect (client attempt)
+  "Schedule CLIENT's reconnect ATTEMPT after its backoff delay."
+  (hermes-dashboard-transport--schedule
+   (hermes-dashboard-transport--reconnect-backoff attempt)
+   #'hermes-dashboard-transport--reconnect-attempt client attempt))
+
+(defun hermes-dashboard-transport--reconnect-attempt (client attempt)
+  "Reopen CLIENT's WebSocket for reconnect ATTEMPT, backing off on failure.
+After the configured maximum attempts CLIENT is finalized so the next request
+rebuilds it.  A reopened socket's `gateway.ready' clears the reconnect state and
+broadcasts `reconnected'; another drop before then re-enters the backoff."
+  (cond
+   ((hermes-dashboard-transport-client-stopping-p client) nil)
+   ((not (hermes-dashboard-transport-client-reconnecting-p client)) nil)
+   ((not (hermes-dashboard-transport--should-reconnect-p client))
+    (setf (hermes-dashboard-transport-client-reconnecting-p client) nil)
+    (hermes-dashboard-transport--unregister-client client)
+    (hermes-dashboard-transport--emit-status
+     client "closed" "Hermes dashboard reconnect abandoned"))
+   ((>= attempt hermes-dashboard-transport-reconnect-max-attempts)
+    (setf (hermes-dashboard-transport-client-reconnecting-p client) nil)
+    (hermes-dashboard-transport--unregister-client client)
+    (hermes-dashboard-transport--emit-status
+     client "closed" "Hermes dashboard reconnect failed"))
+   (t
+    (condition-case _err
+        (setf (hermes-dashboard-transport-client-websocket client)
+              (hermes-dashboard-transport--open-websocket-once
+               client
+               (hermes-dashboard-transport--client-websocket-url client)))
+      (error
+       (setf (hermes-dashboard-transport-client-reconnect-attempts client)
+             (1+ attempt))
+       (hermes-dashboard-transport--schedule-reconnect client (1+ attempt)))))))
+
+(defun hermes-dashboard-transport--handle-socket-down (client message)
+  "React to CLIENT's WebSocket closing with MESSAGE.
+An intentional stop only marks the socket closed.  An unexpected loss rejects
+pending requests, reports `closed', and either reconnects a still-referenced
+client in place or finalizes it so the next request rebuilds it.  A reopened
+socket that drops before becoming ready continues the existing backoff."
+  (hermes-dashboard-transport--mark-websocket-closed client)
+  (unless (hermes-dashboard-transport-client-stopping-p client)
+    (hermes-dashboard-transport--reject-pending-requests client message)
+    (cond
+     ((hermes-dashboard-transport-client-reconnecting-p client)
+      (hermes-dashboard-transport--schedule-reconnect
+       client
+       (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client))))
+     ((hermes-dashboard-transport--should-reconnect-p client)
+      (setf (hermes-dashboard-transport-client-reconnecting-p client) t
+            (hermes-dashboard-transport-client-reconnect-attempts client) 0)
+      (hermes-dashboard-transport--emit-status client "closed" message)
+      (hermes-dashboard-transport--schedule-reconnect client 0))
+     (t
+      (hermes-dashboard-transport--unregister-client client)
+      (hermes-dashboard-transport--emit-status client "closed" message)))))
 
 (defun hermes-dashboard-transport--default-websocket-open (url client)
   "Open URL for CLIENT using websocket.el."
@@ -688,24 +794,16 @@ transport error when a pending request has no reject callback."
                       (hermes-dashboard-transport--handle-frame
                        client (websocket-frame-text frame)))
         :on-error (lambda (_websocket _type error)
-                    (let ((message
-                           (format "Hermes dashboard WebSocket error: %s"
-                                   (hermes-dashboard-transport--redact-secret
-                                    (format "%s" error)
-                                    (hermes-dashboard-transport--client-secrets
-                                     client)))))
-                      (hermes-dashboard-transport--mark-websocket-closed client)
-                      (unless (hermes-dashboard-transport--reject-pending-requests
-                               client message)
-                        (hermes-dashboard-transport--emit-error
-                         client message))))
+                    (hermes-dashboard-transport--handle-socket-down
+                     client
+                     (format "Hermes dashboard WebSocket error: %s"
+                             (hermes-dashboard-transport--redact-secret
+                              (format "%s" error)
+                              (hermes-dashboard-transport--client-secrets
+                               client)))))
         :on-close (lambda (_websocket)
-                    (let ((message "Hermes dashboard WebSocket closed"))
-                      (hermes-dashboard-transport--mark-websocket-closed client)
-                      (hermes-dashboard-transport--reject-pending-requests
-                       client message)
-                      (hermes-dashboard-transport--emit-status
-                       client "closed" message))))))))
+                    (hermes-dashboard-transport--handle-socket-down
+                     client "Hermes dashboard WebSocket closed")))))))
 
 (cl-defun hermes-dashboard-transport-open-websocket
     (url redacted-url secrets &key on-message on-close on-error)
@@ -2891,6 +2989,11 @@ an Unknown error."
     (when (equal (hermes-transport--get params 'type) "gateway.ready")
       (setf (hermes-dashboard-transport-client-ready-p client) t)
       (hermes-dashboard-transport--arm-heartbeat client)
+      (when (hermes-dashboard-transport-client-reconnecting-p client)
+        (setf (hermes-dashboard-transport-client-reconnecting-p client) nil
+              (hermes-dashboard-transport-client-reconnect-attempts client) 0)
+        (hermes-dashboard-transport--emit-status
+         client "reconnected" "Hermes dashboard reconnected"))
       (when-let* ((promise (hermes-dashboard-transport-client-ready-promise
                             client)))
         (hermes--promise-resolve promise client)))

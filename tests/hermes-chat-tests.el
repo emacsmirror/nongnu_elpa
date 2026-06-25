@@ -4375,5 +4375,26 @@ Killing one buffer releases its reference without tearing down the other."
         (when (buffer-live-p buf-a) (kill-buffer buf-a))
         (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
 
+(ert-deftest hermes-chat-dashboard-reconnected-resumes-session ()
+  "A reconnected status re-resumes the buffer's stored dashboard session."
+  (let ((client (hermes-test--dashboard-client)) resumed)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client session-id &rest _args) (setq resumed session-id))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--session-id "stored-session"
+               hermes-chat--dashboard-client client)
+         ;; Drive the real subscriber closure (generation + session filter),
+         ;; not the handler directly, so a future guard regression is caught.
+         (funcall (hermes-chat--transport-callback
+                   (current-buffer) "asst-reconnect" t
+                   (hermes-chat--next-transport-generation))
+                  '(:type status :status "reconnected"))
+         (should (equal resumed "stored-session")))))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

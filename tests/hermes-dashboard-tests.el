@@ -471,6 +471,112 @@
         (should (stringp err))
         (should-not (string-match-p "SEKRIT" err))))))
 
+;;; Group: reconnect
+
+(ert-deftest hermes-dashboard-transport-reconnect-backoff-doubles-and-caps ()
+  "Reconnect backoff doubles per attempt and caps at the max delay."
+  (let ((hermes-dashboard-transport-reconnect-base-delay 1)
+        (hermes-dashboard-transport-reconnect-max-delay 8))
+    (should (= (hermes-dashboard-transport--reconnect-backoff 0) 1))
+    (should (= (hermes-dashboard-transport--reconnect-backoff 2) 4))
+    (should (= (hermes-dashboard-transport--reconnect-backoff 5) 8))))
+
+(ert-deftest hermes-dashboard-transport-unexpected-close-schedules-reconnect ()
+  "An unexpected close on a referenced client schedules a reconnect, staying registered."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (hermes-dashboard-transport-reconnect-base-delay 1)
+         events scheduled
+         (hermes-dashboard-transport-schedule-function
+          (lambda (delay _fn &rest _args) (setq scheduled delay) 'timer)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client :websocket 'ws))))
+      (let ((c (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-subscribe c (lambda (e) (push e events)))
+        (hermes-dashboard-transport--handle-socket-down c "dropped")
+        (should (hermes-dashboard-transport-client-reconnecting-p c))
+        (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients) c))
+        (should (equal scheduled 1))
+        (should (cl-find "closed" events
+                         :key (lambda (e) (plist-get e :status)) :test #'equal))))))
+
+(ert-deftest hermes-dashboard-transport-unreferenced-close-finalizes ()
+  "An unexpected close on an unreferenced client finalizes instead of reconnecting."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         scheduled
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) (setq scheduled t) 'timer)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client :websocket 'ws))))
+      (let ((c (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (setf (hermes-dashboard-transport-client-refcount c) 0)
+        (hermes-dashboard-transport--handle-socket-down c "dropped")
+        (should-not scheduled)
+        (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))))))
+
+(ert-deftest hermes-dashboard-transport-stop-suppresses-reconnect ()
+  "An intentional stop marks the socket closed without scheduling a reconnect."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         scheduled
+         (hermes-dashboard-transport-schedule-function
+          (lambda (&rest _) (setq scheduled t) 'timer)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client :websocket 'ws)))
+              ((symbol-function 'websocket-close) #'ignore))
+      (let ((c (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-stop c "bye")
+        (hermes-dashboard-transport--handle-socket-down c "dropped")
+        (should-not scheduled)
+        (should-not (hermes-dashboard-transport-client-reconnecting-p c))))))
+
+(ert-deftest hermes-dashboard-transport-reconnect-reopens-socket ()
+  "A reconnect attempt reopens the socket through the open function."
+  (let* ((hermes-dashboard-transport-reconnect-max-attempts 3)
+         opened
+         (hermes-dashboard-transport-websocket-open-function
+          (lambda (_url _client) (setq opened t) 'new-ws))
+         (c (make-hermes-dashboard-transport-client
+             :reconnecting-p t :refcount 1 :websocket-url "ws://x")))
+    (hermes-dashboard-transport--reconnect-attempt c 0)
+    (should opened)
+    (should (eq (hermes-dashboard-transport-client-websocket c) 'new-ws))))
+
+(ert-deftest hermes-dashboard-transport-reconnect-gives-up-after-max ()
+  "Exhausting reconnect attempts finalizes the client and reports closed."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 2)
+         events)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client :websocket 'ws))))
+      (let ((c (hermes-dashboard-transport-acquire :start-mode 'spawn)))
+        (hermes-dashboard-transport-subscribe c (lambda (e) (push e events)))
+        (setf (hermes-dashboard-transport-client-reconnecting-p c) t)
+        (hermes-dashboard-transport--reconnect-attempt c 2)
+        (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))
+        (should-not (hermes-dashboard-transport-client-reconnecting-p c))
+        (should (cl-find "closed" events
+                         :key (lambda (e) (plist-get e :status)) :test #'equal))))))
+
+(ert-deftest hermes-dashboard-transport-reconnect-ready-emits-reconnected ()
+  "After reconnect, `gateway.ready' clears reconnect state and broadcasts reconnected."
+  (let* (events
+         (c (make-hermes-dashboard-transport-client
+             :reconnecting-p t :reconnect-attempts 2 :websocket 'ws)))
+    (hermes-dashboard-transport-subscribe c (lambda (e) (push e events)))
+    (hermes-dashboard-transport--handle-frame
+     c '((jsonrpc . "2.0") (method . "event")
+         (params . ((type . "gateway.ready")))))
+    (should-not (hermes-dashboard-transport-client-reconnecting-p c))
+    (should (= (hermes-dashboard-transport-client-reconnect-attempts c) 0))
+    (should (cl-find "reconnected" events
+                     :key (lambda (e) (plist-get e :status)) :test #'equal))))
+
 ;;; Group: heartbeat keepalive
 
 (ert-deftest hermes-dashboard-transport-heartbeat-arms-on-ready-and-pings ()
@@ -750,7 +856,7 @@
                   :websocket 'fake-websocket))))
       (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
         (hermes-dashboard-transport-release c1)
-        (hermes-dashboard-transport--mark-websocket-closed c1)
+        (hermes-dashboard-transport--handle-socket-down c1 "dropped")
         (let ((c2 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
           (apply (car captured) (cdr captured))
           (should-not (eq c1 c2))
@@ -758,15 +864,16 @@
                       c2)))))))
 
 (ert-deftest hermes-dashboard-transport-acquire-rebuilds-after-close ()
-  "A dropped socket leaves the registry so the next acquire builds a fresh client."
-  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
+  "With reconnect off, a dropped socket finalizes so the next acquire rebuilds."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        (hermes-dashboard-transport-reconnect-max-attempts nil))
     (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _)
                  (make-hermes-dashboard-transport-client
                   :websocket 'fake-websocket))))
       (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
         (hermes-dashboard-transport-acquire :start-mode 'spawn)
-        (hermes-dashboard-transport--mark-websocket-closed c1)
+        (hermes-dashboard-transport--handle-socket-down c1 "dropped")
         (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))
         (should-not (eq c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))))))
 

@@ -763,7 +763,8 @@
         (should (string-match-p "Hermes dashboard WebSocket error" rejected))
         (should (string-match-p "<redacted>" rejected))
         (should-not (string-match-p "secret-token" rejected))
-        (should (equal (plist-get (car events) :type) 'error))
+        (should (equal (plist-get (car events) :type) 'status))
+        (should (equal (plist-get (car events) :status) "closed"))
         (should (string-match-p "<redacted>"
                                 (plist-get (car events) :content)))
         (should-not (string-match-p "secret-token"
@@ -898,8 +899,9 @@
                     (hermes-dashboard-transport-client-pending client))
                    0))
         (should (string-match-p "socket died" rejected))
-        (should (= (cl-count 'error events
-                             :key (lambda (event) (plist-get event :type)))
+        (should (= (cl-count "closed" events
+                             :key (lambda (event) (plist-get event :status))
+                             :test #'equal)
                    1))))))
 
 (ert-deftest hermes-transport-dashboard-error-with-unhandled-pending-emits-once ()
@@ -929,7 +931,8 @@
         (should (= (cl-count 'error events
                              :key (lambda (event) (plist-get event :type)))
                    1))
-        (let ((event (car events)))
+        (let ((event (cl-find 'error events
+                              :key (lambda (e) (plist-get e :type)))))
           (should (equal (plist-get event :method) "prompt.submit"))
           (should (string-match-p "socket died"
                                   (plist-get event :content))))))))

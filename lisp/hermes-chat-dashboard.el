@@ -83,6 +83,12 @@
        (equal (hermes-chat--status-name (plist-get event :status))
               "closed")))
 
+(defun hermes-chat--reconnected-status-event-p (event)
+  "Return non-nil when EVENT reports the shared transport reconnected."
+  (and (eq (plist-get event :type) 'status)
+       (equal (hermes-chat--status-name (plist-get event :status))
+              "reconnected")))
+
 (defun hermes-chat--closed-status-error-event (event)
   "Return an error event corresponding to transport close EVENT."
   (list :type 'error
@@ -249,6 +255,10 @@ so do not copy its final content into the unsubmitted retry placeholder."
    ;; from the active turn's assistant entry.
    ((eq (plist-get event :type) 'background)
     (hermes-chat--handle-background-complete event))
+   ;; A reconnect signal is a transport-wide broadcast, not a turn event, so
+   ;; handle it before the stale-turn guard would drop it.
+   ((hermes-chat--reconnected-status-event-p event)
+    (hermes-chat--dashboard-handle-reconnected event))
    ((hermes-chat--stale-assistant-event-p assistant-id) nil)
    ((hermes-chat--closed-status-event-p event)
     (hermes-chat--handle-closed-status assistant-id event))
@@ -651,6 +661,22 @@ DISPLAY is the compact user-turn text shown instead of CONTENT."
             (lambda (message)
               (hermes-chat--dashboard-bootstrap-error message content))))))
     (hermes-chat--queue-or-submit-content content display)))
+
+(defun hermes-chat--dashboard-handle-reconnected (_event)
+  "Re-attach this buffer's stored dashboard session after a socket reconnect.
+A no-op unless the buffer has a durable session that is not currently attached
+and no turn is active -- the same guard a later send uses -- so a reconnected
+shared socket re-resumes every attached chat without waiting for the next send."
+  (when (hermes-chat--dashboard-stored-session-needs-resume-p)
+    (let ((buffer (current-buffer)))
+      (hermes-chat--call-with-dashboard-bootstrap-error
+       nil
+       (lambda ()
+         (hermes-chat--dashboard-ensure-session-action
+          (hermes-chat--dashboard-control-client) buffer #'ignore
+          (lambda (message)
+            (hermes-chat--command-error
+             (format "Hermes reconnect resume failed: %s" message)))))))))
 
 (provide 'hermes-chat-dashboard)
 ;;; hermes-chat-dashboard.el ends here
