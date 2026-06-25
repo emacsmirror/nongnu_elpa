@@ -73,7 +73,8 @@
   "Create a fresh Hermes chat buffer and run BODY in it.
 The buffer is captured by object so teardown still kills it after a rename."
   (declare (indent 0) (debug t))
-  `(let* ((hermes-chat-buffer-name (hermes-test--chat-buffer-name))
+  `(let* ((hermes-dashboard-transport--model-options-cache nil)
+          (hermes-chat-buffer-name (hermes-test--chat-buffer-name))
           (buffer (hermes-chat)))
      (unwind-protect
          (with-current-buffer buffer ,@body)

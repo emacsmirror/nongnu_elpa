@@ -1673,14 +1673,10 @@ confirmation prompt."
   "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
   (when (buffer-live-p buffer)
     (let* ((candidates (hermes-chat--model-candidates result))
-           (labels (mapcar #'car candidates))
-           (current (hermes-transport--scalar-string
-                     (hermes-transport--get result 'model))))
+           (labels (mapcar #'car candidates)))
       (if (null candidates)
           (message "Hermes: no models available to switch to")
-        (let* ((choice (completing-read
-                        (format "Switch model (current %s): " (or current "?"))
-                        labels nil t))
+        (let* ((choice (completing-read "Switch model: " labels nil t))
                (candidate (cdr (assoc choice candidates))))
           (unless (or (string-empty-p choice) (null candidate))
             (if (plist-get candidate :authenticated)
@@ -1690,18 +1686,21 @@ confirmation prompt."
                (hermes-chat--find-provider result (plist-get candidate :provider))
                (lambda () (hermes-chat--apply-model buffer client candidate nil))))))))))
 
-(defun hermes-chat-switch-model ()
-  "Switch the model used by the current Hermes chat session."
-  (interactive)
+(defun hermes-chat-switch-model (&optional refresh)
+  "Switch the model used by the current Hermes chat session.
+The model list is served from the shared cache; with a prefix argument REFRESH,
+refetch it from the dashboard instead."
+  (interactive "P")
   (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
     (user-error "Connect this chat (send a message) before switching models"))
   (when (hermes-chat--active-turn-p)
     (user-error "Interrupt the active turn before switching models"))
   (let ((buffer (current-buffer))
         (client hermes-chat--dashboard-client))
-    (hermes-dashboard-transport-model-options
+    (hermes-dashboard-transport-model-options-cached
      client
      :session-id hermes-chat--dashboard-active-session-id
+     :force refresh
      :resolve (lambda (result)
                 (hermes-chat--prompt-and-set-model buffer client result))
      :reject (lambda (message)
@@ -1739,6 +1738,9 @@ it to apply the model the user originally chose."
        client slug key
        :session-id hermes-chat--dashboard-active-session-id
        :resolve (lambda (_result)
+                  ;; Saving a key flips a provider's authentication, so drop the
+                  ;; cached catalog; the next picker refetches the fresh list.
+                  (hermes-dashboard-transport-invalidate-model-options)
                   (hermes-chat--in-buffer buffer
                     (hermes-chat--insert-local-status
                      (format "Connected provider %s" name) 'ready)
@@ -1757,7 +1759,7 @@ against this session's live agent."
   (require 'hermes-onboarding)
   (let ((buffer (current-buffer))
         (client hermes-chat--dashboard-client))
-    (hermes-dashboard-transport-model-options
+    (hermes-dashboard-transport-model-options-cached
      client
      :session-id hermes-chat--dashboard-active-session-id
      :resolve (lambda (result)

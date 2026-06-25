@@ -3770,6 +3770,24 @@
      (hermes-chat-switch-model)
      (should (string-match-p "backend denied" (buffer-string))))))
 
+(ert-deftest hermes-chat-warm-model-options-fetches-after-ready ()
+  "Warming defers the fetch until the client's readiness promise resolves."
+  (let* ((hermes-dashboard-transport--model-options-cache nil)
+         (ready (hermes--promise-make))
+         (client (make-hermes-dashboard-transport-client :ready-promise ready))
+         fetched)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example"))
+              ((symbol-function 'hermes-dashboard-transport-model-options)
+               (lambda (_client &rest args)
+                 (setq fetched t)
+                 (funcall (plist-get args :resolve) '((providers . nil))))))
+      (hermes-chat--warm-model-options client)
+      (should-not fetched)
+      (hermes--promise-resolve ready t)
+      (should fetched)
+      (should (hermes-dashboard-transport-cached-model-options)))))
+
 (ert-deftest hermes-chat-new-buffer-sets-profile ()
   "A profile chat records the profile; a blank one stays nil."
   (let ((buffer (hermes-chat--new-buffer "work")))

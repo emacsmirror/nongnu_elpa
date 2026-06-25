@@ -97,7 +97,7 @@ with the dashboard's own message."
    (lambda (client)
      (hermes--promise-then
       (hermes-dashboard-transport-call-fn
-       #'hermes-dashboard-transport-model-options client)
+       #'hermes-dashboard-transport-model-options-cached client)
       (lambda (result)
         (let ((provider (hermes-onboarding--choose-provider result)))
           (hermes-dashboard-transport-call-fn
@@ -107,6 +107,7 @@ with the dashboard's own message."
             (hermes-transport--get provider 'slug))
            (hermes-onboarding--read-key provider))))))
    (lambda (result)
+     (hermes-dashboard-transport-invalidate-model-options)
      (message "Connected Hermes provider %s"
               (hermes-onboarding--provider-name
                (hermes-transport--get result 'provider))))))

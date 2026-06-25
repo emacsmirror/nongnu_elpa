@@ -1166,6 +1166,41 @@ discarded once `hermes-dashboard-transport-url' changes."
   (unless (hermes-dashboard-transport--profile-cache-stale-p)
     (plist-get hermes-dashboard-transport--profile-cache :payload)))
 
+(defvar hermes-dashboard-transport--model-options-cache nil
+  "Cached `model.options' payload as `(:base-url URL :payload PAYLOAD)'.
+The provider/model catalog is dashboard-global -- disk config plus the curated
+model list -- so it is keyed only by base URL and shared across every chat
+buffer and model picker.  A base-URL change or a saved API key invalidates it;
+see `hermes-dashboard-transport-invalidate-model-options'.")
+
+(defun hermes-dashboard-transport--model-options-cache-stale-p ()
+  "Return non-nil when cached model options are for a different dashboard URL."
+  (and hermes-dashboard-transport--model-options-cache
+       (not (equal (plist-get hermes-dashboard-transport--model-options-cache
+                              :base-url)
+                   (ignore-errors (hermes-dashboard-transport--api-base-url))))))
+
+(defun hermes-dashboard-transport--store-model-options (payload)
+  "Cache PAYLOAD as the current dashboard's model options and return it."
+  (setq hermes-dashboard-transport--model-options-cache
+        (list :base-url (ignore-errors (hermes-dashboard-transport--api-base-url))
+              :payload payload))
+  payload)
+
+(defun hermes-dashboard-transport-cached-model-options ()
+  "Return the cached `model.options' payload for the current dashboard, or nil.
+The cache is warmed by `hermes-dashboard-transport-model-options-cached' and is
+discarded once the dashboard URL changes or
+`hermes-dashboard-transport-invalidate-model-options' is called."
+  (unless (hermes-dashboard-transport--model-options-cache-stale-p)
+    (plist-get hermes-dashboard-transport--model-options-cache :payload)))
+
+(defun hermes-dashboard-transport-invalidate-model-options ()
+  "Discard any cached `model.options' payload.
+Callers that change provider authentication -- for example after saving an API
+key -- call this so the next picker refetches the full list."
+  (setq hermes-dashboard-transport--model-options-cache nil))
+
 (defun hermes-dashboard-transport-profile-list (&optional client)
   "Return dashboard profile metadata from REST `/api/profiles'.
 When CLIENT is non-nil, authenticate with its live dashboard session token.
@@ -1693,6 +1728,28 @@ RESOLVE and REJECT receive the asynchronous result or error."
 SESSION-ID scopes the current-model hints to that session.  RESOLVE and REJECT
 receive the asynchronous result or error."
   :keys (session-id))
+
+(cl-defun hermes-dashboard-transport-model-options-cached
+    (client &key session-id force resolve reject)
+  "Resolve `model.options' for CLIENT, serving the shared cache when possible.
+With FORCE non-nil, bypass the cache and refetch.  SESSION-ID is forwarded on a
+live fetch but does not key the cache: the provider/model catalog is
+dashboard-global, so it is shared across sessions and chat buffers.  RESOLVE and
+REJECT receive the payload or an error message, matching the plain RPC wrapper.
+
+The underlying request defers until CLIENT is ready, so callers may warm the
+cache immediately after starting a client."
+  (let ((cached (and (not force)
+                     (hermes-dashboard-transport-cached-model-options))))
+    (if cached
+        (when resolve (funcall resolve cached))
+      (hermes-dashboard-transport-model-options
+       client
+       :session-id session-id
+       :resolve (lambda (result)
+                  (hermes-dashboard-transport--store-model-options result)
+                  (when resolve (funcall resolve result)))
+       :reject (or reject #'ignore)))))
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-config-set "config.set"

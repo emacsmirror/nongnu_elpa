@@ -53,7 +53,8 @@ listed like any other, and the gateway decides on save."
 
 (ert-deftest hermes-onboarding-connect-provider-saves-the-chosen-key ()
   "The command fetches options, picks a provider, reads its key, and saves it."
-  (let (saved-slug saved-key)
+  (let (saved-slug saved-key
+        (hermes-dashboard-transport--model-options-cache nil))
     (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-dashboard-transport-model-options)

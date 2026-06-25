@@ -417,7 +417,25 @@ Built with `list' so each call yields its own plist; the result is handed to
     (setq hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-active-session-id nil
           hermes-chat--dashboard-client
-          (hermes-dashboard-transport-start :callback callback))))
+          (hermes-dashboard-transport-start :callback callback))
+    (hermes-chat--warm-model-options hermes-chat--dashboard-client)
+    hermes-chat--dashboard-client))
+
+(defun hermes-chat--warm-model-options (client)
+  "Warm the shared model-options cache once CLIENT's connection is ready.
+The catalog is dashboard-global, so the first chat to connect populates it for
+every model picker; later chats reuse the cache without a round-trip.  The fetch
+waits on CLIENT's readiness promise rather than running on the synchronous send
+path; a client with no readiness promise (such as a test stub) is left alone."
+  (when-let* (((not (hermes-dashboard-transport-cached-model-options)))
+              (ready (hermes-dashboard-transport-client-ready-promise client))
+              ((hermes--promise-p ready)))
+    (hermes--promise-then
+     ready
+     (lambda (_value)
+       (hermes-dashboard-transport-model-options-cached
+        client :resolve #'ignore :reject #'ignore))
+     #'ignore)))
 
 (defun hermes-chat--dashboard-submit-prompt (client prompt)
   "Submit PROMPT to CLIENT's active dashboard session."
