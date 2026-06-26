@@ -415,20 +415,37 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
 (defvar-local hermes-kanban--events-tail nil
   "Live-events tail for this board buffer, or nil when live updates are off.")
 
+(defun hermes-kanban--task-created-desc-p (left right)
+  "Return non-nil when LEFT is newer (created_at) than RIGHT.
+LEFT and RIGHT are task plists/alists as produced by the dashboard.
+A missing or non-numeric `created_at' sorts oldest (treated as 0), so
+tasks without a reliable timestamp never jump above dated ones.  This is
+a strict comparator for `sort'; ties keep their input order, since
+`sort' is stable."
+  (let ((a (hermes-transport--get left 'created_at))
+        (b (hermes-transport--get right 'created_at)))
+    (> (if (numberp a) a 0)
+       (if (numberp b) b 0))))
+
 (defun hermes-kanban--task-rows (columns)
-  "Flatten dashboard COLUMNS (status-grouped) into `tabulated-list' entries."
-  (let (rows)
-    (dolist (column columns (nreverse rows))
-      (dolist (task (hermes-transport--get column 'tasks))
-        (push (list (hermes-transport--display-field task 'id)
-                    (vector (hermes-kanban--format-status-indicator
-                             (hermes-transport--display-field task 'status))
-                            (hermes-transport--display-field task 'priority)
-                            (or (hermes-transport--non-empty-string
-                                 (hermes-transport--display-field task 'assignee))
-                                "-")
-                            (hermes-transport--display-field task 'title)))
-              rows)))))
+  "Flatten dashboard COLUMNS into `tabulated-list' entries, newest first.
+Tasks are sorted by `created_at' descending across all status columns, so
+the board detail buffer shows the most recently created tasks at the top."
+  (let* ((tasks (mapcan (lambda (column)
+                          (append (hermes-transport--get column 'tasks) nil))
+                        columns))
+         (sorted (sort tasks #'hermes-kanban--task-created-desc-p)))
+    (mapcar
+     (lambda (task)
+       (list (hermes-transport--display-field task 'id)
+             (vector (hermes-kanban--format-status-indicator
+                      (hermes-transport--display-field task 'status))
+                     (hermes-transport--display-field task 'priority)
+                     (or (hermes-transport--non-empty-string
+                          (hermes-transport--display-field task 'assignee))
+                         "-")
+                     (hermes-transport--display-field task 'title))))
+     sorted)))
 
 (defvar hermes-kanban-mode-map)
 

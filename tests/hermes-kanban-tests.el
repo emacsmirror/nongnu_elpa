@@ -132,7 +132,8 @@
          (rows (hermes-kanban--task-rows
                 `(((name . "todo")
                    (tasks . (((id . "t1") (status . "todo") (priority . 2)
-                              (assignee . "elisp-dev") (title . ,title)))))
+                              (assignee . "elisp-dev") (title . ,title)
+                              (created_at . 1000)))))
                   ((name . "running") (tasks . nil))))))
     (should (equal (caar rows) "t1"))
     (should (= (length rows) 1))
@@ -143,6 +144,39 @@
     (should (equal (aref (cadr (car rows)) 1) "2"))
     (should (equal (aref (cadr (car rows)) 2) "elisp-dev"))
     (should (equal (aref (cadr (car rows)) 3) title))))
+
+(ert-deftest hermes-kanban-task-rows-sort-newest-first ()
+  "Task rows are sorted by `created_at' descending across all status columns."
+  (let* ((columns
+          `(((name . "done")
+             (tasks . (((id . "old") (status . "done") (priority . 3)
+                        (title . "Oldest") (created_at . 1000))
+                       ((id . "mid") (status . "done") (priority . 5)
+                        (title . "Middle") (created_at . 2000)))))
+            ((name . "todo")
+             (tasks . (((id . "new") (status . "todo") (priority . 1)
+                        (title . "Newest") (created_at . 3000))
+                       ((id . "newer2") (status . "todo") (priority . 2)
+                        (title . "Second") (created_at . 2500)))))))
+         (ids (mapcar #'car (hermes-kanban--task-rows columns))))
+    ;; Newest created_at first, regardless of the backend's status column order
+    ;; (backend returns "done" before "todo" here).
+    (should (equal ids '("new" "newer2" "mid" "old")))))
+
+(ert-deftest hermes-kanban-task-rows-missing-created-at-sorts-oldest ()
+  "Tasks with missing or non-numeric `created_at' sort after dated ones."
+  (let* ((columns
+          `(((name . "todo")
+             (tasks . (((id . "dated") (status . "todo") (priority . 1)
+                        (title . "Dated") (created_at . 1000))
+                       ((id . "missing") (status . "todo") (priority . 2)
+                         (title . "No timestamp"))
+                       ((id . "string-ts") (status . "todo") (priority . 3)
+                        (title . "Bad timestamp") (created_at . "oops")))))))
+         (rows (hermes-kanban--task-rows columns))
+         (ids (mapcar #'car rows)))
+    ;; Dated first, then the two timestamp-less tasks in input order (stable).
+    (should (equal ids '("dated" "missing" "string-ts")))))
 
 (ert-deftest hermes-kanban-render-boards-lists-boards ()
   "The boards overview fetches /boards and renders one row per board."
