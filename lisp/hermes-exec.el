@@ -99,7 +99,7 @@ closes, so a partial or oversized request cannot grow the per-connection buffer
 without bound."
   :type 'integer)
 
-(defcustom hermes-exec-timeout 30
+(defcustom hermes-exec-timeout 120
   "Seconds an evaluation may run before `with-timeout' aborts it."
   :type 'number)
 
@@ -400,40 +400,186 @@ example when a slow approval outlives the bridge's request timeout."
     (ignore-errors (font-lock-ensure))
     (buffer-string)))
 
+(defun hermes-exec--peer-info (proc)
+  "Return a \"HOST:PORT\" contact string for PROC, or nil when unavailable.
+Network connections expose the endpoint via `process-contact'; pipe and
+dead or not-yet-connected processes yield nil so the caller can show a generic
+fallback."
+  (when (and (processp proc) (process-live-p proc))
+    (ignore-errors
+      (let ((contact (process-contact proc nil t)))
+        (and (consp contact)
+             (format "%s:%s" (or (car contact) "?")
+                     (or (cadr contact) "?")))))))
+
+(defun hermes-exec--risk-label (risk)
+  "Return a capitalized label for risk class RISK."
+  (pcase risk
+    ('forbidden "Forbidden")
+    ('sensitive "Sensitive")
+    (_ "Ordinary")))
+
+(defun hermes-exec--format-metadata (request)
+  "Return a list of (LABEL . VALUE) string pairs describing REQUEST."
+  (let ((pairs `(("Risk" . ,(hermes-exec--risk-label
+                             (or (plist-get request :risk) 'ordinary)))
+                 ("Requester" . ,(or (plist-get request :peer) "local"))
+                 ("Origin" . ,(let ((buf (plist-get request :origin-buffer)))
+                                (if (buffer-live-p buf)
+                                    (buffer-name buf)
+                                  "(dead)")))
+                 ("Window" . ,(let ((win (plist-get request :origin-window)))
+                                (if (window-live-p win)
+                                    (format "live: %s" (buffer-name
+                                                        (window-buffer win)))
+                                  "(dead)")))
+                 ("Timeout" . ,(format "%ss" hermes-exec-timeout)))))
+    (let ((total (plist-get request :queue-total)))
+      (if (and (integerp total) (> total 1))
+          (append pairs (list (cons "Queue" (format "1 of %d" total))))
+        pairs))))
+
+(defun hermes-exec--insert-metadata (request)
+  "Insert a formatted metadata header for REQUEST into the current buffer."
+  (let* ((pairs (hermes-exec--format-metadata request))
+         (width (cl-loop for p in pairs maximize (length (car p)))))
+    (dolist (pair pairs)
+      (insert (propertize
+               (concat (car pair)
+                       (make-string (max 0 (- width (length (car pair)))) ?\s)
+                       ": ")
+               'face 'minibuffer-prompt)
+              (cdr pair)
+              "\n"))
+    (insert "\n")))
+
 (defvar-keymap hermes-exec-approval-mode-map
   :doc "Keymap for `hermes-exec-approval-mode'."
+  "RET" #'hermes-exec-decide
+  "a" #'hermes-exec-approve
   "y" #'hermes-exec-approve
-  "RET" #'hermes-exec-approve
+  "d" #'hermes-exec-deny
   "n" #'hermes-exec-deny
-  "q" #'hermes-exec-deny)
+  "q" #'hermes-exec-deny
+  "c" #'hermes-exec-decide)
 
 (define-derived-mode hermes-exec-approval-mode special-mode "Hermes-Eval"
   "Major mode for confirming a single Hermes eval request.
-\\<hermes-exec-approval-mode-map>\\[hermes-exec-approve] evaluates the request; \
-\\[hermes-exec-deny] declines it."
+\\<hermes-exec-approval-mode-map>\\[hermes-exec-decide] shows the approval menu, \
+\\[hermes-exec-approve] evaluates the request, \\[hermes-exec-deny] declines it."
   (setq-local header-line-format
               (substitute-command-keys
-               "Hermes eval request: \\[hermes-exec-approve] approve, \
-\\[hermes-exec-deny] deny")))
+               "Hermes eval request: \\[hermes-exec-decide] decide, \
+\\[hermes-exec-approve] approve, \\[hermes-exec-deny] deny")))
 
-(defun hermes-exec--approval-buffer (code)
-  "Return a read-only buffer showing fontified CODE for eval approval."
-  (let ((buffer (get-buffer-create hermes-exec--approval-buffer-name)))
+(defun hermes-exec--approval-buffer (request)
+  "Return a read-only buffer showing REQUEST's code and metadata for approval.
+REQUEST is a plist with at least :code; optional keys :risk, :peer,
+:origin-buffer, and :queue-total drive the metadata header.  When called
+interactively the buffer is backed by `hermes-exec-approval-mode'."
+  (let ((buffer (get-buffer-create hermes-exec--approval-buffer-name))
+        (code (plist-get request :code)))
     (with-current-buffer buffer
       (let ((inhibit-read-only t))
         (erase-buffer)
+        (hermes-exec--insert-metadata request)
         (insert (hermes-exec--fontify-elisp code))
         (goto-char (point-min)))
       (hermes-exec-approval-mode))
     buffer))
 
-(defun hermes-exec--finish-active ()
-  "Kill the active approval buffer and clear the active slot."
-  (when hermes-exec--active
-    (let ((buffer (plist-get hermes-exec--active :buffer)))
+(defun hermes-exec--close-approval-window ()
+  "Remove the approval buffer's window and kill the buffer."
+  (let ((buffer (get-buffer hermes-exec--approval-buffer-name)))
+    (when buffer
+      (let ((window (get-buffer-window buffer)))
+        (when window
+          (quit-restore-window window)))
       (when (buffer-live-p buffer)
-        (kill-buffer buffer)))
+        (kill-buffer buffer)))))
+
+(defun hermes-exec--display-approval (buffer)
+  "Display approval BUFFER in a bottom side window without stealing focus.
+Uses `display-buffer-in-side-window' so the user's working window is preserved."
+  (let* ((selected (selected-window))
+         (window (display-buffer
+                  buffer
+                  '(display-buffer-in-side-window
+                    . ((side . bottom) (window-height . fit-window-to-buffer)
+                       (slot . 0) (preserve-size . (nil . t)))))))
+    (when (window-live-p selected)
+      (select-window selected))
+    window))
+
+(defun hermes-exec--approval-choices ()
+  "Return the `read-multiple-choice' choice list for the active request.
+Offers approve once / deny / view, plus trust when risk-based policy is not
+already active."
+  (let ((choices '((?a "approve once" "approve once - evaluate this request")
+                   (?d "deny" "deny - decline this request")
+                   (?v "view" "view - inspect the full request"))))
+    (if (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk)
+        choices
+      (append choices
+              '((?t "trust for this session"
+                   "trust for this session - ordinary forms run, sensitive ones still prompt"))))))
+
+(defun hermes-exec--prompt-choice ()
+  "Prompt the user to decide on the active approval request.
+Maps `read-multiple-choice' to `hermes-exec--resolve-active'.  The \"view\"
+choice selects the approval buffer for inspection; the user can press
+\<hermes-exec-approval-mode-map>\[hermes-exec-decide] there to decide later."
+  (when (and hermes-exec--active (not noninteractive))
+    (let (done)
+      (while (not done)
+        (pcase (car (read-multiple-choice
+                     "Hermes eval approval" (hermes-exec--approval-choices)))
+          (?a
+           (hermes-exec--resolve-active t)
+           (setq done t))
+          (?d
+           (hermes-exec--resolve-active nil)
+           (setq done t))
+          (?t
+           (hermes-exec-trust)
+           (if (eq (plist-get hermes-exec--active :risk) 'ordinary)
+               (progn
+                 (hermes-exec--resolve-active t)
+                 (setq done t))
+             (message "Trust enabled; this request still needs approve/deny")))
+          (?v
+           (let ((buffer (plist-get hermes-exec--active :buffer)))
+             (when (buffer-live-p buffer)
+               (pop-to-buffer buffer)
+               (message "Inspect request, then press %s to decide"
+                        (substitute-command-keys
+                         "\\[hermes-exec-decide]"))))
+           (setq done t)))))))
+
+(defun hermes-exec--maybe-prompt ()
+  "Defer `hermes-exec--prompt-choice' until after the network filter completes.
+The timer fires after the current event loop iteration, so the HTTP filter
+that enqueued the request completes before the modal prompt blocks Emacs."
+  (unless noninteractive
+    (run-with-timer 0 nil #'hermes-exec--prompt-choice)))
+
+(defun hermes-exec--finish-active ()
+  "Close the approval window and clear the active slot."
+  (when hermes-exec--active
+    (hermes-exec--close-approval-window)
     (setq hermes-exec--active nil)))
+
+(defun hermes-exec--queue-total ()
+  "Return the total count of active plus pending requests."
+  (+ (length hermes-exec--pending) (if hermes-exec--active 1 0)))
+
+(defun hermes-exec--refresh-active-buffer ()
+  "Refresh the active approval buffer's queue metadata."
+  (when hermes-exec--active
+    (setq hermes-exec--active
+          (plist-put hermes-exec--active :queue-total
+                     (hermes-exec--queue-total)))
+    (hermes-exec--approval-buffer hermes-exec--active)))
 
 (defun hermes-exec--show-next ()
   "Display the next queued request when none is currently shown.
@@ -443,14 +589,19 @@ Skip requests whose client has already disconnected."
            (proc (plist-get next :proc)))
       (if (not (process-live-p proc))
           (hermes-exec--show-next)
-        (let ((buffer (hermes-exec--approval-buffer (plist-get next :code))))
-          (setq hermes-exec--active (plist-put (copy-sequence next) :buffer buffer))
-          (pop-to-buffer buffer))))))
+        (let ((request (plist-put next :queue-total (1+ (hermes-exec--queue-total)))))
+          (setq hermes-exec--active
+                (plist-put (copy-sequence request)
+                           :buffer (hermes-exec--approval-buffer request)))
+          (hermes-exec--display-approval (plist-get hermes-exec--active :buffer))
+          (hermes-exec--maybe-prompt))))))
 
-(defun hermes-exec--enqueue-approval (proc code)
+(defun hermes-exec--enqueue-approval (proc code &rest metadata)
   "Queue CODE from PROC for approval and show it when nothing else is pending.
-Decline immediately when the queue is already at `hermes-exec-max-pending',
-counting the request currently shown, so the queue cannot grow without bound."
+METADATA is a plist appended to the queued request for the approval display
+and eval path: :origin-buffer, :origin-window, :peer, and :risk.  Decline
+immediately when the queue is already at `hermes-exec-max-pending', counting
+the request currently shown, so the queue cannot grow without bound."
   (if (>= (+ (length hermes-exec--pending) (if hermes-exec--active 1 0))
           hermes-exec-max-pending)
       (hermes-exec--send-response
@@ -458,26 +609,47 @@ counting the request currently shown, so the queue cannot grow without bound."
              200 "OK" (hermes-exec--result-json
                        (list :ok nil :error "Too many pending eval requests"))))
     (setq hermes-exec--pending
-          (append hermes-exec--pending (list (list :proc proc :code code))))
-    (hermes-exec--show-next)))
+          (append hermes-exec--pending
+                  (list (append (list :proc proc :code code) metadata))))
+    (if hermes-exec--active
+        (hermes-exec--refresh-active-buffer)
+      (hermes-exec--show-next))))
+
+(defun hermes-exec--eval-with-origin (code origin-buffer origin-window)
+  "Evaluate CODE with ORIGIN-WINDOW or ORIGIN-BUFFER current when live.
+Prefer the captured live window so selected-window-sensitive forms behave as if
+run from the original cockpit.  Fall back to the origin buffer, then the current
+buffer, when that window or buffer has died."
+  (cond
+   ((window-live-p origin-window)
+    (with-selected-window origin-window
+      (hermes-exec--evaluate-guarded code)))
+   ((buffer-live-p origin-buffer)
+    (with-current-buffer origin-buffer
+      (hermes-exec--evaluate-guarded code)))
+   (t (hermes-exec--evaluate-guarded code))))
 
 (defun hermes-exec--resolve-active (approve)
   "Evaluate the active request when APPROVE, else decline it, then respond.
 Consume the active slot before evaluating, so a sentinel that fires during the
 eval -- for instance when the approved code closes its own connection -- cannot
-re-enter and advance the queue twice.  Advance to the next request afterwards."
+re-enter and advance the queue twice.  Evaluation runs in the origin buffer
+captured at enqueue time when it is still live, so current-buffer/region
+operations do not accidentally run in the approval buffer.  Advance to the next
+request afterwards."
   (when hermes-exec--active
     (let* ((active hermes-exec--active)
            (proc (plist-get active :proc))
            (code (plist-get active :code))
-           (buffer (plist-get active :buffer)))
+           (origin-buffer (plist-get active :origin-buffer))
+           (origin-window (plist-get active :origin-window)))
       (setq hermes-exec--active nil)
+      (hermes-exec--close-approval-window)
       (let ((result (if approve
                         (let ((hermes-exec--connection proc))
-                          (hermes-exec--evaluate-guarded code))
+                          (hermes-exec--eval-with-origin code origin-buffer
+                                                          origin-window))
                       (list :ok nil :error "Evaluation declined by user"))))
-        (when (buffer-live-p buffer)
-          (kill-buffer buffer))
         (hermes-exec--send-response
          proc (hermes-exec--http-response
                200 "OK" (hermes-exec--result-json result)))
@@ -502,6 +674,11 @@ re-enter and advance the queue twice.  Advance to the next request afterwards."
   "Decline the eval request shown in the current approval buffer."
   (interactive)
   (hermes-exec--resolve-active nil))
+
+(defun hermes-exec-decide ()
+  "Read an Emacs-native multiple-choice decision for the active eval request."
+  (interactive)
+  (hermes-exec--prompt-choice))
 
 (defun hermes-exec--eval-outcome (code)
   "Return the eval result plist for CODE, or the symbol `defer'.
@@ -606,13 +783,22 @@ dispatched and an incomplete one yields nil."
 ;; dispatches.  This bounds memory and keeps partial reads from a premature eval.
 (defun hermes-exec--filter (proc chunk)
   "Accumulate CHUNK on PROC; respond or queue once a full request arrives."
-  (let ((buffer (concat (process-get proc 'hermes-buffer) chunk))
-        (hermes-exec--connection proc))
+  (let* ((origin-window (selected-window))
+         (origin-buffer (and (window-live-p origin-window)
+                             (window-buffer origin-window)))
+         (buffer (concat (process-get proc 'hermes-buffer) chunk))
+         (hermes-exec--connection proc))
     (process-put proc 'hermes-buffer buffer)
     (when-let* ((outcome (hermes-exec--request-response buffer)))
       (process-put proc 'hermes-buffer nil)
       (if (eq (car-safe outcome) :defer)
-          (hermes-exec--enqueue-approval proc (cadr outcome))
+          (let ((code (cadr outcome)))
+            (hermes-exec--enqueue-approval
+             proc code
+             :origin-buffer origin-buffer
+             :origin-window origin-window
+             :peer (hermes-exec--peer-info proc)
+             :risk (hermes-exec--classify-code code)))
         (hermes-exec--send-response proc outcome)))))
 
 (defun hermes-exec--sentinel (proc _event)

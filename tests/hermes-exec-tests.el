@@ -86,6 +86,19 @@
                         "(setq hermes-exec-test--canary 'ran)"))))
   (should (null hermes-exec-test--canary)))
 
+(ert-deftest hermes-exec-test-approval-choices-use-char-prefixed-labels ()
+  "Approval choices are literal, readable, and keyed by their first label char."
+  (let ((base '((?a "approve once" "approve once - evaluate this request")
+                (?d "deny" "deny - decline this request")
+                (?v "view" "view - inspect the full request")))
+        (trust '((?t "trust for this session"
+                     "trust for this session - ordinary forms run, sensitive ones still prompt"))))
+    (let ((hermes-exec-require-approval t))
+      (should (equal (hermes-exec--approval-choices)
+                     (append base trust))))
+    (let ((hermes-exec-require-approval #'hermes-exec-confirm-by-risk))
+      (should (equal (hermes-exec--approval-choices) base)))))
+
 (ert-deftest hermes-exec-test-disabled-endpoint-refuses-to-evaluate ()
   "A disabled endpoint returns an error result without evaluating."
   (setq hermes-exec-test--canary nil)
@@ -142,19 +155,207 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
          ,sent-var)
      (unwind-protect
          (cl-letf (((symbol-function 'hermes-exec--send-response)
-                    (lambda (_proc response) (setq ,sent-var response))))
+                    (lambda (_proc response) (setq ,sent-var response)))
+                   ((symbol-function 'hermes-exec--display-approval)
+                    (lambda (_buffer) nil))
+                   ((symbol-function 'hermes-exec--maybe-prompt)
+                    #'ignore))
            ,@body)
        (delete-process ,proc-var)
        (when (get-buffer hermes-exec--approval-buffer-name)
          (kill-buffer hermes-exec--approval-buffer-name)))))
 
 (ert-deftest hermes-exec-test-enqueue-shows-code ()
-  "Queuing a request pops a buffer holding the request code verbatim."
+  "Queuing a request prepares a buffer with metadata and request code."
   (hermes-exec-test--with-pending proc _sent
                                   (hermes-exec--enqueue-approval proc "(message \"hi\")")
-                                  (should (equal "(message \"hi\")"
-                                                 (with-current-buffer hermes-exec--approval-buffer-name
-                                                   (buffer-substring-no-properties (point-min) (point-max)))))))
+                                  (let ((text (with-current-buffer hermes-exec--approval-buffer-name
+                                                (buffer-substring-no-properties
+                                                 (point-min) (point-max)))))
+                                    (should (string-match-p "Risk" text))
+                                    (should (string-match-p "(message \\\"hi\\\")" text)))))
+
+(ert-deftest hermes-exec-test-filter-captures-origin-before-display ()
+  "A deferred request stores the selected origin buffer before approval display."
+  (let ((proc (make-pipe-process :name "hermes-exec-test" :noquery t))
+        (origin (get-buffer-create " *hermes-exec-origin*"))
+        (previous (window-buffer (selected-window)))
+        (hermes-exec--pending nil)
+        (hermes-exec--active nil)
+        (hermes-exec-enabled t)
+        (hermes-exec-require-approval t))
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-exec--display-approval)
+                   (lambda (_buffer) nil))
+                  ((symbol-function 'hermes-exec--maybe-prompt)
+                   #'ignore))
+          (set-window-buffer (selected-window) origin)
+          (hermes-exec--filter
+           proc (hermes-exec-test--raw-request
+                 "{\"code\":\"(buffer-name)\"}"))
+          (should (eq origin (plist-get hermes-exec--active :origin-buffer)))
+          (should (eq (selected-window)
+                      (plist-get hermes-exec--active :origin-window))))
+      (set-window-buffer (selected-window) previous)
+      (delete-process proc)
+      (kill-buffer origin)
+      (when (get-buffer hermes-exec--approval-buffer-name)
+        (kill-buffer hermes-exec--approval-buffer-name)))))
+
+(ert-deftest hermes-exec-test-approve-uses-origin-buffer ()
+  "Approving evaluates with the captured origin buffer current."
+  (let ((origin (get-buffer-create " *hermes-exec-origin-eval*")))
+    (unwind-protect
+        (hermes-exec-test--with-pending proc sent
+          (hermes-exec--enqueue-approval proc "(buffer-name)"
+                                         :origin-buffer origin)
+          (hermes-exec-approve)
+          (should (string-match-p (regexp-quote (buffer-name origin)) sent)))
+      (when (buffer-live-p origin)
+        (kill-buffer origin)))))
+
+(ert-deftest hermes-exec-test-approve-prefers-origin-window ()
+  "Approving evaluates with the captured live origin window selected."
+  (let ((origin (get-buffer-create " *hermes-exec-origin-window*"))
+        (fallback (get-buffer-create " *hermes-exec-origin-buffer*"))
+        (window (selected-window))
+        (previous (window-buffer (selected-window))))
+    (unwind-protect
+        (progn
+          (set-window-buffer window origin)
+          (hermes-exec-test--with-pending proc sent
+            (hermes-exec--enqueue-approval proc "(buffer-name)"
+                                           :origin-buffer fallback
+                                           :origin-window window)
+            (hermes-exec-approve)
+            (should (string-match-p (regexp-quote (buffer-name origin)) sent))
+            (should-not (string-match-p (regexp-quote (buffer-name fallback)) sent))))
+      (set-window-buffer window previous)
+      (when (buffer-live-p origin)
+        (kill-buffer origin))
+      (when (buffer-live-p fallback)
+        (kill-buffer fallback)))))
+
+(ert-deftest hermes-exec-test-approve-falls-back-when-origin-dead ()
+  "Approving still evaluates when the captured origin buffer is dead."
+  (let ((origin (get-buffer-create " *hermes-exec-origin-dead*"))
+        (fallback (get-buffer-create " *hermes-exec-fallback*")))
+    (unwind-protect
+        (progn
+          (kill-buffer origin)
+          (with-current-buffer fallback
+            (hermes-exec-test--with-pending proc sent
+              (hermes-exec--enqueue-approval proc "(buffer-name)"
+                                             :origin-buffer origin)
+              (hermes-exec-approve)
+              (should (string-match-p (regexp-quote (buffer-name fallback)) sent)))))
+      (when (buffer-live-p origin)
+        (kill-buffer origin))
+      (when (buffer-live-p fallback)
+        (kill-buffer fallback)))))
+
+(ert-deftest hermes-exec-test-approval-buffer-shows-metadata ()
+  "The approval buffer includes useful metadata plus the full code."
+  (let* ((origin (get-buffer-create " *hermes-exec-meta-origin*"))
+         (hermes-exec-timeout 12)
+         (buffer (hermes-exec--approval-buffer
+                  (list :code "(delete-file \"/tmp/x\")"
+                        :risk 'sensitive
+                        :peer "127.0.0.1:8237"
+                        :origin-buffer origin
+                        :queue-total 3)))
+         (text (with-current-buffer buffer
+                 (buffer-substring-no-properties (point-min) (point-max)))))
+    (unwind-protect
+        (progn
+          (should (string-match-p "Risk[[:space:]]*: Sensitive" text))
+          (should (string-match-p "Requester[[:space:]]*: 127.0.0.1:8237" text))
+          (should (string-match-p "Origin[[:space:]]*:  \\*hermes-exec-meta-origin\\*" text))
+          (should (string-match-p "Queue[[:space:]]*: 1 of 3" text))
+          (should (string-match-p "Timeout[[:space:]]*: 12s" text))
+          (should (string-match-p "delete-file" text)))
+      (kill-buffer origin)
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest hermes-exec-test-prompt-choice-maps-decisions ()
+  "`read-multiple-choice' results map to approve/deny resolution."
+  (let ((hermes-exec--active (list :buffer nil))
+        (noninteractive nil)
+        decisions)
+    (cl-letf (((symbol-function 'hermes-exec--resolve-active)
+               (lambda (approve) (push approve decisions)))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (&rest _) (list ?a "approve once"))))
+      (hermes-exec--prompt-choice))
+    (cl-letf (((symbol-function 'hermes-exec--resolve-active)
+               (lambda (approve) (push approve decisions)))
+              ((symbol-function 'read-multiple-choice)
+               (lambda (&rest _) (list ?d "deny"))))
+      (hermes-exec--prompt-choice))
+    (should (equal '(nil t) decisions))))
+
+(ert-deftest hermes-exec-test-prompt-choice-trusts-ordinary-only ()
+  "Trusting the session approves ordinary, but not sensitive, active requests."
+  (let ((noninteractive nil)
+        decisions)
+    (let ((hermes-exec--active (list :buffer nil :risk 'ordinary))
+          (hermes-exec-require-approval t))
+      (cl-letf (((symbol-function 'hermes-exec--resolve-active)
+                 (lambda (approve) (push approve decisions)))
+                ((symbol-function 'read-multiple-choice)
+                 (lambda (&rest _) (list ?t "trust for this session"))))
+        (hermes-exec--prompt-choice))
+      (should (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk)))
+    (let ((hermes-exec--active (list :buffer nil :risk 'sensitive))
+          (hermes-exec-require-approval t)
+          (answers '((?t "trust for this session") (?d "deny"))))
+      (cl-letf (((symbol-function 'hermes-exec--resolve-active)
+                 (lambda (approve) (push approve decisions)))
+                ((symbol-function 'read-multiple-choice)
+                 (lambda (&rest _) (pop answers))))
+        (hermes-exec--prompt-choice))
+      (should (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk)))
+    (should (equal '(nil t) decisions))))
+
+(ert-deftest hermes-exec-test-prompt-choice-view-selects-buffer ()
+  "The view choice shows the active approval buffer without resolving."
+  (let ((buffer (get-buffer-create " *hermes-exec-view-choice*"))
+        (noninteractive nil)
+        resolved)
+    (unwind-protect
+        (let ((hermes-exec--active (list :buffer buffer)))
+          (cl-letf (((symbol-function 'hermes-exec--resolve-active)
+                     (lambda (&rest _) (setq resolved t)))
+                    ((symbol-function 'read-multiple-choice)
+                     (lambda (&rest _) (list ?v "view"))))
+            (hermes-exec--prompt-choice))
+          (should (eq (current-buffer) buffer))
+          (should-not resolved))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest hermes-exec-test-approval-keymap-keeps-yes-no-aliases ()
+  "The approval buffer keeps old yes/no/quit aliases while adding char choices."
+  (should (eq (lookup-key hermes-exec-approval-mode-map (kbd "a"))
+              #'hermes-exec-approve))
+  (should (eq (lookup-key hermes-exec-approval-mode-map (kbd "y"))
+              #'hermes-exec-approve))
+  (should (eq (lookup-key hermes-exec-approval-mode-map (kbd "d"))
+              #'hermes-exec-deny))
+  (should (eq (lookup-key hermes-exec-approval-mode-map (kbd "n"))
+              #'hermes-exec-deny))
+  (should (eq (lookup-key hermes-exec-approval-mode-map (kbd "q"))
+              #'hermes-exec-deny)))
+
+(ert-deftest hermes-exec-test-peer-info-formats-host-and-port ()
+  "Peer info displays the service element from `process-contact', not the cdr."
+  (cl-letf (((symbol-function 'processp) (lambda (_proc) t))
+            ((symbol-function 'process-live-p) (lambda (_proc) t))
+            ((symbol-function 'process-contact)
+             (lambda (&rest _) '("127.0.0.1" 54321))))
+    (should (equal "127.0.0.1:54321"
+                   (hermes-exec--peer-info 'fake-proc)))))
 
 (ert-deftest hermes-exec-test-approve-evaluates-responds-and-cleans-up ()
   "Approving evaluates the code, sends an ok response, and kills the buffer."
@@ -200,17 +401,26 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
         (hermes-exec-enabled t))
     (unwind-protect
         (cl-letf (((symbol-function 'hermes-exec--send-response)
-                   (lambda (&rest _) nil)))
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'hermes-exec--display-approval)
+                   (lambda (_buffer) nil))
+                  ((symbol-function 'hermes-exec--maybe-prompt)
+                   #'ignore))
           (hermes-exec--enqueue-approval proc1 "(+ 1 1)")
           (hermes-exec--enqueue-approval proc2 "(+ 2 2)")
           (should (eq proc1 (plist-get hermes-exec--active :proc)))
           (should (= 1 (length hermes-exec--pending)))
+          (should (string-match-p
+                   "Queue[[:space:]]*: 1 of 2"
+                   (with-current-buffer hermes-exec--approval-buffer-name
+                     (buffer-substring-no-properties (point-min) (point-max)))))
           (hermes-exec-approve)
           (should (eq proc2 (plist-get hermes-exec--active :proc)))
           (should (null hermes-exec--pending))
-          (should (equal "(+ 2 2)"
-                         (with-current-buffer hermes-exec--approval-buffer-name
-                           (buffer-substring-no-properties (point-min) (point-max))))))
+          (should (string-match-p
+                   (regexp-quote "(+ 2 2)")
+                   (with-current-buffer hermes-exec--approval-buffer-name
+                     (buffer-substring-no-properties (point-min) (point-max))))))
       (delete-process proc1)
       (delete-process proc2)
       (when (get-buffer hermes-exec--approval-buffer-name)
