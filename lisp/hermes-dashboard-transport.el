@@ -177,6 +177,9 @@ Each further attempt doubles the delay up to
   ready-promise
   (next-id 0)
   (pending (make-hash-table :test #'equal))
+  ;; Deprecated: session identity is buffer-local.  These slots are retained
+  ;; for incremental source compatibility only; chat and control paths no
+  ;; longer read or write them.  Do not add new dependencies on them.
   session-id
   stored-session-id
   (callback #'ignore)
@@ -1893,9 +1896,12 @@ FN must accept trailing :resolve/:reject keywords, as the typed
   "Return ALIST without nil-valued cells."
   (cl-remove-if (lambda (cell) (null (cdr cell))) alist))
 
-(defun hermes-dashboard-transport--session-param (client session-id)
-  "Return explicit SESSION-ID or CLIENT's active session id."
-  (or session-id (hermes-dashboard-transport-client-session-id client)))
+(defun hermes-dashboard-transport--session-param (_client session-id)
+  "Return the explicit SESSION-ID, or nil when the caller omitted it.
+The shared dashboard client carries no ambient session identity: every
+session-scoped RPC must pass its own live `:session-id'.  This keeps two
+chat buffers sharing one socket from leaking session state into each other."
+  session-id)
 
 (defmacro hermes-dashboard-transport-define-rpc (name method docstring &rest spec)
   "Define NAME as a wrapper sending METHOD over the dashboard WebSocket.
@@ -1932,9 +1938,11 @@ nil values are dropped.  RESOLVE and REJECT keys are always added."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-create "session.create"
   "Send a `session.create' request for CLIENT.
-COLS, MESSAGES, TITLE, PROFILE, and CWD become request parameters.  RESOLVE
-and REJECT receive the asynchronous result or error."
-  :keys (cols messages title profile cwd))
+COLS, MESSAGES, TITLE, PROFILE, CWD, MODEL, PROVIDER, REASONING-EFFORT, and
+FAST become request parameters; the backend persists them as per-session
+runtime overrides.  RESOLVE and REJECT receive the asynchronous result or
+error."
+  :keys (cols messages title profile cwd model provider reasoning-effort fast))
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-resume "session.resume"
@@ -2598,19 +2606,13 @@ Self-terminating: once CLIENT's WebSocket is gone the chain stops re-arming."
     (and (hermes-transport--object-p error)
          (hermes-transport--get error 'code))))
 
-(defun hermes-dashboard-transport--store-session-result (client method result)
-  "Store CLIENT session identifiers from METHOD RESULT when present."
-  (when (member method '("session.create" "session.resume"))
-    (let ((session-id (hermes-transport--get result 'session_id)))
-      (when session-id
-        (setf (hermes-dashboard-transport-client-session-id client) session-id))
-      (when-let* ((stored-id (or (hermes-transport--get result 'stored_session_id)
-                                 (hermes-transport--get result 'resumed)
-                                 (hermes-transport--get result 'session_key)
-                                 (and (equal method "session.create")
-                                      session-id))))
-        (setf (hermes-dashboard-transport-client-stored-session-id client)
-              stored-id)))))
+(defun hermes-dashboard-transport--store-session-result (_client _method _result)
+  "No-op retained for the response path.
+Session identifiers live buffer-locally in each chat buffer; the shared
+client is transport-only and must not accumulate session identity from
+`session.create'/`session.resume' responses, or two buffers sharing one
+socket would clobber each other's session state."
+  nil)
 
 (defun hermes-dashboard-transport--resolve-response (client frame)
   "Resolve CLIENT's pending request represented by response FRAME."

@@ -299,22 +299,24 @@ so do not copy its final content into the unsubmitted retry placeholder."
   (hermes-transport--scalar-string
    (hermes-transport--get-any result keys)))
 
-(defun hermes-chat--dashboard-active-id-from-result (client result)
-  "Return CLIENT's live dashboard session id from RPC RESULT."
-  (or (hermes-chat--dashboard-result-string result '(session_id id))
-      (and (hermes-dashboard-transport-client-p client)
-           (hermes-dashboard-transport-client-session-id client))))
+(defun hermes-chat--dashboard-active-id-from-result (_client result)
+  "Return the live dashboard session id from RPC RESULT.
+The shared CLIENT is transport-only; session identity is read from the
+result alone so one buffer's session never leaks onto another."
+  (hermes-chat--dashboard-result-string result '(session_id id)))
 
-(defun hermes-chat--dashboard-stored-id-from-result (client result active-id)
-  "Return durable session key from CLIENT, RPC RESULT, and ACTIVE-ID."
+(defun hermes-chat--dashboard-stored-id-from-result (_client result active-id)
+  "Return durable session key from RPC RESULT, falling back to ACTIVE-ID.
+The shared CLIENT contributes no session identity on a shared socket."
   (or (hermes-chat--dashboard-result-string
        result '(stored_session_id resumed session_key))
-      (and (hermes-dashboard-transport-client-p client)
-           (hermes-dashboard-transport-client-stored-session-id client))
       active-id))
 
 (defun hermes-chat--dashboard-record-session (client result)
-  "Record live and durable session identifiers from CLIENT RPC RESULT."
+  "Record live and durable session identifiers from RPC RESULT in this buffer.
+CLIENT is the shared transport client; it is used only to bind the
+subscriber token for event routing.  No session state is written onto the
+shared client."
   (when-let* ((active-id
                (hermes-chat--dashboard-active-id-from-result client result)))
     (let ((stored-id
@@ -322,13 +324,10 @@ so do not copy its final content into the unsubmitted retry placeholder."
       (setq hermes-chat--dashboard-active-session-id active-id
             hermes-chat--session-id stored-id
             hermes-chat--dashboard-session-ready-p t)
-      (when (hermes-dashboard-transport-client-p client)
-        (setf (hermes-dashboard-transport-client-session-id client) active-id
-              (hermes-dashboard-transport-client-stored-session-id client)
-              stored-id)
-        (when hermes-chat--dashboard-token
-          (hermes-dashboard-transport-subscribe-session
-           client hermes-chat--dashboard-token active-id))))))
+      (when (and (hermes-dashboard-transport-client-p client)
+                 hermes-chat--dashboard-token)
+        (hermes-dashboard-transport-subscribe-session
+         client hermes-chat--dashboard-token active-id)))))
 
 (defun hermes-chat--dashboard-result-live-turn-p (result)
   "Return non-nil when RESULT reports the resumed session is still busy."
@@ -536,6 +535,19 @@ RESUME-P means the callback handles a `session.resume' response."
   (and hermes-chat--dashboard-session-ready-p
        hermes-chat--dashboard-active-session-id))
 
+(defun hermes-chat--dashboard-create-runtime-params ()
+  "Return a plist of non-nil buffer-local create-time runtime overrides.
+Values are read from the current buffer's `hermes-chat--dashboard-create-*'
+vars and forwarded to `session.create' only; `session.resume' owns its
+stored runtime and must not receive them."
+  (cl-loop for (var key)
+           in '((hermes-chat--dashboard-create-model :model)
+                 (hermes-chat--dashboard-create-provider :provider)
+                 (hermes-chat--dashboard-create-reasoning-effort :reasoning-effort)
+                 (hermes-chat--dashboard-create-fast-p :fast))
+           when (symbol-value var)
+           append (list key (symbol-value var))))
+
 (defun hermes-chat--dashboard-ensure-session (client prompt buffer)
   "Create or resume CLIENT's dashboard session before submitting PROMPT.
 Record asynchronous session results in BUFFER."
@@ -549,12 +561,15 @@ Record asynchronous session results in BUFFER."
      :resolve (hermes-chat--dashboard-session-resolver
                buffer client prompt t)))
    (t
-    (hermes-dashboard-transport-session-create
+    (apply #'hermes-dashboard-transport-session-create
      client
      :cols (hermes-chat--dashboard-cols)
      :title hermes-chat-dashboard-session-title
      :profile hermes-chat--profile
-     :resolve (hermes-chat--dashboard-session-resolver buffer client prompt)))))
+     (append (hermes-chat--dashboard-create-runtime-params)
+             (list :resolve
+                   (hermes-chat--dashboard-session-resolver
+                    buffer client prompt)))))))
 
 (defun hermes-chat--dashboard-event-for-session-p (event)
   "Return non-nil when EVENT belongs to this buffer's live dashboard session."
@@ -632,12 +647,14 @@ When dashboard session bootstrap fails, call REJECT with the error message."
      :resolve (hermes-chat--dashboard-action-resolver buffer client action)
      :reject (hermes-chat--dashboard-action-rejecter buffer reject)))
    (t
-    (hermes-dashboard-transport-session-create
+    (apply #'hermes-dashboard-transport-session-create
      client
      :cols (hermes-chat--dashboard-cols)
      :title hermes-chat-dashboard-session-title
-     :resolve (hermes-chat--dashboard-action-resolver buffer client action)
-     :reject (hermes-chat--dashboard-action-rejecter buffer reject)))))
+     (append (hermes-chat--dashboard-create-runtime-params)
+             (list :resolve
+                   (hermes-chat--dashboard-action-resolver buffer client action)
+                   :reject (hermes-chat--dashboard-action-rejecter buffer reject)))))))
 
 (defun hermes-chat--dashboard-stored-session-needs-resume-p ()
   "Return non-nil when a durable dashboard session may be active remotely."

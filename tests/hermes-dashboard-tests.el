@@ -230,15 +230,16 @@
 
 (ert-deftest hermes-dashboard-transport-tools-configure-sends-action-payload ()
   "The transport wrapper sends `tools.configure' names/action/session_id."
+  :tags '(shared-socket-isolation)
   (let (method params)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
                (lambda (_client m p resolve _reject)
                  (setq method m params p)
                  (funcall resolve '((ok . t))))))
       (let ((client (hermes-test--dashboard-client)))
-        (setf (hermes-dashboard-transport-client-session-id client) "sid-1")
         (hermes-dashboard-transport-tools-configure
-         client '("terminal") "disable" :resolve #'ignore :reject #'ignore))
+         client '("terminal") "disable"
+         :session-id "sid-1" :resolve #'ignore :reject #'ignore))
       (should (equal method "tools.configure"))
       (should (equal (cdr (assq 'names params)) '("terminal")))
       (should (equal (cdr (assq 'action params)) "disable"))
@@ -261,44 +262,46 @@
 
 (ert-deftest hermes-dashboard-transport-handoff-request-sends-platform ()
   "The transport wrapper sends `handoff.request' with platform and session_id."
+  :tags '(shared-socket-isolation)
   (let (method params)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
                (lambda (_client m p resolve _reject)
                  (setq method m params p)
                  (funcall resolve '((queued . t))))))
       (let ((client (hermes-test--dashboard-client)))
-        (setf (hermes-dashboard-transport-client-session-id client) "sid-1")
         (hermes-dashboard-transport-handoff-request
-         client "telegram" :resolve #'ignore :reject #'ignore))
+         client "telegram"
+         :session-id "sid-1" :resolve #'ignore :reject #'ignore))
       (should (equal method "handoff.request"))
       (should (equal (cdr (assq 'platform params)) "telegram"))
       (should (equal (cdr (assq 'session_id params)) "sid-1")))))
 
 (ert-deftest hermes-dashboard-transport-handoff-state-sends-session ()
   "The transport wrapper sends `handoff.state' scoped to the session."
+  :tags '(shared-socket-isolation)
   (let (method params)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
                (lambda (_client m p resolve _reject)
                  (setq method m params p)
                  (funcall resolve '((state . "pending"))))))
       (let ((client (hermes-test--dashboard-client)))
-        (setf (hermes-dashboard-transport-client-session-id client) "sid-2")
         (hermes-dashboard-transport-handoff-state
-         client :resolve #'ignore :reject #'ignore))
+         client :session-id "sid-2" :resolve #'ignore :reject #'ignore))
       (should (equal method "handoff.state"))
       (should (equal (cdr (assq 'session_id params)) "sid-2")))))
 
 (ert-deftest hermes-dashboard-transport-handoff-fail-sends-error ()
   "The transport wrapper sends `handoff.fail' with the error reason."
+  :tags '(shared-socket-isolation)
   (let (method params)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
                (lambda (_client m p resolve _reject)
                  (setq method m params p)
                  (funcall resolve '((failed . t))))))
       (let ((client (hermes-test--dashboard-client)))
-        (setf (hermes-dashboard-transport-client-session-id client) "sid-3")
         (hermes-dashboard-transport-handoff-fail
-         client :error "poll timed out" :resolve #'ignore :reject #'ignore))
+         client :error "poll timed out"
+         :session-id "sid-3" :resolve #'ignore :reject #'ignore))
       (should (equal method "handoff.fail"))
       (should (equal (cdr (assq 'error params)) "poll timed out"))
       (should (equal (cdr (assq 'session_id params)) "sid-3")))))
@@ -932,6 +935,56 @@
           (hermes-dashboard-transport-stop c1)
           (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients)
                       c2)))))))
+
+
+;;; Shared-socket session param isolation
+
+(ert-deftest hermes-dashboard-transport-session-param-is-explicit-only ()
+  "`--session-param' returns the explicit id and never reads the client."
+  :tags '(shared-socket-isolation)
+  (let ((client (make-hermes-dashboard-transport-client
+                 :session-id "stale-sid")))
+    (should (equal (hermes-dashboard-transport--session-param client "live-sid")
+                   "live-sid"))
+    (should-not (hermes-dashboard-transport--session-param client nil))))
+
+(ert-deftest hermes-dashboard-transport-session-response-does-not-store-client-session ()
+  "A `session.create' response must not mutate the shared client."
+  :tags '(shared-socket-isolation)
+  (let ((client (hermes-test--dashboard-client)))
+    (hermes-dashboard-transport--store-session-result
+     client "session.create"
+     '((session_id . "sid-live") (stored_session_id . "sid-stored")))
+    (should-not (hermes-dashboard-transport-client-session-id client))
+    (should-not (hermes-dashboard-transport-client-stored-session-id client))))
+
+(ert-deftest hermes-dashboard-transport-session-rpc-omits-session-when-not-explicit ()
+  "A `:session t' RPC that omits `:session-id' sends no session_id param."
+  :tags '(shared-socket-isolation)
+  (let (params)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client _method p resolve _reject)
+                 (setq params p)
+                 (funcall resolve '((ok . t))))))
+      (let ((client (make-hermes-dashboard-transport-client
+                     :session-id "ambient-sid")))
+        (hermes-dashboard-transport-tools-configure
+         client '("terminal") "disable" :resolve #'ignore :reject #'ignore))
+      (should-not (assq 'session_id params)))))
+
+(ert-deftest hermes-dashboard-transport-session-rpc-forwards-explicit-session ()
+  "A `:session t' RPC with explicit `:session-id' forwards it."
+  :tags '(shared-socket-isolation)
+  (let (params)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client _method p resolve _reject)
+                 (setq params p)
+                 (funcall resolve '((ok . t))))))
+      (let ((client (hermes-test--dashboard-client)))
+        (hermes-dashboard-transport-tools-configure
+         client '("terminal") "disable"
+         :session-id "explicit-sid" :resolve #'ignore :reject #'ignore))
+      (should (equal (cdr (assq 'session_id params)) "explicit-sid")))))
 
 (provide 'hermes-dashboard-tests)
 ;;; hermes-dashboard-tests.el ends here

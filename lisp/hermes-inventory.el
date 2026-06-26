@@ -260,13 +260,15 @@ client for the listing."
               "; new sessions use this setting after reset/restart"))))
 
 (defun hermes-inventory--set-toolset-enabled (name enabled)
-  "Set toolset NAME to ENABLED through dashboard RPC."
+  "Set toolset NAME to ENABLED through dashboard RPC.
+Toolset changes are global configuration: they are not scoped to a single
+chat session, so no `:session-id' is sent.  New sessions pick up the toggle
+after a reset/restart."
   (hermes-browser--run-on-client
    (lambda (client)
      (hermes-dashboard-transport-call-fn
       #'hermes-dashboard-transport-tools-configure
-      client (list name) (if enabled "enable" "disable")
-      :session-id (hermes-dashboard-transport-client-session-id client)))
+      client (list name) (if enabled "enable" "disable")))
    (lambda (result)
      (message "Hermes: %s"
               (hermes-inventory--toolset-done-message name enabled result))

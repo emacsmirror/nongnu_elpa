@@ -116,6 +116,17 @@ without each one repeating the liveness guard."
   "Plain message queued to send after the active Hermes turn settles.")
 (defvar-local hermes-chat--session-id nil
   "Durable Hermes session key for the current chat buffer.")
+(defvar-local hermes-chat--dashboard-create-model nil
+  "Buffer-local model override forwarded on `session.create' only.
+Nil means inherit the profile default.  Kept buffer-local so two chat
+buffers sharing one dashboard socket each create their own session with
+their own runtime.")
+(defvar-local hermes-chat--dashboard-create-provider nil
+  "Buffer-local provider override forwarded on `session.create' only.")
+(defvar-local hermes-chat--dashboard-create-reasoning-effort nil
+  "Buffer-local reasoning effort forwarded on `session.create' only.")
+(defvar-local hermes-chat--dashboard-create-fast-p nil
+  "Buffer-local fast/service-tier flag forwarded on `session.create' only.")
 (defvar-local hermes-chat--transport-generation 0
   "Monotonic transport-callback generation for the current chat buffer.
 Bumped per turn so stale async callbacks can detect they are obsolete.

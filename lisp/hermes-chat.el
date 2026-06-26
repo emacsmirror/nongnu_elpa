@@ -1954,18 +1954,30 @@ identity is part of the selection."
 
 (defun hermes-chat--apply-model (buffer client candidate confirm)
   "Set CANDIDATE on BUFFER's session via CLIENT.
-CONFIRM acknowledges an expensive-model confirmation prompt."
+CONFIRM acknowledges an expensive-model confirmation prompt.  When BUFFER
+has no live session yet, the choice is stored buffer-locally and forwarded
+on the next `session.create' instead of calling `config.set'."
   (with-current-buffer buffer
-    (hermes-dashboard-transport-config-set
-     client "model" (hermes-chat--model-config-value candidate)
-     :session-id hermes-chat--dashboard-active-session-id
-     :confirm-expensive-model confirm
-     :resolve (lambda (result)
-                (hermes-chat--model-set-result
-                 buffer client candidate result confirm))
-     :reject (lambda (message)
-               (hermes-chat--in-buffer buffer
-                 (hermes-chat--command-error message))))))
+    (if (hermes-chat--dashboard-session-attached-p)
+        (hermes-dashboard-transport-config-set
+         client "model" (hermes-chat--model-config-value candidate)
+         :session-id hermes-chat--dashboard-active-session-id
+         :confirm-expensive-model confirm
+         :resolve (lambda (result)
+                    (hermes-chat--model-set-result
+                     buffer client candidate result confirm))
+         :reject (lambda (message)
+                   (hermes-chat--in-buffer buffer
+                     (hermes-chat--command-error message))))
+      (setq hermes-chat--dashboard-create-model
+            (if (stringp candidate) candidate (plist-get candidate :model))
+            hermes-chat--dashboard-create-provider
+            (and (not (stringp candidate))
+                 (plist-get candidate :provider)))
+      (hermes-chat--insert-local-status
+       (format "Model set to %s (applies to next session)"
+               (hermes-chat--model-display-name candidate))
+       'ready))))
 
 (defun hermes-chat--model-set-result (buffer client candidate result confirmed)
   "Report CANDIDATE switch RESULT for BUFFER, re-confirming through CLIENT.

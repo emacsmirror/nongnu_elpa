@@ -2103,12 +2103,10 @@
                              hermes-chat--dashboard-active-session-id)
                             "sid-live"))
              (should hermes-chat--dashboard-session-ready-p)
-             (should (equal (hermes-dashboard-transport-client-session-id
-                             client)
-                            "sid-live"))
-             (should (equal (hermes-dashboard-transport-client-stored-session-id
-                             client)
-                            "sid-stored"))
+             (should-not (hermes-dashboard-transport-client-session-id
+                          client))
+             (should-not (hermes-dashboard-transport-client-stored-session-id
+                          client))
              (should (eq hermes-chat--process client))
              (should (eq submit-client client))
              (should (equal submit-text "hello dashboard"))
@@ -2153,12 +2151,10 @@
                              hermes-chat--dashboard-active-session-id)
                             "sid-live"))
              (should hermes-chat--dashboard-session-ready-p)
-             (should (equal (hermes-dashboard-transport-client-session-id
-                             client)
-                            "sid-live"))
-             (should (equal (hermes-dashboard-transport-client-stored-session-id
-                             client)
-                            "sid-stored"))
+             (should-not (hermes-dashboard-transport-client-session-id
+                          client))
+             (should-not (hermes-dashboard-transport-client-stored-session-id
+                          client))
              (should (equal submit-text "resume me"))
              (should (equal (plist-get submit-args :session-id)
                             "sid-live")))))))))
@@ -3720,7 +3716,8 @@
                           '((key . "model") (value . "beta --provider p1"))))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
-             hermes-chat--dashboard-active-session-id "sid-1")
+             hermes-chat--dashboard-active-session-id "sid-1"
+             hermes-chat--dashboard-session-ready-p t)
        (hermes-chat-switch-model)
        (should (equal set-key "model"))
        (should (equal set-value "beta --provider p1"))
@@ -3760,7 +3757,8 @@
                               (value . "beta --provider p1")))))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
-             hermes-chat--dashboard-active-session-id "sid-1")
+             hermes-chat--dashboard-active-session-id "sid-1"
+             hermes-chat--dashboard-session-ready-p t)
        (hermes-chat-switch-model)
        (should (equal calls 2))
        (should (equal (nreverse confirms) '(nil t)))
@@ -3793,7 +3791,8 @@
                             (confirm_message . "Still expensive"))))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
-             hermes-chat--dashboard-active-session-id "sid-1")
+             hermes-chat--dashboard-active-session-id "sid-1"
+             hermes-chat--dashboard-session-ready-p t)
        (hermes-chat-switch-model)
        (should (equal calls 2))
        (should (equal (nreverse confirms) '(nil t)))
@@ -3824,7 +3823,8 @@
                             (confirm_message . "This model may be expensive"))))))
       (hermes-test-with-chat-buffer
        (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
-             hermes-chat--dashboard-active-session-id "sid-1")
+             hermes-chat--dashboard-active-session-id "sid-1"
+             hermes-chat--dashboard-session-ready-p t)
        (hermes-chat-switch-model)
        (should (equal calls 1))
        (should (string-match-p "Model switch cancelled" (buffer-string)))))))
@@ -3847,7 +3847,8 @@
                (funcall (plist-get args :reject) "backend denied"))))
     (hermes-test-with-chat-buffer
      (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
-           hermes-chat--dashboard-active-session-id "sid-1")
+           hermes-chat--dashboard-active-session-id "sid-1"
+           hermes-chat--dashboard-session-ready-p t)
      (hermes-chat-switch-model)
      (should (string-match-p "backend denied" (buffer-string))))))
 
@@ -4108,7 +4109,8 @@
                  (funcall (plist-get args :resolve)
                           '((provider . ((slug . "deepseek"))))))))
       (hermes-test-with-chat-buffer
-        (setq hermes-chat--dashboard-active-session-id "sid-1")
+        (setq hermes-chat--dashboard-active-session-id "sid-1"
+              hermes-chat--dashboard-session-ready-p t)
         (hermes-chat--connect-provider-candidate
          (current-buffer) 'fake-client
          '((slug . "deepseek") (name . "DeepSeek")
@@ -4133,7 +4135,8 @@
                  (setq applied (cons key value))
                  (funcall (plist-get args :resolve) '((ok . t))))))
       (hermes-test-with-chat-buffer
-        (setq hermes-chat--dashboard-active-session-id "sid-1")
+        (setq hermes-chat--dashboard-active-session-id "sid-1"
+              hermes-chat--dashboard-session-ready-p t)
         (hermes-chat--prompt-and-set-model
          (current-buffer) 'fake-client
          '((providers . (((slug . "deepseek") (name . "DeepSeek")
@@ -4419,6 +4422,267 @@ Killing one buffer releases its reference without tearing down the other."
                    (hermes-chat--next-transport-generation))
                   '(:type status :status "reconnected"))
          (should (equal resumed "stored-session")))))))
+
+
+;;; Shared-socket runtime isolation
+
+(ert-deftest hermes-chat-dashboard-record-session-does-not-mutate-shared-client ()
+  "Recording a session result updates buffer-local vars only, never the client."
+  :tags '(shared-socket-isolation)
+  (let ((client (hermes-test--dashboard-client)))
+    (hermes-test-with-chat-buffer
+     (hermes-chat--dashboard-set-subscriber
+      client (lambda (_event)))
+     (setq hermes-chat--dashboard-token
+           (hermes-dashboard-transport-subscribe
+            client (lambda (_event))))
+     (hermes-chat--dashboard-record-session
+      client '((session_id . "sid-live")
+               (stored_session_id . "sid-stored")))
+     (should (equal hermes-chat--dashboard-active-session-id "sid-live"))
+     (should (equal hermes-chat--session-id "sid-stored"))
+     (should hermes-chat--dashboard-session-ready-p)
+     (should-not (hermes-dashboard-transport-client-session-id client))
+     (should-not (hermes-dashboard-transport-client-stored-session-id client)))))
+
+(ert-deftest hermes-chat-dashboard-record-session-binds-subscriber-token ()
+  "Recording a session binds the buffer's subscriber token to its session id."
+  :tags '(shared-socket-isolation)
+  (let ((client (hermes-test--dashboard-client)))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-token
+           (hermes-dashboard-transport-subscribe
+            client (lambda (_event))))
+     (hermes-chat--dashboard-record-session
+      client '((session_id . "sid-route")))
+     (should (eq (gethash "sid-route"
+                          (hermes-dashboard-transport-client-session-index
+                           client))
+                 hermes-chat--dashboard-token)))))
+
+(ert-deftest hermes-chat-dashboard-shared-client-keeps-buffer-local-session-ids ()
+  "Two buffers sharing one client keep independent buffer-local session ids."
+  :tags '(shared-socket-isolation)
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        shared buf-a buf-b)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket
+                  :callback (plist-get args :callback)))))
+      (unwind-protect
+          (progn
+            (setq buf-a (generate-new-buffer (hermes-test--chat-buffer-name))
+                  buf-b (generate-new-buffer (hermes-test--chat-buffer-name)))
+            (with-current-buffer buf-a
+              (hermes-chat-mode)
+              (setq shared (hermes-chat--dashboard-start
+                            (lambda (_event)))
+                    hermes-chat--dashboard-token
+                    (hermes-dashboard-transport-subscribe
+                     shared (lambda (_event))))
+              (hermes-chat--dashboard-record-session
+               shared '((session_id . "sid-a"))))
+            (with-current-buffer buf-b
+              (hermes-chat-mode)
+              (hermes-chat--dashboard-start (lambda (_event)))
+              (setq hermes-chat--dashboard-token
+                    (hermes-dashboard-transport-subscribe
+                     shared (lambda (_event))))
+              (hermes-chat--dashboard-record-session
+               shared '((session_id . "sid-b"))))
+            ;; Buffer B's later record must not clobber buffer A.
+            (with-current-buffer buf-a
+              (should (equal hermes-chat--dashboard-active-session-id
+                             "sid-a")))
+            (with-current-buffer buf-b
+              (should (equal hermes-chat--dashboard-active-session-id
+                             "sid-b")))
+            ;; The shared client holds no ambient session identity.
+            (should-not (hermes-dashboard-transport-client-session-id
+                         shared)))
+        (when (buffer-live-p buf-a) (kill-buffer buf-a))
+        (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
+
+(ert-deftest hermes-chat-dashboard-model-switch-targets-current-buffer-session ()
+  "A model switch from buffer A targets A's session, not the last recorded one."
+  :tags '(shared-socket-isolation)
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        config-session shared buf-a buf-b)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket
+                  :callback (plist-get args :callback))))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (_client _key _value &rest args)
+                 (setq config-session (plist-get args :session-id))
+                 (funcall (plist-get args :resolve) '((ok . t)))))
+              ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((providers .
+                             (((slug . "p")
+                               (authenticated . t)
+                               (models . ("m")))))))))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+      (unwind-protect
+          (progn
+            (setq buf-a (generate-new-buffer (hermes-test--chat-buffer-name))
+                  buf-b (generate-new-buffer (hermes-test--chat-buffer-name)))
+            (with-current-buffer buf-a
+              (hermes-chat-mode)
+              (setq shared (hermes-chat--dashboard-start
+                            (lambda (_event)))
+                    hermes-chat--dashboard-client shared
+                    hermes-chat--dashboard-active-session-id "sid-a"
+                    hermes-chat--dashboard-session-ready-p t))
+            (with-current-buffer buf-b
+              (hermes-chat-mode)
+              (hermes-chat--dashboard-start (lambda (_event)))
+              (setq hermes-chat--dashboard-client shared
+                    hermes-chat--dashboard-active-session-id "sid-b"
+                    hermes-chat--dashboard-session-ready-p t))
+            (with-current-buffer buf-a
+              (cl-letf (((symbol-function 'completing-read)
+                         (lambda (_items &rest _) "p · m")))
+                (hermes-chat-switch-model)))
+            ;; Buffer A's switch must carry A's session id.
+            (should (equal config-session "sid-a")))
+        (when (buffer-live-p buf-a) (kill-buffer buf-a))
+        (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
+
+(ert-deftest hermes-chat-dashboard-create-session-forwards-buffer-local-model-provider ()
+  "A new session forwards buffer-local model/provider create overrides."
+  :tags '(shared-socket-isolation)
+  (let ((client (hermes-test--dashboard-client))
+        create-model create-provider)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (setq create-model (plist-get args :model)
+                       create-provider (plist-get args :provider))
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-new")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) 'prompt-request)))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-create-model "gpt-5"
+               hermes-chat--dashboard-create-provider "openai")
+         (insert "hi")
+         (hermes-chat-send)
+         (should (equal create-model "gpt-5"))
+         (should (equal create-provider "openai")))))))
+
+(ert-deftest hermes-chat-dashboard-create-session-forwards-buffer-local-reasoning-fast ()
+  "A new session forwards buffer-local reasoning/fast create overrides."
+  :tags '(shared-socket-isolation)
+  (let ((client (hermes-test--dashboard-client))
+        create-reasoning create-fast)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (setq create-reasoning (plist-get args :reasoning-effort)
+                       create-fast (plist-get args :fast))
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-new")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) 'prompt-request)))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--dashboard-create-reasoning-effort "high"
+               hermes-chat--dashboard-create-fast-p t)
+         (insert "hi")
+         (hermes-chat-send)
+         (should (equal create-reasoning "high"))
+         (should (eq create-fast t)))))))
+
+(ert-deftest hermes-chat-dashboard-resume-does-not-send-create-runtime-overrides ()
+  "Resuming a stored session does not forward create-time runtime overrides."
+  :tags '(shared-socket-isolation)
+  (let ((client (hermes-test--dashboard-client))
+        resume-model resume-provider resume-reasoning resume-fast)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) client))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client _session-id &rest args)
+                 (setq resume-model (plist-get args :model)
+                       resume-provider (plist-get args :provider)
+                       resume-reasoning (plist-get args :reasoning-effort)
+                       resume-fast (plist-get args :fast))
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-live")
+                            (resumed . "sid-stored")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _) 'prompt-request)))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (setq hermes-chat--session-id "sid-stored"
+               hermes-chat--dashboard-create-model "gpt-5"
+               hermes-chat--dashboard-create-provider "openai"
+               hermes-chat--dashboard-create-reasoning-effort "high"
+               hermes-chat--dashboard-create-fast-p t)
+         (insert "resume me")
+         (hermes-chat-send)
+         (should-not resume-model)
+         (should-not resume-provider)
+         (should-not resume-reasoning)
+         (should-not resume-fast))))))
+
+(ert-deftest hermes-chat-dashboard-reconnect-resumes-each-buffer-own-session ()
+  "On reconnect, each buffer resumes its own stored session id."
+  :tags '(shared-socket-isolation)
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+        resumed shared buf-a buf-b)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (make-hermes-dashboard-transport-client
+                  :websocket 'fake-websocket
+                  :callback (plist-get args :callback))))
+              ((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client session-id &rest _args)
+                 (push session-id resumed))))
+      (unwind-protect
+          (progn
+            (setq buf-a (generate-new-buffer (hermes-test--chat-buffer-name))
+                  buf-b (generate-new-buffer (hermes-test--chat-buffer-name)))
+            (with-current-buffer buf-a
+              (hermes-chat-mode)
+              (setq shared (hermes-chat--dashboard-start
+                            (lambda (_event)))
+                    hermes-chat--dashboard-client shared
+                    hermes-chat--session-id "stored-a"))
+            (with-current-buffer buf-b
+              (hermes-chat-mode)
+              (hermes-chat--dashboard-start (lambda (_event)))
+              (setq hermes-chat--dashboard-client shared
+                    hermes-chat--session-id "stored-b"))
+            ;; Simulate reconnect for each buffer.
+            (with-current-buffer buf-a
+              (funcall (hermes-chat--transport-callback
+                        (current-buffer) "asst-a" t
+                        (hermes-chat--next-transport-generation))
+                       '(:type status :status "reconnected")))
+            (with-current-buffer buf-b
+              (funcall (hermes-chat--transport-callback
+                        (current-buffer) "asst-b" t
+                        (hermes-chat--next-transport-generation))
+                       '(:type status :status "reconnected")))
+            (should (member "stored-a" resumed))
+            (should (member "stored-b" resumed)))
+        (when (buffer-live-p buf-a) (kill-buffer buf-a))
+        (when (buffer-live-p buf-b) (kill-buffer buf-b))))))
 
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

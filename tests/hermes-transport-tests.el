@@ -952,7 +952,12 @@
           (should (string-match-p "socket died"
                                   (plist-get event :content))))))))
 
-(ert-deftest hermes-transport-dashboard-resume-stores-durable-session-id ()
+(ert-deftest hermes-transport-dashboard-resume-does-not-store-session-id ()
+  "A `session.resume' response must not mutate the shared client.
+Session identity is buffer-local; the shared transport client stays
+transport-only so two chat buffers sharing one socket cannot clobber each
+other's session."
+  :tags '(shared-socket-isolation)
   (let ((client (make-hermes-dashboard-transport-client
                  :websocket 'fake-websocket
                  :pending (make-hash-table :test #'equal)
@@ -965,10 +970,8 @@
                (id . "hermes-el-1")
                (result . ((session_id . "sid-live")
                           (resumed . "sid-stored"))))))
-    (should (equal (hermes-dashboard-transport-client-session-id client)
-                   "sid-live"))
-    (should (equal (hermes-dashboard-transport-client-stored-session-id client)
-                   "sid-stored"))))
+    (should-not (hermes-dashboard-transport-client-session-id client))
+    (should-not (hermes-dashboard-transport-client-stored-session-id client))))
 
 (ert-deftest hermes-transport-dashboard-connect-error-redacts-token ()
   (let (events)

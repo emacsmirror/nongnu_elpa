@@ -120,12 +120,13 @@
         (should (equal result '((skills . nil))))))))
 
 (ert-deftest hermes-inventory-toolset-toggle-sends-tools-configure ()
-  "Inventory toolset actions go through `tools.configure' with safe actions."
+  "Inventory toolset actions go through `tools.configure' with safe actions.
+Toolset toggles are global configuration: no `:session-id' is sent."
+  :tags '(shared-socket-isolation)
   (let (names action session done-called reverted)
     (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn)
                  (let ((client (hermes-test--dashboard-client)))
-                   (setf (hermes-dashboard-transport-client-session-id client) "sid-2")
                    (funcall fn client (lambda () (setq done-called t))))))
               ((symbol-function 'hermes-dashboard-transport-tools-configure)
                (lambda (_client ns act &rest args)
@@ -139,7 +140,7 @@
       (should reverted)
       (should (equal names '("terminal")))
       (should (equal action "disable"))
-      (should (equal session "sid-2")))))
+      (should-not session))))
 
 (ert-deftest hermes-inventory-skill-toggle-posts-rest-json-boolean ()
   "Inventory skill actions use the dashboard REST toggle endpoint, no CLI shellout."
