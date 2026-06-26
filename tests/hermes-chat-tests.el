@@ -3686,8 +3686,10 @@
     (should (string-match-p "Anthropic" (car labels)))
     (should (string-match-p "(anthropic)" (car labels)))
     (should (string-match-p "claude" (car labels)))
-    (should (string-match-p "\$3" (car labels)))
-    (should (string-match-p "reasoning" (car labels)))
+    (should (string-match-p "\\$3" (car labels)))
+    (should-not (string-match-p "reasoning" (car labels)))
+    (should-not (string-match-p "fast" (car labels)))
+    (should-not (string-match-p "ctx" (car labels)))
     (should (equal (hermes-chat--model-config-value (cdar cands))
                    "claude --provider anthropic"))))
 

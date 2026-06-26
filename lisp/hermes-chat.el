@@ -1864,22 +1864,6 @@ forgets both the live and durable session ids so the next send starts fresh."
                   (hermes-transport--get prices 'output))))
      "/")))
 
-(defun hermes-chat--model-capability-labels (provider model)
-  "Return display labels for MODEL capabilities in PROVIDER row."
-  (when-let* ((capabilities (hermes-transport--get
-                            (hermes-transport--get provider 'capabilities)
-                            model)))
-    (delq nil
-          (list (and (hermes-transport--get capabilities 'reasoning)
-                     "reasoning")
-                (and (hermes-transport--get capabilities 'fast) "fast")
-                (when-let* ((context (hermes-transport--get-any
-                                      capabilities '(context_window context))))
-                  (format "%sk ctx" (/ (or (and (numberp context) context)
-                                           (string-to-number
-                                            (format "%s" context)))
-                                       1000)))))))
-
 (defun hermes-chat--model-provider-label (provider)
   "Return a readable, provider-identity-preserving label for PROVIDER."
   (let ((name (hermes-transport--scalar-string
@@ -1896,10 +1880,9 @@ forgets both the live and durable session ids so the next send starts fresh."
   "Return completion label for MODEL in PROVIDER row."
   (string-join
    (delq nil
-         (append (list (hermes-chat--model-provider-label provider)
-                       model
-                       (hermes-chat--model-price provider model))
-                 (hermes-chat--model-capability-labels provider model)))
+         (list (hermes-chat--model-provider-label provider)
+               model
+               (hermes-chat--model-price provider model)))
    " · "))
 
 (defun hermes-chat--model-candidate (provider model)
