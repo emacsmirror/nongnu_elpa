@@ -46,6 +46,7 @@
 (require 'cl-lib)
 
 (declare-function markdown-mode "markdown-mode")
+(declare-function read-string-from-buffer "string-edit")
 (declare-function hermes-kanban-task-mode "hermes-kanban")
 (declare-function websocket-close "ext:websocket")
 
@@ -1162,7 +1163,7 @@ view."
         (query (hermes-kanban--query-for-board
                 (hermes-kanban--board-slug-for-command)))
         (refresh (hermes-kanban--context-refresher))
-        (body (read-string "Comment: ")))
+        (body (read-string-from-buffer "Comment: " "")))
     (when (string-empty-p (string-trim body))
       (user-error "Comment cannot be empty"))
     (hermes-kanban--then

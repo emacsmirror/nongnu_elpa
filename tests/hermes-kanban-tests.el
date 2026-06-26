@@ -604,7 +604,11 @@
                (lambda (method path &optional body query)
                  (push (list method path body query) calls)
                  (hermes--promise-resolved '((ok . t)))))
-              ((symbol-function 'read-string) (lambda (&rest _) "looks good"))
+              ((symbol-function 'read-string-from-buffer)
+               (lambda (prompt initial)
+                 (should (equal prompt "Comment: "))
+                 (should (equal initial ""))
+                 "looks good"))
               ((symbol-function 'revert-buffer) (lambda (&rest _) (setq refreshed t)))
               ((symbol-function 'message) (lambda (&rest _) nil)))
       (with-temp-buffer
