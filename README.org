@@ -16,7 +16,7 @@ An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
 
 #+begin_src emacs-lisp
   (use-package hermes
-    :vc (:url "https://codeberg.org/thanosapollo/emacs-hermes" :lisp-dir "lisp")
+    :vc (:url "https://git.thanosapollo.org/emacs-hermes" :lisp-dir "lisp")
     :custom (hermes-dashboard-transport-url "http://127.0.0.1:9119"))
 #+end_src
 
