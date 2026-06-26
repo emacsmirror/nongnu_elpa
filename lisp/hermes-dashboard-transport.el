@@ -2210,6 +2210,14 @@ non-nil.  RESOLVE and REJECT receive the asynchronous result or error."
    client "secret.respond" `((request_id . ,request-id) (value . ,value))
    resolve reject))
 
+(defun hermes-dashboard-transport-terminal-read-respond
+    (client request-id text &optional resolve reject)
+  "Send TEXT for terminal-read REQUEST-ID on CLIENT."
+  (hermes-dashboard-transport-request
+   client "terminal.read.respond"
+   `((request_id . ,request-id) (text . ,text))
+   resolve reject))
+
 (defun hermes-dashboard-transport--start-process (_client command env)
   "Start dashboard process using COMMAND and ENV."
   (funcall hermes-dashboard-transport-make-process-function
@@ -2776,6 +2784,7 @@ The plist holds :used, :max, and :percent for the model's context window."
     ("clarify" "Clarification requested")
     ("sudo" "Sudo password requested")
     ("secret" "Secret requested")
+    ("terminal" "Terminal read requested")
     (_ (format "%s requested" prompt-type))))
 
 (defun hermes-dashboard-transport--prompt-content (prompt-type payload)
@@ -2798,6 +2807,13 @@ The plist holds :used, :max, and :percent for the model's context window."
                         (hermes-transport--scalar-string
                          (hermes-transport--get payload 'env_var))))
         ": "))
+      ("terminal"
+       (let ((start (hermes-transport--get payload 'start))
+             (count (hermes-transport--get payload 'count)))
+         (if (or start count)
+             (format "%s (start %s, count %s)" title
+                     (or start "0") (or count "all"))
+           title)))
       (_
        (or (hermes-dashboard-transport--payload-text payload) title)))))
 
@@ -2807,7 +2823,8 @@ The plist holds :used, :max, and :percent for the model's context window."
                    (prompt . :prompt) (env_var . :env-var)
                    (command . :command) (description . :description)
                    (pattern_key . :pattern-key)
-                   (pattern_keys . :pattern-keys)))
+                   (pattern_keys . :pattern-keys)
+                   (start . :start) (count . :count)))
     (when-let* ((value (hermes-transport--get payload (car field))))
       (setq event (plist-put event (cdr field) value))))
   (when (hermes-transport--field-present-p payload 'allow_permanent)
@@ -2975,7 +2992,8 @@ an Unknown error."
       ("thinking.delta"
        (list (hermes-dashboard-transport--payload-event
               type params payload 'thinking)))
-      ((or "approval.request" "clarify.request" "sudo.request" "secret.request")
+      ((or "approval.request" "clarify.request" "sudo.request"
+           "secret.request" "terminal.read.request")
        (list (hermes-dashboard-transport--prompt-request-event
               type params payload)))
       ;; Voice mode and skin changes are client-UI concerns, not chat transcript

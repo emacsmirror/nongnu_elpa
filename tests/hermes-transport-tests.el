@@ -39,6 +39,21 @@
                    "session"))
     (should (eq (alist-get 'all (alist-get 'params sent-frame)) t))))
 
+(ert-deftest hermes-transport-dashboard-terminal-read-respond-payload ()
+  (let ((client (hermes-test--dashboard-client))
+        (hermes-dashboard-transport-request-timeout nil)
+        sent-frame)
+    (let ((hermes-dashboard-transport-websocket-send-function
+           (lambda (_websocket text)
+             (setq sent-frame (hermes-dashboard-transport--decode-frame text)))))
+      (hermes-dashboard-transport-terminal-read-respond
+       client "req-term" "terminal output line"))
+    (should (equal (alist-get 'method sent-frame) "terminal.read.respond"))
+    (should (equal (alist-get 'request_id (alist-get 'params sent-frame))
+                   "req-term"))
+    (should (equal (alist-get 'text (alist-get 'params sent-frame))
+                   "terminal output line"))))
+
 (ert-deftest hermes-transport-field-nil-on-absent ()
   (should (equal (hermes-transport--field '((name . "x")) 'name) "x"))
   (should (null (hermes-transport--field '((name . "x")) 'missing)))
@@ -1570,16 +1585,16 @@
 
 (ert-deftest hermes-transport-dashboard-status-fallback-uses-text-then-label ()
   "Unclassified events become status lines: payload text, else a derived label."
-  (pcase-let ((`(,complete ,terminal)
+  (pcase-let ((`(,complete ,unknown)
                (hermes-test--dashboard-events
                 '("preview.restart.complete" . ((task_id . "t1")
                                                 (text . "Preview ready")))
-                '("terminal.read.request" . ((request_id . "r1"))))))
+                '("unknown.widget.request" . ((request_id . "r1"))))))
     (should (eq (plist-get complete :type) 'status))
     (should (equal (plist-get complete :content) "Preview ready"))
     ;; No text payload, so the event name is prettified into the body.
-    (should (eq (plist-get terminal :type) 'status))
-    (should (equal (plist-get terminal :content) "Terminal Read Request"))))
+    (should (eq (plist-get unknown :type) 'status))
+    (should (equal (plist-get unknown :content) "Unknown Widget Request"))))
 
 (ert-deftest hermes-transport-dashboard-background-complete-event ()
   "`background.complete' becomes a `background' event with task id and response."
@@ -1839,6 +1854,37 @@ This is the contract that replaces hand-mirroring every event name: an invented
                                          (warning . "not saved to history")))))))
          (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
     (should (equal (plist-get event :warning) "not saved to history"))))
+
+(ert-deftest hermes-transport-normalizes-terminal-read-request ()
+  "A `terminal.read.request' becomes a prompt-request status event."
+  (let* ((frame '((jsonrpc . "2.0") (method . "event")
+                  (params . ((type . "terminal.read.request")
+                             (session_id . "sid")
+                             (payload . ((request_id . "req-tr")
+                                         (start . 0)
+                                         (count . 10)))))))
+         (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
+    (should (eq (plist-get event :type) 'status))
+    (should (plist-get event :prompt-request-p))
+    (should (equal (plist-get event :prompt-type) "terminal"))
+    (should (equal (plist-get event :status) "requested"))
+    (should (equal (plist-get event :request-id) "req-tr"))
+    (should (equal (plist-get event :start) 0))
+    (should (equal (plist-get event :count) 10))))
+
+(ert-deftest hermes-transport-normalizes-terminal-read-request-no-params ()
+  "A `terminal.read.request' without start/count omits those fields."
+  (let* ((frame '((jsonrpc . "2.0") (method . "event")
+                  (params . ((type . "terminal.read.request")
+                             (session_id . "sid")
+                             (payload . ((request_id . "req-tr2")))))))
+         (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
+    (should (eq (plist-get event :type) 'status))
+    (should (plist-get event :prompt-request-p))
+    (should (equal (plist-get event :prompt-type) "terminal"))
+    (should (equal (plist-get event :request-id) "req-tr2"))
+    (should-not (plist-member event :start))
+    (should-not (plist-member event :count))))
 
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

@@ -2949,6 +2949,30 @@
         (should-not (string-match-p "secret-token-abc" (buffer-string)))
         (should-not (gethash "req-secret" hermes-chat--pending-prompts))))))
 
+(ert-deftest hermes-chat-handles-terminal-read-request ()
+  (let (respond-request respond-text)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-terminal-read-respond)
+               (lambda (_client request-id text &optional resolve _reject)
+                 (setq respond-request request-id
+                       respond-text text)
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "terminal.read.request"
+         '((request_id . "req-tr")
+           (start . 0)
+           (count . 10)))
+        (should (gethash "req-tr" hermes-chat--pending-prompts))
+        (should (string-match-p "Terminal read" (buffer-string)))
+        (hermes-chat-respond-to-prompt "req-tr")
+        (should (equal respond-request "req-tr"))
+        (let ((snapshot (json-read-from-string respond-text)))
+          (should (equal (alist-get 'start snapshot) 0))
+          (should (<= (alist-get 'end snapshot) 10))
+          (should (string-match-p "trigger prompt"
+                                  (alist-get 'text snapshot))))
+        (should-not (gethash "req-tr" hermes-chat--pending-prompts))))))
+
 (ert-deftest hermes-chat-redacts-secret-response ()
   (cl-letf (((symbol-function 'hermes-dashboard-transport-secret-respond)
              (lambda (_client _request-id value &optional _resolve reject)

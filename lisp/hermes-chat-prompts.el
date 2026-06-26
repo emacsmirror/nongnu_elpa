@@ -34,6 +34,7 @@
 
 (require 'cl-lib)
 (require 'json)
+(require 'seq)
 (require 'subr-x)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
@@ -255,6 +256,7 @@ A nil SESSION-ID matches every prompt in the current buffer."
     ("clarify" "Clarify")
     ("sudo" "Sudo")
     ("secret" "Secret")
+    ("terminal" "Terminal read")
     (_ "Prompt")))
 
 (defun hermes-chat--first-pending-prompt ()
@@ -359,6 +361,35 @@ A nil SESSION-ID matches every prompt in the current buffer."
       (user-error "Unknown approval decision: %s" choice))
     (or (cdr candidate) (keyboard-quit))))
 
+(defun hermes-chat--terminal-read-text (entries &optional start count)
+  "Return a JSON terminal-read snapshot for chat transcript ENTRIES.
+START (0-indexed, default 0) and COUNT (default all) page over transcript
+lines.  The desktop read-terminal tool returns the in-app terminal pane; in
+Emacs the closest analog is the chat transcript, encoded with the same
+`total_lines'/`start'/`end'/`viewport_rows'/`cursor_row'/`text' shape."
+  (let* ((all-text (string-join
+                    (delq nil
+                          (mapcar (lambda (entry)
+                                    (plist-get entry :content))
+                                  entries))
+                    "\n"))
+         (lines (if (string-empty-p all-text)
+                    nil
+                  (split-string all-text "\n")))
+         (total (length lines))
+         (from (max 0 (or (and (integerp start) start) 0)))
+         (limit (and (integerp count) (max 1 count)))
+         (end (if limit (min total (+ from limit)) total))
+         (rows (max 0 (- end from)))
+         (page (seq-subseq lines (min from total) (min end total))))
+    (json-encode
+     `((total_lines . ,total)
+       (start . ,(min from total))
+       (end . ,end)
+       (viewport_rows . ,rows)
+       (cursor_row . ,(if (zerop rows) 0 (1- rows)))
+       (text . ,(string-join page "\n"))))))
+
 (defun hermes-chat--read-prompt-response (prompt)
   "Read a response for PROMPT using an Emacs-native minibuffer UI."
   (pcase (hermes-chat--prompt-event-type prompt)
@@ -375,6 +406,11 @@ A nil SESSION-ID matches every prompt in the current buffer."
     ("secret"
      (read-passwd (or (hermes-chat--event-string prompt '(:prompt :content))
                       "Secret: ")))
+    ("terminal"
+     (hermes-chat--terminal-read-text
+      (hermes-chat--entries)
+      (plist-get prompt :start)
+      (plist-get prompt :count)))
     (_ (read-string "Prompt response: "))))
 
 (defun hermes-chat--approval-response-resolved-count (result)
@@ -499,6 +535,13 @@ A nil SESSION-ID matches every prompt in the current buffer."
                      buffer key prompt canceled all)
                     (hermes-chat--prompt-reject-callback
                      buffer key prompt response)))
+          ("terminal"
+           (hermes-dashboard-transport-terminal-read-respond
+            client (hermes-chat--request-prompt-id key prompt) response
+            (hermes-chat--prompt-success-callback
+             buffer key prompt canceled all)
+            (hermes-chat--prompt-reject-callback
+             buffer key prompt response)))
           (_ (user-error "Unsupported Hermes prompt type: %s" type)))
       (error
        (hermes-chat--prompt-response-rejected
