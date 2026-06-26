@@ -43,7 +43,7 @@
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
 (require 'hermes-browser)
-(eval-when-compile (require 'cl-lib))
+(require 'cl-lib)
 
 (declare-function markdown-mode "markdown-mode")
 (declare-function hermes-kanban-task-mode "hermes-kanban")
@@ -530,6 +530,12 @@ which already runs in the displayed window)."
 (defvar-local hermes-kanban-task--board-slug nil
   "Board slug displayed in the current task detail buffer.")
 
+(defvar-local hermes-kanban-task--status nil
+  "Raw task status displayed in the current task detail buffer.")
+
+(defvar-local hermes-kanban-task--assignees nil
+  "Assignee names known when the current task detail buffer was opened.")
+
 (defvar-local hermes-kanban-log--task-id nil
   "Task id displayed in the current worker-log buffer.")
 
@@ -799,6 +805,7 @@ and an absent branch or run id is omitted."
   :description "Hermes Kanban Task"
   :group "Task"
   "c" ("Comment" hermes-kanban-comment)
+  "a" ("Change assignee" hermes-kanban-change-assignee)
   :group "Recovery"
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
@@ -835,23 +842,29 @@ and an absent branch or run id is omitted."
   (unless hermes-kanban-task--task-id
     (user-error "No task id for this detail buffer"))
   (let ((task-id hermes-kanban-task--task-id)
-        (board-slug hermes-kanban-task--board-slug))
+        (board-slug hermes-kanban-task--board-slug)
+        (assignees hermes-kanban-task--assignees))
     (hermes-kanban--then
      (hermes-kanban--api "GET" (hermes-kanban--task-path task-id)
                          nil (hermes-kanban--query-for-board board-slug))
-     (lambda (payload) (hermes-kanban--display-task payload board-slug t)))))
+     (lambda (payload)
+       (hermes-kanban--display-task payload board-slug t assignees)))))
 
-(defun hermes-kanban--display-task (payload &optional board-slug in-place)
+(defun hermes-kanban--display-task (payload &optional board-slug in-place assignees)
   "Render task PAYLOAD in a read-only detail buffer.
 BOARD-SLUG is remembered for refreshes and log requests.  With IN-PLACE non-nil,
-refresh without re-displaying the buffer (used by revert)."
+refresh without re-displaying the buffer (used by revert).  ASSIGNEES carries
+the board-known assignee names for cold profile-cache completion fallback."
   (let* ((task (hermes-transport--get payload 'task))
-         (task-id (hermes-transport--display-field task 'id)))
+         (task-id (hermes-transport--display-field task 'id))
+         (task-status (hermes-transport--display-field task 'status)))
     (with-current-buffer (get-buffer-create "*Hermes Kanban Task*")
       (unless (derived-mode-p 'hermes-kanban-task-mode)
         (hermes-kanban-task-mode))
       (setq hermes-kanban-task--task-id task-id
             hermes-kanban-task--board-slug board-slug
+            hermes-kanban-task--status task-status
+            hermes-kanban-task--assignees assignees
             mode-line-process (format " [%s]" (or task-id "task")))
       (let ((inhibit-read-only t))
         (erase-buffer)
@@ -865,11 +878,12 @@ refresh without re-displaying the buffer (used by revert)."
   "Show the kanban task at point."
   (interactive)
   (let ((board-slug hermes-kanban--slug)
+        (assignees hermes-kanban--assignees)
         (id (hermes-kanban--id-at-point)))
     (hermes-kanban--then
      (hermes-kanban--api "GET" (hermes-kanban--task-path id)
                          nil (hermes-kanban--query-for-board board-slug))
-     (lambda (payload) (hermes-kanban--display-task payload board-slug)))))
+     (lambda (payload) (hermes-kanban--display-task payload board-slug nil assignees)))))
 
 (defun hermes-kanban--task-id-for-command ()
   "Return the current task id for a board or task-detail command."
@@ -883,6 +897,18 @@ refresh without re-displaying the buffer (used by revert)."
   (if (derived-mode-p 'hermes-kanban-task-mode)
       hermes-kanban-task--board-slug
     hermes-kanban--slug))
+
+(defun hermes-kanban--task-status-for-command ()
+  "Return the current task status for a board or task-detail command."
+  (if (derived-mode-p 'hermes-kanban-task-mode)
+      (or hermes-kanban-task--status "")
+    (hermes-kanban--entry-status (tabulated-list-get-entry))))
+
+(defun hermes-kanban--assignees-for-command ()
+  "Return board-known assignees for the current board or task detail buffer."
+  (if (derived-mode-p 'hermes-kanban-task-mode)
+      hermes-kanban-task--assignees
+    hermes-kanban--assignees))
 
 (defun hermes-kanban--log-query (board-slug)
   "Return the query alist for fetching a task log on BOARD-SLUG."
@@ -1026,6 +1052,76 @@ Running tasks are reassigned with a reclaim; others are assigned directly."
 (defconst hermes-kanban--statuses
   '("todo" "ready" "blocked" "scheduled" "done" "archived" "triage")
   "Statuses settable through the dashboard PATCH endpoint.")
+
+(defun hermes-kanban--profile-name (profile)
+  "Return PROFILE's non-empty name string, or nil."
+  (and-let* ((name (hermes-transport--scalar-string
+                    (hermes-transport--get profile 'name)))
+             (trimmed (string-trim name))
+             ((not (string-empty-p trimmed))))
+    trimmed))
+
+(defun hermes-kanban--profile-default-p (profile)
+  "Return non-nil when PROFILE denotes the dashboard default profile."
+  (or (eq (hermes-transport--get profile 'is_default) t)
+      (equal (hermes-kanban--profile-name profile) "default")))
+
+(defun hermes-kanban--profile-less-p (left right)
+  "Return non-nil when LEFT should sort before RIGHT in the assignee picker."
+  (let ((left-default (hermes-kanban--profile-default-p left))
+        (right-default (hermes-kanban--profile-default-p right)))
+    (cond
+     ((and left-default (not right-default)) t)
+     ((and right-default (not left-default)) nil)
+     (t (string-lessp (downcase (or (hermes-kanban--profile-name left) ""))
+                      (downcase (or (hermes-kanban--profile-name right) "")))))))
+
+(defun hermes-kanban--profile-candidates ()
+  "Return assignee completion candidates for the current buffer.
+Use the warmed dashboard `/api/profiles' cache from
+`hermes-dashboard-transport-cached-profile-list' and merge it with the
+buffer-local `hermes-kanban--assignees' known to the current board, so
+completion stays useful when the profile cache is cold.  The default profile
+sorts first; the rest are case-insensitive.  Returns a list of name strings."
+  (let* ((cached (hermes-transport--get
+                  (or (hermes-dashboard-transport-cached-profile-list) '())
+                  'profiles))
+         (from-cache (delq nil (mapcar #'hermes-kanban--profile-name cached)))
+         (from-board (delq nil (mapcar #'hermes-kanban--profile-name
+                                       (mapcar (lambda (name) `((name . ,name)))
+                                               (hermes-kanban--assignees-for-command)))))
+         (profiles (mapcar (lambda (name) `((name . ,name)))
+                           (cl-remove-duplicates (append from-cache from-board)
+                                                 :test #'equal))))
+    (mapcar #'hermes-kanban--profile-name
+            (sort profiles #'hermes-kanban--profile-less-p))))
+
+(defun hermes-kanban-change-assignee ()
+  "Change the assignee of the current task.
+Reads the new assignee with completion over current Hermes profiles (and
+board-known assignees when the profile cache is cold); empty input unassigns.
+Works from `hermes-kanban-task-mode' and `hermes-kanban-mode'.  Running tasks
+use the dashboard reassign endpoint with reclaim; other tasks use
+`PATCH /tasks/:id' with the assignee body.  Refreshes the buffer in place on
+success."
+  (interactive)
+  (let* ((id (hermes-kanban--task-id-for-command))
+         (status (hermes-kanban--task-status-for-command))
+         (query (hermes-kanban--query-for-board
+                 (hermes-kanban--board-slug-for-command)))
+         (who (completing-read "Assignee (empty to unassign): "
+                               (hermes-kanban--profile-candidates) nil nil))
+         (refresh (hermes-kanban--context-refresher)))
+    (hermes-kanban--then
+     (if (equal status "running")
+         (hermes-kanban--api "POST" (hermes-kanban--task-path id "/reassign")
+                             `((profile . ,who) (reclaim_first . t)) query)
+       (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
+                           `((assignee . ,who)) query))
+     (lambda (_)
+       (message "Assignee for %s set to %s"
+                id (if (string-empty-p who) "-" who))
+       (funcall refresh)))))
 
 (defun hermes-kanban-set-status ()
   "Set the status of the task at point."

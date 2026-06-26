@@ -841,5 +841,82 @@
             (should (= 42 hermes-kanban--latest-event-id))))
       (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*")))))
 
+(ert-deftest hermes-kanban-profile-candidates-merge-cache-and-board-assignees ()
+  "Candidates merge the warmed profile cache with board-known assignees."
+  (let ((hermes-dashboard-transport--profile-cache nil))
+    (hermes-dashboard-transport--store-profile-cache
+     '((profiles . (((name . "default") (is_default . t))
+                    ((name . "elisp-dev"))
+                    ((name . "reviewer"))))))
+    (with-temp-buffer
+      (hermes-kanban-mode)
+      (setq hermes-kanban--assignees '("elisp-dev" "spike"))
+      (should (equal (hermes-kanban--profile-candidates)
+                     '("default" "elisp-dev" "reviewer" "spike"))))))
+
+(ert-deftest hermes-kanban-profile-candidates-empty-when-no-source ()
+  "With no cache and no board assignees, candidates is empty and never errors."
+  (let ((hermes-dashboard-transport--profile-cache nil))
+    (with-temp-buffer
+      (hermes-kanban-mode)
+      (setq hermes-kanban--assignees nil)
+      (should (equal (hermes-kanban--profile-candidates) nil)))))
+
+(ert-deftest hermes-kanban-profile-candidates-use-task-detail-assignees ()
+  "Task detail completions include assignees captured from the board."
+  (let ((hermes-dashboard-transport--profile-cache nil))
+    (with-temp-buffer
+      (hermes-kanban-task-mode)
+      (setq hermes-kanban-task--assignees '("elisp-dev" "reviewer"))
+      (should (equal (hermes-kanban--profile-candidates)
+                     '("elisp-dev" "reviewer"))))))
+
+(ert-deftest hermes-kanban-change-assignee-patches-from-task-detail ()
+  "Changing assignee from the task detail PATCHes /tasks/:id and reverts."
+  (let (calls reverted)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (push (list method path body query) calls)
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _coll &rest _) "elisp-dev"))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq reverted t)))
+              ((symbol-function 'message) (lambda (&rest _) nil)))
+      (with-temp-buffer
+        (hermes-kanban-task-mode)
+        (setq hermes-kanban-task--task-id "t1"
+              hermes-kanban-task--board-slug "emacs-lisp"
+              hermes-kanban-task--status "ready")
+        (hermes-kanban-change-assignee)
+        (should (member '("PATCH" "/tasks/t1" ((assignee . "elisp-dev"))
+                          ((board . "emacs-lisp")))
+                        calls))
+        (should reverted)))))
+
+(ert-deftest hermes-kanban-change-assignee-reassigns-running-task-detail ()
+  "Changing assignee for a running task detail uses reclaiming reassign."
+  (let (calls reverted)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (push (list method path body query) calls)
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt _coll &rest _) "elisp-dev"))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq reverted t)))
+              ((symbol-function 'message) (lambda (&rest _) nil)))
+      (with-temp-buffer
+        (hermes-kanban-task-mode)
+        (setq hermes-kanban-task--task-id "t1"
+              hermes-kanban-task--board-slug "emacs-lisp"
+              hermes-kanban-task--status "running")
+        (hermes-kanban-change-assignee)
+        (should (member '("POST" "/tasks/t1/reassign"
+                          ((profile . "elisp-dev") (reclaim_first . t))
+                          ((board . "emacs-lisp")))
+                        calls))
+        (should reverted)))))
+
 (provide 'hermes-kanban-tests)
 ;;; hermes-kanban-tests.el ends here
