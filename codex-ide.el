@@ -43,6 +43,7 @@
 (require 'project)
 (require 'subr-x)
 (require 'codex-ide-debug)
+(require 'codex-ide-mcp)
 (require 'codex-ide-term)
 
 (autoload 'codex-ide-menu "codex-ide-transient" nil t)
@@ -196,6 +197,15 @@ folding is pure and does not touch the shell."
       (setq args (nconc args codex-ide-cli-extra-args)))
     (cons codex-ide-cli-path args)))
 
+(defun codex-ide--session-config-overrides ()
+  "Return Codex config overrides for a new session.
+Includes user-provided `codex-ide-config-overrides' and transient
+session-local overrides needed by enabled integration helpers."
+  (append codex-ide-config-overrides
+          (when codex-ide-mcp-enabled
+            (codex-ide-mcp-config-overrides
+             (codex-ide-mcp-ensure-server)))))
+
 ;;; CLI detection
 
 (defun codex-ide--detect-cli ()
@@ -292,6 +302,7 @@ Returns (BUFFER . PROCESS)."
   (codex-ide-term--ensure-backend)
   (let* ((working-dir (codex-ide--get-working-directory))
          (buffer-name (codex-ide--get-buffer-name working-dir))
+         (codex-ide-config-overrides (codex-ide--session-config-overrides))
          (cmd (codex-ide--build-command resume-last session-id))
          (program (car cmd))
          (args (cdr cmd))
