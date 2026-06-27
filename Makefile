@@ -1,8 +1,8 @@
 # Makefile for codex-ide
 
 EMACS ?= emacs
-ELS = codex-ide.el codex-ide-term.el codex-ide-transient.el codex-ide-debug.el
-TESTS = test/codex-ide-tests.el
+ELS = codex-ide.el codex-ide-term.el codex-ide-transient.el codex-ide-debug.el codex-ide-context.el
+TESTS = test/codex-ide-tests.el test/codex-ide-context-tests.el
 CHECKDOC_FILES = $(foreach f,$(ELS) $(TESTS),"$(f)")
 
 .PHONY: compile test clean checkdoc
@@ -12,7 +12,7 @@ compile:
 	  -f batch-byte-compile $(ELS)
 
 test: compile
-	$(EMACS) -Q --batch -L . -L test -l $(TESTS) \
+	$(EMACS) -Q --batch -L . -L test $(patsubst %,-l %,$(TESTS)) \
 	  -f ert-run-tests-batch-and-exit
 
 checkdoc:
