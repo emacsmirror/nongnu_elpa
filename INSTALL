@@ -11,6 +11,10 @@ BUILD FROM SOURCE
 
 VM source is availabe from https://gitlab.com/emacs-vm/vm
 
+0) If building from a git checkout, generate the configure script
+
+    autoconf
+
 1) configure: First you need to decide the various options.
 
    --with-emacs      the emacs you will use to compile (can be a Unix path)
@@ -108,10 +112,6 @@ VM source is availabe from https://gitlab.com/emacs-vm/vm
       a new `dir' file in ~/vm/info.
 
       * VM: (vm.info).                  VM Mail Reader
-      * VM-PCrisis: (vm-pcrisis.info).  Personality Crisis package for VM
-
-      Note that vm-pcrisis is a separate add-on package (not officially a
-      part of VM).
 
    b) To use VM from system directories: Run
 
