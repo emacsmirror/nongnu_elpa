@@ -147,7 +147,8 @@ a little-endian u32 length prefix followed by the UTF-8 JSON payload."
         (cons "error" error)))
 
 (defun codex-ide-context--discovery-response (request-id can-handle)
-  "Build a client-discovery response alist for REQUEST-ID."
+  "Build a client-discovery response alist for REQUEST-ID.
+CAN-HANDLE is non-nil when Emacs can serve `/ide' requests."
   (list (cons "type" "client-discovery-response")
         (cons "requestId" request-id)
         (cons "response"
@@ -227,8 +228,9 @@ WORKSPACE-ROOT when the file lives under it."
 
 (defun codex-ide-context--active-file (workspace-root &optional buffer)
   "Return the activeFile alist for BUFFER (default `current-buffer').
-Includes selection and `activeSelectionContent' when a region is active.
-Returns nil when BUFFER is not visiting a file."
+WORKSPACE-ROOT is the project root used to compute the relative
+file path.  Includes selection and `activeSelectionContent' when a
+region is active.  Returns nil when BUFFER is not visiting a file."
   (let* ((buf (or buffer (current-buffer)))
          (descriptor (and (or (not workspace-root)
                               (codex-ide-context--buffer-under-root-p

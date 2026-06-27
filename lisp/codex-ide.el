@@ -317,7 +317,9 @@ Returns (BUFFER . PROCESS)."
 
 (defun codex-ide--start-session (&optional resume-last session-id)
   "Start or focus a Codex session for the current project.
-If a live session exists, toggle its window instead of starting a new one."
+If RESUME-LAST is non-nil, resume the most recent session.  When
+SESSION-ID is given, resume that specific session.  If a live
+session exists, toggle its window instead of starting a new one."
   (unless (codex-ide--ensure-cli)
     (user-error "Codex CLI not available.  Install it and ensure it is in PATH"))
   (codex-ide--cleanup-dead-processes)

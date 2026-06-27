@@ -195,7 +195,7 @@ Lines are one-based and columns are zero-based."
         (plist-get object (codex-ide-mcp--keyword name))))))
 
 (defun codex-ide-mcp--object-has-key-p (object name)
-  "Return non-nil when OBJECT contains NAME."
+  "Return non-nil when OBJECT has a member named NAME."
   (cond
    ((hash-table-p object)
     (let ((sentinel (make-symbol "missing")))
@@ -247,7 +247,7 @@ Lines are one-based and columns are zero-based."
          (line (codex-ide-mcp--object-get args "line"))
          (column (or (codex-ide-mcp--object-get args "column") 0)))
     (unless (and (stringp path) (not (string-empty-p path)))
-      (user-error "emacs_open_file requires a non-empty path"))
+      (user-error "Emacs_open_file requires a non-empty path"))
     (let ((expanded (expand-file-name path)))
       (unless (file-readable-p expanded)
         (user-error "File is not readable: %s" expanded))

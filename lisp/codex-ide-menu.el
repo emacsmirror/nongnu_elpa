@@ -34,14 +34,14 @@
 ;;; Suffixes
 
 (defun codex-ide-menu--set-cli-path (path)
-  "Set `codex-ide-cli-path'."
+  "Set `codex-ide-cli-path' to PATH."
   (interactive
    (list (read-file-name "Codex CLI path: " nil codex-ide-cli-path t)))
   (setq codex-ide-cli-path path)
   (codex-ide-log "CLI path set to %s" path))
 
 (defun codex-ide-menu--set-window-side (side)
-  "Set `codex-ide-window-side'."
+  "Set `codex-ide-window-side' to SIDE."
   (interactive
    (list (intern (completing-read
                  "Window side: "
@@ -52,21 +52,21 @@
   (codex-ide-log "Window side set to %s" side))
 
 (defun codex-ide-menu--set-window-width (width)
-  "Set `codex-ide-window-width'."
+  "Set `codex-ide-window-width' to WIDTH."
   (interactive
    (list (read-number "Window width: " codex-ide-window-width)))
   (setq codex-ide-window-width width)
   (codex-ide-log "Window width set to %d" width))
 
 (defun codex-ide-menu--set-window-height (height)
-  "Set `codex-ide-window-height'."
+  "Set `codex-ide-window-height' to HEIGHT."
   (interactive
    (list (read-number "Window height: " codex-ide-window-height)))
   (setq codex-ide-window-height height)
   (codex-ide-log "Window height set to %d" height))
 
 (defun codex-ide-menu--set-backend (backend)
-  "Set `codex-ide-terminal-backend'."
+  "Set `codex-ide-terminal-backend' to BACKEND."
   (interactive
    (list (intern (completing-read
                  "Terminal backend: "
@@ -76,7 +76,7 @@
   (codex-ide-log "Terminal backend set to %s" backend))
 
 (defun codex-ide-menu--set-approval (policy)
-  "Set `codex-ide-ask-for-approval'."
+  "Set `codex-ide-ask-for-approval' to POLICY."
   (interactive
    (list (intern (completing-read
                  "Approval policy: "
@@ -137,6 +137,10 @@
   (if value "ON" "OFF"))
 
 ;;; Menus
+
+(defvar codex-ide-config-map)
+(defvar codex-ide-debug-map)
+(defvar codex-ide-map)
 
 (keymap-popup-define codex-ide-config-map
   "codex-ide Configuration"

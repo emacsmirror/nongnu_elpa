@@ -264,7 +264,7 @@ The spike auto-denies approval requests."
 ;;; Process filter (line accumulation + dispatch)
 
 (defun codex-ide-appserver--filter (proc string)
-  "Process filter: accumulate STRING into the process buffer and dispatch lines.
+  "Process filter for PROC: accumulate STRING and dispatch lines.
 Lines are newline-delimited JSON messages."
   (let ((proc-buffer (process-buffer proc)))
     (when (buffer-live-p proc-buffer)
@@ -344,7 +344,7 @@ For agentMessage items, a trailing newline is added."
     (codex-ide-appserver--debug "app-server stopped"))))
 
 (defun codex-ide-appserver--debug (format-string &rest args)
-  "Minimal debug logger for the spike.
+  "Minimal debug logger for the spike using FORMAT-STRING and ARGS.
 Appends to a `*codex-ide-appserver-debug*' buffer when that buffer exists."
   (when (buffer-live-p (get-buffer "*codex-ide-appserver-debug*"))
     (with-current-buffer (get-buffer "*codex-ide-appserver-debug*")
