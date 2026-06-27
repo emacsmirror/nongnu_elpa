@@ -1,8 +1,8 @@
 # Makefile for codex-ide
 
 EMACS ?= emacs
-ELS = codex-ide.el codex-ide-term.el codex-ide-transient.el codex-ide-debug.el codex-ide-context.el codex-ide-mcp.el
-TESTS = test/codex-ide-tests.el test/codex-ide-context-tests.el test/codex-ide-mcp-tests.el
+ELS = codex-ide.el codex-ide-term.el codex-ide-transient.el codex-ide-debug.el codex-ide-context.el codex-ide-mcp.el codex-ide-appserver.el
+TESTS = test/codex-ide-tests.el test/codex-ide-context-tests.el test/codex-ide-mcp-tests.el test/codex-ide-appserver-tests.el
 CHECKDOC_FILES = $(foreach f,$(ELS) $(TESTS),"$(f)")
 
 .PHONY: compile test clean checkdoc
