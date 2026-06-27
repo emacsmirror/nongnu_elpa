@@ -611,6 +611,10 @@ CLIENT from the shared registry."
         (hermes-dashboard-transport-client-ready-p client) nil)
   (hermes-dashboard-transport--cancel-heartbeat client))
 
+(defun hermes-dashboard-transport--current-websocket-p (client websocket)
+  "Return non-nil when WEBSOCKET is CLIENT's current WebSocket."
+  (eq websocket (hermes-dashboard-transport-client-websocket client)))
+
 (defun hermes-dashboard-transport--reset-readiness (client)
   "Install a fresh pending readiness promise on CLIENT.
 After the first connection reaches `gateway.ready' the readiness promise is
@@ -719,6 +723,35 @@ transport error when a pending request has no reject callback."
             (hermes-dashboard-transport-client-stored-session-id client) nil))
     client))
 
+(defun hermes-dashboard-transport-reconnect (client &optional message)
+  "Restart CLIENT's dashboard WebSocket in place.
+Subscribers, reference counts, and the shared-client registry are preserved so
+attached chat buffers can resume their durable sessions after the replacement
+socket emits `gateway.ready'.  Pending requests are rejected because their
+responses belonged to the old socket.  MESSAGE describes the restart in local
+status UI and reject callbacks."
+  (unless (hermes-dashboard-transport-client-p client)
+    (user-error "No Hermes dashboard transport client to reconnect"))
+  (unless (> (or (hermes-dashboard-transport-client-refcount client) 0) 0)
+    (user-error "No attached Hermes chat buffers to reconnect"))
+  (let ((message (or message "Hermes dashboard socket reconnecting"))
+        (hermes-dashboard-transport-reconnect-max-attempts
+         (if (hermes-dashboard-transport--reconnect-enabled-p)
+             hermes-dashboard-transport-reconnect-max-attempts
+           1)))
+    (hermes-dashboard-transport--cancel-idle-timer client)
+    (setf (hermes-dashboard-transport-client-stopping-p client) t)
+    (ignore-errors (hermes-dashboard-transport--close-websocket client))
+    (setf (hermes-dashboard-transport-client-stopping-p client) nil
+          (hermes-dashboard-transport-client-reconnecting-p client) t
+          (hermes-dashboard-transport-client-reconnect-attempts client) 0)
+    (hermes-dashboard-transport--reset-readiness client)
+    (hermes-dashboard-transport--reject-pending-requests client message)
+    (hermes-dashboard-transport--arm-ready-timeout client)
+    (hermes-dashboard-transport--emit-status client "reconnecting" message)
+    (hermes-dashboard-transport--reconnect-attempt client 0)
+    client))
+
 (defun hermes-dashboard-transport--reconnect-enabled-p ()
   "Return non-nil when proactive shared-socket reconnect is configured."
   (and (numberp hermes-dashboard-transport-reconnect-max-attempts)
@@ -771,36 +804,41 @@ broadcasts `reconnected'; another drop before then re-enters the backoff."
              (1+ attempt))
        (hermes-dashboard-transport--schedule-reconnect client (1+ attempt)))))))
 
-(defun hermes-dashboard-transport--handle-socket-down (client message)
+(defun hermes-dashboard-transport--handle-socket-down (client message &optional websocket)
   "React to CLIENT's WebSocket closing with MESSAGE.
 An intentional stop only marks the socket closed.  An unexpected loss rejects
 pending requests, reports `closed', and either reconnects a still-referenced
 client in place or finalizes it so the next request rebuilds it.  A reopened
-socket that drops before becoming ready continues the existing backoff."
-  (hermes-dashboard-transport--mark-websocket-closed client)
-  (unless (hermes-dashboard-transport-client-stopping-p client)
-    (hermes-dashboard-transport--reject-pending-requests client message)
-    (cond
-     ((hermes-dashboard-transport-client-reconnecting-p client)
-      ;; Already reconnecting: keep the fresh promise installed at the first
-      ;; socket-down so requests stay deferred for the next `gateway.ready'.
-      (hermes-dashboard-transport--schedule-reconnect
-       client
-       (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client))))
-     ((hermes-dashboard-transport--should-reconnect-p client)
-      ;; Starting reconnect: install a fresh pending readiness promise so a
-      ;; request issued before the replacement socket emits `gateway.ready' is
-      ;; deferred instead of sent against the now-closed socket, then arm the
-      ;; ready timeout for this reconnect generation.
-      (setf (hermes-dashboard-transport-client-reconnecting-p client) t
-            (hermes-dashboard-transport-client-reconnect-attempts client) 0)
-      (hermes-dashboard-transport--reset-readiness client)
-      (hermes-dashboard-transport--arm-ready-timeout client)
-      (hermes-dashboard-transport--emit-status client "closed" message)
-      (hermes-dashboard-transport--schedule-reconnect client 0))
-     (t
-      (hermes-dashboard-transport--unregister-client client)
-      (hermes-dashboard-transport--emit-status client "closed" message)))))
+socket that drops before becoming ready continues the existing backoff.
+When WEBSOCKET is non-nil, ignore the event unless it still names CLIENT's
+current socket; delayed close/error callbacks from an old socket must not tear
+down a replacement opened by manual reconnect."
+  (when (or (null websocket)
+            (hermes-dashboard-transport--current-websocket-p client websocket))
+    (hermes-dashboard-transport--mark-websocket-closed client)
+    (unless (hermes-dashboard-transport-client-stopping-p client)
+      (hermes-dashboard-transport--reject-pending-requests client message)
+      (cond
+       ((hermes-dashboard-transport-client-reconnecting-p client)
+        ;; Already reconnecting: keep the fresh promise installed at the first
+        ;; socket-down so requests stay deferred for the next `gateway.ready'.
+        (hermes-dashboard-transport--schedule-reconnect
+         client
+         (cl-incf (hermes-dashboard-transport-client-reconnect-attempts client))))
+       ((hermes-dashboard-transport--should-reconnect-p client)
+        ;; Starting reconnect: install a fresh pending readiness promise so a
+        ;; request issued before the replacement socket emits `gateway.ready' is
+        ;; deferred instead of sent against the now-closed socket, then arm the
+        ;; ready timeout for this reconnect generation.
+        (setf (hermes-dashboard-transport-client-reconnecting-p client) t
+              (hermes-dashboard-transport-client-reconnect-attempts client) 0)
+        (hermes-dashboard-transport--reset-readiness client)
+        (hermes-dashboard-transport--arm-ready-timeout client)
+        (hermes-dashboard-transport--emit-status client "closed" message)
+        (hermes-dashboard-transport--schedule-reconnect client 0))
+       (t
+        (hermes-dashboard-transport--unregister-client client)
+        (hermes-dashboard-transport--emit-status client "closed" message))))))
 
 (defun hermes-dashboard-transport--default-websocket-open (url client)
   "Open URL for CLIENT using websocket.el."
@@ -812,20 +850,23 @@ socket that drops before becoming ready continues the existing backoff."
      (lambda ()
        (websocket-open
         url
-        :on-message (lambda (_websocket frame)
-                      (hermes-dashboard-transport--handle-frame
-                       client (websocket-frame-text frame)))
-        :on-error (lambda (_websocket _type error)
+        :on-message (lambda (websocket frame)
+                      (when (hermes-dashboard-transport--current-websocket-p
+                             client websocket)
+                        (hermes-dashboard-transport--handle-frame
+                         client (websocket-frame-text frame))))
+        :on-error (lambda (websocket _type error)
                     (hermes-dashboard-transport--handle-socket-down
                      client
                      (format "Hermes dashboard WebSocket error: %s"
                              (hermes-dashboard-transport--redact-secret
                               (format "%s" error)
                               (hermes-dashboard-transport--client-secrets
-                               client)))))
-        :on-close (lambda (_websocket)
+                               client)))
+                     websocket))
+        :on-close (lambda (websocket)
                     (hermes-dashboard-transport--handle-socket-down
-                     client "Hermes dashboard WebSocket closed")))))))
+                     client "Hermes dashboard WebSocket closed" websocket)))))))
 
 (cl-defun hermes-dashboard-transport-open-websocket
     (url redacted-url secrets &key on-message on-close on-error)

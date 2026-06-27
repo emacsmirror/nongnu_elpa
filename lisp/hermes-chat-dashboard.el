@@ -54,6 +54,7 @@
 (declare-function hermes-chat--update-header-for-event "hermes-chat" (event))
 (declare-function hermes-chat--render-turn-event "hermes-chat" (assistant-id event))
 (declare-function hermes-chat--handle-background-complete "hermes-chat" (event))
+(declare-function hermes-chat--insert-local-status "hermes-chat" (content &optional status))
 
 (defvar hermes-chat-dashboard-session-title)
 (defvar hermes-chat-use-dashboard-transport)
@@ -82,6 +83,12 @@
   (and (eq (plist-get event :type) 'status)
        (equal (hermes-chat--status-name (plist-get event :status))
               "closed")))
+
+(defun hermes-chat--reconnecting-status-event-p (event)
+  "Return non-nil when EVENT reports the shared transport is reconnecting."
+  (and (eq (plist-get event :type) 'status)
+       (equal (hermes-chat--status-name (plist-get event :status))
+              "reconnecting")))
 
 (defun hermes-chat--reconnected-status-event-p (event)
   "Return non-nil when EVENT reports the shared transport reconnected."
@@ -247,6 +254,17 @@ so do not copy its final content into the unsubmitted retry placeholder."
               hermes-chat--dashboard-suppress-stream-p nil))
     (hermes-chat--render-turn-event assistant-id event)))
 
+(defun hermes-chat--handle-reconnecting-status (event)
+  "Handle a manual dashboard socket reconnect status EVENT."
+  (hermes-chat--forget-live-dashboard-session)
+  (hermes-chat--clear-terminal-prompts event)
+  (hermes-chat--insert-local-status
+   (or (hermes-chat--transport-entry-content event)
+       "Hermes dashboard socket reconnecting")
+   'reconnecting)
+  (hermes-chat--set-header-state
+   :status 'reconnecting :activity "Reconnecting dashboard socket"))
+
 (defun hermes-chat--handle-transport-event (assistant-id event)
   "Apply transport EVENT to ASSISTANT-ID in the current chat buffer."
   (cond
@@ -257,6 +275,8 @@ so do not copy its final content into the unsubmitted retry placeholder."
     (hermes-chat--handle-background-complete event))
    ;; A reconnect signal is a transport-wide broadcast, not a turn event, so
    ;; handle it before the stale-turn guard would drop it.
+   ((hermes-chat--reconnecting-status-event-p event)
+    (hermes-chat--handle-reconnecting-status event))
    ((hermes-chat--reconnected-status-event-p event)
     (hermes-chat--dashboard-handle-reconnected event))
    ((hermes-chat--stale-assistant-event-p assistant-id) nil)

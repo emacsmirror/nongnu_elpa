@@ -549,6 +549,85 @@
     (should opened)
     (should (eq (hermes-dashboard-transport-client-websocket c) 'new-ws))))
 
+(ert-deftest hermes-dashboard-transport-manual-reconnect-restarts-in-place ()
+  "Manual reconnect preserves the shared client while replacing its socket."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-ready-timeout nil)
+         closed opened rejected events
+         (hermes-dashboard-transport-websocket-open-function
+          (lambda (_url _client) (setq opened t) 'new-ws))
+         (pending (make-hash-table :test #'equal))
+         (c (make-hermes-dashboard-transport-client
+             :endpoint-key 'local-spawn
+             :websocket 'old-ws
+             :websocket-url "ws://x"
+             :ready-p t
+             :ready-promise (hermes--promise-resolved 'ready)
+             :refcount 1
+             :pending pending)))
+    (puthash 'local-spawn c hermes-dashboard-transport--clients)
+    (puthash "req-1"
+             (list :method "prompt.submit"
+                   :reject (lambda (message) (setq rejected message)))
+             pending)
+    (hermes-dashboard-transport-subscribe c (lambda (event) (push event events)))
+    (cl-letf (((symbol-function 'websocket-close)
+               (lambda (websocket) (setq closed websocket))))
+      (hermes-dashboard-transport-reconnect c "manual reconnect"))
+    (should (eq closed 'old-ws))
+    (should opened)
+    (should (eq (hermes-dashboard-transport-client-websocket c) 'new-ws))
+    (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients) c))
+    (should (hermes-dashboard-transport-client-reconnecting-p c))
+    (should-not (hermes-dashboard-transport-client-ready-p c))
+    (should (= (hash-table-count pending) 0))
+    (should (equal rejected "manual reconnect"))
+    (should (cl-find "reconnecting" events
+                     :key (lambda (event) (plist-get event :status))
+                     :test #'equal))))
+
+(ert-deftest hermes-dashboard-transport-manual-reconnect-works-when-auto-off ()
+  "Manual reconnect still opens once when proactive reconnect is disabled."
+  (let* ((hermes-dashboard-transport-reconnect-max-attempts nil)
+         (hermes-dashboard-transport-ready-timeout nil)
+         opened
+         (hermes-dashboard-transport-websocket-open-function
+          (lambda (_url _client) (setq opened t) 'new-ws))
+         (c (make-hermes-dashboard-transport-client
+             :websocket 'old-ws
+             :websocket-url "ws://x"
+             :refcount 1
+             :pending (make-hash-table :test #'equal))))
+    (cl-letf (((symbol-function 'websocket-close) #'ignore))
+      (hermes-dashboard-transport-reconnect c))
+    (should opened)
+    (should (eq (hermes-dashboard-transport-client-websocket c) 'new-ws))))
+
+(ert-deftest hermes-dashboard-transport-stale-websocket-close-is-ignored ()
+  "A delayed close from an old socket must not tear down the replacement socket."
+  (let* ((hermes-dashboard-transport-reconnect-max-attempts 3)
+         scheduled
+         (hermes-dashboard-transport-schedule-function
+          (lambda (_delay fn &rest args)
+            (setq scheduled (cons fn args))
+            'fake-timer))
+         (c (make-hermes-dashboard-transport-client
+             :websocket 'new-ws
+             :websocket-url "ws://x"
+             :reconnecting-p t
+             :reconnect-attempts 0
+             :refcount 1
+             :pending (make-hash-table :test #'equal))))
+    (hermes-dashboard-transport--handle-socket-down c "old closed" 'old-ws)
+    (should (eq (hermes-dashboard-transport-client-websocket c) 'new-ws))
+    (should (hermes-dashboard-transport-client-reconnecting-p c))
+    (should (= (hermes-dashboard-transport-client-reconnect-attempts c) 0))
+    (should-not scheduled)
+    (hermes-dashboard-transport--handle-socket-down c "new closed" 'new-ws)
+    (should-not (hermes-dashboard-transport-client-websocket c))
+    (should (= (hermes-dashboard-transport-client-reconnect-attempts c) 1))
+    (should scheduled)))
+
 (ert-deftest hermes-dashboard-transport-reconnect-gives-up-after-max ()
   "Exhausting reconnect attempts finalizes the client and reports closed."
   (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))

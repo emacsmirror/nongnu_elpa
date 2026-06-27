@@ -1812,6 +1812,24 @@ session key is preserved, so the conversation can still be resumed."
   (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
   (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected"))
 
+;;;###autoload
+(defun hermes-dashboard-reconnect ()
+  "Restart this idle chat's shared Hermes dashboard WebSocket.
+The durable session id is preserved.  After the replacement socket reports
+ready, the chat resumes that durable session over a fresh live session id."
+  (interactive)
+  (unless (hermes-chat--dashboard-default-transport-p)
+    (user-error "Hermes dashboard transport is not enabled for this chat"))
+  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+    (user-error "This Hermes chat has no live dashboard socket to reconnect"))
+  (when (hermes-chat--active-turn-p)
+    (user-error "Cannot reconnect while a turn is active; interrupt or wait first"))
+  (hermes-dashboard-transport-reconnect
+   hermes-chat--dashboard-client "Hermes dashboard socket reconnecting"))
+
+;;;###autoload
+(defalias 'hermes-reconnect #'hermes-dashboard-reconnect)
+
 (defun hermes-chat-stop-processes ()
   "Stop background/tool processes for this chat via `process.stop'.
 This does not interrupt the current model turn -- use `hermes-chat-interrupt'
@@ -2519,6 +2537,7 @@ session-title refresh."
   "K" ("Connect provider" hermes-chat-connect-provider)
   "R" ("Rename session" hermes-chat-rename)
   "H" ("Hand off session" hermes-chat-handoff)
+  "x" ("Reconnect socket" hermes-dashboard-reconnect)
   "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)
   :group "Commands"

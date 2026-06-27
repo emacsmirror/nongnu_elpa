@@ -729,13 +729,15 @@
               #'hermes-chat))
   (should (eq (keymap-lookup hermes-chat-actions-map "H")
               #'hermes-chat-handoff))
+  (should (eq (keymap-lookup hermes-chat-actions-map "x")
+              #'hermes-dashboard-reconnect))
   (let* ((rows (keymap-popup--meta hermes-chat-actions-map 'descriptions))
          (entries (mapcan (lambda (row)
                             (mapcan (lambda (group)
                                       (plist-get group :entries))
                                     row))
                           rows)))
-    (dolist (key '("n" "m"))
+    (dolist (key '("n" "m" "x"))
       (should (cl-find key entries :key (lambda (entry)
                                          (plist-get entry :key))
                        :test #'equal)))))
@@ -3386,6 +3388,35 @@
   "Disconnect signals a user error when there is no live session."
   (hermes-test-with-chat-buffer
    (should-error (hermes-chat-disconnect) :type 'user-error)))
+
+(ert-deftest hermes-chat-dashboard-reconnect-restarts-current-client ()
+  "`hermes-dashboard-reconnect' restarts the current chat's dashboard socket."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket 'ws
+                 :refcount 1))
+        called)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
+               (lambda (c &optional message)
+                 (setq called (list c message)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client)
+       (hermes-dashboard-reconnect)
+       (should (equal called
+                      (list client "Hermes dashboard socket reconnecting")))))))
+
+(ert-deftest hermes-chat-dashboard-reconnect-refuses-active-turn ()
+  "`hermes-dashboard-reconnect' refuses while a turn is active."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket 'ws
+                 :refcount 1))
+        called)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-reconnect)
+               (lambda (&rest _args) (setq called t))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--pending-assistant-id "assistant-1")
+       (should-error (hermes-dashboard-reconnect) :type 'user-error)
+       (should-not called)))))
 
 (ert-deftest hermes-chat-resume-session-presets-session-id ()
   "Resuming a session opens a chat buffer bound to that durable id."
