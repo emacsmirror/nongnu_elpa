@@ -1,0 +1,16 @@
+research
+*.elc
+
+/*-autoloads.el
+/*-pkg.el
+/lisp/*-autoloads.el
+/lisp/*-pkg.el
+.*
+!.gitignore
+!.elpaignore
+\#*
+
+*.md
+*.info
+*.texi
+refs/*
