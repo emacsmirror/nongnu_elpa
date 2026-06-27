@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (transient "0.9.0"))
+;; Package-Requires: ((emacs "28.1") (keymap-popup "0.3.1"))
 ;; Keywords: ai, codex, tools, terminal
 ;; URL: https://git.thanosapollo.org/emacs-codex
 
@@ -35,7 +35,7 @@
 ;;   M-x codex-ide-toggle       Show/hide the Codex window
 ;;   M-x codex-ide-send-prompt  Send a prompt from the minibuffer
 ;;   M-x codex-ide-stop         Stop the session for the current project
-;;   M-x codex-ide-menu         Transient menu of all commands
+;;   M-x codex-ide-menu         Popup menu of all commands
 
 ;;; Code:
 
@@ -46,7 +46,7 @@
 (require 'codex-ide-mcp)
 (require 'codex-ide-term)
 
-(autoload 'codex-ide-menu "codex-ide-transient" nil t)
+(autoload 'codex-ide-menu "codex-ide-menu" nil t)
 
 ;;; Customization
 
@@ -199,7 +199,7 @@ folding is pure and does not touch the shell."
 
 (defun codex-ide--session-config-overrides ()
   "Return Codex config overrides for a new session.
-Includes user-provided `codex-ide-config-overrides' and transient
+Includes user-provided `codex-ide-config-overrides' and any
 session-local overrides needed by enabled integration helpers."
   (append codex-ide-config-overrides
           (when codex-ide-mcp-enabled

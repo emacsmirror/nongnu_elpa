@@ -25,6 +25,7 @@
 (require 'ert)
 (require 'codex-ide)
 (require 'codex-ide-term)
+(require 'codex-ide-menu)
 
 (defun codex-ide-test--with-vars (body)
   "Run BODY with controlled `codex-ide' variables, then restore them."
@@ -193,6 +194,69 @@
             (should (equal (file-truename (codex-ide--get-working-directory))
                            (file-truename root)))))
       (delete-directory root t))))
+
+;;; Menu
+
+(defun codex-ide-test--popup-keys (keymap)
+  "Return the list of binding keys in KEYMAP's popup descriptions."
+  (let ((rows (keymap-popup--meta keymap 'descriptions)))
+    (cl-loop for row in rows
+             append (cl-loop for group in row
+                             append (mapcar (lambda (entry)
+                                              (plist-get entry :key))
+                                            (plist-get group :entries))))))
+
+(ert-deftest codex-ide-menu-main-bindings ()
+  "Main menu binds the core session/navigation/interaction commands."
+  (should (eq (keymap-lookup codex-ide-map "s") #'codex-ide))
+  (should (eq (keymap-lookup codex-ide-map "q") #'codex-ide-stop))
+  (should (eq (keymap-lookup codex-ide-map "b") #'codex-ide-switch-to-buffer))
+  (should (eq (keymap-lookup codex-ide-map "p") #'codex-ide-send-prompt))
+  (dolist (key '("s" "r" "R" "q" "b" "w" "p" "e" "n" "C" "d"))
+    (should (member key (codex-ide-test--popup-keys codex-ide-map)))))
+
+(ert-deftest codex-ide-menu-config-bindings ()
+  "Config menu binds set/toggle suffixes and the save command."
+  (should (eq (keymap-lookup codex-ide-config-map "S")
+              #'codex-ide-menu--save-config))
+  (should (eq (keymap-lookup codex-ide-config-map "u")
+              #'codex-ide-menu--toggle-use-side-window))
+  (dolist (key '("s" "w" "h" "u" "f" "p" "b" "a" "A" "S"))
+    (should (member key (codex-ide-test--popup-keys codex-ide-config-map)))))
+
+(ert-deftest codex-ide-menu-debug-bindings ()
+  "Debug menu binds status, toggle, and log commands."
+  (should (eq (keymap-lookup codex-ide-debug-map "S")
+              #'codex-ide-check-status))
+  (should (eq (keymap-lookup codex-ide-debug-map "d")
+              #'codex-ide-menu--toggle-debug-mode))
+  (dolist (key '("S" "d" "l" "c"))
+    (should (member key (codex-ide-test--popup-keys codex-ide-debug-map)))))
+
+(ert-deftest codex-ide-menu-submenu-navigation ()
+  "Main menu enters config/debug submenus, not their commands directly."
+  (should (eq (keymap-lookup codex-ide-map "C")
+              #'codex-ide-map--enter-codex-ide-config-map))
+  (should (eq (keymap-lookup codex-ide-map "d")
+              #'codex-ide-map--enter-codex-ide-debug-map)))
+
+(ert-deftest codex-ide-menu-toggle-description-is-dynamic ()
+  "Toggle entries resolve their description from current variable state."
+  (let* ((rows (keymap-popup--meta codex-ide-config-map 'descriptions))
+         (entries (mapcan (lambda (row)
+                            (mapcan (lambda (group)
+                                      (plist-get group :entries))
+                                    row))
+                          rows))
+         (entry (cl-find "u" entries
+                         :key (lambda (e) (plist-get e :key))
+                         :test #'equal))
+         (desc-fn (plist-get entry :description)))
+    (should (functionp desc-fn))
+    (let ((codex-ide-use-side-window t))
+      (should (string-match-p "ON" (funcall desc-fn))))
+    (let ((codex-ide-use-side-window nil))
+      (should (string-match-p "OFF" (funcall desc-fn))))))
 
 (provide 'codex-ide-tests)
 
