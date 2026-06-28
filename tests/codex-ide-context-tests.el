@@ -246,6 +246,95 @@
               (should (equal start end)))))
       (delete-file file))))
 
+(ert-deftest codex-ide-context-selection-truncation-multibyte ()
+  "Selection truncation counts characters without splitting multibyte text."
+  (let ((file (expand-file-name "test-selection-multibyte.el"
+                                temporary-file-directory))
+        (codex-ide-context-selection-content-limit 3))
+    (write-region "αβγδε\n" nil file)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name file)
+          (insert-file-contents file)
+          (let ((transient-mark-mode t))
+            (goto-char (point-min))
+            (push-mark (point) t t)
+            (forward-char 5)
+            (setq mark-active t)
+            (let* ((active (codex-ide-context--active-file
+                            temporary-file-directory))
+                   (content (cdr (assoc "activeSelectionContent" active))))
+              (should (equal content "αβγ"))
+              (should (= (length content) 3)))))
+      (delete-file file))))
+
+(ert-deftest codex-ide-context-selection-truncation-under-limit ()
+  "Selection content shorter than the limit is preserved unchanged."
+  (let ((file (expand-file-name "test-selection-under-limit.el"
+                                temporary-file-directory))
+        (codex-ide-context-selection-content-limit 20))
+    (write-region "λx. x\n" nil file)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name file)
+          (insert-file-contents file)
+          (let ((transient-mark-mode t))
+            (goto-char (point-min))
+            (push-mark (point) t t)
+            (forward-char 5)
+            (setq mark-active t)
+            (let ((active (codex-ide-context--active-file
+                           temporary-file-directory)))
+              (should (equal (cdr (assoc "activeSelectionContent" active))
+                             "λx. x")))))
+      (delete-file file))))
+
+(ert-deftest codex-ide-context-collect-no-selection-empty-vector ()
+  "Collect reports empty selection content and vector selections at point."
+  (let ((file (expand-file-name "test-collect-nosel.el"
+                                temporary-file-directory)))
+    (write-region "hello\n" nil file)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name file)
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (let* ((context (codex-ide-context--collect
+                           temporary-file-directory (current-buffer)))
+                 (active (cdr (assoc "activeFile" context)))
+                 (selection (cdr (assoc "selection" active)))
+                 (start (cdr (assoc "start" selection)))
+                 (end (cdr (assoc "end" selection))))
+            (should (equal (cdr (assoc "activeSelectionContent" active))
+                           ""))
+            (should (vectorp (cdr (assoc "selections" active))))
+            (should (equal start end))))
+      (delete-file file))))
+
+(ert-deftest codex-ide-context-selection-from-narrowed-buffer ()
+  "Selection collection works when the active buffer is narrowed."
+  (let ((file (expand-file-name "test-selection-narrowed.el"
+                                temporary-file-directory)))
+    (write-region "hidden\nvisible text\nhidden\n" nil file)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name file)
+          (insert-file-contents file)
+          (forward-line 1)
+          (let ((beg (point))
+                (end (line-end-position)))
+            (narrow-to-region beg end)
+            (let ((transient-mark-mode t))
+              (goto-char (point-min))
+              (push-mark (point) t t)
+              (forward-char 7)
+              (setq mark-active t)
+              (let ((active (codex-ide-context--active-file
+                             temporary-file-directory)))
+                (should (equal (cdr (assoc "activeSelectionContent" active))
+                               "visible"))))))
+      (delete-file file))))
+
 (ert-deftest codex-ide-context-active-file-non-file-buffer ()
   "A buffer visiting no file returns nil for active-file."
   (with-temp-buffer
@@ -372,6 +461,121 @@
                            (unibyte-string 0 0 0 0))))
     (should-error (codex-ide-context--parse-frames oversized nil)
                   :type 'codex-ide-context-frame-too-large)))
+
+;;; Broadcast push
+
+(ert-deftest codex-ide-context-broadcast-no-clients ()
+  "Broadcasting with no connected clients is a no-op that returns zero."
+  (let ((codex-ide-context--clients (make-hash-table :test 'eq)))
+    (should (= (codex-ide-context--broadcast '(("type" . "broadcast")))
+               0))))
+
+(ert-deftest codex-ide-context-broadcast-with-stub-clients ()
+  "Broadcast sends one encoded frame to each live client."
+  (let ((codex-ide-context--clients (make-hash-table :test 'eq))
+        sent)
+    (puthash 'client-a nil codex-ide-context--clients)
+    (puthash 'dead-client nil codex-ide-context--clients)
+    (puthash 'client-b nil codex-ide-context--clients)
+    (cl-letf (((symbol-function 'process-live-p)
+               (lambda (proc) (not (eq proc 'dead-client))))
+              ((symbol-function 'process-send-string)
+               (lambda (proc frame)
+                 (push (cons proc frame) sent))))
+      (should (= (codex-ide-context--broadcast
+                  '(("type" . "broadcast")
+                    ("method" . "ide-context")))
+                 2))
+      (should (= (length sent) 2))
+      (should (assoc 'client-a sent))
+      (should (assoc 'client-b sent))
+      (let* ((frame (cdr (assoc 'client-a sent)))
+             (payload (substring frame 4))
+             (decoded (codex-ide-context--decode-payload payload)))
+        (should (equal (plist-get decoded :type) "broadcast"))
+        (should (equal (plist-get decoded :method) "ide-context"))))))
+
+(ert-deftest codex-ide-context-selection-broadcast-shape ()
+  "Selection broadcast wraps collected context in an ide-context broadcast."
+  (let ((file (expand-file-name "test-selection-broadcast.el"
+                                temporary-file-directory))
+        captured)
+    (write-region "selected\n" nil file)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name file)
+          (insert-file-contents file)
+          (let ((transient-mark-mode t))
+            (goto-char (point-min))
+            (push-mark (point) t t)
+            (forward-char 8)
+            (setq mark-active t)
+            (cl-letf (((symbol-function 'codex-ide-context--broadcast)
+                       (lambda (message)
+                         (setq captured message)
+                         2)))
+              (should (= (codex-ide-context--selection-broadcast
+                          temporary-file-directory (current-buffer))
+                         2)))
+            (should (equal (cdr (assoc "type" captured)) "broadcast"))
+            (should (equal (cdr (assoc "method" captured)) "ide-context"))
+            (let* ((params (cdr (assoc "params" captured)))
+                   (context (cdr (assoc "ideContext" params)))
+                   (active (cdr (assoc "activeFile" context))))
+              (should (equal (cdr (assoc "activeSelectionContent" active))
+                             "selected")))))
+      (delete-file file))))
+
+(ert-deftest codex-ide-context-send-selection-fallback-copies-region ()
+  "Manual selection push copies the region when no client is connected."
+  (let ((kill-ring nil)
+        (interprogram-cut-function nil))
+    (with-temp-buffer
+      (insert "copy me")
+      (let ((transient-mark-mode t))
+        (goto-char (point-min))
+        (push-mark (point) t t)
+        (goto-char (point-max))
+        (setq mark-active t)
+        (cl-letf (((symbol-function 'codex-ide-context--selection-broadcast)
+                   (lambda (_workspace-root &optional _buffer) 0)))
+          (codex-ide-send-selection temporary-file-directory))
+        (should (equal (car kill-ring) "copy me"))))))
+
+(ert-deftest codex-ide-context-send-selection-broadcasts-current-buffer ()
+  "Manual selection push broadcasts the command's current buffer."
+  (let ((file (expand-file-name "test-send-selection-current.el"
+                                temporary-file-directory))
+        captured)
+    (write-region "current\n" nil file)
+    (unwind-protect
+        (with-temp-buffer
+          (setq buffer-file-name file)
+          (insert-file-contents file)
+          (let ((transient-mark-mode t))
+            (goto-char (point-min))
+            (push-mark (point) t t)
+            (forward-char 7)
+            (setq mark-active t)
+            (cl-letf (((symbol-function 'codex-ide-context--broadcast)
+                       (lambda (message)
+                         (setq captured message)
+                         1)))
+              (codex-ide-send-selection temporary-file-directory))
+            (let* ((params (cdr (assoc "params" captured)))
+                   (context (cdr (assoc "ideContext" params)))
+                   (active (cdr (assoc "activeFile" context))))
+              (should (equal (cdr (assoc "activeSelectionContent" active))
+                             "current")))))
+      (delete-file file))))
+
+(ert-deftest codex-ide-context-docstring-selection-limit-says-characters ()
+  "Selection content limit documentation matches character truncation."
+  (let ((doc (documentation-property
+              'codex-ide-context-selection-content-limit
+              'variable-documentation)))
+    (should (string-match-p "characters" doc))
+    (should-not (string-match-p (rx word-start "bytes" word-end) doc))))
 
 ;;; Socket path
 

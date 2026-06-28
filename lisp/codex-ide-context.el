@@ -38,6 +38,7 @@
 ;;   M-x codex-ide-context-start   Start the IPC provider
 ;;   M-x codex-ide-context-stop    Stop the IPC provider
 ;;   M-x codex-ide-context-status  Report provider state
+;;   M-x codex-ide-send-selection  Push current selection context
 
 ;;; Code:
 
@@ -70,7 +71,7 @@ Frames larger than this are rejected before parsing."
   :group 'codex-ide)
 
 (defcustom codex-ide-context-selection-content-limit 65536
-  "Maximum bytes of selected text included as `activeSelectionContent'."
+  "Maximum characters of selected text included as `activeSelectionContent'."
   :type 'integer
   :group 'codex-ide)
 
@@ -441,6 +442,33 @@ a declared payload length exceeds the configured maximum."
       (process-send-string
        proc (codex-ide-context--encode-frame response)))))
 
+(defun codex-ide-context--broadcast (message)
+  "Send MESSAGE as an IPC frame to all connected Codex clients.
+Return the number of live clients the frame was sent to."
+  (let ((frame (codex-ide-context--encode-frame message))
+        (sent 0))
+    (maphash
+     (lambda (proc _state)
+       (when (process-live-p proc)
+         (when (ignore-errors
+                 (process-send-string proc frame)
+                 t)
+           (setq sent (1+ sent)))))
+     codex-ide-context--clients)
+    sent))
+
+(defun codex-ide-context--selection-broadcast (workspace-root &optional buffer)
+  "Broadcast the current IDE context for WORKSPACE-ROOT.
+BUFFER defaults to the selected window buffer.  Return the number of
+clients reached."
+  (codex-ide-context--broadcast
+   (list (cons "type" "broadcast")
+         (cons "method" "ide-context")
+         (cons "params"
+               (list (cons "ideContext"
+                           (codex-ide-context--collect workspace-root
+                                                       buffer)))))))
+
 (defun codex-ide-context--sentinel (proc event)
   "Sentinel: clean up client PROC on EVENT."
   (codex-ide-debug "Codex IPC client event: %s" (string-trim event))
@@ -472,6 +500,30 @@ a declared payload length exceeds the configured maximum."
       (codex-ide-log "Codex IDE context provider is running on %s"
                      (codex-ide-context--socket-path))
     (codex-ide-log "Codex IDE context provider is not running")))
+
+;;;###autoload
+(defun codex-ide-send-selection (&optional workspace-root)
+  "Push the current selection and context to connected Codex clients.
+WORKSPACE-ROOT defaults to `default-directory'.  If no client is
+connected, copy the active selection to the kill ring when present and
+tell the user to use `/ide' in the Codex TUI."
+  (interactive)
+  (let* ((buffer (current-buffer))
+         (sent (codex-ide-context--selection-broadcast
+                (or workspace-root default-directory)
+                buffer))
+         (selection (and (region-active-p)
+                         (buffer-substring-no-properties
+                          (region-beginning) (region-end)))))
+    (if (> sent 0)
+        (codex-ide-log "Sent selection context to %d Codex client(s)" sent)
+      (when selection
+        (kill-new selection))
+      (codex-ide-log
+       (if selection
+           (concat "No Codex clients connected; copied selection.  "
+                   "Type /ide in Codex TUI to pull context")
+         "No Codex clients connected; type /ide in Codex TUI to pull context")))))
 
 (provide 'codex-ide-context)
 
