@@ -35,6 +35,7 @@
 ;;   M-x codex-ide-toggle       Show/hide the Codex window
 ;;   M-x codex-ide-send-prompt  Send a prompt from the minibuffer
 ;;   M-x codex-ide-stop         Stop the session for the current project
+;;   M-x codex-ide-list-sessions  List all active project sessions
 ;;   M-x codex-ide-menu         Popup menu of all commands
 
 ;;; Code:
@@ -42,6 +43,7 @@
 (require 'cl-lib)
 (require 'project)
 (require 'subr-x)
+(require 'tabulated-list)
 (require 'codex-ide-debug)
 (require 'codex-ide-mcp)
 (require 'codex-ide-term)
@@ -230,6 +232,97 @@ session-local overrides needed by enabled integration helpers."
                (remhash directory codex-ide--processes)))
            codex-ide--processes))
 
+;;; Session list
+
+(defun codex-ide--status-string (process)
+  "Return the display status for PROCESS."
+  (if (and process (process-live-p process))
+      "running"
+    "stopped"))
+
+(defun codex-ide--short-directory (directory)
+  "Return the final directory component of DIRECTORY."
+  (file-name-nondirectory (directory-file-name directory)))
+
+(defun codex-ide--session-entries ()
+  "Return `tabulated-list-entries' data for live Codex sessions."
+  (codex-ide--cleanup-dead-processes)
+  (let (entries)
+    (maphash
+     (lambda (directory process)
+       (when (process-live-p process)
+         (push (list directory
+                     (vector (codex-ide--get-buffer-name directory)
+                             directory
+                             (codex-ide--status-string process)))
+               entries)))
+     codex-ide--processes)
+    (nreverse entries)))
+
+(defun codex-ide--sessions-directory< (a b)
+  "Return non-nil if session row A should sort before row B."
+  (string< (aref (cadr a) 1)
+           (aref (cadr b) 1)))
+
+(defun codex-ide--sessions-refresh (&optional _ignore-auto _noconfirm)
+  "Refresh the current `codex-ide-sessions-mode' buffer."
+  (setq tabulated-list-entries (codex-ide--session-entries))
+  (tabulated-list-init-header)
+  (tabulated-list-print t))
+
+(defvar codex-ide-sessions-mode-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map tabulated-list-mode-map)
+    (define-key map (kbd "RET") #'codex-ide-sessions-switch)
+    (define-key map (kbd "s") #'codex-ide-sessions-stop)
+    (define-key map (kbd "k") #'codex-ide-sessions-stop)
+    map)
+  "Keymap for `codex-ide-sessions-mode'.")
+
+(define-derived-mode codex-ide-sessions-mode tabulated-list-mode
+  "Codex Sessions"
+  "Major mode for listing active Codex terminal sessions.
+\{codex-ide-sessions-mode-map}"
+  (buffer-disable-undo)
+  (setq-local revert-buffer-function #'codex-ide--sessions-refresh)
+  (setq-local tabulated-list-format
+              `[("Buffer" 30 t :pad-right 2)
+                ("Working directory" 60 codex-ide--sessions-directory<
+                 :pad-right 2)
+                ("Status" 10 t)])
+  (setq-local tabulated-list-sort-key '("Working directory" . nil))
+  (tabulated-list-init-header))
+
+(defun codex-ide-sessions-switch (directory)
+  "Switch to the Codex session buffer for DIRECTORY."
+  (interactive
+   (list (or (tabulated-list-get-id)
+             (user-error "No Codex session on this line"))))
+  (let ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
+    (unless buffer
+      (user-error "No Codex session for %s" directory))
+    (setq codex-ide--last-accessed-buffer buffer)
+    (if-let ((window (get-buffer-window buffer)))
+        (select-window window)
+      (codex-ide--display-buffer-in-side-window buffer))))
+
+(defun codex-ide-sessions-stop (directory)
+  "Stop the Codex session for DIRECTORY."
+  (interactive
+   (list (or (tabulated-list-get-id)
+             (user-error "No Codex session on this line"))))
+  (let ((buffer (get-buffer (codex-ide--get-buffer-name directory)))
+        (process (gethash directory codex-ide--processes)))
+    (when (process-live-p process)
+      (delete-process process))
+    (when (buffer-live-p buffer)
+      (kill-buffer buffer))
+    (codex-ide--cleanup-on-exit directory)
+    (codex-ide-log "Stopping Codex in %s..."
+                   (codex-ide--short-directory directory)))
+  (when (derived-mode-p 'codex-ide-sessions-mode)
+    (codex-ide--sessions-refresh)))
+
 (defun codex-ide--display-buffer-in-side-window (buffer)
   "Display BUFFER according to the window customization.
 Returns the window.  Updates `codex-ide--last-accessed-buffer'."
@@ -411,6 +504,16 @@ If it is not visible, display it in the configured side window."
         (codex-ide--display-buffer-in-side-window buffer))
     (user-error
      "No Codex session for this project.  Use M-x codex-ide to start one")))
+
+;;;###autoload
+(defun codex-ide-list-sessions ()
+  "List all active Codex terminal sessions.
+\<codex-ide-sessions-mode-map>\[codex-ide-sessions-switch] switches;
+\[codex-ide-sessions-stop] stops; \[revert-buffer] refreshes the list."
+  (interactive)
+  (pop-to-buffer-same-window (get-buffer-create "*codex-sessions*"))
+  (codex-ide-sessions-mode)
+  (codex-ide--sessions-refresh))
 
 ;;;###autoload
 (defun codex-ide-send-prompt (&optional prompt)

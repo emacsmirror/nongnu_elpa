@@ -191,6 +191,7 @@
   "q" ("Stop" codex-ide-stop)
   :group "Navigation"
   "b" ("Switch to buffer" codex-ide-switch-to-buffer)
+  "l" ("List sessions" codex-ide-list-sessions)
   "w" ("Toggle window" codex-ide-toggle)
   :group "Interaction"
   "p" ("Send prompt" codex-ide-send-prompt)

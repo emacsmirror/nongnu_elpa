@@ -36,6 +36,29 @@
         (codex-ide-cli-extra-args nil))
     (funcall body)))
 
+(defun codex-ide-test--make-process (name)
+  "Return a live test process named NAME."
+  (unless (executable-find "sleep")
+    (ert-skip "sleep executable not found"))
+  (start-process name nil "sleep" "60"))
+
+(defun codex-ide-test--call-with-process-table (directories body)
+  "Call BODY with `codex-ide--processes' populated for DIRECTORIES.
+BODY is called with the live processes in the same order as DIRECTORIES."
+  (let ((codex-ide--processes (make-hash-table :test 'equal))
+        (processes nil))
+    (unwind-protect
+        (progn
+          (dolist (directory directories)
+            (let ((process (codex-ide-test--make-process "codex-ide-test")))
+              (push process processes)
+              (puthash directory process codex-ide--processes)))
+          (funcall body (reverse processes)))
+      (mapc (lambda (process)
+              (when (process-live-p process)
+                (delete-process process)))
+            processes))))
+
 (ert-deftest codex-ide-build-command-default ()
   "Default command is just the program with no args."
   (codex-ide-test--with-vars
@@ -195,6 +218,94 @@
                            (file-truename root)))))
       (delete-directory root t))))
 
+(ert-deftest codex-ide-status-string-live ()
+  "Live process status is reported as a string."
+  (let ((process (codex-ide-test--make-process "codex-ide-status-live")))
+    (unwind-protect
+        (should (equal (codex-ide--status-string process) "running"))
+      (when (process-live-p process)
+        (delete-process process)))))
+
+(ert-deftest codex-ide-status-string-dead ()
+  "Dead process status is reported as stopped."
+  (let ((process (codex-ide-test--make-process "codex-ide-status-dead")))
+    (unwind-protect
+        (progn
+          (delete-process process)
+          (should (equal (codex-ide--status-string process) "stopped")))
+      (when (process-live-p process)
+        (delete-process process)))))
+
+(ert-deftest codex-ide-status-string-nil ()
+  "Nil process status is reported as stopped."
+  (should (equal (codex-ide--status-string nil) "stopped")))
+
+(ert-deftest codex-ide-session-entries-empty ()
+  "Empty process table produces no session entries."
+  (let ((codex-ide--processes (make-hash-table :test 'equal)))
+    (should-not (codex-ide--session-entries))))
+
+(ert-deftest codex-ide-session-entries-live ()
+  "Live process table entries produce tabulated session rows."
+  (let* ((dir-a (file-name-as-directory
+                 (make-temp-file "codex-ide-alpha-" t)))
+         (dir-b (file-name-as-directory
+                 (make-temp-file "codex-ide-beta-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-process-table
+         (list dir-a dir-b)
+         (lambda (_processes)
+           (let* ((entries (codex-ide--session-entries))
+                  (row-a (assoc dir-a entries))
+                  (row-b (assoc dir-b entries)))
+             (should (= (length entries) 2))
+             (should (equal row-a
+                            (list dir-a
+                                  (vector (codex-ide--get-buffer-name dir-a)
+                                          dir-a
+                                          "running"))))
+             (should (equal row-b
+                            (list dir-b
+                                  (vector (codex-ide--get-buffer-name dir-b)
+                                          dir-b
+                                          "running")))))))
+      (delete-directory dir-a t)
+      (delete-directory dir-b t))))
+
+(ert-deftest codex-ide-session-entries-filters-dead ()
+  "Dead process table entries are removed and omitted from session rows."
+  (let ((live-dir (file-name-as-directory
+                   (make-temp-file "codex-ide-live-" t)))
+        (dead-dir (file-name-as-directory
+                   (make-temp-file "codex-ide-dead-" t)))
+        (codex-ide--processes (make-hash-table :test 'equal))
+        live-process
+        dead-process)
+    (unwind-protect
+        (progn
+          (setq live-process (codex-ide-test--make-process "codex-ide-live"))
+          (setq dead-process (codex-ide-test--make-process "codex-ide-dead"))
+          (puthash live-dir live-process codex-ide--processes)
+          (puthash dead-dir dead-process codex-ide--processes)
+          (delete-process dead-process)
+          (let ((entries (codex-ide--session-entries)))
+            (should (assoc live-dir entries))
+            (should-not (assoc dead-dir entries))
+            (should-not (gethash dead-dir codex-ide--processes))))
+      (when (and live-process (process-live-p live-process))
+        (delete-process live-process))
+      (when (and dead-process (process-live-p dead-process))
+        (delete-process dead-process))
+      (delete-directory live-dir t)
+      (delete-directory dead-dir t))))
+
+(ert-deftest codex-ide-sessions-directory< ()
+  "Session sort predicate compares the working-directory column."
+  (let ((alpha '("/tmp/alpha/" ["*codex[alpha]*" "/tmp/alpha/" "running"]))
+        (beta '("/tmp/beta/" ["*codex[beta]*" "/tmp/beta/" "running"])))
+    (should (codex-ide--sessions-directory< alpha beta))
+    (should-not (codex-ide--sessions-directory< beta alpha))))
+
 ;;; Menu
 
 (defun codex-ide-test--popup-keys (keymap)
@@ -211,8 +322,9 @@
   (should (eq (keymap-lookup codex-ide-map "s") #'codex-ide))
   (should (eq (keymap-lookup codex-ide-map "q") #'codex-ide-stop))
   (should (eq (keymap-lookup codex-ide-map "b") #'codex-ide-switch-to-buffer))
+  (should (eq (keymap-lookup codex-ide-map "l") #'codex-ide-list-sessions))
   (should (eq (keymap-lookup codex-ide-map "p") #'codex-ide-send-prompt))
-  (dolist (key '("s" "r" "R" "q" "b" "w" "p" "e" "n" "C" "d"))
+  (dolist (key '("s" "r" "R" "q" "b" "l" "w" "p" "e" "n" "C" "d"))
     (should (member key (codex-ide-test--popup-keys codex-ide-map)))))
 
 (ert-deftest codex-ide-menu-config-bindings ()
