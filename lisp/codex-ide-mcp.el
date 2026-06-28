@@ -180,7 +180,7 @@ Lines are one-based and columns are zero-based."
 (defun codex-ide-mcp--buffer-project-root (&optional buffer)
   "Return project root for BUFFER, or nil when no project is known."
   (with-current-buffer (or buffer (current-buffer))
-    (when-let ((project (project-current nil)))
+    (and-let* ((project (project-current nil)))
       (expand-file-name (project-root project)))))
 
 (defun codex-ide-mcp--json-text-result (value)
@@ -249,7 +249,7 @@ Lines are one-based and columns are zero-based."
   "Return one-based line number for xref LOCATION, or nil."
   (condition-case nil
       (or (xref-location-line location)
-          (when-let ((marker (xref-location-marker location)))
+          (and-let* ((marker (xref-location-marker location)))
             (and (markerp marker)
                  (marker-buffer marker)
                  (with-current-buffer (marker-buffer marker)
@@ -299,7 +299,7 @@ CATEGORY names the parent group when recursing into sublists."
               ((imenu--subalist-p item)
                (codex-ide-mcp--imenu-flatten value name))
               ((or (markerp value) (integerp value))
-               (when-let ((line (codex-ide-mcp--imenu-position-line
+               (and-let* ((line (codex-ide-mcp--imenu-position-line
                                   value)))
                  (list (list (cons "name" name)
                              (cons "category" (or category ""))
@@ -679,7 +679,7 @@ CATEGORY names the parent group when recursing into sublists."
         (delq nil
               (list (cons "type" (codex-ide-mcp--arg-type-name
                                    (plist-get arg :type)))
-                    (when-let ((description (plist-get arg :description)))
+                    (and-let* ((description (plist-get arg :description)))
                       (cons "description" description))))))
 
 (defun codex-ide-mcp--tool->mcp (tool)

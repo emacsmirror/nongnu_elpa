@@ -430,7 +430,8 @@
   "Project info reports nil root outside a project."
   (let ((dir (make-temp-file "codex-ide-mcp-no-project" t)))
     (unwind-protect
-        (let ((default-directory (file-name-as-directory dir)))
+        (let ((default-directory (file-name-as-directory dir))
+              (project-find-functions nil))
           (with-temp-buffer
             (rename-buffer "codex-ide-mcp-no-project" t)
             (let* ((result (codex-ide-mcp--handle-tools-call
