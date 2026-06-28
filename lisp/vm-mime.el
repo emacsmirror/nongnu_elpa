@@ -23,6 +23,7 @@
 ;;; Code:
 
 (require 'vm-macro)
+(require 'vm-misc)
 (require 'vm-reply)                     ;vm-mail-mode-show-headers
 (require 'vm-summary)
 (require 'sendmail)
@@ -60,6 +61,10 @@
 (declare-function vm-get-sender ())
 (declare-function vm-smime-get-recipient-certfiles ())
 (declare-function vm-mode "vm" (&optional read-only))
+(declare-function vm-imagemagick-available-p "vm-misc" ())
+(declare-function vm-imagemagick-call-identify "vm-misc" (infile buffer args))
+(declare-function vm-imagemagick-call-convert "vm-misc" (infile buffer args))
+(declare-function vm-imagemagick-convert-shell-command "vm-misc" ())
 
 (defvar enable-multibyte-characters)
 
@@ -3446,7 +3451,7 @@ describing the image type.                             USR, 2011-03-25"
 	  (delete-region start end))
 	(if (not (bolp))
 	    (insert "\n"))
-	(setq do-strips (and (stringp vm-imagemagick-convert-program)
+	(setq do-strips (and (vm-imagemagick-available-p)
 			     vm-mime-use-image-strips))
 	(cond (do-strips
 	       (condition-case error-data
@@ -3573,7 +3578,7 @@ describing the image type.                            USR, 2011-03-25"
 	    (and work-buffer (kill-buffer work-buffer))))
 	(if (not (bolp))
 	    (insert-char ?\n 1))
-	(setq do-strips (and (stringp vm-imagemagick-convert-program)
+	(setq do-strips (and (vm-imagemagick-available-p)
 			     vm-mime-use-image-strips))
 	(cond (do-strips
 	       (condition-case error-data
@@ -3645,16 +3650,17 @@ describing the image type.                            USR, 2011-03-25"
     nil ))
 
 (defun vm-get-image-dimensions (file)
-  (let (work-buffer width height)
+  (let (work-buffer width height exit-status)
     (unwind-protect
 	(save-excursion
 	  (setq work-buffer (vm-make-work-buffer))
 	  (set-buffer work-buffer)
-	  (call-process vm-imagemagick-identify-program nil t nil file)
+	  (setq exit-status
+		(vm-imagemagick-call-identify nil t (list file)))
 	  (goto-char (point-min))
 	  (or (search-forward " " nil t)
-	      (error "no spaces in 'identify' output: %s"
-		     (buffer-string)))
+	      (error "no spaces in 'identify' output (exit %s, file %s): %s"
+		     exit-status file (buffer-string)))
 	  (if (not (re-search-forward "\\b\\([0-9]+\\)x\\([0-9]+\\)\\b" nil t))
 	      (error "file dimensions missing from 'identify' output: %s"
 		     (buffer-string)))
@@ -3703,7 +3709,7 @@ describing the image type.                            USR, 2011-03-25"
 		(progn
 		  ;; Problem - we have no way of knowing whether these
 		  ;; calls succeed or not.  USR, 2011-02-23
-		  (insert vm-imagemagick-convert-program
+		  (insert (vm-imagemagick-convert-shell-command)
 			  " -crop"
 			  (format " %dx%d+0+%d"
 				  width
@@ -3720,21 +3726,22 @@ describing the image type.                            USR, 2011-03-25"
 		  (when incremental
 			(insert "echo XZXX" (int-to-string i) "XZXX\n"))
 		  (setq i (1+ i)))
-	      (call-process vm-imagemagick-convert-program nil nil nil
-			    "-crop"
-			    (format "%dx%d+0+%d"
-				    width
-				    (+ min-height adjustment
-				       (if (zerop remainder) 0 1))
-				    starty)
-			    "-page"
-			    (format "%dx%d+0+0"
-				    width
-				    (+ min-height adjustment
-				       (if (zerop remainder) 0 1)))
-			    "-roll"
-			    (format "+%d+%d" hroll vroll)
-			    file (concat output-type newfile)))
+	      (vm-imagemagick-call-convert
+	       nil nil
+	       (list "-crop"
+		     (format "%dx%d+0+%d"
+			     width
+			     (+ min-height adjustment
+				(if (zerop remainder) 0 1))
+			     starty)
+		     "-page"
+		     (format "%dx%d+0+0"
+			     width
+			     (+ min-height adjustment
+				(if (zerop remainder) 0 1)))
+		     "-roll"
+		     (format "+%d+%d" hroll vroll)
+		     file (concat output-type newfile))))
 	    (setq image-list (cons newfile image-list)
 		  starty (+ starty min-height adjustment
 			    (if (zerop remainder) 0 1))
@@ -3959,12 +3966,13 @@ The return value does not seem to be meaningful.     USR, 2011-03-25"
 	  (with-current-buffer work-buffer
 	    (set-buffer-file-coding-system (vm-binary-coding-system))
 	    ;; convert just the first page "[0]" and enforce PNG
-	    ;; output by "png:" 
+	    ;; output by "png:"
 	    (let ((coding-system-for-read (vm-binary-coding-system)))
 	      (setq success
-		    (eq 0 (apply 'call-process vm-imagemagick-convert-program
-				 tempfile t nil
-				 (append convert-args (list "-[0]" "png:-"))))))
+		    (eq 0 (vm-imagemagick-call-convert
+			   tempfile t
+			   (append convert-args
+				   (list "-[0]" "png:-"))))))
 	    (when success
 	      (write-region (point-min) (point-max) tempfile nil 0)
 	      (vm-set-mm-layout-image-modified layout t)))
@@ -4056,7 +4064,7 @@ Otherwise, set it to nil.                              USR, 2011-03-25"
 (defun vm-mime-display-button-image (layout)
   "Displays a button for the MIME LAYOUT and includes a thumbnail
 image when possible."
-  (if (and vm-imagemagick-convert-program
+  (if (and (vm-imagemagick-available-p)
 	   vm-mime-thumbnail-max-geometry
 	   (vm-images-possible-here-p))
       ;; create a thumbnail and display it
