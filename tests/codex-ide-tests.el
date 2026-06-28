@@ -218,35 +218,13 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                            (file-truename root)))))
       (delete-directory root t))))
 
-(ert-deftest codex-ide-status-string-live ()
-  "Live process status is reported as a string."
-  (let ((process (codex-ide-test--make-process "codex-ide-status-live")))
-    (unwind-protect
-        (should (equal (codex-ide--status-string process) "running"))
-      (when (process-live-p process)
-        (delete-process process)))))
-
-(ert-deftest codex-ide-status-string-dead ()
-  "Dead process status is reported as stopped."
-  (let ((process (codex-ide-test--make-process "codex-ide-status-dead")))
-    (unwind-protect
-        (progn
-          (delete-process process)
-          (should (equal (codex-ide--status-string process) "stopped")))
-      (when (process-live-p process)
-        (delete-process process)))))
-
-(ert-deftest codex-ide-status-string-nil ()
-  "Nil process status is reported as stopped."
-  (should (equal (codex-ide--status-string nil) "stopped")))
-
-(ert-deftest codex-ide-session-entries-empty ()
-  "Empty process table produces no session entries."
+(ert-deftest codex-ide-session-candidates-empty ()
+  "Empty process table produces no session candidates."
   (let ((codex-ide--processes (make-hash-table :test 'equal)))
-    (should-not (codex-ide--session-entries))))
+    (should-not (codex-ide--session-candidates))))
 
-(ert-deftest codex-ide-session-entries-live ()
-  "Live process table entries produce tabulated session rows."
+(ert-deftest codex-ide-session-candidates-live ()
+  "Live process table entries produce buffer-name candidates."
   (let* ((dir-a (file-name-as-directory
                  (make-temp-file "codex-ide-alpha-" t)))
          (dir-b (file-name-as-directory
@@ -255,56 +233,100 @@ BODY is called with the live processes in the same order as DIRECTORIES."
         (codex-ide-test--call-with-process-table
          (list dir-a dir-b)
          (lambda (_processes)
-           (let* ((entries (codex-ide--session-entries))
-                  (row-a (assoc dir-a entries))
-                  (row-b (assoc dir-b entries)))
-             (should (= (length entries) 2))
-             (should (equal row-a
-                            (list dir-a
-                                  (vector (codex-ide--get-buffer-name dir-a)
-                                          dir-a
-                                          "running"))))
-             (should (equal row-b
-                            (list dir-b
-                                  (vector (codex-ide--get-buffer-name dir-b)
-                                          dir-b
-                                          "running")))))))
+           (let ((buffer-a (get-buffer-create (codex-ide--get-buffer-name dir-a)))
+                 (buffer-b (get-buffer-create (codex-ide--get-buffer-name dir-b))))
+             (unwind-protect
+                 (should (equal (codex-ide--session-candidates)
+                                (list (cons (buffer-name buffer-a) dir-a)
+                                      (cons (buffer-name buffer-b) dir-b))))
+               (kill-buffer buffer-a)
+               (kill-buffer buffer-b)))))
       (delete-directory dir-a t)
       (delete-directory dir-b t))))
 
-(ert-deftest codex-ide-session-entries-filters-dead ()
-  "Dead process table entries are removed and omitted from session rows."
+(ert-deftest codex-ide-session-candidates-filter-dead-and-missing-buffers ()
+  "Only live process entries with live buffers become candidates."
   (let ((live-dir (file-name-as-directory
                    (make-temp-file "codex-ide-live-" t)))
         (dead-dir (file-name-as-directory
                    (make-temp-file "codex-ide-dead-" t)))
+        (missing-dir (file-name-as-directory
+                      (make-temp-file "codex-ide-missing-" t)))
         (codex-ide--processes (make-hash-table :test 'equal))
         live-process
-        dead-process)
+        dead-process
+        missing-process
+        live-buffer)
     (unwind-protect
         (progn
           (setq live-process (codex-ide-test--make-process "codex-ide-live"))
           (setq dead-process (codex-ide-test--make-process "codex-ide-dead"))
+          (setq missing-process (codex-ide-test--make-process "codex-ide-missing"))
+          (setq live-buffer (get-buffer-create
+                             (codex-ide--get-buffer-name live-dir)))
           (puthash live-dir live-process codex-ide--processes)
           (puthash dead-dir dead-process codex-ide--processes)
+          (puthash missing-dir missing-process codex-ide--processes)
           (delete-process dead-process)
-          (let ((entries (codex-ide--session-entries)))
-            (should (assoc live-dir entries))
-            (should-not (assoc dead-dir entries))
+          (let ((candidates (codex-ide--session-candidates)))
+            (should (equal candidates
+                           (list (cons (buffer-name live-buffer) live-dir))))
             (should-not (gethash dead-dir codex-ide--processes))))
       (when (and live-process (process-live-p live-process))
         (delete-process live-process))
       (when (and dead-process (process-live-p dead-process))
         (delete-process dead-process))
+      (when (and missing-process (process-live-p missing-process))
+        (delete-process missing-process))
+      (when (buffer-live-p live-buffer)
+        (kill-buffer live-buffer))
       (delete-directory live-dir t)
-      (delete-directory dead-dir t))))
+      (delete-directory dead-dir t)
+      (delete-directory missing-dir t))))
 
-(ert-deftest codex-ide-sessions-directory< ()
-  "Session sort predicate compares the working-directory column."
-  (let ((alpha '("/tmp/alpha/" ["*codex[alpha]*" "/tmp/alpha/" "running"]))
-        (beta '("/tmp/beta/" ["*codex[beta]*" "/tmp/beta/" "running"])))
-    (should (codex-ide--sessions-directory< alpha beta))
-    (should-not (codex-ide--sessions-directory< beta alpha))))
+(ert-deftest codex-ide-session-annotation-shows-directory ()
+  "Session completion annotations show the abbreviated directory."
+  (let* ((directory (file-name-as-directory
+                     (make-temp-file "codex-ide-annotation-" t)))
+         (candidates `(("buffer" . ,directory)))
+         (annotation (funcall (codex-ide--session-annotation-function
+                               candidates)
+                              "buffer")))
+    (unwind-protect
+        (should (equal (substring-no-properties annotation)
+                       (concat "  " (abbreviate-file-name directory))))
+      (delete-directory directory t))))
+
+(ert-deftest codex-ide-read-session-directory-uses-annotated-completion ()
+  "Session reader uses completing-read with an annotation function."
+  (let* ((directory (file-name-as-directory
+                     (make-temp-file "codex-ide-read-" t)))
+         (buffer (get-buffer-create (codex-ide--get-buffer-name directory)))
+         (codex-ide--processes (make-hash-table :test 'equal))
+         process)
+    (unwind-protect
+        (progn
+          (setq process (codex-ide-test--make-process "codex-ide-read"))
+          (puthash directory process codex-ide--processes)
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (prompt collection _predicate require-match
+                                     &rest _args)
+                       (should (equal prompt "Codex session: "))
+                       (should (equal collection
+                                      (list (cons (buffer-name buffer)
+                                                  directory))))
+                       (should require-match)
+                       (should (functionp
+                                (plist-get completion-extra-properties
+                                           :annotation-function)))
+                       (buffer-name buffer))))
+            (should (equal (codex-ide--read-session-directory)
+                           directory))))
+      (when (and process (process-live-p process))
+        (delete-process process))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (delete-directory directory t))))
 
 ;;; Menu
 
