@@ -426,7 +426,7 @@ CATEGORY names the parent group when recursing into sublists."
       (user-error "Tool emacs_xref_references requires a non-empty identifier"))
     (with-current-buffer buffer
       (condition-case err
-          (if-let ((backend (xref-find-backend)))
+          (if-let* ((backend (xref-find-backend)))
               (codex-ide-mcp--json-text-result
                (vconcat
                 (codex-ide-mcp--xref-items->entries
@@ -447,7 +447,7 @@ CATEGORY names the parent group when recursing into sublists."
       (user-error "Tool emacs_xref_apropos requires a non-empty pattern"))
     (with-current-buffer buffer
       (condition-case err
-          (if-let ((backend (xref-find-backend)))
+          (if-let* ((backend (xref-find-backend)))
               (codex-ide-mcp--json-text-result
                (vconcat
                 (codex-ide-mcp--xref-items->entries
@@ -466,7 +466,7 @@ CATEGORY names the parent group when recursing into sublists."
          (file-count
           (if root
               (condition-case nil
-                  (if-let ((project (project-current nil root)))
+                  (if-let* ((project (project-current nil root)))
                       (length (project-files project))
                     0)
                 (error 0))
@@ -870,8 +870,8 @@ Returns a response alist, or nil for notifications."
 
 (defun codex-ide-mcp--content-length (request)
   "Return Content-Length for parsed REQUEST."
-  (if-let ((value (cdr (assoc "content-length"
-                             (plist-get request :headers)))))
+  (if-let* ((value (cdr (assoc "content-length"
+                               (plist-get request :headers)))))
       (string-to-number value)
     0))
 
@@ -891,7 +891,7 @@ Returns a response alist, or nil for notifications."
 
 (defun codex-ide-mcp--selected-buffer ()
   "Return the current UI buffer used for MCP tool execution."
-  (if-let ((window (selected-window)))
+  (if-let* ((window (selected-window)))
       (window-buffer window)
     (current-buffer)))
 
@@ -901,7 +901,7 @@ Returns a response alist, or nil for notifications."
       (codex-ide-mcp--send-json
        proc 405 (codex-ide-mcp--make-error-response
                  nil -32600 "Only POST is supported"))
-    (if-let ((request-error (codex-ide-mcp--request-error request)))
+    (if-let* ((request-error (codex-ide-mcp--request-error request)))
         (codex-ide-mcp--send-json
          proc (car request-error)
          (codex-ide-mcp--make-error-response
@@ -931,7 +931,7 @@ Returns a response alist, or nil for notifications."
   (let* ((state (codex-ide-mcp--client-state proc))
          (pending (concat (plist-get state :pending) string)))
     (while (and (process-live-p proc)
-                (if-let ((parsed (codex-ide-mcp--split-request pending)))
+                (if-let* ((parsed (codex-ide-mcp--split-request pending)))
                     (let ((request (car parsed)))
                       (setq pending (cdr parsed))
                       (codex-ide-mcp--handle-http-request proc request)

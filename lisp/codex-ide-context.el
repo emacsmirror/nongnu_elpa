@@ -239,11 +239,11 @@ region is active.  Returns nil when BUFFER is not visiting a file."
                           (codex-ide-context--buffer->file-descriptor
                            buf workspace-root))))
     (when descriptor
-      (if-let (((buffer-live-p buf))
-               (beg (with-current-buffer buf
-                      (and (region-active-p) (region-beginning))))
-               (end (with-current-buffer buf
-                      (and (region-active-p) (region-end)))))
+      (if-let* (((buffer-live-p buf))
+                (beg (with-current-buffer buf
+                       (and (region-active-p) (region-beginning))))
+                (end (with-current-buffer buf
+                       (and (region-active-p) (region-end)))))
           (let* ((content (with-current-buffer buf
                             (buffer-substring-no-properties beg end)))
                  (trimmed (if (> (length content)
