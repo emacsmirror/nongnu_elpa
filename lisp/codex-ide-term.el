@@ -175,9 +175,9 @@ WORKING-DIR is the working directory.  Returns the process object."
 
 ;;; eat backend
 
-(defun codex-ide-term--steady-eat-cursor (cursor-type)
-  "Return CURSOR-TYPE with Eat's blink frequency disabled."
-  (list (car cursor-type) nil (nth 2 cursor-type)))
+(defun codex-ide-term--steady-eat-cursor (cursor-shape)
+  "Return CURSOR-SHAPE with Eat's blink frequency disabled."
+  (list (car cursor-shape) nil (nth 2 cursor-shape)))
 
 (defun codex-ide-term--eat-backend ()
   "Return the eat backend descriptor."
