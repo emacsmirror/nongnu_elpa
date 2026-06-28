@@ -28,8 +28,8 @@
 ;; Native Codex app-server backend.  Communicates with bare `codex app-server'
 ;; over stdio using JSON-RPC-style newline-delimited JSON (currently without
 ;; the "jsonrpc":"2.0" header).  This is a Phase 4 spike: it proves the
-;; initialize -> thread/start -> turn/start -> streaming -> turn/completed
-;; path with agent-message rendering, plus auto-deny of approval requests.
+;; initialize -> thread/start -> turn/start -> turn/completed streaming path
+;; with agent-message rendering and conservative approval request handling.
 ;;
 ;; The module is intentionally isolated from the terminal MVP
 ;; (`codex-ide.el').  It has its own process, buffer, and state.
@@ -70,6 +70,16 @@
 (defcustom codex-ide-appserver-client-version "0.1.0"
   "Client version reported to the app-server during initialization."
   :type 'string
+  :group 'codex-ide-appserver)
+
+(defcustom codex-ide-approval-policy 'auto-deny
+  "How the app-server backend answers Codex approval requests.
+This applies only to the native app-server backend.  The terminal CLI
+approval flag is controlled separately by `codex-ide-ask-for-approval'."
+  :type '(choice (const :tag "Deny all approvals" auto-deny)
+                 (const :tag "Ask for each approval" ask)
+                 (const :tag "Ask for file changes with request metadata" ask-with-diff)
+                 (const :tag "Approve all approvals" auto-approve))
   :group 'codex-ide-appserver)
 
 ;;; Variables
@@ -163,8 +173,110 @@ Return a plist (:type RESPONSE|NOTIFICATION|REQUEST :method M :id I
 
 (defun codex-ide-appserver--approval-response (decision)
   "Return the result alist for an approval response with DECISION.
-DECISION is a string like \"denied\"."
+DECISION is a Codex app-server protocol string like \"decline\"."
   `(("decision" . ,decision)))
+
+(defun codex-ide-appserver--approval-request-kind (method)
+  "Return the approval request kind for METHOD, or nil."
+  (pcase method
+    ("item/commandExecution/requestApproval" 'command-execution)
+    ("item/fileChange/requestApproval" 'file-change)
+    (_ nil)))
+
+(defun codex-ide-appserver--string-param (key params)
+  "Return the string value for KEY in PARAMS, or nil."
+  (let ((value (cdr (assoc key params))))
+    (and (stringp value)
+         (not (string-empty-p value))
+         value)))
+
+(defun codex-ide-appserver--file-change-approval-params-p (params)
+  "Return non-nil when PARAMS match file-change approval schema."
+  (and (codex-ide-appserver--string-param "itemId" params)
+       (codex-ide-appserver--string-param "threadId" params)
+       (codex-ide-appserver--string-param "turnId" params)
+       (integerp (cdr (assoc "startedAtMs" params)))))
+
+(defun codex-ide-appserver--truncate-summary (string)
+  "Return STRING truncated to fit an approval prompt."
+  (if (<= (string-width string) 160)
+      string
+    (concat (truncate-string-to-width string 157) "...")))
+
+(defun codex-ide-appserver--command-summary (params)
+  "Return a short human-readable command summary from PARAMS."
+  (let* ((command (cdr (assoc "command" params)))
+         (summary
+          (cond
+           ((stringp command) command)
+           ((and command (listp command) (cl-every #'stringp command))
+            (string-join command " "))
+           (t (prin1-to-string command)))))
+    (codex-ide-appserver--truncate-summary summary)))
+
+(defun codex-ide-appserver--file-change-summary (params)
+  "Return a short human-readable file-change summary from PARAMS."
+  (let ((item-id (codex-ide-appserver--string-param "itemId" params))
+        (grant-root (codex-ide-appserver--string-param "grantRoot" params))
+        (reason (codex-ide-appserver--string-param "reason" params)))
+    (codex-ide-appserver--truncate-summary
+     (string-join
+      (delq nil
+            (list (if item-id
+                      (format "file change request %s" item-id)
+                    "file change request")
+                  (and grant-root (format "grant root %s" grant-root))
+                  (and reason (format "reason: %s" reason))))
+      "; "))))
+
+(defun codex-ide-appserver--make-approval-decision (policy method params)
+  "Return a pure approval action plist for POLICY, METHOD, and PARAMS.
+Immediate response decisions use Codex app-server protocol strings."
+  (let ((kind (codex-ide-appserver--approval-request-kind method)))
+    (cond
+     ((null kind)
+      `(:action respond :decision "decline" :kind nil
+        :reason unknown-approval-request))
+     ((and (eq kind 'file-change)
+           (not (codex-ide-appserver--file-change-approval-params-p params)))
+      `(:action respond :decision "decline" :kind ,kind
+        :reason malformed-file-change))
+     (t
+      (pcase policy
+        ('auto-deny
+         `(:action respond :decision "decline" :kind ,kind
+           :reason auto-deny))
+        ('auto-approve
+         `(:action respond :decision "accept" :kind ,kind
+           :reason auto-approve))
+        ('ask
+         (pcase kind
+           ('command-execution
+            `(:action prompt :kind ,kind
+              :prompt ,(format "Approve Codex command: %s? "
+                               (codex-ide-appserver--command-summary params))
+              :params ,params))
+           ('file-change
+            `(:action prompt :kind ,kind
+              :prompt ,(format "Approve Codex %s? "
+                               (codex-ide-appserver--file-change-summary params))
+              :params ,params))))
+        ('ask-with-diff
+         (pcase kind
+           ('command-execution
+            `(:action prompt :kind ,kind
+              :prompt ,(format "Approve Codex command: %s? "
+                               (codex-ide-appserver--command-summary params))
+              :params ,params))
+           ('file-change
+            `(:action prompt :kind ,kind
+              :prompt ,(format "Approve Codex %s? "
+                               (codex-ide-appserver--file-change-summary params))
+              :params ,params
+              :reason schema-file-change-metadata))))
+        (_
+         `(:action respond :decision "decline" :kind ,kind
+           :reason invalid-policy)))))))
 
 (defun codex-ide-appserver--next-id ()
   "Return the next incrementing request id and advance the counter."
@@ -222,7 +334,8 @@ used."
     ('request
      (codex-ide-appserver--handle-request
       (plist-get msg :method)
-      (plist-get msg :id)))))
+      (plist-get msg :id)
+      (plist-get msg :params)))))
 
 (defun codex-ide-appserver--handle-notification (method params)
   "Handle a server notification with METHOD and PARAMS."
@@ -245,21 +358,36 @@ used."
      (codex-ide-appserver--render-error
       (cdr (assoc "error" params))))))
 
-(defun codex-ide-appserver--handle-request (method id)
-  "Handle a server-initiated request with METHOD and numeric ID.
-The spike auto-denies approval requests."
-  (pcase method
-    ("item/commandExecution/requestApproval"
-     (codex-ide-appserver--send-response
-      id (codex-ide-appserver--approval-response "denied")))
-    ("item/fileChange/requestApproval"
-     (codex-ide-appserver--send-response
-      id (codex-ide-appserver--approval-response "denied")))
-    (_
-     ;; Unknown server request: respond with method-not-found error.
-     (codex-ide-appserver--send-response
-      id `(("error" . (("code" . -32601)
-                       ("message" . "Method not found"))))))))
+(defun codex-ide-appserver--confirm-approval (action)
+  "Return \"accept\" or \"decline\" after ACTION confirmation."
+  (condition-case err
+      (pcase (plist-get action :action)
+        ('prompt
+         (if (y-or-n-p (plist-get action :prompt))
+             "accept"
+           "decline"))
+        (_ "decline"))
+    (quit
+     (codex-ide-appserver--debug "approval denied after quit: %S" err)
+     "decline")
+    (error
+     (codex-ide-appserver--debug "approval denied after error: %S" err)
+     "decline")))
+
+(defun codex-ide-appserver--handle-request (method id params)
+  "Handle a server-initiated request with METHOD, numeric ID, and PARAMS."
+  (if (codex-ide-appserver--approval-request-kind method)
+      (let* ((action (codex-ide-appserver--make-approval-decision
+                      codex-ide-approval-policy method params))
+             (decision (if (eq (plist-get action :action) 'respond)
+                           (or (plist-get action :decision) "decline")
+                         (codex-ide-appserver--confirm-approval action))))
+        (codex-ide-appserver--send-response
+         id (codex-ide-appserver--approval-response decision)))
+    ;; Unknown server request: respond with method-not-found error.
+    (codex-ide-appserver--send-response
+     id `(("error" . (("code" . -32601)
+                      ("message" . "Method not found")))))))
 
 ;;; Process filter (line accumulation + dispatch)
 

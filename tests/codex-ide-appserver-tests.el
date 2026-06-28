@@ -11,8 +11,39 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'ert)
 (require 'codex-ide-appserver)
+
+(defun codex-ide-appserver-tests--last-captured-json (captured)
+  "Return the final JSON object encoded in CAPTURED output."
+  (should captured)
+  (codex-ide-appserver--with-json-conventions
+    (json-read-from-string
+     (car (last (split-string captured "\n" t))))))
+
+(defun codex-ide-appserver-tests--dispatch-captured (msg)
+  "Dispatch MSG and return the final JSON object sent in response."
+  (let ((captured nil)
+        (codex-ide-appserver--send-function nil))
+    (setq codex-ide-appserver--send-function
+          (lambda (str) (setq captured (concat captured str))))
+    (codex-ide-appserver--dispatch msg)
+    (codex-ide-appserver-tests--last-captured-json captured)))
+
+(defun codex-ide-appserver-tests--response-decision (obj)
+  "Return the approval decision from response OBJ."
+  (cdr (assoc "decision" (cdr (assoc "result" obj)))))
+
+(defun codex-ide-appserver-tests--file-change-approval-params (&optional overrides)
+  "Return schema-real file-change approval params with OVERRIDES."
+  (append overrides
+          '(("itemId" . "item-file-1")
+            ("startedAtMs" . 123)
+            ("threadId" . "thread-1")
+            ("turnId" . "turn-1")
+            ("grantRoot" . "/tmp/codex-project")
+            ("reason" . "write access requested"))))
 
 ;;; Pure helper tests
 
@@ -83,7 +114,9 @@
     (should (eq 'request (plist-get parsed :type)))
     (should (equal "item/commandExecution/requestApproval"
                    (plist-get parsed :method)))
-    (should (equal 3 (plist-get parsed :id)))))
+    (should (equal 3 (plist-get parsed :id)))
+    (should (equal "ls"
+                   (cdr (assoc "command" (plist-get parsed :params)))))))
 
 (ert-deftest codex-ide-appserver-parse-message-garbage ()
   "Parsing invalid JSON returns nil."
@@ -101,8 +134,110 @@
 
 (ert-deftest codex-ide-appserver-approval-response ()
   "Approval response builder produces the expected decision."
-  (let ((resp (codex-ide-appserver--approval-response "denied")))
-    (should (equal "denied" (cdr (assoc "decision" resp))))))
+  (let ((resp (codex-ide-appserver--approval-response "decline")))
+    (should (equal "decline" (cdr (assoc "decision" resp))))))
+
+(ert-deftest codex-ide-appserver-approval-policy-default-auto-deny ()
+  "The app-server approval policy defaults to denying approvals."
+  (should (eq codex-ide-approval-policy 'auto-deny)))
+
+(ert-deftest codex-ide-appserver-make-approval-decision-auto-deny ()
+  "Auto-deny returns an immediate denied response for approval requests."
+  (let ((command (codex-ide-appserver--make-approval-decision
+                  'auto-deny "item/commandExecution/requestApproval"
+                  '(("command" . "make test"))))
+        (file-change (codex-ide-appserver--make-approval-decision
+                      'auto-deny "item/fileChange/requestApproval"
+                      (codex-ide-appserver-tests--file-change-approval-params))))
+    (should (eq 'respond (plist-get command :action)))
+    (should (equal "decline" (plist-get command :decision)))
+    (should (eq 'command-execution (plist-get command :kind)))
+    (should (eq 'respond (plist-get file-change :action)))
+    (should (equal "decline" (plist-get file-change :decision)))
+    (should (eq 'file-change (plist-get file-change :kind)))))
+
+(ert-deftest codex-ide-appserver-make-approval-decision-auto-approve ()
+  "Auto-approve returns an immediate approved response for approvals."
+  (let ((command (codex-ide-appserver--make-approval-decision
+                  'auto-approve "item/commandExecution/requestApproval"
+                  '(("command" . "make test"))))
+        (file-change (codex-ide-appserver--make-approval-decision
+                      'auto-approve "item/fileChange/requestApproval"
+                      (codex-ide-appserver-tests--file-change-approval-params))))
+    (should (eq 'respond (plist-get command :action)))
+    (should (equal "accept" (plist-get command :decision)))
+    (should (eq 'respond (plist-get file-change :action)))
+    (should (equal "accept" (plist-get file-change :decision)))))
+
+(ert-deftest codex-ide-appserver-make-approval-decision-ask-command ()
+  "Ask policy prompts for command-execution approvals."
+  (let ((action (codex-ide-appserver--make-approval-decision
+                 'ask "item/commandExecution/requestApproval"
+                 '(("command" . ("make" "test"))))))
+    (should (eq 'prompt (plist-get action :action)))
+    (should (eq 'command-execution (plist-get action :kind)))
+    (should (string-match-p "make test" (plist-get action :prompt)))))
+
+(ert-deftest codex-ide-appserver-make-approval-decision-ask-filechange ()
+  "Ask policy prompts for file-change approvals."
+  (let ((action (codex-ide-appserver--make-approval-decision
+                 'ask "item/fileChange/requestApproval"
+                 (codex-ide-appserver-tests--file-change-approval-params))))
+    (should (eq 'prompt (plist-get action :action)))
+    (should (eq 'file-change (plist-get action :kind)))
+    (should (string-match-p "/tmp/codex-project" (plist-get action :prompt)))
+    (should (string-match-p "write access requested"
+                            (plist-get action :prompt)))))
+
+(ert-deftest codex-ide-appserver-make-approval-decision-ask-with-diff-command ()
+  "Ask-with-diff still prompts for command-execution approvals."
+  (let ((action (codex-ide-appserver--make-approval-decision
+                 'ask-with-diff "item/commandExecution/requestApproval"
+                 '(("command" . "make test")))))
+    (should (eq 'prompt (plist-get action :action)))
+    (should (eq 'command-execution (plist-get action :kind)))
+    (should (string-match-p "make test" (plist-get action :prompt)))))
+
+(ert-deftest codex-ide-appserver-make-approval-decision-ask-with-diff-filechange ()
+  "Ask-with-diff prompts for schema-real file-change approvals."
+  (let ((action (codex-ide-appserver--make-approval-decision
+                 'ask-with-diff "item/fileChange/requestApproval"
+                 (codex-ide-appserver-tests--file-change-approval-params))))
+    (should (eq 'prompt (plist-get action :action)))
+    (should (eq 'file-change (plist-get action :kind)))
+    (should (string-match-p "item-file-1" (plist-get action :prompt)))
+    (should (eq 'schema-file-change-metadata
+                (plist-get action :reason)))))
+
+(ert-deftest codex-ide-appserver-make-approval-decision-malformed-filechange-denied ()
+  "Ask-with-diff denies file changes without required schema fields."
+  (let ((missing-item (codex-ide-appserver--make-approval-decision
+                       'ask-with-diff "item/fileChange/requestApproval"
+                       '(("startedAtMs" . 123)
+                         ("threadId" . "thread-1")
+                         ("turnId" . "turn-1"))))
+        (missing-started (codex-ide-appserver--make-approval-decision
+                          'ask-with-diff "item/fileChange/requestApproval"
+                          '(("itemId" . "item-file-1")
+                            ("threadId" . "thread-1")
+                            ("turnId" . "turn-1")))))
+    (should (eq 'respond (plist-get missing-item :action)))
+    (should (equal "decline" (plist-get missing-item :decision)))
+    (should (eq 'malformed-file-change
+                (plist-get missing-item :reason)))
+    (should (eq 'respond (plist-get missing-started :action)))
+    (should (equal "decline" (plist-get missing-started :decision)))
+    (should (eq 'malformed-file-change
+                (plist-get missing-started :reason)))))
+
+(ert-deftest codex-ide-appserver-make-approval-decision-invalid-policy-denied ()
+  "Unknown approval policies deny safely."
+  (let ((action (codex-ide-appserver--make-approval-decision
+                 'surprise "item/commandExecution/requestApproval"
+                 '(("command" . "make test")))))
+    (should (eq 'respond (plist-get action :action)))
+    (should (equal "decline" (plist-get action :decision)))
+    (should (eq 'invalid-policy (plist-get action :reason)))))
 
 (ert-deftest codex-ide-appserver-next-id-increments ()
   "Each call to next-id returns an incrementing integer."
@@ -165,45 +300,104 @@
 
 (ert-deftest codex-ide-appserver-command-approval-auto-deny ()
   "A command-execution approval request is auto-denied."
-  (let ((codex-ide-appserver--next-id 0)
-        (codex-ide-appserver--send-function nil)
-        (captured nil))
-    (setq codex-ide-appserver--send-function
-          (lambda (str) (setq captured (concat captured str))))
-    (codex-ide-appserver--dispatch
-     `(:type request
-       :method "item/commandExecution/requestApproval"
-       :id 7))
-    (should captured)
-    (codex-ide-appserver--with-json-conventions
-      (let* ((lines (split-string captured "\n" t))
-             (last-line (car (last lines)))
-             (obj (json-read-from-string last-line)))
-        (should (equal 7 (cdr (assoc "id" obj))))
-        (should (equal "denied"
-                       (cdr (assoc "decision"
-                                   (cdr (assoc "result" obj))))))))))
+  (let* ((codex-ide-approval-policy 'auto-deny)
+         (obj (codex-ide-appserver-tests--dispatch-captured
+               `(:type request
+                 :method "item/commandExecution/requestApproval"
+                 :id 7
+                 :params (("command" . "make test"))))))
+    (should (equal 7 (cdr (assoc "id" obj))))
+    (should (equal "decline"
+                   (codex-ide-appserver-tests--response-decision obj)))))
 
 (ert-deftest codex-ide-appserver-filechange-approval-auto-deny ()
   "A file-change approval request is auto-denied."
-  (let ((codex-ide-appserver--next-id 0)
-        (codex-ide-appserver--send-function nil)
-        (captured nil))
-    (setq codex-ide-appserver--send-function
-          (lambda (str) (setq captured (concat captured str))))
-    (codex-ide-appserver--dispatch
-     `(:type request
-       :method "item/fileChange/requestApproval"
-       :id 8))
-    (should captured)
-    (codex-ide-appserver--with-json-conventions
-      (let* ((lines (split-string captured "\n" t))
-             (last-line (car (last lines)))
-             (obj (json-read-from-string last-line)))
-        (should (equal 8 (cdr (assoc "id" obj))))
-        (should (equal "denied"
-                       (cdr (assoc "decision"
-                                   (cdr (assoc "result" obj))))))))))
+  (let* ((codex-ide-approval-policy 'auto-deny)
+         (obj (codex-ide-appserver-tests--dispatch-captured
+               `(:type request
+                 :method "item/fileChange/requestApproval"
+                 :id 8
+                 :params ,(codex-ide-appserver-tests--file-change-approval-params)))))
+    (should (equal 8 (cdr (assoc "id" obj))))
+    (should (equal "decline"
+                   (codex-ide-appserver-tests--response-decision obj)))))
+
+(ert-deftest codex-ide-appserver-command-approval-ask-yes ()
+  "Ask policy approves command-execution requests when the user says yes."
+  (let ((codex-ide-approval-policy 'ask)
+        (prompt nil))
+    (cl-letf (((symbol-function 'y-or-n-p)
+               (lambda (text) (setq prompt text) t)))
+      (let ((obj (codex-ide-appserver-tests--dispatch-captured
+                  `(:type request
+                    :method "item/commandExecution/requestApproval"
+                    :id 9
+                    :params (("command" . "make test"))))))
+        (should (string-match-p "make test" prompt))
+        (should (equal "accept"
+                       (codex-ide-appserver-tests--response-decision obj)))))))
+
+(ert-deftest codex-ide-appserver-command-approval-ask-no ()
+  "Ask policy denies command-execution requests when the user says no."
+  (let ((codex-ide-approval-policy 'ask)
+        (prompt nil))
+    (cl-letf (((symbol-function 'y-or-n-p)
+               (lambda (text) (setq prompt text) nil)))
+      (let ((obj (codex-ide-appserver-tests--dispatch-captured
+                  `(:type request
+                    :method "item/commandExecution/requestApproval"
+                    :id 10
+                    :params (("command" . ("make" "test")))))))
+        (should (string-match-p "make test" prompt))
+        (should (equal "decline"
+                       (codex-ide-appserver-tests--response-decision obj)))))))
+
+(ert-deftest codex-ide-appserver-filechange-approval-ask-with-diff-accepts ()
+  "Ask-with-diff accepts schema-real file changes after confirmation."
+  (let ((codex-ide-approval-policy 'ask-with-diff)
+        (prompt nil))
+    (cl-letf (((symbol-function 'y-or-n-p)
+               (lambda (text) (setq prompt text) t)))
+      (let ((obj (codex-ide-appserver-tests--dispatch-captured
+                  `(:type request
+                    :method "item/fileChange/requestApproval"
+                    :id 11
+                    :params ,(codex-ide-appserver-tests--file-change-approval-params)))))
+        (should (string-match-p "item-file-1" prompt))
+        (should (equal "accept"
+                       (codex-ide-appserver-tests--response-decision obj)))))))
+
+(ert-deftest codex-ide-appserver-filechange-approval-ask-with-diff-rejects ()
+  "Ask-with-diff declines schema-real file changes after rejection."
+  (let ((codex-ide-approval-policy 'ask-with-diff)
+        (prompt nil))
+    (cl-letf (((symbol-function 'y-or-n-p)
+               (lambda (text) (setq prompt text) nil)))
+      (let ((obj (codex-ide-appserver-tests--dispatch-captured
+                  `(:type request
+                    :method "item/fileChange/requestApproval"
+                    :id 12
+                    :params ,(codex-ide-appserver-tests--file-change-approval-params)))))
+        (should (string-match-p "item-file-1" prompt))
+        (should (equal "decline"
+                       (codex-ide-appserver-tests--response-decision obj)))))))
+
+(ert-deftest codex-ide-appserver-filechange-approval-prompt-failure-denies ()
+  "Ask-with-diff declines safely when the prompt errors or quits."
+  (let ((codex-ide-approval-policy 'ask-with-diff))
+    (dolist (failure '(error quit))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (_text)
+                   (pcase failure
+                     ('error (error "prompt failed"))
+                     ('quit (signal 'quit nil))))))
+        (let ((obj (codex-ide-appserver-tests--dispatch-captured
+                    `(:type request
+                      :method "item/fileChange/requestApproval"
+                      :id 13
+                      :params ,(codex-ide-appserver-tests--file-change-approval-params)))))
+          (should (equal "decline"
+                         (codex-ide-appserver-tests--response-decision obj))))))))
 
 ;;; Line accumulation / filter tests
 ;;
