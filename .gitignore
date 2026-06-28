@@ -1,7 +1,10 @@
 *.elc
+/.agents/
+/.codex/
 /.hermes/
 /.test-results/
 /result
 /result-*
 /.direnv/
 /local.mk
+/AGENTS.local.md

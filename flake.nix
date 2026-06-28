@@ -65,11 +65,16 @@
             packageRequires = [ ];
           };
 
+          vterm = emacsPackages.vterm;
+
           codexIde = emacsPackages.trivialBuild {
             pname = "codex-ide";
             inherit version;
             src = source;
-            packageRequires = [ keymapPopup ];
+            packageRequires = [
+              keymapPopup
+              vterm
+            ];
 
             buildPhase = ''
               runHook preBuild
@@ -94,8 +99,14 @@
             };
           };
 
-          devEmacs = emacsPackages.emacsWithPackages (_: [ keymapPopup ]);
-          emacsWithCodex = emacsPackages.emacsWithPackages (_: [ codexIde ]);
+          devEmacs = emacsPackages.emacsWithPackages (_: [
+            keymapPopup
+            vterm
+          ]);
+          emacsWithCodex = emacsPackages.emacsWithPackages (_: [
+            codexIde
+            vterm
+          ]);
 
           mkCheck =
             name: target:
@@ -161,6 +172,7 @@
             keymapPopup
             keymapPopupSrc
             pkgs
+            vterm
             ;
 
           apps = {
@@ -215,6 +227,7 @@
         emacs-with-codex = (mkCodex system).emacsWithCodex;
         codex-ide = (mkCodex system).codexIde;
         keymap-popup = (mkCodex system).keymapPopup;
+        vterm = (mkCodex system).vterm;
       });
     };
 }

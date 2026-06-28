@@ -17,8 +17,7 @@
 ;;; Commentary:
 
 ;; ERT tests for `codex-ide'.  These run under `emacs -Q --batch' with no
-;; network, no live Codex process, and no eat/vterm loaded.  Backend
-;; resolution tests exercise the dispatch table, not real terminal backends.
+;; network and no live Codex process.
 
 ;;; Code:
 
@@ -33,7 +32,6 @@
         (codex-ide-config-overrides nil)
         (codex-ide-ask-for-approval nil)
         (codex-ide-no-alt-screen nil)
-        (codex-ide-display-buffer-function #'pop-to-buffer-same-window)
         (codex-ide-cli-extra-args nil))
     (funcall body)))
 
@@ -42,6 +40,22 @@
   (unless (executable-find "sleep")
     (ert-skip "sleep executable not found"))
   (start-process name nil "sleep" "60"))
+
+(defun codex-ide-test--call-with-buffer-process (body)
+  "Call BODY with a temp buffer and live process."
+  (unless (executable-find "sleep")
+    (ert-skip "sleep executable not found"))
+  (let ((buffer (generate-new-buffer " *codex-ide-process-test*"))
+        process)
+    (unwind-protect
+        (progn
+          (setq process (start-process "codex-ide-test-process"
+                                       buffer "sleep" "60"))
+          (funcall body buffer process))
+      (when (and process (process-live-p process))
+        (delete-process process))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
 
 (defun codex-ide-test--call-with-process-table (directories body)
   "Call BODY with `codex-ide--processes' populated for DIRECTORIES.
@@ -158,39 +172,165 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                          "--no-alt-screen"
                          "--search"))))))))
 
-(ert-deftest codex-ide-term-resolve-backend-vterm ()
-  "vterm resolves to a descriptor implementing the four ops."
-  (let ((desc (codex-ide-term--resolve-backend 'vterm)))
-    (should (plist-get desc :ensure))
-    (should (plist-get desc :make-process))
-    (should (plist-get desc :send-string))
-    (should (plist-get desc :send-return))
-    (should (plist-get desc :send-escape))))
-
-(ert-deftest codex-ide-term-resolve-backend-eat ()
-  "eat resolves to a descriptor implementing the four ops."
-  (let ((desc (codex-ide-term--resolve-backend 'eat)))
-    (should (plist-get desc :ensure))
-    (should (plist-get desc :make-process))
-    (should (plist-get desc :send-string))
-    (should (plist-get desc :send-return))
-    (should (plist-get desc :send-escape))))
-
-(ert-deftest codex-ide-term-resolve-backend-unknown-errors ()
-  "Unknown backend signals `user-error'."
-  (should-error (codex-ide-term--resolve-backend 'nosuch)
-                :type 'user-error))
-
-(ert-deftest codex-ide-term-send-string-uses-buffer-local-backend ()
-  "Send operations use the session backend, not the mutable global default."
+(ert-deftest codex-ide-term-send-string-delegates-to-vterm ()
+  "String input goes directly to vterm."
   (let (sent)
-    (with-temp-buffer
-      (setq-local codex-ide-term--backend
-                  (list :send-string (lambda (string)
-                                       (setq sent string))))
-      (let ((codex-ide-terminal-backend 'nosuch))
-        (codex-ide-term--send-string "hello"))
-      (should (equal sent "hello")))))
+    (cl-letf (((symbol-function 'vterm-send-string)
+               (lambda (string)
+                 (setq sent string))))
+      (codex-ide-term--send-string "hello"))
+    (should (equal sent "hello"))))
+
+(ert-deftest codex-ide-term-send-return-delegates-to-vterm ()
+  "Return input goes directly to vterm."
+  (let (called)
+    (cl-letf (((symbol-function 'vterm-send-return)
+               (lambda ()
+                 (setq called t))))
+      (codex-ide-term--send-return))
+    (should called)))
+
+(ert-deftest codex-ide-term-send-escape-delegates-to-vterm ()
+  "Escape input goes directly to vterm."
+  (let (called)
+    (cl-letf (((symbol-function 'vterm-send-escape)
+               (lambda ()
+                 (setq called t))))
+      (codex-ide-term--send-escape))
+    (should called)))
+
+(ert-deftest codex-ide-term-osc-color-query-no-reply ()
+  "Non-query output produces no OSC color replies."
+  (should-not (codex-ide-term--osc-color-query-types "plain output"))
+  (should-not (codex-ide-term--osc-color-query-replies
+               "plain output" '(1 2 3) '(4 5 6))))
+
+(ert-deftest codex-ide-term-osc-color-query-foreground-reply ()
+  "OSC 10 query returns the foreground color reply."
+  (should (equal (codex-ide-term--osc-color-query-types "\e]10;?\e\\")
+                 '(foreground)))
+  (should (equal (codex-ide-term--osc-color-query-replies
+                  "\e]10;?\e\\" '(1 2 3) '(4 5 6))
+                 "\e]10;rgb:0001/0002/0003\e\\")))
+
+(ert-deftest codex-ide-term-osc-color-query-background-reply ()
+  "OSC 11 query returns the background color reply."
+  (should (equal (codex-ide-term--osc-color-query-types "\e]11;?\e\\")
+                 '(background)))
+  (should (equal (codex-ide-term--osc-color-query-replies
+                  "\e]11;?\e\\" '(1 2 3) '(4 5 6))
+                 "\e]11;rgb:0004/0005/0006\e\\")))
+
+(ert-deftest codex-ide-term-osc-color-query-combined-replies ()
+  "Combined OSC 10/11 queries return replies in input order."
+  (should (equal (codex-ide-term--osc-color-query-replies
+                  "\e]10;?\e\\\e]11;?\e\\" '(1 2 3) '(4 5 6))
+                 "\e]10;rgb:0001/0002/0003\e\\\e]11;rgb:0004/0005/0006\e\\")))
+
+(ert-deftest codex-ide-term-osc-color-query-face-fallbacks ()
+  "Nil face colors fall back to default terminal colors."
+  (cl-letf (((symbol-function 'face-foreground)
+             (lambda (&rest _args) nil))
+            ((symbol-function 'face-background)
+             (lambda (&rest _args) nil)))
+    (should (equal (codex-ide-term--default-face-color-values 'foreground)
+                   '(255 255 255)))
+    (should (equal (codex-ide-term--default-face-color-values 'background)
+                   '(0 0 0)))
+    (should (equal (codex-ide-term--vterm-osc-color-replies
+                    "\e]10;?\e\\\e]11;?\e\\")
+                   "\e]10;rgb:00ff/00ff/00ff\e\\\e]11;rgb:0000/0000/0000\e\\"))))
+
+(ert-deftest codex-ide-term-vterm-configure-installs-filter-once ()
+  "Codex vterm setup installs the output filter once."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (buffer process)
+     (let ((original (lambda (_process _input) nil)))
+       (set-process-filter process original)
+       (with-current-buffer buffer
+         (setq truncate-lines nil)
+         (codex-ide-term--vterm-configure-buffer process)
+         (codex-ide-term--vterm-configure-buffer process)
+         (should truncate-lines)
+         (should-not (local-variable-p
+                      'vterm-scroll-to-bottom-on-output buffer)))
+       (should (eq (process-filter process)
+                   #'codex-ide-term--vterm-output-filter))
+       (should (eq (process-get
+                    process 'codex-ide-term--vterm-original-filter)
+                   original))))))
+
+(ert-deftest codex-ide-term-vterm-output-filter-preserves-existing-filter ()
+  "The vterm output wrapper still delegates to the previous process filter."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (_buffer process)
+     (let (received sent)
+       (set-process-filter
+        process
+        (lambda (_process input)
+          (setq received input)))
+       (codex-ide-term--vterm-install-output-filter process)
+       (cl-letf (((symbol-function 'process-send-string)
+                  (lambda (_process string)
+                    (setq sent string))))
+         (funcall (process-filter process) process "plain output"))
+       (should (equal received "plain output"))
+       (should-not sent)))))
+
+(ert-deftest codex-ide-term-vterm-output-filter-sends-osc-replies ()
+  "The vterm output wrapper sends OSC replies back to the process."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (_buffer process)
+     (let (received sent)
+       (set-process-filter
+        process
+        (lambda (_process input)
+          (setq received input)))
+       (codex-ide-term--vterm-install-output-filter process)
+       (cl-letf (((symbol-function
+                   'codex-ide-term--default-face-color-values)
+                  (lambda (type)
+                    (pcase type
+                      ('foreground '(1 2 3))
+                      ('background '(4 5 6)))))
+                 ((symbol-function 'process-send-string)
+                  (lambda (_process string)
+                    (setq sent string))))
+         (funcall (process-filter process)
+                  process "\e]10;?\e\\\e]11;?\e\\"))
+       (should (equal received "\e]10;?\e\\\e]11;?\e\\"))
+       (should (equal sent
+                      "\e]10;rgb:0001/0002/0003\e\\\e]11;rgb:0004/0005/0006\e\\"))))))
+
+(ert-deftest codex-ide-term-vterm-sync-dimensions-delegates ()
+  "vterm display sync delegates to vterm's adjustment function."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (buffer process)
+     (let (called)
+       (process-put
+        process 'adjust-window-size-function
+        (lambda (sync-process windows)
+          (setq called (list sync-process windows))))
+       (save-window-excursion
+         (switch-to-buffer buffer)
+         (let ((window (selected-window)))
+           (codex-ide-term--sync-dimensions buffer window)
+           (should (equal called (list process (list window))))))))))
+
+(ert-deftest codex-ide-term-sync-dimensions-does-not-resize-process ()
+  "Display sync does not manually resize terminal processes."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (buffer process)
+     (let (resized)
+       (process-put process 'adjust-window-size-function
+                    (lambda (&rest _args) nil))
+       (save-window-excursion
+         (switch-to-buffer buffer)
+         (cl-letf (((symbol-function 'set-process-window-size)
+                    (lambda (&rest _args)
+                      (setq resized t))))
+           (codex-ide-term--sync-dimensions buffer (selected-window))
+           (should-not resized)))))))
 
 (ert-deftest codex-ide-default-buffer-name ()
   "Buffer name follows the `*codex[<basename>]*' shape."
@@ -199,33 +339,112 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (equal (codex-ide--default-buffer-name "/tmp/foo/")
                  "*codex[foo]*")))
 
-(ert-deftest codex-ide-display-buffer-default-function ()
-  "Default display uses same-window buffer switching."
-  (should (eq codex-ide-display-buffer-function
-              #'pop-to-buffer-same-window)))
+(ert-deftest codex-ide-window-option-defaults ()
+  "Window customization defaults match the documented side-window setup."
+  (should (eq codex-ide-window-side 'right))
+  (should (= codex-ide-window-width 100))
+  (should (= codex-ide-window-height 20))
+  (should codex-ide-use-side-window)
+  (should codex-ide-focus-on-open))
 
-(ert-deftest codex-ide-display-buffer-calls-custom-function ()
-  "Display helper delegates to `codex-ide-display-buffer-function'."
+(ert-deftest codex-ide-display-buffer-side-window-focuses ()
+  "Side-window display selects and sizes Codex when focus is enabled."
   (let ((buffer (get-buffer-create " *codex-ide-display-test*"))
-        called)
+        (main (get-buffer-create " *codex-ide-main-test*"))
+        (codex-ide-window-side 'right)
+        (codex-ide-window-width 24)
+        (codex-ide-use-side-window t)
+        (codex-ide-focus-on-open t))
     (unwind-protect
         (save-window-excursion
-          (let ((codex-ide-display-buffer-function
-                 (lambda (buf)
-                   (setq called buf)
-                   (pop-to-buffer-same-window buf))))
-            (let ((window (codex-ide--display-buffer buffer)))
-              (should (eq called buffer))
-              (should (window-live-p window))
-              (should (eq (window-buffer window) buffer)))))
+          (delete-other-windows)
+          (switch-to-buffer main)
+          (let ((window (codex-ide--display-buffer buffer)))
+            (should (window-live-p window))
+            (should (eq (selected-window) window))
+            (should (eq (window-buffer window) buffer))
+            (should (eq (window-parameter window 'window-side) 'right))
+            (should (eq (window-dedicated-p window) 'side))
+            (should (= (window-body-width window)
+                       codex-ide-window-width))))
       (when (buffer-live-p buffer)
-        (kill-buffer buffer)))))
+        (kill-buffer buffer))
+      (when (buffer-live-p main)
+        (kill-buffer main)))))
+
+(ert-deftest codex-ide-display-buffer-selects-existing-window ()
+  "Displaying an already visible Codex buffer selects its window."
+  (let ((buffer (get-buffer-create " *codex-ide-existing-test*"))
+        (main (get-buffer-create " *codex-ide-existing-main-test*"))
+        (codex-ide-window-side 'right)
+        (codex-ide-window-width 24)
+        (codex-ide-use-side-window t)
+        (codex-ide-focus-on-open nil))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer main)
+          (let ((window (codex-ide--display-buffer buffer)))
+            (should-not (eq (selected-window) window))
+            (codex-ide--display-buffer buffer)
+            (should (eq (selected-window) window))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (when (buffer-live-p main)
+        (kill-buffer main)))))
+
+(ert-deftest codex-ide-display-buffer-top-bottom-height ()
+  "Top and bottom side windows use `codex-ide-window-height'."
+  (dolist (side '(top bottom))
+    (let ((buffer (get-buffer-create
+                   (format " *codex-ide-%s-height-test*" side)))
+          (main (get-buffer-create " *codex-ide-main-height-test*"))
+          (codex-ide-window-side side)
+          (codex-ide-window-height 6)
+          (codex-ide-use-side-window t)
+          (codex-ide-focus-on-open nil))
+      (unwind-protect
+          (save-window-excursion
+            (delete-other-windows)
+            (switch-to-buffer main)
+            (let ((window (codex-ide--display-buffer buffer)))
+              (should (window-live-p window))
+              (should (eq (window-parameter window 'window-side) side))
+              (should (eq (window-dedicated-p window) 'side))
+              (should (= (window-body-height window)
+                         codex-ide-window-height))))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))
+        (when (buffer-live-p main)
+          (kill-buffer main))))))
+
+(ert-deftest codex-ide-toggle-hides-window-without-killing-buffer ()
+  "Toggling a visible Codex window hides it and leaves the buffer alive."
+  (let ((buffer (get-buffer-create " *codex-ide-toggle-window-test*"))
+        (main (get-buffer-create " *codex-ide-toggle-main-test*"))
+        (codex-ide-window-side 'right)
+        (codex-ide-window-width 24)
+        (codex-ide-use-side-window t)
+        (codex-ide-focus-on-open nil))
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer main)
+          (should (window-live-p (codex-ide--display-buffer buffer)))
+          (should (get-buffer-window buffer t))
+          (codex-ide--toggle-existing-window buffer)
+          (should (buffer-live-p buffer))
+          (should-not (get-buffer-window buffer t)))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (when (buffer-live-p main)
+        (kill-buffer main)))))
 
 (ert-deftest codex-ide-display-buffer-updates-last-accessed-buffer ()
   "Display helper records the displayed Codex buffer."
   (let ((buffer (get-buffer-create " *codex-ide-last-accessed-test*"))
         (codex-ide--last-accessed-buffer nil)
-        (codex-ide-display-buffer-function #'pop-to-buffer-same-window))
+        (codex-ide-use-side-window nil))
     (unwind-protect
         (save-window-excursion
           (codex-ide--display-buffer buffer)
@@ -385,21 +604,16 @@ BODY is called with the live processes in the same order as DIRECTORIES."
     (should (member key (codex-ide-test--popup-keys codex-ide-map)))))
 
 (ert-deftest codex-ide-menu-config-bindings ()
-  "Config menu binds CLI suffixes and the save command."
+  "Config menu binds set/toggle suffixes and the save command."
   (should (eq (keymap-lookup codex-ide-config-map "S")
               #'codex-ide-menu--save-config))
-  (dolist (key '("p" "b" "a" "A" "S"))
+  (should (eq (keymap-lookup codex-ide-config-map "u")
+              #'codex-ide-menu--toggle-use-side-window))
+  (dolist (key '("s" "w" "h" "u" "f" "p" "a" "A" "S"))
     (should (member key (codex-ide-test--popup-keys codex-ide-config-map)))))
 
-(ert-deftest codex-ide-menu-config-omits-side-window-controls ()
-  "Config menu does not expose package-owned side-window layout controls."
-  (dolist (key '("s" "w" "h" "u" "f"))
-    (should-not (keymap-lookup codex-ide-config-map key))
-    (should-not (member key (codex-ide-test--popup-keys
-                             codex-ide-config-map)))))
-
 (ert-deftest codex-ide-menu-save-config-saves-current-symbols ()
-  "Save config persists current non-layout configuration."
+  "Save config persists current configuration."
   (let (saved)
     (cl-letf (((symbol-function 'customize-save-variable)
                (lambda (symbol _value)
@@ -409,8 +623,11 @@ BODY is called with the live processes in the same order as DIRECTORIES."
       (codex-ide-menu--save-config))
     (should (equal (reverse saved)
                    '(codex-ide-cli-path
-                     codex-ide-terminal-backend
-                     codex-ide-display-buffer-function
+                     codex-ide-window-side
+                     codex-ide-window-width
+                     codex-ide-window-height
+                     codex-ide-use-side-window
+                     codex-ide-focus-on-open
                      codex-ide-ask-for-approval
                      codex-ide-no-alt-screen)))))
 
@@ -430,7 +647,7 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (eq (keymap-lookup codex-ide-map "d")
               #'codex-ide-map--enter-codex-ide-debug-map)))
 
-(ert-deftest codex-ide-menu-no-alt-screen-description-is-dynamic ()
+(ert-deftest codex-ide-menu-use-side-window-description-is-dynamic ()
   "Toggle entries resolve their description from current variable state."
   (let* ((rows (keymap-popup--meta codex-ide-config-map 'descriptions))
          (entries (mapcan (lambda (row)
@@ -438,14 +655,14 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                                       (plist-get group :entries))
                                     row))
                           rows))
-         (entry (cl-find "A" entries
+         (entry (cl-find "u" entries
                          :key (lambda (e) (plist-get e :key))
                          :test #'equal))
          (desc-fn (plist-get entry :description)))
     (should (functionp desc-fn))
-    (let ((codex-ide-no-alt-screen t))
+    (let ((codex-ide-use-side-window t))
       (should (string-match-p "ON" (funcall desc-fn))))
-    (let ((codex-ide-no-alt-screen nil))
+    (let ((codex-ide-use-side-window nil))
       (should (string-match-p "OFF" (funcall desc-fn))))))
 
 (provide 'codex-ide-tests)

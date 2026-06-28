@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (keymap-popup "0.3.1"))
+;; Package-Requires: ((emacs "28.1") (keymap-popup "0.3.1") (vterm "0.0.2"))
 ;; Keywords: ai, codex, tools, terminal
 ;; URL: https://git.thanosapollo.org/emacs-codex
 
@@ -25,15 +25,14 @@
 
 ;;; Commentary:
 
-;; Run the Codex CLI inside Emacs through `eat' or `vterm'.  This is a
-;; terminal-first integration: one Codex session per project root, displayed
-;; through standard Emacs buffer switching, with prompt sending, toggling, and
-;; resume.
+;; Run the Codex CLI inside Emacs through vterm.  This is a terminal-first
+;; integration: one Codex session per project root, displayed in a configurable
+;; side window, with prompt sending, toggling, and resume.
 ;;
 ;; Usage:
 ;;   M-x codex-ide              Start Codex for the current project
 ;;   M-x codex-ide-resume-last  Resume the most recent Codex session
-;;   M-x codex-ide-toggle       Show/hide the Codex buffer
+;;   M-x codex-ide-toggle       Show/hide the Codex window
 ;;   M-x codex-ide-send-prompt  Send a prompt from the minibuffer
 ;;   M-x codex-ide-stop         Stop the session for the current project
 ;;   M-x codex-ide-list-sessions  Switch to an active project session
@@ -53,7 +52,7 @@
 ;;; Customization
 
 (defgroup codex-ide nil
-  "Run Codex CLI inside Emacs through `eat' or `vterm'."
+  "Run Codex CLI inside Emacs through vterm."
   :group 'tools
   :prefix "codex-ide-")
 
@@ -62,17 +61,33 @@
   :type 'string
   :group 'codex-ide)
 
-(defcustom codex-ide-terminal-backend 'vterm
-  "Terminal backend for Codex sessions.
-`vterm' is the default and most capable; `eat' is an alternative."
-  :type '(choice (const :tag "vterm" vterm)
-                 (const :tag "eat" eat))
+(defcustom codex-ide-window-side 'right
+  "Side of the frame where the Codex window appears."
+  :type '(choice (const :tag "Left" left)
+                 (const :tag "Right" right)
+                 (const :tag "Top" top)
+                 (const :tag "Bottom" bottom))
   :group 'codex-ide)
 
-(defcustom codex-ide-display-buffer-function #'pop-to-buffer-same-window
-  "Function used to display Codex terminal buffers.
-The function is called with one argument, the buffer to display."
-  :type 'function
+(defcustom codex-ide-window-width 100
+  "Body width of the Codex side window on the left or right."
+  :type 'integer
+  :group 'codex-ide)
+
+(defcustom codex-ide-window-height 20
+  "Height of the Codex side window on the top or bottom."
+  :type 'integer
+  :group 'codex-ide)
+
+(defcustom codex-ide-use-side-window t
+  "When non-nil, display Codex in a dedicated side window.
+When nil, follow standard `display-buffer' behavior."
+  :type 'boolean
+  :group 'codex-ide)
+
+(defcustom codex-ide-focus-on-open t
+  "When non-nil, select the Codex window when it opens."
+  :type 'boolean
   :group 'codex-ide)
 
 (defcustom codex-ide-ask-for-approval nil
@@ -251,25 +266,87 @@ session-local overrides needed by enabled integration helpers."
       (user-error "No Codex session for %s" directory))
     (codex-ide--display-buffer buffer)))
 
+(defun codex-ide--resize-side-window-width (window)
+  "Resize WINDOW to `codex-ide-window-width' body columns."
+  (let ((delta (- codex-ide-window-width (window-body-width window))))
+    (unless (zerop delta)
+      (condition-case err
+          (window-resize window delta t 'safe)
+        (error
+         (codex-ide-debug "Could not resize Codex side window: %s"
+                          (error-message-string err)))))))
+
+(defun codex-ide--resize-side-window-height (window)
+  "Resize WINDOW to `codex-ide-window-height' body lines."
+  (condition-case err
+      (set-window-text-height window codex-ide-window-height)
+    (error
+     (codex-ide-debug "Could not resize Codex side window: %s"
+                      (error-message-string err)))))
+
+(defun codex-ide--side-window-size-alist (side)
+  "Return display action size entries for SIDE."
+  (if (memq side '(left right))
+      '((window-width . codex-ide--resize-side-window-width))
+    '((window-height . codex-ide--resize-side-window-height))))
+
+(defun codex-ide--side-window-action ()
+  "Return the display action for the configured Codex side window."
+  `((display-buffer-in-side-window)
+    (side . ,codex-ide-window-side)
+    (slot . 0)
+    (dedicated . side)
+    ,@(codex-ide--side-window-size-alist codex-ide-window-side)
+    (window-parameters . ((no-delete-other-windows . t)))))
+
+(defun codex-ide--display-window (buffer)
+  "Display BUFFER and return its window."
+  (if codex-ide-use-side-window
+      (display-buffer buffer (codex-ide--side-window-action))
+    (display-buffer buffer)))
+
+(defun codex-ide--configure-window (buffer window &optional force-focus)
+  "Apply Codex window policy to WINDOW showing BUFFER.
+When FORCE-FOCUS is non-nil, select WINDOW regardless of
+`codex-ide-focus-on-open'."
+  (when (window-live-p window)
+    (when (and codex-ide-use-side-window
+               (window-parameter window 'window-side))
+      (set-window-dedicated-p window 'side)
+      (if (memq codex-ide-window-side '(left right))
+          (codex-ide--resize-side-window-width window)
+        (codex-ide--resize-side-window-height window)))
+    (when (or force-focus codex-ide-focus-on-open)
+      (select-window window))
+    (codex-ide-term--sync-dimensions buffer window)
+    window))
+
 (defun codex-ide--display-buffer (buffer)
-  "Display BUFFER using `codex-ide-display-buffer-function'.
+  "Display BUFFER according to Codex window customization.
 Returns the displayed window when one is available.  Updates
 `codex-ide--last-accessed-buffer'."
   (setq codex-ide--last-accessed-buffer buffer)
-  (let* ((result (funcall codex-ide-display-buffer-function buffer))
-         (window (cond
-                  ((and (windowp result) (window-live-p result)) result)
-                  ((buffer-live-p buffer) (get-buffer-window buffer t)))))
-    (when window
-      (codex-ide-term--sync-dimensions buffer window))
-    window))
+  (if-let* ((window (get-buffer-window buffer t)))
+      (codex-ide--configure-window buffer window t)
+    (codex-ide--configure-window buffer
+                                 (codex-ide--display-window buffer))))
 
-(defun codex-ide--bury-displayed-buffer (buffer)
-  "Bury BUFFER in every window showing it."
-  (setq codex-ide--last-accessed-buffer buffer)
-  (dolist (window (get-buffer-window-list buffer nil t))
+(defun codex-ide--hide-window (window)
+  "Hide WINDOW without killing its buffer."
+  (if (window-parameter window 'window-side)
+      (condition-case nil
+          (delete-window window)
+        (error
+         (with-selected-window window
+           (bury-buffer))))
     (with-selected-window window
       (bury-buffer))))
+
+(defun codex-ide--hide-displayed-buffer (buffer)
+  "Hide every live window showing BUFFER."
+  (setq codex-ide--last-accessed-buffer buffer)
+  (dolist (window (get-buffer-window-list buffer nil t))
+    (codex-ide--hide-window window)))
 
 (defun codex-ide--toggle-existing-window (buffer)
   "Show or hide the window showing BUFFER.
@@ -277,10 +354,10 @@ Used when a session is already running."
   (let ((window (get-buffer-window buffer t)))
     (if window
         (progn
-          (codex-ide--bury-displayed-buffer buffer)
-          (codex-ide-debug "Codex buffer hidden"))
+          (codex-ide--hide-displayed-buffer buffer)
+          (codex-ide-debug "Codex window hidden"))
       (codex-ide--display-buffer buffer)
-      (codex-ide-debug "Codex buffer shown"))))
+      (codex-ide-debug "Codex window shown"))))
 
 (defun codex-ide--cleanup-on-exit (directory)
   "Clean up the Codex session state for DIRECTORY.
@@ -304,7 +381,6 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
   "Create a Codex terminal session for the current project.
 RESUME-LAST and SESSION-ID are forwarded to `codex-ide--build-command'.
 Returns (BUFFER . PROCESS)."
-  (codex-ide-term--ensure-backend)
   (let* ((working-dir (codex-ide--get-working-directory))
          (buffer-name (codex-ide--get-buffer-name working-dir))
          (codex-ide-config-overrides (codex-ide--session-config-overrides))
@@ -329,7 +405,7 @@ Returns (BUFFER . PROCESS)."
   "Start or focus a Codex session for the current project.
 If RESUME-LAST is non-nil, resume the most recent session.  When
 SESSION-ID is given, resume that specific session.  If a live
-session exists, toggle its buffer instead of starting a new one."
+session exists, toggle its window instead of starting a new one."
   (unless (codex-ide--ensure-cli)
     (user-error "Codex CLI not available.  Install it and ensure it is in PATH"))
   (codex-ide--cleanup-dead-processes)
@@ -402,7 +478,7 @@ A session picker is deferred to a later phase."
 
 ;;;###autoload
 (defun codex-ide-toggle ()
-  "Toggle visibility of the Codex buffer for the current project."
+  "Toggle visibility of the Codex window for the current project."
   (interactive)
   (let ((buffer (get-buffer (codex-ide--get-buffer-name))))
     (if buffer
@@ -412,7 +488,7 @@ A session picker is deferred to a later phase."
 ;;;###autoload
 (defun codex-ide-switch-to-buffer ()
   "Switch to the Codex buffer for the current project.
-Display it with `codex-ide-display-buffer-function' when needed."
+If it is not visible, display it in the configured side window."
   (interactive)
   (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name))))
       (codex-ide--display-buffer buffer)
