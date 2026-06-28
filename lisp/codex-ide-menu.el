@@ -40,31 +40,6 @@
   (setq codex-ide-cli-path path)
   (codex-ide-log "CLI path set to %s" path))
 
-(defun codex-ide-menu--set-window-side (side)
-  "Set `codex-ide-window-side' to SIDE."
-  (interactive
-   (list (intern (completing-read
-                 "Window side: "
-                 '("left" "right" "top" "bottom")
-                 nil t nil nil
-                 (symbol-name codex-ide-window-side)))))
-  (setq codex-ide-window-side side)
-  (codex-ide-log "Window side set to %s" side))
-
-(defun codex-ide-menu--set-window-width (width)
-  "Set `codex-ide-window-width' to WIDTH."
-  (interactive
-   (list (read-number "Window width: " codex-ide-window-width)))
-  (setq codex-ide-window-width width)
-  (codex-ide-log "Window width set to %d" width))
-
-(defun codex-ide-menu--set-window-height (height)
-  "Set `codex-ide-window-height' to HEIGHT."
-  (interactive
-   (list (read-number "Window height: " codex-ide-window-height)))
-  (setq codex-ide-window-height height)
-  (codex-ide-log "Window height set to %d" height))
-
 (defun codex-ide-menu--set-backend (backend)
   "Set `codex-ide-terminal-backend' to BACKEND."
   (interactive
@@ -88,20 +63,6 @@
   (setq codex-ide-ask-for-approval (unless (eq policy 'nil) policy))
   (codex-ide-log "Approval policy set to %s" policy))
 
-(defun codex-ide-menu--toggle-use-side-window ()
-  "Toggle `codex-ide-use-side-window'."
-  (interactive)
-  (setq codex-ide-use-side-window (not codex-ide-use-side-window))
-  (codex-ide-log "Side window %s"
-                 (if codex-ide-use-side-window "enabled" "disabled")))
-
-(defun codex-ide-menu--toggle-focus-on-open ()
-  "Toggle `codex-ide-focus-on-open'."
-  (interactive)
-  (setq codex-ide-focus-on-open (not codex-ide-focus-on-open))
-  (codex-ide-log "Focus on open %s"
-                 (if codex-ide-focus-on-open "enabled" "disabled")))
-
 (defun codex-ide-menu--toggle-no-alt-screen ()
   "Toggle `codex-ide-no-alt-screen'."
   (interactive)
@@ -123,11 +84,7 @@
           (customize-save-variable symbol (symbol-value symbol)))
         '(codex-ide-cli-path
           codex-ide-terminal-backend
-          codex-ide-window-side
-          codex-ide-window-width
-          codex-ide-window-height
-          codex-ide-use-side-window
-          codex-ide-focus-on-open
+          codex-ide-display-buffer-function
           codex-ide-ask-for-approval
           codex-ide-no-alt-screen))
   (codex-ide-log "Configuration saved"))
@@ -146,16 +103,6 @@
   "codex-ide Configuration"
   :popup-key "?"
   :description "codex-ide Configuration"
-  :group "Window"
-  "s" ("Set window side" codex-ide-menu--set-window-side)
-  "w" ("Set window width" codex-ide-menu--set-window-width)
-  "h" ("Set window height" codex-ide-menu--set-window-height)
-  "u" ((lambda () (format "Use side window (%s)"
-                          (codex-ide-menu--on-off codex-ide-use-side-window)))
-       codex-ide-menu--toggle-use-side-window)
-  "f" ((lambda () (format "Focus on open (%s)"
-                          (codex-ide-menu--on-off codex-ide-focus-on-open)))
-       codex-ide-menu--toggle-focus-on-open)
   :group "CLI"
   "p" ("Set CLI path" codex-ide-menu--set-cli-path)
   "b" ("Set backend" codex-ide-menu--set-backend)
@@ -192,7 +139,7 @@
   :group "Navigation"
   "b" ("Switch to buffer" codex-ide-switch-to-buffer)
   "l" ("Switch session" codex-ide-list-sessions)
-  "w" ("Toggle window" codex-ide-toggle)
+  "w" ("Toggle buffer" codex-ide-toggle)
   :group "Interaction"
   "p" ("Send prompt" codex-ide-send-prompt)
   "e" ("Send escape" codex-ide-send-escape)

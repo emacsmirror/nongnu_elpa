@@ -33,6 +33,7 @@
         (codex-ide-config-overrides nil)
         (codex-ide-ask-for-approval nil)
         (codex-ide-no-alt-screen nil)
+        (codex-ide-display-buffer-function #'pop-to-buffer-same-window)
         (codex-ide-cli-extra-args nil))
     (funcall body)))
 
@@ -198,6 +199,40 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (equal (codex-ide--default-buffer-name "/tmp/foo/")
                  "*codex[foo]*")))
 
+(ert-deftest codex-ide-display-buffer-default-function ()
+  "Default display uses same-window buffer switching."
+  (should (eq codex-ide-display-buffer-function
+              #'pop-to-buffer-same-window)))
+
+(ert-deftest codex-ide-display-buffer-calls-custom-function ()
+  "Display helper delegates to `codex-ide-display-buffer-function'."
+  (let ((buffer (get-buffer-create " *codex-ide-display-test*"))
+        called)
+    (unwind-protect
+        (save-window-excursion
+          (let ((codex-ide-display-buffer-function
+                 (lambda (buf)
+                   (setq called buf)
+                   (pop-to-buffer-same-window buf))))
+            (let ((window (codex-ide--display-buffer buffer)))
+              (should (eq called buffer))
+              (should (window-live-p window))
+              (should (eq (window-buffer window) buffer)))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest codex-ide-display-buffer-updates-last-accessed-buffer ()
+  "Display helper records the displayed Codex buffer."
+  (let ((buffer (get-buffer-create " *codex-ide-last-accessed-test*"))
+        (codex-ide--last-accessed-buffer nil)
+        (codex-ide-display-buffer-function #'pop-to-buffer-same-window))
+    (unwind-protect
+        (save-window-excursion
+          (codex-ide--display-buffer buffer)
+          (should (eq codex-ide--last-accessed-buffer buffer)))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
 (ert-deftest codex-ide-get-working-directory-default ()
   "Without a project, working directory falls back to `default-directory'."
   (let ((default-directory "/tmp/"))
@@ -350,13 +385,34 @@ BODY is called with the live processes in the same order as DIRECTORIES."
     (should (member key (codex-ide-test--popup-keys codex-ide-map)))))
 
 (ert-deftest codex-ide-menu-config-bindings ()
-  "Config menu binds set/toggle suffixes and the save command."
+  "Config menu binds CLI suffixes and the save command."
   (should (eq (keymap-lookup codex-ide-config-map "S")
               #'codex-ide-menu--save-config))
-  (should (eq (keymap-lookup codex-ide-config-map "u")
-              #'codex-ide-menu--toggle-use-side-window))
-  (dolist (key '("s" "w" "h" "u" "f" "p" "b" "a" "A" "S"))
+  (dolist (key '("p" "b" "a" "A" "S"))
     (should (member key (codex-ide-test--popup-keys codex-ide-config-map)))))
+
+(ert-deftest codex-ide-menu-config-omits-side-window-controls ()
+  "Config menu does not expose package-owned side-window layout controls."
+  (dolist (key '("s" "w" "h" "u" "f"))
+    (should-not (keymap-lookup codex-ide-config-map key))
+    (should-not (member key (codex-ide-test--popup-keys
+                             codex-ide-config-map)))))
+
+(ert-deftest codex-ide-menu-save-config-saves-current-symbols ()
+  "Save config persists current non-layout configuration."
+  (let (saved)
+    (cl-letf (((symbol-function 'customize-save-variable)
+               (lambda (symbol _value)
+                 (push symbol saved)))
+              ((symbol-function 'codex-ide-log)
+               (lambda (&rest _args) nil)))
+      (codex-ide-menu--save-config))
+    (should (equal (reverse saved)
+                   '(codex-ide-cli-path
+                     codex-ide-terminal-backend
+                     codex-ide-display-buffer-function
+                     codex-ide-ask-for-approval
+                     codex-ide-no-alt-screen)))))
 
 (ert-deftest codex-ide-menu-debug-bindings ()
   "Debug menu binds status, toggle, and log commands."
@@ -374,7 +430,7 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (eq (keymap-lookup codex-ide-map "d")
               #'codex-ide-map--enter-codex-ide-debug-map)))
 
-(ert-deftest codex-ide-menu-toggle-description-is-dynamic ()
+(ert-deftest codex-ide-menu-no-alt-screen-description-is-dynamic ()
   "Toggle entries resolve their description from current variable state."
   (let* ((rows (keymap-popup--meta codex-ide-config-map 'descriptions))
          (entries (mapcan (lambda (row)
@@ -382,14 +438,14 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                                       (plist-get group :entries))
                                     row))
                           rows))
-         (entry (cl-find "u" entries
+         (entry (cl-find "A" entries
                          :key (lambda (e) (plist-get e :key))
                          :test #'equal))
          (desc-fn (plist-get entry :description)))
     (should (functionp desc-fn))
-    (let ((codex-ide-use-side-window t))
+    (let ((codex-ide-no-alt-screen t))
       (should (string-match-p "ON" (funcall desc-fn))))
-    (let ((codex-ide-use-side-window nil))
+    (let ((codex-ide-no-alt-screen nil))
       (should (string-match-p "OFF" (funcall desc-fn))))))
 
 (provide 'codex-ide-tests)

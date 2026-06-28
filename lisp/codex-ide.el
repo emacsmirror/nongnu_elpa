@@ -27,12 +27,13 @@
 
 ;; Run the Codex CLI inside Emacs through `eat' or `vterm'.  This is a
 ;; terminal-first integration: one Codex session per project root, displayed
-;; in a configurable side window, with prompt sending, toggling, and resume.
+;; through standard Emacs buffer switching, with prompt sending, toggling, and
+;; resume.
 ;;
 ;; Usage:
 ;;   M-x codex-ide              Start Codex for the current project
 ;;   M-x codex-ide-resume-last  Resume the most recent Codex session
-;;   M-x codex-ide-toggle       Show/hide the Codex window
+;;   M-x codex-ide-toggle       Show/hide the Codex buffer
 ;;   M-x codex-ide-send-prompt  Send a prompt from the minibuffer
 ;;   M-x codex-ide-stop         Stop the session for the current project
 ;;   M-x codex-ide-list-sessions  Switch to an active project session
@@ -68,33 +69,10 @@
                  (const :tag "eat" eat))
   :group 'codex-ide)
 
-(defcustom codex-ide-window-side 'right
-  "Side of the frame where the Codex window appears."
-  :type '(choice (const :tag "Left" left)
-                 (const :tag "Right" right)
-                 (const :tag "Top" top)
-                 (const :tag "Bottom" bottom))
-  :group 'codex-ide)
-
-(defcustom codex-ide-window-width 100
-  "Body width of the Codex side window on the left or right."
-  :type 'integer
-  :group 'codex-ide)
-
-(defcustom codex-ide-window-height 20
-  "Height of the Codex side window on the top or bottom."
-  :type 'integer
-  :group 'codex-ide)
-
-(defcustom codex-ide-use-side-window t
-  "When non-nil, display Codex in a dedicated side window.
-When nil, follow standard `display-buffer' behavior."
-  :type 'boolean
-  :group 'codex-ide)
-
-(defcustom codex-ide-focus-on-open t
-  "When non-nil, select the Codex window when it opens."
-  :type 'boolean
+(defcustom codex-ide-display-buffer-function #'pop-to-buffer-same-window
+  "Function used to display Codex terminal buffers.
+The function is called with one argument, the buffer to display."
+  :type 'function
   :group 'codex-ide)
 
 (defcustom codex-ide-ask-for-approval nil
@@ -271,57 +249,38 @@ session-local overrides needed by enabled integration helpers."
   (let ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
     (unless buffer
       (user-error "No Codex session for %s" directory))
-    (setq codex-ide--last-accessed-buffer buffer)
-    (if-let* ((window (get-buffer-window buffer)))
-        (select-window window)
-      (codex-ide--display-buffer-in-side-window buffer))))
+    (codex-ide--display-buffer buffer)))
 
-(defun codex-ide--display-buffer-in-side-window (buffer)
-  "Display BUFFER according to the window customization.
-Returns the window.  Updates `codex-ide--last-accessed-buffer'."
-  (let ((window
-         (if codex-ide-use-side-window
-             (let* ((side codex-ide-window-side)
-                    (params '((no-delete-other-windows . t)))
-                    (display-buffer-alist
-                     `((,(regexp-quote (buffer-name buffer))
-                        (display-buffer-in-side-window)
-                        (side . ,side)
-                        (slot . 0)
-                        ,@(when (memq side '(left right))
-                            `((window-width
-                               . ,(lambda (win)
-                                    (let ((delta (- codex-ide-window-width
-                                                    (window-body-width win))))
-                                      (unless (zerop delta)
-                                        (window-resize win delta t)))))))
-                        ,@(when (memq side '(top bottom))
-                            `((window-height . ,codex-ide-window-height)))
-                        (window-parameters . ,params)))))
-               (display-buffer buffer))
-           (display-buffer buffer))))
-    (setq codex-ide--last-accessed-buffer buffer)
-    (when (and window codex-ide-focus-on-open)
-      (select-window window))
-    (when (and window codex-ide-use-side-window
-               (memq codex-ide-window-side '(top bottom)))
-      (set-window-text-height window codex-ide-window-height)
-      (set-window-dedicated-p window t))
+(defun codex-ide--display-buffer (buffer)
+  "Display BUFFER using `codex-ide-display-buffer-function'.
+Returns the displayed window when one is available.  Updates
+`codex-ide--last-accessed-buffer'."
+  (setq codex-ide--last-accessed-buffer buffer)
+  (let* ((result (funcall codex-ide-display-buffer-function buffer))
+         (window (cond
+                  ((and (windowp result) (window-live-p result)) result)
+                  ((buffer-live-p buffer) (get-buffer-window buffer t)))))
     (when window
       (codex-ide-term--sync-dimensions buffer window))
     window))
 
+(defun codex-ide--bury-displayed-buffer (buffer)
+  "Bury BUFFER in every window showing it."
+  (setq codex-ide--last-accessed-buffer buffer)
+  (dolist (window (get-buffer-window-list buffer nil t))
+    (with-selected-window window
+      (bury-buffer))))
+
 (defun codex-ide--toggle-existing-window (buffer)
   "Show or hide the window showing BUFFER.
 Used when a session is already running."
-  (let ((window (get-buffer-window buffer)))
+  (let ((window (get-buffer-window buffer t)))
     (if window
         (progn
-          (setq codex-ide--last-accessed-buffer buffer)
-          (delete-window window)
-          (codex-ide-debug "Codex window hidden"))
-      (codex-ide--display-buffer-in-side-window buffer)
-      (codex-ide-debug "Codex window shown"))))
+          (codex-ide--bury-displayed-buffer buffer)
+          (codex-ide-debug "Codex buffer hidden"))
+      (codex-ide--display-buffer buffer)
+      (codex-ide-debug "Codex buffer shown"))))
 
 (defun codex-ide--cleanup-on-exit (directory)
   "Clean up the Codex session state for DIRECTORY.
@@ -370,7 +329,7 @@ Returns (BUFFER . PROCESS)."
   "Start or focus a Codex session for the current project.
 If RESUME-LAST is non-nil, resume the most recent session.  When
 SESSION-ID is given, resume that specific session.  If a live
-session exists, toggle its window instead of starting a new one."
+session exists, toggle its buffer instead of starting a new one."
   (unless (codex-ide--ensure-cli)
     (user-error "Codex CLI not available.  Install it and ensure it is in PATH"))
   (codex-ide--cleanup-dead-processes)
@@ -400,7 +359,7 @@ session exists, toggle its window instead of starting a new one."
                         (codex-ide--cleanup-on-exit dir))
                       nil t)
             (codex-ide--setup-terminal-keybindings))
-          (codex-ide--display-buffer-in-side-window buffer)
+          (codex-ide--display-buffer buffer)
           (codex-ide-log "Codex started in %s"
                          (file-name-nondirectory
                           (directory-file-name working-dir))))))))
@@ -443,7 +402,7 @@ A session picker is deferred to a later phase."
 
 ;;;###autoload
 (defun codex-ide-toggle ()
-  "Toggle visibility of the Codex window for the current project."
+  "Toggle visibility of the Codex buffer for the current project."
   (interactive)
   (let ((buffer (get-buffer (codex-ide--get-buffer-name))))
     (if buffer
@@ -453,12 +412,10 @@ A session picker is deferred to a later phase."
 ;;;###autoload
 (defun codex-ide-switch-to-buffer ()
   "Switch to the Codex buffer for the current project.
-If it is not visible, display it in the configured side window."
+Display it with `codex-ide-display-buffer-function' when needed."
   (interactive)
   (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name))))
-      (if-let* ((window (get-buffer-window buffer)))
-          (select-window window)
-        (codex-ide--display-buffer-in-side-window buffer))
+      (codex-ide--display-buffer buffer)
     (user-error
      "No Codex session for this project.  Use M-x codex-ide to start one")))
 
