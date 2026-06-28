@@ -341,6 +341,132 @@
     (insert "not a file")
     (should (null (codex-ide-context--active-file "/repo")))))
 
+(ert-deftest codex-ide-context-selected-project-file-wins-over-tracked ()
+  "The selected project file takes precedence over a tracked source buffer."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-context-root-" t)))
+         (tracked-file (expand-file-name "tracked.el" root))
+         (selected-file (expand-file-name "selected.el" root))
+         (codex-ide-context--source-buffers (make-hash-table :test 'equal))
+         tracked selected)
+    (unwind-protect
+        (progn
+          (write-region "tracked\n" nil tracked-file)
+          (write-region "selected\n" nil selected-file)
+          (setq tracked (find-file-noselect tracked-file))
+          (setq selected (find-file-noselect selected-file))
+          (codex-ide-context-record-source-buffer root tracked)
+          (save-window-excursion
+            (switch-to-buffer selected)
+            (should (eq (codex-ide-context--resolve-source-buffer root)
+                        selected))))
+      (when (buffer-live-p tracked)
+        (kill-buffer tracked))
+      (when (buffer-live-p selected)
+        (kill-buffer selected))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-context-tracked-source-used-from-non-file-buffer ()
+  "A tracked source buffer is used when the selected buffer is not a file."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-context-tracked-root-" t)))
+         (source-file (expand-file-name "source.el" root))
+         (codex-ide-context--source-buffers (make-hash-table :test 'equal))
+         source scratch)
+    (unwind-protect
+        (progn
+          (write-region "source\n" nil source-file)
+          (setq source (find-file-noselect source-file))
+          (setq scratch (get-buffer-create " *codex-context-non-file*"))
+          (codex-ide-context-record-source-buffer root source)
+          (save-window-excursion
+            (switch-to-buffer scratch)
+            (should (eq (codex-ide-context--resolve-source-buffer root)
+                        source))))
+      (when (buffer-live-p source)
+        (kill-buffer source))
+      (when (buffer-live-p scratch)
+        (kill-buffer scratch))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-context-stale-tracked-source-is-ignored ()
+  "Killed tracked buffers are not used as active IDE context."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-context-stale-root-" t)))
+         (source-file (expand-file-name "source.el" root))
+         (codex-ide-context--source-buffers (make-hash-table :test 'equal))
+         source scratch)
+    (unwind-protect
+        (progn
+          (write-region "source\n" nil source-file)
+          (setq source (find-file-noselect source-file))
+          (setq scratch (get-buffer-create " *codex-context-stale*"))
+          (codex-ide-context-record-source-buffer root source)
+          (kill-buffer source)
+          (save-window-excursion
+            (switch-to-buffer scratch)
+            (should-not (codex-ide-context--resolve-source-buffer root))))
+      (when (buffer-live-p source)
+        (kill-buffer source))
+      (when (buffer-live-p scratch)
+        (kill-buffer scratch))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-context-outside-root-tracked-source-is-ignored ()
+  "Tracked buffers outside the requested root are not used."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-context-root-" t)))
+         (outside-root (file-name-as-directory
+                        (make-temp-file "codex-context-outside-" t)))
+         (outside-file (expand-file-name "outside.el" outside-root))
+         (codex-ide-context--source-buffers (make-hash-table :test 'equal))
+         outside scratch)
+    (unwind-protect
+        (progn
+          (write-region "outside\n" nil outside-file)
+          (setq outside (find-file-noselect outside-file))
+          (setq scratch (get-buffer-create " *codex-context-outside*"))
+          (puthash (codex-ide-context--normalize-root root)
+                   outside codex-ide-context--source-buffers)
+          (save-window-excursion
+            (switch-to-buffer scratch)
+            (should-not (codex-ide-context--resolve-source-buffer root))))
+      (when (buffer-live-p outside)
+        (kill-buffer outside))
+      (when (buffer-live-p scratch)
+        (kill-buffer scratch))
+      (delete-directory root t)
+      (delete-directory outside-root t))))
+
+(ert-deftest codex-ide-context-request-uses-resolved-source-buffer ()
+  "An ide-context request serializes the resolved active source buffer."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-context-request-root-" t)))
+         (source-file (expand-file-name "source.el" root))
+         (codex-ide-context--source-buffers (make-hash-table :test 'equal))
+         source scratch)
+    (unwind-protect
+        (progn
+          (write-region "source\n" nil source-file)
+          (setq source (find-file-noselect source-file))
+          (setq scratch (get-buffer-create " *codex-context-request*"))
+          (codex-ide-context-record-source-buffer root source)
+          (save-window-excursion
+            (switch-to-buffer scratch)
+            (let* ((request (codex-ide-context-test--request
+                             "req-ctx" "ide-context"
+                             (list :workspaceRoot root)))
+                   (response (codex-ide-context--handle-message request root))
+                   (result (cdr (assoc "result" response)))
+                   (context (cdr (assoc "ideContext" result)))
+                   (active (cdr (assoc "activeFile" context))))
+              (should (equal (cdr (assoc "path" active)) "source.el")))))
+      (when (buffer-live-p source)
+        (kill-buffer source))
+      (when (buffer-live-p scratch)
+        (kill-buffer scratch))
+      (delete-directory root t))))
+
 (ert-deftest codex-ide-context-open-tabs-filter ()
   "Open tabs only include file-visiting buffers under the root."
   (let* ((root (make-temp-file "codex-tabs-root-" t))

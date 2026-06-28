@@ -42,6 +42,23 @@
     (ert-skip "sleep executable not found"))
   (start-process name nil "sleep" "60"))
 
+(defun codex-ide-test--make-buffer-process (buffer name)
+  "Return a live test process named NAME attached to BUFFER."
+  (unless (executable-find "sleep")
+    (ert-skip "sleep executable not found"))
+  (start-process name buffer "sleep" "60"))
+
+(defun codex-ide-test--call-with-project (body)
+  "Call BODY with a temporary project root."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-project-" t)))
+         (default-directory root))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (funcall body root))
+      (delete-directory root t))))
+
 (defun codex-ide-test--call-with-buffer-process (body)
   "Call BODY with a temp buffer and live process."
   (unless (executable-find "sleep")
@@ -634,6 +651,178 @@ BODY is called with the live processes in the same order as DIRECTORIES."
         (kill-buffer buffer))
       (delete-directory directory t))))
 
+;;; Native IDE context
+
+(ert-deftest codex-ide-start-session-ensures-context-provider-for-new-session ()
+  "New sessions ensure the IDE context provider when auto-start is enabled."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let* ((codex-ide--processes (make-hash-table :test 'equal))
+            (codex-ide-context-auto-start t)
+            (codex-ide-context-auto-enable nil)
+            (buffer (get-buffer-create (codex-ide--get-buffer-name root)))
+            (process nil)
+            (ensured 0))
+       (unwind-protect
+           (progn
+             (setq process
+                   (codex-ide-test--make-buffer-process
+                    buffer "codex-ide-context-start"))
+             (cl-letf (((symbol-function 'codex-ide--ensure-cli)
+                        (lambda () t))
+                       ((symbol-function 'codex-ide-context-ensure-server)
+                        (lambda ()
+                          (setq ensured (1+ ensured))
+                          'server))
+                       ((symbol-function 'codex-ide--create-session)
+                        (lambda (&rest _args)
+                          (cons buffer process)))
+                       ((symbol-function 'codex-ide--display-buffer)
+                        (lambda (_buffer) nil))
+                       ((symbol-function 'codex-ide-context-record-source-buffer)
+                        (lambda (&rest _args) nil))
+                       ((symbol-function 'codex-ide-log)
+                        (lambda (&rest _args) nil))
+                       ((symbol-function 'codex-ide-debug)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root))
+                 (codex-ide--start-session)))
+             (should (= ensured 1)))
+         (when (and process (process-live-p process))
+           (delete-process process))
+         (when (buffer-live-p buffer)
+           (kill-buffer buffer)))))))
+
+(ert-deftest codex-ide-start-session-schedules-ide-on-only-for-new-session ()
+  "`/ide on' is scheduled for new sessions, not focused existing sessions."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let* ((codex-ide--processes (make-hash-table :test 'equal))
+            (codex-ide-context-auto-start nil)
+            (codex-ide-context-auto-enable t)
+            (codex-ide-context-enable-delay 0.25)
+            (buffer (get-buffer-create (codex-ide--get-buffer-name root)))
+            (process nil)
+            (scheduled nil))
+       (unwind-protect
+           (progn
+             (setq process
+                   (codex-ide-test--make-buffer-process
+                    buffer "codex-ide-context-schedule"))
+             (cl-letf (((symbol-function 'codex-ide--ensure-cli)
+                        (lambda () t))
+                       ((symbol-function 'codex-ide--create-session)
+                        (lambda (&rest _args)
+                          (cons buffer process)))
+                       ((symbol-function 'codex-ide--display-buffer)
+                        (lambda (_buffer) nil))
+                       ((symbol-function 'codex-ide--toggle-existing-window)
+                        (lambda (_buffer) nil))
+                       ((symbol-function 'codex-ide-context-record-source-buffer)
+                        (lambda (&rest _args) nil))
+                       ((symbol-function 'run-at-time)
+                        (lambda (time repeat function &rest args)
+                          (push (list time repeat function args) scheduled)
+                          'timer))
+                       ((symbol-function 'codex-ide-log)
+                        (lambda (&rest _args) nil))
+                       ((symbol-function 'codex-ide-debug)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root))
+                 (codex-ide--start-session)
+                 (codex-ide--start-session)))
+             (should (= (length scheduled) 1))
+             (pcase-let ((`(,time ,repeat ,function ,args) (car scheduled)))
+               (should (= time 0.25))
+               (should (null repeat))
+               (should (eq function #'codex-ide--send-ide-on))
+               (should (equal args (list buffer process)))))
+         (when (and process (process-live-p process))
+           (delete-process process))
+         (when (buffer-live-p buffer)
+           (kill-buffer buffer)))))))
+
+(ert-deftest codex-ide-send-ide-on-targets-intended-live-buffer ()
+  "The delayed sender writes to the captured Codex buffer."
+  (codex-ide-test--call-with-buffer-process
+   (lambda (buffer process)
+     (let ((other (get-buffer-create " *codex-ide-other-context-test*"))
+           sent returned)
+       (unwind-protect
+           (with-current-buffer other
+             (cl-letf (((symbol-function 'codex-ide-term--send-string)
+                        (lambda (string)
+                          (setq sent (list string (current-buffer)))))
+                       ((symbol-function 'codex-ide-term--send-return)
+                        (lambda ()
+                          (setq returned (current-buffer))))
+                       ((symbol-function 'sit-for)
+                        (lambda (&rest _args) nil)))
+               (codex-ide--send-ide-on buffer process)))
+         (when (buffer-live-p other)
+           (kill-buffer other)))
+       (should (equal sent (list "/ide on" buffer)))
+       (should (eq returned buffer))))))
+
+(ert-deftest codex-ide-send-ide-on-skips-dead-buffer ()
+  "The delayed sender is a no-op when the target buffer was killed."
+  (let* ((buffer (generate-new-buffer " *codex-ide-dead-context-test*"))
+         (process (codex-ide-test--make-buffer-process
+                   buffer "codex-ide-context-dead"))
+         sent)
+    (set-process-query-on-exit-flag process nil)
+    (let ((kill-buffer-query-functions nil))
+      (kill-buffer buffer))
+    (unwind-protect
+        (cl-letf (((symbol-function 'codex-ide-term--send-string)
+                   (lambda (&rest _args)
+                     (setq sent t)))
+                  ((symbol-function 'codex-ide-term--send-return)
+                   (lambda ()
+                     (setq sent t))))
+          (codex-ide--send-ide-on buffer process)
+          (should-not sent))
+      (when (process-live-p process)
+        (delete-process process)))))
+
+(ert-deftest codex-ide-send-prompt-records-caller-source-buffer ()
+  "`codex-ide-send-prompt' records the source before terminal input."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let* ((source-file (expand-file-name "source.el" root))
+            (source-buffer nil)
+            (codex-buffer (get-buffer-create
+                           (codex-ide--get-buffer-name root)))
+            recorded sent returned)
+       (write-region "(message \"hi\")\n" nil source-file)
+       (unwind-protect
+           (progn
+             (setq source-buffer (find-file-noselect source-file))
+             (with-current-buffer source-buffer
+               (let ((default-directory root))
+                 (cl-letf (((symbol-function 'codex-ide-context-record-source-buffer)
+                            (lambda (directory buffer)
+                              (setq recorded (list directory buffer))))
+                           ((symbol-function 'codex-ide-term--send-string)
+                            (lambda (string)
+                              (setq sent (list string (current-buffer)))))
+                           ((symbol-function 'codex-ide-term--send-return)
+                            (lambda ()
+                              (setq returned (current-buffer))))
+                           ((symbol-function 'sit-for)
+                            (lambda (&rest _args) nil))
+                           ((symbol-function 'codex-ide-debug)
+                            (lambda (&rest _args) nil)))
+                   (codex-ide-send-prompt "hello"))))
+             (should (equal recorded (list root source-buffer)))
+             (should (equal sent (list "hello" codex-buffer)))
+             (should (eq returned codex-buffer)))
+         (when (buffer-live-p source-buffer)
+           (kill-buffer source-buffer))
+         (when (buffer-live-p codex-buffer)
+           (kill-buffer codex-buffer))
+         (delete-file source-file))))))
+
 ;;; Menu
 
 (defun codex-ide-test--popup-keys (keymap)
@@ -652,7 +841,8 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (eq (keymap-lookup codex-ide-map "b") #'codex-ide-switch-to-buffer))
   (should (eq (keymap-lookup codex-ide-map "l") #'codex-ide-list-sessions))
   (should (eq (keymap-lookup codex-ide-map "p") #'codex-ide-send-prompt))
-  (dolist (key '("s" "r" "R" "q" "b" "l" "w" "p" "e" "n" "C" "d"))
+  (should (eq (keymap-lookup codex-ide-map "i") #'codex-ide-enable-context))
+  (dolist (key '("s" "r" "R" "q" "b" "l" "w" "p" "i" "e" "n" "C" "d"))
     (should (member key (codex-ide-test--popup-keys codex-ide-map)))))
 
 (ert-deftest codex-ide-menu-config-bindings ()

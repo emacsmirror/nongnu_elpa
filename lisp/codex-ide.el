@@ -44,6 +44,7 @@
 (require 'cl-lib)
 (require 'project)
 (require 'subr-x)
+(require 'codex-ide-context)
 (require 'codex-ide-debug)
 (require 'codex-ide-mcp)
 (require 'codex-ide-term)
@@ -204,6 +205,43 @@ session-local overrides needed by enabled integration helpers."
                (remhash directory codex-ide--processes)))
            codex-ide--processes))
 
+;;; IDE context
+
+(defun codex-ide--record-source-buffer (&optional directory buffer)
+  "Record BUFFER as source context for DIRECTORY."
+  (codex-ide-context-record-source-buffer
+   (or directory (codex-ide--get-working-directory))
+   (or buffer (current-buffer))))
+
+(defun codex-ide--maybe-ensure-context-server ()
+  "Start the IDE context provider when auto-start is enabled."
+  (when codex-ide-context-auto-start
+    (codex-ide-context-ensure-server)))
+
+(defun codex-ide--terminal-session-live-p (buffer process)
+  "Return non-nil when BUFFER still owns live PROCESS."
+  (and (buffer-live-p buffer)
+       (process-live-p process)
+       (eq (get-buffer-process buffer) process)))
+
+(defun codex-ide--send-terminal-command (buffer process command)
+  "Send COMMAND to BUFFER when it still owns live PROCESS."
+  (when (codex-ide--terminal-session-live-p buffer process)
+    (with-current-buffer buffer
+      (codex-ide-term--send-string command)
+      (sit-for 0.1)
+      (codex-ide-term--send-return))))
+
+(defun codex-ide--send-ide-on (buffer process)
+  "Send `/ide on' to BUFFER when PROCESS is still live."
+  (codex-ide--send-terminal-command buffer process "/ide on"))
+
+(defun codex-ide--schedule-enable-context (buffer process)
+  "Schedule `/ide on' for BUFFER and PROCESS when auto-enable is enabled."
+  (when codex-ide-context-auto-enable
+    (run-at-time codex-ide-context-enable-delay nil
+                 #'codex-ide--send-ide-on buffer process)))
+
 ;;; Session selection
 
 (defun codex-ide--session-candidates ()
@@ -213,7 +251,7 @@ session-local overrides needed by enabled integration helpers."
     (maphash
      (lambda (directory process)
        (when (process-live-p process)
-         (when-let ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
+         (when-let* ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
            (push (cons (buffer-name buffer) directory) candidates))))
      codex-ide--processes)
     (sort candidates
@@ -223,7 +261,7 @@ session-local overrides needed by enabled integration helpers."
 (defun codex-ide--session-annotation-function (candidates)
   "Return a completion `:annotation-function' over CANDIDATES."
   (lambda (buffer-name)
-    (when-let ((directory (cdr (assoc buffer-name candidates))))
+    (and-let* ((directory (cdr (assoc buffer-name candidates))))
       (concat "  " (propertize (abbreviate-file-name directory)
                                'face 'shadow)))))
 
@@ -299,7 +337,7 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
   (unless codex-ide--cleanup-in-progress
     (let ((codex-ide--cleanup-in-progress t))
       (remhash directory codex-ide--processes)
-      (when-let ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
+      (when-let* ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
         (when (buffer-live-p buffer)
           (let ((kill-buffer-hook nil)
                 (kill-buffer-query-functions nil))
@@ -347,8 +385,10 @@ session exists, toggle its window instead of starting a new one."
          (buffer-name (codex-ide--get-buffer-name working-dir))
          (existing-buffer (get-buffer buffer-name))
          (existing-process (codex-ide--get-process working-dir)))
+    (codex-ide--record-source-buffer working-dir)
     (if (and existing-buffer (buffer-live-p existing-buffer) existing-process)
         (codex-ide--toggle-existing-window existing-buffer)
+      (codex-ide--maybe-ensure-context-server)
       (let ((result (codex-ide--create-session resume-last session-id)))
         (let ((buffer (car result))
               (process (cdr result))
@@ -370,6 +410,7 @@ session exists, toggle its window instead of starting a new one."
                       nil t)
             (codex-ide--setup-terminal-keybindings))
           (codex-ide--display-buffer buffer)
+          (codex-ide--schedule-enable-context buffer process)
           (codex-ide-log "Codex started in %s"
                          (file-name-nondirectory
                           (directory-file-name working-dir))))))))
@@ -414,6 +455,7 @@ A session picker is deferred to a later phase."
 (defun codex-ide-toggle ()
   "Toggle visibility of the Codex window for the current project."
   (interactive)
+  (codex-ide--record-source-buffer)
   (let ((buffer (get-buffer (codex-ide--get-buffer-name))))
     (if buffer
         (codex-ide--toggle-existing-window buffer)
@@ -424,6 +466,7 @@ A session picker is deferred to a later phase."
   "Switch to the Codex buffer for the current project.
 If it is not visible, display it with `codex-ide-display-buffer-function'."
   (interactive)
+  (codex-ide--record-source-buffer)
   (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name))))
       (codex-ide--display-buffer buffer)
     (user-error
@@ -433,14 +476,36 @@ If it is not visible, display it with `codex-ide-display-buffer-function'."
 (defun codex-ide-list-sessions ()
   "Switch to an active Codex terminal session."
   (interactive)
-  (codex-ide--switch-to-session (codex-ide--read-session-directory)))
+  (let* ((origin (current-buffer))
+         (directory (codex-ide--read-session-directory)))
+    (codex-ide--record-source-buffer directory origin)
+    (codex-ide--switch-to-session directory)))
+
+;;;###autoload
+(defun codex-ide-enable-context ()
+  "Start the IDE provider and send `/ide on' to the current session."
+  (interactive)
+  (let* ((working-dir (codex-ide--get-working-directory))
+         (buffer (get-buffer (codex-ide--get-buffer-name working-dir)))
+         (process (and buffer (get-buffer-process buffer))))
+    (codex-ide--record-source-buffer working-dir)
+    (unless (codex-ide--terminal-session-live-p buffer process)
+      (user-error "No live Codex session for this project"))
+    (codex-ide-context-ensure-server)
+    (codex-ide--send-ide-on buffer process)
+    (codex-ide-log "IDE context enabled for Codex in %s"
+                   (file-name-nondirectory
+                    (directory-file-name working-dir)))))
 
 ;;;###autoload
 (defun codex-ide-send-prompt (&optional prompt)
   "Send PROMPT to the Codex terminal for the current project.
 Interactively, read PROMPT from the minibuffer."
   (interactive)
-  (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name))))
+  (let ((working-dir (codex-ide--get-working-directory))
+        (origin (current-buffer)))
+    (codex-ide--record-source-buffer working-dir origin)
+    (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name working-dir))))
       (let ((text (or prompt (read-string "Codex prompt: "))))
         (unless (string-empty-p text)
           (with-current-buffer buffer
@@ -448,7 +513,7 @@ Interactively, read PROMPT from the minibuffer."
             (sit-for 0.1)
             (codex-ide-term--send-return))
           (codex-ide-debug "Sent prompt: %s" text)))
-    (user-error "No Codex session for this project")))
+      (user-error "No Codex session for this project"))))
 
 ;;;###autoload
 (defun codex-ide-send-escape ()

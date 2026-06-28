@@ -130,6 +130,7 @@
   "w" ("Toggle window" codex-ide-toggle)
   :group "Interaction"
   "p" ("Send prompt" codex-ide-send-prompt)
+  "i" ("Enable IDE context" codex-ide-enable-context)
   "e" ("Send escape" codex-ide-send-escape)
   "n" ("Insert newline" codex-ide-insert-newline)
   :group "Submenus"

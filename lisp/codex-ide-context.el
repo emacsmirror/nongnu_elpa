@@ -44,6 +44,7 @@
 
 (require 'cl-lib)
 (require 'json)
+(require 'project)
 (require 'subr-x)
 (require 'codex-ide-debug)
 
@@ -75,6 +76,21 @@ Frames larger than this are rejected before parsing."
   :type 'integer
   :group 'codex-ide)
 
+(defcustom codex-ide-context-auto-start t
+  "When non-nil, start the IDE context provider for new Codex sessions."
+  :type 'boolean
+  :group 'codex-ide)
+
+(defcustom codex-ide-context-auto-enable t
+  "When non-nil, send `/ide on' after starting a new Codex session."
+  :type 'boolean
+  :group 'codex-ide)
+
+(defcustom codex-ide-context-enable-delay 0.5
+  "Seconds to wait before sending `/ide on' to a new Codex session."
+  :type 'number
+  :group 'codex-ide)
+
 ;;; Constants
 
 (defconst codex-ide-context--source-client-id "codex-emacs"
@@ -92,6 +108,9 @@ Frames larger than this are rejected before parsing."
   "Hash table mapping client processes to their receive accumulators.
 Each value is a plist with `:pending' (unibyte string buffer) and
 `:length' (expected payload length once the header arrived, or nil).")
+
+(defvar codex-ide-context--source-buffers (make-hash-table :test 'equal)
+  "Hash table mapping project roots to the latest source buffer.")
 
 (define-error 'codex-ide-context-frame-too-large
   "Codex IDE context frame too large")
@@ -172,7 +191,9 @@ means the message needs no reply (broadcast, stray response, etc.)."
      (if (equal (plist-get message :method) "ide-context")
          (codex-ide-context--success-response
           (plist-get message :requestId)
-          (codex-ide-context--collect workspace-root))
+          (codex-ide-context--collect
+           workspace-root
+           (codex-ide-context--resolve-source-buffer workspace-root)))
        (codex-ide-context--unsupported-response message)))
     ("client-discovery-request"
      (codex-ide-context--discovery-response
@@ -218,7 +239,7 @@ outside it."
   "Return a ((label . L) (path . P)) alist for BUFFER, or nil.
 Returns nil when BUFFER is not visiting a file.  PATH is relative to
 WORKSPACE-ROOT when the file lives under it."
-  (when-let ((file (buffer-file-name buffer)))
+  (and-let* ((file (buffer-file-name buffer)))
     (let ((rel (codex-ide-context--relative-path file workspace-root)))
       (list (cons "label" (file-name-nondirectory file))
             (cons "path" rel)))))
@@ -226,6 +247,61 @@ WORKSPACE-ROOT when the file lives under it."
 (defun codex-ide-context--selected-buffer ()
   "Return the buffer currently selected by the active Emacs window."
   (window-buffer (selected-window)))
+
+(defun codex-ide-context--normalize-root (root)
+  "Return ROOT as an expanded directory name, or nil."
+  (and root (file-name-as-directory (expand-file-name root))))
+
+(defun codex-ide-context--buffer-project-root (buffer)
+  "Return BUFFER's project root, or nil when BUFFER is not a file buffer."
+  (when (and (buffer-live-p buffer) (buffer-file-name buffer))
+    (with-current-buffer buffer
+      (codex-ide-context--normalize-root
+       (if-let* ((project (project-current nil)))
+           (project-root project)
+         default-directory)))))
+
+(defun codex-ide-context--source-buffer-p (buffer workspace-root)
+  "Return non-nil when BUFFER is a live file buffer under WORKSPACE-ROOT."
+  (and (buffer-live-p buffer)
+       (buffer-file-name buffer)
+       (or (not workspace-root)
+           (codex-ide-context--buffer-under-root-p buffer workspace-root))))
+
+(defun codex-ide-context-record-source-buffer (&optional workspace-root buffer)
+  "Record BUFFER as the latest source buffer for WORKSPACE-ROOT.
+When BUFFER is nil, use the selected window buffer.  When
+WORKSPACE-ROOT is nil, derive it from BUFFER's project.  Return the
+recorded buffer, or nil when BUFFER is not a project file buffer."
+  (let* ((buf (or buffer (codex-ide-context--selected-buffer)))
+         (root (codex-ide-context--normalize-root
+                (or workspace-root
+                    (codex-ide-context--buffer-project-root buf)))))
+    (when (and root (codex-ide-context--source-buffer-p buf root))
+      (puthash root buf codex-ide-context--source-buffers)
+      buf)))
+
+(defun codex-ide-context--record-window-selection (&rest _args)
+  "Record the selected file buffer after a window-selection change."
+  (codex-ide-context-record-source-buffer))
+
+(defun codex-ide-context--tracked-source-buffer (workspace-root)
+  "Return the tracked live source buffer for WORKSPACE-ROOT, or nil."
+  (let* ((root (codex-ide-context--normalize-root workspace-root))
+         (buffer (and root (gethash root codex-ide-context--source-buffers))))
+    (and (codex-ide-context--source-buffer-p buffer root) buffer)))
+
+(defun codex-ide-context--resolve-source-buffer (workspace-root)
+  "Return the best source buffer for WORKSPACE-ROOT.
+The selected project file wins.  If the selected buffer is not a project
+file, fall back to the latest tracked live project file."
+  (let* ((root (codex-ide-context--normalize-root workspace-root))
+         (selected (codex-ide-context--selected-buffer)))
+    (or (and (codex-ide-context--source-buffer-p selected root) selected)
+        (codex-ide-context--tracked-source-buffer root))))
+
+(add-hook 'window-selection-change-functions
+          #'codex-ide-context--record-window-selection)
 
 (defun codex-ide-context--active-file (workspace-root &optional buffer)
   "Return the activeFile alist for BUFFER (default `current-buffer').
@@ -268,7 +344,7 @@ region is active.  Returns nil when BUFFER is not visiting a file."
 
 (defun codex-ide-context--buffer-under-root-p (buffer root)
   "Return non-nil when BUFFER visits a file under ROOT."
-  (when-let ((file (buffer-file-name buffer)))
+  (and-let* ((file (buffer-file-name buffer)))
     (string-prefix-p (file-name-as-directory (file-truename root))
                      (file-truename file))))
 
@@ -290,9 +366,9 @@ are included.  The list is capped at
          (seen (make-hash-table :test 'equal))
          (deduped nil))
     (dolist (buf chosen)
-      (when-let ((desc (codex-ide-context--buffer->file-descriptor
-                        buf workspace-root))
-                 (path (cdr (assoc "path" desc))))
+      (when-let* ((desc (codex-ide-context--buffer->file-descriptor
+                         buf workspace-root))
+                  (path (cdr (assoc "path" desc))))
         (unless (gethash path seen)
           (puthash path t seen)
           (push desc deduped))))
@@ -302,10 +378,9 @@ are included.  The list is capped at
 
 (defun codex-ide-context--collect (workspace-root &optional buffer)
   "Build the `ideContext' alist for WORKSPACE-ROOT.
-BUFFER (default selected window buffer) is the active buffer to serialize."
-  (let ((active (codex-ide-context--active-file
-                 workspace-root
-                 (or buffer (codex-ide-context--selected-buffer)))))
+BUFFER is the active buffer to serialize."
+  (let ((active (and buffer
+                     (codex-ide-context--active-file workspace-root buffer))))
     (delq nil
           (list (when active (cons "activeFile" active))
                 (cons "openTabs" (vconcat (codex-ide-context--open-tabs
@@ -361,7 +436,7 @@ cannot be secured or the server is already running."
     (ignore-errors (delete-process codex-ide-context--server))
     (setq codex-ide-context--server nil))
   (clrhash codex-ide-context--clients)
-  (when-let ((path (codex-ide-context--socket-path)))
+  (when-let* ((path (codex-ide-context--socket-path)))
     (when (file-exists-p path)
       (ignore-errors (delete-file path))))
   (codex-ide-debug "Codex IPC provider stopped"))
@@ -467,7 +542,8 @@ clients reached."
          (cons "params"
                (list (cons "ideContext"
                            (codex-ide-context--collect workspace-root
-                                                       buffer)))))))
+                                                       (or buffer
+                                                           (codex-ide-context--selected-buffer)))))))))
 
 (defun codex-ide-context--sentinel (proc event)
   "Sentinel: clean up client PROC on EVENT."
@@ -476,6 +552,13 @@ clients reached."
     (remhash proc codex-ide-context--clients)))
 
 ;;; Commands
+
+(defun codex-ide-context-ensure-server ()
+  "Ensure the Codex IDE context IPC provider is running.
+Return the listening process."
+  (if (codex-ide-context--running-p)
+      codex-ide-context--server
+    (codex-ide-context--start-server)))
 
 ;;;###autoload
 (defun codex-ide-context-start ()
