@@ -28,7 +28,7 @@
 ;; Local streamable-HTTP MCP endpoint for Codex sessions.  The bridge exposes a
 ;; deliberately narrow set of Emacs tools: buffer metadata, the active
 ;; selection, opening a file in Emacs, and already-available diagnostics.
-;; Codex sessions opt in by adding a transient `-c mcp_servers.emacs-tools.url'
+;; Codex sessions opt in by adding a transient `-c mcp_servers.emacs_tools.url'
 ;; override; this module never writes to `~/.codex/config.toml'.
 ;;
 ;; Usage:
@@ -39,6 +39,7 @@
 ;;   M-x codex-ide-mcp-start
 ;;   M-x codex-ide-mcp-stop
 ;;   M-x codex-ide-mcp-status
+;;   M-x codex-ide-mcp-install-codex-config
 
 ;;; Code:
 
@@ -84,7 +85,7 @@ is nil because Emacs has no sandbox for arbitrary Elisp."
 
 ;;; Constants and variables
 
-(defconst codex-ide-mcp--server-name "emacs-tools"
+(defconst codex-ide-mcp--server-name "emacs_tools"
   "Codex config key name for the Emacs MCP server.")
 
 (defconst codex-ide-mcp--protocol-version "2025-06-18"
@@ -133,6 +134,32 @@ is nil because Emacs has no sandbox for arbitrary Elisp."
 (defun codex-ide-mcp--url ()
   "Return the URL for the running MCP endpoint."
   (format "http://%s:%d/mcp" codex-ide-mcp-host codex-ide-mcp--port))
+
+(defun codex-ide-mcp--namespace ()
+  "Return the Codex-visible namespace for the Emacs MCP tools."
+  (format "mcp__%s" codex-ide-mcp--server-name))
+
+(defun codex-ide-mcp--callable-tool-name (tool-name)
+  "Return the Codex-visible callable name for TOOL-NAME."
+  (format "%s__%s" (codex-ide-mcp--namespace) tool-name))
+
+(defun codex-ide-mcp--ephemeral-port-p ()
+  "Return non-nil for an operating-system-chosen MCP port."
+  (zerop codex-ide-mcp-port))
+
+(defun codex-ide-mcp--install-command-args (url)
+  "Return Codex CLI arguments for persistently adding URL."
+  (list "codex" "mcp" "add" codex-ide-mcp--server-name "--url" url))
+
+(defun codex-ide-mcp--install-command (url)
+  "Return the persistent Codex MCP setup command for URL."
+  (format "codex mcp add %s --url %s" codex-ide-mcp--server-name url))
+
+(defun codex-ide-mcp--persistent-warning ()
+  "Return an ephemeral-port warning for persistent Codex setup."
+  (when (codex-ide-mcp--ephemeral-port-p)
+    (concat "Warning: persistent setup is only reliable with a fixed "
+            "`codex-ide-mcp-port'; the current port is ephemeral.")))
 
 (defun codex-ide-mcp--line-column (&optional pos)
   "Return line/column alist for POS, defaulting to point.
@@ -1002,6 +1029,51 @@ Returns a response alist, or nil for notifications."
     (codex-ide-mcp--start-server))
   (codex-ide-mcp--url))
 
+(defun codex-ide-mcp--setup-message (url)
+  "Return user-facing persistent setup text for URL."
+  (string-join
+   (delq nil
+         (list (format "Persistent setup command: %s"
+                       (codex-ide-mcp--install-command url))
+               (codex-ide-mcp--persistent-warning)))
+   "\n"))
+
+(defun codex-ide-mcp--status-message ()
+  "Return user-facing MCP server status text."
+  (let* ((running (codex-ide-mcp--running-p))
+         (url (and running (codex-ide-mcp--url))))
+    (string-join
+     (delq nil
+           (list (if running
+                     "Codex MCP tools server: running"
+                   "Codex MCP tools server: stopped")
+                 (when url (format "URL: %s" url))
+                 (format "Port: %s"
+                         (if (codex-ide-mcp--ephemeral-port-p)
+                             "ephemeral"
+                           "fixed"))
+                 (format "Server key: %s" codex-ide-mcp--server-name)
+                 (format "Codex namespace: %s"
+                         (codex-ide-mcp--namespace))
+                 (format "Example tool: %s"
+                         (codex-ide-mcp--callable-tool-name
+                          "emacs_current_buffer"))
+                 (format "emacs_execute: %s"
+                         (if codex-ide-mcp-enable-execute
+                             "enabled"
+                           "disabled"))
+                 (when url (codex-ide-mcp--setup-message url))))
+     "\n")))
+
+(defun codex-ide-mcp--run-install-command (args)
+  "Run the Codex MCP add command described by ARGS."
+  (with-current-buffer (get-buffer-create "*codex-ide-mcp-install*")
+    (erase-buffer)
+    (let ((status (apply #'call-process (car args) nil t nil (cdr args))))
+      (unless (eq status 0)
+        (error "Codex MCP config command failed with status %s" status))
+      status)))
+
 ;;;###autoload
 (defun codex-ide-mcp-start ()
   "Start the local Codex MCP tools server."
@@ -1019,12 +1091,27 @@ Returns a response alist, or nil for notifications."
 
 ;;;###autoload
 (defun codex-ide-mcp-status ()
-  "Report whether the local Codex MCP tools server is running."
+  "Report the local Codex MCP tools server status."
   (interactive)
-  (if (codex-ide-mcp--running-p)
-      (codex-ide-log "Codex MCP tools server is running on %s"
-                     (codex-ide-mcp--url))
-    (codex-ide-log "Codex MCP tools server is not running")))
+  (let ((status (codex-ide-mcp--status-message)))
+    (codex-ide-log "%s" status)
+    status))
+
+;;;###autoload
+(defun codex-ide-mcp-install-codex-config ()
+  "Add the running Emacs MCP server to Codex config after confirmation."
+  (interactive)
+  (let* ((url (codex-ide-mcp-ensure-server))
+         (args (codex-ide-mcp--install-command-args url))
+         (command (codex-ide-mcp--install-command url))
+         (setup (codex-ide-mcp--setup-message url)))
+    (codex-ide-log "%s" setup)
+    (if (y-or-n-p (format "Run `%s'? " command))
+        (progn
+          (codex-ide-mcp--run-install-command args)
+          (codex-ide-log "Installed Codex MCP config with `%s'" command)
+          command)
+      command)))
 
 (provide 'codex-ide-mcp)
 

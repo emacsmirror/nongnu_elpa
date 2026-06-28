@@ -124,8 +124,59 @@
   "MCP URL override is emitted as a TOML string."
   (should (equal (codex-ide-mcp-config-overrides
                   "http://127.0.0.1:43210/mcp")
-                 '(("mcp_servers.emacs-tools.url"
+                 '(("mcp_servers.emacs_tools.url"
                     . "\"http://127.0.0.1:43210/mcp\"")))))
+
+(ert-deftest codex-ide-mcp-install-command-fixed-port ()
+  "Fixed-port persistent setup produces a stable Codex command."
+  (let ((codex-ide-mcp-port 43210))
+    (should (equal (codex-ide-mcp--install-command
+                    "http://127.0.0.1:43210/mcp")
+                   "codex mcp add emacs_tools --url http://127.0.0.1:43210/mcp"))
+    (should-not (codex-ide-mcp--persistent-warning))))
+
+(ert-deftest codex-ide-mcp-setup-message-warns-for-ephemeral-port ()
+  "Ephemeral-port persistent setup reports that reuse is unreliable."
+  (let ((codex-ide-mcp-port 0))
+    (should (string-match-p
+             "Persistent setup command: codex mcp add emacs_tools --url http://127.0.0.1:43210/mcp"
+             (codex-ide-mcp--setup-message
+              "http://127.0.0.1:43210/mcp")))
+    (should (string-match-p
+             "ephemeral"
+             (codex-ide-mcp--setup-message
+              "http://127.0.0.1:43210/mcp")))))
+
+(ert-deftest codex-ide-mcp-status-message-running ()
+  "Running status reports server key, namespace, URL, and execute state."
+  (let ((codex-ide-mcp-port 43210)
+        (codex-ide-mcp-enable-execute t))
+    (cl-letf (((symbol-function 'codex-ide-mcp--running-p)
+               (lambda () t))
+              ((symbol-function 'codex-ide-mcp--url)
+               (lambda () "http://127.0.0.1:43210/mcp")))
+      (let ((status (codex-ide-mcp--status-message)))
+        (should (string-match-p "running" status))
+        (should (string-match-p "URL: http://127.0.0.1:43210/mcp" status))
+        (should (string-match-p "Port: fixed" status))
+        (should (string-match-p "Server key: emacs_tools" status))
+        (should (string-match-p "Codex namespace: mcp__emacs_tools" status))
+        (should (string-match-p
+                 "Example tool: mcp__emacs_tools__emacs_current_buffer"
+                 status))
+        (should (string-match-p "emacs_execute: enabled" status))))))
+
+(ert-deftest codex-ide-mcp-status-message-stopped-ephemeral ()
+  "Stopped status reports ephemeral port setup and disabled execute."
+  (let ((codex-ide-mcp-port 0)
+        (codex-ide-mcp-enable-execute nil))
+    (cl-letf (((symbol-function 'codex-ide-mcp--running-p)
+               (lambda () nil)))
+      (let ((status (codex-ide-mcp--status-message)))
+        (should (string-match-p "stopped" status))
+        (should (string-match-p "Port: ephemeral" status))
+        (should (string-match-p "emacs_execute: disabled" status))
+        (should-not (string-match-p "Persistent setup command" status))))))
 
 (ert-deftest codex-ide-mcp-session-overrides-disabled ()
   "Disabled MCP integration leaves session overrides unchanged."
@@ -144,7 +195,7 @@
                (lambda () "http://127.0.0.1:43210/mcp")))
       (should (equal (codex-ide--session-config-overrides)
                      '(("model" . "o3")
-                       ("mcp_servers.emacs-tools.url"
+                       ("mcp_servers.emacs_tools.url"
                         . "\"http://127.0.0.1:43210/mcp\"")))))))
 
 (ert-deftest codex-ide-mcp-build-command-session-overrides ()
@@ -163,7 +214,7 @@
         (should (equal command
                        '("codex"
                          "-c"
-                         "mcp_servers.emacs-tools.url=\"http://127.0.0.1:43210/mcp\""
+                         "mcp_servers.emacs_tools.url=\"http://127.0.0.1:43210/mcp\""
                          "resume"
                          "--last")))))))
 
@@ -275,6 +326,14 @@
                      "emacs_project_info"
                      "emacs_imenu_symbols"
                      "emacs_close_buffer")))))
+
+(ert-deftest codex-ide-mcp-callable-name-display-only ()
+  "Codex callable names are display-only and raw MCP names stay unchanged."
+  (let ((names (codex-ide-mcp-tool-names)))
+    (should (equal (codex-ide-mcp--callable-tool-name "emacs_selection")
+                   "mcp__emacs_tools__emacs_selection"))
+    (should (member "emacs_selection" names))
+    (should-not (member "mcp__emacs_tools__emacs_selection" names))))
 
 (ert-deftest codex-ide-mcp-tools-list-hides-disabled-execute ()
   "Disabled execute tool is omitted from tools/list."
