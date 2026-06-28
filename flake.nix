@@ -28,6 +28,7 @@
             "lisp/codex-ide-debug.el"
             "lisp/codex-ide-term.el"
             "lisp/codex-ide-context.el"
+            "lisp/codex-ide-diff.el"
             "lisp/codex-ide-mcp.el"
             "lisp/codex-ide-appserver.el"
             "lisp/codex-ide.el"
