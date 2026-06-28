@@ -26,8 +26,9 @@
 ;;; Commentary:
 
 ;; Run the Codex CLI inside Emacs through vterm.  This is a terminal-first
-;; integration: one Codex session per project root, displayed in a configurable
-;; side window, with prompt sending, toggling, and resume.
+;; integration: one Codex session per project root, displayed through a
+;; configurable buffer display function, with prompt sending, toggling, and
+;; resume.
 ;;
 ;; Usage:
 ;;   M-x codex-ide              Start Codex for the current project
@@ -61,33 +62,12 @@
   :type 'string
   :group 'codex-ide)
 
-(defcustom codex-ide-window-side 'right
-  "Side of the frame where the Codex window appears."
-  :type '(choice (const :tag "Left" left)
-                 (const :tag "Right" right)
-                 (const :tag "Top" top)
-                 (const :tag "Bottom" bottom))
-  :group 'codex-ide)
-
-(defcustom codex-ide-window-width 100
-  "Body width of the Codex side window on the left or right."
-  :type 'integer
-  :group 'codex-ide)
-
-(defcustom codex-ide-window-height 20
-  "Height of the Codex side window on the top or bottom."
-  :type 'integer
-  :group 'codex-ide)
-
-(defcustom codex-ide-use-side-window t
-  "When non-nil, display Codex in a dedicated side window.
-When nil, follow standard `display-buffer' behavior."
-  :type 'boolean
-  :group 'codex-ide)
-
-(defcustom codex-ide-focus-on-open t
-  "When non-nil, select the Codex window when it opens."
-  :type 'boolean
+(defcustom codex-ide-display-buffer-function #'pop-to-buffer-same-window
+  "Function used to display the Codex terminal buffer.
+The function is called with the Codex buffer and should display it.  When it
+returns a live window, that window is used for terminal dimension sync;
+otherwise Codex falls back to any live window already showing the buffer."
+  :type 'function
   :group 'codex-ide)
 
 (defcustom codex-ide-ask-for-approval nil
@@ -266,79 +246,33 @@ session-local overrides needed by enabled integration helpers."
       (user-error "No Codex session for %s" directory))
     (codex-ide--display-buffer buffer)))
 
-(defun codex-ide--resize-side-window-width (window)
-  "Resize WINDOW to `codex-ide-window-width' body columns."
-  (let ((delta (- codex-ide-window-width (window-body-width window))))
-    (unless (zerop delta)
-      (condition-case err
-          (window-resize window delta t 'safe)
-        (error
-         (codex-ide-debug "Could not resize Codex side window: %s"
-                          (error-message-string err)))))))
-
-(defun codex-ide--resize-side-window-height (window)
-  "Resize WINDOW to `codex-ide-window-height' body lines."
-  (condition-case err
-      (set-window-text-height window codex-ide-window-height)
-    (error
-     (codex-ide-debug "Could not resize Codex side window: %s"
-                      (error-message-string err)))))
-
-(defun codex-ide--side-window-size-alist (side)
-  "Return display action size entries for SIDE."
-  (if (memq side '(left right))
-      '((window-width . codex-ide--resize-side-window-width))
-    '((window-height . codex-ide--resize-side-window-height))))
-
-(defun codex-ide--side-window-action ()
-  "Return the display action for the configured Codex side window."
-  `((display-buffer-in-side-window)
-    (side . ,codex-ide-window-side)
-    (slot . 0)
-    (dedicated . side)
-    ,@(codex-ide--side-window-size-alist codex-ide-window-side)
-    (window-parameters . ((no-delete-other-windows . t)))))
+(defun codex-ide--display-result-window (buffer result)
+  "Return a live display window for BUFFER from display RESULT."
+  (cond
+   ((and (windowp result) (window-live-p result)) result)
+   ((bufferp result) (get-buffer-window result t))
+   (t (get-buffer-window buffer t))))
 
 (defun codex-ide--display-window (buffer)
   "Display BUFFER and return its window."
-  (if codex-ide-use-side-window
-      (display-buffer buffer (codex-ide--side-window-action))
-    (display-buffer buffer)))
-
-(defun codex-ide--configure-window (buffer window &optional force-focus)
-  "Apply Codex window policy to WINDOW showing BUFFER.
-When FORCE-FOCUS is non-nil, select WINDOW regardless of
-`codex-ide-focus-on-open'."
-  (when (window-live-p window)
-    (when (and codex-ide-use-side-window
-               (window-parameter window 'window-side))
-      (set-window-dedicated-p window 'side)
-      (if (memq codex-ide-window-side '(left right))
-          (codex-ide--resize-side-window-width window)
-        (codex-ide--resize-side-window-height window)))
-    (when (or force-focus codex-ide-focus-on-open)
-      (select-window window))
-    (codex-ide-term--sync-dimensions buffer window)
-    window))
+  (codex-ide--display-result-window
+   buffer
+   (funcall codex-ide-display-buffer-function buffer)))
 
 (defun codex-ide--display-buffer (buffer)
   "Display BUFFER according to Codex window customization.
 Returns the displayed window when one is available.  Updates
 `codex-ide--last-accessed-buffer'."
   (setq codex-ide--last-accessed-buffer buffer)
-  (if-let* ((window (get-buffer-window buffer t)))
-      (codex-ide--configure-window buffer window t)
-    (codex-ide--configure-window buffer
-                                 (codex-ide--display-window buffer))))
+  (when-let* ((window (or (get-buffer-window buffer t)
+                          (codex-ide--display-window buffer))))
+    (select-window window)
+    (codex-ide-term--sync-dimensions buffer window)
+    window))
 
 (defun codex-ide--hide-window (window)
   "Hide WINDOW without killing its buffer."
-  (if (window-parameter window 'window-side)
-      (condition-case nil
-          (delete-window window)
-        (error
-         (with-selected-window window
-           (bury-buffer))))
+  (when (window-live-p window)
     (with-selected-window window
       (bury-buffer))))
 
@@ -488,7 +422,7 @@ A session picker is deferred to a later phase."
 ;;;###autoload
 (defun codex-ide-switch-to-buffer ()
   "Switch to the Codex buffer for the current project.
-If it is not visible, display it in the configured side window."
+If it is not visible, display it with `codex-ide-display-buffer-function'."
   (interactive)
   (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name))))
       (codex-ide--display-buffer buffer)

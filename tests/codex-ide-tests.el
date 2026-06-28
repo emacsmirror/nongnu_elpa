@@ -32,6 +32,7 @@
         (codex-ide-config-overrides nil)
         (codex-ide-ask-for-approval nil)
         (codex-ide-no-alt-screen nil)
+        (codex-ide-display-buffer-function #'pop-to-buffer-same-window)
         (codex-ide-cli-extra-args nil))
     (funcall body)))
 
@@ -339,34 +340,58 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (equal (codex-ide--default-buffer-name "/tmp/foo/")
                  "*codex[foo]*")))
 
-(ert-deftest codex-ide-window-option-defaults ()
-  "Window customization defaults match the documented side-window setup."
-  (should (eq codex-ide-window-side 'right))
-  (should (= codex-ide-window-width 100))
-  (should (= codex-ide-window-height 20))
-  (should codex-ide-use-side-window)
-  (should codex-ide-focus-on-open))
+(ert-deftest codex-ide-display-buffer-function-default ()
+  "Codex displays buffers in the selected window by default."
+  (should (eq codex-ide-display-buffer-function
+              #'pop-to-buffer-same-window)))
 
-(ert-deftest codex-ide-display-buffer-side-window-focuses ()
-  "Side-window display selects and sizes Codex when focus is enabled."
+(ert-deftest codex-ide-display-buffer-calls-custom-function ()
+  "Display helper delegates buffer placement to the configured function."
   (let ((buffer (get-buffer-create " *codex-ide-display-test*"))
         (main (get-buffer-create " *codex-ide-main-test*"))
-        (codex-ide-window-side 'right)
-        (codex-ide-window-width 24)
-        (codex-ide-use-side-window t)
-        (codex-ide-focus-on-open t))
+        called synced)
     (unwind-protect
         (save-window-excursion
           (delete-other-windows)
           (switch-to-buffer main)
-          (let ((window (codex-ide--display-buffer buffer)))
-            (should (window-live-p window))
-            (should (eq (selected-window) window))
-            (should (eq (window-buffer window) buffer))
-            (should (eq (window-parameter window 'window-side) 'right))
-            (should (eq (window-dedicated-p window) 'side))
-            (should (= (window-body-width window)
-                       codex-ide-window-width))))
+          (cl-letf (((symbol-function 'codex-ide-term--sync-dimensions)
+                     (lambda (sync-buffer sync-window)
+                       (setq synced (list sync-buffer sync-window)))))
+            (let ((codex-ide-display-buffer-function
+                   (lambda (buf)
+                     (setq called buf)
+                     (pop-to-buffer-same-window buf)
+                     (selected-window))))
+              (let ((window (codex-ide--display-buffer buffer)))
+                (should (eq called buffer))
+                (should (eq window (selected-window)))
+                (should (eq (window-buffer window) buffer))
+                (should (equal synced (list buffer window)))))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (when (buffer-live-p main)
+        (kill-buffer main)))))
+
+(ert-deftest codex-ide-display-buffer-uses-buffer-result-window ()
+  "A display function may return the displayed buffer instead of a window."
+  (let ((buffer (get-buffer-create " *codex-ide-buffer-result-test*"))
+        (main (get-buffer-create " *codex-ide-buffer-result-main-test*"))
+        synced)
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer main)
+          (cl-letf (((symbol-function 'codex-ide-term--sync-dimensions)
+                     (lambda (sync-buffer sync-window)
+                       (setq synced (list sync-buffer sync-window)))))
+            (let ((codex-ide-display-buffer-function
+                   (lambda (buf)
+                     (switch-to-buffer buf)
+                     buf)))
+              (let ((window (codex-ide--display-buffer buffer)))
+                (should (window-live-p window))
+                (should (eq (window-buffer window) buffer))
+                (should (equal synced (list buffer window)))))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer))
       (when (buffer-live-p main)
@@ -376,56 +401,84 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   "Displaying an already visible Codex buffer selects its window."
   (let ((buffer (get-buffer-create " *codex-ide-existing-test*"))
         (main (get-buffer-create " *codex-ide-existing-main-test*"))
-        (codex-ide-window-side 'right)
-        (codex-ide-window-width 24)
-        (codex-ide-use-side-window t)
-        (codex-ide-focus-on-open nil))
+        (other (get-buffer-create " *codex-ide-existing-other-test*"))
+        called synced)
     (unwind-protect
         (save-window-excursion
           (delete-other-windows)
           (switch-to-buffer main)
-          (let ((window (codex-ide--display-buffer buffer)))
-            (should-not (eq (selected-window) window))
-            (codex-ide--display-buffer buffer)
-            (should (eq (selected-window) window))))
+          (split-window-right)
+          (other-window 1)
+          (switch-to-buffer buffer)
+          (let ((codex-window (selected-window)))
+            (other-window 1)
+            (switch-to-buffer other)
+            (cl-letf (((symbol-function 'codex-ide-term--sync-dimensions)
+                       (lambda (sync-buffer sync-window)
+                         (setq synced (list sync-buffer sync-window)))))
+              (let ((codex-ide-display-buffer-function
+                     (lambda (_buffer)
+                       (setq called t)
+                       (selected-window))))
+                (let ((window (codex-ide--display-buffer buffer)))
+                  (should-not called)
+                  (should (eq window codex-window))
+                  (should (eq (selected-window) codex-window))
+                  (should (equal synced (list buffer codex-window)))
+                  (should (= (length (get-buffer-window-list buffer nil t))
+                             1)))))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (when (buffer-live-p main)
+        (kill-buffer main))
+      (when (buffer-live-p other)
+        (kill-buffer other)))))
+
+(ert-deftest codex-ide-display-buffer-syncs-visible-buffer-on-nil-result ()
+  "Display sync still runs when a nil result leaves the buffer visible."
+  (let ((buffer (get-buffer-create " *codex-ide-nil-result-test*"))
+        (main (get-buffer-create " *codex-ide-nil-result-main-test*"))
+        synced)
+    (unwind-protect
+        (save-window-excursion
+          (delete-other-windows)
+          (switch-to-buffer main)
+          (cl-letf (((symbol-function 'codex-ide-term--sync-dimensions)
+                     (lambda (sync-buffer sync-window)
+                       (setq synced (list sync-buffer sync-window)))))
+            (let ((codex-ide-display-buffer-function
+                   (lambda (buf)
+                     (switch-to-buffer buf)
+                     nil)))
+              (let ((window (codex-ide--display-buffer buffer)))
+                (should (window-live-p window))
+                (should (equal synced (list buffer window)))))))
       (when (buffer-live-p buffer)
         (kill-buffer buffer))
       (when (buffer-live-p main)
         (kill-buffer main)))))
 
-(ert-deftest codex-ide-display-buffer-top-bottom-height ()
-  "Top and bottom side windows use `codex-ide-window-height'."
-  (dolist (side '(top bottom))
-    (let ((buffer (get-buffer-create
-                   (format " *codex-ide-%s-height-test*" side)))
-          (main (get-buffer-create " *codex-ide-main-height-test*"))
-          (codex-ide-window-side side)
-          (codex-ide-window-height 6)
-          (codex-ide-use-side-window t)
-          (codex-ide-focus-on-open nil))
-      (unwind-protect
-          (save-window-excursion
-            (delete-other-windows)
-            (switch-to-buffer main)
-            (let ((window (codex-ide--display-buffer buffer)))
-              (should (window-live-p window))
-              (should (eq (window-parameter window 'window-side) side))
-              (should (eq (window-dedicated-p window) 'side))
-              (should (= (window-body-height window)
-                         codex-ide-window-height))))
-        (when (buffer-live-p buffer)
-          (kill-buffer buffer))
-        (when (buffer-live-p main)
-          (kill-buffer main))))))
+(ert-deftest codex-ide-display-buffer-skips-sync-when-not-visible ()
+  "Display sync is skipped when the configured function shows no window."
+  (let ((buffer (get-buffer-create " *codex-ide-no-window-test*"))
+        called)
+    (unwind-protect
+        (save-window-excursion
+          (cl-letf (((symbol-function 'codex-ide-term--sync-dimensions)
+                     (lambda (&rest _args)
+                       (setq called t))))
+            (let ((codex-ide-display-buffer-function
+                   (lambda (_buffer) nil)))
+              (should-not (codex-ide--display-buffer buffer))
+              (should-not called))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
 
 (ert-deftest codex-ide-toggle-hides-window-without-killing-buffer ()
   "Toggling a visible Codex window hides it and leaves the buffer alive."
   (let ((buffer (get-buffer-create " *codex-ide-toggle-window-test*"))
         (main (get-buffer-create " *codex-ide-toggle-main-test*"))
-        (codex-ide-window-side 'right)
-        (codex-ide-window-width 24)
-        (codex-ide-use-side-window t)
-        (codex-ide-focus-on-open nil))
+        (codex-ide-display-buffer-function #'pop-to-buffer-same-window))
     (unwind-protect
         (save-window-excursion
           (delete-other-windows)
@@ -443,8 +496,7 @@ BODY is called with the live processes in the same order as DIRECTORIES."
 (ert-deftest codex-ide-display-buffer-updates-last-accessed-buffer ()
   "Display helper records the displayed Codex buffer."
   (let ((buffer (get-buffer-create " *codex-ide-last-accessed-test*"))
-        (codex-ide--last-accessed-buffer nil)
-        (codex-ide-use-side-window nil))
+        (codex-ide--last-accessed-buffer nil))
     (unwind-protect
         (save-window-excursion
           (codex-ide--display-buffer buffer)
@@ -607,10 +659,15 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   "Config menu binds set/toggle suffixes and the save command."
   (should (eq (keymap-lookup codex-ide-config-map "S")
               #'codex-ide-menu--save-config))
-  (should (eq (keymap-lookup codex-ide-config-map "u")
-              #'codex-ide-menu--toggle-use-side-window))
-  (dolist (key '("s" "w" "h" "u" "f" "p" "a" "A" "S"))
+  (dolist (key '("p" "a" "A" "S"))
     (should (member key (codex-ide-test--popup-keys codex-ide-config-map)))))
+
+(ert-deftest codex-ide-menu-config-omits-window-layout-controls ()
+  "Config menu does not expose package-owned window layout controls."
+  (dolist (key '("s" "w" "h" "u" "f"))
+    (should-not (keymap-lookup codex-ide-config-map key))
+    (should-not (member key (codex-ide-test--popup-keys
+                             codex-ide-config-map)))))
 
 (ert-deftest codex-ide-menu-save-config-saves-current-symbols ()
   "Save config persists current configuration."
@@ -623,11 +680,7 @@ BODY is called with the live processes in the same order as DIRECTORIES."
       (codex-ide-menu--save-config))
     (should (equal (reverse saved)
                    '(codex-ide-cli-path
-                     codex-ide-window-side
-                     codex-ide-window-width
-                     codex-ide-window-height
-                     codex-ide-use-side-window
-                     codex-ide-focus-on-open
+                     codex-ide-display-buffer-function
                      codex-ide-ask-for-approval
                      codex-ide-no-alt-screen)))))
 
@@ -647,7 +700,7 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (eq (keymap-lookup codex-ide-map "d")
               #'codex-ide-map--enter-codex-ide-debug-map)))
 
-(ert-deftest codex-ide-menu-use-side-window-description-is-dynamic ()
+(ert-deftest codex-ide-menu-no-alt-screen-description-is-dynamic ()
   "Toggle entries resolve their description from current variable state."
   (let* ((rows (keymap-popup--meta codex-ide-config-map 'descriptions))
          (entries (mapcan (lambda (row)
@@ -655,14 +708,14 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                                       (plist-get group :entries))
                                     row))
                           rows))
-         (entry (cl-find "u" entries
+         (entry (cl-find "A" entries
                          :key (lambda (e) (plist-get e :key))
                          :test #'equal))
          (desc-fn (plist-get entry :description)))
     (should (functionp desc-fn))
-    (let ((codex-ide-use-side-window t))
+    (let ((codex-ide-no-alt-screen t))
       (should (string-match-p "ON" (funcall desc-fn))))
-    (let ((codex-ide-use-side-window nil))
+    (let ((codex-ide-no-alt-screen nil))
       (should (string-match-p "OFF" (funcall desc-fn))))))
 
 (provide 'codex-ide-tests)
