@@ -48,6 +48,26 @@
     (ert-skip "sleep executable not found"))
   (start-process name buffer "sleep" "60"))
 
+(defun codex-ide-test--make-recoverable-buffer (root name process-name)
+  "Return (BUFFER PROCESS) for a live orphan Codex buffer."
+  (let ((buffer (get-buffer-create name))
+        process)
+    (with-current-buffer buffer
+      (setq default-directory root)
+      (setq-local codex-ide--session-root nil)
+      (setq-local codex-ide--session-id nil))
+    (setq process
+          (codex-ide-test--make-buffer-process buffer process-name))
+    (set-process-query-on-exit-flag process nil)
+    (list buffer process)))
+
+(defun codex-ide-test--kill-buffer-process (buffer process)
+  "Kill BUFFER and PROCESS when they are live."
+  (when (and process (process-live-p process))
+    (delete-process process))
+  (when (buffer-live-p buffer)
+    (kill-buffer buffer)))
+
 (defun codex-ide-test--call-with-project (body)
   "Call BODY with a temporary project root."
   (let* ((root (file-name-as-directory
@@ -75,22 +95,56 @@
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
-(defun codex-ide-test--call-with-process-table (directories body)
-  "Call BODY with `codex-ide--processes' populated for DIRECTORIES.
-BODY is called with the live processes in the same order as DIRECTORIES."
-  (let ((codex-ide--processes (make-hash-table :test 'equal))
-        (processes nil))
+(defun codex-ide-test--make-session (root id)
+  "Return a live test session for ROOT and ID."
+  (let* ((buffer (get-buffer-create (codex-ide--get-buffer-name root id)))
+         (process (codex-ide-test--make-buffer-process
+                   buffer (format "codex-ide-test-%d" id)))
+         (session (codex-ide--make-session root id buffer process)))
+    (set-process-query-on-exit-flag process nil)
+    (with-current-buffer buffer
+      (setq-local codex-ide--session-root root)
+      (setq-local codex-ide--session-id id))
+    session))
+
+(defun codex-ide-test--store-session (session)
+  "Store SESSION in `codex-ide--sessions'."
+  (let ((root (plist-get session :root)))
+    (puthash root (cons session (gethash root codex-ide--sessions))
+             codex-ide--sessions)
+    (codex-ide--activate-session session)))
+
+(defun codex-ide-test--kill-session (session)
+  "Kill SESSION's process and buffer."
+  (let ((process (plist-get session :process))
+        (buffer (plist-get session :buffer)))
+    (when (and process (process-live-p process))
+      (delete-process process))
+    (when (buffer-live-p buffer)
+      (kill-buffer buffer))))
+
+(defun codex-ide-test--call-with-sessions (root-ids body)
+  "Call BODY with live sessions for ROOT-IDS.
+ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
+  (let ((codex-ide--sessions (make-hash-table :test 'equal))
+        (codex-ide--active-session-ids (make-hash-table :test 'equal))
+        sessions)
     (unwind-protect
         (progn
-          (dolist (directory directories)
-            (let ((process (codex-ide-test--make-process "codex-ide-test")))
-              (push process processes)
-              (puthash directory process codex-ide--processes)))
-          (funcall body (reverse processes)))
-      (mapc (lambda (process)
-              (when (process-live-p process)
-                (delete-process process)))
-            processes))))
+          (dolist (root (delete-dups (mapcar #'car root-ids)))
+            (let ((git-dir (expand-file-name ".git" root)))
+              (unless (file-exists-p git-dir)
+                (make-directory git-dir))))
+          (setq sessions
+                (mapcar (lambda (root-id)
+                          (pcase-let ((`(,root ,id) root-id))
+                            (let ((session
+                                   (codex-ide-test--make-session root id)))
+                              (codex-ide-test--store-session session)
+                              session)))
+                        root-ids))
+          (funcall body sessions))
+      (mapc #'codex-ide-test--kill-session sessions))))
 
 (ert-deftest codex-ide-build-command-default ()
   "Default command is just the program with no args."
@@ -357,6 +411,13 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (equal (codex-ide--default-buffer-name "/tmp/foo/")
                  "*codex[foo]*")))
 
+(ert-deftest codex-ide-indexed-buffer-name ()
+  "Additional same-project sessions get indexed buffer names."
+  (should (equal (codex-ide--get-buffer-name "/tmp/foo" 1)
+                 "*codex[foo]*"))
+  (should (equal (codex-ide--get-buffer-name "/tmp/foo" 2)
+                 "*codex[foo]<2>*")))
+
 (ert-deftest codex-ide-display-buffer-function-default ()
   "Codex displays buffers in the selected window by default."
   (should (eq codex-ide-display-buffer-function
@@ -542,59 +603,90 @@ BODY is called with the live processes in the same order as DIRECTORIES."
       (delete-directory root t))))
 
 (ert-deftest codex-ide-session-candidates-empty ()
-  "Empty process table produces no session candidates."
-  (let ((codex-ide--processes (make-hash-table :test 'equal)))
+  "Empty session table produces no session candidates."
+  (let ((codex-ide--sessions (make-hash-table :test 'equal))
+        (codex-ide--active-session-ids (make-hash-table :test 'equal)))
     (should-not (codex-ide--session-candidates))))
 
 (ert-deftest codex-ide-session-candidates-live ()
-  "Live process table entries produce buffer-name candidates."
+  "Live session table entries produce buffer-name candidates."
   (let* ((dir-a (file-name-as-directory
                  (make-temp-file "codex-ide-alpha-" t)))
          (dir-b (file-name-as-directory
                  (make-temp-file "codex-ide-beta-" t))))
     (unwind-protect
-        (codex-ide-test--call-with-process-table
-         (list dir-a dir-b)
-         (lambda (_processes)
-           (let ((buffer-a (get-buffer-create (codex-ide--get-buffer-name dir-a)))
-                 (buffer-b (get-buffer-create (codex-ide--get-buffer-name dir-b))))
-             (unwind-protect
-                 (should (equal (codex-ide--session-candidates)
-                                (list (cons (buffer-name buffer-a) dir-a)
-                                      (cons (buffer-name buffer-b) dir-b))))
-               (kill-buffer buffer-a)
-               (kill-buffer buffer-b)))))
+        (codex-ide-test--call-with-sessions
+         `((,dir-a 1) (,dir-b 1))
+         (lambda (_sessions)
+           (let ((candidates (codex-ide--session-candidates)))
+             (should (equal (mapcar #'car candidates)
+                            (sort (list (codex-ide--get-buffer-name dir-a)
+                                        (codex-ide--get-buffer-name dir-b))
+                                  #'string<)))
+             (should (equal (sort (mapcar (lambda (candidate)
+                                             (plist-get (cdr candidate) :root))
+                                           candidates)
+                                  #'string<)
+                            (sort (list dir-a dir-b) #'string<))))))
       (delete-directory dir-a t)
       (delete-directory dir-b t))))
 
 (ert-deftest codex-ide-session-candidates-filter-dead-and-missing-buffers ()
-  "Only live process entries with live buffers become candidates."
+  "Only live session entries with live buffers become candidates."
   (let ((live-dir (file-name-as-directory
                    (make-temp-file "codex-ide-live-" t)))
         (dead-dir (file-name-as-directory
                    (make-temp-file "codex-ide-dead-" t)))
         (missing-dir (file-name-as-directory
                       (make-temp-file "codex-ide-missing-" t)))
-        (codex-ide--processes (make-hash-table :test 'equal))
+        (codex-ide--sessions (make-hash-table :test 'equal))
+        (codex-ide--active-session-ids (make-hash-table :test 'equal))
         live-process
         dead-process
         missing-process
-        live-buffer)
+        dead-buffer
+        live-buffer
+        missing-buffer)
     (unwind-protect
         (progn
-          (setq live-process (codex-ide-test--make-process "codex-ide-live"))
-          (setq dead-process (codex-ide-test--make-process "codex-ide-dead"))
-          (setq missing-process (codex-ide-test--make-process "codex-ide-missing"))
           (setq live-buffer (get-buffer-create
                              (codex-ide--get-buffer-name live-dir)))
-          (puthash live-dir live-process codex-ide--processes)
-          (puthash dead-dir dead-process codex-ide--processes)
-          (puthash missing-dir missing-process codex-ide--processes)
+          (setq dead-buffer (get-buffer-create
+                             (codex-ide--get-buffer-name dead-dir)))
+          (setq missing-buffer (get-buffer-create
+                                (codex-ide--get-buffer-name missing-dir)))
+          (setq live-process (codex-ide-test--make-buffer-process
+                              live-buffer "codex-ide-live"))
+          (setq dead-process (codex-ide-test--make-buffer-process
+                              dead-buffer "codex-ide-dead"))
+          (setq missing-process (codex-ide-test--make-buffer-process
+                                 missing-buffer "codex-ide-missing"))
+          (set-process-query-on-exit-flag live-process nil)
+          (set-process-query-on-exit-flag dead-process nil)
+          (set-process-query-on-exit-flag missing-process nil)
+          (puthash live-dir
+                   (list (codex-ide--make-session live-dir 1
+                                                   live-buffer live-process))
+                   codex-ide--sessions)
+          (puthash dead-dir
+                   (list (codex-ide--make-session
+                          dead-dir 1 dead-buffer dead-process))
+                   codex-ide--sessions)
+          (puthash missing-dir
+                   (list (codex-ide--make-session missing-dir 1
+                                                   missing-buffer
+                                                   missing-process))
+                   codex-ide--sessions)
           (delete-process dead-process)
+          (kill-buffer missing-buffer)
           (let ((candidates (codex-ide--session-candidates)))
             (should (equal candidates
-                           (list (cons (buffer-name live-buffer) live-dir))))
-            (should-not (gethash dead-dir codex-ide--processes))))
+                           (list (cons (buffer-name live-buffer)
+                                       (codex-ide--make-session
+                                        live-dir 1 live-buffer
+                                        live-process)))))
+            (should-not (gethash dead-dir codex-ide--sessions))
+            (should-not (gethash missing-dir codex-ide--sessions))))
       (when (and live-process (process-live-p live-process))
         (delete-process live-process))
       (when (and dead-process (process-live-p dead-process))
@@ -603,6 +695,10 @@ BODY is called with the live processes in the same order as DIRECTORIES."
         (delete-process missing-process))
       (when (buffer-live-p live-buffer)
         (kill-buffer live-buffer))
+      (when (buffer-live-p dead-buffer)
+        (kill-buffer dead-buffer))
+      (when (buffer-live-p missing-buffer)
+        (kill-buffer missing-buffer))
       (delete-directory live-dir t)
       (delete-directory dead-dir t)
       (delete-directory missing-dir t))))
@@ -611,7 +707,8 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   "Session completion annotations show the abbreviated directory."
   (let* ((directory (file-name-as-directory
                      (make-temp-file "codex-ide-annotation-" t)))
-         (candidates `(("buffer" . ,directory)))
+         (session (codex-ide--make-session directory 1 nil nil))
+         (candidates `(("buffer" . ,session)))
          (annotation (funcall (codex-ide--session-annotation-function
                                candidates)
                               "buffer")))
@@ -620,36 +717,500 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                        (concat "  " (abbreviate-file-name directory))))
       (delete-directory directory t))))
 
-(ert-deftest codex-ide-read-session-directory-uses-annotated-completion ()
+(ert-deftest codex-ide-read-session-uses-annotated-completion ()
   "Session reader uses completing-read with an annotation function."
   (let* ((directory (file-name-as-directory
                      (make-temp-file "codex-ide-read-" t)))
-         (buffer (get-buffer-create (codex-ide--get-buffer-name directory)))
-         (codex-ide--processes (make-hash-table :test 'equal))
-         process)
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         session)
     (unwind-protect
         (progn
-          (setq process (codex-ide-test--make-process "codex-ide-read"))
-          (puthash directory process codex-ide--processes)
+          (setq session (codex-ide-test--make-session directory 1))
+          (codex-ide-test--store-session session)
           (cl-letf (((symbol-function 'completing-read)
                      (lambda (prompt collection _predicate require-match
                                      &rest _args)
                        (should (equal prompt "Codex session: "))
                        (should (equal collection
-                                      (list (cons (buffer-name buffer)
-                                                  directory))))
+                                      (list (cons
+                                             (buffer-name
+                                              (plist-get session :buffer))
+                                             session))))
                        (should require-match)
                        (should (functionp
                                 (plist-get completion-extra-properties
                                            :annotation-function)))
-                       (buffer-name buffer))))
-            (should (equal (codex-ide--read-session-directory)
-                           directory))))
-      (when (and process (process-live-p process))
-        (delete-process process))
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer))
+                       (buffer-name (plist-get session :buffer)))))
+            (should (eq (codex-ide--read-session) session))))
+      (when session
+        (codex-ide-test--kill-session session))
       (delete-directory directory t))))
+
+(ert-deftest codex-ide-create-session-uses-process-buffer ()
+  "Session creation records the actual process buffer."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let* ((requested-buffer (get-buffer-create
+                               (codex-ide--get-buffer-name root)))
+            (actual-buffer (generate-new-buffer
+                            (format "%s<2>"
+                                    (codex-ide--get-buffer-name root))))
+            requested-name
+            process)
+       (unwind-protect
+           (cl-letf (((symbol-function 'codex-ide-term--make-process)
+                      (lambda (buffer-name _program _args _env _working-dir)
+                        (setq requested-name buffer-name)
+                        (setq process
+                              (codex-ide-test--make-buffer-process
+                               actual-buffer
+                               "codex-ide-process-buffer"))
+                        process)))
+             (let ((default-directory root))
+               (let ((session (codex-ide--create-session 1)))
+                 (should (equal requested-name
+                                (codex-ide--get-buffer-name root)))
+                 (should (eq (plist-get session :buffer) actual-buffer))
+                 (should-not
+                  (eq (plist-get session :buffer) requested-buffer)))))
+         (codex-ide-test--kill-buffer-process actual-buffer process)
+         (when (buffer-live-p requested-buffer)
+           (kill-buffer requested-buffer)))))))
+
+(ert-deftest codex-ide-recover-live-session-registers-orphan-buffer ()
+  "Recovery registers an orphan live Codex buffer without renaming it."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-recover-" t)))
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (codex-ide-cli-path "sleep")
+         (buffer-name (format "%s<2>" (codex-ide--get-buffer-name root)))
+         pair buffer process)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (setq pair
+                (codex-ide-test--make-recoverable-buffer
+                 root buffer-name "codex-ide-recover"))
+          (setq buffer (car pair))
+          (setq process (cadr pair))
+          (codex-ide--recover-live-sessions)
+          (codex-ide--recover-live-sessions)
+          (let* ((sessions (codex-ide--project-sessions root))
+                 (session (car sessions)))
+            (should (= (length sessions) 1))
+            (should (eq (plist-get session :buffer) buffer))
+            (should (eq (plist-get session :process) process))
+            (should (= (plist-get session :id) 2))
+            (should (equal (buffer-name buffer) buffer-name))
+            (should-not (process-query-on-exit-flag process))
+            (should (functionp (process-sentinel process)))
+            (with-current-buffer buffer
+              (should (equal codex-ide--session-root root))
+              (should (= codex-ide--session-id 2))
+              (should (eq (local-key-binding (kbd "S-<return>"))
+                          #'codex-ide-insert-newline))
+              (should (eq (local-key-binding (kbd "C-<escape>"))
+                          #'codex-ide-send-escape)))
+            (should (assoc buffer-name
+                           (codex-ide--session-candidates root)))
+            (should (assoc buffer-name
+                           (codex-ide--session-candidates)))))
+      (when pair
+        (codex-ide-test--kill-buffer-process (car pair) (cadr pair)))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-recovery-ignores-noncodex-processes ()
+  "Recovery ignores Codex-named buffers whose command is not Codex."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-ignore-" t)))
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (codex-ide-cli-path "codex")
+         pair)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (setq pair
+                (codex-ide-test--make-recoverable-buffer
+                 root (codex-ide--get-buffer-name root)
+                 "codex-ide-ignore"))
+          (codex-ide--recover-live-sessions)
+          (should-not (codex-ide--project-sessions root)))
+      (when pair
+        (codex-ide-test--kill-buffer-process (car pair) (cadr pair)))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-recovered-session-commands-target-buffer ()
+  "Active-session commands target a recovered Codex buffer."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-recovered-commands-" t)))
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (codex-ide-cli-path "sleep")
+         pair buffer process displayed sent returned escaped)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (setq pair
+                (codex-ide-test--make-recoverable-buffer
+                 root (format "%s<2>" (codex-ide--get-buffer-name root))
+                 "codex-ide-recovered-commands"))
+          (setq buffer (car pair))
+          (setq process (cadr pair))
+          (codex-ide--recover-live-sessions)
+          (cl-letf (((symbol-function 'codex-ide--display-buffer)
+                     (lambda (display-buffer)
+                       (setq displayed display-buffer)))
+                    ((symbol-function 'codex-ide-context-record-source-buffer)
+                     (lambda (&rest _args) nil))
+                    ((symbol-function 'codex-ide-term--send-string)
+                     (lambda (string)
+                       (setq sent
+                             (append sent
+                                     (list (list string
+                                                 (current-buffer)))))))
+                    ((symbol-function 'codex-ide-term--send-return)
+                     (lambda ()
+                       (setq returned
+                             (append returned (list (current-buffer))))))
+                    ((symbol-function 'codex-ide-term--send-escape)
+                     (lambda ()
+                       (setq escaped (current-buffer))))
+                    ((symbol-function 'sit-for)
+                     (lambda (&rest _args) nil))
+                    ((symbol-function 'codex-ide-debug)
+                     (lambda (&rest _args) nil)))
+            (let ((default-directory root))
+              (codex-ide-switch-to-buffer)
+              (codex-ide-send-prompt "hello")
+              (codex-ide-send-escape)
+              (codex-ide-insert-newline)))
+          (should (eq displayed buffer))
+          (should (equal sent (list (list "hello" buffer)
+                                    (list "\\" buffer))))
+          (should (equal returned (list buffer buffer)))
+          (should (eq escaped buffer)))
+      (codex-ide-test--kill-buffer-process buffer process)
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-stop-targets-recovered-session ()
+  "`codex-ide-stop' kills the active recovered session only."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-recovered-stop-" t)))
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (codex-ide-cli-path "sleep")
+         first second)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (setq first
+                (codex-ide-test--make-recoverable-buffer
+                 root (codex-ide--get-buffer-name root)
+                 "codex-ide-stop-1"))
+          (setq second
+                (codex-ide-test--make-recoverable-buffer
+                 root (format "%s<2>" (codex-ide--get-buffer-name root))
+                 "codex-ide-stop-2"))
+          (codex-ide--recover-live-sessions)
+          (codex-ide--activate-session
+           (codex-ide--session-by-id root 2))
+          (cl-letf (((symbol-function 'codex-ide-log)
+                     (lambda (&rest _args) nil)))
+            (let ((default-directory root))
+              (codex-ide-stop)))
+          (should (buffer-live-p (car first)))
+          (should-not (buffer-live-p (car second)))
+          (should (equal (mapcar (lambda (session)
+                                   (plist-get session :id))
+                                 (codex-ide--project-sessions root))
+                         '(1))))
+      (when first
+        (codex-ide-test--kill-buffer-process (car first) (cadr first)))
+      (when second
+        (codex-ide-test--kill-buffer-process (car second) (cadr second)))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-cleanup-recovered-session-preserves-siblings ()
+  "Cleanup removes one recovered session and keeps live siblings."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-recovered-cleanup-" t)))
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (codex-ide-cli-path "sleep")
+         first second)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (setq first
+                (codex-ide-test--make-recoverable-buffer
+                 root (codex-ide--get-buffer-name root)
+                 "codex-ide-cleanup-1"))
+          (setq second
+                (codex-ide-test--make-recoverable-buffer
+                 root (format "%s<2>" (codex-ide--get-buffer-name root))
+                 "codex-ide-cleanup-2"))
+          (codex-ide--recover-live-sessions)
+          (codex-ide--cleanup-on-exit root 2)
+          (should (buffer-live-p (car first)))
+          (should-not (buffer-live-p (car second)))
+          (should (equal (mapcar (lambda (session)
+                                   (plist-get session :id))
+                                 (codex-ide--project-sessions root))
+                         '(1))))
+      (when first
+        (codex-ide-test--kill-buffer-process (car first) (cadr first)))
+      (when second
+        (codex-ide-test--kill-buffer-process (car second) (cadr second)))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-next-session-id-avoids-recovered-ids ()
+  "New live session ids skip ids assigned during recovery."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-recovered-next-" t)))
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (codex-ide-cli-path "sleep")
+         first second)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (setq first
+                (codex-ide-test--make-recoverable-buffer
+                 root (codex-ide--get-buffer-name root)
+                 "codex-ide-next-1"))
+          (setq second
+                (codex-ide-test--make-recoverable-buffer
+                 root (format "%s<2>" (codex-ide--get-buffer-name root))
+                 "codex-ide-next-2"))
+          (codex-ide--recover-live-sessions)
+          (should (equal (sort (mapcar (lambda (session)
+                                          (plist-get session :id))
+                                        (codex-ide--project-sessions root))
+                               #'<)
+                         '(1 2)))
+          (should (= (codex-ide--next-session-id root) 3)))
+      (when first
+        (codex-ide-test--kill-buffer-process (car first) (cadr first)))
+      (when second
+        (codex-ide-test--kill-buffer-process (car second) (cadr second)))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-prefix-and-new-session-create-indexed-sessions ()
+  "`C-u M-x codex-ide' and `codex-ide-new-session' create siblings."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let ((codex-ide--sessions (make-hash-table :test 'equal))
+           (codex-ide--active-session-ids (make-hash-table :test 'equal))
+           (codex-ide-context-auto-start nil)
+           created)
+       (unwind-protect
+           (cl-letf (((symbol-function 'codex-ide--ensure-cli)
+                      (lambda () t))
+                     ((symbol-function 'codex-ide--create-session)
+                      (lambda (emacs-session-id &rest _args)
+                        (let ((session
+                               (codex-ide-test--make-session
+                                root emacs-session-id)))
+                          (push session created)
+                          session)))
+                     ((symbol-function 'codex-ide--display-buffer)
+                      (lambda (_buffer) nil))
+                     ((symbol-function 'codex-ide-context-record-source-buffer)
+                      (lambda (&rest _args) nil))
+                     ((symbol-function 'codex-ide-log)
+                      (lambda (&rest _args) nil))
+                     ((symbol-function 'codex-ide-debug)
+                      (lambda (&rest _args) nil)))
+             (let ((default-directory root))
+               (codex-ide)
+               (codex-ide '(4))
+               (codex-ide-new-session))
+             (should (equal (sort (mapcar (lambda (session)
+                                             (buffer-name
+                                              (plist-get session :buffer)))
+                                           (codex-ide--project-sessions root))
+                                  #'string<)
+                            (sort (list (codex-ide--get-buffer-name root 1)
+                                        (codex-ide--get-buffer-name root 2)
+                                        (codex-ide--get-buffer-name root 3))
+                                  #'string<)))
+             (should (= (gethash root codex-ide--active-session-ids) 3)))
+         (mapc #'codex-ide-test--kill-session created))))))
+
+(ert-deftest codex-ide-without-prefix-toggles-active-session ()
+  "`codex-ide' without prefix toggles the active project session."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-toggle-active-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((active (cl-find 2 sessions
+                                  :key (lambda (session)
+                                         (plist-get session :id))))
+                 created toggled)
+             (cl-letf (((symbol-function 'codex-ide--ensure-cli)
+                        (lambda () t))
+                       ((symbol-function 'codex-ide--create-session)
+                        (lambda (&rest _args)
+                          (setq created t)))
+                       ((symbol-function 'codex-ide--toggle-existing-window)
+                        (lambda (buffer)
+                          (setq toggled buffer)))
+                       ((symbol-function 'codex-ide-context-record-source-buffer)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root))
+                 (codex-ide)))
+             (should-not created)
+             (should (eq toggled (plist-get active :buffer))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-list-project-sessions-filters-current-root ()
+  "Project session listing offers only sessions for the current root."
+  (let ((root-a (file-name-as-directory
+                 (make-temp-file "codex-ide-project-a-" t)))
+        (root-b (file-name-as-directory
+                 (make-temp-file "codex-ide-project-b-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root-a 1) (,root-a 2) (,root-b 1))
+         (lambda (_sessions)
+           (let (seen)
+             (cl-letf (((symbol-function 'completing-read)
+                        (lambda (_prompt collection _predicate _require-match
+                                         &rest _args)
+                          (setq seen collection)
+                          (car (cl-find 2 collection
+                                        :key (lambda (candidate)
+                                               (plist-get (cdr candidate)
+                                                          :id))
+                                        :test #'=))))
+                       ((symbol-function 'codex-ide--display-buffer)
+                        (lambda (_buffer) nil))
+                       ((symbol-function 'codex-ide-context-record-source-buffer)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root-a))
+                 (codex-ide-list-project-sessions)))
+             (should (equal (delete-dups
+                             (mapcar (lambda (candidate)
+                                       (plist-get (cdr candidate) :root))
+                                     seen))
+                            (list root-a)))
+             (should (= (gethash root-a codex-ide--active-session-ids) 2)))))
+      (delete-directory root-a t)
+      (delete-directory root-b t))))
+
+(ert-deftest codex-ide-list-sessions-offers-all-roots ()
+  "All-session listing offers live sessions from every root."
+  (let ((root-a (file-name-as-directory
+                 (make-temp-file "codex-ide-all-a-" t)))
+        (root-b (file-name-as-directory
+                 (make-temp-file "codex-ide-all-b-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root-a 1) (,root-b 1))
+         (lambda (_sessions)
+           (let (seen)
+             (cl-letf (((symbol-function 'completing-read)
+                        (lambda (_prompt collection _predicate _require-match
+                                         &rest _args)
+                          (setq seen collection)
+                          (car (cl-find root-b collection
+                                        :key (lambda (candidate)
+                                               (plist-get (cdr candidate)
+                                                          :root))
+                                        :test #'equal))))
+                       ((symbol-function 'codex-ide--display-buffer)
+                        (lambda (_buffer) nil))
+                       ((symbol-function 'codex-ide-context-record-source-buffer)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root-a))
+                 (codex-ide-list-sessions)))
+             (should (equal (sort (mapcar (lambda (candidate)
+                                             (plist-get (cdr candidate)
+                                                        :root))
+                                           seen)
+                                  #'string<)
+                            (sort (list root-a root-b) #'string<)))
+             (should (= (gethash root-b codex-ide--active-session-ids) 1)))))
+      (delete-directory root-a t)
+      (delete-directory root-b t))))
+
+(ert-deftest codex-ide-send-prompt-targets-active-session ()
+  "Prompt sending writes to the active project session only."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-prompt-active-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((active (cl-find 2 sessions
+                                  :key (lambda (session)
+                                         (plist-get session :id))))
+                 sent returned)
+             (cl-letf (((symbol-function 'codex-ide-context-record-source-buffer)
+                        (lambda (&rest _args) nil))
+                       ((symbol-function 'codex-ide-term--send-string)
+                        (lambda (string)
+                          (setq sent (list string (current-buffer)))))
+                       ((symbol-function 'codex-ide-term--send-return)
+                        (lambda ()
+                          (setq returned (current-buffer))))
+                       ((symbol-function 'sit-for)
+                        (lambda (&rest _args) nil))
+                       ((symbol-function 'codex-ide-debug)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root))
+                 (codex-ide-send-prompt "active")))
+             (should (equal sent (list "active"
+                                       (plist-get active :buffer))))
+             (should (eq returned (plist-get active :buffer))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-stop-targets-active-session ()
+  "`codex-ide-stop' kills only the active project session buffer."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-stop-active-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((inactive (cl-find 1 sessions
+                                    :key (lambda (session)
+                                           (plist-get session :id))))
+                 (active (cl-find 2 sessions
+                                  :key (lambda (session)
+                                         (plist-get session :id)))))
+             (cl-letf (((symbol-function 'codex-ide-log)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root))
+                 (codex-ide-stop)))
+             (should (buffer-live-p (plist-get inactive :buffer)))
+             (should-not (buffer-live-p (plist-get active :buffer))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-cleanup-removes-only-dead-session ()
+  "Cleanup removes one dead session and preserves live siblings."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-cleanup-active-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((kept (cl-find 1 sessions
+                                :key (lambda (session)
+                                       (plist-get session :id)))))
+             (codex-ide--cleanup-on-exit root 2)
+             (should (equal (mapcar (lambda (session)
+                                      (plist-get session :id))
+                                    (codex-ide--project-sessions root))
+                            '(1)))
+             (should (buffer-live-p (plist-get kept :buffer)))
+             (should (= (gethash root codex-ide--active-session-ids) 1)))))
+      (delete-directory root t))))
 
 ;;; Native IDE context
 
@@ -657,9 +1218,9 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   "New sessions ensure the IDE context provider when auto-start is enabled."
   (codex-ide-test--call-with-project
    (lambda (root)
-     (let* ((codex-ide--processes (make-hash-table :test 'equal))
+     (let* ((codex-ide--sessions (make-hash-table :test 'equal))
+            (codex-ide--active-session-ids (make-hash-table :test 'equal))
             (codex-ide-context-auto-start t)
-            (codex-ide-context-auto-enable nil)
             (buffer (get-buffer-create (codex-ide--get-buffer-name root)))
             (process nil)
             (ensured 0))
@@ -675,8 +1236,9 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                           (setq ensured (1+ ensured))
                           'server))
                        ((symbol-function 'codex-ide--create-session)
-                        (lambda (&rest _args)
-                          (cons buffer process)))
+                        (lambda (emacs-session-id &rest _args)
+                          (codex-ide--make-session
+                           root emacs-session-id buffer process)))
                        ((symbol-function 'codex-ide--display-buffer)
                         (lambda (_buffer) nil))
                        ((symbol-function 'codex-ide-context-record-source-buffer)
@@ -693,17 +1255,18 @@ BODY is called with the live processes in the same order as DIRECTORIES."
          (when (buffer-live-p buffer)
            (kill-buffer buffer)))))))
 
-(ert-deftest codex-ide-start-session-schedules-ide-on-only-for-new-session ()
-  "`/ide on' is scheduled for new sessions, not focused existing sessions."
+(ert-deftest codex-ide-start-session-does-not-send-ide-command ()
+  "New sessions do not schedule `/ide on'; users enable it in Codex."
   (codex-ide-test--call-with-project
    (lambda (root)
-     (let* ((codex-ide--processes (make-hash-table :test 'equal))
+     (let* ((codex-ide--sessions (make-hash-table :test 'equal))
+            (codex-ide--active-session-ids (make-hash-table :test 'equal))
             (codex-ide-context-auto-start nil)
-            (codex-ide-context-auto-enable t)
-            (codex-ide-context-enable-delay 0.25)
             (buffer (get-buffer-create (codex-ide--get-buffer-name root)))
             (process nil)
-            (scheduled nil))
+            (scheduled nil)
+            (sent nil)
+            (created 0))
        (unwind-protect
            (progn
              (setq process
@@ -712,8 +1275,10 @@ BODY is called with the live processes in the same order as DIRECTORIES."
              (cl-letf (((symbol-function 'codex-ide--ensure-cli)
                         (lambda () t))
                        ((symbol-function 'codex-ide--create-session)
-                        (lambda (&rest _args)
-                          (cons buffer process)))
+                        (lambda (emacs-session-id &rest _args)
+                          (setq created (1+ created))
+                          (codex-ide--make-session
+                           root emacs-session-id buffer process)))
                        ((symbol-function 'codex-ide--display-buffer)
                         (lambda (_buffer) nil))
                        ((symbol-function 'codex-ide--toggle-existing-window)
@@ -721,9 +1286,15 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                        ((symbol-function 'codex-ide-context-record-source-buffer)
                         (lambda (&rest _args) nil))
                        ((symbol-function 'run-at-time)
-                        (lambda (time repeat function &rest args)
-                          (push (list time repeat function args) scheduled)
+                        (lambda (&rest args)
+                          (push args scheduled)
                           'timer))
+                       ((symbol-function 'codex-ide-term--send-string)
+                        (lambda (string)
+                          (push string sent)))
+                       ((symbol-function 'codex-ide-term--send-return)
+                        (lambda ()
+                          (push :return sent)))
                        ((symbol-function 'codex-ide-log)
                         (lambda (&rest _args) nil))
                        ((symbol-function 'codex-ide-debug)
@@ -731,72 +1302,36 @@ BODY is called with the live processes in the same order as DIRECTORIES."
                (let ((default-directory root))
                  (codex-ide--start-session)
                  (codex-ide--start-session)))
-             (should (= (length scheduled) 1))
-             (pcase-let ((`(,time ,repeat ,function ,args) (car scheduled)))
-               (should (= time 0.25))
-               (should (null repeat))
-               (should (eq function #'codex-ide--send-ide-on))
-               (should (equal args (list buffer process)))))
+             (should-not scheduled)
+             (should-not sent)
+             (should (= created 1)))
          (when (and process (process-live-p process))
            (delete-process process))
          (when (buffer-live-p buffer)
            (kill-buffer buffer)))))))
-
-(ert-deftest codex-ide-send-ide-on-targets-intended-live-buffer ()
-  "The delayed sender writes to the captured Codex buffer."
-  (codex-ide-test--call-with-buffer-process
-   (lambda (buffer process)
-     (let ((other (get-buffer-create " *codex-ide-other-context-test*"))
-           sent returned)
-       (unwind-protect
-           (with-current-buffer other
-             (cl-letf (((symbol-function 'codex-ide-term--send-string)
-                        (lambda (string)
-                          (setq sent (list string (current-buffer)))))
-                       ((symbol-function 'codex-ide-term--send-return)
-                        (lambda ()
-                          (setq returned (current-buffer))))
-                       ((symbol-function 'sit-for)
-                        (lambda (&rest _args) nil)))
-               (codex-ide--send-ide-on buffer process)))
-         (when (buffer-live-p other)
-           (kill-buffer other)))
-       (should (equal sent (list "/ide on" buffer)))
-       (should (eq returned buffer))))))
-
-(ert-deftest codex-ide-send-ide-on-skips-dead-buffer ()
-  "The delayed sender is a no-op when the target buffer was killed."
-  (let* ((buffer (generate-new-buffer " *codex-ide-dead-context-test*"))
-         (process (codex-ide-test--make-buffer-process
-                   buffer "codex-ide-context-dead"))
-         sent)
-    (set-process-query-on-exit-flag process nil)
-    (let ((kill-buffer-query-functions nil))
-      (kill-buffer buffer))
-    (unwind-protect
-        (cl-letf (((symbol-function 'codex-ide-term--send-string)
-                   (lambda (&rest _args)
-                     (setq sent t)))
-                  ((symbol-function 'codex-ide-term--send-return)
-                   (lambda ()
-                     (setq sent t))))
-          (codex-ide--send-ide-on buffer process)
-          (should-not sent))
-      (when (process-live-p process)
-        (delete-process process)))))
 
 (ert-deftest codex-ide-send-prompt-records-caller-source-buffer ()
   "`codex-ide-send-prompt' records the source before terminal input."
   (codex-ide-test--call-with-project
    (lambda (root)
      (let* ((source-file (expand-file-name "source.el" root))
+            (codex-ide--sessions (make-hash-table :test 'equal))
+            (codex-ide--active-session-ids (make-hash-table :test 'equal))
             (source-buffer nil)
             (codex-buffer (get-buffer-create
                            (codex-ide--get-buffer-name root)))
+            (process nil)
+            (session nil)
             recorded sent returned)
        (write-region "(message \"hi\")\n" nil source-file)
        (unwind-protect
            (progn
+             (setq process
+                   (codex-ide-test--make-buffer-process
+                    codex-buffer "codex-ide-prompt"))
+             (setq session (codex-ide--make-session
+                            root 1 codex-buffer process))
+             (codex-ide-test--store-session session)
              (setq source-buffer (find-file-noselect source-file))
              (with-current-buffer source-buffer
                (let ((default-directory root))
@@ -819,6 +1354,8 @@ BODY is called with the live processes in the same order as DIRECTORIES."
              (should (eq returned codex-buffer)))
          (when (buffer-live-p source-buffer)
            (kill-buffer source-buffer))
+         (when (and process (process-live-p process))
+           (delete-process process))
          (when (buffer-live-p codex-buffer)
            (kill-buffer codex-buffer))
          (delete-file source-file))))))
@@ -839,11 +1376,25 @@ BODY is called with the live processes in the same order as DIRECTORIES."
   (should (eq (keymap-lookup codex-ide-map "s") #'codex-ide))
   (should (eq (keymap-lookup codex-ide-map "q") #'codex-ide-stop))
   (should (eq (keymap-lookup codex-ide-map "b") #'codex-ide-switch-to-buffer))
-  (should (eq (keymap-lookup codex-ide-map "l") #'codex-ide-list-sessions))
+  (should (eq (keymap-lookup codex-ide-map "l")
+              #'codex-ide-list-project-sessions))
+  (should (eq (keymap-lookup codex-ide-map "L") #'codex-ide-list-sessions))
   (should (eq (keymap-lookup codex-ide-map "p") #'codex-ide-send-prompt))
-  (should (eq (keymap-lookup codex-ide-map "i") #'codex-ide-enable-context))
-  (dolist (key '("s" "r" "R" "q" "b" "l" "w" "p" "i" "e" "n" "C" "d"))
+  (dolist (key '("s" "r" "R" "q" "b" "l" "L" "w" "p" "e" "n" "C" "d"))
     (should (member key (codex-ide-test--popup-keys codex-ide-map)))))
+
+(ert-deftest codex-ide-menu-start-entry-has-prefix-hint ()
+  "Start menu entry advertises the new-session prefix action."
+  (let* ((rows (keymap-popup--meta codex-ide-map 'descriptions))
+         (entries (mapcan (lambda (row)
+                            (mapcan (lambda (group)
+                                      (plist-get group :entries))
+                                    row))
+                          rows))
+         (entry (cl-find "s" entries
+                         :key (lambda (e) (plist-get e :key))
+                         :test #'equal)))
+    (should (equal (plist-get entry :c-u) "new session"))))
 
 (ert-deftest codex-ide-menu-config-bindings ()
   "Config menu binds set/toggle suffixes and the save command."

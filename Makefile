@@ -126,15 +126,8 @@ do-load: clean
 	      (when (and (string-prefix-p \"codex-ide-\" (symbol-name major-mode)) \
 	                 map (boundp map) (keymapp (symbol-value map))) \
 	        (use-local-map (symbol-value map))))))" > /dev/null
-	@emacsclient --eval "(when (and (boundp 'codex-ide--processes) \
-	                                (fboundp 'codex-ide--setup-terminal-keybindings)) \
-	  (maphash (lambda (directory process) \
-	             (when (process-live-p process) \
-	               (let ((buffer (get-buffer (codex-ide--get-buffer-name directory)))) \
-	                 (when buffer \
-	                   (with-current-buffer buffer \
-	                     (codex-ide--setup-terminal-keybindings)))))) \
-	           codex-ide--processes))" > /dev/null
+	@emacsclient --eval "(when (fboundp 'codex-ide--recover-live-sessions) \
+	  (codex-ide--recover-live-sessions))" > /dev/null
 	@printf "\033[32mLoaded all modules into Emacs\033[0m\n"
 
 clean:

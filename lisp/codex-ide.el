@@ -26,17 +26,20 @@
 ;;; Commentary:
 
 ;; Run the Codex CLI inside Emacs through vterm.  This is a terminal-first
-;; integration: one Codex session per project root, displayed through a
-;; configurable buffer display function, with prompt sending, toggling, and
-;; resume.
+;; integration: live Codex sessions are grouped by project root and displayed
+;; through a configurable buffer display function, with prompt sending,
+;; toggling, and resume.
 ;;
 ;; Usage:
-;;   M-x codex-ide              Start Codex for the current project
+;;   M-x codex-ide              Start or toggle Codex for the current project
+;;   C-u M-x codex-ide          Start another Codex session
 ;;   M-x codex-ide-resume-last  Resume the most recent Codex session
+;;   M-x codex-ide-new-session  Start another Codex session
 ;;   M-x codex-ide-toggle       Show/hide the Codex window
 ;;   M-x codex-ide-send-prompt  Send a prompt from the minibuffer
 ;;   M-x codex-ide-stop         Stop the session for the current project
-;;   M-x codex-ide-list-sessions  Switch to an active project session
+;;   M-x codex-ide-list-project-sessions  Switch project Codex sessions
+;;   M-x codex-ide-list-sessions  Switch to any live Codex session
 ;;   M-x codex-ide-menu         Popup menu of all commands
 
 ;;; Code:
@@ -111,14 +114,23 @@ Escape hatch for flags not yet modeled by a defcustom."
 (defvar codex-ide--cli-available nil
   "Whether the Codex CLI was detected.")
 
-(defvar codex-ide--processes (make-hash-table :test 'equal)
-  "Hash table mapping project roots to their Codex processes.")
+(defvar codex-ide--sessions (make-hash-table :test 'equal)
+  "Hash table mapping project roots to live Codex session records.")
+
+(defvar codex-ide--active-session-ids (make-hash-table :test 'equal)
+  "Hash table mapping project roots to active Codex session ids.")
 
 (defvar codex-ide--last-accessed-buffer nil
   "The most recently displayed Codex buffer.")
 
 (defvar codex-ide--cleanup-in-progress nil
   "Reentrancy guard for `codex-ide--cleanup-on-exit'.")
+
+(defvar-local codex-ide--session-root nil
+  "Project root for the Codex session in the current buffer.")
+
+(defvar-local codex-ide--session-id nil
+  "Numeric Codex session id for the current buffer.")
 
 ;;; Helpers (pure / mostly pure)
 
@@ -135,15 +147,130 @@ Prefers the current project root; falls back to `default-directory'."
   (format "*codex[%s]*"
           (file-name-nondirectory (directory-file-name directory))))
 
-(defun codex-ide--get-buffer-name (&optional directory)
-  "Return the buffer name for DIRECTORY, defaulting to the current project."
-  (funcall codex-ide-buffer-name-function
-           (or directory (codex-ide--get-working-directory))))
+(defun codex-ide--indexed-buffer-name (base-name session-id)
+  "Return BASE-NAME indexed for SESSION-ID."
+  (if (= session-id 1)
+      base-name
+    (let ((suffix (format "<%d>" session-id)))
+      (if (string-suffix-p "*" base-name)
+          (concat (substring base-name 0 -1) suffix "*")
+        (concat base-name suffix)))))
 
-(defun codex-ide--get-process (&optional directory)
-  "Return the Codex process for DIRECTORY, defaulting to current project."
-  (gethash (or directory (codex-ide--get-working-directory))
-           codex-ide--processes))
+(defun codex-ide--get-buffer-name (&optional directory session-id)
+  "Return the buffer name for DIRECTORY and SESSION-ID.
+DIRECTORY defaults to the current project and SESSION-ID defaults to 1."
+  (codex-ide--indexed-buffer-name
+   (funcall codex-ide-buffer-name-function
+            (or directory (codex-ide--get-working-directory)))
+   (or session-id 1)))
+
+(defun codex-ide--make-session (root id buffer process)
+  "Return a Codex session record for ROOT, ID, BUFFER, and PROCESS."
+  (list :root root :id id :buffer buffer :process process))
+
+(defun codex-ide--raw-sessions ()
+  "Return all session records without refreshing the table."
+  (let (sessions)
+    (maphash (lambda (_root root-sessions)
+               (setq sessions (append root-sessions sessions)))
+             codex-ide--sessions)
+    sessions))
+
+(defun codex-ide--session-live-p (session)
+  "Return non-nil when SESSION owns a live terminal process."
+  (let ((buffer (plist-get session :buffer))
+        (process (plist-get session :process)))
+    (and (buffer-live-p buffer)
+         (process-live-p process)
+         (eq (get-buffer-process buffer) process))))
+
+(defun codex-ide--session-by-id (root session-id)
+  "Return the session for ROOT and SESSION-ID."
+  (cl-find session-id (gethash root codex-ide--sessions)
+           :key (lambda (session) (plist-get session :id))
+           :test #'=))
+
+(defun codex-ide--session-by-buffer (buffer)
+  "Return the registered session for BUFFER, if any."
+  (cl-find buffer (codex-ide--raw-sessions)
+           :key (lambda (session) (plist-get session :buffer))
+           :test #'eq))
+
+(defun codex-ide--project-sessions (root)
+  "Return live Codex sessions for ROOT."
+  (cl-remove-if-not #'codex-ide--session-live-p
+                    (gethash root codex-ide--sessions)))
+
+(defun codex-ide--sync-active-session (root sessions)
+  "Keep ROOT's active session id valid for SESSIONS."
+  (let ((active-id (gethash root codex-ide--active-session-ids)))
+    (if-let* ((active (and active-id
+                           (cl-find active-id sessions
+                                    :key (lambda (session)
+                                           (plist-get session :id))
+                                    :test #'=))))
+        (puthash root (plist-get active :id) codex-ide--active-session-ids)
+      (if-let* ((fallback (car sessions)))
+          (puthash root (plist-get fallback :id) codex-ide--active-session-ids)
+        (remhash root codex-ide--active-session-ids)))))
+
+(defun codex-ide--activate-session (session)
+  "Mark SESSION as active for its project root."
+  (puthash (plist-get session :root)
+           (plist-get session :id)
+           codex-ide--active-session-ids)
+  session)
+
+(defun codex-ide--store-session (session)
+  "Store SESSION in the live session table."
+  (let ((root (plist-get session :root)))
+    (puthash root (cons session (gethash root codex-ide--sessions))
+             codex-ide--sessions)))
+
+(defun codex-ide--remember-session (session)
+  "Store SESSION and mark it active."
+  (codex-ide--store-session session)
+  (codex-ide--activate-session session))
+
+(defun codex-ide--remove-session (root session-id)
+  "Remove SESSION-ID from ROOT's live session table."
+  (let* ((remaining
+          (cl-remove-if (lambda (session)
+                          (= (plist-get session :id) session-id))
+                        (gethash root codex-ide--sessions))))
+    (if remaining
+        (puthash root remaining codex-ide--sessions)
+      (remhash root codex-ide--sessions))
+    (codex-ide--sync-active-session root remaining)))
+
+(defun codex-ide--next-session-id (root)
+  "Return the lowest unused live session id for ROOT."
+  (let ((ids (mapcar (lambda (session) (plist-get session :id))
+                     (gethash root codex-ide--sessions))))
+    (cl-loop for id from 1
+             unless (memq id ids)
+             return id)))
+
+(defun codex-ide--buffer-session (&optional buffer)
+  "Return the Codex session owned by BUFFER, if any."
+  (with-current-buffer (or buffer (current-buffer))
+    (and-let* ((root codex-ide--session-root)
+               (session-id codex-ide--session-id)
+               (session (codex-ide--session-by-id root session-id)))
+      (and (codex-ide--session-live-p session) session))))
+
+(defun codex-ide--active-session (&optional directory)
+  "Return the active live Codex session for DIRECTORY."
+  (codex-ide--recover-live-sessions)
+  (let ((root (or directory (codex-ide--get-working-directory))))
+    (or (and-let* ((session (codex-ide--buffer-session)))
+          (and (equal root (plist-get session :root))
+               (codex-ide--activate-session session)))
+        (and-let* ((session-id (gethash root codex-ide--active-session-ids))
+                   (session (codex-ide--session-by-id root session-id)))
+          (and (codex-ide--session-live-p session) session))
+        (and-let* ((session (car (codex-ide--project-sessions root))))
+          (codex-ide--activate-session session)))))
 
 (defun codex-ide--build-command (&optional resume-last session-id)
   "Return (PROGRAM . ARGS) for invoking the Codex CLI.
@@ -198,12 +325,120 @@ session-local overrides needed by enabled integration helpers."
 
 ;;; Process lifecycle
 
-(defun codex-ide--cleanup-dead-processes ()
-  "Remove entries for dead processes from the process table."
-  (maphash (lambda (directory process)
-             (unless (process-live-p process)
-               (remhash directory codex-ide--processes)))
-           codex-ide--processes))
+(defun codex-ide--cleanup-dead-sessions ()
+  "Remove entries for dead sessions from the session table."
+  (maphash (lambda (root sessions)
+             (let ((live-sessions
+                    (cl-remove-if-not #'codex-ide--session-live-p sessions)))
+               (if live-sessions
+                   (puthash root live-sessions codex-ide--sessions)
+                 (remhash root codex-ide--sessions))
+               (codex-ide--sync-active-session root live-sessions)))
+           codex-ide--sessions))
+
+(defun codex-ide--codex-buffer-name-p (name)
+  "Return non-nil when NAME has the Codex terminal buffer shape."
+  (or (string-match-p "\\`\\*codex\\[[^]\n]+\\]\\*\\(?:<[0-9]+>\\)?\\'"
+                      name)
+      (string-match-p "\\`\\*codex\\[[^]\n]+\\]<[0-9]+>\\*\\'"
+                      name)))
+
+(defun codex-ide--buffer-name-session-id (name)
+  "Return the session id parsed from NAME, or nil."
+  (cond
+   ((string-match "\\`\\*codex\\[[^]\n]+\\]<\\([0-9]+\\)>\\*\\'" name)
+    (string-to-number (match-string 1 name)))
+   ((string-match "\\`\\*codex\\[[^]\n]+\\]\\*<\\([0-9]+\\)>\\'" name)
+    (string-to-number (match-string 1 name)))))
+
+(defun codex-ide--available-session-id-p (root session-id)
+  "Return non-nil when SESSION-ID can be used for ROOT."
+  (and (integerp session-id)
+       (> session-id 0)
+       (not (codex-ide--session-by-id root session-id))))
+
+(defun codex-ide--process-command-fragments (process)
+  "Return strings that may describe PROCESS's command."
+  (let ((command (ignore-errors (process-command process)))
+        (recorded (process-get process 'codex-ide--command))
+        (buffer (process-buffer process)))
+    (append (cl-remove-if-not #'stringp command)
+            (cl-remove-if-not #'stringp recorded)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer
+                (and (boundp 'vterm-shell)
+                     (stringp vterm-shell)
+                     (list vterm-shell)))))))
+
+(defun codex-ide--command-fragment-invokes-p (fragment program)
+  "Return non-nil when FRAGMENT invokes PROGRAM."
+  (let* ((name (file-name-nondirectory program))
+         (regexp (format "\\(?:\\`\\|[[:space:]'\"()]\\|/\\)%s\\(?:\\'\\|[[:space:]'\"()]\\)"
+                         (regexp-quote name))))
+    (or (equal (file-name-nondirectory fragment) name)
+        (string-match-p regexp fragment))))
+
+(defun codex-ide--command-invokes-codex-p (fragments)
+  "Return non-nil when any string in FRAGMENTS invokes Codex."
+  (let ((programs (delete-dups (list codex-ide-cli-path "codex"))))
+    (cl-some (lambda (fragment)
+               (cl-some (lambda (program)
+                          (codex-ide--command-fragment-invokes-p
+                           fragment program))
+                        programs))
+             fragments)))
+
+(defun codex-ide--codex-process-p (process)
+  "Return non-nil when PROCESS appears to be a Codex terminal process."
+  (and (process-live-p process)
+       (codex-ide--command-invokes-codex-p
+        (codex-ide--process-command-fragments process))))
+
+(defun codex-ide--recoverable-buffer-p (buffer)
+  "Return non-nil when BUFFER is a live Codex terminal buffer."
+  (and (buffer-live-p buffer)
+       (codex-ide--codex-buffer-name-p (buffer-name buffer))
+       (and-let* ((process (get-buffer-process buffer)))
+         (codex-ide--codex-process-p process))))
+
+(defun codex-ide--recovered-session-id (root buffer)
+  "Return the session id to use when recovering BUFFER for ROOT."
+  (or (cl-find-if
+       (lambda (session-id)
+         (codex-ide--available-session-id-p root session-id))
+       (list (with-current-buffer buffer codex-ide--session-id)
+             (codex-ide--buffer-name-session-id (buffer-name buffer))))
+      (codex-ide--next-session-id root)))
+
+(defun codex-ide--active-session-live-p (root)
+  "Return non-nil when ROOT has a live active session."
+  (and-let* ((session-id (gethash root codex-ide--active-session-ids))
+             (session (codex-ide--session-by-id root session-id)))
+    (codex-ide--session-live-p session)))
+
+(defun codex-ide--recover-live-session (buffer)
+  "Register BUFFER as a live Codex session when needed."
+  (or (and-let* ((session (codex-ide--session-by-buffer buffer)))
+        (codex-ide--setup-session session))
+      (let* ((process (get-buffer-process buffer))
+             (root (with-current-buffer buffer
+                     (codex-ide--get-working-directory)))
+             (session-id (codex-ide--recovered-session-id root buffer))
+             (session (codex-ide--make-session
+                       root session-id buffer process)))
+        (codex-ide--store-session session)
+        (codex-ide--setup-session session)
+        (unless (codex-ide--active-session-live-p root)
+          (codex-ide--activate-session session))
+        session)))
+
+(defun codex-ide--recover-live-sessions ()
+  "Register live Codex terminal buffers missing session records."
+  (codex-ide--cleanup-dead-sessions)
+  (mapc #'codex-ide--recover-live-session
+        (cl-remove-if-not #'codex-ide--recoverable-buffer-p
+                          (buffer-list)))
+  (codex-ide--cleanup-dead-sessions))
 
 ;;; IDE context
 
@@ -218,56 +453,40 @@ session-local overrides needed by enabled integration helpers."
   (when codex-ide-context-auto-start
     (codex-ide-context-ensure-server)))
 
-(defun codex-ide--terminal-session-live-p (buffer process)
-  "Return non-nil when BUFFER still owns live PROCESS."
-  (and (buffer-live-p buffer)
-       (process-live-p process)
-       (eq (get-buffer-process buffer) process)))
-
-(defun codex-ide--send-terminal-command (buffer process command)
-  "Send COMMAND to BUFFER when it still owns live PROCESS."
-  (when (codex-ide--terminal-session-live-p buffer process)
-    (with-current-buffer buffer
-      (codex-ide-term--send-string command)
-      (sit-for 0.1)
-      (codex-ide-term--send-return))))
-
-(defun codex-ide--send-ide-on (buffer process)
-  "Send `/ide on' to BUFFER when PROCESS is still live."
-  (codex-ide--send-terminal-command buffer process "/ide on"))
-
-(defun codex-ide--schedule-enable-context (buffer process)
-  "Schedule `/ide on' for BUFFER and PROCESS when auto-enable is enabled."
-  (when codex-ide-context-auto-enable
-    (run-at-time codex-ide-context-enable-delay nil
-                 #'codex-ide--send-ide-on buffer process)))
-
 ;;; Session selection
 
-(defun codex-ide--session-candidates ()
-  "Return (BUFFER-NAME . DIRECTORY) pairs for live Codex sessions."
-  (codex-ide--cleanup-dead-processes)
-  (let (candidates)
-    (maphash
-     (lambda (directory process)
-       (when (process-live-p process)
-         (when-let* ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
-           (push (cons (buffer-name buffer) directory) candidates))))
-     codex-ide--processes)
-    (sort candidates
-          (lambda (a b)
-            (string< (car a) (car b))))))
+(defun codex-ide--all-sessions ()
+  "Return all live Codex session records."
+  (codex-ide--recover-live-sessions)
+  (codex-ide--raw-sessions))
+
+(defun codex-ide--session-candidates (&optional directory)
+  "Return (BUFFER-NAME . SESSION) pairs for live Codex sessions.
+When DIRECTORY is non-nil, return only sessions for that project root."
+  (let* ((sessions (if directory
+                       (progn
+                         (codex-ide--recover-live-sessions)
+                         (codex-ide--project-sessions directory))
+                     (codex-ide--all-sessions)))
+         (candidates
+          (mapcar (lambda (session)
+                    (cons (buffer-name (plist-get session :buffer))
+                          session))
+                  sessions)))
+    (sort candidates (lambda (a b) (string< (car a) (car b))))))
 
 (defun codex-ide--session-annotation-function (candidates)
   "Return a completion `:annotation-function' over CANDIDATES."
   (lambda (buffer-name)
-    (and-let* ((directory (cdr (assoc buffer-name candidates))))
-      (concat "  " (propertize (abbreviate-file-name directory)
+    (and-let* ((session (cdr (assoc buffer-name candidates))))
+      (concat "  " (propertize (abbreviate-file-name
+                                (plist-get session :root))
                                'face 'shadow)))))
 
-(defun codex-ide--read-session-directory ()
-  "Read a live Codex session directory with completion."
-  (let ((candidates (codex-ide--session-candidates)))
+(defun codex-ide--read-session (&optional directory)
+  "Read a live Codex session with completion.
+When DIRECTORY is non-nil, offer only sessions for that project root."
+  (let ((candidates (codex-ide--session-candidates directory)))
     (unless candidates
       (user-error "No Codex sessions"))
     (let* ((completion-extra-properties
@@ -277,12 +496,12 @@ session-local overrides needed by enabled integration helpers."
       (or (cdr (assoc choice candidates))
           (user-error "No Codex session selected")))))
 
-(defun codex-ide--switch-to-session (directory)
-  "Switch to the Codex session buffer for DIRECTORY."
-  (let ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
-    (unless buffer
-      (user-error "No Codex session for %s" directory))
-    (codex-ide--display-buffer buffer)))
+(defun codex-ide--switch-to-session (session)
+  "Switch to SESSION's Codex terminal buffer."
+  (unless (codex-ide--session-live-p session)
+    (user-error "No live Codex session"))
+  (codex-ide--activate-session session)
+  (codex-ide--display-buffer (plist-get session :buffer)))
 
 (defun codex-ide--display-result-window (buffer result)
   "Return a live display window for BUFFER from display RESULT."
@@ -302,6 +521,8 @@ session-local overrides needed by enabled integration helpers."
 Returns the displayed window when one is available.  Updates
 `codex-ide--last-accessed-buffer'."
   (setq codex-ide--last-accessed-buffer buffer)
+  (when-let* ((session (codex-ide--buffer-session buffer)))
+    (codex-ide--activate-session session))
   (when-let* ((window (or (get-buffer-window buffer t)
                           (codex-ide--display-window buffer))))
     (select-window window)
@@ -331,32 +552,77 @@ Used when a session is already running."
       (codex-ide--display-buffer buffer)
       (codex-ide-debug "Codex window shown"))))
 
-(defun codex-ide--cleanup-on-exit (directory)
-  "Clean up the Codex session state for DIRECTORY.
+(defun codex-ide--cleanup-on-exit (directory session-id)
+  "Clean up the Codex session state for DIRECTORY and SESSION-ID.
 Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
   (unless codex-ide--cleanup-in-progress
-    (let ((codex-ide--cleanup-in-progress t))
-      (remhash directory codex-ide--processes)
-      (when-let* ((buffer (get-buffer (codex-ide--get-buffer-name directory))))
+    (let* ((codex-ide--cleanup-in-progress t)
+           (session (codex-ide--session-by-id directory session-id))
+           (buffer (or (plist-get session :buffer)
+                       (get-buffer
+                        (codex-ide--get-buffer-name directory session-id)))))
+      (codex-ide--remove-session directory session-id)
+      (when buffer
         (when (buffer-live-p buffer)
           (let ((kill-buffer-hook nil)
                 (kill-buffer-query-functions nil))
             (kill-buffer buffer))))
-      (codex-ide-debug "Cleaned up Codex session for %s"
+      (codex-ide-debug "Cleaned up Codex session %s for %s"
+                       session-id
                        (file-name-nondirectory (directory-file-name directory))))))
+
+(defun codex-ide--cleanup-current-buffer-session ()
+  "Clean up the Codex session owned by the current buffer."
+  (when (and codex-ide--session-root codex-ide--session-id)
+    (codex-ide--cleanup-on-exit
+     codex-ide--session-root codex-ide--session-id)))
+
+(defun codex-ide--make-process-sentinel (directory session-id)
+  "Return the process sentinel for DIRECTORY and SESSION-ID."
+  (lambda (_proc event)
+    (codex-ide-debug "Codex process event: %s" (string-trim event))
+    (when (string-match-p
+           (rx (or "finished" "exited" "killed" "terminated"))
+           event)
+      (codex-ide--cleanup-on-exit directory session-id))))
 
 (defun codex-ide--make-env ()
   "Return the list of \"KEY=VALUE\" env vars for a Codex session."
   (list "TERM_PROGRAM=emacs"))
 
-(defun codex-ide--create-session (&optional resume-last session-id)
+(defun codex-ide--setup-terminal-keybindings ()
+  "Install Codex local keybindings in the current terminal buffer."
+  (local-set-key (kbd "S-<return>") #'codex-ide-insert-newline)
+  (local-set-key (kbd "C-<escape>") #'codex-ide-send-escape))
+
+(defun codex-ide--setup-session (session)
+  "Install process and buffer-local state for SESSION."
+  (let ((buffer (plist-get session :buffer))
+        (process (plist-get session :process))
+        (directory (plist-get session :root))
+        (session-id (plist-get session :id)))
+    (set-process-query-on-exit-flag process nil)
+    (set-process-sentinel
+     process (codex-ide--make-process-sentinel directory session-id))
+    (with-current-buffer buffer
+      (setq-local codex-ide--session-root directory)
+      (setq-local codex-ide--session-id session-id)
+      (add-hook 'kill-buffer-hook
+                #'codex-ide--cleanup-current-buffer-session nil t)
+      (codex-ide--setup-terminal-keybindings))
+    session))
+
+(defun codex-ide--create-session (emacs-session-id &optional resume-last
+                                                    codex-session-id)
   "Create a Codex terminal session for the current project.
-RESUME-LAST and SESSION-ID are forwarded to `codex-ide--build-command'.
-Returns (BUFFER . PROCESS)."
+EMACS-SESSION-ID identifies the live Emacs-managed session.  RESUME-LAST
+and CODEX-SESSION-ID are forwarded to `codex-ide--build-command'.
+Returns a session record."
   (let* ((working-dir (codex-ide--get-working-directory))
-         (buffer-name (codex-ide--get-buffer-name working-dir))
+         (buffer-name (codex-ide--get-buffer-name working-dir
+                                                  emacs-session-id))
          (codex-ide-config-overrides (codex-ide--session-config-overrides))
-         (cmd (codex-ide--build-command resume-last session-id))
+         (cmd (codex-ide--build-command resume-last codex-session-id))
          (program (car cmd))
          (args (cdr cmd))
          (env (codex-ide--make-env))
@@ -366,62 +632,55 @@ Returns (BUFFER . PROCESS)."
     (codex-ide-debug "Working directory: %s" working-dir)
     (let ((process (codex-ide-term--make-process
                     buffer-name program args env working-dir)))
-      (cons (get-buffer buffer-name) process))))
+      (process-put process 'codex-ide--command (cons program args))
+      (codex-ide--make-session working-dir emacs-session-id
+                                (process-buffer process) process))))
 
-(defun codex-ide--setup-terminal-keybindings ()
-  "Install Codex local keybindings in the current terminal buffer."
-  (local-set-key (kbd "S-<return>") #'codex-ide-insert-newline)
-  (local-set-key (kbd "C-<escape>") #'codex-ide-send-escape))
-
-(defun codex-ide--start-session (&optional resume-last session-id)
+(defun codex-ide--start-session (&optional resume-last codex-session-id
+                                           new-session)
   "Start or focus a Codex session for the current project.
 If RESUME-LAST is non-nil, resume the most recent session.  When
-SESSION-ID is given, resume that specific session.  If a live
-session exists, toggle its window instead of starting a new one."
+CODEX-SESSION-ID is given, resume that specific saved session.  If a live
+session exists, toggle its window unless NEW-SESSION is non-nil."
   (unless (codex-ide--ensure-cli)
     (user-error "Codex CLI not available.  Install it and ensure it is in PATH"))
-  (codex-ide--cleanup-dead-processes)
+  (codex-ide--recover-live-sessions)
   (let* ((working-dir (codex-ide--get-working-directory))
-         (buffer-name (codex-ide--get-buffer-name working-dir))
-         (existing-buffer (get-buffer buffer-name))
-         (existing-process (codex-ide--get-process working-dir)))
+         (existing-session (and (not new-session)
+                                (codex-ide--active-session working-dir))))
     (codex-ide--record-source-buffer working-dir)
-    (if (and existing-buffer (buffer-live-p existing-buffer) existing-process)
-        (codex-ide--toggle-existing-window existing-buffer)
+    (if existing-session
+        (codex-ide--toggle-existing-window (plist-get existing-session :buffer))
       (codex-ide--maybe-ensure-context-server)
-      (let ((result (codex-ide--create-session resume-last session-id)))
-        (let ((buffer (car result))
-              (process (cdr result))
-              (dir working-dir))
-          (puthash working-dir process codex-ide--processes)
-          (set-process-query-on-exit-flag process nil)
-          (set-process-sentinel
-           process
-           (lambda (_proc event)
-             (codex-ide-debug "Codex process event: %s" (string-trim event))
-             (when (string-match-p
-                    (rx (or "finished" "exited" "killed" "terminated"))
-                    event)
-               (codex-ide--cleanup-on-exit dir))))
-          (with-current-buffer buffer
-            (add-hook 'kill-buffer-hook
-                      (lambda ()
-                        (codex-ide--cleanup-on-exit dir))
-                      nil t)
-            (codex-ide--setup-terminal-keybindings))
-          (codex-ide--display-buffer buffer)
-          (codex-ide--schedule-enable-context buffer process)
-          (codex-ide-log "Codex started in %s"
-                         (file-name-nondirectory
-                          (directory-file-name working-dir))))))))
+      (let* ((emacs-session-id (codex-ide--next-session-id working-dir))
+             (session (codex-ide--create-session emacs-session-id
+                                                  resume-last
+                                                  codex-session-id))
+             (buffer (plist-get session :buffer))
+             (process (plist-get session :process)))
+        (unless (and buffer process)
+          (error "Failed to create Codex session"))
+        (codex-ide--remember-session session)
+        (codex-ide--setup-session session)
+        (codex-ide--display-buffer buffer)
+        (codex-ide-log "Codex started in %s"
+                       (file-name-nondirectory
+                        (directory-file-name working-dir)))))))
 
 ;;; Commands
 
 ;;;###autoload
-(defun codex-ide ()
-  "Start Codex for the current project, or toggle its window if running."
+(defun codex-ide (&optional prefix)
+  "Start Codex for the current project, or toggle its active window.
+With PREFIX, start another Codex session for the current project."
+  (interactive "P")
+  (codex-ide--start-session nil nil prefix))
+
+;;;###autoload
+(defun codex-ide-new-session ()
+  "Start another Codex session for the current project."
   (interactive)
-  (codex-ide--start-session))
+  (codex-ide--start-session nil nil t))
 
 ;;;###autoload
 (defun codex-ide-resume-last ()
@@ -441,24 +700,24 @@ A session picker is deferred to a later phase."
 (defun codex-ide-stop ()
   "Stop the Codex session for the current project."
   (interactive)
-  (let ((buffer-name (codex-ide--get-buffer-name)))
-    (if-let* ((buffer (get-buffer buffer-name)))
+  (let* ((working-dir (codex-ide--get-working-directory))
+         (session (codex-ide--active-session working-dir)))
+    (if-let* ((buffer (plist-get session :buffer)))
         (progn
           (kill-buffer buffer)
           (codex-ide-log "Stopping Codex in %s..."
                          (file-name-nondirectory
-                          (directory-file-name
-                           (codex-ide--get-working-directory)))))
+                          (directory-file-name working-dir))))
       (codex-ide-log "No Codex session is running in this directory"))))
 
 ;;;###autoload
 (defun codex-ide-toggle ()
   "Toggle visibility of the Codex window for the current project."
   (interactive)
-  (codex-ide--record-source-buffer)
-  (let ((buffer (get-buffer (codex-ide--get-buffer-name))))
-    (if buffer
-        (codex-ide--toggle-existing-window buffer)
+  (let ((working-dir (codex-ide--get-working-directory)))
+    (codex-ide--record-source-buffer working-dir)
+    (if-let* ((session (codex-ide--active-session working-dir)))
+        (codex-ide--toggle-existing-window (plist-get session :buffer))
       (user-error "No Codex session for this project"))))
 
 ;;;###autoload
@@ -466,36 +725,32 @@ A session picker is deferred to a later phase."
   "Switch to the Codex buffer for the current project.
 If it is not visible, display it with `codex-ide-display-buffer-function'."
   (interactive)
-  (codex-ide--record-source-buffer)
-  (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name))))
-      (codex-ide--display-buffer buffer)
-    (user-error
-     "No Codex session for this project.  Use M-x codex-ide to start one")))
+  (let ((working-dir (codex-ide--get-working-directory)))
+    (codex-ide--record-source-buffer working-dir)
+    (if-let* ((session (codex-ide--active-session working-dir)))
+        (codex-ide--display-buffer (plist-get session :buffer))
+      (user-error
+       "No Codex session for this project.  Use M-x codex-ide to start one"))))
+
+;;;###autoload
+(defun codex-ide-list-project-sessions ()
+  "Switch to a live Codex terminal session for the current project."
+  (interactive)
+  (let* ((origin (current-buffer))
+         (working-dir (codex-ide--get-working-directory))
+         (session (codex-ide--read-session working-dir)))
+    (codex-ide--record-source-buffer working-dir origin)
+    (codex-ide--switch-to-session session)))
 
 ;;;###autoload
 (defun codex-ide-list-sessions ()
-  "Switch to an active Codex terminal session."
+  "Switch to any live Codex terminal session."
   (interactive)
   (let* ((origin (current-buffer))
-         (directory (codex-ide--read-session-directory)))
+         (session (codex-ide--read-session))
+         (directory (plist-get session :root)))
     (codex-ide--record-source-buffer directory origin)
-    (codex-ide--switch-to-session directory)))
-
-;;;###autoload
-(defun codex-ide-enable-context ()
-  "Start the IDE provider and send `/ide on' to the current session."
-  (interactive)
-  (let* ((working-dir (codex-ide--get-working-directory))
-         (buffer (get-buffer (codex-ide--get-buffer-name working-dir)))
-         (process (and buffer (get-buffer-process buffer))))
-    (codex-ide--record-source-buffer working-dir)
-    (unless (codex-ide--terminal-session-live-p buffer process)
-      (user-error "No live Codex session for this project"))
-    (codex-ide-context-ensure-server)
-    (codex-ide--send-ide-on buffer process)
-    (codex-ide-log "IDE context enabled for Codex in %s"
-                   (file-name-nondirectory
-                    (directory-file-name working-dir)))))
+    (codex-ide--switch-to-session session)))
 
 ;;;###autoload
 (defun codex-ide-send-prompt (&optional prompt)
@@ -505,21 +760,23 @@ Interactively, read PROMPT from the minibuffer."
   (let ((working-dir (codex-ide--get-working-directory))
         (origin (current-buffer)))
     (codex-ide--record-source-buffer working-dir origin)
-    (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name working-dir))))
-      (let ((text (or prompt (read-string "Codex prompt: "))))
-        (unless (string-empty-p text)
-          (with-current-buffer buffer
-            (codex-ide-term--send-string text)
-            (sit-for 0.1)
-            (codex-ide-term--send-return))
-          (codex-ide-debug "Sent prompt: %s" text)))
+    (if-let* ((session (codex-ide--active-session working-dir))
+              (buffer (plist-get session :buffer)))
+        (let ((text (or prompt (read-string "Codex prompt: "))))
+          (unless (string-empty-p text)
+            (with-current-buffer buffer
+              (codex-ide-term--send-string text)
+              (sit-for 0.1)
+              (codex-ide-term--send-return))
+            (codex-ide-debug "Sent prompt: %s" text)))
       (user-error "No Codex session for this project"))))
 
 ;;;###autoload
 (defun codex-ide-send-escape ()
   "Send ESC to the Codex terminal for the current project."
   (interactive)
-  (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name))))
+  (if-let* ((session (codex-ide--active-session))
+            (buffer (plist-get session :buffer)))
       (with-current-buffer buffer
         (codex-ide-term--send-escape))
     (user-error "No Codex session for this project")))
@@ -529,7 +786,8 @@ Interactively, read PROMPT from the minibuffer."
   "Insert a literal newline into the Codex prompt.
 Sends backslash followed by RET, which Codex interprets as a newline."
   (interactive)
-  (if-let* ((buffer (get-buffer (codex-ide--get-buffer-name))))
+  (if-let* ((session (codex-ide--active-session))
+            (buffer (plist-get session :buffer)))
       (with-current-buffer buffer
         (codex-ide-term--send-string "\\")
         (sit-for 0.1)

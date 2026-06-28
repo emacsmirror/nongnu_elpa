@@ -120,17 +120,17 @@
   :popup-key "?"
   :description "codex-ide Menu"
   :group "Session"
-  "s" ("Start" codex-ide)
+  "s" ("Start" codex-ide :c-u "C-u: new session")
   "r" ("Resume last" codex-ide-resume-last)
   "R" ("Resume" codex-ide-resume)
   "q" ("Stop" codex-ide-stop)
   :group "Navigation"
   "b" ("Switch to buffer" codex-ide-switch-to-buffer)
-  "l" ("Switch session" codex-ide-list-sessions)
+  "l" ("Switch project session" codex-ide-list-project-sessions)
+  "C-l" ("Switch any session" codex-ide-list-sessions)
   "w" ("Toggle window" codex-ide-toggle)
   :group "Interaction"
   "p" ("Send prompt" codex-ide-send-prompt)
-  "i" ("Enable IDE context" codex-ide-enable-context)
   "e" ("Send escape" codex-ide-send-escape)
   "n" ("Insert newline" codex-ide-insert-newline)
   :group "Submenus"

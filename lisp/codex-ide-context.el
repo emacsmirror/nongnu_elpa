@@ -81,16 +81,6 @@ Frames larger than this are rejected before parsing."
   :type 'boolean
   :group 'codex-ide)
 
-(defcustom codex-ide-context-auto-enable t
-  "When non-nil, send `/ide on' after starting a new Codex session."
-  :type 'boolean
-  :group 'codex-ide)
-
-(defcustom codex-ide-context-enable-delay 0.5
-  "Seconds to wait before sending `/ide on' to a new Codex session."
-  :type 'number
-  :group 'codex-ide)
-
 ;;; Constants
 
 (defconst codex-ide-context--source-client-id "codex-emacs"
