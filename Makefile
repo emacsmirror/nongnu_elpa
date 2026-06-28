@@ -4,10 +4,13 @@ NIX := $(shell command -v nix 2>/dev/null)
 
 -include local.mk
 
+ENV ?= nix
 ENV_MAKE = $(MAKE) --no-print-directory
 ifeq ($(CODEX_ENV_WRAPPED),)
+ifeq ($(ENV),nix)
 ifneq ($(NIX),)
-ENV_MAKE = nix develop --no-write-lock-file path:$(CURDIR) --command env CODEX_ENV_WRAPPED=1 $(MAKE) --no-print-directory
+ENV_MAKE = nix develop --no-write-lock-file path:$(CURDIR) --command env CODEX_ENV_WRAPPED=1 ENV=$(ENV) $(MAKE) --no-print-directory
+endif
 endif
 endif
 
@@ -30,7 +33,7 @@ ERT_OPTS ?=
 LOAD_PATH = -L lisp -L tests $(if $(KEYMAP_POPUP),-L $(KEYMAP_POPUP))
 BATCH = $(EMACS_CMD) -Q --batch $(LOAD_PATH)
 
-.PHONY: all compile do-compile test do-test lint do-lint native-comp do-native-comp dev check pre-commit pre-handoff-check load clean
+.PHONY: all compile do-compile compile-tests do-compile-tests test do-test lint do-lint native-comp do-native-comp dev do-dev check pre-commit pre-handoff-check load do-load clean
 
 all: compile
 
@@ -44,8 +47,17 @@ do-compile:
 	    -f batch-byte-compile $$f || exit 1; \
 	done
 
+compile-tests:
+	@$(ENV_MAKE) do-compile-tests
+
+do-compile-tests:
+	@for f in $(TESTS); do \
+	  echo "Compiling $$f..."; \
+	  $(BATCH) -l ert -f batch-byte-compile $$f || exit 1; \
+	done
+
 test:
-	@$(ENV_MAKE) do-test
+	@$(ENV_MAKE) clean do-compile-tests do-test
 
 do-test:
 	@for f in $(TESTS); do \
@@ -76,13 +88,15 @@ do-native-comp:
 	done
 
 dev:
-	@$(ENV_MAKE) do-compile do-lint do-test
+	@$(ENV_MAKE) clean do-dev
+
+do-dev: do-compile do-lint do-compile-tests do-test
 
 check: dev
 
 pre-commit:
 	git diff --check
-	@$(ENV_MAKE) do-compile do-lint do-native-comp do-test
+	@$(ENV_MAKE) do-compile do-lint do-native-comp do-compile-tests do-test
 
 pre-handoff-check:
 	git status --short --branch
@@ -92,7 +106,10 @@ pre-handoff-check:
 	nix --extra-experimental-features 'nix-command flakes' \
 	  flake check --no-write-lock-file
 
-load: clean
+load:
+	@$(ENV_MAKE) do-load
+
+do-load: clean
 	@emacsclient --eval "(progn \
 	  (add-to-list 'load-path \"$(CURDIR)/lisp\") \
 	  (mapatoms (lambda (s) \
@@ -109,6 +126,15 @@ load: clean
 	      (when (and (string-prefix-p \"codex-ide-\" (symbol-name major-mode)) \
 	                 map (boundp map) (keymapp (symbol-value map))) \
 	        (use-local-map (symbol-value map))))))" > /dev/null
+	@emacsclient --eval "(when (and (boundp 'codex-ide--processes) \
+	                                (fboundp 'codex-ide--setup-terminal-keybindings)) \
+	  (maphash (lambda (directory process) \
+	             (when (process-live-p process) \
+	               (let ((buffer (get-buffer (codex-ide--get-buffer-name directory)))) \
+	                 (when buffer \
+	                   (with-current-buffer buffer \
+	                     (codex-ide--setup-terminal-keybindings)))))) \
+	           codex-ide--processes))" > /dev/null
 	@printf "\033[32mLoaded all modules into Emacs\033[0m\n"
 
 clean:

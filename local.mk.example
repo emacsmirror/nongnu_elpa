@@ -1,0 +1,10 @@
+# Copy to local.mk for machine-specific overrides.
+
+# Run targets on the host instead of entering the flake.
+# ENV = host
+
+# Point host-side tests at a local checkout when keymap-popup is not installed.
+# KEYMAP_POPUP = /home/$USER/Projects/emacs-lisp/keymap-popup
+
+# Pick a specific Emacs binary for host-side commands.
+# EMACS = emacs
