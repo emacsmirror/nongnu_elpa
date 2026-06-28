@@ -38,6 +38,9 @@
 (defvar vterm-environment)
 (defvar eat-terminal)
 (defvar eat--synchronize-scroll-function)
+(defvar eat-very-visible-cursor-type)
+(defvar eat-very-visible-vertical-bar-cursor-type)
+(defvar eat-very-visible-horizontal-bar-cursor-type)
 
 (defvar-local codex-ide-term--backend nil
   "Backend descriptor plist for the current Codex terminal buffer.
@@ -48,8 +51,18 @@ When nil, send operations fall back to the active global backend.")
 (declare-function vterm-send-escape "vterm" ())
 (declare-function vterm-send-return "vterm" ())
 (declare-function eat-mode "eat" ())
-(declare-function eat-exec "eat" (buffer name command startfile &rest switches))
+(declare-function eat-exec "eat" (buffer name command startfile switches))
 (declare-function eat-term-send-string "eat" (terminal string))
+
+;;; User options
+
+(defcustom codex-ide-term-blink-cursor nil
+  "Non-nil lets the Codex TUI drive a blinking cursor in eat buffers.
+When nil, the cursor stays steady even though Codex requests a blinking
+one via its terminal cursor-style escape.  Only the eat backend honors
+this; vterm renders the cursor itself."
+  :type 'boolean
+  :group 'codex-ide)
 
 ;;; Backend registry
 
@@ -162,6 +175,10 @@ WORKING-DIR is the working directory.  Returns the process object."
 
 ;;; eat backend
 
+(defun codex-ide-term--steady-eat-cursor (cursor-type)
+  "Return CURSOR-TYPE with Eat's blink frequency disabled."
+  (list (car cursor-type) nil (nth 2 cursor-type)))
+
 (defun codex-ide-term--eat-backend ()
   "Return the eat backend descriptor."
   (list
@@ -172,16 +189,29 @@ WORKING-DIR is the working directory.  Returns the process object."
         "Package eat is not installed.  Install eat or set `codex-ide-terminal-backend' to `vterm'")))
    :make-process
    ;; `eat-exec' takes program and args natively, so structured args pay off
-   ;; here without re-parsing a shell command string.
+   ;; here without re-parsing a shell command string.  SWITCHES is a single
+   ;; list argument (eat 0.9+), so pass ARGS directly rather than spreading it.
    (lambda (buffer-name program args env working-dir)
      (let ((buffer (get-buffer-create buffer-name))
            (default-directory working-dir))
        (with-current-buffer buffer
          (unless (eq major-mode 'eat-mode)
            (eat-mode))
+         (unless codex-ide-term-blink-cursor
+           ;; Codex requests a blinking cursor; render it steady by
+           ;; preserving user cursor shapes while clearing blink frequency.
+           (setq-local eat-very-visible-cursor-type
+                       (codex-ide-term--steady-eat-cursor
+                        eat-very-visible-cursor-type)
+                       eat-very-visible-vertical-bar-cursor-type
+                       (codex-ide-term--steady-eat-cursor
+                        eat-very-visible-vertical-bar-cursor-type)
+                       eat-very-visible-horizontal-bar-cursor-type
+                       (codex-ide-term--steady-eat-cursor
+                        eat-very-visible-horizontal-bar-cursor-type)))
          (setq-local process-environment
                      (append env process-environment))
-         (apply #'eat-exec buffer buffer-name program nil args))
+         (eat-exec buffer buffer-name program nil args))
        (let ((proc (get-buffer-process buffer)))
          (unless proc
            (error "Failed to create eat process"))
