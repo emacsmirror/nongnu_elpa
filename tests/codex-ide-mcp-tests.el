@@ -25,6 +25,7 @@
 (require 'cl-lib)
 (require 'ert)
 (require 'json)
+(require 'xref)
 (require 'codex-ide)
 (require 'codex-ide-mcp)
 
@@ -36,6 +37,22 @@
         (json-false nil)
         (json-null nil))
     (json-read-from-string string)))
+
+(defun codex-ide-mcp-test--result-text (result)
+  "Return the first MCP text content string from RESULT."
+  (cdr (assoc "text" (aref (cdr (assoc "content" result)) 0))))
+
+(defun codex-ide-mcp-test--decoded-result (result)
+  "Decode the first MCP JSON text content from RESULT."
+  (codex-ide-mcp-test--json-read
+   (codex-ide-mcp-test--result-text result)))
+
+(defun codex-ide-mcp-test--line-position (line)
+  "Return buffer position at one-based LINE."
+  (save-excursion
+    (goto-char (point-min))
+    (forward-line (1- line))
+    (point)))
 
 (defun codex-ide-mcp-test--request (&rest headers)
   "Return a normal parsed MCP request with HEADERS."
@@ -164,9 +181,86 @@
     (should (equal (cdr (assoc "type" (cdr (assoc "line" properties))))
                    "integer"))))
 
-(ert-deftest codex-ide-mcp-tools-list-shape ()
-  "tools/list returns the four narrow Emacs tool schemas."
-  (let* ((result (codex-ide-mcp--handle-tools-list nil))
+(ert-deftest codex-ide-mcp-xref-item-to-entry-file-location ()
+  "Xref file locations become plain JSON-ready entries."
+  (let* ((item (xref-make
+                "summary"
+                (xref-make-file-location "/tmp/f.el" 12 0)))
+         (entry (codex-ide-mcp--xref-item->entry item)))
+    (should (equal (cdr (assoc "file" entry)) "/tmp/f.el"))
+    (should (equal (cdr (assoc "line" entry)) 12))
+    (should (equal (cdr (assoc "summary" entry)) "summary"))))
+
+(ert-deftest codex-ide-mcp-xref-items-to-entries-skips-failures ()
+  "Bad xref items are skipped when building JSON-ready entries."
+  (let* ((item (xref-make
+                "summary"
+                (xref-make-file-location "/tmp/f.el" 12 0)))
+         (entries (codex-ide-mcp--xref-items->entries
+                   (list item "not an xref item"))))
+    (should (equal (length entries) 1))
+    (should (equal (cdr (assoc "summary" (car entries))) "summary"))))
+
+(ert-deftest codex-ide-mcp-imenu-flatten-flat ()
+  "Flat imenu indexes become flat JSON-ready entries."
+  (with-temp-buffer
+    (dotimes (_ 12) (insert "x\n"))
+    (let* ((entries (codex-ide-mcp--imenu-flatten
+                     `(("foo" . ,(codex-ide-mcp-test--line-position 5))
+                       ("bar" . ,(codex-ide-mcp-test--line-position 10)))))
+           (first (car entries))
+           (second (cadr entries)))
+      (should (equal (mapcar (lambda (entry) (cdr (assoc "name" entry)))
+                             entries)
+                     '("foo" "bar")))
+      (should (equal (cdr (assoc "category" first)) ""))
+      (should (equal (cdr (assoc "line" first)) 5))
+      (should (equal (cdr (assoc "line" second)) 10)))))
+
+(ert-deftest codex-ide-mcp-imenu-flatten-nested ()
+  "Nested imenu indexes include their parent category."
+  (with-temp-buffer
+    (dotimes (_ 8) (insert "x\n"))
+    (let* ((entries (codex-ide-mcp--imenu-flatten
+                     `(("Functions"
+                        ("alpha" . ,(codex-ide-mcp-test--line-position 3)))
+                       ("beta" . ,(codex-ide-mcp-test--line-position 7)))))
+           (alpha (car entries))
+           (beta (cadr entries)))
+      (should (equal (cdr (assoc "name" alpha)) "alpha"))
+      (should (equal (cdr (assoc "category" alpha)) "Functions"))
+      (should (equal (cdr (assoc "line" alpha)) 3))
+      (should (equal (cdr (assoc "name" beta)) "beta"))
+      (should (equal (cdr (assoc "category" beta)) ""))
+      (should (equal (cdr (assoc "line" beta)) 7)))))
+
+(ert-deftest codex-ide-mcp-imenu-flatten-skips-rescan ()
+  "Imenu rescan entries are omitted from flattened output."
+  (with-temp-buffer
+    (dotimes (_ 2) (insert "x\n"))
+    (let ((entries (codex-ide-mcp--imenu-flatten
+                    `(("*Rescan*" . ,(point-min))
+                      ("real" . ,(codex-ide-mcp-test--line-position 2))))))
+      (should (equal (length entries) 1))
+      (should (equal (cdr (assoc "name" (car entries))) "real")))))
+
+(ert-deftest codex-ide-mcp-tool-to-mcp-schema-xref-references ()
+  "Xref references schema includes required path and identifier strings."
+  (let* ((tool (codex-ide-mcp--tool-by-name "emacs_xref_references"))
+         (schema (codex-ide-mcp--tool->mcp tool))
+         (input (cdr (assoc "inputSchema" schema)))
+         (properties (cdr (assoc "properties" input))))
+    (should (equal (cdr (assoc "name" schema)) "emacs_xref_references"))
+    (should (equal (cdr (assoc "required" input)) ["path" "identifier"]))
+    (should (equal (cdr (assoc "type" (cdr (assoc "path" properties))))
+                   "string"))
+    (should (equal (cdr (assoc "type" (cdr (assoc "identifier" properties))))
+                   "string"))))
+
+(ert-deftest codex-ide-mcp-tools-list-shape-default ()
+  "tools/list returns the default Emacs tool schemas."
+  (let* ((codex-ide-mcp-enable-execute nil)
+         (result (codex-ide-mcp--handle-tools-list nil))
          (tools (cdr (assoc "tools" result)))
          (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
                         (append tools nil))))
@@ -175,7 +269,123 @@
                    '("emacs_current_buffer"
                      "emacs_selection"
                      "emacs_open_file"
-                     "emacs_diagnostics")))))
+                     "emacs_diagnostics"
+                     "emacs_xref_references"
+                     "emacs_xref_apropos"
+                     "emacs_project_info"
+                     "emacs_imenu_symbols"
+                     "emacs_close_buffer")))))
+
+(ert-deftest codex-ide-mcp-tools-list-hides-disabled-execute ()
+  "Disabled execute tool is omitted from tools/list."
+  (let* ((codex-ide-mcp-enable-execute nil)
+         (result (codex-ide-mcp--handle-tools-list nil))
+         (tools (cdr (assoc "tools" result)))
+         (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
+                        (append tools nil))))
+    (should (equal (length names) 9))
+    (should-not (member "emacs_execute" names))))
+
+(ert-deftest codex-ide-mcp-tools-list-shows-enabled-execute ()
+  "Enabled execute tool is included in tools/list."
+  (let* ((codex-ide-mcp-enable-execute t)
+         (result (codex-ide-mcp--handle-tools-list nil))
+         (tools (cdr (assoc "tools" result)))
+         (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
+                        (append tools nil))))
+    (should (equal (length names) 10))
+    (should (member "emacs_execute" names))))
+
+(ert-deftest codex-ide-mcp-tools-call-execute-disabled ()
+  "Disabled execute tool returns an MCP tool error."
+  (let* ((codex-ide-mcp-enable-execute nil)
+         (result (codex-ide-mcp--handle-tools-call
+                  '(:name "emacs_execute"
+                    :arguments (:code "(+ 1 2)")))))
+    (should (eq (cdr (assoc "isError" result)) t))
+    (should (string-match-p "disabled"
+                            (codex-ide-mcp-test--result-text result)))))
+
+(ert-deftest codex-ide-mcp-tools-call-execute-enabled-evals ()
+  "Enabled execute tool evaluates one Elisp expression."
+  (let* ((codex-ide-mcp-enable-execute t)
+         (result (codex-ide-mcp--handle-tools-call
+                  '(:name "emacs_execute"
+                    :arguments (:code "(+ 1 2)"))))
+         (decoded (codex-ide-mcp-test--decoded-result result)))
+    (should (eq (cdr (assoc "isError" result)) :json-false))
+    (should (equal (cdr (assoc "value" decoded)) "3"))))
+
+(ert-deftest codex-ide-mcp-tools-call-xref-references-no-buffer ()
+  "Xref references tool requires an already-open buffer."
+  (let ((path (make-temp-file "codex-ide-mcp-xref")))
+    (unwind-protect
+        (let* ((result (codex-ide-mcp--handle-tools-call
+                        `(:name "emacs_xref_references"
+                          :arguments (:path ,path :identifier "foo")))))
+          (should (eq (cdr (assoc "isError" result)) t))
+          (should (string-match-p "No open buffer"
+                                  (codex-ide-mcp-test--result-text result))))
+      (when (file-exists-p path)
+        (delete-file path)))))
+
+(ert-deftest codex-ide-mcp-tools-call-close-buffer-by-name ()
+  "Close-buffer tool kills a named unmodified buffer."
+  (let ((buffer (generate-new-buffer "codex-ide-mcp-close-test")))
+    (unwind-protect
+        (let* ((name (buffer-name buffer))
+               (result (codex-ide-mcp--handle-tools-call
+                        `(:name "emacs_close_buffer"
+                          :arguments (:buffer ,name))))
+               (decoded (codex-ide-mcp-test--decoded-result result)))
+          (should (eq (cdr (assoc "isError" result)) :json-false))
+          (should (equal (cdr (assoc "closed" decoded)) name))
+          (should-not (buffer-live-p buffer)))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
+(ert-deftest codex-ide-mcp-tools-call-close-buffer-refuses-modified ()
+  "Close-buffer tool refuses modified file-visiting buffers."
+  (let* ((file (make-temp-file "codex-ide-mcp-close"))
+         (buffer (find-file-noselect file)))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (goto-char (point-max))
+            (insert "changed"))
+          (let ((result (codex-ide-mcp--handle-tools-call
+                         `(:name "emacs_close_buffer"
+                           :arguments (:path ,file)))))
+            (should (eq (cdr (assoc "isError" result)) t))
+            (should (string-match-p "unsaved changes"
+                                    (codex-ide-mcp-test--result-text result)))
+            (should (buffer-live-p buffer))))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          (set-buffer-modified-p nil))
+        (kill-buffer buffer))
+      (when (file-exists-p file)
+        (delete-file file)))))
+
+(ert-deftest codex-ide-mcp-tools-call-project-info-no-project ()
+  "Project info reports nil root outside a project."
+  (let ((dir (make-temp-file "codex-ide-mcp-no-project" t)))
+    (unwind-protect
+        (let ((default-directory (file-name-as-directory dir)))
+          (with-temp-buffer
+            (rename-buffer "codex-ide-mcp-no-project" t)
+            (let* ((result (codex-ide-mcp--handle-tools-call
+                            '(:name "emacs_project_info"
+                              :arguments nil)))
+                   (decoded (codex-ide-mcp-test--decoded-result result)))
+              (should (eq (cdr (assoc "isError" result)) :json-false))
+              (should-not (cdr (assoc "root" decoded)))
+              (should (equal (cdr (assoc "fileCount" decoded)) 0))
+              (should (equal (cdr (assoc "activeBuffer" decoded))
+                             "codex-ide-mcp-no-project"))
+              (should (equal (cdr (assoc "majorMode" decoded))
+                             "fundamental-mode")))))
+      (delete-directory dir t))))
 
 (ert-deftest codex-ide-mcp-tools-call-current-buffer ()
   "current-buffer tool returns normal MCP text content."
