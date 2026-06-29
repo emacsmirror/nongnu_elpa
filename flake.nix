@@ -30,7 +30,6 @@
             "lisp/codex-ide-context.el"
             "lisp/codex-ide-diff.el"
             "lisp/codex-ide-mcp.el"
-            "lisp/codex-ide-appserver.el"
             "lisp/codex-ide.el"
             "lisp/codex-ide-menu.el"
           ];

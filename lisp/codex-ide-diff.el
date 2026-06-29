@@ -33,7 +33,6 @@
 ;; was accepted and nil if rejected.
 ;;
 ;; The module performs no file writes; the caller owns the target path.
-;; Approval policy and appserver wiring live in `codex-ide-appserver'.
 
 ;;; Code:
 

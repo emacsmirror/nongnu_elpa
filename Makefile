@@ -20,12 +20,11 @@ KEYMAP_POPUP ?=
 
 SRCS = lisp/codex-ide-debug.el lisp/codex-ide-term.el \
        lisp/codex-ide-context.el lisp/codex-ide-diff.el \
-       lisp/codex-ide-mcp.el lisp/codex-ide-appserver.el \
-       lisp/codex-ide.el lisp/codex-ide-menu.el
+       lisp/codex-ide-mcp.el lisp/codex-ide.el \
+       lisp/codex-ide-menu.el
 
 TESTS = tests/codex-ide-tests.el tests/codex-ide-context-tests.el \
-        tests/codex-ide-mcp-tests.el tests/codex-ide-appserver-tests.el \
-        tests/codex-ide-diff-tests.el
+        tests/codex-ide-mcp-tests.el tests/codex-ide-diff-tests.el
 
 SELECTOR ?= t
 ERT_OPTS ?=

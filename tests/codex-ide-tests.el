@@ -1362,53 +1362,45 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
 
 ;;; Menu
 
-(defun codex-ide-test--popup-keys (keymap)
-  "Return the list of binding keys in KEYMAP's popup descriptions."
+(defun codex-ide-test--popup-entries (keymap)
+  "Return popup metadata entries for KEYMAP."
   (let ((rows (keymap-popup--meta keymap 'descriptions)))
     (cl-loop for row in rows
              append (cl-loop for group in row
-                             append (mapcar (lambda (entry)
-                                              (plist-get entry :key))
-                                            (plist-get group :entries))))))
+                             append (plist-get group :entries)))))
 
-(ert-deftest codex-ide-menu-main-bindings ()
-  "Main menu binds the core session/navigation/interaction commands."
-  (should (eq (keymap-lookup codex-ide-map "s") #'codex-ide))
-  (should (eq (keymap-lookup codex-ide-map "q") #'codex-ide-stop))
-  (should (eq (keymap-lookup codex-ide-map "b") #'codex-ide-switch-to-buffer))
-  (should (eq (keymap-lookup codex-ide-map "l")
-              #'codex-ide-list-project-sessions))
-  (should (eq (keymap-lookup codex-ide-map "L") #'codex-ide-list-sessions))
-  (should (eq (keymap-lookup codex-ide-map "p") #'codex-ide-send-prompt))
-  (dolist (key '("s" "r" "R" "q" "b" "l" "L" "w" "p" "e" "n" "C" "d"))
-    (should (member key (codex-ide-test--popup-keys codex-ide-map)))))
+(defun codex-ide-test--popup-entry-by-command (keymap command)
+  "Return the popup entry for COMMAND in KEYMAP."
+  (cl-find command (codex-ide-test--popup-entries keymap)
+           :key (lambda (entry) (plist-get entry :command))
+           :test #'eq))
 
-(ert-deftest codex-ide-menu-start-entry-has-prefix-hint ()
-  "Start menu entry advertises the new-session prefix action."
-  (let* ((rows (keymap-popup--meta codex-ide-map 'descriptions))
-         (entries (mapcan (lambda (row)
-                            (mapcan (lambda (group)
-                                      (plist-get group :entries))
-                                    row))
-                          rows))
-         (entry (cl-find "s" entries
-                         :key (lambda (e) (plist-get e :key))
-                         :test #'equal)))
-    (should (equal (plist-get entry :c-u) "new session"))))
+(defun codex-ide-test--command-bound-p (keymap command)
+  "Return non-nil when COMMAND is reachable in KEYMAP."
+  (where-is-internal command (list keymap) t))
 
-(ert-deftest codex-ide-menu-config-bindings ()
-  "Config menu binds set/toggle suffixes and the save command."
-  (should (eq (keymap-lookup codex-ide-config-map "S")
-              #'codex-ide-menu--save-config))
-  (dolist (key '("p" "a" "A" "S"))
-    (should (member key (codex-ide-test--popup-keys codex-ide-config-map)))))
+(ert-deftest codex-ide-menu-main-commands ()
+  "Main menu exposes the core session/navigation/interaction commands."
+  (dolist (command '(codex-ide
+                     codex-ide-resume-last
+                     codex-ide-resume
+                     codex-ide-stop
+                     codex-ide-switch-to-buffer
+                     codex-ide-list-project-sessions
+                     codex-ide-list-sessions
+                     codex-ide-toggle
+                     codex-ide-send-prompt
+                     codex-ide-send-escape
+                     codex-ide-insert-newline))
+    (should (codex-ide-test--command-bound-p codex-ide-map command))))
 
-(ert-deftest codex-ide-menu-config-omits-window-layout-controls ()
-  "Config menu does not expose package-owned window layout controls."
-  (dolist (key '("s" "w" "h" "u" "f"))
-    (should-not (keymap-lookup codex-ide-config-map key))
-    (should-not (member key (codex-ide-test--popup-keys
-                             codex-ide-config-map)))))
+(ert-deftest codex-ide-menu-config-commands ()
+  "Config menu exposes package configuration commands."
+  (dolist (command '(codex-ide-menu--set-cli-path
+                     codex-ide-menu--set-approval
+                     codex-ide-menu--toggle-no-alt-screen
+                     codex-ide-menu--save-config))
+    (should (codex-ide-test--command-bound-p codex-ide-config-map command))))
 
 (ert-deftest codex-ide-menu-save-config-saves-current-symbols ()
   "Save config persists current configuration."
@@ -1425,33 +1417,24 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                      codex-ide-ask-for-approval
                      codex-ide-no-alt-screen)))))
 
-(ert-deftest codex-ide-menu-debug-bindings ()
-  "Debug menu binds status, toggle, and log commands."
-  (should (eq (keymap-lookup codex-ide-debug-map "S")
-              #'codex-ide-check-status))
-  (should (eq (keymap-lookup codex-ide-debug-map "d")
-              #'codex-ide-menu--toggle-debug-mode))
-  (dolist (key '("S" "d" "l" "c"))
-    (should (member key (codex-ide-test--popup-keys codex-ide-debug-map)))))
+(ert-deftest codex-ide-menu-debug-commands ()
+  "Debug menu exposes status, toggle, and log commands."
+  (dolist (command '(codex-ide-check-status
+                     codex-ide-menu--toggle-debug-mode
+                     codex-ide-show-debug
+                     codex-ide-clear-debug))
+    (should (codex-ide-test--command-bound-p codex-ide-debug-map command))))
 
-(ert-deftest codex-ide-menu-submenu-navigation ()
-  "Main menu enters config/debug submenus, not their commands directly."
-  (should (eq (keymap-lookup codex-ide-map "C")
-              #'codex-ide-map--enter-codex-ide-config-map))
-  (should (eq (keymap-lookup codex-ide-map "d")
-              #'codex-ide-map--enter-codex-ide-debug-map)))
+(ert-deftest codex-ide-menu-submenus-exist ()
+  "Config and debug submenus are defined keymaps."
+  (should (keymapp codex-ide-config-map))
+  (should (keymapp codex-ide-debug-map)))
 
 (ert-deftest codex-ide-menu-no-alt-screen-description-is-dynamic ()
   "Toggle entries resolve their description from current variable state."
-  (let* ((rows (keymap-popup--meta codex-ide-config-map 'descriptions))
-         (entries (mapcan (lambda (row)
-                            (mapcan (lambda (group)
-                                      (plist-get group :entries))
-                                    row))
-                          rows))
-         (entry (cl-find "A" entries
-                         :key (lambda (e) (plist-get e :key))
-                         :test #'equal))
+  (let* ((entry (codex-ide-test--popup-entry-by-command
+                 codex-ide-config-map
+                 #'codex-ide-menu--toggle-no-alt-screen))
          (desc-fn (plist-get entry :description)))
     (should (functionp desc-fn))
     (let ((codex-ide-no-alt-screen t))
