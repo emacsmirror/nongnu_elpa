@@ -147,7 +147,7 @@
                  "tab" (car pair) (cdr pair) t captured-winconf))
          restored-winconf)
     (cl-letf (((symbol-function 'set-window-configuration)
-               (lambda (winconf)
+               (lambda (winconf &rest _args)
                  (setq restored-winconf winconf))))
       (codex-ide-diff--cleanup state))
     (should (eq captured-winconf restored-winconf))))
