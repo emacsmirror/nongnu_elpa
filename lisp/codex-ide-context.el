@@ -38,6 +38,7 @@
 ;;   M-x codex-ide-context-start   Start the IPC provider
 ;;   M-x codex-ide-context-stop    Stop the IPC provider
 ;;   M-x codex-ide-context-status  Report provider state
+;;   M-x codex-ide-context-mode    Toggle the IPC provider
 ;;   M-x codex-ide-send-selection  Push current selection context
 
 ;;; Code:
@@ -94,6 +95,12 @@ Frames larger than this are rejected before parsing."
 (defvar codex-ide-context--server nil
   "The listening server process, or nil when stopped.")
 
+(defvar codex-ide-context--owned-socket-path nil
+  "Socket path owned by the current Emacs provider instance.")
+
+(defvar codex-ide-context--owned-socket-identity nil
+  "File identity for the socket owned by this provider instance.")
+
 (defvar codex-ide-context--clients (make-hash-table :test 'eq)
   "Hash table mapping client processes to their receive accumulators.
 Each value is a plist with `:pending' (unibyte string buffer) and
@@ -134,7 +141,7 @@ a little-endian u32 length prefix followed by the UTF-8 JSON payload."
   "Decode BYTES (a unibyte string) as JSON into a plist."
   (let ((json-object-type 'plist)
         (json-array-type 'list)
-        (json-false nil)
+        (json-false :json-false)
         (json-null nil))
     (json-read-from-string
      (decode-coding-string bytes 'utf-8))))
@@ -146,6 +153,8 @@ a little-endian u32 length prefix followed by the UTF-8 JSON payload."
   (list (cons "type" "response")
         (cons "requestId" request-id)
         (cons "resultType" "success")
+        (cons "method" "ide-context")
+        (cons "handledByClientId" codex-ide-context--source-client-id)
         (cons "result"
               (list (cons "ideContext" ide-context)))))
 
@@ -162,13 +171,31 @@ CAN-HANDLE is non-nil when Emacs can serve `/ide' requests."
   (list (cons "type" "client-discovery-response")
         (cons "requestId" request-id)
         (cons "response"
-              (list (cons "canHandle" (if can-handle t :false))))))
+              (list (cons "canHandle" (if can-handle t :json-false))))))
 
 (defun codex-ide-context--unsupported-response (message)
   "Build an error response for an unsupported inbound request MESSAGE."
   (codex-ide-context--error-response
    (plist-get message :requestId)
    "no-handler-for-request"))
+
+(defun codex-ide-context--version-mismatch-response (message)
+  "Build a version-mismatch error response for inbound request MESSAGE."
+  (codex-ide-context--error-response
+   (plist-get message :requestId)
+   "request-version-mismatch"))
+
+(defun codex-ide-context--request-supported-p (message)
+  "Return non-nil when MESSAGE is an IDE context request Emacs supports."
+  (and (equal (plist-get message :method) "ide-context")
+       (equal (plist-get message :version)
+              codex-ide-context--supported-version)))
+
+(defun codex-ide-context--discovery-can-handle-p (message)
+  "Return non-nil when discovery MESSAGE describes a supported request."
+  (if-let* ((request (plist-get message :request)))
+      (codex-ide-context--request-supported-p request)
+    t))
 
 ;;; Dispatch (pure)
 
@@ -178,16 +205,22 @@ WORKSPACE-ROOT is the root to scope context collection to.  Returning nil
 means the message needs no reply (broadcast, stray response, etc.)."
   (pcase (plist-get message :type)
     ("request"
-     (if (equal (plist-get message :method) "ide-context")
-         (codex-ide-context--success-response
-          (plist-get message :requestId)
-          (codex-ide-context--collect
-           workspace-root
-           (codex-ide-context--resolve-source-buffer workspace-root)))
-       (codex-ide-context--unsupported-response message)))
+     (cond
+      ((not (equal (plist-get message :method) "ide-context"))
+       (codex-ide-context--unsupported-response message))
+      ((not (equal (plist-get message :version)
+                   codex-ide-context--supported-version))
+       (codex-ide-context--version-mismatch-response message))
+      (t
+       (codex-ide-context--success-response
+        (plist-get message :requestId)
+        (codex-ide-context--collect
+         workspace-root
+         (codex-ide-context--resolve-source-buffer workspace-root))))))
     ("client-discovery-request"
      (codex-ide-context--discovery-response
-      (plist-get message :requestId) t))
+      (plist-get message :requestId)
+      (codex-ide-context--discovery-can-handle-p message)))
     ((or "broadcast" "response" "client-discovery-response") nil)
     (_ nil)))
 
@@ -226,13 +259,15 @@ outside it."
       path)))
 
 (defun codex-ide-context--buffer->file-descriptor (buffer workspace-root)
-  "Return a ((label . L) (path . P)) alist for BUFFER, or nil.
+  "Return a Codex file descriptor alist for BUFFER, or nil.
 Returns nil when BUFFER is not visiting a file.  PATH is relative to
-WORKSPACE-ROOT when the file lives under it."
+WORKSPACE-ROOT when the file lives under it.  FSPATH is always absolute."
   (and-let* ((file (buffer-file-name buffer)))
-    (let ((rel (codex-ide-context--relative-path file workspace-root)))
+    (let ((rel (codex-ide-context--relative-path file workspace-root))
+          (abs (expand-file-name file)))
       (list (cons "label" (file-name-nondirectory file))
-            (cons "path" rel)))))
+            (cons "path" rel)
+            (cons "fsPath" abs)))))
 
 (defun codex-ide-context--selected-buffer ()
   "Return the buffer currently selected by the active Emacs window."
@@ -289,9 +324,6 @@ file, fall back to the latest tracked live project file."
          (selected (codex-ide-context--selected-buffer)))
     (or (and (codex-ide-context--source-buffer-p selected root) selected)
         (codex-ide-context--tracked-source-buffer root))))
-
-(add-hook 'window-selection-change-functions
-          #'codex-ide-context--record-window-selection)
 
 (defun codex-ide-context--active-file (workspace-root &optional buffer)
   "Return the activeFile alist for BUFFER (default `current-buffer').
@@ -388,51 +420,158 @@ BUFFER is the active buffer to serialize."
 Codex requires the parent directory to be owned by the current user and
 not writable by group or other users."
   (make-directory directory t)
-  (set-file-modes directory #o700))
+  (unless (equal (nth 2 (file-attributes directory 'integer))
+                 (user-uid))
+    (user-error "Codex IPC directory is not owned by the current user: %s"
+                directory))
+  (set-file-modes directory #o700)
+  (unless (codex-ide-context--owned-private-directory-p directory)
+    (user-error "Codex IPC directory is not private: %s" directory)))
+
+(defun codex-ide-context--owned-private-directory-p (directory)
+  "Return non-nil when DIRECTORY is owned by this user and mode 0700."
+  (and-let* ((attrs (file-attributes directory 'integer))
+             (modes (file-modes directory)))
+    (and (eq (car attrs) t)
+         (equal (nth 2 attrs) (user-uid))
+         (= (logand modes #o777) #o700))))
+
+(defun codex-ide-context--socket-file-p (path)
+  "Return non-nil when PATH's file type is a Unix socket."
+  (and-let* ((attrs (file-attributes path 'integer))
+             (modes (file-attribute-modes attrs)))
+    (and (> (length modes) 0)
+         (eq (aref modes 0) ?s))))
+
+(defun codex-ide-context--socket-identity (path)
+  "Return the inode and device identity for PATH, or nil."
+  (and-let* ((attrs (file-attributes path 'integer)))
+    (list (file-attribute-inode-number attrs)
+          (file-attribute-device-number attrs))))
 
 (defun codex-ide-context--running-p ()
   "Return non-nil when the IPC server is listening."
   (and codex-ide-context--server
-       (process-live-p codex-ide-context--server)))
+       (process-live-p codex-ide-context--server)
+       (equal codex-ide-context--owned-socket-path
+              (codex-ide-context--socket-path))
+       codex-ide-context--owned-socket-identity
+       (equal codex-ide-context--owned-socket-identity
+              (codex-ide-context--socket-identity
+               codex-ide-context--owned-socket-path))))
+
+(defun codex-ide-context--delete-server-process ()
+  "Delete the live IPC server process without touching socket files."
+  (when codex-ide-context--server
+    (ignore-errors (delete-process codex-ide-context--server))
+    (setq codex-ide-context--server nil)))
+
+(defun codex-ide-context--stale-socket-error-p (error)
+  "Return non-nil when ERROR means PATH is a stale socket."
+  (string-match-p
+   (regexp-opt '("Connection refused" "No such file or directory"))
+   (error-message-string error)))
+
+(defun codex-ide-context--socket-state (path)
+  "Return `live', `stale', or `unknown' for the socket at PATH."
+  (let (probe)
+    (unwind-protect
+        (condition-case err
+            (progn
+              (setq probe
+                    (make-network-process
+                     :name "codex-ide-context-probe"
+                     :buffer nil
+                     :family 'local
+                     :service path
+                     :noquery t
+                     :coding 'binary))
+              (if (process-live-p probe) 'live 'unknown))
+          (file-error
+           (if (codex-ide-context--stale-socket-error-p err)
+               'stale
+             'unknown))
+          (error 'unknown))
+      (when (process-live-p probe)
+        (delete-process probe)))))
+
+(defun codex-ide-context--prepare-socket-path (directory path)
+  "Prepare PATH in DIRECTORY before binding the IPC server."
+  (when (file-exists-p path)
+    (pcase (codex-ide-context--socket-state path)
+      ('live
+       (user-error "Another Codex IDE provider is using %s" path))
+      ('stale
+       (if (and (codex-ide-context--owned-private-directory-p directory)
+                (codex-ide-context--socket-file-p path))
+           (delete-file path)
+         (user-error "Refusing to remove non-stale Codex IPC path: %s"
+                     path)))
+      (_
+       (user-error "Cannot determine whether Codex IPC socket is stale: %s"
+                   path)))))
 
 (defun codex-ide-context--start-server ()
   "Start the IPC server on the Codex IDE context socket.
-Returns the server process.  Signals an error when the socket directory
-cannot be secured or the server is already running."
-  (when (codex-ide-context--running-p)
-    (user-error "Codex IDE context provider is already running"))
-  (let ((dir codex-ide-context-socket-directory)
-        (path (codex-ide-context--socket-path)))
-    (codex-ide-context--ensure-socket-directory dir)
-    (when (file-exists-p path)
-      (delete-file path))
-    (let ((server (make-network-process
-                   :name "codex-ide-context"
-                   :buffer nil
-                   :family 'local
-                   :service path
-                   :server t
-                   :noquery t
-                   :filter #'codex-ide-context--filter
-                   :sentinel #'codex-ide-context--sentinel)))
-      (setq codex-ide-context--server server)
-      (set-file-modes path #o600)
-      (codex-ide-debug "Codex IPC listening on %s" path)
-      server)))
+Return the server process.  Signals an error when the socket directory
+cannot be secured or another live provider owns the socket."
+  (if (codex-ide-context--running-p)
+      codex-ide-context--server
+    (let ((dir codex-ide-context-socket-directory)
+          (path (codex-ide-context--socket-path)))
+      (codex-ide-context--delete-server-process)
+      (codex-ide-context--ensure-socket-directory dir)
+      (codex-ide-context--prepare-socket-path dir path)
+      (let ((server (make-network-process
+                     :name "codex-ide-context"
+                     :buffer nil
+                     :family 'local
+                     :service path
+                     :server t
+                     :noquery t
+                     :coding 'binary
+                     :filter #'codex-ide-context--filter
+                     :sentinel #'codex-ide-context--sentinel)))
+        (setq codex-ide-context--server server
+              codex-ide-context--owned-socket-path path
+              codex-ide-context--owned-socket-identity
+              (codex-ide-context--socket-identity path))
+        (set-file-modes path #o600)
+        (codex-ide-debug "Codex IPC listening on %s" path)
+        server))))
+
+(defun codex-ide-context--delete-clients ()
+  "Delete live IPC client processes and clear client state."
+  (maphash
+   (lambda (proc _state)
+     (when (process-live-p proc)
+       (ignore-errors (delete-process proc))))
+   codex-ide-context--clients)
+  (clrhash codex-ide-context--clients))
+
+(defun codex-ide-context--delete-owned-socket ()
+  "Delete the socket file owned by this provider instance."
+  (when-let* ((path codex-ide-context--owned-socket-path)
+              (identity codex-ide-context--owned-socket-identity))
+    (when (and (equal path (codex-ide-context--socket-path))
+               (file-exists-p path)
+               (equal identity
+                      (codex-ide-context--socket-identity path))
+               (codex-ide-context--socket-file-p path))
+      (ignore-errors (delete-file path))))
+  (setq codex-ide-context--owned-socket-path nil
+        codex-ide-context--owned-socket-identity nil))
 
 (defun codex-ide-context--stop-server ()
   "Stop the IPC server and release the socket."
-  (when codex-ide-context--server
-    (ignore-errors (delete-process codex-ide-context--server))
-    (setq codex-ide-context--server nil))
-  (clrhash codex-ide-context--clients)
-  (when-let* ((path (codex-ide-context--socket-path)))
-    (when (file-exists-p path)
-      (ignore-errors (delete-file path))))
+  (codex-ide-context--delete-clients)
+  (codex-ide-context--delete-server-process)
+  (codex-ide-context--delete-owned-socket)
   (codex-ide-debug "Codex IPC provider stopped"))
 
 (defun codex-ide-context--client-state (proc)
   "Return the accumulator plist for client PROC, creating it if needed."
+  (set-process-coding-system proc 'binary 'binary)
   (or (gethash proc codex-ide-context--clients)
       (let ((state (list :pending (unibyte-string)
                          :length nil)))
@@ -538,23 +677,68 @@ clients reached."
 (defun codex-ide-context--sentinel (proc event)
   "Sentinel: clean up client PROC on EVENT."
   (codex-ide-debug "Codex IPC client event: %s" (string-trim event))
+  (when (eq proc codex-ide-context--server)
+    (setq codex-ide-context--server nil))
   (unless (process-live-p proc)
     (remhash proc codex-ide-context--clients)))
 
 ;;; Commands
 
+(defun codex-ide-context--install-tracking ()
+  "Install source-buffer tracking hooks for the provider."
+  (add-hook 'window-selection-change-functions
+            #'codex-ide-context--record-window-selection)
+  (add-hook 'kill-emacs-hook
+            #'codex-ide-context--cleanup-on-exit)
+  (codex-ide-context-record-source-buffer))
+
+(defun codex-ide-context--uninstall-tracking ()
+  "Remove source-buffer tracking hooks for the provider."
+  (remove-hook 'window-selection-change-functions
+               #'codex-ide-context--record-window-selection)
+  (remove-hook 'kill-emacs-hook
+               #'codex-ide-context--cleanup-on-exit))
+
+(defun codex-ide-context--enable ()
+  "Enable the Codex IDE context provider."
+  (codex-ide-context--start-server)
+  (codex-ide-context--install-tracking))
+
+(defun codex-ide-context--disable ()
+  "Disable the Codex IDE context provider."
+  (codex-ide-context--uninstall-tracking)
+  (codex-ide-context--stop-server)
+  (clrhash codex-ide-context--source-buffers))
+
+(defun codex-ide-context--cleanup-on-exit ()
+  "Clean up the IPC provider while Emacs is exiting."
+  (codex-ide-context--disable))
+
+;;;###autoload
+(define-minor-mode codex-ide-context-mode
+  "Toggle the global Codex IDE context provider."
+  :global t
+  :group 'codex-ide
+  (if codex-ide-context-mode
+      (condition-case err
+          (codex-ide-context--enable)
+        (error
+         (setq codex-ide-context-mode nil)
+         (codex-ide-context--disable)
+         (signal (car err) (cdr err))))
+    (codex-ide-context--disable)))
+
 (defun codex-ide-context-ensure-server ()
   "Ensure the Codex IDE context IPC provider is running.
 Return the listening process."
-  (if (codex-ide-context--running-p)
-      codex-ide-context--server
-    (codex-ide-context--start-server)))
+  (codex-ide-context-mode 1)
+  codex-ide-context--server)
 
 ;;;###autoload
 (defun codex-ide-context-start ()
   "Start the Codex IDE context IPC provider."
   (interactive)
-  (codex-ide-context--start-server)
+  (codex-ide-context-mode 1)
   (codex-ide-log "Codex IDE context provider started on %s"
                  (codex-ide-context--socket-path)))
 
@@ -562,7 +746,7 @@ Return the listening process."
 (defun codex-ide-context-stop ()
   "Stop the Codex IDE context IPC provider."
   (interactive)
-  (codex-ide-context--stop-server)
+  (codex-ide-context-mode -1)
   (codex-ide-log "Codex IDE context provider stopped"))
 
 ;;;###autoload
@@ -576,7 +760,7 @@ Return the listening process."
 
 ;;;###autoload
 (defun codex-ide-send-selection (&optional workspace-root)
-  "Push the current selection and context to connected Codex clients.
+  "Compatibility command for pushing context to connected Codex clients.
 WORKSPACE-ROOT defaults to `default-directory'.  If no client is
 connected, copy the active selection to the kill ring when present and
 tell the user to use `/ide' in the Codex TUI."

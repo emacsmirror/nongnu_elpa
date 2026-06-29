@@ -127,6 +127,10 @@ do-load: clean
 	        (use-local-map (symbol-value map))))))" > /dev/null
 	@emacsclient --eval "(when (fboundp 'codex-ide--recover-live-sessions) \
 	  (codex-ide--recover-live-sessions))" > /dev/null
+	@emacsclient --eval "(when (and (boundp 'codex-ide-context-mode) \
+	                                codex-ide-context-mode \
+	                                (fboundp 'codex-ide-context-start)) \
+	  (codex-ide-context-start))" > /dev/null
 	@printf "\033[32mLoaded all modules into Emacs\033[0m\n"
 
 clean:

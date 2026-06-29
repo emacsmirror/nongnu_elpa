@@ -1192,6 +1192,27 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
              (should-not (buffer-live-p (plist-get active :buffer))))))
       (delete-directory root t))))
 
+(ert-deftest codex-ide-stop-leaves-context-provider-running ()
+  "`codex-ide-stop' does not stop the user-wide context provider."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-stop-context-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1))
+         (lambda (_sessions)
+           (let ((codex-ide-context-mode t)
+                 stopped-provider)
+             (cl-letf (((symbol-function 'codex-ide-context-stop)
+                        (lambda ()
+                          (setq stopped-provider t)))
+                       ((symbol-function 'codex-ide-log)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root))
+                 (codex-ide-stop)))
+             (should codex-ide-context-mode)
+             (should-not stopped-provider))))
+      (delete-directory root t))))
+
 (ert-deftest codex-ide-cleanup-removes-only-dead-session ()
   "Cleanup removes one dead session and preserves live siblings."
   (let ((root (file-name-as-directory
@@ -1212,10 +1233,58 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
              (should (= (gethash root codex-ide--active-session-ids) 1)))))
       (delete-directory root t))))
 
+(ert-deftest codex-ide-cleanup-accepts-buffer-argument ()
+  "Cleanup tolerates hook-style calls with the session buffer."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-cleanup-buffer-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1))
+         (lambda (sessions)
+           (let ((session (car sessions)))
+             (codex-ide--cleanup-on-exit (plist-get session :buffer))
+             (should-not (buffer-live-p (plist-get session :buffer)))
+             (should-not (codex-ide--project-sessions root)))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-cleanup-accepts-process-argument ()
+  "Cleanup tolerates sentinel-style calls with only the process."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-cleanup-process-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1))
+         (lambda (sessions)
+           (let ((session (car sessions)))
+             (codex-ide--cleanup-on-exit (plist-get session :process))
+             (should-not (buffer-live-p (plist-get session :buffer)))
+             (should-not (codex-ide--project-sessions root)))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-setup-session-removes-stale-cleanup-hook ()
+  "Session setup removes obsolete cleanup hook function objects."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-cleanup-stale-hook-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1))
+         (lambda (sessions)
+           (let* ((session (car sessions))
+                  (buffer (plist-get session :buffer))
+                  (stale (symbol-function 'codex-ide--cleanup-on-exit)))
+             (with-current-buffer buffer
+               (add-hook 'kill-buffer-hook stale nil t))
+             (codex-ide--setup-session session)
+             (with-current-buffer buffer
+               (should-not (memq stale kill-buffer-hook))
+               (should (memq #'codex-ide--cleanup-current-buffer-session
+                             kill-buffer-hook))))))
+      (delete-directory root t))))
+
 ;;; Native IDE context
 
-(ert-deftest codex-ide-start-session-ensures-context-provider-for-new-session ()
-  "New sessions ensure the IDE context provider when auto-start is enabled."
+(ert-deftest codex-ide-start-session-enables-context-provider-for-new-session ()
+  "New sessions enable the IDE context provider when auto-start is enabled."
   (codex-ide-test--call-with-project
    (lambda (root)
      (let* ((codex-ide--sessions (make-hash-table :test 'equal))
@@ -1223,7 +1292,7 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
             (codex-ide-context-auto-start t)
             (buffer (get-buffer-create (codex-ide--get-buffer-name root)))
             (process nil)
-            (ensured 0))
+            (enabled 0))
        (unwind-protect
            (progn
              (setq process
@@ -1231,10 +1300,10 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                     buffer "codex-ide-context-start"))
              (cl-letf (((symbol-function 'codex-ide--ensure-cli)
                         (lambda () t))
-                       ((symbol-function 'codex-ide-context-ensure-server)
-                        (lambda ()
-                          (setq ensured (1+ ensured))
-                          'server))
+                       ((symbol-function 'codex-ide-context-mode)
+                        (lambda (arg)
+                          (when (> (prefix-numeric-value arg) 0)
+                            (setq enabled (1+ enabled)))))
                        ((symbol-function 'codex-ide--create-session)
                         (lambda (emacs-session-id &rest _args)
                           (codex-ide--make-session
@@ -1249,7 +1318,54 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                         (lambda (&rest _args) nil)))
                (let ((default-directory root))
                  (codex-ide--start-session)))
-             (should (= ensured 1)))
+             (should (= enabled 1)))
+         (when (and process (process-live-p process))
+           (delete-process process))
+         (when (buffer-live-p buffer)
+           (kill-buffer buffer)))))))
+
+(ert-deftest codex-ide-start-session-enables-context-provider-once-for-active-session ()
+  "Auto-start does not re-enable context when toggling an existing session."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let* ((codex-ide--sessions (make-hash-table :test 'equal))
+            (codex-ide--active-session-ids (make-hash-table :test 'equal))
+            (codex-ide-context-auto-start t)
+            (buffer (get-buffer-create (codex-ide--get-buffer-name root)))
+            (process nil)
+            (enabled 0)
+            (created 0))
+       (unwind-protect
+           (progn
+             (setq process
+                   (codex-ide-test--make-buffer-process
+                    buffer "codex-ide-context-existing"))
+             (cl-letf (((symbol-function 'codex-ide--ensure-cli)
+                        (lambda () t))
+                       ((symbol-function 'codex-ide-context-mode)
+                        (lambda (arg)
+                          (when (> (prefix-numeric-value arg) 0)
+                            (setq enabled (1+ enabled)))))
+                       ((symbol-function 'codex-ide--create-session)
+                        (lambda (emacs-session-id &rest _args)
+                          (setq created (1+ created))
+                          (codex-ide--make-session
+                           root emacs-session-id buffer process)))
+                       ((symbol-function 'codex-ide--display-buffer)
+                        (lambda (_buffer) nil))
+                       ((symbol-function 'codex-ide--toggle-existing-window)
+                        (lambda (_buffer) nil))
+                       ((symbol-function 'codex-ide-context-record-source-buffer)
+                        (lambda (&rest _args) nil))
+                       ((symbol-function 'codex-ide-log)
+                        (lambda (&rest _args) nil))
+                       ((symbol-function 'codex-ide-debug)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root))
+                 (codex-ide--start-session)
+                 (codex-ide--start-session)))
+             (should (= enabled 1))
+             (should (= created 1)))
          (when (and process (process-live-p process))
            (delete-process process))
          (when (buffer-live-p buffer)

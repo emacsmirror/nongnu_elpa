@@ -451,7 +451,7 @@ session-local overrides needed by enabled integration helpers."
 (defun codex-ide--maybe-ensure-context-server ()
   "Start the IDE context provider when auto-start is enabled."
   (when codex-ide-context-auto-start
-    (codex-ide-context-ensure-server)))
+    (codex-ide-context-mode 1)))
 
 ;;; Session selection
 
@@ -552,30 +552,66 @@ Used when a session is already running."
       (codex-ide--display-buffer buffer)
       (codex-ide-debug "Codex window shown"))))
 
-(defun codex-ide--cleanup-on-exit (directory session-id)
+(defun codex-ide--cleanup-target-from-buffer (buffer)
+  "Return BUFFER's cleanup target as (ROOT ID), or nil."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (and codex-ide--session-root
+              codex-ide--session-id
+              (list codex-ide--session-root codex-ide--session-id)))))
+
+(defun codex-ide--cleanup-target (directory session-id)
+  "Resolve a cleanup target from DIRECTORY and SESSION-ID."
+  (cond
+   ((and (stringp directory) session-id)
+    (list directory session-id))
+   ((bufferp directory)
+    (codex-ide--cleanup-target-from-buffer directory))
+   ((processp directory)
+    (codex-ide--cleanup-target-from-buffer (process-buffer directory)))
+   (t
+    (codex-ide--cleanup-target-from-buffer (current-buffer)))))
+
+(defun codex-ide--cleanup-on-exit (&optional directory session-id &rest _ignored)
   "Clean up the Codex session state for DIRECTORY and SESSION-ID.
 Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
-  (unless codex-ide--cleanup-in-progress
-    (let* ((codex-ide--cleanup-in-progress t)
-           (session (codex-ide--session-by-id directory session-id))
-           (buffer (or (plist-get session :buffer)
-                       (get-buffer
-                        (codex-ide--get-buffer-name directory session-id)))))
-      (codex-ide--remove-session directory session-id)
-      (when buffer
-        (when (buffer-live-p buffer)
-          (let ((kill-buffer-hook nil)
-                (kill-buffer-query-functions nil))
-            (kill-buffer buffer))))
-      (codex-ide-debug "Cleaned up Codex session %s for %s"
-                       session-id
-                       (file-name-nondirectory (directory-file-name directory))))))
+  (when-let* ((target (codex-ide--cleanup-target directory session-id))
+              (directory (car target))
+              (session-id (cadr target)))
+    (unless codex-ide--cleanup-in-progress
+      (let* ((codex-ide--cleanup-in-progress t)
+             (session (codex-ide--session-by-id directory session-id))
+             (buffer (or (plist-get session :buffer)
+                         (get-buffer
+                          (codex-ide--get-buffer-name directory session-id)))))
+        (codex-ide--remove-session directory session-id)
+        (when buffer
+          (when (buffer-live-p buffer)
+            (let ((kill-buffer-hook nil)
+                  (kill-buffer-query-functions nil))
+              (kill-buffer buffer))))
+        (codex-ide-debug "Cleaned up Codex session %s for %s"
+                         session-id
+                         (file-name-nondirectory (directory-file-name directory)))))))
 
 (defun codex-ide--cleanup-current-buffer-session ()
   "Clean up the Codex session owned by the current buffer."
   (when (and codex-ide--session-root codex-ide--session-id)
     (codex-ide--cleanup-on-exit
      codex-ide--session-root codex-ide--session-id)))
+
+(defun codex-ide--stale-cleanup-hook-p (function)
+  "Return non-nil when FUNCTION is an obsolete cleanup hook."
+  (or (eq function 'codex-ide--cleanup-on-exit)
+      (string-prefix-p
+       "Clean up the Codex session state"
+       (or (ignore-errors (documentation function t)) ""))))
+
+(defun codex-ide--remove-stale-cleanup-hooks ()
+  "Remove obsolete cleanup hooks from the current session buffer."
+  (setq-local kill-buffer-hook
+              (cl-remove-if #'codex-ide--stale-cleanup-hook-p
+                            kill-buffer-hook)))
 
 (defun codex-ide--make-process-sentinel (directory session-id)
   "Return the process sentinel for DIRECTORY and SESSION-ID."
@@ -607,6 +643,7 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
     (with-current-buffer buffer
       (setq-local codex-ide--session-root directory)
       (setq-local codex-ide--session-id session-id)
+      (codex-ide--remove-stale-cleanup-hooks)
       (add-hook 'kill-buffer-hook
                 #'codex-ide--cleanup-current-buffer-session nil t)
       (codex-ide--setup-terminal-keybindings))

@@ -29,12 +29,15 @@
 (require 'ert)
 (require 'codex-ide-context)
 
-(defun codex-ide-context-test--request (request-id method params)
+(defvar native-comp-enable-subr-trampolines)
+
+(defun codex-ide-context-test--request (request-id method params
+                                                   &optional version)
   "Build a request plist matching the Codex wire shape."
   (append (list :type "request"
                 :requestId request-id
                 :sourceClientId "codex-tui"
-                :version 0
+                :version (if (null version) 0 version)
                 :method method)
           (when params (list :params params))))
 
@@ -95,12 +98,15 @@
 ;;; Protocol builders
 
 (ert-deftest codex-ide-context-success-response-shape ()
-  "Success response carries requestId, resultType, and result.ideContext."
+  "Success response carries requestId, metadata, and result.ideContext."
   (let ((resp (codex-ide-context--success-response
                "req-1" '((activeFile)))))
     (should (equal (cdr (assoc "type" resp)) "response"))
     (should (equal (cdr (assoc "requestId" resp)) "req-1"))
     (should (equal (cdr (assoc "resultType" resp)) "success"))
+    (should (equal (cdr (assoc "method" resp)) "ide-context"))
+    (should (equal (cdr (assoc "handledByClientId" resp))
+                   "codex-emacs"))
     (should (assoc "ideContext" (cdr (assoc "result" resp))))))
 
 (ert-deftest codex-ide-context-error-response-shape ()
@@ -118,6 +124,14 @@
     (should (eq (cdr (assoc "canHandle"
                             (cdr (assoc "response" resp))))
                 t))))
+
+(ert-deftest codex-ide-context-discovery-response-uses-json-false ()
+  "Discovery response encodes canHandle nil as JSON false."
+  (let* ((resp (codex-ide-context--discovery-response "d-2" nil))
+         (frame (codex-ide-context--encode-frame resp))
+         (payload (decode-coding-string (substring frame 4) 'utf-8)))
+    (should (string-match-p "\"canHandle\":false" payload))
+    (should-not (string-match-p "\"canHandle\":\"false\"" payload))))
 
 (ert-deftest codex-ide-context-unsupported-response-shape ()
   "Unsupported request yields a no-handler-for-request error."
@@ -148,6 +162,16 @@
     (should (equal (cdr (assoc "error" resp))
                    "no-handler-for-request"))))
 
+(ert-deftest codex-ide-context-handle-version-mismatch ()
+  "An unsupported version dispatches to a request-version-mismatch error."
+  (let* ((request (codex-ide-context-test--request
+                   "req-version" "ide-context"
+                   (list :workspaceRoot "/repo") 99))
+         (resp (codex-ide-context--handle-message request "/repo")))
+    (should (equal (cdr (assoc "resultType" resp)) "error"))
+    (should (equal (cdr (assoc "error" resp))
+                   "request-version-mismatch"))))
+
 (ert-deftest codex-ide-context-handle-discovery-request ()
   "A client-discovery-request dispatches to a discovery response."
   (let* ((msg (list :type "client-discovery-request"
@@ -158,6 +182,18 @@
     (should (eq (cdr (assoc "canHandle"
                             (cdr (assoc "response" resp))))
                 t))))
+
+(ert-deftest codex-ide-context-discovery-rejects-unsupported-request ()
+  "Discovery reports false for an unsupported embedded request."
+  (let* ((msg (list :type "client-discovery-request"
+                    :requestId "d-unsupported"
+                    :request (codex-ide-context-test--request
+                              "req" "ide-context"
+                              (list :workspaceRoot "/repo") 2)))
+         (resp (codex-ide-context--handle-message msg "/repo")))
+    (should (eq (cdr (assoc "canHandle"
+                            (cdr (assoc "response" resp))))
+                :json-false))))
 
 (ert-deftest codex-ide-context-handle-broadcast-ignored ()
   "Broadcasts produce no response."
@@ -222,6 +258,8 @@
               (should (equal (cdr (assoc "activeSelectionContent" active))
                              "second"))
               (should (equal (cdr (assoc "path" active)) "test-active.el"))
+              (should (equal (cdr (assoc "fsPath" active))
+                             (expand-file-name file)))
               (should (alist-get "selection" active nil nil #'equal)))))
       (delete-file file))))
 
@@ -495,7 +533,9 @@
                                                           (cdr (assoc "path" desc))))))
                     (dolist (desc tabs)
                       (should (assoc "label" desc))
-                      (should (assoc "path" desc)))))
+                      (should (assoc "path" desc))
+                      (should (file-name-absolute-p
+                               (cdr (assoc "fsPath" desc)))))))
               (when buf-a (kill-buffer buf-a))
               (when buf-b (kill-buffer buf-b))
               (when buf-out (kill-buffer buf-out))
@@ -702,6 +742,273 @@
               'variable-documentation)))
     (should (string-match-p "characters" doc))
     (should-not (string-match-p (rx word-start "bytes" word-end) doc))))
+
+;;; Lifecycle
+
+(ert-deftest codex-ide-context-start-server-idempotent ()
+  "Starting an already live provider returns the existing server."
+  (let ((codex-ide-context--server nil)
+        (codex-ide-context--owned-socket-path nil)
+        (codex-ide-context--owned-socket-identity nil)
+        (codex-ide-context-socket-directory "/tmp/codex-ipc-test")
+        (native-comp-enable-subr-trampolines nil)
+        (created 0)
+        network-args)
+    (cl-letf (((symbol-function 'make-directory)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'file-attributes)
+               (lambda (&rest _args)
+                 (list t 1 (user-uid) (user-uid))))
+              ((symbol-function 'file-modes)
+               (lambda (&rest _args) #o700))
+              ((symbol-function 'file-exists-p)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'make-network-process)
+               (lambda (&rest args)
+                 (setq network-args args)
+                 (setq created (1+ created))
+                 'server))
+              ((symbol-function 'process-live-p)
+               (lambda (proc) (eq proc 'server)))
+              ((symbol-function 'set-file-modes)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'codex-ide-context--socket-identity)
+               (lambda (_path) '(10 20)))
+              ((symbol-function 'codex-ide-debug)
+               (lambda (&rest _args) nil)))
+      (should (eq (codex-ide-context--start-server) 'server))
+      (should (eq (codex-ide-context--start-server) 'server))
+      (should (eq (plist-get network-args :coding) 'binary))
+      (should (equal codex-ide-context--owned-socket-identity
+                     '(10 20)))
+      (should (= created 1)))))
+
+(ert-deftest codex-ide-context-start-server-replaces-orphan-process ()
+  "Starting removes a live server process with lost socket ownership."
+  (let* ((codex-ide-context--server 'orphan)
+         (codex-ide-context--owned-socket-path nil)
+         (codex-ide-context--owned-socket-identity nil)
+         (codex-ide-context-socket-directory "/tmp/codex-ipc-test")
+         (path (codex-ide-context--socket-path))
+         (native-comp-enable-subr-trampolines nil)
+         (created 0)
+         deleted-processes
+         deleted-files)
+    (cl-letf (((symbol-function 'make-directory)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'file-attributes)
+               (lambda (&rest _args)
+                 (list t 1 (user-uid) (user-uid))))
+              ((symbol-function 'file-modes)
+               (lambda (&rest _args) #o700))
+              ((symbol-function 'file-exists-p)
+               (lambda (&rest _args) t))
+              ((symbol-function 'codex-ide-context--socket-state)
+               (lambda (_path) 'stale))
+              ((symbol-function 'codex-ide-context--socket-file-p)
+               (lambda (_path) t))
+              ((symbol-function 'delete-file)
+               (lambda (file)
+                 (push file deleted-files)))
+              ((symbol-function 'make-network-process)
+               (lambda (&rest _args)
+                 (setq created (1+ created))
+                 'server))
+              ((symbol-function 'process-live-p)
+               (lambda (proc) (memq proc '(orphan server))))
+              ((symbol-function 'delete-process)
+               (lambda (proc)
+                 (push proc deleted-processes)))
+              ((symbol-function 'set-file-modes)
+               (lambda (&rest _args) nil))
+              ((symbol-function 'codex-ide-context--socket-identity)
+               (lambda (_path) '(10 20)))
+              ((symbol-function 'codex-ide-debug)
+               (lambda (&rest _args) nil)))
+      (should (eq (codex-ide-context--start-server) 'server))
+      (should (equal deleted-processes '(orphan)))
+      (should (equal deleted-files (list path)))
+      (should (equal codex-ide-context--owned-socket-path path))
+      (should (equal codex-ide-context--owned-socket-identity '(10 20)))
+      (should (= created 1)))))
+
+(ert-deftest codex-ide-context-stop-server-idempotent-cleans-clients ()
+  "Stopping deletes live clients, clears state, and tolerates repeats."
+  (let* ((path "/tmp/codex-ipc/ipc-test.sock")
+         (codex-ide-context--server 'server)
+         (codex-ide-context--owned-socket-path path)
+         (codex-ide-context--owned-socket-identity '(10 20))
+         (codex-ide-context--clients (make-hash-table :test 'eq))
+         (native-comp-enable-subr-trampolines nil)
+         deleted-processes deleted-files)
+    (puthash 'client-a nil codex-ide-context--clients)
+    (puthash 'dead-client nil codex-ide-context--clients)
+    (cl-letf (((symbol-function 'process-live-p)
+               (lambda (proc) (memq proc '(server client-a))))
+              ((symbol-function 'delete-process)
+               (lambda (proc)
+                 (push proc deleted-processes)))
+              ((symbol-function 'codex-ide-context--socket-path)
+               (lambda () path))
+              ((symbol-function 'file-exists-p)
+               (lambda (_path) t))
+              ((symbol-function 'codex-ide-context--socket-file-p)
+               (lambda (_path) t))
+              ((symbol-function 'codex-ide-context--socket-identity)
+               (lambda (_path) '(10 20)))
+              ((symbol-function 'delete-file)
+               (lambda (file)
+                 (push file deleted-files)))
+              ((symbol-function 'codex-ide-debug)
+               (lambda (&rest _args) nil)))
+      (codex-ide-context--stop-server)
+      (codex-ide-context--stop-server)
+      (should (memq 'client-a deleted-processes))
+      (should (memq 'server deleted-processes))
+      (should-not (memq 'dead-client deleted-processes))
+      (should (= (hash-table-count codex-ide-context--clients) 0))
+      (should-not codex-ide-context--server)
+      (should-not codex-ide-context--owned-socket-path)
+      (should-not codex-ide-context--owned-socket-identity)
+      (should (equal deleted-files (list path))))))
+
+(ert-deftest codex-ide-context-stop-server-keeps-replaced-socket ()
+  "Stopping does not remove a socket that replaced the owned one."
+  (let* ((path "/tmp/codex-ipc/ipc-test.sock")
+         (codex-ide-context--server nil)
+         (codex-ide-context--owned-socket-path path)
+         (codex-ide-context--owned-socket-identity '(10 20))
+         (codex-ide-context--clients (make-hash-table :test 'eq))
+         (native-comp-enable-subr-trampolines nil)
+         deleted)
+    (cl-letf (((symbol-function 'codex-ide-context--socket-path)
+               (lambda () path))
+              ((symbol-function 'file-exists-p)
+               (lambda (_path) t))
+              ((symbol-function 'codex-ide-context--socket-identity)
+               (lambda (_path) '(30 40)))
+              ((symbol-function 'codex-ide-context--socket-file-p)
+               (lambda (_path) t))
+              ((symbol-function 'delete-file)
+               (lambda (file)
+                 (setq deleted file)))
+              ((symbol-function 'codex-ide-debug)
+               (lambda (&rest _args) nil)))
+      (codex-ide-context--stop-server)
+      (should-not deleted)
+      (should-not codex-ide-context--owned-socket-path)
+      (should-not codex-ide-context--owned-socket-identity))))
+
+(ert-deftest codex-ide-context-mode-owns-hooks-and-tracked-buffers ()
+  "The global mode installs tracking and clears tracked source buffers."
+  (let ((codex-ide-context-mode nil)
+        (codex-ide-context--source-buffers (make-hash-table :test 'equal))
+        (window-selection-change-functions nil)
+        (kill-emacs-hook nil)
+        starts stops records)
+    (cl-letf (((symbol-function 'codex-ide-context--start-server)
+               (lambda ()
+                 (push :start starts)
+                 'server))
+              ((symbol-function 'codex-ide-context--stop-server)
+               (lambda ()
+                 (push :stop stops)))
+              ((symbol-function 'codex-ide-context-record-source-buffer)
+               (lambda (&rest _args)
+                 (push :record records))))
+      (codex-ide-context-mode 1)
+      (should codex-ide-context-mode)
+      (should (memq #'codex-ide-context--record-window-selection
+                    window-selection-change-functions))
+      (should (memq #'codex-ide-context--cleanup-on-exit
+                    kill-emacs-hook))
+      (puthash "/repo/" 'buffer codex-ide-context--source-buffers)
+      (codex-ide-context-mode -1)
+      (should-not codex-ide-context-mode)
+      (should-not (memq #'codex-ide-context--record-window-selection
+                        window-selection-change-functions))
+      (should-not (memq #'codex-ide-context--cleanup-on-exit
+                        kill-emacs-hook))
+      (should (= (hash-table-count codex-ide-context--source-buffers) 0))
+      (should (= (length starts) 1))
+      (should (= (length stops) 1))
+      (should (= (length records) 1)))))
+
+;;; Socket ownership
+
+(ert-deftest codex-ide-context-prepare-socket-refuses-live-provider ()
+  "A live socket owned by another provider is left in place."
+  (let ((native-comp-enable-subr-trampolines nil)
+        deleted)
+    (cl-letf (((symbol-function 'file-exists-p)
+               (lambda (_path) t))
+              ((symbol-function 'codex-ide-context--socket-state)
+               (lambda (_path) 'live))
+              ((symbol-function 'delete-file)
+               (lambda (file)
+                 (setq deleted file))))
+      (should-error
+       (codex-ide-context--prepare-socket-path
+        "/tmp/codex-ipc" "/tmp/codex-ipc/ipc-test.sock")
+       :type 'user-error)
+      (should-not deleted))))
+
+(ert-deftest codex-ide-context-prepare-socket-deletes-stale-socket ()
+  "A stale socket in the owned private directory is removed before bind."
+  (let ((native-comp-enable-subr-trampolines nil)
+        deleted)
+    (cl-letf (((symbol-function 'file-exists-p)
+               (lambda (_path) t))
+              ((symbol-function 'codex-ide-context--socket-state)
+               (lambda (_path) 'stale))
+              ((symbol-function 'codex-ide-context--owned-private-directory-p)
+               (lambda (_directory) t))
+              ((symbol-function 'codex-ide-context--socket-file-p)
+               (lambda (_path) t))
+              ((symbol-function 'delete-file)
+               (lambda (file)
+                 (setq deleted file))))
+      (codex-ide-context--prepare-socket-path
+       "/tmp/codex-ipc" "/tmp/codex-ipc/ipc-test.sock")
+      (should (equal deleted "/tmp/codex-ipc/ipc-test.sock")))))
+
+(ert-deftest codex-ide-context-prepare-socket-refuses-nonsocket-path ()
+  "A regular file at the socket path is never removed as stale."
+  (let ((native-comp-enable-subr-trampolines nil)
+        deleted)
+    (cl-letf (((symbol-function 'file-exists-p)
+               (lambda (_path) t))
+              ((symbol-function 'codex-ide-context--socket-state)
+               (lambda (_path) 'stale))
+              ((symbol-function 'codex-ide-context--owned-private-directory-p)
+               (lambda (_directory) t))
+              ((symbol-function 'codex-ide-context--socket-file-p)
+               (lambda (_path) nil))
+              ((symbol-function 'delete-file)
+               (lambda (file)
+                 (setq deleted file))))
+      (should-error
+       (codex-ide-context--prepare-socket-path
+        "/tmp/codex-ipc" "/tmp/codex-ipc/ipc-test.sock")
+       :type 'user-error)
+      (should-not deleted))))
+
+(ert-deftest codex-ide-context-prepare-socket-refuses-unknown-socket-state ()
+  "Ambiguous socket probe errors are not treated as stale."
+  (let ((native-comp-enable-subr-trampolines nil)
+        deleted)
+    (cl-letf (((symbol-function 'file-exists-p)
+               (lambda (_path) t))
+              ((symbol-function 'codex-ide-context--socket-state)
+               (lambda (_path) 'unknown))
+              ((symbol-function 'delete-file)
+               (lambda (file)
+                 (setq deleted file))))
+      (should-error
+       (codex-ide-context--prepare-socket-path
+        "/tmp/codex-ipc" "/tmp/codex-ipc/ipc-test.sock")
+       :type 'user-error)
+      (should-not deleted))))
 
 ;;; Socket path
 
