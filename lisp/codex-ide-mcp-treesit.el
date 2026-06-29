@@ -240,9 +240,9 @@ tree output."
      (codex-ide-mcp--treesit-node-extras
       node include-ancestors include-children max-children))))
 
-;;; Tool implementation
+;;; Tree-sitter query
 
-(defun codex-ide-mcp--tool-tree-sitter-info (args)
+(defun codex-ide-mcp--tree-sitter-info (args)
   "Return structured tree-sitter information for ARGS."
   (let* ((line (codex-ide-mcp--object-get args "line"))
          (column (codex-ide-mcp--object-get args "column"))
@@ -271,10 +271,16 @@ tree output."
                          (treesit-node-at (point) parser))))
             (unless node
               (user-error "No tree-sitter node at point"))
-            (codex-ide-mcp--json-text-result
-             (codex-ide-mcp--treesit-result
-              parser node whole-file include-ancestors include-children
-              max-depth max-children))))))))
+            (codex-ide-mcp--treesit-result
+             parser node whole-file include-ancestors include-children
+             max-depth max-children)))))))
+
+;;; Tool implementation
+
+(defun codex-ide-mcp--tool-tree-sitter-info (args)
+  "Return structured tree-sitter information for ARGS."
+  (codex-ide-mcp--json-text-result
+   (codex-ide-mcp--tree-sitter-info args)))
 
 (provide 'codex-ide-mcp-treesit)
 

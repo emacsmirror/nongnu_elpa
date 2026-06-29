@@ -1,4 +1,4 @@
-;;; codex-ide-mcp-tools.el --- MCP tool implementations for Codex  -*- lexical-binding: t; -*-
+;;; codex-ide-mcp-tools.el --- MCP harness tools for Codex  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Thanos Apollo
 
@@ -16,7 +16,7 @@
 
 ;;; Commentary:
 
-;; Tool implementations and registry for the local MCP bridge.
+;; Public harness helpers and the narrow MCP registry that exposes them.
 
 ;;; Code:
 
@@ -28,7 +28,211 @@
 (require 'codex-ide-mcp-core)
 (require 'codex-ide-mcp-treesit)
 
-;;; Tool helpers
+;;; Harness state
+
+(defconst codex-ide-harness-event-limit 500
+  "Maximum number of harness events retained in memory.")
+
+(defvar codex-ide-harness--event-cursor 0
+  "Monotonic cursor for harness events.")
+
+(defvar codex-ide-harness--events nil
+  "Newest-first list of recent harness events.")
+
+(defvar codex-ide-harness--jobs (make-hash-table :test 'equal)
+  "Hash table of async harness jobs keyed by string id.")
+
+(defvar codex-ide-harness--next-job-id 0
+  "Counter used to allocate harness job ids.")
+
+;;; Shared data helpers
+
+(defun codex-ide-harness--non-empty-string-p (value)
+  "Return non-nil when VALUE is a non-empty string."
+  (and (stringp value)
+       (not (string-empty-p (string-trim value)))))
+
+(defun codex-ide-harness--json-bool (value)
+  "Return a JSON boolean representation for VALUE."
+  (codex-ide-mcp--json-false value))
+
+(defun codex-ide-harness--time-string ()
+  "Return the current time as an ISO-like string."
+  (format-time-string "%Y-%m-%dT%H:%M:%S%z"))
+
+(defun codex-ide-harness--record-event (type data)
+  "Record a harness event of TYPE with DATA."
+  (setq codex-ide-harness--event-cursor
+        (1+ codex-ide-harness--event-cursor))
+  (let ((event (list (cons "cursor" codex-ide-harness--event-cursor)
+                     (cons "time" (codex-ide-harness--time-string))
+                     (cons "type" type)
+                     (cons "data" data))))
+    (push event codex-ide-harness--events)
+    (when (> (length codex-ide-harness--events)
+             codex-ide-harness-event-limit)
+      (setcdr (nthcdr (1- codex-ide-harness-event-limit)
+                      codex-ide-harness--events)
+              nil))
+    event))
+
+(defun codex-ide-harness--bounded-limit (value default)
+  "Return VALUE as a positive limit, or DEFAULT."
+  (if (and (integerp value) (> value 0))
+      value
+    default))
+
+(defun codex-ide-harness--events-since (since limit)
+  "Return recent events after SINCE, bounded by LIMIT."
+  (let* ((cursor (if (integerp since) since 0))
+         (events (cl-remove-if-not
+                  (lambda (event)
+                    (> (cdr (assoc "cursor" event)) cursor))
+                  codex-ide-harness--events))
+         (ordered (nreverse events))
+         (bounded (if (> (length ordered) limit)
+                      (last ordered limit)
+                    ordered)))
+    (list (cons "cursor" codex-ide-harness--event-cursor)
+          (cons "events" (vconcat bounded)))))
+
+(defun codex-ide-harness--buffer-named (name)
+  "Return live buffer named NAME, or signal `user-error'."
+  (let ((buffer (and (codex-ide-harness--non-empty-string-p name)
+                     (get-buffer name))))
+    (unless (buffer-live-p buffer)
+      (user-error "No live buffer named %s" name))
+    buffer))
+
+(defun codex-ide-harness--buffer-for-args (args &optional live-only)
+  "Return the buffer selected by ARGS.
+When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
+  (let ((buffer (codex-ide-mcp--object-get args "buffer"))
+        (path (codex-ide-mcp--object-get args "path")))
+    (cond
+     ((codex-ide-harness--non-empty-string-p buffer)
+      (codex-ide-harness--buffer-named buffer))
+     ((codex-ide-harness--non-empty-string-p path)
+      (if live-only
+          (codex-ide-mcp--buffer-for-path path)
+        (find-file-noselect (expand-file-name path))))
+     (t (current-buffer)))))
+
+(defun codex-ide-harness--directory-for-args (args buffer)
+  "Return the effective directory for ARGS and BUFFER."
+  (let ((directory (codex-ide-mcp--object-get args "directory")))
+    (cond
+     ((codex-ide-harness--non-empty-string-p directory)
+      (let ((expanded (file-name-as-directory
+                       (expand-file-name directory))))
+        (unless (file-directory-p expanded)
+          (user-error "Directory does not exist: %s" expanded))
+        expanded))
+     ((buffer-live-p buffer)
+      (with-current-buffer buffer default-directory))
+     (t default-directory))))
+
+(defun codex-ide-harness--context (args &optional live-only)
+  "Return `(BUFFER DIRECTORY)' selected by ARGS.
+When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
+  (let* ((buffer (codex-ide-harness--buffer-for-args args live-only))
+         (directory (codex-ide-harness--directory-for-args args buffer)))
+    (list buffer directory)))
+
+(defun codex-ide-harness--buffer-summary (&optional buffer)
+  "Return JSON-ready metadata for BUFFER."
+  (with-current-buffer (or buffer (current-buffer))
+    (let ((file (buffer-file-name))
+          (root (codex-ide-mcp--buffer-project-root)))
+      (delq nil
+            (list (cons "buffer" (buffer-name))
+                  (when file (cons "path" (expand-file-name file)))
+                  (cons "directory" default-directory)
+                  (when root (cons "projectRoot" root))
+                  (cons "majorMode" (symbol-name major-mode))
+                  (cons "modified" (codex-ide-harness--json-bool
+                                    (buffer-modified-p)))
+                  (cons "readOnly" (codex-ide-harness--json-bool
+                                    buffer-read-only))
+                  (cons "point" (codex-ide-mcp--line-column)))))))
+
+(defun codex-ide-harness--region-summary ()
+  "Return JSON-ready metadata for the active region."
+  (let* ((active (use-region-p))
+         (beg (if active (region-beginning) (point)))
+         (end (if active (region-end) (point)))
+         (text (if active (buffer-substring-no-properties beg end) ""))
+         (truncated (> (length text) codex-ide-mcp-selection-content-limit))
+         (content (if truncated
+                      (substring text 0 codex-ide-mcp-selection-content-limit)
+                    text)))
+    (list (cons "active" (codex-ide-harness--json-bool active))
+          (cons "range" (codex-ide-mcp--range beg end))
+          (cons "text" content)
+          (cons "truncated" (codex-ide-harness--json-bool truncated)))))
+
+(defun codex-ide-harness--project-summary (&optional buffer)
+  "Return project metadata for BUFFER."
+  (with-current-buffer (or buffer (current-buffer))
+    (let* ((root (codex-ide-mcp--buffer-project-root))
+           (file-count
+            (if root
+                (condition-case nil
+                    (if-let* ((project (project-current nil root)))
+                        (length (project-files project))
+                      0)
+                  (error 0))
+              0)))
+      (list (cons "root" root)
+            (cons "fileCount" file-count)))))
+
+(defun codex-ide-harness--window-summary (window)
+  "Return JSON-ready metadata for WINDOW."
+  (let ((buffer (window-buffer window)))
+    (with-current-buffer buffer
+      (save-excursion
+        (goto-char (window-point window))
+        (delq nil
+              (list (cons "buffer" (buffer-name buffer))
+                    (when buffer-file-name
+                      (cons "path" (expand-file-name buffer-file-name)))
+                    (cons "selected" (codex-ide-harness--json-bool
+                                      (eq window (selected-window))))
+                    (cons "point" (codex-ide-mcp--line-column))
+                    (cons "start" (codex-ide-mcp--line-column
+                                   (window-start window)))))))))
+
+(defun codex-ide-harness--window-summaries ()
+  "Return JSON-ready metadata for visible windows."
+  (vconcat (mapcar #'codex-ide-harness--window-summary
+                   (window-list nil 'no-minibuf))))
+
+(defun codex-ide-harness--message-tail (limit)
+  "Return up to LIMIT recent lines from `*Messages*'."
+  (if-let* ((buffer (get-buffer "*Messages*")))
+      (with-current-buffer buffer
+        (save-excursion
+          (save-restriction
+            (widen)
+            (goto-char (point-max))
+            (forward-line (- limit))
+            (vconcat (split-string
+                      (buffer-substring-no-properties (point) (point-max))
+                      "\n" t)))))
+    []))
+
+(defun codex-ide-harness--modified-buffers ()
+  "Return summaries for modified live buffers."
+  (vconcat
+   (delq nil
+         (mapcar
+          (lambda (buffer)
+            (when (and (buffer-live-p buffer)
+                       (buffer-modified-p buffer))
+              (codex-ide-harness--buffer-summary buffer)))
+          (buffer-list)))))
+
+;;; Diagnostics, xref, and imenu helpers
 
 (defun codex-ide-mcp--xref-location-line (location)
   "Return one-based line number for xref LOCATION, or nil."
@@ -92,64 +296,6 @@ CATEGORY names the parent group when recursing into sublists."
               (t nil))))
          (or index nil))))
 
-;;; Tool implementations
-
-(defun codex-ide-mcp--tool-current-buffer (_args)
-  "Return metadata for the current Emacs buffer."
-  (let ((file (buffer-file-name))
-        (root (codex-ide-mcp--buffer-project-root)))
-    (codex-ide-mcp--json-text-result
-     (delq nil
-           (list (cons "buffer" (buffer-name))
-                 (when file (cons "path" (expand-file-name file)))
-                 (when root (cons "projectRoot" root))
-                 (cons "majorMode" (symbol-name major-mode))
-                 (cons "modified" (codex-ide-mcp--json-false
-                                    (buffer-modified-p)))
-                 (cons "readOnly" (codex-ide-mcp--json-false
-                                    buffer-read-only))
-                 (cons "point" (codex-ide-mcp--line-column)))))))
-
-(defun codex-ide-mcp--tool-selection (_args)
-  "Return the active region in the current Emacs buffer."
-  (let* ((active (use-region-p))
-         (beg (if active (region-beginning) (point)))
-         (end (if active (region-end) (point)))
-         (text (if active (buffer-substring-no-properties beg end) ""))
-         (truncated (> (length text) codex-ide-mcp-selection-content-limit))
-         (content (if truncated
-                      (substring text 0 codex-ide-mcp-selection-content-limit)
-                    text)))
-    (codex-ide-mcp--json-text-result
-     (list (cons "active" (codex-ide-mcp--json-false active))
-           (cons "range" (codex-ide-mcp--range beg end))
-           (cons "text" content)
-           (cons "truncated" (codex-ide-mcp--json-false truncated))))))
-
-(defun codex-ide-mcp--tool-open-file (args)
-  "Open a file described by ARGS in Emacs and return the destination."
-  (let* ((path (codex-ide-mcp--object-get args "path"))
-         (line (codex-ide-mcp--object-get args "line"))
-         (column (or (codex-ide-mcp--object-get args "column") 0)))
-    (unless (and (stringp path) (not (string-empty-p path)))
-      (user-error "Emacs_open_file requires a non-empty path"))
-    (let ((expanded (expand-file-name path)))
-      (unless (file-readable-p expanded)
-        (user-error "File is not readable: %s" expanded))
-      (let* ((enable-local-variables nil)
-             (enable-local-eval nil)
-             (buffer (find-file-noselect expanded)))
-        (pop-to-buffer buffer)
-        (with-current-buffer buffer
-          (when line
-            (goto-char (point-min))
-            (forward-line (max 0 (1- line)))
-            (move-to-column column))
-          (codex-ide-mcp--json-text-result
-           (list (cons "path" (expand-file-name expanded))
-                 (cons "buffer" (buffer-name buffer))
-                 (cons "point" (codex-ide-mcp--line-column)))))))))
-
 (defun codex-ide-mcp--flymake-diagnostics ()
   "Return available Flymake diagnostics for the current buffer."
   (when (and (bound-and-true-p flymake-mode)
@@ -181,17 +327,20 @@ CATEGORY names the parent group when recursing into sublists."
              (fboundp 'flycheck-error-filename))
     (let ((file (buffer-file-name)))
       (cl-loop for err in (symbol-value 'flycheck-current-errors)
-               for filename = (funcall (symbol-function 'flycheck-error-filename)
+               for filename = (funcall (symbol-function
+                                        'flycheck-error-filename)
                                        err)
                when (or (not file)
                         (not filename)
                         (equal (file-truename file)
                                (file-truename filename)))
                collect
-               (let* ((line (or (funcall (symbol-function 'flycheck-error-line)
+               (let* ((line (or (funcall (symbol-function
+                                          'flycheck-error-line)
                                          err)
                                 1))
-                      (column (or (funcall (symbol-function 'flycheck-error-column)
+                      (column (or (funcall (symbol-function
+                                            'flycheck-error-column)
                                            err)
                                   0))
                       (pos (save-excursion
@@ -209,254 +358,590 @@ CATEGORY names the parent group when recursing into sublists."
                                                  err))
                        (cons "range" (codex-ide-mcp--range pos pos))))))))
 
-(defun codex-ide-mcp--tool-diagnostics (args)
+(defun codex-ide-harness-diagnostics (&optional args)
   "Return already-known diagnostics for ARGS or the current buffer."
   (let* ((path (codex-ide-mcp--object-get args "path"))
-         (buffer (if (and (stringp path) (not (string-empty-p path)))
+         (buffer (if (codex-ide-harness--non-empty-string-p path)
                      (codex-ide-mcp--buffer-for-path path)
                    (current-buffer))))
     (with-current-buffer buffer
-      (codex-ide-mcp--json-text-result
-       (vconcat (append (codex-ide-mcp--flymake-diagnostics)
-                        (codex-ide-mcp--flycheck-diagnostics)))))))
+      (vconcat (append (codex-ide-mcp--flymake-diagnostics)
+                       (codex-ide-mcp--flycheck-diagnostics))))))
 
-(defun codex-ide-mcp--tool-xref-references (args)
-  "Return xref references described by ARGS."
+(defun codex-ide-harness-xref (args)
+  "Return xref data described by ARGS.
+The `action' field is `references' or `apropos'."
   (let* ((path (codex-ide-mcp--object-get args "path"))
+         (action (or (codex-ide-mcp--object-get args "action")
+                     "references"))
          (identifier (codex-ide-mcp--object-get args "identifier"))
-         (buffer (codex-ide-mcp--buffer-for-path path)))
-    (unless (and (stringp identifier) (not (string-empty-p identifier)))
-      (user-error "Tool emacs_xref_references requires a non-empty identifier"))
-    (with-current-buffer buffer
-      (condition-case err
-          (if-let* ((backend (xref-find-backend)))
-              (codex-ide-mcp--json-text-result
-               (vconcat
-                (codex-ide-mcp--xref-items->entries
-                 (xref-backend-references backend identifier))))
-            (codex-ide-mcp--text-error-result
-             (format "No xref backend available for %s" path)))
-        (error
-         (codex-ide-mcp--text-error-result
-          (format "Xref references error: %s"
-                  (error-message-string err))))))))
-
-(defun codex-ide-mcp--tool-xref-apropos (args)
-  "Return xref apropos matches described by ARGS."
-  (let* ((path (codex-ide-mcp--object-get args "path"))
          (pattern (codex-ide-mcp--object-get args "pattern"))
          (buffer (codex-ide-mcp--buffer-for-path path)))
-    (unless (and (stringp pattern) (not (string-empty-p pattern)))
-      (user-error "Tool emacs_xref_apropos requires a non-empty pattern"))
     (with-current-buffer buffer
-      (condition-case err
-          (if-let* ((backend (xref-find-backend)))
-              (codex-ide-mcp--json-text-result
-               (vconcat
-                (codex-ide-mcp--xref-items->entries
-                 (xref-backend-apropos backend pattern))))
-            (codex-ide-mcp--text-error-result
-             (format "No xref backend available for %s" path)))
-        (error
-         (codex-ide-mcp--text-error-result
-          (format "Xref apropos error: %s"
-                  (error-message-string err))))))))
+      (if-let* ((backend (xref-find-backend)))
+          (pcase action
+            ("references"
+             (unless (codex-ide-harness--non-empty-string-p identifier)
+               (user-error "Xref references requires identifier"))
+             (vconcat
+              (codex-ide-mcp--xref-items->entries
+               (xref-backend-references backend identifier))))
+            ("apropos"
+             (unless (codex-ide-harness--non-empty-string-p pattern)
+               (user-error "Xref apropos requires pattern"))
+             (vconcat
+              (codex-ide-mcp--xref-items->entries
+               (xref-backend-apropos backend pattern))))
+            (_ (user-error "Unknown xref action: %s" action)))
+        (user-error "No xref backend available for %s" path)))))
 
-(defun codex-ide-mcp--tool-project-info (_args)
-  "Return project metadata for the current buffer."
-  (let* ((buffer (current-buffer))
-         (root (codex-ide-mcp--buffer-project-root buffer))
-         (file-count
-          (if root
-              (condition-case nil
-                  (if-let* ((project (project-current nil root)))
-                      (length (project-files project))
-                    0)
-                (error 0))
-            0)))
-    (codex-ide-mcp--json-text-result
-     (list (cons "root" root)
-           (cons "fileCount" file-count)
-           (cons "activeBuffer" (buffer-name buffer))
-           (cons "majorMode" (symbol-name major-mode))))))
-
-(defun codex-ide-mcp--tool-imenu-symbols (args)
+(defun codex-ide-harness-imenu (args)
   "Return imenu symbols for the open buffer described by ARGS."
   (let* ((path (codex-ide-mcp--object-get args "path"))
          (buffer (codex-ide-mcp--buffer-for-path path)))
     (with-current-buffer buffer
-      (condition-case err
-          (codex-ide-mcp--json-text-result
-           (vconcat
-            (codex-ide-mcp--imenu-flatten
-             (imenu--make-index-alist t))))
-        (error
-         (codex-ide-mcp--text-error-result
-          (format "Imenu error: %s" (error-message-string err))))))))
+      (vconcat (codex-ide-mcp--imenu-flatten
+                (imenu--make-index-alist t))))))
 
-(defun codex-ide-mcp--tool-close-buffer (args)
-  "Close an Emacs buffer described by ARGS."
-  (let* ((path (codex-ide-mcp--object-get args "path"))
-         (name (codex-ide-mcp--object-get args "buffer"))
-         (path-p (and (stringp path) (not (string-empty-p path))))
-         (name-p (and (stringp name) (not (string-empty-p name))))
-         (label (cond (path-p path) (name-p name) (t "buffer")))
-         (buffer (cond (path-p (find-buffer-visiting
-                                (expand-file-name path)))
-                       (name-p (get-buffer name)))))
+(defun codex-ide-harness-tree-sitter (&optional args)
+  "Return tree-sitter data for ARGS or the current buffer."
+  (codex-ide-mcp--tree-sitter-info args))
+
+;;; Execution
+
+(defun codex-ide-harness--read-forms (code)
+  "Read every Emacs Lisp form from CODE."
+  (with-temp-buffer
+    (insert code)
+    (goto-char (point-min))
+    (let (forms done)
+      (while (not done)
+        (condition-case nil
+            (push (read (current-buffer)) forms)
+          (end-of-file (setq done t))))
+      (nreverse forms))))
+
+(defun codex-ide-harness--eval-forms (forms)
+  "Evaluate FORMS and return the final value."
+  (let (value)
+    (dolist (form forms)
+      (setq value (eval form t)))
+    value))
+
+(defun codex-ide-harness--backtrace-string ()
+  "Return a best-effort backtrace string."
+  (with-output-to-string
+    (backtrace)))
+
+(defun codex-ide-harness--error-summary (err)
+  "Return JSON-ready data for error ERR."
+  (list (cons "type" (symbol-name (car err)))
+        (cons "message" (error-message-string err))
+        (cons "data" (prin1-to-string err t))
+        (cons "backtrace" (codex-ide-harness--backtrace-string))))
+
+(defun codex-ide-harness--selected-buffer-summary ()
+  "Return metadata for the selected window buffer."
+  (if-let* ((window (selected-window)))
+      (codex-ide-harness--buffer-summary (window-buffer window))
+    (codex-ide-harness--buffer-summary (current-buffer))))
+
+(defun codex-ide-harness--execute-captured (forms output-buffer)
+  "Evaluate FORMS with output captured in OUTPUT-BUFFER."
+  (let ((original-message (symbol-function 'message))
+        messages value error-data)
+    (cl-letf (((symbol-function 'message)
+               (lambda (format-string &rest message-args)
+                 (when format-string
+                   (push (apply #'format-message
+                                format-string message-args)
+                         messages))
+                 (apply original-message format-string message-args))))
+      (let ((standard-output output-buffer))
+        (condition-case err
+            (setq value (codex-ide-harness--eval-forms forms))
+          (error
+           (setq error-data (codex-ide-harness--error-summary err))))))
+    (list :value value :error error-data :messages (nreverse messages))))
+
+(defun codex-ide-harness--execute-result (capture output-buffer)
+  "Return JSON-ready execution result from CAPTURE and OUTPUT-BUFFER."
+  (let ((error-data (plist-get capture :error)))
+    (delq nil
+          (list (cons "ok" (codex-ide-harness--json-bool
+                            (not error-data)))
+                (cons "value" (and (not error-data)
+                                   (prin1-to-string
+                                    (plist-get capture :value) t)))
+                (cons "output" (with-current-buffer output-buffer
+                                 (buffer-string)))
+                (cons "messages" (vconcat (plist-get capture :messages)))
+                (cons "currentBuffer" (codex-ide-harness--buffer-summary))
+                (cons "selectedBuffer"
+                      (codex-ide-harness--selected-buffer-summary))
+                (cons "point" (codex-ide-mcp--line-column))
+                (cons "modifiedBuffers"
+                      (codex-ide-harness--modified-buffers))
+                (when error-data (cons "error" error-data))))))
+
+(defun codex-ide-harness-execute (args)
+  "Evaluate every form in ARGS's `code' field."
+  (let* ((code (codex-ide-mcp--object-get args "code"))
+         (forms (and (codex-ide-harness--non-empty-string-p code)
+                     (codex-ide-harness--read-forms code)))
+         (output-buffer (generate-new-buffer " *codex-harness-output*")))
+    (unless forms
+      (user-error "Emacs_execute requires at least one readable form"))
+    (unwind-protect
+        (pcase-let ((`(,buffer ,directory)
+                     (codex-ide-harness--context args)))
+          (with-current-buffer buffer
+            (let* ((default-directory directory)
+                   (capture (codex-ide-harness--execute-captured
+                             forms output-buffer))
+                   (result (codex-ide-harness--execute-result
+                            capture output-buffer)))
+              (codex-ide-harness--record-event
+               (if (plist-get capture :error) "execute-error" "execute")
+               result)
+              result)))
+      (kill-buffer output-buffer))))
+
+;;; Editing
+
+(defun codex-ide-harness--truthy-default (args key default)
+  "Return boolean field KEY from ARGS, defaulting to DEFAULT."
+  (if (codex-ide-mcp--object-has-key-p args key)
+      (codex-ide-mcp--truthy-p (codex-ide-mcp--object-get args key))
+    default))
+
+(defun codex-ide-harness--validate-position (pos)
+  "Return POS when it is inside the current buffer."
+  (unless (and (integerp pos) (<= (point-min) pos) (<= pos (point-max)))
+    (user-error "Buffer position out of range: %s" pos))
+  pos)
+
+(defun codex-ide-harness--line-column-position (line column)
+  "Return buffer position for one-based LINE and zero-based COLUMN."
+  (unless (and (integerp line) (> line 0))
+    (user-error "Line must be a positive integer"))
+  (unless (or (null column) (and (integerp column) (>= column 0)))
+    (user-error "Column must be a non-negative integer"))
+  (save-excursion
+    (goto-char (point-min))
+    (forward-line (1- line))
+    (move-to-column (or column 0))
+    (point)))
+
+(defun codex-ide-harness--position-from-args
+    (args pos-key line-key column-key default)
+  "Return a buffer position described by ARGS.
+POS-KEY, LINE-KEY, and COLUMN-KEY name position fields, and DEFAULT is
+used when no explicit position is present."
+  (let ((pos (codex-ide-mcp--object-get args pos-key))
+        (line (codex-ide-mcp--object-get args line-key))
+        (column (codex-ide-mcp--object-get args column-key)))
     (cond
-     ((not (buffer-live-p buffer))
-      (codex-ide-mcp--text-error-result
-       (format "No open buffer for %s" label)))
-     ((with-current-buffer buffer
-        (and buffer-file-name (buffer-modified-p)))
-      (codex-ide-mcp--text-error-result
-       (format "Buffer %s has unsaved changes; not closing"
-               (buffer-name buffer))))
-     (t
-      (let ((closed (buffer-name buffer)))
-        (if (kill-buffer buffer)
-            (codex-ide-mcp--json-text-result
-             (list (cons "closed" closed)))
-          (codex-ide-mcp--text-error-result
-           (format "Could not close buffer %s" closed))))))))
+     ((integerp pos) (codex-ide-harness--validate-position pos))
+     ((integerp line) (codex-ide-harness--line-column-position line column))
+     (default (codex-ide-harness--validate-position default))
+     (t nil))))
+
+(defun codex-ide-harness--edit-result (operation beg end)
+  "Return JSON-ready edit result for OPERATION over BEG to END."
+  (list (cons "operation" operation)
+        (cons "buffer" (codex-ide-harness--buffer-summary))
+        (cons "range" (codex-ide-mcp--point-range beg end))
+        (cons "point" (codex-ide-mcp--line-column))
+        (cons "modified" (codex-ide-harness--json-bool
+                          (buffer-modified-p)))))
+
+(defun codex-ide-harness--indent-change (beg end indent)
+  "Indent BEG to END when INDENT is non-nil."
+  (when (and indent (< beg end))
+    (indent-region beg end)))
+
+(defun codex-ide-harness--insert-text (text pos indent)
+  "Insert TEXT at POS and return the changed range.
+When INDENT is non-nil, indent the inserted region."
+  (goto-char pos)
+  (let ((beg (point)))
+    (insert text)
+    (let ((end (point)))
+      (codex-ide-harness--indent-change beg end indent)
+      (list beg end))))
+
+(defun codex-ide-harness--replace-range (text beg end indent)
+  "Replace BEG to END with TEXT and return the changed range."
+  (goto-char beg)
+  (delete-region beg end)
+  (insert text)
+  (let ((new-end (point)))
+    (codex-ide-harness--indent-change beg new-end indent)
+    (list beg new-end)))
+
+(defun codex-ide-harness-edit (args)
+  "Apply a structured edit described by ARGS to a live Emacs buffer."
+  (let ((operation (codex-ide-mcp--object-get args "operation"))
+        (text (codex-ide-mcp--object-get args "text"))
+        (indent (codex-ide-harness--truthy-default args "indent" t)))
+    (pcase-let ((`(,buffer ,directory)
+                 (codex-ide-harness--context args t)))
+      (with-current-buffer buffer
+        (let ((default-directory directory))
+          (pcase operation
+            ("insert"
+             (unless (stringp text)
+               (user-error "Insert requires text"))
+             (pcase-let ((`(,beg ,end)
+                          (codex-ide-harness--insert-text
+                           text
+                           (codex-ide-harness--position-from-args
+                            args "start" "line" "column" (point))
+                           indent)))
+               (codex-ide-harness--edit-result operation beg end)))
+            ("replace"
+             (unless (stringp text)
+               (user-error "Replace requires text"))
+             (pcase-let ((`(,beg ,end)
+                          (codex-ide-harness--replace-range
+                           text
+                           (codex-ide-harness--position-from-args
+                            args "start" "line" "column" nil)
+                           (codex-ide-harness--position-from-args
+                            args "end" "end_line" "end_column" nil)
+                           indent)))
+               (codex-ide-harness--edit-result operation beg end)))
+            ("delete"
+             (let ((beg (codex-ide-harness--position-from-args
+                         args "start" "line" "column" nil))
+                   (end (codex-ide-harness--position-from-args
+                         args "end" "end_line" "end_column" nil)))
+               (delete-region beg end)
+               (codex-ide-harness--edit-result operation beg beg)))
+            (_ (user-error "Unknown edit operation: %s" operation))))))))
+
+(defun codex-ide-harness-insert (text &optional args)
+  "Insert TEXT using optional edit ARGS."
+  (codex-ide-harness-edit
+   (append (list :operation "insert" :text text) args)))
+
+;;; Context
+
+(defun codex-ide-harness-context (&optional args)
+  "Return selected buffer, project, windows, region, and state for ARGS."
+  (pcase-let ((`(,buffer ,directory)
+               (codex-ide-harness--context args)))
+    (with-current-buffer buffer
+      (let ((default-directory directory))
+        (list (cons "buffer" (codex-ide-harness--buffer-summary))
+              (cons "project" (codex-ide-harness--project-summary))
+              (cons "windows" (codex-ide-harness--window-summaries))
+              (cons "region" (codex-ide-harness--region-summary))
+              (cons "diagnostics" (codex-ide-harness-diagnostics))
+              (cons "messages"
+                    (codex-ide-harness--message-tail
+                     (codex-ide-harness--bounded-limit
+                      (codex-ide-mcp--object-get args "messages")
+                      40)))
+              (cons "jobs" (codex-ide-harness--job-summaries))
+              (cons "eventsCursor" codex-ide-harness--event-cursor))))))
+
+;;; Jobs
+
+(defun codex-ide-harness--put-job (job)
+  "Store JOB and return it."
+  (puthash (plist-get job :id) job codex-ide-harness--jobs)
+  job)
+
+(defun codex-ide-harness--update-job (id function)
+  "Replace job ID with the result of FUNCTION."
+  (when-let* ((job (gethash id codex-ide-harness--jobs)))
+    (codex-ide-harness--put-job (funcall function job))))
+
+(defun codex-ide-harness--job-output (job since)
+  "Return JOB output starting at SINCE."
+  (let* ((output (or (plist-get job :output) ""))
+         (offset (if (and (integerp since) (>= since 0))
+                     (min since (length output))
+                   0)))
+    (list (cons "offset" offset)
+          (cons "nextOffset" (length output))
+          (cons "text" (substring output offset)))))
+
+(defun codex-ide-harness--job-summary (job &optional output)
+  "Return JSON-ready metadata for JOB.
+When OUTPUT is non-nil, include output data."
+  (delq nil
+        (list (cons "id" (plist-get job :id))
+              (cons "command" (plist-get job :command))
+              (cons "directory" (plist-get job :directory))
+              (cons "status" (plist-get job :status))
+              (cons "exitCode" (plist-get job :exit-code))
+              (cons "started" (plist-get job :started))
+              (cons "finished" (plist-get job :finished))
+              (cons "outputLength"
+                    (length (or (plist-get job :output) "")))
+              (when output (cons "output" output)))))
+
+(defun codex-ide-harness--job-summaries ()
+  "Return summaries for all known harness jobs."
+  (let (jobs)
+    (maphash (lambda (_id job)
+               (push (codex-ide-harness--job-summary job) jobs))
+             codex-ide-harness--jobs)
+    (vconcat (nreverse jobs))))
+
+(defun codex-ide-harness--job-by-id (id)
+  "Return job ID, or signal `user-error'."
+  (let ((job (and (codex-ide-harness--non-empty-string-p id)
+                  (gethash id codex-ide-harness--jobs))))
+    (unless job
+      (user-error "Unknown harness job: %s" id))
+    job))
+
+(defun codex-ide-harness--job-finished-status (process)
+  "Return final status string for PROCESS."
+  (if (eq (process-status process) 'exit)
+      (if (zerop (process-exit-status process)) "done" "failed")
+    "canceled"))
+
+(defun codex-ide-harness--job-filter (id _process string)
+  "Append STRING to job ID output."
+  (codex-ide-harness--update-job
+   id (lambda (job)
+        (plist-put job :output
+                   (concat (or (plist-get job :output) "") string)))))
+
+(defun codex-ide-harness--job-sentinel (id process _event)
+  "Record final state for PROCESS belonging to job ID."
+  (unless (eq (process-status process) 'run)
+    (let ((job (codex-ide-harness--update-job
+                id (lambda (old-job)
+                     (setq old-job
+                           (plist-put old-job :status
+                                      (codex-ide-harness--job-finished-status
+                                       process)))
+                     (setq old-job
+                           (plist-put old-job :exit-code
+                                      (process-exit-status process)))
+                     (plist-put old-job :finished
+                                (codex-ide-harness--time-string))))))
+      (when job
+        (codex-ide-harness--record-event
+         "job-finished" (codex-ide-harness--job-summary job))))))
+
+(defun codex-ide-harness-start-job (args)
+  "Start an async process job described by ARGS."
+  (let ((command (codex-ide-mcp--object-get args "command")))
+    (unless (codex-ide-harness--non-empty-string-p command)
+      (user-error "Job start requires command"))
+    (let* ((buffer (current-buffer))
+           (directory (codex-ide-harness--directory-for-args args buffer))
+           (id (format "job-%d" (cl-incf codex-ide-harness--next-job-id)))
+           (default-directory directory)
+           (process (start-file-process-shell-command id nil command))
+           (job (list :id id :command command :directory directory
+                      :status "running" :exit-code nil
+                      :started (codex-ide-harness--time-string)
+                      :finished nil :output "" :process process)))
+      (set-process-query-on-exit-flag process nil)
+      (set-process-filter
+       process (lambda (proc string)
+                 (codex-ide-harness--job-filter id proc string)))
+      (set-process-sentinel
+       process (lambda (proc event)
+                 (codex-ide-harness--job-sentinel id proc event)))
+      (codex-ide-harness--put-job job)
+      (codex-ide-harness--record-event
+       "job-started" (codex-ide-harness--job-summary job))
+      (codex-ide-harness--job-summary job))))
+
+(defun codex-ide-harness--cancel-job (job)
+  "Cancel JOB and return its updated summary."
+  (let ((process (plist-get job :process)))
+    (when (process-live-p process)
+      (delete-process process))
+    (setq job (plist-put job :status "canceled"))
+    (setq job (plist-put job :finished
+                         (codex-ide-harness--time-string)))
+    (codex-ide-harness--put-job job)
+    (codex-ide-harness--record-event
+     "job-canceled" (codex-ide-harness--job-summary job))
+    (codex-ide-harness--job-summary job)))
+
+(defun codex-ide-harness-job-result (args)
+  "Start, poll, read, or cancel a harness job described by ARGS."
+  (let ((action (codex-ide-mcp--object-get args "action"))
+        (job-id (codex-ide-mcp--object-get args "job_id"))
+        (since (codex-ide-mcp--object-get args "since")))
+    (pcase action
+      ("start" (codex-ide-harness-start-job args))
+      ("poll" (codex-ide-harness--job-summary
+               (codex-ide-harness--job-by-id job-id)))
+      ("read" (let ((job (codex-ide-harness--job-by-id job-id)))
+                (codex-ide-harness--job-summary
+                 job (codex-ide-harness--job-output job since))))
+      ("cancel" (codex-ide-harness--cancel-job
+                 (codex-ide-harness--job-by-id job-id)))
+      (_ (user-error "Unknown job action: %s" action)))))
+
+;;; MCP tool wrappers
 
 (defun codex-ide-mcp--tool-execute (args)
-  "Evaluate the Emacs Lisp expression in ARGS when enabled."
-  (if (not codex-ide-mcp-enable-execute)
-      (codex-ide-mcp--text-error-result
-       "emacs_execute is disabled; set codex-ide-mcp-enable-execute to enable")
-    (let ((code (codex-ide-mcp--object-get args "code")))
-      (if (not (and (stringp code)
-                    (not (string-empty-p (string-trim code)))))
-          (codex-ide-mcp--text-error-result
-           "emacs_execute requires a non-empty code argument")
-        (condition-case err
-            (codex-ide-mcp--json-text-result
-             (list (cons "value"
-                         (prin1-to-string
-                          (eval (car (read-from-string code)) t)
-                          t))))
-          (error
-           (codex-ide-mcp--text-error-result
-            (format "Evaluation error: %s"
-                    (error-message-string err)))))))))
+  "Evaluate Elisp ARGS through the harness."
+  (codex-ide-mcp--json-text-result
+   (codex-ide-harness-execute args)))
+
+(defun codex-ide-mcp--tool-context (args)
+  "Return harness context for ARGS."
+  (codex-ide-mcp--json-text-result
+   (codex-ide-harness-context args)))
+
+(defun codex-ide-mcp--tool-edit (args)
+  "Apply a live-buffer edit described by ARGS."
+  (let ((result (codex-ide-harness-edit args)))
+    (codex-ide-harness--record-event "edit" result)
+    (codex-ide-mcp--json-text-result result)))
+
+(defun codex-ide-mcp--tool-job (args)
+  "Run a harness job action described by ARGS."
+  (codex-ide-mcp--json-text-result
+   (codex-ide-harness-job-result args)))
+
+(defun codex-ide-mcp--tool-events (args)
+  "Return recent harness events described by ARGS."
+  (codex-ide-mcp--json-text-result
+   (codex-ide-harness--events-since
+    (codex-ide-mcp--object-get args "since")
+    (codex-ide-harness--bounded-limit
+     (codex-ide-mcp--object-get args "limit") 100))))
 
 ;;; Tool registry
 
 (defconst codex-ide-mcp--tools
   (list
-   (list :name "emacs_current_buffer"
-         :description "Return metadata for the current Emacs buffer."
-         :args nil
-         :function #'codex-ide-mcp--tool-current-buffer)
-   (list :name "emacs_selection"
-         :description "Return the active Emacs region, if any."
-         :args nil
-         :function #'codex-ide-mcp--tool-selection)
-   (list :name "emacs_open_file"
-         :description "Open a file in Emacs and optionally move point."
-         :args (list (list :name "path"
+   (list :name "emacs_execute"
+         :description "Evaluate a multi-form Emacs Lisp script."
+         :args (list (list :name "code"
                            :type 'string
-                           :description "File path to open.")
-                     (list :name "line"
-                           :type 'integer
-                           :description "Optional one-based line number."
+                           :description "Emacs Lisp forms to evaluate.")
+                     (list :name "buffer"
+                           :type 'string
+                           :description "Optional live buffer name."
                            :optional t)
-                     (list :name "column"
-                           :type 'integer
-                           :description "Optional zero-based column."
+                     (list :name "path"
+                           :type 'string
+                           :description "Optional file path context."
+                           :optional t)
+                     (list :name "directory"
+                           :type 'string
+                           :description "Optional default directory."
                            :optional t))
-         :function #'codex-ide-mcp--tool-open-file)
-   (list :name "emacs_diagnostics"
-         :description "Return already-available Flymake/Flycheck diagnostics."
-         :args (list (list :name "path"
+         :function #'codex-ide-mcp--tool-execute)
+   (list :name "emacs_context"
+         :description "Return selected Emacs harness context."
+         :args (list (list :name "buffer"
                            :type 'string
-                           :description "Optional path of an open buffer."
+                           :description "Optional live buffer name."
+                           :optional t)
+                     (list :name "path"
+                           :type 'string
+                           :description "Optional file path context."
+                           :optional t)
+                     (list :name "directory"
+                           :type 'string
+                           :description "Optional default directory."
+                           :optional t)
+                     (list :name "messages"
+                           :type 'integer
+                           :description "Number of message lines to include."
                            :optional t))
-         :function #'codex-ide-mcp--tool-diagnostics)
-   (list :name "emacs_xref_references"
-         :description "Find references to an identifier using xref."
-         :args (list (list :name "path"
+         :function #'codex-ide-mcp--tool-context)
+   (list :name "emacs_edit"
+         :description "Apply a structured edit to a live Emacs buffer."
+         :args (list (list :name "operation"
                            :type 'string
-                           :description "Path of an open buffer.")
-                     (list :name "identifier"
+                           :description "insert, replace, or delete.")
+                     (list :name "text"
                            :type 'string
-                           :description "Symbol name to find references for."))
-         :function #'codex-ide-mcp--tool-xref-references)
-   (list :name "emacs_xref_apropos"
-         :description "Find symbols matching a pattern using xref."
-         :args (list (list :name "path"
-                           :type 'string
-                           :description "Path of an open buffer.")
-                     (list :name "pattern"
-                           :type 'string
-                           :description "Regexp or substring pattern."))
-         :function #'codex-ide-mcp--tool-xref-apropos)
-   (list :name "emacs_project_info"
-         :description "Return project root, file count, and active buffer."
-         :args nil
-         :function #'codex-ide-mcp--tool-project-info)
-   (list :name "emacs_imenu_symbols"
-         :description "Return imenu symbols for an open buffer."
-         :args (list (list :name "path"
-                           :type 'string
-                           :description "Path of an open buffer."))
-         :function #'codex-ide-mcp--tool-imenu-symbols)
-   (list :name "emacs_tree_sitter_info"
-         :description "Return structured tree-sitter node or tree data."
-         :args (list (list :name "path"
-                           :type 'string
-                           :description "Optional path of an open buffer."
-                           :optional t)
-                     (list :name "line"
-                           :type 'integer
-                           :description "Optional one-based line number."
-                           :optional t)
-                     (list :name "column"
-                           :type 'integer
-                           :description "Optional zero-based column."
-                           :optional t)
-                     (list :name "whole_file"
-                           :type 'boolean
-                           :description "Return a bounded root tree."
-                           :optional t)
-                     (list :name "include_ancestors"
-                           :type 'boolean
-                           :description "Include ancestors for node output."
-                           :optional t)
-                     (list :name "include_children"
-                           :type 'boolean
-                           :description "Include children for node output."
-                           :optional t)
-                     (list :name "max_depth"
-                           :type 'integer
-                           :description "Maximum tree depth for whole_file."
-                           :optional t)
-                     (list :name "max_children"
-                           :type 'integer
-                           :description "Maximum children per node."
-                           :optional t))
-         :function #'codex-ide-mcp--tool-tree-sitter-info)
-   (list :name "emacs_close_buffer"
-         :description "Close an open buffer by path or name."
-         :args (list (list :name "path"
-                           :type 'string
-                           :description "Path of the buffer to close."
+                           :description "Text for insert or replace."
                            :optional t)
                      (list :name "buffer"
                            :type 'string
-                           :description "Buffer name to close."
-                           :optional t))
-         :function #'codex-ide-mcp--tool-close-buffer)
-   (list :name "emacs_execute"
-         :description "Evaluate an Emacs Lisp expression."
-         :args (list (list :name "code"
+                           :description "Optional live buffer name."
+                           :optional t)
+                     (list :name "path"
                            :type 'string
-                           :description "Emacs Lisp expression to evaluate."))
-         :enabled-when 'codex-ide-mcp-enable-execute
-         :function #'codex-ide-mcp--tool-execute))
-  "Registered MCP tools.")
+                           :description "Optional open buffer path."
+                           :optional t)
+                     (list :name "directory"
+                           :type 'string
+                           :description "Optional default directory."
+                           :optional t)
+                     (list :name "start"
+                           :type 'integer
+                           :description "Start buffer position."
+                           :optional t)
+                     (list :name "end"
+                           :type 'integer
+                           :description "End buffer position."
+                           :optional t)
+                     (list :name "line"
+                           :type 'integer
+                           :description "One-based start line."
+                           :optional t)
+                     (list :name "column"
+                           :type 'integer
+                           :description "Zero-based start column."
+                           :optional t)
+                     (list :name "end_line"
+                           :type 'integer
+                           :description "One-based end line."
+                           :optional t)
+                     (list :name "end_column"
+                           :type 'integer
+                           :description "Zero-based end column."
+                           :optional t)
+                     (list :name "indent"
+                           :type 'boolean
+                           :description "Indent changed text."
+                           :optional t))
+         :function #'codex-ide-mcp--tool-edit)
+   (list :name "emacs_job"
+         :description "Start, poll, read, or cancel async harness jobs."
+         :args (list (list :name "action"
+                           :type 'string
+                           :description "start, poll, read, or cancel.")
+                     (list :name "command"
+                           :type 'string
+                           :description "Shell command for start."
+                           :optional t)
+                     (list :name "job_id"
+                           :type 'string
+                           :description "Harness job id."
+                           :optional t)
+                     (list :name "directory"
+                           :type 'string
+                           :description "Optional job directory."
+                           :optional t)
+                     (list :name "since"
+                           :type 'integer
+                           :description "Output offset for read."
+                           :optional t))
+         :function #'codex-ide-mcp--tool-job)
+   (list :name "emacs_events"
+         :description "Return recent Emacs harness events."
+         :args (list (list :name "since"
+                           :type 'integer
+                           :description "Event cursor to read after."
+                           :optional t)
+                     (list :name "limit"
+                           :type 'integer
+                           :description "Maximum events to return."
+                           :optional t))
+         :function #'codex-ide-mcp--tool-events))
+  "Registered MCP harness tools.")
 
 (defun codex-ide-mcp-tool-names ()
   "Return the names of the local Emacs MCP tools."
@@ -468,13 +953,9 @@ CATEGORY names the parent group when recursing into sublists."
            :key (lambda (tool) (plist-get tool :name))
            :test #'equal))
 
-(defun codex-ide-mcp--tool-enabled-p (tool)
-  "Return non-nil when TOOL is currently enabled."
-  (let ((gate (plist-get tool :enabled-when)))
-    (or (not gate)
-        (and (symbolp gate)
-             (boundp gate)
-             (symbol-value gate)))))
+(defun codex-ide-mcp--tool-enabled-p (_tool)
+  "Return non-nil for every harness tool."
+  t)
 
 (provide 'codex-ide-mcp-tools)
 

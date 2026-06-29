@@ -260,9 +260,8 @@
               "http://127.0.0.1:43210/mcp")))))
 
 (ert-deftest codex-ide-mcp-status-message-running ()
-  "Running status reports server key, namespace, URL, and execute state."
-  (let ((codex-ide-mcp-port 43210)
-        (codex-ide-mcp-enable-execute t))
+  "Running status reports server key, namespace, URL, and harness tools."
+  (let ((codex-ide-mcp-port 43210))
     (cl-letf (((symbol-function 'codex-ide-mcp--running-p)
                (lambda () t))
               ((symbol-function 'codex-ide-mcp--url)
@@ -274,21 +273,22 @@
         (should (string-match-p "Server key: emacs_tools" status))
         (should (string-match-p "Codex namespace: mcp__emacs_tools" status))
         (should (string-match-p
-                 "Example tool: mcp__emacs_tools__emacs_current_buffer"
+                 "Example tool: mcp__emacs_tools__emacs_context"
                  status))
-        (should (string-match-p "emacs_execute: enabled" status))))))
+        (should (string-match-p "Harness tools: emacs_execute" status))
+        (should-not (string-match-p "disabled" status))))))
 
 (ert-deftest codex-ide-mcp-status-message-stopped-ephemeral ()
-  "Stopped status reports ephemeral port setup and disabled execute."
-  (let ((codex-ide-mcp-port 0)
-        (codex-ide-mcp-enable-execute nil))
+  "Stopped status reports ephemeral port setup without execute gating."
+  (let ((codex-ide-mcp-port 0))
     (cl-letf (((symbol-function 'codex-ide-mcp--running-p)
                (lambda () nil)))
       (let ((status (codex-ide-mcp--status-message)))
         (should (string-match-p "stopped" status))
         (should (string-match-p "Port: ephemeral" status))
-        (should (string-match-p "emacs_execute: disabled" status))
-        (should-not (string-match-p "Persistent setup command" status))))))
+        (should (string-match-p "Harness tools: emacs_execute" status))
+        (should-not (string-match-p "Persistent setup command" status))
+        (should-not (string-match-p "disabled" status))))))
 
 (ert-deftest codex-ide-mcp-session-overrides-disabled ()
   "Disabled MCP integration leaves session overrides unchanged."
@@ -334,17 +334,17 @@
 
 (ert-deftest codex-ide-mcp-tool-to-mcp-schema-required-args ()
   "Tool schema marks required args and omits optional args from required."
-  (let* ((tool (codex-ide-mcp--tool-by-name "emacs_open_file"))
+  (let* ((tool (codex-ide-mcp--tool-by-name "emacs_execute"))
          (schema (codex-ide-mcp--tool->mcp tool))
          (input (cdr (assoc "inputSchema" schema)))
          (properties (cdr (assoc "properties" input))))
-    (should (equal (cdr (assoc "name" schema)) "emacs_open_file"))
+    (should (equal (cdr (assoc "name" schema)) "emacs_execute"))
     (should (equal (cdr (assoc "type" input)) "object"))
-    (should (equal (cdr (assoc "required" input)) ["path"]))
-    (should (equal (cdr (assoc "type" (cdr (assoc "path" properties))))
+    (should (equal (cdr (assoc "required" input)) ["code"]))
+    (should (equal (cdr (assoc "type" (cdr (assoc "code" properties))))
                    "string"))
-    (should (equal (cdr (assoc "type" (cdr (assoc "line" properties))))
-                   "integer"))))
+    (should (equal (cdr (assoc "type" (cdr (assoc "buffer" properties))))
+                   "string"))))
 
 (ert-deftest codex-ide-mcp-xref-item-to-entry-file-location ()
   "Xref file locations become plain JSON-ready entries."
@@ -409,115 +409,234 @@
       (should (equal (length entries) 1))
       (should (equal (cdr (assoc "name" (car entries))) "real")))))
 
-(ert-deftest codex-ide-mcp-tool-to-mcp-schema-xref-references ()
-  "Xref references schema includes required path and identifier strings."
-  (let* ((tool (codex-ide-mcp--tool-by-name "emacs_xref_references"))
+(ert-deftest codex-ide-mcp-tool-to-mcp-schema-edit ()
+  "Edit schema requires operation and keeps edit coordinates optional."
+  (let* ((tool (codex-ide-mcp--tool-by-name "emacs_edit"))
          (schema (codex-ide-mcp--tool->mcp tool))
          (input (cdr (assoc "inputSchema" schema)))
          (properties (cdr (assoc "properties" input))))
-    (should (equal (cdr (assoc "name" schema)) "emacs_xref_references"))
-    (should (equal (cdr (assoc "required" input)) ["path" "identifier"]))
-    (should (equal (cdr (assoc "type" (cdr (assoc "path" properties))))
-                   "string"))
-    (should (equal (cdr (assoc "type" (cdr (assoc "identifier" properties))))
-                   "string"))))
+    (should (equal (cdr (assoc "name" schema)) "emacs_edit"))
+    (should (equal (cdr (assoc "required" input)) ["operation"]))
+    (should (equal (cdr (assoc "type" (cdr (assoc "start" properties))))
+                   "integer"))
+    (should (equal (cdr (assoc "type" (cdr (assoc "indent" properties))))
+                   "boolean"))))
 
 (ert-deftest codex-ide-mcp-tools-list-shape-default ()
-  "tools/list returns the default Emacs tool schemas."
+  "tools/list returns the core harness schemas."
   (let* ((result (codex-ide-mcp--handle-tools-list nil))
          (tools (cdr (assoc "tools" result)))
          (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
                         (append tools nil))))
     (should (vectorp tools))
     (should (equal names
-                   '("emacs_current_buffer"
-                     "emacs_selection"
-                     "emacs_open_file"
-                     "emacs_diagnostics"
-                     "emacs_xref_references"
-                     "emacs_xref_apropos"
-                     "emacs_project_info"
-                     "emacs_imenu_symbols"
-                     "emacs_tree_sitter_info"
-                     "emacs_close_buffer"
-                     "emacs_execute")))))
+                   '("emacs_execute"
+                     "emacs_context"
+                     "emacs_edit"
+                     "emacs_job"
+                     "emacs_events")))))
 
 (ert-deftest codex-ide-mcp-callable-name-display-only ()
   "Codex callable names are display-only and raw MCP names stay unchanged."
   (let ((names (codex-ide-mcp-tool-names)))
-    (should (equal (codex-ide-mcp--callable-tool-name "emacs_selection")
-                   "mcp__emacs_tools__emacs_selection"))
-    (should (member "emacs_selection" names))
-    (should-not (member "mcp__emacs_tools__emacs_selection" names))))
+    (should (equal (codex-ide-mcp--callable-tool-name "emacs_context")
+                   "mcp__emacs_tools__emacs_context"))
+    (should (member "emacs_context" names))
+    (should-not (member "mcp__emacs_tools__emacs_context" names))))
 
-(ert-deftest codex-ide-mcp-tools-list-hides-disabled-execute ()
-  "Disabled execute tool is omitted from tools/list."
-  (let* ((codex-ide-mcp-enable-execute nil)
-         (result (codex-ide-mcp--handle-tools-list nil))
-         (tools (cdr (assoc "tools" result)))
-         (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
-                        (append tools nil))))
-    (should (equal (length names) 10))
-    (should (member "emacs_tree_sitter_info" names))
-    (should-not (member "emacs_execute" names))))
+(ert-deftest codex-ide-mcp-tools-call-execute-evals-multiple-forms ()
+  "Execute evaluates every readable form and returns the final value."
+  (unwind-protect
+      (let* ((result (codex-ide-mcp--handle-tools-call
+                      '(:name "emacs_execute"
+                        :arguments
+                        (:code "(put 'codex-ide-mcp-test 'value 4)
+(+ (get 'codex-ide-mcp-test 'value) 5)"))))
+             (decoded (codex-ide-mcp-test--decoded-result result)))
+        (should (eq (cdr (assoc "isError" result)) :json-false))
+        (should (eq (cdr (assoc "ok" decoded)) t))
+        (should (equal (cdr (assoc "value" decoded)) "9")))
+    (put 'codex-ide-mcp-test 'value nil)))
 
-(ert-deftest codex-ide-mcp-tools-list-shows-enabled-execute ()
-  "Enabled execute tool is included in tools/list."
-  (let* ((codex-ide-mcp-enable-execute t)
-         (result (codex-ide-mcp--handle-tools-list nil))
-         (tools (cdr (assoc "tools" result)))
-         (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
-                        (append tools nil))))
-    (should (equal (length names) 11))
-    (should (member "emacs_execute" names))))
-
-(ert-deftest codex-ide-mcp-tools-call-execute-disabled ()
-  "Disabled execute tool returns an MCP tool error."
-  (let* ((codex-ide-mcp-enable-execute nil)
-         (result (codex-ide-mcp--handle-tools-call
+(ert-deftest codex-ide-mcp-tools-call-execute-captures-output-messages ()
+  "Execute returns printed output and messages emitted during execution."
+  (let* ((result (codex-ide-mcp--handle-tools-call
                   '(:name "emacs_execute"
-                    :arguments (:code "(+ 1 2)")))))
-    (should (eq (cdr (assoc "isError" result)) t))
-    (should (string-match-p "disabled"
-                            (codex-ide-mcp-test--result-text result)))))
-
-(ert-deftest codex-ide-mcp-tools-call-execute-enabled-evals ()
-  "Enabled execute tool evaluates one Elisp expression."
-  (let* ((codex-ide-mcp-enable-execute t)
-         (result (codex-ide-mcp--handle-tools-call
-                  '(:name "emacs_execute"
-                    :arguments (:code "(+ 1 2)"))))
-         (decoded (codex-ide-mcp-test--decoded-result result)))
+                    :arguments
+                    (:code "(princ \"printed\")
+(let ((inhibit-message t))
+  (message \"hello %s\" \"world\"))
+42"))))
+         (decoded (codex-ide-mcp-test--decoded-result result))
+         (messages (cdr (assoc "messages" decoded))))
     (should (eq (cdr (assoc "isError" result)) :json-false))
-    (should (equal (cdr (assoc "value" decoded)) "3"))))
+    (should (equal (cdr (assoc "value" decoded)) "42"))
+    (should (equal (cdr (assoc "output" decoded)) "printed"))
+    (should (member "hello world" messages))))
+
+(ert-deftest codex-ide-mcp-tools-call-execute-returns-structured-error ()
+  "Execute returns structured errors instead of failing the tool call."
+  (let* ((result (codex-ide-mcp--handle-tools-call
+                  '(:name "emacs_execute"
+                    :arguments (:code "(let ((inhibit-message t))
+  (message \"before boom\"))
+(error \"boom\")"))))
+         (decoded (codex-ide-mcp-test--decoded-result result))
+         (error-data (cdr (assoc "error" decoded))))
+    (should (eq (cdr (assoc "isError" result)) :json-false))
+    (should-not (cdr (assoc "ok" decoded)))
+    (should (equal (cdr (assoc "message" error-data)) "boom"))
+    (should (stringp (cdr (assoc "backtrace" error-data))))))
+
+(ert-deftest codex-ide-mcp-tools-call-execute-selects-context-args ()
+  "Execute can run in a buffer/path/directory context."
+  (let* ((dir (make-temp-file "codex-ide-mcp-execute-dir" t))
+         (file (expand-file-name "context.el" dir))
+         (buffer nil))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert ";; context\n"))
+          (setq buffer (find-file-noselect file))
+          (let* ((result (codex-ide-mcp--handle-tools-call
+                          `(:name "emacs_execute"
+                            :arguments
+                            (:code "(list (buffer-name) default-directory)"
+                             :path ,file
+                             :directory ,dir))))
+                 (decoded (codex-ide-mcp-test--decoded-result result))
+                 (current (cdr (assoc "currentBuffer" decoded))))
+            (should (eq (cdr (assoc "isError" result)) :json-false))
+            (should (string-match-p "context.el"
+                                    (cdr (assoc "value" decoded))))
+            (should (equal (cdr (assoc "path" current))
+                           (expand-file-name file)))))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer))
+      (delete-directory dir t))))
+
+(ert-deftest codex-ide-mcp-tools-call-edit-insert-indents ()
+  "Edit insert applies text to a live buffer and calls indent-region."
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (let (indented)
+      (cl-letf (((symbol-function 'indent-region)
+                 (lambda (beg end &rest _args)
+                   (setq indented (list beg end)))))
+        (let* ((result (codex-ide-mcp--handle-tools-call
+                        `(:name "emacs_edit"
+                          :arguments
+                          (:operation "insert"
+                           :text "(message \"x\")"
+                           :buffer ,(buffer-name)
+                           :start ,(point-min)))))
+               (decoded (codex-ide-mcp-test--decoded-result result)))
+          (should (eq (cdr (assoc "isError" result)) :json-false))
+          (should (equal (buffer-string) "(message \"x\")"))
+          (should (equal (cdr (assoc "operation" decoded)) "insert"))
+          (should indented))))))
+
+(ert-deftest codex-ide-mcp-tools-call-edit-replace-indents ()
+  "Edit replace applies text to a live buffer and calls indent-region."
+  (with-temp-buffer
+    (emacs-lisp-mode)
+    (insert "(old)\n")
+    (let (indented)
+      (cl-letf (((symbol-function 'indent-region)
+                 (lambda (beg end &rest _args)
+                   (setq indented (list beg end)))))
+        (let* ((result (codex-ide-mcp--handle-tools-call
+                        `(:name "emacs_edit"
+                          :arguments
+                          (:operation "replace"
+                           :text "(new)\n"
+                           :buffer ,(buffer-name)
+                           :start ,(point-min)
+                           :end ,(point-max)))))
+               (decoded (codex-ide-mcp-test--decoded-result result)))
+          (should (eq (cdr (assoc "isError" result)) :json-false))
+          (should (equal (buffer-string) "(new)\n"))
+          (should (equal (cdr (assoc "operation" decoded)) "replace"))
+          (should indented))))))
+
+(defun codex-ide-mcp-test--wait-for-job (job-id)
+  "Poll harness JOB-ID until it is no longer running."
+  (let ((deadline (+ (float-time) 2))
+        result)
+    (while (and (< (float-time) deadline)
+                (or (not result)
+                    (equal (cdr (assoc "status" result)) "running")))
+      (accept-process-output nil 0.05)
+      (setq result
+            (codex-ide-mcp-test--decoded-result
+             (codex-ide-mcp--handle-tools-call
+              `(:name "emacs_job"
+                :arguments (:action "poll" :job_id ,job-id))))))
+    result))
+
+(ert-deftest codex-ide-mcp-tools-call-job-start-poll-read ()
+  "Job tool starts, polls, and reads async process output."
+  (let* ((start (codex-ide-mcp-test--decoded-result
+                 (codex-ide-mcp--handle-tools-call
+                  '(:name "emacs_job"
+                    :arguments (:action "start"
+                                :command "printf harness-job")))))
+         (job-id (cdr (assoc "id" start)))
+         (done (codex-ide-mcp-test--wait-for-job job-id))
+         (read (codex-ide-mcp-test--decoded-result
+                (codex-ide-mcp--handle-tools-call
+                 `(:name "emacs_job"
+                   :arguments (:action "read"
+                               :job_id ,job-id
+                               :since 0)))))
+         (output (cdr (assoc "output" read))))
+    (should (member (cdr (assoc "status" done)) '("done" "failed")))
+    (should (equal (cdr (assoc "text" output)) "harness-job"))))
+
+(ert-deftest codex-ide-mcp-tools-call-job-cancel ()
+  "Job tool cancels a running async process."
+  (let* ((start (codex-ide-mcp-test--decoded-result
+                 (codex-ide-mcp--handle-tools-call
+                  '(:name "emacs_job"
+                    :arguments (:action "start"
+                                :command "sleep 5")))))
+         (job-id (cdr (assoc "id" start)))
+         (cancel (codex-ide-mcp-test--decoded-result
+                  (codex-ide-mcp--handle-tools-call
+                   `(:name "emacs_job"
+                     :arguments (:action "cancel" :job_id ,job-id))))))
+    (should (equal (cdr (assoc "status" cancel)) "canceled"))))
+
+(ert-deftest codex-ide-mcp-tools-call-events-after-cursor ()
+  "Events tool returns harness events after a cursor."
+  (let ((cursor codex-ide-harness--event-cursor))
+    (codex-ide-mcp--handle-tools-call
+     '(:name "emacs_execute" :arguments (:code "(+ 1 2)")))
+    (let* ((result (codex-ide-mcp--handle-tools-call
+                    `(:name "emacs_events"
+                      :arguments (:since ,cursor))))
+           (decoded (codex-ide-mcp-test--decoded-result result))
+           (events (cdr (assoc "events" decoded))))
+      (should (eq (cdr (assoc "isError" result)) :json-false))
+      (should events)
+      (should (equal (cdr (assoc "type" (car events))) "execute")))))
 
 (ert-deftest codex-ide-mcp-tools-call-tree-sitter-unavailable ()
-  "Tree-sitter info reports an MCP tool error when treesit is absent."
+  "Tree-sitter helper signals when treesit is absent."
   (with-temp-buffer
     (cl-letf (((symbol-function 'treesit-available-p)
                (lambda () nil)))
-      (let ((result (codex-ide-mcp--handle-tools-call
-                     '(:name "emacs_tree_sitter_info"
-                       :arguments nil))))
-        (should (eq (cdr (assoc "isError" result)) t))
-        (should (string-match-p
-                 "Tree-sitter is not available"
-                 (codex-ide-mcp-test--result-text result)))))))
+      (should-error (codex-ide-harness-tree-sitter nil)
+                    :type 'user-error))))
 
 (ert-deftest codex-ide-mcp-tools-call-tree-sitter-no-parser ()
-  "Tree-sitter info reports an MCP tool error without a parser."
+  "Tree-sitter helper signals without a parser."
   (with-temp-buffer
     (let ((tree (codex-ide-mcp-test--sample-tree)))
       (codex-ide-mcp-test--with-treesit (plist-get tree :root)
         (cl-letf (((symbol-function 'treesit-parser-list)
                    (lambda (&rest _args) nil)))
-          (let ((result (codex-ide-mcp--handle-tools-call
-                         '(:name "emacs_tree_sitter_info"
-                           :arguments nil))))
-            (should (eq (cdr (assoc "isError" result)) t))
-            (should (string-match-p
-                     "No tree-sitter parser"
-                     (codex-ide-mcp-test--result-text result)))))))))
+          (should-error (codex-ide-harness-tree-sitter nil)
+                        :type 'user-error))))))
 
 (ert-deftest codex-ide-mcp-tools-call-tree-sitter-node-at-point ()
   "Tree-sitter info returns structured node data at point."
@@ -527,17 +646,13 @@
            (symbol-end (plist-get tree :symbol-end)))
       (goto-char symbol-start)
       (codex-ide-mcp-test--with-treesit (plist-get tree :root)
-        (let* ((result (codex-ide-mcp--handle-tools-call
-                        '(:name "emacs_tree_sitter_info"
-                          :arguments nil)))
-               (decoded (codex-ide-mcp-test--decoded-result result))
+        (let* ((decoded (codex-ide-harness-tree-sitter nil))
                (parser (cdr (assoc "parser" decoded)))
                (node (cdr (assoc "node" decoded)))
                (point-range (cdr (assoc "pointRange" node)))
                (byte-range (cdr (assoc "byteRange" node)))
                (range (cdr (assoc "range" node)))
                (range-start (cdr (assoc "start" range))))
-          (should (eq (cdr (assoc "isError" result)) :json-false))
           (should (equal (cdr (assoc "language" parser)) "elisp"))
           (should (equal (cdr (assoc "type" node)) "symbol"))
           (should (eq (cdr (assoc "named" node)) t))
@@ -557,19 +672,17 @@
     (let ((tree (codex-ide-mcp-test--sample-tree)))
       (goto-char (plist-get tree :first-start))
       (codex-ide-mcp-test--with-treesit (plist-get tree :root)
-        (let* ((result (codex-ide-mcp--handle-tools-call
-                        '(:name "emacs_tree_sitter_info"
-                          :arguments (:include_ancestors t
-                                      :include_children t
-                                      :max_children 1))))
-               (decoded (codex-ide-mcp-test--decoded-result result))
+        (let* ((decoded (codex-ide-harness-tree-sitter
+                         '(:include_ancestors t
+                           :include_children t
+                           :max_children 1)))
                (node (cdr (assoc "node" decoded)))
                (ancestors (cdr (assoc "ancestors" decoded)))
                (children (cdr (assoc "children" decoded)))
-               (first-child (car children)))
+               (first-child (aref children 0)))
           (should (equal (cdr (assoc "type" node)) "list"))
           (should (equal (length ancestors) 1))
-          (should (equal (cdr (assoc "type" (car ancestors)))
+          (should (equal (cdr (assoc "type" (aref ancestors 0)))
                          "source_file"))
           (should (equal (length children) 1))
           (should (equal (cdr (assoc "type" first-child)) "symbol"))
@@ -580,15 +693,13 @@
   (with-temp-buffer
     (let ((tree (codex-ide-mcp-test--sample-tree)))
       (codex-ide-mcp-test--with-treesit (plist-get tree :root)
-        (let* ((result (codex-ide-mcp--handle-tools-call
-                        '(:name "emacs_tree_sitter_info"
-                          :arguments (:whole_file t
-                                      :max_depth 1
-                                      :max_children 1))))
-               (decoded (codex-ide-mcp-test--decoded-result result))
+        (let* ((decoded (codex-ide-harness-tree-sitter
+                         '(:whole_file t
+                           :max_depth 1
+                           :max_children 1)))
                (root (cdr (assoc "tree" decoded)))
                (children (cdr (assoc "children" root)))
-               (first-child (car children)))
+               (first-child (aref children 0)))
           (should (equal (cdr (assoc "type" root)) "source_file"))
           (should (equal (length children) 1))
           (should (equal (cdr (assoc "type" first-child)) "list"))
@@ -596,58 +707,18 @@
           (should (eq (cdr (assoc "childrenTruncated" root)) t)))))))
 
 (ert-deftest codex-ide-mcp-tools-call-xref-references-no-buffer ()
-  "Xref references tool requires an already-open buffer."
+  "Xref helper requires an already-open buffer."
   (let ((path (make-temp-file "codex-ide-mcp-xref")))
     (unwind-protect
-        (let* ((result (codex-ide-mcp--handle-tools-call
-                        `(:name "emacs_xref_references"
-                          :arguments (:path ,path :identifier "foo")))))
-          (should (eq (cdr (assoc "isError" result)) t))
-          (should (string-match-p "No open buffer"
-                                  (codex-ide-mcp-test--result-text result))))
+        (should-error
+         (codex-ide-harness-xref
+          `(:path ,path :identifier "foo"))
+         :type 'user-error)
       (when (file-exists-p path)
         (delete-file path)))))
 
-(ert-deftest codex-ide-mcp-tools-call-close-buffer-by-name ()
-  "Close-buffer tool kills a named unmodified buffer."
-  (let ((buffer (generate-new-buffer "codex-ide-mcp-close-test")))
-    (unwind-protect
-        (let* ((name (buffer-name buffer))
-               (result (codex-ide-mcp--handle-tools-call
-                        `(:name "emacs_close_buffer"
-                          :arguments (:buffer ,name))))
-               (decoded (codex-ide-mcp-test--decoded-result result)))
-          (should (eq (cdr (assoc "isError" result)) :json-false))
-          (should (equal (cdr (assoc "closed" decoded)) name))
-          (should-not (buffer-live-p buffer)))
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer)))))
-
-(ert-deftest codex-ide-mcp-tools-call-close-buffer-refuses-modified ()
-  "Close-buffer tool refuses modified file-visiting buffers."
-  (let* ((file (make-temp-file "codex-ide-mcp-close"))
-         (buffer (find-file-noselect file)))
-    (unwind-protect
-        (progn
-          (with-current-buffer buffer
-            (goto-char (point-max))
-            (insert "changed"))
-          (let ((result (codex-ide-mcp--handle-tools-call
-                         `(:name "emacs_close_buffer"
-                           :arguments (:path ,file)))))
-            (should (eq (cdr (assoc "isError" result)) t))
-            (should (string-match-p "unsaved changes"
-                                    (codex-ide-mcp-test--result-text result)))
-            (should (buffer-live-p buffer))))
-      (when (buffer-live-p buffer)
-        (with-current-buffer buffer
-          (set-buffer-modified-p nil))
-        (kill-buffer buffer))
-      (when (file-exists-p file)
-        (delete-file file)))))
-
 (ert-deftest codex-ide-mcp-tools-call-project-info-no-project ()
-  "Project info reports nil root outside a project."
+  "Context reports nil project root outside a project."
   (let ((dir (make-temp-file "codex-ide-mcp-no-project" t)))
     (unwind-protect
         (let ((default-directory (file-name-as-directory dir))
@@ -655,40 +726,49 @@
           (with-temp-buffer
             (rename-buffer "codex-ide-mcp-no-project" t)
             (let* ((result (codex-ide-mcp--handle-tools-call
-                            '(:name "emacs_project_info"
+                            '(:name "emacs_context"
                               :arguments nil)))
-                   (decoded (codex-ide-mcp-test--decoded-result result)))
+                   (decoded (codex-ide-mcp-test--decoded-result result))
+                   (project (cdr (assoc "project" decoded)))
+                   (buffer (cdr (assoc "buffer" decoded))))
               (should (eq (cdr (assoc "isError" result)) :json-false))
-              (should-not (cdr (assoc "root" decoded)))
-              (should (equal (cdr (assoc "fileCount" decoded)) 0))
-              (should (equal (cdr (assoc "activeBuffer" decoded))
+              (should-not (cdr (assoc "root" project)))
+              (should (equal (cdr (assoc "fileCount" project)) 0))
+              (should (equal (cdr (assoc "buffer" buffer))
                              "codex-ide-mcp-no-project"))
-              (should (equal (cdr (assoc "majorMode" decoded))
+              (should (equal (cdr (assoc "majorMode" buffer))
                              "fundamental-mode")))))
       (delete-directory dir t))))
 
-(ert-deftest codex-ide-mcp-tools-call-current-buffer ()
-  "current-buffer tool returns normal MCP text content."
+(ert-deftest codex-ide-mcp-tools-call-context-current-buffer ()
+  "Context tool returns normal MCP text content."
   (with-temp-buffer
     (rename-buffer "codex-ide-mcp-test" t)
     (let* ((result (codex-ide-mcp--handle-tools-call
-                    '(:name "emacs_current_buffer" :arguments nil)))
+                    '(:name "emacs_context" :arguments nil)))
            (content (aref (cdr (assoc "content" result)) 0))
            (decoded (codex-ide-mcp-test--json-read
-                     (cdr (assoc "text" content)))))
+                     (cdr (assoc "text" content))))
+           (buffer (cdr (assoc "buffer" decoded))))
       (should (eq (cdr (assoc "isError" result)) :json-false))
       (should (equal (cdr (assoc "type" content)) "text"))
-      (should (equal (cdr (assoc "buffer" decoded))
+      (should (equal (cdr (assoc "buffer" buffer))
                      "codex-ide-mcp-test")))))
 
-(ert-deftest codex-ide-mcp-tools-call-open-file-validates-path ()
-  "open-file tool reports an MCP tool error when path is absent."
-  (let* ((result (codex-ide-mcp--handle-tools-call
-                  '(:name "emacs_open_file" :arguments nil)))
-         (content (aref (cdr (assoc "content" result)) 0)))
-    (should (eq (cdr (assoc "isError" result)) t))
-    (should (string-match-p "requires argument path"
-                            (cdr (assoc "text" content))))))
+(ert-deftest codex-ide-mcp-tools-call-edit-path-requires-live-buffer ()
+  "Edit by path reports an MCP error unless the buffer is live."
+  (let ((path (make-temp-file "codex-ide-mcp-edit")))
+    (unwind-protect
+        (let* ((result (codex-ide-mcp--handle-tools-call
+                        `(:name "emacs_edit"
+                          :arguments (:operation "insert"
+                                      :text "x"
+                                      :path ,path))))
+               (content (aref (cdr (assoc "content" result)) 0)))
+          (should (eq (cdr (assoc "isError" result)) t))
+          (should (string-match-p "No open buffer"
+                                  (cdr (assoc "text" content)))))
+      (delete-file path))))
 
 (ert-deftest codex-ide-mcp-handle-message-wraps-tools-list ()
   "JSON-RPC messages are wrapped in a success response."

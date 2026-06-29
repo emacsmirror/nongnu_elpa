@@ -49,13 +49,6 @@ Zero means ask the operating system for an ephemeral port."
   :type 'integer
   :group 'codex-ide)
 
-(defcustom codex-ide-mcp-enable-execute t
-  "Expose the dangerous `emacs_execute' MCP tool when non-nil.
-This enables full Emacs Lisp eval from local MCP clients.  Set this to
-nil to hide and reject the tool."
-  :type 'boolean
-  :group 'codex-ide)
-
 ;;; Constants
 
 (defconst codex-ide-mcp--server-name "emacs_tools"

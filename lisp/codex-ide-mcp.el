@@ -26,8 +26,8 @@
 ;;; Commentary:
 
 ;; Local streamable-HTTP MCP endpoint for Codex sessions.  The bridge exposes
-;; Emacs tools for buffer metadata, navigation, diagnostics, tree-sitter
-;; inspection, and, unless disabled, Emacs Lisp evaluation.
+;; Emacs tools for harness context, live-buffer editing, async jobs, recent
+;; events, and Emacs Lisp evaluation.
 ;; Codex sessions register it by adding a transient
 ;; `-c mcp_servers.emacs_tools.url' override; this module never writes to
 ;; `~/.codex/config.toml' unless `codex-ide-mcp-install-codex-config' is run.
@@ -35,7 +35,6 @@
 ;; Usage:
 ;;   M-x codex-ide
 ;;   (setq codex-ide-mcp-enabled nil) ; disable automatic registration
-;;   (setq codex-ide-mcp-enable-execute nil) ; hide emacs_execute
 ;;
 ;; Commands:
 ;;   M-x codex-ide-mcp-start
@@ -83,11 +82,9 @@
                          (codex-ide-mcp--namespace))
                  (format "Example tool: %s"
                          (codex-ide-mcp--callable-tool-name
-                          "emacs_current_buffer"))
-                 (format "emacs_execute: %s"
-                         (if codex-ide-mcp-enable-execute
-                             "enabled"
-                           "disabled"))
+                          "emacs_context"))
+                 (format "Harness tools: %s"
+                         (string-join (codex-ide-mcp-tool-names) ", "))
                  (when url (codex-ide-mcp--setup-message url))))
      "\n")))
 
