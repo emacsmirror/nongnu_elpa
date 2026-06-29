@@ -63,6 +63,118 @@
                            ("content-type" . "application/json")))
         :body "{}"))
 
+(cl-defstruct codex-ide-mcp-test-node
+  type start end named field parent children)
+
+(defun codex-ide-mcp-test--node
+    (type start end &optional named field children)
+  "Return a stub tree-sitter node."
+  (let ((node (make-codex-ide-mcp-test-node
+               :type type
+               :start start
+               :end end
+               :named named
+               :field field
+               :children children)))
+    (dolist (child children)
+      (setf (codex-ide-mcp-test-node-parent child) node))
+    node))
+
+(defun codex-ide-mcp-test--node-at (node pos)
+  "Return the deepest stub NODE covering POS."
+  (or (cl-some
+       (lambda (child)
+         (when (and (<= (codex-ide-mcp-test-node-start child) pos)
+                    (< pos (codex-ide-mcp-test-node-end child)))
+           (codex-ide-mcp-test--node-at child pos)))
+       (codex-ide-mcp-test-node-children node))
+      node))
+
+(defmacro codex-ide-mcp-test--with-treesit (root &rest body)
+  "Run BODY with tree-sitter functions stubbed around ROOT."
+  (declare (indent 1))
+  `(let ((root-node ,root)
+         (parser 'codex-ide-mcp-test-parser))
+     (cl-letf (((symbol-function 'treesit-available-p)
+                (lambda () t))
+               ((symbol-function 'treesit-parser-list)
+                (lambda (&rest _args) (list parser)))
+               ((symbol-function 'treesit-parser-language)
+                (lambda (_parser) 'elisp))
+               ((symbol-function 'treesit-parser-root-node)
+                (lambda (_parser) root-node))
+               ((symbol-function 'treesit-node-at)
+                (lambda (pos &optional _parser-or-lang _named)
+                  (codex-ide-mcp-test--node-at root-node pos)))
+               ((symbol-function 'treesit-node-check)
+                (lambda (node property)
+                  (and (eq property 'named)
+                       (codex-ide-mcp-test-node-named node))))
+               ((symbol-function 'treesit-node-child)
+                (lambda (node n &optional _named)
+                  (nth n (codex-ide-mcp-test-node-children node))))
+               ((symbol-function 'treesit-node-child-count)
+                (lambda (node &optional _named)
+                  (length (codex-ide-mcp-test-node-children node))))
+               ((symbol-function 'treesit-node-end)
+                #'codex-ide-mcp-test-node-end)
+               ((symbol-function 'treesit-node-field-name)
+                #'codex-ide-mcp-test-node-field)
+               ((symbol-function 'treesit-node-parent)
+                #'codex-ide-mcp-test-node-parent)
+               ((symbol-function 'treesit-node-start)
+                #'codex-ide-mcp-test-node-start)
+               ((symbol-function 'treesit-node-type)
+                #'codex-ide-mcp-test-node-type))
+       ,@body)))
+
+(defun codex-ide-mcp-test--sample-tree ()
+  "Insert sample text and return stub tree metadata."
+  (insert "(message \"hi\")\n(+ 1 2)\n")
+  (let* ((first-start (point-min))
+         (first-end (save-excursion
+                      (goto-char first-start)
+                      (line-end-position)))
+         (second-start (save-excursion
+                         (goto-char first-end)
+                         (forward-line 1)
+                         (point)))
+         (second-end (save-excursion
+                       (goto-char second-start)
+                       (line-end-position)))
+         (symbol-start (save-excursion
+                         (goto-char (point-min))
+                         (search-forward "message")
+                         (match-beginning 0)))
+         (symbol-end (save-excursion
+                       (goto-char symbol-start)
+                       (search-forward "message")
+                       (match-end 0)))
+         (string-start (save-excursion
+                         (goto-char (point-min))
+                         (search-forward "\"hi\"")
+                         (match-beginning 0)))
+         (string-end (save-excursion
+                       (goto-char string-start)
+                       (search-forward "\"hi\"")
+                       (match-end 0)))
+         (symbol (codex-ide-mcp-test--node
+                  "symbol" symbol-start symbol-end t "function"))
+         (string (codex-ide-mcp-test--node
+                  "string" string-start string-end t "argument"))
+         (first (codex-ide-mcp-test--node
+                 "list" first-start first-end t nil
+                 (list symbol string)))
+         (second (codex-ide-mcp-test--node
+                  "list" second-start second-end t))
+         (root (codex-ide-mcp-test--node
+                "source_file" (point-min) (point-max) t nil
+                (list first second))))
+    (list :root root
+          :first-start first-start
+          :symbol-start symbol-start
+          :symbol-end symbol-end)))
+
 (ert-deftest codex-ide-mcp-split-request-exact ()
   "HTTP request splitting returns a complete request and no rest."
   (let* ((body "{\"jsonrpc\":\"2.0\"}")
@@ -187,21 +299,23 @@
       (should (equal (codex-ide--session-config-overrides)
                      '(("model" . "o3")))))))
 
-(ert-deftest codex-ide-mcp-session-overrides-enabled ()
-  "Enabled MCP integration appends the transient server URL override."
+(ert-deftest codex-ide-mcp-session-overrides-default-enabled ()
+  "Default MCP integration appends the transient server URL override."
   (let ((codex-ide-config-overrides '(("model" . "o3")))
-        (codex-ide-mcp-enabled t))
+        (started nil))
     (cl-letf (((symbol-function 'codex-ide-mcp-ensure-server)
-               (lambda () "http://127.0.0.1:43210/mcp")))
+               (lambda ()
+                 (setq started t)
+                 "http://127.0.0.1:43210/mcp")))
       (should (equal (codex-ide--session-config-overrides)
                      '(("model" . "o3")
                        ("mcp_servers.emacs_tools.url"
-                        . "\"http://127.0.0.1:43210/mcp\"")))))))
+                        . "\"http://127.0.0.1:43210/mcp\""))))
+      (should started))))
 
 (ert-deftest codex-ide-mcp-build-command-session-overrides ()
   "Session-local MCP overrides are visible to command construction."
   (let ((codex-ide-config-overrides nil)
-        (codex-ide-mcp-enabled t)
         (codex-ide-cli-path "codex")
         (codex-ide-cli-extra-args nil)
         (codex-ide-ask-for-approval nil)
@@ -310,8 +424,7 @@
 
 (ert-deftest codex-ide-mcp-tools-list-shape-default ()
   "tools/list returns the default Emacs tool schemas."
-  (let* ((codex-ide-mcp-enable-execute nil)
-         (result (codex-ide-mcp--handle-tools-list nil))
+  (let* ((result (codex-ide-mcp--handle-tools-list nil))
          (tools (cdr (assoc "tools" result)))
          (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
                         (append tools nil))))
@@ -325,7 +438,9 @@
                      "emacs_xref_apropos"
                      "emacs_project_info"
                      "emacs_imenu_symbols"
-                     "emacs_close_buffer")))))
+                     "emacs_tree_sitter_info"
+                     "emacs_close_buffer"
+                     "emacs_execute")))))
 
 (ert-deftest codex-ide-mcp-callable-name-display-only ()
   "Codex callable names are display-only and raw MCP names stay unchanged."
@@ -342,7 +457,8 @@
          (tools (cdr (assoc "tools" result)))
          (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
                         (append tools nil))))
-    (should (equal (length names) 9))
+    (should (equal (length names) 10))
+    (should (member "emacs_tree_sitter_info" names))
     (should-not (member "emacs_execute" names))))
 
 (ert-deftest codex-ide-mcp-tools-list-shows-enabled-execute ()
@@ -352,7 +468,7 @@
          (tools (cdr (assoc "tools" result)))
          (names (mapcar (lambda (tool) (cdr (assoc "name" tool)))
                         (append tools nil))))
-    (should (equal (length names) 10))
+    (should (equal (length names) 11))
     (should (member "emacs_execute" names))))
 
 (ert-deftest codex-ide-mcp-tools-call-execute-disabled ()
@@ -374,6 +490,110 @@
          (decoded (codex-ide-mcp-test--decoded-result result)))
     (should (eq (cdr (assoc "isError" result)) :json-false))
     (should (equal (cdr (assoc "value" decoded)) "3"))))
+
+(ert-deftest codex-ide-mcp-tools-call-tree-sitter-unavailable ()
+  "Tree-sitter info reports an MCP tool error when treesit is absent."
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'treesit-available-p)
+               (lambda () nil)))
+      (let ((result (codex-ide-mcp--handle-tools-call
+                     '(:name "emacs_tree_sitter_info"
+                       :arguments nil))))
+        (should (eq (cdr (assoc "isError" result)) t))
+        (should (string-match-p
+                 "Tree-sitter is not available"
+                 (codex-ide-mcp-test--result-text result)))))))
+
+(ert-deftest codex-ide-mcp-tools-call-tree-sitter-no-parser ()
+  "Tree-sitter info reports an MCP tool error without a parser."
+  (with-temp-buffer
+    (let ((tree (codex-ide-mcp-test--sample-tree)))
+      (codex-ide-mcp-test--with-treesit (plist-get tree :root)
+        (cl-letf (((symbol-function 'treesit-parser-list)
+                   (lambda (&rest _args) nil)))
+          (let ((result (codex-ide-mcp--handle-tools-call
+                         '(:name "emacs_tree_sitter_info"
+                           :arguments nil))))
+            (should (eq (cdr (assoc "isError" result)) t))
+            (should (string-match-p
+                     "No tree-sitter parser"
+                     (codex-ide-mcp-test--result-text result)))))))))
+
+(ert-deftest codex-ide-mcp-tools-call-tree-sitter-node-at-point ()
+  "Tree-sitter info returns structured node data at point."
+  (with-temp-buffer
+    (let* ((tree (codex-ide-mcp-test--sample-tree))
+           (symbol-start (plist-get tree :symbol-start))
+           (symbol-end (plist-get tree :symbol-end)))
+      (goto-char symbol-start)
+      (codex-ide-mcp-test--with-treesit (plist-get tree :root)
+        (let* ((result (codex-ide-mcp--handle-tools-call
+                        '(:name "emacs_tree_sitter_info"
+                          :arguments nil)))
+               (decoded (codex-ide-mcp-test--decoded-result result))
+               (parser (cdr (assoc "parser" decoded)))
+               (node (cdr (assoc "node" decoded)))
+               (point-range (cdr (assoc "pointRange" node)))
+               (byte-range (cdr (assoc "byteRange" node)))
+               (range (cdr (assoc "range" node)))
+               (range-start (cdr (assoc "start" range))))
+          (should (eq (cdr (assoc "isError" result)) :json-false))
+          (should (equal (cdr (assoc "language" parser)) "elisp"))
+          (should (equal (cdr (assoc "type" node)) "symbol"))
+          (should (eq (cdr (assoc "named" node)) t))
+          (should (equal (cdr (assoc "fieldName" node)) "function"))
+          (should (equal (cdr (assoc "text" node)) "message"))
+          (should (equal (cdr (assoc "start" point-range)) symbol-start))
+          (should (equal (cdr (assoc "end" point-range)) symbol-end))
+          (should (equal (cdr (assoc "start" byte-range))
+                         (- (position-bytes symbol-start)
+                            (position-bytes (point-min)))))
+          (should (equal (cdr (assoc "line" range-start)) 1))
+          (should (equal (cdr (assoc "column" range-start)) 1)))))))
+
+(ert-deftest codex-ide-mcp-tools-call-tree-sitter-ancestors-children ()
+  "Tree-sitter info can include ancestors and bounded children."
+  (with-temp-buffer
+    (let ((tree (codex-ide-mcp-test--sample-tree)))
+      (goto-char (plist-get tree :first-start))
+      (codex-ide-mcp-test--with-treesit (plist-get tree :root)
+        (let* ((result (codex-ide-mcp--handle-tools-call
+                        '(:name "emacs_tree_sitter_info"
+                          :arguments (:include_ancestors t
+                                      :include_children t
+                                      :max_children 1))))
+               (decoded (codex-ide-mcp-test--decoded-result result))
+               (node (cdr (assoc "node" decoded)))
+               (ancestors (cdr (assoc "ancestors" decoded)))
+               (children (cdr (assoc "children" decoded)))
+               (first-child (car children)))
+          (should (equal (cdr (assoc "type" node)) "list"))
+          (should (equal (length ancestors) 1))
+          (should (equal (cdr (assoc "type" (car ancestors)))
+                         "source_file"))
+          (should (equal (length children) 1))
+          (should (equal (cdr (assoc "type" first-child)) "symbol"))
+          (should (eq (cdr (assoc "childrenTruncated" decoded)) t)))))))
+
+(ert-deftest codex-ide-mcp-tools-call-tree-sitter-whole-file ()
+  "Tree-sitter info can return a bounded whole-file tree."
+  (with-temp-buffer
+    (let ((tree (codex-ide-mcp-test--sample-tree)))
+      (codex-ide-mcp-test--with-treesit (plist-get tree :root)
+        (let* ((result (codex-ide-mcp--handle-tools-call
+                        '(:name "emacs_tree_sitter_info"
+                          :arguments (:whole_file t
+                                      :max_depth 1
+                                      :max_children 1))))
+               (decoded (codex-ide-mcp-test--decoded-result result))
+               (root (cdr (assoc "tree" decoded)))
+               (children (cdr (assoc "children" root)))
+               (first-child (car children)))
+          (should (equal (cdr (assoc "type" root)) "source_file"))
+          (should (equal (length children) 1))
+          (should (equal (cdr (assoc "type" first-child)) "list"))
+          (should-not (assoc "children" first-child))
+          (should (eq (cdr (assoc "childrenTruncated" root)) t)))))))
 
 (ert-deftest codex-ide-mcp-tools-call-xref-references-no-buffer ()
   "Xref references tool requires an already-open buffer."

@@ -20,7 +20,9 @@ KEYMAP_POPUP ?=
 
 SRCS = lisp/codex-ide-debug.el lisp/codex-ide-term.el \
        lisp/codex-ide-context.el lisp/codex-ide-diff.el \
-       lisp/codex-ide-mcp.el lisp/codex-ide.el \
+       lisp/codex-ide-mcp-core.el lisp/codex-ide-mcp-treesit.el \
+       lisp/codex-ide-mcp-tools.el lisp/codex-ide-mcp-protocol.el \
+       lisp/codex-ide-mcp-server.el lisp/codex-ide-mcp.el lisp/codex-ide.el \
        lisp/codex-ide-menu.el
 
 TESTS = tests/codex-ide-tests.el tests/codex-ide-context-tests.el \
