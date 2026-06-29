@@ -1,0 +1,24 @@
+* Codex IDE integration for GNU Emacs
+
+** About
++ [[https://github.com/openai/codex][codex]] native integration for emacs, utilizing [[https://github.com/akermu/emacs-libvterm][vterm]]
+  + Run Codex in a project-scoped vterm buffer.
+  + Resume, switch, and manage multiple live Codex sessions from Emacs.
+
+** Installation
++ Using =:vc=
+#+begin_src emacs-lisp
+(use-package codex-ide
+  :vc (:url "https://git.thanosapollo.org/emacs-codex-ide"
+       :lisp-dir "lisp"
+       :rev :newest))
+#+end_src
+
++ Using =straight.el=
+#+begin_src emacs-lisp
+(straight-use-package
+ '(codex-ide :type git
+             :host nil
+             :repo "https://git.thanosapollo.org/emacs-codex-ide"
+             :files ("lisp/*.el")))
+#+end_src
