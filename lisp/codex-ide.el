@@ -27,15 +27,15 @@
 
 ;; Run the Codex CLI inside Emacs through vterm.  This is a terminal-first
 ;; integration: live Codex sessions are grouped by project root and displayed
-;; through a configurable buffer display function, with prompt sending,
-;; toggling, and resume.
+;; through a configurable buffer display function, with prompt sending, session
+;; cycling, and resume.
 ;;
 ;; Usage:
 ;;   M-x codex-ide              Start or toggle Codex for the current project
 ;;   C-u M-x codex-ide          Start another Codex session
 ;;   M-x codex-ide-resume-last  Resume the most recent Codex session
 ;;   M-x codex-ide-new-session  Start another Codex session
-;;   M-x codex-ide-toggle       Show/hide the Codex window
+;;   M-x codex-ide-toggle       Cycle project Codex sessions
 ;;   M-x codex-ide-send-prompt  Send a prompt from the minibuffer
 ;;   M-x codex-ide-stop         Stop the session for the current project
 ;;   M-x codex-ide-list-project-sessions  Switch project Codex sessions
@@ -200,6 +200,12 @@ DIRECTORY defaults to the current project and SESSION-ID defaults to 1."
   "Return live Codex sessions for ROOT."
   (cl-remove-if-not #'codex-ide--session-live-p
                     (gethash root codex-ide--sessions)))
+
+(defun codex-ide--sorted-project-sessions (root)
+  "Return live Codex sessions for ROOT sorted by numeric id."
+  (sort (copy-sequence (codex-ide--project-sessions root))
+        (lambda (left right)
+          (< (plist-get left :id) (plist-get right :id)))))
 
 (defun codex-ide--sync-active-session (root sessions)
   "Keep ROOT's active session id valid for SESSIONS."
@@ -541,6 +547,55 @@ Returns the displayed window when one is available.  Updates
   (dolist (window (get-buffer-window-list buffer nil t))
     (codex-ide--hide-window window)))
 
+(defun codex-ide--session-visible-p (session)
+  "Return non-nil when SESSION has a visible window."
+  (get-buffer-window (plist-get session :buffer) t))
+
+(defun codex-ide--selected-project-session (root sessions)
+  "Return the selected project session for ROOT from SESSIONS."
+  (and-let* ((session (codex-ide--buffer-session
+                       (window-buffer (selected-window)))))
+    (and (equal root (plist-get session :root))
+         (memq session sessions)
+         session)))
+
+(defun codex-ide--visible-project-session (root sessions)
+  "Return the visible project session to cycle from for ROOT in SESSIONS."
+  (or (codex-ide--selected-project-session root sessions)
+      (cl-find-if #'codex-ide--session-visible-p sessions)))
+
+(defun codex-ide--hide-project-session-windows (sessions)
+  "Hide visible windows for SESSIONS without stopping them."
+  (dolist (session sessions)
+    (codex-ide--hide-displayed-buffer (plist-get session :buffer))))
+
+(defun codex-ide--active-or-first-session (sessions active-id)
+  "Return ACTIVE-ID's session from SESSIONS, falling back to the first."
+  (or (and active-id
+           (cl-find active-id sessions
+                    :key (lambda (session) (plist-get session :id))
+                    :test #'=))
+      (car sessions)))
+
+(defun codex-ide--next-session (session sessions)
+  "Return the session after SESSION in SESSIONS, or nil."
+  (let ((position (cl-position session sessions :test #'eq)))
+    (when (and position (< position (1- (length sessions))))
+      (nth (1+ position) sessions))))
+
+(defun codex-ide--cycle-project-session (root sessions active-id)
+  "Cycle ROOT's visible Codex window through SESSIONS.
+ACTIVE-ID is the session that was active before session recovery."
+  (if-let* ((visible (codex-ide--visible-project-session root sessions)))
+      (progn
+        (codex-ide--hide-project-session-windows sessions)
+        (if-let* ((next (codex-ide--next-session visible sessions)))
+            (codex-ide--switch-to-session next)
+          (codex-ide--activate-session (car sessions))
+          (codex-ide-debug "Codex windows hidden")))
+    (codex-ide--switch-to-session
+     (codex-ide--active-or-first-session sessions active-id))))
+
 (defun codex-ide--toggle-existing-window (buffer)
   "Show or hide the window showing BUFFER.
 Used when a session is already running."
@@ -749,13 +804,16 @@ A session picker is deferred to a later phase."
 
 ;;;###autoload
 (defun codex-ide-toggle ()
-  "Toggle visibility of the Codex window for the current project."
+  "Cycle live Codex sessions for the current project."
   (interactive)
-  (let ((working-dir (codex-ide--get-working-directory)))
+  (let* ((working-dir (codex-ide--get-working-directory))
+         (active-id (gethash working-dir codex-ide--active-session-ids)))
     (codex-ide--record-source-buffer working-dir)
-    (if-let* ((session (codex-ide--active-session working-dir)))
-        (codex-ide--toggle-existing-window (plist-get session :buffer))
-      (user-error "No Codex session for this project"))))
+    (codex-ide--recover-live-sessions)
+    (let ((sessions (codex-ide--sorted-project-sessions working-dir)))
+      (if sessions
+          (codex-ide--cycle-project-session working-dir sessions active-id)
+        (user-error "No Codex session for this project")))))
 
 ;;;###autoload
 (defun codex-ide-switch-to-buffer ()

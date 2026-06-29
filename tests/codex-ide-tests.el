@@ -123,6 +123,40 @@
     (when (buffer-live-p buffer)
       (kill-buffer buffer))))
 
+(defun codex-ide-test--session-by-id (sessions id)
+  "Return the session with ID from SESSIONS."
+  (cl-find id sessions
+           :key (lambda (session) (plist-get session :id))
+           :test #'=))
+
+(defun codex-ide-test--session-by-root (sessions root)
+  "Return the session for ROOT from SESSIONS."
+  (cl-find root sessions
+           :key (lambda (session) (plist-get session :root))
+           :test #'equal))
+
+(defun codex-ide-test--session-visible-p (session)
+  "Return non-nil when SESSION's buffer is visible."
+  (get-buffer-window (plist-get session :buffer) t))
+
+(defun codex-ide-test--call-with-toggle-stubs (body)
+  "Call BODY with noisy toggle collaborators muted."
+  (cl-letf (((symbol-function 'codex-ide-context-record-source-buffer)
+             (lambda (&rest _args) nil))
+            ((symbol-function 'codex-ide-term--sync-dimensions)
+             (lambda (&rest _args) nil))
+            ((symbol-function 'codex-ide-debug)
+             (lambda (&rest _args) nil)))
+    (funcall body)))
+
+(defun codex-ide-test--toggle-in-root (root)
+  "Call `codex-ide-toggle' for ROOT with same-window display."
+  (codex-ide-test--call-with-toggle-stubs
+   (lambda ()
+     (let ((default-directory root)
+           (codex-ide-display-buffer-function #'pop-to-buffer-same-window))
+       (codex-ide-toggle)))))
+
 (defun codex-ide-test--call-with-sessions (root-ids body)
   "Call BODY with live sessions for ROOT-IDS.
 ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
@@ -1067,6 +1101,152 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
              (should-not created)
              (should (eq toggled (plist-get active :buffer))))))
       (delete-directory root t))))
+
+(ert-deftest codex-ide-toggle-shows-active-session-when-hidden ()
+  "`codex-ide-toggle' shows the active project session when none is visible."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-cycle-hidden-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((main (generate-new-buffer " *codex-ide-cycle-main*"))
+                 (active (codex-ide-test--session-by-id sessions 2)))
+             (unwind-protect
+                 (save-window-excursion
+                   (delete-other-windows)
+                   (switch-to-buffer main)
+                   (codex-ide-test--toggle-in-root root)
+                   (should (eq (window-buffer) (plist-get active :buffer)))
+                   (should (= (gethash root codex-ide--active-session-ids) 2)))
+               (when (buffer-live-p main)
+                 (kill-buffer main))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-toggle-hidden-state-falls-back-to-first-session ()
+  "`codex-ide-toggle' uses the first sorted session when no active id exists."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-cycle-fallback-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((main (generate-new-buffer " *codex-ide-cycle-fallback*"))
+                 (first (codex-ide-test--session-by-id sessions 1)))
+             (remhash root codex-ide--active-session-ids)
+             (unwind-protect
+                 (save-window-excursion
+                   (delete-other-windows)
+                   (switch-to-buffer main)
+                   (codex-ide-test--toggle-in-root root)
+                   (should (eq (window-buffer) (plist-get first :buffer)))
+                   (should (= (gethash root codex-ide--active-session-ids) 1)))
+               (when (buffer-live-p main)
+                 (kill-buffer main))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-toggle-cycles-visible-session-to-next ()
+  "`codex-ide-toggle' cycles a visible project session to the next id."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-cycle-next-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((first (codex-ide-test--session-by-id sessions 1))
+                 (second (codex-ide-test--session-by-id sessions 2)))
+             (save-window-excursion
+               (delete-other-windows)
+               (switch-to-buffer (plist-get first :buffer))
+               (codex-ide-test--toggle-in-root root)
+               (should (eq (window-buffer) (plist-get second :buffer)))
+               (should-not (codex-ide-test--session-visible-p first))
+               (should (= (gethash root codex-ide--active-session-ids) 2))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-toggle-hides-last-session-then-shows-first ()
+  "`codex-ide-toggle' hides after the last session and next shows the first."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-cycle-wrap-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((first (codex-ide-test--session-by-id sessions 1))
+                 (second (codex-ide-test--session-by-id sessions 2)))
+             (save-window-excursion
+               (delete-other-windows)
+               (switch-to-buffer (plist-get second :buffer))
+               (codex-ide-test--call-with-toggle-stubs
+                (lambda ()
+                  (let ((default-directory root)
+                        (codex-ide-display-buffer-function
+                         #'pop-to-buffer-same-window))
+                    (codex-ide-toggle)
+                    (should-not (cl-some #'codex-ide-test--session-visible-p
+                                         sessions))
+                    (dolist (session sessions)
+                      (should (buffer-live-p (plist-get session :buffer)))
+                      (should (process-live-p (plist-get session :process))))
+                    (should (= (gethash root codex-ide--active-session-ids) 1))
+                    (codex-ide-toggle))))
+               (should (eq (window-buffer) (plist-get first :buffer)))
+               (should (= (gethash root codex-ide--active-session-ids) 1))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-toggle-ignores-visible-sessions-from-other-roots ()
+  "`codex-ide-toggle' ignores visible Codex windows from other projects."
+  (let ((root-a (file-name-as-directory
+                 (make-temp-file "codex-ide-cycle-a-" t)))
+        (root-b (file-name-as-directory
+                 (make-temp-file "codex-ide-cycle-b-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root-a 1) (,root-b 1))
+         (lambda (sessions)
+           (let ((main (generate-new-buffer " *codex-ide-cycle-other*"))
+                 (session-a (codex-ide-test--session-by-root sessions root-a))
+                 (session-b (codex-ide-test--session-by-root sessions root-b)))
+             (unwind-protect
+                 (save-window-excursion
+                   (delete-other-windows)
+                   (switch-to-buffer main)
+                   (split-window-right)
+                   (other-window 1)
+                   (switch-to-buffer (plist-get session-b :buffer))
+                   (let ((other-window (selected-window)))
+                     (other-window -1)
+                     (codex-ide-test--toggle-in-root root-a)
+                     (should (eq (window-buffer)
+                                 (plist-get session-a :buffer)))
+                     (should (eq (window-buffer other-window)
+                                 (plist-get session-b :buffer)))))
+               (when (buffer-live-p main)
+                 (kill-buffer main))))))
+      (delete-directory root-a t)
+      (delete-directory root-b t))))
+
+(ert-deftest codex-ide-toggle-without-project-sessions-errors ()
+  "`codex-ide-toggle' preserves the no-session user error."
+  (let ((root-a (file-name-as-directory
+                 (make-temp-file "codex-ide-cycle-empty-a-" t)))
+        (root-b (file-name-as-directory
+                 (make-temp-file "codex-ide-cycle-empty-b-" t))))
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root-a))
+          (codex-ide-test--call-with-sessions
+           `((,root-b 1))
+           (lambda (_sessions)
+             (condition-case err
+                 (progn
+                   (codex-ide-test--toggle-in-root root-a)
+                   (ert-fail "Expected user-error"))
+               (user-error
+                (should (equal (cadr err)
+                               "No Codex session for this project")))))))
+      (delete-directory root-a t)
+      (delete-directory root-b t))))
 
 (ert-deftest codex-ide-list-project-sessions-filters-current-root ()
   "Project session listing offers only sessions for the current root."
