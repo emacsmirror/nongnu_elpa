@@ -727,6 +727,20 @@
         (when (get-buffer "*Hermes Kanban Diagnostics*")
           (kill-buffer "*Hermes Kanban Diagnostics*"))))))
 
+(defun hermes-kanban-test--face-match-p (face expected)
+  "Return non-nil when FACE contains EXPECTED."
+  (cond
+   ((eq face expected) t)
+   ((listp face) (memq expected face))))
+
+(defun hermes-kanban-test--line-has-face-p (text line expected)
+  "Return non-nil when LINE in TEXT has EXPECTED face on any character."
+  (when-let* ((start (string-match (regexp-quote line) text)))
+    (cl-loop for i from start below (+ start (length line))
+             thereis (hermes-kanban-test--face-match-p
+                      (get-text-property i 'face text)
+                      expected))))
+
 (ert-deftest hermes-kanban-show-log-fetches-selected-task-log ()
   "Log viewing goes through the dashboard REST endpoint for the selected task."
   (let (log-path log-query)
@@ -788,6 +802,115 @@
     (should-not (string-match-p (regexp-quote "\33[") plain))
     (should (string-match-p "start\nprogress\ndone" plain))
     (should (string-match-p "error" plain))))
+
+(ert-deftest hermes-kanban-format-log-fontifies-embedded-diff ()
+  "Worker log formatting applies diff faces to embedded unified diffs."
+  (let* ((content (concat "before diff\n"
+                          "a//lisp/foo.el → b//lisp/foo.el\n"
+                          "@@ -17,2 +17,2 @@\n"
+                          " context\n"
+                          "-old\n"
+                          "+new\n"
+                          "middle diff\n"
+                          "diff --git a/lisp/bar.el b/lisp/bar.el\n"
+                          "--- a/lisp/bar.el\n"
+                          "+++ b/lisp/bar.el\n"
+                          "@@ -1 +1 @@\n"
+                          "-before\n"
+                          "+after\n"
+                          "after diff\n"))
+         (text (hermes-kanban--format-log
+                `((task_id . "t1") (exists . t) (content . ,content))))
+         (plain (substring-no-properties text)))
+    (should (string-match-p "before diff" plain))
+    (should (string-match-p (regexp-quote "@@ -17,2 +17,2 @@") plain))
+    (should (string-match-p "-old" plain))
+    (should (string-match-p "\\+new" plain))
+    (should (string-match-p (regexp-quote "@@ -1 +1 @@") plain))
+    (should (string-match-p "-before" plain))
+    (should (string-match-p "\\+after" plain))
+    (should (string-match-p "after diff" plain))
+    (should (hermes-kanban-test--line-has-face-p
+             text "@@ -17,2 +17,2 @@" 'diff-hunk-header))
+    (should (hermes-kanban-test--line-has-face-p
+             text "-old" 'diff-indicator-removed))
+    (should (hermes-kanban-test--line-has-face-p
+             text "-old" 'diff-removed))
+    (should (hermes-kanban-test--line-has-face-p
+             text "+new" 'diff-indicator-added))
+    (should (hermes-kanban-test--line-has-face-p
+             text "+new" 'diff-added))
+    (should (hermes-kanban-test--line-has-face-p
+             text "@@ -1 +1 @@" 'diff-hunk-header))
+    (should (hermes-kanban-test--line-has-face-p
+             text "-before" 'diff-removed))
+    (should (hermes-kanban-test--line-has-face-p
+             text "+after" 'diff-added))))
+
+(ert-deftest hermes-kanban-format-log-does-not-fontify-ordinary-plus-minus-lines ()
+  "Worker log formatting ignores ordinary plus/minus lines without hunks."
+  (let* ((content (concat "worker said\n"
+                          "+not a diff addition\n"
+                          "-not a diff removal\n"
+                          "@@ -1 +1 @@\n"
+                          "-incomplete hunk\n"))
+         (text (hermes-kanban--format-log
+                `((task_id . "t1") (exists . t) (content . ,content))))
+         (plain (substring-no-properties text)))
+    (should (string-match-p "\\+not a diff addition" plain))
+    (should (string-match-p "-not a diff removal" plain))
+    (should (string-match-p (regexp-quote "@@ -1 +1 @@") plain))
+    (should (string-match-p "-incomplete hunk" plain))
+    (dolist (face '(diff-added diff-indicator-added diff-removed
+                    diff-indicator-removed diff-hunk-header))
+      (should-not (hermes-kanban-test--line-has-face-p
+                   text "+not a diff addition" face))
+      (should-not (hermes-kanban-test--line-has-face-p
+                   text "-not a diff removal" face))
+      (should-not (hermes-kanban-test--line-has-face-p
+                   text "@@ -1 +1 @@" face))
+      (should-not (hermes-kanban-test--line-has-face-p
+                   text "-incomplete hunk" face)))))
+
+(ert-deftest hermes-kanban-log-mode-navigates-embedded-diff-hunks ()
+  "Log-mode n/p commands move across embedded unified diff hunks.
+Incomplete header-shaped blocks that the fontifier rejects are skipped."
+  (with-temp-buffer
+    (hermes-kanban-log-mode)
+    (let ((inhibit-read-only t))
+      (insert (hermes-kanban--render-log-content
+               (concat "worker said\n"
+                       ;; Incomplete hunk-shaped block: a header that
+                       ;; announces one old and one new line, but the
+                       ;; following lines are not +/- body lines, so
+                       ;; `hermes-kanban--consume-diff-hunk' rejects it
+                       ;; and the fontifier does not fontify it.
+                       "@@ -1 +1 @@\n"
+                       "this is just prose, not a diff body\n"
+                       "a//lisp/foo.el → b//lisp/foo.el\n"
+                       "@@ -1 +1 @@\n"
+                       "-old\n"
+                       "+new\n"
+                       "between\n"
+                       "@@ -5 +5 @@\n"
+                       "-alpha\n"
+                       "+beta\n"))))
+    (should (eq (lookup-key hermes-kanban-log-mode-map (kbd "n"))
+                'hermes-kanban-log-next-hunk))
+    (should (eq (lookup-key hermes-kanban-log-mode-map (kbd "p"))
+                'hermes-kanban-log-previous-hunk))
+    (goto-char (point-min))
+    ;; `n' must skip the incomplete header block at the top and land on
+    ;; the first VALID hunk inside the fontified diff.
+    (hermes-kanban-log-next-hunk)
+    (should (looking-at (regexp-quote "@@ -1 +1 @@")))
+    (let ((first-hunk (point)))
+      (hermes-kanban-log-next-hunk)
+      (should (looking-at (regexp-quote "@@ -5 +5 @@")))
+      ;; `p' must also skip the incomplete block and land back on the
+      ;; first valid hunk, not on the bogus header above it.
+      (hermes-kanban-log-previous-hunk)
+      (should (= (point) first-hunk)))))
 
 ;;; Group N: live events tail
 
