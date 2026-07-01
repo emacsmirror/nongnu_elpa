@@ -1757,18 +1757,14 @@ both URLs and SINCE/BOARD are appended as query parameters."
               url)
           :secrets (hermes-dashboard-transport-client-secrets client))))
 
-(cl-defun hermes-dashboard-transport-kanban-events-url-async
-    (&key since board client)
-  "Return a promise of the kanban live-events WebSocket URL plist.
-The plist is (:url :redacted-url :secrets).  When CLIENT already has a resolved
-WebSocket URL it is reused; otherwise auth resolves against
-`hermes-dashboard-transport-url' exactly as the chat client does.  The events
-path is swapped onto the resolved URL -- the credential is never rebuilt -- and
-SINCE and BOARD are appended as query parameters."
+(defun hermes-dashboard-transport--auth-plist-async (client)
+  "Return a promise of a WebSocket auth (:url :redacted-url :secrets) plist.
+When CLIENT already has a resolved WebSocket URL its credential is reused;
+otherwise auth resolves against `hermes-dashboard-transport-url' exactly as
+the chat client does."
   (if-let* ((auth (and client
                        (hermes-dashboard-transport--client-auth-plist client))))
-      (hermes--promise-resolved
-       (hermes-dashboard-transport--kanban-events-plist auth since board))
+      (hermes--promise-resolved auth)
     (let* ((target (hermes-dashboard-transport--parse-url
                     hermes-dashboard-transport-url))
            (host (or (plist-get target :host) "127.0.0.1"))
@@ -1777,10 +1773,32 @@ SINCE and BOARD are appended as query parameters."
                             hermes-dashboard-transport-url))
            (base-url (hermes-dashboard-transport--base-url host port remote-url))
            (method (or hermes-dashboard-transport-remote-auth-method 'auto)))
-      (hermes--promise-map
-       (hermes-dashboard-transport--remote-auth-async host port base-url method)
-       (lambda (auth)
-         (hermes-dashboard-transport--kanban-events-plist auth since board))))))
+      (hermes-dashboard-transport--remote-auth-async
+       host port base-url method))))
+
+(cl-defun hermes-dashboard-transport-kanban-events-url-async
+    (&key since board client)
+  "Return a promise of the kanban live-events WebSocket URL plist.
+The plist is (:url :redacted-url :secrets).  When CLIENT already has a resolved
+WebSocket URL it is reused; otherwise auth resolves against
+`hermes-dashboard-transport-url' exactly as the chat client does.  The events
+path is swapped onto the resolved URL -- the credential is never rebuilt -- and
+SINCE and BOARD are appended as query parameters."
+  (hermes--promise-map
+   (hermes-dashboard-transport--auth-plist-async client)
+   (lambda (auth)
+     (hermes-dashboard-transport--kanban-events-plist auth since board))))
+
+(cl-defun hermes-dashboard-transport-capability-url-async
+    (&key client)
+  "Return a promise of the capability provider WebSocket URL plist.
+The plist is (:url :redacted-url :secrets).  When CLIENT already has a resolved
+WebSocket URL it is reused; otherwise auth resolves against
+`hermes-dashboard-transport-url' exactly as the chat client does.  The
+capability provider uses the same `/api/ws' JSON-RPC endpoint as chat, so unlike
+the kanban events tail no path swap is performed -- only the credential is
+reused."
+  (hermes-dashboard-transport--auth-plist-async client))
 
 (defun hermes-dashboard-transport--encode-frame (frame)
   "Encode JSON-RPC FRAME as a JSON string."
