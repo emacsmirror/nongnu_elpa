@@ -85,11 +85,13 @@
 (defun codex-ide-harness--events-since (since limit)
   "Return recent events after SINCE, bounded by LIMIT."
   (let* ((cursor (if (integerp since) since 0))
+         ;; `cl-remove-if-not' can return the input list itself, so a
+         ;; destructive reverse here would corrupt the global event log.
          (events (cl-remove-if-not
                   (lambda (event)
                     (> (cdr (assoc "cursor" event)) cursor))
                   codex-ide-harness--events))
-         (ordered (nreverse events))
+         (ordered (reverse events))
          (bounded (if (> (length ordered) limit)
                       (last ordered limit)
                     ordered)))
@@ -838,6 +840,8 @@ When OUTPUT is non-nil, include output data."
                            :type 'string
                            :description "Optional default directory."
                            :optional t))
+         :annotations (list (cons "destructiveHint" t)
+                            (cons "openWorldHint" :json-false))
          :function #'codex-ide-mcp--tool-execute)
    (list :name "emacs_context"
          :description "Return selected Emacs harness context."
@@ -857,6 +861,9 @@ When OUTPUT is non-nil, include output data."
                            :type 'integer
                            :description "Number of message lines to include."
                            :optional t))
+         :annotations (list (cons "readOnlyHint" t)
+                            (cons "idempotentHint" t)
+                            (cons "openWorldHint" :json-false))
          :function #'codex-ide-mcp--tool-context)
    (list :name "emacs_edit"
          :description "Apply a structured edit to a live Emacs buffer."
@@ -907,6 +914,8 @@ When OUTPUT is non-nil, include output data."
                            :type 'boolean
                            :description "Indent changed text."
                            :optional t))
+         :annotations (list (cons "destructiveHint" t)
+                            (cons "openWorldHint" :json-false))
          :function #'codex-ide-mcp--tool-edit)
    (list :name "emacs_job"
          :description "Start, poll, read, or cancel async harness jobs."
@@ -929,6 +938,7 @@ When OUTPUT is non-nil, include output data."
                            :type 'integer
                            :description "Output offset for read."
                            :optional t))
+         :annotations (list (cons "openWorldHint" t))
          :function #'codex-ide-mcp--tool-job)
    (list :name "emacs_events"
          :description "Return recent Emacs harness events."
@@ -940,6 +950,9 @@ When OUTPUT is non-nil, include output data."
                            :type 'integer
                            :description "Maximum events to return."
                            :optional t))
+         :annotations (list (cons "readOnlyHint" t)
+                            (cons "idempotentHint" t)
+                            (cons "openWorldHint" :json-false))
          :function #'codex-ide-mcp--tool-events))
   "Registered MCP harness tools.")
 

@@ -51,14 +51,17 @@
          (required (cl-loop for arg in args
                             unless (plist-get arg :optional)
                             collect (plist-get arg :name))))
-    (list (cons "name" (plist-get tool :name))
-          (cons "description" (plist-get tool :description))
-          (cons "inputSchema"
-                (list (cons "type" "object")
-                      (cons "properties"
-                            (or properties (make-hash-table :test 'equal)))
-                      (cons "required" (vconcat required))
-                      (cons "additionalProperties" :json-false))))))
+    (delq nil
+          (list (cons "name" (plist-get tool :name))
+                (cons "description" (plist-get tool :description))
+                (cons "inputSchema"
+                      (list (cons "type" "object")
+                            (cons "properties"
+                                  (or properties (make-hash-table :test 'equal)))
+                            (cons "required" (vconcat required))
+                            (cons "additionalProperties" :json-false)))
+                (and-let* ((annotations (plist-get tool :annotations)))
+                  (cons "annotations" annotations))))))
 
 (defun codex-ide-mcp--validate-required-args (tool args)
   "Signal `user-error' when TOOL required arguments are absent from ARGS."

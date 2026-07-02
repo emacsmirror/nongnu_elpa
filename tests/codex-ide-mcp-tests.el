@@ -346,6 +346,26 @@
     (should (equal (cdr (assoc "type" (cdr (assoc "buffer" properties))))
                    "string"))))
 
+(ert-deftest codex-ide-mcp-tool-to-mcp-schema-annotations ()
+  "Tool schemas carry effect annotations for the Codex approval gate."
+  (let* ((context (codex-ide-mcp--tool->mcp
+                   (codex-ide-mcp--tool-by-name "emacs_context")))
+         (execute (codex-ide-mcp--tool->mcp
+                   (codex-ide-mcp--tool-by-name "emacs_execute")))
+         (read-only (cdr (assoc "annotations" context)))
+         (mutating (cdr (assoc "annotations" execute))))
+    (should (eq (cdr (assoc "readOnlyHint" read-only)) t))
+    (should (eq (cdr (assoc "idempotentHint" read-only)) t))
+    (should (eq (cdr (assoc "openWorldHint" read-only)) :json-false))
+    (should (eq (cdr (assoc "destructiveHint" mutating)) t))))
+
+(ert-deftest codex-ide-mcp-tools-list-includes-annotations ()
+  "Every tool in tools/list carries an annotations object."
+  (let* ((result (codex-ide-mcp--handle-tools-list nil))
+         (tools (append (cdr (assoc "tools" result)) nil)))
+    (dolist (tool tools)
+      (should (consp (cdr (assoc "annotations" tool)))))))
+
 (ert-deftest codex-ide-mcp-xref-item-to-entry-file-location ()
   "Xref file locations become plain JSON-ready entries."
   (let* ((item (xref-make
@@ -619,6 +639,20 @@
       (should (eq (cdr (assoc "isError" result)) :json-false))
       (should events)
       (should (equal (cdr (assoc "type" (car events))) "execute")))))
+
+(ert-deftest codex-ide-mcp-events-since-preserves-event-log ()
+  "Reading events with a stale cursor must not mutate the global log."
+  (let ((codex-ide-harness--events nil)
+        (codex-ide-harness--event-cursor 0))
+    (codex-ide-harness--record-event "one" nil)
+    (codex-ide-harness--record-event "two" nil)
+    (codex-ide-harness--record-event "three" nil)
+    (let ((first (codex-ide-harness--events-since 0 100))
+          (second (codex-ide-harness--events-since 0 100)))
+      (should (equal first second))
+      (should (equal (mapcar (lambda (event) (cdr (assoc "type" event)))
+                             codex-ide-harness--events)
+                     '("three" "two" "one"))))))
 
 (ert-deftest codex-ide-mcp-tools-call-tree-sitter-unavailable ()
   "Tree-sitter helper signals when treesit is absent."
