@@ -133,6 +133,21 @@ Escape hatch for flags not yet modeled by a defcustom."
 (defvar-local codex-ide--session-id nil
   "Numeric Codex session id for the current buffer.")
 
+(defvar-keymap codex-ide-mode-map
+  :doc "Keymap for Codex terminal buffers."
+  "S-<return>" #'codex-ide-insert-newline
+  "C-c C-k" #'codex-ide-send-escape)
+
+(define-minor-mode codex-ide-mode
+  "Minor mode for terminal buffers running a Codex CLI session."
+  :interactive nil
+  :lighter " Codex"
+  (if codex-ide-mode
+      (add-hook 'kill-buffer-hook
+                #'codex-ide--cleanup-current-buffer-session nil t)
+    (remove-hook 'kill-buffer-hook
+                 #'codex-ide--cleanup-current-buffer-session t)))
+
 ;;; Helpers (pure / mostly pure)
 
 (defun codex-ide--get-working-directory ()
@@ -343,21 +358,6 @@ session-local overrides needed by enabled integration helpers."
                (codex-ide--sync-active-session root live-sessions)))
            codex-ide--sessions))
 
-(defun codex-ide--codex-buffer-name-p (name)
-  "Return non-nil when NAME has the Codex terminal buffer shape."
-  (or (string-match-p "\\`\\*codex\\[[^]\n]+\\]\\*\\(?:<[0-9]+>\\)?\\'"
-                      name)
-      (string-match-p "\\`\\*codex\\[[^]\n]+\\]<[0-9]+>\\*\\'"
-                      name)))
-
-(defun codex-ide--buffer-name-session-id (name)
-  "Return the session id parsed from NAME, or nil."
-  (cond
-   ((string-match "\\`\\*codex\\[[^]\n]+\\]<\\([0-9]+\\)>\\*\\'" name)
-    (string-to-number (match-string 1 name)))
-   ((string-match "\\`\\*codex\\[[^]\n]+\\]\\*<\\([0-9]+\\)>\\'" name)
-    (string-to-number (match-string 1 name)))))
-
 (defun codex-ide--available-session-id-p (root session-id)
   "Return non-nil when SESSION-ID can be used for ROOT."
   (and (integerp session-id)
@@ -404,18 +404,16 @@ session-local overrides needed by enabled integration helpers."
 (defun codex-ide--recoverable-buffer-p (buffer)
   "Return non-nil when BUFFER is a live Codex terminal buffer."
   (and (buffer-live-p buffer)
-       (codex-ide--codex-buffer-name-p (buffer-name buffer))
+       (buffer-local-value 'codex-ide-mode buffer)
        (and-let* ((process (get-buffer-process buffer)))
          (codex-ide--codex-process-p process))))
 
 (defun codex-ide--recovered-session-id (root buffer)
   "Return the session id to use when recovering BUFFER for ROOT."
-  (or (cl-find-if
-       (lambda (session-id)
-         (codex-ide--available-session-id-p root session-id))
-       (list (with-current-buffer buffer codex-ide--session-id)
-             (codex-ide--buffer-name-session-id (buffer-name buffer))))
-      (codex-ide--next-session-id root)))
+  (let ((session-id (buffer-local-value 'codex-ide--session-id buffer)))
+    (if (codex-ide--available-session-id-p root session-id)
+        session-id
+      (codex-ide--next-session-id root))))
 
 (defun codex-ide--active-session-live-p (root)
   "Return non-nil when ROOT has a live active session."
@@ -692,19 +690,6 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
     (codex-ide--cleanup-on-exit
      codex-ide--session-root codex-ide--session-id)))
 
-(defun codex-ide--stale-cleanup-hook-p (function)
-  "Return non-nil when FUNCTION is an obsolete cleanup hook."
-  (or (eq function 'codex-ide--cleanup-on-exit)
-      (string-prefix-p
-       "Clean up the Codex session state"
-       (or (ignore-errors (documentation function t)) ""))))
-
-(defun codex-ide--remove-stale-cleanup-hooks ()
-  "Remove obsolete cleanup hooks from the current session buffer."
-  (setq-local kill-buffer-hook
-              (cl-remove-if #'codex-ide--stale-cleanup-hook-p
-                            kill-buffer-hook)))
-
 (defun codex-ide--make-process-sentinel (directory session-id)
   "Return the process sentinel for DIRECTORY and SESSION-ID."
   (lambda (_proc event)
@@ -718,11 +703,6 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
   "Return the list of \"KEY=VALUE\" env vars for a Codex session."
   (list "TERM_PROGRAM=emacs"))
 
-(defun codex-ide--setup-terminal-keybindings ()
-  "Install Codex local keybindings in the current terminal buffer."
-  (local-set-key (kbd "S-<return>") #'codex-ide-insert-newline)
-  (local-set-key (kbd "C-<escape>") #'codex-ide-send-escape))
-
 (defun codex-ide--setup-session (session)
   "Install process and buffer-local state for SESSION."
   (let ((buffer (plist-get session :buffer))
@@ -735,10 +715,8 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
     (with-current-buffer buffer
       (setq-local codex-ide--session-root directory)
       (setq-local codex-ide--session-id session-id)
-      (codex-ide--remove-stale-cleanup-hooks)
-      (add-hook 'kill-buffer-hook
-                #'codex-ide--cleanup-current-buffer-session nil t)
-      (codex-ide--setup-terminal-keybindings))
+      (unless codex-ide-mode
+        (codex-ide-mode 1)))
     session))
 
 (defun codex-ide--create-session (emacs-session-id &optional resume-last

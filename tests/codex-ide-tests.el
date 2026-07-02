@@ -48,14 +48,18 @@
     (ert-skip "sleep executable not found"))
   (start-process name buffer "sleep" "60"))
 
-(defun codex-ide-test--make-recoverable-buffer (root name process-name)
-  "Return (BUFFER PROCESS) for a live orphan Codex buffer."
+(defun codex-ide-test--make-recoverable-buffer (root name process-name
+                                                     session-id)
+  "Return (BUFFER PROCESS) for a live orphan Codex buffer.
+The buffer carries ROOT and SESSION-ID as buffer-locals with
+`codex-ide-mode' enabled, simulating a session whose record was lost."
   (let ((buffer (get-buffer-create name))
         process)
     (with-current-buffer buffer
       (setq default-directory root)
-      (setq-local codex-ide--session-root nil)
-      (setq-local codex-ide--session-id nil))
+      (setq-local codex-ide--session-root root)
+      (setq-local codex-ide--session-id session-id)
+      (codex-ide-mode 1))
     (setq process
           (codex-ide-test--make-buffer-process buffer process-name))
     (set-process-query-on-exit-flag process nil)
@@ -901,7 +905,7 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
           (make-directory (expand-file-name ".git" root))
           (setq pair
                 (codex-ide-test--make-recoverable-buffer
-                 root buffer-name "codex-ide-recover"))
+                 root buffer-name "codex-ide-recover" 2))
           (setq buffer (car pair))
           (setq process (cadr pair))
           (codex-ide--recover-live-sessions)
@@ -916,11 +920,16 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
             (should-not (process-query-on-exit-flag process))
             (should (functionp (process-sentinel process)))
             (with-current-buffer buffer
+              (should codex-ide-mode)
               (should (equal codex-ide--session-root root))
               (should (= codex-ide--session-id 2))
-              (should (eq (local-key-binding (kbd "S-<return>"))
+              (should (eq (cdr (assq 'codex-ide-mode
+                                     (minor-mode-key-binding
+                                      (kbd "S-<return>"))))
                           #'codex-ide-insert-newline))
-              (should (eq (local-key-binding (kbd "C-<escape>"))
+              (should (eq (cdr (assq 'codex-ide-mode
+                                     (minor-mode-key-binding
+                                      (kbd "C-c C-k"))))
                           #'codex-ide-send-escape)))
             (should (assoc buffer-name
                            (codex-ide--session-candidates root)))
@@ -929,6 +938,34 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
       (when pair
         (codex-ide-test--kill-buffer-process (car pair) (cadr pair)))
       (delete-directory root t))))
+
+(ert-deftest codex-ide-mode-map-leaves-vterm-map-alone ()
+  "Codex bindings live in the minor mode map, not in `vterm-mode-map'."
+  (should (eq (lookup-key codex-ide-mode-map (kbd "S-<return>"))
+              #'codex-ide-insert-newline))
+  (should (eq (lookup-key codex-ide-mode-map (kbd "C-c C-k"))
+              #'codex-ide-send-escape))
+  (should-not (eq (lookup-key vterm-mode-map (kbd "S-<return>"))
+                  #'codex-ide-insert-newline))
+  (should-not (eq (lookup-key vterm-mode-map (kbd "C-c C-k"))
+                  #'codex-ide-send-escape))
+  (with-temp-buffer
+    (codex-ide-mode 1)
+    (should (eq (cdr (assq 'codex-ide-mode
+                           (minor-mode-key-binding (kbd "S-<return>"))))
+                #'codex-ide-insert-newline))))
+
+(ert-deftest codex-ide-mode-manages-cleanup-hook ()
+  "Enabling the mode installs the cleanup hook once; disabling removes it."
+  (with-temp-buffer
+    (codex-ide-mode 1)
+    (codex-ide-mode 1)
+    (should (= (cl-count #'codex-ide--cleanup-current-buffer-session
+                         kill-buffer-hook)
+               1))
+    (codex-ide-mode -1)
+    (should-not (memq #'codex-ide--cleanup-current-buffer-session
+                      kill-buffer-hook))))
 
 (ert-deftest codex-ide-recovery-ignores-noncodex-processes ()
   "Recovery ignores Codex-named buffers whose command is not Codex."
@@ -944,11 +981,33 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
           (setq pair
                 (codex-ide-test--make-recoverable-buffer
                  root (codex-ide--get-buffer-name root)
-                 "codex-ide-ignore"))
+                 "codex-ide-ignore" 1))
           (codex-ide--recover-live-sessions)
           (should-not (codex-ide--project-sessions root)))
       (when pair
         (codex-ide-test--kill-buffer-process (car pair) (cadr pair)))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-recovery-ignores-mode-off-buffers ()
+  "Recovery ignores Codex-named buffers without `codex-ide-mode'."
+  (let* ((root (file-name-as-directory
+                (make-temp-file "codex-ide-mode-off-" t)))
+         (codex-ide--sessions (make-hash-table :test 'equal))
+         (codex-ide--active-session-ids (make-hash-table :test 'equal))
+         (codex-ide-cli-path "sleep")
+         buffer process)
+    (unwind-protect
+        (progn
+          (make-directory (expand-file-name ".git" root))
+          (setq buffer (get-buffer-create (codex-ide--get-buffer-name root)))
+          (with-current-buffer buffer
+            (setq default-directory root))
+          (setq process (codex-ide-test--make-buffer-process
+                         buffer "codex-ide-mode-off"))
+          (set-process-query-on-exit-flag process nil)
+          (codex-ide--recover-live-sessions)
+          (should-not (codex-ide--project-sessions root)))
+      (codex-ide-test--kill-buffer-process buffer process)
       (delete-directory root t))))
 
 (ert-deftest codex-ide-recovered-session-commands-target-buffer ()
@@ -965,7 +1024,7 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
           (setq pair
                 (codex-ide-test--make-recoverable-buffer
                  root (format "%s<2>" (codex-ide--get-buffer-name root))
-                 "codex-ide-recovered-commands"))
+                 "codex-ide-recovered-commands" 2))
           (setq buffer (car pair))
           (setq process (cadr pair))
           (codex-ide--recover-live-sessions)
@@ -1018,11 +1077,11 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
           (setq first
                 (codex-ide-test--make-recoverable-buffer
                  root (codex-ide--get-buffer-name root)
-                 "codex-ide-stop-1"))
+                 "codex-ide-stop-1" 1))
           (setq second
                 (codex-ide-test--make-recoverable-buffer
                  root (format "%s<2>" (codex-ide--get-buffer-name root))
-                 "codex-ide-stop-2"))
+                 "codex-ide-stop-2" 2))
           (codex-ide--recover-live-sessions)
           (codex-ide--activate-session
            (codex-ide--session-by-id root 2))
@@ -1056,11 +1115,11 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
           (setq first
                 (codex-ide-test--make-recoverable-buffer
                  root (codex-ide--get-buffer-name root)
-                 "codex-ide-cleanup-1"))
+                 "codex-ide-cleanup-1" 1))
           (setq second
                 (codex-ide-test--make-recoverable-buffer
                  root (format "%s<2>" (codex-ide--get-buffer-name root))
-                 "codex-ide-cleanup-2"))
+                 "codex-ide-cleanup-2" 2))
           (codex-ide--recover-live-sessions)
           (codex-ide--cleanup-on-exit root 2)
           (should (buffer-live-p (car first)))
@@ -1089,11 +1148,11 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
           (setq first
                 (codex-ide-test--make-recoverable-buffer
                  root (codex-ide--get-buffer-name root)
-                 "codex-ide-next-1"))
+                 "codex-ide-next-1" 1))
           (setq second
                 (codex-ide-test--make-recoverable-buffer
                  root (format "%s<2>" (codex-ide--get-buffer-name root))
-                 "codex-ide-next-2"))
+                 "codex-ide-next-2" 2))
           (codex-ide--recover-live-sessions)
           (should (equal (sort (mapcar (lambda (session)
                                           (plist-get session :id))
@@ -1603,24 +1662,24 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
              (should-not (codex-ide--project-sessions root)))))
       (delete-directory root t))))
 
-(ert-deftest codex-ide-setup-session-removes-stale-cleanup-hook ()
-  "Session setup removes obsolete cleanup hook function objects."
+(ert-deftest codex-ide-setup-session-enables-mode ()
+  "Session setup enables `codex-ide-mode' with the cleanup hook."
   (let ((root (file-name-as-directory
-               (make-temp-file "codex-ide-cleanup-stale-hook-" t))))
+               (make-temp-file "codex-ide-setup-mode-" t))))
     (unwind-protect
         (codex-ide-test--call-with-sessions
          `((,root 1))
          (lambda (sessions)
            (let* ((session (car sessions))
-                  (buffer (plist-get session :buffer))
-                  (stale (symbol-function 'codex-ide--cleanup-on-exit)))
-             (with-current-buffer buffer
-               (add-hook 'kill-buffer-hook stale nil t))
+                  (buffer (plist-get session :buffer)))
+             (codex-ide--setup-session session)
              (codex-ide--setup-session session)
              (with-current-buffer buffer
-               (should-not (memq stale kill-buffer-hook))
-               (should (memq #'codex-ide--cleanup-current-buffer-session
-                             kill-buffer-hook))))))
+               (should codex-ide-mode)
+               (should (= (cl-count
+                           #'codex-ide--cleanup-current-buffer-session
+                           kill-buffer-hook)
+                          1))))))
       (delete-directory root t))))
 
 ;;; Native IDE context
