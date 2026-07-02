@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (keymap-popup "0.3.1") (vterm "0.0.2"))
+;; Package-Requires: ((emacs "28.1") (compat "29.1.4.2") (keymap-popup "0.3.1") (vterm "0.0.2"))
 ;; Keywords: ai, codex, tools, terminal
 ;; URL: https://git.thanosapollo.org/emacs-codex
 
@@ -44,6 +44,7 @@
 
 ;;; Code:
 
+(require 'compat)
 (require 'cl-lib)
 (require 'project)
 (require 'subr-x)

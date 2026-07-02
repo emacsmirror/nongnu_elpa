@@ -70,12 +70,14 @@
           };
 
           vterm = emacsPackages.vterm;
+          compat = emacsPackages.compat;
 
           codexIde = emacsPackages.trivialBuild {
             pname = "codex-ide";
             inherit version;
             src = source;
             packageRequires = [
+              compat
               keymapPopup
               vterm
             ];
@@ -104,11 +106,13 @@
           };
 
           devEmacs = emacsPackages.emacsWithPackages (_: [
+            compat
             keymapPopup
             vterm
           ]);
           emacsWithCodex = emacsPackages.emacsWithPackages (_: [
             codexIde
+            compat
             vterm
           ]);
 
