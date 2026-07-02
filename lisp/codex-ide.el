@@ -490,18 +490,54 @@ When DIRECTORY is non-nil, return only sessions for that project root."
                                 (plist-get session :root))
                                'face 'shadow)))))
 
-(defun codex-ide--read-session (&optional directory)
+(defun codex-ide--read-session (&optional directory default-session)
   "Read a live Codex session with completion.
-When DIRECTORY is non-nil, offer only sessions for that project root."
+When DIRECTORY is non-nil, offer only sessions for that project root.
+DEFAULT-SESSION, when non-nil, is the initially selected session."
   (let ((candidates (codex-ide--session-candidates directory)))
     (unless candidates
       (user-error "No Codex sessions"))
-    (let* ((completion-extra-properties
+    (let* ((default-name (and-let* ((buffer (plist-get default-session
+                                                       :buffer))
+                                    (name (buffer-name buffer)))
+                           (and (assoc name candidates) name)))
+           (completion-extra-properties
             (list :annotation-function
                   (codex-ide--session-annotation-function candidates)))
-           (choice (completing-read "Codex session: " candidates nil t)))
+           (choice (completing-read "Codex session: " candidates nil t
+                                    nil nil default-name)))
       (or (cdr (assoc choice candidates))
           (user-error "No Codex session selected")))))
+
+(defun codex-ide--default-target-session (root sessions)
+  "Return the default target session for ROOT from SESSIONS."
+  (or (and-let* ((session-id (gethash root codex-ide--active-session-ids))
+                 (session (codex-ide--session-by-id root session-id)))
+        (and (memq session sessions) session))
+      (car sessions)))
+
+(defun codex-ide--target-session (&optional directory)
+  "Return the target Codex session for DIRECTORY.
+When the current buffer owns a live session for the project, use it
+directly.  Otherwise prompt when the project has more than one live
+session."
+  (let ((root (or directory (codex-ide--get-working-directory))))
+    (codex-ide--recover-live-sessions)
+    (let ((sessions (codex-ide--sorted-project-sessions root))
+          (own (codex-ide--buffer-session)))
+      (cond
+       ((and own
+             (equal root (plist-get own :root))
+             (memq own sessions))
+        (codex-ide--activate-session own))
+       ((null sessions)
+        (user-error "No Codex session for this project"))
+       ((null (cdr sessions))
+        (codex-ide--activate-session (car sessions)))
+       (t
+        (codex-ide--activate-session
+         (codex-ide--read-session
+          root (codex-ide--default-target-session root sessions))))))))
 
 (defun codex-ide--switch-to-session (session)
   "Switch to SESSION's Codex terminal buffer."
@@ -856,39 +892,36 @@ Interactively, read PROMPT from the minibuffer."
   (let ((working-dir (codex-ide--get-working-directory))
         (origin (current-buffer)))
     (codex-ide--record-source-buffer working-dir origin)
-    (if-let* ((session (codex-ide--active-session working-dir))
-              (buffer (plist-get session :buffer)))
-        (let ((text (or prompt (read-string "Codex prompt: "))))
-          (unless (string-empty-p text)
-            (with-current-buffer buffer
-              (codex-ide-term--send-string text)
-              (sit-for 0.1)
-              (codex-ide-term--send-return))
-            (codex-ide-debug "Sent prompt: %s" text)))
-      (user-error "No Codex session for this project"))))
+    (let* ((session (codex-ide--target-session working-dir))
+           (buffer (plist-get session :buffer))
+           (text (or prompt (read-string "Codex prompt: "))))
+      (unless (string-empty-p text)
+        (with-current-buffer buffer
+          (codex-ide-term--send-string text)
+          (sit-for 0.1)
+          (codex-ide-term--send-return))
+        (codex-ide-debug "Sent prompt: %s" text)))))
 
 ;;;###autoload
 (defun codex-ide-send-escape ()
   "Send ESC to the Codex terminal for the current project."
   (interactive)
-  (if-let* ((session (codex-ide--active-session))
-            (buffer (plist-get session :buffer)))
-      (with-current-buffer buffer
-        (codex-ide-term--send-escape))
-    (user-error "No Codex session for this project")))
+  (let* ((session (codex-ide--target-session))
+         (buffer (plist-get session :buffer)))
+    (with-current-buffer buffer
+      (codex-ide-term--send-escape))))
 
 ;;;###autoload
 (defun codex-ide-insert-newline ()
   "Insert a literal newline into the Codex prompt.
 Sends backslash followed by RET, which Codex interprets as a newline."
   (interactive)
-  (if-let* ((session (codex-ide--active-session))
-            (buffer (plist-get session :buffer)))
-      (with-current-buffer buffer
-        (codex-ide-term--send-string "\\")
-        (sit-for 0.1)
-        (codex-ide-term--send-return))
-    (user-error "No Codex session for this project")))
+  (let* ((session (codex-ide--target-session))
+         (buffer (plist-get session :buffer)))
+    (with-current-buffer buffer
+      (codex-ide-term--send-string "\\")
+      (sit-for 0.1)
+      (codex-ide-term--send-return))))
 
 ;;;###autoload
 (defun codex-ide-check-status ()

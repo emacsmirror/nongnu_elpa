@@ -781,6 +781,81 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
         (codex-ide-test--kill-session session))
       (delete-directory directory t))))
 
+(ert-deftest codex-ide-read-session-uses-default-session ()
+  "Session reader supplies DEFAULT-SESSION as completion default."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-read-default-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((default (cl-find 2 sessions
+                                   :key (lambda (session)
+                                          (plist-get session :id))))
+                 seen-default)
+             (cl-letf (((symbol-function 'completing-read)
+                        (lambda (_prompt _collection _predicate _require-match
+                                         _initial-input _hist def
+                                         &rest _args)
+                          (setq seen-default def)
+                          def)))
+               (should (eq (codex-ide--read-session root default)
+                           default)))
+             (should (equal seen-default
+                            (buffer-name (plist-get default :buffer)))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-target-session-single-session-does-not-prompt ()
+  "Single project session is selected without completion."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-target-single-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1))
+         (lambda (sessions)
+           (cl-letf (((symbol-function 'completing-read)
+                      (lambda (&rest _args)
+                        (error "Unexpected session prompt"))))
+             (let ((session (let ((default-directory root))
+                              (codex-ide--target-session))))
+               (should (eq session (car sessions)))
+               (should (= (gethash root codex-ide--active-session-ids)
+                          1))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-target-session-multiple-sessions-prompts ()
+  "Multiple project sessions are selected with project-filtered completion."
+  (let ((root-a (file-name-as-directory
+                 (make-temp-file "codex-ide-target-a-" t)))
+        (root-b (file-name-as-directory
+                 (make-temp-file "codex-ide-target-b-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root-a 1) (,root-a 2) (,root-b 1))
+         (lambda (_sessions)
+           (let (seen)
+             (cl-letf (((symbol-function 'completing-read)
+                        (lambda (_prompt collection _predicate _require-match
+                                         &rest _args)
+                          (setq seen collection)
+                          (car (cl-find 1 collection
+                                        :key (lambda (candidate)
+                                               (plist-get (cdr candidate)
+                                                          :id))
+                                        :test #'=)))))
+               (let ((session (let ((default-directory root-a))
+                                (codex-ide--target-session))))
+                 (should (= (plist-get session :id) 1))))
+             (should (equal (delete-dups
+                             (mapcar (lambda (candidate)
+                                       (plist-get (cdr candidate) :root))
+                                     seen))
+                            (list root-a)))
+             (should (= (gethash root-a codex-ide--active-session-ids)
+                        1)))))
+      (delete-directory root-a t)
+      (delete-directory root-b t))))
+
 (ert-deftest codex-ide-create-session-uses-process-buffer ()
   "Session creation records the actual process buffer."
   (codex-ide-test--call-with-project
@@ -1319,20 +1394,28 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
       (delete-directory root-a t)
       (delete-directory root-b t))))
 
-(ert-deftest codex-ide-send-prompt-targets-active-session ()
-  "Prompt sending writes to the active project session only."
+(ert-deftest codex-ide-send-prompt-prompts-for-multiple-sessions ()
+  "Prompt sending writes to the selected project session."
   (let ((root (file-name-as-directory
-               (make-temp-file "codex-ide-prompt-active-" t))))
+               (make-temp-file "codex-ide-prompt-target-" t))))
     (unwind-protect
         (codex-ide-test--call-with-sessions
          `((,root 1) (,root 2))
          (lambda (sessions)
-           (let ((active (cl-find 2 sessions
+           (let ((target (cl-find 1 sessions
                                   :key (lambda (session)
                                          (plist-get session :id))))
                  sent returned)
              (cl-letf (((symbol-function 'codex-ide-context-record-source-buffer)
                         (lambda (&rest _args) nil))
+                       ((symbol-function 'completing-read)
+                        (lambda (_prompt collection _predicate _require-match
+                                         &rest _args)
+                          (car (cl-find 1 collection
+                                        :key (lambda (candidate)
+                                               (plist-get (cdr candidate)
+                                                          :id))
+                                        :test #'=))))
                        ((symbol-function 'codex-ide-term--send-string)
                         (lambda (string)
                           (setq sent (list string (current-buffer)))))
@@ -1346,8 +1429,87 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                (let ((default-directory root))
                  (codex-ide-send-prompt "active")))
              (should (equal sent (list "active"
-                                       (plist-get active :buffer))))
-             (should (eq returned (plist-get active :buffer))))))
+                                       (plist-get target :buffer))))
+             (should (eq returned (plist-get target :buffer)))
+             (should (= (gethash root codex-ide--active-session-ids)
+                        1)))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-terminal-input-prompts-for-multiple-sessions ()
+  "Escape and newline commands write to the selected project session."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-input-target-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((target (cl-find 1 sessions
+                                  :key (lambda (session)
+                                         (plist-get session :id))))
+                 sent returned escaped)
+             (cl-letf (((symbol-function 'completing-read)
+                        (lambda (_prompt collection _predicate _require-match
+                                         &rest _args)
+                          (car (cl-find 1 collection
+                                        :key (lambda (candidate)
+                                               (plist-get (cdr candidate)
+                                                          :id))
+                                        :test #'=))))
+                       ((symbol-function 'codex-ide-term--send-string)
+                        (lambda (string)
+                          (setq sent
+                                (append sent
+                                        (list (list string
+                                                    (current-buffer)))))))
+                       ((symbol-function 'codex-ide-term--send-return)
+                        (lambda ()
+                          (setq returned
+                                (append returned
+                                        (list (current-buffer))))))
+                       ((symbol-function 'codex-ide-term--send-escape)
+                        (lambda ()
+                          (setq escaped (current-buffer))))
+                       ((symbol-function 'sit-for)
+                        (lambda (&rest _args) nil)))
+               (let ((default-directory root))
+                 (codex-ide-send-escape)
+                 (codex-ide-insert-newline)))
+             (should (eq escaped (plist-get target :buffer)))
+             (should (equal sent
+                            (list (list "\\" (plist-get target :buffer)))))
+             (should (equal returned
+                            (list (plist-get target :buffer))))
+             (should (= (gethash root codex-ide--active-session-ids)
+                        1)))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-terminal-input-targets-own-session ()
+  "Escape from a session buffer targets it without prompting."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-input-own-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let ((by-id (lambda (id)
+                          (cl-find id sessions
+                                   :key (lambda (session)
+                                          (plist-get session :id))
+                                   :test #'=)))
+                 escaped)
+             (codex-ide--activate-session (funcall by-id 1))
+             (cl-letf (((symbol-function 'completing-read)
+                        (lambda (&rest _args)
+                          (error "Unexpected session prompt")))
+                       ((symbol-function 'codex-ide-term--send-escape)
+                        (lambda ()
+                          (setq escaped (current-buffer)))))
+               (with-current-buffer (plist-get (funcall by-id 2) :buffer)
+                 (let ((default-directory root))
+                   (codex-ide-send-escape))))
+             (should (eq escaped (plist-get (funcall by-id 2) :buffer)))
+             (should (= (gethash root codex-ide--active-session-ids)
+                        2)))))
       (delete-directory root t))))
 
 (ert-deftest codex-ide-stop-targets-active-session ()
