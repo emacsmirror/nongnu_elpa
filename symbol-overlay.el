@@ -607,8 +607,7 @@ When called interactively, then also reset
   (interactive)
   (unless (minibufferp)
     (mapc 'delete-overlay (symbol-overlay-get-list 0))
-    (when (called-interactively-p 'any)
-      (setq symbol-overlay-keywords-alist nil))))
+    (setq symbol-overlay-keywords-alist nil)))
 
 (add-hook 'before-revert-hook #'symbol-overlay-remove-all)
 
