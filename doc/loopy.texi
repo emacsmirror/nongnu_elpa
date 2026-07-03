@@ -6536,13 +6536,13 @@ loop commands.  You can easily find this file using @kbd{M-x find-library loopy-
 The special macro argument @samp{override} is used to override the global values of
 the customizable variables.  This is desirable when one wants to configure
 Loopy's behavior without affecting other libraries that might be using Loopy.
-For example@comma{} consider namespace collisions: a library which makes a custom
-loop command available via @code{loopy-command-parsers} might
-overwrite another definition created by some other@comma{} unknown library.  This is
-similar to what would happen if different libraries tried to use the same
-function name or variable name.  If the loop command is only meant to be used
-internally@comma{} then local overrides paired with wrapping macros can help to avoid
-the problem of unintentionally affecting other libraries.
+For example@comma{} consider namespace collisions: a library which makes a custom loop
+command available via @code{loopy-parsers} might overwrite another definition created
+by some other@comma{} unknown library.  This is similar to what would happen if
+different libraries tried to use the same function name or variable name.  If
+the loop command is only meant to be used internally@comma{} then local overrides
+paired with wrapping macros can help to avoid the problem of unintentionally
+affecting other libraries.
 
 The syntax of the special macro argument @samp{override} is similar to that of the
 special macro argument @samp{with}.  Note@comma{} however@comma{} its arguments are not evaluated@comma{}
@@ -6579,10 +6579,6 @@ macro.  The following variables can be overridden:
 A @samp{map.el}-compatible structure that maps a symbol to a
 parsing function.  Parsing functions must be available during macro expansion.
 See the user option @code{loopy-parsers} and see @ref{Custom Commands}.
-
-In both @code{loopy} and @code{loopy-iter}@comma{} overriding @code{loopy-parsers} will also
-override any effects from setting the deprecated variables
-@code{loopy-command-parsers} and @code{loopy-aliases} to a non-@code{nil} value.
 
 @lisp
 (cl-defun my-set-parser ((_name var val))
@@ -6630,7 +6626,7 @@ A list of symbols.  See the user option
   (let ((map (map-insert loopy-parsers 'my-set #'my-set-parser))
         (list (cons 'my-set loopy-iter-bare-names)))
     `(loopy-iter (override (loopy-iter-bare-names @comma{}list)
-                            (loopy-command-parsers @comma{}map))
+                           (loopy-parsers @comma{}map))
                  @comma{}@@args)))
 
 ;; => 3

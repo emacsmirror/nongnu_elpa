@@ -3087,7 +3087,7 @@ are records, which are sequences, so they still work in that way."
 (loopy-deftest seq-:from-:downto-:by
   :result '(8 6 4 2)
   :body ((seq i (seq-into [0 1 2 3 4 5 6 7 8 9 10] 'loopy--test-custom-seq)
-                   :from 8 :downto 1 :by 2)
+              :from 8 :downto 1 :by 2)
          (collect i))
   :loopy t
   :iter-keyword (seq collect)
@@ -4057,81 +4057,6 @@ are records, which are sequences, so they still work in that way."
 ;;;;; Final updates
 
 (loopy-deftest accumulation-conflicting-final-updates
-  :doc "NOTE: Remove this test when we fully remove `loopy-command-parsers'.
-It's already been copied to a version ending in `-ht'.
-
-Check that commands of the same category but different updates error.
-
-Previously, this was mostly concerned with using a different
-`:result-type' but in the same command type category.
-
-Wrapping with another eval to make sure variables are set by
-expansion time."
-  :error loopy-incompatible-accumulation-final-updates
-  :wrap (
-         (x . `(cl-labels ((my-loopy-sum-command1 ((&whole cmd _
-                                                           var-or-val
-                                                           &optional
-                                                           maybe-val))
-                             "Set TARGET to the sum of ITEMS."
-                             (let ((var)
-                                   (val))
-                               (if maybe-val
-                                   (setq var var-or-val
-                                         val maybe-val)
-                                 (setq var 'loopy-result
-                                       val var-or-val))
-                               (loopy--check-accumulation-compatibility
-                                loopy--loop-name
-                                var 'number cmd)
-                               `((loopy--accumulation-vars (,var nil))
-                                 (loopy--main-body (setq ,var (+ ,var ,val)))
-                                 (loopy--vars-final-updates
-                                  (,var . (setq ,var (1- ,var)))))))
-                           (my-loopy-sum-command2 ((&whole cmd _
-                                                           var-or-val
-                                                           &optional
-                                                           maybe-val))
-                             "Set TARGET to the sum of ITEMS."
-                             (let ((var)
-                                   (val))
-                               (if maybe-val
-                                   (setq var var-or-val
-                                         val maybe-val)
-                                 (setq var 'loopy-result
-                                       val var-or-val))
-                               (loopy--check-accumulation-compatibility
-                                loopy--loop-name
-                                var 'number cmd)
-                               `((loopy--accumulation-vars (,var nil))
-                                 (loopy--main-body (setq ,var (+ ,var ,val)))
-                                 (loopy--vars-final-updates
-                                  (,var . (setq ,var (- ,var 100))))))))
-                 ;; TODO: Update this for `loopy-parsers' after
-                 ;; `loopy-command-parsers' fully removed.
-                 (let ((loopy-command-parsers
-                        (thread-first loopy-command-parsers
-                                      (map-insert 'sum1
-                                                  #'my-loopy-sum-command1)
-                                      (map-insert 'sum2
-                                                  #'my-loopy-sum-command2)))
-                       (loopy-iter-bare-names (append '(sum1 sum2)
-                                                      loopy-iter-bare-names)))
-                   (eval (quote ,x) t)))))
-  :multi-body t
-  :body [((list i '(1 2 3 4 5))
-          (sum1 my-target i)
-          (sum2 my-target i)
-          (finally-return my-target))
-
-         ((list i '(1 2 3 4 5))
-          (sum1 i)
-          (sum2 i))]
-  :loopy t
-  :iter-keyword (sum1 sum2)
-  :iter-bare t)
-
-(loopy-deftest accumulation-conflicting-final-updates-ht
   :doc "Check that commands of the same category but different updates error.
 
 Previously, this was mostly concerned with using a different
@@ -6912,30 +6837,8 @@ Not multiple of 3: 7"
               (find . finding)))
 
 ;;; Custom Commands
+
 (loopy-deftest custom-command-sum
-  :doc "NOTE: Remove this test when we fully remove `loopy-command-parsers'.
-It's already been copied to a version ending in `-ht'.
-
-Wrapping with another eval to make sure variables are set by expansion time."
-  :wrap ((x . `(cl-labels ((my-loopy-sum-command ((_ target &rest items))
-                             "Set TARGET to the sum of ITEMS."
-                             `((loopy--iteration-vars (,target nil))
-                               (loopy--main-body (setq ,target (apply #'+ (list ,@items)))))))
-                 (let ((loopy-command-parsers
-                        (map-insert loopy-command-parsers 'target-sum
-                                    #'my-loopy-sum-command))
-                       (loopy-iter-bare-names (cons 'target-sum
-                                                    loopy-iter-bare-names)))
-                   (eval (quote ,x) t)))))
-  :result 6
-  :body ((target-sum my-target 1 2 3)
-         (return nil)
-         (finally-return my-target))
-  :loopy t
-  :iter-keyword (target-sum return)
-  :iter-bare ((return . returning)))
-
-(loopy-deftest custom-command-sum-ht
   :doc "Wrapping with another eval to make sure variables are set by expansion time."
   :wrap ((x . `(cl-labels ((my-loopy-sum-command ((_ target &rest items))
                              "Set TARGET to the sum of ITEMS."
@@ -6956,43 +6859,6 @@ Wrapping with another eval to make sure variables are set by expansion time."
   :iter-bare ((return . returning)))
 
 (loopy-deftest custom-command-always-pass
-  :doc "NOTE: Remove this test when we fully remove `loopy-command-parsers'.
-It's already been copied to a version ending in `-ht'.
-
-Wrapping with another eval to make sure variables are set by expansion time.
-Also tests that post-conditions work as expected."
-  :wrap ((x . `(cl-labels ((my--loopy-always-command-parser ((_ &rest conditions))
-                             "Parse a command of the form `(my-always [CONDITIONS])'.
-If any condition is `nil', `loopy' should immediately return nil.
-Otherwise, `loopy' should return t."
-                             ;; Return t if loop completes successfully.
-                             `((loopy--after-do (cl-return t))
-                               ;; Check all conditions at the end of the loop
-                               ;; body, forcing an exit if any evaluate to nil.
-                               ;; Since the default return value of the macro is
-                               ;; nil, we don’t need to do anything else.
-                               ;;
-                               ;; NOTE: We must not add anything to
-                               ;;       `loopy--final-return', since that would
-                               ;;       override the value of any early returns.
-                               ,@(cl-loop
-                                  for condition in conditions
-                                  collect `(loopy--post-conditions ,condition)))))
-                 (let ((loopy-command-parsers
-                        (map-insert loopy-command-parsers 'my-always
-                                    #'my--loopy-always-command-parser))
-                       (loopy-iter-bare-names (cons 'my-always
-                                                    loopy-iter-bare-names)))
-                   (eval (quote ,x) t)))))
-  :result t
-  :body ((list i (number-sequence 1 9))
-         (my-always (< i 10) (< i 20)))
-  :loopy t
-  :iter-keyword (list my-always)
-  :iter-bare ((list . listing)
-              (my-always . my-always)))
-
-(loopy-deftest custom-command-always-pass-ht
   :doc "Wrapping with another eval to make sure variables are set by expansion time.
 Also tests that post-conditions work as expected."
   :wrap ((x . `(cl-labels ((my--loopy-always-command-parser ((_ &rest conditions))
@@ -7025,44 +6891,6 @@ Otherwise, `loopy' should return t."
               (my-always . my-always)))
 
 (loopy-deftest custom-command-always-fail
-  :doc "NOTE: Remove this test when we fully remove `loopy-command-parsers'.
-It's already been copied to a version ending in `-ht'.
-
-Wrapping with another eval to make sure variables are set by expansion time.
-Also tests that post-conditions work as expected."
-  :wrap ((x . `(cl-labels ((my--loopy-always-command-parser ((_ &rest conditions))
-                             "Parse a command of the form `(my-always [CONDITIONS])'.
-If any condition is `nil', `loopy' should immediately return nil.
-Otherwise, `loopy' should return t."
-                             ;; Return t if loop completes successfully.
-                             `((loopy--after-do (cl-return t))
-                               ;; Check all conditions at the end of the loop
-                               ;; body, forcing an exit if any evaluate to nil.
-                               ;; Since the default return value of the macro is
-                               ;; nil, we don’t need to do anything else.
-                               ;;
-                               ;; NOTE: We must not add anything to
-                               ;;       `loopy--final-return', since that would
-                               ;;       override the value of any early returns.
-                               ,@(cl-loop
-                                  for condition in conditions
-                                  collect `(loopy--post-conditions ,condition)))))
-                 (let ((loopy-command-parsers
-                        (map-insert loopy-command-parsers 'my-always
-                                    #'my--loopy-always-command-parser))
-                       (loopy-iter-bare-commands (cons 'my-always
-                                                       loopy-iter-bare-commands)))
-                   (eval (quote ,x) t)))))
-  :result nil
-  :body ((list i (number-sequence 1 9))
-         (list j '(2 4 6 8 9))
-         (my-always (< i 10) (cl-evenp j)))
-  :loopy t
-  :iter-keyword (list my-always)
-  :iter-bare ((list . listing)
-              (my-always . my-always)))
-
-(loopy-deftest custom-command-always-fail-ht
   :doc "Wrapping with another eval to make sure variables are set by expansion time.
 Also tests that post-conditions work as expected."
   :wrap ((x . `(cl-labels ((my--loopy-always-command-parser ((_ &rest conditions))
@@ -7191,7 +7019,7 @@ This assumes that you're on guix."
 
 (loopy-deftest custom-alias-before-do
   :result 7
-  :wrap ((x . `(let ((loopy-aliases (map-copy loopy-aliases))
+  :wrap ((x . `(let ((loopy-parsers (map-copy loopy-parsers))
                      (loopy-iter-bare-names
                       (cons 'precode loopy-iter-bare-names)))
                  (loopy-defalias precode before-do)
@@ -7206,7 +7034,7 @@ This assumes that you're on guix."
 
 (loopy-deftest custom-alias-after-do
   :result t
-  :wrap ((x . `(let ((loopy-aliases (map-copy loopy-aliases))
+  :wrap ((x . `(let ((loopy-parsers (map-copy loopy-parsers))
                      (loopy-iter-bare-names
                       (cons 'postcode loopy-iter-bare-names)))
                  (loopy-defalias postcode after-do)
@@ -7222,7 +7050,7 @@ This assumes that you're on guix."
 
 (loopy-deftest custom-alias-finally-do
   :result 10
-  :wrap ((x . `(let ((loopy-aliases (map-copy loopy-aliases))
+  :wrap ((x . `(let ((loopy-parsers (map-copy loopy-parsers))
                      (loopy-iter-bare-special-macro-arguments
                       (cons 'fd loopy-iter-bare-special-macro-arguments)))
                  (loopy-defalias fd finally-do)
@@ -7239,7 +7067,7 @@ This assumes that you're on guix."
 
 (loopy-deftest custom-alias-finally-return
   :result 10
-  :wrap ((x . `(let ((loopy-aliases (map-copy loopy-aliases))
+  :wrap ((x . `(let ((loopy-parsers (map-copy loopy-parsers))
                      (loopy-iter-bare-special-macro-arguments
                       (cons 'fr loopy-iter-bare-special-macro-arguments)))
                  (loopy-defalias fr finally-return)
@@ -7254,7 +7082,7 @@ This assumes that you're on guix."
 
 (loopy-deftest custom-alias-list-array
   :result '((1 . 4) (2 . 5) (3 . 6))
-  :wrap ((x . `(let ((loopy-aliases (map-copy loopy-aliases))
+  :wrap ((x . `(let ((loopy-parsers (map-copy loopy-parsers))
                      (loopy-iter-bare-commands
                       (append (list 'l 'a) loopy-iter-bare-commands)))
                  (loopy-defalias l list)

@@ -565,22 +565,12 @@ to use `loopy' in general.
     (loopy--wrap-variables-around-body
   ;;;;; Process obsolete variables
      (setq loopy--parsers-internal (copy-hash-table loopy-parsers))
-     (when loopy-command-parsers
-       (map-do (lambda (k v)
-                 (puthash k v loopy--parsers-internal))
-               loopy-command-parsers))
 
      ;; NOTE: This one isn't obsolete but needs to happen before aliases.
      (when loopy-iter-overwritten-parsers
        (map-do (lambda (k v)
                  (puthash k v loopy--parsers-internal))
                loopy-iter-overwritten-command-parsers))
-
-     (when loopy-aliases
-       (pcase-dolist (`(,orig . ,aliases) loopy-aliases)
-         (let ((parser (gethash orig loopy--parsers-internal)))
-           (dolist (alias aliases)
-             (puthash alias parser loopy--parsers-internal)))))
 
      (setq loopy-iter--keywords-internal loopy-iter-keywords
            loopy-iter--bare-names-internal loopy-iter-bare-names)

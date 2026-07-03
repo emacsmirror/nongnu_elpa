@@ -76,33 +76,15 @@ function in the variable `loopy--flag-settings'."
   (if (eq alias definition)
       (error "Can't alias name to itself: `%s' -> `%s'"
              alias definition)
-    (with-suppressed-warnings ((obsolete loopy-aliases))
-      (let ((true-name
-             ;; Now that `loopy-aliases' is nil, we know that it can only
-             ;; contain the true name by user intervention, in which
-             ;; case it should have priority over `loopy-parsers'.
-             (or (cl-loop for (orig . aliases) in loopy-aliases
-                          when (memq definition aliases)
-                          return orig)
-                 (and (map-contains-key loopy-parsers definition)
-                      definition))))
-        (if (eq alias true-name)
-            (error "Can't alias name to itself: `%s' -> `%s' -> ... -> `%s'"
-                   alias definition true-name)
-          (if-let* ((fn (gethash true-name loopy-parsers)))
-              (progn
-                ;; Remove previous uses of that alias from all other names.
-                ;; We don't want to trigger the setting warning unless we must,
-                ;; so we check first.
-                (when (map-some (lambda (_ v) (memq alias v))
-                                loopy-aliases)
-                  (setq loopy-aliases (map-apply (lambda (k v)
-                                                   (cons k (remq alias v)))
-                                                 loopy-aliases)))
-                ;; Add the alias for the new target name.
-                (puthash alias fn loopy-parsers))
-            (error "Ultimate command `%S' for alias `%S' to `%S' is not a known command"
-                   true-name alias definition)))))))
+    (let ((true-name (and (map-contains-key loopy-parsers definition)
+                          definition)))
+      (if (eq alias true-name)
+          (error "Can't alias name to itself: `%s' -> `%s' -> ... -> `%s'"
+                 alias definition true-name)
+        (if-let* ((fn (gethash true-name loopy-parsers)))
+            (puthash alias fn loopy-parsers)
+          (error "Ultimate command `%S' for alias `%S' to `%S' is not a known command"
+                 true-name alias definition))))))
 
 ;;;###autoload
 (defmacro loopy-defalias (alias definition)
@@ -327,52 +309,6 @@ which are used after special macro arguments are processed.  See the Info node
 `(loopy)Loop Commands' and the Info node `(loopy)Custom Commands'."
   :group 'loopy
   :type '(restricted-sexp :match-alternatives (loopy--expression-parser-map-p)))
-
-(make-obsolete-variable 'loopy-command-parsers 'loopy-parsers "2025-07" 'set)
-(defcustom loopy-command-parsers nil
-
-  "An alist of pairs of a quoted command name and a parsing function.
-
-This variable is obsolete.  See instead the customizable variable
-`loopy-parsers'.
-
-The parsing function is chosen based on the command name (such as
-`list' in `(list i my-list)'), not the usage of the command.  That is,
-
-  (my-command var1)
-
-and
-
-  (my-command var1 var2)
-
-are both parsed by the same function, but that parsing function
-is not limited in how it responds to different usages.  If you
-really want, it can return different instructions each time.
-Learn more in the Info node `(loopy)Custom Commands'.
-
-For example, to add a `when' command (if one didn't already
-exist), one could do
-
-  (add-to-list \\='loopy-command-parsers
-                (cons \\='when #\\='my-loopy-parse-when-command))"
-  :group 'loopy
-  :type '(alist :key-type symbol :value-type function))
-
-(make-obsolete-variable 'loopy-aliases 'loopy-parsers "2025-07" 'set)
-(defcustom loopy-aliases nil
-  "Aliases for loopy commands and special macro arguments.
-
-This variable is obsolete.  See instead the customizable variable
-`loopy-parsers'.
-
-This variable should not be modified directly.  For forward
-compatibility, use `loopy-defalias'.  For now, these are pairs of
-true names and lists of aliases.
-
- This user option is an alternative to modifying
-`loopy-command-parsers' when the command parser is unknown."
-  :group 'loopy
-  :type '(alist :key-type symbol :value-type (repeat symbol)))
 
 
 ;;;; Flags

@@ -984,18 +984,7 @@ see the Info node `(loopy)' distributed with this package."
   (loopy--wrap-variables-around-body
 ;;;;; Process obsolete variables
    ;; Don't copy unless we have to.
-   (if (not (or loopy-command-parsers loopy-aliases))
-       (setq loopy--parsers-internal loopy-parsers)
-     (setq loopy--parsers-internal (copy-hash-table loopy-parsers))
-     (when loopy-command-parsers
-       (map-do (lambda (k v)
-                 (puthash k v loopy--parsers-internal))
-               loopy-command-parsers))
-     (when loopy-aliases
-       (pcase-dolist (`(,orig . ,aliases) loopy-aliases)
-         (let ((parser (loopy--get-command-parser orig)))
-           (dolist (alias aliases)
-             (puthash alias parser loopy--parsers-internal))))))
+   (setq loopy--parsers-internal loopy-parsers)
 
 ;;;;; Process the special macro arguments.
    (when loopy-default-flags

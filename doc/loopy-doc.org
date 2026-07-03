@@ -5918,13 +5918,13 @@ loopy-commands RET)}}}.
 The special macro argument =override= is used to override the global values of
 the customizable variables.  This is desirable when one wants to configure
 Loopy's behavior without affecting other libraries that might be using Loopy.
-For example, consider namespace collisions: a library which makes a custom
-loop command available via ~loopy-command-parsers~ might
-overwrite another definition created by some other, unknown library.  This is
-similar to what would happen if different libraries tried to use the same
-function name or variable name.  If the loop command is only meant to be used
-internally, then local overrides paired with wrapping macros can help to avoid
-the problem of unintentionally affecting other libraries.
+For example, consider namespace collisions: a library which makes a custom loop
+command available via ~loopy-parsers~ might overwrite another definition created
+by some other, unknown library.  This is similar to what would happen if
+different libraries tried to use the same function name or variable name.  If
+the loop command is only meant to be used internally, then local overrides
+paired with wrapping macros can help to avoid the problem of unintentionally
+affecting other libraries.
 
 The syntax of the special macro argument =override= is similar to that of the
 special macro argument =with=.  Note, however, its arguments are not evaluated,
@@ -5959,10 +5959,6 @@ macro.  The following variables can be overridden:
 - ~loopy-parsers~ :: A =map.el=-compatible structure that maps a symbol to a
   parsing function.  Parsing functions must be available during macro expansion.
   See the user option ~loopy-parsers~ and see [[#adding-custom-commands]].
-
-  In both ~loopy~ and ~loopy-iter~, overriding ~loopy-parsers~ will also
-  override any effects from setting the deprecated variables
-  ~loopy-command-parsers~ and ~loopy-aliases~ to a non-~nil~ value.
 
   #+begin_src emacs-lisp
     (cl-defun my-set-parser ((_name var val))
@@ -6009,7 +6005,7 @@ macro.  The following variables can be overridden:
       (let ((map (map-insert loopy-parsers 'my-set #'my-set-parser))
             (list (cons 'my-set loopy-iter-bare-names)))
         `(loopy-iter (override (loopy-iter-bare-names ,list)
-                                (loopy-command-parsers ,map))
+                               (loopy-parsers ,map))
                      ,@args)))
 
     ;; => 3

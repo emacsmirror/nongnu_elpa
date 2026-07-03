@@ -4,6 +4,13 @@ This document describes the user-facing changes to Loopy.
 
 For Loopy Dash, see <https://codeberg.org/okamsn/loopy-dash>.
 
+## Unreleased
+
+- Remove deprecated variables `loopy-command-parsers` and `loopy-aliases`
+  ([#288]).  Both have been replaced by the new variable `loopy-parsers`.
+
+[#288]: https://codeberg.org/okamsn/loopy/pulls/288
+
 ## 0.16.1
 
 - Silence byte-compilation warnings regarding the absence of the
