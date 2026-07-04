@@ -13,7 +13,7 @@ Project-specific guidance for the Emacs Codex integration.
 
 ## Architecture
 
-- Preserve the terminal-first design: vterm session wrapper first, `/ide`
+- Preserve the terminal-first design: eat session wrapper first, `/ide`
   context IPC second, local MCP tools third.
 - Terminal buffers are the primary user surface.  Live sessions are grouped by
   project root and may have multiple buffers per root.

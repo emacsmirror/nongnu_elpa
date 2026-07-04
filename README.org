@@ -1,8 +1,8 @@
 * Codex IDE integration for GNU Emacs
 
 ** About
-+ [[https://github.com/openai/codex][codex]] native integration for emacs, utilizing [[https://github.com/akermu/emacs-libvterm][vterm]]
-  + Run Codex in a project-scoped vterm buffer.
++ [[https://github.com/openai/codex][codex]] native integration for emacs, utilizing [[https://codeberg.org/akib/emacs-eat][eat]]
+  + Run Codex in a project-scoped eat buffer.
   + Resume, switch, and manage multiple live Codex sessions from Emacs.
 
 ** Installation
