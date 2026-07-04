@@ -109,10 +109,10 @@ Returns the final PREDICATE value.  TIMEOUT defaults to 5 seconds."
       (sit-for 0.05))
     (funcall predicate)))
 
-(defun codex-ide-test--call-with-eat-process (script body)
+(defun codex-ide-test--call-with-eat-process (script body &optional env)
   "Run SCRIPT through sh in a Codex eat buffer and call BODY.
-BODY receives the eat buffer and its process.  The session is torn
-down afterwards."
+BODY receives the eat buffer and its process.  ENV is passed through
+to the session.  The session is torn down afterwards."
   (unless (executable-find "sh")
     (ert-skip "sh executable not found"))
   (let ((buffer nil)
@@ -121,8 +121,7 @@ down afterwards."
         (progn
           (setq process (codex-ide-term--make-process
                          (generate-new-buffer-name " *codex-ide-eat-test*")
-                         "sh" (list "-c" script)
-                         '("CODEX_IDE_TEST_VAR=codex-env-ok")
+                         "sh" (list "-c" script) env
                          temporary-file-directory))
           (setq buffer (process-buffer process))
           (funcall body buffer process))
@@ -478,7 +477,8 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
        (should (member "sh" (process-command process)))
        (should (codex-ide-test--wait-for
                 (lambda ()
-                  (string-match-p "codex-env-ok" (buffer-string)))))))))
+                  (string-match-p "codex-env-ok" (buffer-string)))))))
+   '("CODEX_IDE_TEST_VAR=codex-env-ok")))
 
 (ert-deftest codex-ide-term-point-survives-erase-display ()
   "Point tracks the cursor across full-screen redraws.
