@@ -1,13 +1,11 @@
 ---
 name: Bug report
-about: Create a report to help us improve
+about: Suggestions for bug report (including `macroexpand` example)
 title: ''
 labels: ''
 assignees: ''
 
 ---
-
-(Moving to Codeberg: https://codeberg.org/okamsn/loopy/issues)
 
 Suggested content:
 
@@ -15,7 +13,8 @@ Suggested content:
 - Code used to produce problem
 - Emacs version
 
-If you have problems running the macro, please include the expanded code, such as with the command `pp-macroexpand-last-sexp` or the below command
+If you have problems running the macro, please include the expanded code, such
+as with the command `pp-macroexpand-last-sexp` or the below command
 
 ``` elisp
 (defun my-pp-macroexpand-all-last-sexp (arg)
@@ -28,4 +27,4 @@ With ARG, print into current buffer."
                            "*Pp Macroexpand Output*")))
 ```
 
-though the first is usually good enough.
+though `pp-macroexpand-last-sexp` is usually good enough.
