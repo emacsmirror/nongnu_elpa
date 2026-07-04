@@ -457,9 +457,8 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                  "*codex[foo]<2>*")))
 
 (ert-deftest codex-ide-display-buffer-function-default ()
-  "Codex displays buffers in the selected window by default."
-  (should (eq codex-ide-display-buffer-function
-              #'pop-to-buffer-same-window)))
+  "Codex pops the terminal buffer to another window by default."
+  (should (eq codex-ide-display-buffer-function #'pop-to-buffer)))
 
 (ert-deftest codex-ide-display-buffer-calls-custom-function ()
   "Display helper delegates buffer placement to the configured function."
