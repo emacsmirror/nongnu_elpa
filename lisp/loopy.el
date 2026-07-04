@@ -626,30 +626,23 @@ Returns BODY without the `%s' argument."
          (signal 'loopy-malformed-override (list elem))))))
   (seq-remove (lambda (x) (eq (car x) arg-name)) body))
 
-(defun loopy--clean-up-stack-vars ()
-  "Clean up the special stack variables.
+(defmacro loopy--with-protected-stack (&rest body)
+  "Protect the stack variables from BODY during unwind and cleanup.
 
 Some variables can't simply be `let'-bound around the expansion
 code and must instead be cleaned up manually."
   (declare (important-return-value nil)
            (side-effect-free nil)
-           (ftype (function () t)))
-  (pop loopy--known-loop-names)
-  (pop loopy--accumulation-places)
-  (cl-callf map-delete loopy--at-instructions loopy--loop-name)
-  (cl-callf2 seq-drop-while (lambda (x) (eq loopy--loop-name (caar x)))
-             loopy--accumulation-list-end-vars)
-  (cl-callf2 seq-drop-while (lambda (x) (eq loopy--loop-name (caar x)))
-             loopy--accumulation-variable-info))
-
-(defmacro loopy--with-protected-stack (&rest body)
-  "Protect the stack variables from BODY during unwind and cleanup."
-  (declare (important-return-value nil)
-           (side-effect-free nil)
            (ftype (function (&rest t) t)))
   `(unwind-protect
        ,(macroexp-progn body)
-     (loopy--clean-up-stack-vars)))
+     (pop loopy--known-loop-names)
+     (pop loopy--accumulation-places)
+     (cl-callf map-delete loopy--at-instructions loopy--loop-name)
+     (cl-callf2 seq-drop-while (lambda (x) (eq loopy--loop-name (caar x)))
+                loopy--accumulation-list-end-vars)
+     (cl-callf2 seq-drop-while (lambda (x) (eq loopy--loop-name (caar x)))
+                loopy--accumulation-variable-info)))
 
 ;;;;; Process Instructions
 (cl-defun loopy--process-instruction (instruction &key erroring-instructions)
