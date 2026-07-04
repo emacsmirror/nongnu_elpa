@@ -69,7 +69,7 @@
             packageRequires = [ ];
           };
 
-          vterm = emacsPackages.vterm;
+          eat = emacsPackages.eat;
           compat = emacsPackages.compat;
 
           codexIde = emacsPackages.trivialBuild {
@@ -79,7 +79,7 @@
             packageRequires = [
               compat
               keymapPopup
-              vterm
+              eat
             ];
 
             buildPhase = ''
@@ -108,12 +108,12 @@
           devEmacs = emacsPackages.emacsWithPackages (_: [
             compat
             keymapPopup
-            vterm
+            eat
           ]);
           emacsWithCodex = emacsPackages.emacsWithPackages (_: [
             codexIde
             compat
-            vterm
+            eat
           ]);
 
           mkCheck =
@@ -180,7 +180,7 @@
             keymapPopup
             keymapPopupSrc
             pkgs
-            vterm
+            eat
             ;
 
           apps = {
@@ -235,7 +235,7 @@
         emacs-with-codex = (mkCodex system).emacsWithCodex;
         codex-ide = (mkCodex system).codexIde;
         keymap-popup = (mkCodex system).keymapPopup;
-        vterm = (mkCodex system).vterm;
+        eat = (mkCodex system).eat;
       });
     };
 }
