@@ -179,17 +179,17 @@ handled by `loopy-iter'."
       (0 (warn "`loopy': `%s' will require at least 1 value in the future: `%s'"
                name
                cmd)
-         (loopy--destructure-for-other-command
+         (loopy--destructure-instrs-for-other-command
           var nil))
       ;; If one value, repeatedly set to that value.
-      (1 (loopy--destructure-for-other-command
+      (1 (loopy--destructure-instrs-for-other-command
           var (cl-first vals)))
       ;; If two values, repeatedly check against `value-selector' to
       ;; determine if we should assign the first or second value.  This
       ;; is how `cl-loop' does it.
       (2
        `((loopy--other-vars (,value-selector t))
-         ,@(loopy--destructure-for-other-command
+         ,@(loopy--destructure-instrs-for-other-command
             var `(if ,value-selector ,(cl-first vals) ,(cl-second vals)))
          ;; This needs to happen right after running the above.
          (loopy--main-body (setq ,value-selector nil))))
@@ -203,7 +203,7 @@ handled by `loopy-iter'."
          ;;
          ;; E.g., for '(a b c),
          ;; use '(cond ((> cnt 1) c) ((> cnt 0) b) ((> cnt -1) a))
-         ,@(loopy--destructure-for-other-command
+         ,@(loopy--destructure-instrs-for-other-command
             var (let ((body-code nil) (index 0))
                   (dolist (value vals)
                     (push `((> ,value-selector ,(1- index))
@@ -250,7 +250,7 @@ This command does not wait for VAL to change before updating VAR."
           ;; desired values and for setting them to nil.  There is overlap in the
           ;; remaining expressions, which initialize the variables.
           (loopy--bind-main-body (main-exprs init-instr)
-              (loopy--destructure-for-other-command
+              (loopy--destructure-instrs-for-other-command
                var `(or (pop ,queue-front)
                         (progn
                           (setq ,queue-front (reverse ,queue-end)
@@ -272,7 +272,7 @@ This command does not wait for VAL to change before updating VAR."
                                 (run nil))
             loopy--other-vars
           `(,@(loopy--bind-main-body (main-exprs init-instrs)
-                  (loopy--destructure-for-other-command var hold-var)
+                  (loopy--destructure-instrs-for-other-command var hold-var)
                 `((loopy--main-body (when ,run
                                       ,@main-exprs))
                   ,@init-instrs))
@@ -285,7 +285,7 @@ This command does not wait for VAL to change before updating VAR."
           `(,@(mapcar (lambda (x) `(loopy--other-vars (,x nil)))
                       hold-vars)
             ,@(loopy--bind-main-body (main-exprs init-instrs)
-                  (loopy--destructure-for-other-command var (car hold-vars))
+                  (loopy--destructure-instrs-for-other-command var (car hold-vars))
                 `((loopy--main-body (when (>= ,cnt ,back)
                                       ,@main-exprs))
                   ,@init-instrs))
@@ -752,7 +752,7 @@ using the function `loopy--distribute-array-elements'."
                                                   0))
                                             (plist-get opts :index)))
           loopy--iteration-vars
-        `(,@(loopy--destructure-for-iteration-command
+        `(,@(loopy--destructure-instrs-for-iteration-command
              var `(aref ,value-holder ,index-holder))
           (loopy--latter-body
            (setq ,index-holder (,(cond
@@ -826,7 +826,7 @@ is a function by which to update VAR (default `cdr')."
       `(;; NOTE: The benchmarks show that `consp' is faster than no `consp',
         ;;       at least for some commands.
         (loopy--pre-conditions (consp ,cons-value))
-        ,@(loopy--destructure-for-iteration-command var cons-value)
+        ,@(loopy--destructure-instrs-for-iteration-command var cons-value)
         (loopy--latter-body
          (setq ,cons-value (funcall ,cons-by ,cons-value)))))))
 
@@ -863,7 +863,7 @@ and is a value."
                                                                         ,yield-result))
                                          (iter-end-of-sequence nil)
                                          (:success t)))
-                ,@(loopy--destructure-for-iteration-command var val-holder))))
+                ,@(loopy--destructure-instrs-for-iteration-command var val-holder))))
            (t
             `((loopy--pre-conditions
                (condition-case nil
@@ -926,7 +926,7 @@ using the function `loopy--distribute-list-elements'."
       `(;; NOTE: The benchmarks show that `consp' is faster than no `consp',
         ;;       at least for some commands.
         (loopy--pre-conditions (consp ,list-val))
-        ,@(loopy--destructure-for-iteration-command var `(car ,list-val))
+        ,@(loopy--destructure-instrs-for-iteration-command var `(car ,list-val))
         (loopy--latter-body
          (setq ,list-val (funcall ,list-func ,list-val)))))))
 
@@ -972,11 +972,11 @@ If UNIQUE, filter out values for duplicated keys."
       (loopy--latter-body (setq ,value-holder (cdr ,value-holder)))
       ,@(pcase unique
           ('nil
-           (loopy--destructure-for-iteration-command var `(car ,value-holder)))
+           (loopy--destructure-instrs-for-iteration-command var `(car ,value-holder)))
           ('t
            (loopy--instr-let-var* ((key-list nil))
                loopy--iteration-vars
-             (loopy--destructure-for-iteration-command
+             (loopy--destructure-instrs-for-iteration-command
               var `(progn
                      (while (member (caar ,value-holder) ,key-list)
                        (setq ,value-holder (cdr ,value-holder)))
@@ -988,7 +988,7 @@ If UNIQUE, filter out values for duplicated keys."
                                                  #'member
                                                #'ignore)))
                loopy--iteration-vars
-             (loopy--destructure-for-iteration-command
+             (loopy--destructure-instrs-for-iteration-command
               var `(progn
                      (while (funcall ,test-fn (caar ,value-holder) ,key-list)
                        (setq ,value-holder (cdr ,value-holder)))
@@ -1246,7 +1246,7 @@ distributed using the function `loopy--distribute-seq-elements'."
                                          (plist-get opts :index)))
           loopy--iteration-vars
         `((loopy--pre-conditions (funcall ,test ,seq-index ,end))
-          ,@(loopy--destructure-for-iteration-command
+          ,@(loopy--destructure-instrs-for-iteration-command
              var `(seq-elt ,seq-val ,seq-index))
           (loopy--latter-body
            (setq ,seq-index (,(cond
@@ -1354,7 +1354,7 @@ distributed using the function `loopy--distribute-sequence-elements'."
                                                (consp ,seq-val)
                                              (funcall ,test ,seq-index ,end))
                                         `(funcall ,test ,seq-index ,end)))
-              ,@(loopy--destructure-for-iteration-command
+              ,@(loopy--destructure-instrs-for-iteration-command
                  var (if optimize
                          `(if ,is-list
                               (car ,seq-val)
@@ -1593,7 +1593,7 @@ bound to VAR."
       (loopy--instr-let-var* ((value-holder `(stream-delay ,val)))
           loopy--iteration-vars
         `((loopy--pre-conditions (not (stream-empty-p ,value-holder)))
-          ,@(loopy--destructure-for-iteration-command
+          ,@(loopy--destructure-instrs-for-iteration-command
              var (if len
                      `(seq-take ,value-holder ,len)
                    value-holder))
@@ -1611,7 +1611,7 @@ Iterate through the elements of STREAM, similar to the command `list'.
   :instructions
   (let ((value-holder (gensym "stream-holder")))
     `(,@(loopy--parse-substream-command `(substream ,value-holder ,val :by ,by))
-      ,@(loopy--destructure-for-iteration-command
+      ,@(loopy--destructure-instrs-for-iteration-command
          var `(stream-first ,value-holder)))))
 
 ;;;;; Accumulation
@@ -3265,7 +3265,7 @@ Returns a list.  The elements are:
 ;; TODO: Rename these so that the current "iteration" features
 ;;       are "generic" and the new "iteration" features
 ;;       a special case of the new "generic" features.
-(defun loopy--destructure-for-iteration-command (var value-expression)
+(defun loopy--destructure-instrs-for-iteration-command (var value-expression)
   "Return command instructions to destructure VALUE-EXPRESSION according to VAR.
 
 Note that this does not apply to commands which use generalized
@@ -3285,7 +3285,7 @@ destructuring into them in the loop body."
         ,@(mapcar (lambda (x) `(loopy--iteration-vars (,x nil)))
                   var-list)))))
 
-(defun loopy--destructure-for-other-command (var value-expression)
+(defun loopy--destructure-instrs-for-other-command (var value-expression)
   "Destructure VALUE-EXPRESSION according to VAR for a loop command.
 
 Note that this does not apply to commands which use generalized
@@ -3295,22 +3295,23 @@ variables (`setf'-able places).  For that, see the function
 Return a list of instructions for initializing the variables and
 destructuring into them in the loop body.
 
-A wrapper around `loopy--destructure-for-iteration-command'."
+A wrapper around `loopy--destructure-instrs-for-iteration-command'."
   (declare (important-return-value t)
            (ftype (function ((or symbol sequence) t) cons)))
-  (cl-loop
-   for binding in (loopy--destructure-for-iteration-command var value-expression)
-   if (eq (car binding) 'loopy--iteration-vars)
-   collect (cons 'loopy--other-vars (cdr binding))
-   else
-   collect binding
-   end))
+  (if (symbolp var)
+      `((loopy--iteration-vars (,var nil))
+        (loopy--main-body (setq ,var ,value-expression)))
+    (cl-destructuring-bind (destructuring-expression var-list)
+        (loopy--destructure-for-iteration var value-expression)
+      `((loopy--main-body ,destructuring-expression)
+        ,@(mapcar (lambda (x) `(loopy--other-vars (,x nil)))
+                  var-list)))))
 
 (cl-defun loopy--parse-destructuring-accumulation-command-default
     ((name var val &rest args))
   "Return instructions for destructuring accumulation commands.
 
-Unlike `loopy--destructure-for-iteration-command', this function
+Unlike `loopy--destructure-instrs-for-iteration-command', this function
 does destructuring and returns instructions.
 
 NAME is the name of the command.  VAR is a variable name.  VAL is a value."
