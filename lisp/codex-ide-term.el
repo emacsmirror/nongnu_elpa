@@ -72,15 +72,11 @@ eat's own sync so the window is also recentered on the TUI frame."
 Preserves the user's cursor shapes and only clears the blink frequency,
 honoring `codex-ide-term-blink-cursor'."
   (unless codex-ide-term-blink-cursor
-    (setq-local eat-very-visible-cursor-type
-                (codex-ide-term--steady-cursor
-                 eat-very-visible-cursor-type)
-                eat-very-visible-vertical-bar-cursor-type
-                (codex-ide-term--steady-cursor
-                 eat-very-visible-vertical-bar-cursor-type)
-                eat-very-visible-horizontal-bar-cursor-type
-                (codex-ide-term--steady-cursor
-                 eat-very-visible-horizontal-bar-cursor-type))))
+    (dolist (var '(eat-very-visible-cursor-type
+                   eat-very-visible-vertical-bar-cursor-type
+                   eat-very-visible-horizontal-bar-cursor-type))
+      (set (make-local-variable var)
+           (codex-ide-term--steady-cursor (symbol-value var))))))
 
 ;;; Process lifecycle
 
