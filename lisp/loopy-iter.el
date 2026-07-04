@@ -85,8 +85,7 @@ collect i)\" and \"(accum collect i)\" are both valid way of
 identifying the `collect' loop command.
 
 Without these keywords, one must use one of the names given in
-`loopy-iter-bare-commands' or
-`loopy-iter-bare-special-macro-arguments'."
+`loopy-iter-bare-names'."
   :type '(repeat symbol))
 
 (def-edebug-spec loopy-iter--special-macro-arg-edebug-spec
@@ -111,12 +110,6 @@ Without these keywords, one must use one of the names given in
 
 ;;;; For parsing commands
 
-(define-obsolete-variable-alias 'loopy-iter-bare-commands
-  'loopy-iter-bare-names
-  "2025-07")
-(define-obsolete-variable-alias 'loopy-iter-bare-special-macro-arguments
-  'loopy-iter-bare-names
-  "2025-07")
 (defcustom loopy-iter-bare-names
   '(;; Bare special macro arguments
     after-do
@@ -522,10 +515,9 @@ for other reasons.  The macros `cl-block', `cl-return-from', and
 This can be more flexible than using the `do' loop command in
 `loopy'.
 
-Loop commands are expanded like macros inside the body.  Hence,
-it's possible for the names of loop commands to overshadow other
-definitions.  To avoid this, see the user options
-`loopy-iter-bare-commands', `loopy-iter-bare-special-macro-arguments', and
+Loop commands are expanded like macros inside the body.  Hence, it's
+possible for the names of loop commands to overshadow other definitions.
+To avoid this, see the user options `loopy-iter-bare-names' and
 `loopy-iter-keywords'.
 
 See the Info node `(loopy)The loopy-iter Macro' for information

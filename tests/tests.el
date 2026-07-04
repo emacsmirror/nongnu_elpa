@@ -6879,8 +6879,8 @@ Otherwise, `loopy' should return t."
                                   for condition in conditions
                                   collect `(loopy--post-conditions ,condition)))))
                  (let ((loopy-parsers (map-insert loopy-parsers 'my-always #'my--loopy-always-command-parser))
-                       (loopy-iter-bare-commands (cons 'my-always
-                                                       loopy-iter-bare-commands)))
+                       (loopy-iter-bare-names (cons 'my-always
+                                                    loopy-iter-bare-names)))
                    (eval (quote ,x) t)))))
   :result t
   :body ((list i (number-sequence 1 9))
@@ -6911,8 +6911,8 @@ Otherwise, `loopy' should return t."
                                   for condition in conditions
                                   collect `(loopy--post-conditions ,condition)))))
                  (let ((loopy-parsers (map-insert loopy-parsers 'my-always #'my--loopy-always-command-parser))
-                       (loopy-iter-bare-commands (cons 'my-always
-                                                       loopy-iter-bare-commands)))
+                       (loopy-iter-bare-names (cons 'my-always
+                                                    loopy-iter-bare-names)))
                    (eval (quote ,x) t)))))
   :result nil
   :body ((list i (number-sequence 1 9))
@@ -7051,8 +7051,8 @@ This assumes that you're on guix."
 (loopy-deftest custom-alias-finally-do
   :result 10
   :wrap ((x . `(let ((loopy-parsers (map-copy loopy-parsers))
-                     (loopy-iter-bare-special-macro-arguments
-                      (cons 'fd loopy-iter-bare-special-macro-arguments)))
+                     (loopy-iter-bare-names
+                      (cons 'fd loopy-iter-bare-names)))
                  (loopy-defalias fd finally-do)
                  (eval (quote (let (my-var)
                                 ,x
@@ -7068,8 +7068,8 @@ This assumes that you're on guix."
 (loopy-deftest custom-alias-finally-return
   :result 10
   :wrap ((x . `(let ((loopy-parsers (map-copy loopy-parsers))
-                     (loopy-iter-bare-special-macro-arguments
-                      (cons 'fr loopy-iter-bare-special-macro-arguments)))
+                     (loopy-iter-bare-names
+                      (cons 'fr loopy-iter-bare-names)))
                  (loopy-defalias fr finally-return)
                  (eval (quote ,x)
                        t))))
@@ -7083,8 +7083,8 @@ This assumes that you're on guix."
 (loopy-deftest custom-alias-list-array
   :result '((1 . 4) (2 . 5) (3 . 6))
   :wrap ((x . `(let ((loopy-parsers (map-copy loopy-parsers))
-                     (loopy-iter-bare-commands
-                      (append (list 'l 'a) loopy-iter-bare-commands)))
+                     (loopy-iter-bare-names
+                      (append (list 'l 'a) loopy-iter-bare-names)))
                  (loopy-defalias l list)
                  (loopy-defalias a 'array)
                  (eval (quote ,x)

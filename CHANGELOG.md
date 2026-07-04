@@ -9,7 +9,12 @@ For Loopy Dash, see <https://codeberg.org/okamsn/loopy-dash>.
 - Remove deprecated variables `loopy-command-parsers` and `loopy-aliases`
   ([#288]).  Both have been replaced by the new variable `loopy-parsers`.
 
+- Remove deprecated aliases `loopy-iter-bare-commands` and
+  `loopy-iter-bare-special-marco-arguments` (both aliases of the still existing
+  `loopy-iter-bare-names`) ([#289]).
+
 [#288]: https://codeberg.org/okamsn/loopy/pulls/288
+[#289]: https://codeberg.org/okamsn/loopy/pulls/289
 
 ## 0.16.1
 
