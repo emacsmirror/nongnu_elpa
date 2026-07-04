@@ -3246,25 +3246,28 @@ Returns a list.  The elements are:
         (signal 'loopy-destructure-vars-missing (list var val))
       res)))
 
-(defun loopy--destructure-for-iteration (var val)
-  "Destructure VAL according to VAR.
+(defun loopy--destructure-instrs-for-iteration-or-other-command-1
+    (var val var-place)
+  "Return command instructions to destructure VAL according to VAR.
 
-Returns a list.  The elements are:
-1. An expression which binds the variables in VAR to the values
-   in VAL.
-2. A list of variables which exist outside of this expression and
-   need to be `let'-bound."
+VAR-PLACE is either the symbol `loopy--iteration-vars' or
+`loopy--other-vars'.
+
+Return a list of instructions for initializing the variables and
+destructuring into them in the loop body."
   (declare (important-return-value t)
-           (ftype (function ((or symbol sequence) t) cons)))
-  (pcase-let ((`(,expr ,vars)
-               (funcall (or loopy--destructuring-for-iteration-function
-                            #'loopy--destructure-for-iteration-default)
-                        var val)))
-    (list expr (seq-uniq vars #'eq))))
+           (ftype (function ((or symbol sequence) t symbol) cons)))
+  (if (symbolp var)
+      `((,var-place (,var nil))
+        (loopy--main-body (setq ,var ,val)))
+    (cl-destructuring-bind (destructuring-expression var-list)
+        (funcall (or loopy--destructuring-for-iteration-function
+                     #'loopy--destructure-for-iteration-default)
+                 var val)
+      `((loopy--main-body ,destructuring-expression)
+        ,@(mapcar (lambda (x) `(,var-place (,x nil)))
+                  (seq-uniq var-list #'eq))))))
 
-;; TODO: Rename these so that the current "iteration" features
-;;       are "generic" and the new "iteration" features
-;;       a special case of the new "generic" features.
 (defun loopy--destructure-instrs-for-iteration-command (var value-expression)
   "Return command instructions to destructure VALUE-EXPRESSION according to VAR.
 
@@ -3276,14 +3279,8 @@ Return a list of instructions for initializing the variables and
 destructuring into them in the loop body."
   (declare (important-return-value t)
            (ftype (function ((or symbol sequence) t) cons)))
-  (if (symbolp var)
-      `((loopy--iteration-vars (,var nil))
-        (loopy--main-body (setq ,var ,value-expression)))
-    (cl-destructuring-bind (destructuring-expression var-list)
-        (loopy--destructure-for-iteration var value-expression)
-      `((loopy--main-body ,destructuring-expression)
-        ,@(mapcar (lambda (x) `(loopy--iteration-vars (,x nil)))
-                  var-list)))))
+  (loopy--destructure-instrs-for-iteration-or-other-command-1
+   var value-expression 'loopy--iteration-vars))
 
 (defun loopy--destructure-instrs-for-other-command (var value-expression)
   "Destructure VALUE-EXPRESSION according to VAR for a loop command.
@@ -3298,14 +3295,8 @@ destructuring into them in the loop body.
 A wrapper around `loopy--destructure-instrs-for-iteration-command'."
   (declare (important-return-value t)
            (ftype (function ((or symbol sequence) t) cons)))
-  (if (symbolp var)
-      `((loopy--iteration-vars (,var nil))
-        (loopy--main-body (setq ,var ,value-expression)))
-    (cl-destructuring-bind (destructuring-expression var-list)
-        (loopy--destructure-for-iteration var value-expression)
-      `((loopy--main-body ,destructuring-expression)
-        ,@(mapcar (lambda (x) `(loopy--other-vars (,x nil)))
-                  var-list)))))
+  (loopy--destructure-instrs-for-iteration-or-other-command-1
+   var value-expression 'loopy--other-vars))
 
 (cl-defun loopy--parse-destructuring-accumulation-command-default
     ((name var val &rest args))
