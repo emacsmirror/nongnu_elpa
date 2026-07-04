@@ -67,7 +67,7 @@
   :type 'string
   :group 'codex-ide)
 
-(defcustom codex-ide-display-buffer-function #'pop-to-buffer-same-window
+(defcustom codex-ide-display-buffer-function #'pop-to-buffer
   "Function used to display the Codex terminal buffer.
 The function is called with the Codex buffer and should display it.  When it
 returns a live window, that window is used for terminal dimension sync;
@@ -542,7 +542,7 @@ session."
   (unless (codex-ide--session-live-p session)
     (user-error "No live Codex session"))
   (codex-ide--activate-session session)
-  (codex-ide--display-buffer (plist-get session :buffer)))
+  (pop-to-buffer-same-window (plist-get session :buffer)))
 
 (defun codex-ide--display-result-window (buffer result)
   "Return a live display window for BUFFER from display RESULT."
