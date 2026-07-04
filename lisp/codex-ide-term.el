@@ -1,4 +1,4 @@
-;;; codex-ide-term.el --- vterm integration for codex-ide  -*- lexical-binding: t; -*-
+;;; codex-ide-term.el --- eat integration for codex-ide  -*- lexical-binding: t; -*-
 
 ;; Copyright (C) 2026 Thanos Apollo
 
@@ -23,169 +23,113 @@
 
 ;;; Commentary:
 
-;; vterm integration for `codex-ide'.  Codex runs as a real terminal process;
-;; this file only owns vterm session creation, input forwarding, terminal color
-;; query replies, and display-size synchronization.
+;; eat integration for `codex-ide'.  Codex runs as a real terminal process;
+;; this file only owns eat session creation, input forwarding, scroll/point
+;; synchronization, and display-size synchronization.
 
 ;;; Code:
 
-(require 'cl-lib)
-(require 'codex-ide-debug)
+(require 'eat)
 (require 'subr-x)
-(require 'vterm)
 
-(defvar vterm-shell)
-(defvar vterm-environment)
+;;; User options
+
+(defcustom codex-ide-term-blink-cursor nil
+  "Non-nil lets the Codex TUI drive a blinking cursor.
+When nil, the cursor stays steady even though Codex requests a blinking
+one via its terminal cursor-style escape."
+  :type 'boolean
+  :group 'codex-ide)
+
+;;; Scroll and point synchronization
+
+(defun codex-ide-term--synchronize-scroll (_windows)
+  "Synchronize point and all windows with the terminal cursor.
+Replaces eat's default sync, which skips any position that no longer
+sits on the cursor.  Codex redraws erase the display with
+`delete-region', dragging off-cursor points and window markers to
+`point-min' where the default sync would strand them."
+  (eat--synchronize-scroll (cons 'buffer (get-buffer-window-list))))
+
+(defun codex-ide-term--snap-window-point (window)
+  "Move WINDOW's point to the terminal cursor.
+When a window shows the buffer again while Codex is idle, no output
+arrives to run the scroll sync, and the window point restored from
+`window-prev-buffers' has usually collapsed to `point-min'."
+  (when-let* ((terminal (buffer-local-value 'eat-terminal
+                                            (window-buffer window))))
+    (set-window-point window (eat-term-display-cursor terminal))))
+
+;;; Cursor appearance
+
+(defun codex-ide-term--steady-cursor (cursor-shape)
+  "Return CURSOR-SHAPE with eat's blink frequency disabled."
+  (list (car cursor-shape) nil (nth 2 cursor-shape)))
+
+(defun codex-ide-term--apply-steady-cursor ()
+  "Disable cursor blinking in the current eat buffer.
+Preserves the user's cursor shapes and only clears the blink frequency,
+honoring `codex-ide-term-blink-cursor'."
+  (unless codex-ide-term-blink-cursor
+    (setq-local eat-very-visible-cursor-type
+                (codex-ide-term--steady-cursor
+                 eat-very-visible-cursor-type)
+                eat-very-visible-vertical-bar-cursor-type
+                (codex-ide-term--steady-cursor
+                 eat-very-visible-vertical-bar-cursor-type)
+                eat-very-visible-horizontal-bar-cursor-type
+                (codex-ide-term--steady-cursor
+                 eat-very-visible-horizontal-bar-cursor-type))))
 
 ;;; Process lifecycle
 
+(defun codex-ide-term--configure-buffer ()
+  "Configure the current Codex eat buffer.
+Must run after `eat-mode', which resets the sync function."
+  (setq-local eat--synchronize-scroll-function
+              #'codex-ide-term--synchronize-scroll)
+  (add-hook 'window-buffer-change-functions
+            #'codex-ide-term--snap-window-point nil t)
+  (codex-ide-term--apply-steady-cursor))
+
 (defun codex-ide-term--make-process (buffer-name program args env working-dir)
-  "Start PROGRAM with ARGS in a vterm buffer named BUFFER-NAME.
-ENV is a list of \"KEY=VALUE\" strings prepended to the vterm process
-environment.  Returns the process object."
-  ;; vterm runs a single command via `vterm-shell'; keep shell quoting
-  ;; isolated to this boundary.
-  (let ((default-directory (or working-dir default-directory))
-        (vterm-shell (string-join
-                      (mapcar #'shell-quote-argument (cons program args))
-                      " "))
-        (vterm-environment (append env vterm-environment)))
-    (save-window-excursion
-      (let ((buffer (vterm buffer-name)))
-        (unless buffer
-          (error "Failed to create vterm buffer"))
-        (let ((process (get-buffer-process buffer)))
-          (unless process
-            (error "Failed to create vterm process"))
-          (with-current-buffer buffer
-            (codex-ide-term--vterm-configure-buffer process))
-          process)))))
+  "Start PROGRAM with ARGS in an eat buffer named BUFFER-NAME.
+ENV is a list of \"KEY=VALUE\" strings prepended to the process
+environment.  WORKING-DIR is the working directory.  Returns the
+process object."
+  (let ((buffer (get-buffer-create buffer-name))
+        (default-directory (or working-dir default-directory)))
+    (with-current-buffer buffer
+      (unless (eq major-mode 'eat-mode)
+        (eat-mode))
+      (codex-ide-term--configure-buffer)
+      ;; `eat-exec' takes an argv list, so no shell quoting is needed.
+      (let ((process-environment (append env process-environment)))
+        (eat-exec buffer buffer-name program nil args)))
+    (or (get-buffer-process buffer)
+        (error "Failed to create eat process"))))
 
 (defun codex-ide-term--send-string (string)
-  "Send STRING to the current vterm buffer."
-  (vterm-send-string string))
+  "Send STRING to the current eat buffer's terminal."
+  (when eat-terminal
+    (eat-term-send-string eat-terminal string)))
 
 (defun codex-ide-term--send-return ()
-  "Send RET to the current vterm buffer."
-  (vterm-send-return))
+  "Send RET to the current eat buffer's terminal."
+  (codex-ide-term--send-string "\r"))
 
 (defun codex-ide-term--send-escape ()
-  "Send ESC to the current vterm buffer."
-  (vterm-send-escape))
+  "Send ESC to the current eat buffer's terminal."
+  (codex-ide-term--send-string "\e"))
 
 (defun codex-ide-term--sync-dimensions (buffer window)
-  "Sync BUFFER terminal dimensions to WINDOW through vterm's resize hook."
+  "Sync BUFFER terminal dimensions to WINDOW through eat's resize hook."
   (when (and (buffer-live-p buffer) (window-live-p window))
     (with-current-buffer buffer
       (when-let* ((process (get-buffer-process buffer))
                   (adjust (process-get process 'adjust-window-size-function)))
         (when (functionp adjust)
           (funcall adjust process (list window)))))))
-
-;;; Terminal color queries
-
-(defconst codex-ide-term--osc-color-query-regexp
-  (rx (seq ?\e "]"
-           (group (or "10" "11"))
-           ";?"
-           (or ?\a (seq ?\e "\\"))))
-  "Regexp matching OSC 10/11 default color queries.")
-
-(defun codex-ide-term--osc-color-query-types (string)
-  "Return color query types from OSC 10/11 queries in STRING."
-  (when string
-    (cl-loop with start = 0
-             while (string-match codex-ide-term--osc-color-query-regexp
-                                 string start)
-             collect (if (equal (match-string 1 string) "10")
-                         'foreground
-                       'background)
-             do (setq start (match-end 0)))))
-
-(defun codex-ide-term--osc-color-code (type)
-  "Return the OSC color code for TYPE."
-  (pcase type
-    ('foreground 10)
-    ('background 11)
-    (_ (error "Unknown OSC color type: %s" type))))
-
-(defun codex-ide-term--osc-color-reply (type rgb)
-  "Return an OSC color reply for TYPE and RGB values."
-  (format "\e]%d;rgb:%04x/%04x/%04x\e\\"
-          (codex-ide-term--osc-color-code type)
-          (nth 0 rgb) (nth 1 rgb) (nth 2 rgb)))
-
-(defun codex-ide-term--osc-color-query-replies (string foreground background)
-  "Return OSC color replies for queries in STRING.
-FOREGROUND and BACKGROUND are RGB value lists."
-  (when-let* ((types (codex-ide-term--osc-color-query-types string)))
-    (string-join
-     (mapcar (lambda (type)
-               (codex-ide-term--osc-color-reply
-                type (if (eq type 'foreground) foreground background)))
-             types)
-     "")))
-
-(defun codex-ide-term--color-values-or-fallback (color fallback)
-  "Return COLOR values, or FALLBACK when COLOR is unavailable."
-  (or (and color (color-values color)) fallback))
-
-(defun codex-ide-term--default-face-color-values (type)
-  "Return default face color values for TYPE."
-  (pcase type
-    ('foreground
-     (codex-ide-term--color-values-or-fallback
-      (face-foreground 'default) '(255 255 255)))
-    ('background
-     (codex-ide-term--color-values-or-fallback
-      (face-background 'default) '(0 0 0)))
-    (_ (error "Unknown default face color type: %s" type))))
-
-(defun codex-ide-term--vterm-osc-color-replies (input)
-  "Return vterm OSC color replies for INPUT."
-  (codex-ide-term--osc-color-query-replies
-   input
-   (codex-ide-term--default-face-color-values 'foreground)
-   (codex-ide-term--default-face-color-values 'background)))
-
-;;; vterm output filter
-
-(defun codex-ide-term--vterm-send-osc-replies (process input)
-  "Send OSC color replies for PROCESS output INPUT."
-  (when-let* ((reply (codex-ide-term--vterm-osc-color-replies input)))
-    (process-send-string process reply)))
-
-(defun codex-ide-term--vterm-call-original-filter (process input)
-  "Call PROCESS's original vterm filter with INPUT."
-  (when-let* ((filter (process-get process
-                                   'codex-ide-term--vterm-original-filter)))
-    (funcall filter process input)))
-
-(defun codex-ide-term--vterm-output-filter (process input)
-  "Wrap vterm PROCESS output INPUT with Codex terminal replies."
-  (condition-case err
-      (codex-ide-term--vterm-send-osc-replies process input)
-    (error
-     (codex-ide-debug "Could not answer vterm OSC query: %s"
-                      (error-message-string err))))
-  (codex-ide-term--vterm-call-original-filter process input))
-
-(defun codex-ide-term--vterm-install-output-filter (process)
-  "Install the Codex vterm output filter for PROCESS."
-  (when (processp process)
-    (unless (eq (process-filter process)
-                #'codex-ide-term--vterm-output-filter)
-      (unless (process-get process
-                           'codex-ide-term--vterm-original-filter)
-        (process-put process
-                     'codex-ide-term--vterm-original-filter
-                     (process-filter process)))
-      (set-process-filter process #'codex-ide-term--vterm-output-filter))))
-
-(defun codex-ide-term--vterm-configure-buffer (process)
-  "Configure the current Codex vterm buffer for PROCESS."
-  (setq-local truncate-lines t)
-  (codex-ide-term--vterm-install-output-filter process))
 
 (provide 'codex-ide-term)
 

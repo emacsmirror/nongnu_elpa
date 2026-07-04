@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (compat "29.1.4.2") (keymap-popup "0.3.1") (vterm "0.0.2"))
+;; Package-Requires: ((emacs "28.1") (compat "29.1.4.2") (keymap-popup "0.3.1") (eat "0.9.4"))
 ;; Keywords: ai, codex, tools, terminal
 ;; URL: https://git.thanosapollo.org/emacs-codex
 
@@ -25,7 +25,7 @@
 
 ;;; Commentary:
 
-;; Run the Codex CLI inside Emacs through vterm.  This is a terminal-first
+;; Run the Codex CLI inside Emacs through eat.  This is a terminal-first
 ;; integration: live Codex sessions are grouped by project root and displayed
 ;; through a configurable buffer display function, with prompt sending, session
 ;; cycling, and resume.
@@ -58,7 +58,7 @@
 ;;; Customization
 
 (defgroup codex-ide nil
-  "Run Codex CLI inside Emacs through vterm."
+  "Run Codex CLI inside Emacs through eat."
   :group 'tools
   :prefix "codex-ide-")
 
@@ -367,15 +367,9 @@ session-local overrides needed by enabled integration helpers."
 (defun codex-ide--process-command-fragments (process)
   "Return strings that may describe PROCESS's command."
   (let ((command (ignore-errors (process-command process)))
-        (recorded (process-get process 'codex-ide--command))
-        (buffer (process-buffer process)))
+        (recorded (process-get process 'codex-ide--command)))
     (append (cl-remove-if-not #'stringp command)
-            (cl-remove-if-not #'stringp recorded)
-            (when (buffer-live-p buffer)
-              (with-current-buffer buffer
-                (and (boundp 'vterm-shell)
-                     (stringp vterm-shell)
-                     (list vterm-shell)))))))
+            (cl-remove-if-not #'stringp recorded))))
 
 (defun codex-ide--command-fragment-invokes-p (fragment program)
   "Return non-nil when FRAGMENT invokes PROGRAM."
@@ -720,7 +714,7 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
     session))
 
 (defun codex-ide--create-session (emacs-session-id &optional resume-last
-                                                    codex-session-id)
+                                                   codex-session-id)
   "Create a Codex terminal session for the current project.
 EMACS-SESSION-ID identifies the live Emacs-managed session.  RESUME-LAST
 and CODEX-SESSION-ID are forwarded to `codex-ide--build-command'.
@@ -741,7 +735,7 @@ Returns a session record."
                     buffer-name program args env working-dir)))
       (process-put process 'codex-ide--command (cons program args))
       (codex-ide--make-session working-dir emacs-session-id
-                                (process-buffer process) process))))
+                               (process-buffer process) process))))
 
 (defun codex-ide--start-session (&optional resume-last codex-session-id
                                            new-session)
@@ -761,8 +755,8 @@ session exists, toggle its window unless NEW-SESSION is non-nil."
       (codex-ide--maybe-ensure-context-server)
       (let* ((emacs-session-id (codex-ide--next-session-id working-dir))
              (session (codex-ide--create-session emacs-session-id
-                                                  resume-last
-                                                  codex-session-id))
+                                                 resume-last
+                                                 codex-session-id))
              (buffer (plist-get session :buffer))
              (process (plist-get session :process)))
         (unless (and buffer process)

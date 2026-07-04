@@ -99,6 +99,38 @@ The buffer carries ROOT and SESSION-ID as buffer-locals with
       (when (buffer-live-p buffer)
         (kill-buffer buffer)))))
 
+(defun codex-ide-test--wait-for (predicate &optional timeout)
+  "Wait until PREDICATE returns non-nil or TIMEOUT seconds pass.
+Returns the final PREDICATE value.  TIMEOUT defaults to 5 seconds."
+  (let ((deadline (+ (float-time) (or timeout 5))))
+    (while (and (not (funcall predicate))
+                (< (float-time) deadline))
+      (accept-process-output nil 0.05)
+      (sit-for 0.05))
+    (funcall predicate)))
+
+(defun codex-ide-test--call-with-eat-process (script body)
+  "Run SCRIPT through sh in a Codex eat buffer and call BODY.
+BODY receives the eat buffer and its process.  The session is torn
+down afterwards."
+  (unless (executable-find "sh")
+    (ert-skip "sh executable not found"))
+  (let ((buffer nil)
+        (process nil))
+    (unwind-protect
+        (progn
+          (setq process (codex-ide-term--make-process
+                         (generate-new-buffer-name " *codex-ide-eat-test*")
+                         "sh" (list "-c" script)
+                         '("CODEX_IDE_TEST_VAR=codex-env-ok")
+                         temporary-file-directory))
+          (setq buffer (process-buffer process))
+          (funcall body buffer process))
+      (when (and process (process-live-p process))
+        (delete-process process))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
 (defun codex-ide-test--make-session (root id)
   "Return a live test session for ROOT and ID."
   (let* ((buffer (get-buffer-create (codex-ide--get-buffer-name root id)))
@@ -282,138 +314,124 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                          "--no-alt-screen"
                          "--search"))))))))
 
-(ert-deftest codex-ide-term-send-string-delegates-to-vterm ()
-  "String input goes directly to vterm."
-  (let (sent)
-    (cl-letf (((symbol-function 'vterm-send-string)
-               (lambda (string)
-                 (setq sent string))))
-      (codex-ide-term--send-string "hello"))
-    (should (equal sent "hello"))))
+(ert-deftest codex-ide-term-send-string-delegates-to-eat ()
+  "String input goes directly to the eat terminal."
+  (with-temp-buffer
+    (setq-local eat-terminal 'dummy)
+    (let (sent)
+      (cl-letf (((symbol-function 'eat-term-send-string)
+                 (lambda (terminal string)
+                   (setq sent (list terminal string)))))
+        (codex-ide-term--send-string "hello"))
+      (should (equal sent '(dummy "hello"))))))
 
-(ert-deftest codex-ide-term-send-return-delegates-to-vterm ()
-  "Return input goes directly to vterm."
-  (let (called)
-    (cl-letf (((symbol-function 'vterm-send-return)
-               (lambda ()
-                 (setq called t))))
-      (codex-ide-term--send-return))
-    (should called)))
+(ert-deftest codex-ide-term-send-return-sends-cr ()
+  "Return input reaches the eat terminal as a carriage return."
+  (with-temp-buffer
+    (setq-local eat-terminal 'dummy)
+    (let (sent)
+      (cl-letf (((symbol-function 'eat-term-send-string)
+                 (lambda (_terminal string)
+                   (setq sent string))))
+        (codex-ide-term--send-return))
+      (should (equal sent "\r")))))
 
-(ert-deftest codex-ide-term-send-escape-delegates-to-vterm ()
-  "Escape input goes directly to vterm."
-  (let (called)
-    (cl-letf (((symbol-function 'vterm-send-escape)
-               (lambda ()
-                 (setq called t))))
-      (codex-ide-term--send-escape))
-    (should called)))
+(ert-deftest codex-ide-term-send-escape-sends-esc ()
+  "Escape input reaches the eat terminal as an ESC character."
+  (with-temp-buffer
+    (setq-local eat-terminal 'dummy)
+    (let (sent)
+      (cl-letf (((symbol-function 'eat-term-send-string)
+                 (lambda (_terminal string)
+                   (setq sent string))))
+        (codex-ide-term--send-escape))
+      (should (equal sent "\e")))))
 
-(ert-deftest codex-ide-term-osc-color-query-no-reply ()
-  "Non-query output produces no OSC color replies."
-  (should-not (codex-ide-term--osc-color-query-types "plain output"))
-  (should-not (codex-ide-term--osc-color-query-replies
-               "plain output" '(1 2 3) '(4 5 6))))
+(ert-deftest codex-ide-term-send-ops-require-terminal ()
+  "Send operations do nothing without a live eat terminal."
+  (with-temp-buffer
+    (setq-local eat-terminal nil)
+    (let (sent)
+      (cl-letf (((symbol-function 'eat-term-send-string)
+                 (lambda (_terminal string)
+                   (setq sent string))))
+        (codex-ide-term--send-string "hello")
+        (codex-ide-term--send-return)
+        (codex-ide-term--send-escape))
+      (should-not sent))))
 
-(ert-deftest codex-ide-term-osc-color-query-foreground-reply ()
-  "OSC 10 query returns the foreground color reply."
-  (should (equal (codex-ide-term--osc-color-query-types "\e]10;?\e\\")
-                 '(foreground)))
-  (should (equal (codex-ide-term--osc-color-query-replies
-                  "\e]10;?\e\\" '(1 2 3) '(4 5 6))
-                 "\e]10;rgb:0001/0002/0003\e\\")))
+(ert-deftest codex-ide-term-steady-cursor-clears-blink ()
+  (should (equal (codex-ide-term--steady-cursor '(bar 2 hollow))
+                 '(bar nil hollow))))
 
-(ert-deftest codex-ide-term-osc-color-query-background-reply ()
-  "OSC 11 query returns the background color reply."
-  (should (equal (codex-ide-term--osc-color-query-types "\e]11;?\e\\")
-                 '(background)))
-  (should (equal (codex-ide-term--osc-color-query-replies
-                  "\e]11;?\e\\" '(1 2 3) '(4 5 6))
-                 "\e]11;rgb:0004/0005/0006\e\\")))
+(ert-deftest codex-ide-term-configure-buffer-installs-sync-and-hook ()
+  "Buffer setup installs the point sync, window snap, and steady cursor."
+  (with-temp-buffer
+    (eat-mode)
+    (codex-ide-term--configure-buffer)
+    (should (eq eat--synchronize-scroll-function
+                #'codex-ide-term--synchronize-scroll))
+    (should (local-variable-p 'eat--synchronize-scroll-function))
+    (should (memq #'codex-ide-term--snap-window-point
+                  (buffer-local-value 'window-buffer-change-functions
+                                      (current-buffer))))
+    (dolist (var '(eat-very-visible-cursor-type
+                   eat-very-visible-vertical-bar-cursor-type
+                   eat-very-visible-horizontal-bar-cursor-type))
+      (should (local-variable-p var))
+      (should-not (nth 1 (buffer-local-value var (current-buffer)))))))
 
-(ert-deftest codex-ide-term-osc-color-query-combined-replies ()
-  "Combined OSC 10/11 queries return replies in input order."
-  (should (equal (codex-ide-term--osc-color-query-replies
-                  "\e]10;?\e\\\e]11;?\e\\" '(1 2 3) '(4 5 6))
-                 "\e]10;rgb:0001/0002/0003\e\\\e]11;rgb:0004/0005/0006\e\\")))
+(ert-deftest codex-ide-term-configure-buffer-honors-blink-cursor ()
+  "With `codex-ide-term-blink-cursor' the cursor types stay untouched."
+  (with-temp-buffer
+    (eat-mode)
+    (let ((codex-ide-term-blink-cursor t))
+      (codex-ide-term--configure-buffer))
+    (should-not (local-variable-p 'eat-very-visible-cursor-type))))
 
-(ert-deftest codex-ide-term-osc-color-query-face-fallbacks ()
-  "Nil face colors fall back to default terminal colors."
-  (cl-letf (((symbol-function 'face-foreground)
-             (lambda (&rest _args) nil))
-            ((symbol-function 'face-background)
-             (lambda (&rest _args) nil)))
-    (should (equal (codex-ide-term--default-face-color-values 'foreground)
-                   '(255 255 255)))
-    (should (equal (codex-ide-term--default-face-color-values 'background)
-                   '(0 0 0)))
-    (should (equal (codex-ide-term--vterm-osc-color-replies
-                    "\e]10;?\e\\\e]11;?\e\\")
-                   "\e]10;rgb:00ff/00ff/00ff\e\\\e]11;rgb:0000/0000/0000\e\\"))))
+(ert-deftest codex-ide-term-synchronize-scroll-syncs-buffer-and-all-windows ()
+  "The sync override always syncs buffer point and every window."
+  (let ((buffer (generate-new-buffer " *codex-ide-sync-test*"))
+        synced)
+    (unwind-protect
+        (cl-letf (((symbol-function 'eat--synchronize-scroll)
+                   (lambda (windows)
+                     (setq synced windows))))
+          (save-window-excursion
+            (switch-to-buffer buffer)
+            (with-current-buffer buffer
+              (codex-ide-term--synchronize-scroll nil))
+            (should (equal synced
+                           (cons 'buffer (get-buffer-window-list buffer))))))
+      (kill-buffer buffer))))
 
-(ert-deftest codex-ide-term-vterm-configure-installs-filter-once ()
-  "Codex vterm setup installs the output filter once."
-  (codex-ide-test--call-with-buffer-process
-   (lambda (buffer process)
-     (let ((original (lambda (_process _input) nil)))
-       (set-process-filter process original)
-       (with-current-buffer buffer
-         (setq truncate-lines nil)
-         (codex-ide-term--vterm-configure-buffer process)
-         (codex-ide-term--vterm-configure-buffer process)
-         (should truncate-lines)
-         (should-not (local-variable-p
-                      'vterm-scroll-to-bottom-on-output buffer)))
-       (should (eq (process-filter process)
-                   #'codex-ide-term--vterm-output-filter))
-       (should (eq (process-get
-                    process 'codex-ide-term--vterm-original-filter)
-                   original))))))
+(ert-deftest codex-ide-term-snap-window-point-moves-to-cursor ()
+  "Window point snaps to the terminal cursor on buffer change."
+  (let ((buffer (generate-new-buffer " *codex-ide-snap-test*")))
+    (unwind-protect
+        (with-current-buffer buffer
+          (insert "0123456789")
+          (setq-local eat-terminal 'dummy)
+          (save-window-excursion
+            (switch-to-buffer buffer)
+            (set-window-point (selected-window) 1)
+            (cl-letf (((symbol-function 'eat-term-display-cursor)
+                       (lambda (_terminal) 5)))
+              (codex-ide-term--snap-window-point (selected-window)))
+            (should (= (window-point (selected-window)) 5))))
+      (kill-buffer buffer))))
 
-(ert-deftest codex-ide-term-vterm-output-filter-preserves-existing-filter ()
-  "The vterm output wrapper still delegates to the previous process filter."
-  (codex-ide-test--call-with-buffer-process
-   (lambda (_buffer process)
-     (let (received sent)
-       (set-process-filter
-        process
-        (lambda (_process input)
-          (setq received input)))
-       (codex-ide-term--vterm-install-output-filter process)
-       (cl-letf (((symbol-function 'process-send-string)
-                  (lambda (_process string)
-                    (setq sent string))))
-         (funcall (process-filter process) process "plain output"))
-       (should (equal received "plain output"))
-       (should-not sent)))))
+(ert-deftest codex-ide-term-snap-window-point-ignores-non-eat-buffers ()
+  "The snap hook leaves windows on non-eat buffers alone."
+  (let ((buffer (generate-new-buffer " *codex-ide-snap-plain*")))
+    (unwind-protect
+        (save-window-excursion
+          (switch-to-buffer buffer)
+          (should-not (codex-ide-term--snap-window-point (selected-window))))
+      (kill-buffer buffer))))
 
-(ert-deftest codex-ide-term-vterm-output-filter-sends-osc-replies ()
-  "The vterm output wrapper sends OSC replies back to the process."
-  (codex-ide-test--call-with-buffer-process
-   (lambda (_buffer process)
-     (let (received sent)
-       (set-process-filter
-        process
-        (lambda (_process input)
-          (setq received input)))
-       (codex-ide-term--vterm-install-output-filter process)
-       (cl-letf (((symbol-function
-                   'codex-ide-term--default-face-color-values)
-                  (lambda (type)
-                    (pcase type
-                      ('foreground '(1 2 3))
-                      ('background '(4 5 6)))))
-                 ((symbol-function 'process-send-string)
-                  (lambda (_process string)
-                    (setq sent string))))
-         (funcall (process-filter process)
-                  process "\e]10;?\e\\\e]11;?\e\\"))
-       (should (equal received "\e]10;?\e\\\e]11;?\e\\"))
-       (should (equal sent
-                      "\e]10;rgb:0001/0002/0003\e\\\e]11;rgb:0004/0005/0006\e\\"))))))
-
-(ert-deftest codex-ide-term-vterm-sync-dimensions-delegates ()
-  "vterm display sync delegates to vterm's adjustment function."
+(ert-deftest codex-ide-term-sync-dimensions-delegates ()
+  "Display sync delegates to eat's window size adjustment function."
   (codex-ide-test--call-with-buffer-process
    (lambda (buffer process)
      (let (called)
@@ -441,6 +459,42 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                       (setq resized t))))
            (codex-ide-term--sync-dimensions buffer (selected-window))
            (should-not resized)))))))
+
+(ert-deftest codex-ide-term-make-process-starts-eat-session ()
+  "Session creation yields a live eat process with argv and env intact."
+  (codex-ide-test--call-with-eat-process
+   "printf '%s' \"$CODEX_IDE_TEST_VAR\"; sleep 60"
+   (lambda (buffer process)
+     (should (process-live-p process))
+     (with-current-buffer buffer
+       (should (eq major-mode 'eat-mode))
+       ;; Session recovery matches the program inside `process-command';
+       ;; eat's stty wrapper must keep the real argv visible.
+       (should (member "sh" (process-command process)))
+       (should (codex-ide-test--wait-for
+                (lambda ()
+                  (string-match-p "codex-env-ok" (buffer-string)))))))))
+
+(ert-deftest codex-ide-term-point-survives-erase-display ()
+  "Point tracks the cursor across full-screen redraws.
+Regression test for the bug that forced the switch to vterm: an
+erase-display sequence collapsed off-cursor points to `point-min' and
+eat never restored them."
+  (codex-ide-test--call-with-eat-process
+   "printf 'one\\r\\ntwo\\r\\nthree\\r\\n'; read x; printf '\\033[H\\033[2Jredrawn'; read y"
+   (lambda (buffer process)
+     (with-current-buffer buffer
+       (should (codex-ide-test--wait-for
+                (lambda ()
+                  (string-match-p "three" (buffer-string)))))
+       ;; Park point away from the cursor, as a stale window switch or a
+       ;; user click would, then let the TUI redraw everything.
+       (goto-char (point-min))
+       (process-send-string process "\n")
+       (should (codex-ide-test--wait-for
+                (lambda ()
+                  (string-match-p "redrawn" (buffer-string)))))
+       (should (= (point) (eat-term-display-cursor eat-terminal)))))))
 
 (ert-deftest codex-ide-default-buffer-name ()
   "Buffer name follows the `*codex[<basename>]*' shape."
@@ -661,8 +715,8 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                                         (codex-ide--get-buffer-name dir-b))
                                   #'string<)))
              (should (equal (sort (mapcar (lambda (candidate)
-                                             (plist-get (cdr candidate) :root))
-                                           candidates)
+                                            (plist-get (cdr candidate) :root))
+                                          candidates)
                                   #'string<)
                             (sort (list dir-a dir-b) #'string<))))))
       (delete-directory dir-a t)
@@ -703,7 +757,7 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
           (set-process-query-on-exit-flag missing-process nil)
           (puthash live-dir
                    (list (codex-ide--make-session live-dir 1
-                                                   live-buffer live-process))
+                                                  live-buffer live-process))
                    codex-ide--sessions)
           (puthash dead-dir
                    (list (codex-ide--make-session
@@ -711,8 +765,8 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                    codex-ide--sessions)
           (puthash missing-dir
                    (list (codex-ide--make-session missing-dir 1
-                                                   missing-buffer
-                                                   missing-process))
+                                                  missing-buffer
+                                                  missing-process))
                    codex-ide--sessions)
           (delete-process dead-process)
           (kill-buffer missing-buffer)
@@ -938,16 +992,17 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
         (codex-ide-test--kill-buffer-process (car pair) (cadr pair)))
       (delete-directory root t))))
 
-(ert-deftest codex-ide-mode-map-leaves-vterm-map-alone ()
-  "Codex bindings live in the minor mode map, not in `vterm-mode-map'."
+(ert-deftest codex-ide-mode-map-leaves-eat-maps-alone ()
+  "Codex bindings live in the minor mode map, not in eat's keymaps."
   (should (eq (lookup-key codex-ide-mode-map (kbd "S-<return>"))
               #'codex-ide-insert-newline))
   (should (eq (lookup-key codex-ide-mode-map (kbd "C-c C-k"))
               #'codex-ide-send-escape))
-  (should-not (eq (lookup-key vterm-mode-map (kbd "S-<return>"))
-                  #'codex-ide-insert-newline))
-  (should-not (eq (lookup-key vterm-mode-map (kbd "C-c C-k"))
-                  #'codex-ide-send-escape))
+  (dolist (map (list eat-mode-map eat-semi-char-mode-map))
+    (should-not (eq (lookup-key map (kbd "S-<return>"))
+                    #'codex-ide-insert-newline))
+    (should-not (eq (lookup-key map (kbd "C-c C-k"))
+                    #'codex-ide-send-escape)))
   (with-temp-buffer
     (codex-ide-mode 1)
     (should (eq (cdr (assq 'codex-ide-mode
@@ -1154,8 +1209,8 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                  "codex-ide-next-2" 2))
           (codex-ide--recover-live-sessions)
           (should (equal (sort (mapcar (lambda (session)
-                                          (plist-get session :id))
-                                        (codex-ide--project-sessions root))
+                                         (plist-get session :id))
+                                       (codex-ide--project-sessions root))
                                #'<)
                          '(1 2)))
           (should (= (codex-ide--next-session-id root) 3)))
@@ -1196,9 +1251,9 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                (codex-ide '(4))
                (codex-ide-new-session))
              (should (equal (sort (mapcar (lambda (session)
-                                             (buffer-name
-                                              (plist-get session :buffer)))
-                                           (codex-ide--project-sessions root))
+                                            (buffer-name
+                                             (plist-get session :buffer)))
+                                          (codex-ide--project-sessions root))
                                   #'string<)
                             (sort (list (codex-ide--get-buffer-name root 1)
                                         (codex-ide--get-buffer-name root 2)
@@ -1443,9 +1498,9 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                (let ((default-directory root-a))
                  (codex-ide-list-sessions)))
              (should (equal (sort (mapcar (lambda (candidate)
-                                             (plist-get (cdr candidate)
-                                                        :root))
-                                           seen)
+                                            (plist-get (cdr candidate)
+                                                       :root))
+                                          seen)
                                   #'string<)
                             (sort (list root-a root-b) #'string<)))
              (should (= (gethash root-b codex-ide--active-session-ids) 1)))))
