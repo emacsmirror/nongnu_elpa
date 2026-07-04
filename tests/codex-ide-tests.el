@@ -1721,6 +1721,47 @@ eat never restored them."
              (should-not (codex-ide--project-sessions root)))))
       (delete-directory root t))))
 
+(ert-deftest codex-ide-make-process-sentinel-chains-original ()
+  "The Codex sentinel runs the replaced sentinel before cleaning up."
+  (let (chained cleaned)
+    (cl-letf (((symbol-function 'codex-ide--cleanup-on-exit)
+               (lambda (&rest args)
+                 (setq cleaned args))))
+      (funcall (codex-ide--make-process-sentinel
+                "/tmp/root" 1
+                (lambda (proc event)
+                  (setq chained (list proc event))))
+               'fake-proc "finished\n"))
+    (should (equal chained '(fake-proc "finished\n")))
+    (should (equal cleaned '("/tmp/root" 1)))))
+
+(ert-deftest codex-ide-make-process-sentinel-chains-on-non-exit-events ()
+  "Non-exit events reach the chained sentinel without triggering cleanup."
+  (let (chained cleaned)
+    (cl-letf (((symbol-function 'codex-ide--cleanup-on-exit)
+               (lambda (&rest args)
+                 (setq cleaned args))))
+      (funcall (codex-ide--make-process-sentinel
+                "/tmp/root" 1
+                (lambda (proc event)
+                  (setq chained (list proc event))))
+               'fake-proc "open\n"))
+    (should (equal chained '(fake-proc "open\n")))
+    (should-not cleaned)))
+
+(ert-deftest codex-ide-make-process-sentinel-cleans-up-when-original-errors ()
+  "A failing chained sentinel cannot block Codex session cleanup."
+  (let (cleaned)
+    (cl-letf (((symbol-function 'codex-ide--cleanup-on-exit)
+               (lambda (&rest args)
+                 (setq cleaned args))))
+      (funcall (codex-ide--make-process-sentinel
+                "/tmp/root" 1
+                (lambda (_proc _event)
+                  (error "Boom")))
+               'fake-proc "killed\n"))
+    (should (equal cleaned '("/tmp/root" 1)))))
+
 (ert-deftest codex-ide-setup-session-enables-mode ()
   "Session setup enables `codex-ide-mode' with the cleanup hook."
   (let ((root (file-name-as-directory
