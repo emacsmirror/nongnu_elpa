@@ -295,7 +295,7 @@ The valid keys are:
 
 (ert-deftest pcase-for-iteration-unique-values ()
   "This condition was found during documentation writing."
-  (thread-last (loopy--pcase-destructure-for-iteration
+  (thread-last (loopy--pcase-destructure-basic-setter
                 '(loopy [&seq i j &optional k &rest r])
                 'val)
                (cl-second)

@@ -76,7 +76,7 @@
              (cons '-pcase #'loopy-pcase--disable-flag-pcase))
 
 (defalias 'loopy-pcase--destructure-for-iteration
-  #'loopy--pcase-destructure-for-iteration)
+  #'loopy--pcase-destructure-basic-setter)
 
 (defalias 'loopy-pcase--destructure-for-with-vars
   #'loopy--pcase-destructure-for-with-vars)

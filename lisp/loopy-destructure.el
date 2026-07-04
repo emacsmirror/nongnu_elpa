@@ -937,8 +937,8 @@ See the Info node `(loopy)Basic Destructuring'."
                    (list (quote ,pattern)
                          ,(car (alist-get 'loopy--pcase-unmatched varvals)))))))
 
-(cl-defun loopy--pcase-destructure-for-iteration (var val &key error)
-  "Destructure VAL according to VAR as by `pcase-let'.
+(cl-defun loopy--pcase-destructure-basic-setter (var val &key error)
+  "Get a setter expression to destructure VAL according to VAR via `pcase'.
 
 Returns a list.  The elements are:
 1. An expression which binds the variables in VAR to the values
@@ -999,14 +999,14 @@ Returns a list of two elements:
             (cl-callf2 cl-adjoin var all-vars :test #'eq)
             (push `(nil (,var ,val))
                   new-bindings))
-        ;; `loopy--pcase-destructure-for-iteration' does not return any capture
+        ;; `loopy--pcase-destructure-basic-setter' does not return any capture
         ;; variables that `pcase' might use, so we need to `let' bind our own
         ;; capture variable before we `let' bind the found variables, to avoid
         ;; hiding any needed variable values when binding the found variables to
         ;; `nil'.
         (let ((capture-var (gensym "loopy--with-capture")))
           (pcase-let ((`(,setter ,found-vars)
-                       (loopy--pcase-destructure-for-iteration
+                       (loopy--pcase-destructure-basic-setter
                         var capture-var
                         :error error)))
             (cl-callf cl-union all-vars found-vars :test #'eq)

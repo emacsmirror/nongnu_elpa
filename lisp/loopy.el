@@ -1065,7 +1065,7 @@ instead of this macro.
   (declare (debug (&rest [sexp form])))
   (macroexp-progn
    (cl-loop for (var val) on args by #'cddr
-            collect (car (loopy--pcase-destructure-for-iteration
+            collect (car (loopy--pcase-destructure-basic-setter
                           `(loopy ,var) val :error t)))))
 
 ;;;###autoload

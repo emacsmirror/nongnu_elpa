@@ -136,7 +136,7 @@ Returns a list.  The elements are:
    in VAL.
 2. A list of variables which exist outside of this expression and
    need to be `let'-bound."
-  (loopy--pcase-destructure-for-iteration (loopy-seq--make-pcase-pattern var) val))
+  (loopy--pcase-destructure-basic-setter (loopy-seq--make-pcase-pattern var) val))
 
 (cl-defun loopy-seq--parse-destructuring-accumulation-command
     ((name var val &rest args))

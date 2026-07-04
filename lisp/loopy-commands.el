@@ -3241,7 +3241,7 @@ Returns a list.  The elements are:
    need to be `let'-bound."
   (declare (important-return-value t)
            (ftype (function ((or symbol sequence) t) cons)))
-  (let ((res (loopy--pcase-destructure-for-iteration `(loopy ,var) val :error t)))
+  (let ((res (loopy--pcase-destructure-basic-setter `(loopy ,var) val :error t)))
     (if (null (cl-second res))
         (signal 'loopy-destructure-vars-missing (list var val))
       res)))
