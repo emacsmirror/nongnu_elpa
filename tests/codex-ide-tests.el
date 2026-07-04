@@ -405,29 +405,34 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
                            (cons 'buffer (get-buffer-window-list buffer))))))
       (kill-buffer buffer))))
 
-(ert-deftest codex-ide-term-snap-window-point-moves-to-cursor ()
-  "Window point snaps to the terminal cursor on buffer change."
-  (let ((buffer (generate-new-buffer " *codex-ide-snap-test*")))
+(ert-deftest codex-ide-term-snap-window-point-syncs-window ()
+  "The snap hook delegates the window to eat's scroll sync."
+  (let ((buffer (generate-new-buffer " *codex-ide-snap-test*"))
+        synced)
     (unwind-protect
         (with-current-buffer buffer
-          (insert "0123456789")
           (setq-local eat-terminal 'dummy)
           (save-window-excursion
             (switch-to-buffer buffer)
-            (set-window-point (selected-window) 1)
-            (cl-letf (((symbol-function 'eat-term-display-cursor)
-                       (lambda (_terminal) 5)))
+            (cl-letf (((symbol-function 'eat--synchronize-scroll)
+                       (lambda (windows)
+                         (setq synced windows))))
               (codex-ide-term--snap-window-point (selected-window)))
-            (should (= (window-point (selected-window)) 5))))
+            (should (equal synced (list (selected-window))))))
       (kill-buffer buffer))))
 
 (ert-deftest codex-ide-term-snap-window-point-ignores-non-eat-buffers ()
   "The snap hook leaves windows on non-eat buffers alone."
-  (let ((buffer (generate-new-buffer " *codex-ide-snap-plain*")))
+  (let ((buffer (generate-new-buffer " *codex-ide-snap-plain*"))
+        synced)
     (unwind-protect
         (save-window-excursion
           (switch-to-buffer buffer)
-          (should-not (codex-ide-term--snap-window-point (selected-window))))
+          (cl-letf (((symbol-function 'eat--synchronize-scroll)
+                     (lambda (windows)
+                       (setq synced windows))))
+            (codex-ide-term--snap-window-point (selected-window)))
+          (should-not synced))
       (kill-buffer buffer))))
 
 (ert-deftest codex-ide-term-sync-dimensions-delegates ()

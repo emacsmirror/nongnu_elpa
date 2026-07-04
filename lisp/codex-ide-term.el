@@ -52,13 +52,14 @@ sits on the cursor.  Codex redraws erase the display with
   (eat--synchronize-scroll (cons 'buffer (get-buffer-window-list))))
 
 (defun codex-ide-term--snap-window-point (window)
-  "Move WINDOW's point to the terminal cursor.
+  "Synchronize WINDOW with the terminal cursor.
 When a window shows the buffer again while Codex is idle, no output
 arrives to run the scroll sync, and the window point restored from
-`window-prev-buffers' has usually collapsed to `point-min'."
-  (when-let* ((terminal (buffer-local-value 'eat-terminal
-                                            (window-buffer window))))
-    (set-window-point window (eat-term-display-cursor terminal))))
+`window-prev-buffers' has usually collapsed to `point-min'.  Reuses
+eat's own sync so the window is also recentered on the TUI frame."
+  (with-current-buffer (window-buffer window)
+    (when eat-terminal
+      (eat--synchronize-scroll (list window)))))
 
 ;;; Cursor appearance
 
