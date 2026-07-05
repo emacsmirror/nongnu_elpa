@@ -1,9 +1,11 @@
 name: Test Emacs Matrix
+# The `push` event also triggers after merging pull requests that have
+# already been checked, which is redundant.
 on:
-  push:
-    branches:
-      - main
-      - master
+  # push:
+  #   branches:
+  #     - main
+  #     - master
   pull_request:
     branches:
       - main
