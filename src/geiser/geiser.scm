@@ -114,13 +114,30 @@
               '()))
         '())))
 
+(define (opcode-arglist id opcode)
+  (let loop ((params (opcode-num-params opcode))
+             (variadic? (opcode-variadic? opcode))
+             (required '()))
+    (cond
+     ((and (zero? params)
+           variadic?)
+      `(,id ("args" (("required" ,@required)
+                     ("optional" o "...")
+                     ("key")))))
+     ((zero? params)
+      `(,id ("args" (("required" ,@required)
+                     ("optional")
+                     ("key")))))
+     (else
+      (loop (- params 1) variadic? (cons '_ required))))))
+
 (define (geiser:operator-arglist id)
   (let ((cell (env-cell (interaction-environment) id)))
     (if (pair? cell)
         (let ((proc (cdr cell)))
           (cond
            ((macro? proc) '())
-           ((opcode? proc) '())
+           ((opcode? proc) (opcode-arglist id proc))
            ((procedure? proc) (procedure-arglist id proc))
            (else '())))
         '())))
