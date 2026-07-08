@@ -182,7 +182,7 @@ to the session.  The session is torn down afterwards."
              (lambda (&rest _args) nil))
             ((symbol-function 'codex-ide-debug)
              (lambda (&rest _args) nil)))
-    (funcall body)))
+	   (funcall body)))
 
 (defun codex-ide-test--toggle-in-root (root)
   "Call `codex-ide-toggle' for ROOT with same-window display."
@@ -388,21 +388,50 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
       (codex-ide-term--configure-buffer))
     (should-not (local-variable-p 'eat-very-visible-cursor-type))))
 
-(ert-deftest codex-ide-term-synchronize-scroll-syncs-buffer-and-all-windows ()
-  "The sync override always syncs buffer point and every window."
+(defun codex-ide-test--sync-scroll (park snapshot-p)
+  "Run the scroll sync override with point parked at PARK.
+The stubbed terminal display region begins at buffer position 5.  When
+SNAPSHOT-P, pass eat's would-be pre-output snapshot (buffer plus the
+selected window); otherwise pass nil.  Return (SYNCED . WINDOW), the
+list forwarded to `eat--synchronize-scroll' and the selected window."
   (let ((buffer (generate-new-buffer " *codex-ide-sync-test*"))
-        synced)
+        synced window)
     (unwind-protect
         (cl-letf (((symbol-function 'eat--synchronize-scroll)
                    (lambda (windows)
-                     (setq synced windows))))
+                     (setq synced windows)))
+                  ((symbol-function 'eat-term-display-beginning)
+                   (lambda (_terminal) 5)))
           (save-window-excursion
             (switch-to-buffer buffer)
-            (with-current-buffer buffer
-              (codex-ide-term--synchronize-scroll nil))
-            (should (equal synced
-                           (cons 'buffer (get-buffer-window-list buffer))))))
-      (kill-buffer buffer))))
+            (insert "scrollback and display text")
+            (setq-local eat-terminal 'dummy)
+            (goto-char park)
+            (setq window (selected-window))
+            (codex-ide-term--synchronize-scroll
+             (and snapshot-p (list 'buffer window)))))
+      (kill-buffer buffer))
+    (cons synced window)))
+
+(ert-deftest codex-ide-term-synchronize-scroll-rescues-display-point ()
+  "Off-snapshot points inside the display region snap to the cursor."
+  (pcase-let ((`(,synced . ,window) (codex-ide-test--sync-scroll 7 nil)))
+    (should (equal synced (list 'buffer window)))))
+
+(ert-deftest codex-ide-term-synchronize-scroll-leaves-scrollback-alone ()
+  "Points parked above the display region are not yanked to the cursor."
+  (pcase-let ((`(,synced . ,_window) (codex-ide-test--sync-scroll 2 nil)))
+    (should-not synced)))
+
+(ert-deftest codex-ide-term-synchronize-scroll-rescues-collapsed-point ()
+  "Points collapsed to `point-min' by a scrollback purge re-sync."
+  (pcase-let ((`(,synced . ,window) (codex-ide-test--sync-scroll 1 nil)))
+    (should (equal synced (list 'buffer window)))))
+
+(ert-deftest codex-ide-term-synchronize-scroll-honors-eat-snapshot ()
+  "Positions eat saw on the cursor before output always sync."
+  (pcase-let ((`(,synced . ,window) (codex-ide-test--sync-scroll 2 t)))
+    (should (equal synced (list 'buffer window)))))
 
 (ert-deftest codex-ide-term-snap-window-point-syncs-window ()
   "The snap hook delegates the window to eat's scroll sync."
@@ -495,6 +524,51 @@ eat never restored them."
        ;; Park point away from the cursor, as a stale window switch or a
        ;; user click would, then let the TUI redraw everything.
        (goto-char (point-min))
+       (process-send-string process "\n")
+       (should (codex-ide-test--wait-for
+                (lambda ()
+                  (string-match-p "redrawn" (buffer-string)))))
+       (should (= (point) (eat-term-display-cursor eat-terminal)))))))
+
+(ert-deftest codex-ide-term-scrollback-point-survives-output ()
+  "A point parked in the scrollback stays put while output streams."
+  (codex-ide-test--call-with-eat-process
+   "i=1; while [ $i -le 80 ]; do printf 'line-%s\\r\\n' $i; i=$((i+1)); done; read x; printf 'tail\\r\\n'; read y"
+   (lambda (buffer process)
+     (with-current-buffer buffer
+       (should (codex-ide-test--wait-for
+                (lambda ()
+                  (string-match-p "line-80" (buffer-string)))))
+       ;; Park point above the display region, as scrolling back does.
+       ;; Not at `point-min': that position re-syncs by design, since
+       ;; scrollback purges collapse dragged points there.
+       (goto-char (+ (point-min) 10))
+       (should (< (point) (eat-term-display-beginning eat-terminal)))
+       (process-send-string process "\n")
+       (should (codex-ide-test--wait-for
+                (lambda ()
+                  (string-match-p "tail" (buffer-string)))))
+       (should (= (point) (+ (point-min) 10)))))))
+
+(ert-deftest codex-ide-term-point-survives-scrollback-purge ()
+  "Point re-syncs when a resize-style redraw purges the scrollback.
+Codex resize reflows emit ESC [2J and ESC [3J, deleting the whole
+buffer and collapsing every point and marker to `point-min'.  Once the
+transcript is re-emitted the collapsed point sits below the display
+region, where the scrollback-browsing rule alone would strand it."
+  (codex-ide-test--call-with-eat-process
+   (concat
+    "i=1; while [ $i -le 80 ]; do printf 'line-%s\\r\\n' $i; i=$((i+1)); done;"
+    " read x; printf '\\033[H\\033[2J\\033[3J';"
+    " i=1; while [ $i -le 80 ]; do printf 'again-%s\\r\\n' $i; i=$((i+1)); done;"
+    " printf 'redrawn\\r\\n'; read y")
+   (lambda (buffer process)
+     (with-current-buffer buffer
+       (should (codex-ide-test--wait-for
+                (lambda ()
+                  (string-match-p "line-80" (buffer-string)))))
+       ;; Park point mid-scrollback, then let the purge and reflow run.
+       (goto-char (+ (point-min) 40))
        (process-send-string process "\n")
        (should (codex-ide-test--wait-for
                 (lambda ()

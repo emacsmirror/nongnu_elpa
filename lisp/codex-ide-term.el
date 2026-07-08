@@ -43,13 +43,33 @@ one via its terminal cursor-style escape."
 
 ;;; Scroll and point synchronization
 
-(defun codex-ide-term--synchronize-scroll (_windows)
-  "Synchronize point and all windows with the terminal cursor.
-Replaces eat's default sync, which skips any position that no longer
-sits on the cursor.  Codex redraws erase the display with
-`delete-region', dragging off-cursor points and window markers to
-`point-min' where the default sync would strand them."
-  (eat--synchronize-scroll (cons 'buffer (get-buffer-window-list))))
+(defun codex-ide-term--adrift-point-p (pos begin)
+  "Non-nil when POS should re-sync to the terminal cursor.
+BEGIN is the terminal display start.  POS re-syncs inside the display
+region, whose contents Codex erases and redraws wholesale, and at
+`point-min', where scrollback purges (ESC [3J, emitted by Codex resize
+reflows) collapse every dragged point and marker.  Anywhere else in
+the scrollback POS is a deliberate browsing position."
+  (or (>= pos begin) (= pos (point-min))))
+
+(defun codex-ide-term--synchronize-scroll (windows)
+  "Synchronize point and windows with the terminal cursor.
+WINDOWS is eat's snapshot, taken before the output was processed, of
+the positions that were following the cursor; those always sync.  Also
+sync any point the redraw set adrift (see
+`codex-ide-term--adrift-point-p'), where eat's default sync would
+strand it.  Other scrollback positions stay put so the user can browse
+history while output streams."
+  (let ((begin (eat-term-display-beginning eat-terminal)))
+    (eat--synchronize-scroll
+     (append (and (or (memq 'buffer windows)
+                      (codex-ide-term--adrift-point-p (point) begin))
+                  '(buffer))
+             (seq-filter (lambda (window)
+                           (or (memq window windows)
+                               (codex-ide-term--adrift-point-p
+                                (window-point window) begin)))
+                         (get-buffer-window-list))))))
 
 (defun codex-ide-term--snap-window-point (window)
   "Synchronize WINDOW with the terminal cursor.
