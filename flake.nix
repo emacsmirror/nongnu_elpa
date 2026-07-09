@@ -24,7 +24,9 @@
 
           emacs = pkgs.emacs30-nox or pkgs.emacs;
           emacsPackages = pkgs.emacsPackagesFor emacs;
+          # Keep in sync with SRCS in the Makefile.
           elispFiles = [
+            "lisp/hermes-promise.el"
             "lisp/hermes-transport.el"
             "lisp/hermes-dashboard-transport.el"
             "lisp/hermes-chat-format.el"
@@ -32,12 +34,17 @@
             "lisp/hermes-chat-prompts.el"
             "lisp/hermes-chat-dashboard.el"
             "lisp/hermes-chat.el"
+            "lisp/hermes-browser.el"
             "lisp/hermes-sessions.el"
             "lisp/hermes-inventory.el"
             "lisp/hermes-rollback.el"
             "lisp/hermes-subagents.el"
             "lisp/hermes-cron.el"
             "lisp/hermes-kanban.el"
+            "lisp/hermes-mcp.el"
+            "lisp/hermes-exec.el"
+            "lisp/hermes-onboarding.el"
+            "lisp/hermes-capabilities.el"
             "lisp/hermes.el"
           ];
           elispFileArgs = lib.concatStringsSep " " elispFiles;
