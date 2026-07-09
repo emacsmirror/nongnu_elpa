@@ -100,7 +100,9 @@ without bound."
   :type 'integer)
 
 (defcustom hermes-exec-timeout 120
-  "Seconds an evaluation may run before `with-timeout' aborts it."
+  "Seconds an evaluation may run before `with-timeout' aborts it.
+`with-timeout' fires from a timer, so it only interrupts code that waits or
+checks input; a CPU-bound loop that never yields runs to completion anyway."
   :type 'number)
 
 (defcustom hermes-exec-max-pending 16
@@ -352,7 +354,9 @@ Set `hermes-exec-require-approval' to `hermes-exec-confirm-by-risk'."
   "Read and evaluate every top-level form in CODE under a timeout.
 CODE may carry more than one form; all run in order and the last value is
 returned.  Wrapping in `progn' avoids silently dropping every form after the
-first the way a single `read-from-string' would."
+first the way a single `read-from-string' would.  The timeout is best-effort:
+it cannot interrupt a CPU-bound form that never waits or checks input (see
+`hermes-exec-timeout')."
   (with-timeout (hermes-exec-timeout
                  (error "Hermes eval timed out after %s seconds"
                         hermes-exec-timeout))
@@ -903,17 +907,23 @@ back to `hermes-exec--resolve-host' once the process is gone."
       "<your-host>"))
 
 (defun hermes-exec-show-bridge-command ()
-  "Show the ready-to-paste `hermes mcp add' line registering this endpoint.
+  "Copy the ready-to-paste `hermes mcp add' line registering this endpoint.
 Includes EMACS_EXEC_TOKEN when a token is configured, since the bridge needs the
-same secret the endpoint enforces."
+same secret the endpoint enforces.  Interactively the full command lands only on
+the kill ring; the echoed line redacts the token so the secret does not persist
+in `*Messages*'."
   (interactive)
   (let* ((token (hermes-exec--expected-token))
-         (command (format
-                   "hermes mcp add emacs --command <venv>/bin/python --args server.py --env EMACS_EXEC_HOST=%s EMACS_EXEC_PORT=%d%s"
-                   (hermes-exec--detect-host) hermes-exec-port
-                   (if token (format " EMACS_EXEC_TOKEN=%s" token) ""))))
+         (line "hermes mcp add emacs --command <venv>/bin/python --args server.py --env EMACS_EXEC_HOST=%s EMACS_EXEC_PORT=%d%s")
+         (host (hermes-exec--detect-host))
+         (command (format line host hermes-exec-port
+                          (if token (format " EMACS_EXEC_TOKEN=%s" token) ""))))
     (if (called-interactively-p 'interactive)
-        (progn (kill-new command) (message "%s" command))
+        (progn
+          (kill-new command)
+          (message "Copied: %s"
+                   (format line host hermes-exec-port
+                           (if token " EMACS_EXEC_TOKEN=<redacted>" ""))))
       command)))
 
 (provide 'hermes-exec)
