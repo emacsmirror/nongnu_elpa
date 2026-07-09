@@ -17,6 +17,18 @@
    (insert "draft")
    (should (equal (hermes-chat-input-string) "draft"))))
 
+(ert-deftest hermes-chat-protect-transcript-covers-inserted-and-updated-entries ()
+  "Entries inserted mid-transcript and invalidated nodes end up read-only."
+  (hermes-test-with-chat-buffer
+   (let ((node (hermes-chat--insert-entry
+                '(:id "a1" :role assistant :content "reply" :status streaming))))
+     (hermes-chat--insert-entry '(:id "s1" :role status :content "tooling") node)
+     (hermes-chat--update-entry
+      "a1" (lambda (entry) (plist-put entry :content "reply grew"))))
+   (let ((pos (hermes-chat--input-position)))
+     (should-not (text-property-not-all (point-min) pos 'read-only t))
+     (should-not (text-property-not-all pos (point-max) 'read-only nil)))))
+
 (ert-deftest hermes-chat-in-buffer-runs-only-when-live ()
   (let ((buffer (generate-new-buffer " *hermes-in-buffer-test*"))
         ran)

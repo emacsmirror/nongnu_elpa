@@ -375,14 +375,22 @@ markdown with diff blocks replaced by View Diff links."
 
 (defun hermes-chat--protect-transcript ()
   "Make transcript and prompt read-only while keeping input tail writable.
-Do not record these internal text-property changes in the undo list."
+Only touch subranges that actually need the change: this runs after every
+streamed delta, so rewriting properties across the whole transcript would
+cost O(buffer) interval churn per chunk.  Do not record these internal
+text-property changes in the undo list."
   (when-let* ((pos (hermes-chat--input-position)))
     (let ((inhibit-read-only t)
-          (buffer-undo-list t))
-      (remove-text-properties (point-min) (point-max)
-                              '(read-only nil front-sticky nil rear-nonsticky nil))
-      (add-text-properties (point-min) pos
-                           '(read-only t front-sticky t rear-nonsticky t)))))
+          (buffer-undo-list t)
+          (start (point-min)))
+      (while (and (< start pos)
+                  (setq start (text-property-not-all start pos 'read-only t)))
+        (let ((end (or (text-property-any start pos 'read-only t) pos)))
+          (add-text-properties start end
+                               '(read-only t front-sticky t rear-nonsticky t))
+          (setq start end)))
+      (remove-text-properties pos (point-max)
+                              '(read-only nil front-sticky nil rear-nonsticky nil)))))
 
 (defmacro hermes-chat--preserve-input-point (&rest body)
   "Run BODY preserving point's offset into the writable input tail."
