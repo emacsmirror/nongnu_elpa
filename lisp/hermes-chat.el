@@ -79,14 +79,11 @@ Distinguishes a `/btw' result that arrives out of band from ordinary turns."
 (defvar hermes-chat-state-change-hook nil
   "Hook run in a Hermes chat buffer when dashboard-visible state changes.")
 
-(defvar-local hermes-chat--ewoc nil
-  "EWOC displaying chat transcript entries in the current Hermes chat buffer.")
-
-(defvar-local hermes-chat--input-marker nil
-  "Marker at the beginning of the writable chat input tail.")
-
-(defvar-local hermes-chat--nodes nil
-  "Hash table mapping Hermes entry IDs to EWOC nodes.")
+;; Buffer/EWOC state owned by `hermes-chat-buffer'; re-declared here for the
+;; byte-compiler.  See that file for the authoritative defvar-locals and docs.
+(defvar hermes-chat--ewoc)
+(defvar hermes-chat--input-marker)
+(defvar hermes-chat--nodes)
 
 (defvar-local hermes-chat--background-counter 0
   "Number of background (`/btw') tasks launched from this chat buffer.")
@@ -142,17 +139,12 @@ A manual title is preserved against the automatic session-title refresh.")
 (defvar-local hermes-chat--active-tools nil
   "Hash table of active tool summaries shown in the chat header.")
 
-(defvar-local hermes-chat--queued-message nil
-  "Plain message queued to send after the active Hermes turn settles.")
-
-(defvar-local hermes-chat--queued-display nil
-  "Compact display text for the queued message's user turn, or nil.")
-
-(defvar-local hermes-chat--draining-queued-message-p nil
-  "Non-nil while the queued message is being submitted.")
-
-(defvar-local hermes-chat--ansi-fragments nil
-  "Hash table of partial ANSI escape sequences by stream key.")
+;; Queue and stream state owned by `hermes-chat-buffer'; re-declared here for
+;; the byte-compiler.
+(defvar hermes-chat--queued-message)
+(defvar hermes-chat--queued-display)
+(defvar hermes-chat--draining-queued-message-p)
+(defvar hermes-chat--ansi-fragments)
 
 (defvar-local hermes-chat--commands-cache nil
   "Cached slash command catalog as an alist of (NAME . DESCRIPTION).")
