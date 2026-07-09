@@ -1,5 +1,5 @@
 .POSIX:
-EMACS = emacs
+EMACS ?= emacs
 BATCH = $(EMACS) -batch -Q -L .
 
 compile: simple-httpd.elc simple-httpd-test.elc
