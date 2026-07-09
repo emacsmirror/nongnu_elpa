@@ -4,7 +4,6 @@
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: tools, convenience
-;; Package-Requires: ((emacs "29.1") (keymap-popup "0.3.1") (websocket "1.15") (markdown-mode "2.6"))
 
 ;; This program is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by

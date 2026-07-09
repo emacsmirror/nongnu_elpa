@@ -83,8 +83,14 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
   unauthenticated providers from `model.options`, reads an API key, and saves it
   via `model.save_key`. Entry points: the dashboard auth gate, the chat model
   picker, and `C-c C-o K`. Independent of the chat transcript stack.
+- `hermes-capabilities.el` -- native Emacs capability provider: registers over
+  a dedicated second `/api/ws` connection (independent of chat buffers), takes
+  JSON-RPC `emacs.request` frames, dispatches through the
+  `hermes-capabilities-define` method registry, and replies with JSON-RPC
+  `result`/`error` frames.
 - `hermes-exec.el` -- optional local eval endpoint (FastMCP bridge); independent
-  of the chat/dashboard stack.
+  of the chat transcript stack, but reuses `hermes-dashboard-transport` for its
+  loopback-URL check.
 
 Data flow: outbound chat input -> `prompt.submit` RPC over the WebSocket.
 Inbound WS frame -> `hermes-dashboard-transport--normalize-event-frame` /

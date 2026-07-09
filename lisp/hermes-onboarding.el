@@ -20,13 +20,15 @@
 
 ;;; Commentary:
 
-;; Connect an API-key provider to Hermes from Emacs.  When the dashboard has no
-;; usable credentials a first-run user otherwise hits a raw connection failure
-;; with no way forward; this lists the dashboard's unauthenticated API-key
-;; providers, reads a key, and saves it through `model.save_key'.
+;; Connect a provider to Hermes from Emacs.  When the dashboard has no usable
+;; credentials a first-run user otherwise hits a raw connection failure with
+;; no way forward; this lists the dashboard's unauthenticated providers, reads
+;; an API key, and saves it through `model.save_key'.
 ;;
-;; Only API-key providers are offered: OAuth and managed-install providers
-;; cannot be connected by pasting a key and must be configured elsewhere.
+;; Every unauthenticated provider is offered without client-side auth
+;; classification: the gateway accepts a pasted key or returns its own error
+;; on save, so OAuth/managed providers fail with the backend's message rather
+;; than being filtered here.
 
 ;;; Code:
 
