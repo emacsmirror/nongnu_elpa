@@ -476,10 +476,11 @@ agent's reply can stay last while tool/status/diff entries land above it."
   (ewoc-collect hermes-chat--ewoc #'identity))
 
 (defun hermes-chat--update-entry (id function)
-  "Update entry ID by applying FUNCTION to its entry plist."
-  (let ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
-    (unless node
-      (user-error "No Hermes chat entry with id %s" id))
+  "Update entry ID by applying FUNCTION to its entry plist.
+Return the updated entry, or nil when ID names no live entry -- callers run
+from WebSocket callbacks and timers, where the entry may already be gone
+(e.g. the chat was cleared mid-turn), like `hermes-chat--remove-entry'."
+  (when-let* ((node (and hermes-chat--nodes (gethash id hermes-chat--nodes))))
     (let ((entry (hermes-chat--preserve-input-point
                   (let ((inhibit-read-only t)
                         (buffer-undo-list t)
