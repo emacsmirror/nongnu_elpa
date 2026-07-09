@@ -675,6 +675,23 @@ When dashboard session bootstrap fails, call REJECT with the error message."
                    (hermes-chat--dashboard-action-resolver buffer client action)
                    :reject (hermes-chat--dashboard-action-rejecter buffer reject)))))))
 
+(defun hermes-chat--with-dashboard-session (content buffer action &optional reject)
+  "Ensure a live dashboard session for BUFFER, then call ACTION with the client.
+CONTENT is restored to the input tail when session bootstrap fails.  REJECT
+overrides the default failure handler, which renders the error and preserves
+CONTENT.  This is the one spelling of the control-RPC bootstrap stack; call it
+instead of nesting `hermes-chat--call-with-dashboard-bootstrap-error',
+`hermes-chat--dashboard-control-client', and
+`hermes-chat--dashboard-ensure-session-action' by hand."
+  (hermes-chat--call-with-dashboard-bootstrap-error
+   content
+   (lambda ()
+     (hermes-chat--dashboard-ensure-session-action
+      (hermes-chat--dashboard-control-client) buffer action
+      (or reject
+          (lambda (message)
+            (hermes-chat--dashboard-bootstrap-error message content)))))))
+
 (defun hermes-chat--dashboard-stored-session-needs-resume-p ()
   "Return non-nil when a durable dashboard session may be active remotely."
   (and (hermes-chat--dashboard-default-transport-p)
@@ -686,16 +703,10 @@ When dashboard session bootstrap fails, call REJECT with the error message."
   "Resume stored dashboard session in BUFFER before queuing or submitting CONTENT.
 DISPLAY is the compact user-turn text shown instead of CONTENT."
   (if (hermes-chat--dashboard-stored-session-needs-resume-p)
-      (hermes-chat--call-with-dashboard-bootstrap-error
-       content
-       (lambda ()
-         (let ((client (hermes-chat--dashboard-control-client)))
-           (hermes-chat--dashboard-ensure-session-action
-            client buffer
-            (lambda (_live-client)
-              (hermes-chat--queue-or-submit-content content display))
-            (lambda (message)
-              (hermes-chat--dashboard-bootstrap-error message content))))))
+      (hermes-chat--with-dashboard-session
+       content buffer
+       (lambda (_live-client)
+         (hermes-chat--queue-or-submit-content content display)))
     (hermes-chat--queue-or-submit-content content display)))
 
 (defun hermes-chat--dashboard-handle-reconnected (_event)
@@ -704,15 +715,11 @@ A no-op unless the buffer has a durable session that is not currently attached
 and no turn is active -- the same guard a later send uses -- so a reconnected
 shared socket re-resumes every attached chat without waiting for the next send."
   (when (hermes-chat--dashboard-stored-session-needs-resume-p)
-    (let ((buffer (current-buffer)))
-      (hermes-chat--call-with-dashboard-bootstrap-error
-       nil
-       (lambda ()
-         (hermes-chat--dashboard-ensure-session-action
-          (hermes-chat--dashboard-control-client) buffer #'ignore
-          (lambda (message)
-            (hermes-chat--command-error
-             (format "Hermes reconnect resume failed: %s" message)))))))))
+    (hermes-chat--with-dashboard-session
+     nil (current-buffer) #'ignore
+     (lambda (message)
+       (hermes-chat--command-error
+        (format "Hermes reconnect resume failed: %s" message))))))
 
 (provide 'hermes-chat-dashboard)
 ;;; hermes-chat-dashboard.el ends here

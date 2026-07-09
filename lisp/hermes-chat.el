@@ -908,6 +908,7 @@ self-explanatory."
 (declare-function hermes-chat--next-transport-generation "hermes-chat-dashboard" ())
 (declare-function hermes-chat--send-prompt "hermes-chat-dashboard" (prompt callback))
 (declare-function hermes-chat--transport-callback "hermes-chat-dashboard" (buffer assistant-id dashboard-p generation))
+(declare-function hermes-chat--with-dashboard-session "hermes-chat-dashboard" (content buffer action &optional reject))
 
 (defun hermes-chat--active-turn-p ()
   "Return non-nil when this chat buffer has an active Hermes turn."
@@ -1277,49 +1278,36 @@ DISPLAY lets a slash skill send its full payload while showing a compact line."
 PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
   (let ((buffer (current-buffer))
         (raw (or preserve-content (hermes-chat--alias-content name arg))))
-    (hermes-chat--call-with-dashboard-bootstrap-error
-     raw
-     (lambda ()
-       (let ((client (hermes-chat--dashboard-control-client)))
-         (hermes-chat--dashboard-ensure-session-action
-          client buffer
-          (lambda (live-client)
-            (hermes-dashboard-transport-command-dispatch
-             live-client name arg
-             :session-id hermes-chat--dashboard-active-session-id
-             :resolve (lambda (result)
-                        (hermes-chat--in-buffer buffer
-                          (hermes-chat--handle-command-result result arg)))
-             :reject (lambda (message)
-                       (hermes-chat--in-buffer buffer
-                         (hermes-chat--command-error message)))))
-          (lambda (message)
-            (hermes-chat--dashboard-bootstrap-error message raw))))))))
+    (hermes-chat--with-dashboard-session
+     raw buffer
+     (lambda (live-client)
+       (hermes-dashboard-transport-command-dispatch
+        live-client name arg
+        :session-id hermes-chat--dashboard-active-session-id
+        :resolve (lambda (result)
+                   (hermes-chat--in-buffer buffer
+                     (hermes-chat--handle-command-result result arg)))
+        :reject (lambda (message)
+                  (hermes-chat--in-buffer buffer
+                    (hermes-chat--command-error message))))))))
 
 (defun hermes-chat--dashboard-slash-exec (name arg raw)
   "Run RAW slash command, falling back to command dispatch for NAME/ARG."
   (let ((buffer (current-buffer))
         (preserve-content (concat "/" raw)))
-    (hermes-chat--call-with-dashboard-bootstrap-error
-     preserve-content
-     (lambda ()
-       (let ((client (hermes-chat--dashboard-control-client)))
-         (hermes-chat--dashboard-ensure-session-action
-          client buffer
-          (lambda (live-client)
-            (hermes-dashboard-transport-slash-exec
-             live-client raw
-             :session-id hermes-chat--dashboard-active-session-id
-             :resolve (lambda (result)
-                        (hermes-chat--in-buffer buffer
-                          (hermes-chat--handle-command-result result arg)))
-             :reject (lambda (_message)
-                       (hermes-chat--in-buffer buffer
-                         (hermes-chat--dashboard-dispatch-command
-                          name arg preserve-content)))))
-          (lambda (message)
-            (hermes-chat--dashboard-bootstrap-error
-             message preserve-content))))))))
+    (hermes-chat--with-dashboard-session
+     preserve-content buffer
+     (lambda (live-client)
+       (hermes-dashboard-transport-slash-exec
+        live-client raw
+        :session-id hermes-chat--dashboard-active-session-id
+        :resolve (lambda (result)
+                   (hermes-chat--in-buffer buffer
+                     (hermes-chat--handle-command-result result arg)))
+        :reject (lambda (_message)
+                  (hermes-chat--in-buffer buffer
+                    (hermes-chat--dashboard-dispatch-command
+                     name arg preserve-content))))))))
 
 (defun hermes-chat--fetch-commands-catalog ()
   "Fetch the slash command catalog into the buffer cache, when connected."
@@ -1508,16 +1496,10 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
 (defun hermes-chat--dashboard-steer-or-submit (content buffer)
   "Resume stored dashboard session in BUFFER before steering or submitting CONTENT."
   (if (hermes-chat--dashboard-stored-session-needs-resume-p)
-      (hermes-chat--call-with-dashboard-bootstrap-error
-       content
-       (lambda ()
-         (let ((client (hermes-chat--dashboard-control-client)))
-           (hermes-chat--dashboard-ensure-session-action
-            client buffer
-            (lambda (_live-client)
-              (hermes-chat--steer-or-submit content buffer))
-            (lambda (message)
-              (hermes-chat--dashboard-bootstrap-error message content))))))
+      (hermes-chat--with-dashboard-session
+       content buffer
+       (lambda (_live-client)
+         (hermes-chat--steer-or-submit content buffer)))
     (hermes-chat--steer-or-submit content buffer)))
 
 (defun hermes-chat-background (&optional prompt)
@@ -1555,24 +1537,18 @@ BUFFER's client gains a result listener when no turn is streaming, so the
 
 (defun hermes-chat--background-submit (content buffer)
   "Launch CONTENT as a background task for BUFFER's dashboard session."
-  (hermes-chat--call-with-dashboard-bootstrap-error
-   content
-   (lambda ()
-     (let ((client (hermes-chat--dashboard-control-client)))
-       (hermes-chat--dashboard-ensure-session-action
-        client buffer
-        (lambda (live-client)
-          (hermes-dashboard-transport-prompt-background
-           live-client content
-           :session-id hermes-chat--dashboard-active-session-id
-           :resolve (lambda (result)
-                      (hermes-chat--in-buffer buffer
-                        (hermes-chat--background-started result content buffer)))
-           :reject (lambda (message)
-                     (hermes-chat--in-buffer buffer
-                       (hermes-chat--command-error message)))))
-        (lambda (message)
-          (hermes-chat--dashboard-bootstrap-error message content)))))))
+  (hermes-chat--with-dashboard-session
+   content buffer
+   (lambda (live-client)
+     (hermes-dashboard-transport-prompt-background
+      live-client content
+      :session-id hermes-chat--dashboard-active-session-id
+      :resolve (lambda (result)
+                 (hermes-chat--in-buffer buffer
+                   (hermes-chat--background-started result content buffer)))
+      :reject (lambda (message)
+                (hermes-chat--in-buffer buffer
+                  (hermes-chat--command-error message)))))))
 
 (defun hermes-chat--handle-background-complete (event)
   "Insert a persistent result entry for a `background' EVENT.
