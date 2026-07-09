@@ -245,6 +245,18 @@
        (should-not (string-match-p "secret-token" message)))
       (other (ert-fail (format "expected error, got %S" other))))))
 
+(ert-deftest hermes-transport-dashboard-http-result-error-on-non-json-2xx ()
+  "A 2xx status with a non-JSON body yields an error result, not a signal."
+  (let ((response (list :status 200 :headers nil
+                        :body-text "<html>proxy login secret-token</html>")))
+    (pcase (hermes-dashboard-transport--http-result
+            response "http://x?token=<redacted>" '("secret-token"))
+      (`(error . ,message)
+       (should (string-match-p "non-JSON body" message))
+       (should (string-match-p "HTTP 200" message))
+       (should-not (string-match-p "secret-token" message)))
+      (other (ert-fail (format "expected error, got %S" other))))))
+
 (ert-deftest hermes-transport-dashboard-http-json-async-returns-promise ()
   (let* ((captured nil)
          (hermes-dashboard-transport-http-request-async-function

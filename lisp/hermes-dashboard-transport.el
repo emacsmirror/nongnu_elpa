@@ -975,9 +975,16 @@ Return (ok . RESPONSE) with the JSON `:body' filled in on a 2xx status, or
 \(error . MESSAGE) otherwise."
   (let ((status (plist-get response :status)))
     (if (and status (<= 200 status 299))
-        (cons 'ok (plist-put response :body
-                             (hermes-dashboard-transport--json-body
-                              (plist-get response :body-text))))
+        (condition-case err
+            (cons 'ok (plist-put response :body
+                                 (hermes-dashboard-transport--json-body
+                                  (plist-get response :body-text))))
+          (error
+           (cons 'error
+                 (format "Hermes dashboard returned a non-JSON body at %s (HTTP %s): %s"
+                         safe-url status
+                         (hermes-dashboard-transport--redact-secret
+                          (error-message-string err) secrets)))))
       (let ((detail (hermes-dashboard-transport--http-error-detail
                      (plist-get response :body-text))))
         (cons 'error
@@ -1049,8 +1056,18 @@ Return a promise of the response plist; SECRETS are redacted from any error."
            (cancel-timer timer)
            (let ((buffer (current-buffer)))
              (unwind-protect
-                 (hermes-dashboard-transport--settle-http-response
-                  promise status buffer safe-url secrets)
+                 ;; No signal may escape: the timeout timer is already
+                 ;; cancelled, so an error here would strand the promise.
+                 (condition-case err
+                     (hermes-dashboard-transport--settle-http-response
+                      promise status buffer safe-url secrets)
+                   (error
+                    (hermes--promise-reject
+                     promise
+                     (format "Hermes dashboard response error at %s: %s"
+                             safe-url
+                             (hermes-dashboard-transport--redact-secret
+                              (error-message-string err) secrets)))))
                (when (buffer-live-p buffer)
                  (kill-buffer buffer)))))
          nil t t)
