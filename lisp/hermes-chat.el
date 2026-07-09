@@ -701,6 +701,21 @@ re-submits any queued turn."
               '(clear-pending)
               '(drain))))
 
+(defun hermes-chat--turn-suppressed-effects (event status)
+  "Return the ordered effect list for a `suppressed-terminal' EVENT.
+STATUS is the merged header state.  Mirrors `hermes-chat--turn-done-effects'
+minus content copying: the turn was resumed in flight without a local
+assistant entry, so the reply placeholder keeps its text."
+  (list '(clear-tools)
+        (cons 'refresh-header status)
+        (cons 'clear-prompts (plist-get event :original))
+        (cons 'mark-status (plist-get event :settle-status))
+        '(drop-thinking)
+        (cons 'settle (plist-get event :settle-status))
+        '(finish)
+        '(clear-pending)
+        '(drain)))
+
 (defun hermes-chat--turn-error-effects (event status)
   "Return the ordered effect list for an `error' EVENT with header STATUS."
   (let ((estatus (hermes-chat--error-status event))
@@ -741,6 +756,11 @@ and `upsert-entry'.  Other types return (STATE)."
      (let ((status (hermes-chat--turn-status-state state event now)))
        (cons (hermes-chat--turn-state-put state :status-state status)
              (hermes-chat--turn-error-effects event status))))
+    ('suppressed-terminal
+     (let ((status (hermes-chat--turn-status-state
+                    state (plist-get event :header) now)))
+       (cons (hermes-chat--turn-state-put state :status-state status)
+             (hermes-chat--turn-suppressed-effects event status))))
     ((or 'progress 'tool)
      (cons state (delq nil (list (hermes-chat--turn-tool-effect event)
                                  (hermes-chat--turn-entry-effect event)))))
@@ -754,8 +774,9 @@ Header and tool effects always apply; transcript, message, and turn-lifecycle
 effects apply only when ASSISTANT-ID is non-nil, so a header-only reduction
 stays side-effect-light."
   (pcase effect
-    (`(refresh-header . ,status)
-     (setq hermes-chat--status-state status)
+    ;; The reduced :status-state is persisted by the boundary
+    ;; (`hermes-chat--run-turn-reducer'); this effect only redisplays.
+    (`(refresh-header . ,_status)
      (force-mode-line-update)
      (hermes-chat--notify-state-change))
     ('(clear-tools) (hermes-chat--clear-active-tools))
@@ -775,6 +796,8 @@ stays side-effect-light."
       (hermes-chat--assistant-done-content assistant-id content) t))
     (`(append-error ,content . ,status)
      (hermes-chat--append-assistant-content assistant-id content status))
+    (`(mark-status . ,status)
+     (hermes-chat--mark-assistant assistant-id status nil t))
     ('(drop-thinking) (hermes-chat--drop-duplicate-thinking assistant-id))
     (`(settle . ,status)
      (hermes-chat--settle-transport-entries assistant-id status))
@@ -788,14 +811,18 @@ stays side-effect-light."
        (hermes-chat--append-assistant-content assistant-id content 'streaming)))))
 
 (defun hermes-chat--run-turn-reducer (assistant-id event)
-  "Reduce EVENT and apply its effects in order for ASSISTANT-ID.
-Captures session identity first.  The reducer puts `refresh-header' in sequence
-so the boundary only replays effects, with no separate write-back."
+  "Reduce EVENT, persist the new turn state, and apply its effects in order.
+Captures session identity first.  ASSISTANT-ID scopes the transcript effects.
+The boundary persists NEW-STATE and replays the effects; it makes no decisions
+of its own."
   (hermes-chat--capture-session-identity event)
-  (let ((result (hermes-chat--turn-reduce
-                 (hermes-chat--turn-state :status-state hermes-chat--status-state)
-                 event (current-time))))
-    (dolist (effect (cdr result))
+  (pcase-let ((`(,new-state . ,effects)
+               (hermes-chat--turn-reduce
+                (hermes-chat--turn-state :status-state hermes-chat--status-state)
+                event (current-time))))
+    (setq hermes-chat--status-state
+          (hermes-chat--turn-state-get new-state :status-state))
+    (dolist (effect effects)
       (hermes-chat--apply-turn-effect assistant-id effect))))
 
 (defun hermes-chat--update-header-for-event (event)

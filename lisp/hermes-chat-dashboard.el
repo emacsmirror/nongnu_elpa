@@ -53,6 +53,7 @@
 (declare-function hermes-chat--unknown-event-content "hermes-chat" (event))
 (declare-function hermes-chat--update-header-for-event "hermes-chat" (event))
 (declare-function hermes-chat--render-turn-event "hermes-chat" (assistant-id event))
+(declare-function hermes-chat--run-turn-reducer "hermes-chat" (assistant-id event))
 (declare-function hermes-chat--handle-background-complete "hermes-chat" (event))
 (declare-function hermes-chat--insert-local-status "hermes-chat" (content &optional status))
 
@@ -224,17 +225,15 @@ FALLBACK-ID is the assistant id captured by the transport callback."
     (assistant-id event)
   "Settle suppressed dashboard terminal EVENT for ASSISTANT-ID.
 The event belongs to a resumed in-flight turn without a local assistant entry,
-so do not copy its final content into the unsubmitted retry placeholder."
-  (let ((status (hermes-chat--dashboard-suppressed-terminal-status event)))
-    (hermes-chat--clear-terminal-prompts event)
-    (hermes-chat--update-header-for-event
-     (hermes-chat--dashboard-suppressed-header-event event))
-    (hermes-chat--mark-assistant assistant-id status nil t)
-    (hermes-chat--settle-transport-entries assistant-id status)
-    (hermes-chat--dashboard-finish-assistant assistant-id)
-    (setq hermes-chat--pending-assistant-id nil
-          hermes-chat--process nil)
-    (hermes-chat--drain-queued-message)))
+so its final content must not reach the unsubmitted retry placeholder.  The
+turn lifecycle itself runs through the reducer's `suppressed-terminal' case so
+settlement order lives in one place."
+  (hermes-chat--run-turn-reducer
+   assistant-id
+   (list :type 'suppressed-terminal
+         :settle-status (hermes-chat--dashboard-suppressed-terminal-status event)
+         :header (hermes-chat--dashboard-suppressed-header-event event)
+         :original event)))
 
 (defun hermes-chat--stale-assistant-event-p (assistant-id)
   "Return non-nil when ASSISTANT-ID is older than the active pending turn."

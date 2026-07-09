@@ -3614,6 +3614,25 @@
           (should (equal (cdr (assq 'refresh-header (cdr result)))
                          expected-status)))))))
 
+(ert-deftest hermes-chat-turn-reduce-suppressed-terminal-settles-without-content ()
+  "A suppressed terminal event runs the done lifecycle minus content copying."
+  (let* ((original '(:type done :content "final text"))
+         (event (list :type 'suppressed-terminal
+                      :settle-status 'done
+                      :header '(:type done)
+                      :original original))
+         (result (hermes-chat--turn-reduce
+                  '(:status-state (:status running)) event '(1 2)))
+         (effects (cdr result)))
+    (should (equal (mapcar #'car effects)
+                   '(clear-tools refresh-header clear-prompts mark-status
+                     drop-thinking settle finish clear-pending drain)))
+    (should (eq (cdr (assq 'mark-status effects)) 'done))
+    (should (eq (cdr (assq 'clear-prompts effects)) original))
+    (should-not (assq 'mark-done effects))
+    (should (eq (plist-get (plist-get (car result) :status-state) :status)
+                'ready))))
+
 (ert-deftest hermes-chat-turn-reduce-status-stamps-clock-and-upserts ()
   "A non-session-info status stamps NOW, refreshes, and upserts; info skips upsert."
   (let* ((now '(7 7))
