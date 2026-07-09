@@ -1055,35 +1055,40 @@ Return a promise of the response plist; SECRETS are redacted from any error."
         (url-request-extra-headers headers)
         (url-request-data data)
         (promise (hermes--promise-make))
-        timer)
+        timer request-buffer)
     (setq timer (run-at-time
                  hermes-dashboard-transport-http-timeout nil
                  (lambda ()
                    (hermes--promise-reject
                     promise (format "Hermes dashboard request timed out at %s"
-                                    safe-url)))))
+                                    safe-url))
+                   ;; Also drop the abandoned connection: url.el would keep
+                   ;; the process and its buffer alive until its own cleanup.
+                   (when (buffer-live-p request-buffer)
+                     (kill-buffer request-buffer)))))
     (condition-case err
-        (url-retrieve
-         url
-         (lambda (status)
-           (cancel-timer timer)
-           (let ((buffer (current-buffer)))
-             (unwind-protect
-                 ;; No signal may escape: the timeout timer is already
-                 ;; cancelled, so an error here would strand the promise.
-                 (condition-case err
-                     (hermes-dashboard-transport--settle-http-response
-                      promise status buffer safe-url secrets)
-                   (error
-                    (hermes--promise-reject
-                     promise
-                     (format "Hermes dashboard response error at %s: %s"
-                             safe-url
-                             (hermes-dashboard-transport--redact-secret
-                              (error-message-string err) secrets)))))
-               (when (buffer-live-p buffer)
-                 (kill-buffer buffer)))))
-         nil t t)
+        (setq request-buffer
+              (url-retrieve
+               url
+               (lambda (status)
+                 (cancel-timer timer)
+                 (let ((buffer (current-buffer)))
+                   (unwind-protect
+                       ;; No signal may escape: the timeout timer is already
+                       ;; cancelled, so an error here would strand the promise.
+                       (condition-case err
+                           (hermes-dashboard-transport--settle-http-response
+                            promise status buffer safe-url secrets)
+                         (error
+                          (hermes--promise-reject
+                           promise
+                           (format "Hermes dashboard response error at %s: %s"
+                                   safe-url
+                                   (hermes-dashboard-transport--redact-secret
+                                    (error-message-string err) secrets)))))
+                     (when (buffer-live-p buffer)
+                       (kill-buffer buffer)))))
+               nil t t))
       (error
        (cancel-timer timer)
        (hermes--promise-reject
