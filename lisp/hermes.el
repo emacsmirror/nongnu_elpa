@@ -3,6 +3,8 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Version: 0.1.0
+;; URL: https://git.thanosapollo.org/emacs-hermes
 ;; Keywords: tools, convenience
 ;; Package-Requires: ((emacs "29.1") (keymap-popup "0.3.1") (websocket "1.15") (markdown-mode "2.6"))
 
