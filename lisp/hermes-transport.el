@@ -536,5 +536,421 @@ names a structured event type."
   (dolist (event (hermes-transport-parse-events raw event-name))
     (funcall callback event)))
 
+;;; Dashboard frame normalization
+
+;; Pure JSON-RPC frame -> event helpers for the dashboard gateway.  They
+;; moved here from hermes-dashboard-transport.el and keep their historical
+;; `hermes-dashboard-transport--' prefix so callers and tests stay stable.
+
+(defun hermes-dashboard-transport--frame-id (frame)
+  "Return FRAME's JSON-RPC id as a string, or nil."
+  (hermes-transport--scalar-string (hermes-transport--get frame 'id)))
+
+(defun hermes-dashboard-transport--frame-kind (frame)
+  "Return FRAME kind: response, error-response, event, or unknown."
+  (cond
+   ((and (hermes-dashboard-transport--frame-id frame)
+         (hermes-transport--get frame 'error))
+    'error-response)
+   ((hermes-dashboard-transport--frame-id frame) 'response)
+   ((equal (hermes-transport--get frame 'method) "event") 'event)
+   (t 'unknown)))
+
+(defun hermes-dashboard-transport--response-error-message (frame)
+  "Return JSON-RPC error message from FRAME."
+  (let ((error (hermes-transport--get frame 'error)))
+    (or (and (hermes-transport--object-p error)
+             (hermes-transport--scalar-string
+              (hermes-transport--get error 'message)))
+        (hermes-transport--scalar-string error)
+        "Hermes dashboard request failed")))
+
+(defun hermes-dashboard-transport--response-error-code (frame)
+  "Return JSON-RPC error code from FRAME, if present."
+  (let ((error (hermes-transport--get frame 'error)))
+    (and (hermes-transport--object-p error)
+         (hermes-transport--get error 'code))))
+
+(defun hermes-dashboard-transport--payload-text (payload)
+  "Return PAYLOAD's best display text, or nil."
+  (hermes-transport--scalar-string
+   (hermes-transport--get-any payload
+                              '(text rendered content delta message context
+                                     question prompt description command env_var
+                                     summary result_text result preview))))
+
+(defun hermes-dashboard-transport--event-base (type params payload)
+  "Return base event plist for TYPE, PARAMS, and PAYLOAD."
+  (let ((event (list :event type))
+        (session-id (hermes-transport--get params 'session_id)))
+    (when session-id
+      (setq event (plist-put event :session-id session-id)))
+    (when-let* ((request-id (hermes-transport--get payload 'request_id)))
+      (setq event (plist-put event :request-id request-id)))
+    event))
+
+(defun hermes-dashboard-transport--status-event (type params payload status content)
+  "Return a status event for TYPE, PARAMS, PAYLOAD, STATUS, and CONTENT."
+  (let ((event (plist-put
+                (hermes-dashboard-transport--event-base type params payload)
+                :type 'status)))
+    (when status
+      (setq event (plist-put event :status status)))
+    (when content
+      (setq event (plist-put event :content content)))
+    event))
+
+(defun hermes-dashboard-transport--background-complete-event (type params payload)
+  "Return a `background' event for `background.complete' TYPE/PARAMS/PAYLOAD.
+The event carries the originating `:task-id' and the agent's full response as
+`:content', so the chat layer can pair it with the launching task and render a
+persistent result entry instead of a transient status line."
+  (let ((event (plist-put
+                (hermes-dashboard-transport--event-base type params payload)
+                :type 'background))
+        (task-id (hermes-transport--scalar-string
+                  (hermes-transport--get payload 'task_id)))
+        (content (hermes-dashboard-transport--payload-text payload)))
+    (when task-id
+      (setq event (plist-put event :task-id task-id)))
+    (plist-put event :content (or content ""))))
+
+(defun hermes-dashboard-transport--tool-event (type params payload status)
+  "Return a tool event for TYPE, PARAMS, PAYLOAD, and STATUS."
+  (let ((event (plist-put
+                (hermes-dashboard-transport--event-base type params payload)
+                :type 'tool))
+        (preview (hermes-dashboard-transport--payload-text payload)))
+    (dolist (field '((tool_id . :tool-call-id) (name . :name)
+                     (args . :args) (args_text . :args)
+                     (context . :context) (summary . :summary)
+                     (result_text . :result-text) (result . :result)
+                     (duration_s . :duration) (duration . :duration)))
+      (when-let* ((value (hermes-transport--get payload (car field))))
+        (setq event (plist-put event (cdr field) value))))
+    (when preview
+      (setq event (plist-put event :preview preview)))
+    (plist-put event :status status)))
+
+(defun hermes-dashboard-transport--inline-diff-event (type params payload)
+  "Return a normalized inline diff event for TYPE/PARAMS/PAYLOAD, if any."
+  (when-let* ((content (hermes-transport--scalar-string
+			(hermes-transport--get payload 'inline_diff))))
+    (plist-put
+     (plist-put (hermes-dashboard-transport--event-base type params payload)
+                :type 'diff)
+     :content content)))
+
+(defun hermes-dashboard-transport--tool-complete-events (type params payload)
+  "Return normalized `tool.complete' events for TYPE/PARAMS/PAYLOAD."
+  (let ((events (list (hermes-dashboard-transport--tool-event
+                       type params payload "completed"))))
+    (if-let* ((diff (hermes-dashboard-transport--inline-diff-event
+                     type params payload)))
+        (append events (list diff))
+      events)))
+
+(defun hermes-dashboard-transport--payload-event (type params payload kind)
+  "Return a single transport event of KIND for TYPE/PARAMS/PAYLOAD."
+  (let ((event (plist-put
+                (hermes-dashboard-transport--event-base type params payload)
+                :type kind))
+        (content (hermes-dashboard-transport--payload-text payload)))
+    (if content
+        (plist-put event :content content)
+      event)))
+
+(defun hermes-dashboard-transport--message-complete-kind (payload)
+  "Return the transport kind for a `message.complete' PAYLOAD."
+  (let ((status (downcase
+                 (or (hermes-transport--scalar-string
+                      (hermes-transport--get payload 'status))
+                     "complete"))))
+    (if (member status '("complete" "completed" "done" "success" "ok"))
+        'done
+      'error)))
+
+(defun hermes-dashboard-transport--usage-plist (payload)
+  "Return an :input/:output token usage plist from PAYLOAD's usage, or nil.
+The backend nests per-turn token counts under PAYLOAD's `usage' object, like
+`hermes-dashboard-transport--context-plist' reads the context fields.  Only
+positive token counts are reported, so an empty turn shows no gauge."
+  (let* ((usage (hermes-transport--get payload 'usage))
+         (input (hermes-transport--get usage 'input))
+         (output (hermes-transport--get usage 'output)))
+    (and (or (and (numberp input) (> input 0))
+             (and (numberp output) (> output 0)))
+         (list :input input :output output))))
+
+(defun hermes-dashboard-transport--context-plist (payload)
+  "Return a context-window plist from PAYLOAD's usage, or nil.
+The plist holds :used, :max, and :percent for the model's context window."
+  (when-let* ((usage (hermes-transport--get payload 'usage))
+              (max (hermes-transport--get usage 'context_max))
+              ((and (numberp max) (> max 0))))
+    (list :used (or (hermes-transport--get usage 'context_used) 0)
+          :max max
+          :percent (or (hermes-transport--get usage 'context_percent) 0))))
+
+(defun hermes-dashboard-transport--message-complete-event (type params payload)
+  "Return a normalized `message.complete' event for TYPE/PARAMS/PAYLOAD."
+  (let* ((status (hermes-transport--scalar-string
+                  (hermes-transport--get payload 'status)))
+         (usage (hermes-dashboard-transport--usage-plist payload))
+         (context (hermes-dashboard-transport--context-plist payload))
+         (warning (hermes-transport--non-empty-string
+                   (hermes-transport--get payload 'warning)))
+         (event (hermes-dashboard-transport--payload-event
+                 type params payload
+                 (hermes-dashboard-transport--message-complete-kind payload))))
+    (when usage (setq event (plist-put event :usage usage)))
+    (when context (setq event (plist-put event :context context)))
+    (when status (setq event (plist-put event :status status)))
+    (when warning (setq event (plist-put event :warning warning)))
+    event))
+
+(defun hermes-dashboard-transport--prompt-title (prompt-type)
+  "Return human title for PROMPT-TYPE."
+  (pcase prompt-type
+    ("approval" "Approval requested")
+    ("clarify" "Clarification requested")
+    ("sudo" "Sudo password requested")
+    ("secret" "Secret requested")
+    ("terminal" "Terminal read requested")
+    (_ (format "%s requested" prompt-type))))
+
+(defun hermes-dashboard-transport--prompt-content (prompt-type payload)
+  "Return redacted display content for PROMPT-TYPE and PAYLOAD."
+  (let ((title (hermes-dashboard-transport--prompt-title prompt-type)))
+    (pcase prompt-type
+      ("approval"
+       (string-join
+        (delq nil (list title
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get payload 'description))
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get payload 'command))))
+        ": "))
+      ("secret"
+       (string-join
+        (delq nil (list title
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get payload 'prompt))
+                        (hermes-transport--scalar-string
+                         (hermes-transport--get payload 'env_var))))
+        ": "))
+      ("terminal"
+       (let ((start (hermes-transport--get payload 'start))
+             (count (hermes-transport--get payload 'count)))
+         (if (or start count)
+             (format "%s (start %s, count %s)" title
+                     (or start "0") (or count "all"))
+           title)))
+      (_
+       (or (hermes-dashboard-transport--payload-text payload) title)))))
+
+(defun hermes-dashboard-transport--copy-prompt-fields (event payload)
+  "Copy safe prompt request fields from PAYLOAD into EVENT."
+  (dolist (field '((question . :question) (choices . :choices)
+                   (prompt . :prompt) (env_var . :env-var)
+                   (command . :command) (description . :description)
+                   (pattern_key . :pattern-key)
+                   (pattern_keys . :pattern-keys)
+                   (start . :start) (count . :count)))
+    (when-let* ((value (hermes-transport--get payload (car field))))
+      (setq event (plist-put event (cdr field) value))))
+  (when (hermes-transport--field-present-p payload 'allow_permanent)
+    (setq event (plist-put event :allow-permanent
+                           (hermes-transport--get payload 'allow_permanent))))
+  event)
+
+(defun hermes-dashboard-transport--prompt-request-event (type params payload)
+  "Return a redacted prompt request status event for TYPE/PARAMS/PAYLOAD."
+  (let* ((prompt-type (car (split-string type "\\." t)))
+         (event (hermes-dashboard-transport--status-event
+                 type params payload "requested"
+                 (hermes-dashboard-transport--prompt-content
+                  prompt-type payload))))
+    (setq event (plist-put event :prompt-type prompt-type))
+    (setq event (plist-put event :prompt-request-p t))
+    (hermes-dashboard-transport--copy-prompt-fields event payload)))
+
+(defun hermes-dashboard-transport--payload-object (payload)
+  "Return PAYLOAD as an object suitable for normalization."
+  (cond
+   ((hermes-transport--object-p payload) payload)
+   ((null payload) nil)
+   (t `((content . ,payload)))))
+
+(defun hermes-dashboard-transport--session-info-content (payload)
+  "Return a compact display string for a `session.info' PAYLOAD."
+  (let ((model (hermes-transport--scalar-string
+                (hermes-transport--get payload 'model)))
+        (provider (hermes-transport--scalar-string
+                   (hermes-transport--get payload 'provider)))
+        (warning (hermes-transport--scalar-string
+                  (hermes-transport--get payload 'config_warning))))
+    (string-join
+     (delq nil
+           (list (cond
+                  ((and model provider)
+                   (format "Session ready: %s via %s" model provider))
+                  (model (format "Session ready: %s" model))
+                  (provider (format "Session ready via %s" provider))
+                  (t "Session ready"))
+                 warning))
+     " — ")))
+
+(defun hermes-dashboard-transport--session-info-event (type params payload)
+  "Return a normalized `session.info' status event for TYPE/PARAMS/PAYLOAD.
+Surface the session's model and profile (agent) name so the chat header can
+show them."
+  (let ((event (hermes-dashboard-transport--status-event
+                type params payload "ready"
+                (hermes-dashboard-transport--session-info-content payload)))
+        (model (hermes-transport--scalar-string
+                (hermes-transport--get payload 'model)))
+        (agent (hermes-transport--scalar-string
+                (hermes-transport--get payload 'profile_name)))
+        (context (hermes-dashboard-transport--context-plist payload)))
+    (when model (setq event (plist-put event :model model)))
+    (when agent (setq event (plist-put event :agent-name agent)))
+    (when context (setq event (plist-put event :context context)))
+    event))
+
+(defun hermes-dashboard-transport--generic-event (type params payload)
+  "Return generic normalized event for TYPE/PARAMS/PAYLOAD."
+  (let* ((object (or (hermes-dashboard-transport--payload-object payload) '()))
+         (session-id (hermes-transport--get params 'session_id))
+         (raw (if session-id
+                  (append object `((session_id . ,session-id)))
+                object)))
+    (list (hermes-transport-normalize-event raw type))))
+
+(defun hermes-dashboard-transport--tool-generating-event (type params payload)
+  "Return a header-only `thinking' event for a `tool.generating' PAYLOAD.
+TYPE and PARAMS supply event metadata.  The gateway emits `tool.generating'
+once when the model starts streaming a tool call, before the authoritative
+`tool.start'; surface it as transient header activity so a large tool payload
+does not look like a frozen screen.  It is intentionally not a transcript
+entry."
+  (let ((event (plist-put
+                (hermes-dashboard-transport--event-base type params payload)
+                :type 'thinking))
+        (name (hermes-transport--scalar-string
+               (hermes-transport--get payload 'name))))
+    (plist-put event :content
+               (if name (format "Calling %s" name) "Calling tool"))))
+
+(defun hermes-dashboard-transport--prettify-event-name (type)
+  "Return a human label for gateway event TYPE, e.g. \"Background Complete\"."
+  (let ((words (replace-regexp-in-string "[._]" " " (or type ""))))
+    (if (string-empty-p words) "Event" (capitalize words))))
+
+(defun hermes-dashboard-transport--display-fallback-event (type params payload)
+  "Return a status or progress event for an unclassified TYPE/PARAMS/PAYLOAD.
+The trailing phase of TYPE picks the channel and PAYLOAD's text -- or a label
+derived from TYPE when it carries none -- is the body, so any event the gateway
+adds still renders as a labelled line instead of an error."
+  (let* ((kind (if (member (hermes-transport--phase type)
+                           '("progress" "generating"))
+                   'progress
+                 'status))
+         (text (hermes-dashboard-transport--payload-text payload))
+         (event (plist-put
+                 (hermes-dashboard-transport--event-base type params payload)
+                 :type kind)))
+    (when (eq kind 'status)
+      (setq event (plist-put event :status "notification")))
+    (plist-put event :content
+               (or text (hermes-dashboard-transport--prettify-event-name type)))))
+
+(defun hermes-dashboard-transport--generic-display-event (type params payload)
+  "Return display events for an otherwise-unhandled TYPE/PARAMS/PAYLOAD.
+Try the structured classifier first so `subagent.*' and SSE-style events keep
+their rich typing; fall back to a labelled status/progress line for anything it
+cannot classify, so a newly added gateway event renders instead of surfacing as
+an Unknown error."
+  (let ((event (car (hermes-dashboard-transport--generic-event
+                     type params payload))))
+    (if (and event (not (eq (plist-get event :type) 'unknown)))
+        (list event)
+      (list (hermes-dashboard-transport--display-fallback-event
+             type params payload)))))
+
+(defun hermes-dashboard-transport--normalize-event-frame (frame)
+  "Return normalized transport events for JSON-RPC event FRAME."
+  (let* ((params (hermes-transport--get frame 'params))
+         (type (hermes-transport--scalar-string
+                (hermes-transport--get params 'type)))
+         (payload (or (hermes-transport--get params 'payload) '())))
+    (pcase type
+      ("gateway.ready"
+       (list (hermes-dashboard-transport--status-event
+              type params payload "ready" "Hermes dashboard connected")))
+      ("session.info"
+       (list (hermes-dashboard-transport--session-info-event
+              type params payload)))
+      ("message.delta"
+       (list (hermes-dashboard-transport--payload-event type params payload 'delta)))
+      ("message.complete"
+       (list (hermes-dashboard-transport--message-complete-event
+              type params payload)))
+      ("error"
+       (list (hermes-dashboard-transport--payload-event type params payload 'error)))
+      ("status.update"
+       (let ((status (hermes-transport--scalar-string
+                      (or (hermes-transport--get payload 'kind)
+                          (hermes-transport--get payload 'status)))))
+         (list (hermes-dashboard-transport--status-event
+                type params payload status
+                (hermes-dashboard-transport--payload-text payload)))))
+      ("tool.start"
+       (list (hermes-dashboard-transport--tool-event
+              type params payload "running")))
+      ("tool.complete"
+       (hermes-dashboard-transport--tool-complete-events
+        type params payload))
+      ("tool.generating"
+       (list (hermes-dashboard-transport--tool-generating-event
+              type params payload)))
+      ("reasoning.delta"
+       (list (hermes-dashboard-transport--payload-event
+              type params payload 'commentary)))
+      ;; `thinking.delta' carries the kawaii spinner status (face + verb), not
+      ;; real reasoning.  Surface it as a header-only `thinking' event so the
+      ;; live verb (e.g. "Pondering...") rotates in the status line; the chat
+      ;; layer never turns a `thinking' event into a transcript entry.
+      ("thinking.delta"
+       (list (hermes-dashboard-transport--payload-event
+              type params payload 'thinking)))
+      ((or "approval.request" "clarify.request" "sudo.request"
+           "secret.request" "terminal.read.request")
+       (list (hermes-dashboard-transport--prompt-request-event
+              type params payload)))
+      ;; Voice mode and skin changes are client-UI concerns, not chat transcript
+      ;; content; drop them so they do not render at all.
+      ((or "voice.status" "voice.transcript" "skin.changed")
+       nil)
+      ;; `review.summary' is a self-improvement notification; show it as a status
+      ;; line in the transcript rather than as an Unknown event.
+      ("review.summary"
+       (list (hermes-dashboard-transport--status-event
+              type params payload "notification"
+              (hermes-dashboard-transport--payload-text payload))))
+      ;; A `/btw' background task finishing in its own session.  Keep it as a
+      ;; dedicated `background' event so the chat layer renders a persistent
+      ;; result entry rather than letting it decay into a transient status line.
+      ("background.complete"
+       (list (hermes-dashboard-transport--background-complete-event
+              type params payload)))
+      (_
+       (if (and type (string-prefix-p "notification." type))
+           (list (hermes-dashboard-transport--status-event
+                  type params payload "notification"
+                  (hermes-dashboard-transport--payload-text payload)))
+         (hermes-dashboard-transport--generic-display-event
+          type params payload))))))
+
 (provide 'hermes-transport)
 ;;; hermes-transport.el ends here
