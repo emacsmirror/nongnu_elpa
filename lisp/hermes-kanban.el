@@ -1565,10 +1565,15 @@ A task with no active run is reported; a 404/409 surfaces as a message."
   "Maximum reconnect backoff in seconds for the live-events tail.")
 
 (defun hermes-kanban--live-indicator ()
-  "Return the board mode-line live-status indicator."
-  (if hermes-kanban--events-tail
-      (propertize " ●live" 'face 'success)
-    (propertize " ○" 'face 'shadow)))
+  "Return the board mode-line live-status indicator.
+Live is keyed on the socket, not the tail struct, so a tail waiting in the
+reconnect backoff shows as retrying rather than falsely live."
+  (cond
+   ((null hermes-kanban--events-tail)
+    (propertize " ○" 'face 'shadow))
+   ((hermes-kanban--events-tail-socket hermes-kanban--events-tail)
+    (propertize " ●live" 'face 'success))
+   (t (propertize " ◌retry" 'face 'warning))))
 
 (defun hermes-kanban--events-refresh (tail)
   "Refresh TAIL's board buffer in place when it is still live."
@@ -1625,23 +1630,29 @@ through the chat client's JSON-RPC handler."
   (hermes-kanban--events-reconnect tail))
 
 (defun hermes-kanban--events-connect (tail)
-  "Resolve the events URL for TAIL and open its socket."
+  "Resolve the events URL for TAIL and open its socket.
+A failed URL resolve or socket open re-enters the bounded backoff like a
+dropped connection, instead of permanently killing the tail."
   (hermes--promise-then
    (hermes-dashboard-transport-kanban-events-url-async
     :since (hermes-kanban--events-tail-cursor tail)
     :board (hermes-kanban--events-tail-slug tail))
    (lambda (url)
      (when (hermes-kanban--events-tail-active tail)
-       (setf (hermes-kanban--events-tail-socket tail)
-             (hermes-dashboard-transport-open-websocket
-              (plist-get url :url) (plist-get url :redacted-url)
-              (plist-get url :secrets)
-              :on-message (lambda (text)
-                            (hermes-kanban--events-handle-frame tail text))
-              :on-close (lambda () (hermes-kanban--events-on-down tail))
-              :on-error (lambda (msg)
-                          (hermes-kanban--events-on-down tail msg))))))
-   (lambda (reason) (message "Hermes kanban live: %s" reason))))
+       (condition-case err
+           (setf (hermes-kanban--events-tail-socket tail)
+                 (hermes-dashboard-transport-open-websocket
+                  (plist-get url :url) (plist-get url :redacted-url)
+                  (plist-get url :secrets)
+                  :on-message (lambda (text)
+                                (hermes-kanban--events-handle-frame tail text))
+                  :on-close (lambda () (hermes-kanban--events-on-down tail))
+                  :on-error (lambda (msg)
+                              (hermes-kanban--events-on-down tail msg))))
+         (error (hermes-kanban--events-on-down
+                 tail (error-message-string err))))))
+   (lambda (reason)
+     (hermes-kanban--events-on-down tail (format "%s" reason)))))
 
 (defun hermes-kanban--events-disconnect (tail)
   "Tear down TAIL: stop reconnecting, cancel timers, and close the socket."

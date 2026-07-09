@@ -938,13 +938,29 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
       (should-not scheduled))))
 
 (ert-deftest hermes-kanban-live-indicator-reflects-tail-state ()
-  "The indicator is shadow when off and success when a tail is live."
+  "The indicator is shadow when off, warning while retrying, success when live."
   (with-temp-buffer
     (should (eq 'shadow (get-text-property 0 'face (hermes-kanban--live-indicator))))
     (setq-local hermes-kanban--events-tail (hermes-kanban--events-tail-create))
     (let ((ind (hermes-kanban--live-indicator)))
+      (should (string-match-p "retry" ind))
+      (should (eq 'warning (get-text-property 1 'face ind))))
+    (setf (hermes-kanban--events-tail-socket hermes-kanban--events-tail) 'ws)
+    (let ((ind (hermes-kanban--live-indicator)))
       (should (string-match-p "live" ind))
       (should (eq 'success (get-text-property 1 'face ind))))))
+
+(ert-deftest hermes-kanban-events-connect-failure-schedules-reconnect ()
+  "A failed URL resolve re-enters the reconnect backoff instead of dying."
+  (let (scheduled
+        (tail (hermes-kanban--events-tail-create :buffer (current-buffer))))
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (delay &rest _) (push delay scheduled) 'timer))
+              ((symbol-function
+                'hermes-dashboard-transport-kanban-events-url-async)
+               (lambda (&rest _) (hermes--promise-rejected "boom"))))
+      (hermes-kanban--events-connect tail)
+      (should (equal scheduled '(1))))))
 
 (ert-deftest hermes-kanban-events-reconnect-backs-off-and-stops-when-dead ()
   "Reconnect doubles the backoff, never double-schedules, and stops if dead."
