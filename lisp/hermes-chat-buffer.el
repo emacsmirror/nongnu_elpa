@@ -64,7 +64,6 @@ without each one repeating the liveness guard."
 (declare-function hermes-chat--unknown-event-content "hermes-chat-format" (event))
 
 (declare-function hermes-chat--clear-ansi-fragment "hermes-chat" (key))
-(declare-function hermes-chat--diff-blocks "hermes-chat" (content))
 (declare-function hermes-chat--entry-expanded-p "hermes-chat" (entry))
 (declare-function hermes-chat--entry-with "hermes-chat" (entry &rest props))
 (declare-function hermes-chat--header-line "hermes-chat" ())

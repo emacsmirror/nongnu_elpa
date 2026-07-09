@@ -29,6 +29,8 @@
 
 ;;; Code:
 
+(require 'diff-mode)
+(require 'markdown-mode)
 (require 'subr-x)
 (require 'hermes-transport)
 
@@ -368,6 +370,165 @@ detail is kept rather than replaced by a bare \"completed\" line."
      (error (format "%s  %s" head error))
      (duration (format "%s  %s" head duration))
      (t head))))
+
+;;; Diff detection
+
+(defun hermes-chat--fenced-diff-blocks ()
+  "Return fenced ```diff/```patch blocks as (START END TEXT) zero-based.
+START and END span the whole fenced block to replace; TEXT is its inner diff."
+  (let ((case-fold-search t)
+        blocks)
+    (goto-char (point-min))
+    (while (re-search-forward "^```[ \t]*\\(?:diff\\|patch\\)\\(?:[ \t].*\\)?\n" nil t)
+      (let ((block-start (match-beginning 0))
+            (inner-start (point)))
+        (if (re-search-forward "^```[ \t]*$" nil t)
+            (push (list (1- block-start)
+                        (1- (min (point-max) (1+ (line-end-position))))
+                        (buffer-substring-no-properties inner-start
+                                                        (match-beginning 0)))
+                  blocks)
+          (push (list (1- block-start) (1- (point-max))
+                      (buffer-substring-no-properties inner-start (point-max)))
+                blocks))))
+    blocks))
+
+(defun hermes-chat--unified-diff-hunk-counts ()
+  "Return old/new line counts for a unified diff hunk at point."
+  (when (looking-at diff-hunk-header-re-unified)
+    (cons (if-let* ((count (match-string 2)))
+              (string-to-number count)
+            1)
+          (if-let* ((count (match-string 4)))
+              (string-to-number count)
+            1))))
+
+(defun hermes-chat--unified-diff-hunk-header-p ()
+  "Return non-nil if point is at a unified diff hunk header."
+  (hermes-chat--unified-diff-hunk-counts))
+
+(defun hermes-chat--unified-diff-header-line-p ()
+  "Return non-nil if point is at unified diff file metadata."
+  (looking-at
+   (concat "^\\(?:diff --git \\|index \\|old mode \\|new mode \\|"
+           "new file mode \\|deleted file mode \\|similarity index \\|"
+           "dissimilarity index \\|rename from \\|rename to \\|"
+           "copy from \\|copy to \\|--- \\|\\+\\+\\+ \\)")))
+
+(defun hermes-chat--unified-diff-body-line-counts ()
+  "Return old/new line counts for the current unified diff body line."
+  (cond
+   ((looking-at "^\\\\ No newline at end of file") '(0 . 0))
+   ((looking-at "^\\+") '(0 . 1))
+   ((looking-at "^-") '(1 . 0))
+   ((looking-at "^ ") '(1 . 1))
+   ((looking-at "^$") '(1 . 1))))
+
+(defun hermes-chat--consume-unified-diff-hunk ()
+  "Move over a unified diff hunk at point.
+Return non-nil when the consumed hunk contains an added or removed line."
+  (let ((start (point)))
+    (when-let* ((counts (hermes-chat--unified-diff-hunk-counts)))
+      (let ((old-left (car counts))
+            (new-left (cdr counts))
+            saw-change valid)
+        (forward-line 1)
+        (setq valid t)
+        (while (and valid
+                    (not (and (<= old-left 0) (<= new-left 0)))
+                    (not (eobp)))
+          (if-let* ((line-counts
+                     (hermes-chat--unified-diff-body-line-counts)))
+              (let ((old-count (car line-counts))
+                    (new-count (cdr line-counts)))
+                (if (or (> old-count old-left)
+                        (> new-count new-left))
+                    (setq valid nil)
+                  (when (or (and (= old-count 1) (= new-count 0))
+                            (and (= old-count 0) (= new-count 1)))
+                    (setq saw-change t))
+                  (setq old-left (- old-left old-count)
+                        new-left (- new-left new-count))
+                  (forward-line 1)))
+            (setq valid nil)))
+        (while (and valid
+                    (not (eobp))
+                    (looking-at "^\\\\ No newline at end of file"))
+          (forward-line 1))
+        (if (and valid saw-change)
+            t
+          (goto-char start)
+          nil)))))
+
+(defun hermes-chat--unified-diff-range-at-point ()
+  "Return unified diff range at point as zero-based offsets, or nil."
+  (let ((start (point)) saw-hunk saw-change)
+    (when (or (hermes-chat--unified-diff-header-line-p)
+              (hermes-chat--unified-diff-hunk-header-p))
+      (while (and (not saw-hunk)
+                  (hermes-chat--unified-diff-header-line-p))
+        (forward-line 1))
+      (let ((keep-scanning t))
+        (while (and keep-scanning
+                    (hermes-chat--unified-diff-hunk-header-p))
+          (if (hermes-chat--consume-unified-diff-hunk)
+              (setq saw-hunk t
+                    saw-change t)
+            (setq keep-scanning nil))))
+      (when (and saw-hunk saw-change (< start (point)))
+        (hermes-chat--offset-range start (point))))))
+
+(defun hermes-chat--inline-diff-blocks ()
+  "Return inline unified diff blocks as (START END TEXT) zero-based."
+  (let (blocks)
+    (goto-char (point-min))
+    (while (not (eobp))
+      (if-let* ((range (hermes-chat--unified-diff-range-at-point)))
+          (progn
+            (push (list (car range) (cdr range)
+                        (buffer-substring-no-properties
+                         (1+ (car range)) (1+ (cdr range))))
+                  blocks)
+            (goto-char (1+ (cdr range))))
+        (forward-line 1)))
+    blocks))
+
+(defun hermes-chat--merge-diff-blocks (blocks)
+  "Return BLOCKS sorted by start, dropping empty and overlapping ranges."
+  (let ((sorted (sort (copy-sequence blocks)
+                      (lambda (left right) (< (nth 0 left) (nth 0 right)))))
+        result last-end)
+    (dolist (block sorted (nreverse result))
+      (when (and (< (nth 0 block) (nth 1 block))
+                 (or (null last-end) (>= (nth 0 block) last-end)))
+        (push block result)
+        (setq last-end (nth 1 block))))))
+
+(defun hermes-chat--diff-blocks (content)
+  "Return diff blocks in CONTENT as (START END TEXT), sorted and non-overlapping.
+A fenced block subsumes the inline diff it contains, so each diff yields one
+block spanning the whole region to replace with a link."
+  (with-temp-buffer
+    (insert content)
+    (hermes-chat--merge-diff-blocks
+     (append (hermes-chat--fenced-diff-blocks)
+             (hermes-chat--inline-diff-blocks)))))
+
+;;; Markdown fontification
+
+(defun hermes-chat--fontify-markdown-string (text)
+  "Return TEXT fontified with `markdown-mode', or TEXT on failure.
+Markup markers (* _ ` # ...) keep their faces but are never hidden, so the raw
+markdown stays visible and easy to copy."
+  (condition-case nil
+      (with-temp-buffer
+        (insert text)
+        (delay-mode-hooks (markdown-mode))
+        (font-lock-mode 1)
+        (font-lock-ensure (point-min) (point-max))
+        (remove-text-properties (point-min) (point-max) '(invisible nil))
+        (buffer-string))
+    (error text)))
 
 (provide 'hermes-chat-format)
 ;;; hermes-chat-format.el ends here
