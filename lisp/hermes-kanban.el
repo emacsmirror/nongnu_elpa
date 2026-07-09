@@ -460,7 +460,7 @@ the board detail buffer shows the most recently created tasks at the top."
   "b" ("Back to boards" hermes-kanban-boards)
   :group "Edit task"
   "e" ("Edit title/priority" hermes-kanban-edit)
-  "a" ("Assign / reassign" hermes-kanban-assign)
+  "a" ("Assign / reassign" hermes-kanban-change-assignee)
   "s" ("Set status" hermes-kanban-set-status)
   "c" ("Comment" hermes-kanban-comment)
   :group "Board"
@@ -660,33 +660,6 @@ and an absent branch or run id is omitted."
      "\n## Description\n\n"
      (or body "— no description —")
      "\n")))
-
-(defun hermes-kanban--format-comments (comments)
-  "Return COMMENTS as a display string, or an empty string."
-  (if (null comments) ""
-    (concat "\nComments:\n"
-            (mapconcat
-             (lambda (comment)
-               (format "  [%s] %s: %s"
-                       (hermes-kanban--format-time
-                        (hermes-transport--get comment 'created_at))
-                       (hermes-transport--display-field comment 'author)
-                       (hermes-transport--display-field comment 'body)))
-             comments "\n")
-            "\n")))
-
-(defun hermes-kanban--format-events (events)
-  "Return EVENTS as a display string, or an empty string."
-  (if (null events) ""
-    (concat "\nEvents:\n"
-            (mapconcat
-             (lambda (event)
-               (format "  [%s] %s"
-                       (hermes-kanban--format-time
-                        (hermes-transport--get event 'created_at))
-                       (hermes-transport--display-field event 'kind)))
-             events "\n")
-            "\n")))
 
 (defun hermes-kanban--format-comment-row (comment)
   "Return COMMENT as one Markdown row."
@@ -1234,26 +1207,6 @@ With IN-PLACE non-nil, refresh without re-displaying (used by revert)."
      (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
                          `((title . ,title) (priority . ,priority))
                          (hermes-kanban--board-query))
-     (lambda (_) (hermes-kanban--render-board slug name)))))
-
-(defun hermes-kanban-assign ()
-  "Assign or reassign the task at point.
-Running tasks are reassigned with a reclaim; others are assigned directly."
-  (interactive)
-  (let* ((id (hermes-kanban--id-at-point))
-         (entry (tabulated-list-get-entry))
-         (status (hermes-kanban--entry-status entry))
-         (who (completing-read "Assignee (empty to unassign): "
-                               hermes-kanban--assignees nil nil))
-         (slug hermes-kanban--slug)
-         (name hermes-kanban--name)
-         (query (hermes-kanban--board-query)))
-    (hermes-kanban--then
-     (if (equal status "running")
-         (hermes-kanban--api "POST" (hermes-kanban--task-path id "/reassign")
-                             `((profile . ,who) (reclaim_first . t)) query)
-       (hermes-kanban--api "PATCH" (hermes-kanban--task-path id)
-                           `((assignee . ,who)) query))
      (lambda (_) (hermes-kanban--render-board slug name)))))
 
 (defconst hermes-kanban--statuses
