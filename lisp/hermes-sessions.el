@@ -85,25 +85,35 @@
                      (hermes-transport--display-field session 'source)))))
    sessions))
 
-(defun hermes-sessions--revert (&rest _)
-  "Refresh the Hermes session list in place."
-  (hermes-sessions--refresh))
+(defun hermes-sessions--result-rows (result)
+  "Return `tabulated-list' entries for a `session.list' RESULT."
+  (hermes-sessions--rows (hermes-transport--get result 'sessions)))
 
-(defvar-keymap hermes-sessions-mode-map
-  :doc "Keymap for `hermes-sessions-mode'."
-  :parent tabulated-list-mode-map
-  "RET" #'hermes-sessions-open
-  "v" #'hermes-sessions-view
-  "r" #'hermes-sessions-rename
-  "d" #'hermes-sessions-delete)
+(defun hermes-sessions--record-result (result)
+  "Cache RESULT's sessions by durable id for the row commands."
+  (setq hermes-sessions--session-map
+        (hermes-sessions--sessions-by-id
+         (hermes-transport--get result 'sessions))))
 
-(define-derived-mode hermes-sessions-mode tabulated-list-mode "Hermes Sessions"
-  "Major mode listing resumable Hermes dashboard sessions."
-  :interactive nil
-  (setq tabulated-list-format
-        [("Session" 22 t) ("Title" 40 t) ("Msgs" 6 t) ("Source" 12 t)])
-  (setq-local revert-buffer-function #'hermes-sessions--revert)
-  (tabulated-list-init-header))
+;;;###autoload (autoload 'hermes-list-sessions "hermes-sessions" nil t)
+(hermes-define-list-browser sessions
+  :title "Hermes Sessions"
+  :buffer "*Hermes Sessions*"
+  :command hermes-list-sessions
+  :doc "Major mode listing resumable Hermes dashboard sessions."
+  :command-doc "List resumable Hermes dashboard sessions in a browser buffer.
+Reuses a live chat connection when one exists; otherwise connects a transient
+client just for the listing."
+  :columns [("Session" 22 t) ("Title" 40 t) ("Msgs" 6 t) ("Source" 12 t)]
+  :fetch (lambda (client)
+           (hermes-dashboard-transport-call-fn
+            #'hermes-dashboard-transport-session-list client))
+  :rows #'hermes-sessions--result-rows
+  :on-result #'hermes-sessions--record-result
+  :keys ("RET" #'hermes-sessions-open
+         "v" #'hermes-sessions-view
+         "r" #'hermes-sessions-rename
+         "d" #'hermes-sessions-delete))
 
 (defvar-keymap hermes-session-detail-mode-map
   :doc "Keymap for `hermes-session-detail-mode'."
@@ -116,27 +126,6 @@
 (define-derived-mode hermes-session-detail-mode special-mode "Hermes Session"
   "Major mode showing one Hermes session's history."
   :interactive nil)
-
-(defun hermes-sessions--render (sessions)
-  "Display SESSIONS in the Hermes sessions buffer."
-  (with-current-buffer (get-buffer-create "*Hermes Sessions*")
-    (unless (derived-mode-p 'hermes-sessions-mode)
-      (hermes-sessions-mode))
-    (setq hermes-sessions--session-map
-          (hermes-sessions--sessions-by-id sessions))
-    (setq tabulated-list-entries (hermes-sessions--rows sessions))
-    (tabulated-list-print t)))
-
-(defun hermes-sessions--refresh (&optional display)
-  "Fetch the session list and render it.
-DISPLAY pops the buffer when non-nil; revert refreshes in place without it."
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes-dashboard-transport-call-fn
-      #'hermes-dashboard-transport-session-list client))
-   (lambda (result)
-     (hermes-sessions--render (hermes-transport--get result 'sessions))
-     (when display (pop-to-buffer "*Hermes Sessions*")))))
 
 (defun hermes-sessions--session-from-entry (id entry)
   "Return a session alist from row ID and tabulated ENTRY."
@@ -471,14 +460,6 @@ id it returns."
            (message "Hermes: deleted session %s" id)
            (hermes-sessions--after-delete origin id)))
       (message "Hermes: delete cancelled"))))
-
-;;;###autoload
-(defun hermes-list-sessions ()
-  "List resumable Hermes dashboard sessions in a browser buffer.
-Reuses a live chat connection when one exists; otherwise connects a transient
-client just for the listing."
-  (interactive)
-  (hermes-sessions--refresh t))
 
 (provide 'hermes-sessions)
 ;;; hermes-sessions.el ends here

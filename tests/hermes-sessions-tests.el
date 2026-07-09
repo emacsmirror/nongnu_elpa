@@ -5,6 +5,10 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(defun hermes-sessions-test--render (sessions)
+  "Render SESSIONS through the browser's `session.list' result shape."
+  (hermes-sessions--render `((sessions . ,sessions))))
+
 (ert-deftest hermes-sessions-rows-from-session-list ()
   "Session rows map the `session.list' result fields to columns."
   (let* ((rows (hermes-sessions--rows
@@ -98,7 +102,7 @@
                  (funcall (plist-get args :resolve) history-result))))
       (unwind-protect
           (progn
-            (hermes-sessions--render
+            (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
@@ -166,7 +170,7 @@
                  (setq shown (apply #'format fmt args)))))
       (unwind-protect
           (progn
-            (hermes-sessions--render
+            (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
@@ -195,7 +199,7 @@
                           '((pending . :json-false) (title . "Renamed"))))))
       (unwind-protect
           (progn
-            (hermes-sessions--render
+            (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
@@ -223,7 +227,7 @@
                         '((pending . :json-false) (title . "Renamed"))))))
     (unwind-protect
         (progn
-          (hermes-sessions--render
+          (hermes-sessions-test--render
            '(((id . "s1") (title . "First") (message_count . 2))))
           (hermes-sessions--render-detail
            '((id . "s1") (title . "First") (message_count . 2))
@@ -248,7 +252,7 @@
                (lambda (&rest _) (setq sent t))))
       (unwind-protect
           (progn
-            (hermes-sessions--render
+            (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
@@ -275,7 +279,7 @@
                  (setq shown (apply #'format fmt args)))))
       (unwind-protect
           (progn
-            (hermes-sessions--render
+            (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
@@ -304,7 +308,7 @@
                           '((deleted . "s1"))))))
       (unwind-protect
           (progn
-            (hermes-sessions--render
+            (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (hermes-sessions--render-detail
              '((id . "s1") (title . "First") (message_count . 2))
@@ -331,7 +335,7 @@
                (lambda (&rest _) (setq deleted t))))
       (unwind-protect
           (progn
-            (hermes-sessions--render
+            (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
@@ -358,7 +362,7 @@
                  (setq shown (apply #'format fmt args)))))
       (unwind-protect
           (progn
-            (hermes-sessions--render
+            (hermes-sessions-test--render
              '(((id . "s1") (title . "First") (message_count . 2))))
             (with-current-buffer "*Hermes Sessions*"
               (goto-char (point-min))
