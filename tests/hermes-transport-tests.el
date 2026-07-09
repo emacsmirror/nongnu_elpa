@@ -161,6 +161,15 @@
       (should-not (string-match-p "secret-token" message))
       (should-not (string-match-p "secret-fragment" message)))))
 
+(ert-deftest hermes-transport-dashboard-normalize-base-url-empty-is-nil ()
+  "Empty or whitespace-only URLs normalize to nil, not \"\"."
+  (should-not (hermes-dashboard-transport--normalize-base-url nil))
+  (should-not (hermes-dashboard-transport--normalize-base-url ""))
+  (should-not (hermes-dashboard-transport--normalize-base-url "   "))
+  (should (equal (hermes-dashboard-transport--normalize-base-url
+                  "https://dash.example/hermes/")
+                 "https://dash.example/hermes")))
+
 (ert-deftest hermes-transport-dashboard-parses-set-cookie-headers ()
   (let ((buffer (generate-new-buffer " *hermes-test-http*")))
     (unwind-protect
