@@ -42,6 +42,9 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
   accessors (`--get`, `--field`, `--field-present-p`, `--scalar-string`,
   `--non-empty-string`) and the `hermes-transport--normalize-*` family that turn
   a raw gateway frame into a normalized event plist. No I/O lives here.
+- `hermes-transport-cli.el` -- the sanctioned `hermes chat -Q -q` one-shot
+  subprocess fallback (`hermes-transport-send`) and the
+  `hermes-transport-send-function` seam. Smoke-test transport only.
 - `hermes-dashboard-transport.el` -- the side-effecting transport: WebSocket
   connect + async auth handshake, REST over async `url-retrieve`/promises, the
   `hermes-dashboard-transport-define-rpc` macro that generates the JSON-RPC

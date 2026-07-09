@@ -31,6 +31,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'hermes-transport)
+(require 'hermes-transport-cli)
 (require 'hermes-dashboard-transport)
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)

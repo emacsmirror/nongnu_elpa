@@ -107,9 +107,11 @@
 			    :content "Starting Hermes"))))))
 
 (ert-deftest hermes-transport-builds-quiet-chat-command ()
-  (let ((hermes-command "hermes"))
-    (should (equal (hermes-transport--command "hello")
-                   '("hermes" "chat" "-Q" "-q" "hello")))))
+  (cl-letf (((symbol-function 'executable-find) #'ignore)
+            ((symbol-function 'file-executable-p) #'ignore))
+    (let ((hermes-command "hermes"))
+      (should (equal (hermes-transport--command "hello")
+                     '("hermes" "chat" "-Q" "-q" "hello"))))))
 
 (ert-deftest hermes-transport-dashboard-builds-command ()
   (let* ((hermes-dashboard-transport-command "hermes")
@@ -117,9 +119,11 @@
                "secret-token" '("PATH=/bin")))
          (start-event (hermes-dashboard-transport--start-event
                        "127.0.0.1" 4567 "secret-token")))
-    (should (equal (hermes-dashboard-transport--command "127.0.0.1" 4567)
-                   '("hermes" "dashboard" "--no-open" "--tui" "--isolated"
-                     "--host" "127.0.0.1" "--port" "4567")))
+    (cl-letf (((symbol-function 'executable-find) #'ignore)
+              ((symbol-function 'file-executable-p) #'ignore))
+      (should (equal (hermes-dashboard-transport--command "127.0.0.1" 4567)
+                     '("hermes" "dashboard" "--no-open" "--tui" "--isolated"
+                       "--host" "127.0.0.1" "--port" "4567"))))
     (should (member "PATH=/bin" env))
     (should (member "HERMES_DASHBOARD_SESSION_TOKEN=secret-token" env))
     (should (member "HERMES_DASHBOARD_TUI=1" env))

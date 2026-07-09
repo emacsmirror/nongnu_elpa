@@ -21,8 +21,9 @@
 
 ;;; Commentary:
 
-;; Small asynchronous transport boundary for hermes-el.  UI code calls
-;; `hermes-transport-send-function', which may be rebound in tests or by users.
+;; Pure event/model normalization for hermes-el: shared field accessors and
+;; the normalize family that turn a raw gateway frame into an event plist.
+;; No I/O lives here; the CLI fallback subprocess is `hermes-transport-cli'.
 
 ;;; Code:
 
@@ -33,22 +34,6 @@
 (defconst hermes-transport-event-types
   '(delta done error status tool progress commentary diff unknown)
   "Event types emitted by `hermes-transport-normalize-event'.")
-
-(defun hermes-transport-default-command ()
-  "Return the preferred Hermes Agent executable path."
-  (or (executable-find "hermes")
-      (let ((local (expand-file-name "~/.local/bin/hermes")))
-        (and (file-executable-p local) local))
-      "hermes"))
-
-(defcustom hermes-command (hermes-transport-default-command)
-  "Hermes Agent command used by the default CLI transport."
-  :type 'string
-  :group 'hermes)
-
-(defun hermes-transport--command (prompt)
-  "Return the Hermes CLI command for PROMPT."
-  (list hermes-command "chat" "-Q" "-q" prompt))
 
 (defun hermes-transport--plist-p (object)
   "Return non-nil if OBJECT is a property list."
@@ -550,76 +535,6 @@ names a structured event type."
   "Normalize RAW/EVENT-NAME and invoke CALLBACK for each event."
   (dolist (event (hermes-transport-parse-events raw event-name))
     (funcall callback event)))
-
-(defun hermes-transport--process-output (process)
-  "Return PROCESS buffer contents, or an empty string."
-  (let ((buffer (process-buffer process)))
-    (if (buffer-live-p buffer)
-        (with-current-buffer buffer
-          (buffer-substring-no-properties (point-min) (point-max)))
-      "")))
-
-(defun hermes-transport--start-event ()
-  "Return fallback status event emitted before Hermes process startup."
-  (list :type 'status
-        :event "run.started"
-        :status "running"
-        :content "Starting Hermes"))
-
-(defun hermes-transport-send (prompt callback)
-  "Send PROMPT to Hermes asynchronously and report events to CALLBACK.
-
-CALLBACK receives plist events:
-
-  (:type delta :content STRING)  output chunk arrived
-  (:type done)                   process exited successfully
-  (:type error :content STRING)  process failed
-
-Structured transports may additionally emit `status', `progress', `tool',
-`commentary', and optional `diff' events through
-`hermes-transport-normalize-event'.
-
-Return the process object created by `make-process'."
-  (hermes-transport--emit callback (hermes-transport--start-event))
-  (let ((buffer (generate-new-buffer " *hermes-transport*")))
-    (make-process
-     :name "hermes-chat"
-     :buffer buffer
-     :command (hermes-transport--command prompt)
-     :connection-type 'pipe
-     :noquery t
-     :filter (lambda (process chunk)
-               (when (buffer-live-p (process-buffer process))
-                 (with-current-buffer (process-buffer process)
-                   (goto-char (point-max))
-                   (insert chunk)))
-               (unless (string-empty-p chunk)
-                 (hermes-transport--emit
-                  callback (list :type 'delta :content chunk))))
-     :sentinel (lambda (process event)
-                 (when (memq (process-status process) '(exit signal))
-                   (unwind-protect
-                       (if (zerop (process-exit-status process))
-                           (hermes-transport--emit callback '(:type done))
-                         (let ((message (string-trim
-                                         (or (hermes-transport--process-output
-                                              process)
-                                             event))))
-                           (hermes-transport--emit
-                            callback
-                            (list :type 'error
-                                  :content (if (string-empty-p message)
-                                               event
-                                             message)))))
-                     (when (buffer-live-p (process-buffer process))
-                       (kill-buffer (process-buffer process)))))))))
-
-(defcustom hermes-transport-send-function #'hermes-transport-send
-  "Function used to send a prompt to Hermes.
-The function is called with PROMPT and CALLBACK arguments.  CALLBACK receives
-transport event plists as documented by `hermes-transport-send'."
-  :type 'function
-  :group 'hermes)
 
 (provide 'hermes-transport)
 ;;; hermes-transport.el ends here

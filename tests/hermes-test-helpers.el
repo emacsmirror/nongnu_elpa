@@ -56,6 +56,7 @@
 (require 'hermes-chat)
 
 (require 'hermes-transport)
+(require 'hermes-transport-cli)
 
 (require 'hermes-dashboard-transport)
 

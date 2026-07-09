@@ -47,8 +47,10 @@
   "Dashboard/TUI transport for Hermes Agent."
   :group 'hermes)
 
-(defcustom hermes-dashboard-transport-command (hermes-transport-default-command)
-  "Hermes Agent command used to start the dashboard transport."
+(defcustom hermes-dashboard-transport-command "hermes"
+  "Hermes Agent command used to start the dashboard transport.
+Resolved at spawn time: a bare name is searched on variable `exec-path',
+with ~/.local/bin/hermes as a fallback."
   :type 'string)
 
 (define-obsolete-variable-alias 'hermes-dashboard-transport-remote-url
@@ -299,9 +301,13 @@ buffer attached to the same dashboard endpoint.")
 
 (defun hermes-dashboard-transport--command (host port &optional command)
   "Return dashboard startup argv for HOST, PORT, and optional COMMAND."
-  (list (or command hermes-dashboard-transport-command)
-        "dashboard" "--no-open" "--tui" "--isolated"
-        "--host" host "--port" (number-to-string port)))
+  (let ((program (or command hermes-dashboard-transport-command)))
+    (list (or (executable-find program)
+              (let ((local (expand-file-name "~/.local/bin/hermes")))
+                (and (equal program "hermes") (file-executable-p local) local))
+              program)
+          "dashboard" "--no-open" "--tui" "--isolated"
+          "--host" host "--port" (number-to-string port))))
 
 (defun hermes-dashboard-transport--env-name (entry)
   "Return ENTRY's environment variable name."

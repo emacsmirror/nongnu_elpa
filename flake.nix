@@ -28,6 +28,7 @@
           elispFiles = [
             "lisp/hermes-promise.el"
             "lisp/hermes-transport.el"
+            "lisp/hermes-transport-cli.el"
             "lisp/hermes-dashboard-transport.el"
             "lisp/hermes-chat-format.el"
             "lisp/hermes-chat-buffer.el"
