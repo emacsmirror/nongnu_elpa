@@ -537,6 +537,43 @@
         (should-not scheduled)
         (should-not (hermes-dashboard-transport-client-reconnecting-p c))))))
 
+(ert-deftest hermes-dashboard-transport-stale-scheduled-reconnect-is-dropped ()
+  "A reconnect attempt scheduled before a stop does not fire afterwards."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (hermes-dashboard-transport-reconnect-max-attempts 3)
+         (hermes-dashboard-transport-reconnect-base-delay 1)
+         fired
+         (hermes-dashboard-transport-schedule-function
+          (lambda (_delay fn &rest args) (push (cons fn args) fired) 'timer)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _)
+                 (make-hermes-dashboard-transport-client :websocket 'ws)))
+              ((symbol-function 'websocket-close) #'ignore))
+      (let ((c (hermes-dashboard-transport-acquire :start-mode 'spawn))
+            attempted)
+        (cl-letf (((symbol-function
+                    'hermes-dashboard-transport--reconnect-attempt)
+                   (lambda (&rest args) (setq attempted args))))
+          (hermes-dashboard-transport--handle-socket-down c "dropped")
+          (should fired)
+          (hermes-dashboard-transport-stop c "bye")
+          (dolist (entry fired) (apply (car entry) (cdr entry)))
+          (should-not attempted))))))
+
+(ert-deftest hermes-dashboard-transport-stale-ready-timeout-is-dropped ()
+  "A ready timeout armed for an earlier generation does not fail the client."
+  (let* (fired failed
+         (hermes-dashboard-transport-ready-timeout 15)
+         (hermes-dashboard-transport-schedule-function
+          (lambda (_delay fn &rest args) (push (cons fn args) fired) 'timer))
+         (c (make-hermes-dashboard-transport-client)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--fail-ready)
+               (lambda (&rest _) (setq failed t))))
+      (hermes-dashboard-transport--arm-ready-timeout c)
+      (cl-incf (hermes-dashboard-transport-client-generation c))
+      (dolist (entry fired) (apply (car entry) (cdr entry)))
+      (should-not failed))))
+
 (ert-deftest hermes-dashboard-transport-reconnect-reopens-socket ()
   "A reconnect attempt reopens the socket through the open function."
   (let* ((hermes-dashboard-transport-reconnect-max-attempts 3)

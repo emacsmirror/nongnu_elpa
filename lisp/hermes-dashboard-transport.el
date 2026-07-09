@@ -191,7 +191,11 @@ Each further attempt doubles the delay up to
   heartbeat-timer
   stopping-p
   reconnecting-p
-  (reconnect-attempts 0))
+  (reconnect-attempts 0)
+  ;; Bumped by `hermes-dashboard-transport-stop' and manual reconnect so
+  ;; scheduled reconnect attempts and ready timeouts armed for an earlier
+  ;; connection lifetime become no-ops instead of racing the replacement.
+  (generation 0))
 
 (defun hermes-dashboard-transport-subscribe (client fn)
   "Register FN as an event subscriber on CLIENT and return an opaque token.
@@ -700,6 +704,7 @@ and its session ended, so the caller can always start a new session.
 MESSAGE is reported to pending request reject callbacks, or as a normalized
 transport error when a pending request has no reject callback."
   (when (hermes-dashboard-transport-client-p client)
+    (cl-incf (hermes-dashboard-transport-client-generation client))
     (setf (hermes-dashboard-transport-client-stopping-p client) t)
     (ignore-errors
       (hermes-dashboard-transport--reject-pending-requests
@@ -739,6 +744,7 @@ status UI and reject callbacks."
          (if (hermes-dashboard-transport--reconnect-enabled-p)
              hermes-dashboard-transport-reconnect-max-attempts
            1)))
+    (cl-incf (hermes-dashboard-transport-client-generation client))
     (hermes-dashboard-transport--cancel-idle-timer client)
     (setf (hermes-dashboard-transport-client-stopping-p client) t)
     (ignore-errors (hermes-dashboard-transport--close-websocket client))
@@ -770,10 +776,17 @@ Reconnect only while at least one buffer is attached and reconnect is enabled."
           (expt 2 attempt))))
 
 (defun hermes-dashboard-transport--schedule-reconnect (client attempt)
-  "Schedule CLIENT's reconnect ATTEMPT after its backoff delay."
-  (hermes-dashboard-transport--schedule
-   (hermes-dashboard-transport--reconnect-backoff attempt)
-   #'hermes-dashboard-transport--reconnect-attempt client attempt))
+  "Schedule CLIENT's reconnect ATTEMPT after its backoff delay.
+The attempt is dropped when CLIENT's generation moves on before the timer
+fires: a manual reconnect or stop in the meantime owns the socket now, and a
+stale attempt would open a second WebSocket and orphan the replacement's."
+  (let ((generation (hermes-dashboard-transport-client-generation client)))
+    (hermes-dashboard-transport--schedule
+     (hermes-dashboard-transport--reconnect-backoff attempt)
+     (lambda ()
+       (when (= generation
+                (hermes-dashboard-transport-client-generation client))
+         (hermes-dashboard-transport--reconnect-attempt client attempt))))))
 
 (defun hermes-dashboard-transport--reconnect-attempt (client attempt)
   "Reopen CLIENT's WebSocket for reconnect ATTEMPT, backing off on failure.
@@ -2382,12 +2395,17 @@ gateway readiness flow to resolve the readiness promise."
 Scheduled without blocking; a no-op when CLIENT is already ready or the timeout
 is disabled."
   (when hermes-dashboard-transport-ready-timeout
-    (hermes-dashboard-transport--schedule
-     hermes-dashboard-transport-ready-timeout
-     (lambda ()
-       (unless (hermes-dashboard-transport-client-ready-p client)
-         (hermes-dashboard-transport--fail-ready
-          client (hermes-dashboard-transport--ready-timeout-error client)))))))
+    (let ((generation (hermes-dashboard-transport-client-generation client)))
+      (hermes-dashboard-transport--schedule
+       hermes-dashboard-transport-ready-timeout
+       (lambda ()
+         ;; A timeout armed for an earlier connection lifetime must not tear
+         ;; down a later reconnect whose own timeout window is still open.
+         (when (and (= generation
+                       (hermes-dashboard-transport-client-generation client))
+                    (not (hermes-dashboard-transport-client-ready-p client)))
+           (hermes-dashboard-transport--fail-ready
+            client (hermes-dashboard-transport--ready-timeout-error client))))))))
 
 (defun hermes-dashboard-transport--cleanup-start-failure (client)
   "Release CLIENT resources after a failed dashboard start."
