@@ -69,10 +69,16 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
   macro: `hermes-sessions`, `hermes-kanban`, `hermes-mcp`, `hermes-cron`,
   `hermes-inventory`, `hermes-rollback`, `hermes-subagents`. Each derives its
   base URL from `hermes-dashboard-transport-url` and uses the async REST helpers.
-  `hermes-kanban` additionally owns a live-events tail: a dedicated raw
+  `hermes-kanban` is split along its pure seams: `hermes-kanban-log.el` holds
+  the worker-log diff engine (detection/validation/fontification plus the two
+  hunk-navigation commands; deliberately duplicates part of the
+  `hermes-chat-format` diff walker because the kanban variant accepts the
+  gateway `a/path → b/path` header and rejects hunks with leftover counts),
+  and `hermes-kanban-events.el` holds the live-events tail: a dedicated raw
   WebSocket to `/api/plugins/kanban/events` (plain `{events,cursor}` JSON parsed
   with `json-parse-string`, debounced in-place revert, bounded-backoff
   reconnect) -- never routed through the chat JSON-RPC `--handle-frame`.
+  `hermes-kanban.el` requires both and keeps the buffers, modes, and commands.
 - `hermes-onboarding.el` -- provider onboarding: lists the dashboard's
   unauthenticated providers from `model.options`, reads an API key, and saves it
   via `model.save_key`. Entry points: the dashboard auth gate, the chat model

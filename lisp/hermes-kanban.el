@@ -32,8 +32,6 @@
 
 ;;; Code:
 
-(require 'ansi-color)
-(require 'diff-mode)
 (require 'tabulated-list)
 (require 'json)
 (require 'outline)
@@ -44,12 +42,13 @@
 (require 'hermes-dashboard-transport)
 (require 'hermes-promise)
 (require 'hermes-browser)
+(require 'hermes-kanban-log)
+(require 'hermes-kanban-events)
 (require 'cl-lib)
 
 (declare-function markdown-mode "markdown-mode")
 (declare-function read-string-from-buffer "string-edit")
 (declare-function hermes-kanban-task-mode "hermes-kanban")
-(declare-function websocket-close "ext:websocket")
 
 ;;; HTTP against the dashboard kanban plugin
 
@@ -413,9 +412,6 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
 
 (defvar-local hermes-kanban--latest-event-id nil
   "Most recent task-event id from the last board render, for live seeding.")
-
-(defvar-local hermes-kanban--events-tail nil
-  "Live-events tail for this board buffer, or nil when live updates are off.")
 
 (defun hermes-kanban--task-created-desc-p (left right)
   "Return non-nil when LEFT is newer (created_at) than RIGHT.
@@ -916,141 +912,6 @@ instead of surfacing a transport error."
                        nil (hermes-kanban--log-query board-slug))
    (lambda (reason) `((task_id . ,id) (error . ,reason)))))
 
-(defun hermes-kanban--sanitize-log-content (content)
-  "Return CONTENT normalized for human-readable log display."
-  (replace-regexp-in-string "\r\n?" "\n" (or content "") t t))
-
-(defun hermes-kanban--diff-hunk-counts ()
-  "Return old/new line counts for a unified diff hunk at point."
-  (when (looking-at diff-hunk-header-re-unified)
-    (cons (if-let* ((count (match-string 2)))
-              (string-to-number count)
-            1)
-          (if-let* ((count (match-string 4)))
-              (string-to-number count)
-            1))))
-
-(defun hermes-kanban--diff-hunk-header-p ()
-  "Return non-nil when point is at a unified diff hunk header."
-  (hermes-kanban--diff-hunk-counts))
-
-(defun hermes-kanban--diff-header-line-p ()
-  "Return non-nil when point is at unified diff file metadata."
-  (or (looking-at
-       (concat "^\\(?:diff --git \\|index \\|old mode \\|new mode \\|"
-               "new file mode \\|deleted file mode \\|similarity index \\|"
-               "dissimilarity index \\|rename from \\|rename to \\|"
-               "copy from \\|copy to \\|--- \\|\\+\\+\\+ \\)"))
-      (looking-at "^.+ → .+$")))
-
-(defun hermes-kanban--diff-body-line-counts ()
-  "Return old/new line counts for the current unified diff body line."
-  (cond
-   ((looking-at "^\\\\ No newline at end of file") '(0 . 0))
-   ((looking-at "^\\+") '(0 . 1))
-   ((looking-at "^-") '(1 . 0))
-   ((looking-at "^ ") '(1 . 1))
-   ((looking-at "^$") '(1 . 1))))
-
-(defun hermes-kanban--consume-diff-hunk ()
-  "Move over a valid unified diff hunk at point.
-Return non-nil when the consumed hunk contains an added or removed line."
-  (let ((start (point)))
-    (when-let* ((counts (hermes-kanban--diff-hunk-counts)))
-      (let ((old-left (car counts))
-            (new-left (cdr counts))
-            saw-change valid)
-        (forward-line 1)
-        (setq valid t)
-        (while (and valid
-                    (not (and (<= old-left 0) (<= new-left 0)))
-                    (not (eobp)))
-          (if-let* ((line-counts (hermes-kanban--diff-body-line-counts)))
-              (let ((old-count (car line-counts))
-                    (new-count (cdr line-counts)))
-                (if (or (> old-count old-left)
-                        (> new-count new-left))
-                    (setq valid nil)
-                  (when (or (and (= old-count 1) (= new-count 0))
-                            (and (= old-count 0) (= new-count 1)))
-                    (setq saw-change t))
-                  (setq old-left (- old-left old-count)
-                        new-left (- new-left new-count))
-                  (forward-line 1)))
-            (setq valid nil)))
-        (when (or (> old-left 0) (> new-left 0))
-          (setq valid nil))
-        (while (and valid
-                    (not (eobp))
-                    (looking-at "^\\\\ No newline at end of file"))
-          (forward-line 1))
-        (if (and valid saw-change)
-            t
-          (goto-char start)
-          nil)))))
-
-(defun hermes-kanban--diff-range-at-point ()
-  "Return embedded unified diff range at point as zero-based offsets, or nil."
-  (let ((start (point))
-        saw-hunk keep-scanning)
-    (when (or (hermes-kanban--diff-header-line-p)
-              (hermes-kanban--diff-hunk-header-p))
-      (while (hermes-kanban--diff-header-line-p)
-        (forward-line 1))
-      (setq keep-scanning t)
-      (while (and keep-scanning
-                  (hermes-kanban--diff-hunk-header-p))
-        (if (hermes-kanban--consume-diff-hunk)
-            (setq saw-hunk t)
-          (setq keep-scanning nil)))
-      (if (and saw-hunk (< start (point)))
-          (cons (1- start) (1- (point)))
-        (goto-char start)
-        nil))))
-
-(defun hermes-kanban--diff-blocks (content)
-  "Return embedded unified diff ranges in CONTENT as zero-based conses."
-  (with-temp-buffer
-    (insert (substring-no-properties content))
-    (goto-char (point-min))
-    (cl-loop until (eobp)
-             for range = (hermes-kanban--diff-range-at-point)
-             if range
-             collect range
-             and do (goto-char (1+ (cdr range)))
-             else do (forward-line 1))))
-
-(defun hermes-kanban--fontify-diff-string (text)
-  "Return TEXT fontified with `diff-mode', or TEXT on failure."
-  (condition-case nil
-      (with-temp-buffer
-        (insert (substring-no-properties text))
-        (delay-mode-hooks (diff-mode))
-        (font-lock-mode 1)
-        (font-lock-ensure (point-min) (point-max))
-        (buffer-string))
-    (error text)))
-
-(defun hermes-kanban--fontify-log-diffs (text)
-  "Return TEXT with embedded unified diff blocks fontified."
-  (let ((blocks (hermes-kanban--diff-blocks text)))
-    (if (null blocks)
-        text
-      (with-temp-buffer
-        (let ((pos 0))
-          (dolist (block blocks)
-            (insert (substring text pos (car block)))
-            (insert (hermes-kanban--fontify-diff-string
-                     (substring text (car block) (cdr block))))
-            (setq pos (cdr block)))
-          (insert (substring text pos)))
-        (buffer-string)))))
-
-(defun hermes-kanban--render-log-content (content)
-  "Return CONTENT normalized, ANSI-colored, and diff-fontified for display."
-  (hermes-kanban--fontify-log-diffs
-   (ansi-color-apply (hermes-kanban--sanitize-log-content content))))
-
 (defun hermes-kanban--format-log (payload)
   "Return worker-log text for PAYLOAD from GET /tasks/:id/log."
   (let ((task-id (hermes-transport--display-field payload 'task_id))
@@ -1074,64 +935,6 @@ Return non-nil when the consumed hunk contains an added or removed line."
      (when (hermes-kanban--truthy-p (hermes-transport--get payload 'truncated))
        (format "\n\n(showing last %s; full log path above)\n"
                (hermes-kanban--format-size hermes-kanban-log-tail-bytes))))))
-
-(defun hermes-kanban-log--valid-hunk-header-p ()
-  "Return non-nil when point is at a validated embedded diff hunk header.
-A header is validated by consuming it like `hermes-kanban--diff-range-at-point'
-does, so header-shaped log text that the fontifier rejected is skipped."
-  (save-excursion (hermes-kanban--consume-diff-hunk)))
-
-(defun hermes-kanban-log-next-hunk (&optional arg)
-  "Move to the next validated embedded unified diff hunk.
-ARG is a positive repeat count, as in `diff-hunk-next'.  Only hunks that
-pass `hermes-kanban-log--valid-hunk-header-p' are visited, so incomplete
-header-shaped blocks are skipped.  Point is left unchanged when no valid
-hunk follows."
-  (interactive "p")
-  (let ((count (prefix-numeric-value arg)))
-    (when (> count 0)
-      (dotimes (_ count)
-        ;; ORIGIN excludes the hunk point already sits on, so a second
-        ;; `n' from a hunk header advances past it instead of re-matching.
-        (let ((origin (point))
-              done)
-          (while (and (not done)
-                      (re-search-forward diff-hunk-header-re-unified nil t))
-            (let ((header (match-beginning 0)))
-              (cond
-               ((<= header origin)
-                (goto-char (match-end 0)))
-               ((save-excursion
-                  (goto-char header)
-                  (hermes-kanban--consume-diff-hunk))
-                (goto-char header)
-                (setq done t))
-               (t (goto-char (match-end 0))))))
-          (unless done (goto-char origin)))))))
-
-(defun hermes-kanban-log-previous-hunk (&optional arg)
-  "Move to the previous validated embedded unified diff hunk.
-ARG is a positive repeat count, as in `diff-hunk-prev'.  Only hunks that
-pass `hermes-kanban-log--valid-hunk-header-p' are visited, so incomplete
-header-shaped blocks are skipped.  Point is left unchanged when no valid
-hunk precedes point."
-  (interactive "p")
-  (let ((count (prefix-numeric-value arg)))
-    (when (> count 0)
-      (dotimes (_ count)
-        ;; re-search-backward lands at match-beginning, so a candidate is
-        ;; validated in place; an invalid header is naturally left behind
-        ;; by the next backward search.
-        (let ((origin (point))
-              done)
-          (while (and (not done)
-                      (re-search-backward diff-hunk-header-re-unified nil t))
-            (cond
-             ((>= (point) origin))
-             ((hermes-kanban-log--valid-hunk-header-p)
-              (setq done t))
-             (t)))
-          (unless done (goto-char origin)))))))
 
 (defvar hermes-kanban-log-mode-map)
 
@@ -1502,151 +1305,6 @@ A task with no active run is reported; a 404/409 surfaces as a message."
      (lambda (payload)
        (hermes-kanban--terminate-run-for-task
         (hermes-transport--get payload 'task) id query refresh)))))
-
-;;; Live events tail
-
-(cl-defstruct (hermes-kanban--events-tail
-               (:constructor hermes-kanban--events-tail-create))
-  "State for one board buffer's live-events WebSocket."
-  socket buffer slug (cursor 0) refresh-timer (backoff 1) reconnect-timer
-  (active t))
-
-(defconst hermes-kanban--events-debounce 0.4
-  "Seconds to debounce an in-place board refresh from live events.")
-
-(defconst hermes-kanban--events-backoff-max 30
-  "Maximum reconnect backoff in seconds for the live-events tail.")
-
-(defun hermes-kanban--live-indicator ()
-  "Return the board mode-line live-status indicator.
-Live is keyed on the socket, not the tail struct, so a tail waiting in the
-reconnect backoff shows as retrying rather than falsely live."
-  (cond
-   ((null hermes-kanban--events-tail)
-    (propertize " ○" 'face 'shadow))
-   ((hermes-kanban--events-tail-socket hermes-kanban--events-tail)
-    (propertize " ●live" 'face 'success))
-   (t (propertize " ◌retry" 'face 'warning))))
-
-(defun hermes-kanban--events-refresh (tail)
-  "Refresh TAIL's board buffer in place when it is still live."
-  (setf (hermes-kanban--events-tail-refresh-timer tail) nil)
-  (let ((buffer (hermes-kanban--events-tail-buffer tail)))
-    (when (and (hermes-kanban--events-tail-active tail) (buffer-live-p buffer))
-      (with-current-buffer buffer (revert-buffer nil t)))))
-
-(defun hermes-kanban--events-schedule-refresh (tail)
-  "Debounce an in-place board refresh for TAIL."
-  (when-let* ((timer (hermes-kanban--events-tail-refresh-timer tail)))
-    (cancel-timer timer))
-  (setf (hermes-kanban--events-tail-refresh-timer tail)
-        (run-at-time hermes-kanban--events-debounce nil
-                     #'hermes-kanban--events-refresh tail)))
-
-(defun hermes-kanban--events-handle-frame (tail text)
-  "Advance TAIL's cursor from the JSON frame TEXT and schedule a refresh.
-TEXT is a plain `{events,cursor}' frame, parsed on this socket alone -- never
-through the chat client's JSON-RPC handler."
-  (when (hermes-kanban--events-tail-active tail)
-    (setf (hermes-kanban--events-tail-backoff tail) 1)
-    (when-let* ((frame (ignore-errors
-                         (json-parse-string text :object-type 'alist
-                                            :array-type 'list
-                                            :null-object nil :false-object nil))))
-      (let ((cursor (hermes-transport--get frame 'cursor)))
-        (when (numberp cursor)
-          (setf (hermes-kanban--events-tail-cursor tail) cursor)))
-      (hermes-kanban--events-schedule-refresh tail))))
-
-(defun hermes-kanban--events-reconnect (tail)
-  "Schedule a bounded-backoff reconnect for TAIL, stopping when its buffer dies."
-  (when (and (hermes-kanban--events-tail-active tail)
-             (buffer-live-p (hermes-kanban--events-tail-buffer tail))
-             (not (hermes-kanban--events-tail-reconnect-timer tail)))
-    (let ((delay (hermes-kanban--events-tail-backoff tail)))
-      (setf (hermes-kanban--events-tail-backoff tail)
-            (min hermes-kanban--events-backoff-max (* 2 delay))
-            (hermes-kanban--events-tail-reconnect-timer tail)
-            (run-at-time delay nil #'hermes-kanban--events-do-reconnect tail)))))
-
-(defun hermes-kanban--events-do-reconnect (tail)
-  "Clear TAIL's reconnect timer and reconnect when still active."
-  (setf (hermes-kanban--events-tail-reconnect-timer tail) nil)
-  (when (and (hermes-kanban--events-tail-active tail)
-             (buffer-live-p (hermes-kanban--events-tail-buffer tail)))
-    (hermes-kanban--events-connect tail)))
-
-(defun hermes-kanban--events-on-down (tail &optional message)
-  "Drop TAIL's socket, report optional MESSAGE, and reconnect with backoff."
-  (when message (message "Hermes kanban live: %s" message))
-  (setf (hermes-kanban--events-tail-socket tail) nil)
-  (hermes-kanban--events-reconnect tail))
-
-(defun hermes-kanban--events-connect (tail)
-  "Resolve the events URL for TAIL and open its socket.
-A failed URL resolve or socket open re-enters the bounded backoff like a
-dropped connection, instead of permanently killing the tail."
-  (hermes--promise-then
-   (hermes-dashboard-transport-kanban-events-url-async
-    :since (hermes-kanban--events-tail-cursor tail)
-    :board (hermes-kanban--events-tail-slug tail))
-   (lambda (url)
-     (when (hermes-kanban--events-tail-active tail)
-       (condition-case err
-           (setf (hermes-kanban--events-tail-socket tail)
-                 (hermes-dashboard-transport-open-websocket
-                  (plist-get url :url) (plist-get url :redacted-url)
-                  (plist-get url :secrets)
-                  :on-message (lambda (text)
-                                (hermes-kanban--events-handle-frame tail text))
-                  :on-close (lambda () (hermes-kanban--events-on-down tail))
-                  :on-error (lambda (msg)
-                              (hermes-kanban--events-on-down tail msg))))
-         (error (hermes-kanban--events-on-down
-                 tail (error-message-string err))))))
-   (lambda (reason)
-     (hermes-kanban--events-on-down tail (format "%s" reason)))))
-
-(defun hermes-kanban--events-disconnect (tail)
-  "Tear down TAIL: stop reconnecting, cancel timers, and close the socket."
-  (setf (hermes-kanban--events-tail-active tail) nil)
-  (when-let* ((timer (hermes-kanban--events-tail-refresh-timer tail)))
-    (cancel-timer timer))
-  (when-let* ((timer (hermes-kanban--events-tail-reconnect-timer tail)))
-    (cancel-timer timer))
-  (setf (hermes-kanban--events-tail-refresh-timer tail) nil
-        (hermes-kanban--events-tail-reconnect-timer tail) nil)
-  (when-let* ((socket (hermes-kanban--events-tail-socket tail)))
-    (when (fboundp 'websocket-close) (ignore-errors (websocket-close socket))))
-  (setf (hermes-kanban--events-tail-socket tail) nil))
-
-(defun hermes-kanban--events-teardown ()
-  "Disconnect the board buffer's events tail when the buffer is killed."
-  (when hermes-kanban--events-tail
-    (hermes-kanban--events-disconnect hermes-kanban--events-tail)
-    (setq hermes-kanban--events-tail nil)))
-
-(defun hermes-kanban-toggle-live ()
-  "Toggle the live-events tail for the current board buffer.
-When on, a dedicated WebSocket streams task events and the board refreshes in
-place; the mode line shows a live indicator."
-  (interactive)
-  (unless (derived-mode-p 'hermes-kanban-mode)
-    (user-error "Live updates are only available on a board buffer"))
-  (if hermes-kanban--events-tail
-      (progn
-        (hermes-kanban--events-disconnect hermes-kanban--events-tail)
-        (setq hermes-kanban--events-tail nil)
-        (force-mode-line-update)
-        (message "Hermes kanban live updates off"))
-    (let ((tail (hermes-kanban--events-tail-create
-                 :buffer (current-buffer) :slug hermes-kanban--slug
-                 :cursor (or hermes-kanban--latest-event-id 0))))
-      (setq hermes-kanban--events-tail tail)
-      (add-hook 'kill-buffer-hook #'hermes-kanban--events-teardown nil t)
-      (force-mode-line-update)
-      (hermes-kanban--events-connect tail)
-      (message "Hermes kanban live updates on"))))
 
 ;;;###autoload
 (defun hermes-list-kanban ()

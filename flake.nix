@@ -41,6 +41,8 @@
             "lisp/hermes-rollback.el"
             "lisp/hermes-subagents.el"
             "lisp/hermes-cron.el"
+            "lisp/hermes-kanban-log.el"
+            "lisp/hermes-kanban-events.el"
             "lisp/hermes-kanban.el"
             "lisp/hermes-mcp.el"
             "lisp/hermes-exec.el"
