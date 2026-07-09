@@ -67,7 +67,7 @@ Shared by the dashboard browser commands."
       (hermes--promise-then
        (hermes--promise-finally (funcall make-promise client) done)
        on-success)
-      (lambda (message) (message "Hermes: %s" message))))))
+      (lambda (reason) (message "Hermes: %s" reason))))))
 
 (defun hermes-browser--notify (title body)
   "Show desktop notification TITLE/BODY, falling back to the echo area.

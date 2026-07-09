@@ -746,9 +746,9 @@ and an absent branch or run id is omitted."
      (when-let* ((summary (hermes-transport--non-empty-string
                            (hermes-transport--display-field run 'summary))))
        (format "\n- Summary: %s" summary))
-     (when-let* ((error (hermes-transport--non-empty-string
-                         (hermes-transport--display-field run 'error))))
-       (format "\n- Error: %s" error))
+     (when-let* ((error-text (hermes-transport--non-empty-string
+                              (hermes-transport--display-field run 'error))))
+       (format "\n- Error: %s" error-text))
      (when metadata
        (format "\n- Metadata: %s" (hermes-kanban--object-string metadata))))))
 

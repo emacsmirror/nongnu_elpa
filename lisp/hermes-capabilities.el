@@ -60,7 +60,7 @@
   "Master switch for the native capability provider.
 When nil `hermes-capabilities-start' refuses to start, so the provider can
 never come up implicitly.  Set it to t before calling
-`hermes-capabilities-start' or enabling `hermes-capabilities-mode'."
+`hermes-capabilities-start'."
   :type 'boolean)
 
 (defcustom hermes-capabilities-target "pihome-pair"
@@ -168,7 +168,8 @@ which stores `methods=dict(params.get(\"methods\") or {})'."
 NAME is a symbol naming the generated declaration; METHOD is the wire string
 sent by the backend.  HANDLER is a function of one argument (the request
 params) returning a JSON-serializable result.  DOCSTRING documents the method.
-The method is registered at expansion time, and NAME is defined as a constant
+The registration runs when the expansion is evaluated (load time), and NAME
+is defined as a constant
 holding METHOD so callers can reference the wire name symbolically."
   (declare (indent defun))
   `(progn

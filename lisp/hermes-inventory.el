@@ -81,13 +81,14 @@ of the string \"off\"."
 
 (defun hermes-inventory--skill-group-rows (skills)
   "Return rows for legacy SKILLS grouped by category."
-  (let (rows)
-    (dolist (entry skills)
-      (let ((category (format "%s" (car entry))))
-        (dolist (name (cdr entry))
-          (let ((name (or (hermes-transport--scalar-string name) "")))
-            (push (list name (vector category name "?" "")) rows)))))
-    (nreverse rows)))
+  (mapcan (lambda (entry)
+            (let ((category (format "%s" (car entry))))
+              (mapcar (lambda (name)
+                        (let ((name (or (hermes-transport--scalar-string name)
+                                        "")))
+                          (list name (vector category name "?" ""))))
+                      (cdr entry))))
+          skills))
 
 (defun hermes-inventory--skill-rows (result)
   "Return inventory rows for a skill list RESULT.

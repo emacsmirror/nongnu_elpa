@@ -167,42 +167,32 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "Return dashboard NODE's kind."
   (plist-get node :kind))
 
-(defconst hermes-dashboard--status-symbols
-  '(("ready" . ready)
-    ("done" . done)
-    ("completed" . completed)
-    ("complete" . complete)
-    ("success" . success)
-    ("succeeded" . succeeded)
-    ("idle" . idle)
-    ("running" . running)
-    ("streaming" . streaming)
-    ("progress" . progress)
-    ("tool" . tool)
-    ("busy" . busy)
-    ("started" . started)
-    ("preparing" . preparing)
-    ("in-progress" . in-progress)
-    ("pending" . pending)
-    ("waiting" . waiting)
-    ("queued" . queued)
-    ("starting" . starting)
-    ("loading" . loading)
-    ("connecting" . connecting)
-    ("reconnecting" . reconnecting)
-    ("closed" . closed)
-    ("disconnected" . disconnected)
-    ("stale" . stale)
-    ("approval-requested" . approval-requested)
-    ("requested" . requested)
-    ("input-requested" . input-requested)
-    ("interrupted" . interrupted)
-    ("error" . error)
-    ("failed" . failed)
-    ("failure" . failure)
-    ("cancelled" . cancelled)
-    ("canceled" . canceled))
-  "Known normalized dashboard status strings and their symbols.")
+(defconst hermes-dashboard--status-table
+  (cl-loop for (statuses label face)
+           in '((("ready" "done" "completed" "complete" "success" "succeeded"
+                  "idle")
+                 "Ready" hermes-dashboard-status-ready)
+                (("running" "streaming" "progress" "tool" "busy" "started"
+                  "preparing" "in-progress")
+                 "Running" hermes-dashboard-status-running)
+                (("pending" "waiting" "queued")
+                 "Waiting" hermes-dashboard-status-waiting)
+                (("starting" "loading")
+                 "Loading" hermes-dashboard-status-running)
+                (("connecting" "reconnecting")
+                 "Connecting" hermes-dashboard-status-running)
+                (("closed" "disconnected")
+                 "Disconnected" hermes-dashboard-status-error)
+                (("stale") "Stale" hermes-dashboard-status-stale)
+                (("approval-requested")
+                 "Approval requested" hermes-dashboard-status-waiting)
+                (("requested" "input-requested")
+                 "Input requested" hermes-dashboard-status-waiting)
+                (("interrupted") "Interrupted" hermes-dashboard-status-error)
+                (("error" "failed" "failure" "cancelled" "canceled")
+                 "Error" hermes-dashboard-status-error))
+           append (mapcar (lambda (status) (list status label face)) statuses))
+  "Known normalized dashboard statuses mapped to (STATUS LABEL FACE).")
 
 (defun hermes-dashboard--status-name (status)
   "Return STATUS as a normalized comparison string."
@@ -220,45 +210,26 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
       (capitalize (replace-regexp-in-string "-" " " name))
     "Unknown"))
 
+(defun hermes-dashboard--status-entry (status)
+  "Return STATUS's (STATUS LABEL FACE) table entry, or nil when unknown."
+  (and-let* ((name (hermes-dashboard--status-name status)))
+    (assoc name hermes-dashboard--status-table)))
+
 (defun hermes-dashboard--status-symbol (status)
   "Return the known normalized status symbol for STATUS."
-  (when-let* ((name (hermes-dashboard--status-name status)))
-    (alist-get name hermes-dashboard--status-symbols nil nil #'equal)))
+  (and-let* ((entry (hermes-dashboard--status-entry status)))
+    (intern (car entry))))
 
 (defun hermes-dashboard--status-label (status)
   "Return human display label for STATUS."
-  (pcase (hermes-dashboard--status-symbol status)
-    ((or 'ready 'done 'completed 'complete 'success 'succeeded 'idle) "Ready")
-    ((or 'running 'streaming 'progress 'tool 'busy 'started 'preparing
-         'in-progress)
-     "Running")
-    ((or 'pending 'waiting 'queued) "Waiting")
-    ((or 'starting 'loading) "Loading")
-    ((or 'connecting 'reconnecting) "Connecting")
-    ((or 'closed 'disconnected) "Disconnected")
-    ('stale "Stale")
-    ('approval-requested "Approval requested")
-    ((or 'requested 'input-requested) "Input requested")
-    ('interrupted "Interrupted")
-    ((or 'error 'failed 'failure 'cancelled 'canceled) "Error")
-    (_ (hermes-dashboard--status-title status))))
+  (if-let* ((entry (hermes-dashboard--status-entry status)))
+      (nth 1 entry)
+    (hermes-dashboard--status-title status)))
 
 (defun hermes-dashboard--status-face (status)
   "Return face for dashboard STATUS."
-  (pcase (hermes-dashboard--status-symbol status)
-    ((or 'ready 'done 'completed 'complete 'idle 'success 'succeeded)
-     'hermes-dashboard-status-ready)
-    ((or 'running 'streaming 'progress 'tool 'busy 'started 'preparing
-         'in-progress 'starting 'loading 'connecting 'reconnecting)
-     'hermes-dashboard-status-running)
-    ((or 'pending 'waiting 'queued 'approval-requested 'requested
-         'input-requested)
-     'hermes-dashboard-status-waiting)
-    ('stale 'hermes-dashboard-status-stale)
-    ((or 'error 'failed 'failure 'interrupted 'closed 'disconnected
-         'cancelled 'canceled)
-     'hermes-dashboard-status-error)
-    (_ 'hermes-dashboard-muted)))
+  (or (nth 2 (hermes-dashboard--status-entry status))
+      'hermes-dashboard-muted))
 
 (defun hermes-dashboard--nonempty-string (value)
   "Return VALUE when it is a non-empty string."
@@ -389,10 +360,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
 
 (defun hermes-dashboard--chat-buffers ()
   "Return live Hermes chat buffers in `buffer-list' order."
-  (let (buffers)
-    (dolist (buffer (buffer-list) (nreverse buffers))
-      (when (hermes-dashboard--chat-buffer-p buffer)
-        (push buffer buffers)))))
+  (seq-filter #'hermes-dashboard--chat-buffer-p (buffer-list)))
 
 (defun hermes-dashboard--onboarding-node ()
   "Return the provider-onboarding action node."
@@ -507,10 +475,8 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 
 (defun hermes-dashboard--clear-ewoc ()
   "Remove all nodes from the current dashboard EWOC."
-  (let ((node (and hermes-dashboard--ewoc (ewoc-nth hermes-dashboard--ewoc 0))))
-    (while node
-      (ewoc-delete hermes-dashboard--ewoc node)
-      (setq node (ewoc-nth hermes-dashboard--ewoc 0)))))
+  (when hermes-dashboard--ewoc
+    (ewoc-filter hermes-dashboard--ewoc #'ignore)))
 
 (defun hermes-dashboard--rebuild-ewoc (nodes)
   "Rebuild the dashboard EWOC from NODES."
