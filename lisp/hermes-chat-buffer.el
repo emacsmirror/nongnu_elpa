@@ -202,6 +202,9 @@ Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
                            event '(:event)))))
        (concat "status:" key)))
     ((or 'progress 'tool)
+     ;; Without a call id the tool name is the key, so two concurrent
+     ;; same-named calls coalesce into one entry: gateways that interleave
+     ;; tools are expected to tag frames with a tool_call_id.
      (when-let* ((key (or (hermes-chat--transport-key-fragment
                            event '(:tool-call-id :tool_call_id :call-id
 						 :call_id :id :message-id
@@ -418,8 +421,10 @@ text-property changes in the undo list."
           hermes-chat--queued-display nil
           hermes-chat--pending-prompts (make-hash-table :test #'equal)
           hermes-chat--auto-prompt-keys (make-hash-table :test #'equal)
+          ;; `hermes-chat--transport-generation' is deliberately not reset:
+          ;; it is documented monotonic, and a clear mid-turn must not let a
+          ;; stale pre-clear callback match a fresh post-clear generation.
           hermes-chat--draining-queued-message-p nil
-          hermes-chat--transport-generation 0
           hermes-chat--process nil
           hermes-chat--dashboard-client nil
           hermes-chat--dashboard-token nil

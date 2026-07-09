@@ -77,11 +77,7 @@ When ANSI-KEY is non-nil, preserve split ANSI sequences for that stream."
       (hermes-chat--record-ansi-fragment ansi-key (cdr stripped)))
     (unless (multibyte-string-p text)
       (setq text (decode-coding-string text 'utf-8-unix t)))
-    (with-temp-buffer
-      (dolist (char (string-to-list text))
-        (when (hermes-chat--displayable-char-p char)
-          (insert-char char)))
-      (buffer-string))))
+    (concat (seq-filter #'hermes-chat--displayable-char-p text))))
 
 (defun hermes-chat--strip-session-id-lines (content &optional final)
   "Return CONTENT without Hermes CLI session-id lines.
@@ -116,12 +112,7 @@ values, with a `format' fallback the chat renderer relies on."
 
 (defun hermes-chat--event-value (event keys)
   "Return the first non-nil plist value in EVENT for KEYS."
-  (catch 'found
-    (dolist (key keys)
-      (when-let* ((tail (plist-member event key))
-                  (value (cadr tail)))
-        (throw 'found value)))
-    nil))
+  (cl-some (lambda (key) (cadr (plist-member event key))) keys))
 
 (defun hermes-chat--event-string (event keys)
   "Return the first scalar plist value in EVENT for KEYS as a string."
@@ -313,12 +304,11 @@ USAGE is a plist of :input and :output token counts."
 
 (defun hermes-chat--first-arg-detail (args keys)
   "Return the first non-empty scalar value among KEYS in ARGS."
-  (catch 'found
-    (dolist (key keys)
-      (when-let* ((value (hermes-transport--non-empty-string
-                          (hermes-transport--scalar-string
-                           (hermes-transport--get args key)))))
-        (throw 'found value)))))
+  (cl-some (lambda (key)
+             (hermes-transport--non-empty-string
+              (hermes-transport--scalar-string
+               (hermes-transport--get args key))))
+           keys))
 
 (defun hermes-chat--tool-args-detail (event name)
   "Return a detail string from EVENT's args for tool NAME, or nil.
@@ -523,7 +513,7 @@ markdown stays visible and easy to copy."
       (with-temp-buffer
         (insert text)
         (delay-mode-hooks (markdown-mode))
-        (font-lock-mode 1)
+        ;; `font-lock-mode' refuses temp buffers; `font-lock-ensure' suffices.
         (font-lock-ensure (point-min) (point-max))
         (remove-text-properties (point-min) (point-max) '(invisible nil))
         (buffer-string))

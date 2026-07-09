@@ -1065,10 +1065,12 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
     (buffer-substring-no-properties pos (point-max))))
 
 (defun hermes-chat-newline ()
-  "Insert a literal newline in the Hermes chat input tail."
+  "Insert a literal newline in the Hermes chat input tail.
+Outside the tail, move to the end of the draft first so the newline
+extends the input instead of prepending a blank line to it."
   (interactive)
   (unless (hermes-chat--point-in-input-p)
-    (goto-char (hermes-chat--input-position)))
+    (goto-char (point-max)))
   (insert "\n"))
 
 (defun hermes-chat--drain-queued-message ()
