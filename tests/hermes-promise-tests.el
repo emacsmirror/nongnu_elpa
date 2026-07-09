@@ -74,6 +74,27 @@
     (hermes--promise-resolve p 1)
     (should (string-match-p "kaboom" caught))))
 
+(ert-deftest hermes-promise-test-handler-quit-rejects-next ()
+  "A keyboard quit inside a handler rejects instead of stranding the chain."
+  (let ((p (hermes--promise-make)) caught finalized)
+    (hermes--promise-finally
+     (hermes--promise-catch
+      (hermes--promise-then p (lambda (_v) (signal 'quit nil)))
+      (lambda (r) (setq caught r)))
+     (lambda () (setq finalized t)))
+    (hermes--promise-resolve p 1)
+    (should (stringp caught))
+    (should finalized)))
+
+(ert-deftest hermes-promise-test-finally-quit-rejects-next ()
+  "A quit inside a finally thunk rejects the mirrored promise."
+  (let ((p (hermes--promise-make)) caught)
+    (hermes--promise-catch
+     (hermes--promise-finally p (lambda () (signal 'quit nil)))
+     (lambda (r) (setq caught r)))
+    (hermes--promise-resolve p 1)
+    (should (stringp caught))))
+
 (ert-deftest hermes-promise-test-then-chains-returned-promise ()
   "A handler returning a promise defers settlement until that promise settles."
   (let ((p (hermes--promise-make))

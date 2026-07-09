@@ -80,7 +80,10 @@ A no-op when PROMISE is already settled, giving resolve-once semantics."
   "Apply HANDLER to VALUE and settle NEXT with the outcome.
 When HANDLER is nil the settlement passes through: NEXT resolves with VALUE if
 RESOLVED is non-nil, else rejects with it.  A HANDLER that returns a promise is
-adopted; one that signals rejects NEXT with the error message."
+adopted; one that signals rejects NEXT with the error message.  `quit' is
+caught too: a \\[keyboard-quit] inside a handler (say, at a minibuffer prompt
+mid-chain) must still settle NEXT, or `hermes--promise-finally' cleanups
+downstream never run."
   (cond
    ((null handler)
     (if resolved
@@ -95,7 +98,7 @@ adopted; one that signals rejects NEXT with the error message."
                (lambda (v) (hermes--promise-resolve next v))
                (lambda (r) (hermes--promise-reject next r)))
             (hermes--promise-resolve next result)))
-      (error (hermes--promise-reject next (error-message-string err)))))))
+      ((error quit) (hermes--promise-reject next (error-message-string err)))))))
 
 (defun hermes--promise-then (promise on-resolve &optional on-reject)
   "Return a promise applying ON-RESOLVE or ON-REJECT to PROMISE's settled value.
@@ -154,19 +157,19 @@ It rejects with the reason of the first of PROMISES to reject."
 (defun hermes--promise-finally (promise fn)
   "Run FN for its side effect when PROMISE settles, passing the settlement on.
 Return a new promise that mirrors PROMISE's resolution or rejection after FN.
-If FN signals, the returned promise rejects with that error rather than
-stranding the chain in a pending state."
+If FN signals (including `quit'), the returned promise rejects with that
+error rather than stranding the chain in a pending state."
   (let ((next (hermes--promise-make)))
     (hermes--promise-subscribe
      promise
      (lambda (value)
        (condition-case err
            (progn (funcall fn) (hermes--promise-resolve next value))
-         (error (hermes--promise-reject next (error-message-string err)))))
+         ((error quit) (hermes--promise-reject next (error-message-string err)))))
      (lambda (reason)
        (condition-case err
            (progn (funcall fn) (hermes--promise-reject next reason))
-         (error (hermes--promise-reject next (error-message-string err))))))
+         ((error quit) (hermes--promise-reject next (error-message-string err))))))
     next))
 
 (provide 'hermes-promise)
