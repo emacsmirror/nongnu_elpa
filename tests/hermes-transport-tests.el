@@ -270,6 +270,22 @@
        (should-not (string-match-p "secret-token" message)))
       (other (ert-fail (format "expected error, got %S" other))))))
 
+(ert-deftest hermes-transport-dashboard-basic-auth-request-descriptor ()
+  "The pure builder yields the password-login request plist."
+  (let ((request (hermes-dashboard-transport--basic-auth-request
+                  "http://dash.example" "basic" "admin" "hunter2")))
+    (should (equal (plist-get request :url)
+                   "http://dash.example/auth/password-login"))
+    (should (equal (plist-get request :method) "POST"))
+    (should (equal (plist-get request :headers)
+                   '(("Content-Type" . "application/json"))))
+    (should (equal (plist-get request :body)
+                   '((provider . "basic")
+                     (username . "admin")
+                     (password . "hunter2")
+                     (next . ""))))
+    (should (equal (plist-get request :secrets) '("hunter2")))))
+
 (ert-deftest hermes-transport-dashboard-http-json-async-returns-promise ()
   (let* ((captured nil)
          (hermes-dashboard-transport-http-request-async-function

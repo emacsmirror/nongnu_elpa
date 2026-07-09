@@ -1052,7 +1052,10 @@ SECRETS are redacted from any error message."
 (cl-defun hermes-dashboard-transport--default-http-request
     (url &key (method "GET") headers data secrets)
   "Fetch URL with METHOD, HEADERS, and DATA using url.el synchronously.
-SECRETS are redacted from any user-visible error."
+SECRETS are redacted from any user-visible error.
+Legacy: new callers must use
+`hermes-dashboard-transport--default-http-request-async'; synchronous
+network on the main thread is banned by AGENTS.md."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
         (url-request-extra-headers headers)
@@ -1153,6 +1156,25 @@ Return a promise of the response plist."
            :data (and body (json-serialize body))
            :secrets secrets))
 
+(defun hermes-dashboard-transport--http-json-request (request)
+  "Send REQUEST, a (:url :method :headers :body :secrets) plist, synchronously."
+  (hermes-dashboard-transport--http-json
+   (plist-get request :url)
+   :method (plist-get request :method)
+   :headers (plist-get request :headers)
+   :body (plist-get request :body)
+   :secrets (plist-get request :secrets)))
+
+(defun hermes-dashboard-transport--http-json-request-async (request)
+  "Send REQUEST, a (:url :method :headers :body :secrets) plist, asynchronously.
+Return a promise of the response plist."
+  (hermes-dashboard-transport--http-json-async
+   (plist-get request :url)
+   :method (plist-get request :method)
+   :headers (plist-get request :headers)
+   :body (plist-get request :body)
+   :secrets (plist-get request :secrets)))
+
 
 ;;; REST API and authentication
 
@@ -1172,29 +1194,48 @@ The value is `(:base-url URL :headers HEADERS :secrets SECRETS)'.")
     (list :headers (list (cons "X-Hermes-Session-Token" token))
           :secrets (list token))))
 
-(defun hermes-dashboard-transport--api-basic-auth (base-url status)
-  "Return REST cookie auth for dashboard BASE-URL described by STATUS."
+(defun hermes-dashboard-transport--basic-auth-request
+    (base-url provider username password &optional next)
+  "Return the password-login request plist for dashboard BASE-URL.
+PROVIDER, USERNAME, PASSWORD, and NEXT (default \"\") form the JSON body.
+The result carries :url, :method, :headers, :body, and :secrets, ready for
+`hermes-dashboard-transport--http-json-request' or its async variant;
+:secrets holds PASSWORD for redaction."
+  (list :url (hermes-dashboard-transport--api-url
+              base-url "/auth/password-login")
+        :method "POST"
+        :headers '(("Content-Type" . "application/json"))
+        :body `((provider . ,provider)
+                (username . ,username)
+                (password . ,password)
+                (next . ,(or next "")))
+        :secrets (list password)))
+
+(defun hermes-dashboard-transport--basic-login-request (base-url status)
+  "Return the password-login request plist for BASE-URL described by STATUS.
+Signals when STATUS lacks a basic provider or auth-source has no credentials.
+The password is the sole entry of the request's :secrets list."
   (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
     (unless provider
       (hermes-dashboard-transport--unsupported-remote-auth base-url))
-    (let* ((credentials (hermes-dashboard-transport--remote-basic-credentials
-                         base-url))
-           (password (plist-get credentials :password))
-           (response
-            (hermes-dashboard-transport--http-json
-             (hermes-dashboard-transport--api-url base-url "/auth/password-login")
-             :method "POST"
-             :headers '(("Content-Type" . "application/json"))
-             :body `((provider . ,provider)
-                     (username . ,(plist-get credentials :username))
-                     (password . ,password)
-                     (next . ""))
-             :secrets (list password)))
-           (cookies (hermes-dashboard-transport--response-cookie-header response)))
-      (unless cookies
-        (user-error "Hermes dashboard basic login returned no session cookies"))
-      (list :headers (list (cons "Cookie" cookies))
-            :secrets (list password cookies)))))
+    (let ((credentials (hermes-dashboard-transport--remote-basic-credentials
+                        base-url)))
+      (hermes-dashboard-transport--basic-auth-request
+       base-url provider
+       (plist-get credentials :username)
+       (plist-get credentials :password)))))
+
+(defun hermes-dashboard-transport--api-basic-auth (base-url status)
+  "Return REST cookie auth for dashboard BASE-URL described by STATUS."
+  (let* ((request (hermes-dashboard-transport--basic-login-request
+                   base-url status))
+         (password (car (plist-get request :secrets)))
+         (response (hermes-dashboard-transport--http-json-request request))
+         (cookies (hermes-dashboard-transport--response-cookie-header response)))
+    (unless cookies
+      (user-error "Hermes dashboard basic login returned no session cookies"))
+    (list :headers (list (cons "Cookie" cookies))
+          :secrets (list password cookies))))
 
 (defun hermes-dashboard-transport--api-authenticate ()
   "Resolve dashboard REST auth for `hermes-dashboard-transport-url'."
@@ -1266,48 +1307,57 @@ Cached auth is also re-resolved when `hermes-dashboard-transport-url' changes."
             (hermes-dashboard-transport-client-port client)))
       (hermes-dashboard-transport--api-base-url)))
 
+(cl-defun hermes-dashboard-transport--api-request-plist
+    (auth method path &key body query headers secrets)
+  "Return the REST request plist for METHOD PATH under resolved AUTH.
+BODY, QUERY, HEADERS, and SECRETS extend the request; AUTH supplies the base
+URL plus its own headers and secrets.  Pure: shared by the synchronous and
+asynchronous request executors."
+  (list :url (concat (hermes-dashboard-transport--api-url
+		      (plist-get auth :base-url) path)
+		     (hermes-dashboard-transport--query-string query))
+	:method method
+	:headers (append (plist-get auth :headers)
+			 headers
+			 (and body '(("Content-Type" . "application/json"))))
+	:body body
+	:secrets (append secrets (plist-get auth :secrets))))
+
+(defun hermes-dashboard-transport--api-client-auth (client)
+  "Return a REST auth plist derived from CLIENT's live session token."
+  (let ((token (hermes-dashboard-transport--api-client-token client)))
+    (list :base-url (hermes-dashboard-transport--api-client-base-url client)
+          :headers (and token (list (cons "X-Hermes-Session-Token" token)))
+          :secrets (and token (list token)))))
+
 (cl-defun hermes-dashboard-transport--api-request-with-client
     (client method path &key body query headers secrets)
-  "Call dashboard REST METHOD PATH using CLIENT's live session token."
-  (let* ((token (hermes-dashboard-transport--api-client-token client))
-         (all-secrets (append secrets (and token (list token))))
-         (url (concat (hermes-dashboard-transport--api-url
-                       (hermes-dashboard-transport--api-client-base-url client)
-                       path)
-                      (hermes-dashboard-transport--query-string query)))
-         (all-headers (append (and token
-                                   (list (cons "X-Hermes-Session-Token" token)))
-                              headers
-                              (and body
-                                   '(("Content-Type" . "application/json"))))))
+  "Call dashboard REST METHOD PATH using CLIENT's live session token.
+Legacy synchronous path; see `hermes-dashboard-transport-api-request'."
+  (let ((request (hermes-dashboard-transport--api-request-plist
+		  (hermes-dashboard-transport--api-client-auth client)
+		  method path :body body :query query :headers headers
+		  :secrets secrets)))
     (condition-case err
-        (plist-get (hermes-dashboard-transport--http-json
-                    url :method method :headers all-headers :body body
-                    :secrets all-secrets)
+	(plist-get (hermes-dashboard-transport--http-json-request request)
                    :body)
       (error
        (signal (car err)
                (list (hermes-dashboard-transport--redact-secret
-                      (error-message-string err) all-secrets)))))))
+		      (error-message-string err)
+		      (plist-get request :secrets))))))))
 
 (cl-defun hermes-dashboard-transport--api-request-1
     (method path &key body query headers secrets retry)
   "Call dashboard REST METHOD PATH with BODY and QUERY.
 HEADERS and SECRETS extend the resolved dashboard auth.  RETRY refreshes auth
 once when the request fails."
-  (let* ((auth (hermes-dashboard-transport-api-auth))
-         (all-secrets (append secrets (plist-get auth :secrets)))
-         (url (concat (hermes-dashboard-transport--api-url
-                       (plist-get auth :base-url) path)
-                      (hermes-dashboard-transport--query-string query)))
-         (all-headers (append (plist-get auth :headers)
-                              headers
-                              (and body
-                                   '(("Content-Type" . "application/json"))))))
+  (let ((request (hermes-dashboard-transport--api-request-plist
+		  (hermes-dashboard-transport-api-auth)
+		  method path :body body :query query :headers headers
+		  :secrets secrets)))
     (condition-case err
-        (plist-get (hermes-dashboard-transport--http-json
-                    url :method method :headers all-headers :body body
-                    :secrets all-secrets)
+	(plist-get (hermes-dashboard-transport--http-json-request request)
                    :body)
       (error
        (if (and retry (hermes-dashboard-transport--auth-error-p
@@ -1319,7 +1369,8 @@ once when the request fails."
               :secrets secrets :retry nil))
          (signal (car err)
                  (list (hermes-dashboard-transport--redact-secret
-                        (error-message-string err) all-secrets))))))))
+			(error-message-string err)
+			(plist-get request :secrets)))))))))
 
 (cl-defun hermes-dashboard-transport-api-request
     (method path &key body query headers secrets client)
@@ -1328,7 +1379,10 @@ PATH is appended to `hermes-dashboard-transport-url'.  BODY is JSON-encoded,
 QUERY is an alist encoded as a query string, and HEADERS/SECRETS extend the
 authenticated request.  CLIENT, when it has a live session token, supplies the
 spawned dashboard base URL and `X-Hermes-Session-Token'.  GET requests using
-cached auth retry once with refreshed auth."
+cached auth retry once with refreshed auth.
+Legacy: new callers must use
+`hermes-dashboard-transport-api-request-async'; synchronous network on the
+main thread is banned by AGENTS.md."
   (if (hermes-dashboard-transport--api-client-token client)
       (hermes-dashboard-transport--api-request-with-client
        client method path :body body :query query :headers headers
@@ -1356,30 +1410,19 @@ network; a missing token rejects the promise."
 (defun hermes-dashboard-transport--api-basic-auth-async (base-url status)
   "Return a promise of REST cookie auth for BASE-URL described by STATUS."
   (condition-case err
-      (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
-        (unless provider
-          (hermes-dashboard-transport--unsupported-remote-auth base-url))
-        (let* ((credentials (hermes-dashboard-transport--remote-basic-credentials
-                             base-url))
-               (password (plist-get credentials :password)))
-          (hermes--promise-then
-           (hermes-dashboard-transport--http-json-async
-            (hermes-dashboard-transport--api-url base-url "/auth/password-login")
-            :method "POST"
-            :headers '(("Content-Type" . "application/json"))
-            :body `((provider . ,provider)
-                    (username . ,(plist-get credentials :username))
-                    (password . ,password)
-                    (next . ""))
-            :secrets (list password))
-           (lambda (response)
-             (let ((cookies (hermes-dashboard-transport--response-cookie-header
-                             response)))
-               (if cookies
-                   (list :headers (list (cons "Cookie" cookies))
-                         :secrets (list password cookies))
-                 (hermes--promise-rejected
-                  "Hermes dashboard basic login returned no session cookies")))))))
+      (let* ((request (hermes-dashboard-transport--basic-login-request
+                       base-url status))
+             (password (car (plist-get request :secrets))))
+        (hermes--promise-then
+         (hermes-dashboard-transport--http-json-request-async request)
+         (lambda (response)
+           (let ((cookies (hermes-dashboard-transport--response-cookie-header
+                           response)))
+             (if cookies
+                 (list :headers (list (cons "Cookie" cookies))
+                       :secrets (list password cookies))
+               (hermes--promise-rejected
+                "Hermes dashboard basic login returned no session cookies"))))))
     (error (hermes--promise-rejected (error-message-string err)))))
 
 (defun hermes-dashboard-transport--api-authenticate-async ()
@@ -1427,19 +1470,12 @@ retries once when the request fails."
   (hermes--promise-then
    (hermes-dashboard-transport-api-auth-async)
    (lambda (auth)
-     (let* ((all-secrets (append secrets (plist-get auth :secrets)))
-            (url (concat (hermes-dashboard-transport--api-url
-                          (plist-get auth :base-url) path)
-                         (hermes-dashboard-transport--query-string query)))
-            (all-headers (append (plist-get auth :headers)
-                                 headers
-                                 (and body
-                                      '(("Content-Type" . "application/json"))))))
+     (let ((request (hermes-dashboard-transport--api-request-plist
+		     auth method path :body body :query query
+		     :headers headers :secrets secrets)))
        (hermes--promise-catch
         (hermes--promise-map
-         (hermes-dashboard-transport--http-json-async
-          url :method method :headers all-headers :body body
-          :secrets all-secrets)
+	 (hermes-dashboard-transport--http-json-request-async request)
          (lambda (response) (plist-get response :body)))
         (lambda (reason)
           (if (and retry (hermes-dashboard-transport--auth-error-p reason))
@@ -1449,27 +1485,19 @@ retries once when the request fails."
                  method path :body body :query query :headers headers
                  :secrets secrets :retry nil))
             (hermes--promise-rejected
-             (hermes-dashboard-transport--redact-secret reason all-secrets)))))))))
+	     (hermes-dashboard-transport--redact-secret
+	      reason (plist-get request :secrets))))))))))
 
 (cl-defun hermes-dashboard-transport--api-request-with-client-async
     (client method path &key body query headers secrets)
   "Return a promise of dashboard REST METHOD PATH using CLIENT's session token.
 BODY, QUERY, HEADERS, and SECRETS extend the request."
-  (let* ((token (hermes-dashboard-transport--api-client-token client))
-         (all-secrets (append secrets (and token (list token))))
-         (url (concat (hermes-dashboard-transport--api-url
-                       (hermes-dashboard-transport--api-client-base-url client)
-                       path)
-                      (hermes-dashboard-transport--query-string query)))
-         (all-headers (append (and token
-                                   (list (cons "X-Hermes-Session-Token" token)))
-                              headers
-                              (and body
-                                   '(("Content-Type" . "application/json"))))))
-    (hermes--promise-map
-     (hermes-dashboard-transport--http-json-async
-      url :method method :headers all-headers :body body :secrets all-secrets)
-     (lambda (response) (plist-get response :body)))))
+  (hermes--promise-map
+   (hermes-dashboard-transport--http-json-request-async
+    (hermes-dashboard-transport--api-request-plist
+     (hermes-dashboard-transport--api-client-auth client)
+     method path :body body :query query :headers headers :secrets secrets))
+   (lambda (response) (plist-get response :body))))
 
 (cl-defun hermes-dashboard-transport-api-request-async
     (method path &key body query headers secrets client)
@@ -1743,25 +1771,14 @@ HOST, PORT, and BASE-URL build the URL; PASSWORD is redacted from errors."
 A rejected promise reports any failure, so the password login and WebSocket
 ticket round-trips never block Emacs."
   (condition-case err
-      (let ((provider (hermes-dashboard-transport--status-basic-provider status)))
-        (unless provider
-          (hermes-dashboard-transport--unsupported-remote-auth base-url))
-        (let* ((credentials (hermes-dashboard-transport--remote-basic-credentials
-                             base-url))
-               (password (plist-get credentials :password)))
-          (hermes--promise-then
-           (hermes-dashboard-transport--http-json-async
-            (hermes-dashboard-transport--api-url base-url "/auth/password-login")
-            :method "POST"
-            :headers '(("Content-Type" . "application/json"))
-            :body `((provider . ,provider)
-                    (username . ,(plist-get credentials :username))
-                    (password . ,password)
-                    (next . ""))
-            :secrets (list password))
-           (lambda (login-response)
-             (hermes-dashboard-transport--remote-basic-ticket-async
-              host port base-url password login-response)))))
+      (let* ((request (hermes-dashboard-transport--basic-login-request
+                       base-url status))
+             (password (car (plist-get request :secrets))))
+        (hermes--promise-then
+         (hermes-dashboard-transport--http-json-request-async request)
+         (lambda (login-response)
+           (hermes-dashboard-transport--remote-basic-ticket-async
+            host port base-url password login-response))))
     (error (hermes--promise-rejected (error-message-string err)))))
 
 (defun hermes-dashboard-transport--remote-token-auth-async
