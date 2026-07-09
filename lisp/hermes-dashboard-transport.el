@@ -445,14 +445,20 @@ token or ticket is never reconstructed."
   (replace-regexp-in-string "/api/ws\\(\\?\\|\\'\\)"
                             (concat path "\\1") url t))
 
+(defun hermes-dashboard-transport--query-pair (key value)
+  "Return KEY=VALUE percent-encoded for a URL query string."
+  (format "%s=%s"
+          (url-hexify-string (format "%s" key))
+          (url-hexify-string (format "%s" value))))
+
 (defun hermes-dashboard-transport--append-url-query (url params)
   "Return URL with PARAMS, an alist, appended as `&key=value' query pairs.
-Pairs whose value is nil are dropped; values are percent-encoded."
+Pairs whose value is nil are dropped; keys and values are percent-encoded."
   (concat url
           (mapconcat
            (lambda (kv)
-             (format "&%s=%s" (car kv)
-                     (url-hexify-string (format "%s" (cdr kv)))))
+             (concat "&" (hermes-dashboard-transport--query-pair
+                          (car kv) (cdr kv))))
            (seq-filter #'cdr params) "")))
 
 ;;; Secret redaction
@@ -471,12 +477,10 @@ malformed slot never aborts the teardown-path redaction this guards."
       (push secrets result))
     (nreverse result)))
 
-(defun hermes-dashboard-transport--non-empty-string (value)
-  "Return VALUE when it is a non-empty string."
-  (and (stringp value) (not (string-empty-p value)) value))
-
 (defun hermes-dashboard-transport--redact-secret (text &optional secrets)
-  "Return TEXT with dashboard URL credentials and SECRETS redacted."
+  "Return TEXT with dashboard URL credentials and SECRETS redacted.
+Each secret is also matched in its JSON-escaped spelling, since request
+bodies travel JSON-serialized and an error may echo the escaped form."
   (let ((message (if (stringp text) text (format "%s" text))))
     (setq message
           (replace-regexp-in-string
@@ -487,7 +491,10 @@ malformed slot never aborts the teardown-path redaction this guards."
            "\\(HERMES_DASHBOARD_SESSION_TOKEN=\\)[^[:space:])\"']+"
            "\\1<redacted>" message t nil))
     (dolist (secret (hermes-dashboard-transport--secret-list secrets))
-      (setq message (string-replace secret "<redacted>" message)))
+      (setq message (string-replace secret "<redacted>" message))
+      (let ((escaped (substring (json-encode secret) 1 -1)))
+        (unless (equal escaped secret)
+          (setq message (string-replace escaped "<redacted>" message)))))
     message))
 
 (defun hermes-dashboard-transport--client-secrets (client)
@@ -952,11 +959,7 @@ It is called with the tokenized URL and the dashboard client.")
 (defun hermes-dashboard-transport--json-body (text)
   "Return JSON object parsed from TEXT, or nil for an empty body."
   (unless (string-empty-p (string-trim (or text "")))
-    (json-parse-string text
-                       :object-type 'alist
-                       :array-type 'list
-                       :null-object nil
-                       :false-object nil)))
+    (hermes-transport-json-parse text)))
 
 (defun hermes-dashboard-transport--json-error-message (value)
   "Return a human-facing error message extracted from JSON VALUE."
@@ -1278,21 +1281,16 @@ Cached auth is also re-resolved when `hermes-dashboard-transport-url' changes."
 (defun hermes-dashboard-transport--query-string (query)
   "Return a URL query string for QUERY, an alist of (KEY . VALUE)."
   (if query
-      (concat "?" (string-join
-                   (mapcar (lambda (entry)
-                             (format "%s=%s"
-                                     (url-hexify-string
-                                      (format "%s" (car entry)))
-                                     (url-hexify-string
-                                      (format "%s" (cdr entry)))))
-                           query)
-                   "&"))
+      (concat "?" (mapconcat (lambda (entry)
+                               (hermes-dashboard-transport--query-pair
+                                (car entry) (cdr entry)))
+                             query "&"))
     ""))
 
 (defun hermes-dashboard-transport--api-client-token (client)
   "Return CLIENT's dashboard session token, or nil."
   (and (hermes-dashboard-transport-client-p client)
-       (hermes-dashboard-transport--non-empty-string
+       (hermes-transport--non-empty-string
         (hermes-dashboard-transport-client-token client))))
 
 (defun hermes-dashboard-transport--api-client-base-url (client)
@@ -1683,15 +1681,15 @@ When CLIENT is non-nil, authenticate with its live dashboard session token."
 
 (defun hermes-dashboard-transport--remote-token-secret (base-url &optional token)
   "Return legacy dashboard session token for BASE-URL, preferring TOKEN."
-  (or (hermes-dashboard-transport--non-empty-string token)
+  (or (hermes-transport--non-empty-string token)
       (when-let* ((entry (hermes-dashboard-transport--auth-source-entry
                           base-url
                           :user "hermes-dashboard-token"
                           :port "hermes-dashboard-token"
                           :require '(:secret))))
-        (hermes-dashboard-transport--non-empty-string
+        (hermes-transport--non-empty-string
          (hermes-dashboard-transport--auth-source-secret entry)))
-      (hermes-dashboard-transport--non-empty-string
+      (hermes-transport--non-empty-string
        (getenv "HERMES_DASHBOARD_SESSION_TOKEN"))
       (user-error
        "No Hermes dashboard session token found; add auth-source login hermes-dashboard-token with port hermes-dashboard-token, or set HERMES_DASHBOARD_SESSION_TOKEN for legacy token attach")))
@@ -1890,11 +1888,7 @@ reused."
 (defun hermes-dashboard-transport--decode-frame (text)
   "Decode JSON-RPC TEXT into an alist frame."
   (if (stringp text)
-      (json-parse-string text
-                         :object-type 'alist
-                         :array-type 'list
-                         :null-object nil
-                         :false-object nil)
+      (hermes-transport-json-parse text)
     text))
 
 (defun hermes-dashboard-transport--jsonrpc-request (id method params)
@@ -2055,7 +2049,8 @@ non-nil sends the resolved session id, and :params adds extra
 \(REQUEST-KEY . VALUE-FORM) cells.  Each :args and :keys symbol contributes a
 request parameter keyed by its snake_case name with the symbol as the value;
 nil values are dropped.  RESOLVE and REJECT keys are always added."
-  (declare (indent 2))
+  (declare (indent 2)
+           (debug (&define name stringp stringp &rest sexp)))
   (let* ((args (plist-get spec :args))
          (keys (plist-get spec :keys))
          (session (plist-get spec :session))

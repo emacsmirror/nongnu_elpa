@@ -317,21 +317,20 @@ OBJECT may be a hash table, plist, or alist.  Return
       (setq event (plist-put event :content content)))
     event))
 
+(defun hermes-transport--put-present-fields (event pairs)
+  "Return EVENT with each (KEY . VALUE) of PAIRS set when VALUE is non-nil."
+  (dolist (pair pairs event)
+    (when (cdr pair)
+      (setq event (plist-put event (car pair) (cdr pair))))))
+
 (defun hermes-transport--normalize-progress (raw event-name)
   "Return RAW normalized as a progress EVENT-NAME."
-  (let ((event (hermes-transport--put-common-fields
-                (list :type 'progress) raw event-name))
-        (content (hermes-transport--content raw))
-        (name (hermes-transport--scalar-string
-               (hermes-transport--get-any raw '(tool_name tool name kind))))
-        (progress (hermes-transport--get raw 'progress)))
-    (when name
-      (setq event (plist-put event :name name)))
-    (when content
-      (setq event (plist-put event :content content)))
-    (when progress
-      (setq event (plist-put event :progress progress)))
-    event))
+  (hermes-transport--put-present-fields
+   (hermes-transport--put-common-fields (list :type 'progress) raw event-name)
+   (list (cons :name (hermes-transport--scalar-string
+                      (hermes-transport--get-any raw '(tool_name tool name kind))))
+         (cons :content (hermes-transport--content raw))
+         (cons :progress (hermes-transport--get raw 'progress)))))
 
 (defun hermes-transport--normalize-tool (raw event-name)
   "Return RAW normalized as a tool EVENT-NAME."
@@ -350,27 +349,16 @@ OBJECT may be a hash table, plist, or alist.  Return
                    (hermes-transport--get raw 'arguments)
                    (hermes-transport--get item 'arguments)))
          (duration (hermes-transport--get raw 'duration))
-         (error (hermes-transport--get raw 'error))
+         (error-value (hermes-transport--get raw 'error))
          (tool-call-id (hermes-transport--get-any
                         raw '(toolCallId tool_call_id call_id)))
          (emoji (hermes-transport--get raw 'emoji)))
-    (when name
-      (setq event (plist-put event :name name)))
-    (when status
-      (setq event (plist-put event :status status)))
-    (when preview
-      (setq event (plist-put event :preview preview)))
-    (when args
-      (setq event (plist-put event :args args)))
-    (when duration
-      (setq event (plist-put event :duration duration)))
-    (when error
-      (setq event (plist-put event :error error)))
-    (when tool-call-id
-      (setq event (plist-put event :tool-call-id tool-call-id)))
-    (when emoji
-      (setq event (plist-put event :emoji emoji)))
-    event))
+    (hermes-transport--put-present-fields
+     event
+     (list (cons :name name) (cons :status status) (cons :preview preview)
+           (cons :args args) (cons :duration duration)
+           (cons :error error-value) (cons :tool-call-id tool-call-id)
+           (cons :emoji emoji)))))
 
 (defun hermes-transport--normalize-commentary (raw event-name)
   "Return RAW normalized as a commentary EVENT-NAME."
@@ -415,14 +403,20 @@ EVENT-NAME supplies an SSE event name when RAW came from an `event:' line."
     (hermes-transport--invalid-event
      raw "Invalid Hermes transport event" event-name))))
 
+(defun hermes-transport-json-parse (string)
+  "Parse STRING as JSON with the shared alist/list option set.
+All hermes-el JSON parsing goes through this so objects, arrays, null, and
+false decode identically everywhere."
+  (json-parse-string string
+                     :object-type 'alist
+                     :array-type 'list
+                     :null-object nil
+                     :false-object nil))
+
 (defun hermes-transport--json-read (string)
   "Parse STRING as JSON and return (t . VALUE), or nil on failure."
   (condition-case nil
-      (cons t (json-parse-string string
-                                 :object-type 'alist
-                                 :array-type 'list
-                                 :null-object nil
-                                 :false-object nil))
+      (cons t (hermes-transport-json-parse string))
     (error nil)))
 
 (defun hermes-transport--structured-json-looking-p (string)
@@ -491,12 +485,9 @@ EVENT-NAME supplies an SSE event name when RAW came from an `event:' line."
 (defun hermes-transport--parse-sse-events (string)
   "Return normalized events parsed from SSE STRING, or nil."
   (when (hermes-transport--sse-stream-p string)
-    (let ((text (replace-regexp-in-string "\r\n?" "\n" string))
-          events)
-      (dolist (frame (split-string text "\n\n" t))
-        (setq events
-              (append events (hermes-transport--parse-sse-frame frame))))
-      events)))
+    (mapcan #'hermes-transport--parse-sse-frame
+            (split-string (replace-regexp-in-string "\r\n?" "\n" string)
+                          "\n\n" t))))
 
 (defun hermes-transport-parse-events (raw &optional event-name)
   "Parse RAW transport data and return normalized plist events.
