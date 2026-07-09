@@ -168,11 +168,6 @@ status values."
   (or (hermes-transport--non-empty-string (hermes-kanban--status-icon status))
       (capitalize (hermes-kanban--status-label status))))
 
-(defun hermes-kanban--status-count-column (status)
-  "Return one `tabulated-list-format' count column for STATUS."
-  (let ((heading (hermes-kanban--status-column-heading status)))
-    (list heading 5 t)))
-
 (defun hermes-kanban--display-status-value (display)
   "Return the backend status represented by DISPLAY."
   (let* ((plain (substring-no-properties display))
@@ -201,16 +196,11 @@ status values."
                                 (list "📋" (nth 1 widths) t)
                                 (list "Σ" (nth 2 widths) t))))
     (vconcat fixed-columns
-             (let ((statuses hermes-kanban--board-count-statuses)
-                   (status-widths (nthcdr 3 widths))
-                   columns)
-               (while statuses
-                 (let ((column (hermes-kanban--status-count-column (car statuses))))
-                   (setcar (cdr column) (car status-widths))
-                   (push column columns))
-                 (setq statuses (cdr statuses)
-                       status-widths (cdr status-widths)))
-               (nreverse columns)))))
+             (cl-mapcar (lambda (status column-width)
+                          (list (hermes-kanban--status-column-heading status)
+                                column-width t))
+                        hermes-kanban--board-count-statuses
+                        (nthcdr 3 widths)))))
 
 (defun hermes-kanban--tasks-tabulated-list-format (&optional width)
   "Return the dynamic task `tabulated-list-format' for WIDTH."
