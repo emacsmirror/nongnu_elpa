@@ -42,10 +42,31 @@
 (declare-function set-itimer-restart "vm-xemacs.el" (itimer restart))
 
 (declare-function vm-update-draft-count "vm.el" ())
-(declare-function vm "vm.el" 
-		  (&optional folder 
+(declare-function vm "vm.el"
+		  (&optional folder
 			     &key read-only access-method reload revisit))
 (declare-function vm-mode "vm.el" (&optional read-only))
+(declare-function vm-version "vm.el" ())
+
+;; vm-imap.el functions - cyclic dependency
+(declare-function vm-imap-make-filename-for-spec "vm-imap" (spec))
+(declare-function vm-imap-set-default-attributes "vm-imap" (m))
+(declare-function vm-imap-end-session "vm-imap"
+		  (process &optional imap-buffer keep-buffer))
+(declare-function vm-imap-synchronize-folder "vm-imap" t)
+(declare-function vm-imap-find-spec-for-buffer "vm-imap" (buffer))
+(declare-function vm-imap-folder-check-mail "vm-imap" (&optional interactive))
+(declare-function vm-imap-account-name-for-spec "vm-imap" (spec))
+
+;; vm-virtual.el functions - cyclic dependency
+(declare-function vm-virtual-quit "vm-virtual" (&optional no-expunge no-change))
+(declare-function vm-virtual-save-folder "vm-virtual" (prefix))
+(declare-function vm-virtual-get-new-mail "vm-virtual" ())
+(declare-function vm-build-virtual-message-list "vm-virtual"
+		  (new-messages &optional dont-finalize))
+
+;; vm-mark.el function
+(declare-function vm-marked-messages "vm-mark" ())
 		  
 
 ;; Operations for vm-folder-access-data

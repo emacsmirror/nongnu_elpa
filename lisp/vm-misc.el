@@ -30,6 +30,9 @@
 ;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
 (declare-function find-coding-system "vm-xemacs" (coding-system-or-name))
 (declare-function map-extents "vm-xemacs" (function &optional buffer from to))
+(declare-function focus-frame "vm-xemacs" (frame))
+(declare-function char-to-int "vm-xemacs" (char))
+(declare-function scroll-bar-mode "scroll-bar" (&optional arg))
 
 ;; Aliases for xemacs/fsfemacs functions with different arguments
 ;; (declare-function vm-interactive-p "vm-misc.el"

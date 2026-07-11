@@ -38,6 +38,9 @@
 (declare-function vm-sort-messages "vm-sort.el"
 		  (keys &optional lets-get-physical))
 
+;; vm-imap.el function
+(declare-function vm-imap-folder-for-spec "vm-imap" (spec))
+
 (defvar scrollbar-height)		; defined for XEmacs
 
 

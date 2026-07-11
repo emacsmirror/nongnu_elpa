@@ -44,7 +44,13 @@
 	    err
 	    )))
   
-;; Load byte compile 
+;; Declarations for optional/platform-specific functions
+(declare-function cygwin-mount-activate "ext:cygwin-mount" ())
+(declare-function cygwin-mount-convert-file-name "ext:cygwin-mount" (path))
+(declare-function custom-make-dependencies "cus-dep" ())
+(declare-function update-autoloads-from-directories "autoload" (&rest dirs))
+
+;; Load byte compile
 (require 'bytecomp)
 ;; Current public setting
 ;; Check for undefined functions, ignore save-excursion problems

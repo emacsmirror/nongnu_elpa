@@ -58,6 +58,10 @@
 (defvar current-itimer)
 
 (declare-function vm-decode-mime-encoded-words-in-string "vm-mime" (string))
+
+;; X11 display functions
+(declare-function x-display-pixel-width "xfns.c" (&optional terminal))
+(declare-function x-display-pixel-height "xfns.c" (&optional terminal))
 (declare-function vm-goto-message "vm-motion" (n))
 (declare-function vm-mouse-set-mouse-track-highlight "vm-mouse"
 		  (start end &optional overlay))

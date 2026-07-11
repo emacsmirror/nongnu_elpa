@@ -72,7 +72,17 @@
 
 (declare-function vm-mode "vm" (&optional read-only))
 (declare-function vm-session-initialization "vm" ())
+(declare-function vm-version "vm" ())
 (declare-function get-itimer "vm-xemacs.el" (name))
+
+;; vm-digest.el functions - cyclic dependency
+(declare-function vm-no-frills-encapsulate-message "vm-digest"
+		  (m keep-list discard-regexp))
+(declare-function vm-mime-encapsulate-messages "vm-digest" t)
+(declare-function vm-rfc934-encapsulate-messages "vm-digest"
+		  (message-list keep-list discard-regexp))
+(declare-function vm-rfc1153-encapsulate-messages "vm-digest"
+		  (message-list keep-list discard-regexp))
 
 (declare-function mail-strip-quoted-names "ext:mail-utils" (address))
 (declare-function mail-fetch-field "ext:mail-utils" 

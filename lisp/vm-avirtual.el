@@ -115,11 +115,19 @@
 ;; The following function is erroneously called for fsfemacs as well
 (declare-function key-or-menu-binding "vm-xemacs" (key &optional menu-flag))
 (declare-function bbdb-get-addresses "ext:bbdb-com"
-		  (only-first-address 
-		   uninteresting-senders 
+		  (only-first-address
+		   uninteresting-senders
 		   get-header-content-function
 		   &rest get-header-content-function-args))
 (declare-function bbdb-search-simple "ext:bbdb" (name net))
+
+;; vm-save.el function
+(declare-function vm-save-message "vm-save"
+		  (folder &optional count mlist quiet))
+
+;; vm-virtual.el function - cyclic dependency
+(declare-function vm-build-virtual-message-list "vm-virtual"
+		  (new-messages &optional dont-finalize))
 
 ; group already defined in vm-vars
 ;(defgroup vm nil
