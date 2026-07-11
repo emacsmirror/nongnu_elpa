@@ -236,15 +236,9 @@ ERROR-PLIST has the shape produced by `hermes-capabilities--make-error'."
   "Convert PLIST into an alist with keyword names as symbols.
 Keys keep their names without the leading colon so the JSON output uses bare
 field names (e.g. `ok', `content', `method')."
-  (let (alist)
-    (while (and (consp plist) (consp (cdr plist)))
-      (let ((key (car plist))
-            (value (cadr plist)))
-        (when (keywordp key)
-          (let ((name (intern (substring (symbol-name key) 1))))
-            (push (cons name value) alist)))
-        (setq plist (cddr plist))))
-    (nreverse alist)))
+  (cl-loop for (key value) on plist by #'cddr
+           when (keywordp key)
+           collect (cons (intern (substring (symbol-name key) 1)) value)))
 
 (defun hermes-capabilities--code-number (code)
   "Return a JSON-RPC integer error code for symbolic CODE."
