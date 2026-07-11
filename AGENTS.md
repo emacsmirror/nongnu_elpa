@@ -75,6 +75,9 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
   - `hermes-chat-models.el` -- model/provider selection: `model.options`
     completion candidates, the `config.set` model switch with its
     expensive-model confirmation loop, API-key provider connect.
+  - `hermes-chat-handoff.el` -- session handoff: the `handoff.request`
+    command, live-platform target prompt, and the backoff-polled
+    `handoff.state` watcher with its `handoff.fail` timeout.
   - `hermes-chat-prompts.el` -- the approval/clarify/sudo/secret prompt flows.
   - `hermes-chat-dashboard.el` -- chat<->dashboard glue, session restore/reattach.
 - `hermes.el` -- the `M-x hermes` EWOC dashboard entry; requires the world.
