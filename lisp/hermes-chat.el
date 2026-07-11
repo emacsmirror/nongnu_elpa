@@ -34,6 +34,7 @@
 (require 'subr-x)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-dashboard-rpc)
 (require 'hermes-chat-format)
 
 (declare-function hermes-chat--prompt-event-type "hermes-chat-prompts" (event))

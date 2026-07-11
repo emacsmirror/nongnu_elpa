@@ -31,6 +31,7 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-dashboard-rpc)
 (require 'hermes-promise)
 (require 'hermes-browser)
 (require 'hermes-chat)

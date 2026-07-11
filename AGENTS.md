@@ -46,13 +46,17 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
   subprocess fallback (`hermes-transport-send`) and the
   `hermes-transport-send-function` seam. Smoke-test transport only.
 - `hermes-dashboard-transport.el` -- the side-effecting transport: WebSocket
-  connect + async auth handshake, REST over async `url-retrieve`/promises, the
-  `hermes-dashboard-transport-define-rpc` macro that generates the JSON-RPC
-  method wrappers, the client struct/lifecycle, and secret redaction. All
-  network code lives here; everything else calls into it. Also exposes
+  connect + async auth handshake, REST over async `url-retrieve`/promises,
+  the client struct/lifecycle, JSON-RPC request/promise plumbing, and secret
+  redaction. All network code lives here. Also exposes
   `hermes-dashboard-transport-open-websocket`, a redaction-wrapped raw-socket
   opener for callers (e.g. the kanban live-events tail) that own a separate
   plain-JSON stream rather than the chat JSON-RPC client.
+- `hermes-dashboard-rpc.el` -- the typed JSON-RPC method wrappers: the
+  `hermes-dashboard-transport-define-rpc` macro plus one generated wrapper per
+  gateway method (wrapper names keep the `hermes-dashboard-transport-` prefix).
+  Modules that call gateway methods require this; the transport core does not
+  depend on it.
 - `hermes-chat*` -- one logical module (see the require note in `hermes-chat.el`):
   - `hermes-chat-format.el` -- pure render helpers: markdown fontification, diff
     detection, ANSI stripping, the `hermes-chat--{ready,error,active}-statuses`
@@ -100,7 +104,8 @@ markdown and swap diffs for View Diff links. The agent reply stays the last node
 
 Extension seams (prefer these over ad hoc additions):
 
-- New RPC method -> add a `hermes-dashboard-transport-define-rpc` form.
+- New RPC method -> add a `hermes-dashboard-transport-define-rpc` form in
+  `hermes-dashboard-rpc.el`.
 - New event type -> handle it in the `hermes-transport--normalize-*` dispatch and
   the `hermes-chat--turn-reduce` reducer, and add a keyword to the status tables
   in `hermes-chat-format.el`.

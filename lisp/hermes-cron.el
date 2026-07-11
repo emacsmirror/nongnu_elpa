@@ -31,6 +31,7 @@
 (require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-dashboard-rpc)
 (require 'hermes-promise)
 (require 'hermes-browser)
 

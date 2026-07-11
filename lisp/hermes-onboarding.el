@@ -36,6 +36,7 @@
 (require 'hermes-promise)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-dashboard-rpc)
 (require 'hermes-browser)
 
 ;;; Pure provider model

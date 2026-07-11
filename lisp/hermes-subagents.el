@@ -29,6 +29,7 @@
 (require 'tabulated-list)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-dashboard-rpc)
 (require 'hermes-browser)
 
 (defun hermes-subagents--rows (result)
