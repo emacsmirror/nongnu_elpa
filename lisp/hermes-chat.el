@@ -738,10 +738,6 @@ and approval bypass (YOLO)."
   "Return the current input tail trimmed for sending."
   (string-trim (hermes-chat-input-string)))
 
-(defun hermes-chat--delete-input-tail ()
-  "Delete the current writable input tail."
-  (delete-region (hermes-chat--input-position) (point-max)))
-
 (defun hermes-chat--replace-input-tail (content)
   "Replace the current writable input tail with CONTENT."
   (hermes-chat--delete-input-tail)

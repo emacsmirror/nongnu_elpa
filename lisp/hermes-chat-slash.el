@@ -38,7 +38,6 @@
 
 (declare-function hermes-chat--alias-content "hermes-chat" (name arg))
 (declare-function hermes-chat--commands-categories-content "hermes-chat" (result))
-(declare-function hermes-chat--delete-input-tail "hermes-chat" ())
 (declare-function hermes-chat--handle-command-result "hermes-chat" (result arg))
 (declare-function hermes-chat--new-buffer "hermes-chat" (&optional profile title))
 (declare-function hermes-chat-background "hermes-chat" (arg))

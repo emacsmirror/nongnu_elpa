@@ -691,6 +691,10 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
             (ewoc-invalidate hermes-chat--ewoc node))))
       hermes-chat--nodes))))
 
+(defun hermes-chat--delete-input-tail ()
+  "Delete the current writable input tail."
+  (delete-region (hermes-chat--input-position) (point-max)))
+
 ;;; Entry and header-state primitives
 
 ;; Shared by every chat sibling module; they live here, next to the
