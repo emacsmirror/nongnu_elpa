@@ -75,9 +75,6 @@ which keeps tests and user custom transports working."
 Distinguishes a `/btw' result that arrives out of band from ordinary turns."
   :group 'hermes)
 
-(defvar hermes-chat-state-change-hook nil
-  "Hook run in a Hermes chat buffer when dashboard-visible state changes.")
-
 ;; Buffer/EWOC state owned by `hermes-chat-buffer'; re-declared here for the
 ;; byte-compiler.  See that file for the authoritative defvar-locals and docs.
 (defvar hermes-chat--ewoc)
@@ -96,6 +93,8 @@ number and the prompt that launched it.")
 ;; Connection state owned by `hermes-chat-buffer'; re-declared here for the
 ;; byte-compiler.  See that file for the authoritative defvar-locals and docs.
 (defvar hermes-chat--process)
+(defvar hermes-chat--status-state)
+(defvar hermes-chat--active-tools)
 (defvar hermes-chat--dashboard-client)
 (defvar hermes-chat--dashboard-session-ready-p)
 (defvar hermes-chat--dashboard-active-session-id)
@@ -127,9 +126,6 @@ Shown as annotations after the model in the chat header.")
 (defvar hermes-chat--dashboard-stream-assistant-id)
 (defvar hermes-chat--dashboard-suppress-stream-p)
 
-(defvar-local hermes-chat--status-state nil
-  "Plist describing the live status shown in the chat header.")
-
 (defvar-local hermes-chat--title nil
   "Human title for this chat session.
 Set by `hermes-chat-rename'.  Shown in the buffer name and reported to the
@@ -139,9 +135,6 @@ dashboard; nil falls back to the buffer name.")
   "Non-nil when the user set this chat's title via `hermes-chat-rename'.
 A manual title is preserved against the automatic session-title refresh.")
 
-(defvar-local hermes-chat--active-tools nil
-  "Hash table of active tool summaries shown in the chat header.")
-
 ;; Queue and stream state owned by `hermes-chat-buffer'; re-declared here for
 ;; the byte-compiler.
 (defvar hermes-chat--queued-message)
@@ -149,25 +142,11 @@ A manual title is preserved against the automatic session-title refresh.")
 (defvar hermes-chat--draining-queued-message-p)
 (defvar hermes-chat--ansi-fragments)
 
-(defvar hermes-chat--entry-counter 0
-  "Counter used to generate local chat entry IDs.")
-
 (defconst hermes-chat--transient-entry-roles '(status progress tool)
   "Entry roles used for compact transport status/progress lines.")
 
 (defconst hermes-chat--unknown-event-raw-preview-width 180
   "Maximum width for raw unknown transport event previews.")
-
-(defun hermes-chat--next-id (role)
-  "Return a new local entry ID for ROLE."
-  (format "%s-%d" role (cl-incf hermes-chat--entry-counter)))
-
-(defun hermes-chat--entry-with (entry &rest props)
-  "Return a copy of ENTRY with PROPS applied."
-  (let ((copy (copy-sequence entry)))
-    (while props
-      (setq copy (plist-put copy (pop props) (pop props))))
-    copy))
 
 (defun hermes-chat--entry-expanded-p (entry)
   "Return non-nil when ENTRY's detail view is expanded."
@@ -325,17 +304,6 @@ BLOCKS, when given, is a precomputed `hermes-chat--diff-blocks' result."
       (setq pos (nth 1 block)))
     (funcall insert-text (substring content pos))))
 
-(defun hermes-chat--make-entry (role content &optional status id metadata)
-  "Return a chat entry plist for ROLE and CONTENT.
-STATUS defaults to `done'.  ID defaults to a generated local ID.
-METADATA is stored as the entry's `:metadata' plist."
-  (list :id (or id (hermes-chat--next-id role))
-        :role role
-        :status (or status 'done)
-        :content (hermes-chat--sanitize-content content)
-        :created (current-time)
-        :metadata metadata))
-
 (defun hermes-chat--unknown-event-content (event)
   "Return visible diagnostic text for unknown transport EVENT."
   (let* ((name (or (hermes-chat--event-string event '(:event)) "unnamed"))
@@ -349,27 +317,6 @@ METADATA is stored as the entry's `:metadata' plist."
      (delq nil (list (format "Unknown Hermes transport event: %s" name)
                      (and preview (format "raw: %s" preview))))
      "\n")))
-
-(defun hermes-chat--notify-state-change ()
-  "Run `hermes-chat-state-change-hook' in the current chat buffer."
-  (run-hooks 'hermes-chat-state-change-hook))
-
-(defun hermes-chat--set-header-state (&rest props)
-  "Merge PROPS into `hermes-chat--status-state' and refresh the header."
-  (setq hermes-chat--status-state
-        (apply #'hermes-chat--entry-with
-               hermes-chat--status-state
-               (append props (list :updated (current-time)))))
-  (force-mode-line-update)
-  (hermes-chat--notify-state-change))
-
-(defun hermes-chat--reset-header-state ()
-  "Reset live header state for the current chat buffer."
-  (setq hermes-chat--active-tools (make-hash-table :test 'equal)
-        hermes-chat--status-state
-        (list :status 'ready :activity "Ready" :updated (current-time)))
-  (force-mode-line-update)
-  (hermes-chat--notify-state-change))
 
 (defun hermes-chat--clear-active-tools ()
   "Forget currently active tools in the chat header."
@@ -778,10 +725,6 @@ and approval bypass (YOLO)."
 (declare-function hermes-chat--transport-callback "hermes-chat-dashboard" (buffer assistant-id dashboard-p generation))
 (declare-function hermes-chat--with-dashboard-session "hermes-chat-dashboard" (content buffer action &optional reject))
 
-(defun hermes-chat--active-turn-p ()
-  "Return non-nil when this chat buffer has an active Hermes turn."
-  hermes-chat--pending-assistant-id)
-
 (defun hermes-chat--busy-message ()
   "Return the user-facing busy/backpressure message."
   (concat "A Hermes reply is still pending; use C-c C-i to interrupt, "
@@ -815,11 +758,6 @@ and approval bypass (YOLO)."
 (defun hermes-chat--preview (content)
   "Return a compact preview for CONTENT."
   (truncate-string-to-width (string-replace "\n" " " content) 80 nil nil "…"))
-
-(defun hermes-chat--insert-local-status (content &optional status)
-  "Insert local status CONTENT with optional STATUS."
-  (hermes-chat--insert-entry
-   (hermes-chat--make-entry 'status content (or status 'done))))
 
 (defun hermes-chat--queue-content (content &optional note display)
   "Queue CONTENT for the next turn, inserting NOTE when non-nil.
@@ -945,11 +883,6 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
     (_
      (when-let* ((output (hermes-chat--result-output result)))
        (hermes-chat--insert-local-status output 'done)))))
-
-(defun hermes-chat--command-error (message)
-  "Render dashboard command error MESSAGE."
-  (hermes-chat--insert-local-status message 'error)
-  (hermes-chat--set-header-state :status 'error :activity message))
 
 (defun hermes-chat--format-command-pair (pair)
   "Return a readable catalog line for PAIR."

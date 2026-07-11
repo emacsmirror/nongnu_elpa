@@ -64,17 +64,13 @@ without each one repeating the liveness guard."
 
 (declare-function hermes-chat--clear-ansi-fragment "hermes-chat" (key))
 (declare-function hermes-chat--entry-expanded-p "hermes-chat" (entry))
-(declare-function hermes-chat--entry-with "hermes-chat" (entry &rest props))
 (declare-function hermes-chat--header-line "hermes-chat" ())
 (declare-function hermes-chat--insert-diff-entry "hermes-chat" (content))
 (declare-function hermes-chat--insert-background-entry "hermes-chat" (entry))
 (declare-function hermes-chat--insert-diffed "hermes-chat" (content insert-text &optional blocks))
 (declare-function hermes-chat--insert-markdown "hermes-chat" (text))
 (declare-function hermes-chat--insert-shadow "hermes-chat" (text))
-(declare-function hermes-chat--make-entry "hermes-chat" (role content &optional status id metadata))
 (declare-function hermes-chat--metadata-preserve-expanded "hermes-chat" (entry metadata))
-(declare-function hermes-chat--notify-state-change "hermes-chat" ())
-(declare-function hermes-chat--reset-header-state "hermes-chat" ())
 
 (defvar-local hermes-chat--ansi-fragments nil
   "Partial ANSI escape sequences by stream key, from `hermes-chat'.")
@@ -694,6 +690,82 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
             (ewoc-set-data node (hermes-chat--entry-with entry :status status))
             (ewoc-invalidate hermes-chat--ewoc node))))
       hermes-chat--nodes))))
+
+;;; Entry and header-state primitives
+
+;; Shared by every chat sibling module; they live here, next to the
+;; buffer-local state they touch, so no module needs a
+;; declare-function to reach them.
+
+(defvar hermes-chat-state-change-hook nil
+  "Hook run in a Hermes chat buffer when dashboard-visible state changes.")
+
+(defvar-local hermes-chat--status-state nil
+  "Plist describing the live status shown in the chat header.")
+
+(defvar-local hermes-chat--active-tools nil
+  "Hash table of active tool summaries shown in the chat header.")
+
+(defvar hermes-chat--entry-counter 0
+  "Counter used to generate local chat entry IDs.")
+
+(defun hermes-chat--next-id (role)
+  "Return a new local entry ID for ROLE."
+  (format "%s-%d" role (cl-incf hermes-chat--entry-counter)))
+
+(defun hermes-chat--entry-with (entry &rest props)
+  "Return a copy of ENTRY with PROPS applied."
+  (let ((copy (copy-sequence entry)))
+    (while props
+      (setq copy (plist-put copy (pop props) (pop props))))
+    copy))
+
+(defun hermes-chat--make-entry (role content &optional status id metadata)
+  "Return a chat entry plist for ROLE and CONTENT.
+STATUS defaults to `done'.  ID defaults to a generated local ID.
+METADATA is stored as the entry's `:metadata' plist."
+  (list :id (or id (hermes-chat--next-id role))
+        :role role
+        :status (or status 'done)
+        :content (hermes-chat--sanitize-content content)
+        :created (current-time)
+        :metadata metadata))
+
+(defun hermes-chat--notify-state-change ()
+  "Run `hermes-chat-state-change-hook' in the current chat buffer."
+  (run-hooks 'hermes-chat-state-change-hook))
+
+(defun hermes-chat--set-header-state (&rest props)
+  "Merge PROPS into `hermes-chat--status-state' and refresh the header."
+  (setq hermes-chat--status-state
+        (apply #'hermes-chat--entry-with
+               hermes-chat--status-state
+               (append props (list :updated (current-time)))))
+  (force-mode-line-update)
+  (hermes-chat--notify-state-change))
+
+(defun hermes-chat--reset-header-state ()
+  "Reset live header state for the current chat buffer."
+  (setq hermes-chat--active-tools (make-hash-table :test 'equal)
+        hermes-chat--status-state
+        (list :status 'ready :activity "Ready" :updated (current-time)))
+  (force-mode-line-update)
+  (hermes-chat--notify-state-change))
+
+(defun hermes-chat--active-turn-p ()
+  "Return non-nil when this chat buffer has an active Hermes turn."
+  hermes-chat--pending-assistant-id)
+
+(defun hermes-chat--insert-local-status (content &optional status)
+  "Insert local status CONTENT with optional STATUS."
+  (hermes-chat--insert-entry
+   (hermes-chat--make-entry 'status content (or status 'done))))
+
+(defun hermes-chat--command-error (message)
+  "Render dashboard command error MESSAGE."
+  (hermes-chat--insert-local-status message 'error)
+  (hermes-chat--set-header-state :status 'error :activity message))
+
 
 (provide 'hermes-chat-buffer)
 ;;; hermes-chat-buffer.el ends here

@@ -41,12 +41,7 @@
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
 
-(declare-function hermes-chat--active-turn-p "hermes-chat" ())
-(declare-function hermes-chat--command-error "hermes-chat" (message))
 (declare-function hermes-chat--header-activity-for-event "hermes-chat" (event))
-(declare-function hermes-chat--insert-local-status "hermes-chat" (content &optional status))
-(declare-function hermes-chat--notify-state-change "hermes-chat" ())
-(declare-function hermes-chat--set-header-state "hermes-chat" (&rest props))
 
 (declare-function hermes-chat--dashboard-control-client "hermes-chat-dashboard" ())
 

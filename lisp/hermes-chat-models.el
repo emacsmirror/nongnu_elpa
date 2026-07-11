@@ -35,9 +35,6 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-chat-buffer)
 
-(declare-function hermes-chat--active-turn-p "hermes-chat" ())
-(declare-function hermes-chat--command-error "hermes-chat" (message))
-(declare-function hermes-chat--insert-local-status "hermes-chat" (content &optional status))
 (declare-function hermes-chat--dashboard-client-live-p "hermes-chat-dashboard" (client))
 (declare-function hermes-chat--dashboard-session-attached-p "hermes-chat-dashboard" ())
 
