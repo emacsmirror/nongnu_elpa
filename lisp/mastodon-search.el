@@ -289,6 +289,17 @@ If NOTE is non-nil, include user's profile note. This is also
                               mastodon-tl--horiz-bar
                               "\n\n"))))
 
+(defun mastodon-search-propertize-user-handle (handle)
+  "Propertize user HANDLE as a link."
+  (propertize
+   (concat "@" handle)
+   'face 'mastodon-handle-face
+   'mouse-face 'highlight
+   'mastodon-tab-stop 'user-handle
+   'keymap mastodon-tl--link-keymap
+   'mastodon-handle (concat "@" handle)
+   'help-echo (concat "Browse user profile of @" handle)))
+
 (defun mastodon-search--propertize-user (acct &optional note)
   "Propertize display string for ACCT, optionally including profile NOTE."
   (let* ((user (mastodon-search--get-user-info acct))
@@ -301,13 +312,7 @@ If NOTE is non-nil, include user's profile note. This is also
                   'item-type 'user
                   'item-id id) ; for prev/next nav
       " : \n : "
-      (propertize (concat "@" (cadr user))
-                  'face 'mastodon-handle-face
-                  'mouse-face 'highlight
-		  'mastodon-tab-stop 'user-handle
-		  'keymap mastodon-tl--link-keymap
-                  'mastodon-handle (concat "@" (cadr user))
-		  'help-echo (concat "Browse user profile of @" (cadr user)))
+      (mastodon-search-propertize-user-handle (cadr user))
       " : \n"
       (when note
         (mastodon-tl--render-text (cadddr user) acct))
