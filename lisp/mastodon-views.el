@@ -156,6 +156,15 @@
 
 ;;; GENERAL FUNCTION
 
+(defun mastodon-views-no-data-str (thing)
+  "Return a no-data string for object type THING."
+  (propertize
+   (format "Looks like you have no %s for now." thing)
+   'face 'mastodon-toot-docs-face
+   'byline t
+   'item-type 'no-item ; for nav
+   'item-id "0")) ; so point can move here when no item
+
 (defun mastodon-views--minor-view (view-name insert-fun data)
   "Load a minor view named VIEW-NAME.
 BINDINGS-STRING is a string explaining the view's local bindings.
@@ -169,12 +178,7 @@ provides the JSON data."
   ;; to set up the empty buffer or else call the insert-fun. not sure if we cd
   ;; improve by eg calling init-sync in here, making this a real view function.
   (if (seq-empty-p data)
-      (insert (propertize
-               (format "Looks like you have no %s for now." view-name)
-               'face 'mastodon-toot-docs-face
-               'byline t
-               'item-type 'no-item ; for nav
-               'item-id "0")) ; so point can move here when no item
+      (insert (mastodon-views-no-data-str view-name))
     (funcall insert-fun data)
     (goto-char (point-min)))
   ;; (when data
