@@ -65,6 +65,12 @@
 (autoload 'mastodon-search--insert-users-propertized "mastodon-search")
 (autoload 'mastodon-tl--map-alist "mastodon-tl")
 (autoload 'mastodon-tl--map-alist-vals-to-alist "mastodon-tl")
+(autoload 'mastodon-search--insert-heading "mastodon-search")
+(autoload 'mastodon-profile--profile-json "mastodon-profile")
+(autoload 'mastodon-profile--pretty-table "mastodon-profile")
+(autoload 'mastodon-profile--insert-fields "mastodon-profile")
+(autoload 'mastodon-search-propertize-user-handle "mastodon-search")
+(autoload 'mastodon-tl--render-base-tag "mastodon-tl")
 
 
 ;;; KEYMAPS
@@ -1073,6 +1079,75 @@ IND is the optional indentation level to print at."
              (< 50 (length rend)))
         "\n"
       "")))
+
+;;; COLLECTIONS
+
+;; collections are sortable in the web UI but not via the API.
+;; sort: date added, last active, most followers, alphabetical
+
+(defun mastodon-views-get-collection (id)
+  "Return collection with ID."
+  (let ((endpoint (mastodon-http--api
+                   (format "collections/%s" id))))
+    (mastodon-http--get-json endpoint)))
+
+(defun mastodon-views-get-account-collections (id)
+  "Return collections for account with ID."
+  (let ((endpoint (mastodon-http--api
+                   (format "accounts/%s/collections" id))))
+    (mastodon-http--get-json endpoint)))
+
+(defun mastodon-views-collections-featuring-account (id)
+  "Return collections featuring account with ID."
+  (let ((endpoint (mastodon-http--api
+                   (format "accounts/%s/in_collections" id))))
+    (mastodon-http--get-json endpoint)))
+
+(defun mastodon-views--insert-collection (json)
+  "Insert the collection from JSON."
+  (if (not json)
+      (mastodon-views-no-data-str "collection")
+    (let-alist json
+      (mastodon-search--insert-heading
+       (concat "collection ".collection.name))
+      ;; (setq test-coll .collection)
+      ;; FIXME: in collection view, web UI:
+      ;; - collection is sharable (ie copy URL, need to store coll JSON somewhere)
+      ;; - coll is editable (edit details, need keymap, & instructions str?)
+      (mastodon-profile--pretty-table
+       #'mastodon-profile--insert-fields
+       nil
+       `(("topic" . ,(mastodon-tl--render-base-tag .collection.tag nil))
+         ("by" . ,(mastodon-search-propertize-user-handle
+                   (alist-get 'username (car .accounts))))
+         ("desc" . ,.collection.description)
+         ("items" . ,(number-to-string .collection.item_count))))
+      (insert "\n")
+      ;; FIXME: confirm if first acct is owner?
+      (mastodon-views--insert-users-propertized-note (cdr .accounts)))))
+
+(defun mastodon-views-read-account-collection (json)
+  "Read a collection by name and return its ID.
+JSON is the profile data to get collections for."
+  (let* ((id (alist-get 'id json))
+         (colls (mastodon-views-get-account-collections id))
+         (cands (cl-loop for x in (alist-get 'collections colls)
+                         collect (cons (alist-get 'name x)
+                                       (alist-get 'id x))))
+         (choice
+          (completing-read "Collection: " cands nil :match)))
+    (alist-get choice cands nil nil #'string=)))
+
+(defun mastodon-views-view-collection ()
+  "Prompt for a collection and view it.
+Must be called from a user's profile."
+  (interactive)
+  (let* ((profile (mastodon-profile--profile-json))
+         (id (mastodon-views-read-account-collection profile)))
+    (mastodon-tl--init-sync
+     (format "%s-collection" (alist-get 'username profile))
+     (format "collections/%s" id)
+     'mastodon-views--insert-collection)))
 
 (provide 'mastodon-views)
 ;;; mastodon-views.el ends here
