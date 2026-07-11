@@ -855,10 +855,6 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
       (hermes-chat--queue-content content nil display)
     (hermes-chat--submit-content content display)))
 
-(defun hermes-chat--result-string (result key)
-  "Return RESULT's scalar value for KEY as a string."
-  (hermes-transport--scalar-string (hermes-transport--get result key)))
-
 (defun hermes-chat--result-type (result)
   "Return command RESULT's lower-case type string."
   (when-let* ((type (hermes-chat--result-string result 'type)))
@@ -955,24 +951,6 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
   (hermes-chat--insert-local-status message 'error)
   (hermes-chat--set-header-state :status 'error :activity message))
 
-(defun hermes-chat--listify (value)
-  "Return VALUE as a list when it is a list or vector."
-  (cond
-   ((vectorp value) (append value nil))
-   ((listp value) value)))
-
-(defun hermes-chat--pair-command (pair)
-  "Return command name from catalog PAIR."
-  (cond
-   ((vectorp pair) (and (> (length pair) 0) (aref pair 0)))
-   ((consp pair) (car pair))))
-
-(defun hermes-chat--pair-description (pair)
-  "Return command description from catalog PAIR."
-  (cond
-   ((vectorp pair) (and (> (length pair) 1) (aref pair 1)))
-   ((consp pair) (cadr pair))))
-
 (defun hermes-chat--format-command-pair (pair)
   "Return a readable catalog line for PAIR."
   (let ((name (hermes-chat--scalar-string (hermes-chat--pair-command pair)))
@@ -996,15 +974,6 @@ transcript shows only \"loading skill: NAME\", not the whole skill."
                      "\n\n")
       (hermes-chat--format-command-category
        `((name . "Commands") (pairs . ,(hermes-transport--get result 'pairs)))))))
-
-(defun hermes-chat--maplike-entries (value)
-  "Return VALUE's entries when VALUE is an alist or hash table."
-  (cond
-   ((hash-table-p value)
-    (let (entries)
-      (maphash (lambda (key item) (push (cons key item) entries)) value)
-      (nreverse entries)))
-   ((listp value) value)))
 
 (defun hermes-chat-input-string ()
   "Return the current input tail as a plain string."

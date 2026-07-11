@@ -519,5 +519,43 @@ markdown stays visible and easy to copy."
         (buffer-string))
     (error text)))
 
+;;; Value coercion helpers
+
+;; Pure plist/alist/vector coercions shared by the chat siblings;
+;; they live in this pure layer so no module needs a declare-function
+;; to reach them.
+
+(defun hermes-chat--result-string (result key)
+  "Return RESULT's scalar value for KEY as a string."
+  (hermes-transport--scalar-string (hermes-transport--get result key)))
+
+(defun hermes-chat--listify (value)
+  "Return VALUE as a list when it is a list or vector."
+  (cond
+   ((vectorp value) (append value nil))
+   ((listp value) value)))
+
+(defun hermes-chat--pair-command (pair)
+  "Return command name from catalog PAIR."
+  (cond
+   ((vectorp pair) (and (> (length pair) 0) (aref pair 0)))
+   ((consp pair) (car pair))))
+
+(defun hermes-chat--pair-description (pair)
+  "Return command description from catalog PAIR."
+  (cond
+   ((vectorp pair) (and (> (length pair) 1) (aref pair 1)))
+   ((consp pair) (cadr pair))))
+
+(defun hermes-chat--maplike-entries (value)
+  "Return VALUE's entries when VALUE is an alist or hash table."
+  (cond
+   ((hash-table-p value)
+    (let (entries)
+      (maphash (lambda (key item) (push (cons key item) entries)) value)
+      (nreverse entries)))
+   ((listp value) value)))
+
+
 (provide 'hermes-chat-format)
 ;;; hermes-chat-format.el ends here
