@@ -639,7 +639,7 @@ JSON is the filters data."
     (mastodon-views--end-of-table)))
 
 (defun mastodon-views--end-of-table ()
-  ""
+  "Go to end of table."
   (while (re-search-forward ;; goto end of table:
           (concat table-cell-horizontal-chars
                   (make-string 1 table-cell-intersection-char)
