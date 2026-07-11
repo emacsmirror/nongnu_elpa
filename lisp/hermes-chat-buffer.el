@@ -21,15 +21,11 @@
 ;;; Commentary:
 
 ;; Stateful EWOC rendering and editable-tail buffer helpers for the Hermes
-;; chat UI.  This file is one area of a single logical chat module split for
-;; size across hermes-chat.el (entry model, markdown/diff rendering, command
-;; surface), this file (the EWOC spine and writable input tail),
-;; hermes-chat-prompts.el (approval/clarify/sudo/secret dialogs), and
-;; hermes-chat-dashboard.el (per-session transport state).  The split is by
-;; area, not a strict bottom-up layering: this spine calls back into
-;; hermes-chat.el for entry/markdown/diff rendering (declared with
-;; `declare-function'), which is why hermes-chat.el `require's these files
-;; mid-file, after those helpers are defined, rather than at its top.
+;; chat UI: the EWOC spine, the writable input tail, the header line, the
+;; shared entry/header-state primitives, and the queue/drain input flow.
+;; One area of the single logical chat module (see the AGENTS.md map); it
+;; depends only downward (format/render) and reaches the submit pipeline in
+;; `hermes-chat' through `hermes-chat--submit-function', never by name.
 
 ;;; Code:
 

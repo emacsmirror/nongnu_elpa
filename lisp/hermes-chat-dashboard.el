@@ -21,9 +21,11 @@
 ;;; Commentary:
 
 ;; Dashboard transport, session, and event lifecycle helpers for
-;; `hermes-chat'.  The public chat commands and UI selectors remain in
-;; `hermes-chat.el'; this module preserves the existing `hermes-chat--*'
-;; symbols while isolating dashboard-specific transport state.
+;; `hermes-chat', plus the session-scoped features that ride the lifecycle:
+;; server session titles and `/btw' background tasks.  Events route upward
+;; only through `hermes-chat--turn-event-function'; per-buffer teardown runs
+;; `hermes-chat-cleanup-functions'.  This module preserves the existing
+;; `hermes-chat--*' symbols while isolating dashboard-specific state.
 
 ;;; Code:
 
