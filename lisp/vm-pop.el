@@ -32,10 +32,12 @@
 (require 'vm-mime)
 (eval-when-compile (require 'cl-lib))
 
-(declare-function vm-submit-bug-report 
+(declare-function vm-submit-bug-report
 		  "vm.el" (&optional pre-hooks post-hooks))
-(declare-function open-network-stream 
+(declare-function open-network-stream
 		  "subr.el" (name buffer host service &rest parameters))
+
+(defvar auth-sources)  ;; from auth-source.el, used for dynamic binding
 
 (if (fboundp 'define-error)
     (progn

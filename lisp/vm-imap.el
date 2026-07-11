@@ -45,6 +45,7 @@
 ;; 				     (retry nil)))
 
 (defvar selectable-only) ;; FIXME: Add `vm-' prefix!
+(defvar auth-sources)  ;; from auth-source.el, used for dynamic binding
 
 ;;; To-Do  (USR)
 ;; - Need to ensure that new imap sessions get created as and when needed.
@@ -1175,7 +1176,7 @@ Returns the process or nil if the session could not be created."
 	  protocol (car source-list)
 	  host (nth 1 source-list)
 	  port (nth 2 source-list)
-	  ;; mailbox (nth 3 source-list)
+	  mailbox (nth 3 source-list)
 	  auth (nth 4 source-list)
 	  user (nth 5 source-list)
 	  pass (nth 6 source-list)
@@ -4667,7 +4668,7 @@ May throw exceptions."
 	(mailboxes nil)
 	(fcc-string (vm-mail-get-header-contents "FCC:" ","))
 	fcc-list fcc maildrop spec-list 
-	process flags string m ;; response
+	process (flags nil) string m ;; response
 	(vm-imap-ok-to-ask t))
     (if (null mailbox)
 	(setq mailboxes nil)

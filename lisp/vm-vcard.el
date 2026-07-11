@@ -34,6 +34,8 @@
   (require 'vm-misc)
   (vm-load-features-silent-when-compiling '(vcard)))
 
+(defvar vcard-pretty-print-function)  ;; from vcard.el, used for dynamic binding
+
 (and (boundp 'vcard-api-version) (string-lessp vcard-api-version "2.0")
      (error "vm-vcard.el requires vcard API version 2.0 or later."))
 

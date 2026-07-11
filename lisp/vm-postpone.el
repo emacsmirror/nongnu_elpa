@@ -941,7 +941,7 @@ See the variable `vm-mail-priority'."
                                     vm-auto-folder-alist)
   "Like `vm-auto-folder-alist' but for outgoing messages.
 It should be fed to `vm-mail-select-folder'."
-  :type 'list
+  :type 'sexp
   :group 'vm-postpone)
 
 ;;;###autoload
@@ -954,7 +954,7 @@ By reordering the elements of this list or adding own functions you
 can control the behavior of vm-mail-fcc and `vm-mail-auto-fcc'.
 You may allow a sophisticated decision for the right folder for your
 outgoing message."
-  :type 'list
+  :type 'sexp
   :group 'vm-postpone)
 
 ;;;###autoload

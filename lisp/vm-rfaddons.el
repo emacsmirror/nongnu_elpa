@@ -146,7 +146,7 @@ nil. (Rob F)"
       (vm-mime-auto-save-all-attachments-delete-external m)))
 
 ;;;###autoload
-(defun vm-rfaddons-infect-vm (&optional sit-for
+(defun vm-rfaddons-infect-vm (&optional _sit-for
                                         option-list exclude-option-list)
   "This function will setup the key bindings, advices and hooks
 necessary to use all the function of vm-rfaddons.el.
@@ -1388,7 +1388,7 @@ text/alternative message depending on the value of the variable
                (setq end (point-marker))
                (insert "--" boundary "--\n")))
 
-    (if qp-encoded (vm-mime-qp-decode-region start end))
+    (if qp-encoded (quoted-printable-decode-region start end))
     
     (goto-char body)
     (if (stringp vm-assimilate-html-command)
