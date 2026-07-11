@@ -230,6 +230,41 @@ Body
     ;; Label should be back in obarray
     (should (intern-soft "undo-test" vm-label-obarray))))
 
+;;; Test for clear-expunge handling of non-message records (bug fix)
+
+(ert-deftest vm-undo-test-clear-expunge-handles-intern-records ()
+  "Test that vm-clear-expunge-invalidated-undos handles intern records.
+This tests the fix for a bug where intern records from vm-expunge-label
+caused wrong-type-argument errors because the function assumed all
+non-boundary records had message structs."
+  (let ((vm-undo-record-list
+         (list nil
+               '(intern "some-label" vm-label-obarray)  ; non-message record
+               nil)))
+    ;; Should not error
+    (vm-clear-expunge-invalidated-undos)
+    ;; The intern record should still be there (not removed)
+    (should (member '(intern "some-label" vm-label-obarray)
+                    vm-undo-record-list))))
+
+(ert-deftest vm-undo-test-clear-virtual-quit-handles-intern-records ()
+  "Test that vm-clear-virtual-quit-invalidated-undos handles intern records."
+  (let ((vm-undo-record-list
+         (list nil
+               '(intern "some-label" vm-label-obarray)  ; non-message record
+               nil)))
+    ;; Should not error
+    (vm-clear-virtual-quit-invalidated-undos)
+    ;; The intern record should still be there (not removed)
+    (should (member '(intern "some-label" vm-label-obarray)
+                    vm-undo-record-list))))
+
+(ert-deftest vm-undo-test-set-message-pointer-handles-intern-records ()
+  "Test that vm-undo-set-message-pointer handles intern records."
+  (let ((vm-message-pointer nil))
+    ;; Should not error when called with an intern record
+    (vm-undo-set-message-pointer '(intern "some-label" vm-label-obarray))))
+
 ;;; Flag setting functions tests
 
 (ert-deftest vm-undo-test-flag-functions-exist ()

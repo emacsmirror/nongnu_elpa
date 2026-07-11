@@ -53,6 +53,9 @@
       (cond ((null (car udp))
 	     (setq udp-prev udp))
 	    ((and (not (eq (car (car udp)) 'vm-set-buffer-modified-p))
+		  ;; skip records that don't have a message struct
+		  ;; (e.g., intern records from vm-expunge-label)
+		  (vectorp (car (cdr (car udp))))
 		  ;; delete flag == expunged is the
 		  ;; indicator of an expunged message
 		  (eq (vm-deleted-flag (car (cdr (car udp)))) 'expunged))
@@ -68,6 +71,9 @@
       (cond ((null (car udp))
 	     (setq udp-prev udp))
 	    ((and (not (eq (car (car udp)) 'vm-set-buffer-modified-p))
+		  ;; skip records that don't have a message struct
+		  ;; (e.g., intern records from vm-expunge-label)
+		  (vectorp (car (cdr (car udp))))
 		  ;; message-id-number == "Q" is the
 		  ;; indicator of a dead message
 		  (equal (vm-message-id-number-of (car (cdr (car udp)))) "Q"))
@@ -151,6 +157,9 @@
 
 (defun vm-undo-set-message-pointer (record)
   (if (and (not (eq (car record) 'vm-set-buffer-modified-p))
+	   ;; skip records that don't have a message struct
+	   ;; (e.g., intern records from vm-expunge-label)
+	   (vectorp (nth 1 record))
 	   (not (eq (nth 1 record) vm-message-pointer)))
       (progn
 	(vm-record-and-change-message-pointer
