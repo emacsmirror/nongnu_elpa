@@ -2077,11 +2077,11 @@ nil values are dropped.  RESOLVE and REJECT keys are always added."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-create "session.create"
   "Send a `session.create' request for CLIENT.
-COLS, MESSAGES, TITLE, PROFILE, CWD, MODEL, PROVIDER, REASONING-EFFORT, and
-FAST become request parameters; the backend persists them as per-session
-runtime overrides.  RESOLVE and REJECT receive the asynchronous result or
-error."
-  :keys (cols messages title profile cwd model provider reasoning-effort fast))
+COLS, MESSAGES, TITLE, PROFILE, and CWD become request parameters; the
+handler reads nothing else, so runtime overrides such as the model are
+applied to the fresh session through `config.set' instead.  RESOLVE and
+REJECT receive the asynchronous result or error."
+  :keys (cols messages title profile cwd))
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-resume "session.resume"

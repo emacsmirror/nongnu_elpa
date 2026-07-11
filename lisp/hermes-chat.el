@@ -1796,8 +1796,8 @@ identity is part of the selection."
 (defun hermes-chat--apply-model (buffer client candidate confirm)
   "Set CANDIDATE on BUFFER's session via CLIENT.
 CONFIRM acknowledges an expensive-model confirmation prompt.  When BUFFER
-has no live session yet, the choice is stored buffer-locally and forwarded
-on the next `session.create' instead of calling `config.set'."
+has no live session yet, the choice is stored buffer-locally and applied
+through `config.set' right after the next session is created."
   (with-current-buffer buffer
     (if (hermes-chat--dashboard-session-attached-p)
         (hermes-dashboard-transport-config-set
