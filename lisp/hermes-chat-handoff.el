@@ -35,8 +35,8 @@
 (require 'hermes-dashboard-transport)
 (require 'hermes-dashboard-rpc)
 (require 'hermes-chat-buffer)
+(require 'hermes-chat-dashboard)
 
-(declare-function hermes-chat--dashboard-session-attached-p "hermes-chat-dashboard" ())
 
 (defvar hermes-chat--dashboard-active-session-id)
 (defvar hermes-chat--dashboard-client)
