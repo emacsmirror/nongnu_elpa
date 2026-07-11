@@ -2579,7 +2579,10 @@ call this function after it is set or use something else."
            'announcements)
           ;; followed hashtags
           ((mastodon-tl--endpoint-str-= "followed_tags")
-           'followed-hashtags))))
+           'followed-hashtags)
+          ;; collections:
+          ((string-suffix-p "collection*" buffer-name)
+           'collection))))
 
 (defun mastodon-tl--buffer-type-eq (type)
   "Return t if current buffer type is equal to symbol TYPE."
