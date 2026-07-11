@@ -45,10 +45,14 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
 - `hermes-transport-cli.el` -- the sanctioned `hermes chat -Q -q` one-shot
   subprocess fallback (`hermes-transport-send`) and the
   `hermes-transport-send-function` seam. Smoke-test transport only.
-- `hermes-dashboard-transport.el` -- the side-effecting transport: WebSocket
-  connect + async auth handshake, REST over async `url-retrieve`/promises,
-  the client struct/lifecycle, JSON-RPC request/promise plumbing, and secret
-  redaction. All network code lives here. Also exposes
+- `hermes-dashboard-api.el` -- the client-struct-free bottom of the dashboard
+  stack: the dashboard URL options, URL/WebSocket endpoint builders, secret
+  redaction on plain strings, and the promise-based url.el HTTP plumbing.
+  Symbol names keep the `hermes-dashboard-transport-` prefix.
+- `hermes-dashboard-transport.el` -- the side-effecting transport (requires
+  `hermes-dashboard-api`): WebSocket connect + async auth handshake, the REST
+  API helpers and credential lookup, the client struct/lifecycle, JSON-RPC
+  request/promise plumbing, and reconnect/heartbeat. Also exposes
   `hermes-dashboard-transport-open-websocket`, a redaction-wrapped raw-socket
   opener for callers (e.g. the kanban live-events tail) that own a separate
   plain-JSON stream rather than the chat JSON-RPC client.
