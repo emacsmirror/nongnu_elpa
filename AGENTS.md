@@ -66,15 +66,17 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
 - `hermes-chat*` -- one logical module (see the require note in `hermes-chat.el`):
   - `hermes-chat-format.el` -- pure render helpers: markdown fontification, diff
     detection, ANSI stripping, the `hermes-chat--{ready,error,active}-statuses`
-    keyword tables.
+    keyword tables, and pure event classification/diagnostics.
   - `hermes-chat-render.el` -- transcript rendering effects between format
     and buffer: markdown/shadow insertion, diff View Diff links, the
     dedicated diff/background result buffers, entry-expansion metadata.
   - `hermes-chat-buffer.el` -- the EWOC buffer/mode, the writable compose tail
-    after `hermes-chat--input-marker`, node insertion, and the shared
-    entry/header-state primitives.
+    after `hermes-chat--input-marker`, node insertion, the shared
+    entry/header-state primitives, the header line, and the queue/drain
+    input flow (submitting through `hermes-chat--submit-function`).
   - `hermes-chat.el` -- the `hermes-chat--turn-reduce` reducer + effects, event
-    handling, commands, session actions.
+    handling, commands, session actions; populates the registry variables
+    at load.
   - `hermes-chat-slash.el` -- slash commands: `/command arg' parsing, the
     `commands.catalog` cache and `completion-at-point` function, the native
     in-client command table, and `slash.exec`/`command.dispatch` dispatch.
@@ -85,7 +87,9 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
     command, live-platform target prompt, and the backoff-polled
     `handoff.state` watcher with its `handoff.fail` timeout.
   - `hermes-chat-prompts.el` -- the approval/clarify/sudo/secret prompt flows.
-  - `hermes-chat-dashboard.el` -- chat<->dashboard glue, session restore/reattach.
+  - `hermes-chat-dashboard.el` -- chat<->dashboard glue, session
+    restore/reattach, server session titles, and `/btw` background tasks;
+    routes events upward only through `hermes-chat--turn-event-function`.
 - `hermes.el` -- the `M-x hermes` EWOC dashboard entry; requires the world.
 - Browser modules via `hermes-browser.el` + the `hermes-define-list-browser`
   macro: `hermes-sessions`, `hermes-kanban`, `hermes-mcp`, `hermes-cron`,
@@ -208,6 +212,13 @@ The header/modeline should make current state visible: waiting, streaming, activ
 - Prefer clean functional style: pure helpers, explicit inputs/outputs, and data transformations over mutation-heavy blobs.
 - Executor-authored functions should generally stay under ~35 LOC; split larger routines unless a flat dispatch/table is clearer.
 - Separate pure entry/model/event transformations from buffer/process/WebSocket side effects.
+- No `declare-function` between the `hermes-chat-*` siblings: sink a helper to
+  the layer that owns its state, or register upward wiring through the
+  registry variables (`hermes-chat--turn-event-function`,
+  `hermes-chat--submit-function`, `hermes-chat--native-slash-commands`,
+  `hermes-chat-cleanup-functions`).  `declare-function` is reserved for soft
+  external dependencies (`ext:websocket`, `markdown-mode`, `string-edit`),
+  documented load-cycle exceptions, and downstream autoloaded commands.
 - Preserve existing WIP.  Do not run `git reset`, `git checkout --`, `git clean`, `git stash`, amend, rebase, or push unless the maintainer explicitly asks.
 - Kanban workers should make real local commits after verified code-changing work/review. Use normal `git commit`, author with the repo/default git identity, short subjects like `module: change` or `[fix] module: change`, and no AI/co-author metadata. Commit only scoped, verified changes; if concurrent WIP makes staging unsafe, block with `commit-required` and state the exact safe split needed.
 - Verify code changes with targeted ERT, `make test`, byte-compilation/`make compile`, and `git diff --check` where appropriate.  Live `emacsclient` dogfood is additional verification, not a replacement for clean batch tests.
