@@ -1937,5 +1937,38 @@ This is the contract that replaces hand-mirroring every event name: an invented
     (should-not (plist-member event :start))
     (should-not (plist-member event :count))))
 
+(ert-deftest hermes-transport-dashboard-normalizes-notification-metadata ()
+  "notification.show carries level/kind/ttl/key/id; warning levels prefix the text."
+  (let (events)
+    (let ((client (make-hermes-dashboard-transport-client
+                   :callback (lambda (event) (push event events)))))
+      (hermes-dashboard-transport--handle-frame
+       client (hermes-dashboard-transport--encode-frame
+               '((jsonrpc . "2.0") (method . "event")
+                 (params . ((type . "notification.show")
+                            (session_id . "sid")
+                            (payload . ((text . "credits low")
+                                        (level . "warning")
+                                        (kind . "credits")
+                                        (ttl_ms . 5000)
+                                        (key . "credits")
+                                        (id . "n1"))))))))
+      (hermes-dashboard-transport--handle-frame
+       client (hermes-dashboard-transport--encode-frame
+               '((jsonrpc . "2.0") (method . "event")
+                 (params . ((type . "notification.clear")
+                            (session_id . "sid")
+                            (payload . ((key . "credits")))))))))
+    (let ((show (cadr events))
+          (clear (car events)))
+      (should (equal (plist-get show :content) "[warning] credits low"))
+      (should (equal (plist-get show :level) "warning"))
+      (should (equal (plist-get show :kind) "credits"))
+      (should (equal (plist-get show :ttl-ms) 5000))
+      (should (equal (plist-get show :notification-key) "credits"))
+      (should (equal (plist-get show :notification-id) "n1"))
+      (should (equal (plist-get clear :event) "notification.clear"))
+      (should (equal (plist-get clear :notification-key) "credits")))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here

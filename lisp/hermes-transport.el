@@ -942,6 +942,14 @@ an Unknown error."
       ("background.complete"
        (list (hermes-dashboard-transport--background-complete-event
               type params payload)))
+      ("notification.show"
+       (list (hermes-dashboard-transport--notification-event
+              type params payload)))
+      ;; A clear only retracts a keyed notice; it carries no text and must
+      ;; not decay into an empty transcript line.
+      ("notification.clear"
+       (list (hermes-dashboard-transport--notification-event
+              type params payload)))
       (_
        (if (and type (string-prefix-p "notification." type))
            (list (hermes-dashboard-transport--status-event
@@ -949,6 +957,26 @@ an Unknown error."
                   (hermes-dashboard-transport--payload-text payload)))
          (hermes-dashboard-transport--generic-display-event
           type params payload))))))
+
+(defun hermes-dashboard-transport--notification-event (type params payload)
+  "Return a normalized notification event for TYPE/PARAMS/PAYLOAD.
+`notification.show' carries `level'/`kind'/`ttl_ms'/`key'/`id' alongside its
+text; `notification.clear' carries only the `key' that retracts an earlier
+keyed notice.  All are surfaced so the chat layer can level, key, and clear
+notices instead of flattening them to plain status text."
+  (let* ((text (hermes-dashboard-transport--payload-text payload))
+         (level (hermes-transport--scalar-string
+                 (hermes-transport--get payload 'level)))
+         (event (hermes-dashboard-transport--status-event
+                 type params payload "notification"
+                 (if (and text level (not (member level '("info" ""))))
+                     (format "[%s] %s" level text)
+                   text))))
+    (dolist (field '((level . :level) (kind . :kind) (ttl_ms . :ttl-ms)
+                     (key . :notification-key) (id . :notification-id))
+                   event)
+      (when-let* ((value (hermes-transport--get payload (car field))))
+        (setq event (plist-put event (cdr field) value))))))
 
 (provide 'hermes-transport)
 ;;; hermes-transport.el ends here

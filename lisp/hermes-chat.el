@@ -307,9 +307,13 @@ literal \"Thinking\" label."
                  (list :updated now))))
 
 (defun hermes-chat--transcript-event-p (event)
-  "Return non-nil when EVENT should render a compact transcript entry."
+  "Return non-nil when EVENT should render a compact transcript entry.
+`session.info' feeds the header only, and `notification.clear' retracts a
+keyed notice without carrying text, so neither becomes an entry."
   (pcase (plist-get event :type)
-    ('status (not (hermes-chat--session-info-event-p event)))
+    ('status (not (or (hermes-chat--session-info-event-p event)
+                      (equal (hermes-chat--event-string event '(:event))
+                             "notification.clear"))))
     ((or 'progress 'tool 'commentary 'diff 'unknown) t)))
 
 (defun hermes-chat--turn-entry-effect (event)

@@ -3546,5 +3546,14 @@
        (should (equal seen-session "sid-usage"))
        (should (string-match-p "Usage: 2 calls" (buffer-string)))))))
 
+(ert-deftest hermes-chat-notification-clear-adds-no-transcript-entry ()
+  "notification.clear retracts a keyed notice; it must not render an entry."
+  (should-not (hermes-chat--transcript-event-p
+               '(:type status :event "notification.clear"
+                       :notification-key "credits")))
+  (should (hermes-chat--transcript-event-p
+           '(:type status :event "notification.show"
+                   :content "[warning] credits low"))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here
