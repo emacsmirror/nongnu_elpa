@@ -3080,6 +3080,28 @@
   (hermes-test-with-chat-buffer
    (should (string-match-p "Hermes" (hermes-test--header-line-string)))))
 
+(ert-deftest hermes-chat-header-annotates-model-with-runtime-flags ()
+  "Reasoning effort, fast tier, and yolo from `session.info' annotate the model."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--update-header-for-event
+    '(:type status :event "session.info" :status "ready"
+            :model "gpt-5.5" :reasoning-effort "high" :fast t :yolo t))
+   (should (equal (hermes-chat--header-model-segment)
+                  "gpt-5.5 (high, fast, YOLO)"))
+   ;; A later session.info clearing fast/yolo updates the captured flags.
+   (hermes-chat--update-header-for-event
+    '(:type status :event "session.info" :status "ready"
+            :model "gpt-5.5" :fast nil :yolo nil))
+   (should (equal (hermes-chat--header-model-segment) "gpt-5.5 (high)"))))
+
+(ert-deftest hermes-chat-header-model-segment-without-flags-is-bare ()
+  "Without runtime flags the model segment is the bare model id."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--model "gpt-5.5")
+   (should (equal (hermes-chat--header-model-segment) "gpt-5.5"))
+   (setq hermes-chat--model nil)
+   (should-not (hermes-chat--header-model-segment))))
+
 (ert-deftest hermes-chat-format-tool-event-keeps-detail-and-emoji ()
   "Tool lines keep the command/skill detail and carry the tool emoji."
   (should (equal (hermes-chat--format-tool-event

@@ -113,6 +113,10 @@ number and the prompt that launched it.")
 (defvar-local hermes-chat--context nil
   "Context-window usage plist (:used :max :percent) for the header.")
 
+(defvar-local hermes-chat--runtime-flags nil
+  "Runtime flag plist (:reasoning-effort :fast :yolo) from `session.info'.
+Shown as annotations after the model in the chat header.")
+
 ;; Owned by `hermes-chat-buffer'; declared here for the byte-compiler.
 (defvar hermes-chat--pending-assistant-id)
 
@@ -409,11 +413,15 @@ This feeds the dashboard's per-session tool list via
        (hermes-chat--event-string event '(:content :text :preview :event)))))
 
 (defun hermes-chat--capture-session-identity (event)
-  "Record the model, agent name, and context usage carried by EVENT."
+  "Record the model, agent name, flags, and context usage carried by EVENT."
   (when-let* ((model (plist-get event :model)))
     (setq hermes-chat--model model))
   (when-let* ((agent (plist-get event :agent-name)))
     (setq hermes-chat--agent-name agent))
+  (dolist (key '(:reasoning-effort :fast :yolo))
+    (when-let* ((tail (plist-member event key)))
+      (setq hermes-chat--runtime-flags
+            (plist-put hermes-chat--runtime-flags key (cadr tail)))))
   (when-let* ((context (plist-get event :context)))
     (setq hermes-chat--context context)))
 
@@ -713,13 +721,29 @@ self-explanatory."
                  (if detail (format "%s: %s" label detail) label))
          'face (hermes-chat--header-status-face status))))))
 
+(defun hermes-chat--header-model-segment ()
+  "Return the header model segment with runtime flag annotations, or nil.
+The flags come from `session.info': reasoning effort, fast/priority tier,
+and approval bypass (YOLO)."
+  (and-let* ((model (hermes-transport--non-empty-string hermes-chat--model)))
+    (let ((flags (delq nil
+                       (list (plist-get hermes-chat--runtime-flags
+                                        :reasoning-effort)
+                             (and (plist-get hermes-chat--runtime-flags :fast)
+                                  "fast")
+                             (and (plist-get hermes-chat--runtime-flags :yolo)
+                                  "YOLO")))))
+      (if flags
+          (format "%s (%s)" model (string-join flags ", "))
+        model))))
+
 (defun hermes-chat--header-line ()
   "Return the chat buffer header line: agent, status, model, and context."
   (let* ((parts (delq nil
                       (list (propertize (hermes-chat--header-agent-name)
                                         'face 'mode-line-emphasis)
                             (hermes-chat--header-status-segment)
-                            (hermes-transport--non-empty-string hermes-chat--model)
+                            (hermes-chat--header-model-segment)
                             (hermes-chat--format-context hermes-chat--context))))
          (text (concat " " (string-join parts "  |  ") " "))
          (width (max 20 (window-total-width))))

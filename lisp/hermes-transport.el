@@ -790,8 +790,9 @@ The plist holds :used, :max, and :percent for the model's context window."
 
 (defun hermes-dashboard-transport--session-info-event (type params payload)
   "Return a normalized `session.info' status event for TYPE/PARAMS/PAYLOAD.
-Surface the session's model and profile (agent) name so the chat header can
-show them."
+Surface the session's model, profile (agent) name, and runtime flags --
+reasoning effort, fast/priority tier, and approval bypass (yolo) -- so the
+chat header can show them."
   (let ((event (hermes-dashboard-transport--status-event
                 type params payload "ready"
                 (hermes-dashboard-transport--session-info-content payload)))
@@ -799,9 +800,19 @@ show them."
                 (hermes-transport--get payload 'model)))
         (agent (hermes-transport--scalar-string
                 (hermes-transport--get payload 'profile_name)))
+        (effort (hermes-transport--non-empty-string
+                 (hermes-transport--scalar-string
+                  (hermes-transport--get payload 'reasoning_effort))))
         (context (hermes-dashboard-transport--context-plist payload)))
     (when model (setq event (plist-put event :model model)))
     (when agent (setq event (plist-put event :agent-name agent)))
+    (when effort (setq event (plist-put event :reasoning-effort effort)))
+    (when (hermes-transport--field-present-p payload 'fast)
+      (setq event (plist-put event :fast
+                             (eq (hermes-transport--get payload 'fast) t))))
+    (when (hermes-transport--field-present-p payload 'yolo)
+      (setq event (plist-put event :yolo
+                             (eq (hermes-transport--get payload 'yolo) t))))
     (when context (setq event (plist-put event :context context)))
     event))
 
