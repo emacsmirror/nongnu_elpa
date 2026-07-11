@@ -39,19 +39,9 @@
 (declare-function hermes-chat--alias-content "hermes-chat" (name arg))
 (declare-function hermes-chat--commands-categories-content "hermes-chat" (result))
 (declare-function hermes-chat--handle-command-result "hermes-chat" (result arg))
-(declare-function hermes-chat--new-buffer "hermes-chat" (&optional profile title))
-(declare-function hermes-chat-background "hermes-chat" (arg))
-(declare-function hermes-chat-clear "hermes-chat" ())
-(declare-function hermes-chat-interrupt "hermes-chat" ())
-(declare-function hermes-chat-rename "hermes-chat" (&optional title))
-(declare-function hermes-chat-steer-message "hermes-chat" (&optional message))
-(declare-function hermes-chat-stop-processes "hermes-chat" ())
-(declare-function hermes-chat-switch-model "hermes-chat-models" (&optional refresh))
-(declare-function hermes-chat-handoff "hermes-chat-handoff" (&optional platform))
 (declare-function hermes-chat--dashboard-control-client "hermes-chat-dashboard" ())
 (declare-function hermes-chat--dashboard-client-live-p "hermes-chat-dashboard" (client))
 (declare-function hermes-chat--with-dashboard-session "hermes-chat-dashboard" (content buffer action &optional reject))
-(declare-function hermes-list-sessions "hermes-sessions")
 
 (defvar hermes-chat--dashboard-active-session-id)
 (defvar hermes-chat--dashboard-client)
@@ -237,35 +227,12 @@ Only matches while typing the /command word in the writable input tail."
                (hermes-chat--in-buffer buffer
                  (hermes-chat--command-error message))))))
 
-(defconst hermes-chat--native-slash-commands
-  (list
-   (cons '("commands") (lambda (_arg) (hermes-chat-show-commands)))
-   (cons '("queue" "q")
-         (lambda (arg) (hermes-chat--dashboard-dispatch-command "queue" arg)))
-   (cons '("background" "bg" "btw")
-         (lambda (arg) (hermes-chat-background arg)))
-   (cons '("steer") (lambda (arg) (hermes-chat-steer-message arg)))
-   (cons '("stop") (lambda (_arg) (hermes-chat-stop-processes)))
-   (cons '("interrupt" "int") (lambda (_arg) (hermes-chat-interrupt)))
-   (cons '("clear" "reset") (lambda (_arg) (hermes-chat-clear)))
-   (cons '("new") (lambda (arg) (hermes-chat--new-buffer nil arg)))
-   (cons '("model") (lambda (_arg) (hermes-chat-switch-model)))
-   (cons '("title" "rename")
-         (lambda (arg)
-           (if (string-empty-p arg)
-               (call-interactively #'hermes-chat-rename)
-             (hermes-chat-rename arg))))
-   (cons '("handoff")
-         (lambda (arg)
-           (if (string-empty-p arg)
-               (call-interactively #'hermes-chat-handoff)
-             (hermes-chat-handoff arg))))
-   (cons '("sessions") (lambda (_arg) (hermes-list-sessions))))
+(defvar hermes-chat--native-slash-commands nil
   "Native in-client slash commands as (NAMES . HANDLER) entries.
-NAMES is a list of aliases; HANDLER takes the command's ARG string (empty when
-none).  Control commands handled here run as dedicated RPCs or local actions
-instead of being forwarded to the agent; names absent here fall through to the
-gateway via `hermes-chat--dashboard-slash-exec'.")
+NAMES is a list of aliases; HANDLER takes the command's ARG string (empty
+when none).  Populated by `hermes-chat', which owns the commands the
+handlers call; names absent here fall through to the gateway via
+`hermes-chat--dashboard-slash-exec'.")
 
 (defun hermes-chat--native-slash-handler (name)
   "Return the native handler for slash command NAME, or nil when none.

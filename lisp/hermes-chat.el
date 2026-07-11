@@ -1555,5 +1555,34 @@ titled, after that title -- so chats stay filterable with
   (interactive (list (hermes-chat--read-profile)))
   (hermes-chat--new-buffer profile))
 
+
+;; Native slash commands are wired here, where the commands live; the
+;; registry variable and dispatch stay in `hermes-chat-slash' so the
+;; lower layer needs no declare-function back into this file.
+(setq hermes-chat--native-slash-commands
+  (list
+   (cons '("commands") (lambda (_arg) (hermes-chat-show-commands)))
+   (cons '("queue" "q")
+         (lambda (arg) (hermes-chat--dashboard-dispatch-command "queue" arg)))
+   (cons '("background" "bg" "btw")
+         (lambda (arg) (hermes-chat-background arg)))
+   (cons '("steer") (lambda (arg) (hermes-chat-steer-message arg)))
+   (cons '("stop") (lambda (_arg) (hermes-chat-stop-processes)))
+   (cons '("interrupt" "int") (lambda (_arg) (hermes-chat-interrupt)))
+   (cons '("clear" "reset") (lambda (_arg) (hermes-chat-clear)))
+   (cons '("new") (lambda (arg) (hermes-chat--new-buffer nil arg)))
+   (cons '("model") (lambda (_arg) (hermes-chat-switch-model)))
+   (cons '("title" "rename")
+         (lambda (arg)
+           (if (string-empty-p arg)
+               (call-interactively #'hermes-chat-rename)
+             (hermes-chat-rename arg))))
+   (cons '("handoff")
+         (lambda (arg)
+           (if (string-empty-p arg)
+               (call-interactively #'hermes-chat-handoff)
+             (hermes-chat-handoff arg))))
+   (cons '("sessions") (lambda (_arg) (hermes-list-sessions)))))
+
 (provide 'hermes-chat)
 ;;; hermes-chat.el ends here
