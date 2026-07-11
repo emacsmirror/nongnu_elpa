@@ -39,10 +39,7 @@
 
 (declare-function hermes-chat--drain-queued-message "hermes-chat" ())
 (declare-function hermes-chat--handoff-stop "hermes-chat-handoff" ())
-(declare-function hermes-chat--model-config-value "hermes-chat-models" (candidate))
-(declare-function hermes-chat--preserve-control-content "hermes-chat" (content))
 (declare-function hermes-chat--queue-or-submit-content "hermes-chat" (content &optional display))
-(declare-function hermes-chat--update-header-for-event "hermes-chat" (event))
 (declare-function hermes-chat--render-turn-event "hermes-chat" (assistant-id event))
 (declare-function hermes-chat--run-turn-reducer "hermes-chat" (assistant-id event))
 

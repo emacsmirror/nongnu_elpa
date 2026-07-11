@@ -49,7 +49,6 @@ without each one repeating the liveness guard."
        ,@body)))
 
 
-(declare-function hermes-chat--header-line "hermes-chat" ())
 
 (defvar-local hermes-chat--auto-prompt-keys nil
   "Scheduled auto-prompt keys for the current chat buffer.")
@@ -679,6 +678,32 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
   "Delete the current writable input tail."
   (delete-region (hermes-chat--input-position) (point-max)))
 
+(defun hermes-chat--replace-input-tail (content)
+  "Replace the current writable input tail with CONTENT."
+  (hermes-chat--delete-input-tail)
+  (goto-char (hermes-chat--input-position))
+  (insert content))
+
+(defun hermes-chat--append-input-tail (content)
+  "Append CONTENT to the writable input tail, preserving existing draft text."
+  (goto-char (point-max))
+  (unless (string-suffix-p "\n" (hermes-chat-input-string))
+    (insert "\n"))
+  (insert content))
+
+(defun hermes-chat--preserve-control-content (content)
+  "Keep busy-control CONTENT recoverable after a dashboard bootstrap error."
+  (when-let* ((text (hermes-transport--non-empty-string content)))
+    (if (string-empty-p (string-trim (hermes-chat-input-string)))
+        (hermes-chat--replace-input-tail text)
+      (if (not hermes-chat--queued-message)
+          (hermes-chat--queue-content
+           text "Preserved busy-control text after dashboard error")
+        (hermes-chat--append-input-tail text)
+        (hermes-chat--insert-local-status
+         "Restored busy-control text in input tail after dashboard error"
+         'error)))))
+
 ;;; Entry and header-state primitives
 
 ;; Shared by every chat sibling module; they live here, next to the
@@ -801,6 +826,95 @@ This feeds the dashboard's per-session tool list via
   (hermes-transport--non-empty-string
    (or (hermes-chat--transport-entry-content event)
        (hermes-chat--event-string event '(:content :text :preview :event)))))
+
+
+;;; Header line
+
+;; Session identity for the header; written by the chat reducer via
+;; `hermes-chat--capture-session-identity', rendered here.
+
+(defvar-local hermes-chat--profile nil
+  "Profile name for this chat's dashboard session, or nil for the default.")
+
+(defvar-local hermes-chat--model nil
+  "Model id reported by the live dashboard session, for the header.")
+
+(defvar-local hermes-chat--agent-name nil
+  "Agent/profile name reported by the live dashboard session, for the header.")
+
+(defvar-local hermes-chat--context nil
+  "Context-window usage plist (:used :max :percent) for the header.")
+
+(defvar-local hermes-chat--runtime-flags nil
+  "Runtime flag plist (:reasoning-effort :fast :yolo) from `session.info'.
+Shown as annotations after the model in the chat header.")
+
+(defun hermes-chat--header-agent-name ()
+  "Return the agent/profile name shown in the chat header."
+  (or (hermes-transport--non-empty-string hermes-chat--agent-name)
+      (hermes-transport--non-empty-string hermes-chat--profile)
+      "Hermes"))
+
+(defun hermes-chat--header-detail (label)
+  "Return the live detail to append after LABEL in the header, or nil.
+The activity is used, with a leading copy of LABEL stripped so a label-prefixed
+activity is not shown twice.  Tool commands are deliberately not surfaced here:
+the header keeps the kawaii thinking status as its only live detail, while the
+transcript carries the full tool detail."
+  (when-let* ((activity (hermes-transport--non-empty-string
+                         (plist-get hermes-chat--status-state :activity))))
+    (if (string-prefix-p (downcase label) (downcase activity))
+        (hermes-transport--non-empty-string
+         (string-trim (substring activity (length label)) "[-: ]+"))
+      activity)))
+
+(defun hermes-chat--header-status-segment ()
+  "Return the propertized status segment: icon, label, and live detail.
+The label carries the high-level state (Ready/Running/...) and an active tool
+or distinct activity is appended so the live detail is not lost.  The `thinking'
+state is shown bare (kawaii face plus verb, no icon or label) since the face is
+self-explanatory."
+  (let ((status (plist-get hermes-chat--status-state :status)))
+    (if (eq status 'thinking)
+        (propertize (or (hermes-transport--non-empty-string
+                         (plist-get hermes-chat--status-state :activity))
+                        "Thinking")
+                    'face (hermes-chat--header-status-face 'running))
+      (let* ((label (hermes-chat--header-status-label status))
+             (detail (hermes-chat--header-detail label)))
+        (propertize
+         (format "%s %s" (hermes-chat--status-icon status)
+                 (if detail (format "%s: %s" label detail) label))
+         'face (hermes-chat--header-status-face status))))))
+
+(defun hermes-chat--header-model-segment ()
+  "Return the header model segment with runtime flag annotations, or nil.
+The flags come from `session.info': reasoning effort, fast/priority tier,
+and approval bypass (YOLO)."
+  (and-let* ((model (hermes-transport--non-empty-string hermes-chat--model)))
+    (let ((flags (delq nil
+                       (list (plist-get hermes-chat--runtime-flags
+                                        :reasoning-effort)
+                             (and (plist-get hermes-chat--runtime-flags :fast)
+                                  "fast")
+                             (and (plist-get hermes-chat--runtime-flags :yolo)
+                                  "YOLO")))))
+      (if flags
+          (format "%s (%s)" model (string-join flags ", "))
+        model))))
+
+(defun hermes-chat--header-line ()
+  "Return the chat buffer header line: agent, status, model, and context."
+  (let* ((parts (delq nil
+                      (list (propertize (hermes-chat--header-agent-name)
+                                        'face 'mode-line-emphasis)
+                            (hermes-chat--header-status-segment)
+                            (hermes-chat--header-model-segment)
+                            (hermes-chat--format-context hermes-chat--context))))
+         (text (concat " " (string-join parts "  |  ") " "))
+         (width (max 20 (window-total-width))))
+    ;; Double % so the context percentage is not read as a mode-line %-spec.
+    (string-replace "%" "%%" (truncate-string-to-width text width nil nil "…"))))
 
 
 (provide 'hermes-chat-buffer)

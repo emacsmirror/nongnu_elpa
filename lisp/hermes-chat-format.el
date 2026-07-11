@@ -620,5 +620,16 @@ markdown stays visible and easy to copy."
      "\n")))
 
 
+(defun hermes-chat--model-config-value (candidate)
+  "Return the `config.set' model value for CANDIDATE."
+  (let ((model (if (stringp candidate)
+                   candidate
+                 (plist-get candidate :model)))
+        (provider (and (not (stringp candidate))
+                       (plist-get candidate :provider))))
+    (if (and provider (not (string-empty-p provider)))
+        (format "%s --provider %s" model provider)
+      model)))
+
 (provide 'hermes-chat-format)
 ;;; hermes-chat-format.el ends here

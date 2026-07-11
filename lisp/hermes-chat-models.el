@@ -111,17 +111,6 @@ identity is part of the selection."
               (push candidate other))))))
     (append (nreverse authed) (nreverse other))))
 
-(defun hermes-chat--model-config-value (candidate)
-  "Return the `config.set' model value for CANDIDATE."
-  (let ((model (if (stringp candidate)
-                   candidate
-                 (plist-get candidate :model)))
-        (provider (and (not (stringp candidate))
-                       (plist-get candidate :provider))))
-    (if (and provider (not (string-empty-p provider)))
-        (format "%s --provider %s" model provider)
-      model)))
-
 (defun hermes-chat--model-display-name (candidate)
   "Return a compact display name for CANDIDATE."
   (if (stringp candidate)
