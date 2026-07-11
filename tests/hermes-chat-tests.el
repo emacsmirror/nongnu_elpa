@@ -3518,5 +3518,33 @@
               (should-not create-profile))
           (kill-buffer buffer))))))
 
+(ert-deftest hermes-chat-usage-content-formats-counts-and-credits ()
+  "Usage text carries the four counters and appends credit lines."
+  (should (equal (hermes-chat--usage-content
+                  '((calls . 3) (input . 100) (output . 50) (total . 150)
+                    (credits_lines . ("Nous: 1.2 credits left"))))
+                 "Usage: 3 calls — input 100, output 50, total 150 tokens\nNous: 1.2 credits left"))
+  (should (equal (hermes-chat--usage-content '())
+                 "Usage: 0 calls — input 0, output 0, total 0 tokens")))
+
+(ert-deftest hermes-chat-show-usage-inserts-panel-for-session ()
+  "The usage command fetches `session.usage' for the attached session."
+  (let (seen-session)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-session-usage)
+               (lambda (_client &rest args)
+                 (setq seen-session (plist-get args :session-id))
+                 (funcall (plist-get args :resolve)
+                          '((calls . 2) (input . 10) (output . 5) (total . 15))))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client
+             (hermes-test--dashboard-client)
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-active-session-id "sid-usage")
+       (cl-letf (((symbol-function 'hermes-chat--dashboard-control-client)
+                  (lambda () hermes-chat--dashboard-client)))
+         (hermes-chat-show-usage))
+       (should (equal seen-session "sid-usage"))
+       (should (string-match-p "Usage: 2 calls" (buffer-string)))))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

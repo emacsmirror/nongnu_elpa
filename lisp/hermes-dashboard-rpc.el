@@ -249,6 +249,21 @@ carries the assigned task id.  RESOLVE and REJECT receive the result or error."
   :args (text) :session t)
 
 (hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-usage "session.usage"
+  "Request token usage for CLIENT's SESSION-ID via `session.usage'.
+The result carries `calls'/`input'/`output'/`total' counters and, when the
+account exposes them, `credits_lines'.  RESOLVE and REJECT receive the
+asynchronous result or error."
+  :session t)
+
+(hermes-dashboard-transport-define-rpc
+    hermes-dashboard-transport-session-status "session.status"
+  "Request the rendered status panel for CLIENT's SESSION-ID.
+The result carries a preformatted multi-line `output' string.  RESOLVE and
+REJECT receive the asynchronous result or error."
+  :session t)
+
+(hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-interrupt "session.interrupt"
   "Send `session.interrupt' for CLIENT's SESSION-ID or active session.
 RESOLVE and REJECT receive the asynchronous result or error."

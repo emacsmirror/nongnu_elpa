@@ -1345,6 +1345,53 @@ session-title refresh."
 
 (declare-function hermes-list-sessions "hermes-sessions")
 
+(defun hermes-chat--usage-content (result)
+  "Return display text for a `session.usage' RESULT."
+  (let ((line (format "Usage: %s calls — input %s, output %s, total %s tokens"
+                      (or (hermes-transport--get result 'calls) 0)
+                      (or (hermes-transport--get result 'input) 0)
+                      (or (hermes-transport--get result 'output) 0)
+                      (or (hermes-transport--get result 'total) 0)))
+        (credits (delq nil (mapcar #'hermes-chat--scalar-string
+                                   (hermes-chat--listify
+                                    (hermes-transport--get
+                                     result 'credits_lines))))))
+    (string-join (cons line credits) "\n")))
+
+(defun hermes-chat--show-session-panel (fetch render)
+  "Call RPC wrapper FETCH for this session and insert RENDER of its result.
+FETCH takes CLIENT plus :session-id/:resolve/:reject; RENDER turns the
+result into the transient status text shown in the transcript."
+  (unless (hermes-chat--dashboard-session-attached-p)
+    (user-error "This Hermes chat has no live session"))
+  (let ((buffer (current-buffer)))
+    (funcall fetch (hermes-chat--dashboard-control-client)
+             :session-id hermes-chat--dashboard-active-session-id
+             :resolve (lambda (result)
+                        (hermes-chat--in-buffer buffer
+                          (hermes-chat--insert-local-status
+                           (funcall render result) 'done)))
+             :reject (lambda (message)
+                       (hermes-chat--in-buffer buffer
+                         (hermes-chat--command-error message))))))
+
+(defun hermes-chat-show-usage ()
+  "Show this session's token usage via `session.usage'."
+  (interactive)
+  (hermes-chat--show-session-panel
+   #'hermes-dashboard-transport-session-usage
+   #'hermes-chat--usage-content))
+
+(defun hermes-chat-show-status ()
+  "Show the gateway's rendered `session.status' panel for this session."
+  (interactive)
+  (hermes-chat--show-session-panel
+   #'hermes-dashboard-transport-session-status
+   (lambda (result)
+     (or (hermes-transport--scalar-string
+          (hermes-transport--get result 'output))
+         "No status available"))))
+
 (defvar hermes-chat-actions-map)
 
 (keymap-popup-define hermes-chat-actions-map
@@ -1367,6 +1414,8 @@ session-title refresh."
   "x" ("Reconnect socket" hermes-dashboard-reconnect)
   "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)
+  "u" ("Token usage" hermes-chat-show-usage)
+  "t" ("Session status" hermes-chat-show-status)
   :group "Commands"
   "c" ("Show commands" hermes-chat-show-commands)
   "r" ("Refresh commands" hermes-chat-refresh-commands))
