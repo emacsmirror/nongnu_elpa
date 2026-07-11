@@ -37,6 +37,7 @@
 (require 'ewoc)
 (require 'subr-x)
 (require 'hermes-chat-format)
+(require 'hermes-chat-render)
 
 (defmacro hermes-chat--in-buffer (buffer &rest body)
   "Evaluate BODY in BUFFER when it is live, else do nothing.
@@ -62,18 +63,8 @@ without each one repeating the liveness guard."
 (declare-function hermes-chat--tool-name "hermes-chat-format" (event))
 (declare-function hermes-chat--unknown-event-content "hermes-chat-format" (event))
 
-(declare-function hermes-chat--clear-ansi-fragment "hermes-chat" (key))
-(declare-function hermes-chat--entry-expanded-p "hermes-chat" (entry))
 (declare-function hermes-chat--header-line "hermes-chat" ())
-(declare-function hermes-chat--insert-diff-entry "hermes-chat" (content))
-(declare-function hermes-chat--insert-background-entry "hermes-chat" (entry))
-(declare-function hermes-chat--insert-diffed "hermes-chat" (content insert-text &optional blocks))
-(declare-function hermes-chat--insert-markdown "hermes-chat" (text))
-(declare-function hermes-chat--insert-shadow "hermes-chat" (text))
-(declare-function hermes-chat--metadata-preserve-expanded "hermes-chat" (entry metadata))
 
-(defvar-local hermes-chat--ansi-fragments nil
-  "Partial ANSI escape sequences by stream key, from `hermes-chat'.")
 (defvar-local hermes-chat--auto-prompt-keys nil
   "Scheduled auto-prompt keys for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-active-session-id nil

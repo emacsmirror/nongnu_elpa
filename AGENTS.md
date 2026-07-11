@@ -67,8 +67,12 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
   - `hermes-chat-format.el` -- pure render helpers: markdown fontification, diff
     detection, ANSI stripping, the `hermes-chat--{ready,error,active}-statuses`
     keyword tables.
+  - `hermes-chat-render.el` -- transcript rendering effects between format
+    and buffer: markdown/shadow insertion, diff View Diff links, the
+    dedicated diff/background result buffers, entry-expansion metadata.
   - `hermes-chat-buffer.el` -- the EWOC buffer/mode, the writable compose tail
-    after `hermes-chat--input-marker`, node insertion.
+    after `hermes-chat--input-marker`, node insertion, and the shared
+    entry/header-state primitives.
   - `hermes-chat.el` -- the `hermes-chat--turn-reduce` reducer + effects, event
     handling, commands, session actions.
   - `hermes-chat-slash.el` -- slash commands: `/command arg' parsing, the

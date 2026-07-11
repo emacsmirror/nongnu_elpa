@@ -35,8 +35,6 @@
 
 ;; Defined in hermes-chat.el; the ANSI-fragment hash mutators stay there while
 ;; `hermes-chat--sanitize-content' lives here.
-(declare-function hermes-chat--ansi-fragment "hermes-chat" (key))
-(declare-function hermes-chat--record-ansi-fragment "hermes-chat" (key fragment))
 
 (defun hermes-chat--displayable-char-p (char)
   "Return non-nil if CHAR is safe to display in chat content."
@@ -555,6 +553,34 @@ markdown stays visible and easy to copy."
       (maphash (lambda (key item) (push (cons key item) entries)) value)
       (nreverse entries)))
    ((listp value) value)))
+
+
+;;; ANSI fragment cache
+
+;; A control sequence split across two deltas must not leak half an
+;; escape into the transcript; the sanitizer stashes the tail here and
+;; re-prepends it on the next delta for the same entry.
+
+(defvar-local hermes-chat--ansi-fragments nil
+  "Hash of entry key to pending ANSI escape fragment.")
+
+(defun hermes-chat--ansi-fragment (key)
+  "Return pending ANSI fragment for KEY, or nil."
+  (and key hermes-chat--ansi-fragments
+       (gethash key hermes-chat--ansi-fragments)))
+
+(defun hermes-chat--record-ansi-fragment (key fragment)
+  "Record ANSI FRAGMENT for KEY, or clear KEY when FRAGMENT is nil."
+  (when key
+    (unless hermes-chat--ansi-fragments
+      (setq hermes-chat--ansi-fragments (make-hash-table :test #'equal)))
+    (if fragment
+        (puthash key fragment hermes-chat--ansi-fragments)
+      (remhash key hermes-chat--ansi-fragments))))
+
+(defun hermes-chat--clear-ansi-fragment (key)
+  "Clear pending ANSI fragment for KEY."
+  (hermes-chat--record-ansi-fragment key nil))
 
 
 (provide 'hermes-chat-format)
