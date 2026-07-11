@@ -167,13 +167,10 @@ nil so the caller can refuse to bind a public interface."
 
 (defun hermes-exec--parse-headers (header-block)
   "Return an alist of lowercased header names to values from HEADER-BLOCK."
-  (let (headers)
-    (dolist (line (split-string header-block "\r?\n" t))
-      (when (string-match "\\`\\([^:]+\\):[ \t]*\\(.*\\)\\'" line)
-        (push (cons (downcase (string-trim (match-string 1 line)))
-                    (string-trim (match-string 2 line)))
-              headers)))
-    (nreverse headers)))
+  (cl-loop for line in (split-string header-block "\r?\n" t)
+           when (string-match "\\`\\([^:]+\\):[ \t]*\\(.*\\)\\'" line)
+           collect (cons (downcase (string-trim (match-string 1 line)))
+                         (string-trim (match-string 2 line)))))
 
 (defun hermes-exec--content-length (headers)
   "Return the Content-Length value from HEADERS as a number, or nil."
