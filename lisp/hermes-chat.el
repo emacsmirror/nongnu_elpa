@@ -20,8 +20,13 @@
 
 ;;; Commentary:
 
-;; ERC/emacs-jabber-shaped chat buffer for hermes-el.  Transcript entries are
-;; EWOC nodes before a read-only prompt; the input tail remains writable.
+;; The chat facade of hermes-el: the pure `hermes-chat--turn-reduce'
+;; reducer with its effect interpreter, the transport event handling, the
+;; user-facing commands and keymaps, and the load-time population of the
+;; sibling registries (submit pipeline, turn-event routing, native slash
+;; commands).  The ERC/emacs-jabber-shaped buffer itself -- EWOC transcript
+;; before a writable input tail -- lives in `hermes-chat-buffer'; see the
+;; AGENTS.md module map for the full split.
 
 ;;; Code:
 
