@@ -85,6 +85,8 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
 - `hermes.el` -- the `M-x hermes` EWOC dashboard entry; requires the world.
 - Browser modules via `hermes-browser.el` + the `hermes-define-list-browser`
   macro: `hermes-sessions`, `hermes-kanban`, `hermes-mcp`, `hermes-cron`,
+  `hermes-profiles` (profile list with in-place model editing via
+  `PUT /api/profiles/{name}/model`),
   `hermes-inventory`, `hermes-rollback`, `hermes-subagents`. Each derives its
   base URL from `hermes-dashboard-transport-url` and uses the async REST helpers.
   `hermes-kanban` is split along its pure seams: `hermes-kanban-log.el` holds

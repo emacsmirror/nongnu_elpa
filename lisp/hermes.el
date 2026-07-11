@@ -37,6 +37,7 @@
 (require 'hermes-rollback)
 (require 'hermes-subagents)
 (require 'hermes-cron)
+(require 'hermes-profiles)
 (require 'hermes-kanban)
 (require 'hermes-mcp)
 (require 'hermes-browser)

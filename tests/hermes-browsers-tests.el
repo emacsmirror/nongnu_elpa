@@ -242,5 +242,54 @@
       (should-not (hermes-browser--notify "T" "B"))
       (should (string-match-p "T: B" msg)))))
 
+(ert-deftest hermes-profiles-rows-map-fields ()
+  "Profile rows carry name, default marker, model, provider, and description."
+  (let ((rows (hermes-profiles--rows
+               '((profiles . (((name . "default") (is_default . t)
+                               (model . "gpt-5.5") (provider . "openai")
+                               (description . "main"))
+                              ((name . "planner") (is_default . :false))))))))
+    (should (equal (caar rows) "default"))
+    (should (equal (aref (cadr (car rows)) 1) "*"))
+    (should (equal (aref (cadr (car rows)) 2) "gpt-5.5"))
+    (should (equal (aref (cadr (car rows)) 3) "openai"))
+    (should (equal (aref (cadr (car rows)) 5) "main"))
+    (should (equal (aref (cadr (cadr rows)) 1) ""))))
+
+(ert-deftest hermes-profiles-set-model-puts-provider-and-model ()
+  "Setting a profile model PUTs provider+model to the profile route."
+  (let (seen-method seen-path seen-body reverted)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((providers . (((slug . "openai") (name . "openai")
+                                           (authenticated . t)
+                                           (models . ("gpt-5.5")))))))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt collection &rest _) (car collection)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method path &rest args)
+                 (setq seen-method method
+                       seen-path path
+                       seen-body (plist-get args :body))
+                 (hermes--promise-resolved
+                  '((ok . t) (model . "gpt-5.5") (provider . "openai")))))
+              ((symbol-function 'hermes-profiles--revert)
+               (lambda (&rest _) (setq reverted t))))
+      (with-temp-buffer
+        (hermes-profiles-mode)
+        (setq tabulated-list-entries
+              '(("planner" ["planner" "" "" "" "\u2014" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-profiles-set-model))
+      (should (equal seen-method "PUT"))
+      (should (equal seen-path "/api/profiles/planner/model"))
+      (should (equal (cdr (assq 'provider seen-body)) "openai"))
+      (should (equal (cdr (assq 'model seen-body)) "gpt-5.5"))
+      (should reverted))))
+
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here
