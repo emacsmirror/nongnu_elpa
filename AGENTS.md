@@ -70,8 +70,10 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
   - `hermes-chat-buffer.el` -- the EWOC buffer/mode, the writable compose tail
     after `hermes-chat--input-marker`, node insertion.
   - `hermes-chat.el` -- the `hermes-chat--turn-reduce` reducer + effects, event
-    handling, the slash `completion-at-point` function, commands, session
-    actions.
+    handling, commands, session actions.
+  - `hermes-chat-slash.el` -- slash commands: `/command arg' parsing, the
+    `commands.catalog` cache and `completion-at-point` function, the native
+    in-client command table, and `slash.exec`/`command.dispatch` dispatch.
   - `hermes-chat-models.el` -- model/provider selection: `model.options`
     completion candidates, the `config.set` model switch with its
     expensive-model confirmation loop, API-key provider connect.
