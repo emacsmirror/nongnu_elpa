@@ -762,5 +762,23 @@ METADATA is stored as the entry's `:metadata' plist."
   (hermes-chat--set-header-state :status 'error :activity message))
 
 
+(defun hermes-chat--preview (content)
+  "Return a compact preview for CONTENT."
+  (truncate-string-to-width (string-replace "\n" " " content) 80 nil nil "…"))
+
+(defun hermes-chat--queue-content (content &optional note display)
+  "Queue CONTENT for the next turn, inserting NOTE when non-nil.
+DISPLAY is the compact user-turn text shown when the queued message is sent."
+  (when hermes-chat--queued-message
+    (user-error "A Hermes message is already queued"))
+  (setq hermes-chat--queued-message content
+        hermes-chat--queued-display display)
+  (hermes-chat--insert-local-status
+   (or note (format "Queued next message: %s"
+                    (hermes-chat--preview (or display content))))
+   'queued)
+  (hermes-chat--set-header-state
+   :status 'queued :activity "Queued next message"))
+
 (provide 'hermes-chat-buffer)
 ;;; hermes-chat-buffer.el ends here

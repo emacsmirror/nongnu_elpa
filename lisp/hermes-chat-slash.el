@@ -35,13 +35,8 @@
 (require 'hermes-dashboard-transport)
 (require 'hermes-dashboard-rpc)
 (require 'hermes-chat-buffer)
+(require 'hermes-chat-dashboard)
 
-(declare-function hermes-chat--alias-content "hermes-chat" (name arg))
-(declare-function hermes-chat--commands-categories-content "hermes-chat" (result))
-(declare-function hermes-chat--handle-command-result "hermes-chat" (result arg))
-(declare-function hermes-chat--dashboard-control-client "hermes-chat-dashboard" ())
-(declare-function hermes-chat--dashboard-client-live-p "hermes-chat-dashboard" (client))
-(declare-function hermes-chat--with-dashboard-session "hermes-chat-dashboard" (content buffer action &optional reject))
 
 (defvar hermes-chat--dashboard-active-session-id)
 (defvar hermes-chat--dashboard-client)
@@ -251,5 +246,126 @@ via `hermes-chat--dashboard-slash-exec'."
     (if-let* ((handler (hermes-chat--native-slash-handler name)))
         (funcall handler (or arg ""))
       (hermes-chat--dashboard-slash-exec name arg (substring content 1)))))
+;;; Command results
+
+;; Dispatch/alias/skill/prefill result handling lives with the slash
+;; dispatch that produces the results.
+
+(defun hermes-chat--result-type (result)
+  "Return command RESULT's lower-case type string."
+  (when-let* ((type (hermes-chat--result-string result 'type)))
+    (downcase type)))
+
+(defun hermes-chat--result-output (result)
+  "Return display output from command RESULT."
+  (let ((warning (hermes-transport--non-empty-string
+                  (hermes-chat--result-string result 'warning)))
+        (body (cl-some
+               (lambda (key)
+                 (hermes-transport--non-empty-string
+                  (hermes-chat--result-string result key)))
+               '(output notice message target))))
+    (cond
+     ((and warning body) (format "warning: %s\n%s" warning body))
+     (body)
+     (warning (format "warning: %s" warning)))))
+
+(defun hermes-chat--alias-content (target arg)
+  "Return slash content for alias TARGET with original ARG."
+  (when-let* ((command (hermes-transport--non-empty-string
+			(string-trim (or target "")))))
+    (string-join
+     (delq nil (list (concat "/" (string-remove-prefix "/" command))
+                     (hermes-transport--non-empty-string arg)))
+     " ")))
+
+(defun hermes-chat--handle-alias-result (target arg)
+  "Follow command-dispatch alias TARGET with original ARG."
+  (if-let* ((content (hermes-chat--alias-content target arg))
+            (parsed (hermes-chat--parse-slash content)))
+      (pcase-let ((`(,name . ,next-arg) parsed))
+        (hermes-chat--dashboard-slash-exec name next-arg (substring content 1)))
+    (user-error "Command alias target missing")))
+
+(defun hermes-chat--handle-send-result (message &optional notice)
+  "Handle command-dispatch MESSAGE with optional NOTICE."
+  (when (hermes-transport--non-empty-string notice)
+    (hermes-chat--insert-local-status notice 'done))
+  (cond
+   ((not (hermes-transport--non-empty-string message))
+    (user-error "Command returned no message to send"))
+   ((hermes-chat--active-turn-p)
+    (hermes-chat--queue-content message))
+   (t
+    (hermes-chat--dashboard-queue-or-submit message (current-buffer)))))
+
+(defun hermes-chat--handle-skill-result (message name)
+  "Send skill MESSAGE to the agent, echoing a compact loading line for NAME.
+The dispatch returns the full skill payload (the agent needs it); the
+transcript shows only \"loading skill: NAME\", not the whole skill."
+  (unless (hermes-transport--non-empty-string message)
+    (user-error "Skill returned no content to load"))
+  (let ((display (format "⚡ loading skill: %s"
+                         (or (hermes-transport--non-empty-string name) "skill"))))
+    (hermes-chat--dashboard-queue-or-submit message (current-buffer) display)))
+
+(defun hermes-chat--prefill-input (message)
+  "Replace the input tail with MESSAGE."
+  (hermes-chat--delete-input-tail)
+  (insert (or message "")))
+
+(defun hermes-chat--handle-prefill-result (message notice)
+  "Handle command-dispatch prefill MESSAGE with optional NOTICE."
+  (when (hermes-transport--non-empty-string notice)
+    (hermes-chat--insert-local-status notice 'done))
+  (hermes-chat--prefill-input message))
+
+(defun hermes-chat--handle-command-result (result &optional arg)
+  "Render or act on a dashboard command RESULT using optional ARG."
+  (pcase (hermes-chat--result-type result)
+    ("alias"
+     (hermes-chat--handle-alias-result
+      (hermes-chat--result-string result 'target) arg))
+    ("send"
+     (hermes-chat--handle-send-result
+      (hermes-chat--result-string result 'message)
+      (hermes-chat--result-string result 'notice)))
+    ("skill"
+     (hermes-chat--handle-skill-result
+      (hermes-chat--result-string result 'message)
+      (hermes-chat--result-string result 'name)))
+    ("prefill"
+     (hermes-chat--handle-prefill-result
+      (hermes-chat--result-string result 'message)
+      (hermes-chat--result-string result 'notice)))
+    (_
+     (when-let* ((output (hermes-chat--result-output result)))
+       (hermes-chat--insert-local-status output 'done)))))
+
+(defun hermes-chat--format-command-pair (pair)
+  "Return a readable catalog line for PAIR."
+  (let ((name (hermes-chat--scalar-string (hermes-chat--pair-command pair)))
+        (desc (hermes-chat--scalar-string (hermes-chat--pair-description pair))))
+    (string-join (delq nil (list name desc)) " — ")))
+
+(defun hermes-chat--format-command-category (category)
+  "Return readable command catalog text for CATEGORY."
+  (let* ((name (or (hermes-chat--result-string category 'name) "Commands"))
+         (pairs (hermes-chat--listify (hermes-transport--get category 'pairs)))
+         (lines (mapcar #'hermes-chat--format-command-pair pairs)))
+    (string-join (cons name (mapcar (lambda (line) (concat "  " line)) lines))
+                 "\n")))
+
+(defun hermes-chat--commands-categories-content (result)
+  "Return readable command categories from catalog RESULT."
+  (let ((categories (hermes-chat--listify
+                     (hermes-transport--get result 'categories))))
+    (if categories
+        (string-join (mapcar #'hermes-chat--format-command-category categories)
+                     "\n\n")
+      (hermes-chat--format-command-category
+       `((name . "Commands") (pairs . ,(hermes-transport--get result 'pairs)))))))
+
+
 (provide 'hermes-chat-slash)
 ;;; hermes-chat-slash.el ends here
