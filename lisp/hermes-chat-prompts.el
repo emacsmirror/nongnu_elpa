@@ -317,12 +317,6 @@ A nil SESSION-ID matches every prompt in the current buffer."
     (delq nil (mapcar #'hermes-chat--scalar-string
                       (if (vectorp choices) (append choices nil) choices)))))
 
-(defun hermes-chat--approval-permanent-allowed-p (prompt)
-  "Return non-nil if PROMPT may offer permanent approval."
-  (let ((tail (or (plist-member prompt :allow-permanent)
-                  (plist-member prompt :allow_permanent))))
-    (not (and tail (null (cadr tail))))))
-
 (defun hermes-chat--approval-choice-label (choice)
   "Return a minibuffer label for approval CHOICE."
   (pcase choice
@@ -333,17 +327,15 @@ A nil SESSION-ID matches every prompt in the current buffer."
     (_ choice)))
 
 (defun hermes-chat--approval-response-candidates (prompt)
-  "Return completion candidates for responding to approval PROMPT."
-  (let* ((choices (or (hermes-chat--prompt-choices prompt)
-                      '("once" "session" "always" "deny")))
-         (available (if (hermes-chat--approval-permanent-allowed-p prompt)
-                        choices
-                      (cl-remove-if (lambda (choice)
-                                      (equal choice "always"))
-                                    choices))))
+  "Return completion candidates for responding to approval PROMPT.
+The choice vocabulary comes from PROMPT's `:choices' when present and
+otherwise defaults to the server's once/session/always/deny set; the
+backend never gates \"always\", so no choice is filtered locally."
+  (let ((choices (or (hermes-chat--prompt-choices prompt)
+                     '("once" "session" "always" "deny"))))
     (append (mapcar (lambda (choice)
                       (cons (hermes-chat--approval-choice-label choice) choice))
-                    available)
+                    choices)
             '(("Cancel / ignore" . nil)))))
 
 (defun hermes-chat--read-approval-response (prompt)

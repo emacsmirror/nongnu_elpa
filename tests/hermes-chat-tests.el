@@ -2833,27 +2833,28 @@
 
 (ert-deftest hermes-chat-approval-candidates-follow-backend-choices ()
   (let* ((prompt '(:prompt-type "approval"
-                   :choices ["once" "deny"]
-                   :allow-permanent nil))
+                   :choices ["once" "deny"]))
          (candidates (hermes-chat--approval-response-candidates prompt)))
     (should (equal (mapcar #'cdr candidates) '("once" "deny" nil)))
     (should (equal (mapcar #'car candidates)
                    '("Approve once" "Deny" "Cancel / ignore")))))
 
-(ert-deftest hermes-chat-read-approval-response-omits-unavailable-always ()
+(ert-deftest hermes-chat-read-approval-response-offers-full-default-vocabulary ()
+  "Without explicit choices the full once/session/always/deny set is offered.
+The backend never gates \"always\", so it must not be filtered locally."
   (let (seen-candidates)
     (cl-letf (((symbol-function 'completing-read)
                (lambda (_prompt candidates &rest _args)
                  (setq seen-candidates candidates)
                  "Deny")))
       (should (equal (hermes-chat--read-prompt-response
-                      '(:prompt-type "approval" :allow-permanent nil))
+                      '(:prompt-type "approval"))
                      "deny"))
       (should (member "Approve once" seen-candidates))
       (should (member "Approve for session" seen-candidates))
+      (should (member "Always approve" seen-candidates))
       (should (member "Deny" seen-candidates))
-      (should (member "Cancel / ignore" seen-candidates))
-      (should-not (member "Always approve" seen-candidates)))))
+      (should (member "Cancel / ignore" seen-candidates)))))
 
 (ert-deftest hermes-chat-read-approval-response-can-cancel ()
   (let (seen-candidates cancelled)
@@ -2880,7 +2881,10 @@
                      "my own answer"))
       (should-not require-match))))
 
-(ert-deftest hermes-chat-parses-approval-allow-permanent-flag ()
+(ert-deftest hermes-chat-approval-ignores-allow-permanent-field ()
+  "The gateway approval payload never carries `allow_permanent'.
+A payload that does is not normalized into the prompt, and \"always\"
+stays available."
   (hermes-test-with-dashboard-prompt-session (client)
     (hermes-test--emit-dashboard-prompt
      client "approval.request"
@@ -2889,12 +2893,11 @@
        (allow_permanent . nil)))
     (let ((prompt (gethash "approval:sid-prompt" hermes-chat--pending-prompts)))
       (should prompt)
-      (should (plist-member prompt :allow-permanent))
-      (should-not (plist-get prompt :allow-permanent))
-      (should-not (member "always"
-                          (mapcar #'cdr
-                                  (hermes-chat--approval-response-candidates
-                                   prompt)))))))
+      (should-not (plist-member prompt :allow-permanent))
+      (should (member "always"
+                      (mapcar #'cdr
+                              (hermes-chat--approval-response-candidates
+                               prompt)))))))
 
 (ert-deftest hermes-chat-handles-clarify-request ()
   (let (respond-client respond-request respond-answer)
