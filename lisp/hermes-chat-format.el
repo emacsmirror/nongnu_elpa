@@ -583,5 +583,42 @@ markdown stays visible and easy to copy."
   (hermes-chat--record-ansi-fragment key nil))
 
 
+;;; Event classification
+
+;; Pure event predicates and diagnostics shared by the chat siblings.
+
+(defconst hermes-chat--unknown-event-raw-preview-width 180
+  "Maximum width for raw unknown transport event previews.")
+
+(defun hermes-chat--session-info-event-p (event)
+  "Return non-nil when EVENT is a `session.info' status event."
+  (equal (hermes-chat--event-string event '(:event)) "session.info"))
+
+(defun hermes-chat--message-start-status-event-p (event)
+  "Return non-nil when EVENT is low-value message-start status noise."
+  (and (eq (plist-get event :type) 'status)
+       (and-let* ((name (hermes-chat--event-string event '(:event))))
+         (member (downcase name)
+                 '("message.start" "message_start"
+                   "message.started" "message_started")))
+       (equal (hermes-chat--status-name (plist-get event :status)) "started")
+       (hermes-chat--message-start-noise-content-p
+        (hermes-chat--event-string event '(:content :text :preview)))))
+
+(defun hermes-chat--unknown-event-content (event)
+  "Return visible diagnostic text for unknown transport EVENT."
+  (let* ((name (or (hermes-chat--event-string event '(:event)) "unnamed"))
+         (raw (plist-get event :raw))
+         (preview (and raw
+                       (truncate-string-to-width
+                        (format "%S" raw)
+                        hermes-chat--unknown-event-raw-preview-width
+                        nil nil "…"))))
+    (string-join
+     (delq nil (list (format "Unknown Hermes transport event: %s" name)
+                     (and preview (format "raw: %s" preview))))
+     "\n")))
+
+
 (provide 'hermes-chat-format)
 ;;; hermes-chat-format.el ends here

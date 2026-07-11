@@ -41,7 +41,6 @@
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
 
-(declare-function hermes-chat--header-activity-for-event "hermes-chat" (event))
 
 (declare-function hermes-chat--dashboard-control-client "hermes-chat-dashboard" ())
 

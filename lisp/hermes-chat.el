@@ -136,36 +136,6 @@ A manual title is preserved against the automatic session-title refresh.")
 (defconst hermes-chat--transient-entry-roles '(status progress tool)
   "Entry roles used for compact transport status/progress lines.")
 
-(defconst hermes-chat--unknown-event-raw-preview-width 180
-  "Maximum width for raw unknown transport event previews.")
-
-(defun hermes-chat--unknown-event-content (event)
-  "Return visible diagnostic text for unknown transport EVENT."
-  (let* ((name (or (hermes-chat--event-string event '(:event)) "unnamed"))
-         (raw (plist-get event :raw))
-         (preview (and raw
-                       (truncate-string-to-width
-                        (format "%S" raw)
-                        hermes-chat--unknown-event-raw-preview-width
-                        nil nil "…"))))
-    (string-join
-     (delq nil (list (format "Unknown Hermes transport event: %s" name)
-                     (and preview (format "raw: %s" preview))))
-     "\n")))
-
-(defun hermes-chat--clear-active-tools ()
-  "Forget currently active tools in the chat header."
-  (when (hash-table-p hermes-chat--active-tools)
-    (clrhash hermes-chat--active-tools)))
-
-(defun hermes-chat--active-tool-summaries ()
-  "Return active tool summaries for the chat header."
-  (let (summaries)
-    (when (hash-table-p hermes-chat--active-tools)
-      (maphash (lambda (_key summary) (push summary summaries))
-               hermes-chat--active-tools))
-    (nreverse summaries)))
-
 (defun hermes-chat--header-tool-key (event)
   "Return stable header key for EVENT's tool-like activity."
   (or (hermes-chat--transport-entry-id event)
@@ -179,20 +149,6 @@ A manual title is preserved against the automatic session-title refresh.")
      ('progress (hermes-chat--format-progress-event event))
      ('tool (hermes-chat--format-tool-event event))
      (_ nil))))
-
-(defun hermes-chat--active-tools-table ()
-  "Return the active-tools hash for this buffer, creating it when absent.
-This feeds the dashboard's per-session tool list via
-`hermes-chat--dashboard-snapshot'; the chat header itself never shows tools."
-  (unless (hash-table-p hermes-chat--active-tools)
-    (setq hermes-chat--active-tools (make-hash-table :test 'equal)))
-  hermes-chat--active-tools)
-
-(defun hermes-chat--header-activity-for-event (event)
-  "Return a compact activity string for transport EVENT."
-  (hermes-transport--non-empty-string
-   (or (hermes-chat--transport-entry-content event)
-       (hermes-chat--event-string event '(:content :text :preview :event)))))
 
 (defun hermes-chat--capture-session-identity (event)
   "Record the model, agent name, flags, and context usage carried by EVENT."
@@ -214,21 +170,6 @@ fields, so it collapses to a plain ready state instead of repeating them."
   (if (hermes-chat--session-info-event-p event)
       "Ready"
     (or (hermes-chat--header-activity-for-event event) "Working")))
-
-(defun hermes-chat--session-info-event-p (event)
-  "Return non-nil when EVENT is a `session.info' status event."
-  (equal (hermes-chat--event-string event '(:event)) "session.info"))
-
-(defun hermes-chat--message-start-status-event-p (event)
-  "Return non-nil when EVENT is low-value message-start status noise."
-  (and (eq (plist-get event :type) 'status)
-       (and-let* ((name (hermes-chat--event-string event '(:event))))
-         (member (downcase name)
-                 '("message.start" "message_start"
-                   "message.started" "message_started")))
-       (equal (hermes-chat--status-name (plist-get event :status)) "started")
-       (hermes-chat--message-start-noise-content-p
-        (hermes-chat--event-string event '(:content :text :preview)))))
 
 ;;; Turn-state reducer
 ;;

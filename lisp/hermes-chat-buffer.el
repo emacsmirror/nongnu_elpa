@@ -48,7 +48,6 @@ without each one repeating the liveness guard."
      (with-current-buffer ,buffer
        ,@body)))
 
-(declare-function hermes-chat--unknown-event-content "hermes-chat-format" (event))
 
 (declare-function hermes-chat--header-line "hermes-chat" ())
 
@@ -766,6 +765,36 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
    'queued)
   (hermes-chat--set-header-state
    :status 'queued :activity "Queued next message"))
+
+;;; Active-tool registry and event activity
+
+(defun hermes-chat--active-tools-table ()
+  "Return the active-tools hash for this buffer, creating it when absent.
+This feeds the dashboard's per-session tool list via
+`hermes-chat--dashboard-snapshot'; the chat header itself never shows tools."
+  (unless (hash-table-p hermes-chat--active-tools)
+    (setq hermes-chat--active-tools (make-hash-table :test 'equal)))
+  hermes-chat--active-tools)
+
+(defun hermes-chat--clear-active-tools ()
+  "Forget currently active tools in the chat header."
+  (when (hash-table-p hermes-chat--active-tools)
+    (clrhash hermes-chat--active-tools)))
+
+(defun hermes-chat--active-tool-summaries ()
+  "Return active tool summaries for the chat header."
+  (let (summaries)
+    (when (hash-table-p hermes-chat--active-tools)
+      (maphash (lambda (_key summary) (push summary summaries))
+               hermes-chat--active-tools))
+    (nreverse summaries)))
+
+(defun hermes-chat--header-activity-for-event (event)
+  "Return a compact activity string for transport EVENT."
+  (hermes-transport--non-empty-string
+   (or (hermes-chat--transport-entry-content event)
+       (hermes-chat--event-string event '(:content :text :preview :event)))))
+
 
 (provide 'hermes-chat-buffer)
 ;;; hermes-chat-buffer.el ends here
