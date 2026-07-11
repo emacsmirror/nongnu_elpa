@@ -6,7 +6,7 @@ An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
 + ERC/emacs-jabber-style chat buffer with streaming replies
 + Slash commands, approvals, clarify/sudo/secret prompts, interrupts, and steering
 + Markdown-rendered replies; diffs open as =[View Diff]= in =diff-mode=
-+ *Kanban*, sessions, MCP, cron, inventory, and rollback browsers
++ *Kanban*, sessions, profiles, MCP, cron, inventory, and rollback browsers
 + Provider onboarding (API keys) from Emacs
 + /Optional/ local eval endpoint (=hermes-exec=) for the Hermes Emacs MCP bridge
 
