@@ -668,6 +668,13 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
             (ewoc-invalidate hermes-chat--ewoc node))))
       hermes-chat--nodes))))
 
+(defun hermes-chat-input-string ()
+  "Return the current input tail as a plain string."
+  (let ((pos (hermes-chat--input-position)))
+    (unless pos
+      (user-error "No Hermes chat input marker in this buffer"))
+    (buffer-substring-no-properties pos (point-max))))
+
 (defun hermes-chat--delete-input-tail ()
   "Delete the current writable input tail."
   (delete-region (hermes-chat--input-position) (point-max)))

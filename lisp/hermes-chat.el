@@ -73,15 +73,6 @@ which keeps tests and user custom transports working."
 (defvar hermes-chat--input-marker)
 (defvar hermes-chat--nodes)
 
-(defvar-local hermes-chat--background-counter 0
-  "Number of background (`/btw') tasks launched from this chat buffer.")
-
-(defvar-local hermes-chat--background-tasks nil
-  "Alist mapping a background task id to its (:number :preview) plist.
-Populated when `prompt.background' accepts a task and consumed when the matching
-`background.complete' event arrives, so the result entry can show the task's
-number and the prompt that launched it.")
-
 ;; Connection state owned by `hermes-chat-buffer'; re-declared here for the
 ;; byte-compiler.  See that file for the authoritative defvar-locals and docs.
 (defvar hermes-chat--process)
@@ -117,15 +108,6 @@ Shown as annotations after the model in the chat header.")
 (defvar hermes-chat--dashboard-detached-assistant-id)
 (defvar hermes-chat--dashboard-stream-assistant-id)
 (defvar hermes-chat--dashboard-suppress-stream-p)
-
-(defvar-local hermes-chat--title nil
-  "Human title for this chat session.
-Set by `hermes-chat-rename'.  Shown in the buffer name and reported to the
-dashboard; nil falls back to the buffer name.")
-
-(defvar-local hermes-chat--title-manual-p nil
-  "Non-nil when the user set this chat's title via `hermes-chat-rename'.
-A manual title is preserved against the automatic session-title refresh.")
 
 ;; Queue and stream state owned by `hermes-chat-buffer'; re-declared here for
 ;; the byte-compiler.
@@ -537,13 +519,6 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
       (hermes-chat--queue-content content nil display)
     (hermes-chat--submit-content content display)))
 
-(defun hermes-chat-input-string ()
-  "Return the current input tail as a plain string."
-  (let ((pos (hermes-chat--input-position)))
-    (unless pos
-      (user-error "No Hermes chat input marker in this buffer"))
-    (buffer-substring-no-properties pos (point-max))))
-
 (defun hermes-chat-newline ()
   "Insert a literal newline in the Hermes chat input tail.
 Outside the tail, move to the end of the draft first so the newline
@@ -678,75 +653,6 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
        (lambda (_live-client)
          (hermes-chat--steer-or-submit content buffer)))
     (hermes-chat--steer-or-submit content buffer)))
-
-(defun hermes-chat-background (&optional prompt)
-  "Run PROMPT as a Hermes background task, delivering its result to this chat.
-With no PROMPT, use the input tail.  The task runs in its own session via
-`prompt.background', so it does not block the current turn; its answer returns
-later as a `background.complete' event rendered as a persistent [View Result]
-entry."
-  (interactive)
-  (let ((content (string-trim (or prompt (hermes-chat-input-string))))
-        (buffer (current-buffer)))
-    (when (string-empty-p content)
-      (user-error "No Hermes background prompt given"))
-    (unless prompt
-      (hermes-chat--delete-input-tail))
-    (hermes-chat--background-submit content buffer)))
-
-(defun hermes-chat--background-started (result prompt buffer)
-  "Record the background task in RESULT for PROMPT and show a started notice.
-BUFFER's client gains a result listener when no turn is streaming, so the
-`background.complete' event is delivered even on an otherwise idle chat."
-  (let ((task-id (hermes-transport--scalar-string
-                  (hermes-transport--get result 'task_id)))
-        (number (cl-incf hermes-chat--background-counter))
-        (preview (hermes-chat--preview prompt)))
-    (when task-id
-      (push (cons task-id (list :number number :preview preview))
-            hermes-chat--background-tasks))
-    (hermes-chat--ensure-background-listener hermes-chat--dashboard-client buffer)
-    ;; Insert above any pending reply so the active turn's answer stays last.
-    (hermes-chat--insert-entry
-     (hermes-chat--make-entry
-      'status (format "Background #%d started: %s" number preview) 'running)
-     (hermes-chat--pending-assistant-node))))
-
-(defun hermes-chat--background-submit (content buffer)
-  "Launch CONTENT as a background task for BUFFER's dashboard session."
-  (hermes-chat--with-dashboard-session
-   content buffer
-   (lambda (live-client)
-     (hermes-dashboard-transport-prompt-background
-      live-client content
-      :session-id hermes-chat--dashboard-active-session-id
-      :resolve (lambda (result)
-                 (hermes-chat--in-buffer buffer
-                   (hermes-chat--background-started result content buffer)))
-      :reject (lambda (message)
-                (hermes-chat--in-buffer buffer
-                  (hermes-chat--command-error message)))))))
-
-(defun hermes-chat--handle-background-complete (event)
-  "Insert a persistent result entry for a `background' EVENT.
-EVENT's `:task-id' is paired with the launching task's number and preview.  The
-entry is inserted before any pending assistant reply -- nil before-node when the
-chat is idle, so it simply lands last -- so a result arriving mid-turn keeps the
-active turn's answer at the bottom.  The counter is owned by the launch path and
-is not advanced here; an unrecorded result falls back to its current value."
-  (let* ((task-id (plist-get event :task-id))
-         (info (and task-id (cdr (assoc task-id hermes-chat--background-tasks))))
-         (number (or (plist-get info :number) hermes-chat--background-counter))
-         (preview (or (plist-get info :preview) ""))
-         (content (or (plist-get event :content) "")))
-    (when task-id
-      (setq hermes-chat--background-tasks
-            (assoc-delete-all task-id hermes-chat--background-tasks)))
-    (hermes-chat--insert-entry
-     (hermes-chat--make-entry
-      'background content 'done nil
-      (list :number number :preview preview))
-     (hermes-chat--pending-assistant-node))))
 
 (defun hermes-chat-steer-message (&optional message)
   "Steer the active dashboard run with MESSAGE, falling back to queue."
@@ -1144,100 +1050,6 @@ messages are fetched and rendered; the durable session continues on send."
   (and profile
        (let ((trimmed (string-trim profile)))
          (and (not (string-empty-p trimmed)) trimmed))))
-
-(defun hermes-chat--buffer-name-for-title (profile title)
-  "Return a chat buffer name from PROFILE and TITLE.
-PROFILE nil means the default profile.  A nil or empty TITLE yields a name with
-just the profile, so buffers stay distinct before a session title arrives."
-  (let ((profile (or profile "default")))
-    (if (and title (not (string-empty-p title)))
-        (format "*Hermes: %s: %s*" profile title)
-      (format "*Hermes: %s*" profile))))
-
-(defun hermes-chat--push-session-title (title)
-  "Push TITLE to the server with `session.title' when a session is attached.
-With no live session the rename stays buffer-local; report that instead."
-  (if (and (hermes-chat--dashboard-session-attached-p)
-           hermes-chat--dashboard-active-session-id)
-      (let ((buffer (current-buffer)))
-        (hermes-dashboard-transport-session-title
-         hermes-chat--dashboard-client
-         :session-id hermes-chat--dashboard-active-session-id
-         :title title
-         :resolve (lambda (result)
-                    (when (and (buffer-live-p buffer)
-                               (eq (hermes-transport--get result 'pending) t))
-                      (message "Title queued; applies once the session is saved")))
-         :reject (lambda (message)
-                   (hermes-chat--in-buffer buffer
-                     (hermes-chat--command-error message)))))
-    (message "Renamed buffer; no live session to update on the server")))
-
-(defun hermes-chat--apply-session-title (title)
-  "Record TITLE and rename this buffer to match, without updating the server."
-  (setq hermes-chat--title title)
-  (let ((newname (hermes-chat--buffer-name-for-title
-                  hermes-chat--profile title)))
-    (unless (equal (buffer-name) newname)
-      (rename-buffer newname t)))
-  (force-mode-line-update))
-
-(defun hermes-chat--should-apply-title-p (title current manual-p)
-  "Return non-nil when TITLE should replace CURRENT in the buffer name.
-TITLE applies only when it is a non-empty string, differs from CURRENT, and
-MANUAL-P is nil (the user has not pinned a title)."
-  (and (not manual-p)
-       (stringp title)
-       (not (string-empty-p title))
-       (not (equal title current))))
-
-(defun hermes-chat--apply-fetched-title (buffer result)
-  "Apply the session title carried by RESULT to BUFFER when it should change."
-  (hermes-chat--in-buffer buffer
-    (let ((title (string-trim
-                  (or (hermes-transport--scalar-string
-                       (hermes-transport--get result 'title))
-                      ""))))
-      (when (hermes-chat--should-apply-title-p
-             title hermes-chat--title hermes-chat--title-manual-p)
-        (hermes-chat--apply-session-title title)))))
-
-(defun hermes-chat--fetch-session-title (buffer)
-  "Fetch BUFFER's server session title and apply it to the buffer name.
-Guards are re-checked here since this runs after the turn settles."
-  (hermes-chat--in-buffer buffer
-    (when (and (hermes-chat--dashboard-session-attached-p)
-               (not hermes-chat--title-manual-p))
-      (hermes-dashboard-transport-session-title-fetch
-       hermes-chat--dashboard-client
-       :session-id hermes-chat--dashboard-active-session-id
-       :resolve (lambda (result)
-                  (hermes-chat--apply-fetched-title buffer result))
-       ;; A background title fetch must never surface as a chat error; swallow
-       ;; failures rather than letting them reach the transport callback.
-       :reject #'ignore))))
-
-(defun hermes-chat--maybe-refresh-session-title ()
-  "Schedule a server session-title refresh for this buffer after a turn settles.
-Deferred to the next idle moment so no network I/O runs inside the transport
-event handler.  A no-op without a live dashboard session or with a manual title."
-  (when (and (hermes-chat--dashboard-session-attached-p)
-             (not hermes-chat--title-manual-p))
-    (run-at-time 0 nil #'hermes-chat--fetch-session-title (current-buffer))))
-
-(defun hermes-chat-rename (title)
-  "Rename this chat session to TITLE.
-Renames the buffer and, when a live dashboard session is attached, updates the
-server title via `session.title'.  A manual rename is kept against the automatic
-session-title refresh."
-  (interactive
-   (list (read-string "Hermes chat title: " (or hermes-chat--title ""))))
-  (let ((title (string-trim title)))
-    (when (string-empty-p title)
-      (user-error "Title must not be empty"))
-    (setq hermes-chat--title-manual-p t)
-    (hermes-chat--apply-session-title title)
-    (hermes-chat--push-session-title title)))
 
 (defun hermes-chat--live-buffers ()
   "Return all live Hermes chat buffers in `buffer-list' order."
