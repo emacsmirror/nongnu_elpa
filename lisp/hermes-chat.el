@@ -408,13 +408,6 @@ Used where a synthesized header event must not insert a transcript entry."
   "Return the current input tail trimmed for sending."
   (string-trim (hermes-chat-input-string)))
 
-(defun hermes-chat--queue-or-submit-content (content &optional display)
-  "Queue CONTENT during an active turn, otherwise submit it now.
-DISPLAY is the compact user-turn text to show instead of CONTENT."
-  (if (hermes-chat--active-turn-p)
-      (hermes-chat--queue-content content nil display)
-    (hermes-chat--submit-content content display)))
-
 (defun hermes-chat-newline ()
   "Insert a literal newline in the Hermes chat input tail.
 Outside the tail, move to the end of the draft first so the newline
@@ -423,20 +416,6 @@ extends the input instead of prepending a blank line to it."
   (unless (hermes-chat--point-in-input-p)
     (goto-char (point-max)))
   (insert "\n"))
-
-(defun hermes-chat--drain-queued-message ()
-  "Submit one queued message after the active turn settles."
-  (when (and hermes-chat--queued-message
-             (not hermes-chat--pending-assistant-id)
-             (not hermes-chat--draining-queued-message-p))
-    (let ((content hermes-chat--queued-message)
-          (display hermes-chat--queued-display))
-      (setq hermes-chat--queued-message nil
-            hermes-chat--queued-display nil
-            hermes-chat--draining-queued-message-p t)
-      (unwind-protect
-          (hermes-chat--submit-content content display)
-        (setq hermes-chat--draining-queued-message-p nil)))))
 
 (defun hermes-chat--submit-content (content &optional display)
   "Submit CONTENT as a new user turn, echoing DISPLAY when non-nil.
@@ -468,6 +447,12 @@ DISPLAY lets a slash skill send its full payload while showing a compact line."
        (hermes-chat--handle-transport-event
         assistant-id (list :type 'error :content (error-message-string err)))
        (message "Hermes transport failed: %s" (error-message-string err))))))
+
+;; Register the submit pipeline with `hermes-chat-buffer''s queue/drain flow
+;; and the dashboard's event routing; the registries keep the lower layers
+;; free of upward references (see the require-order note above).
+(setq hermes-chat--submit-function #'hermes-chat--submit-content)
+(setq hermes-chat--turn-event-function #'hermes-chat--run-turn-reducer)
 
 
 (defun hermes-chat-queue-message (&optional message)

@@ -784,6 +784,32 @@ METADATA is stored as the entry's `:metadata' plist."
   "Return a compact preview for CONTENT."
   (truncate-string-to-width (string-replace "\n" " " content) 80 nil nil "…"))
 
+(defvar hermes-chat--submit-function #'ignore
+  "Function submitting CONTENT as a new user turn, set by `hermes-chat'.
+Takes (CONTENT &optional DISPLAY).  The queue/drain flow below calls it so
+this file never references the submit pipeline defined above it.")
+
+(defun hermes-chat--queue-or-submit-content (content &optional display)
+  "Queue CONTENT during an active turn, otherwise submit it now.
+DISPLAY is the compact user-turn text to show instead of CONTENT."
+  (if (hermes-chat--active-turn-p)
+      (hermes-chat--queue-content content nil display)
+    (funcall hermes-chat--submit-function content display)))
+
+(defun hermes-chat--drain-queued-message ()
+  "Submit one queued message after the active turn settles."
+  (when (and hermes-chat--queued-message
+             (not hermes-chat--pending-assistant-id)
+             (not hermes-chat--draining-queued-message-p))
+    (let ((content hermes-chat--queued-message)
+          (display hermes-chat--queued-display))
+      (setq hermes-chat--queued-message nil
+            hermes-chat--queued-display nil
+            hermes-chat--draining-queued-message-p t)
+      (unwind-protect
+          (funcall hermes-chat--submit-function content display)
+        (setq hermes-chat--draining-queued-message-p nil)))))
+
 (defun hermes-chat--queue-content (content &optional note display)
   "Queue CONTENT for the next turn, inserting NOTE when non-nil.
 DISPLAY is the compact user-turn text shown when the queued message is sent."

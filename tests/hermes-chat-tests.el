@@ -3419,5 +3419,11 @@
            '(:type status :event "notification.show"
                    :content "[warning] credits low"))))
 
+(ert-deftest hermes-chat-load-populates-registry-functions ()
+  "Loading `hermes-chat' wires the buffer/dashboard registry variables."
+  (should (eq hermes-chat--submit-function #'hermes-chat--submit-content))
+  (should (eq hermes-chat--turn-event-function #'hermes-chat--run-turn-reducer))
+  (should (memq #'hermes-chat--handoff-stop hermes-chat-cleanup-functions)))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

@@ -42,6 +42,10 @@
 (require 'hermes-chat-buffer)
 
 
+;; The one sanctioned upward reference among the chat siblings:
+;; `hermes-chat-dashboard' requires this file (its event path records
+;; prompt requests here), so the respond dispatcher below cannot require
+;; it back and declares this client accessor instead.
 (declare-function hermes-chat--dashboard-control-client "hermes-chat-dashboard" ())
 
 (defcustom hermes-chat-auto-prompt-requests t

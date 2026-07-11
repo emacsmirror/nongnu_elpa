@@ -37,11 +37,6 @@
 (require 'hermes-chat-buffer)
 (require 'hermes-chat-prompts)
 
-(declare-function hermes-chat--drain-queued-message "hermes-chat" ())
-(declare-function hermes-chat--handoff-stop "hermes-chat-handoff" ())
-(declare-function hermes-chat--queue-or-submit-content "hermes-chat" (content &optional display))
-(declare-function hermes-chat--render-turn-event "hermes-chat" (assistant-id event))
-(declare-function hermes-chat--run-turn-reducer "hermes-chat" (assistant-id event))
 
 (defvar hermes-chat-dashboard-session-title)
 (defvar hermes-chat-use-dashboard-transport)
@@ -82,6 +77,17 @@ number and the prompt that launched it.")
 (defvar hermes-chat--dashboard-session-ready-p)
 (defvar hermes-chat--dashboard-stream-assistant-id)
 (defvar hermes-chat--dashboard-suppress-stream-p)
+
+(defvar hermes-chat--turn-event-function #'ignore
+  "Function reducing one transport event, set by `hermes-chat'.
+Takes (ASSISTANT-ID EVENT); a nil ASSISTANT-ID reduces for the header only.
+Routing through a registry keeps this file free of upward references into
+the reducer defined in `hermes-chat'.")
+
+(defvar hermes-chat-cleanup-functions nil
+  "Abnormal-free hook run when a chat buffer releases its resources.
+Modules add their per-buffer teardown here (e.g. `hermes-chat-handoff'
+stops its poll) instead of being called by name from this file.")
 
 (defun hermes-chat--closed-status-event-p (event)
   "Return non-nil when EVENT reports a closed live transport."
@@ -164,7 +170,7 @@ so a new session can be started afterwards."
 
 (defun hermes-chat--cleanup-buffer ()
   "Release per-buffer Hermes chat resources before killing the buffer."
-  (hermes-chat--handoff-stop)
+  (run-hooks 'hermes-chat-cleanup-functions)
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--notify-state-change))
 
@@ -232,7 +238,7 @@ The event belongs to a resumed in-flight turn without a local assistant entry,
 so its final content must not reach the unsubmitted retry placeholder.  The
 turn lifecycle itself runs through the reducer's `suppressed-terminal' case so
 settlement order lives in one place."
-  (hermes-chat--run-turn-reducer
+  (funcall hermes-chat--turn-event-function
    assistant-id
    (list :type 'suppressed-terminal
          :settle-status (hermes-chat--dashboard-suppressed-terminal-status event)
@@ -255,7 +261,7 @@ settlement order lives in one place."
         (setq hermes-chat--dashboard-detached-assistant-id assistant-id
               hermes-chat--dashboard-stream-assistant-id nil
               hermes-chat--dashboard-suppress-stream-p nil))
-    (hermes-chat--render-turn-event assistant-id event)))
+    (funcall hermes-chat--turn-event-function assistant-id event)))
 
 (defun hermes-chat--handle-reconnecting-status (event)
   "Handle a manual dashboard socket reconnect status EVENT."
@@ -293,7 +299,7 @@ settlement order lives in one place."
     ;; Every recognized event -- header, tool, transcript, streaming delta, and
     ;; the done/error turn lifecycle -- is rendered by the reducer effects in
     ;; `hermes-chat--render-turn-event'.  Only a truly unknown type warns here.
-    (hermes-chat--render-turn-event assistant-id event)
+    (funcall hermes-chat--turn-event-function assistant-id event)
     (when (eq (plist-get event :type) 'done)
       (hermes-chat--maybe-refresh-session-title))
     (pcase (plist-get event :type)

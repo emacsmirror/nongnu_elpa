@@ -217,5 +217,7 @@ attached, idle session; the gateway transfers it to the platform's home channel.
         (hermes-chat--handoff-begin buffer given)
       (hermes-chat--handoff-prompt-platform buffer))))
 
+(add-hook 'hermes-chat-cleanup-functions #'hermes-chat--handoff-stop)
+
 (provide 'hermes-chat-handoff)
 ;;; hermes-chat-handoff.el ends here
