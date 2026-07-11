@@ -2099,9 +2099,9 @@ asynchronous result or error."
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-history "session.history"
   "Send a `session.history' request for SESSION-ID on CLIENT.
-OFFSET and LIMIT page the returned messages; RESOLVE and REJECT receive the
-result or error."
-  :args (session-id) :keys (offset limit))
+The handler always returns the full conversation (it reads no paging
+parameters).  RESOLVE and REJECT receive the result or error."
+  :args (session-id))
 
 (hermes-dashboard-transport-define-rpc
     hermes-dashboard-transport-session-delete "session.delete"
