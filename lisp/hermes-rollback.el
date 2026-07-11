@@ -26,8 +26,10 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'tabulated-list)
 (require 'hermes-transport)
+(require 'hermes-promise)
 (require 'hermes-dashboard-transport)
 (require 'hermes-browser)
 (require 'hermes-chat)
@@ -35,6 +37,35 @@
 (defun hermes-rollback--short (hash)
   "Return an abbreviated form of checkpoint HASH."
   (if (and hash (> (length hash) 8)) (substring hash 0 8) (or hash "")))
+
+(defun hermes-rollback--live-session-id ()
+  "Return a live dashboard session id from any Hermes chat buffer, or nil.
+The rollback methods are session-scoped server-side: the gateway resolves
+checkpoints against the session's working directory and rejects a request
+whose session id is missing or unknown."
+  (cl-some (lambda (buffer)
+             (with-current-buffer buffer
+               (and (derived-mode-p 'hermes-chat-mode)
+                    hermes-chat--dashboard-session-ready-p
+                    hermes-chat--dashboard-active-session-id)))
+           (buffer-list)))
+
+(defun hermes-rollback--require-session-id ()
+  "Return a live dashboard session id, or signal a `user-error'."
+  (or (hermes-rollback--live-session-id)
+      (user-error "Hermes rollback needs a live chat session; open a chat first")))
+
+(defun hermes-rollback--fetch (client)
+  "Return a promise of `rollback.list' for the live chat session on CLIENT.
+When no live session exists the promise rejects instead of signaling, so the
+browser reports the error and still releases a transient client."
+  (let ((session-id (hermes-rollback--live-session-id)))
+    (if session-id
+        (hermes-dashboard-transport-call-fn
+         #'hermes-dashboard-transport-rollback-list client
+         :session-id session-id)
+      (hermes--promise-rejected
+       "rollback needs a live chat session; open a Hermes chat first"))))
 
 (defun hermes-rollback--rows (result)
   "Return `tabulated-list' entries for a `rollback.list' RESULT."
@@ -61,18 +92,21 @@
 (defun hermes-rollback-show-diff ()
   "Show the diff for the checkpoint at point."
   (interactive)
-  (let ((hash (tabulated-list-get-id)))
+  (let ((hash (tabulated-list-get-id))
+        (session-id (hermes-rollback--require-session-id)))
     (unless hash (user-error "No checkpoint on this line"))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes-dashboard-transport-call-fn
-        #'hermes-dashboard-transport-rollback-diff client hash))
+        #'hermes-dashboard-transport-rollback-diff client hash
+        :session-id session-id))
      (lambda (result) (hermes-rollback--display-diff hash result)))))
 
 (defun hermes-rollback-restore ()
   "Restore the working tree to the checkpoint at point."
   (interactive)
-  (let ((hash (tabulated-list-get-id)))
+  (let ((hash (tabulated-list-get-id))
+        (session-id (hermes-rollback--require-session-id)))
     (unless hash (user-error "No checkpoint on this line"))
     (when (yes-or-no-p
            (format "Restore working tree to checkpoint %s? "
@@ -80,7 +114,8 @@
       (hermes-browser--run-on-client
        (lambda (client)
          (hermes-dashboard-transport-call-fn
-          #'hermes-dashboard-transport-rollback-restore client hash))
+          #'hermes-dashboard-transport-rollback-restore client hash
+          :session-id session-id))
        (lambda (_result)
          (message "Hermes: restored %s" (hermes-rollback--short hash)))))))
 
@@ -92,9 +127,7 @@
   :doc "Major mode listing Hermes session checkpoints."
   :command-doc "Browse Hermes checkpoint history for the active session."
   :columns [("Checkpoint" 10 t) ("When" 22 t) ("Message" 50 nil)]
-  :fetch (lambda (client)
-           (hermes-dashboard-transport-call-fn
-            #'hermes-dashboard-transport-rollback-list client))
+  :fetch #'hermes-rollback--fetch
   :rows #'hermes-rollback--rows
   :keys ("RET" #'hermes-rollback-show-diff
          "d" #'hermes-rollback-show-diff

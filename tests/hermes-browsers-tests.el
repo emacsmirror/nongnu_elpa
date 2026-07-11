@@ -16,25 +16,71 @@
     (should (equal (aref (cadr (car rows)) 2) "edit foo"))))
 
 (ert-deftest hermes-rollback-list-fetches-and-renders ()
-  "Listing fetches rollback.list and renders the checkpoints."
-  (let (stopped)
+  "Listing fetches rollback.list with the live session id and renders it."
+  (let (stopped seen-session)
     (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-rollback--live-session-id)
+               (lambda () "sid-live"))
               ((symbol-function 'hermes-dashboard-transport-start)
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop)
                (lambda (client &rest _) (setq stopped client)))
               ((symbol-function 'hermes-dashboard-transport-rollback-list)
                (lambda (_client &rest args)
+                 (setq seen-session (plist-get args :session-id))
                  (funcall (plist-get args :resolve)
                           '((checkpoints . (((hash . "h1") (message . "m1")))))))))
       (unwind-protect
           (progn
             (hermes-list-rollbacks)
             (should (eq stopped 'fake-client))
+            (should (equal seen-session "sid-live"))
             (with-current-buffer "*Hermes Rollbacks*"
               (should (derived-mode-p 'hermes-rollback-mode))
               (should (equal (caar tabulated-list-entries) "h1"))))
         (when (get-buffer "*Hermes Rollbacks*") (kill-buffer "*Hermes Rollbacks*"))))))
+
+(ert-deftest hermes-rollback-list-without-live-session-rejects ()
+  "Without a live chat session the fetch rejects and the client is released."
+  (let (stopped reported)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-rollback--live-session-id) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop)
+               (lambda (client &rest _) (setq stopped client)))
+              ((symbol-function 'hermes-dashboard-transport-rollback-list)
+               (lambda (&rest _) (error "Must not reach the RPC")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) reported))))
+      (hermes-list-rollbacks)
+      (should (eq stopped 'fake-client))
+      (should (cl-some (lambda (m) (string-match-p "live chat session" m))
+                       reported)))))
+
+(ert-deftest hermes-rollback-diff-passes-session-id ()
+  "The diff command threads the live session id into rollback.diff."
+  (let (seen-session seen-hash)
+    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
+               (lambda () "sid-live"))
+              ((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-rollback-diff)
+               (lambda (_client hash &rest args)
+                 (setq seen-hash hash
+                       seen-session (plist-get args :session-id))
+                 (funcall (plist-get args :resolve) '((diff . "")))))
+              ((symbol-function 'hermes-rollback--display-diff)
+               (lambda (&rest _))))
+      (with-temp-buffer
+        (hermes-rollback-mode)
+        (setq tabulated-list-entries '(("hash-1" ["hash-1" "" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-rollback-show-diff))
+      (should (equal seen-hash "hash-1"))
+      (should (equal seen-session "sid-live")))))
 
 (ert-deftest hermes-rollback-display-diff-fontifies ()
   "The diff view renders the unified diff through diff-mode."
