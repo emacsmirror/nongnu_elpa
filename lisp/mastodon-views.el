@@ -788,7 +788,7 @@ When t, whole words means only match whole words."
            (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
            (resp (mastodon-http--put url params)))
       (mastodon-views--filters-triage resp
-                                      (format "Keyword %s updated!" updated)))))
+                        (format "Keyword %s updated!" updated)))))
 
 (defun mastodon-views--filters-triage (resp msg-str)
   "Triage filter action response RESP, reload filters, message MSG-STR."
@@ -814,7 +814,7 @@ When t, whole words means only match whole words."
            (url (mastodon-http--api-v2 (format "filters/%s/keywords" id)))
            (resp (mastodon-http--post url params)))
       (mastodon-views--filters-triage resp
-                                      (format "Keyword %s added!" kw)))))
+                        (format "Keyword %s added!" kw)))))
 
 (defun mastodon-views-remove-filter-kw ()
   "Remove keyword from filter at point."
@@ -962,7 +962,7 @@ USER, BRIEF, and INSTANCE are all for
   (mastodon-views-view-instance-description user brief instance :miskey))
 
 (defun mastodon-views--instance-response-fun (response brief instance
-                                                       &optional misskey)
+                                         &optional misskey)
   "Display instance description RESPONSE in a new buffer.
 BRIEF means to show fewer details.
 INSTANCE is the instance were are working with.
