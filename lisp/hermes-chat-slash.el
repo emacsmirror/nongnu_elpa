@@ -58,7 +58,6 @@
 (declare-function hermes-chat-switch-model "hermes-chat-models" (&optional refresh))
 (declare-function hermes-chat-handoff "hermes-chat-handoff" (&optional platform))
 (declare-function hermes-chat--dashboard-control-client "hermes-chat-dashboard" ())
-(declare-function hermes-chat--dashboard-session-attached-p "hermes-chat-dashboard" ())
 (declare-function hermes-chat--dashboard-client-live-p "hermes-chat-dashboard" (client))
 (declare-function hermes-chat--with-dashboard-session "hermes-chat-dashboard" (content buffer action &optional reject))
 (declare-function hermes-list-sessions "hermes-sessions")
