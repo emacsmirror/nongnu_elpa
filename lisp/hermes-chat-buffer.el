@@ -48,19 +48,6 @@ without each one repeating the liveness guard."
      (with-current-buffer ,buffer
        ,@body)))
 
-(declare-function hermes-chat--active-status-p "hermes-chat-format" (status))
-(declare-function hermes-chat--event-phase "hermes-chat-format" (event))
-(declare-function hermes-chat--event-string "hermes-chat-format" (event keys))
-(declare-function hermes-chat--event-value "hermes-chat-format" (event keys))
-(declare-function hermes-chat--format-progress-event "hermes-chat-format" (event))
-(declare-function hermes-chat--format-status-event "hermes-chat-format" (event))
-(declare-function hermes-chat--format-tool-event "hermes-chat-format" (event))
-(declare-function hermes-chat--sanitize-assistant-content "hermes-chat-format" (content &optional final))
-(declare-function hermes-chat--sanitize-content "hermes-chat-format" (content &optional ansi-key))
-(declare-function hermes-chat--status-face "hermes-chat-format" (status))
-(declare-function hermes-chat--status-icon "hermes-chat-format" (status))
-(declare-function hermes-chat--strip-session-id-lines "hermes-chat-format" (content &optional final))
-(declare-function hermes-chat--tool-name "hermes-chat-format" (event))
 (declare-function hermes-chat--unknown-event-content "hermes-chat-format" (event))
 
 (declare-function hermes-chat--header-line "hermes-chat" ())

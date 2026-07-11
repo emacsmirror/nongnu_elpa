@@ -37,8 +37,6 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-chat-format)
 
-(declare-function hermes-chat--prompt-event-type "hermes-chat-prompts" (event))
-
 (defcustom hermes-chat-buffer-name "*Hermes Chat*"
   "Name of the Hermes chat buffer."
   :type 'string
@@ -539,9 +537,11 @@ and approval bypass (YOLO)."
     (string-replace "%" "%%" (truncate-string-to-width text width nil nil "…"))))
 
 
-;; These files are sibling areas of one logical chat module; they call back
-;; into the entry/markdown/diff helpers defined above via `declare-function',
-;; so they are required here, after those definitions, rather than at the top.
+;; These files are sibling areas of one logical chat module.  They are
+;; required here, after the reducer/effect helpers above, so the require
+;; order documents the module seam: everything below this point may call
+;; sibling functions directly, and the siblings' own upward wiring goes
+;; through the registry variables they define (never `declare-function').
 (require 'hermes-chat-buffer)
 (require 'hermes-chat-prompts)
 (require 'hermes-chat-dashboard)
@@ -549,22 +549,6 @@ and approval bypass (YOLO)."
 (require 'hermes-chat-handoff)
 (require 'hermes-chat-slash)
 
-(declare-function hermes-chat--cleanup-buffer "hermes-chat-dashboard" ())
-(declare-function hermes-chat--dashboard-bootstrap-error "hermes-chat-dashboard" (message &optional content))
-(declare-function hermes-chat--dashboard-client-live-p "hermes-chat-dashboard" (client))
-(declare-function hermes-chat--dashboard-control-client "hermes-chat-dashboard" ())
-(declare-function hermes-chat--dashboard-default-transport-p "hermes-chat-dashboard" ())
-(declare-function hermes-chat--dashboard-ensure-session-action "hermes-chat-dashboard" (client buffer action &optional reject))
-(declare-function hermes-chat--dashboard-queue-or-submit "hermes-chat-dashboard" (content buffer &optional display))
-(declare-function hermes-chat--dashboard-record-session "hermes-chat-dashboard" (client result))
-(declare-function hermes-chat--dashboard-session-attached-p "hermes-chat-dashboard" ())
-(declare-function hermes-chat--dashboard-start "hermes-chat-dashboard" (callback))
-(declare-function hermes-chat--ensure-background-listener "hermes-chat-dashboard" (client buffer))
-(declare-function hermes-chat--handle-transport-event "hermes-chat-dashboard" (assistant-id event))
-(declare-function hermes-chat--next-transport-generation "hermes-chat-dashboard" ())
-(declare-function hermes-chat--send-prompt "hermes-chat-dashboard" (prompt callback))
-(declare-function hermes-chat--transport-callback "hermes-chat-dashboard" (buffer assistant-id dashboard-p generation))
-(declare-function hermes-chat--with-dashboard-session "hermes-chat-dashboard" (content buffer action &optional reject))
 
 (defun hermes-chat--busy-message ()
   "Return the user-facing busy/backpressure message."
@@ -1347,6 +1331,8 @@ session-title refresh."
                                (mapcar #'buffer-name buffers) nil t))))))
   (pop-to-buffer-same-window buffer))
 
+;; `hermes-sessions' is downstream of this file; its autoloaded browser
+;; command is the one sanctioned upward reference.
 (declare-function hermes-list-sessions "hermes-sessions")
 
 (defun hermes-chat--usage-content (result)
