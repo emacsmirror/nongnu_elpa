@@ -70,8 +70,11 @@ Layered bottom-up; each layer depends only on the ones above it in this list.
   - `hermes-chat-buffer.el` -- the EWOC buffer/mode, the writable compose tail
     after `hermes-chat--input-marker`, node insertion.
   - `hermes-chat.el` -- the `hermes-chat--turn-reduce` reducer + effects, event
-    handling, the slash `completion-at-point` function, commands, model/session
+    handling, the slash `completion-at-point` function, commands, session
     actions.
+  - `hermes-chat-models.el` -- model/provider selection: `model.options`
+    completion candidates, the `config.set` model switch with its
+    expensive-model confirmation loop, API-key provider connect.
   - `hermes-chat-prompts.el` -- the approval/clarify/sudo/secret prompt flows.
   - `hermes-chat-dashboard.el` -- chat<->dashboard glue, session restore/reattach.
 - `hermes.el` -- the `M-x hermes` EWOC dashboard entry; requires the world.

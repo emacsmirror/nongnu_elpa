@@ -1,0 +1,288 @@
+;;; hermes-chat-models.el --- Model and provider selection for Hermes chat  -*- lexical-binding: t; -*-
+
+;; Copyright (C) 2026  Thanos Apollo
+
+;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Keywords: tools, convenience
+
+;; This program is free software; you can redistribute it and/or modify
+;; it under the terms of the GNU General Public License as published by
+;; the Free Software Foundation, either version 3 of the License, or
+;; (at your option) any later version.
+
+;; This program is distributed in the hope that it will be useful,
+;; but WITHOUT ANY WARRANTY; without even the implied warranty of
+;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+;; GNU General Public License for more details.
+
+;; You should have received a copy of the GNU General Public License
+;; along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+;;; Commentary:
+
+;; Model/provider selection for `hermes-chat': the `model.options'
+;; completion candidates, the `config.set' model switch with its
+;; expensive-model confirmation loop, and API-key provider connect.  Part
+;; of the one logical chat module (see the require note in
+;; `hermes-chat.el'); it preserves the existing `hermes-chat--*' symbols.
+
+;;; Code:
+
+(require 'cl-lib)
+(require 'subr-x)
+(require 'hermes-transport)
+(require 'hermes-dashboard-transport)
+(require 'hermes-dashboard-rpc)
+(require 'hermes-chat-buffer)
+
+(declare-function hermes-chat--active-turn-p "hermes-chat" ())
+(declare-function hermes-chat--command-error "hermes-chat" (message))
+(declare-function hermes-chat--insert-local-status "hermes-chat" (content &optional status))
+(declare-function hermes-chat--dashboard-client-live-p "hermes-chat-dashboard" (client))
+(declare-function hermes-chat--dashboard-session-attached-p "hermes-chat-dashboard" ())
+
+(defvar hermes-chat--dashboard-active-session-id)
+(defvar hermes-chat--dashboard-client)
+
+(defun hermes-chat--model-id (model)
+  "Return the model id string from a `model.options' MODEL entry."
+  (or (hermes-transport--scalar-string model)
+      (hermes-transport--scalar-string
+       (hermes-transport--get-any model '(id model name)))))
+
+(defun hermes-chat--model-price (provider model)
+  "Return a compact price string for MODEL in PROVIDER row, or nil."
+  (when-let* ((prices (hermes-transport--get
+                      (hermes-transport--get provider 'pricing) model)))
+    (string-join
+     (delq nil
+           (list (hermes-transport--scalar-string
+                  (hermes-transport--get prices 'input))
+                 (hermes-transport--scalar-string
+                  (hermes-transport--get prices 'output))))
+     "/")))
+
+(defun hermes-chat--model-provider-label (provider)
+  "Return a readable, provider-identity-preserving label for PROVIDER."
+  (let ((name (hermes-transport--scalar-string
+               (hermes-transport--get provider 'name)))
+        (slug (hermes-transport--scalar-string
+               (hermes-transport--get provider 'slug))))
+    (cond
+     ((and name slug (not (equal name slug))) (format "%s (%s)" name slug))
+     (name name)
+     (slug slug)
+     (t "provider"))))
+
+(defun hermes-chat--model-label (provider model)
+  "Return completion label for MODEL in PROVIDER row."
+  (string-join
+   (delq nil
+         (list (hermes-chat--model-provider-label provider)
+               model
+               (hermes-chat--model-price provider model)))
+   " · "))
+
+(defun hermes-chat--model-candidate (provider model)
+  "Return one completion candidate for MODEL in PROVIDER row."
+  (when-let* ((model-id (hermes-chat--model-id model)))
+    (let* ((provider-slug (hermes-transport--scalar-string
+                          (hermes-transport--get provider 'slug)))
+           (label (hermes-chat--model-label provider model-id)))
+      (cons label (list :model model-id
+                        :provider provider-slug
+                        :label label
+                        :authenticated (eq (hermes-transport--get
+                                            provider 'authenticated)
+                                           t))))))
+
+(defun hermes-chat--model-candidates (payload)
+  "Return completion candidates from `model.options' PAYLOAD.
+Each candidate is (LABEL . PLIST).  Authenticated provider rows are listed
+first; model ids are not de-duplicated across providers because provider
+identity is part of the selection."
+  (let (authed other seen)
+    (dolist (provider (hermes-transport--get payload 'providers))
+      (dolist (model (hermes-transport--get provider 'models))
+        (when-let* ((candidate (hermes-chat--model-candidate provider model))
+                    (data (cdr candidate))
+                    (key (list (plist-get data :provider)
+                               (plist-get data :model))))
+          (unless (member key seen)
+            (push key seen)
+            (if (plist-get data :authenticated)
+                (push candidate authed)
+              (push candidate other))))))
+    (append (nreverse authed) (nreverse other))))
+
+(defun hermes-chat--model-config-value (candidate)
+  "Return the `config.set' model value for CANDIDATE."
+  (let ((model (if (stringp candidate)
+                   candidate
+                 (plist-get candidate :model)))
+        (provider (and (not (stringp candidate))
+                       (plist-get candidate :provider))))
+    (if (and provider (not (string-empty-p provider)))
+        (format "%s --provider %s" model provider)
+      model)))
+
+(defun hermes-chat--model-display-name (candidate)
+  "Return a compact display name for CANDIDATE."
+  (if (stringp candidate)
+      candidate
+    (or (plist-get candidate :model)
+        (hermes-chat--model-config-value candidate))))
+
+(defun hermes-chat--apply-model (buffer client candidate confirm)
+  "Set CANDIDATE on BUFFER's session via CLIENT.
+CONFIRM acknowledges an expensive-model confirmation prompt.  When BUFFER
+has no live session yet, the choice is stored buffer-locally and applied
+through `config.set' right after the next session is created."
+  (with-current-buffer buffer
+    (if (hermes-chat--dashboard-session-attached-p)
+        (hermes-dashboard-transport-config-set
+         client "model" (hermes-chat--model-config-value candidate)
+         :session-id hermes-chat--dashboard-active-session-id
+         :confirm-expensive-model confirm
+         :resolve (lambda (result)
+                    (hermes-chat--model-set-result
+                     buffer client candidate result confirm))
+         :reject (lambda (message)
+                   (hermes-chat--in-buffer buffer
+                     (hermes-chat--command-error message))))
+      (setq hermes-chat--dashboard-create-model
+            (if (stringp candidate) candidate (plist-get candidate :model))
+            hermes-chat--dashboard-create-provider
+            (and (not (stringp candidate))
+                 (plist-get candidate :provider)))
+      (hermes-chat--insert-local-status
+       (format "Model set to %s (applies to next session)"
+               (hermes-chat--model-display-name candidate))
+       'ready))))
+
+(defun hermes-chat--model-set-result (buffer client candidate result confirmed)
+  "Report CANDIDATE switch RESULT for BUFFER, re-confirming through CLIENT.
+CONFIRMED is non-nil after the user has already accepted an expensive-model
+confirmation prompt."
+  (hermes-chat--in-buffer buffer
+    (if (hermes-transport--get result 'confirm_required)
+        (if confirmed
+            (hermes-chat--command-error
+             (format "Model switch still requires confirmation: %s"
+                     (or (hermes-transport--scalar-string
+                          (hermes-transport--get result 'confirm_message))
+                         "backend repeated confirmation request")))
+          (if (yes-or-no-p
+               (or (hermes-transport--scalar-string
+                    (hermes-transport--get result 'confirm_message))
+                   "Confirm switching to this model? "))
+              (hermes-chat--apply-model buffer client candidate t)
+            (hermes-chat--insert-local-status "Model switch cancelled" 'ready)))
+      (hermes-chat--insert-local-status
+       (format "Model set to %s"
+               (hermes-chat--model-display-name candidate))
+       'ready))))
+
+(defun hermes-chat--prompt-and-set-model (buffer client result)
+  "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
+  (when (buffer-live-p buffer)
+    (let* ((candidates (hermes-chat--model-candidates result))
+           (labels (mapcar #'car candidates)))
+      (if (null candidates)
+          (message "Hermes: no models available to switch to")
+        (let* ((choice (completing-read "Switch model: " labels nil t))
+               (candidate (cdr (assoc choice candidates))))
+          (unless (or (string-empty-p choice) (null candidate))
+            (if (plist-get candidate :authenticated)
+                (hermes-chat--apply-model buffer client candidate nil)
+              (hermes-chat--connect-provider-candidate
+               buffer client
+               (hermes-chat--find-provider result (plist-get candidate :provider))
+               (lambda () (hermes-chat--apply-model buffer client candidate nil))))))))))
+
+(defun hermes-chat-switch-model (&optional refresh)
+  "Switch the model used by the current Hermes chat session.
+The model list is served from the shared cache; with a prefix argument REFRESH,
+refetch it from the dashboard instead."
+  (interactive "P")
+  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+    (user-error "Connect this chat (send a message) before switching models"))
+  (when (hermes-chat--active-turn-p)
+    (user-error "Interrupt the active turn before switching models"))
+  (let ((buffer (current-buffer))
+        (client hermes-chat--dashboard-client))
+    (hermes-dashboard-transport-model-options-cached
+     client
+     :session-id hermes-chat--dashboard-active-session-id
+     :force refresh
+     :resolve (lambda (result)
+                (hermes-chat--prompt-and-set-model buffer client result))
+     :reject (lambda (message)
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
+
+;; Reused from `hermes-onboarding'.  That module requires `hermes-browser',
+;; which requires this file, so it is loaded lazily inside the commands below to
+;; avoid a load-time cycle; by then this file is already provided.
+(declare-function hermes-onboarding--read-key "hermes-onboarding")
+(declare-function hermes-onboarding--choose-provider "hermes-onboarding")
+
+(defun hermes-chat--find-provider (result slug)
+  "Return the provider row in `model.options' RESULT whose slug is SLUG."
+  (cl-find slug (hermes-transport--get result 'providers)
+           :key (lambda (provider)
+                  (hermes-transport--scalar-string
+                   (hermes-transport--get provider 'slug)))
+           :test #'equal))
+
+(defun hermes-chat--connect-provider-candidate (buffer client provider
+                                                       &optional on-connected)
+  "Read a key for PROVIDER and save it on CLIENT scoped to BUFFER's session.
+ON-CONNECTED, when given, runs after a successful save -- the model picker uses
+it to apply the model the user originally chose."
+  (require 'hermes-onboarding)
+  (let* ((slug (hermes-transport--scalar-string
+                (hermes-transport--get provider 'slug)))
+         (name (or (hermes-transport--scalar-string
+                    (hermes-transport--get provider 'name))
+                   slug))
+         (key (hermes-onboarding--read-key provider)))
+    (with-current-buffer buffer
+      (hermes-dashboard-transport-model-save-key
+       client slug key
+       :session-id hermes-chat--dashboard-active-session-id
+       :resolve (lambda (_result)
+                  ;; Saving a key flips a provider's authentication, so drop the
+                  ;; cached catalog; the next picker refetches the fresh list.
+                  (hermes-dashboard-transport-invalidate-model-options)
+                  (hermes-chat--in-buffer buffer
+                    (hermes-chat--insert-local-status
+                     (format "Connected provider %s" name) 'ready)
+                    (when on-connected (funcall on-connected))))
+       :reject (lambda (message)
+                 (hermes-chat--in-buffer buffer
+                   (hermes-chat--command-error message)))))))
+
+(defun hermes-chat-connect-provider ()
+  "Connect an API-key provider to the current Hermes chat session.
+Pick an unauthenticated provider and paste its key; the dashboard saves it
+against this session's live agent."
+  (interactive)
+  (unless (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
+    (user-error "Connect this chat (send a message) before connecting a provider"))
+  (require 'hermes-onboarding)
+  (let ((buffer (current-buffer))
+        (client hermes-chat--dashboard-client))
+    (hermes-dashboard-transport-model-options-cached
+     client
+     :session-id hermes-chat--dashboard-active-session-id
+     :resolve (lambda (result)
+                (hermes-chat--in-buffer buffer
+                  (hermes-chat--connect-provider-candidate
+                   buffer client (hermes-onboarding--choose-provider result))))
+     :reject (lambda (message)
+               (hermes-chat--in-buffer buffer
+                 (hermes-chat--command-error message))))))
+
+(provide 'hermes-chat-models)
+;;; hermes-chat-models.el ends here

@@ -44,7 +44,7 @@
 (declare-function hermes-chat--drain-queued-message "hermes-chat" ())
 (declare-function hermes-chat--handoff-stop "hermes-chat" ())
 (declare-function hermes-chat--message-start-status-event-p "hermes-chat" (event))
-(declare-function hermes-chat--model-config-value "hermes-chat" (candidate))
+(declare-function hermes-chat--model-config-value "hermes-chat-models" (candidate))
 (declare-function hermes-chat--make-entry "hermes-chat" (role content &optional status id metadata))
 (declare-function hermes-chat--maybe-refresh-session-title "hermes-chat" ())
 (declare-function hermes-chat--notify-state-change "hermes-chat" ())
