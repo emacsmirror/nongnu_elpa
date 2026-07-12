@@ -6,10 +6,14 @@
 (require 'hermes-test-helpers)
 (require 'hermes-tracker)
 
-(ert-deftest hermes-tracker-normalize-base-url-validates-safe-http-origin ()
-  "Tracker URLs accept HTTP(S) origins and reject embedded credentials."
+(ert-deftest hermes-tracker-normalize-base-url-requires-secure-remote-origin ()
+  "Tracker URLs require HTTPS except for loopback development."
   (should (equal (hermes-tracker--normalize-base-url " https://tracker.test/ ")
                  "https://tracker.test"))
+  (should (equal (hermes-tracker--normalize-base-url "http://127.0.0.1:8000/")
+                 "http://127.0.0.1:8000"))
+  (should-error (hermes-tracker--normalize-base-url "http://tracker.test")
+                :type 'user-error)
   (should-error (hermes-tracker--normalize-base-url "https://u:p@tracker.test")
                 :type 'user-error)
   (should-error (hermes-tracker--normalize-base-url "file:///tmp/tracker")
@@ -151,6 +155,28 @@
     (should (eq (keymap-lookup hermes-dashboard-mode-map "T")
                 'hermes-list-tracker-repositories))
     (should (featurep 'hermes-tracker))))
+
+(ert-deftest hermes-tracker-todo-detail-uses-markdown-mode ()
+  "Tracker TODO details retain actions while rendering as Markdown."
+  (cl-letf (((symbol-function 'pop-to-buffer) #'switch-to-buffer))
+    (unwind-protect
+        (progn
+          (hermes-tracker--display-todo
+           (cons '((repo_slug . "proj") (number . 3) (title . "Build it")) nil))
+          (with-current-buffer "*Hermes Tracker TODO*"
+            (should (derived-mode-p 'hermes-tracker-todo-mode))
+            (when (require 'markdown-mode nil t)
+              (should (derived-mode-p 'markdown-mode)))
+            (should buffer-read-only)
+            (goto-char (point-min))
+            (should (re-search-forward outline-regexp nil t))
+            (should (= (funcall outline-level) 1))
+            (setq-local revert-buffer-function (lambda (&rest _)))
+            (revert-buffer t)
+            (should (eq (keymap-lookup (current-local-map) "u")
+                        'hermes-tracker-update-todo))))
+      (when (get-buffer "*Hermes Tracker TODO*")
+        (kill-buffer "*Hermes Tracker TODO*")))))
 
 (provide 'hermes-tracker-tests)
 ;;; hermes-tracker-tests.el ends here

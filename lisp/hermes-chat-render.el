@@ -39,6 +39,15 @@
 Distinguishes a `/btw' result that arrives out of band from ordinary turns."
   :group 'hermes)
 
+(defvar-keymap hermes-chat-background-mode-map
+  :parent markdown-mode-map
+  "q" #'quit-window)
+
+(define-derived-mode hermes-chat-background-mode markdown-mode "Hermes Background"
+  "Major mode for a rendered Hermes background-task result."
+  :interactive nil
+  (read-only-mode 1))
+
 (defun hermes-chat--entry-expanded-p (entry)
   "Return non-nil when ENTRY's detail view is expanded."
   (plist-get (plist-get entry :metadata) :expanded))
@@ -124,11 +133,11 @@ gateway's pre-rendered `a/path -> b/path' header."
 (defun hermes-chat--show-background-result (number content)
   "Show background task NUMBER's CONTENT in a dedicated markdown buffer.
 The buffer renders CONTENT as markdown with diffs swapped for View Diff links,
-mirroring `hermes-chat--show-diff'.  `special-mode' makes it read-only and binds
-`q' to `quit-window', the conventional surface for a rendered read-only buffer."
+mirroring `hermes-chat--show-diff'.  `hermes-chat-background-mode' keeps the
+rendered buffer read-only and binds `q' to `quit-window'."
   (let ((buffer (get-buffer-create (format "*hermes-bg #%d*" number))))
     (with-current-buffer buffer
-      (special-mode)
+      (hermes-chat-background-mode)
       (let ((inhibit-read-only t))
         (erase-buffer)
         (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)

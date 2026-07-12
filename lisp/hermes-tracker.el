@@ -29,6 +29,9 @@
 (require 'hermes-promise)
 (require 'hermes-transport)
 
+(declare-function markdown-mode "markdown-mode")
+(declare-function hermes-tracker-todo-mode "hermes-tracker")
+
 (defgroup hermes-tracker nil
   "Optional integration with the Hermes Tracker service."
   :group 'hermes)
@@ -73,6 +76,10 @@
         (user-error "Hermes Tracker URL must start with http:// or https://"))
       (unless (url-host parsed)
         (user-error "Hermes Tracker URL must include a host"))
+      (unless (or (equal (url-type parsed) "https")
+                  (hermes-dashboard-transport--loopback-host-p
+                   (url-host parsed)))
+        (user-error "Hermes Tracker URL must use HTTPS outside loopback"))
       (when (or (url-user parsed) (url-password parsed))
         (user-error "Hermes Tracker URL must not include credentials"))
       (when (or (cdr (url-path-and-query parsed)) (url-target parsed))
@@ -509,12 +516,27 @@
   :group "View" "g" ("Refresh" revert-buffer)
   "?" ("Help" hermes-tracker-todo-mode-map-popup))
 
-(define-derived-mode hermes-tracker-todo-mode special-mode "Tracker TODO"
-  "Major mode for Tracker TODO details."
-  :interactive nil
+(defun hermes-tracker--outline-level ()
+  "Return the Markdown heading level for `outline-minor-mode'."
+  (length (match-string 1)))
+
+(defun hermes-tracker--todo-mode-setup ()
+  "Set up buffer-local state for `hermes-tracker-todo-mode'."
   (setq-local revert-buffer-function #'hermes-tracker--todo-revert)
   (setq-local outline-regexp "^\\(#+\\) ")
-  (outline-minor-mode 1))
+  (setq-local outline-level #'hermes-tracker--outline-level)
+  (outline-minor-mode 1)
+  (read-only-mode 1))
+
+(if (require 'markdown-mode nil t)
+    (define-derived-mode hermes-tracker-todo-mode markdown-mode "Tracker TODO"
+      "Major mode for Tracker TODO details."
+      :interactive nil
+      (hermes-tracker--todo-mode-setup))
+  (define-derived-mode hermes-tracker-todo-mode special-mode "Tracker TODO"
+    "Major mode for Tracker TODO details."
+    :interactive nil
+    (hermes-tracker--todo-mode-setup)))
 
 (defun hermes-tracker--display-todo (pair)
   "Render TODO and linked cards from PAIR."

@@ -854,6 +854,10 @@
          (hermes-test--push-button-labeled "View Result")
          (should (get-buffer "*hermes-bg #1*"))
          (with-current-buffer "*hermes-bg #1*"
+           (should (derived-mode-p 'hermes-chat-background-mode))
+           (should (derived-mode-p 'markdown-mode))
+           (should buffer-read-only)
+           (should (eq (keymap-lookup (current-local-map) "q") 'quit-window))
            (should (string-match-p
                     "x_search is available"
                     (buffer-substring-no-properties (point-min) (point-max))))))
