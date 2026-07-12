@@ -452,6 +452,7 @@ the board detail buffer shows the most recently created tasks at the top."
   :group "Board"
   "+" ("New task" hermes-kanban-create-task)
   "D" ("Delete task" hermes-kanban-delete)
+  "N" ("Nudge dispatcher" hermes-kanban-nudge-dispatch)
   :group "Recovery"
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
@@ -791,6 +792,7 @@ and an absent branch or run id is omitted."
   :group "Recovery"
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
+  "N" ("Nudge dispatcher" hermes-kanban-nudge-dispatch)
   :group "View"
   "g" ("Refresh" revert-buffer)
   "l" ("View worker log" hermes-kanban-show-log)
@@ -1277,6 +1279,46 @@ whose then-current buffer may differ."
     (lambda ()
       (when (buffer-live-p buffer)
         (with-current-buffer buffer (revert-buffer nil t))))))
+
+(defun hermes-kanban--dispatch-summary (result)
+  "Return a one-line dispatcher summary for a `/dispatch' RESULT."
+  (let* ((spawned (length (hermes-transport--get result 'spawned)))
+         (auto (length (hermes-transport--get result 'auto_assigned_default)))
+         (promoted (or (hermes-transport--get result 'promoted) 0))
+         (reclaimed (or (hermes-transport--get result 'reclaimed) 0))
+         (unassigned (length (hermes-transport--get result 'skipped_unassigned)))
+         (parts (delq nil
+                      (list (and (> spawned 0)
+                                 (if (> auto 0)
+                                     (format "%d spawned (%d auto-assigned)"
+                                             spawned auto)
+                                   (format "%d spawned" spawned)))
+                            (and (> promoted 0) (format "%d promoted" promoted))
+                            (and (> reclaimed 0)
+                                 (format "%d reclaimed" reclaimed))
+                            (and (> unassigned 0)
+                                 (format "%d skipped unassigned" unassigned))))))
+    (if parts
+        (concat "Dispatcher: " (string-join parts ", "))
+      "Dispatcher: nothing ready to dispatch")))
+
+(defun hermes-kanban-nudge-dispatch (&optional dry-run)
+  "Wake the kanban dispatcher to claim ready tasks now.
+With prefix argument DRY-RUN, report what would spawn without spawning
+anything.  Maps to the dashboard `POST /dispatch', the same quick-path
+behind the web UI's Nudge dispatcher button; without it, ready tasks wait
+for the dispatcher's next tick."
+  (interactive "P")
+  (let ((query (append (hermes-kanban--query-for-board
+                        (hermes-kanban--board-slug-for-command))
+                       (and dry-run '((dry_run . "true")))))
+        (refresh (hermes-kanban--context-refresher)))
+    (hermes-kanban--then
+     (hermes-kanban--api "POST" "/dispatch" nil query)
+     (lambda (result)
+       (message "%s%s" (hermes-kanban--dispatch-summary result)
+                (if dry-run " (dry run)" ""))
+       (unless dry-run (funcall refresh))))))
 
 (defun hermes-kanban-reclaim ()
   "Release the worker claim on the task at point after confirmation.

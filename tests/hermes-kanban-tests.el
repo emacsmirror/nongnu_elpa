@@ -1117,5 +1117,43 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
                         calls))
         (should reverted)))))
 
+(ert-deftest hermes-kanban-dispatch-summary-formats-counts ()
+  "The dispatch summary reports non-zero counters and auto-assignments."
+  (should (equal (hermes-kanban--dispatch-summary
+                  '((reclaimed . 1) (promoted . 2)
+                    (spawned . [["t1" "dev" "/ws"] ["t2" "dev" "/ws"]])
+                    (auto_assigned_default . ["t2"])
+                    (skipped_unassigned . ["t3"])
+                    (skipped_nonspawnable . ["t4"])))
+                 "Dispatcher: 2 spawned (1 auto-assigned), 2 promoted, 1 reclaimed, 1 skipped unassigned"))
+  (should (equal (hermes-kanban--dispatch-summary
+                  '((reclaimed . 0) (promoted . 0) (spawned . [])
+                    (skipped_nonspawnable . ["t4"])))
+                 "Dispatcher: nothing ready to dispatch")))
+
+(ert-deftest hermes-kanban-nudge-dispatch-posts-and-reports ()
+  "The nudge command POSTs /dispatch with the board query and echoes counts."
+  (let (seen-method seen-path seen-query reported)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional _body query)
+                 (setq seen-method method
+                       seen-path path
+                       seen-query query)
+                 (hermes--promise-resolved
+                  '((spawned . [["t1" "dev" "/ws"]]) (promoted . 0)
+                    (reclaimed . 0)))))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) reported)))
+              ((symbol-function 'hermes-kanban--board-slug-for-command)
+               (lambda () "main"))
+              ((symbol-function 'revert-buffer) (lambda (&rest _))))
+      (hermes-kanban-nudge-dispatch)
+      (should (equal seen-method "POST"))
+      (should (equal seen-path "/dispatch"))
+      (should (equal (cdr (assq 'board seen-query)) "main"))
+      (should (cl-some (lambda (m) (string-match-p "1 spawned" m))
+                       reported)))))
+
 (provide 'hermes-kanban-tests)
 ;;; hermes-kanban-tests.el ends here
