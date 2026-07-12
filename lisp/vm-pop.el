@@ -792,7 +792,7 @@ killed as well."
     (goto-char vm-pop-read-point)
     (while (not (search-forward "\r\n" nil t))
       (vm-pop-check-connection process)
-      (accept-process-output process)
+      (vm-accept-process-output process)
       (goto-char vm-pop-read-point))
     (setq match-end (point))
     (goto-char vm-pop-read-point)
@@ -812,7 +812,7 @@ killed as well."
       ;; save-excursion doesn't work right
       (let ((opoint (point)))
 	(vm-pop-check-connection process)
-	(accept-process-output process)
+	(vm-accept-process-output process)
 	(goto-char opoint)))
     (setq vm-pop-read-point (point))))
 
@@ -841,7 +841,7 @@ killed as well."
 	;; save-excursion doesn't work right
 	(let ((opoint (point)))
 	  (vm-pop-check-connection process)
-	  (accept-process-output process)
+	  (vm-accept-process-output process)
 	  (goto-char opoint)))
       (setq vm-pop-read-point (point-marker))
       (goto-char start)
@@ -946,7 +946,7 @@ popdrop
 			   (vm-pop-report-retrieval-status statblob)))))))
 	     (after-change-functions (cons func after-change-functions)))
 	(vm-pop-check-connection process)
-	(accept-process-output process)
+	(vm-accept-process-output process)
 	(goto-char opoint)))
     (vm-set-pop-stat-x-need statblob nil)
     (setq vm-pop-read-point (point-marker))
@@ -1050,7 +1050,7 @@ popdrop
 	    ;; save-excursion doesn't work right
 	    (let ((opoint (point)))
 	      (vm-pop-check-connection process)
-	      (accept-process-output process)
+	      (vm-accept-process-output process)
 	      (goto-char opoint)))
 	  (setq vm-pop-read-point (point-marker))
 	  (goto-char start)

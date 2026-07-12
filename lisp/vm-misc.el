@@ -89,6 +89,14 @@ message."
 (defsubst vm-garbage-collect ()
   (pp (vm-zip-lists gc-fields (garbage-collect))))
 
+(defun vm-accept-process-output (process &optional timeout)
+  "Accept output from PROCESS, optionally with TIMEOUT seconds.
+Binds `inhibit-quit' to nil to allow user interrupts and avoid
+the \"Blocking call to accept-process-output with quit inhibited\" warning.
+Returns non-nil if output was received, nil on timeout."
+  (let ((inhibit-quit nil))
+    (accept-process-output process timeout)))
+
 ;; Make sure that interprogram-cut-function is defined
 (unless (boundp 'interprogram-cut-function)
   (defvar interprogram-cut-function nil))

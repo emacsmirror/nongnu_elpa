@@ -809,9 +809,9 @@ arguments after the command finished."
 
     (process-send-eof process)
 
-    (when (not no-wait) 
+    (when (not no-wait)
       (while (and (eq 'run (process-status process)))
-	(accept-process-output process)
+	(vm-accept-process-output process)
 	(sit-for 0))
       (vm-pipe-command-exit-handler process command discard-output))
     buffer))
