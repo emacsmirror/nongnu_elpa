@@ -541,6 +541,9 @@ which already runs in the displayed window)."
 (defvar-local hermes-kanban-task--assignees nil
   "Assignee names known when the current task detail buffer was opened.")
 
+(defvar-local hermes-kanban-task--tracker-reference nil
+  "Canonical Tracker reference parsed from the displayed task body.")
+
 (defvar-local hermes-kanban-log--task-id nil
   "Task id displayed in the current worker-log buffer.")
 
@@ -784,6 +787,7 @@ and an absent branch or run id is omitted."
   :group "Task"
   "c" ("Comment" hermes-kanban-comment)
   "a" ("Change assignee" hermes-kanban-change-assignee)
+  "T" ("Open Tracker TODO" hermes-kanban-open-tracker)
   :group "Recovery"
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
@@ -843,14 +847,39 @@ the board-known assignee names for cold profile-cache completion fallback."
             hermes-kanban-task--board-slug board-slug
             hermes-kanban-task--status task-status
             hermes-kanban-task--assignees assignees
+            hermes-kanban-task--tracker-reference
+            (and (require 'hermes-tracker nil t)
+                 (funcall (intern "hermes-tracker-parse-reference")
+                          (hermes-transport--display-field task 'body)))
             mode-line-process (format " [%s]" (or task-id "task")))
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert (hermes-kanban--fontify-markdown-string
                  (hermes-kanban--format-task-detail payload)))
+        (when hermes-kanban-task--tracker-reference
+          (insert "\nTracker: ")
+          (let ((reference hermes-kanban-task--tracker-reference))
+            (insert-text-button
+             (format "%s#%s" (plist-get reference :repo-slug)
+                     (plist-get reference :number))
+             'follow-link t
+             'help-echo "Open Tracker TODO"
+             'action (lambda (_) (hermes-kanban-open-tracker))))
+          (insert "\n"))
         (read-only-mode 1))
       (goto-char (point-min))
       (unless in-place (pop-to-buffer (current-buffer))))))
+
+(defun hermes-kanban-open-tracker ()
+  "Open the Tracker TODO referenced by the current Kanban task."
+  (interactive)
+  (unless hermes-kanban-task--tracker-reference
+    (user-error "This Kanban task has no canonical Tracker reference"))
+  (unless (require 'hermes-tracker nil t)
+    (user-error "Hermes Tracker integration is unavailable"))
+  (funcall (intern "hermes-tracker-open-todo")
+           (plist-get hermes-kanban-task--tracker-reference :repo-slug)
+           (plist-get hermes-kanban-task--tracker-reference :number)))
 
 (defun hermes-kanban-show ()
   "Show the kanban task at point."
