@@ -84,6 +84,11 @@ distclean:
 #
 PACKAGE_INIT = --eval "(progn (require 'package) (package-initialize))"
 
+# don't try to run in parallel as byte-compile-lint removes .elc files
+lint:
+	${MAKE} byte-compile-lint
+	${MAKE} native-compile-lint
+
 # byte compile check
 # Note: pgg is deprecated which also generated a warning, so can't generate errors
 byte-compile-lint:
@@ -104,9 +109,8 @@ native-compile-lint:
 
 # check with build-in elint
 elint-lint:
-	$(EMACS_PROG) -batch -Q -l `pwd`/lisp \
-	    --eval '(mapc (lambda (f) (message "Checking %s" f) (elint-file f)) \
-	                  (directory-files "lisp" t "\\.el$$"))'
+	$(EMACS_PROG) -batch -Q -L lisp \
+	    --eval '(dolist (f (directory-files "lisp" t "\\.el$$")) (message "Checking %s" f) (elint-file f))'
 
 # check package file with external package-lint
 package-lint:

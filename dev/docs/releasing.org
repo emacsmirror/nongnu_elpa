@@ -19,7 +19,7 @@ package at https://elpa.nongnu.org/nongnu/vm.html
 
 * check for unexpected warnings
 - make -j 32  # needs generated files
-- make -j 32 byte-compile-lint native-compile-lint >&log
+- make -j 32 lint
 
 * use package-lint to check vm.el packages
 requires package-lint
