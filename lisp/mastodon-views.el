@@ -1130,13 +1130,16 @@ IND is the optional indentation level to print at."
   "Read a collection by name and return its ID.
 JSON is the profile data to get collections for."
   (let* ((id (alist-get 'id json))
-         (colls (mastodon-views-get-account-collections id))
-         (cands (cl-loop for x in (alist-get 'collections colls)
-                         collect (cons (alist-get 'name x)
-                                       (alist-get 'id x))))
-         (choice
-          (completing-read "Collection: " cands nil :match)))
-    (alist-get choice cands nil nil #'string=)))
+         (colls (alist-get 'collections
+                           (mastodon-views-get-account-collections id))))
+    (if (not colls)
+        (user-error "No collections by this user found.")
+      (let* ((cands (cl-loop for x in colls
+                             collect (cons (alist-get 'name x)
+                                           (alist-get 'id x))))
+             (choice
+              (completing-read "Collection: " cands nil :match)))
+        (alist-get choice cands nil nil #'string=)))))
 
 (defun mastodon-views-view-collection ()
   "Prompt for a collection and view it.
