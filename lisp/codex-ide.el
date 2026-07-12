@@ -69,9 +69,9 @@
 
 (defcustom codex-ide-display-buffer-function #'pop-to-buffer
   "Function used to display the Codex terminal buffer.
-The function is called with the Codex buffer and should display it.  When it
-returns a live window, that window is used for terminal dimension sync;
-otherwise Codex falls back to any live window already showing the buffer."
+The function is called with the Codex buffer and must make it visible.
+When it returns a live window, that window is used for terminal dimension
+sync; otherwise Codex uses any live window showing the buffer."
   :type 'function
   :group 'codex-ide)
 
@@ -720,6 +720,7 @@ so eat can flush final output, tear down the terminal, and run
     (with-current-buffer buffer
       (setq-local codex-ide--session-root directory)
       (setq-local codex-ide--session-id session-id)
+      (codex-ide-term--configure-buffer)
       (unless codex-ide-mode
         (codex-ide-mode 1)))
     session))
@@ -738,15 +739,26 @@ Returns a session record."
          (program (car cmd))
          (args (cdr cmd))
          (env (codex-ide--make-env))
-         (default-directory working-dir))
+         (previous-accessed-buffer codex-ide--last-accessed-buffer)
+         (buffer (codex-ide-term--prepare-buffer buffer-name working-dir)))
     (codex-ide-debug "Starting Codex: %s %s"
                      program (string-join args " "))
     (codex-ide-debug "Working directory: %s" working-dir)
-    (let ((process (codex-ide-term--make-process
-                    buffer-name program args env working-dir)))
-      (process-put process 'codex-ide--command (cons program args))
-      (codex-ide--make-session working-dir emacs-session-id
-                               (process-buffer process) process))))
+    (condition-case err
+        (progn
+          (unless (codex-ide--display-buffer buffer)
+            (error "Codex display function did not make %s visible"
+                   (buffer-name buffer)))
+          (let ((process (codex-ide-term--make-process
+                          buffer program args env)))
+            (process-put process 'codex-ide--command (cons program args))
+            (codex-ide--make-session working-dir emacs-session-id
+                                     (process-buffer process) process)))
+      (error
+       (setq codex-ide--last-accessed-buffer previous-accessed-buffer)
+       (when (buffer-live-p buffer)
+         (kill-buffer buffer))
+       (signal (car err) (cdr err))))))
 
 (defun codex-ide--start-session (&optional resume-last codex-session-id
                                            new-session)
@@ -774,7 +786,6 @@ session exists, toggle its window unless NEW-SESSION is non-nil."
           (error "Failed to create Codex session"))
         (codex-ide--remember-session session)
         (codex-ide--setup-session session)
-        (codex-ide--display-buffer buffer)
         (codex-ide-log "Codex started in %s"
                        (file-name-nondirectory
                         (directory-file-name working-dir)))))))

@@ -71,7 +71,7 @@ history while output streams."
                                 (window-point window) begin)))
                          (get-buffer-window-list))))))
 
-(defun codex-ide-term--snap-window-point (window)
+(defun codex-ide-term--synchronize-window (window)
   "Synchronize WINDOW with the terminal cursor.
 When a window shows the buffer again while Codex is idle, no output
 arrives to run the scroll sync, and the window point restored from
@@ -83,20 +83,39 @@ eat's own sync so the window is also recentered on the TUI frame."
 
 ;;; Cursor appearance
 
-(defun codex-ide-term--steady-cursor (cursor-shape)
-  "Return CURSOR-SHAPE with eat's blink frequency disabled."
-  (list (car cursor-shape) nil (nth 2 cursor-shape)))
+(defun codex-ide-term--normalize-cursor-state (state blink-cursor)
+  "Return Eat cursor STATE adjusted for BLINK-CURSOR.
+When BLINK-CURSOR is nil, map blinking block, bar, and underline states
+to their steady equivalents.  Preserve every other state."
+  (if blink-cursor
+      state
+    (pcase state
+      (:blinking-block :block)
+      (:blinking-bar :bar)
+      (:blinking-underline :underline)
+      (_ state))))
 
-(defun codex-ide-term--apply-steady-cursor ()
-  "Disable cursor blinking in the current eat buffer.
-Preserves the user's cursor shapes and only clears the blink frequency,
-honoring `codex-ide-term-blink-cursor'."
-  (unless codex-ide-term-blink-cursor
-    (dolist (var '(eat-very-visible-cursor-type
-                   eat-very-visible-vertical-bar-cursor-type
-                   eat-very-visible-horizontal-bar-cursor-type))
-      (set (make-local-variable var)
-           (codex-ide-term--steady-cursor (symbol-value var))))))
+(defun codex-ide-term--set-cursor (terminal state)
+  "Apply cursor STATE to TERMINAL through Eat's original callback."
+  (when-let* ((original
+               (eat-term-parameter
+                terminal 'codex-ide-term--original-set-cursor-function)))
+    (funcall original terminal
+             (codex-ide-term--normalize-cursor-state
+              state codex-ide-term-blink-cursor))))
+
+(defun codex-ide-term--install-cursor-adapter ()
+  "Install the Codex cursor adapter in the current Eat terminal."
+  (when eat-terminal
+    (let ((current (eat-term-parameter eat-terminal 'set-cursor-function)))
+      (unless (eq current #'codex-ide-term--set-cursor)
+        (setf (eat-term-parameter
+               eat-terminal 'codex-ide-term--original-set-cursor-function)
+              current)
+        (setf (eat-term-parameter eat-terminal 'set-cursor-function)
+              #'codex-ide-term--set-cursor))
+      (codex-ide-term--set-cursor
+       eat-terminal (eat-term-cursor-type eat-terminal)))))
 
 ;;; Process lifecycle
 
@@ -106,25 +125,35 @@ Must run after `eat-mode', which resets the sync function."
   (setq-local eat--synchronize-scroll-function
               #'codex-ide-term--synchronize-scroll)
   (add-hook 'window-buffer-change-functions
-            #'codex-ide-term--snap-window-point nil t)
-  (codex-ide-term--apply-steady-cursor))
+            #'codex-ide-term--synchronize-window nil t)
+  (codex-ide-term--install-cursor-adapter))
 
-(defun codex-ide-term--make-process (buffer-name program args env working-dir)
-  "Start PROGRAM with ARGS in an eat buffer named BUFFER-NAME.
-ENV is a list of \"KEY=VALUE\" strings prepended to the process
-environment.  WORKING-DIR is the working directory.  Returns the
-process object."
-  (let ((buffer (get-buffer-create buffer-name))
-        (default-directory (or working-dir default-directory)))
-    (with-current-buffer buffer
-      (unless (eq major-mode 'eat-mode)
-        (eat-mode))
-      (codex-ide-term--configure-buffer)
+(defun codex-ide-term--prepare-buffer (buffer-name working-dir)
+  "Prepare and return an Eat buffer named BUFFER-NAME for WORKING-DIR."
+  (let ((buffer (get-buffer-create buffer-name)))
+    (condition-case err
+        (progn
+          (with-current-buffer buffer
+            (setq default-directory (or working-dir default-directory))
+            (unless (eq major-mode 'eat-mode)
+              (eat-mode))
+            (codex-ide-term--configure-buffer))
+          buffer)
+      (error
+       (kill-buffer buffer)
+       (signal (car err) (cdr err))))))
+
+(defun codex-ide-term--make-process (buffer program args env)
+  "Start PROGRAM with ARGS in the prepared Eat BUFFER.
+ENV is a list of \"KEY=VALUE\" strings prepended to the process environment.
+Return the process object."
+  (with-current-buffer buffer
+    (let ((process-environment (append env process-environment)))
       ;; `eat-exec' takes an argv list, so no shell quoting is needed.
-      (let ((process-environment (append env process-environment)))
-        (eat-exec buffer buffer-name program nil args)))
+      (eat-exec buffer (buffer-name buffer) program nil args))
+    (codex-ide-term--configure-buffer)
     (or (get-buffer-process buffer)
-        (error "Failed to create eat process"))))
+        (error "Failed to create Eat process"))))
 
 (defun codex-ide-term--send-string (string)
   "Send STRING to the current eat buffer's terminal."

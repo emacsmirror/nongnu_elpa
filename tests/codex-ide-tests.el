@@ -118,12 +118,14 @@ to the session.  The session is torn down afterwards."
   (let ((buffer nil)
         (process nil))
     (unwind-protect
-        (progn
+        (save-window-excursion
+          (setq buffer
+                (codex-ide-term--prepare-buffer
+                 (generate-new-buffer-name " *codex-ide-eat-test*")
+                 temporary-file-directory))
+          (switch-to-buffer buffer)
           (setq process (codex-ide-term--make-process
-                         (generate-new-buffer-name " *codex-ide-eat-test*")
-                         "sh" (list "-c" script) env
-                         temporary-file-directory))
-          (setq buffer (process-buffer process))
+                         buffer "sh" (list "-c" script) env))
           (funcall body buffer process))
       (when (and process (process-live-p process))
         (delete-process process))
@@ -359,34 +361,66 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
         (codex-ide-term--send-escape))
       (should-not sent))))
 
-(ert-deftest codex-ide-term-steady-cursor-clears-blink ()
-  (should (equal (codex-ide-term--steady-cursor '(bar 2 hollow))
-                 '(bar nil hollow))))
+(ert-deftest codex-ide-term-normalize-cursor-state ()
+  "Cursor normalization steadies blinking states and preserves others."
+  (dolist (case '((:blinking-block . :block)
+                  (:blinking-bar . :bar)
+                  (:blinking-underline . :underline)
+                  (:block . :block)
+                  (:bar . :bar)
+                  (:underline . :underline)
+                  (:invisible . :invisible)
+                  (:unknown . :unknown)))
+    (should (eq (codex-ide-term--normalize-cursor-state (car case) nil)
+                (cdr case)))
+    (should (eq (codex-ide-term--normalize-cursor-state (car case) t)
+                (car case)))))
 
 (ert-deftest codex-ide-term-configure-buffer-installs-sync-and-hook ()
-  "Buffer setup installs the point sync, window snap, and steady cursor."
+  "Buffer setup installs point and window synchronization."
   (with-temp-buffer
     (eat-mode)
     (codex-ide-term--configure-buffer)
     (should (eq eat--synchronize-scroll-function
                 #'codex-ide-term--synchronize-scroll))
     (should (local-variable-p 'eat--synchronize-scroll-function))
-    (should (memq #'codex-ide-term--snap-window-point
+    (should (memq #'codex-ide-term--synchronize-window
                   (buffer-local-value 'window-buffer-change-functions
-                                      (current-buffer))))
-    (dolist (var '(eat-very-visible-cursor-type
-                   eat-very-visible-vertical-bar-cursor-type
-                   eat-very-visible-horizontal-bar-cursor-type))
-      (should (local-variable-p var))
-      (should-not (nth 1 (buffer-local-value var (current-buffer)))))))
+                                      (current-buffer))))))
 
-(ert-deftest codex-ide-term-configure-buffer-honors-blink-cursor ()
-  "With `codex-ide-term-blink-cursor' the cursor types stay untouched."
+(ert-deftest codex-ide-term-cursor-adapter-installs-idempotently ()
+  "Cursor setup retains Eat's callback, applies state, and avoids wrapping."
   (with-temp-buffer
     (eat-mode)
-    (let ((codex-ide-term-blink-cursor t))
-      (codex-ide-term--configure-buffer))
-    (should-not (local-variable-p 'eat-very-visible-cursor-type))))
+    (setq eat-terminal (eat-term-make (current-buffer) (point)))
+    (let* ((states nil)
+           (original (lambda (_terminal state) (push state states))))
+      (setf (eat-term-parameter eat-terminal 'set-cursor-function) original)
+      (cl-letf (((symbol-function 'eat-term-cursor-type)
+                 (lambda (_terminal) :blinking-bar)))
+        (codex-ide-term--configure-buffer)
+        (codex-ide-term--configure-buffer))
+      (should (eq (eat-term-parameter eat-terminal 'set-cursor-function)
+                  #'codex-ide-term--set-cursor))
+      (should (eq (eat-term-parameter
+                   eat-terminal
+                   'codex-ide-term--original-set-cursor-function)
+                  original))
+      (should (equal states '(:bar :bar))))))
+
+(ert-deftest codex-ide-term-cursor-adapter-honors-blink-option ()
+  "The cursor adapter passes blinking states through when enabled."
+  (with-temp-buffer
+    (eat-mode)
+    (setq eat-terminal (eat-term-make (current-buffer) (point)))
+    (let ((codex-ide-term-blink-cursor t)
+          state)
+      (setf (eat-term-parameter eat-terminal 'set-cursor-function)
+            (lambda (_terminal cursor-state) (setq state cursor-state)))
+      (cl-letf (((symbol-function 'eat-term-cursor-type)
+                 (lambda (_terminal) :blinking-underline)))
+        (codex-ide-term--configure-buffer))
+      (should (eq state :blinking-underline)))))
 
 (defun codex-ide-test--sync-scroll (park snapshot-p)
   "Run the scroll sync override with point parked at PARK.
@@ -433,8 +467,8 @@ list forwarded to `eat--synchronize-scroll' and the selected window."
   (pcase-let ((`(,synced . ,window) (codex-ide-test--sync-scroll 2 t)))
     (should (equal synced (list 'buffer window)))))
 
-(ert-deftest codex-ide-term-snap-window-point-syncs-window ()
-  "The snap hook delegates the window to eat's scroll sync."
+(ert-deftest codex-ide-term-synchronize-window-syncs-window ()
+  "The window hook delegates the window to Eat's scroll sync."
   (let ((buffer (generate-new-buffer " *codex-ide-snap-test*"))
         synced)
     (unwind-protect
@@ -445,12 +479,12 @@ list forwarded to `eat--synchronize-scroll' and the selected window."
             (cl-letf (((symbol-function 'eat--synchronize-scroll)
                        (lambda (windows)
                          (setq synced windows))))
-              (codex-ide-term--snap-window-point (selected-window)))
+              (codex-ide-term--synchronize-window (selected-window)))
             (should (equal synced (list (selected-window))))))
       (kill-buffer buffer))))
 
-(ert-deftest codex-ide-term-snap-window-point-ignores-non-eat-buffers ()
-  "The snap hook leaves windows on non-eat buffers alone."
+(ert-deftest codex-ide-term-synchronize-window-ignores-non-eat-buffers ()
+  "The window hook leaves windows on non-Eat buffers alone."
   (let ((buffer (generate-new-buffer " *codex-ide-snap-plain*"))
         synced)
     (unwind-protect
@@ -459,7 +493,7 @@ list forwarded to `eat--synchronize-scroll' and the selected window."
           (cl-letf (((symbol-function 'eat--synchronize-scroll)
                      (lambda (windows)
                        (setq synced windows))))
-            (codex-ide-term--snap-window-point (selected-window)))
+            (codex-ide-term--synchronize-window (selected-window)))
           (should-not synced))
       (kill-buffer buffer))))
 
@@ -508,6 +542,22 @@ list forwarded to `eat--synchronize-scroll' and the selected window."
                 (lambda ()
                   (string-match-p "codex-env-ok" (buffer-string)))))))
    '("CODEX_IDE_TEST_VAR=codex-env-ok")))
+
+(ert-deftest codex-ide-term-process-starts-at-visible-window-size ()
+  "The child process sees the displayed window size on its first output."
+  (save-window-excursion
+    (delete-other-windows)
+    (codex-ide-test--call-with-eat-process
+     "stty size; sleep 60"
+     (lambda (buffer _process)
+       (with-current-buffer buffer
+         (pcase-let ((`(,columns . ,rows) (eat-term-size eat-terminal)))
+           (should
+            (codex-ide-test--wait-for
+             (lambda ()
+               (string-match-p
+                (format "\\b%d %d\\b" rows columns)
+                (buffer-string)))))))))))
 
 (ert-deftest codex-ide-term-point-survives-erase-display ()
   "Point tracks the cursor across full-screen redraws.
@@ -1004,9 +1054,11 @@ region, where the scrollback-browsing rule alone would strand it."
             requested-name
             process)
        (unwind-protect
-           (cl-letf (((symbol-function 'codex-ide-term--make-process)
-                      (lambda (buffer-name _program _args _env _working-dir)
-                        (setq requested-name buffer-name)
+           (cl-letf (((symbol-function 'codex-ide--display-buffer)
+                      (lambda (_buffer) (selected-window)))
+                     ((symbol-function 'codex-ide-term--make-process)
+                      (lambda (buffer _program _args _env)
+                        (setq requested-name (buffer-name buffer))
                         (setq process
                               (codex-ide-test--make-buffer-process
                                actual-buffer
@@ -1022,6 +1074,69 @@ region, where the scrollback-browsing rule alone would strand it."
          (codex-ide-test--kill-buffer-process actual-buffer process)
          (when (buffer-live-p requested-buffer)
            (kill-buffer requested-buffer)))))))
+
+(ert-deftest codex-ide-create-session-displays-before-process-start ()
+  "Session creation prepares and displays the buffer before process start."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let (events process buffer)
+       (unwind-protect
+           (cl-letf (((symbol-function 'codex-ide-term--prepare-buffer)
+                      (lambda (name directory)
+                        (push (list 'prepare name directory) events)
+                        (setq buffer (get-buffer-create name))))
+                     ((symbol-function 'codex-ide--display-buffer)
+                      (lambda (display-buffer)
+                        (push (list 'display display-buffer) events)
+                        (selected-window)))
+                     ((symbol-function 'codex-ide-term--make-process)
+                      (lambda (process-buffer _program _args _env)
+                        (push (list 'process process-buffer) events)
+                        (setq process
+                              (codex-ide-test--make-buffer-process
+                               process-buffer "codex-ide-order")))))
+             (let ((default-directory root))
+               (codex-ide--create-session 1))
+             (should (equal (mapcar #'car (nreverse events))
+                            '(prepare display process))))
+         (codex-ide-test--kill-buffer-process buffer process))))))
+
+(ert-deftest codex-ide-create-session-cleans-up-display-failure ()
+  "A display failure kills the prepared buffer before registration."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let ((previous (get-buffer-create " *codex-ide-previous*"))
+           buffer process-started)
+       (setq codex-ide--last-accessed-buffer previous)
+       (cl-letf (((symbol-function 'codex-ide-term--prepare-buffer)
+                  (lambda (name _directory)
+                    (setq buffer (get-buffer-create name))))
+                 ((symbol-function 'codex-ide--display-buffer)
+                  (lambda (_buffer) nil))
+                 ((symbol-function 'codex-ide-term--make-process)
+                  (lambda (&rest _args) (setq process-started t))))
+         (let ((default-directory root))
+           (should-error (codex-ide--create-session 1) :type 'error))
+         (should-not process-started)
+         (should-not (buffer-live-p buffer))
+         (should (eq codex-ide--last-accessed-buffer previous)))
+       (kill-buffer previous)))))
+
+(ert-deftest codex-ide-create-session-cleans-up-process-failure ()
+  "A process failure kills the displayed but incomplete buffer."
+  (codex-ide-test--call-with-project
+   (lambda (root)
+     (let (buffer)
+       (cl-letf (((symbol-function 'codex-ide-term--prepare-buffer)
+                  (lambda (name _directory)
+                    (setq buffer (get-buffer-create name))))
+                 ((symbol-function 'codex-ide--display-buffer)
+                  (lambda (_buffer) (selected-window)))
+                 ((symbol-function 'codex-ide-term--make-process)
+                  (lambda (&rest _args) (error "Process failed"))))
+         (let ((default-directory root))
+           (should-error (codex-ide--create-session 1) :type 'error))
+         (should-not (buffer-live-p buffer)))))))
 
 (ert-deftest codex-ide-recover-live-session-registers-orphan-buffer ()
   "Recovery registers an orphan live Codex buffer without renaming it."
@@ -1845,11 +1960,15 @@ region, where the scrollback-browsing rule alone would strand it."
          `((,root 1))
          (lambda (sessions)
            (let* ((session (car sessions))
-                  (buffer (plist-get session :buffer)))
-             (codex-ide--setup-session session)
-             (codex-ide--setup-session session)
+                  (buffer (plist-get session :buffer))
+                  (configured 0))
+             (cl-letf (((symbol-function 'codex-ide-term--configure-buffer)
+                        (lambda () (cl-incf configured))))
+               (codex-ide--setup-session session)
+               (codex-ide--setup-session session))
              (with-current-buffer buffer
                (should codex-ide-mode)
+               (should (= configured 2))
                (should (= (cl-count
                            #'codex-ide--cleanup-current-buffer-session
                            kill-buffer-hook)
