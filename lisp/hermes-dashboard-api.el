@@ -301,8 +301,13 @@ Return (ok . RESPONSE) with the JSON `:body' filled in on a 2xx status, or
 (defun hermes-dashboard-transport--settle-http-response
     (promise status buffer safe-url secrets)
   "Settle PROMISE from url.el STATUS and response BUFFER for SAFE-URL.
-SECRETS are redacted from any error message."
-  (if-let* ((error-data (plist-get status :error)))
+SECRETS are redacted from any error message.  An `http' STATUS error is
+NOT taken at face value: url.el reports every 4xx/5xx that way (its
+`error-message-string' is the useless \"peculiar error: N\"), while the
+response buffer still holds the backend's JSON error detail -- so those
+fall through to the body parser and reject with the real message."
+  (if-let* ((error-data (plist-get status :error))
+            ((not (eq (nth 1 error-data) 'http))))
       (hermes--promise-reject
        promise (format "Hermes dashboard request failed at %s: %s"
                        safe-url

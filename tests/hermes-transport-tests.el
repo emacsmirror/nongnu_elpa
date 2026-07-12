@@ -1970,5 +1970,36 @@ This is the contract that replaces hand-mirroring every event name: an invented
       (should (equal (plist-get clear :event) "notification.clear"))
       (should (equal (plist-get clear :notification-key) "credits")))))
 
+(ert-deftest hermes-transport-dashboard-async-http-error-surfaces-detail ()
+  "An url.el `http' status error rejects with the backend JSON detail.
+url.el flags every 4xx/5xx via the callback status; the useless
+\"peculiar error: N\" must not mask the body's detail message."
+  (let (rejection)
+    (with-temp-buffer
+      (insert "HTTP/1.1 409 Conflict\r\n"
+              "Content-Type: application/json\r\n\r\n"
+              "{\"detail\": \"cannot reclaim t_x: not in a claimable state\"}")
+      (let ((promise (hermes--promise-make)))
+        (hermes-dashboard-transport--settle-http-response
+         promise (list :error '(error http 409)) (current-buffer)
+         "http://safe.test/api" nil)
+        (hermes--promise-then promise #'ignore
+                              (lambda (reason) (setq rejection reason)))))
+    (should (string-match-p "not in a claimable state" rejection))
+    (should (string-match-p "HTTP 409" rejection))
+    (should-not (string-match-p "peculiar" rejection))))
+
+(ert-deftest hermes-transport-dashboard-async-connection-error-still-rejects ()
+  "A non-http url.el error keeps the direct rejection path."
+  (let (rejection)
+    (with-temp-buffer
+      (let ((promise (hermes--promise-make)))
+        (hermes-dashboard-transport--settle-http-response
+         promise (list :error '(error connection-failed "refused"))
+         (current-buffer) "http://safe.test/api" nil)
+        (hermes--promise-then promise #'ignore
+                              (lambda (reason) (setq rejection reason)))))
+    (should (string-match-p "request failed at http://safe.test/api" rejection))))
+
 (provide 'hermes-transport-tests)
 ;;; hermes-transport-tests.el ends here
