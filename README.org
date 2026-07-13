@@ -5,6 +5,11 @@
   + Run Codex in a project-scoped eat buffer.
   + Resume, switch, and manage multiple live Codex sessions from Emacs.
 
+** Terminal scrolling
++ =C-c C-e= enters Eat's read-only Emacs mode for ordinary scrolling,
+  movement, search, and selection.
++ =C-c C-j= restores terminal input and jumps to the live Codex frame.
+
 ** Installation
 + Using =:vc=
 #+begin_src emacs-lisp

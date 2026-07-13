@@ -52,24 +52,34 @@ reflows) collapse every dragged point and marker.  Anywhere else in
 the scrollback POS is a deliberate browsing position."
   (or (>= pos begin) (= pos (point-min))))
 
+(defun codex-ide-term--emacs-mode-p ()
+  "Return non-nil if the current Eat buffer is in Emacs input mode."
+  (not (or eat--semi-char-mode eat--char-mode eat--line-mode)))
+
 (defun codex-ide-term--synchronize-scroll (windows)
   "Synchronize point and windows with the terminal cursor.
 WINDOWS is eat's snapshot, taken before the output was processed, of
-the positions that were following the cursor; those always sync.  Also
-sync any point the redraw set adrift (see
-`codex-ide-term--adrift-point-p'), where eat's default sync would
-strand it.  Other scrollback positions stay put so the user can browse
-history while output streams."
-  (let ((begin (eat-term-display-beginning eat-terminal)))
-    (eat--synchronize-scroll
-     (append (and (or (memq 'buffer windows)
-                      (codex-ide-term--adrift-point-p (point) begin))
-                  '(buffer))
-             (seq-filter (lambda (window)
-                           (or (memq window windows)
-                               (codex-ide-term--adrift-point-p
-                                (window-point window) begin)))
-                         (get-buffer-window-list))))))
+the positions that were following the cursor; those always sync.  In
+Eat Emacs mode, leave that snapshot unchanged so navigation remains
+free.  In terminal input modes, also sync points a redraw set adrift
+according to `codex-ide-term--adrift-point-p'."
+  (if (codex-ide-term--emacs-mode-p)
+      (eat--synchronize-scroll windows)
+    (let ((begin (eat-term-display-beginning eat-terminal)))
+      (eat--synchronize-scroll
+       (append (and (or (memq 'buffer windows)
+                        (codex-ide-term--adrift-point-p (point) begin))
+                    '(buffer))
+               (seq-filter (lambda (window)
+                             (or (memq window windows)
+                                 (codex-ide-term--adrift-point-p
+                                  (window-point window) begin)))
+                           (get-buffer-window-list)))))))
+
+(defun codex-ide-term--return-live ()
+  "Restore terminal input and follow the live cursor in the current buffer."
+  (eat-semi-char-mode)
+  (eat--synchronize-scroll (list 'buffer (selected-window))))
 
 (defun codex-ide-term--synchronize-window (window)
   "Synchronize WINDOW with the terminal cursor.

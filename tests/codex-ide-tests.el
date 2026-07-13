@@ -422,12 +422,13 @@ ROOT-IDS is a list of (ROOT ID) pairs.  BODY receives the session records."
         (codex-ide-term--configure-buffer))
       (should (eq state :blinking-underline)))))
 
-(defun codex-ide-test--sync-scroll (park snapshot-p)
+(defun codex-ide-test--sync-scroll (park snapshot-p &optional emacs-mode-p)
   "Run the scroll sync override with point parked at PARK.
 The stubbed terminal display region begins at buffer position 5.  When
 SNAPSHOT-P, pass eat's would-be pre-output snapshot (buffer plus the
-selected window); otherwise pass nil.  Return (SYNCED . WINDOW), the
-list forwarded to `eat--synchronize-scroll' and the selected window."
+selected window); otherwise pass nil.  EMACS-MODE-P selects Eat's
+Emacs input mode instead of semi-char mode.  Return (SYNCED . WINDOW),
+the list forwarded to `eat--synchronize-scroll' and the selected window."
   (let ((buffer (generate-new-buffer " *codex-ide-sync-test*"))
         synced window)
     (unwind-protect
@@ -440,6 +441,9 @@ list forwarded to `eat--synchronize-scroll' and the selected window."
             (switch-to-buffer buffer)
             (insert "scrollback and display text")
             (setq-local eat-terminal 'dummy)
+            (if emacs-mode-p
+                (eat-emacs-mode)
+              (eat-semi-char-mode))
             (goto-char park)
             (setq window (selected-window))
             (codex-ide-term--synchronize-scroll
@@ -466,6 +470,48 @@ list forwarded to `eat--synchronize-scroll' and the selected window."
   "Positions eat saw on the cursor before output always sync."
   (pcase-let ((`(,synced . ,window) (codex-ide-test--sync-scroll 2 t)))
     (should (equal synced (list 'buffer window)))))
+
+(ert-deftest codex-ide-term-synchronize-scroll-leaves-emacs-mode-free ()
+  "Off-snapshot display positions stay free in Eat Emacs mode."
+  (pcase-let ((`(,synced . ,_window)
+               (codex-ide-test--sync-scroll 7 nil t)))
+    (should-not synced)))
+
+(ert-deftest codex-ide-term-synchronize-scroll-honors-emacs-snapshot ()
+  "Eat snapshots remain authoritative in Eat Emacs mode."
+  (pcase-let ((`(,synced . ,window)
+               (codex-ide-test--sync-scroll 7 t t)))
+    (should (equal synced (list 'buffer window)))))
+
+(ert-deftest codex-ide-return-live-restores-terminal-following ()
+  "Returning live restores input, point, window, and recentering."
+  (with-temp-buffer
+    (eat-mode)
+    (let ((inhibit-read-only t))
+      (insert "0123456789abcdef"))
+    (setq-local eat-terminal 'dummy)
+    (goto-char 2)
+    (let ((buffer (current-buffer))
+          recentered)
+      (save-window-excursion
+        (switch-to-buffer buffer)
+        (cl-letf (((symbol-function 'eat-term-display-cursor)
+                   (lambda (_terminal) 10))
+                  ((symbol-function 'eat-term-display-beginning)
+                   (lambda (_terminal) 5))
+                  ((symbol-function 'eat-term-size)
+                   (lambda (_terminal) '(80 . 24)))
+                  ((symbol-function 'recenter)
+                   (lambda (&rest args)
+                     (setq recentered args))))
+          (codex-ide-return-live))
+        (should eat--semi-char-mode)
+        (should-not eat--char-mode)
+        (should-not eat--line-mode)
+        (should-not buffer-read-only)
+        (should (= (point) 10))
+        (should (= (window-point (selected-window)) 10))
+        (should recentered)))))
 
 (ert-deftest codex-ide-term-synchronize-window-syncs-window ()
   "The window hook delegates the window to Eat's scroll sync."
@@ -1192,16 +1238,30 @@ region, where the scrollback-browsing rule alone would strand it."
               #'codex-ide-insert-newline))
   (should (eq (lookup-key codex-ide-mode-map (kbd "C-c C-k"))
               #'codex-ide-send-escape))
+  (should (eq (lookup-key codex-ide-mode-map (kbd "C-c C-j"))
+              #'codex-ide-return-live))
+  (should (eq (lookup-key eat-mode-map (kbd "C-c C-j"))
+              #'eat-semi-char-mode))
   (dolist (map (list eat-mode-map eat-semi-char-mode-map))
     (should-not (eq (lookup-key map (kbd "S-<return>"))
                     #'codex-ide-insert-newline))
     (should-not (eq (lookup-key map (kbd "C-c C-k"))
-                    #'codex-ide-send-escape)))
+                    #'codex-ide-send-escape))
+    (should-not (eq (lookup-key map (kbd "C-c C-j"))
+                    #'codex-ide-return-live)))
   (with-temp-buffer
+    (eat-mode)
+    (should (eq (key-binding (kbd "C-c C-j"))
+                #'eat-semi-char-mode))
     (codex-ide-mode 1)
+    (should (eq (key-binding (kbd "C-c C-j"))
+                #'codex-ide-return-live))
     (should (eq (cdr (assq 'codex-ide-mode
                            (minor-mode-key-binding (kbd "S-<return>"))))
-                #'codex-ide-insert-newline))))
+                #'codex-ide-insert-newline))
+    (should (eq (cdr (assq 'codex-ide-mode
+                           (minor-mode-key-binding (kbd "C-c C-j"))))
+                #'codex-ide-return-live))))
 
 (ert-deftest codex-ide-mode-manages-cleanup-hook ()
   "Enabling the mode installs the cleanup hook once; disabling removes it."

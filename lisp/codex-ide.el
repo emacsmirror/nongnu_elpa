@@ -136,7 +136,8 @@ Escape hatch for flags not yet modeled by a defcustom."
 (defvar-keymap codex-ide-mode-map
   :doc "Keymap for Codex terminal buffers."
   "S-<return>" #'codex-ide-insert-newline
-  "C-c C-k" #'codex-ide-send-escape)
+  "C-c C-k" #'codex-ide-send-escape
+  "C-c C-j" #'codex-ide-return-live)
 
 (define-minor-mode codex-ide-mode
   "Minor mode for terminal buffers running a Codex CLI session."
@@ -904,6 +905,12 @@ Interactively, read PROMPT from the minibuffer."
          (buffer (plist-get session :buffer)))
     (with-current-buffer buffer
       (codex-ide-term--send-escape))))
+
+;;;###autoload
+(defun codex-ide-return-live ()
+  "Restore terminal input and follow the live Codex frame."
+  (interactive)
+  (codex-ide-term--return-live))
 
 ;;;###autoload
 (defun codex-ide-insert-newline ()
