@@ -793,9 +793,12 @@ The plist holds :used, :max, and :percent for the model's context window."
 Surface the session's model, profile (agent) name, and runtime flags --
 reasoning effort, fast/priority tier, and approval bypass (yolo) -- so the
 chat header can show them."
-  (let ((event (hermes-dashboard-transport--status-event
-                type params payload "ready"
-                (hermes-dashboard-transport--session-info-content payload)))
+  (let* ((running-present
+          (hermes-transport--field-present-p payload 'running))
+         (running (eq (hermes-transport--get payload 'running) t))
+         (event (hermes-dashboard-transport--status-event
+                 type params payload (if running "running" "ready")
+                 (hermes-dashboard-transport--session-info-content payload)))
         (model (hermes-transport--scalar-string
                 (hermes-transport--get payload 'model)))
         (agent (hermes-transport--scalar-string
@@ -804,6 +807,8 @@ chat header can show them."
                  (hermes-transport--scalar-string
                   (hermes-transport--get payload 'reasoning_effort))))
         (context (hermes-dashboard-transport--context-plist payload)))
+    (when running-present
+      (setq event (plist-put event :running running)))
     (when model (setq event (plist-put event :model model)))
     (when agent (setq event (plist-put event :agent-name agent)))
     (when effort (setq event (plist-put event :reasoning-effort effort)))

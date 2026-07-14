@@ -50,6 +50,7 @@
 (defvar hermes-chat--session-id)
 (defvar hermes-chat--status-state)
 (defvar hermes-chat--transport-generation)
+(defvar hermes-chat--lifecycle-generation)
 
 (defvar-local hermes-chat--title nil
   "Human title for this chat session.
@@ -76,9 +77,20 @@ number and the prompt that launched it.")
 (defvar hermes-chat--dashboard-client)
 (defvar hermes-chat--dashboard-token)
 (defvar hermes-chat--dashboard-detached-assistant-id)
+(defvar hermes-chat--dashboard-running-p)
 (defvar hermes-chat--dashboard-session-ready-p)
 (defvar hermes-chat--dashboard-stream-assistant-id)
 (defvar hermes-chat--dashboard-suppress-stream-p)
+(defvar hermes-chat--interrupted-assistant-id)
+(defvar hermes-chat--interrupted-events)
+(defvar hermes-chat--interrupt-request-pending-p)
+(defvar hermes-chat--server-queued-assistant-id)
+(defvar hermes-chat--server-queued-after-idle-count)
+(defvar hermes-chat--dashboard-idle-count)
+(defvar hermes-chat--dashboard-last-start-idle-count)
+(defvar hermes-chat--unsettled-submit-context)
+(defvar hermes-chat--prepared-submit-assistant-id)
+(defvar hermes-dashboard-transport-request-owner)
 
 (defvar hermes-chat--turn-event-function #'ignore
   "Function reducing one transport event, set by `hermes-chat'.
@@ -152,6 +164,7 @@ stops its poll) instead of being called by name from this file.")
 (defun hermes-chat--forget-live-dashboard-session ()
   "Forget the live dashboard session while preserving the durable session key."
   (setq hermes-chat--dashboard-session-ready-p nil
+        hermes-chat--dashboard-running-p nil
         hermes-chat--dashboard-active-session-id nil))
 
 (defun hermes-chat--stop-dashboard-client ()
@@ -161,6 +174,8 @@ is torn down only when the last buffer detaches.  The buffer-local client,
 token, and live-session state are always cleared, even after a partial teardown,
 so a new session can be started afterwards."
   (when-let* ((client hermes-chat--dashboard-client))
+    (hermes-dashboard-transport-cancel-owner-requests
+     client (current-buffer))
     (when hermes-chat--dashboard-token
       (hermes-dashboard-transport-unsubscribe client hermes-chat--dashboard-token))
     (hermes-dashboard-transport-release client)
@@ -173,6 +188,7 @@ so a new session can be started afterwards."
 (defun hermes-chat--cleanup-buffer ()
   "Release per-buffer Hermes chat resources before killing the buffer."
   (run-hooks 'hermes-chat-cleanup-functions)
+  (hermes-chat--invalidate-transport-state)
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--notify-state-change))
 
@@ -188,6 +204,86 @@ so a new session can be started afterwards."
   "Return non-nil when EVENT should settle a suppressed dashboard stream."
   (or (memq (plist-get event :type) '(done error))
       (hermes-chat--closed-status-event-p event)))
+
+(defun hermes-chat--interrupted-assistant-event-p (assistant-id event)
+  "Return non-nil when EVENT must wait for ASSISTANT-ID's interrupt result."
+  (and (equal assistant-id hermes-chat--interrupted-assistant-id)
+       hermes-chat--interrupt-request-pending-p
+       (not (hermes-chat--session-info-event-p event))
+       (memq (plist-get event :type)
+             '(delta done error thinking commentary progress tool diff
+                     status unknown))))
+
+(defun hermes-chat--interrupted-trailing-event-p (assistant-id event)
+  "Return non-nil when accepted interrupt EVENT for ASSISTANT-ID is trailing."
+  (and (equal assistant-id hermes-chat--interrupted-assistant-id)
+       (not hermes-chat--interrupt-request-pending-p)
+       (not (hermes-chat--session-info-event-p event))
+       (not (memq (plist-get event :type) '(done error)))))
+
+(defun hermes-chat--interrupted-terminal-event (assistant-id event)
+  "Return status-only interruption EVENT for interrupted ASSISTANT-ID."
+  (if (and (equal assistant-id hermes-chat--interrupted-assistant-id)
+           (memq (plist-get event :type) '(done error)))
+      (let ((result (copy-sequence event)))
+        (setq result (plist-put result :type 'error))
+        (setq result (plist-put result :status "interrupted"))
+        (plist-put result :content nil))
+    event))
+
+(defun hermes-chat--hold-interrupted-event (event)
+  "Hold EVENT until the pending interrupt request settles."
+  (push (copy-sequence event) hermes-chat--interrupted-events))
+
+(defun hermes-chat--dashboard-activate-server-queued-turn (assistant-id)
+  "Start rendering the backend-owned queued turn for ASSISTANT-ID."
+  (when (and (equal assistant-id hermes-chat--server-queued-assistant-id)
+             (numberp hermes-chat--server-queued-after-idle-count)
+             (> hermes-chat--dashboard-last-start-idle-count
+                hermes-chat--server-queued-after-idle-count))
+    (setq hermes-chat--server-queued-assistant-id nil
+          hermes-chat--server-queued-after-idle-count nil
+          hermes-chat--dashboard-running-p t
+          hermes-chat--pending-assistant-id assistant-id
+          hermes-chat--process hermes-chat--dashboard-client
+          hermes-chat--dashboard-stream-assistant-id assistant-id
+          hermes-chat--dashboard-suppress-stream-p nil)
+    (hermes-chat--mark-assistant assistant-id 'streaming)
+    (hermes-chat--set-header-state
+     :status 'streaming :activity "Hermes is responding"
+     :assistant-id assistant-id)))
+
+(defun hermes-chat--dashboard-handle-message-start (assistant-id)
+  "Record a message boundary and activate ASSISTANT-ID when server-queued."
+  (setq hermes-chat--dashboard-last-start-idle-count
+        hermes-chat--dashboard-idle-count)
+  (when-let* ((context hermes-chat--unsettled-submit-context)
+              ((equal assistant-id (plist-get context :assistant-id)))
+              ((> hermes-chat--dashboard-idle-count
+                  (or (plist-get context :idle-count) 0))))
+    (hermes-chat--reset-submit-assistant assistant-id)
+    (setq hermes-chat--prepared-submit-assistant-id assistant-id))
+  (hermes-chat--dashboard-activate-server-queued-turn assistant-id))
+
+(defun hermes-chat--dashboard-note-session-info (event)
+  "Record an explicit idle transition carried by session-info EVENT."
+  (when (and (hermes-chat--session-info-event-p event)
+             (plist-member event :running)
+             (not (plist-get event :running)))
+    (cl-incf hermes-chat--dashboard-idle-count)))
+
+(defun hermes-chat--dashboard-note-unsettled-terminal (assistant-id event)
+  "Record terminal EVENT after an early submit boundary for ASSISTANT-ID."
+  (when-let* ((context hermes-chat--unsettled-submit-context)
+              ((equal assistant-id hermes-chat--prepared-submit-assistant-id))
+              ((memq (plist-get event :type) '(done error))))
+    (setf (plist-get context :post-start-terminal-p) t)
+    (hermes-chat--clear-submit-context context)))
+
+(defun hermes-chat--server-queued-prior-event-p (assistant-id event)
+  "Return non-nil when EVENT predates ASSISTANT-ID's server-queued turn."
+  (and (equal assistant-id hermes-chat--server-queued-assistant-id)
+       (not (hermes-chat--session-info-event-p event))))
 
 (defun hermes-chat--dashboard-suppressed-content-event-p (event)
   "Return non-nil when suppressed EVENT must not update reply text."
@@ -254,16 +350,26 @@ settlement order lives in one place."
 
 (defun hermes-chat--handle-closed-status (assistant-id event)
   "Handle a transport closed status EVENT for ASSISTANT-ID."
-  (hermes-chat--forget-live-dashboard-session)
-  (hermes-chat--clear-terminal-prompts event)
-  (if (equal hermes-chat--pending-assistant-id assistant-id)
-      (progn
-        (hermes-chat--handle-transport-event
-         assistant-id (hermes-chat--closed-status-error-event event))
-        (setq hermes-chat--dashboard-detached-assistant-id assistant-id
-              hermes-chat--dashboard-stream-assistant-id nil
-              hermes-chat--dashboard-suppress-stream-p nil))
-    (funcall hermes-chat--turn-event-function assistant-id event)))
+  (let ((context (and hermes-chat--unsettled-submit-context
+                      (equal assistant-id
+                             (plist-get hermes-chat--unsettled-submit-context
+                                        :assistant-id))
+                      hermes-chat--unsettled-submit-context)))
+    (hermes-chat--forget-live-dashboard-session)
+    (hermes-chat--clear-terminal-prompts event)
+    (if (equal hermes-chat--pending-assistant-id assistant-id)
+        (progn
+          (when (equal assistant-id hermes-chat--server-queued-assistant-id)
+            (setq hermes-chat--server-queued-assistant-id nil
+                  hermes-chat--server-queued-after-idle-count nil))
+          (hermes-chat--handle-transport-event
+           assistant-id (hermes-chat--closed-status-error-event event))
+          (setq hermes-chat--dashboard-detached-assistant-id assistant-id
+                hermes-chat--dashboard-stream-assistant-id nil
+                hermes-chat--dashboard-suppress-stream-p nil))
+      (funcall hermes-chat--turn-event-function assistant-id event))
+    (when context
+      (hermes-chat--clear-submit-context context))))
 
 (defun hermes-chat--handle-reconnecting-status (event)
   "Handle a manual dashboard socket reconnect status EVENT."
@@ -276,8 +382,38 @@ settlement order lives in one place."
   (hermes-chat--set-header-state
    :status 'reconnecting :activity "Reconnecting dashboard socket"))
 
+(defun hermes-chat--dashboard-settle-terminal (interrupted-p)
+  "Settle dashboard bookkeeping for a terminal event.
+When INTERRUPTED-P is non-nil, also clear the interrupt request state."
+  (when interrupted-p
+    (setq hermes-chat--interrupted-assistant-id nil
+          hermes-chat--interrupted-events nil
+          hermes-chat--interrupt-request-pending-p nil))
+  (hermes-chat--dashboard-schedule-idle-reconciliation
+   #'hermes-chat--drain-queued-message))
+
+(defun hermes-chat--render-dashboard-turn-event (assistant-id event)
+  "Render ordinary dashboard EVENT for ASSISTANT-ID and settle its lifecycle."
+  (hermes-chat--dashboard-note-unsettled-terminal assistant-id event)
+  (let ((interrupted-p
+         (equal assistant-id hermes-chat--interrupted-assistant-id)))
+    (setq event (hermes-chat--interrupted-terminal-event assistant-id event))
+    (when (hermes-chat--prompt-request-event-p event)
+      (setq event (hermes-chat--record-prompt-request event assistant-id))
+      (hermes-chat--schedule-auto-prompt event))
+    (funcall hermes-chat--turn-event-function assistant-id event)
+    (when (memq (plist-get event :type) '(done error))
+      (hermes-chat--dashboard-settle-terminal interrupted-p))
+    (when (eq (plist-get event :type) 'done)
+      (hermes-chat--maybe-refresh-session-title))
+    (unless (memq (plist-get event :type)
+                  '(delta done error thinking status progress tool commentary
+                          diff unknown))
+      (message "Unknown Hermes transport event: %S" event))))
+
 (defun hermes-chat--handle-transport-event (assistant-id event)
   "Apply transport EVENT to ASSISTANT-ID in the current chat buffer."
+  (hermes-chat--dashboard-note-session-info event)
   (cond
    ;; A background (`/btw') result is owned by its own session and arrives out
    ;; of band, so handle it before the stale-turn guard would drop it and apart
@@ -290,26 +426,16 @@ settlement order lives in one place."
     (hermes-chat--handle-reconnecting-status event))
    ((hermes-chat--reconnected-status-event-p event)
     (hermes-chat--dashboard-handle-reconnected event))
+   ((hermes-chat--message-start-status-event-p event)
+    (hermes-chat--dashboard-handle-message-start assistant-id))
    ((hermes-chat--stale-assistant-event-p assistant-id) nil)
    ((hermes-chat--closed-status-event-p event)
     (hermes-chat--handle-closed-status assistant-id event))
-   ((hermes-chat--message-start-status-event-p event) nil)
-   (t
-    (when (hermes-chat--prompt-request-event-p event)
-      (setq event (hermes-chat--record-prompt-request event assistant-id))
-      (hermes-chat--schedule-auto-prompt event))
-    ;; Every recognized event -- header, tool, transcript, streaming delta, and
-    ;; the done/error turn lifecycle -- is rendered by the reducer effects in
-    ;; `hermes-chat--render-turn-event'.  Only a truly unknown type warns here.
-    (funcall hermes-chat--turn-event-function assistant-id event)
-    (when (eq (plist-get event :type) 'done)
-      (hermes-chat--maybe-refresh-session-title))
-    (pcase (plist-get event :type)
-      ((or 'delta 'done 'error 'thinking 'status 'progress 'tool 'commentary
-           'diff 'unknown)
-       nil)
-      (_
-       (message "Unknown Hermes transport event: %S" event))))))
+   ((hermes-chat--server-queued-prior-event-p assistant-id event) nil)
+   ((hermes-chat--interrupted-assistant-event-p assistant-id event)
+    (hermes-chat--hold-interrupted-event event))
+   ((hermes-chat--interrupted-trailing-event-p assistant-id event) nil)
+   (t (hermes-chat--render-dashboard-turn-event assistant-id event))))
 
 (defun hermes-chat--dashboard-default-transport-p ()
   "Return non-nil when chat should use the dashboard transport."
@@ -355,6 +481,9 @@ shared client."
       (setq hermes-chat--dashboard-active-session-id active-id
             hermes-chat--session-id stored-id
             hermes-chat--dashboard-session-ready-p t)
+      (when (hermes-transport--field-present-p result 'running)
+        (setq hermes-chat--dashboard-running-p
+              (eq (hermes-transport--get result 'running) t)))
       (when (and (hermes-dashboard-transport-client-p client)
                  hermes-chat--dashboard-token)
         (hermes-dashboard-transport-subscribe-session
@@ -364,6 +493,83 @@ shared client."
   "Return non-nil when RESULT reports the resumed session is still busy."
   (or (hermes-transport--get result 'running)
       (hermes-transport--get result 'inflight)))
+
+(defun hermes-chat--dashboard-context-current-p
+    (client generation &optional session-id)
+  "Return non-nil when CLIENT, GENERATION, and SESSION-ID still own this chat."
+  (and (eq client hermes-chat--dashboard-client)
+       (= generation hermes-chat--lifecycle-generation)
+       (or (null session-id)
+           (equal session-id hermes-chat--dashboard-active-session-id))))
+
+(defun hermes-chat--dashboard-idle-context (on-idle)
+  "Return an idle-reconciliation context calling ON-IDLE when settled."
+  (list :buffer (current-buffer)
+        :client hermes-chat--dashboard-client
+        :active-id hermes-chat--dashboard-active-session-id
+        :stored-id (or hermes-chat--session-id
+                       hermes-chat--dashboard-active-session-id)
+        :generation hermes-chat--transport-generation
+        :delay 0.1
+        :on-idle on-idle))
+
+(defun hermes-chat--dashboard-idle-context-valid-p (context)
+  "Return non-nil when idle reconciliation CONTEXT still owns this chat."
+  (and hermes-chat--dashboard-running-p
+       (eq (plist-get context :client) hermes-chat--dashboard-client)
+       (equal (plist-get context :active-id)
+              hermes-chat--dashboard-active-session-id)
+       (hermes-chat--current-transport-generation-p
+        (plist-get context :generation))))
+
+(defun hermes-chat--dashboard-next-idle-context (context)
+  "Return CONTEXT with its polling delay increased up to one second."
+  (plist-put (copy-sequence context) :delay
+             (min 1.0 (* 2 (plist-get context :delay)))))
+
+(defun hermes-chat--dashboard-reconcile-idle-later (context)
+  "Schedule the next idle reconciliation described by CONTEXT."
+  (run-at-time (plist-get context :delay) nil
+               #'hermes-chat--dashboard-reconcile-idle context))
+
+(defun hermes-chat--dashboard-handle-idle-result (context result)
+  "Handle session resume RESULT for idle reconciliation CONTEXT."
+  (when (hermes-chat--dashboard-idle-context-valid-p context)
+    (if (hermes-chat--dashboard-result-live-turn-p result)
+        (hermes-chat--dashboard-reconcile-idle-later
+         (hermes-chat--dashboard-next-idle-context context))
+      (setq hermes-chat--dashboard-running-p nil)
+      (funcall (plist-get context :on-idle)))))
+
+(defun hermes-chat--dashboard-reconcile-idle (context)
+  "Poll the session described by CONTEXT until the backend reports idle."
+  (hermes-chat--in-buffer (plist-get context :buffer)
+    (when (hermes-chat--dashboard-idle-context-valid-p context)
+      (condition-case nil
+          (hermes-dashboard-transport-session-resume
+           (plist-get context :client) (plist-get context :stored-id)
+           :cols (hermes-chat--dashboard-cols)
+           :resolve (lambda (result)
+                      (hermes-chat--in-buffer (plist-get context :buffer)
+                        (hermes-chat--dashboard-handle-idle-result
+                         context result)))
+           :reject (lambda (_message)
+                     (hermes-chat--in-buffer (plist-get context :buffer)
+                       (when (hermes-chat--dashboard-idle-context-valid-p context)
+                         (hermes-chat--dashboard-reconcile-idle-later
+                          (hermes-chat--dashboard-next-idle-context context))))))
+        (error
+         (hermes-chat--dashboard-reconcile-idle-later
+          (hermes-chat--dashboard-next-idle-context context)))))))
+
+(defun hermes-chat--dashboard-schedule-idle-reconciliation (on-idle)
+  "Schedule ON-IDLE after this session is authoritatively no longer running."
+  (if (not hermes-chat--dashboard-running-p)
+      (funcall on-idle)
+    (when (and hermes-chat--dashboard-client
+               hermes-chat--dashboard-active-session-id)
+      (hermes-chat--dashboard-reconcile-idle-later
+       (hermes-chat--dashboard-idle-context on-idle)))))
 
 (defun hermes-chat--dashboard-mark-unsubmitted-retry (assistant-id)
   "Mark ASSISTANT-ID as an unsubmitted retry placeholder."
@@ -443,6 +649,7 @@ Built with `list' so each call yields its own plist; the result is handed to
 
 (defun hermes-chat--dashboard-restore-inflight-turn (client)
   "Restore local busy state for CLIENT's resumed in-flight turn."
+  (setq hermes-chat--dashboard-running-p t)
   (let* ((retry-id hermes-chat--pending-assistant-id)
          (stream-id (or hermes-chat--dashboard-detached-assistant-id
                         (and hermes-chat--dashboard-stream-assistant-id
@@ -493,6 +700,7 @@ released and a shared client for the configured endpoint is acquired and warmed.
 CALLBACK seeds a freshly created client's fallback callback; per-buffer events
 still route through this buffer's subscriber, so the fallback only matters once
 no buffer is attached."
+  (setq-local hermes-dashboard-transport-request-owner (current-buffer))
   (if (hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
       hermes-chat--dashboard-client
     (hermes-chat--stop-dashboard-client)
@@ -535,40 +743,57 @@ path; a client with no readiness promise (such as a test stub) is left alone."
         client :resolve #'ignore :reject #'ignore))
      #'ignore)))
 
-(defun hermes-chat--dashboard-submit-prompt (client prompt)
-  "Submit PROMPT to CLIENT's active dashboard session."
+(defun hermes-chat--dashboard-submit-prompt
+    (client prompt &optional resolve reject)
+  "Submit PROMPT to CLIENT's active dashboard session.
+RESOLVE and REJECT receive the asynchronous request result."
   (unless hermes-chat--dashboard-active-session-id
     (user-error "Hermes dashboard did not return a live session id"))
+  (setq hermes-chat--dashboard-running-p t)
   (hermes-dashboard-transport-prompt-submit
-   client prompt :session-id hermes-chat--dashboard-active-session-id))
+   client prompt
+   :session-id hermes-chat--dashboard-active-session-id
+   :resolve resolve
+   :reject reject))
 
 (defun hermes-chat--dashboard-after-session
-    (client prompt result &optional resume-p)
+    (client prompt result &optional resume-p resolve reject queued-p generation)
   "Record CLIENT session RESULT and submit PROMPT.
 When RESUME-P is non-nil and RESULT reports a live turn, keep local busy
 state instead of submitting another prompt into that durable session.  On a
 fresh session, pending create-time runtime overrides are applied through
-`config.set' before the prompt is submitted."
+`config.set' before the prompt is submitted.  RESOLVE and REJECT receive the
+prompt request result.  QUEUED-P means a local FIFO entry owns the request.
+GENERATION scopes asynchronous create-time overrides."
   (hermes-chat--dashboard-record-session client result)
   (cond
    ((and resume-p (hermes-chat--dashboard-result-live-turn-p result))
+    (when (and queued-p reject)
+      (funcall reject "session is still running"))
     (hermes-chat--dashboard-restore-inflight-turn client))
    (resume-p
     (setq hermes-chat--dashboard-detached-assistant-id nil)
-    (hermes-chat--dashboard-submit-prompt client prompt))
+    (hermes-chat--dashboard-submit-prompt client prompt resolve reject))
    (t
     (setq hermes-chat--dashboard-detached-assistant-id nil)
     (hermes-chat--dashboard-apply-create-overrides
-     client
-     (lambda () (hermes-chat--dashboard-submit-prompt client prompt))))))
+     client (lambda ()
+              (hermes-chat--dashboard-submit-prompt
+               client prompt resolve reject))
+     generation))))
 
-(defun hermes-chat--dashboard-session-resolver (buffer client prompt &optional resume-p)
+(defun hermes-chat--dashboard-session-resolver
+    (buffer client prompt &optional resume-p resolve reject queued-p)
   "Return a callback that records CLIENT's session in BUFFER and sends PROMPT.
-RESUME-P means the callback handles a `session.resume' response."
-  (lambda (result)
-    (hermes-chat--in-buffer buffer
-      (hermes-chat--dashboard-after-session
-       client prompt result resume-p))))
+RESUME-P means the callback handles a `session.resume' response.  RESOLVE and
+REJECT receive the following prompt request result.  QUEUED-P identifies a
+local FIFO submission."
+  (let ((generation hermes-chat--lifecycle-generation))
+    (lambda (result)
+      (hermes-chat--in-buffer buffer
+        (when (hermes-chat--dashboard-context-current-p client generation)
+          (hermes-chat--dashboard-after-session
+           client prompt result resume-p resolve reject queued-p generation))))))
 
 (defun hermes-chat--dashboard-session-attached-p ()
   "Return non-nil when the current buffer has a live dashboard session."
@@ -600,12 +825,14 @@ must not receive them."
         hermes-chat--dashboard-create-reasoning-effort nil
         hermes-chat--dashboard-create-fast-p nil))
 
-(defun hermes-chat--dashboard-apply-create-overrides (client continue)
+(defun hermes-chat--dashboard-apply-create-overrides
+    (client continue &optional generation)
   "Apply pending create-time overrides to CLIENT's fresh session, then CONTINUE.
 Each override is sent as a `config.set' scoped to the session recorded in
 the current buffer.  CONTINUE runs in this buffer once every request has
 settled, so a following `prompt.submit' cannot race the model switch; a
-failed override is reported as a chat error without blocking CONTINUE."
+failed override is reported as a chat error without blocking CONTINUE.
+GENERATION prevents a cleared buffer from receiving late results."
   (let ((cells (hermes-chat--dashboard-create-config-cells))
         (buffer (current-buffer))
         (session-id hermes-chat--dashboard-active-session-id))
@@ -620,25 +847,36 @@ failed override is reported as a chat error without blocking CONTINUE."
                    client (car cell) (cdr cell) :session-id session-id))
                 cells))
        (lambda (_values)
-         (hermes-chat--in-buffer buffer (funcall continue)))
+         (hermes-chat--in-buffer buffer
+           (when (and generation
+                      (hermes-chat--dashboard-context-current-p
+                       client generation session-id))
+             (funcall continue))))
        (lambda (message)
          (hermes-chat--in-buffer buffer
-           (hermes-chat--command-error
-            (format "Pre-session override failed: %s" message))
-           (funcall continue)))))))
+           (when (and generation
+                      (hermes-chat--dashboard-context-current-p
+                       client generation session-id))
+             (hermes-chat--command-error
+              (format "Pre-session override failed: %s" message))
+             (funcall continue))))))))
 
-(defun hermes-chat--dashboard-ensure-session (client prompt buffer)
+(defun hermes-chat--dashboard-ensure-session
+    (client prompt buffer &optional resolve reject queued-p)
   "Create or resume CLIENT's dashboard session before submitting PROMPT.
-Record asynchronous session results in BUFFER."
+Record asynchronous session results in BUFFER.  RESOLVE and REJECT receive the
+prompt request result or a session bootstrap error.  QUEUED-P identifies a
+local FIFO submission."
   (cond
    ((hermes-chat--dashboard-session-attached-p)
-    (hermes-chat--dashboard-submit-prompt client prompt))
+    (hermes-chat--dashboard-submit-prompt client prompt resolve reject))
    (hermes-chat--session-id
     (hermes-dashboard-transport-session-resume
      client hermes-chat--session-id
      :cols (hermes-chat--dashboard-cols)
      :resolve (hermes-chat--dashboard-session-resolver
-               buffer client prompt t)))
+               buffer client prompt t resolve reject queued-p)
+     :reject reject))
    (t
     (hermes-dashboard-transport-session-create
      client
@@ -646,7 +884,8 @@ Record asynchronous session results in BUFFER."
      :title hermes-chat-dashboard-session-title
      :profile hermes-chat--profile
      :resolve (hermes-chat--dashboard-session-resolver
-               buffer client prompt)))))
+               buffer client prompt nil resolve reject queued-p)
+     :reject reject))))
 
 (defun hermes-chat--dashboard-event-for-session-p (event)
   "Return non-nil when EVENT belongs to this buffer's live dashboard session."
@@ -655,17 +894,24 @@ Record asynchronous session results in BUFFER."
         (and hermes-chat--dashboard-active-session-id
              (equal session-id hermes-chat--dashboard-active-session-id)))))
 
-(defun hermes-chat--dashboard-send (prompt callback)
-  "Send PROMPT through the dashboard transport and stream to CALLBACK."
+(defun hermes-chat--dashboard-send
+    (prompt callback &optional resolve reject queued-p)
+  "Send PROMPT through the dashboard transport and stream to CALLBACK.
+RESOLVE and REJECT receive the prompt request result.  QUEUED-P identifies a
+local FIFO submission."
   (let ((buffer (current-buffer))
         (client (hermes-chat--dashboard-start callback)))
-    (hermes-chat--dashboard-ensure-session client prompt buffer)
+    (hermes-chat--dashboard-ensure-session
+     client prompt buffer resolve reject queued-p)
     client))
 
-(defun hermes-chat--send-prompt (prompt callback)
-  "Send PROMPT to Hermes and stream transport events to CALLBACK."
+(defun hermes-chat--send-prompt
+    (prompt callback &optional resolve reject queued-p)
+  "Send PROMPT to Hermes and stream transport events to CALLBACK.
+RESOLVE and REJECT apply to dashboard request acceptance.  QUEUED-P identifies
+a local FIFO submission."
   (if (hermes-chat--dashboard-default-transport-p)
-      (hermes-chat--dashboard-send prompt callback)
+      (hermes-chat--dashboard-send prompt callback resolve reject queued-p)
     (funcall hermes-transport-send-function prompt callback)))
 
 (defun hermes-chat--dashboard-bootstrap-error (message &optional content)
@@ -683,6 +929,7 @@ Record asynchronous session results in BUFFER."
 
 (defun hermes-chat--dashboard-control-client ()
   "Return a shared dashboard client for control RPCs without seizing callbacks."
+  (setq-local hermes-dashboard-transport-request-owner (current-buffer))
   (cond
    ((hermes-chat--dashboard-client-live-p hermes-chat--dashboard-client)
     hermes-chat--dashboard-client)
@@ -691,51 +938,59 @@ Record asynchronous session results in BUFFER."
    (t
     (user-error "Hermes dashboard transport controls are unavailable"))))
 
-(defun hermes-chat--dashboard-action-resolver (buffer client action
-                                                      &optional create-p)
+(defun hermes-chat--dashboard-action-resolver
+    (buffer client action generation &optional create-p)
   "Return a resolver to record CLIENT's session in BUFFER, then call ACTION.
 With CREATE-P non-nil the resolver handles a fresh `session.create' result,
 so pending create-time runtime overrides are applied before ACTION."
   (lambda (result)
     (hermes-chat--in-buffer buffer
-      (hermes-chat--dashboard-record-session client result)
-      (when (hermes-chat--dashboard-result-live-turn-p result)
-        (hermes-chat--dashboard-restore-inflight-turn client)
-        (hermes-chat--dashboard-bind-stream-callback
-         client hermes-chat--pending-assistant-id))
-      (if create-p
-          (hermes-chat--dashboard-apply-create-overrides
-           client (lambda () (funcall action client)))
-        (funcall action client)))))
+      (when (hermes-chat--dashboard-context-current-p client generation)
+        (hermes-chat--dashboard-record-session client result)
+        (when (hermes-chat--dashboard-result-live-turn-p result)
+          (hermes-chat--dashboard-restore-inflight-turn client)
+          (hermes-chat--dashboard-bind-stream-callback
+           client hermes-chat--pending-assistant-id))
+        (if create-p
+            (hermes-chat--dashboard-apply-create-overrides
+             client (lambda () (funcall action client)) generation)
+          (funcall action client))))))
 
-(defun hermes-chat--dashboard-action-rejecter (buffer reject)
-  "Return a reject callback to run REJECT visibly in BUFFER."
+(defun hermes-chat--dashboard-action-rejecter
+    (buffer client generation reject)
+  "Return BUFFER callback for REJECT scoped to CLIENT and GENERATION."
   (lambda (message)
     (hermes-chat--in-buffer buffer
-      (if reject
-          (funcall reject message)
-        (hermes-chat--command-error message)))))
+      (when (hermes-chat--dashboard-context-current-p client generation)
+        (if reject
+            (funcall reject message)
+          (hermes-chat--command-error message))))))
 
 (defun hermes-chat--dashboard-ensure-session-action
     (client buffer action &optional reject)
   "Ensure CLIENT has a session in BUFFER, then call ACTION with CLIENT.
 When dashboard session bootstrap fails, call REJECT with the error message."
-  (cond
-   ((hermes-chat--dashboard-session-attached-p)
-    (funcall action client))
-   (hermes-chat--session-id
-    (hermes-dashboard-transport-session-resume
-     client hermes-chat--session-id
-     :cols (hermes-chat--dashboard-cols)
-     :resolve (hermes-chat--dashboard-action-resolver buffer client action)
-     :reject (hermes-chat--dashboard-action-rejecter buffer reject)))
-   (t
-    (hermes-dashboard-transport-session-create
-     client
-     :cols (hermes-chat--dashboard-cols)
-     :title hermes-chat-dashboard-session-title
-     :resolve (hermes-chat--dashboard-action-resolver buffer client action t)
-     :reject (hermes-chat--dashboard-action-rejecter buffer reject)))))
+  (let ((generation hermes-chat--lifecycle-generation))
+    (cond
+     ((hermes-chat--dashboard-session-attached-p)
+      (funcall action client))
+     (hermes-chat--session-id
+      (hermes-dashboard-transport-session-resume
+       client hermes-chat--session-id
+       :cols (hermes-chat--dashboard-cols)
+       :resolve (hermes-chat--dashboard-action-resolver
+                 buffer client action generation)
+       :reject (hermes-chat--dashboard-action-rejecter
+                buffer client generation reject)))
+     (t
+      (hermes-dashboard-transport-session-create
+       client
+       :cols (hermes-chat--dashboard-cols)
+       :title hermes-chat-dashboard-session-title
+       :resolve (hermes-chat--dashboard-action-resolver
+                 buffer client action generation t)
+       :reject (hermes-chat--dashboard-action-rejecter
+                buffer client generation reject))))))
 
 (defun hermes-chat--with-dashboard-session (content buffer action &optional reject)
   "Ensure a live dashboard session for BUFFER, then call ACTION with the client.

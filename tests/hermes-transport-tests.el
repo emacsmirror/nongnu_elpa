@@ -895,6 +895,23 @@
       (should (string-match-p "timed out" rejected))
       (should (string-match-p "session.create" rejected)))))
 
+(ert-deftest hermes-transport-dashboard-request-timeout-varies-by-method ()
+  "A prompt submission gets longer than the customizable RPC timeout."
+  (let ((client (make-hermes-dashboard-transport-client
+                 :websocket 'fake-websocket
+                 :ready-p t
+                 :pending (make-hash-table :test #'equal)))
+        (hermes-dashboard-transport-websocket-send-function #'ignore)
+        (hermes-dashboard-transport-request-timeout 30)
+        timeouts)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (seconds _repeat _function &rest _args)
+                 (push seconds timeouts)
+                 'fake-timer)))
+      (hermes-dashboard-transport-request client "session.create")
+      (hermes-dashboard-transport-request client "prompt.submit")
+      (should (equal (nreverse timeouts) '(30 1800))))))
+
 (ert-deftest hermes-transport-dashboard-model-save-key-sends-key-never-logs-it ()
   "`model.save_key' sends slug/api_key/session_id; a rejection never echoes the key."
   (let ((client (make-hermes-dashboard-transport-client
@@ -1480,6 +1497,7 @@ other's session."
                             (payload . ((model . "gpt-5.5")
                                         (provider . "openai-codex")
                                         (profile_name . "planner")
+                                        (running . t)
                                         (reasoning_effort . "high")
                                         (fast . t)
                                         (yolo . :false)
@@ -1490,7 +1508,8 @@ other's session."
       (should (eq (plist-get event :type) 'status))
       (should (equal (plist-get event :event) "session.info"))
       (should (equal (plist-get event :session-id) "sid"))
-      (should (equal (plist-get event :status) "ready"))
+      (should (equal (plist-get event :status) "running"))
+      (should (eq (plist-get event :running) t))
       (should (equal (plist-get event :model) "gpt-5.5"))
       (should (equal (plist-get event :agent-name) "planner"))
       (should (equal (plist-get event :reasoning-effort) "high"))
@@ -1500,6 +1519,14 @@ other's session."
       (should (equal (plist-get event :context) '(:used 45000 :max 200000 :percent 22)))
       (should (equal (plist-get event :content)
                      "Session ready: gpt-5.5 via openai-codex")))))
+
+(ert-deftest hermes-transport-dashboard-session-info-preserves-idle-state ()
+  "A false running field remains distinguishable from an absent field."
+  (let ((event (car (hermes-test--dashboard-events
+                     '("session.info" . ((running . :false)))))))
+    (should (equal (plist-get event :status) "ready"))
+    (should (plist-member event :running))
+    (should-not (plist-get event :running))))
 
 (ert-deftest hermes-transport-dashboard-normalizes-reasoning-events ()
   "`reasoning.delta' becomes commentary; `thinking.delta' becomes a `thinking' event."

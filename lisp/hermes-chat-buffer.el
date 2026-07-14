@@ -56,14 +56,26 @@ without each one repeating the liveness guard."
   "This chat buffer's subscriber token on the shared dashboard client.")
 (defvar-local hermes-chat--dashboard-detached-assistant-id nil
   "Detached dashboard assistant entry id for the current chat buffer.")
+(defvar-local hermes-chat--dashboard-running-p nil
+  "Non-nil while the dashboard reports that this session is running.")
 (defvar-local hermes-chat--dashboard-session-ready-p nil
   "Non-nil when a dashboard session is ready for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-stream-assistant-id nil
   "Assistant entry id receiving live dashboard stream events.")
 (defvar-local hermes-chat--dashboard-suppress-stream-p nil
   "Non-nil when live dashboard stream events are suppressed.")
-(defvar-local hermes-chat--draining-queued-message-p nil
-  "Non-nil while the queued chat message is being drained.")
+(defvar-local hermes-chat--dashboard-idle-count 0
+  "Number of explicit dashboard idle events seen by this chat buffer.")
+(defvar-local hermes-chat--dashboard-last-start-idle-count 0
+  "Idle count observed at the most recent dashboard `message.start'.")
+(defvar-local hermes-chat--server-queued-assistant-id nil
+  "Assistant entry waiting for a backend-owned queued turn to start.")
+(defvar-local hermes-chat--server-queued-after-idle-count nil
+  "Idle count that must advance before the server-queued turn can start.")
+(defvar-local hermes-chat--unsettled-submit-context nil
+  "Dashboard submit context whose RPC result has not arrived yet.")
+(defvar-local hermes-chat--prepared-submit-assistant-id nil
+  "Assistant reset at a queued `message.start' before submit settlement.")
 (defvar-local hermes-chat--ewoc nil
   "EWOC displaying chat transcript entries.")
 (defvar-local hermes-chat--input-marker nil
@@ -76,10 +88,10 @@ without each one repeating the liveness guard."
   "Pending dashboard prompt requests by prompt key.")
 (defvar-local hermes-chat--process nil
   "Current Hermes transport process or token.")
-(defvar-local hermes-chat--queued-display nil
-  "Compact display text for the queued message's user turn.")
-(defvar-local hermes-chat--queued-message nil
-  "Plain message queued to send after the active Hermes turn settles.")
+(defvar-local hermes-chat--queued-messages nil
+  "FIFO queue of message plists waiting for an idle Hermes session.")
+(defvar-local hermes-chat--queued-submit-id nil
+  "Queued message id currently awaiting transport acceptance.")
 (defvar-local hermes-chat--session-id nil
   "Durable Hermes session key for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-create-model nil
@@ -96,8 +108,16 @@ their own session with their own runtime.")
   "Buffer-local fast/service-tier flag applied after the next `session.create'.")
 (defvar-local hermes-chat--transport-generation 0
   "Monotonic transport-callback generation for the current chat buffer.
-Bumped per turn so stale async callbacks can detect they are obsolete.
+Bumped per turn and transcript reset so stale async callbacks become obsolete.
 Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
+(defvar-local hermes-chat--lifecycle-generation 0
+  "Monotonic chat lifetime generation used to reject post-reset callbacks.")
+(defvar-local hermes-chat--interrupted-assistant-id nil
+  "Assistant entry whose remaining turn events must be ignored.")
+(defvar-local hermes-chat--interrupted-events nil
+  "Turn events held while an interrupt request is unresolved.")
+(defvar-local hermes-chat--interrupt-request-pending-p nil
+  "Non-nil until the current `session.interrupt' request settles.")
 (defvar hermes-chat--transient-entry-roles)
 
 (defun hermes-chat--transport-entry-role (event)
@@ -381,27 +401,35 @@ text-property changes in the undo list."
   "Initialize the current buffer as an empty Hermes chat buffer."
   (let ((inhibit-read-only t)
         (buffer-undo-list t))
+    (cl-incf hermes-chat--transport-generation)
+    (cl-incf hermes-chat--lifecycle-generation)
     (erase-buffer)
     (setq-local header-line-format '(:eval (hermes-chat--header-line)))
     (hermes-chat--reset-header-state)
     (setq hermes-chat--nodes (make-hash-table :test 'equal)
           hermes-chat--pending-assistant-id nil
-          hermes-chat--queued-message nil
-          hermes-chat--queued-display nil
+          hermes-chat--queued-messages nil
+          hermes-chat--queued-submit-id nil
           hermes-chat--pending-prompts (make-hash-table :test #'equal)
           hermes-chat--auto-prompt-keys (make-hash-table :test #'equal)
-          ;; `hermes-chat--transport-generation' is deliberately not reset:
-          ;; it is documented monotonic, and a clear mid-turn must not let a
-          ;; stale pre-clear callback match a fresh post-clear generation.
-          hermes-chat--draining-queued-message-p nil
           hermes-chat--process nil
           hermes-chat--dashboard-client nil
           hermes-chat--dashboard-token nil
           hermes-chat--dashboard-session-ready-p nil
           hermes-chat--dashboard-active-session-id nil
           hermes-chat--dashboard-detached-assistant-id nil
+          hermes-chat--dashboard-running-p nil
           hermes-chat--dashboard-stream-assistant-id nil
           hermes-chat--dashboard-suppress-stream-p nil
+          hermes-chat--dashboard-idle-count 0
+          hermes-chat--dashboard-last-start-idle-count 0
+          hermes-chat--server-queued-assistant-id nil
+          hermes-chat--server-queued-after-idle-count nil
+          hermes-chat--unsettled-submit-context nil
+          hermes-chat--prepared-submit-assistant-id nil
+          hermes-chat--interrupted-assistant-id nil
+          hermes-chat--interrupted-events nil
+          hermes-chat--interrupt-request-pending-p nil
           hermes-chat--ansi-fragments (make-hash-table :test #'equal)
           hermes-chat--session-id nil
           hermes-chat--ewoc (ewoc-create #'hermes-chat--print-entry
@@ -415,6 +443,25 @@ text-property changes in the undo list."
     (setq hermes-chat--input-marker (copy-marker (point) nil))
     (hermes-chat--protect-transcript)
     (goto-char hermes-chat--input-marker)))
+
+(defun hermes-chat--invalidate-transport-state ()
+  "Invalidate callbacks and pending work before releasing this buffer's client."
+  (cl-incf hermes-chat--transport-generation)
+  (cl-incf hermes-chat--lifecycle-generation)
+  (setq hermes-chat--pending-assistant-id nil
+        hermes-chat--queued-messages nil
+        hermes-chat--queued-submit-id nil
+        hermes-chat--process nil
+        hermes-chat--dashboard-running-p nil
+        hermes-chat--dashboard-stream-assistant-id nil
+        hermes-chat--dashboard-suppress-stream-p nil
+        hermes-chat--server-queued-assistant-id nil
+        hermes-chat--server-queued-after-idle-count nil
+        hermes-chat--unsettled-submit-context nil
+        hermes-chat--prepared-submit-assistant-id nil
+        hermes-chat--interrupted-assistant-id nil
+        hermes-chat--interrupted-events nil
+        hermes-chat--interrupt-request-pending-p nil))
 
 (defun hermes-chat--register-node (entry node)
   "Register ENTRY's ID for NODE and return NODE."
@@ -692,7 +739,7 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
   (when-let* ((text (hermes-transport--non-empty-string content)))
     (if (string-empty-p (string-trim (hermes-chat-input-string)))
         (hermes-chat--replace-input-tail text)
-      (if (not hermes-chat--queued-message)
+      (if (null hermes-chat--queued-messages)
           (hermes-chat--queue-content
            text "Preserved busy-control text after dashboard error")
         (hermes-chat--append-input-tail text)
@@ -763,7 +810,11 @@ METADATA is stored as the entry's `:metadata' plist."
 
 (defun hermes-chat--active-turn-p ()
   "Return non-nil when this chat buffer has an active Hermes turn."
-  hermes-chat--pending-assistant-id)
+  (or hermes-chat--pending-assistant-id
+      hermes-chat--dashboard-running-p
+      hermes-chat--server-queued-assistant-id
+      hermes-chat--unsettled-submit-context
+      hermes-chat--queued-submit-id))
 
 (defun hermes-chat--insert-local-status (content &optional status)
   "Insert local status CONTENT with optional STATUS."
@@ -782,37 +833,109 @@ METADATA is stored as the entry's `:metadata' plist."
 
 (defvar hermes-chat--submit-function #'ignore
   "Function submitting CONTENT as a new user turn, set by `hermes-chat'.
-Takes (CONTENT &optional DISPLAY).  The queue/drain flow below calls it so
-this file never references the submit pipeline defined above it.")
+Takes (CONTENT &optional DISPLAY QUEUE-ENTRY).  The queue/drain flow below
+calls it so this file never references the submit pipeline defined above it.")
 
 (defun hermes-chat--queue-or-submit-content (content &optional display)
   "Queue CONTENT during an active turn, otherwise submit it now.
 DISPLAY is the compact user-turn text to show instead of CONTENT."
-  (if (hermes-chat--active-turn-p)
-      (hermes-chat--queue-content content nil display)
+  (if (or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
+      (progn
+        (hermes-chat--queue-content content nil display)
+        (hermes-chat--drain-queued-message))
     (funcall hermes-chat--submit-function content display)))
+
+(defun hermes-chat--make-queue-entry (content display)
+  "Return a queued message entry for CONTENT and DISPLAY."
+  (list :id (hermes-chat--next-id 'queue)
+        :content content
+        :display display))
+
+(defun hermes-chat--queue-head-id ()
+  "Return the id of the first queued message, or nil."
+  (plist-get (car hermes-chat--queued-messages) :id))
+
+(defun hermes-chat--queue-submit-current-p (entry-id)
+  "Return non-nil when ENTRY-ID owns the current queued submission."
+  (and (equal entry-id hermes-chat--queued-submit-id)
+       (equal entry-id (hermes-chat--queue-head-id))))
+
+(defun hermes-chat--queue-submit-accepted (entry-id)
+  "Remove accepted queue ENTRY-ID without disturbing a newer head."
+  (when (hermes-chat--queue-submit-current-p entry-id)
+    (setq hermes-chat--queued-messages (cdr hermes-chat--queued-messages)
+          hermes-chat--queued-submit-id nil)
+    (hermes-chat--drain-queued-message)))
+
+(defun hermes-chat--turn-entry-ids (assistant-id)
+  "Return transport entry ids owned by ASSISTANT-ID."
+  (cl-loop for id being the hash-keys of hermes-chat--nodes
+           for node = (gethash id hermes-chat--nodes)
+           for entry = (ignore-errors (ewoc-data node))
+           when (equal (hermes-chat--entry-assistant-id entry) assistant-id)
+           collect id))
+
+(defun hermes-chat--reset-submit-assistant (assistant-id)
+  "Clear misattributed output from pending ASSISTANT-ID."
+  (mapc #'hermes-chat--remove-entry
+        (hermes-chat--turn-entry-ids assistant-id))
+  (hermes-chat--mark-assistant assistant-id 'pending "" t))
+
+(defun hermes-chat--rollback-queued-turn (user-id assistant-id)
+  "Remove optimistic USER-ID and ASSISTANT-ID turn entries."
+  (mapc #'hermes-chat--remove-entry
+        (hermes-chat--turn-entry-ids assistant-id))
+  (hermes-chat--remove-entry assistant-id)
+  (hermes-chat--remove-entry user-id))
+
+(defun hermes-chat--queue-submit-rejected
+    (entry-id user-id assistant-id message)
+  "Retain queue ENTRY-ID after MESSAGE, rolling back USER-ID and ASSISTANT-ID."
+  (when (hermes-chat--queue-submit-current-p entry-id)
+    (setq hermes-chat--queued-submit-id nil
+          hermes-chat--dashboard-running-p nil)
+    (when (equal hermes-chat--pending-assistant-id assistant-id)
+      (setq hermes-chat--pending-assistant-id nil
+            hermes-chat--process nil))
+    (when (equal hermes-chat--dashboard-stream-assistant-id assistant-id)
+      (setq hermes-chat--dashboard-stream-assistant-id nil))
+    (when (equal hermes-chat--dashboard-detached-assistant-id assistant-id)
+      (setq hermes-chat--dashboard-detached-assistant-id nil))
+    (setq hermes-chat--dashboard-suppress-stream-p nil)
+    (hermes-chat--rollback-queued-turn user-id assistant-id)
+    (hermes-chat--insert-local-status
+     (format "Queued message retained: %s" message) 'error)
+    (hermes-chat--set-header-state
+     :status 'error :activity "Queued message was not sent")))
 
 (defun hermes-chat--drain-queued-message ()
   "Submit one queued message after the active turn settles."
-  (when (and hermes-chat--queued-message
-             (not hermes-chat--pending-assistant-id)
-             (not hermes-chat--draining-queued-message-p))
-    (let ((content hermes-chat--queued-message)
-          (display hermes-chat--queued-display))
-      (setq hermes-chat--queued-message nil
-            hermes-chat--queued-display nil
-            hermes-chat--draining-queued-message-p t)
-      (unwind-protect
-          (funcall hermes-chat--submit-function content display)
-        (setq hermes-chat--draining-queued-message-p nil)))))
+  (when (and hermes-chat--queued-messages
+             (not (hermes-chat--active-turn-p)))
+    (let ((entry (car hermes-chat--queued-messages)))
+      (setq hermes-chat--queued-submit-id (plist-get entry :id))
+      (condition-case err
+          (funcall hermes-chat--submit-function
+                   (plist-get entry :content)
+                   (plist-get entry :display)
+                   entry)
+        (error
+         (setq hermes-chat--queued-submit-id nil)
+         (hermes-chat--command-error (error-message-string err)))))))
+
+(defun hermes-chat--clear-submit-context (context)
+  "Clear CONTEXT when it is still the unresolved dashboard submission."
+  (when (eq context hermes-chat--unsettled-submit-context)
+    (setq hermes-chat--unsettled-submit-context nil
+          hermes-chat--prepared-submit-assistant-id nil)
+    (hermes-chat--drain-queued-message)))
 
 (defun hermes-chat--queue-content (content &optional note display)
   "Queue CONTENT for the next turn, inserting NOTE when non-nil.
 DISPLAY is the compact user-turn text shown when the queued message is sent."
-  (when hermes-chat--queued-message
-    (user-error "A Hermes message is already queued"))
-  (setq hermes-chat--queued-message content
-        hermes-chat--queued-display display)
+  (setq hermes-chat--queued-messages
+        (append hermes-chat--queued-messages
+                (list (hermes-chat--make-queue-entry content display))))
   (hermes-chat--insert-local-status
    (or note (format "Queued next message: %s"
                     (hermes-chat--preview (or display content))))

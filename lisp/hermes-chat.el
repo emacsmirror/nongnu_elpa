@@ -36,6 +36,7 @@
 (require 'ewoc)
 (require 'goto-addr)
 (require 'keymap-popup)
+(require 'seq)
 (require 'subr-x)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
@@ -91,6 +92,7 @@ which keeps tests and user custom transports working."
 (defvar hermes-chat--dashboard-client)
 (defvar hermes-chat--dashboard-session-ready-p)
 (defvar hermes-chat--dashboard-active-session-id)
+(defvar hermes-chat--dashboard-running-p)
 (defvar hermes-chat--session-id)
 
 ;; Owned by `hermes-chat-buffer'; declared here for the byte-compiler.
@@ -102,12 +104,20 @@ which keeps tests and user custom transports working."
 (defvar hermes-chat--dashboard-detached-assistant-id)
 (defvar hermes-chat--dashboard-stream-assistant-id)
 (defvar hermes-chat--dashboard-suppress-stream-p)
+(defvar hermes-chat--interrupted-assistant-id)
+(defvar hermes-chat--interrupted-events)
+(defvar hermes-chat--interrupt-request-pending-p)
+(defvar hermes-chat--server-queued-assistant-id)
+(defvar hermes-chat--server-queued-after-idle-count)
+(defvar hermes-chat--dashboard-idle-count)
+(defvar hermes-chat--dashboard-last-start-idle-count)
+(defvar hermes-chat--unsettled-submit-context)
+(defvar hermes-chat--prepared-submit-assistant-id)
 
 ;; Queue and stream state owned by `hermes-chat-buffer'; re-declared here for
 ;; the byte-compiler.
-(defvar hermes-chat--queued-message)
-(defvar hermes-chat--queued-display)
-(defvar hermes-chat--draining-queued-message-p)
+(defvar hermes-chat--queued-messages)
+(defvar hermes-chat--queued-submit-id)
 
 (defconst hermes-chat--transient-entry-roles '(status progress tool)
   "Entry roles used for compact transport status/progress lines.")
@@ -144,7 +154,7 @@ which keeps tests and user custom transports working."
 `session.info' carries the model/provider, now shown in their own header
 fields, so it collapses to a plain ready state instead of repeating them."
   (if (hermes-chat--session-info-event-p event)
-      "Ready"
+      (if (plist-get event :running) "Working" "Ready")
     (or (hermes-chat--header-activity-for-event event) "Working")))
 
 ;;; Turn-state reducer
@@ -189,6 +199,11 @@ literal \"Thinking\" label."
       (list :status 'thinking
             :activity (hermes-chat--thinking-activity content)))))
 
+(defun hermes-chat--interrupted-status-p (status)
+  "Return non-nil when STATUS denotes an interrupted turn."
+  (member (hermes-chat--status-name status)
+          '("interrupted" "cancelled" "canceled")))
+
 (defun hermes-chat--turn-header-props (event)
   "Return header props for any header-affecting EVENT, or nil for none."
   (pcase (plist-get event :type)
@@ -198,9 +213,14 @@ literal \"Thinking\" label."
     ('diff '(:status running :activity "Reviewing diff"))
     ('done (list :status 'ready :activity "Ready"
                  :usage (plist-get event :usage)))
-    ('error (list :status (hermes-chat--error-status event)
-                  :activity (or (hermes-chat--event-string event '(:content :error))
-                                "Transport error")))
+    ('error
+     (let ((status (hermes-chat--error-status event)))
+       (list :status status
+             :activity (if (hermes-chat--interrupted-status-p status)
+                           "Interrupted"
+                         (or (hermes-chat--event-string
+                              event '(:content :error))
+                             "Transport error")))))
     ('unknown (list :status 'error
                     :activity (hermes-chat--unknown-event-content event)))))
 
@@ -236,6 +256,14 @@ keyed notice without carrying text, so neither becomes an entry."
   (and (hermes-chat--transcript-event-p event)
        (cons 'upsert-entry event)))
 
+(defun hermes-chat--turn-session-info-effects (event)
+  "Return dashboard-running effects carried by session-info EVENT."
+  (when (and (hermes-chat--session-info-event-p event)
+             (plist-member event :running))
+    (let ((running (plist-get event :running)))
+      (append (list (cons 'set-dashboard-running running))
+              (unless running '((drain)))))))
+
 (defun hermes-chat--turn-done-effects (event status)
   "Return the ordered effect list for a `done' EVENT with header STATUS.
 `refresh-header' precedes the lifecycle so the header settles before `drain'
@@ -270,17 +298,26 @@ assistant entry, so the reply placeholder keeps its text."
 
 (defun hermes-chat--turn-error-effects (event status)
   "Return the ordered effect list for an `error' EVENT with header STATUS."
-  (let ((estatus (hermes-chat--error-status event))
-        (content (let ((c (or (plist-get event :content) "")))
-                   (if (string-empty-p c) "Transport error" c))))
-    (list '(clear-tools)
-          (cons 'refresh-header status)
-          (cons 'clear-prompts event)
-          (cons 'append-error (cons content estatus))
-          (cons 'settle estatus)
-          '(finish)
-          '(clear-pending)
-          '(drain))))
+  (let ((estatus (hermes-chat--error-status event)))
+    (if (hermes-chat--interrupted-status-p estatus)
+        (list '(clear-tools)
+              (cons 'refresh-header status)
+              (cons 'clear-prompts event)
+              (cons 'mark-status estatus)
+              (cons 'settle estatus)
+              '(finish)
+              '(clear-pending)
+              '(drain))
+      (let ((content (let ((value (or (plist-get event :content) "")))
+                       (if (string-empty-p value) "Transport error" value))))
+        (list '(clear-tools)
+              (cons 'refresh-header status)
+              (cons 'clear-prompts event)
+              (cons 'append-error (cons content estatus))
+              (cons 'settle estatus)
+              '(finish)
+              '(clear-pending)
+              '(drain))))))
 
 (defun hermes-chat--turn-reduce (state event now)
   "Return (NEW-STATE . EFFECTS) for domain EVENT applied to STATE at time NOW.
@@ -292,8 +329,10 @@ and `upsert-entry'.  Other types return (STATE)."
     ((or 'status 'commentary 'thinking 'diff)
      (let ((status (hermes-chat--turn-status-state state event now)))
        (cons (hermes-chat--turn-state-put state :status-state status)
-             (delq nil (list (cons 'refresh-header status)
-                             (hermes-chat--turn-entry-effect event))))))
+             (append
+              (delq nil (list (cons 'refresh-header status)
+                              (hermes-chat--turn-entry-effect event)))
+              (hermes-chat--turn-session-info-effects event)))))
     ('unknown
      (let ((status (hermes-chat--turn-status-state state event now)))
        (cons (hermes-chat--turn-state-put state :status-state status)
@@ -335,6 +374,9 @@ stays side-effect-light."
     (`(tool-put ,key . ,summary)
      (puthash key summary (hermes-chat--active-tools-table)))
     (`(tool-remove . ,key) (remhash key (hermes-chat--active-tools-table)))
+    (`(set-dashboard-running . ,running)
+     (setq hermes-chat--dashboard-running-p running))
+    ('(drain) (hermes-chat--drain-queued-message))
     ((guard (null assistant-id)) nil)
     (`(upsert-entry . ,event)
      (hermes-chat--upsert-transport-entry assistant-id event))
@@ -357,7 +399,6 @@ stays side-effect-light."
     ('(clear-pending)
      (setq hermes-chat--pending-assistant-id nil
            hermes-chat--process nil))
-    ('(drain) (hermes-chat--drain-queued-message))
     (`(append-delta . ,content)
      (unless (hermes-chat--thinking-echo-delta-p assistant-id content)
        (hermes-chat--append-assistant-content assistant-id content 'streaming)))))
@@ -422,17 +463,110 @@ extends the input instead of prepending a blank line to it."
     (goto-char (point-max)))
   (insert "\n"))
 
-(defun hermes-chat--submit-content (content &optional display)
-  "Submit CONTENT as a new user turn, echoing DISPLAY when non-nil.
-DISPLAY lets a slash skill send its full payload while showing a compact line."
-  (when (hermes-chat--active-turn-p)
-    (user-error "%s" (hermes-chat--busy-message)))
-  (let* ((user-entry (hermes-chat--make-entry 'user (or display content) 'done))
-         (assistant-entry (hermes-chat--make-entry 'assistant "" 'pending))
-         (assistant-id (plist-get assistant-entry :id))
-         (buffer (current-buffer))
-         (dashboard-p (hermes-chat--dashboard-default-transport-p))
-         (generation (hermes-chat--next-transport-generation)))
+(defun hermes-chat--busy-submit-steered (context)
+  "Convert CONTEXT's optimistic turn into the backend's active steered turn."
+  (hermes-chat--remove-entry (plist-get context :user-id))
+  (when (equal hermes-chat--pending-assistant-id
+               (plist-get context :assistant-id))
+    (hermes-chat--mark-assistant (plist-get context :assistant-id) 'streaming))
+  (hermes-chat--insert-local-status
+   (format "Steered: %s"
+           (hermes-chat--preview
+            (or (plist-get context :display)
+                (plist-get context :content))))
+   'done)
+  (when-let* ((queue-id (plist-get context :queue-id)))
+    (hermes-chat--queue-submit-accepted queue-id)))
+
+(defun hermes-chat--prepare-server-queued-turn (context)
+  "Prepare CONTEXT's assistant for a backend-owned queued turn."
+  (let ((assistant-id (plist-get context :assistant-id)))
+    (unless (equal assistant-id hermes-chat--prepared-submit-assistant-id)
+      (hermes-chat--reset-submit-assistant assistant-id))
+    (setq hermes-chat--pending-assistant-id assistant-id
+          hermes-chat--process hermes-chat--dashboard-client
+          hermes-chat--dashboard-stream-assistant-id assistant-id
+          hermes-chat--dashboard-suppress-stream-p nil
+          hermes-chat--dashboard-running-p t
+          hermes-chat--server-queued-assistant-id assistant-id
+          hermes-chat--server-queued-after-idle-count
+          (plist-get context :idle-count))
+    (hermes-chat--set-header-state
+     :status 'pending :activity "Queued by Hermes"
+     :assistant-id assistant-id)))
+
+(defun hermes-chat--busy-submit-queued (context)
+  "Transfer CONTEXT from the local FIFO to the backend-owned busy queue."
+  (let ((current-p (hermes-chat--current-transport-generation-p
+                    (plist-get context :generation)))
+        (terminal-p (plist-get context :post-start-terminal-p)))
+    (when (and current-p (not terminal-p))
+      (hermes-chat--prepare-server-queued-turn context))
+    (hermes-chat--insert-local-status
+     "Queued by Hermes" (if (or terminal-p (not current-p)) 'done 'pending))
+    (when-let* ((queue-id (plist-get context :queue-id)))
+      (hermes-chat--queue-submit-accepted queue-id))
+    (when (and current-p (not terminal-p))
+      (hermes-chat--dashboard-activate-server-queued-turn
+       (plist-get context :assistant-id)))))
+
+(defun hermes-chat--submit-resolved (context result)
+  "Settle CONTEXT from dashboard prompt RESULT."
+  (pcase (hermes-chat--status-name
+          (hermes-chat--result-string result 'status))
+    ("queued" (hermes-chat--busy-submit-queued context))
+    ("steered" (hermes-chat--busy-submit-steered context))
+    (_
+     (when-let* ((queue-id (plist-get context :queue-id)))
+       (hermes-chat--queue-submit-accepted queue-id)))))
+
+(defun hermes-chat--submit-resolve-callback (buffer context)
+  "Return BUFFER callback settling dashboard submission CONTEXT."
+  (let (settled)
+    (lambda (result)
+      (hermes-chat--in-buffer buffer
+        (let ((queue-id (plist-get context :queue-id))
+              (user-id (plist-get context :user-id)))
+          (when (and (not settled)
+                     (or (and queue-id
+                              (hermes-chat--queue-submit-current-p queue-id))
+                         (and hermes-chat--nodes
+                              (gethash user-id hermes-chat--nodes))))
+            (setq settled t)
+            (hermes-chat--submit-resolved context result)
+            (hermes-chat--clear-submit-context context)))))))
+
+(defun hermes-chat--queue-reject-callback (buffer context)
+  "Return BUFFER callback rejecting the queued turn described by CONTEXT."
+  (lambda (message)
+    (hermes-chat--in-buffer buffer
+      (when (hermes-chat--current-transport-generation-p
+             (plist-get context :generation))
+        (hermes-chat--clear-submit-context context)
+        (hermes-chat--queue-submit-rejected
+         (plist-get context :queue-id)
+         (plist-get context :user-id)
+         (plist-get context :assistant-id)
+         message)))))
+
+(defun hermes-chat--submit-reject-callback (buffer context)
+  "Return BUFFER callback rejecting the turn described by CONTEXT."
+  (lambda (message)
+    (hermes-chat--in-buffer buffer
+      (when (and (hermes-chat--current-transport-generation-p
+                  (plist-get context :generation))
+                 (equal hermes-chat--pending-assistant-id
+                        (plist-get context :assistant-id)))
+        (hermes-chat--clear-submit-context context)
+        (setq hermes-chat--dashboard-running-p nil)
+        (hermes-chat--handle-transport-event
+         (plist-get context :assistant-id)
+         (list :type 'error :content message))))))
+
+(defun hermes-chat--begin-pending-turn (user-entry assistant-entry context)
+  "Insert USER-ENTRY and ASSISTANT-ENTRY, then activate CONTEXT."
+  (let ((assistant-id (plist-get context :assistant-id))
+        (dashboard-p (plist-get context :dashboard-p)))
     (hermes-chat--insert-entry user-entry)
     (hermes-chat--insert-entry assistant-entry)
     (hermes-chat--clear-active-tools)
@@ -441,17 +575,90 @@ DISPLAY lets a slash skill send its full payload while showing a compact line."
      :assistant-id assistant-id :last-tool nil :started (current-time))
     (setq hermes-chat--pending-assistant-id assistant-id
           hermes-chat--dashboard-stream-assistant-id (and dashboard-p assistant-id)
-          hermes-chat--dashboard-suppress-stream-p nil)
+          hermes-chat--dashboard-suppress-stream-p nil
+          hermes-chat--server-queued-assistant-id nil
+          hermes-chat--server-queued-after-idle-count nil
+          hermes-chat--unsettled-submit-context (and dashboard-p context)
+          hermes-chat--prepared-submit-assistant-id nil
+          hermes-chat--interrupted-assistant-id nil
+          hermes-chat--interrupted-events nil
+          hermes-chat--interrupt-request-pending-p nil)))
+
+(defun hermes-chat--submit-through-transport (content context resolve reject)
+  "Submit CONTENT using CONTEXT with RESOLVE and REJECT callbacks."
+  (let* ((buffer (plist-get context :buffer))
+         (assistant-id (plist-get context :assistant-id))
+         (dashboard-p (plist-get context :dashboard-p))
+         (generation (plist-get context :generation))
+         (queue-id (plist-get context :queue-id))
+         (transport
+          (hermes-chat--send-prompt
+           content
+           (hermes-chat--transport-callback
+            buffer assistant-id dashboard-p generation)
+           resolve reject (and queue-id t))))
+    (when (equal hermes-chat--pending-assistant-id assistant-id)
+      (setq hermes-chat--process transport))
+    (when (and queue-id (not dashboard-p))
+      (hermes-chat--queue-submit-accepted queue-id))))
+
+(defun hermes-chat--submit-signal-error (context err)
+  "Apply synchronous submit ERR to the turn described by CONTEXT."
+  (let ((queue-id (plist-get context :queue-id))
+        (user-id (plist-get context :user-id))
+        (assistant-id (plist-get context :assistant-id))
+        (message (error-message-string err)))
+    (hermes-chat--clear-submit-context context)
+    (when (plist-get context :dashboard-p)
+      (setq hermes-chat--dashboard-running-p nil))
+    (if queue-id
+        (hermes-chat--queue-submit-rejected
+         queue-id user-id assistant-id message)
+      (hermes-chat--handle-transport-event
+       assistant-id (list :type 'error :content message)))
+    (message "Hermes transport failed: %s" message)))
+
+(defun hermes-chat--make-submit-context (content display queue-entry user assistant)
+  "Return transport context for CONTENT, DISPLAY, QUEUE-ENTRY, USER, and ASSISTANT."
+  (let ((dashboard-p (hermes-chat--dashboard-default-transport-p)))
+    (list :buffer (current-buffer)
+          :user-id (plist-get user :id)
+          :assistant-id (plist-get assistant :id)
+          :dashboard-p dashboard-p
+          :generation (hermes-chat--next-transport-generation)
+          :idle-count hermes-chat--dashboard-idle-count
+          :post-start-terminal-p nil
+          :queue-id (plist-get queue-entry :id)
+          :queue-entry queue-entry
+          :content content
+          :display display)))
+
+(defun hermes-chat--submit-callbacks (context)
+  "Return the dashboard acceptance callbacks for CONTEXT."
+  (let ((buffer (plist-get context :buffer)))
+    (cons (hermes-chat--submit-resolve-callback buffer context)
+          (if (plist-get context :queue-id)
+              (hermes-chat--queue-reject-callback buffer context)
+            (hermes-chat--submit-reject-callback buffer context)))))
+
+(defun hermes-chat--submit-content (content &optional display queue-entry)
+  "Submit CONTENT as a new user turn, echoing DISPLAY when non-nil.
+DISPLAY lets a slash skill send its full payload while showing a compact line.
+QUEUE-ENTRY identifies a queued message retained until transport acceptance."
+  (when (and (hermes-chat--active-turn-p) (null queue-entry))
+    (user-error "%s" (hermes-chat--busy-message)))
+  (let* ((user-entry (hermes-chat--make-entry 'user (or display content) 'done))
+         (assistant-entry (hermes-chat--make-entry 'assistant "" 'pending))
+         (context (hermes-chat--make-submit-context
+                   content display queue-entry user-entry assistant-entry))
+         (callbacks (and (plist-get context :dashboard-p)
+                         (hermes-chat--submit-callbacks context))))
+    (hermes-chat--begin-pending-turn user-entry assistant-entry context)
     (condition-case err
-        (setq hermes-chat--process
-              (hermes-chat--send-prompt
-               content
-               (hermes-chat--transport-callback
-                buffer assistant-id dashboard-p generation)))
+        (hermes-chat--submit-through-transport
+         content context (car callbacks) (cdr callbacks))
       (error
-       (hermes-chat--handle-transport-event
-        assistant-id (list :type 'error :content (error-message-string err)))
-       (message "Hermes transport failed: %s" (error-message-string err))))))
+       (hermes-chat--submit-signal-error context err)))))
 
 ;; Register the submit pipeline with `hermes-chat-buffer''s queue/drain flow
 ;; and the dashboard's event routing; the registries keep the lower layers
@@ -474,7 +681,7 @@ DISPLAY lets a slash skill send its full payload while showing a compact line."
   "Handle rejected steer CONTENT with fallback MESSAGE."
   (hermes-chat--insert-local-status
    (format "Steer unavailable (%s); queued next message" message) 'error)
-  (hermes-chat--queue-content content "Queued next message after steer fallback"))
+  (hermes-chat--queue-or-submit-content content))
 
 (defun hermes-chat--steer-pending-status (content)
   "Insert an immediate pending steer entry for CONTENT; return its entry id.
@@ -503,8 +710,9 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
 
 (defun hermes-chat--steer-failed (id content message)
   "Drop the pending steer entry ID, then queue CONTENT after MESSAGE fallback."
-  (hermes-chat--remove-entry id)
-  (hermes-chat--steer-rejected content message))
+  (when (and hermes-chat--nodes (gethash id hermes-chat--nodes))
+    (hermes-chat--remove-entry id)
+    (hermes-chat--steer-rejected content message)))
 
 (defun hermes-chat--steer-active-turn (content buffer)
   "Steer active dashboard turn with CONTENT in BUFFER, or queue when unsupported."
@@ -527,9 +735,9 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
 
 (defun hermes-chat--steer-or-submit (content buffer)
   "Steer active turn with CONTENT in BUFFER, or submit CONTENT when idle."
-  (if (hermes-chat--active-turn-p)
+  (if hermes-chat--pending-assistant-id
       (hermes-chat--steer-active-turn content buffer)
-    (hermes-chat--submit-content content)))
+    (hermes-chat--queue-or-submit-content content)))
 
 (defun hermes-chat--dashboard-steer-or-submit (content buffer)
   "Resume stored dashboard session in BUFFER before steering or submitting CONTENT."
@@ -551,33 +759,107 @@ A no-op when the entry is gone (e.g. the chat was cleared mid-steer)."
       (hermes-chat--delete-input-tail))
     (hermes-chat--dashboard-steer-or-submit content buffer)))
 
+(defun hermes-chat--interrupt-rejected (assistant-id generation message)
+  "Restore ASSISTANT-ID after its GENERATION interrupt fails with MESSAGE."
+  (when (and (hermes-chat--current-transport-generation-p generation)
+             (equal hermes-chat--interrupted-assistant-id assistant-id)
+             hermes-chat--interrupt-request-pending-p)
+    (let ((events (nreverse hermes-chat--interrupted-events)))
+      (setq hermes-chat--interrupted-assistant-id nil
+            hermes-chat--interrupted-events nil
+            hermes-chat--interrupt-request-pending-p nil)
+      (when (equal hermes-chat--pending-assistant-id assistant-id)
+        (hermes-chat--mark-assistant assistant-id 'streaming))
+      (mapc (lambda (event)
+              (hermes-chat--handle-transport-event assistant-id event))
+            events))
+    (hermes-chat--insert-local-status
+     (format "Interrupt failed: %s" message) 'error)
+    (when (equal hermes-chat--pending-assistant-id assistant-id)
+      (hermes-chat--set-header-state
+       :status 'running :activity "Interrupt failed"))))
+
+(defun hermes-chat--interrupt-reject-callback
+    (buffer assistant-id generation)
+  "Return BUFFER callback rejecting ASSISTANT-ID at GENERATION."
+  (lambda (message)
+    (hermes-chat--in-buffer buffer
+      (hermes-chat--interrupt-rejected assistant-id generation message))))
+
+(defun hermes-chat--finish-reconciled-interrupt (assistant-id generation)
+  "Finish ASSISTANT-ID when its GENERATION interrupt reaches backend idle."
+  (when (and (hermes-chat--current-transport-generation-p generation)
+             (equal hermes-chat--pending-assistant-id assistant-id)
+             (equal hermes-chat--interrupted-assistant-id assistant-id))
+    (when (equal assistant-id hermes-chat--server-queued-assistant-id)
+      (setq hermes-chat--server-queued-assistant-id nil
+            hermes-chat--server-queued-after-idle-count nil))
+    (setq hermes-chat--interrupted-events nil)
+    (hermes-chat--handle-transport-event
+     assistant-id '(:type error :status "interrupted"))))
+
+(defun hermes-chat--held-interrupt-terminal ()
+  "Return the first held terminal event in arrival order, or nil."
+  (seq-find (lambda (event)
+              (memq (plist-get event :type) '(done error)))
+            (nreverse hermes-chat--interrupted-events)))
+
+(defun hermes-chat--interrupt-resolve-callback
+    (buffer assistant-id generation)
+  "Return BUFFER callback reconciling ASSISTANT-ID at GENERATION after acceptance."
+  (lambda (_result)
+    (hermes-chat--in-buffer buffer
+      (when (and (hermes-chat--current-transport-generation-p generation)
+                 (equal hermes-chat--interrupted-assistant-id assistant-id)
+                 hermes-chat--interrupt-request-pending-p)
+        (let ((terminal (hermes-chat--held-interrupt-terminal)))
+          (setq hermes-chat--interrupt-request-pending-p nil
+                hermes-chat--interrupted-events nil)
+          (when (equal assistant-id hermes-chat--server-queued-assistant-id)
+            (setq hermes-chat--server-queued-assistant-id nil
+                  hermes-chat--server-queued-after-idle-count nil))
+          (if terminal
+              (hermes-chat--handle-transport-event assistant-id terminal)
+            (hermes-chat--dashboard-schedule-idle-reconciliation
+             (lambda ()
+               (hermes-chat--finish-reconciled-interrupt
+                assistant-id generation)))))))))
+
 (defun hermes-chat-interrupt ()
   "Request interruption of the active dashboard run."
   (interactive)
-  (unless (hermes-chat--active-turn-p)
+  (unless hermes-chat--pending-assistant-id
     (user-error "No active Hermes run to interrupt"))
   (unless (hermes-chat--dashboard-session-attached-p)
     (user-error "Current Hermes transport does not support interrupt"))
-  (let ((buffer (current-buffer)))
-    (hermes-dashboard-transport-session-interrupt
-     hermes-chat--dashboard-client
-     :session-id hermes-chat--dashboard-active-session-id
-     :resolve (lambda (_result)
-                (hermes-chat--in-buffer buffer
-                  (hermes-chat--insert-local-status
-                   "Interrupt requested" 'interrupted)
-                  (hermes-chat--set-header-state
-                   :status 'interrupted :activity "Interrupt requested")))
-     :reject (lambda (message)
-               (hermes-chat--in-buffer buffer
-                 (hermes-chat--command-error message))))))
+  (let ((buffer (current-buffer))
+        (assistant-id hermes-chat--pending-assistant-id)
+        (generation hermes-chat--transport-generation))
+    (setq hermes-chat--interrupted-assistant-id assistant-id
+          hermes-chat--interrupted-events nil
+          hermes-chat--interrupt-request-pending-p t)
+    (hermes-chat--mark-assistant assistant-id 'interrupted)
+    (hermes-chat--insert-local-status "Interrupt requested" 'interrupted)
+    (hermes-chat--set-header-state
+     :status 'interrupted :activity "Interrupt requested")
+    (condition-case err
+        (hermes-dashboard-transport-session-interrupt
+         hermes-chat--dashboard-client
+         :session-id hermes-chat--dashboard-active-session-id
+         :resolve (hermes-chat--interrupt-resolve-callback
+                   buffer assistant-id generation)
+         :reject (hermes-chat--interrupt-reject-callback
+                  buffer assistant-id generation))
+      (error
+       (hermes-chat--interrupt-rejected
+        assistant-id generation (error-message-string err))))))
 
 (defun hermes-chat-interrupt-and-send (&optional message)
   "Interrupt the active run, then queue MESSAGE for the next turn when non-empty.
 MESSAGE defaults to the input tail.  The interrupt fires first and
 unconditionally, so an empty input still stops the run instead of erroring."
   (interactive)
-  (unless (hermes-chat--active-turn-p)
+  (unless hermes-chat--pending-assistant-id
     (user-error "No active Hermes run to interrupt"))
   (unless (hermes-chat--dashboard-session-attached-p)
     (user-error "Current Hermes transport does not support interrupt"))
@@ -596,6 +878,9 @@ session key is preserved, so the conversation can still be resumed."
               hermes-chat--process
               hermes-chat--dashboard-active-session-id)
     (user-error "This Hermes chat has no session to disconnect"))
+  (when-let* ((assistant-id hermes-chat--pending-assistant-id))
+    (hermes-chat--mark-assistant assistant-id 'disconnected nil t))
+  (hermes-chat--invalidate-transport-state)
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--insert-local-status "Session disconnected" 'disconnected)
   (hermes-chat--set-header-state :status 'disconnected :activity "Disconnected"))
@@ -642,6 +927,7 @@ for that."
   "Tear down the live session and re-initialize this chat buffer empty.
 Stops any live dashboard client, clears the EWOC transcript and header, and
 forgets both the live and durable session ids so the next send starts fresh."
+  (hermes-chat--invalidate-transport-state)
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--setup-buffer))
 
@@ -853,11 +1139,10 @@ messages are fetched and rendered; the durable session continues on send."
     (if (hermes-chat--parse-slash content)
         (hermes-chat--handle-slash-content content)
       (cond
-       ((and (hermes-chat--active-turn-p) hermes-chat--queued-message)
-        (user-error "A Hermes message is already queued"))
-       ((hermes-chat--active-turn-p)
+       ((or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
         (hermes-chat--delete-input-tail)
-        (hermes-chat--queue-content content))
+        (hermes-chat--queue-content content)
+        (hermes-chat--drain-queued-message))
        (t
         (hermes-chat--delete-input-tail)
         (hermes-chat--submit-content content))))))

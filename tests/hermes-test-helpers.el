@@ -166,6 +166,17 @@ The buffer is captured by object so teardown still kills it after a rename."
   (cl-find-if (lambda (entry) (eq (plist-get entry :role) 'assistant))
               (hermes-chat--entries)))
 
+(defun hermes-test--last-assistant-entry ()
+  "Return the last chat entry whose role is `assistant'."
+  (car (last (cl-remove-if-not
+              (lambda (entry) (eq (plist-get entry :role) 'assistant))
+              (hermes-chat--entries)))))
+
+(defun hermes-test--queued-contents ()
+  "Return queued chat message contents in send order."
+  (mapcar (lambda (entry) (plist-get entry :content))
+          hermes-chat--queued-messages))
+
 (defun hermes-test--dashboard-client ()
   "Return a fake dashboard transport client for chat integration tests."
   (make-hermes-dashboard-transport-client
@@ -175,7 +186,8 @@ The buffer is captured by object so teardown still kills it after a rename."
 
 (defun hermes-test--control-content-preserved-p (&rest candidates)
   "Return non-nil when a busy-control CANDIDATE is still recoverable."
-  (or (member hermes-chat--queued-message candidates)
+  (or (cl-some (lambda (content) (member content candidates))
+               (hermes-test--queued-contents))
       (member (hermes-chat-input-string) candidates)))
 
 (defmacro hermes-test-with-dashboard-prompt-session (spec &rest body)
@@ -213,6 +225,27 @@ The buffer is captured by object so teardown still kills it after a rename."
       (params . ((type . ,type)
                  (session_id . "sid-prompt")
                  (payload . ,payload)))))))
+
+(defun hermes-test--emit-dashboard-event (client type payload)
+  "Emit dashboard event TYPE with PAYLOAD through CLIENT."
+  (hermes-dashboard-transport--handle-frame
+   client
+   (hermes-dashboard-transport--encode-frame
+    `((jsonrpc . "2.0")
+      (method . "event")
+      (params . ((type . ,type)
+                 (session_id . "sid-active")
+                 (payload . ,payload)))))))
+
+(defun hermes-test--emit-dashboard-idle (client &optional session-id)
+  "Emit authoritative idle state for CLIENT and optional SESSION-ID."
+  (hermes-dashboard-transport--dispatch-event
+   client
+   (list :type 'status
+         :event "session.info"
+         :status "ready"
+         :running nil
+         :session-id (or session-id "sid-active"))))
 
 (defun hermes-test--dashboard-events (&rest frames)
   "Return events emitted by handling each event FRAMES alist on a fresh client.

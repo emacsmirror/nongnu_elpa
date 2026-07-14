@@ -88,10 +88,14 @@ first request until the ready event arrives."
 (defcustom hermes-dashboard-transport-request-timeout 30
   "Seconds before an unanswered dashboard request is rejected.
 A pending JSON-RPC request whose response never arrives would otherwise leak
-its callbacks forever, so it is rejected once this many seconds elapse.  Use
-nil to disable the per-request timeout."
+its callbacks forever.  Ordinary requests use this timeout; `prompt.submit'
+uses at least 1800 seconds because its response can span a full agent turn.
+Use nil to disable per-request timeouts."
   :type '(choice (const :tag "No timeout" nil) number)
   :group 'hermes-dashboard-transport)
+
+(defvar hermes-dashboard-transport-request-owner nil
+  "Identity attached to requests for scoped cancellation by their caller.")
 
 (defcustom hermes-dashboard-transport-idle-close-delay nil
   "Seconds to keep a shared dashboard client alive after its last reference.
@@ -762,6 +766,22 @@ It is called with the tokenized URL and the dashboard client.")
     (hermes-dashboard-transport--cancel-request-timer request)
     request))
 
+(defun hermes-dashboard-transport-cancel-owner-requests (client owner)
+  "Silently cancel pending CLIENT requests belonging to OWNER.
+Return the number cancelled.  This releases callbacks and timeout timers
+without reporting teardown as a request failure."
+  (let (ids)
+    (when-let* (((hermes-dashboard-transport-client-p client))
+                (pending (hermes-dashboard-transport-client-pending client)))
+      (maphash (lambda (id request)
+                 (when (eq owner (plist-get request :owner))
+                   (push id ids)))
+               pending))
+    (mapc (lambda (id)
+            (hermes-dashboard-transport--take-pending client id))
+          ids)
+    (length ids)))
+
 (defun hermes-dashboard-transport--on-request-timeout (client id)
   "Reject CLIENT's pending request ID after its timeout elapses."
   (when-let* ((request (hermes-dashboard-transport--take-pending client id)))
@@ -772,12 +792,19 @@ It is called with the tokenized URL and the dashboard client.")
       (format "Hermes dashboard request %s timed out"
               (plist-get request :method))))))
 
-(defun hermes-dashboard-transport--arm-request-timer (client id)
-  "Return a timeout timer for CLIENT's request ID, or nil when disabled."
+(defun hermes-dashboard-transport--request-timeout (method)
+  "Return the request timeout for METHOD, or nil when disabled."
   (and hermes-dashboard-transport-request-timeout
-       (run-at-time hermes-dashboard-transport-request-timeout nil
-                    #'hermes-dashboard-transport--on-request-timeout
-                    client id)))
+       (if (equal method "prompt.submit")
+           (max 1800 hermes-dashboard-transport-request-timeout)
+         hermes-dashboard-transport-request-timeout)))
+
+(defun hermes-dashboard-transport--arm-request-timer (client id method)
+  "Return a timeout timer for CLIENT's request ID and METHOD."
+  (and-let* ((timeout (hermes-dashboard-transport--request-timeout method)))
+    (run-at-time timeout nil
+                 #'hermes-dashboard-transport--on-request-timeout
+                 client id)))
 
 (defun hermes-dashboard-transport--when-ready (client on-ready on-fail)
   "Run ON-READY once CLIENT can send, or ON-FAIL with the failure reason.
@@ -814,13 +841,15 @@ id."
   (let* ((id (hermes-dashboard-transport--next-id client))
          (pending (hermes-dashboard-transport--ensure-pending client))
          (frame (hermes-dashboard-transport--jsonrpc-request id method params))
-         (timer (hermes-dashboard-transport--arm-request-timer client id)))
-    (puthash id (list :method method :resolve resolve :reject reject :timer timer)
+         (timer (hermes-dashboard-transport--arm-request-timer client id method)))
+    (puthash id (list :method method :resolve resolve :reject reject :timer timer
+                      :owner hermes-dashboard-transport-request-owner)
              pending)
     (hermes-dashboard-transport--when-ready
      client
      (lambda ()
-       (hermes-dashboard-transport--send-frame client id method frame reject))
+       (when (gethash id pending)
+         (hermes-dashboard-transport--send-frame client id method frame reject)))
      (lambda (reason)
        (when (hermes-dashboard-transport--take-pending client id)
          (hermes-dashboard-transport--reject-pending-request
