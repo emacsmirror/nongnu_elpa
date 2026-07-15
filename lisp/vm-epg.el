@@ -313,13 +313,13 @@ Switch mode on/off according to ARG.
 
 (defun vm-epg-get-emails (headers)
   "Return email addresses found in the given HEADERS."
-  (let (content recipients)
+  (let (content addresses)
     (while headers
       (setq content (vm-mail-mode-get-header-contents (car headers)))
       (when content
-        (setq recipients (append (rfc822-addresses content) recipients)))
+        (setq addresses (append (rfc822-addresses content) addresses)))
       (setq headers (cdr headers)))
-    recipients))
+    addresses))
 
 (defvar vm-epg-get-recipients-headers '("To:" "CC:" "BCC:")
   "The list of headers to get recipients from.")
@@ -360,24 +360,18 @@ Uses CONTEXT for key lookup."
                    'encrypt))
                 (vm-epg-get-recipients))))
 
-;;; TODO Ny funktion som behöver granskas extra
-(defun vm-epg-valid-signing-key (key)
-  "Check if a key has a valid signing subkey."
-  (seq-find
-   (lambda (subkey)
-     (and
-      (memq 'sign (epg-sub-key-capability subkey))
-      (not (eq (epg-sub-key-validity subkey) 'revoked))))
-   (epg-key-sub-key-list key)))
-
-(defun vm-epg-get-signer (context)
-  "Return a list with an EPG key objects to use for signing.
+(defun vm-epg-set-signer (context)
+  "Set the signer in CONTEXT to the author.
 Uses CONTEXT and `vm-epg-get-author' to identify the sender."
   (let ((author (vm-epg-get-author)))
     (when author
-      (list
-       (seq-find 'vm-epg-valid-signing-key
-		 (epg-list-keys context author t))))))
+      (let ((signer
+	     (vm-epg-find-usable-key
+	      (epg-list-keys context author t)
+	      'sign)))
+        (when signer
+	  (message (format "Signer: %S" signer))
+          (setf (epg-context-signers context) (list signer)))))))
 
 ;;; Composition helpers
 
@@ -470,7 +464,7 @@ If STATES is nil, clear it."
   :type 'integer
   :group 'vm-epg)
 
-;;; TODO definieras på annan plats i epg
+;;; TODO definieras på annan plats i pgg
 (defun vm-epg-make-presentation-copy ()
   "Make a presentation copy for cleartext PGP messages."
   (let* ((m (car vm-message-pointer))
@@ -691,9 +685,7 @@ the cleanup here after verification/decoding."
            encrypted)
       (setf (epg-context-armor context) t)
       (when sign
-        (let ((signer (vm-epg-get-signer context)))
-          (when signer
-            (setf (epg-context-signers context) signer))))
+        (vm-epg-set-signer context))
       (let ((keys (vm-epg-get-recipient-keys context)))
         (condition-case err
             (setq encrypted (epg-encrypt-string context plain keys sign))
@@ -715,9 +707,7 @@ the cleanup here after verification/decoding."
            (plain (buffer-substring-no-properties start end))
            signed)
       (setf (epg-context-armor context) t)
-      (let ((signer (vm-epg-get-signer context)))
-        (when signer
-          (setf (epg-context-signers context) signer)))
+      (vm-epg-set-signer context)
       (condition-case err
           (setq signed (epg-sign-string context plain 'clear))
         (error
@@ -1255,9 +1245,7 @@ and `vm-mime-composition-armor-from-lines' is t."
              (body-text (buffer-substring-no-properties body-start (point-max)))
              signature)
         (setf (epg-context-armor context) t)
-        (let ((signer (vm-epg-get-signer context)))
-          (when signer
-            (setf (epg-context-signers context) signer)))
+        (vm-epg-set-signer context)
         (condition-case err
             (setq signature (epg-sign-string context body-text 'detached))
           (error
