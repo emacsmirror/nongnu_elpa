@@ -332,7 +332,6 @@ Switch mode on/off according to ARG.
   "Return the email address of the message author."
   (car (vm-epg-get-emails vm-epg-get-author-headers)))
 
-;;; TODO Ny funktion som behöver granskas extra
 (defun vm-epg-find-usable-key (keys usage)
   "Find a usable key from KEYS for USAGE (\\='sign or \\='encrypt)."
   (catch 'found
