@@ -369,7 +369,6 @@ Uses CONTEXT and `vm-epg-get-author' to identify the sender."
 	      (epg-list-keys context author t)
 	      'sign)))
         (when signer
-	  (message (format "Signer: %S" signer))
           (setf (epg-context-signers context) (list signer)))))))
 
 ;;; Composition helpers
@@ -607,16 +606,20 @@ If STATES is nil, clear it."
 (defun vm-epg-cleartext-cleanup (status)
   "Remove ASCII armor and insert EPG output depending on STATUS."
   (let (start end)
-    (setq start (and (re-search-forward "^-----BEGIN PGP SIGNED MESSAGE-----$")
+    (setq start (and (re-search-forward "^-----BEGIN PGP SIGNED MESSAGE-----$"
+                                        nil t)
                      (match-beginning 0))
-          end   (and (search-forward "\n\n")
+          end   (and start (search-forward "\n\n" nil t)
                      (match-end 0)))
-    (delete-region start end)
-    (setq start (and (re-search-forward "^-----BEGIN PGP SIGNATURE-----$")
+    (when (and start end)
+      (delete-region start end))
+    (setq start (and (re-search-forward "^-----BEGIN PGP SIGNATURE-----$" nil t)
                      (match-beginning 0))
-          end (and (re-search-forward "^-----END PGP SIGNATURE-----$")
+          end (and start
+                   (re-search-forward "^-----END PGP SIGNATURE-----$" nil t)
                    (match-end 0)))
-    (delete-region start end)
+    (when (and start end)
+      (delete-region start end))
     ;; add output from PGP
     (insert "\n")
     (let ((start (point)) end)
@@ -686,6 +689,11 @@ the cleanup here after verification/decoding."
       (when sign
         (vm-epg-set-signer context))
       (let ((keys (vm-epg-get-recipient-keys context)))
+        ;; A nil recipient list makes `epg-encrypt-string' silently perform
+        ;; symmetric (passphrase) encryption, which is never what the user
+        ;; wants here.  Refuse instead.
+        (unless keys
+          (error "No usable PGP public key found for any recipient"))
         (condition-case err
             (setq encrypted (epg-encrypt-string context plain keys sign))
           (error
@@ -733,6 +741,25 @@ the cleanup here after verification/decoding."
      result
      "\n")))
 
+(defun vm-epg-fetch-missing-keys-p (context result)
+  "Fetch public keys missing for RESULT into CONTEXT if enabled.
+RESULT is a list of `epg-signature' objects.  When
+`vm-epg-fetch-missing-keys' is non-nil and one or more signatures were made
+by a key that is not in the local keyring (status `no-pubkey'), attempt to
+receive those keys from a keyserver.  Return non-nil if any keys were
+fetched, so the caller can verify the message again."
+  (when vm-epg-fetch-missing-keys
+    (let ((missing (delq nil
+                         (mapcar (lambda (sig)
+                                   (and (eq (epg-signature-status sig)
+                                            'no-pubkey)
+                                        (epg-signature-key-id sig)))
+                                 result))))
+      (when missing
+        (condition-case _err
+            (progn (epg-receive-keys context missing) t)
+          (error nil))))))
+
 ;;;###autoload
 (defun vm-epg-cleartext-verify ()
   "Verify the signature in the current message."
@@ -754,12 +781,18 @@ the cleanup here after verification/decoding."
            (context (epg-make-context 'OpenPGP))
            (message-text (buffer-substring-no-properties (point) (point-max)))
            result status)
-      (when vm-epg-fetch-missing-keys
-        (setf (epg-context-armor context) t))
+      (setf (epg-context-armor context) t)
       (condition-case _err
           (epg-verify-string context message-text)
         (error nil))
       (setq result (epg-context-result-for context 'verify))
+      ;; If a signature was made by a key we do not have, optionally fetch it
+      ;; from a keyserver and verify again.
+      (when (vm-epg-fetch-missing-keys-p context result)
+        (condition-case _err
+            (epg-verify-string context message-text)
+          (error nil))
+        (setq result (epg-context-result-for context 'verify)))
       (vm-epg-state-set 'signed)
       (setq status
             (if (and result
@@ -793,10 +826,13 @@ the cleanup here after verification/decoding."
   ;; decrypt
   ;; TODO Här skiljer sig EPG från PGG, granskas
   (let (start end cipher plain)
-    (setq start (and (re-search-forward "^-----BEGIN PGP MESSAGE-----$")
+    (setq start (and (re-search-forward "^-----BEGIN PGP MESSAGE-----$" nil t)
                      (match-beginning 0))
-          end   (and (re-search-forward "^-----END PGP MESSAGE-----$")
+          end   (and start
+                     (re-search-forward "^-----END PGP MESSAGE-----$" nil t)
                      (match-end 0)))
+    (unless (and start end)
+      (error "No complete PGP MESSAGE armor found"))
     (setq cipher (buffer-substring-no-properties start end))
 
     (vm-epg-state-set 'encrypted)
@@ -945,7 +981,11 @@ the cleanup here after verification/decoding."
                            (put-text-property start (point) 'face
                                               'vm-epg-good-signature)))
                      (vm-epg-state-set 'signed 'error)))))
-             t))))))
+             t))))
+    ;; Always report the part as handled -- even on decrypt failure or an
+    ;; unrecognised structure -- so VM does not fall through and re-render the
+    ;; raw ciphertext parts as multipart/mixed.
+    t))
 
 ;;; MIME multipart/signed handler
 
@@ -1001,7 +1041,13 @@ the cleanup here after verification/decoding."
                  (condition-case _err
                      (epg-verify-string context sig-string signed-text)
                    (error nil))
-                 (setq status (epg-context-result-for context 'verify)))
+                 (setq status (epg-context-result-for context 'verify))
+                 ;; Fetch a missing signer key from a keyserver, then re-verify.
+                 (when (vm-epg-fetch-missing-keys-p context status)
+                   (condition-case _err
+                       (epg-verify-string context sig-string signed-text)
+                     (error nil))
+                   (setq status (epg-context-result-for context 'verify))))
                ;; insert verification result
                (insert "\n")
                (setq start (point))
@@ -1186,9 +1232,11 @@ the cleanup here after verification/decoding."
 (defun vm-epg-digest-algo-name (algo-id)
   "Return the lowercase name of digest algorithm with id ALGO-ID.
 Falls back to \"sha256\" for unknown IDs."
-  (let ((entry (rassq algo-id epg-digest-algorithm-alist)))
+  ;; `epg-digest-algorithm-alist' maps ID -> NAME, so look up by `assq' and
+  ;; take the cdr.  (Using `rassq'/`car' never matches and always falls back.)
+  (let ((entry (assq algo-id epg-digest-algorithm-alist)))
     (if entry
-        (downcase (car entry))
+        (downcase (cdr entry))
       "sha256")))
 
 ;;; Sign composition
