@@ -45,9 +45,17 @@
 (eval-when-compile (require 'vm-macro))
 
 (declare-function set-extent-face "vm-xemacs" (extent face))
-(declare-function timezone-absolute-from-gregorian "ext:timezone" 
+(declare-function timezone-absolute-from-gregorian "ext:timezone"
 		  (month day year))
 (declare-function bbdb-buffer "ext:bbdb" ())
+(declare-function bbdb-record-putprop "ext:bbdb" (record property value))
+(declare-function bbdb-save-db "ext:bbdb" (&optional postprocess))
+(declare-function bbdb-record-net "ext:bbdb" (record))
+(declare-function bbdb-get-field "ext:bbdb-com" (record field &optional yet-another))
+(declare-function bbdb-search "ext:bbdb" (records &optional name company net notes phone))
+(declare-function bbdb-create-internal "ext:bbdb" (&rest args))
+;; bbdb-with-db-buffer is a macro, declare it to suppress warning
+(declare-function bbdb-with-db-buffer "ext:bbdb" t)
 (declare-function vm-imap-account-name-for-spec "vm-imap" (maildrop-spec))
 (declare-function vm-pop-find-name-for-spec "vm-pop" (maildrop-spec))
 

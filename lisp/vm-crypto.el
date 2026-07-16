@@ -148,7 +148,7 @@
     ;; wait for some output from vm-ssh-remote-command.  this
     ;; ensures that when we return the ssh connection is ready to
     ;; do port-forwarding.
-    (accept-process-output process)
+    (vm-accept-process-output process)
 
     local-port ))
 

@@ -30,6 +30,9 @@
 ;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
 (declare-function find-coding-system "vm-xemacs" (coding-system-or-name))
 (declare-function map-extents "vm-xemacs" (function &optional buffer from to))
+(declare-function focus-frame "vm-xemacs" (frame))
+(declare-function char-to-int "vm-xemacs" (char))
+(declare-function scroll-bar-mode "scroll-bar" (&optional arg))
 
 ;; Aliases for xemacs/fsfemacs functions with different arguments
 ;; (declare-function vm-interactive-p "vm-misc.el"
@@ -85,6 +88,14 @@ message."
 
 (defsubst vm-garbage-collect ()
   (pp (vm-zip-lists gc-fields (garbage-collect))))
+
+(defun vm-accept-process-output (process &optional timeout)
+  "Accept output from PROCESS, optionally with TIMEOUT seconds.
+Binds `inhibit-quit' to nil to allow user interrupts and avoid
+the \"Blocking call to accept-process-output with quit inhibited\" warning.
+Returns non-nil if output was received, nil on timeout."
+  (let ((inhibit-quit nil))
+    (accept-process-output process timeout)))
 
 ;; Make sure that interprogram-cut-function is defined
 (unless (boundp 'interprogram-cut-function)

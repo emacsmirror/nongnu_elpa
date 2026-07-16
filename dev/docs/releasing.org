@@ -17,6 +17,10 @@ Once release is made with a release version number (1.2.3)
 in vm.el, it will become available as a NonGNU ELPA
 package at https://elpa.nongnu.org/nongnu/vm.html
 
+* check for unexpected warnings
+- make -j 32  # needs generated files
+- make -j 32 lint
+
 * use package-lint to check vm.el packages
 requires package-lint
   make package-lint

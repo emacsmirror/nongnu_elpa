@@ -85,8 +85,11 @@
   "Sending personalized serial mails and getting message templates."
   :group  'vm-ext)
 
-(declare-function bbdb-extract-address-components 
+(declare-function bbdb-extract-address-components
 		  "ext:bbdb-snarf" (adstring &optional ignore-errors))
+
+;; XEmacs function
+(declare-function read-expression "vm-xemacs" (prompt &optional initial-contents))
 (declare-function bbdb-record-firstname "ext:bbdb" (record))
 (declare-function bbdb-record-lastname "ext:bbdb" (record))
 (declare-function bbdb-search-simple "ext:bbdb" (name net))

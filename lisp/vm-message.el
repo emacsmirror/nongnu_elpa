@@ -442,6 +442,10 @@ works in all VM buffers."
 (defsubst vm-set-thread-indentation-offset-of (message offset)
   (aset (aref message 1) 22 offset))
 
+;; Defined here early because it's used by vm-set-edited-flag-of below
+(defsubst vm-set-stuff-flag-of (message val)
+  (aset (aref message 4) 2 val))
+
 ;; The other routines in attributes group are part of the undo system.
 (defun vm-set-edited-flag-of (message flag)
   (aset (aref message 2) 7 flag)
@@ -557,8 +561,6 @@ works in all VM buffers."
   (set (aref (aref message 4) 1) list))
 (defsubst vm-set-virtual-messages-sym-of (message sym)
   (aset (aref message 4) 1 sym))
-(defsubst vm-set-stuff-flag-of (message val)
-  (aset (aref message 4) 2 val))
 (defsubst vm-set-decoded-labels-of (message labels)
   (aset (aref message 4) 3 labels))
 (defalias 'vm-set-labels-of 'vm-set-decoded-labels-of)

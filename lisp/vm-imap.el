@@ -45,6 +45,7 @@
 ;; 				     (retry nil)))
 
 (defvar selectable-only) ;; FIXME: Add `vm-' prefix!
+(defvar auth-sources)  ;; from auth-source.el, used for dynamic binding
 
 ;;; To-Do  (USR)
 ;; - Need to ensure that new imap sessions get created as and when needed.
@@ -457,25 +458,13 @@ for accessing MAILBOX."
 (defsubst vm-imap-auth-method (auth)
   (memq auth vm-imap-auth-methods))
 
-(defsubst vm-accept-process-output (process)
-  "Accept output from PROCESS.  
-
+(defun vm-imap-accept-process-output (process)
+  "Accept output from PROCESS for IMAP operations.
 The variable `vm-imap-server-timeout' specifies how many seconds
-to wait before timing out.  If a timeout occurs, an exception is
-thrown.  In such a situation, typically VM cannot proceed."
-  ;; protect against possible buffer change due to bug in Emacs
-  (let ((buf (current-buffer))
-	(got-output (accept-process-output process vm-imap-server-timeout)))
-    (if got-output
-	(when (not (equal (current-buffer) buf))
-	  (when (string-lessp "24" emacs-version)
-	    ;; the Emacs bug should have been fixed in version 24
-	    (vm-warn 0 2 
-	     "Emacs process output error: Buffer changed to %s" 
-	     (current-buffer)))
-	  ;; recover from the bug
-	  (set-buffer buf))
-      (vm-imap-protocol-error "Timed out for response from the IMAP server"))))
+to wait before timing out.  If a timeout occurs, a protocol error
+is signaled."
+  (unless (vm-accept-process-output process vm-imap-server-timeout)
+    (vm-imap-protocol-error "Timed out for response from the IMAP server")))
 
 
 ;; (defvar vm-imap-connection-mode 'online)  ; moved to vm-vars.el
@@ -1175,7 +1164,7 @@ Returns the process or nil if the session could not be created."
 	  protocol (car source-list)
 	  host (nth 1 source-list)
 	  port (nth 2 source-list)
-	  ;; mailbox (nth 3 source-list)
+	  mailbox (nth 3 source-list)
 	  auth (nth 4 source-list)
 	  user (nth 5 source-list)
 	  pass (nth 6 source-list)
@@ -1548,11 +1537,6 @@ as well."
   (if (not (= (point) (point-max)))
       (vm-imap-log-tokens (list 'send1 (point) (point-max))))
   (goto-char (point-max))
-  ;; try if it makes a difference to get pending output here, use timeout
-  ;; (accept-process-output process 0 0.01)
-  ;; (if (not (= (point) (point-max)))
-  ;;     (vm-imap-log-tokens (list 'send2 (point) (point-max))))
-  ;; (goto-char (point-max))
 
   (unless no-tag (insert-before-markers (or tag "VM") " "))
   (let ((case-fold-search t))
@@ -2311,7 +2295,7 @@ May throw exceptions."
 		 (setq opoint (point))
 		 (vm-imap-check-connection process)
 		 ;; point might change here?
-		 (vm-accept-process-output process) 
+		 (vm-imap-accept-process-output process)
 		 (goto-char opoint))
 		((looking-at "\r\n")
 		 (forward-char 2)
@@ -2380,7 +2364,7 @@ May throw exceptions."
 		     (while (< (- (point-max) start) n-octets)
 		       (vm-imap-check-connection process)
 		       ;; point might change here?  USR, 2011-03-16
-		       (vm-accept-process-output process))
+		       (vm-imap-accept-process-output process))
 		     (goto-char (+ start n-octets))
 		     (setq token (list 'string start (point))
 			   done t)))
@@ -2400,7 +2384,7 @@ May throw exceptions."
 			   (forward-char 1))
 		       (vm-imap-check-connection process)
 		       ;; point might change here?
-		       (vm-accept-process-output process)
+		       (vm-imap-accept-process-output process)
 		       (goto-char curpoint))
 		     (setq token (list 'string start curpoint)))))
 		;; should be (looking-at "[\000-\040\177-\377]")
@@ -2429,7 +2413,7 @@ May throw exceptions."
 			 (setq done t)
 		       (vm-imap-check-connection process)
 		       ;; point might change here?
-		       (vm-accept-process-output process)
+		       (vm-imap-accept-process-output process)
 		       (goto-char curpoint))
 		     (vm-imap-log-token (buffer-substring start curpoint))
 		     (setq token (list 'atom start curpoint)))))))
@@ -4667,7 +4651,7 @@ May throw exceptions."
 	(mailboxes nil)
 	(fcc-string (vm-mail-get-header-contents "FCC:" ","))
 	fcc-list fcc maildrop spec-list 
-	process flags string m ;; response
+	process (flags nil) string m ;; response
 	(vm-imap-ok-to-ask t))
     (if (null mailbox)
 	(setq mailboxes nil)

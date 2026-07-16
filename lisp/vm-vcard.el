@@ -34,6 +34,13 @@
   (require 'vm-misc)
   (vm-load-features-silent-when-compiling '(vcard)))
 
+(defvar vcard-pretty-print-function)  ;; from vcard.el, used for dynamic binding
+
+;; vcard.el functions
+(declare-function vcard-pretty-print "ext:vcard" (vcard))
+(declare-function vcard-parse-string "ext:vcard" (string &optional filter))
+(declare-function vcard-format-sample-string "ext:vcard" (vcard))
+
 (and (boundp 'vcard-api-version) (string-lessp vcard-api-version "2.0")
      (error "vm-vcard.el requires vcard API version 2.0 or later."))
 

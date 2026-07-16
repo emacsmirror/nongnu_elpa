@@ -66,6 +66,16 @@
 (declare-function vm-imagemagick-call-convert "vm-misc" (infile buffer args))
 (declare-function vm-imagemagick-convert-shell-command "vm-misc" ())
 
+;; vm-digest.el functions - cyclic dependency
+(declare-function vm-mime-encapsulate-messages "vm-digest" t)
+(declare-function vm-mime-burst-layout "vm-digest" (layout ident-header))
+
+;; vm-edit.el function
+(declare-function vm-discard-cached-data "vm-edit" (&optional count))
+
+;; Image cache function
+(declare-function clear-image-cache "image.c" (&optional filter))
+
 (defvar enable-multibyte-characters)
 
 ;; The following variables are defined in the code, depending on the
