@@ -78,7 +78,7 @@ the always-ask default."
 When nil and `hermes-dashboard-transport-url' names a loopback dashboard, the
 endpoint binds \"127.0.0.1\".  When nil and the dashboard is remote,
 `hermes-exec-start' errors and asks the user to set this to their Tailscale IP.
-The endpoint never binds \"0.0.0.0\" or all interfaces."
+Only IPv4/IPv6 loopback and addresses reported by local Tailscale are accepted."
   :type '(choice (const :tag "Auto-resolve from dashboard" nil)
                  (string :tag "Bind address")))
 
@@ -115,9 +115,9 @@ bound."
   "Shared bearer token the eval endpoint requires, or nil for loopback-only.
 When nil the endpoint trusts its bind host: `hermes-exec-start' refuses to bind
 anything but a loopback interface and every request is served.  When set to a
-string, the endpoint may bind a private non-loopback host (a Tailscale IP) and
-each request must present a matching `Authorization: Bearer' header.  Falls back
-to the EMACS_EXEC_TOKEN environment variable when nil, so the Python bridge and
+string, the endpoint may bind an address reported by local Tailscale and each
+request must present a matching `Authorization: Bearer' header.  Falls back to
+the EMACS_EXEC_TOKEN environment variable when nil, so the Python bridge and
 this endpoint can share one secret without duplicating it in config."
   :type '(choice (const :tag "Loopback-only, no token" nil)
                  (string :tag "Required bearer token")))
@@ -158,6 +158,33 @@ nil so the caller can refuse to bind a public interface."
    ((ignore-errors (hermes-exec--dashboard-loopback-p)) "127.0.0.1")
    (t nil)))
 
+(defun hermes-exec--ipv4-octets (host)
+  "Return HOST's four IPv4 octets, or nil when HOST is not an IPv4 address."
+  (let ((parts (split-string host "\\.")))
+    (when (and (= (length parts) 4)
+               (cl-every (lambda (part)
+                           (and (string-match-p "\\`[0-9]+\\'" part)
+                                (<= (string-to-number part) 255)))
+                         parts))
+      (mapcar #'string-to-number parts))))
+
+(defun hermes-exec--tailscale-ipv4-addresses ()
+  "Return IPv4 addresses assigned to this host by Tailscale."
+  (condition-case nil
+      (cl-remove-if-not #'hermes-exec--ipv4-octets
+                        (process-lines "tailscale" "ip" "-4"))
+    (error nil)))
+
+(defun hermes-exec--loopback-host-p (host)
+  "Return non-nil when HOST names an IPv4 or IPv6 loopback address."
+  (or (hermes-dashboard-transport--loopback-host-p host)
+      (eq (car (hermes-exec--ipv4-octets host)) 127)))
+
+(defun hermes-exec--allowed-bind-host-p (host)
+  "Return non-nil when HOST is safe for the eval endpoint to bind."
+  (or (hermes-exec--loopback-host-p host)
+      (member host (hermes-exec--tailscale-ipv4-addresses))))
+
 ;;; HTTP request parsing (pure)
 
 (defun hermes-exec--parse-request-line (line)
@@ -194,8 +221,8 @@ needed: the header terminator or the full Content-Length body is still missing."
 
 ;;; Authentication
 ;;
-;; Network reachability is the primary control: the endpoint binds loopback or a
-;; private Tailscale interface and never a public one.  A shared bearer token is
+;; Network reachability is the primary control: the endpoint binds loopback or
+;; an address Tailscale reports as assigned locally.  A shared bearer token is
 ;; the enforced second layer for the non-loopback case, checked here against the
 ;; parsed request before evaluation.  Over plain HTTP the token authenticates but
 ;; does not encrypt, so it adds nothing on loopback and is redundant with
@@ -845,7 +872,9 @@ public interface, and store the listening process for `hermes-exec-stop'."
     (unless host
       (user-error
        "Set `hermes-exec-host' to your Tailscale IP; refusing to bind a public interface for a remote dashboard"))
-    (when (and (not (hermes-dashboard-transport--loopback-host-p host))
+    (unless (hermes-exec--allowed-bind-host-p host)
+      (user-error "Refusing to bind eval endpoint to unsafe host %s" host))
+    (when (and (not (hermes-exec--loopback-host-p host))
                (not (hermes-exec--expected-token)))
       (user-error
        "Refusing to bind non-loopback host %s without a token; set `hermes-exec-token' or EMACS_EXEC_TOKEN"
@@ -899,7 +928,7 @@ back to `hermes-exec--resolve-host' once the process is gone."
 (defun hermes-exec--detect-host ()
   "Return the bridge host: resolved host, a Tailscale IP, or a placeholder."
   (or (hermes-exec--resolve-host)
-      (ignore-errors (car (process-lines "tailscale" "ip" "-4")))
+      (car (hermes-exec--tailscale-ipv4-addresses))
       "<your-host>"))
 
 (defun hermes-exec-show-bridge-command ()

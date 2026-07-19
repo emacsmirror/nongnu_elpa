@@ -53,8 +53,10 @@ listed like any other, and the gateway decides on save."
 
 (ert-deftest hermes-onboarding-connect-provider-saves-the-chosen-key ()
   "The command fetches options, picks a provider, reads its key, and saves it."
-  (let (saved-slug saved-key
-        (hermes-dashboard-transport--model-options-cache nil))
+  (let* (saved-slug saved-key connected
+         (hermes-onboarding-connected-function
+          (lambda () (setq connected t)))
+         (hermes-dashboard-transport--model-options-cache nil))
     (cl-letf (((symbol-function 'hermes-browser--with-client)
                (lambda (fn) (funcall fn 'fake-client #'ignore)))
               ((symbol-function 'hermes-dashboard-transport-model-options)
@@ -72,7 +74,8 @@ listed like any other, and the gateway decides on save."
               ((symbol-function 'message) #'ignore))
       (hermes-onboarding-connect-provider)
       (should (equal saved-slug "deepseek"))
-      (should (equal saved-key "sk-secret")))))
+      (should (equal saved-key "sk-secret"))
+      (should connected))))
 
 (defun hermes-onboarding-test--api-key-provider-result ()
   "Return a `model.options' result carrying one connectable provider."

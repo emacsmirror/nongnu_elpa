@@ -581,6 +581,20 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
         (hermes-dashboard-transport-url "http://127.0.0.1:9119"))
     (should (equal "100.64.0.1" (hermes-exec--resolve-host)))))
 
+(ert-deftest hermes-exec-test-allows-entire-ipv4-loopback-range ()
+  "Every address in 127.0.0.0/8 is safe without Tailscale discovery."
+  (should (hermes-exec--allowed-bind-host-p "127.99.8.7")))
+
+(ert-deftest hermes-exec-test-allows-only-assigned-tailscale-addresses ()
+  "Non-loopback binds must match a locally assigned Tailscale address."
+  (cl-letf (((symbol-function 'hermes-exec--tailscale-ipv4-addresses)
+             (lambda () '("100.71.2.3" "198.18.4.5"))))
+    (should (hermes-exec--allowed-bind-host-p "100.71.2.3"))
+    (should (hermes-exec--allowed-bind-host-p "198.18.4.5"))
+    (should-not (hermes-exec--allowed-bind-host-p "100.71.2.4"))
+    (should-not (hermes-exec--allowed-bind-host-p "10.0.0.8"))
+    (should-not (hermes-exec--allowed-bind-host-p "192.168.1.10"))))
+
 ;;; Group 6: authentication
 
 (defun hermes-exec-tests--request (&optional authorization)
@@ -656,6 +670,44 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
          (hermes-exec-host "100.64.0.1")
          (hermes-exec--process nil))
      (should-error (hermes-exec-start) :type 'user-error))))
+
+(ert-deftest hermes-exec-test-start-allows-ipv4-loopback-without-token ()
+  "Starting anywhere in 127.0.0.0/8 does not require a bearer token."
+  (hermes-exec-tests--without-env-token
+   (let ((hermes-exec-enabled t)
+         (hermes-exec-token nil)
+         (hermes-exec-host "127.99.8.7")
+         (hermes-exec--process nil)
+         started)
+     (cl-letf (((symbol-function 'hermes-exec--start-server)
+                (lambda (host) (setq started host) 'server))
+               ((symbol-function 'message) #'ignore))
+       (hermes-exec-start)
+       (should (equal started "127.99.8.7"))))))
+
+(ert-deftest hermes-exec-test-start-refuses-wildcard-with-token ()
+  "A bearer token must not permit binding the eval endpoint to all interfaces."
+  (let ((hermes-exec-enabled t)
+        (hermes-exec-token "secret")
+        (hermes-exec-host "0.0.0.0")
+        (hermes-exec--process nil)
+        started)
+    (cl-letf (((symbol-function 'hermes-exec--start-server)
+               (lambda (host) (setq started host))))
+      (should-error (hermes-exec-start) :type 'user-error)
+      (should-not started))))
+
+(ert-deftest hermes-exec-test-start-refuses-public-address-with-token ()
+  "A bearer token must not permit binding the eval endpoint to a public address."
+  (let ((hermes-exec-enabled t)
+        (hermes-exec-token "secret")
+        (hermes-exec-host "203.0.113.10")
+        (hermes-exec--process nil)
+        started)
+    (cl-letf (((symbol-function 'hermes-exec--start-server)
+               (lambda (host) (setq started host))))
+      (should-error (hermes-exec-start) :type 'user-error)
+      (should-not started))))
 
 ;;; Group 7: server lifecycle helpers
 

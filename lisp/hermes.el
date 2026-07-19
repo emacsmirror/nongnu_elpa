@@ -111,6 +111,9 @@ arrives."
   "Non-nil when the gateway reports no usable provider credentials.
 Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
 
+(defvar-local hermes-dashboard--auth-request-token nil
+  "Identity of the newest credential check for this dashboard buffer.")
+
 (defvar hermes-dashboard--refresh-timer nil
   "Timer used to debounce dashboard refreshes.")
 
@@ -394,17 +397,25 @@ connection just to check, so opening the dashboard stays passive.  Branches on
 the result `ok' flag because `setup.runtime_check' reports a credential failure
 as `ok' nil, not a JSON-RPC error."
   (when (hermes-browser--existing-client)
-    (let ((buffer (current-buffer)))
+    (let ((buffer (current-buffer))
+          (token (setq hermes-dashboard--auth-request-token (list 'auth))))
       (hermes-browser--run-on-client
        (lambda (client)
          (hermes-dashboard-transport-call-fn
           #'hermes-dashboard-transport-setup-runtime-check client))
        (lambda (result)
-         (when (and (buffer-live-p buffer)
-                    (not (eq (hermes-transport--get result 'ok) t)))
+         (when (and (hermes-browser--buffer-mode-p
+                     buffer 'hermes-dashboard-mode)
+                    (eq token
+                        (buffer-local-value
+                         'hermes-dashboard--auth-request-token buffer)))
            (with-current-buffer buffer
-             (setq hermes-dashboard--needs-onboarding t)
-             (hermes-dashboard-refresh))))))))
+             (let ((needs-onboarding
+                    (not (eq (hermes-transport--get result 'ok) t))))
+               (unless (eq needs-onboarding
+                           hermes-dashboard--needs-onboarding)
+                 (setq hermes-dashboard--needs-onboarding needs-onboarding)
+                 (hermes-dashboard-refresh))))))))))
 
 (defun hermes-dashboard--warm-profile-cache ()
   "Warm the profile cache that feeds the chat picker, unless already fresh.
@@ -436,7 +447,7 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
   (list :id "empty:chats"
         :kind 'empty
         :title "No live Hermes chat buffers"
-        :subtitle "Press c to open Chat or N for a new session."))
+        :subtitle "Press c to open Chat."))
 
 (defun hermes-dashboard--collect-nodes ()
   "Return dashboard nodes for actions and live chat buffers."
@@ -629,6 +640,16 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
         (when (derived-mode-p 'hermes-dashboard-mode)
           (hermes-dashboard-refresh))))))
 
+(defun hermes-dashboard--provider-connected ()
+  "Clear a stale onboarding card after provider credentials are saved."
+  (when-let* ((buffer (get-buffer hermes-dashboard-buffer-name)))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+        (when (derived-mode-p 'hermes-dashboard-mode)
+          (setq hermes-dashboard--auth-request-token nil
+                hermes-dashboard--needs-onboarding nil)
+          (hermes-dashboard-refresh))))))
+
 (defun hermes-dashboard--schedule-refresh ()
   "Schedule a debounced refresh of the Hermes dashboard."
   (when (timerp hermes-dashboard--refresh-timer)
@@ -700,6 +721,8 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
     (ewoc-goto-node hermes-dashboard--ewoc node)))
 
 (add-hook 'hermes-chat-state-change-hook #'hermes-dashboard--schedule-refresh)
+(setq hermes-onboarding-connected-function
+      #'hermes-dashboard--provider-connected)
 
 ;;;###autoload
 (defun hermes ()

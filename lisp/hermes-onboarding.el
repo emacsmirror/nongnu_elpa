@@ -39,6 +39,9 @@
 (require 'hermes-dashboard-rpc)
 (require 'hermes-browser)
 
+(defvar hermes-onboarding-connected-function #'ignore
+  "Function called after provider credentials are saved successfully.")
+
 ;;; Pure provider model
 
 (defun hermes-onboarding--unauthed-p (provider)
@@ -111,6 +114,7 @@ with the dashboard's own message."
            (hermes-onboarding--read-key provider))))))
    (lambda (result)
      (hermes-dashboard-transport-invalidate-model-options)
+     (funcall hermes-onboarding-connected-function)
      (message "Connected Hermes provider %s"
               (hermes-onboarding--provider-name
                (hermes-transport--get result 'provider))))))

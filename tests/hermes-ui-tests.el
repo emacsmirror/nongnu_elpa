@@ -25,7 +25,8 @@
             (let ((text (buffer-string)))
               (should (string-match-p "Hermes" text))
               (should (string-match-p "Chat" text))
-              (should (string-match-p "New session" text))))
+              (should (string-match-p "Press c to open Chat" text))
+              (should-not (string-match-p "N for a new session" text))))
         (when-let* ((buffer (get-buffer hermes-dashboard-buffer-name)))
           (kill-buffer buffer))))))
 
@@ -225,7 +226,7 @@
                        :key (lambda (n) (plist-get n :id)) :test #'equal)))))
 
 (ert-deftest hermes-dashboard-check-auth-skips-card-when-authed ()
-  "An `ok' t runtime check leaves the onboarding card off."
+  "An `ok' t runtime check clears a stale onboarding card."
   (cl-letf (((symbol-function 'hermes-browser--existing-client)
              (lambda () 'fake-client))
             ((symbol-function 'hermes-browser--with-client)
@@ -236,8 +237,55 @@
                         '((ok . t) (provider . "openai"))))))
     (with-temp-buffer
       (hermes-dashboard-mode)
+      (setq hermes-dashboard--needs-onboarding t)
       (hermes-dashboard--check-auth)
       (should-not hermes-dashboard--needs-onboarding))))
+
+(ert-deftest hermes-dashboard-check-auth-keeps-newest-result ()
+  "An older credential check cannot replace a newer result."
+  (let ((first (hermes--promise-make))
+        (second (hermes--promise-make))
+        (requests 0))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'fake-client)
+                                       on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _)
+                 (setq requests (1+ requests))
+                 (if (= requests 1) first second)))
+              ((symbol-function 'hermes-dashboard-refresh) #'ignore))
+      (with-temp-buffer
+        (hermes-dashboard-mode)
+        (hermes-dashboard--check-auth)
+        (hermes-dashboard--check-auth)
+        (hermes--promise-resolve second '((ok . t)))
+        (hermes--promise-resolve first '((ok . :false)))
+        (should-not hermes-dashboard--needs-onboarding)))))
+
+(ert-deftest hermes-dashboard-provider-connect-invalidates-auth-check ()
+  "Saving credentials invalidates a credential check already in flight."
+  (let ((promise (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'fake-client)
+                                       on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-dashboard-refresh) #'ignore))
+      (let ((buffer (get-buffer-create hermes-dashboard-buffer-name)))
+        (unwind-protect
+            (with-current-buffer buffer
+              (hermes-dashboard-mode)
+              (hermes-dashboard--check-auth)
+              (hermes-dashboard--provider-connected)
+              (hermes--promise-resolve promise '((ok . :false)))
+              (should-not hermes-dashboard--needs-onboarding))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
 (provide 'hermes-ui-tests)
 ;;; hermes-ui-tests.el ends here
