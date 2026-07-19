@@ -876,58 +876,82 @@ spawned dashboard base URL and `X-Hermes-Session-Token'."
 ;;; Profile and model caches
 
 (defvar hermes-dashboard-transport--profile-cache nil
-  "Cached `/api/profiles' payload as `(:base-url URL :payload PAYLOAD)'.
-Keyed by base URL so switching dashboards re-fetches instead of serving a
-previous dashboard's profiles.")
+  "Cached `/api/profiles' payloads as an alist of (BASE-URL . PAYLOAD).")
 
-(defun hermes-dashboard-transport--profile-cache-stale-p ()
-  "Return non-nil when the cached profile list is for a different dashboard URL."
+(defun hermes-dashboard-transport--cache-base-url (&optional client)
+  "Return the normalized endpoint identity for CLIENT or the configured URL."
+  (ignore-errors
+    (hermes-dashboard-transport--normalize-base-url
+     (hermes-dashboard-transport--api-client-base-url client))))
+
+(defun hermes-dashboard-transport--endpoint-cache-get (cache base-url)
+  "Return the payload in endpoint CACHE for BASE-URL.
+Also accepts the single-entry cache shape used before endpoint isolation."
+  (if (keywordp (car-safe cache))
+      (and (equal (plist-get cache :base-url) base-url)
+           (plist-get cache :payload))
+    (cdr (assoc base-url cache))))
+
+(defun hermes-dashboard-transport--endpoint-cache-put
+    (cache base-url payload)
+  "Return CACHE with PAYLOAD stored for BASE-URL."
+  (let ((entries (unless (keywordp (car-safe cache)) cache)))
+    (cons (cons base-url payload)
+          (cl-remove base-url entries :key #'car :test #'equal))))
+
+(defun hermes-dashboard-transport--profile-cache-stale-p (&optional client)
+  "Return non-nil when no cached profile list exists for CLIENT's endpoint."
   (and hermes-dashboard-transport--profile-cache
-       (not (equal (plist-get hermes-dashboard-transport--profile-cache :base-url)
-                   (ignore-errors (hermes-dashboard-transport--api-base-url))))))
+       (not (hermes-dashboard-transport--endpoint-cache-get
+             hermes-dashboard-transport--profile-cache
+             (hermes-dashboard-transport--cache-base-url client)))))
 
-(defun hermes-dashboard-transport--store-profile-cache (payload)
-  "Cache PAYLOAD as the current dashboard's profile list and return it."
+(defun hermes-dashboard-transport--store-profile-cache (payload &optional base-url)
+  "Cache PAYLOAD for BASE-URL and return it.
+BASE-URL defaults to the currently configured dashboard endpoint."
   (setq hermes-dashboard-transport--profile-cache
-        (list :base-url (ignore-errors (hermes-dashboard-transport--api-base-url))
-              :payload payload))
+        (hermes-dashboard-transport--endpoint-cache-put
+         hermes-dashboard-transport--profile-cache
+         (or base-url (hermes-dashboard-transport--cache-base-url)) payload))
   payload)
 
-(defun hermes-dashboard-transport-cached-profile-list ()
-  "Return the cached `/api/profiles' payload for the current dashboard, or nil.
-The cache is warmed by `hermes-dashboard-transport-profile-list-async' and is
-discarded once `hermes-dashboard-transport-url' changes."
-  (unless (hermes-dashboard-transport--profile-cache-stale-p)
-    (plist-get hermes-dashboard-transport--profile-cache :payload)))
+(defun hermes-dashboard-transport-cached-profile-list (&optional client)
+  "Return cached `/api/profiles' for CLIENT's endpoint, or nil.
+The cache is warmed by `hermes-dashboard-transport-profile-list-async'."
+  (hermes-dashboard-transport--endpoint-cache-get
+   hermes-dashboard-transport--profile-cache
+   (hermes-dashboard-transport--cache-base-url client)))
 
 (defvar hermes-dashboard-transport--model-options-cache nil
-  "Cached `model.options' payload as `(:base-url URL :payload PAYLOAD)'.
+  "Cached `model.options' payloads as an alist of (BASE-URL . PAYLOAD).
 The provider/model catalog is dashboard-global -- disk config plus the curated
-model list -- so it is keyed only by base URL and shared across every chat
-buffer and model picker.  A base-URL change or a saved API key invalidates it;
+model list -- so it is shared across sessions for the same endpoint.  A saved
+API key invalidates it;
 see `hermes-dashboard-transport-invalidate-model-options'.")
 
-(defun hermes-dashboard-transport--model-options-cache-stale-p ()
-  "Return non-nil when cached model options are for a different dashboard URL."
+(defun hermes-dashboard-transport--model-options-cache-stale-p (&optional client)
+  "Return non-nil when no model options exist for CLIENT's endpoint."
   (and hermes-dashboard-transport--model-options-cache
-       (not (equal (plist-get hermes-dashboard-transport--model-options-cache
-                              :base-url)
-                   (ignore-errors (hermes-dashboard-transport--api-base-url))))))
+       (not (hermes-dashboard-transport--endpoint-cache-get
+             hermes-dashboard-transport--model-options-cache
+             (hermes-dashboard-transport--cache-base-url client)))))
 
-(defun hermes-dashboard-transport--store-model-options (payload)
-  "Cache PAYLOAD as the current dashboard's model options and return it."
+(defun hermes-dashboard-transport--store-model-options (payload &optional base-url)
+  "Cache PAYLOAD for BASE-URL and return it.
+BASE-URL defaults to the currently configured dashboard endpoint."
   (setq hermes-dashboard-transport--model-options-cache
-        (list :base-url (ignore-errors (hermes-dashboard-transport--api-base-url))
-              :payload payload))
+        (hermes-dashboard-transport--endpoint-cache-put
+         hermes-dashboard-transport--model-options-cache
+         (or base-url (hermes-dashboard-transport--cache-base-url)) payload))
   payload)
 
-(defun hermes-dashboard-transport-cached-model-options ()
-  "Return the cached `model.options' payload for the current dashboard, or nil.
+(defun hermes-dashboard-transport-cached-model-options (&optional client)
+  "Return cached `model.options' for CLIENT's endpoint, or nil.
 The cache is warmed by `hermes-dashboard-transport-model-options-cached' and is
-discarded once the dashboard URL changes or
-`hermes-dashboard-transport-invalidate-model-options' is called."
-  (unless (hermes-dashboard-transport--model-options-cache-stale-p)
-    (plist-get hermes-dashboard-transport--model-options-cache :payload)))
+discarded when `hermes-dashboard-transport-invalidate-model-options' is called."
+  (hermes-dashboard-transport--endpoint-cache-get
+   hermes-dashboard-transport--model-options-cache
+   (hermes-dashboard-transport--cache-base-url client)))
 
 (defun hermes-dashboard-transport-invalidate-model-options ()
   "Discard any cached `model.options' payload.
@@ -938,22 +962,26 @@ key -- call this so the next picker refetches the full list."
 (defun hermes-dashboard-transport-profile-list (&optional client)
   "Return dashboard profile metadata from REST `/api/profiles'.
 When CLIENT is non-nil, authenticate with its live dashboard session token.
-The payload is cached for the current dashboard URL so subsequent profile
-prompts can read it without blocking (see
+The payload is cached for CLIENT's endpoint so subsequent profile prompts can
+read it without blocking (see
 `hermes-dashboard-transport-cached-profile-list')."
-  (hermes-dashboard-transport--store-profile-cache
-   (hermes-dashboard-transport-api-request
-    "GET" "/api/profiles" :client client)))
+  (let ((base-url (hermes-dashboard-transport--cache-base-url client)))
+    (hermes-dashboard-transport--store-profile-cache
+     (hermes-dashboard-transport-api-request
+      "GET" "/api/profiles" :client client)
+     base-url)))
 
 (defun hermes-dashboard-transport-profile-list-async (&optional client)
   "Return a promise of `/api/profiles', warming the profile cache on success.
 When CLIENT is non-nil, authenticate with its live dashboard session token.
 Resolves without blocking Emacs, so callers can warm the cache eagerly (for
 example when the dashboard opens)."
-  (hermes--promise-map
-   (hermes-dashboard-transport-api-request-async
-    "GET" "/api/profiles" :client client)
-   #'hermes-dashboard-transport--store-profile-cache))
+  (let ((base-url (hermes-dashboard-transport--cache-base-url client)))
+    (hermes--promise-map
+     (hermes-dashboard-transport-api-request-async
+      "GET" "/api/profiles" :client client)
+     (lambda (payload)
+       (hermes-dashboard-transport--store-profile-cache payload base-url)))))
 
 (defun hermes-dashboard-transport-active-profile (&optional client)
   "Return dashboard active-profile metadata from REST `/api/profiles/active'.

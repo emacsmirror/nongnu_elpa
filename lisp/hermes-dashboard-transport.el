@@ -140,14 +140,26 @@ Each further attempt doubles the delay up to
 
 (defun hermes-dashboard-transport-subscribe (client fn)
   "Register FN as an event subscriber on CLIENT and return an opaque token.
-A new subscriber owns no session, so it receives broadcast events -- untagged
-connection-level events and tagged events with no owner -- until
+A new subscriber owns no session, so it receives untagged connection-level
+broadcast events until
 `hermes-dashboard-transport-subscribe-session' binds the token to a live session
 id."
   (let ((token (gensym "hermes-dashboard-sub-")))
     (puthash token (list :fn fn :session-id nil)
              (hermes-dashboard-transport-client-subscribers client))
     token))
+
+(defun hermes-dashboard-transport--session-owner-token
+    (client session-id &optional excluded)
+  "Return a live token owning SESSION-ID on CLIENT, except EXCLUDED."
+  (cl-loop for token being the hash-keys of
+           (hermes-dashboard-transport-client-subscribers client)
+           for record = (gethash token
+                                 (hermes-dashboard-transport-client-subscribers
+                                  client))
+           when (and (not (eq token excluded))
+                     (equal (plist-get record :session-id) session-id))
+           return token))
 
 (defun hermes-dashboard-transport-subscribe-session (client token session-id)
   "Bind subscriber TOKEN on CLIENT to live SESSION-ID.
@@ -159,7 +171,10 @@ stop receiving them.  Re-binding moves TOKEN to the new SESSION-ID."
     (let ((index (hermes-dashboard-transport-client-session-index client)))
       (when-let* ((previous (plist-get record :session-id)))
         (when (eq (gethash previous index) token)
-          (remhash previous index)))
+          (if-let* ((owner (hermes-dashboard-transport--session-owner-token
+                            client previous token)))
+              (puthash previous owner index)
+            (remhash previous index))))
       (plist-put record :session-id session-id)
       (when session-id
         (puthash session-id token index)))))
@@ -171,7 +186,10 @@ stop receiving them.  Re-binding moves TOKEN to the new SESSION-ID."
     (when-let* ((record (gethash token subscribers)))
       (when-let* ((session-id (plist-get record :session-id)))
         (when (eq (gethash session-id index) token)
-          (remhash session-id index)))
+          (if-let* ((owner (hermes-dashboard-transport--session-owner-token
+                            client session-id token)))
+              (puthash session-id owner index)
+            (remhash session-id index))))
       (remhash token subscribers))))
 
 (defun hermes-dashboard-transport-set-subscriber-fn (client token fn)
@@ -187,14 +205,19 @@ Return TOKEN on success, or nil when TOKEN is not registered on CLIENT."
   "Return EVENT's session id, or nil."
   (and (listp event) (plist-get event :session-id)))
 
+(defun hermes-dashboard-transport--session-subscriber-fns (client session-id)
+  "Return live subscriber functions bound to SESSION-ID on CLIENT."
+  (when-let* ((token (gethash
+                      session-id
+                      (hermes-dashboard-transport-client-session-index client)))
+              (record (gethash
+                       token
+                       (hermes-dashboard-transport-client-subscribers client))))
+    (list (plist-get record :fn))))
+
 (defun hermes-dashboard-transport--session-subscriber-fn (client session-id)
-  "Return the subscriber function bound to SESSION-ID on CLIENT, or nil."
-  (when-let* ((token (gethash session-id
-                              (hermes-dashboard-transport-client-session-index
-                               client))))
-    (plist-get (gethash token
-                         (hermes-dashboard-transport-client-subscribers client))
-               :fn)))
+  "Return one subscriber function bound to SESSION-ID on CLIENT, or nil."
+  (car (hermes-dashboard-transport--session-subscriber-fns client session-id)))
 
 (defun hermes-dashboard-transport--deliver (fn event)
   "Call subscriber FN with EVENT, demoting any error so delivery continues.
@@ -209,22 +232,37 @@ perturb shared transport state from inside a status broadcast."
              (hermes-dashboard-transport--deliver (plist-get record :fn) event))
            (hermes-dashboard-transport-client-subscribers client)))
 
+(defun hermes-dashboard-transport--sole-subscriber-fn (client)
+  "Return CLIENT's only unbound subscriber function, or nil."
+  (let ((subscribers (hermes-dashboard-transport-client-subscribers client)))
+    (when (= (hash-table-count subscribers) 1)
+      (let ((record (car (hash-table-values subscribers))))
+        (unless (plist-get record :session-id)
+          (plist-get record :fn))))))
+
 (defun hermes-dashboard-transport--dispatch-event (client event)
-  "Route EVENT to CLIENT's subscribers by session id, else broadcast.
-A tagged event whose session id owns a subscriber goes to that subscriber alone;
-untagged or unowned events broadcast to every subscriber.  With no subscribers
-registered, fall back to CLIENT's legacy callback so single-callback callers
-keep working unchanged."
+  "Route EVENT to CLIENT's subscribers by session id.
+Tagged events go only to their live session owners and are dropped when no
+owner remains.  A sole unbound subscriber is the legacy bootstrap case and may
+receive the tagged event; with multiple subscribers an unowned tag is dropped.
+Untagged events broadcast.  With no subscribers registered, fall back to
+CLIENT's legacy callback for single-callback callers."
   (let ((subscribers (hermes-dashboard-transport-client-subscribers client)))
     (if (and (hash-table-p subscribers)
              (> (hash-table-count subscribers) 0))
-        (let* ((session-id (hermes-dashboard-transport--event-session-id event))
-               (fn (and session-id
-                        (hermes-dashboard-transport--session-subscriber-fn
-                         client session-id))))
-          (if fn
-              (hermes-dashboard-transport--deliver fn event)
-            (hermes-dashboard-transport--broadcast-event client event)))
+        (if-let* ((session-id
+                   (hermes-dashboard-transport--event-session-id event)))
+            (let ((fns (hermes-dashboard-transport--session-subscriber-fns
+                        client session-id)))
+              (if fns
+                  (mapc (lambda (fn)
+                          (hermes-dashboard-transport--deliver fn event))
+                        fns)
+                (when-let* ((fn
+                             (hermes-dashboard-transport--sole-subscriber-fn
+                              client)))
+                  (hermes-dashboard-transport--deliver fn event))))
+          (hermes-dashboard-transport--broadcast-event client event))
       (funcall (hermes-dashboard-transport-client-callback client) event))))
 
 (defvar hermes-dashboard-transport--clients (make-hash-table :test #'equal)
@@ -585,15 +623,11 @@ broadcasts `reconnected'; another drop before then re-enters the backoff."
    ((hermes-dashboard-transport-client-stopping-p client) nil)
    ((not (hermes-dashboard-transport-client-reconnecting-p client)) nil)
    ((not (hermes-dashboard-transport--should-reconnect-p client))
-    (setf (hermes-dashboard-transport-client-reconnecting-p client) nil)
-    (hermes-dashboard-transport--unregister-client client)
-    (hermes-dashboard-transport--emit-status
-     client "closed" "Hermes dashboard reconnect abandoned"))
+    (hermes-dashboard-transport--finalize-reconnect
+     client "Hermes dashboard reconnect abandoned"))
    ((>= attempt hermes-dashboard-transport-reconnect-max-attempts)
-    (setf (hermes-dashboard-transport-client-reconnecting-p client) nil)
-    (hermes-dashboard-transport--unregister-client client)
-    (hermes-dashboard-transport--emit-status
-     client "closed" "Hermes dashboard reconnect failed"))
+    (hermes-dashboard-transport--finalize-reconnect
+     client "Hermes dashboard reconnect failed"))
    (t
     (condition-case _err
         (setf (hermes-dashboard-transport-client-websocket client)
@@ -604,6 +638,12 @@ broadcasts `reconnected'; another drop before then re-enters the backoff."
        (setf (hermes-dashboard-transport-client-reconnect-attempts client)
              (1+ attempt))
        (hermes-dashboard-transport--schedule-reconnect client (1+ attempt)))))))
+
+(defun hermes-dashboard-transport--finalize-reconnect (client message)
+  "Report terminal reconnect MESSAGE and stop CLIENT."
+  (setf (hermes-dashboard-transport-client-reconnecting-p client) nil)
+  (hermes-dashboard-transport--emit-status client "closed" message)
+  (hermes-dashboard-transport-stop client message))
 
 (defun hermes-dashboard-transport--handle-socket-down (client message &optional websocket)
   "React to CLIENT's WebSocket closing with MESSAGE.
@@ -936,29 +976,40 @@ Used when the connection or `gateway.ready' handshake fails asynchronously."
   (hermes-dashboard-transport--emit-error client message)
   (hermes-dashboard-transport-stop client message))
 
-(defun hermes-dashboard-transport--connect-async (client &optional attempt)
+(defun hermes-dashboard-transport--generation-live-p (client generation)
+  "Return non-nil when GENERATION still owns CLIENT startup work."
+  (and (not (hermes-dashboard-transport-client-stopping-p client))
+       (= generation (hermes-dashboard-transport-client-generation client))))
+
+(defun hermes-dashboard-transport--connect-async
+    (client &optional attempt generation)
   "Open CLIENT's WebSocket, retrying dashboard cold-start races asynchronously.
-ATTEMPT counts retries.  This never blocks: a transient failure reschedules the
-next attempt with `hermes-dashboard-transport--schedule', a `user-error' fails
-fast, and exhausting the retries fails CLIENT's readiness.  Success leaves the
-gateway readiness flow to resolve the readiness promise."
+ATTEMPT counts retries and GENERATION identifies their startup lifetime.  This
+never blocks: a transient failure reschedules the next attempt with
+`hermes-dashboard-transport--schedule', a `user-error' fails fast, and
+exhausting the retries fails CLIENT's readiness.  Success leaves the gateway
+readiness flow to resolve the readiness promise."
   (let ((attempt (or attempt 0))
+        (generation (or generation
+                        (hermes-dashboard-transport-client-generation client)))
         (url (hermes-dashboard-transport--client-websocket-url client))
         (max-attempts (max 1 hermes-dashboard-transport-connect-retries)))
-    (condition-case err
-        (setf (hermes-dashboard-transport-client-websocket client)
-              (hermes-dashboard-transport--open-websocket-once client url))
-      (user-error
-       (hermes-dashboard-transport--fail-ready
-        client (hermes-dashboard-transport--condition-message client err)))
-      (error
-       (if (< (1+ attempt) max-attempts)
-           (hermes-dashboard-transport--schedule
-            hermes-dashboard-transport-connect-retry-delay
-            #'hermes-dashboard-transport--connect-async client (1+ attempt))
+    (when (hermes-dashboard-transport--generation-live-p client generation)
+      (condition-case err
+          (setf (hermes-dashboard-transport-client-websocket client)
+                (hermes-dashboard-transport--open-websocket-once client url))
+        (user-error
          (hermes-dashboard-transport--fail-ready
-          client (hermes-dashboard-transport--connection-error-message
-                  client err)))))))
+          client (hermes-dashboard-transport--condition-message client err)))
+        (error
+         (if (< (1+ attempt) max-attempts)
+             (hermes-dashboard-transport--schedule
+              hermes-dashboard-transport-connect-retry-delay
+              #'hermes-dashboard-transport--connect-async
+              client (1+ attempt) generation)
+           (hermes-dashboard-transport--fail-ready
+            client (hermes-dashboard-transport--connection-error-message
+                    client err))))))))
 
 (defun hermes-dashboard-transport--ready-timeout-error (client)
   "Return a redacted `gateway.ready' timeout message for CLIENT."
@@ -1045,7 +1096,8 @@ Emacs."
          (client (make-hermes-dashboard-transport-client
                   :host host :port port :base-url base-url
                   :ready-promise (hermes--promise-make)
-                  :callback (or callback #'ignore))))
+                  :callback (or callback #'ignore)))
+         (generation (hermes-dashboard-transport-client-generation client)))
     (hermes--promise-then
      (hermes-dashboard-transport-client-ready-promise client)
      (lambda (_value)
@@ -1056,10 +1108,13 @@ Emacs."
     (hermes--promise-then
      (hermes-dashboard-transport--remote-auth-async host port base-url method
                                                      token)
-     (lambda (auth) (hermes-dashboard-transport--remote-connect client auth))
+     (lambda (auth)
+       (when (hermes-dashboard-transport--generation-live-p client generation)
+         (hermes-dashboard-transport--remote-connect client auth)))
      (lambda (reason)
-       (hermes-dashboard-transport--fail-ready
-        client (hermes-dashboard-transport--redact-secret reason))))
+       (when (hermes-dashboard-transport--generation-live-p client generation)
+         (hermes-dashboard-transport--fail-ready
+          client (hermes-dashboard-transport--redact-secret reason)))))
     client))
 
 (cl-defun hermes-dashboard-transport--resolve-target
@@ -1108,13 +1163,13 @@ BASE-ENVIRONMENT, START-MODE, REMOTE-URL, and REMOTE-AUTH-METHOD override it."
     (&key host port start-mode remote-url)
   "Return the registry key identifying the resolved dashboard endpoint.
 HOST, PORT, START-MODE, and REMOTE-URL select the target.  Spawn-mode targets
-share the single `local-spawn' key; remote targets key on their normalized base
-URL."
+key on their resolved host and port; remote targets key on their normalized
+base URL."
   (let ((target (hermes-dashboard-transport--resolve-target
                  :host host :port port :start-mode start-mode
                  :remote-url remote-url)))
     (pcase (plist-get target :mode)
-      ('spawn 'local-spawn)
+      ('spawn (list 'spawn (plist-get target :host) (plist-get target :port)))
       ('remote (hermes-dashboard-transport--base-url
                 (plist-get target :host)
                 (plist-get target :port)

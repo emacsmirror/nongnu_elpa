@@ -80,37 +80,42 @@ Structured transports may additionally emit `status', `progress', `tool',
 Return the process object created by `make-process'."
   (hermes-transport--emit callback (hermes-transport--start-event))
   (let ((buffer (generate-new-buffer " *hermes-transport*")))
-    (make-process
-     :name "hermes-chat"
-     :buffer buffer
-     :command (hermes-transport--command prompt)
-     :connection-type 'pipe
-     :noquery t
-     :filter (lambda (process chunk)
-               (when (buffer-live-p (process-buffer process))
-                 (with-current-buffer (process-buffer process)
-                   (goto-char (point-max))
-                   (insert chunk)))
-               (unless (string-empty-p chunk)
-                 (hermes-transport--emit
-                  callback (list :type 'delta :content chunk))))
-     :sentinel (lambda (process event)
-                 (when (memq (process-status process) '(exit signal))
-                   (unwind-protect
-                       (if (zerop (process-exit-status process))
-                           (hermes-transport--emit callback '(:type done))
-                         (let ((message (string-trim
-                                         (or (hermes-transport--process-output
-                                              process)
-                                             event))))
-                           (hermes-transport--emit
-                            callback
-                            (list :type 'error
-                                  :content (if (string-empty-p message)
-                                               event
-                                             message)))))
-                     (when (buffer-live-p (process-buffer process))
-                       (kill-buffer (process-buffer process)))))))))
+    (condition-case err
+        (make-process
+         :name "hermes-chat"
+         :buffer buffer
+         :command (hermes-transport--command prompt)
+         :connection-type 'pipe
+         :noquery t
+         :filter (lambda (process chunk)
+                   (when (buffer-live-p (process-buffer process))
+                     (with-current-buffer (process-buffer process)
+                       (goto-char (point-max))
+                       (insert chunk)))
+                   (unless (string-empty-p chunk)
+                     (hermes-transport--emit
+                      callback (list :type 'delta :content chunk))))
+         :sentinel (lambda (process event)
+                     (when (memq (process-status process) '(exit signal))
+                       (unwind-protect
+                           (if (zerop (process-exit-status process))
+                               (hermes-transport--emit callback '(:type done))
+                             (let ((message (string-trim
+                                             (or (hermes-transport--process-output
+                                                  process)
+                                                 event))))
+                               (hermes-transport--emit
+                                callback
+                                (list :type 'error
+                                      :content (if (string-empty-p message)
+                                                   event
+                                                 message)))))
+                         (when (buffer-live-p (process-buffer process))
+                           (kill-buffer (process-buffer process)))))))
+      (error
+       (when (buffer-live-p buffer)
+         (kill-buffer buffer))
+       (signal (car err) (cdr err))))))
 
 (defcustom hermes-transport-send-function #'hermes-transport-send
   "Function used to send a prompt to Hermes.

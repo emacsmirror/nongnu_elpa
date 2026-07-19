@@ -309,7 +309,9 @@
         (hermes-dashboard-transport-subscribe c (lambda (e) (push e events)))
         (hermes-dashboard-transport--handle-socket-down c "dropped")
         (should (hermes-dashboard-transport-client-reconnecting-p c))
-        (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients) c))
+        (should (eq (gethash '(spawn "127.0.0.1" 9119)
+                             hermes-dashboard-transport--clients)
+                    c))
         (should (equal scheduled 1))
         (should (cl-find "closed" events
                          :key (lambda (e) (plist-get e :status)) :test #'equal))))))
@@ -328,7 +330,8 @@
         (setf (hermes-dashboard-transport-client-refcount c) 0)
         (hermes-dashboard-transport--handle-socket-down c "dropped")
         (should-not scheduled)
-        (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))))))
+        (should-not (gethash '(spawn "127.0.0.1" 9119)
+                             hermes-dashboard-transport--clients))))))
 
 (ert-deftest hermes-dashboard-transport-stop-suppresses-reconnect ()
   "An intentional stop marks the socket closed without scheduling a reconnect."
@@ -405,14 +408,15 @@
           (lambda (_url _client) (setq opened t) 'new-ws))
          (pending (make-hash-table :test #'equal))
          (c (make-hermes-dashboard-transport-client
-             :endpoint-key 'local-spawn
+             :endpoint-key '(spawn "127.0.0.1" 8765)
              :websocket 'old-ws
              :websocket-url "ws://x"
              :ready-p t
              :ready-promise (hermes--promise-resolved 'ready)
              :refcount 1
              :pending pending)))
-    (puthash 'local-spawn c hermes-dashboard-transport--clients)
+    (puthash '(spawn "127.0.0.1" 8765)
+             c hermes-dashboard-transport--clients)
     (puthash "req-1"
              (list :method "prompt.submit"
                    :reject (lambda (message) (setq rejected message)))
@@ -424,7 +428,9 @@
     (should (eq closed 'old-ws))
     (should opened)
     (should (eq (hermes-dashboard-transport-client-websocket c) 'new-ws))
-    (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients) c))
+    (should (eq (gethash '(spawn "127.0.0.1" 8765)
+                         hermes-dashboard-transport--clients)
+                c))
     (should (hermes-dashboard-transport-client-reconnecting-p c))
     (should-not (hermes-dashboard-transport-client-ready-p c))
     (should (= (hash-table-count pending) 0))
@@ -487,7 +493,8 @@
         (hermes-dashboard-transport-subscribe c (lambda (e) (push e events)))
         (setf (hermes-dashboard-transport-client-reconnecting-p c) t)
         (hermes-dashboard-transport--reconnect-attempt c 2)
-        (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))
+        (should-not (gethash '(spawn "127.0.0.1" 9119)
+                             hermes-dashboard-transport--clients))
         (should-not (hermes-dashboard-transport-client-reconnecting-p c))
         (should (cl-find "closed" events
                          :key (lambda (e) (plist-get e :status)) :test #'equal))))))
@@ -647,8 +654,8 @@
     (should (equal (length a-events) 1))
     (should (equal (length b-events) 1))))
 
-(ert-deftest hermes-dashboard-transport-unowned-tagged-event-broadcasts ()
-  "A tagged event with no registered owner falls back to a broadcast."
+(ert-deftest hermes-dashboard-transport-unowned-tagged-event-is-ignored ()
+  "A tagged event with no registered owner reaches no subscriber."
   (let* ((client (hermes-test--dashboard-client))
          events
          (token (hermes-dashboard-transport-subscribe
@@ -656,7 +663,7 @@
     (hermes-dashboard-transport-subscribe-session client token "sid-a")
     (hermes-dashboard-transport--dispatch-event
      client (list :type 'delta :session-id "other" :content "x"))
-    (should (equal (length events) 1))))
+    (should-not events)))
 
 (ert-deftest hermes-dashboard-transport-dispatch-falls-back-to-callback ()
   "With no subscribers, dispatch uses the legacy single callback."
@@ -733,10 +740,10 @@
 ;;; Group: shared client registry
 
 (ert-deftest hermes-dashboard-transport-endpoint-key-spawn-is-local ()
-  "A spawn-mode target keys on the single `local-spawn' endpoint."
-  (should (eq (hermes-dashboard-transport--endpoint-key
-               :host "127.0.0.1" :port 8765 :start-mode 'spawn)
-              'local-spawn)))
+  "A spawn-mode target keys on its resolved host and port."
+  (should (equal (hermes-dashboard-transport--endpoint-key
+                  :host "127.0.0.1" :port 8765 :start-mode 'spawn)
+                 '(spawn "127.0.0.1" 8765))))
 
 (ert-deftest hermes-dashboard-transport-endpoint-key-remote-is-base-url ()
   "A remote target keys on its normalized base URL."
@@ -769,6 +776,17 @@
                  :start-mode 'remote :remote-url "https://b.example")))
         (should-not (eq c1 c2))))))
 
+(ert-deftest hermes-dashboard-transport-acquire-distinct-spawn-ports ()
+  "Different local spawn ports get distinct clients."
+  (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) (make-hermes-dashboard-transport-client))))
+      (let ((c1 (hermes-dashboard-transport-acquire
+                 :start-mode 'spawn :host "127.0.0.1" :port 8765))
+            (c2 (hermes-dashboard-transport-acquire
+                 :start-mode 'spawn :host "127.0.0.1" :port 8766)))
+        (should-not (eq c1 c2))))))
+
 (ert-deftest hermes-dashboard-transport-release-stops-and-unregisters-at-zero ()
   "Release decrements references and tears the client down only at zero."
   (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))
@@ -777,9 +795,12 @@
       (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
         (hermes-dashboard-transport-acquire :start-mode 'spawn)
         (should (= (hermes-dashboard-transport-release c1) 1))
-        (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients) c1))
+        (should (eq (gethash '(spawn "127.0.0.1" 9119)
+                             hermes-dashboard-transport--clients)
+                    c1))
         (should (= (hermes-dashboard-transport-release c1) 0))
-        (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))
+        (should-not (gethash '(spawn "127.0.0.1" 9119)
+                             hermes-dashboard-transport--clients))
         (should-not (eq c1 (hermes-dashboard-transport-acquire
                             :start-mode 'spawn)))))))
 
@@ -795,7 +816,9 @@
       (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
         (hermes-dashboard-transport-release c1)
         (should (equal scheduled 30))
-        (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients) c1))
+        (should (eq (gethash '(spawn "127.0.0.1" 9119)
+                             hermes-dashboard-transport--clients)
+                    c1))
         (should (eq c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
         (should (= (hermes-dashboard-transport-client-refcount c1) 1))
         (should-not (hermes-dashboard-transport-client-idle-timer c1))))))
@@ -812,7 +835,7 @@
       (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
         (hermes-dashboard-transport-release c1)
         (apply (car captured) (cdr captured))
-        (should-not (gethash 'local-spawn
+        (should-not (gethash '(spawn "127.0.0.1" 9119)
                              hermes-dashboard-transport--clients))))))
 
 (ert-deftest hermes-dashboard-transport-idle-timer-after-rebuild-is-harmless ()
@@ -832,7 +855,8 @@
         (let ((c2 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
           (apply (car captured) (cdr captured))
           (should-not (eq c1 c2))
-          (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients)
+          (should (eq (gethash '(spawn "127.0.0.1" 9119)
+                               hermes-dashboard-transport--clients)
                       c2)))))))
 
 (ert-deftest hermes-dashboard-transport-acquire-rebuilds-after-close ()
@@ -846,7 +870,8 @@
       (let ((c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
         (hermes-dashboard-transport-acquire :start-mode 'spawn)
         (hermes-dashboard-transport--handle-socket-down c1 "dropped")
-        (should-not (gethash 'local-spawn hermes-dashboard-transport--clients))
+        (should-not (gethash '(spawn "127.0.0.1" 9119)
+                             hermes-dashboard-transport--clients))
         (should-not (eq c1 (hermes-dashboard-transport-acquire :start-mode 'spawn)))))))
 
 (ert-deftest hermes-dashboard-transport-unregister-keeps-replacement ()
@@ -859,7 +884,8 @@
         (let ((c2 (hermes-dashboard-transport-acquire :start-mode 'spawn)))
           (should-not (eq c1 c2))
           (hermes-dashboard-transport-stop c1)
-          (should (eq (gethash 'local-spawn hermes-dashboard-transport--clients)
+          (should (eq (gethash '(spawn "127.0.0.1" 9119)
+                               hermes-dashboard-transport--clients)
                       c2)))))))
 
 

@@ -131,15 +131,17 @@ REJECT receive the payload or an error message, matching the plain RPC wrapper.
 
 The underlying request defers until CLIENT is ready, so callers may warm the
 cache immediately after starting a client."
-  (let ((cached (and (not force)
-                     (hermes-dashboard-transport-cached-model-options))))
+  (let* ((base-url (hermes-dashboard-transport--cache-base-url client))
+         (cached (and (not force)
+                      (hermes-dashboard-transport-cached-model-options client))))
     (if cached
         (when resolve (funcall resolve cached))
       (hermes-dashboard-transport-model-options
        client
        :session-id session-id
        :resolve (lambda (result)
-                  (hermes-dashboard-transport--store-model-options result)
+                  (hermes-dashboard-transport--store-model-options
+                   result base-url)
                   (when resolve (funcall resolve result)))
        :reject (or reject #'ignore)))))
 
