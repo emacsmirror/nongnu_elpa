@@ -78,11 +78,13 @@ browser reports the error and still releases a transient client."
              (vector (hermes-browser--face-cell
                       (hermes-rollback--short hash) 'hermes-browser-identifier)
                      (hermes-browser--face-cell
-                      (or (hermes-transport--scalar-string
-                           (hermes-transport--get checkpoint 'timestamp)) "")
-                      'hermes-browser-muted)
                      (or (hermes-transport--scalar-string
-                          (hermes-transport--get checkpoint 'message)) "")))))
+                           (hermes-transport--get checkpoint 'timestamp)) "")
+                      'hermes-browser-timestamp)
+                     (hermes-browser--face-cell
+                      (or (hermes-transport--scalar-string
+                           (hermes-transport--get checkpoint 'message)) "")
+                      'hermes-browser-message)))))
    (hermes-transport--get result 'checkpoints)))
 
 (defun hermes-rollback--display-diff (hash result)

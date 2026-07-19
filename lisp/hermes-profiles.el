@@ -53,14 +53,18 @@
                    (if (eq (hermes-transport--get profile 'is_default) t)
                        "*"
                      "")
-                   'hermes-browser-success)
-                  (or (hermes-profiles--field profile 'model) "")
+                   'hermes-browser-default)
+                  (hermes-browser--face-cell
+                   (or (hermes-profiles--field profile 'model) "")
+                   'hermes-browser-model)
                   (hermes-browser--face-cell
                    (or (hermes-profiles--field profile 'provider) "")
-                   'hermes-browser-muted)
+                   'hermes-browser-provider)
                   ;; No per-profile reasoning surface in the dashboard yet.
-                  (hermes-browser--face-cell "—" 'hermes-browser-muted)
-                  (or (hermes-profiles--field profile 'description) "")))))
+                  (hermes-browser--face-cell "—" 'hermes-browser-reasoning)
+                  (hermes-browser--face-cell
+                   (or (hermes-profiles--field profile 'description) "")
+                   'hermes-browser-description)))))
 
 (defun hermes-profiles--rows (result)
   "Return `tabulated-list' entries for an `/api/profiles' RESULT."

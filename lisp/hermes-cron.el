@@ -118,17 +118,19 @@ auto-refresh.  Used to detect cron failures for `hermes-cron-notify-on-failure'.
     (_ nil)))
 
 (defun hermes-cron--state-cell (job)
-  "Return JOB's state cell with its shared semantic face.
+  "Return JOB's state cell with its semantic and column faces.
 The cell text is unchanged so commands reading it by `equal' still match."
-  (hermes-browser--status-cell (hermes-cron--state job)))
+  (hermes-browser--status-cell (hermes-cron--state job)
+                               'hermes-browser-state))
 
 (defun hermes-cron--deliver-cell (job)
   "Return JOB's deliver cell, faced as an error after delivery failure."
   (hermes-browser--face-cell
    (hermes-transport--display-field job 'deliver)
-   (and (hermes-transport--non-blank-string
-         (hermes-transport--display-field job 'last_delivery_error))
-        'hermes-browser-error)))
+   (if (hermes-transport--non-blank-string
+        (hermes-transport--display-field job 'last_delivery_error))
+       'hermes-browser-error
+     'hermes-browser-delivery)))
 
 (defun hermes-cron--last-run-cell (job)
   "Return JOB's last-run cell, faced by the most recent run outcome."
@@ -137,15 +139,18 @@ The cell text is unchanged so commands reading it by `equal' still match."
    (pcase (hermes-cron--last-status job)
      ('error 'hermes-browser-error)
      ('ok 'hermes-browser-success)
-     (_ 'hermes-browser-muted))))
+     (_ 'hermes-browser-timestamp))))
 
 (defun hermes-cron--rows (result)
   "Return `tabulated-list' entries for a cron list RESULT."
   (mapcar
    (lambda (job)
      (list (hermes-cron--job-id job)
-           (vector (hermes-transport--display-field job 'name)
-                   (hermes-cron--schedule job)
+           (vector (hermes-browser--face-cell
+                    (hermes-transport--display-field job 'name)
+                    'hermes-browser-name)
+                   (hermes-browser--face-cell
+                    (hermes-cron--schedule job) 'hermes-browser-schedule)
                    (hermes-cron--state-cell job)
                    (hermes-browser--face-cell
                     (hermes-cron--profile job) 'hermes-browser-profile)
@@ -153,8 +158,9 @@ The cell text is unchanged so commands reading it by `equal' still match."
                    (hermes-cron--last-run-cell job)
                    (hermes-browser--face-cell
                     (hermes-transport--display-field job 'next_run_at)
-                    'hermes-browser-muted)
-                   (hermes-cron--prompt job))))
+                    'hermes-browser-timestamp)
+                   (hermes-browser--face-cell
+                    (hermes-cron--prompt job) 'hermes-browser-prompt))))
    (hermes-transport--get result 'jobs)))
 
 ;;; Dashboard REST API

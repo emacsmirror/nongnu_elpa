@@ -44,7 +44,8 @@ of the string \"off\"."
    (cond
     ((eq value t) "on")
     ((and (null value) unknown) "?")
-    (t "off"))))
+    (t "off"))
+   'hermes-browser-enabled))
 
 (defun hermes-inventory--json-bool (value)
   "Return VALUE encoded for `json-serialize' as a JSON boolean."
@@ -58,12 +59,16 @@ of the string \"off\"."
                                   (length (or (hermes-transport--get toolset 'tools)
                                               '())))))
               (list name
-                    (vector name
+                    (vector (hermes-browser--face-cell
+                             name 'hermes-browser-name)
                             (hermes-inventory--bool-cell
                              (hermes-transport--get toolset 'enabled))
                             (hermes-browser--face-cell
-                             tool-count 'hermes-browser-count)
-                            (hermes-transport--display-field toolset 'description)))))
+                             tool-count 'hermes-browser-tool-count)
+                            (hermes-browser--face-cell
+                             (hermes-transport--display-field
+                              toolset 'description)
+                             'hermes-browser-description)))))
           (hermes-transport--get result 'toolsets)))
 
 (defun hermes-inventory--skill-object-p (entry)
@@ -78,11 +83,13 @@ of the string \"off\"."
     (list name
           (vector (hermes-browser--face-cell
                    (hermes-transport--display-field skill 'category)
-                   'hermes-browser-muted)
-                  name
+                   'hermes-browser-category)
+                  (hermes-browser--face-cell name 'hermes-browser-name)
                   (hermes-inventory--bool-cell
                    (hermes-transport--get skill 'enabled))
-                  (hermes-transport--display-field skill 'description)))))
+                  (hermes-browser--face-cell
+                   (hermes-transport--display-field skill 'description)
+                   'hermes-browser-description)))))
 
 (defun hermes-inventory--skill-group-rows (skills)
   "Return rows for legacy SKILLS grouped by category."
@@ -93,10 +100,12 @@ of the string \"off\"."
                                         "")))
                           (list name
                                 (vector (hermes-browser--face-cell
-                                         category 'hermes-browser-muted)
-                                        name
+                                         category 'hermes-browser-category)
+                                        (hermes-browser--face-cell
+                                         name 'hermes-browser-name)
                                         (hermes-inventory--bool-cell nil t)
-                                        ""))))
+                                        (hermes-browser--face-cell
+                                         "" 'hermes-browser-description)))))
                       (cdr entry))))
           skills))
 
@@ -124,21 +133,26 @@ a `skills' field too so older/newer dashboard shapes render the same way."
                     (vector (hermes-browser--face-cell
                              id 'hermes-browser-identifier)
                             (hermes-browser--status-cell
-                             (hermes-transport--display-field process 'status))
+                             (hermes-transport--display-field process 'status)
+                             'hermes-browser-status)
                             (hermes-browser--face-cell
                              (or (hermes-transport--get process 'uptime) 0)
-                             'hermes-browser-count)
-                            (hermes-transport--display-field process 'command)))))
+                             'hermes-browser-uptime)
+                            (hermes-browser--face-cell
+                             (hermes-transport--display-field process 'command)
+                             'hermes-browser-command)))))
           (hermes-transport--get result 'processes)))
 
 (defun hermes-inventory--plugin-rows (result)
   "Return inventory rows for a `plugins.list' RESULT."
   (mapcar (lambda (plugin)
             (list (hermes-transport--display-field plugin 'name)
-                  (vector (hermes-transport--display-field plugin 'name)
+                  (vector (hermes-browser--face-cell
+                           (hermes-transport--display-field plugin 'name)
+                           'hermes-browser-name)
                           (hermes-browser--face-cell
                            (hermes-transport--display-field plugin 'version)
-                           'hermes-browser-muted)
+                           'hermes-browser-version)
                           (hermes-inventory--bool-cell
                            (hermes-transport--get plugin 'enabled)))))
           (hermes-transport--get result 'plugins)))

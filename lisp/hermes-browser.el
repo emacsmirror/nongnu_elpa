@@ -36,19 +36,164 @@
 
 ;;; Faces
 
+(defface hermes-browser-name
+  '((t :inherit bold))
+  "Face for names in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-title
+  '((t :inherit bold))
+  "Face for titles in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-description
+  '((t :inherit font-lock-doc-face))
+  "Face for descriptions in Hermes browser rows."
+  :group 'hermes)
+
 (defface hermes-browser-identifier
-  '((t :inherit shadow))
+  '((t :inherit font-lock-constant-face))
   "Face for identifiers in Hermes browser rows."
   :group 'hermes)
 
 (defface hermes-browser-profile
-  '((t :inherit font-lock-constant-face))
-  "Face for profile and assignee names in Hermes browser rows."
+  '((t :inherit font-lock-variable-name-face))
+  "Face for profile names in Hermes browser rows."
   :group 'hermes)
 
 (defface hermes-browser-count
+  '((t :inherit font-lock-number-face))
+  "Face for generic counts in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-message-count
+  '((t :inherit font-lock-number-face))
+  "Face for message counts in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-tool-count
+  '((t :inherit font-lock-builtin-face))
+  "Face for tool counts in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-total
+  '((t :inherit shadow))
+  "Face for aggregate totals in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-priority
+  '((t :inherit warning))
+  "Face for priorities in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-assignee
+  '((t :inherit font-lock-variable-use-face))
+  "Face for assignees in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-model
+  '((t :inherit font-lock-type-face))
+  "Face for model names in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-provider
+  '((t :inherit font-lock-builtin-face))
+  "Face for provider names in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-type
+  '((t :inherit font-lock-property-name-face))
+  "Face for transport and resource types in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-timestamp
+  '((t :inherit shadow))
+  "Face for timestamps in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-schedule
+  '((t :inherit font-lock-string-face))
+  "Face for schedules in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-delivery
+  '((t :inherit font-lock-function-call-face))
+  "Face for delivery targets in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-prompt
+  '((t :inherit font-lock-doc-face))
+  "Face for prompt previews in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-command
+  '((t :inherit font-lock-string-face))
+  "Face for commands in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-category
+  '((t :inherit font-lock-keyword-face))
+  "Face for categories in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-version
   '((t :inherit font-lock-constant-face))
-  "Face for counts and priorities in Hermes browser rows."
+  "Face for versions in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-source
+  '((t :inherit font-lock-property-name-face))
+  "Face for source names in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-message
+  '((t :inherit font-lock-string-face))
+  "Face for messages in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-default
+  '((t :inherit success))
+  "Face for default markers in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-reasoning
+  '((t :inherit shadow))
+  "Face for reasoning settings in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-diagnostic
+  '((t :inherit font-lock-warning-face))
+  "Face for diagnostic summaries in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-uptime
+  '((t :inherit font-lock-number-face))
+  "Face for uptime values in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-goal
+  '((t :inherit font-lock-doc-face))
+  "Face for subagent goals in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-enabled
+  '((t :inherit font-lock-variable-use-face :slant italic))
+  "Face for enabled-state columns in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-state
+  '((t :inherit font-lock-keyword-face :weight semi-bold))
+  "Face for lifecycle-state columns in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-status
+  '((t :inherit font-lock-keyword-face))
+  "Face for status columns in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-severity
+  '((t :inherit font-lock-warning-face))
+  "Face for severity columns in Hermes browser rows."
   :group 'hermes)
 
 (defface hermes-browser-active
@@ -86,7 +231,7 @@
       text)))
 
 (defun hermes-browser--status-face (status)
-  "Return the shared semantic face for STATUS, or nil when unknown."
+  "Return the shared semantic face for STATUS."
   (let ((status (downcase (substring-no-properties
                            (format "%s" (or status ""))))))
     (cond
@@ -104,11 +249,18 @@
       'hermes-browser-error)
      ((member status '("archived" "closed" "disabled" "idle" "info" "off"
                        "stopped" "unknown"))
-      'hermes-browser-muted))))
+      'hermes-browser-muted)
+     (t 'hermes-browser-status))))
 
-(defun hermes-browser--status-cell (status)
-  "Return STATUS styled with its shared semantic face when known."
-  (hermes-browser--face-cell status (hermes-browser--status-face status)))
+(defun hermes-browser--status-cell (status &optional column-face)
+  "Return STATUS styled with its semantic and optional COLUMN-FACE."
+  (let* ((status-face (hermes-browser--status-face status))
+         (face (cond
+                ((null column-face) status-face)
+                ((eq status-face column-face) status-face)
+                (t (list status-face column-face)))))
+    (hermes-browser--face-cell
+     status face)))
 
 (defun hermes-browser--existing-client ()
   "Return a live dashboard client from any Hermes chat buffer, or nil."

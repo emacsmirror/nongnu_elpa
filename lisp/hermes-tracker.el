@@ -175,10 +175,14 @@
   "Return tabulated rows for REPOSITORIES."
   (mapcar (lambda (repo)
             (let ((slug (hermes-tracker--display repo 'slug)))
-              (list slug (vector (hermes-tracker--display repo 'name slug)
+              (list slug (vector (hermes-browser--face-cell
+                                  (hermes-tracker--display repo 'name slug)
+                                  'hermes-browser-name)
                                  (hermes-browser--face-cell
                                   slug 'hermes-browser-identifier)
-                                 (hermes-tracker--display repo 'description)))))
+                                 (hermes-browser--face-cell
+                                  (hermes-tracker--display repo 'description)
+                                  'hermes-browser-description)))))
           (hermes-tracker--items repositories)))
 
 (defun hermes-tracker--todo-rows (payload)
@@ -189,14 +193,17 @@
                     (vector (hermes-browser--face-cell
                              number 'hermes-browser-identifier)
                             (hermes-browser--status-cell
-                             (hermes-tracker--display todo 'status))
+                             (hermes-tracker--display todo 'status)
+                             'hermes-browser-status)
                             (hermes-browser--face-cell
                              (hermes-tracker--display todo 'priority "0")
-                             'hermes-browser-count)
+                             'hermes-browser-priority)
                             (hermes-browser--face-cell
                              (hermes-tracker--display todo 'assignee "-")
-                             'hermes-browser-profile)
-                            (hermes-tracker--display todo 'title)))))
+                             'hermes-browser-assignee)
+                            (hermes-browser--face-cell
+                             (hermes-tracker--display todo 'title)
+                             'hermes-browser-title)))))
           (hermes-tracker--items (hermes-transport--get payload 'todos))))
 
 (defun hermes-tracker--format-list (title values empty)

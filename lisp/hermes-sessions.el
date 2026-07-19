@@ -81,13 +81,15 @@
      (let ((id (hermes-sessions--id session)))
        (list id
              (vector (hermes-browser--face-cell id 'hermes-browser-identifier)
-                     (hermes-transport--display-field session 'title)
+                     (hermes-browser--face-cell
+                      (hermes-transport--display-field session 'title)
+                      'hermes-browser-title)
                      (hermes-browser--face-cell
                       (hermes-sessions--message-count session)
-                      'hermes-browser-count)
+                      'hermes-browser-message-count)
                      (hermes-browser--face-cell
                       (hermes-transport--display-field session 'source)
-                      'hermes-browser-muted)))))
+                      'hermes-browser-source)))))
    sessions))
 
 (defun hermes-sessions--result-rows (result)

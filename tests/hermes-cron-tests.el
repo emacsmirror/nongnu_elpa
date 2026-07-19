@@ -265,7 +265,8 @@
 (ert-deftest hermes-cron-state-cell-faces-error-but-keeps-text ()
   "An error state is faced yet still equals the bare string for commands."
   (let ((cell (hermes-cron--state-cell '((state . "error")))))
-    (should (eq (get-text-property 0 'face cell) 'hermes-browser-error))
+    (should (equal (get-text-property 0 'face cell)
+                   '(hermes-browser-error hermes-browser-state)))
     (should (equal cell "error"))
     (should (member cell '("error")))))
 
@@ -277,18 +278,31 @@
     (should (equal cell "telegram"))))
 
 (ert-deftest hermes-cron-rows-face-profile-and-timestamps ()
-  "Cron rows distinguish profile names and secondary timestamps."
+  "Cron rows give every column its own face."
   (let* ((row (car (hermes-cron--rows
-                    '((jobs . (((id . "j") (profile . "work")
+                    '((jobs . (((id . "j") (name . "nightly")
+                                (schedule . "daily") (state . "scheduled")
+                                (profile . "work") (deliver . "telegram")
                                 (last_run_at . "old")
-                                (next_run_at . "next"))))))))
+                                (next_run_at . "next")
+                                (prompt . "do it"))))))))
          (entry (cadr row)))
+    (should (eq (get-text-property 0 'face (aref entry 0))
+                'hermes-browser-name))
+    (should (eq (get-text-property 0 'face (aref entry 1))
+                'hermes-browser-schedule))
+    (should (equal (get-text-property 0 'face (aref entry 2))
+                   '(hermes-browser-pending hermes-browser-state)))
     (should (eq (get-text-property 0 'face (aref entry 3))
                 'hermes-browser-profile))
+    (should (eq (get-text-property 0 'face (aref entry 4))
+                'hermes-browser-delivery))
     (should (eq (get-text-property 0 'face (aref entry 5))
-                'hermes-browser-muted))
+                'hermes-browser-timestamp))
     (should (eq (get-text-property 0 'face (aref entry 6))
-                'hermes-browser-muted))))
+                'hermes-browser-timestamp))
+    (should (eq (get-text-property 0 'face (aref entry 7))
+                'hermes-browser-prompt))))
 
 (ert-deftest hermes-cron-format-run-is-navigable ()
   "A run line carries its session id and a RET keymap."

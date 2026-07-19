@@ -90,6 +90,41 @@ on a failed GET come from the shared dashboard transport, which talks only to
 
 ;;; Shared status display helpers
 
+(defface hermes-kanban-triage-face
+  '((t :inherit warning))
+  "Face for triage tasks and board counts."
+  :group 'hermes)
+
+(defface hermes-kanban-todo-face
+  '((t :inherit font-lock-variable-name-face))
+  "Face for todo tasks and board counts."
+  :group 'hermes)
+
+(defface hermes-kanban-ready-face
+  '((t :inherit font-lock-type-face))
+  "Face for ready tasks and board counts."
+  :group 'hermes)
+
+(defface hermes-kanban-running-face
+  '((t :inherit font-lock-keyword-face))
+  "Face for running tasks and board counts."
+  :group 'hermes)
+
+(defface hermes-kanban-blocked-face
+  '((t :inherit error))
+  "Face for blocked tasks and board counts."
+  :group 'hermes)
+
+(defface hermes-kanban-done-face
+  '((t :inherit success))
+  "Face for done tasks and board counts."
+  :group 'hermes)
+
+(defface hermes-kanban-archived-face
+  '((t :inherit shadow))
+  "Face for archived tasks and board counts."
+  :group 'hermes)
+
 (defconst hermes-kanban--current-board-marker "📍"
   "Marker used for the current Hermes Kanban board.")
 
@@ -97,13 +132,14 @@ on a failed GET come from the shared dashboard transport, which talks only to
   "Board slugs protected from archive/delete by the Hermes backend.")
 
 (defconst hermes-kanban--status-display
-  '(("triage" :icon "💡" :label "triage" :face hermes-browser-pending)
-    ("todo" :icon "📝" :label "todo" :face hermes-browser-pending)
-    ("ready" :icon "✅" :label "ready" :face hermes-browser-success)
-    ("running" :icon "⚙️" :label "running" :face hermes-browser-active)
-    ("blocked" :icon "⛔" :label "blocked" :face hermes-browser-error)
-    ("done" :icon "🏁" :label "done" :face hermes-browser-success)
-    ("archived" :icon "🗄️" :label "archived" :face hermes-browser-muted))
+  '(("triage" :icon "💡" :label "triage" :face hermes-kanban-triage-face)
+    ("todo" :icon "📝" :label "todo" :face hermes-kanban-todo-face)
+    ("ready" :icon "✅" :label "ready" :face hermes-kanban-ready-face)
+    ("running" :icon "⚙️" :label "running" :face hermes-kanban-running-face)
+    ("blocked" :icon "⛔" :label "blocked" :face hermes-kanban-blocked-face)
+    ("done" :icon "🏁" :label "done" :face hermes-kanban-done-face)
+    ("archived" :icon "🗄️" :label "archived"
+     :face hermes-kanban-archived-face))
   "User-facing display metadata for Kanban task statuses.
 Each entry maps a status string to :icon, :label, and optional :face.")
 
@@ -136,7 +172,7 @@ text property, so commands can keep using backend status values."
          (info (hermes-kanban--status-info raw))
          (icon (plist-get info :icon))
          (label (or (plist-get info :label) raw))
-         (face (plist-get info :face))
+         (face (or (plist-get info :face) 'hermes-browser-status))
          (text (copy-sequence
                 (if (and icon (not (string-empty-p icon)))
                     (format "%s %s" icon label)
@@ -156,7 +192,7 @@ status values."
   (let* ((raw (or (hermes-transport--scalar-string status) ""))
          (info (hermes-kanban--status-info raw))
          (icon (plist-get info :icon))
-         (face (plist-get info :face))
+         (face (or (plist-get info :face) 'hermes-browser-status))
          (text (copy-sequence
                 (or (hermes-transport--non-empty-string icon) raw))))
     (when (and face (not (string-empty-p text)))
@@ -168,7 +204,9 @@ status values."
 (defun hermes-kanban--format-status-count (counts status)
   "Return COUNTS' tally for STATUS."
   (hermes-browser--face-cell
-   (hermes-kanban--count counts status) 'hermes-browser-count))
+   (hermes-kanban--count counts status)
+   (or (plist-get (hermes-kanban--status-info status) :face)
+       'hermes-browser-count)))
 
 (defun hermes-kanban--status-column-heading (status)
   "Return the boards-overview heading for STATUS."
@@ -233,12 +271,14 @@ status values."
                        (if (eq (hermes-transport--get board 'is_current) t)
                            hermes-kanban--current-board-marker
                          "")
-                       'hermes-browser-success)
-                      (or (hermes-transport--non-empty-string
-                           (hermes-transport--display-field board 'name))
-                          slug)
+                       'hermes-browser-default)
                       (hermes-browser--face-cell
-                       (if (numberp total) total 0) 'hermes-browser-count))
+                       (or (hermes-transport--non-empty-string
+                            (hermes-transport--display-field board 'name))
+                           slug)
+                       'hermes-browser-name)
+                      (hermes-browser--face-cell
+                       (if (numberp total) total 0) 'hermes-browser-total))
               (mapcar (lambda (status)
                         (hermes-kanban--format-status-count counts status))
                       hermes-kanban--board-count-statuses)))))
@@ -440,13 +480,15 @@ the board detail buffer shows the most recently created tasks at the top."
                       (hermes-transport--display-field task 'status))
                      (hermes-browser--face-cell
                       (hermes-transport--display-field task 'priority)
-                      'hermes-browser-count)
+                      'hermes-browser-priority)
                      (hermes-browser--face-cell
                       (or (hermes-transport--non-empty-string
                            (hermes-transport--display-field task 'assignee))
                           "-")
-                      'hermes-browser-profile)
-                     (hermes-transport--display-field task 'title))))
+                      'hermes-browser-assignee)
+                     (hermes-browser--face-cell
+                      (hermes-transport--display-field task 'title)
+                      'hermes-browser-title))))
      sorted)))
 
 (defvar hermes-kanban-mode-map)
@@ -1289,16 +1331,21 @@ summary of the top diagnostic; absent fields fall back to placeholders."
     (list task-id
           (vector
            (hermes-browser--status-cell
-            (hermes-transport--display-field top 'severity))
-           (or (hermes-transport--non-empty-string
-                (hermes-transport--display-field group 'task_title))
-               task-id)
+            (hermes-transport--display-field top 'severity)
+            'hermes-browser-severity)
+           (hermes-browser--face-cell
+            (or (hermes-transport--non-empty-string
+                 (hermes-transport--display-field group 'task_title))
+                task-id)
+            'hermes-browser-title)
            (hermes-browser--face-cell
             (or (hermes-transport--non-empty-string
                  (hermes-transport--display-field group 'task_assignee))
                 "-")
-            'hermes-browser-profile)
-           (hermes-kanban--diagnostic-summary top (length diagnostics))))))
+            'hermes-browser-assignee)
+           (hermes-browser--face-cell
+            (hermes-kanban--diagnostic-summary top (length diagnostics))
+            'hermes-browser-diagnostic)))))
 
 (defun hermes-kanban--diagnostic-rows (groups)
   "Return tabulated-list entries for diagnostic GROUPS from GET /diagnostics."

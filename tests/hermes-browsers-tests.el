@@ -7,10 +7,25 @@
 
 (ert-deftest hermes-browser-semantic-faces-are-customizable ()
   "Every semantic browser role has its own customizable face."
-  (dolist (face '(hermes-browser-identifier hermes-browser-profile
-                  hermes-browser-count hermes-browser-active
-                  hermes-browser-success hermes-browser-pending
-                  hermes-browser-error hermes-browser-muted))
+  (dolist (face '(hermes-browser-name hermes-browser-title
+                  hermes-browser-description hermes-browser-identifier
+                  hermes-browser-profile hermes-browser-count
+                  hermes-browser-message-count hermes-browser-tool-count
+                  hermes-browser-total hermes-browser-priority
+                  hermes-browser-assignee hermes-browser-model
+                  hermes-browser-provider hermes-browser-type
+                  hermes-browser-timestamp hermes-browser-schedule
+                  hermes-browser-delivery hermes-browser-prompt
+                  hermes-browser-command hermes-browser-category
+                  hermes-browser-version hermes-browser-source
+                  hermes-browser-message hermes-browser-default
+                  hermes-browser-reasoning hermes-browser-diagnostic
+                  hermes-browser-uptime hermes-browser-goal
+                  hermes-browser-enabled hermes-browser-state
+                  hermes-browser-status hermes-browser-severity
+                  hermes-browser-active hermes-browser-success
+                  hermes-browser-pending hermes-browser-error
+                  hermes-browser-muted))
     (should (facep face))))
 
 (ert-deftest hermes-browser-semantic-face-cell-preserves-visible-text ()
@@ -38,16 +53,22 @@
               'hermes-browser-error))
   (should (eq (hermes-browser--status-face "archived")
               'hermes-browser-muted))
-  (should-not (hermes-browser--status-face "backend-specific")))
+  (should (eq (hermes-browser--status-face "backend-specific")
+              'hermes-browser-status)))
 
-(ert-deftest hermes-browser-semantic-status-cell-keeps-unknown-states-plain ()
-  "Status cells style known states and leave unknown states readable and plain."
+(ert-deftest hermes-browser-semantic-status-cell-faces-unknown-states ()
+  "Status cells give known and unknown states explicit faces."
   (let ((known (hermes-browser--status-cell "RUNNING"))
-        (unknown (hermes-browser--status-cell "custom")))
+        (unknown (hermes-browser--status-cell "custom"))
+        (column-unknown
+         (hermes-browser--status-cell "custom" 'hermes-browser-status)))
     (should (equal known "RUNNING"))
     (should (eq (get-text-property 0 'face known) 'hermes-browser-active))
     (should (equal unknown "custom"))
-    (should-not (get-text-property 0 'face unknown))))
+    (should (eq (get-text-property 0 'face unknown)
+                'hermes-browser-status))
+    (should (eq (get-text-property 0 'face column-unknown)
+                'hermes-browser-status))))
 
 (ert-deftest hermes-rollback-rows-from-list ()
   "Rollback rows abbreviate the hash and map timestamp/message."
@@ -59,16 +80,19 @@
     (should (equal (aref (cadr (car rows)) 1) "2026-01-01"))
     (should (equal (aref (cadr (car rows)) 2) "edit foo"))))
 
-(ert-deftest hermes-rollback-rows-face-identifiers-and-timestamps ()
-  "Rollback rows distinguish checkpoint hashes from secondary timestamps."
+(ert-deftest hermes-rollback-rows-face-every-column ()
+  "Rollback rows give every column its own face."
   (let* ((row (car (hermes-rollback--rows
                     '((checkpoints . (((hash . "abcdef1234567890")
-                                       (timestamp . "2026-01-01"))))))))
+                                       (timestamp . "2026-01-01")
+                                       (message . "edit foo"))))))))
          (entry (cadr row)))
     (should (eq (get-text-property 0 'face (aref entry 0))
                 'hermes-browser-identifier))
     (should (eq (get-text-property 0 'face (aref entry 1))
-                'hermes-browser-muted))))
+                'hermes-browser-timestamp))
+    (should (eq (get-text-property 0 'face (aref entry 2))
+                'hermes-browser-message))))
 
 (ert-deftest hermes-rollback-list-fetches-and-renders ()
   "Listing fetches rollback.list with the live session id and renders it."
@@ -162,19 +186,21 @@
     (should (equal (aref (cadr (nth 1 rows)) 0) "    child"))
     (should (equal (aref (cadr (car rows)) 3) "2"))))
 
-(ert-deftest hermes-subagents-rows-face-state-model-and-count ()
-  "Subagent rows expose active state while keeping model and count secondary."
+(ert-deftest hermes-subagents-rows-face-every-column ()
+  "Subagent rows give every column its own face."
   (let* ((row (car (hermes-subagents--rows
                     '((active . (((subagent_id . "s0") (goal . "root")
                                   (status . "running") (model . "m")
                                   (tool_count . 2))))))))
          (entry (cadr row)))
-    (should (eq (get-text-property 0 'face (aref entry 1))
-                'hermes-browser-active))
+    (should (eq (get-text-property 0 'face (aref entry 0))
+                'hermes-browser-goal))
+    (should (equal (get-text-property 0 'face (aref entry 1))
+                   '(hermes-browser-active hermes-browser-status)))
     (should (eq (get-text-property 0 'face (aref entry 2))
-                'hermes-browser-muted))
+                'hermes-browser-model))
     (should (eq (get-text-property 0 'face (aref entry 3))
-                'hermes-browser-count))))
+                'hermes-browser-tool-count))))
 
 (ert-deftest hermes-subagents-list-fetches-and-renders ()
   "Listing fetches delegation.status and renders active subagents."
@@ -325,18 +351,26 @@
     (should (equal (aref (cadr (car rows)) 5) "main"))
     (should (equal (aref (cadr (cadr rows)) 1) ""))))
 
-(ert-deftest hermes-profiles-rows-face-profile-and-default-marker ()
-  "Profile rows make profile identity and the default marker scannable."
+(ert-deftest hermes-profiles-rows-face-every-column ()
+  "Profile rows give every column its own face."
   (let* ((row (car (hermes-profiles--rows
                     '((profiles . (((name . "default") (is_default . t)
-                                    (provider . "openai"))))))))
+                                    (model . "gpt-5.5")
+                                    (provider . "openai")
+                                    (description . "main"))))))))
          (entry (cadr row)))
     (should (eq (get-text-property 0 'face (aref entry 0))
                 'hermes-browser-profile))
     (should (eq (get-text-property 0 'face (aref entry 1))
-                'hermes-browser-success))
+                'hermes-browser-default))
+    (should (eq (get-text-property 0 'face (aref entry 2))
+                'hermes-browser-model))
     (should (eq (get-text-property 0 'face (aref entry 3))
-                'hermes-browser-muted))))
+                'hermes-browser-provider))
+    (should (eq (get-text-property 0 'face (aref entry 4))
+                'hermes-browser-reasoning))
+    (should (eq (get-text-property 0 'face (aref entry 5))
+                'hermes-browser-description))))
 
 (ert-deftest hermes-profiles-set-model-puts-provider-and-model ()
   "Setting a profile model PUTs provider+model to the profile route."

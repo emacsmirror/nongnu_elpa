@@ -48,11 +48,33 @@
                    "done"))
     (should-not (text-properties-at 0 raw))))
 
-(ert-deftest hermes-kanban-status-and-row-metadata-use-semantic-faces ()
-  "Kanban rows style status and metadata without styling task titles."
+(ert-deftest hermes-kanban-workflow-statuses-have-distinct-faces ()
+  "Every Kanban workflow column has its own customizable face."
+  (dolist (spec '(("triage" hermes-kanban-triage-face)
+                  ("todo" hermes-kanban-todo-face)
+                  ("ready" hermes-kanban-ready-face)
+                  ("running" hermes-kanban-running-face)
+                  ("blocked" hermes-kanban-blocked-face)
+                  ("done" hermes-kanban-done-face)
+                  ("archived" hermes-kanban-archived-face)))
+    (pcase-let ((`(,status ,face) spec))
+      (should (facep face))
+      (should (eq (plist-get (hermes-kanban--status-info status) :face) face))
+      (should (eq (get-text-property
+                   0 'face (hermes-kanban--format-status-count nil status))
+                  face))
+      (should (eq (get-text-property
+                   0 'face (hermes-kanban--format-status-indicator status))
+                  face)))))
+
+(ert-deftest hermes-kanban-rows-face-every-column ()
+  "Kanban rows give every board, task, and diagnostic column a face."
   (let* ((board (car (hermes-kanban--board-rows
                       '(((slug . "main") (name . "Main") (is_current . t)
-                         (total . 1) (counts . ((triage . 1))))))))
+                         (total . 7)
+                         (counts . ((triage . 1) (todo . 1) (ready . 1)
+                                    (running . 1) (blocked . 1) (done . 1)
+                                    (archived . 1))))))))
          (row (car (hermes-kanban--task-rows
                     '(((tasks . (((id . "t1") (status . "triage")
                                   (priority . 2) (assignee . "planner")
@@ -66,20 +88,34 @@
          (entry (cadr row))
          (diagnostic-entry (cadr diagnostic)))
     (should (eq (get-text-property 0 'face (aref board-entry 0))
-                'hermes-browser-success))
+                'hermes-browser-default))
+    (should (eq (get-text-property 0 'face (aref board-entry 1))
+                'hermes-browser-name))
     (should (eq (get-text-property 0 'face (aref board-entry 2))
-                'hermes-browser-count))
+                'hermes-browser-total))
+    (cl-mapc (lambda (cell face)
+               (should (eq (get-text-property 0 'face cell) face)))
+             (append (seq-subseq board-entry 3) nil)
+             '(hermes-kanban-triage-face hermes-kanban-todo-face
+               hermes-kanban-ready-face hermes-kanban-running-face
+               hermes-kanban-blocked-face hermes-kanban-done-face
+               hermes-kanban-archived-face))
     (should (eq (get-text-property 0 'face (aref entry 0))
-                'hermes-browser-pending))
+                'hermes-kanban-triage-face))
     (should (eq (get-text-property 0 'face (aref entry 1))
-                'hermes-browser-count))
+                'hermes-browser-priority))
     (should (eq (get-text-property 0 'face (aref entry 2))
-                'hermes-browser-profile))
-    (should-not (get-text-property 0 'face (aref entry 3)))
-    (should (eq (get-text-property 0 'face (aref diagnostic-entry 0))
-                'hermes-browser-error))
+                'hermes-browser-assignee))
+    (should (eq (get-text-property 0 'face (aref entry 3))
+                'hermes-browser-title))
+    (should (equal (get-text-property 0 'face (aref diagnostic-entry 0))
+                   '(hermes-browser-error hermes-browser-severity)))
+    (should (eq (get-text-property 0 'face (aref diagnostic-entry 1))
+                'hermes-browser-title))
     (should (eq (get-text-property 0 'face (aref diagnostic-entry 2))
-                'hermes-browser-profile))))
+                'hermes-browser-assignee))
+    (should (eq (get-text-property 0 'face (aref diagnostic-entry 3))
+                'hermes-browser-diagnostic))))
 
 (ert-deftest hermes-kanban-tabulated-list-formats-scale-with-width ()
   "Kanban tabulated-list formats fit and flex by display width."

@@ -62,26 +62,32 @@
     (should (equal (car todo-row) 3))
     (should (equal (cadr todo-row) ["3" "open" "7" "elisp-dev" "Build it"]))))
 
-(ert-deftest hermes-tracker-todo-rows-face-metadata-not-title ()
-  "Tracker TODO rows style metadata while leaving the title unstyled."
+(ert-deftest hermes-tracker-rows-face-every-column ()
+  "Tracker repository and TODO rows give every column its own face."
   (let* ((repo-row (car (hermes-tracker--repository-rows
-                         '(((slug . "proj") (name . "Project"))))))
+                         '(((slug . "proj") (name . "Project")
+                            (description . "Work"))))))
          (row (car (hermes-tracker--todo-rows
                     '((todos . (((number . 3) (status . "open")
                                  (priority . 7) (assignee . "elisp-dev")
                                  (title . "Build it"))))))))
          (entry (cadr row)))
+    (should (eq (get-text-property 0 'face (aref (cadr repo-row) 0))
+                'hermes-browser-name))
     (should (eq (get-text-property 0 'face (aref (cadr repo-row) 1))
                 'hermes-browser-identifier))
+    (should (eq (get-text-property 0 'face (aref (cadr repo-row) 2))
+                'hermes-browser-description))
     (should (eq (get-text-property 0 'face (aref entry 0))
                 'hermes-browser-identifier))
-    (should (eq (get-text-property 0 'face (aref entry 1))
-                'hermes-browser-active))
+    (should (equal (get-text-property 0 'face (aref entry 1))
+                   '(hermes-browser-active hermes-browser-status)))
     (should (eq (get-text-property 0 'face (aref entry 2))
-                'hermes-browser-count))
+                'hermes-browser-priority))
     (should (eq (get-text-property 0 'face (aref entry 3))
-                'hermes-browser-profile))
-    (should-not (get-text-property 0 'face (aref entry 4)))))
+                'hermes-browser-assignee))
+    (should (eq (get-text-property 0 'face (aref entry 4))
+                'hermes-browser-title))))
 
 (ert-deftest hermes-tracker-format-detail-renders-durable-fields ()
   "TODO detail includes criteria, evidence, links, comments, and closure data."

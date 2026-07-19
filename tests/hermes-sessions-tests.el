@@ -20,17 +20,20 @@
     (should (equal (aref entry 2) "3"))
     (should (equal (aref entry 3) "tui"))))
 
-(ert-deftest hermes-sessions-rows-face-id-count-and-source ()
-  "Session rows distinguish identifiers, counts, and secondary source data."
+(ert-deftest hermes-sessions-rows-face-every-column ()
+  "Session rows give every column its own face."
   (let* ((row (car (hermes-sessions--rows
-                    '(((id . "s1") (message_count . 3) (source . "tui"))))))
+                    '(((id . "s1") (title . "First")
+                       (message_count . 3) (source . "tui"))))))
          (entry (cadr row)))
     (should (eq (get-text-property 0 'face (aref entry 0))
                 'hermes-browser-identifier))
+    (should (eq (get-text-property 0 'face (aref entry 1))
+                'hermes-browser-title))
     (should (eq (get-text-property 0 'face (aref entry 2))
-                'hermes-browser-count))
+                'hermes-browser-message-count))
     (should (eq (get-text-property 0 'face (aref entry 3))
-                'hermes-browser-muted))))
+                'hermes-browser-source))))
 
 (ert-deftest hermes-sessions-mode-keymap-keeps-ret-and-adds-actions ()
   "The browser keeps RET resume and exposes native history/actions."
