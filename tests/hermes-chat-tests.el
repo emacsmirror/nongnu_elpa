@@ -1072,6 +1072,19 @@
        (should (equal (plist-get (hermes-test--assistant-entry) :content)
                       "hello"))))))
 
+(ert-deftest hermes-chat-sanitize-fragment-state-is-explicit ()
+  "ANSI fragments are pure values that can be carried by independent streams."
+  (let* ((first (hermes-chat--sanitize-content-with-fragment
+                 "left\e[38;2;255" nil))
+         (other (hermes-chat--sanitize-content-with-fragment "right" nil))
+         (continued (hermes-chat--sanitize-content-with-fragment
+                     ";0;0m!" (cdr first))))
+    (should (equal (car first) "left"))
+    (should (equal (car other) "right"))
+    (should-not (cdr other))
+    (should (equal (car continued) "!"))
+    (should-not (cdr continued))))
+
 (ert-deftest hermes-chat-resume-renders-prior-messages ()
   "Resuming a session renders its prior user/assistant/tool messages."
   (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
@@ -1944,6 +1957,23 @@
          (should (equal (mapcar (lambda (e) (plist-get e :role))
                                 (hermes-chat--entries))
                         '(status))))))))
+
+(ert-deftest hermes-chat-reset-runs-buffer-cleanup-before-reinitializing ()
+  "Reset cancels per-buffer resources before constructing the new transcript."
+  (let ((timer 'handoff-timer) cancelled cleanup-ran)
+    (cl-letf (((symbol-function 'cancel-timer)
+               (lambda (value) (push value cancelled)))
+              ((symbol-function 'hermes-chat--stop-dashboard-client) #'ignore))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--handoff-poll (list :timer timer :id 'old)
+             hermes-chat-cleanup-functions
+             (list (lambda ()
+                     (setq cleanup-ran t)
+                     (hermes-chat--handoff-stop))))
+       (hermes-chat--reset-transcript)
+       (should cleanup-ran)
+       (should (memq timer cancelled))
+       (should-not hermes-chat--handoff-poll)))))
 
 (ert-deftest hermes-chat-unknown-slash-falls-through-to-gateway ()
   "An unknown slash command dispatches to the gateway, not a native handler."
@@ -3813,12 +3843,12 @@
     (should-not (funcall annotate "unknown"))))
 
 (ert-deftest hermes-chat-read-profile-falls-back-when-dashboard-unavailable ()
-  "The profile chooser falls back to a raw prompt when dashboard data is missing."
+  "A cold profile chooser falls back while its asynchronous warmup fails."
   (let (prompt messages)
     (cl-letf (((symbol-function 'hermes-chat--existing-dashboard-client)
                (lambda () 'fake-client))
-              ((symbol-function 'hermes-dashboard-transport-profile-list)
-               (lambda (_client) (user-error "404 not found")))
+              ((symbol-function 'hermes-dashboard-transport-profile-list-async)
+               (lambda (_client) (hermes--promise-rejected "404 not found")))
               ((symbol-function 'read-string)
                (lambda (text &rest _)
                  (setq prompt text)
@@ -3828,9 +3858,8 @@
                  (push (apply #'format fmt args) messages))))
       (should (equal (hermes-chat--read-profile) "manual-profile"))
       (should (string-match-p "blank for default" prompt))
-      (should (string-match-p "Profile list unavailable: 404 not found"
-                              prompt))
-      (should (string-match-p "Profile list unavailable: 404 not found"
+      (should (string-match-p "No dashboard profiles available" prompt))
+      (should (string-match-p "No dashboard profiles available"
                               (car messages))))))
 
 (ert-deftest hermes-chat-read-profile-falls-back-when-list-empty ()
@@ -3884,6 +3913,23 @@
                      '(("default" . nil) ("elisp-dev" . nil))))
       (should-not touched))))
 
+(ert-deftest hermes-chat-profile-list-cache-miss-warms-asynchronously ()
+  "A cold profile picker starts a warmup but never calls synchronous HTTP."
+  (let ((hermes-dashboard-transport--profile-cache nil)
+        (client (hermes-test--dashboard-client)) warmed)
+    (cl-letf (((symbol-function 'hermes-chat--existing-dashboard-client)
+               (lambda () client))
+              ((symbol-function 'hermes-dashboard-transport-profile-list-async)
+               (lambda (value)
+                 (setq warmed value)
+                 (hermes--promise-resolved nil)))
+              ((symbol-function 'hermes-dashboard-transport-profile-list)
+               (lambda (&rest _) (error "synchronous profile fetch")))
+              ((symbol-function 'url-retrieve-synchronously)
+               (lambda (&rest _) (error "synchronous HTTP"))))
+      (should-not (hermes-chat--profile-list-payload))
+      (should (eq warmed client)))))
+
 (ert-deftest hermes-chat-read-profile-completes-from-cache-without-client ()
   "With a warm cache and no live client the picker completes, never spawning."
   (let ((hermes-dashboard-transport--profile-cache nil)
@@ -3904,19 +3950,18 @@
       (should-not spawned))))
 
 (ert-deftest hermes-chat-completes-dashboard-profile ()
-  "Interactively creating a chat chooses from dashboard profiles."
-  (let (choices)
-    (cl-letf (((symbol-function 'hermes-chat--existing-dashboard-client)
-               (lambda () 'fake-client))
-              ((symbol-function 'hermes-dashboard-transport-profile-list)
-               (lambda (_client)
-                 '((profiles . (((name . "default") (is_default . t))
-                                ((name . "elisp-dev")
-                                 (description . "Emacs Lisp work")))))))
+  "Interactively creating a chat chooses from the warmed profile cache."
+  (let ((hermes-dashboard-transport--profile-cache nil) choices)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
+               (lambda () "http://dash.example"))
               ((symbol-function 'completing-read)
                (lambda (_prompt collection &rest _)
                  (setq choices collection)
                  (cl-find "elisp-dev" collection :test #'string-match-p))))
+      (hermes-dashboard-transport--store-profile-cache
+       '((profiles . (((name . "default") (is_default . t))
+                      ((name . "elisp-dev")
+                       (description . "Emacs Lisp work"))))))
       (let ((buffer (call-interactively #'hermes-chat)))
         (unwind-protect
             (progn

@@ -118,72 +118,109 @@ identity is part of the selection."
     (or (plist-get candidate :model)
         (hermes-chat--model-config-value candidate))))
 
-(defun hermes-chat--apply-model (buffer client candidate confirm)
+(defun hermes-chat--model-switch-context ()
+  "Return the current chat identity for an asynchronous model switch."
+  (list :buffer (current-buffer)
+        :client hermes-chat--dashboard-client
+        :session-id hermes-chat--dashboard-active-session-id
+        :lifecycle-generation hermes-chat--lifecycle-generation
+        :transport-generation hermes-chat--transport-generation))
+
+(defun hermes-chat--model-switch-current-p (context)
+  "Return non-nil when model-switch CONTEXT still names an idle chat."
+  (or (null context)
+      (and-let* ((buffer (plist-get context :buffer))
+                 ((buffer-live-p buffer)))
+        (with-current-buffer buffer
+          (and (eq hermes-chat--dashboard-client
+                   (plist-get context :client))
+               (equal hermes-chat--dashboard-active-session-id
+                      (plist-get context :session-id))
+               (= hermes-chat--lifecycle-generation
+                  (plist-get context :lifecycle-generation))
+               (= hermes-chat--transport-generation
+                  (plist-get context :transport-generation))
+               (not (hermes-chat--active-turn-p)))))))
+
+(defun hermes-chat--apply-model (buffer client candidate confirm &optional context)
   "Set CANDIDATE on BUFFER's session via CLIENT.
 CONFIRM acknowledges an expensive-model confirmation prompt.  When BUFFER
 has no live session yet, the choice is stored buffer-locally and applied
 through `config.set' right after the next session is created."
-  (with-current-buffer buffer
-    (if (hermes-chat--dashboard-session-attached-p)
-        (hermes-dashboard-transport-config-set
-         client "model" (hermes-chat--model-config-value candidate)
-         :session-id hermes-chat--dashboard-active-session-id
-         :confirm-expensive-model confirm
-         :resolve (lambda (result)
-                    (hermes-chat--model-set-result
-                     buffer client candidate result confirm))
-         :reject (lambda (message)
-                   (hermes-chat--in-buffer buffer
-                     (hermes-chat--command-error message))))
-      (setq hermes-chat--dashboard-create-model
-            (if (stringp candidate) candidate (plist-get candidate :model))
-            hermes-chat--dashboard-create-provider
-            (and (not (stringp candidate))
-                 (plist-get candidate :provider)))
-      (hermes-chat--insert-local-status
-       (format "Model set to %s (applies to next session)"
-               (hermes-chat--model-display-name candidate))
-       'ready))))
+  (if (not (hermes-chat--model-switch-current-p context))
+      (message "Hermes: model switch is stale or the chat is busy")
+    (with-current-buffer buffer
+      (if (hermes-chat--dashboard-session-attached-p)
+          (hermes-dashboard-transport-config-set
+           client "model" (hermes-chat--model-config-value candidate)
+           :session-id hermes-chat--dashboard-active-session-id
+           :confirm-expensive-model confirm
+           :resolve (lambda (result)
+                      (hermes-chat--model-set-result
+                       buffer client candidate result confirm context))
+           :reject (lambda (message)
+                     (hermes-chat--in-buffer buffer
+                       (hermes-chat--command-error message))))
+        (setq hermes-chat--dashboard-create-model
+              (if (stringp candidate) candidate (plist-get candidate :model))
+              hermes-chat--dashboard-create-provider
+              (and (not (stringp candidate))
+                   (plist-get candidate :provider)))
+        (hermes-chat--insert-local-status
+         (format "Model set to %s (applies to next session)"
+                 (hermes-chat--model-display-name candidate))
+         'ready)))))
 
-(defun hermes-chat--model-set-result (buffer client candidate result confirmed)
+(defun hermes-chat--model-set-result
+    (buffer client candidate result confirmed &optional context)
   "Report CANDIDATE switch RESULT for BUFFER, re-confirming through CLIENT.
 CONFIRMED is non-nil after the user has already accepted an expensive-model
 confirmation prompt."
-  (hermes-chat--in-buffer buffer
-    (if (hermes-transport--get result 'confirm_required)
-        (if confirmed
-            (hermes-chat--command-error
-             (format "Model switch still requires confirmation: %s"
-                     (or (hermes-transport--scalar-string
-                          (hermes-transport--get result 'confirm_message))
-                         "backend repeated confirmation request")))
-          (if (yes-or-no-p
-               (or (hermes-transport--scalar-string
-                    (hermes-transport--get result 'confirm_message))
-                   "Confirm switching to this model? "))
-              (hermes-chat--apply-model buffer client candidate t)
-            (hermes-chat--insert-local-status "Model switch cancelled" 'ready)))
-      (hermes-chat--insert-local-status
-       (format "Model set to %s"
-               (hermes-chat--model-display-name candidate))
-       'ready))))
+  (when (hermes-chat--model-switch-current-p context)
+    (hermes-chat--in-buffer buffer
+      (if (hermes-transport--get result 'confirm_required)
+          (if confirmed
+              (hermes-chat--command-error
+               (format "Model switch still requires confirmation: %s"
+                       (or (hermes-transport--scalar-string
+                            (hermes-transport--get result 'confirm_message))
+                           "backend repeated confirmation request")))
+            (if (yes-or-no-p
+                 (or (hermes-transport--scalar-string
+                      (hermes-transport--get result 'confirm_message))
+                     "Confirm switching to this model? "))
+                (hermes-chat--apply-model buffer client candidate t context)
+              (hermes-chat--insert-local-status
+               "Model switch cancelled" 'ready)))
+        (hermes-chat--insert-local-status
+         (format "Model set to %s"
+                 (hermes-chat--model-display-name candidate))
+         'ready)))))
 
-(defun hermes-chat--prompt-and-set-model (buffer client result)
+(defun hermes-chat--prompt-and-set-model (buffer client result &optional context)
   "Prompt for a model from RESULT and apply it to BUFFER's session via CLIENT."
-  (when (buffer-live-p buffer)
-    (let* ((candidates (hermes-chat--model-candidates result))
-           (labels (mapcar #'car candidates)))
-      (if (null candidates)
-          (message "Hermes: no models available to switch to")
-        (let* ((choice (completing-read "Switch model: " labels nil t))
-               (candidate (cdr (assoc choice candidates))))
-          (unless (or (string-empty-p choice) (null candidate))
-            (if (plist-get candidate :authenticated)
-                (hermes-chat--apply-model buffer client candidate nil)
-              (hermes-chat--connect-provider-candidate
-               buffer client
-               (hermes-chat--find-provider result (plist-get candidate :provider))
-               (lambda () (hermes-chat--apply-model buffer client candidate nil))))))))))
+  (if (not (hermes-chat--model-switch-current-p context))
+      (message "Hermes: model switch is stale or the chat is busy")
+    (when (buffer-live-p buffer)
+      (let* ((candidates (hermes-chat--model-candidates result))
+             (labels (mapcar #'car candidates)))
+        (if (null candidates)
+            (message "Hermes: no models available to switch to")
+          (let* ((choice (completing-read "Switch model: " labels nil t))
+                 (candidate (cdr (assoc choice candidates))))
+            (unless (or (string-empty-p choice) (null candidate))
+              (if (not (hermes-chat--model-switch-current-p context))
+                  (message "Hermes: model switch is stale or the chat is busy")
+                (if (plist-get candidate :authenticated)
+                    (hermes-chat--apply-model
+                     buffer client candidate nil context)
+                  (hermes-chat--connect-provider-candidate
+                   buffer client
+                   (hermes-chat--find-provider
+                    result (plist-get candidate :provider))
+                   (lambda ()
+                     (hermes-chat--apply-model
+                      buffer client candidate nil context))))))))))))
 
 (defun hermes-chat-switch-model (&optional refresh)
   "Switch the model used by the current Hermes chat session.
@@ -195,13 +232,15 @@ refetch it from the dashboard instead."
   (when (hermes-chat--active-turn-p)
     (user-error "Interrupt the active turn before switching models"))
   (let ((buffer (current-buffer))
-        (client hermes-chat--dashboard-client))
+        (client hermes-chat--dashboard-client)
+        (context (hermes-chat--model-switch-context)))
     (hermes-dashboard-transport-model-options-cached
      client
      :session-id hermes-chat--dashboard-active-session-id
      :force refresh
      :resolve (lambda (result)
-                (hermes-chat--prompt-and-set-model buffer client result))
+                (hermes-chat--prompt-and-set-model
+                 buffer client result context))
      :reject (lambda (message)
                (hermes-chat--in-buffer buffer
                  (hermes-chat--command-error message))))))

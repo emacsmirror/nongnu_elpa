@@ -145,6 +145,38 @@
         (hermes-chat--handoff-poll-tick (current-buffer)))
       (should (equal (cdr (assq 'state handled)) "running")))))
 
+(ert-deftest hermes-chat-handoff-stale-poll-result-does-not-settle-replacement ()
+  "A result captured for poll A cannot settle a replacement poll B."
+  (with-temp-buffer
+    (let (resolve handled)
+      (setq hermes-chat--handoff-poll
+            (list :id 'poll-a :platform "telegram" :backoff 1
+                  :deadline (time-add (current-time) 60)))
+      (cl-letf (((symbol-function 'hermes-dashboard-transport-handoff-state)
+                 (lambda (_client &rest args)
+                   (setq resolve (plist-get args :resolve))))
+                ((symbol-function 'hermes-chat--handoff-handle-state)
+                 (lambda (&rest _args) (setq handled t))))
+        (hermes-chat--handoff-poll-tick (current-buffer))
+        (setq hermes-chat--handoff-poll
+              (list :id 'poll-b :platform "discord" :backoff 1
+                    :deadline (time-add (current-time) 60)))
+        (funcall resolve '((state . "completed"))))
+      (should (eq (plist-get hermes-chat--handoff-poll :id) 'poll-b))
+      (should-not handled))))
+
+(ert-deftest hermes-chat-handoff-start-replaces-poll-with-new-identity ()
+  "Starting a second handoff replaces the first with a distinct identity."
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (&rest _args) 'timer))
+              ((symbol-function 'cancel-timer) #'ignore))
+      (hermes-chat--handoff-start-poll "telegram")
+      (let ((first (plist-get hermes-chat--handoff-poll :id)))
+        (hermes-chat--handoff-start-poll "discord")
+        (should first)
+        (should-not (eq first (plist-get hermes-chat--handoff-poll :id)))))))
+
 (ert-deftest hermes-chat-handoff-slash-routes-to-command ()
   "The /handoff slash command dispatches its argument to `hermes-chat-handoff'."
   (let (called)

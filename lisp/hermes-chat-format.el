@@ -33,9 +33,6 @@
 (require 'subr-x)
 (require 'hermes-transport)
 
-;; Defined in hermes-chat.el; the ANSI-fragment hash mutators stay there while
-;; `hermes-chat--sanitize-content' lives here.
-
 (defun hermes-chat--displayable-char-p (char)
   "Return non-nil if CHAR is safe to display in chat content."
   (or (memq char '(?\t ?\n))
@@ -50,9 +47,8 @@ FRAGMENT is a partial escape sequence carried over from the same stream, or
 nil.  This is deliberately not `ansi-color-filter-apply': besides SGR/CSI
 color codes it also strips OSC sequences (terminal-title and the like) that
 `ansi-color' leaves in place, and it carries a trailing partial escape -- a
-CSI, an OSC, or a lone ESC -- across stream chunks through FRAGMENT, which
-`hermes-chat--sanitize-content' keys per stream.  `ansi-color''s single global
-context models neither."
+CSI, an OSC, or a lone ESC -- across stream chunks through FRAGMENT.
+`ansi-color''s single global context models neither."
   (let ((text (concat (or fragment "") (or content "")))
         next-fragment)
     (setq text (replace-regexp-in-string
@@ -65,17 +61,18 @@ context models neither."
             text (substring text 0 (match-beginning 1))))
     (cons text next-fragment)))
 
-(defun hermes-chat--sanitize-content (content &optional ansi-key)
-  "Return sanitized CONTENT for display in chat buffers.
-When ANSI-KEY is non-nil, preserve split ANSI sequences for that stream."
-  (let* ((stripped (hermes-chat--strip-ansi-escape-sequences
-                    content (hermes-chat--ansi-fragment ansi-key)))
+(defun hermes-chat--sanitize-content-with-fragment (content fragment)
+  "Return (TEXT . FRAGMENT) after sanitizing CONTENT with ANSI FRAGMENT."
+  (let* ((stripped (hermes-chat--strip-ansi-escape-sequences content fragment))
          (text (car stripped)))
-    (when ansi-key
-      (hermes-chat--record-ansi-fragment ansi-key (cdr stripped)))
     (unless (multibyte-string-p text)
       (setq text (decode-coding-string text 'utf-8-unix t)))
-    (concat (seq-filter #'hermes-chat--displayable-char-p text))))
+    (cons (concat (seq-filter #'hermes-chat--displayable-char-p text))
+          (cdr stripped))))
+
+(defun hermes-chat--sanitize-content (content)
+  "Return sanitized CONTENT for display in chat buffers."
+  (car (hermes-chat--sanitize-content-with-fragment content nil)))
 
 (defun hermes-chat--strip-session-id-lines (content &optional final)
   "Return CONTENT without Hermes CLI session-id lines.
@@ -553,34 +550,6 @@ markdown stays visible and easy to copy."
       (maphash (lambda (key item) (push (cons key item) entries)) value)
       (nreverse entries)))
    ((listp value) value)))
-
-
-;;; ANSI fragment cache
-
-;; A control sequence split across two deltas must not leak half an
-;; escape into the transcript; the sanitizer stashes the tail here and
-;; re-prepends it on the next delta for the same entry.
-
-(defvar-local hermes-chat--ansi-fragments nil
-  "Hash of entry key to pending ANSI escape fragment.")
-
-(defun hermes-chat--ansi-fragment (key)
-  "Return pending ANSI fragment for KEY, or nil."
-  (and key hermes-chat--ansi-fragments
-       (gethash key hermes-chat--ansi-fragments)))
-
-(defun hermes-chat--record-ansi-fragment (key fragment)
-  "Record ANSI FRAGMENT for KEY, or clear KEY when FRAGMENT is nil."
-  (when key
-    (unless hermes-chat--ansi-fragments
-      (setq hermes-chat--ansi-fragments (make-hash-table :test #'equal)))
-    (if fragment
-        (puthash key fragment hermes-chat--ansi-fragments)
-      (remhash key hermes-chat--ansi-fragments))))
-
-(defun hermes-chat--clear-ansi-fragment (key)
-  "Clear pending ANSI fragment for KEY."
-  (hermes-chat--record-ansi-fragment key nil))
 
 
 ;;; Event classification

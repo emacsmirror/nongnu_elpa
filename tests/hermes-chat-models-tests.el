@@ -201,6 +201,66 @@
      (hermes-chat-switch-model)
      (should (string-match-p "backend denied" (buffer-string))))))
 
+(ert-deftest hermes-chat-switch-model-ignores-catalog-after-turn-starts ()
+  "A delayed catalog cannot prompt once the target chat becomes busy."
+  (let (resolve prompted applied)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (setq resolve (plist-get args :resolve))))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _args) (setq prompted t) "model"))
+              ((symbol-function 'hermes-dashboard-transport-config-set)
+               (lambda (&rest _args) (setq applied t))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+             hermes-chat--dashboard-active-session-id "sid-1"
+             hermes-chat--dashboard-session-ready-p t)
+       (hermes-chat-switch-model)
+       (setq hermes-chat--pending-assistant-id "assistant")
+       (funcall resolve
+                '((providers . (((slug . "p") (authenticated . t)
+                                  (models . ("model")))))))
+       (should-not prompted)
+       (should-not applied)))))
+
+(ert-deftest hermes-chat-switch-model-ignores-catalog-after-reset ()
+  "A delayed catalog cannot prompt after the chat lifetime changes."
+  (let (resolve prompted)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (setq resolve (plist-get args :resolve))))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _args) (setq prompted t) "model")))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+             hermes-chat--dashboard-active-session-id "sid-1"
+             hermes-chat--dashboard-session-ready-p t)
+       (hermes-chat-switch-model)
+       (cl-incf hermes-chat--lifecycle-generation)
+       (funcall resolve
+                '((providers . (((slug . "p") (authenticated . t)
+                                  (models . ("model")))))))
+       (should-not prompted)))))
+
+(ert-deftest hermes-chat-switch-model-ignores-catalog-after-client-change ()
+  "A delayed catalog cannot prompt after the chat changes transport clients."
+  (let (resolve prompted)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (setq resolve (plist-get args :resolve))))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _args) (setq prompted t) "model")))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+             hermes-chat--dashboard-active-session-id "sid-1"
+             hermes-chat--dashboard-session-ready-p t)
+       (hermes-chat-switch-model)
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client))
+       (funcall resolve
+                '((providers . (((slug . "p") (authenticated . t)
+                                  (models . ("model")))))))
+       (should-not prompted)))))
+
 ;;; Group: provider onboarding from chat
 
 (ert-deftest hermes-chat-find-provider-matches-slug ()

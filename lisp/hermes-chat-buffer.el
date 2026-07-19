@@ -112,6 +112,8 @@ Bumped per turn and transcript reset so stale async callbacks become obsolete.
 Owned here; `hermes-chat' and `hermes-chat-dashboard' only re-declare it.")
 (defvar-local hermes-chat--lifecycle-generation 0
   "Monotonic chat lifetime generation used to reject post-reset callbacks.")
+(defvar-local hermes-chat--ansi-fragments nil
+  "Hash of entry key to pending ANSI escape fragment.")
 (defvar-local hermes-chat--interrupted-assistant-id nil
   "Assistant entry whose remaining turn events must be ignored.")
 (defvar-local hermes-chat--interrupted-events nil
@@ -540,6 +542,31 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
   "Return ANSI-fragment key for ASSISTANT-ID stream chunks."
   (list 'assistant assistant-id))
 
+(defun hermes-chat--ansi-fragment (key)
+  "Return the pending ANSI fragment for KEY, or nil."
+  (and key hermes-chat--ansi-fragments
+       (gethash key hermes-chat--ansi-fragments)))
+
+(defun hermes-chat--record-ansi-fragment (key fragment)
+  "Record ANSI FRAGMENT for KEY, or clear KEY when FRAGMENT is nil."
+  (when key
+    (unless hermes-chat--ansi-fragments
+      (setq hermes-chat--ansi-fragments (make-hash-table :test #'equal)))
+    (if fragment
+        (puthash key fragment hermes-chat--ansi-fragments)
+      (remhash key hermes-chat--ansi-fragments))))
+
+(defun hermes-chat--clear-ansi-fragment (key)
+  "Clear the pending ANSI fragment for KEY."
+  (hermes-chat--record-ansi-fragment key nil))
+
+(defun hermes-chat--sanitize-stream-content (content key)
+  "Sanitize stream CONTENT using the pending ANSI fragment for KEY."
+  (let ((result (hermes-chat--sanitize-content-with-fragment
+                 content (hermes-chat--ansi-fragment key))))
+    (hermes-chat--record-ansi-fragment key (cdr result))
+    (car result)))
+
 (defun hermes-chat--append-assistant-content (assistant-id content status)
   "Append CONTENT to ASSISTANT-ID and set STATUS."
   (let ((ansi-key (hermes-chat--assistant-ansi-key assistant-id)))
@@ -549,8 +576,10 @@ because the chat was cleared mid-turn, like `hermes-chat--remove-entry'."
      assistant-id
      (lambda (entry)
        (let ((text (concat (or (plist-get entry :content) "")
-                           (hermes-chat--sanitize-content
-                            content (and (eq status 'streaming) ansi-key)))))
+                           (if (eq status 'streaming)
+                               (hermes-chat--sanitize-stream-content
+                                content ansi-key)
+                             (hermes-chat--sanitize-content content)))))
          (hermes-chat--entry-with
           entry
           :status status

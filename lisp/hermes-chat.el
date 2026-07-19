@@ -927,6 +927,7 @@ for that."
   "Tear down the live session and re-initialize this chat buffer empty.
 Stops any live dashboard client, clears the EWOC transcript and header, and
 forgets both the live and durable session ids so the next send starts fresh."
+  (run-hooks 'hermes-chat-cleanup-functions)
   (hermes-chat--invalidate-transport-state)
   (hermes-chat--stop-dashboard-client)
   (hermes-chat--setup-buffer))
@@ -1023,14 +1024,16 @@ CANDIDATES is a (NAME . MODEL-LABEL) alist; the annotation shows the model."
 (defun hermes-chat--profile-list-payload ()
   "Return dashboard profile metadata, preferring the warmed cache.
 `hermes' warms a per-URL profile cache on launch (see
-`hermes-dashboard-transport-profile-list-async'), so cold-start completion has
-candidates without blocking.  On a cache miss this falls back to a synchronous
-fetch only when a live chat client already supplies a cheap session token; with
-neither it returns nil so the caller prompts for a profile manually and never
-spawns a transient dashboard."
+`hermes-dashboard-transport-profile-list-async').  A cache miss starts a
+best-effort asynchronous warmup through an existing client and returns nil, so
+the current invocation remains nonblocking."
   (or (hermes-dashboard-transport-cached-profile-list)
       (when-let* ((client (hermes-chat--existing-dashboard-client)))
-        (hermes-dashboard-transport-profile-list client))))
+        (ignore-errors
+          (hermes--promise-catch
+           (hermes-dashboard-transport-profile-list-async client)
+           #'ignore))
+        nil)))
 
 (defun hermes-chat--read-raw-profile (&optional notice)
   "Read a raw Hermes profile name with the default-profile prompt.
