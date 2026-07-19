@@ -1049,8 +1049,8 @@ PROFILE nil means the default profile.  A nil or empty TITLE yields a name with
 just the profile, so buffers stay distinct before a session title arrives."
   (let ((profile (or profile "default")))
     (if (and title (not (string-empty-p title)))
-        (format "*Hermes: %s: %s*" profile title)
-      (format "*Hermes: %s*" profile))))
+        (format "*Hermes@%s: %s*" profile title)
+      (format "*Hermes@%s*" profile))))
 
 (defun hermes-chat--push-session-title (title)
   "Push TITLE to the server with `session.title' when a session is attached.

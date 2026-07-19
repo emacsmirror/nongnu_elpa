@@ -941,7 +941,7 @@ forgets both the live and durable session ids so the next send starts fresh."
 (defun hermes-chat--new-buffer (&optional profile title)
   "Create, display, and return a fresh chat buffer for PROFILE and TITLE.
 PROFILE nil means the dashboard default; a non-empty TITLE pins a manual title.
-The buffer is named `*Hermes: PROFILE*' (or `*Hermes: PROFILE: TITLE*') so chats
+The buffer is named `*Hermes@PROFILE*' (or `*Hermes@PROFILE: TITLE*') so chats
 stay distinct before a server title arrives.  This is the single side-effecting
 constructor every new-chat entry point funnels through."
   (let ((profile (hermes-chat--clean-profile profile))
@@ -1113,9 +1113,7 @@ messages are fetched and rendered; the durable session continues on send."
   (when (or (null session-id) (string-empty-p session-id))
     (user-error "No Hermes session id to resume"))
   (let ((buffer (generate-new-buffer
-                 (if (and title (not (string-empty-p title)))
-                     (format "*Hermes: %s*" title)
-                   hermes-chat-buffer-name))))
+                 (hermes-chat--buffer-name-for-title nil title))))
     (with-current-buffer buffer
       (hermes-chat-mode)
       (setq hermes-chat--session-id session-id))

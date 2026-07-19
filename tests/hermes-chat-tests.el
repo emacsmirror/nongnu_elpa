@@ -384,7 +384,7 @@
    (hermes-chat-rename "  My Project  ")
    (should (equal hermes-chat--title "My Project"))
    (should hermes-chat--title-manual-p)
-   (should (equal (buffer-name) "*Hermes: default: My Project*"))))
+   (should (equal (buffer-name) "*Hermes@default: My Project*"))))
 
 (ert-deftest hermes-chat-rename-rejects-empty-title ()
   (hermes-test-with-chat-buffer
@@ -406,13 +406,13 @@
 (ert-deftest hermes-chat-buffer-name-for-title-formats ()
   "Buffer names carry the profile, plus the title once present."
   (should (equal (hermes-chat--buffer-name-for-title "coder" nil)
-                 "*Hermes: coder*"))
+                 "*Hermes@coder*"))
   (should (equal (hermes-chat--buffer-name-for-title "coder" "Fix bug")
-                 "*Hermes: coder: Fix bug*"))
+                 "*Hermes@coder: Fix bug*"))
   (should (equal (hermes-chat--buffer-name-for-title nil "Fix bug")
-                 "*Hermes: default: Fix bug*"))
+                 "*Hermes@default: Fix bug*"))
   (should (equal (hermes-chat--buffer-name-for-title nil "")
-                 "*Hermes: default*")))
+                 "*Hermes@default*")))
 
 (ert-deftest hermes-chat-prompts-profile-and-names-buffer ()
   "M-x hermes-chat reads a profile and names the buffer after it."
@@ -422,7 +422,7 @@
       (unwind-protect
           (with-current-buffer buffer
             (should (equal hermes-chat--profile "coder"))
-            (should (string-prefix-p "*Hermes: coder" (buffer-name))))
+            (should (string-prefix-p "*Hermes@coder" (buffer-name))))
         (when (buffer-live-p buffer) (kill-buffer buffer))))))
 
 (ert-deftest hermes-chat-blank-profile-names-buffer-default ()
@@ -431,7 +431,7 @@
     (unwind-protect
         (with-current-buffer buffer
           (should-not hermes-chat--profile)
-          (should (string-prefix-p "*Hermes: default" (buffer-name))))
+          (should (string-prefix-p "*Hermes@default" (buffer-name))))
       (when (buffer-live-p buffer) (kill-buffer buffer)))))
 
 (ert-deftest hermes-chat-should-apply-title-p-rules ()
@@ -470,7 +470,7 @@
          (funcall callback '(:type done))
          ;; The title fetch is deferred off the event handler; let it run.
          (sit-for 0.05)
-         (should (equal (buffer-name) "*Hermes: default: Auto Title*"))
+         (should (equal (buffer-name) "*Hermes@default: Auto Title*"))
          (should (= pushes 0)))))))
 
 (ert-deftest hermes-chat-manual-title-survives-refresh ()
@@ -3570,7 +3570,8 @@
       (unwind-protect
           (with-current-buffer buffer
             (should (derived-mode-p 'hermes-chat-mode))
-            (should (equal hermes-chat--session-id "sid-42")))
+            (should (equal hermes-chat--session-id "sid-42"))
+            (should (equal (buffer-name) "*Hermes@default: My chat*")))
         (kill-buffer buffer)))))
 
 (ert-deftest hermes-chat-format-usage ()
@@ -3774,12 +3775,12 @@
   "The buffer name reflects the profile and a pinned title, never the bare name."
   (let ((buffer (hermes-chat--new-buffer nil nil)))
     (unwind-protect
-        (with-current-buffer buffer (should (equal (buffer-name) "*Hermes: default*")))
+        (with-current-buffer buffer (should (equal (buffer-name) "*Hermes@default*")))
       (kill-buffer buffer)))
   (let ((buffer (hermes-chat--new-buffer "work" "deploy")))
     (unwind-protect
         (with-current-buffer buffer
-          (should (equal (buffer-name) "*Hermes: work: deploy*"))
+          (should (equal (buffer-name) "*Hermes@work: deploy*"))
           (should hermes-chat--title-manual-p))
       (kill-buffer buffer))))
 
