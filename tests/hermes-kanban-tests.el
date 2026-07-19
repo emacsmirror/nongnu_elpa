@@ -9,8 +9,12 @@
   "Status display helpers share icons, labels, and raw status properties."
   (should (equal hermes-kanban--current-board-marker "📍"))
   (should (equal hermes-kanban--board-count-statuses
-                 '("todo" "ready" "running" "blocked" "done" "archived")))
-  (dolist (spec '(("todo" "📝")
+                 '("triage" "todo" "ready" "running" "blocked" "done" "archived")))
+  (should (equal hermes-kanban--statuses
+                 '("triage" "todo" "scheduled" "ready" "blocked" "done"
+                   "archived")))
+  (dolist (spec '(("triage" "💡")
+                  ("todo" "📝")
                   ("ready" "✅")
                   ("running" "⚙️")
                   ("blocked" "⛔")
@@ -55,14 +59,14 @@
                   width))
       (should (equal (car (aref boards 0)) ""))
       (should (equal (car (aref boards 1)) "📋"))
-      (should (equal (car (aref boards 3)) "📝"))
+      (should (equal (car (aref boards 3)) "💡"))
       (should (>= (cadr (aref boards 0)) 1))
       (should (>= (cadr (aref boards 1)) 1))
       (should (>= (cadr (aref tasks 0)) 1))
       (should (>= (cadr (aref tasks 3)) 1))
       (should (<= (cadr (aref tasks 3))
                   hermes-kanban--task-title-column-max-width))
-      (when (>= width 50)
+      (when (>= width 60)
         (should (>= (cadr (aref boards 1)) 12))
         (should (>= (cadr (aref boards 3)) 4))
         (should (>= (cadr (aref tasks 0)) 6))
@@ -114,14 +118,15 @@
                                   :test #'equal))))
     (let* ((rows (hermes-kanban--board-rows
                   '(((slug . "emacs-lisp") (name . "Emacs Lisp")
-                     (is_current . t) (total . 4)
-                     (counts . ((todo . 1) (running . 2)
+                     (is_current . t) (total . 6)
+                     (counts . ((triage . 2) (todo . 1) (running . 2)
                                 (archived . 1)))))))
            (entry (cadr (car rows))))
       (should (equal (caar rows) (cons "emacs-lisp" "Emacs Lisp")))
       (should (equal (aref entry 0) "📍"))
       (should (equal (aref entry 1) "Emacs Lisp"))
-      (should (equal (aref entry 2) "4"))
+      (should (equal (aref entry 2) "6"))
+      (should (equal (aref entry (column-for "triage")) "2"))
       (should (equal (aref entry (column-for "todo")) "1"))
       (should (equal (aref entry (column-for "running")) "2"))
       (should (equal (aref entry (column-for "archived")) "1")))))
@@ -1116,6 +1121,132 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
                           ((board . "emacs-lisp")))
                         calls))
         (should reverted)))))
+
+(ert-deftest hermes-kanban-create-triage-task-posts-triage-body ()
+  "Creating a triage idea POSTs the backend triage flag and refreshes."
+  (let (call refreshed)
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) "Rough idea"))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) "specifier"))
+              ((symbol-function 'read-number)
+               (lambda (&rest _) 3))
+              ((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (setq call (list method path body query))
+                 (hermes--promise-resolved '((task . ((id . "t1")))))))
+              ((symbol-function 'hermes-kanban--render-board)
+               (lambda (slug name &optional _in-place)
+                 (setq refreshed (list slug name)))))
+      (with-temp-buffer
+        (hermes-kanban-mode)
+        (setq hermes-kanban--slug "main"
+              hermes-kanban--name "Main"
+              hermes-kanban--assignees '("specifier"))
+        (hermes-kanban-create-triage-task)
+        (should (equal call
+                       '("POST" "/tasks"
+                         ((title . "Rough idea") (priority . 3)
+                          (assignee . "specifier") (triage . t))
+                         ((board . "main")))))
+        (should (equal refreshed '("main" "Main")))))))
+
+(ert-deftest hermes-kanban-specify-triage-task-posts-and-refreshes-detail ()
+  "Specifying a triage task reports its new title and refreshes its detail."
+  (let (call reported reverted)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query timeout)
+                 (setq call (list method path body query timeout))
+                 (hermes--promise-resolved
+                  '((ok . t) (task_id . "t1") (new_title . "Clear task")))))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq reverted t)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq reported (apply #'format format-string args)))))
+      (with-temp-buffer
+        (hermes-kanban-task-mode)
+        (setq hermes-kanban-task--task-id "t1"
+              hermes-kanban-task--board-slug "main"
+              hermes-kanban-task--status "triage")
+        (hermes-kanban-specify-triage-task)
+        (should (equal call
+                       '("POST" "/tasks/t1/specify" ((author . :null))
+                         ((board . "main")) 300)))
+        (should (equal reported "Specified task: Clear task"))
+        (should reverted)))))
+
+(ert-deftest hermes-kanban-specify-summary-reports-resolved-failure ()
+  "A resolved non-OK specifier outcome keeps its backend reason visible."
+  (should (equal (hermes-kanban--specify-summary
+                  '((ok . :false) (reason . "no auxiliary client configured")))
+                 "Specify failed: no auxiliary client configured")))
+
+(ert-deftest hermes-kanban-triage-action-rejects-non-triage-task ()
+  "Triage-only actions do not call the backend for another task status."
+  (let (called)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (setq called t)
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'revert-buffer) #'ignore)
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-kanban-task-mode)
+        (setq hermes-kanban-task--task-id "t1"
+              hermes-kanban-task--board-slug "main"
+              hermes-kanban-task--status "todo")
+        (should-error (hermes-kanban-specify-triage-task)
+                      :type 'user-error)
+        (should-not called)))))
+
+(ert-deftest hermes-kanban-triage-actions-are-discoverable-in-keymaps ()
+  "Board and task popups expose their applicable triage commands."
+  (should (eq (lookup-key hermes-kanban-mode-map (kbd "i"))
+              #'hermes-kanban-create-triage-task))
+  (dolist (map (list hermes-kanban-mode-map hermes-kanban-task-mode-map))
+    (should (eq (lookup-key map (kbd "S"))
+                #'hermes-kanban-specify-triage-task))
+    (should (eq (lookup-key map (kbd "x"))
+                #'hermes-kanban-decompose-triage-task))))
+
+(ert-deftest hermes-kanban-decompose-triage-task-reports-child-ids ()
+  "Decomposing a triage task reports the generated child ids."
+  (let (call reported reverted)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query timeout)
+                 (setq call (list method path body query timeout))
+                 (hermes--promise-resolved
+                  '((ok . t) (fanout . t) (child_ids . ["c1" "c2"])))))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq reverted t)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq reported (apply #'format format-string args)))))
+      (with-temp-buffer
+        (hermes-kanban-task-mode)
+        (setq hermes-kanban-task--task-id "t1"
+              hermes-kanban-task--board-slug "main"
+              hermes-kanban-task--status "triage")
+        (hermes-kanban-decompose-triage-task)
+        (should (equal call
+                       '("POST" "/tasks/t1/decompose" ((author . :null))
+                         ((board . "main")) 300)))
+        (should (equal reported "Decomposed task into 2 children: c1, c2"))
+        (should reverted)))))
+
+(ert-deftest hermes-kanban-decompose-summary-reports-resolved-failure ()
+  "A resolved non-OK decomposer outcome keeps its backend reason visible."
+  (should (equal (hermes-kanban--decompose-summary
+                  '((ok . :false) (reason . "decomposer unavailable")))
+                 "Decompose failed: decomposer unavailable")))
+
+(ert-deftest hermes-kanban-decompose-summary-reports-single-task-title ()
+  "A non-fanout decomposition reports the rewritten task title."
+  (should (equal (hermes-kanban--decompose-summary
+                  '((ok . t) (fanout . :false) (child_ids . [])
+                    (new_title . "Clear task")))
+                 "Kept as one task: Clear task")))
 
 (ert-deftest hermes-kanban-dispatch-summary-formats-counts ()
   "The dispatch summary reports non-zero counters and auto-assignments."

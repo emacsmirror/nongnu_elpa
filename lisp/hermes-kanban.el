@@ -28,7 +28,7 @@
 ;;
 ;; `hermes-list-kanban' opens the boards overview: one row per board with a
 ;; per-status count summary.  RET drills into a board's tasks, where RET shows
-;; a task and e/a/s/c/+/D edit, assign, set-status, comment, create, delete.
+;; a task and the popup exposes editing, triage, recovery, and view actions.
 
 ;;; Code:
 
@@ -55,14 +55,19 @@
 (defconst hermes-kanban-log-tail-bytes 100000
   "Number of worker-log bytes fetched for `hermes-kanban-show-log'.")
 
-(defun hermes-kanban--api (method path &optional body query)
+(defcustom hermes-kanban-triage-action-timeout 300
+  "Seconds before a triage specify or decompose request gives up."
+  :type 'number
+  :group 'hermes)
+
+(defun hermes-kanban--api (method path &optional body query timeout)
   "Return a promise of the kanban plugin response for METHOD PATH.
-BODY and QUERY extend the request.  Authentication and a single retry on a
-failed GET come from the shared dashboard transport, which talks only to
+BODY, QUERY, and TIMEOUT extend the request.  Authentication and a single retry
+on a failed GET come from the shared dashboard transport, which talks only to
 `hermes-dashboard-transport-url'."
   (hermes-dashboard-transport-api-request-async
    method (concat "/api/plugins/kanban" path)
-   :body body :query query))
+   :body body :query query :timeout timeout))
 
 (defun hermes-kanban--then (promise on-ok)
   "Run ON-OK on PROMISE's resolved value, reporting any rejection."
@@ -92,7 +97,8 @@ failed GET come from the shared dashboard transport, which talks only to
   "Board slugs protected from archive/delete by the Hermes backend.")
 
 (defconst hermes-kanban--status-display
-  '(("todo" :icon "📝" :label "todo" :face nil)
+  '(("triage" :icon "💡" :label "triage" :face nil)
+    ("todo" :icon "📝" :label "todo" :face nil)
     ("ready" :icon "✅" :label "ready" :face nil)
     ("running" :icon "⚙️" :label "running" :face nil)
     ("blocked" :icon "⛔" :label "blocked" :face nil)
@@ -102,7 +108,7 @@ failed GET come from the shared dashboard transport, which talks only to
 Each entry maps a status string to :icon, :label, and optional :face.")
 
 (defconst hermes-kanban--board-count-statuses
-  '("todo" "ready" "running" "blocked" "done" "archived")
+  '("triage" "todo" "ready" "running" "blocked" "done" "archived")
   "Statuses displayed as count columns in the boards overview.")
 
 (defconst hermes-kanban--task-title-column-max-width 64
@@ -449,6 +455,10 @@ the board detail buffer shows the most recently created tasks at the top."
   "a" ("Assign / reassign" hermes-kanban-change-assignee)
   "s" ("Set status" hermes-kanban-set-status)
   "c" ("Comment" hermes-kanban-comment)
+  :group "Triage"
+  "i" ("New rough idea" hermes-kanban-create-triage-task)
+  "S" ("Specify rough idea" hermes-kanban-specify-triage-task)
+  "x" ("Decompose rough idea" hermes-kanban-decompose-triage-task)
   :group "Board"
   "+" ("New task" hermes-kanban-create-task)
   "D" ("Delete task" hermes-kanban-delete)
@@ -789,6 +799,9 @@ and an absent branch or run id is omitted."
   "c" ("Comment" hermes-kanban-comment)
   "a" ("Change assignee" hermes-kanban-change-assignee)
   "T" ("Open Tracker TODO" hermes-kanban-open-tracker)
+  :group "Triage"
+  "S" ("Specify rough idea" hermes-kanban-specify-triage-task)
+  "x" ("Decompose rough idea" hermes-kanban-decompose-triage-task)
   :group "Recovery"
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
@@ -1034,7 +1047,7 @@ With IN-PLACE non-nil, refresh without re-displaying (used by revert)."
      (lambda (_) (hermes-kanban--render-board slug name)))))
 
 (defconst hermes-kanban--statuses
-  '("todo" "ready" "blocked" "scheduled" "done" "archived" "triage")
+  '("triage" "todo" "scheduled" "ready" "blocked" "done" "archived")
   "Statuses settable through the dashboard PATCH endpoint.")
 
 (defun hermes-kanban--profile-name (profile)
@@ -1137,23 +1150,102 @@ view."
                          `((body . ,body)) query)
      (lambda (_) (message "Comment added to task %s" id) (funcall refresh)))))
 
-(defun hermes-kanban-create-task ()
-  "Create a task on the current board."
-  (interactive)
-  (let ((title (read-string "Title: "))
-        (who (completing-read "Assignee (optional): "
-                              hermes-kanban--assignees nil nil))
+(defun hermes-kanban--create-task-body (title priority assignee triage)
+  "Return a task creation body from TITLE, PRIORITY, ASSIGNEE, and TRIAGE."
+  (append `((title . ,title) (priority . ,priority))
+          (and (not (string-empty-p assignee)) `((assignee . ,assignee)))
+          (and triage '((triage . t)))))
+
+(defun hermes-kanban--create-task (triage)
+  "Create a task on the current board.
+When TRIAGE is non-nil, create it in the triage column."
+  (let ((title (read-string (if triage "Rough idea: " "Title: ")))
+        (who (completing-read (if triage
+                                 "Specifier (optional): "
+                               "Assignee (optional): ")
+                              (hermes-kanban--profile-candidates) nil nil))
         (priority (read-number "Priority: " 0))
         (slug hermes-kanban--slug)
         (name hermes-kanban--name))
     (when (string-empty-p (string-trim title))
       (user-error "Title is required"))
-    (let ((body `((title . ,title) (priority . ,priority))))
-      (unless (string-empty-p who)
-        (setq body (append body `((assignee . ,who)))))
-      (hermes-kanban--then
-       (hermes-kanban--api "POST" "/tasks" body (hermes-kanban--board-query))
-       (lambda (_) (hermes-kanban--render-board slug name))))))
+    (hermes-kanban--then
+     (hermes-kanban--api
+      "POST" "/tasks"
+      (hermes-kanban--create-task-body title priority who triage)
+      (hermes-kanban--board-query))
+     (lambda (_) (hermes-kanban--render-board slug name)))))
+
+(defun hermes-kanban-create-task ()
+  "Create a normal task on the current board."
+  (interactive)
+  (hermes-kanban--create-task nil))
+
+(defun hermes-kanban-create-triage-task ()
+  "Create a rough idea in the current board's triage column."
+  (interactive)
+  (hermes-kanban--create-task t))
+
+(defun hermes-kanban--specify-summary (result)
+  "Return a user-facing summary of a triage specifier RESULT."
+  (if (hermes-kanban--truthy-p (hermes-transport--get result 'ok))
+      (if-let* ((title (hermes-transport--non-empty-string
+                        (hermes-transport--display-field result 'new_title))))
+          (format "Specified task: %s" title)
+        "Specified task")
+    (format "Specify failed: %s"
+            (or (hermes-transport--non-empty-string
+                 (hermes-transport--display-field result 'reason))
+                "unknown error"))))
+
+(defun hermes-kanban--run-triage-action (endpoint summary-function)
+  "POST ENDPOINT for the current triage task and call SUMMARY-FUNCTION."
+  (let ((id (hermes-kanban--task-id-for-command))
+        (status (hermes-kanban--task-status-for-command))
+        (query (hermes-kanban--query-for-board
+                (hermes-kanban--board-slug-for-command)))
+        (refresh (hermes-kanban--context-refresher)))
+    (unless (equal status "triage")
+      (user-error "Task %s is not in triage" id))
+    (hermes-kanban--then
+     (hermes-kanban--api "POST" (hermes-kanban--task-path id endpoint)
+                         '((author . :null)) query
+                         hermes-kanban-triage-action-timeout)
+     (lambda (result)
+       (message "%s" (funcall summary-function result))
+       (funcall refresh)))))
+
+(defun hermes-kanban-specify-triage-task ()
+  "Flesh out the current triage task and promote it to todo."
+  (interactive)
+  (hermes-kanban--run-triage-action "/specify"
+                                    #'hermes-kanban--specify-summary))
+
+(defun hermes-kanban--decompose-summary (result)
+  "Return a user-facing summary of a triage decomposer RESULT."
+  (let ((children (delq nil (mapcar #'hermes-transport--scalar-string
+                                    (hermes-kanban--items
+                                     (hermes-transport--get result 'child_ids))))))
+    (cond
+     ((not (hermes-kanban--truthy-p (hermes-transport--get result 'ok)))
+      (format "Decompose failed: %s"
+              (or (hermes-transport--non-empty-string
+                   (hermes-transport--display-field result 'reason))
+                  "unknown error")))
+     (children
+      (format "Decomposed task into %d children: %s"
+              (length children) (string-join children ", ")))
+     ((hermes-transport--non-empty-string
+       (hermes-transport--display-field result 'new_title))
+      (format "Kept as one task: %s"
+              (hermes-transport--display-field result 'new_title)))
+     (t "Kept as one task"))))
+
+(defun hermes-kanban-decompose-triage-task ()
+  "Decompose the current triage task into a dependency graph."
+  (interactive)
+  (hermes-kanban--run-triage-action "/decompose"
+                                    #'hermes-kanban--decompose-summary))
 
 (defun hermes-kanban-delete ()
   "Delete the task at point after confirmation."

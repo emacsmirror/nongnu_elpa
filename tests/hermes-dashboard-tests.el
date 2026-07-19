@@ -5,6 +5,43 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-dashboard-http-json-async-forwards-request-timeout ()
+  "The JSON request seam receives a caller-specific timeout."
+  (let (arguments)
+    (let ((hermes-dashboard-transport-http-request-async-function
+           (lambda (_url &rest args)
+             (setq arguments args)
+             (hermes--promise-resolved '(:status 200 :body ((ok . t)))))))
+      (hermes-dashboard-transport--http-json-async
+       "http://example.test/slow" :method "POST" :timeout 300)
+      (should (equal (plist-get arguments :timeout) 300)))))
+
+(ert-deftest hermes-dashboard-http-json-async-omits-nil-request-timeout ()
+  "Existing request seams receive no new keyword without an override."
+  (let ((hermes-dashboard-transport-http-request-async-function
+         (cl-function
+          (lambda (_url &key method headers data secrets)
+            (ignore method headers data secrets)
+            (hermes--promise-resolved '(:status 200 :body ((ok . t))))))))
+    (should (hermes--promise-p
+             (hermes-dashboard-transport--http-json-async
+              "http://example.test/fast")))))
+
+(ert-deftest hermes-dashboard-api-request-async-forwards-request-timeout ()
+  "Authenticated async REST requests retain a caller-specific timeout."
+  (let ((hermes-dashboard-transport-url "http://example.test")
+        (hermes-dashboard-transport--api-auth
+         '(:base-url "http://example.test" :headers nil :secrets nil))
+        request)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport--http-json-request-async)
+               (lambda (value)
+                 (setq request value)
+                 (hermes--promise-resolved '(:status 200 :body ((ok . t)))))))
+      (hermes-dashboard-transport-api-request-async
+       "POST" "/slow" :timeout 300)
+      (should (equal (plist-get request :timeout) 300)))))
+
 (ert-deftest hermes-dashboard-transport-call-resolves-on-result ()
   "A call resolves its promise with the JSON-RPC result for the matching id."
   (let* ((client (hermes-test--dashboard-client))

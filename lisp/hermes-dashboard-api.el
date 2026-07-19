@@ -344,17 +344,19 @@ network on the main thread is banned by AGENTS.md."
           (kill-buffer buffer))))))
 
 (cl-defun hermes-dashboard-transport--default-http-request-async
-    (url &key (method "GET") headers data secrets)
+    (url &key (method "GET") headers data secrets timeout)
   "Fetch URL with METHOD, HEADERS, and DATA asynchronously using url.el.
-Return a promise of the response plist; SECRETS are redacted from any error."
+Return a promise of the response plist; SECRETS are redacted from any error.
+TIMEOUT overrides `hermes-dashboard-transport-http-timeout' when non-nil."
   (let ((safe-url (hermes-dashboard-transport--redact-secret url secrets))
         (url-request-method method)
         (url-request-extra-headers headers)
         (url-request-data data)
+        (request-timeout (or timeout hermes-dashboard-transport-http-timeout))
         (promise (hermes--promise-make))
         timer request-buffer)
     (setq timer (run-at-time
-                 hermes-dashboard-transport-http-timeout nil
+                 request-timeout nil
                  (lambda ()
                    (hermes--promise-reject
                     promise (format "Hermes dashboard request timed out at %s"
@@ -402,8 +404,9 @@ It is called with URL and keyword arguments :method, :headers, :data, and
 (defvar hermes-dashboard-transport-http-request-async-function
   #'hermes-dashboard-transport--default-http-request-async
   "Function used for asynchronous remote dashboard HTTP requests.
-Called like `hermes-dashboard-transport-http-request-function' but returns a
-promise of the response plist instead of blocking.")
+Called with URL and keyword arguments :method, :headers, :data, and :secrets.
+A caller-specific override adds :timeout.  The function returns a promise of
+the response plist.")
 
 (cl-defun hermes-dashboard-transport--http-json
     (url &key (method "GET") headers body secrets)
@@ -416,15 +419,17 @@ promise of the response plist instead of blocking.")
            :secrets secrets))
 
 (cl-defun hermes-dashboard-transport--http-json-async
-    (url &key (method "GET") headers body secrets)
+    (url &key (method "GET") headers body secrets timeout)
   "Request URL as JSON asynchronously using METHOD, HEADERS, BODY, and SECRETS.
-Return a promise of the response plist."
-  (funcall hermes-dashboard-transport-http-request-async-function
-           url
-           :method method
-           :headers (append '(("Accept" . "application/json")) headers)
-           :data (and body (json-serialize body))
-           :secrets secrets))
+Return a promise of the response plist.  TIMEOUT overrides the default."
+  (apply hermes-dashboard-transport-http-request-async-function
+         url
+         (append
+          (list :method method
+                :headers (append '(("Accept" . "application/json")) headers)
+                :data (and body (json-serialize body))
+                :secrets secrets)
+          (and timeout (list :timeout timeout)))))
 
 (defun hermes-dashboard-transport--http-json-request (request)
   "Send REQUEST, a (:url :method :headers :body :secrets) plist, synchronously."
@@ -436,14 +441,17 @@ Return a promise of the response plist."
    :secrets (plist-get request :secrets)))
 
 (defun hermes-dashboard-transport--http-json-request-async (request)
-  "Send REQUEST, a (:url :method :headers :body :secrets) plist, asynchronously.
+  "Send REQUEST, a REST request plist, asynchronously.
 Return a promise of the response plist."
-  (hermes-dashboard-transport--http-json-async
-   (plist-get request :url)
-   :method (plist-get request :method)
-   :headers (plist-get request :headers)
-   :body (plist-get request :body)
-   :secrets (plist-get request :secrets)))
+  (let ((timeout (plist-get request :timeout)))
+    (apply #'hermes-dashboard-transport--http-json-async
+           (plist-get request :url)
+           (append
+            (list :method (plist-get request :method)
+                  :headers (plist-get request :headers)
+                  :body (plist-get request :body)
+                  :secrets (plist-get request :secrets))
+            (and timeout (list :timeout timeout))))))
 
 
 
@@ -657,11 +665,11 @@ Cached auth is also re-resolved when `hermes-dashboard-transport-url' changes."
       (hermes-dashboard-transport--api-base-url)))
 
 (cl-defun hermes-dashboard-transport--api-request-plist
-    (auth method path &key body query headers secrets)
+    (auth method path &key body query headers secrets timeout)
   "Return the REST request plist for METHOD PATH under resolved AUTH.
-BODY, QUERY, HEADERS, and SECRETS extend the request; AUTH supplies the base
-URL plus its own headers and secrets.  Pure: shared by the synchronous and
-asynchronous request executors."
+BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request; AUTH supplies
+the base URL plus its own headers and secrets.  Pure: shared by the synchronous
+and asynchronous request executors."
   (list :url (concat (hermes-dashboard-transport--api-url
 		      (plist-get auth :base-url) path)
 		     (hermes-dashboard-transport--query-string query))
@@ -670,6 +678,7 @@ asynchronous request executors."
 			 headers
 			 (and body '(("Content-Type" . "application/json"))))
 	:body body
+	:timeout timeout
 	:secrets (append secrets (plist-get auth :secrets))))
 
 (defun hermes-dashboard-transport--api-client-auth (client)
@@ -812,16 +821,16 @@ with the synchronous path, and re-resolved when the configured URL changes."
        auth))))
 
 (cl-defun hermes-dashboard-transport--api-request-1-async
-    (method path &key body query headers secrets retry)
+    (method path &key body query headers secrets timeout retry)
   "Return a promise of dashboard REST METHOD PATH using resolved auth.
-BODY, QUERY, HEADERS, and SECRETS extend the request; RETRY refreshes auth and
-retries once when the request fails."
+BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request; RETRY refreshes
+auth and retries once when the request fails."
   (hermes--promise-then
    (hermes-dashboard-transport-api-auth-async)
    (lambda (auth)
      (let ((request (hermes-dashboard-transport--api-request-plist
 		     auth method path :body body :query query
-		     :headers headers :secrets secrets)))
+		     :headers headers :secrets secrets :timeout timeout)))
        (hermes--promise-catch
         (hermes--promise-map
 	 (hermes-dashboard-transport--http-json-request-async request)
@@ -832,36 +841,37 @@ retries once when the request fails."
                 (setq hermes-dashboard-transport--api-auth nil)
                 (hermes-dashboard-transport--api-request-1-async
                  method path :body body :query query :headers headers
-                 :secrets secrets :retry nil))
+                 :secrets secrets :timeout timeout :retry nil))
             (hermes--promise-rejected
 	     (hermes-dashboard-transport--redact-secret
 	      reason (plist-get request :secrets))))))))))
 
 (cl-defun hermes-dashboard-transport--api-request-with-client-async
-    (client method path &key body query headers secrets)
+    (client method path &key body query headers secrets timeout)
   "Return a promise of dashboard REST METHOD PATH using CLIENT's session token.
-BODY, QUERY, HEADERS, and SECRETS extend the request."
+BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend the request."
   (hermes--promise-map
    (hermes-dashboard-transport--http-json-request-async
     (hermes-dashboard-transport--api-request-plist
      (hermes-dashboard-transport--api-client-auth client)
-     method path :body body :query query :headers headers :secrets secrets))
+     method path :body body :query query :headers headers :secrets secrets
+     :timeout timeout))
    (lambda (response) (plist-get response :body))))
 
 (cl-defun hermes-dashboard-transport-api-request-async
-    (method path &key body query headers secrets client)
+    (method path &key body query headers secrets client timeout)
   "Return a promise of authenticated dashboard REST METHOD PATH.
 Mirrors `hermes-dashboard-transport-api-request' but resolves asynchronously so
-callers never block Emacs.  BODY, QUERY, HEADERS, and SECRETS extend the
-request.  CLIENT, when it carries a live session token, supplies the spawned
-dashboard base URL and `X-Hermes-Session-Token'."
+callers never block Emacs.  BODY, QUERY, HEADERS, SECRETS, and TIMEOUT extend
+the request.  CLIENT, when it carries a live session token, supplies the
+spawned dashboard base URL and `X-Hermes-Session-Token'."
   (if (hermes-dashboard-transport--api-client-token client)
       (hermes-dashboard-transport--api-request-with-client-async
        client method path :body body :query query :headers headers
-       :secrets secrets)
+       :secrets secrets :timeout timeout)
     (hermes-dashboard-transport--api-request-1-async
      method path :body body :query query :headers headers :secrets secrets
-     :retry (equal method "GET"))))
+     :timeout timeout :retry (equal method "GET"))))
 
 ;;; Profile and model caches
 
