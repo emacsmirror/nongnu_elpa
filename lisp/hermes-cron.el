@@ -117,37 +117,27 @@ auto-refresh.  Used to detect cron failures for `hermes-cron-notify-on-failure'.
     ("ok" 'ok)
     (_ nil)))
 
-(defun hermes-cron--faced (text face)
-  "Return TEXT propertized with FACE, or TEXT when FACE or TEXT is empty."
-  (if (and face (not (string-empty-p text)))
-      (propertize text 'face face)
-    text))
-
 (defun hermes-cron--state-cell (job)
-  "Return JOB's state cell, faced for an error, paused, or disabled state.
+  "Return JOB's state cell with its shared semantic face.
 The cell text is unchanged so commands reading it by `equal' still match."
-  (let ((state (hermes-cron--state job)))
-    (hermes-cron--faced state (pcase (downcase state)
-                                ("error" 'error)
-                                ((or "paused" "disabled") 'shadow)
-                                (_ nil)))))
+  (hermes-browser--status-cell (hermes-cron--state job)))
 
 (defun hermes-cron--deliver-cell (job)
-  "Return JOB's deliver cell, faced `warning' when the last delivery failed."
-  (hermes-cron--faced
+  "Return JOB's deliver cell, faced as an error after delivery failure."
+  (hermes-browser--face-cell
    (hermes-transport--display-field job 'deliver)
    (and (hermes-transport--non-blank-string
          (hermes-transport--display-field job 'last_delivery_error))
-        'warning)))
+        'hermes-browser-error)))
 
 (defun hermes-cron--last-run-cell (job)
   "Return JOB's last-run cell, faced by the most recent run outcome."
-  (hermes-cron--faced
+  (hermes-browser--face-cell
    (hermes-transport--display-field job 'last_run_at)
    (pcase (hermes-cron--last-status job)
-     ('error 'error)
-     ('ok 'success)
-     (_ nil))))
+     ('error 'hermes-browser-error)
+     ('ok 'hermes-browser-success)
+     (_ 'hermes-browser-muted))))
 
 (defun hermes-cron--rows (result)
   "Return `tabulated-list' entries for a cron list RESULT."
@@ -157,10 +147,13 @@ The cell text is unchanged so commands reading it by `equal' still match."
            (vector (hermes-transport--display-field job 'name)
                    (hermes-cron--schedule job)
                    (hermes-cron--state-cell job)
-                   (hermes-cron--profile job)
+                   (hermes-browser--face-cell
+                    (hermes-cron--profile job) 'hermes-browser-profile)
                    (hermes-cron--deliver-cell job)
                    (hermes-cron--last-run-cell job)
-                   (hermes-transport--display-field job 'next_run_at)
+                   (hermes-browser--face-cell
+                    (hermes-transport--display-field job 'next_run_at)
+                    'hermes-browser-muted)
                    (hermes-cron--prompt job))))
    (hermes-transport--get result 'jobs)))
 

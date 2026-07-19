@@ -44,11 +44,16 @@ Each active subagent's goal is indented by its spawn depth."
              (vector (concat (make-string (* 2 (max 0 depth)) ?\s)
                              (or (hermes-transport--scalar-string
                                   (hermes-transport--get subagent 'goal)) ""))
-                     (or (hermes-transport--scalar-string
-                          (hermes-transport--get subagent 'status)) "")
-                     (or (hermes-transport--scalar-string
-                          (hermes-transport--get subagent 'model)) "")
-                     (format "%s" (or (hermes-transport--get subagent 'tool_count) 0))))))
+                     (hermes-browser--status-cell
+                      (or (hermes-transport--scalar-string
+                           (hermes-transport--get subagent 'status)) ""))
+                     (hermes-browser--face-cell
+                      (or (hermes-transport--scalar-string
+                           (hermes-transport--get subagent 'model)) "")
+                      'hermes-browser-muted)
+                     (hermes-browser--face-cell
+                      (or (hermes-transport--get subagent 'tool_count) 0)
+                      'hermes-browser-count)))))
    (hermes-transport--get result 'active)))
 
 (defun hermes-subagents-interrupt ()

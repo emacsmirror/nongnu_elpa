@@ -15,6 +15,44 @@
     (should (equal (aref (cadr (car rows)) 2) "5"))
     (should (equal (aref (cadr (car rows)) 3) "File ops"))))
 
+(ert-deftest hermes-inventory-rows-face-state-status-and-counts ()
+  "Inventory rows use shared faces for boolean state, runtime status, and counts."
+  (let* ((toolset (car (hermes-inventory--toolset-rows
+                        '((toolsets . (((name . "files") (enabled . t)
+                                        (tool_count . 5))))))))
+         (agent (car (hermes-inventory--agent-rows
+                      '((processes . (((session_id . "a1")
+                                       (status . "running")
+                                       (uptime . 42))))))))
+         (skill (car (hermes-inventory--skill-rows
+                      '((skills . (((name . "review") (category . "coding")
+                                     (enabled . nil))))))))
+         (plugin (car (hermes-inventory--plugin-rows
+                       '((plugins . (((name . "kanban") (version . "1.2")
+                                      (enabled . nil))))))))
+         (toolset-entry (cadr toolset))
+         (agent-entry (cadr agent))
+         (skill-entry (cadr skill))
+         (plugin-entry (cadr plugin)))
+    (should (eq (get-text-property 0 'face (aref toolset-entry 1))
+                'hermes-browser-success))
+    (should (eq (get-text-property 0 'face (aref toolset-entry 2))
+                'hermes-browser-count))
+    (should (eq (get-text-property 0 'face (aref agent-entry 0))
+                'hermes-browser-identifier))
+    (should (eq (get-text-property 0 'face (aref agent-entry 1))
+                'hermes-browser-active))
+    (should (eq (get-text-property 0 'face (aref agent-entry 2))
+                'hermes-browser-count))
+    (should (eq (get-text-property 0 'face (aref skill-entry 0))
+                'hermes-browser-muted))
+    (should (eq (get-text-property 0 'face (aref skill-entry 2))
+                'hermes-browser-muted))
+    (should (eq (get-text-property 0 'face (aref plugin-entry 1))
+                'hermes-browser-muted))
+    (should (eq (get-text-property 0 'face (aref plugin-entry 2))
+                'hermes-browser-muted))))
+
 (ert-deftest hermes-inventory-skill-rows-flattens-categories ()
   "Skill rows flatten the category->names map into per-skill rows."
   (let ((rows (hermes-inventory--skill-rows

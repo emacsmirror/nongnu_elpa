@@ -75,9 +75,12 @@ browser reports the error and still releases a transient client."
      (let ((hash (hermes-transport--scalar-string
                   (hermes-transport--get checkpoint 'hash))))
        (list hash
-             (vector (hermes-rollback--short hash)
-                     (or (hermes-transport--scalar-string
-                          (hermes-transport--get checkpoint 'timestamp)) "")
+             (vector (hermes-browser--face-cell
+                      (hermes-rollback--short hash) 'hermes-browser-identifier)
+                     (hermes-browser--face-cell
+                      (or (hermes-transport--scalar-string
+                           (hermes-transport--get checkpoint 'timestamp)) "")
+                      'hermes-browser-muted)
                      (or (hermes-transport--scalar-string
                           (hermes-transport--get checkpoint 'message)) "")))))
    (hermes-transport--get result 'checkpoints)))

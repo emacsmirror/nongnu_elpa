@@ -62,6 +62,27 @@
     (should (equal (car todo-row) 3))
     (should (equal (cadr todo-row) ["3" "open" "7" "elisp-dev" "Build it"]))))
 
+(ert-deftest hermes-tracker-todo-rows-face-metadata-not-title ()
+  "Tracker TODO rows style metadata while leaving the title unstyled."
+  (let* ((repo-row (car (hermes-tracker--repository-rows
+                         '(((slug . "proj") (name . "Project"))))))
+         (row (car (hermes-tracker--todo-rows
+                    '((todos . (((number . 3) (status . "open")
+                                 (priority . 7) (assignee . "elisp-dev")
+                                 (title . "Build it"))))))))
+         (entry (cadr row)))
+    (should (eq (get-text-property 0 'face (aref (cadr repo-row) 1))
+                'hermes-browser-identifier))
+    (should (eq (get-text-property 0 'face (aref entry 0))
+                'hermes-browser-identifier))
+    (should (eq (get-text-property 0 'face (aref entry 1))
+                'hermes-browser-active))
+    (should (eq (get-text-property 0 'face (aref entry 2))
+                'hermes-browser-count))
+    (should (eq (get-text-property 0 'face (aref entry 3))
+                'hermes-browser-profile))
+    (should-not (get-text-property 0 'face (aref entry 4)))))
+
 (ert-deftest hermes-tracker-format-detail-renders-durable-fields ()
   "TODO detail includes criteria, evidence, links, comments, and closure data."
   (let ((text (hermes-tracker--format-todo-detail

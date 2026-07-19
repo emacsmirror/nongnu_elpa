@@ -80,10 +80,14 @@
    (lambda (session)
      (let ((id (hermes-sessions--id session)))
        (list id
-             (vector id
+             (vector (hermes-browser--face-cell id 'hermes-browser-identifier)
                      (hermes-transport--display-field session 'title)
-                     (hermes-sessions--message-count session)
-                     (hermes-transport--display-field session 'source)))))
+                     (hermes-browser--face-cell
+                      (hermes-sessions--message-count session)
+                      'hermes-browser-count)
+                     (hermes-browser--face-cell
+                      (hermes-transport--display-field session 'source)
+                      'hermes-browser-muted)))))
    sessions))
 
 (defun hermes-sessions--result-rows (result)

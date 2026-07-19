@@ -176,7 +176,8 @@
   (mapcar (lambda (repo)
             (let ((slug (hermes-tracker--display repo 'slug)))
               (list slug (vector (hermes-tracker--display repo 'name slug)
-                                 slug
+                                 (hermes-browser--face-cell
+                                  slug 'hermes-browser-identifier)
                                  (hermes-tracker--display repo 'description)))))
           (hermes-tracker--items repositories)))
 
@@ -185,10 +186,16 @@
   (mapcar (lambda (todo)
             (let ((number (hermes-transport--get todo 'number)))
               (list number
-                    (vector (format "%s" number)
-                            (hermes-tracker--display todo 'status)
-                            (hermes-tracker--display todo 'priority "0")
-                            (hermes-tracker--display todo 'assignee "-")
+                    (vector (hermes-browser--face-cell
+                             number 'hermes-browser-identifier)
+                            (hermes-browser--status-cell
+                             (hermes-tracker--display todo 'status))
+                            (hermes-browser--face-cell
+                             (hermes-tracker--display todo 'priority "0")
+                             'hermes-browser-count)
+                            (hermes-browser--face-cell
+                             (hermes-tracker--display todo 'assignee "-")
+                             'hermes-browser-profile)
                             (hermes-tracker--display todo 'title)))))
           (hermes-tracker--items (hermes-transport--get payload 'todos))))
 

@@ -25,6 +25,20 @@
     (should (equal (aref (cadr (nth 2 rows)) 2) "?"))
     (should (equal (aref (cadr (nth 2 rows)) 3) "connecting"))))
 
+(ert-deftest hermes-mcp-rows-face-enabled-status-and-tool-count ()
+  "MCP rows style enabled state, runtime status, and tool counts semantically."
+  (let* ((row (car (hermes-mcp--rows
+                    '((servers . (((name . "ctx") (enabled . t)
+                                    (status . "connecting")
+                                    (tool_count . 7))))))))
+         (entry (cadr row)))
+    (should (eq (get-text-property 0 'face (aref entry 2))
+                'hermes-browser-success))
+    (should (eq (get-text-property 0 'face (aref entry 3))
+                'hermes-browser-pending))
+    (should (eq (get-text-property 0 'face (aref entry 4))
+                'hermes-browser-count))))
+
 (ert-deftest hermes-mcp-rows-redact-secret-shaped-display-values ()
   "MCP row display cells do not leak secret-shaped backend values."
   (let* ((secret "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789")

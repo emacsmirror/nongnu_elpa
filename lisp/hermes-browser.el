@@ -34,6 +34,82 @@
 (require 'hermes-promise)
 (require 'hermes-chat)
 
+;;; Faces
+
+(defface hermes-browser-identifier
+  '((t :inherit shadow))
+  "Face for identifiers in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-profile
+  '((t :inherit font-lock-constant-face))
+  "Face for profile and assignee names in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-count
+  '((t :inherit font-lock-constant-face))
+  "Face for counts and priorities in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-active
+  '((t :inherit font-lock-keyword-face))
+  "Face for active states in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-success
+  '((t :inherit success))
+  "Face for successful states in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-pending
+  '((t :inherit warning))
+  "Face for pending states in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-error
+  '((t :inherit error))
+  "Face for failed or blocked states in Hermes browser rows."
+  :group 'hermes)
+
+(defface hermes-browser-muted
+  '((t :inherit shadow))
+  "Face for inactive states and secondary data in Hermes browser rows."
+  :group 'hermes)
+
+(defun hermes-browser--face-cell (value face)
+  "Return VALUE as a string carrying FACE when both are non-empty."
+  (let ((text (if (stringp value)
+                  (copy-sequence value)
+                (format "%s" (or value "")))))
+    (if (and face (not (string-empty-p text)))
+        (propertize text 'face face)
+      text)))
+
+(defun hermes-browser--status-face (status)
+  "Return the shared semantic face for STATUS, or nil when unknown."
+  (let ((status (downcase (substring-no-properties
+                           (format "%s" (or status ""))))))
+    (cond
+     ((member status '("active" "in-progress" "open" "running" "streaming"
+                       "working"))
+      'hermes-browser-active)
+     ((member status '("complete" "completed" "configured" "done" "enabled"
+                       "healthy" "ok" "on" "ready" "succeeded" "success"))
+      'hermes-browser-success)
+     ((member status '("connecting" "paused" "pending" "queued" "scheduled"
+                       "todo" "triage" "waiting" "warning"))
+      'hermes-browser-pending)
+     ((member status '("blocked" "critical" "degraded" "error" "failed"
+                       "failure" "rejected" "unhealthy"))
+      'hermes-browser-error)
+     ((member status '("archived" "closed" "disabled" "idle" "info" "off"
+                       "stopped" "unknown"))
+      'hermes-browser-muted))))
+
+(defun hermes-browser--status-cell (status)
+  "Return STATUS styled with its shared semantic face when known."
+  (hermes-browser--face-cell status (hermes-browser--status-face status)))
+
 (defun hermes-browser--existing-client ()
   "Return a live dashboard client from any Hermes chat buffer, or nil."
   (cl-some (lambda (buffer)

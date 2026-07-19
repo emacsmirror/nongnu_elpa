@@ -48,6 +48,39 @@
                    "done"))
     (should-not (text-properties-at 0 raw))))
 
+(ert-deftest hermes-kanban-status-and-row-metadata-use-semantic-faces ()
+  "Kanban rows style status and metadata without styling task titles."
+  (let* ((board (car (hermes-kanban--board-rows
+                      '(((slug . "main") (name . "Main") (is_current . t)
+                         (total . 1) (counts . ((triage . 1))))))))
+         (row (car (hermes-kanban--task-rows
+                    '(((tasks . (((id . "t1") (status . "triage")
+                                  (priority . 2) (assignee . "planner")
+                                  (title . "Rough idea")))))))))
+         (diagnostic (hermes-kanban--diagnostic-row
+                      '((task_id . "t1") (task_title . "Rough idea")
+                        (task_assignee . "planner")
+                        (diagnostics . (((severity . "critical")
+                                         (title . "Worker failed")))))))
+         (board-entry (cadr board))
+         (entry (cadr row))
+         (diagnostic-entry (cadr diagnostic)))
+    (should (eq (get-text-property 0 'face (aref board-entry 0))
+                'hermes-browser-success))
+    (should (eq (get-text-property 0 'face (aref board-entry 2))
+                'hermes-browser-count))
+    (should (eq (get-text-property 0 'face (aref entry 0))
+                'hermes-browser-pending))
+    (should (eq (get-text-property 0 'face (aref entry 1))
+                'hermes-browser-count))
+    (should (eq (get-text-property 0 'face (aref entry 2))
+                'hermes-browser-profile))
+    (should-not (get-text-property 0 'face (aref entry 3)))
+    (should (eq (get-text-property 0 'face (aref diagnostic-entry 0))
+                'hermes-browser-error))
+    (should (eq (get-text-property 0 'face (aref diagnostic-entry 2))
+                'hermes-browser-profile))))
+
 (ert-deftest hermes-kanban-tabulated-list-formats-scale-with-width ()
   "Kanban tabulated-list formats fit and flex by display width."
   (dolist (width '(30 40 50 80 120))

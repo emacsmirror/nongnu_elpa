@@ -40,10 +40,11 @@
   "Return an on/off display cell for VALUE.
 When VALUE is nil and UNKNOWN is non-nil, return `?' instead
 of the string \"off\"."
-  (cond
-   ((eq value t) "on")
-   ((and (null value) unknown) "?")
-   (t "off")))
+  (hermes-browser--status-cell
+   (cond
+    ((eq value t) "on")
+    ((and (null value) unknown) "?")
+    (t "off"))))
 
 (defun hermes-inventory--json-bool (value)
   "Return VALUE encoded for `json-serialize' as a JSON boolean."
@@ -60,7 +61,8 @@ of the string \"off\"."
                     (vector name
                             (hermes-inventory--bool-cell
                              (hermes-transport--get toolset 'enabled))
-                            (format "%s" tool-count)
+                            (hermes-browser--face-cell
+                             tool-count 'hermes-browser-count)
                             (hermes-transport--display-field toolset 'description)))))
           (hermes-transport--get result 'toolsets)))
 
@@ -74,7 +76,9 @@ of the string \"off\"."
   "Return a tabulated-list row for dashboard SKILL metadata."
   (let ((name (hermes-transport--display-field skill 'name)))
     (list name
-          (vector (hermes-transport--display-field skill 'category)
+          (vector (hermes-browser--face-cell
+                   (hermes-transport--display-field skill 'category)
+                   'hermes-browser-muted)
                   name
                   (hermes-inventory--bool-cell
                    (hermes-transport--get skill 'enabled))
@@ -87,7 +91,12 @@ of the string \"off\"."
               (mapcar (lambda (name)
                         (let ((name (or (hermes-transport--scalar-string name)
                                         "")))
-                          (list name (vector category name "?" ""))))
+                          (list name
+                                (vector (hermes-browser--face-cell
+                                         category 'hermes-browser-muted)
+                                        name
+                                        (hermes-inventory--bool-cell nil t)
+                                        ""))))
                       (cdr entry))))
           skills))
 
@@ -110,11 +119,16 @@ a `skills' field too so older/newer dashboard shapes render the same way."
 (defun hermes-inventory--agent-rows (result)
   "Return inventory rows for an `agents.list' RESULT."
   (mapcar (lambda (process)
-            (list (hermes-transport--display-field process 'session_id)
-                  (vector (hermes-transport--display-field process 'session_id)
-                          (hermes-transport--display-field process 'status)
-                          (format "%s" (or (hermes-transport--get process 'uptime) 0))
-                          (hermes-transport--display-field process 'command))))
+            (let ((id (hermes-transport--display-field process 'session_id)))
+              (list id
+                    (vector (hermes-browser--face-cell
+                             id 'hermes-browser-identifier)
+                            (hermes-browser--status-cell
+                             (hermes-transport--display-field process 'status))
+                            (hermes-browser--face-cell
+                             (or (hermes-transport--get process 'uptime) 0)
+                             'hermes-browser-count)
+                            (hermes-transport--display-field process 'command)))))
           (hermes-transport--get result 'processes)))
 
 (defun hermes-inventory--plugin-rows (result)
@@ -122,7 +136,9 @@ a `skills' field too so older/newer dashboard shapes render the same way."
   (mapcar (lambda (plugin)
             (list (hermes-transport--display-field plugin 'name)
                   (vector (hermes-transport--display-field plugin 'name)
-                          (hermes-transport--display-field plugin 'version)
+                          (hermes-browser--face-cell
+                           (hermes-transport--display-field plugin 'version)
+                           'hermes-browser-muted)
                           (hermes-inventory--bool-cell
                            (hermes-transport--get plugin 'enabled)))))
           (hermes-transport--get result 'plugins)))

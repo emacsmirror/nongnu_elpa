@@ -171,10 +171,15 @@ TEST-RESULTS maps server names to `test' endpoint responses."
             (display-name (hermes-mcp--redact-display raw-name)))
        (list raw-name
              (vector display-name
-                     (hermes-mcp--server-type server)
-                     (hermes-mcp--enabled-label server)
-                     (hermes-mcp--status server test-results)
-                     (hermes-mcp--tool-count server test-results)))))
+                     (hermes-browser--face-cell
+                      (hermes-mcp--server-type server) 'hermes-browser-muted)
+                     (hermes-browser--status-cell
+                      (hermes-mcp--enabled-label server))
+                     (hermes-browser--status-cell
+                      (hermes-mcp--status server test-results))
+                     (hermes-browser--face-cell
+                      (hermes-mcp--tool-count server test-results)
+                      'hermes-browser-count)))))
    (hermes-mcp--server-list result)))
 
 (defun hermes-mcp--unsupported-api-error-p (message)

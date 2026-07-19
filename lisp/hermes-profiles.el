@@ -48,14 +48,18 @@
   "Return one `tabulated-list' entry for PROFILE."
   (let ((name (or (hermes-profiles--field profile 'name) "")))
     (list name
-          (vector name
-                  (if (eq (hermes-transport--get profile 'is_default) t)
-                      "*"
-                    "")
+          (vector (hermes-browser--face-cell name 'hermes-browser-profile)
+                  (hermes-browser--face-cell
+                   (if (eq (hermes-transport--get profile 'is_default) t)
+                       "*"
+                     "")
+                   'hermes-browser-success)
                   (or (hermes-profiles--field profile 'model) "")
-                  (or (hermes-profiles--field profile 'provider) "")
+                  (hermes-browser--face-cell
+                   (or (hermes-profiles--field profile 'provider) "")
+                   'hermes-browser-muted)
                   ;; No per-profile reasoning surface in the dashboard yet.
-                  "—"
+                  (hermes-browser--face-cell "—" 'hermes-browser-muted)
                   (or (hermes-profiles--field profile 'description) "")))))
 
 (defun hermes-profiles--rows (result)

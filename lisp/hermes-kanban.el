@@ -97,13 +97,13 @@ on a failed GET come from the shared dashboard transport, which talks only to
   "Board slugs protected from archive/delete by the Hermes backend.")
 
 (defconst hermes-kanban--status-display
-  '(("triage" :icon "💡" :label "triage" :face nil)
-    ("todo" :icon "📝" :label "todo" :face nil)
-    ("ready" :icon "✅" :label "ready" :face nil)
-    ("running" :icon "⚙️" :label "running" :face nil)
-    ("blocked" :icon "⛔" :label "blocked" :face nil)
-    ("done" :icon "🏁" :label "done" :face nil)
-    ("archived" :icon "🗄️" :label "archived" :face nil))
+  '(("triage" :icon "💡" :label "triage" :face hermes-browser-pending)
+    ("todo" :icon "📝" :label "todo" :face hermes-browser-pending)
+    ("ready" :icon "✅" :label "ready" :face hermes-browser-success)
+    ("running" :icon "⚙️" :label "running" :face hermes-browser-active)
+    ("blocked" :icon "⛔" :label "blocked" :face hermes-browser-error)
+    ("done" :icon "🏁" :label "done" :face hermes-browser-success)
+    ("archived" :icon "🗄️" :label "archived" :face hermes-browser-muted))
   "User-facing display metadata for Kanban task statuses.
 Each entry maps a status string to :icon, :label, and optional :face.")
 
@@ -167,7 +167,8 @@ status values."
 
 (defun hermes-kanban--format-status-count (counts status)
   "Return COUNTS' tally for STATUS."
-  (hermes-kanban--count counts status))
+  (hermes-browser--face-cell
+   (hermes-kanban--count counts status) 'hermes-browser-count))
 
 (defun hermes-kanban--status-column-heading (status)
   "Return the boards-overview heading for STATUS."
@@ -228,13 +229,16 @@ status values."
            (total (hermes-transport--get board 'total)))
        (list (cons slug (hermes-transport--non-empty-string (hermes-transport--display-field board 'name)))
              (vconcat
-              (vector (if (eq (hermes-transport--get board 'is_current) t)
-                          hermes-kanban--current-board-marker
-                        "")
+              (vector (hermes-browser--face-cell
+                       (if (eq (hermes-transport--get board 'is_current) t)
+                           hermes-kanban--current-board-marker
+                         "")
+                       'hermes-browser-success)
                       (or (hermes-transport--non-empty-string
                            (hermes-transport--display-field board 'name))
                           slug)
-                      (if (numberp total) (number-to-string total) "0"))
+                      (hermes-browser--face-cell
+                       (if (numberp total) total 0) 'hermes-browser-count))
               (mapcar (lambda (status)
                         (hermes-kanban--format-status-count counts status))
                       hermes-kanban--board-count-statuses)))))
@@ -434,10 +438,14 @@ the board detail buffer shows the most recently created tasks at the top."
        (list (hermes-transport--display-field task 'id)
              (vector (hermes-kanban--format-status-indicator
                       (hermes-transport--display-field task 'status))
-                     (hermes-transport--display-field task 'priority)
-                     (or (hermes-transport--non-empty-string
-                          (hermes-transport--display-field task 'assignee))
-                         "-")
+                     (hermes-browser--face-cell
+                      (hermes-transport--display-field task 'priority)
+                      'hermes-browser-count)
+                     (hermes-browser--face-cell
+                      (or (hermes-transport--non-empty-string
+                           (hermes-transport--display-field task 'assignee))
+                          "-")
+                      'hermes-browser-profile)
                      (hermes-transport--display-field task 'title))))
      sorted)))
 
@@ -1280,13 +1288,16 @@ summary of the top diagnostic; absent fields fall back to placeholders."
          (top (car diagnostics)))
     (list task-id
           (vector
-           (hermes-transport--display-field top 'severity)
+           (hermes-browser--status-cell
+            (hermes-transport--display-field top 'severity))
            (or (hermes-transport--non-empty-string
                 (hermes-transport--display-field group 'task_title))
                task-id)
-           (or (hermes-transport--non-empty-string
-                (hermes-transport--display-field group 'task_assignee))
-               "-")
+           (hermes-browser--face-cell
+            (or (hermes-transport--non-empty-string
+                 (hermes-transport--display-field group 'task_assignee))
+                "-")
+            'hermes-browser-profile)
            (hermes-kanban--diagnostic-summary top (length diagnostics))))))
 
 (defun hermes-kanban--diagnostic-rows (groups)
