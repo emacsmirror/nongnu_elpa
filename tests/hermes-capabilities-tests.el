@@ -327,6 +327,32 @@ touched."
         (should (= (length sent-ids) 2))
         (should (not (equal (nth 0 sent-ids) (nth 1 sent-ids))))))))
 
+(ert-deftest hermes-capabilities-late-close-keeps-current-socket ()
+  "A replaced socket's close callback must not tear down its successor."
+  (let* ((callbacks nil)
+         (sockets '(socket-a socket-b))
+         (reconnects 0)
+         (hermes-capabilities--url-function
+         (lambda (&rest _args)
+           (hermes--promise-resolved
+            (list :url "ws://x" :redacted-url "ws://x" :secrets nil))))
+         (hermes-capabilities--open-function
+         (cl-function
+          (lambda (_url _redacted _secrets &key on-close &allow-other-keys)
+            (let ((socket (pop sockets)))
+              (setq callbacks (append callbacks (list on-close)))
+              socket)))))
+    (let ((provider (hermes-capabilities--provider-create
+                     :active t :buffer (current-buffer))))
+      (cl-letf (((symbol-function 'hermes-capabilities--reconnect)
+                 (lambda (_provider) (cl-incf reconnects))))
+        (hermes-capabilities--connect provider)
+        (hermes-capabilities--connect provider)
+        (should (eq (hermes-capabilities--provider-socket provider) 'socket-b))
+        (funcall (car callbacks))
+        (should (eq (hermes-capabilities--provider-socket provider) 'socket-b))
+        (should (zerop reconnects))))))
+
 (ert-deftest hermes-capabilities-method-not-found-graceful ()
   "A `method not found' registration rejection deactivates the provider."
   (hermes-capabilities-test--with-clean-registry
@@ -465,10 +491,11 @@ checked to exclude session-id-bearing slots."
         (should-not (member " cap-internal-filter" names))))))
 
 (ert-deftest hermes-capabilities-buffer-current-shape ()
-  "`buffer.current' returns the entry of the current buffer."
+  "`buffer.current' returns the entry of the selected window's buffer."
   (let ((name "cap-test-current"))
     (hermes-capabilities-test--with-temp-buffer name "content"
-      (with-current-buffer (get-buffer name)
+      (save-window-excursion
+        (set-window-buffer (selected-window) (get-buffer name))
         (let ((res (hermes-capabilities--handle-buffer-current nil)))
           (should (equal (alist-get 'name res) name))
           (should (stringp (alist-get 'mode res)))
@@ -600,6 +627,17 @@ checked to exclude session-id-bearing slots."
             (with-current-buffer buf
               (setq buffer-file-name nil))))))))
 
+(ert-deftest hermes-capabilities-buffer-read-remote-directory-rejected ()
+  "`buffer.read' rejects non-file buffers rooted in a remote directory."
+  (let ((name "cap-test-read-remote-directory"))
+    (hermes-capabilities-test--with-temp-buffer name "secret"
+      (let ((buf (get-buffer name)))
+        (with-current-buffer buf
+          (setq default-directory "/ssh:host:/tmp/"))
+        (should-error (hermes-capabilities--handle-buffer-read
+                       `((buffer . ,name)))
+                      :type 'error)))))
+
 (ert-deftest hermes-capabilities-capabilities-list-shape ()
   "`capabilities.list' reports registered method descriptors and a count."
   (let ((res (hermes-capabilities--handle-capabilities-list nil)))
@@ -659,6 +697,33 @@ checked to exclude session-id-bearing slots."
         (should (integerp (alist-get 'total_lines metadata)))
         (should (integerp (alist-get 'start_line metadata)))
         (should (integerp (alist-get 'end_line metadata)))))))
+
+(ert-deftest hermes-capabilities-current-context-uses-selected-window-buffer ()
+  "Wire handlers resolve buffer and project context outside the process buffer."
+  (let ((visible (generate-new-buffer " cap-visible"))
+        (process-buffer (generate-new-buffer " cap-process"))
+        project-directory current-entry project-entry)
+    (unwind-protect
+        (progn
+          (set-window-buffer (selected-window) visible)
+          (with-current-buffer visible
+            (setq default-directory "/tmp/cap-project/"))
+          (cl-letf (((symbol-function 'project-current)
+                     (lambda (_prompt directory)
+                       (setq project-directory directory)
+                       nil)))
+            (with-current-buffer process-buffer
+              (setq current-entry
+                    (hermes-capabilities--handle-buffer-current nil)
+                    project-entry
+                    (hermes-capabilities--handle-project-current nil))))
+          (should (equal (alist-get 'name current-entry) " cap-visible"))
+          (should (equal project-directory "/tmp/cap-project/"))
+          (should (eq (alist-get 'root project-entry) :null)))
+      (when (eq (window-buffer (selected-window)) visible)
+        (set-window-buffer (selected-window) (other-buffer visible t)))
+      (kill-buffer visible)
+      (kill-buffer process-buffer))))
 
 (provide 'hermes-capabilities-tests)
 ;;; hermes-capabilities-tests.el ends here

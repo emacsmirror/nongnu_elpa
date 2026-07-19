@@ -368,6 +368,7 @@ here or on the shared chat client."
   (seq 0)
   (backoff 1)
   reconnect-timer
+  (generation 0)
   (active t))
 
 (defvar hermes-capabilities--provider nil
@@ -391,6 +392,9 @@ fixed URL plist without touching auth or the network.")
   "Function used to open the capability WebSocket.
 Called with (URL REDACTED-URL SECRETS :on-message :on-close :on-error).  Tests
 rebind it to return a fake socket object.")
+
+(defvar hermes-capabilities--request-owner-buffer nil
+  "Owning provider buffer for the capability request being dispatched.")
 
 (defun hermes-capabilities--default-send (socket text)
   "Send TEXT on the provider SOCKET using websocket.el."
@@ -492,7 +496,9 @@ re-registers."
          ;; Backend-initiated capability request.
          ((equal (hermes-transport--get frame 'method) "emacs.request")
           (when-let* ((request (hermes-capabilities--normalize-request frame)))
-            (let ((response (hermes-capabilities--response-for request)))
+            (let* ((hermes-capabilities--request-owner-buffer
+                    (hermes-capabilities--provider-buffer provider))
+                   (response (hermes-capabilities--response-for request)))
               (hermes-capabilities--send-frame provider response))))
          ;; Backend response to our registration (result or error).
          ((and id (or (hermes-transport--get frame 'result)
@@ -507,12 +513,18 @@ re-registers."
             (when (equal type "gateway.ready")
               (hermes-capabilities--send-registration provider)))))))))
 
-(defun hermes-capabilities--on-down (provider &optional message)
-  "Drop PROVIDER's socket, report MESSAGE, and reconnect with backoff."
-  (when message
-    (message "Hermes capabilities: %s" message))
-  (setf (hermes-capabilities--provider-socket provider) nil)
-  (hermes-capabilities--reconnect provider))
+(defun hermes-capabilities--current-generation-p (provider generation)
+  "Return non-nil when GENERATION still owns PROVIDER's connection."
+  (and (hermes-capabilities--provider-active provider)
+       (= generation (hermes-capabilities--provider-generation provider))))
+
+(defun hermes-capabilities--on-down (provider generation &optional message)
+  "Drop PROVIDER's GENERATION, report MESSAGE, and reconnect with backoff."
+  (when (hermes-capabilities--current-generation-p provider generation)
+    (when message
+      (message "Hermes capabilities: %s" message))
+    (setf (hermes-capabilities--provider-socket provider) nil)
+    (hermes-capabilities--reconnect provider)))
 
 (defun hermes-capabilities--reconnect (provider)
   "Schedule a bounded-backoff reconnect for PROVIDER."
@@ -538,31 +550,41 @@ re-registers."
 
 (defun hermes-capabilities--connect (provider)
   "Resolve the capability `/api/ws' URL and open PROVIDER's socket."
-  (hermes--promise-then
-   (funcall hermes-capabilities--url-function)
-   (lambda (auth)
-     (when (hermes-capabilities--provider-active provider)
-       (setf (hermes-capabilities--provider-socket provider)
-             (funcall hermes-capabilities--open-function
-                      (plist-get auth :url)
-                      (plist-get auth :redacted-url)
-                      (plist-get auth :secrets)
-                      :on-message (lambda (text)
-                                    (hermes-capabilities--handle-message
-                                     provider text))
-                      :on-close (lambda ()
-                                  (hermes-capabilities--on-down provider))
-                      :on-error (lambda (msg)
-                                  (hermes-capabilities--on-down provider msg))))))
-   (lambda (reason)
-     (message "Hermes capabilities: connect failed: %s" reason)
-     (hermes-capabilities--reconnect provider))))
+  (let ((generation (1+ (hermes-capabilities--provider-generation provider))))
+    (setf (hermes-capabilities--provider-generation provider) generation)
+    (hermes--promise-then
+     (funcall hermes-capabilities--url-function)
+     (lambda (auth)
+       (when (hermes-capabilities--current-generation-p provider generation)
+         (setf (hermes-capabilities--provider-socket provider)
+               (funcall hermes-capabilities--open-function
+                        (plist-get auth :url)
+                        (plist-get auth :redacted-url)
+                        (plist-get auth :secrets)
+                        :on-message
+                        (lambda (text)
+                          (when (hermes-capabilities--current-generation-p
+                                 provider generation)
+                            (hermes-capabilities--handle-message provider text)))
+                        :on-close
+                        (lambda ()
+                          (hermes-capabilities--on-down provider generation))
+                        :on-error
+                        (lambda (msg)
+                          (hermes-capabilities--on-down
+                           provider generation msg))))))
+     (lambda (reason)
+       (when (hermes-capabilities--current-generation-p provider generation)
+         (message "Hermes capabilities: connect failed: %s" reason)
+         (hermes-capabilities--reconnect provider))))))
 
 (defun hermes-capabilities--teardown (provider)
   "Tear down PROVIDER: stop reconnecting, close the socket, drop the kill hook.
 Removing the owning buffer's `kill-buffer-hook' entry keeps a replaced
 provider's old buffer from tearing down a newer provider later."
-  (setf (hermes-capabilities--provider-active provider) nil)
+  (setf (hermes-capabilities--provider-active provider) nil
+        (hermes-capabilities--provider-generation provider)
+        (1+ (hermes-capabilities--provider-generation provider)))
   (when-let* ((timer (hermes-capabilities--provider-reconnect-timer provider)))
     (cancel-timer timer))
   (setf (hermes-capabilities--provider-reconnect-timer provider) nil)
@@ -610,6 +632,12 @@ otherwise, so any non-nil value counts as remote."
        (when (fboundp 'file-remote-p)
          (file-remote-p path))))
 
+(defun hermes-capabilities--remote-buffer-p (buffer)
+  "Return non-nil when BUFFER visits or is rooted in a remote path."
+  (with-current-buffer buffer
+    (or (hermes-capabilities--remote-path-p buffer-file-name)
+        (hermes-capabilities--remote-path-p default-directory))))
+
 (defun hermes-capabilities--buffer-entry (buffer)
   "Return a JSON-serializable alist describing BUFFER.
 Shape: ((name . S) (mode . S) (point . N) (file . PATH/:null))."
@@ -625,6 +653,15 @@ Shape: ((name . S) (mode . S) (point . N) (file . PATH/:null))."
   (seq-filter (lambda (b) (hermes-capabilities--listable-buffer-p
                            (buffer-name b)))
               (buffer-list)))
+
+(defun hermes-capabilities--context-buffer ()
+  "Return the user context buffer for the current capability request."
+  (let ((selected (and (window-live-p (selected-window))
+                       (window-buffer (selected-window)))))
+    (cond ((buffer-live-p selected) selected)
+          ((buffer-live-p hermes-capabilities--request-owner-buffer)
+           hermes-capabilities--request-owner-buffer)
+          (t (current-buffer)))))
 
 (defun hermes-capabilities--truncate-by-chars (string max)
   "Return (TRUNCATED . STRING) capping STRING at MAX characters.
@@ -692,13 +729,15 @@ reports truncation metadata."
       (truncated . ,(hermes-capabilities--json-bool (> total cap))))))
 
 (defun hermes-capabilities--handle-buffer-current (_params)
-  "Return the `buffer.current' result alist: the entry of the current buffer."
-  (hermes-capabilities--buffer-entry (current-buffer)))
+  "Return the `buffer.current' result alist for the user context buffer."
+  (hermes-capabilities--buffer-entry (hermes-capabilities--context-buffer)))
 
 (defun hermes-capabilities--handle-project-current (_params)
   "Return the `project.current' result alist.
 Safe when no project is active: returns null root and name."
-  (hermes-capabilities--project-entry (project-current nil)))
+  (with-current-buffer (hermes-capabilities--context-buffer)
+    (hermes-capabilities--project-entry
+     (project-current nil default-directory))))
 
 (defun hermes-capabilities--handle-buffer-read (params)
   "Return the `buffer.read' envelope alist for PARAMS.
@@ -716,9 +755,8 @@ Returns the roadmap §2.3 envelope shape
     (let ((buffer (get-buffer name)))
       (unless buffer
         (error "Buffer.read: no buffer named %S" name))
-      (let ((file (buffer-file-name buffer)))
-        (when (hermes-capabilities--remote-path-p file)
-          (error "Buffer.read: remote/TRAMP buffers rejected by default")))
+      (when (hermes-capabilities--remote-buffer-p buffer)
+        (error "Buffer.read: remote/TRAMP buffers rejected by default"))
       (let* ((start (hermes-transport--get-any
                      params '(start start_line)))
              (end (hermes-transport--get-any
