@@ -96,7 +96,8 @@ route requires both fields."
 (defun hermes-profiles-set-model ()
   "Set the model of the profile at point, persisted in its configuration."
   (interactive)
-  (let ((name (tabulated-list-get-id)))
+  (let ((name (tabulated-list-get-id))
+        (origin (current-buffer)))
     (unless name (user-error "No profile on this line"))
     (hermes-browser--run-on-client
      (lambda (client)
@@ -112,7 +113,9 @@ route requires both fields."
                  (hermes-transport--get result 'model))
                 (hermes-transport--scalar-string
                  (hermes-transport--get result 'provider)))
-       (hermes-profiles--revert)))))
+       (when (hermes-browser--buffer-mode-p origin 'hermes-profiles-mode)
+         (with-current-buffer origin
+           (hermes-profiles--revert)))))))
 
 ;;;###autoload (autoload 'hermes-list-profiles "hermes-profiles" nil t)
 (hermes-define-list-browser profiles

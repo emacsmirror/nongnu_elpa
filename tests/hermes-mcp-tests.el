@@ -60,6 +60,16 @@
     (should-not (string-match-p (regexp-quote secret) display))
     (should (string-match-p "<redacted>" display))))
 
+(ert-deftest hermes-mcp-redacts-whitespace-secret-flags ()
+  "MCP display redaction covers token flags whose value follows whitespace."
+  (dolist (flag '("--token" "--api-key"))
+    (let* ((secret "short-secret-value")
+           (redacted (hermes-mcp--redact-display
+                      (format "failed: %s %s" flag secret))))
+      (should-not (string-match-p (regexp-quote secret) redacted))
+      (should (string-match-p (concat (regexp-quote flag) " <redacted>")
+                              redacted)))))
+
 (ert-deftest hermes-mcp-revert-refreshes-without-display ()
   "Reverting the MCP list refreshes rows in place; the command displays."
   (let (displayed)
@@ -76,12 +86,57 @@
                (lambda (&rest _) (setq displayed t))))
       (unwind-protect
           (progn
-            (hermes-mcp--revert)
+            (with-current-buffer (get-buffer-create hermes-mcp-buffer-name)
+              (hermes-mcp-mode)
+              (hermes-mcp--revert))
             (should-not displayed)
             (with-current-buffer hermes-mcp-buffer-name
               (should (equal (mapcar #'car tabulated-list-entries) '("ctx"))))
             (hermes-list-mcp)
             (should displayed))
+        (when (get-buffer hermes-mcp-buffer-name)
+          (kill-buffer hermes-mcp-buffer-name))))))
+
+(ert-deftest hermes-mcp-revert-does-not-resurrect-killed-buffer ()
+  "A late MCP refresh does not recreate its killed buffer."
+  (let ((promise (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'fake-client)
+                                       on-success)))
+              ((symbol-function 'hermes-mcp--api) (lambda (&rest _) promise)))
+      (with-current-buffer (get-buffer-create hermes-mcp-buffer-name)
+        (hermes-mcp-mode)
+        (hermes-mcp--revert))
+      (kill-buffer hermes-mcp-buffer-name)
+      (hermes--promise-resolve promise '((servers . nil)))
+      (should-not (get-buffer hermes-mcp-buffer-name)))))
+
+(ert-deftest hermes-mcp-revert-keeps-newest-result ()
+  "An older MCP refresh cannot overwrite a newer result."
+  (let ((first (hermes--promise-make))
+        (second (hermes--promise-make))
+        (requests 0))
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'fake-client)
+                                       on-success)))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (&rest _)
+                 (setq requests (1+ requests))
+                 (if (= requests 1) first second))))
+      (unwind-protect
+          (progn
+            (with-current-buffer (get-buffer-create hermes-mcp-buffer-name)
+              (hermes-mcp-mode)
+              (hermes-mcp--revert)
+              (hermes-mcp--revert))
+            (hermes--promise-resolve
+             second '((servers . (((name . "new") (enabled . t))))))
+            (hermes--promise-resolve
+             first '((servers . (((name . "old") (enabled . t))))))
+            (with-current-buffer hermes-mcp-buffer-name
+              (should (equal (mapcar #'car tabulated-list-entries) '("new")))))
         (when (get-buffer hermes-mcp-buffer-name)
           (kill-buffer hermes-mcp-buffer-name))))))
 
@@ -144,6 +199,33 @@
                              messages)))
         (when (get-buffer "*Hermes MCP Servers*")
           (kill-buffer "*Hermes MCP Servers*"))))))
+
+(ert-deftest hermes-mcp-toggle-refreshes-after-newer-read ()
+  "A completed MCP toggle starts a fresh authoritative read."
+  (let ((put (hermes--promise-make)) refreshed)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-mcp--api)
+               (lambda (method _path &rest _)
+                 (if (equal method "PUT")
+                     put
+                   (error "The stale mutation chain must not own the refresh"))))
+              ((symbol-function 'hermes-mcp--revert)
+               (lambda (&rest _) (setq refreshed (current-buffer))))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-mcp-mode)
+        (hermes-mcp--ensure-state)
+        (puthash "ctx" '((name . "ctx") (enabled . t)) hermes-mcp--servers)
+        (setq tabulated-list-entries '(("ctx" ["ctx" "stdio" "on" "ok" "1"])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (let ((origin (current-buffer)))
+          (hermes-mcp-toggle)
+          (hermes-browser--next-request-generation)
+          (hermes--promise-resolve put '((ok . t)))
+          (should (eq refreshed origin)))))))
 
 (ert-deftest hermes-mcp-test-failure-message-redacts-secret ()
   "MCP test failure messages redact secret-shaped backend errors."

@@ -325,18 +325,28 @@ returned messages instead."
   (let* ((session (hermes-sessions--selected-session))
          (history-id (hermes-sessions--history-id session))
          (resume-id (hermes-sessions--id session))
-         (display (not (derived-mode-p 'hermes-session-detail-mode))))
+         (detail-p (derived-mode-p 'hermes-session-detail-mode))
+         (display (not detail-p))
+         (origin (current-buffer))
+         (generation (hermes-browser--next-request-generation)))
     (unless history-id
       (user-error "No Hermes session id to view"))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes-sessions--history-promise client history-id resume-id))
      (lambda (result)
-       (hermes-sessions--render-detail
-        (hermes-sessions--session-with-result session result)
-        (hermes-transport--get result 'messages)
-        (hermes-transport--get result 'count)
-        display)))))
+       (when (hermes-browser--request-current-mode-p
+              origin generation
+              (if detail-p 'hermes-session-detail-mode 'hermes-sessions-mode))
+         (let ((session (hermes-sessions--session-with-result session result))
+               (messages (hermes-transport--get result 'messages))
+               (count (hermes-transport--get result 'count)))
+           (if detail-p
+               (with-current-buffer origin
+                 (when (derived-mode-p 'hermes-session-detail-mode)
+                   (hermes-sessions--render-detail-contents
+                    session messages count)))
+             (hermes-sessions--render-detail session messages count display))))))))
 
 (defun hermes-sessions-open ()
   "Resume the selected Hermes session in a chat buffer."
@@ -380,7 +390,8 @@ id it returns."
 (defun hermes-sessions--replace-browser-row-title (id title)
   "Replace browser row ID's title with TITLE in the current buffer."
   (when-let* ((entry (assoc id tabulated-list-entries)))
-    (aset (cadr entry) 1 title)
+    (aset (cadr entry) 1
+          (hermes-browser--face-cell title 'hermes-browser-title))
     (when hermes-sessions--session-map
       (let ((session (gethash id hermes-sessions--session-map)))
         (when session

@@ -198,7 +198,9 @@ a `skills' field too so older/newer dashboard shapes render the same way."
 (defun hermes-inventory--revert (&rest _)
   "Re-fetch the inventory shown in the current buffer."
   (when hermes-inventory--spec
-    (hermes-inventory--fetch hermes-inventory--spec)))
+    (let ((target (current-buffer))
+          (generation (hermes-browser--next-request-generation)))
+      (hermes-inventory--fetch hermes-inventory--spec nil target generation))))
 
 (defvar-keymap hermes-inventory-mode-map
   :doc "Keymap for `hermes-inventory-mode'."
@@ -217,9 +219,10 @@ Toolsets and skills support `\[hermes-inventory-enable]' and
   :interactive nil
   (setq-local revert-buffer-function #'hermes-inventory--revert))
 
-(defun hermes-inventory--render (spec rows)
-  "Display ROWS for inventory SPEC."
-  (with-current-buffer (get-buffer-create (format "*Hermes %s*" (car spec)))
+(defun hermes-inventory--render (spec rows &optional buffer)
+  "Display ROWS for inventory SPEC in BUFFER when given."
+  (with-current-buffer (or buffer
+                           (get-buffer-create (format "*Hermes %s*" (car spec))))
     (unless (derived-mode-p 'hermes-inventory-mode)
       (hermes-inventory-mode))
     (setq hermes-inventory--spec spec)
@@ -228,10 +231,11 @@ Toolsets and skills support `\[hermes-inventory-enable]' and
     (setq tabulated-list-entries rows)
     (tabulated-list-print t)))
 
-(defun hermes-inventory--render-result (spec result)
-  "Render inventory SPEC from dashboard RESULT."
+(defun hermes-inventory--render-result (spec result &optional buffer)
+  "Render inventory SPEC from dashboard RESULT in BUFFER when given."
   (hermes-inventory--render spec (funcall (hermes-inventory--spec-rows spec)
-                                          result)))
+                                          result)
+                            buffer))
 
 (defun hermes-inventory--skills-promise (client spec)
   "Return a promise of the skill inventory for CLIENT.
@@ -247,19 +251,40 @@ REST is unavailable."
               reason)
      (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec)))))
 
-(defun hermes-inventory--fetch (spec &optional display)
+(defun hermes-inventory--fetch (spec &optional display target generation)
   "Fetch and render the inventory described by SPEC asynchronously.
 DISPLAY pops the buffer when non-nil; revert refreshes in place without it.
+TARGET and GENERATION identify an existing buffer-owned refresh.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client for the listing."
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (if (eq (hermes-inventory--spec-kind spec) 'skills)
-         (hermes-inventory--skills-promise client spec)
-       (hermes-dashboard-transport-call client (hermes-inventory--spec-method spec) (hermes-inventory--spec-params spec))))
-   (lambda (result)
-     (hermes-inventory--render-result spec result)
-     (when display (pop-to-buffer (format "*Hermes %s*" (car spec)))))))
+  (let ((target (or target
+                    (and display
+                         (get-buffer-create (format "*Hermes %s*" (car spec))))
+                    (current-buffer))))
+    (with-current-buffer target
+      (unless (derived-mode-p 'hermes-inventory-mode)
+        (hermes-inventory-mode)))
+    (let ((generation (or generation
+                          (with-current-buffer target
+                            (hermes-browser--next-request-generation)))))
+      (hermes-browser--run-on-client
+       (lambda (client)
+         (if (eq (hermes-inventory--spec-kind spec) 'skills)
+             (hermes-inventory--skills-promise client spec)
+           (hermes-dashboard-transport-call
+            client (hermes-inventory--spec-method spec)
+            (hermes-inventory--spec-params spec))))
+       (lambda (result)
+         (when (hermes-browser--request-current-mode-p
+                target generation 'hermes-inventory-mode)
+           (hermes-inventory--render-result spec result target)
+           (when display (pop-to-buffer target))))))))
+
+(defun hermes-inventory--refresh-origin (buffer)
+  "Start a fresh read of live inventory BUFFER."
+  (when (hermes-browser--buffer-mode-p buffer 'hermes-inventory-mode)
+    (with-current-buffer buffer
+      (hermes-inventory--revert))))
 
 (defun hermes-inventory--row-name ()
   "Return the current inventory row name, or signal `user-error'."
@@ -296,29 +321,31 @@ client for the listing."
 Toolset changes are global configuration: they are not scoped to a single
 chat session, so no `:session-id' is sent.  New sessions pick up the toggle
 after a reset/restart."
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes-dashboard-transport-call-fn
-      #'hermes-dashboard-transport-tools-configure
-      client (list name) (if enabled "enable" "disable")))
-   (lambda (result)
-     (message "Hermes: %s"
-              (hermes-inventory--toolset-done-message name enabled result))
-     (hermes-inventory--revert))))
+  (let ((origin (current-buffer)))
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-dashboard-transport-call-fn
+        #'hermes-dashboard-transport-tools-configure
+        client (list name) (if enabled "enable" "disable")))
+     (lambda (result)
+       (message "Hermes: %s"
+                (hermes-inventory--toolset-done-message name enabled result))
+       (hermes-inventory--refresh-origin origin)))))
 
 (defun hermes-inventory--set-skill-enabled (name enabled)
   "Set skill NAME to ENABLED through the dashboard REST API."
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes-dashboard-transport-api-request-async
-      "PUT" "/api/skills/toggle"
-      :body `((name . ,name)
-              (enabled . ,(hermes-inventory--json-bool enabled)))
-      :client client))
-   (lambda (_result)
-     (message "Hermes: %s skill %s; new sessions use this setting, or press R to reload skills"
-              (if enabled "enabled" "disabled") name)
-     (hermes-inventory--revert))))
+  (let ((origin (current-buffer)))
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-dashboard-transport-api-request-async
+        "PUT" "/api/skills/toggle"
+        :body `((name . ,name)
+                (enabled . ,(hermes-inventory--json-bool enabled)))
+        :client client))
+     (lambda (_result)
+       (message "Hermes: %s skill %s; new sessions use this setting, or press R to reload skills"
+                (if enabled "enabled" "disabled") name)
+       (hermes-inventory--refresh-origin origin)))))
 
 (defun hermes-inventory--set-enabled (enabled)
   "Set the toolset or skill at point to ENABLED."
@@ -346,19 +373,24 @@ after a reset/restart."
 (defun hermes-inventory-reload-skills ()
   "Reload dashboard skills, reporting added/removed skills when supported."
   (interactive)
-  (hermes-browser--run-on-client
-   (lambda (client)
-     (hermes-dashboard-transport-call-fn
-      #'hermes-dashboard-transport-skills-reload client))
-   (lambda (result)
-     (message "Hermes: %s"
-              (or (hermes-transport--scalar-string
-                   (hermes-transport--get result 'output))
-                  "skills reloaded"))
-     (when (and hermes-inventory--spec
-                (eq (hermes-inventory--spec-kind hermes-inventory--spec)
-                    'skills))
-       (hermes-inventory--revert)))))
+  (let ((origin (current-buffer)))
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-dashboard-transport-call-fn
+        #'hermes-dashboard-transport-skills-reload client))
+     (lambda (result)
+       (message "Hermes: %s"
+                (or (hermes-transport--scalar-string
+                     (hermes-transport--get result 'output))
+                    "skills reloaded"))
+       (when (and (hermes-browser--buffer-mode-p
+                   origin 'hermes-inventory-mode)
+                  (with-current-buffer origin
+                    (and hermes-inventory--spec
+                         (eq (hermes-inventory--spec-kind
+                              hermes-inventory--spec)
+                             'skills))))
+         (hermes-inventory--refresh-origin origin))))))
 
 ;;; Memory status
 
@@ -399,10 +431,10 @@ unknown backend fields so secrets cannot leak through this buffer."
          "Keys: g refresh, D reset built-in memory (asks yes-or-no-p).")
    "\n"))
 
-(defun hermes-inventory--render-memory-status (status &optional display)
+(defun hermes-inventory--render-memory-status (status target &optional display)
   "Render memory STATUS in the memory buffer.
-DISPLAY pops the buffer when non-nil; a `g' refresh from within it omits that."
-  (with-current-buffer (get-buffer-create "*Hermes Memory*")
+TARGET is the existing memory buffer.  DISPLAY pops it when non-nil."
+  (with-current-buffer target
     (unless (derived-mode-p 'hermes-memory-status-mode)
       (hermes-memory-status-mode))
     (let ((inhibit-read-only t))
@@ -426,13 +458,23 @@ DISPLAY pops the buffer when non-nil; a `g' refresh from within it omits that."
   "Show Hermes memory provider and built-in store sizes.
 The buffer never displays memory contents or secret material."
   (interactive)
-  (let ((display (not (derived-mode-p 'hermes-memory-status-mode))))
+  (let* ((display (not (derived-mode-p 'hermes-memory-status-mode)))
+         (target (if display
+                     (get-buffer-create "*Hermes Memory*")
+                   (current-buffer)))
+         (generation
+          (with-current-buffer target
+            (unless (derived-mode-p 'hermes-memory-status-mode)
+              (hermes-memory-status-mode))
+            (hermes-browser--next-request-generation))))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes-dashboard-transport-api-request-async
         "GET" "/api/memory" :client client))
      (lambda (status)
-       (hermes-inventory--render-memory-status status display)))))
+       (when (hermes-browser--request-current-mode-p
+              target generation 'hermes-memory-status-mode)
+         (hermes-inventory--render-memory-status status target display))))))
 
 ;;;###autoload
 (defun hermes-memory-reset (target)
@@ -443,22 +485,26 @@ TARGET is one of all, memory, or user.  External providers are not reset."
                           '("all" "memory" "user") nil t nil nil "all")))
   (unless (member target '("all" "memory" "user"))
     (user-error "Memory reset target must be all, memory, or user"))
-  (when (yes-or-no-p
-         (format "Erase built-in Hermes %s memory?  This deletes only MEMORY.md/USER.md data.  Continue?"
-                 target))
-    (hermes-browser--run-on-client
-     (lambda (client)
-       (hermes-dashboard-transport-api-request-async
-        "POST" "/api/memory/reset"
-        :body `((target . ,target))
-        :client client))
-     (lambda (result)
-       (message "Hermes: reset %s memory (%s)"
-                target
-                (string-join
-                 (or (hermes-transport--get result 'deleted) '())
-                 ", "))
-       (hermes-memory-status)))))
+  (let ((origin (current-buffer)))
+    (when (yes-or-no-p
+           (format "Erase built-in Hermes %s memory?  This deletes only MEMORY.md/USER.md data.  Continue?"
+                   target))
+      (hermes-browser--run-on-client
+       (lambda (client)
+         (hermes-dashboard-transport-api-request-async
+          "POST" "/api/memory/reset"
+          :body `((target . ,target))
+          :client client))
+       (lambda (result)
+         (message "Hermes: reset %s memory (%s)"
+                  target
+                  (string-join
+                   (or (hermes-transport--get result 'deleted) '())
+                   ", "))
+         (when (hermes-browser--buffer-mode-p
+                origin 'hermes-memory-status-mode)
+           (with-current-buffer origin
+             (hermes-memory-status))))))))
 
 ;;;###autoload
 (defun hermes-list-inventory ()

@@ -65,6 +65,10 @@
         (safe (hermes-dashboard-transport--redact-secret text)))
     (setq safe
           (replace-regexp-in-string
+           "\\(--\\(?:token\\|secret\\|password\\|api[-_]?key\\)\\)[ \\t]+[^[:space:],;)\"']+"
+           "\\1 <redacted>" safe t nil))
+    (setq safe
+          (replace-regexp-in-string
            "\\b\\([A-Za-z0-9_.-]*\\(?:token\\|secret\\|password\\|api[_-]?key\\)[A-Za-z0-9_.-]*[=:]\\)[^[:space:],;)\"']+"
            "\\1<redacted>" safe t nil))
     (if (hermes-mcp--secret-like-value-p safe)
@@ -224,9 +228,9 @@ error.  CLIENT supplies a live dashboard session token when available."
                 ((not (string-empty-p name))))
       (puthash name server hermes-mcp--servers))))
 
-(defun hermes-mcp--render (result)
-  "Render MCP servers from RESULT in `hermes-mcp-buffer-name'."
-  (with-current-buffer (get-buffer-create hermes-mcp-buffer-name)
+(defun hermes-mcp--render (result &optional buffer)
+  "Render MCP servers from RESULT in BUFFER or the standard MCP buffer."
+  (with-current-buffer (or buffer (get-buffer-create hermes-mcp-buffer-name))
     (unless (derived-mode-p 'hermes-mcp-mode)
       (hermes-mcp-mode))
     (hermes-mcp--remember-servers result)
@@ -234,18 +238,33 @@ error.  CLIENT supplies a live dashboard session token when available."
           (hermes-mcp--rows result hermes-mcp--test-results))
     (tabulated-list-print t)))
 
-(defun hermes-mcp--fetch (&optional display)
+(defun hermes-mcp--fetch (&optional display target generation)
   "Fetch and render the MCP server list asynchronously.
-DISPLAY pops the buffer when non-nil; revert refreshes in place without it."
-  (hermes-browser--run-on-client
-   (lambda (client) (hermes-mcp--api "GET" "/servers" nil nil :client client))
-   (lambda (result)
-     (hermes-mcp--render result)
-     (when display (pop-to-buffer hermes-mcp-buffer-name)))))
+DISPLAY pops the buffer when non-nil; revert refreshes in place without it.
+TARGET and GENERATION identify an existing buffer-owned refresh."
+  (let ((target (or target
+                    (and display (get-buffer-create hermes-mcp-buffer-name))
+                    (current-buffer))))
+    (with-current-buffer target
+      (unless (derived-mode-p 'hermes-mcp-mode)
+        (hermes-mcp-mode)))
+    (let ((generation (or generation
+                          (with-current-buffer target
+                            (hermes-browser--next-request-generation)))))
+      (hermes-browser--run-on-client
+       (lambda (client)
+         (hermes-mcp--api "GET" "/servers" nil nil :client client))
+       (lambda (result)
+         (when (hermes-browser--request-current-mode-p
+                target generation 'hermes-mcp-mode)
+           (hermes-mcp--render result target)
+           (when display (pop-to-buffer target))))))))
 
 (defun hermes-mcp--revert (&rest _)
   "Refresh the MCP server list."
-  (hermes-mcp--fetch))
+  (let ((target (current-buffer))
+        (generation (hermes-browser--next-request-generation)))
+    (hermes-mcp--fetch nil target generation)))
 
 (defun hermes-mcp--name-at-point ()
   "Return the MCP server name on the current line, or signal `user-error'."
@@ -281,20 +300,25 @@ DISPLAY pops the buffer when non-nil; revert refreshes in place without it."
   (interactive)
   (hermes-mcp--ensure-state)
   (let ((name (hermes-mcp--name-at-point))
-        (buffer (current-buffer)))
+        (buffer (current-buffer))
+        (generation (hermes-browser--next-request-generation)))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes--promise-then
         (hermes-mcp--api "POST" (hermes-mcp--server-path name "/test")
                          nil nil :client client)
         (lambda (result)
-          (when (buffer-live-p buffer)
+          (when (hermes-browser--request-current-mode-p
+                 buffer generation 'hermes-mcp-mode)
             (with-current-buffer buffer
               (hermes-mcp--ensure-state)
               (puthash name result hermes-mcp--test-results)
               (hermes-mcp--message-test-result name result)))
           (hermes-mcp--api "GET" "/servers" nil nil :client client))))
-     #'hermes-mcp--render)))
+     (lambda (result)
+       (when (hermes-browser--request-current-mode-p
+              buffer generation 'hermes-mcp-mode)
+         (hermes-mcp--render result buffer))))))
 
 (defun hermes-mcp-toggle ()
   "Enable or disable the MCP server at point through the dashboard API."
@@ -305,18 +329,19 @@ DISPLAY pops the buffer when non-nil; revert refreshes in place without it."
     (unless (hermes-transport--field-present-p server 'enabled)
       (user-error "MCP server %s has no enabled state; refresh or update Hermes Agent/dashboard"
                   (hermes-mcp--redact-display name)))
-    (let ((next (not (hermes-mcp--enabled-p server))))
+    (let ((next (not (hermes-mcp--enabled-p server)))
+          (buffer (current-buffer)))
       (hermes-browser--run-on-client
        (lambda (client)
-         (hermes--promise-then
-          (hermes-mcp--api "PUT" (hermes-mcp--server-path name "/enabled")
-                           `((enabled . ,(if next t :false))) nil :client client)
-          (lambda (_result)
-            (message "Hermes: %s %s; change applies to new sessions/gateway reload"
-                     (if next "enabled" "disabled")
-                     (hermes-mcp--redact-display name))
-            (hermes-mcp--api "GET" "/servers" nil nil :client client))))
-       #'hermes-mcp--render))))
+         (hermes-mcp--api "PUT" (hermes-mcp--server-path name "/enabled")
+                          `((enabled . ,(if next t :false))) nil :client client))
+       (lambda (_result)
+         (message "Hermes: %s %s; change applies to new sessions/gateway reload"
+                  (if next "enabled" "disabled")
+                  (hermes-mcp--redact-display name))
+         (when (hermes-browser--buffer-mode-p buffer 'hermes-mcp-mode)
+           (with-current-buffer buffer
+             (hermes-mcp--revert))))))))
 
 (defvar hermes-mcp-mode-map)
 

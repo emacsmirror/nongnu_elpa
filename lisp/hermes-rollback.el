@@ -99,31 +99,51 @@ browser reports the error and still releases a transient client."
   "Show the diff for the checkpoint at point."
   (interactive)
   (let ((hash (tabulated-list-get-id))
-        (session-id (hermes-rollback--require-session-id)))
+        (session-id (hermes-rollback--require-session-id))
+        (origin (current-buffer))
+        (generation (hermes-browser--next-request-generation)))
     (unless hash (user-error "No checkpoint on this line"))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes-dashboard-transport-call-fn
         #'hermes-dashboard-transport-rollback-diff client hash
         :session-id session-id))
-     (lambda (result) (hermes-rollback--display-diff hash result)))))
+     (lambda (result)
+       (when (hermes-browser--request-current-mode-p
+              origin generation 'hermes-rollback-mode)
+         (hermes-rollback--display-diff hash result))))))
+
+(defun hermes-rollback--checked-restore (result)
+  "Return restore RESULT, or signal when it declares failure."
+  (if (and (hermes-transport--field-present-p result 'success)
+           (not (eq (hermes-transport--get result 'success) t)))
+      (error "%s" (or (hermes-transport--non-blank-string
+                        (hermes-transport--display-field result 'error))
+                       "Rollback restore failed"))
+    result))
 
 (defun hermes-rollback-restore ()
   "Restore the working tree to the checkpoint at point."
   (interactive)
   (let ((hash (tabulated-list-get-id))
-        (session-id (hermes-rollback--require-session-id)))
+        (session-id (hermes-rollback--require-session-id))
+        (origin (current-buffer)))
     (unless hash (user-error "No checkpoint on this line"))
     (when (yes-or-no-p
            (format "Restore working tree to checkpoint %s? "
                    (hermes-rollback--short hash)))
       (hermes-browser--run-on-client
        (lambda (client)
-         (hermes-dashboard-transport-call-fn
-          #'hermes-dashboard-transport-rollback-restore client hash
-          :session-id session-id))
+         (hermes--promise-map
+          (hermes-dashboard-transport-call-fn
+           #'hermes-dashboard-transport-rollback-restore client hash
+           :session-id session-id)
+          #'hermes-rollback--checked-restore))
        (lambda (_result)
-         (message "Hermes: restored %s" (hermes-rollback--short hash)))))))
+         (message "Hermes: restored %s" (hermes-rollback--short hash))
+         (when (hermes-browser--buffer-mode-p origin 'hermes-rollback-mode)
+           (with-current-buffer origin
+             (hermes-rollback--revert))))))))
 
 ;;;###autoload (autoload 'hermes-list-rollbacks "hermes-rollback" nil t)
 (hermes-define-list-browser rollback

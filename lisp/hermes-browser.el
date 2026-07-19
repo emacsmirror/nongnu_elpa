@@ -293,9 +293,40 @@ Shared by the dashboard browser commands."
    (lambda (client done)
      (hermes--promise-catch
       (hermes--promise-then
-       (hermes--promise-finally (funcall make-promise client) done)
+       (condition-case err
+           (hermes--promise-finally (funcall make-promise client) done)
+         ((error quit)
+          (funcall done)
+          (hermes--promise-rejected (error-message-string err))))
        on-success)
       (lambda (reason) (message "Hermes: %s" reason))))))
+
+(defvar hermes-browser--request-sequence 0
+  "Sequence used to issue request tokens that are unique across mode resets.")
+
+(defvar-local hermes-browser--request-generation nil
+  "Token of the newest asynchronous request for this buffer.")
+
+(defun hermes-browser--next-request-generation ()
+  "Issue and return a new request token for the current buffer."
+  (setq hermes-browser--request-generation
+        (cl-incf hermes-browser--request-sequence)))
+
+(defun hermes-browser--request-current-p (buffer generation)
+  "Return non-nil when BUFFER still owns request GENERATION."
+  (and (buffer-live-p buffer)
+       (eql generation
+            (buffer-local-value 'hermes-browser--request-generation buffer))))
+
+(defun hermes-browser--buffer-mode-p (buffer mode)
+  "Return non-nil when BUFFER is live and derives from MODE."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer (derived-mode-p mode))))
+
+(defun hermes-browser--request-current-mode-p (buffer generation mode)
+  "Return non-nil when BUFFER owns GENERATION and derives from MODE."
+  (and (hermes-browser--request-current-p buffer generation)
+       (hermes-browser--buffer-mode-p buffer mode)))
 
 (defun hermes-browser--notify (title body)
   "Show desktop notification TITLE/BODY, falling back to the echo area.
@@ -405,7 +436,7 @@ command `hermes-list-NAME'.  BODY is a plist:
                    with `:columns'
   :command         list-command symbol when it differs from `hermes-list-NAME';
                    it must match the caller's `(autoload ...)' cookie
-  :fetch           function (CLIENT -> promise) issuing the dashboard RPC
+  :fetch           function (CLIENT -> promise) that starts asynchronous I/O
   :rows            pure function (RESULT -> list of `tabulated-list' entries)
   :keys            extra bindings, spliced into `defvar-keymap'
   :doc             major-mode docstring, optional
@@ -413,8 +444,8 @@ command `hermes-list-NAME'.  BODY is a plist:
   :on-result       function (RESULT) called in the buffer after each render,
                    for side effects only (e.g. failure notifications)
 
-`:fetch' and `:rows' must be pure: this macro owns the only side effects -- the
-buffer render and the dashboard client plumbing."
+`:rows' must be a pure result-to-entry transform.  `:fetch' starts the async
+dashboard operation; this macro owns its client lifecycle and buffer effects."
   (declare (indent 1))
   (let ((mode (intern (format "hermes-%s-mode" name)))
         (map (intern (format "hermes-%s-mode-map" name)))
@@ -474,19 +505,33 @@ buffer render and the dashboard client plumbing."
            ,@(and on-result `((funcall ,on-result result)))))
        (defun ,revert (&rest _)
          ,(format "Refresh the %s browser without re-displaying it." title)
-         (hermes-browser--run-on-client ,fetch #',render))
+         (let ((target (current-buffer))
+               (generation (hermes-browser--next-request-generation)))
+           (hermes-browser--run-on-client
+            ,fetch
+            (lambda (result)
+              (when (hermes-browser--request-current-mode-p
+                     target generation ',mode)
+                (with-current-buffer target
+                  (,render result)))))))
        (defun ,command ()
          ,(or command-doc (format "Browse %s from the Hermes dashboard." title))
          (interactive)
-         (hermes-browser--run-on-client
-          ,fetch
-          ,(if dynamic
-               `(lambda (result)
-                  (pop-to-buffer (get-buffer-create ,buffer))
-                  (,render result))
-             `(lambda (result)
-                (,render result)
-                (pop-to-buffer ,buffer))))))))
+         (let ((target (get-buffer-create ,buffer)))
+           (with-current-buffer target
+             (unless (derived-mode-p ',mode)
+               (,mode)))
+           (let ((generation
+                  (with-current-buffer target
+                    (hermes-browser--next-request-generation))))
+             (hermes-browser--run-on-client
+              ,fetch
+              (lambda (result)
+                (when (hermes-browser--request-current-mode-p
+                       target generation ',mode)
+                  (with-current-buffer target
+                    (,render result))
+                  (pop-to-buffer target))))))))))
 
 (provide 'hermes-browser)
 ;;; hermes-browser.el ends here

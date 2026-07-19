@@ -188,7 +188,9 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               ((symbol-function 'hermes-inventory--revert)
                (lambda (&rest _) (setq reverted t)))
               ((symbol-function 'message) #'ignore))
-      (hermes-inventory--set-toolset-enabled "terminal" nil)
+      (with-temp-buffer
+        (hermes-inventory-mode)
+        (hermes-inventory--set-toolset-enabled "terminal" nil))
       (should done-called)
       (should reverted)
       (should (equal names '("terminal")))
@@ -211,7 +213,9 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               ((symbol-function 'hermes-inventory--revert)
                (lambda (&rest _) (setq reverted t)))
               ((symbol-function 'message) #'ignore))
-      (hermes-inventory--set-skill-enabled "review" nil)
+      (with-temp-buffer
+        (hermes-inventory-mode)
+        (hermes-inventory--set-skill-enabled "review" nil))
       (should done-called)
       (should reverted)
       (should (equal method "PUT"))
@@ -237,6 +241,51 @@ Toolset toggles are global configuration: no `:session-id' is sent."
       (should-not reverted)
       (should (equal message-text "Hermes: token missing")))))
 
+(ert-deftest hermes-inventory-mutation-refreshes-origin-buffer ()
+  "A mutation settled elsewhere refreshes only its originating inventory."
+  (let ((promise (hermes--promise-make)) refreshed)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'fake-client)
+                                       on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-inventory--revert)
+               (lambda (&rest _) (setq refreshed (current-buffer))))
+              ((symbol-function 'message) #'ignore))
+      (let ((origin (generate-new-buffer " *Hermes inventory origin*")))
+        (unwind-protect
+            (progn
+              (with-current-buffer origin
+                (hermes-inventory-mode)
+                (setq hermes-inventory--spec
+                      (assoc "Toolsets" hermes-inventory--specs))
+                (hermes-inventory--set-toolset-enabled "terminal" nil))
+              (with-temp-buffer
+                (hermes--promise-resolve promise '((reset . t))))
+              (should (eq refreshed origin)))
+          (when (buffer-live-p origin) (kill-buffer origin)))))))
+
+(ert-deftest hermes-inventory-mutation-refreshes-after-newer-read ()
+  "A completed inventory mutation starts a fresh read after an intervening refresh."
+  (let ((promise (hermes--promise-make)) refreshed)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-inventory--revert)
+               (lambda (&rest _) (setq refreshed (current-buffer))))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-inventory-mode)
+        (setq hermes-inventory--spec (assoc "Toolsets" hermes-inventory--specs))
+        (let ((origin (current-buffer)))
+          (hermes-inventory--set-toolset-enabled "terminal" nil)
+          (hermes-browser--next-request-generation)
+          (hermes--promise-resolve promise '((reset . t)))
+          (should (eq refreshed origin)))))))
+
 (ert-deftest hermes-inventory-reload-skills-dispatches-rpc-and-refreshes ()
   "Skill reload uses dashboard RPC and refreshes skill inventory buffers."
   (let (done-called reloaded-client message-text reverted)
@@ -252,7 +301,9 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (setq message-text (apply #'format fmt args)))))
-      (let ((hermes-inventory--spec (assoc "Skills" hermes-inventory--specs)))
+      (with-temp-buffer
+        (hermes-inventory-mode)
+        (setq hermes-inventory--spec (assoc "Skills" hermes-inventory--specs))
         (hermes-inventory-reload-skills))
       (should done-called)
       (should (eq reloaded-client 'fake-client))
@@ -296,7 +347,8 @@ Toolset toggles are global configuration: no `:session-id' is sent."
                  (hermes--promise-resolved
                   '((active . "built-in") (builtin_files . ((memory . 1)))))))
               ((symbol-function 'hermes-inventory--render-memory-status)
-               (lambda (status &optional _display) (setq rendered status))))
+               (lambda (status _target &optional _display)
+                 (setq rendered status))))
       (hermes-memory-status)
       (should done-called)
       (should (equal method "GET"))
@@ -304,6 +356,51 @@ Toolset toggles are global configuration: no `:session-id' is sent."
       (should (eq requested-client 'fake-client))
       (should (equal rendered '((active . "built-in")
                                 (builtin_files . ((memory . 1)))))))))
+
+(ert-deftest hermes-memory-status-does-not-recreate-killed-target ()
+  "A late memory response does not recreate a killed memory buffer."
+  (let ((promise (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) promise)))
+      (with-current-buffer (get-buffer-create "*Hermes Memory*")
+        (hermes-memory-status-mode)
+        (hermes-memory-status))
+      (kill-buffer "*Hermes Memory*")
+      (hermes--promise-resolve promise '((active . "late")))
+      (should-not (get-buffer "*Hermes Memory*")))))
+
+(ert-deftest hermes-memory-status-keeps-newest-response ()
+  "An older memory response cannot replace a newer response."
+  (let ((first (hermes--promise-make))
+        (second (hermes--promise-make))
+        (requests 0))
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _)
+                 (setq requests (1+ requests))
+                 (if (= requests 1) first second))))
+      (unwind-protect
+          (progn
+            (with-current-buffer (get-buffer-create "*Hermes Memory*")
+              (hermes-memory-status-mode)
+              (hermes-memory-status)
+              (hermes-memory-status))
+            (hermes--promise-resolve second
+                                     '((active . "new")
+                                       (builtin_files . ((memory . 2) (user . 0)))))
+            (hermes--promise-resolve first
+                                     '((active . "old")
+                                       (builtin_files . ((memory . 1) (user . 0)))))
+            (with-current-buffer "*Hermes Memory*"
+              (should (string-match-p "Active provider: new" (buffer-string)))
+              (should-not (string-match-p "Active provider: old" (buffer-string)))))
+        (when (get-buffer "*Hermes Memory*")
+          (kill-buffer "*Hermes Memory*"))))))
 
 (ert-deftest hermes-memory-reset-confirms-and-posts-target ()
   "Memory reset is gated by yes-or-no-p and posts the chosen target to REST."
@@ -323,7 +420,9 @@ Toolset toggles are global configuration: no `:session-id' is sent."
               ((symbol-function 'hermes-memory-status)
                (lambda () (setq refreshed t)))
               ((symbol-function 'message) #'ignore))
-      (hermes-memory-reset "user")
+      (with-temp-buffer
+        (hermes-memory-status-mode)
+        (hermes-memory-reset "user"))
       (should (string-match-p "Erase built-in Hermes user memory" prompt))
       (should (equal method "POST"))
       (should (equal path "/api/memory/reset"))
@@ -331,6 +430,45 @@ Toolset toggles are global configuration: no `:session-id' is sent."
       (should (eq requested-client 'fake-client))
       (should done-called)
       (should refreshed))))
+
+(ert-deftest hermes-memory-reset-does-not-refresh-killed-origin ()
+  "A reset response cannot recreate or refresh a killed memory buffer."
+  (let ((promise (hermes--promise-make)) refreshed)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-memory-status)
+               (lambda () (setq refreshed t)))
+              ((symbol-function 'message) #'ignore))
+      (let ((origin (generate-new-buffer " *Hermes memory reset origin*")))
+        (with-current-buffer origin
+          (hermes-memory-status-mode)
+          (hermes-memory-reset "all"))
+        (kill-buffer origin)
+        (hermes--promise-resolve promise '((ok . t) (deleted . nil)))
+        (should-not refreshed)))))
+
+(ert-deftest hermes-memory-reset-does-not-refresh-after-mode-change ()
+  "A reset response cannot refresh an origin that left memory status mode."
+  (let ((promise (hermes--promise-make)) refreshed)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-memory-status)
+               (lambda () (setq refreshed t)))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-memory-status-mode)
+        (hermes-memory-reset "all")
+        (fundamental-mode)
+        (hermes--promise-resolve promise '((ok . t) (deleted . nil)))
+        (should-not refreshed)))))
 
 (ert-deftest hermes-memory-reset-cancel-skips-client-and-rest ()
   "Declining memory reset stops before client startup or REST calls."

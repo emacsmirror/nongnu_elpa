@@ -5,6 +5,16 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(defvar hermes-browser-test--fetch-function nil)
+
+(hermes-define-list-browser browseridentity
+  :title "Hermes Browser Identity"
+  :buffer "*Hermes Browser Identity*"
+  :columns [("Name" 20 t)]
+  :fetch (lambda (_client) (funcall hermes-browser-test--fetch-function))
+  :rows (lambda (result)
+          (mapcar (lambda (name) (list name (vector name))) result)))
+
 (ert-deftest hermes-browser-semantic-faces-are-customizable ()
   "Every semantic browser role has its own customizable face."
   (dolist (face '(hermes-browser-name hermes-browser-title
@@ -225,6 +235,97 @@
         (when (get-buffer "*Hermes Subagents*")
           (kill-buffer "*Hermes Subagents*"))))))
 
+(ert-deftest hermes-subagents-interrupt-reports-finished-result ()
+  "An interrupt result with `found' false does not report success."
+  (let ((promise (hermes--promise-make)) messages refreshed)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'fake-client)
+                                       on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-subagents--revert)
+               (lambda (&rest _) (setq refreshed (current-buffer))))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (push (apply #'format fmt args) messages))))
+      (with-temp-buffer
+        (hermes-subagents-mode)
+        (setq tabulated-list-entries '(("s1" ["goal" "running" "m" "0"])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-subagents-interrupt)
+        (hermes--promise-resolve promise '((found . :false)))
+        (should (eq refreshed (current-buffer))))
+      (should-not (cl-some (lambda (text) (string-match-p "interrupted" text))
+                           messages))
+      (should (cl-some (lambda (text)
+                         (string-match-p "already finished\\|not found" text))
+                       messages)))))
+
+(ert-deftest hermes-browser-revert-does-not-resurrect-killed-buffer ()
+  "A late revert result does not recreate its killed browser buffer."
+  (let ((promise (hermes--promise-make))
+        (hermes-browser-test--fetch-function nil))
+    (setq hermes-browser-test--fetch-function (lambda () promise))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore))))
+      (hermes-browseridentity--render '("initial"))
+      (with-current-buffer "*Hermes Browser Identity*"
+        (hermes-browseridentity--revert))
+      (kill-buffer "*Hermes Browser Identity*")
+      (hermes--promise-resolve promise '("late"))
+      (should-not (get-buffer "*Hermes Browser Identity*")))))
+
+(ert-deftest hermes-browser-revert-keeps-newest-result ()
+  "An older refresh cannot overwrite rows from a newer refresh."
+  (let ((first (hermes--promise-make))
+        (second (hermes--promise-make))
+        (requests 0)
+        (hermes-browser-test--fetch-function nil))
+    (setq hermes-browser-test--fetch-function
+          (lambda ()
+            (setq requests (1+ requests))
+            (if (= requests 1) first second)))
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn) (funcall fn 'fake-client #'ignore))))
+      (unwind-protect
+          (progn
+            (hermes-browseridentity--render '("initial"))
+            (with-current-buffer "*Hermes Browser Identity*"
+              (hermes-browseridentity--revert)
+              (hermes-browseridentity--revert))
+            (hermes--promise-resolve second '("new"))
+            (hermes--promise-resolve first '("old"))
+            (with-current-buffer "*Hermes Browser Identity*"
+              (should (equal (mapcar #'car tabulated-list-entries) '("new")))))
+        (when (get-buffer "*Hermes Browser Identity*")
+          (kill-buffer "*Hermes Browser Identity*"))))))
+
+(ert-deftest hermes-browser-request-token-survives-mode-reset ()
+  "A request token cannot become current again after changing modes twice."
+  (with-temp-buffer
+    (hermes-browseridentity-mode)
+    (let ((old (hermes-browser--next-request-generation)))
+      (fundamental-mode)
+      (hermes-browseridentity-mode)
+      (hermes-browser--next-request-generation)
+      (should-not (hermes-browser--request-current-p (current-buffer) old)))))
+
+(ert-deftest hermes-browser-run-on-client-cleans-signalling-setup ()
+  "A synchronous fetch setup error releases its transient client once."
+  (let ((stops 0) reported)
+    (cl-letf (((symbol-function 'hermes-browser--with-client)
+               (lambda (fn)
+                 (funcall fn 'fake-client (lambda () (setq stops (1+ stops))))))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args)
+                 (setq reported (apply #'format fmt args)))))
+      (hermes-browser--run-on-client (lambda (_client) (error "setup failed")))
+      (should (= stops 1))
+      (should (equal reported "Hermes: setup failed")))))
+
 (ert-deftest hermes-browser-list-browser-macro-defines-working-browser ()
   "`hermes-define-list-browser' defines a mode, keymap, render, and command."
   (hermes-define-list-browser browsertest
@@ -264,7 +365,9 @@
                (lambda (&rest _) (setq displayed t))))
       (unwind-protect
           (progn
-            (hermes-browserrevert--revert)
+            (with-current-buffer (get-buffer-create "*Hermes Browser Revert*")
+              (hermes-browserrevert-mode)
+              (hermes-browserrevert--revert))
             (should-not displayed)
             (with-current-buffer "*Hermes Browser Revert*"
               (should (equal (mapcar #'car tabulated-list-entries) '("a" "b"))))
@@ -406,6 +509,165 @@
       (should (equal (cdr (assq 'provider seen-body)) "openai"))
       (should (equal (cdr (assq 'model seen-body)) "gpt-5.5"))
       (should reverted))))
+
+(ert-deftest hermes-profiles-set-model-refreshes-origin-after-newer-read ()
+  "A completed model update starts a fresh read in its originating profile buffer."
+  (let ((put (hermes--promise-make)) refreshed)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((providers . (((slug . "openai") (name . "openai")
+                                           (authenticated . t)
+                                           (models . ("gpt-5.5")))))))))
+              ((symbol-function 'completing-read)
+               (lambda (_prompt collection &rest _) (car collection)))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) put))
+              ((symbol-function 'hermes-profiles--revert)
+               (lambda (&rest _) (setq refreshed (current-buffer))))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-profiles-mode)
+        (setq tabulated-list-entries
+              '(("planner" ["planner" "" "" "" "—" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (let ((origin (current-buffer)))
+          (hermes-profiles-set-model)
+          (hermes-browser--next-request-generation)
+          (with-temp-buffer
+            (hermes--promise-resolve
+             put '((ok . t) (model . "gpt-5.5") (provider . "openai"))))
+          (should (eq refreshed origin)))))))
+
+(ert-deftest hermes-rollback-diff-ignores-stale-result ()
+  "An older rollback diff cannot replace the result of a newer request."
+  (let ((first (hermes--promise-make))
+        (second (hermes--promise-make))
+        (calls 0)
+        displayed)
+    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
+               (lambda () "session"))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _)
+                 (setq calls (1+ calls))
+                 (if (= calls 1) first second)))
+              ((symbol-function 'hermes-rollback--display-diff)
+               (lambda (_hash result)
+                 (push (hermes-transport--get result 'diff) displayed))))
+      (with-temp-buffer
+        (hermes-rollback-mode)
+        (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-rollback-show-diff)
+        (hermes-rollback-show-diff)
+        (hermes--promise-resolve second '((diff . "new")))
+        (hermes--promise-resolve first '((diff . "old"))))
+      (should (equal displayed '("new"))))))
+
+(ert-deftest hermes-rollback-diff-ignores-killed-origin ()
+  "A rollback diff response is ignored after its list buffer dies."
+  (let ((promise (hermes--promise-make)) displayed)
+    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
+               (lambda () "session"))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-rollback--display-diff)
+               (lambda (&rest _) (setq displayed t))))
+      (let ((origin (generate-new-buffer " *Hermes rollback origin*")))
+        (with-current-buffer origin
+          (hermes-rollback-mode)
+          (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
+          (tabulated-list-print)
+          (goto-char (point-min))
+          (hermes-rollback-show-diff))
+        (kill-buffer origin)
+        (hermes--promise-resolve promise '((diff . "late")))
+        (should-not displayed)))))
+
+(ert-deftest hermes-rollback-restore-rejects-false-success ()
+  "A rollback response declaring failure does not report success or refresh."
+  (let (messages refreshed)
+    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
+               (lambda () "session"))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-catch
+                  (hermes--promise-then (funcall make-promise 'client) on-success)
+                  (lambda (reason) (push reason messages)))))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) (hermes--promise-resolved
+                                   '((success . :false) (error . "denied")))))
+              ((symbol-function 'hermes-rollback--revert)
+               (lambda (&rest _) (setq refreshed t)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (with-temp-buffer
+        (hermes-rollback-mode)
+        (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-rollback-restore))
+      (should-not refreshed)
+      (should (cl-some (lambda (text) (string-match-p "denied" text)) messages))
+      (should-not (cl-some (lambda (text) (string-match-p "restored" text)) messages)))))
+
+(ert-deftest hermes-rollback-restore-refreshes-origin-on-success ()
+  "A successful rollback starts a fresh read in its originating buffer."
+  (let (refreshed)
+    (cl-letf (((symbol-function 'hermes-rollback--live-session-id)
+               (lambda () "session"))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) (hermes--promise-resolved '((success . t)))))
+              ((symbol-function 'hermes-rollback--revert)
+               (lambda (&rest _) (setq refreshed (current-buffer))))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-rollback-mode)
+        (setq tabulated-list-entries '(("abc" ["abc" "now" "message"])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (let ((origin (current-buffer)))
+          (hermes-rollback-restore)
+          (should (eq refreshed origin)))))))
+
+(ert-deftest hermes-subagents-interrupt-refreshes-after-newer-read ()
+  "A completed interrupt starts a fresh read despite an intervening refresh."
+  (let ((promise (hermes--promise-make)) refreshed)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'client) on-success)))
+              ((symbol-function 'hermes-dashboard-transport-call-fn)
+               (lambda (&rest _) promise))
+              ((symbol-function 'hermes-subagents--revert)
+               (lambda (&rest _) (setq refreshed (current-buffer))))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-subagents-mode)
+        (setq tabulated-list-entries '(("s1" ["goal" "running" "m" "0"])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (let ((origin (current-buffer)))
+          (hermes-subagents-interrupt)
+          (hermes-browser--next-request-generation)
+          (hermes--promise-resolve promise '((found . t)))
+          (should (eq refreshed origin)))))))
 
 (provide 'hermes-browsers-tests)
 ;;; hermes-browsers-tests.el ends here

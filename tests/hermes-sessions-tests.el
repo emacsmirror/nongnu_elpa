@@ -197,6 +197,65 @@
         (when (get-buffer "*Hermes Sessions*")
           (kill-buffer "*Hermes Sessions*"))))))
 
+(ert-deftest hermes-sessions-detail-refresh-does-not-resurrect-killed-buffer ()
+  "A late detail refresh does not recreate its killed session buffer."
+  (let ((promise (hermes--promise-make))
+        (buffer (hermes-sessions--render-detail '((id . "s1")) nil 0)))
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'fake-client)
+                                       on-success)))
+              ((symbol-function 'hermes-sessions--history-promise)
+               (lambda (&rest _) promise)))
+      (with-current-buffer buffer (hermes-sessions-view))
+      (kill-buffer buffer)
+      (hermes--promise-resolve promise '((messages . nil) (count . 0)))
+      (should-not (get-buffer "*Hermes Session: s1*")))))
+
+(ert-deftest hermes-sessions-detail-refresh-keeps-newest-result ()
+  "An older detail refresh cannot replace a newer history result."
+  (let ((first (hermes--promise-make))
+        (second (hermes--promise-make))
+        (requests 0)
+        (buffer (hermes-sessions--render-detail '((id . "s1")) nil 0)))
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional on-success)
+                 (hermes--promise-then (funcall make-promise 'fake-client)
+                                       on-success)))
+              ((symbol-function 'hermes-sessions--history-promise)
+               (lambda (&rest _)
+                 (setq requests (1+ requests))
+                 (if (= requests 1) first second))))
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer
+              (hermes-sessions-view)
+              (hermes-sessions-view))
+            (hermes--promise-resolve
+             second '((messages . (((role . "assistant") (text . "new"))))
+                      (count . 1)))
+            (hermes--promise-resolve
+             first '((messages . (((role . "assistant") (text . "old"))))
+                     (count . 1)))
+            (with-current-buffer buffer
+              (should (string-match-p "new" (buffer-string)))
+              (should-not (string-match-p "old" (buffer-string)))))
+        (when (buffer-live-p buffer) (kill-buffer buffer))))))
+
+(ert-deftest hermes-sessions-replaced-title-keeps-title-face ()
+  "An in-place session rename preserves the title column face."
+  (unwind-protect
+      (progn
+        (hermes-sessions-test--render '(((id . "s1") (title . "First"))))
+        (with-current-buffer "*Hermes Sessions*"
+          (hermes-sessions--replace-browser-row-title "s1" "Renamed")
+          (let ((title (aref (cadr (assoc "s1" tabulated-list-entries)) 1)))
+            (should (equal title "Renamed"))
+            (should (eq (get-text-property 0 'face title)
+                        'hermes-browser-title)))))
+    (when (get-buffer "*Hermes Sessions*")
+      (kill-buffer "*Hermes Sessions*"))))
+
 (ert-deftest hermes-sessions-rename-prompts-and-dispatches-title ()
   "Renaming a selected row prompts and dispatches `session.title'."
   (let (sent stopped)
