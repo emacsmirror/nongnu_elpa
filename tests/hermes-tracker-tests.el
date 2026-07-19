@@ -113,13 +113,18 @@
 (ert-deftest hermes-tracker-parse-tracker-reference-is-strict ()
   "Only one exact canonical tracker-ref block opts a Kanban card in."
   (should (equal (hermes-tracker-parse-reference
-                  "before\n```tracker-ref\n{\"repo_slug\":\"proj\",\"number\":3}\n```\nafter")
+                  "before\n```tracker-ref\n{\"number\":3,\"repo_slug\":\"proj\"}\n```\nafter")
                  '(:repo-slug "proj" :number 3)))
   (dolist (body '(nil
                   "```tracker-ref\nnot-json\n```"
                   "```tracker-ref\n{\"repo_slug\":\"proj\",\"number\":0}\n```"
                   "```tracker-ref\n{\"repo_slug\":\"proj\",\"number\":3,\"extra\":true}\n```"
-                  "```tracker-ref\n{\"repo_slug\":\"a\",\"number\":1}\n```\n```tracker-ref\n{\"repo_slug\":\"b\",\"number\":2}\n```"))
+                  "```tracker-ref   \n{\"number\":3,\"repo_slug\":\"proj\"}\n```"
+                  "````tracker-ref\n{\"number\":3,\"repo_slug\":\"proj\"}\n````"
+                  "```tracker-ref\n{\"number\":3,\"repo_slug\":\"proj\"}\n```\n```tracker-ref"
+                  "```tracker-ref\n{ \"number\": 3, \"repo_slug\": \"proj\" }\n```"
+                  "```tracker-ref\n{\"repo_slug\":\"proj\",\"number\":3}\n```"
+                  "```tracker-ref\n{\"number\":1,\"repo_slug\":\"a\"}\n```\n```tracker-ref\n{\"number\":2,\"repo_slug\":\"b\"}\n```"))
     (should-not (hermes-tracker-parse-reference body))))
 
 (ert-deftest hermes-tracker-render-and-append-reference-is-canonical ()
@@ -148,7 +153,7 @@
                   todo (car refs)
                   '((task . ((id . "t_1234abcd") (title . "Card")
                              (status . "done") (assignee . "elisp-dev")
-                             (body . "```tracker-ref\n{\"repo_slug\":\"proj\",\"number\":3}\n```")))))))
+                             (body . "```tracker-ref\n{\"number\":3,\"repo_slug\":\"proj\"}\n```")))))))
     (should (= (length refs) 1))
     (should (equal (plist-get linked :drift) 'none))
     (should (equal (plist-get linked :execution-state) 'superseded))
@@ -172,7 +177,7 @@
              (plist-get (hermes-tracker--linked-card
                          todo ref
                          '((task . ((id . "t_1234abcd")
-                                    (body . "```tracker-ref\n{\"repo_slug\":\"other\",\"number\":1}\n```")))))
+                                    (body . "```tracker-ref\n{\"number\":1,\"repo_slug\":\"other\"}\n```")))))
                         :drift)
              'mismatched-card-backlink))))
 
@@ -201,9 +206,387 @@
             (setq-local revert-buffer-function (lambda (&rest _)))
             (revert-buffer t)
             (should (eq (keymap-lookup (current-local-map) "u")
-                        'hermes-tracker-update-todo))))
+                        'hermes-tracker-update-todo))
+            (should (eq (keymap-lookup (current-local-map) "C")
+                        'hermes-tracker-close-todo))))
       (when (get-buffer "*Hermes Tracker TODO*")
         (kill-buffer "*Hermes Tracker TODO*")))))
+
+(ert-deftest hermes-tracker-repositories-discard-late-response ()
+  "A late repositories response cannot replace the latest request."
+  (let ((old (hermes--promise-make)) (new (hermes--promise-make)) (calls 0))
+    (cl-letf (((symbol-function 'hermes-tracker--request-async)
+               (lambda (&rest _)
+                 (cl-incf calls)
+                 (if (= calls 1) old new)))
+              ((symbol-function 'pop-to-buffer) #'ignore))
+      (unwind-protect
+          (progn
+            (hermes-list-tracker-repositories)
+            (hermes-list-tracker-repositories)
+            (hermes--promise-resolve
+             new '(((slug . "new") (name . "New"))))
+            (hermes--promise-resolve
+             old '(((slug . "old") (name . "Old"))))
+            (with-current-buffer "*Hermes Tracker Repositories*"
+              (should (equal (caar tabulated-list-entries) "new"))))
+        (when (get-buffer "*Hermes Tracker Repositories*")
+          (kill-buffer "*Hermes Tracker Repositories*"))))))
+
+(ert-deftest hermes-tracker-todo-list-discards-late-response ()
+  "A late repository A response cannot replace repository B TODOs."
+  (let ((a (hermes--promise-make)) (b (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-tracker--request-async)
+               (lambda (_method path &rest _)
+                 (if (string-match-p "/repos/a/" path) a b)))
+              ((symbol-function 'pop-to-buffer) #'ignore))
+      (unwind-protect
+          (progn
+            (hermes-tracker--render-todos "a" "Repo A")
+            (hermes-tracker--render-todos "b" "Repo B")
+            (hermes--promise-resolve
+             b '((todos . (((number . 2) (status . "open")
+                            (title . "New"))))))
+            (hermes--promise-resolve
+             a '((todos . (((number . 1) (status . "open")
+                            (title . "Old"))))))
+            (with-current-buffer "*Hermes Tracker TODOs*"
+              (should (equal hermes-tracker--repo-slug "b"))
+              (should (= (caar tabulated-list-entries) 2))))
+        (when (get-buffer "*Hermes Tracker TODOs*")
+          (kill-buffer "*Hermes Tracker TODOs*"))))))
+
+(ert-deftest hermes-tracker-todo-detail-discards-late-response ()
+  "A late TODO A response cannot replace the newer TODO B detail."
+  (let ((a (hermes--promise-make)) (b (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-tracker--fetch-todo-with-cards)
+               (lambda (repo _number) (if (equal repo "a") a b)))
+              ((symbol-function 'pop-to-buffer) #'ignore))
+      (unwind-protect
+          (progn
+            (hermes-tracker-open-todo "a" 1)
+            (hermes-tracker-open-todo "b" 2)
+            (hermes--promise-resolve
+             b '(((repo_slug . "b") (number . 2) (title . "New"))))
+            (hermes--promise-resolve
+             a '(((repo_slug . "a") (number . 1) (title . "Old"))))
+            (with-current-buffer "*Hermes Tracker TODO*"
+              (should (equal hermes-tracker--repo-slug "b"))
+              (should (= hermes-tracker--todo-number 2))
+              (should (string-match-p "# New" (buffer-string)))
+              (should-not (string-match-p "# Old" (buffer-string)))))
+        (when (get-buffer "*Hermes Tracker TODO*")
+          (kill-buffer "*Hermes Tracker TODO*"))))))
+
+(ert-deftest hermes-tracker-linked-card-finds-stale-board-metadata ()
+  "A linked task moved to another board is reported as stale-board, not missing."
+  (let* ((todo '((repo_slug . "proj") (number . 3)))
+         (reference '((external_id . "t_1234abcd")
+                      (metadata . ((board . "old")))))
+         card calls)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (_method path &rest args)
+                 (let ((board (cdr (assq 'board (plist-get args :query)))))
+                   (push (list path board) calls)
+                   (cond
+                    ((equal path "/api/plugins/kanban/boards")
+                     (hermes--promise-resolved
+                      '((boards . (((slug . "new")))))))
+                    ((equal board "new")
+                     (hermes--promise-resolved
+                      '((task . ((id . "t_1234abcd") (title . "Moved")
+                                  (status . "todo")
+                                  (body . "```tracker-ref\n{\"number\":3,\"repo_slug\":\"proj\"}\n```"))))))
+                    (t
+                     (hermes--promise-rejected
+                      "Hermes dashboard request failed (HTTP 404)")))))))
+      (hermes--promise-then
+       (hermes-tracker--fetch-linked-card todo reference)
+       (lambda (value) (setq card value)))
+      (should (equal (plist-get card :board) "new"))
+      (should (eq (plist-get card :drift) 'stale-board))
+      (should (member '("/api/plugins/kanban/boards" nil) calls)))))
+
+(ert-deftest hermes-tracker-linked-card-propagates-primary-fetch-failure ()
+  "A non-404 primary task fetch failure is not reported as a missing card."
+  (let (rejected)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _)
+                 (hermes--promise-rejected
+                  "Hermes dashboard request failed (HTTP 500)"))))
+      (hermes--promise-catch
+       (hermes-tracker--fetch-linked-card
+        '((repo_slug . "proj") (number . 3))
+        '((external_id . "t_1234abcd")
+          (metadata . ((board . "default")))))
+       (lambda (reason) (setq rejected reason)))
+      (should (string-match-p "HTTP 500" rejected)))))
+
+(ert-deftest hermes-tracker-linked-card-propagates-partial-board-failure ()
+  "An incomplete fallback scan cannot turn an unknown card into a missing card."
+  (let (rejected)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (_method path &rest args)
+                 (let ((board (cdr (assq 'board (plist-get args :query)))))
+                   (cond
+                    ((equal path "/api/plugins/kanban/boards")
+                     (hermes--promise-resolved
+                      '((boards . (((slug . "a")) ((slug . "b")))))))
+                    ((member board '("default" "a"))
+                     (hermes--promise-rejected
+                      "Hermes dashboard request failed (HTTP 404)"))
+                    (t
+                     (hermes--promise-rejected
+                      "Hermes dashboard request failed (HTTP 500)")))))))
+      (hermes--promise-catch
+       (hermes-tracker--fetch-linked-card
+        '((repo_slug . "proj") (number . 3))
+        '((external_id . "t_1234abcd")
+          (metadata . ((board . "default")))))
+       (lambda (reason) (setq rejected reason)))
+      (should (string-match-p "HTTP 500" rejected)))))
+
+(ert-deftest hermes-tracker-linked-card-prefers-match-over-partial-failure ()
+  "A fallback match remains authoritative when a different board fetch fails."
+  (let (card)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (_method path &rest args)
+                 (let ((board (cdr (assq 'board (plist-get args :query)))))
+                   (cond
+                    ((equal path "/api/plugins/kanban/boards")
+                     (hermes--promise-resolved
+                      '((boards . (((slug . "found")) ((slug . "broken")))))))
+                    ((equal board "default")
+                     (hermes--promise-rejected
+                      "Hermes dashboard request failed (HTTP 404)"))
+                    ((equal board "found")
+                     (hermes--promise-resolved
+                      '((task . ((id . "t_1234abcd") (title . "Moved")
+                                  (body . "```tracker-ref\n{\"number\":3,\"repo_slug\":\"proj\"}\n```"))))))
+                    (t
+                     (hermes--promise-rejected
+                      "Hermes dashboard request failed (HTTP 500)")))))))
+      (hermes--promise-then
+       (hermes-tracker--fetch-linked-card
+        '((repo_slug . "proj") (number . 3))
+        '((external_id . "t_1234abcd")
+          (metadata . ((board . "default")))))
+       (lambda (value) (setq card value)))
+      (should (equal (plist-get card :board) "found"))
+      (should (eq (plist-get card :drift) 'stale-board)))))
+
+(ert-deftest hermes-tracker-create-todo-reads-multiline-description ()
+  "TODO creation reads its description through the multiline editor."
+  (let (request refreshed)
+    (cl-letf (((symbol-function 'read-string) (lambda (&rest _) "Title"))
+              ((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) "line one\nline two"))
+              ((symbol-function 'read-number) (lambda (&rest _) 4))
+              ((symbol-function 'hermes-tracker--request-async)
+               (lambda (method path &optional body invocation)
+                 (setq request (list method path body invocation))
+                 (hermes--promise-resolved '((number . 1)))))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq refreshed t))))
+      (with-temp-buffer
+        (setq-local hermes-tracker--repo-slug "proj")
+        (hermes-tracker-create-todo))
+      (should refreshed)
+      (should (equal (cdr (assq 'description (nth 2 request)))
+                     "line one\nline two")))))
+
+(ert-deftest hermes-tracker-comment-reads-multiline-body ()
+  "Tracker comments preserve multiline text from the editor."
+  (let (request refreshed)
+    (cl-letf (((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) "first\nsecond"))
+              ((symbol-function 'hermes-tracker--request-async)
+               (lambda (method path &optional body invocation)
+                 (setq request (list method path body invocation))
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq refreshed t))))
+      (with-temp-buffer
+        (setq-local major-mode 'hermes-tracker-todo-mode
+                    hermes-tracker--repo-slug "proj"
+                    hermes-tracker--todo-number 3)
+        (hermes-tracker-comment))
+      (should refreshed)
+      (should (equal (cdr (assq 'body (nth 2 request))) "first\nsecond")))))
+
+(ert-deftest hermes-tracker-close-requires-verification-evidence ()
+  "Closing stops before the API when multiline evidence is blank."
+  (let (called)
+    (cl-letf (((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) " \n "))
+              ((symbol-function 'hermes-tracker--request-async)
+               (lambda (&rest _) (setq called t))))
+      (with-temp-buffer
+        (setq-local major-mode 'hermes-tracker-todo-mode
+                    hermes-tracker--repo-slug "proj"
+                    hermes-tracker--todo-number 3)
+        (should-error (hermes-tracker-close-todo) :type 'user-error))
+      (should-not called))))
+
+(ert-deftest hermes-tracker-close-posts-evidence-and-optional-commit ()
+  "Closing posts durable evidence and refreshes only after success."
+  (let (request refreshed)
+    (cl-letf (((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) "make test\n42 passed"))
+              ((symbol-function 'read-string) (lambda (&rest _) "abc123"))
+              ((symbol-function 'hermes-tracker--request-async)
+               (lambda (method path &optional body invocation)
+                 (setq request (list method path body invocation))
+                 (hermes--promise-resolved '((status . "done")))))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq refreshed t))))
+      (with-temp-buffer
+        (setq-local major-mode 'hermes-tracker-todo-mode
+                    hermes-tracker--repo-slug "proj"
+                    hermes-tracker--todo-number 3)
+        (hermes-tracker-close-todo))
+      (should refreshed)
+      (should (equal (seq-take request 3)
+                     '("POST" "/api/v1/repos/proj/todos/3/close"
+                       ((verification_output . "make test\n42 passed")
+                        (closing_commit . "abc123"))))))))
+
+(ert-deftest hermes-tracker-close-rejection-does-not-refresh ()
+  "A dependency conflict is reported and leaves the detail unchanged."
+  (let (refreshed messages)
+    (cl-letf (((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) "verified"))
+              ((symbol-function 'read-string) (lambda (&rest _) ""))
+              ((symbol-function 'hermes-tracker--request-async)
+               (lambda (&rest _)
+                 (hermes--promise-rejected "blocked by dependency")))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq refreshed t)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (with-temp-buffer
+        (setq-local major-mode 'hermes-tracker-todo-mode
+                    hermes-tracker--repo-slug "proj"
+                    hermes-tracker--todo-number 3)
+        (hermes-tracker-close-todo))
+      (should-not refreshed)
+      (should (seq-some (lambda (text)
+                          (string-match-p "blocked by dependency" text))
+                        messages)))))
+
+(ert-deftest hermes-tracker-link-card-uses-atomic-reference-route ()
+  "Card linking appends the canonical reference through the dedicated route."
+  (let (request)
+    (cl-letf (((symbol-function 'hermes-tracker--ensure-external-reference)
+               (lambda (&rest _) (hermes--promise-resolved 'ok)))
+              ((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (method path &rest args)
+                 (setq request (list method path args))
+                 (hermes--promise-resolved '((task . ((id . "t_1234abcd"))))))))
+      (hermes-tracker--link-card
+       "proj" 3 "default" "t_1234abcd"
+       '((task . ((id . "t_1234abcd") (assignee . "dev")
+                   (body . "newer body")))))
+      (should (equal (car request) "POST"))
+      (should (equal (cadr request)
+                     "/api/plugins/kanban/tasks/t_1234abcd/tracker-reference"))
+      (should (equal (plist-get (caddr request) :body)
+                     '((repo_slug . "proj") (number . 3)))))))
+
+(ert-deftest hermes-tracker-link-card-stops-when-backlink-fails ()
+  "A Tracker backlink failure prevents the card-side append."
+  (let (called rejected)
+    (cl-letf (((symbol-function 'hermes-tracker--ensure-external-reference)
+               (lambda (&rest _) (hermes--promise-rejected "tracker failed")))
+              ((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) (setq called t))))
+      (hermes--promise-catch
+       (hermes-tracker--link-card
+        "proj" 3 "default" "t_1234abcd"
+        '((task . ((id . "t_1234abcd") (body . "body")))))
+       (lambda (reason) (setq rejected reason)))
+      (should (equal rejected "tracker failed"))
+      (should-not called))))
+
+(ert-deftest hermes-tracker-link-card-surfaces-card-append-failure ()
+  "A card-side append failure reports the repairable one-sided link."
+  (let (rejected)
+    (cl-letf (((symbol-function 'hermes-tracker--ensure-external-reference)
+               (lambda (&rest _) (hermes--promise-resolved 'ok)))
+              ((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _) (hermes--promise-rejected "append failed"))))
+      (hermes--promise-catch
+       (hermes-tracker--link-card
+        "proj" 3 "default" "t_1234abcd"
+        '((task . ((id . "t_1234abcd") (body . "body")))))
+       (lambda (reason) (setq rejected reason)))
+      (should (string-match-p "Tracker backlink was written" rejected))
+      (should (string-match-p "retry" rejected))
+      (should (string-match-p "append failed" rejected)))))
+
+(ert-deftest hermes-tracker-link-command-refreshes-after-complete-success ()
+  "The link command reports and refreshes only after both sides succeed."
+  (let ((link (hermes--promise-make)) messages refreshed)
+    (cl-letf (((symbol-function 'read-string)
+               (let ((answers '("default" "t_1234abcd")))
+                 (lambda (&rest _) (pop answers))))
+              ((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '((task . ((id . "t_1234abcd") (body . "body")))))))
+              ((symbol-function 'hermes-tracker--link-card)
+               (lambda (&rest _) link))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq refreshed t)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (with-temp-buffer
+        (setq-local hermes-tracker--repo-slug "proj"
+                    hermes-tracker--todo-number 3)
+        (hermes-tracker-link-kanban)
+        (should-not refreshed)
+        (should-not (seq-some (lambda (text) (string-match-p "linked" text))
+                              messages))
+        (hermes--promise-resolve link 'ok)
+        (should refreshed)
+        (should (seq-some (lambda (text) (string-match-p "linked" text))
+                          messages))))))
+
+(ert-deftest hermes-tracker-link-command-reports-final-chain-failure ()
+  "A final link failure reports once and never refreshes the TODO."
+  (let (messages refreshed)
+    (cl-letf (((symbol-function 'read-string)
+               (let ((answers '("default" "t_1234abcd")))
+                 (lambda (&rest _) (pop answers))))
+              ((symbol-function
+                'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '((task . ((id . "t_1234abcd") (body . "body")))))))
+              ((symbol-function 'hermes-tracker--link-card)
+               (lambda (&rest _) (hermes--promise-rejected "append failed")))
+              ((symbol-function 'revert-buffer)
+               (lambda (&rest _) (setq refreshed t)))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (with-temp-buffer
+        (setq-local hermes-tracker--repo-slug "proj"
+                    hermes-tracker--todo-number 3)
+        (hermes-tracker-link-kanban))
+      (should-not refreshed)
+      (should (= (length messages) 1))
+      (should (string-match-p "append failed" (car messages))))))
 
 (provide 'hermes-tracker-tests)
 ;;; hermes-tracker-tests.el ends here

@@ -9,15 +9,18 @@
   "Status display helpers share icons, labels, and raw status properties."
   (should (equal hermes-kanban--current-board-marker "📍"))
   (should (equal hermes-kanban--board-count-statuses
-                 '("triage" "todo" "ready" "running" "blocked" "done" "archived")))
+                 '("triage" "todo" "scheduled" "ready" "running" "blocked"
+                   "review" "done" "archived")))
   (should (equal hermes-kanban--statuses
-                 '("triage" "todo" "scheduled" "ready" "blocked" "done"
-                   "archived")))
+                 '("triage" "todo" "scheduled" "ready" "running" "blocked"
+                   "review" "done" "archived")))
   (dolist (spec '(("triage" "💡")
                   ("todo" "📝")
+                  ("scheduled" "⏰")
                   ("ready" "✅")
                   ("running" "⚙️")
                   ("blocked" "⛔")
+                  ("review" "👀")
                   ("done" "🏁")
                   ("archived" "🗄️")))
     (pcase-let ((`(,status ,icon) spec))
@@ -52,9 +55,11 @@
   "Every Kanban workflow column has its own customizable face."
   (dolist (spec '(("triage" hermes-kanban-triage-face)
                   ("todo" hermes-kanban-todo-face)
+                  ("scheduled" hermes-kanban-scheduled-face)
                   ("ready" hermes-kanban-ready-face)
                   ("running" hermes-kanban-running-face)
                   ("blocked" hermes-kanban-blocked-face)
+                  ("review" hermes-kanban-review-face)
                   ("done" hermes-kanban-done-face)
                   ("archived" hermes-kanban-archived-face)))
     (pcase-let ((`(,status ,face) spec))
@@ -97,8 +102,9 @@
                (should (eq (get-text-property 0 'face cell) face)))
              (append (seq-subseq board-entry 3) nil)
              '(hermes-kanban-triage-face hermes-kanban-todo-face
-               hermes-kanban-ready-face hermes-kanban-running-face
-               hermes-kanban-blocked-face hermes-kanban-done-face
+               hermes-kanban-scheduled-face hermes-kanban-ready-face
+               hermes-kanban-running-face hermes-kanban-blocked-face
+               hermes-kanban-review-face hermes-kanban-done-face
                hermes-kanban-archived-face))
     (should (eq (get-text-property 0 'face (aref entry 0))
                 'hermes-kanban-triage-face))
@@ -295,6 +301,52 @@
         (when (get-buffer "*Hermes Kanban Boards*")
           (kill-buffer "*Hermes Kanban Boards*"))))))
 
+(ert-deftest hermes-kanban-boards-discard-late-response ()
+  "A late boards overview response cannot replace the latest refresh."
+  (let ((old (hermes--promise-make)) (new (hermes--promise-make)) (calls 0))
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (cl-incf calls)
+                 (if (= calls 1) old new)))
+              ((symbol-function 'pop-to-buffer) #'ignore))
+      (unwind-protect
+          (progn
+            (hermes-list-kanban)
+            (hermes-list-kanban)
+            (hermes--promise-resolve
+             new '((boards . (((slug . "new") (name . "New"))))))
+            (hermes--promise-resolve
+             old '((boards . (((slug . "old") (name . "Old"))))))
+            (with-current-buffer "*Hermes Kanban Boards*"
+              (should (equal (caar tabulated-list-entries)
+                             (cons "new" "New")))))
+        (when (get-buffer "*Hermes Kanban Boards*")
+          (kill-buffer "*Hermes Kanban Boards*"))))))
+
+(ert-deftest hermes-kanban-boards-ignore-late-rejection ()
+  "A stale boards rejection cannot report an error after newer success."
+  (let ((old (hermes--promise-make)) (new (hermes--promise-make))
+        (calls 0) messages)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (cl-incf calls)
+                 (if (= calls 1) old new)))
+              ((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (unwind-protect
+          (progn
+            (hermes-list-kanban)
+            (hermes-list-kanban)
+            (hermes--promise-resolve new '((boards . [])))
+            (hermes--promise-reject old "stale boards error")
+            (should-not
+             (seq-some (lambda (text) (string-match-p "stale boards" text))
+                       messages)))
+        (when (get-buffer "*Hermes Kanban Boards*")
+          (kill-buffer "*Hermes Kanban Boards*"))))))
+
 (ert-deftest hermes-kanban-board-actions-dispatch-rest-calls ()
   "Board overview actions use REST endpoints, safe archive, and refresh."
   (let (calls prompts)
@@ -485,6 +537,67 @@
             (should (equal (caar tabulated-list-entries) "t1"))))
       (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*")))))
 
+(ert-deftest hermes-kanban-board-discards-late-response ()
+  "A late response for board A cannot replace the newer board B render."
+  (let ((a (hermes--promise-make)) (b (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (_method _path &optional _body query)
+                 (if (equal (cdr (assq 'board query)) "a") a b))))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-board "a" "Board A")
+            (hermes-kanban--render-board "b" "Board B")
+            (hermes--promise-resolve
+             b '((columns . (((name . "todo")
+                              (tasks . (((id . "b-task") (status . "todo")
+                                         (title . "B")))))))
+                 (assignees)))
+            (hermes--promise-resolve
+             a '((columns . (((name . "todo")
+                              (tasks . (((id . "a-task") (status . "todo")
+                                         (title . "A")))))))
+                 (assignees)))
+            (with-current-buffer "*Hermes Kanban*"
+              (should (equal hermes-kanban--slug "b"))
+              (should (equal (caar tabulated-list-entries) "b-task"))))
+        (when (get-buffer "*Hermes Kanban*")
+          (kill-buffer "*Hermes Kanban*"))))))
+
+(ert-deftest hermes-kanban-board-switch-retargets-live-tail ()
+  "Switching boards disconnects the old live socket and reconnects for the new slug."
+  (let (disconnected connected)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '((columns . (((name . "todo") (tasks . []))))
+                    (assignees) (latest_event_id . 9)))))
+              ((symbol-function 'hermes-kanban--events-disconnect)
+               (lambda (tail)
+                 (setq disconnected (hermes-kanban--events-tail-slug tail))))
+              ((symbol-function 'hermes-kanban--events-connect)
+               (lambda (tail)
+                 (setq connected (hermes-kanban--events-tail-slug tail)))))
+      (unwind-protect
+          (progn
+            (with-current-buffer (get-buffer-create "*Hermes Kanban*")
+              (hermes-kanban-mode)
+              (setq hermes-kanban--slug "a"
+                    hermes-kanban--events-tail
+                    (hermes-kanban--events-tail-create
+                     :buffer (current-buffer) :slug "a" :socket 'old)))
+            (hermes-kanban--render-board "b" "Board B")
+            (with-current-buffer "*Hermes Kanban*"
+              (should (equal disconnected "a"))
+              (should (equal connected "b"))
+              (should (equal (hermes-kanban--events-tail-slug
+                              hermes-kanban--events-tail)
+                             "b"))
+              (should (= (hermes-kanban--events-tail-cursor
+                          hermes-kanban--events-tail)
+                         9))))
+        (when (get-buffer "*Hermes Kanban*")
+          (kill-buffer "*Hermes Kanban*"))))))
+
 (ert-deftest hermes-kanban-show-fetches-task-at-point ()
   "Showing fetches the task on the current row and renders its body."
   (let (show-path)
@@ -517,6 +630,59 @@
         (dolist (b '("*Hermes Kanban*" "*Hermes Kanban Task*"))
           (when (get-buffer b) (kill-buffer b)))))))
 
+(ert-deftest hermes-kanban-task-detail-discards-late-response ()
+  "A late task A refresh cannot replace the newer task B detail."
+  (let ((a (hermes--promise-make)) (b (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (_method path &rest _)
+                 (if (string-suffix-p "/a" path) a b))))
+      (unwind-protect
+          (progn
+            (with-current-buffer (get-buffer-create "*Hermes Kanban Task*")
+              (hermes-kanban-task-mode)
+              (setq hermes-kanban-task--task-id "a"
+                    hermes-kanban-task--board-slug "board")
+              (hermes-kanban--task-revert)
+              (setq hermes-kanban-task--task-id "b")
+              (hermes-kanban--task-revert))
+            (hermes--promise-resolve
+             b '((task . ((id . "b") (title . "Task B")
+                           (status . "todo") (body . "new")))))
+            (hermes--promise-resolve
+             a '((task . ((id . "a") (title . "Task A")
+                           (status . "todo") (body . "old")))))
+            (with-current-buffer "*Hermes Kanban Task*"
+              (should (equal hermes-kanban-task--task-id "b"))
+              (should (string-match-p "Task B" (buffer-string)))
+              (should-not (string-match-p "Task A" (buffer-string)))))
+        (when (get-buffer "*Hermes Kanban Task*")
+          (kill-buffer "*Hermes Kanban Task*"))))))
+
+(ert-deftest hermes-kanban-log-discards-late-response ()
+  "A late task A log refresh cannot replace the newer task B log."
+  (let ((a (hermes--promise-make)) (b (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-kanban--fetch-log)
+               (lambda (id _board) (if (equal id "a") a b))))
+      (unwind-protect
+          (progn
+            (with-current-buffer (get-buffer-create "*Hermes Kanban Log*")
+              (hermes-kanban-log-mode)
+              (setq hermes-kanban-log--task-id "a"
+                    hermes-kanban-log--board-slug "board")
+              (hermes-kanban--log-revert)
+              (setq hermes-kanban-log--task-id "b")
+              (hermes-kanban--log-revert))
+            (hermes--promise-resolve
+             b '((task_id . "b") (exists . t) (content . "new log")))
+            (hermes--promise-resolve
+             a '((task_id . "a") (exists . t) (content . "old log")))
+            (with-current-buffer "*Hermes Kanban Log*"
+              (should (equal hermes-kanban-log--task-id "b"))
+              (should (string-match-p "new log" (buffer-string)))
+              (should-not (string-match-p "old log" (buffer-string)))))
+        (when (get-buffer "*Hermes Kanban Log*")
+          (kill-buffer "*Hermes Kanban Log*"))))))
+
 (ert-deftest hermes-kanban-task-detail-renders-tracker-backlink ()
   "A canonical card-side tracker-ref renders and navigates reciprocally."
   (let (opened)
@@ -528,7 +694,7 @@
             (hermes-kanban--display-task
              '((task . ((id . "t_1234abcd") (title . "Tracked")
                         (status . "todo")
-                        (body . "Body\n\n```tracker-ref\n{\"repo_slug\":\"proj\",\"number\":3}\n```"))))
+                        (body . "Body\n\n```tracker-ref\n{\"number\":3,\"repo_slug\":\"proj\"}\n```"))))
              "default")
             (with-current-buffer "*Hermes Kanban Task*"
               (should (equal hermes-kanban-task--tracker-reference
@@ -823,6 +989,54 @@
         (when (get-buffer "*Hermes Kanban Diagnostics*")
           (kill-buffer "*Hermes Kanban Diagnostics*"))))))
 
+(ert-deftest hermes-kanban-diagnostics-discard-late-response ()
+  "A late diagnostics response cannot replace the latest board refresh."
+  (let ((old (hermes--promise-make)) (new (hermes--promise-make)))
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (_method _path &optional _body query)
+                 (if (equal (cdr (assq 'board query)) "old") old new)))
+              ((symbol-function 'pop-to-buffer) #'ignore))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-diagnostics "old" "Old")
+            (hermes-kanban--render-diagnostics "new" "New")
+            (hermes--promise-resolve
+             new '((diagnostics . (((task_id . "new-task")
+                                     (diagnostics . (((severity . "warning")
+                                                      (title . "New")))))))))
+            (hermes--promise-resolve
+             old '((diagnostics . (((task_id . "old-task")
+                                     (diagnostics . (((severity . "error")
+                                                      (title . "Old")))))))))
+            (with-current-buffer "*Hermes Kanban Diagnostics*"
+              (should (equal hermes-kanban--slug "new"))
+              (should (equal (caar tabulated-list-entries) "new-task"))))
+        (when (get-buffer "*Hermes Kanban Diagnostics*")
+          (kill-buffer "*Hermes Kanban Diagnostics*"))))))
+
+(ert-deftest hermes-kanban-diagnostics-ignore-late-rejection ()
+  "A stale diagnostics rejection cannot report an error after newer success."
+  (let ((old (hermes--promise-make)) (new (hermes--promise-make)) messages)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (_method _path &optional _body query)
+                 (if (equal (cdr (assq 'board query)) "old") old new)))
+              ((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (push (apply #'format format-string args) messages))))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-diagnostics "old" "Old")
+            (hermes-kanban--render-diagnostics "new" "New")
+            (hermes--promise-resolve new '((diagnostics . [])))
+            (hermes--promise-reject old "stale diagnostics error")
+            (should-not
+             (seq-some
+              (lambda (text) (string-match-p "stale diagnostics" text))
+              messages)))
+        (when (get-buffer "*Hermes Kanban Diagnostics*")
+          (kill-buffer "*Hermes Kanban Diagnostics*"))))))
+
 (defun hermes-kanban-test--face-match-p (face expected)
   "Return non-nil when FACE contains EXPECTED."
   (cond
@@ -968,6 +1182,13 @@
       (should-not (hermes-kanban-test--line-has-face-p
                    text "-incomplete hunk" face)))))
 
+(ert-deftest hermes-kanban-log-rejects-bare-blank-diff-body-line ()
+  "A bare blank line is not valid unified-diff context."
+  (with-temp-buffer
+    (insert "@@ -1,2 +1,2 @@\n-old\n+new\n\n")
+    (goto-char (point-min))
+    (should-not (hermes-kanban--consume-diff-hunk))))
+
 (ert-deftest hermes-kanban-log-mode-navigates-embedded-diff-hunks ()
   "Log-mode n/p commands move across embedded unified diff hunks.
 Incomplete header-shaped blocks that the fontifier rejects are skipped."
@@ -1045,6 +1266,29 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
     (let ((ind (hermes-kanban--live-indicator)))
       (should (string-match-p "live" ind))
       (should (eq 'success (get-text-property 1 'face ind))))))
+
+(ert-deftest hermes-kanban-live-indicator-requires-current-board-tail ()
+  "A connected tail for another slug is not shown as live on this board."
+  (with-temp-buffer
+    (setq-local hermes-kanban--slug "b"
+                hermes-kanban--events-tail
+                (hermes-kanban--events-tail-create :slug "a" :socket 'ws))
+    (let ((indicator (hermes-kanban--live-indicator)))
+      (should-not (string-match-p "live" indicator))
+      (should (eq 'warning (get-text-property 1 'face indicator))))))
+
+(ert-deftest hermes-kanban-events-stale-close-does-not-clear-new-socket ()
+  "The close callback from socket A cannot clear replacement socket B."
+  (let* ((socket-a 'socket-a)
+         (socket-b 'socket-b)
+         (tail (hermes-kanban--events-tail-create
+                :buffer (current-buffer) :socket socket-b))
+         scheduled)
+    (cl-letf (((symbol-function 'hermes-kanban--events-reconnect)
+               (lambda (&rest _) (setq scheduled t))))
+      (hermes-kanban--events-on-down tail socket-a)
+      (should (eq (hermes-kanban--events-tail-socket tail) socket-b))
+      (should-not scheduled))))
 
 (ert-deftest hermes-kanban-events-connect-failure-schedules-reconnect ()
   "A failed URL resolve re-enters the reconnect backoff instead of dying."

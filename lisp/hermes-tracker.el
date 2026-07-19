@@ -30,6 +30,7 @@
 (require 'hermes-transport)
 
 (declare-function markdown-mode "markdown-mode")
+(declare-function read-string-from-buffer "string-edit")
 (declare-function hermes-tracker-todo-mode "hermes-tracker")
 
 (defgroup hermes-tracker nil
@@ -56,9 +57,12 @@
   :type 'string
   :group 'hermes-tracker)
 
+(defconst hermes-tracker--reference-marker "```tracker-ref"
+  "Raw marker that reserves a Tracker reference fence.")
+
 (defconst hermes-tracker--reference-regexp
-  "```tracker-ref[[:space:]]*\n\\(.*?\\)\n```"
-  "Regexp matching a fenced Tracker reference block.")
+  "\\(?:\\`\\|\n\\)\\(```tracker-ref\n\\([^\n]+\\)\n```\\)\\(?:\\'\\|\n\\)"
+  "Regexp matching one exact canonical Tracker reference fence.")
 
 (defvar-local hermes-tracker--repo-slug nil)
 (defvar-local hermes-tracker--repo-name nil)
@@ -66,6 +70,20 @@
 (defvar-local hermes-tracker--todo-number nil)
 (defvar-local hermes-tracker--todo nil)
 (defvar-local hermes-tracker--linked-cards nil)
+
+(defvar hermes-tracker--repositories-request-id 0)
+(defvar hermes-tracker--todos-request-id 0)
+(defvar hermes-tracker--todo-request-id 0)
+
+(defun hermes-tracker--begin-request (slot)
+  "Advance request identity SLOT and return its new value."
+  (let ((request-id (1+ (symbol-value slot))))
+    (set slot request-id)
+    request-id))
+
+(defun hermes-tracker--request-current-p (slot request-id)
+  "Return non-nil when REQUEST-ID is the latest value of SLOT."
+  (= request-id (symbol-value slot)))
 
 (defun hermes-tracker--normalize-base-url (value)
   "Return validated Tracker base URL from VALUE, or nil when empty."
@@ -265,13 +283,17 @@
 (defun hermes-tracker-parse-reference (body)
   "Return canonical Tracker reference plist parsed from Kanban BODY."
   (when (stringp body)
-    (let ((start 0) payloads)
-      (while (string-match hermes-tracker--reference-regexp body start)
-        (push (match-string 1 body) payloads)
+    (let ((start 0) (markers 0))
+      (while (string-match (regexp-quote hermes-tracker--reference-marker)
+                           body start)
+        (cl-incf markers)
         (setq start (match-end 0)))
-      (when (= (length payloads) 1)
+      (when (and (= markers 1)
+                 (string-match hermes-tracker--reference-regexp body))
         (condition-case nil
-            (let* ((object (json-parse-string (car payloads) :object-type 'alist))
+            (let* ((block (match-string 1 body))
+                   (object (json-parse-string (match-string 2 body)
+                                              :object-type 'alist))
                    (keys (mapcar #'car object))
                    (slug (cdr (assq 'repo_slug object)))
                    (number (cdr (assq 'number object))))
@@ -280,6 +302,7 @@
                           '(number repo_slug))
                    (stringp slug) (not (string-empty-p (string-trim slug)))
                    (integerp number) (> number 0)
+                   (equal block (hermes-tracker-render-reference slug number))
                    (list :repo-slug (string-trim slug) :number number)))
           (error nil))))))
 
@@ -357,18 +380,82 @@
                           (format " by %s" replacement) ""))
             "")))
 
+(defun hermes-tracker--not-found-reason-p (reason)
+  "Return non-nil when REASON confirms an HTTP 404 response."
+  (and (stringp reason)
+       (string-match-p "(HTTP 404)" reason)))
+
+(defun hermes-tracker--fetch-dashboard-task (id board)
+  "Return a promise resolving task ID on BOARD, or nil when absent."
+  (hermes--promise-catch
+   (hermes-dashboard-transport-api-request-async
+    "GET" (concat "/api/plugins/kanban/tasks/" (url-hexify-string id))
+    :query `((board . ,board)))
+   (lambda (reason)
+     (if (hermes-tracker--not-found-reason-p reason)
+         nil
+       (hermes--promise-rejected reason)))))
+
+(defun hermes-tracker--board-task-result (id board)
+  "Return a promise of one BOARD lookup result for task ID."
+  (hermes--promise-catch
+   (hermes--promise-map
+    (hermes-tracker--fetch-dashboard-task id board)
+    (lambda (payload) (list :match (and payload (cons board payload)))))
+   (lambda (reason) (list :error reason))))
+
+(defun hermes-tracker--select-board-task-result (results)
+  "Return the match in RESULTS, reject its first error, or return nil."
+  (let ((match (seq-some (lambda (result) (plist-get result :match)) results))
+        (reason (seq-some (lambda (result) (plist-get result :error)) results)))
+    (cond (match match)
+          (reason (hermes--promise-rejected reason)))))
+
+(defun hermes-tracker--find-dashboard-task (id stale-board)
+  "Return a promise resolving (BOARD . PAYLOAD) for ID outside STALE-BOARD."
+  (hermes--promise-then
+   (hermes-dashboard-transport-api-request-async
+    "GET" "/api/plugins/kanban/boards")
+   (lambda (payload)
+     (hermes--promise-map
+     (hermes--promise-all
+       (mapcar
+        (lambda (board)
+          (hermes-tracker--board-task-result id board))
+        (seq-remove
+         (lambda (board) (equal board stale-board))
+         (mapcar (lambda (board)
+                   (hermes-tracker--display board 'slug))
+                 (hermes-tracker--items
+                  (hermes-transport--get payload 'boards))))))
+      #'hermes-tracker--select-board-task-result))))
+
+(defun hermes-tracker--linked-card-at-board (todo reference payload board)
+  "Return TODO REFERENCE card data from PAYLOAD found on BOARD."
+  (let ((card (hermes-tracker--linked-card todo reference payload)))
+    (if (and payload (not (equal board (plist-get card :board))))
+        (plist-put
+         (plist-put card :board board) :drift
+         (if (eq (plist-get card :drift) 'none)
+             'stale-board
+           (plist-get card :drift)))
+      card)))
+
 (defun hermes-tracker--fetch-linked-card (todo reference)
   "Return promise resolving TODO REFERENCE to a linked-card record."
   (let* ((id (hermes-tracker--display reference 'external_id))
          (metadata (hermes-transport--get reference 'metadata))
          (board (hermes-tracker--display metadata 'board "default")))
-    (hermes--promise-map
-     (hermes--promise-catch
-      (hermes-dashboard-transport-api-request-async
-       "GET" (concat "/api/plugins/kanban/tasks/" (url-hexify-string id))
-       :query `((board . ,board)))
-      (lambda (_) nil))
-     (lambda (payload) (hermes-tracker--linked-card todo reference payload)))))
+    (hermes--promise-then
+     (hermes-tracker--fetch-dashboard-task id board)
+     (lambda (payload)
+       (if payload
+           (hermes-tracker--linked-card todo reference payload)
+         (hermes--promise-map
+          (hermes-tracker--find-dashboard-task id board)
+          (lambda (match)
+            (hermes-tracker--linked-card-at-board
+             todo reference (cdr match) (or (car match) board)))))))))
 
 (defun hermes-tracker--fetch-todo-with-cards (repo number)
   "Return promise of (TODO . LINKED-CARDS) for REPO NUMBER."
@@ -404,6 +491,7 @@
 
 (defun hermes-tracker--render-repositories (repositories &optional in-place)
   "Render REPOSITORIES, displaying unless IN-PLACE."
+  (hermes-tracker--begin-request 'hermes-tracker--repositories-request-id)
   (with-current-buffer (get-buffer-create "*Hermes Tracker Repositories*")
     (unless (derived-mode-p 'hermes-tracker-repositories-mode)
       (hermes-tracker-repositories-mode))
@@ -413,18 +501,35 @@
 
 (defun hermes-tracker--repositories-revert (&rest _)
   "Refresh Tracker repositories in place."
-  (hermes--promise-then
-   (hermes-tracker--request-async "GET" (hermes-tracker--api-path "repos"))
-   (lambda (repos) (hermes-tracker--render-repositories repos t))
-   #'hermes-tracker--report-error))
+  (let ((request-id (hermes-tracker--begin-request
+                     'hermes-tracker--repositories-request-id)))
+    (hermes--promise-then
+     (hermes-tracker--request-async "GET" (hermes-tracker--api-path "repos"))
+     (lambda (repos)
+       (when (hermes-tracker--request-current-p
+              'hermes-tracker--repositories-request-id request-id)
+         (hermes-tracker--render-repositories repos t)))
+     (lambda (reason)
+       (when (hermes-tracker--request-current-p
+              'hermes-tracker--repositories-request-id request-id)
+         (hermes-tracker--report-error reason))))))
 
 ;;;###autoload
 (defun hermes-list-tracker-repositories ()
   "Browse configured Hermes Tracker repositories."
   (interactive)
-  (hermes--promise-then
-   (hermes-tracker--request-async "GET" (hermes-tracker--api-path "repos"))
-   #'hermes-tracker--render-repositories #'hermes-tracker--report-error))
+  (let ((request-id (hermes-tracker--begin-request
+                     'hermes-tracker--repositories-request-id)))
+    (hermes--promise-then
+     (hermes-tracker--request-async "GET" (hermes-tracker--api-path "repos"))
+     (lambda (repos)
+       (when (hermes-tracker--request-current-p
+              'hermes-tracker--repositories-request-id request-id)
+         (hermes-tracker--render-repositories repos)))
+     (lambda (reason)
+       (when (hermes-tracker--request-current-p
+              'hermes-tracker--repositories-request-id request-id)
+         (hermes-tracker--report-error reason))))))
 
 (defun hermes-tracker-open-repository ()
   "Open selected Tracker repository's TODO list."
@@ -461,6 +566,7 @@
 
 (defun hermes-tracker--display-todos (payload slug name &optional in-place)
   "Display TODO PAYLOAD for repository SLUG NAME unless IN-PLACE."
+  (hermes-tracker--begin-request 'hermes-tracker--todos-request-id)
   (with-current-buffer (get-buffer-create "*Hermes Tracker TODOs*")
     (unless (derived-mode-p 'hermes-tracker-todos-mode) (hermes-tracker-todos-mode))
     (setq hermes-tracker--repo-slug slug hermes-tracker--repo-name name
@@ -474,11 +580,19 @@
 (defun hermes-tracker--render-todos (slug name &optional in-place)
   "Fetch and render repository SLUG NAME TODOs unless IN-PLACE."
   (let ((status (and (derived-mode-p 'hermes-tracker-todos-mode)
-                     hermes-tracker--status-filter)))
+                     hermes-tracker--status-filter))
+        (request-id (hermes-tracker--begin-request
+                     'hermes-tracker--todos-request-id)))
     (hermes--promise-then
      (hermes-tracker--request-async "GET" (hermes-tracker--todo-list-path slug status))
-     (lambda (payload) (hermes-tracker--display-todos payload slug name in-place))
-     #'hermes-tracker--report-error)))
+     (lambda (payload)
+       (when (hermes-tracker--request-current-p
+              'hermes-tracker--todos-request-id request-id)
+         (hermes-tracker--display-todos payload slug name in-place)))
+     (lambda (reason)
+       (when (hermes-tracker--request-current-p
+              'hermes-tracker--todos-request-id request-id)
+         (hermes-tracker--report-error reason))))))
 
 (defun hermes-tracker--todos-revert (&rest _)
   "Refresh current Tracker TODO list."
@@ -514,9 +628,18 @@
 
 (defun hermes-tracker-open-todo (repo number)
   "Open Tracker TODO NUMBER in REPO."
-  (hermes--promise-then
-   (hermes-tracker--fetch-todo-with-cards repo number)
-   #'hermes-tracker--display-todo #'hermes-tracker--report-error))
+  (let ((request-id (hermes-tracker--begin-request
+                     'hermes-tracker--todo-request-id)))
+    (hermes--promise-then
+     (hermes-tracker--fetch-todo-with-cards repo number)
+     (lambda (pair)
+       (when (hermes-tracker--request-current-p
+              'hermes-tracker--todo-request-id request-id)
+         (hermes-tracker--display-todo pair)))
+     (lambda (reason)
+       (when (hermes-tracker--request-current-p
+              'hermes-tracker--todo-request-id request-id)
+         (hermes-tracker--report-error reason))))))
 
 (defvar hermes-tracker-todo-mode-map)
 (keymap-popup-define hermes-tracker-todo-mode-map
@@ -526,6 +649,7 @@
   "b" ("TODO list" hermes-tracker-back-to-todos)
   :group "TODO" "u" ("Update" hermes-tracker-update-todo)
   "a" ("Claim" hermes-tracker-claim-todo) "c" ("Comment" hermes-tracker-comment)
+  "C" ("Close with evidence" hermes-tracker-close-todo)
   "L" ("Link Kanban card" hermes-tracker-link-kanban)
   :group "View" "g" ("Refresh" revert-buffer)
   "?" ("Help" hermes-tracker-todo-mode-map-popup))
@@ -554,6 +678,7 @@
 
 (defun hermes-tracker--display-todo (pair)
   "Render TODO and linked cards from PAIR."
+  (hermes-tracker--begin-request 'hermes-tracker--todo-request-id)
   (let ((todo (car pair)) (cards (cdr pair)))
     (with-current-buffer (get-buffer-create "*Hermes Tracker TODO*")
       (unless (derived-mode-p 'hermes-tracker-todo-mode) (hermes-tracker-todo-mode))
@@ -611,7 +736,7 @@
   (interactive)
   (let* ((repo hermes-tracker--repo-slug)
          (title (string-trim (read-string "Title: ")))
-         (description (read-string "Description (optional): "))
+         (description (read-string-from-buffer "Description (optional): "))
          (priority (read-number "Priority: " 0)))
     (when (string-empty-p title) (user-error "Title is required"))
     (hermes--promise-then
@@ -654,7 +779,7 @@
   "Append a public Tracker comment to current TODO."
   (interactive)
   (pcase-let ((`(,repo ,number ,refresh) (hermes-tracker--context)))
-    (let ((body (string-trim (read-string "Comment: "))))
+    (let ((body (string-trim (read-string-from-buffer "Comment: "))))
       (when (string-empty-p body) (user-error "Comment is required"))
       (hermes--promise-then
        (hermes-tracker--request-async
@@ -662,6 +787,26 @@
         `((author . ,hermes-tracker-actor) (body . ,body))
         (hermes-tracker--invocation "comment" repo number))
        (lambda (_) (funcall refresh)) #'hermes-tracker--report-error))))
+
+(defun hermes-tracker-close-todo ()
+  "Close the current TODO with multiline verification evidence."
+  (interactive)
+  (pcase-let ((`(,repo ,number ,refresh) (hermes-tracker--context)))
+    (let ((evidence (string-trim
+                     (read-string-from-buffer "Verification evidence: "))))
+      (when (string-empty-p evidence)
+        (user-error "Verification evidence is required"))
+      (let ((commit (hermes-transport--non-empty-string
+                     (string-trim
+                      (read-string "Closing commit (optional): ")))))
+        (hermes--promise-then
+         (hermes-tracker--request-async
+          "POST" (hermes-tracker--api-path "repos" repo "todos" number "close")
+          `((verification_output . ,evidence)
+            (closing_commit . ,(or commit :null)))
+          (hermes-tracker--invocation "close" repo number))
+         (lambda (_) (funcall refresh))
+         #'hermes-tracker--report-error)))))
 
 (defun hermes-tracker--external-reference-body (task-id board profile)
   "Return canonical external reference body for TASK-ID, BOARD, and PROFILE."
@@ -700,28 +845,38 @@
     (hermes--promise-then
      (hermes-tracker--ensure-external-reference repo number task-id board profile)
      (lambda (_)
-       (if existing
-           payload
-         (hermes-dashboard-transport-api-request-async
-          "PATCH" (concat "/api/plugins/kanban/tasks/" (url-hexify-string task-id))
-          :body `((body . ,(hermes-tracker--body-with-reference body repo number)))
-          :query `((board . ,board))))))))
+       (hermes--promise-catch
+        (hermes-dashboard-transport-api-request-async
+         "POST" (concat "/api/plugins/kanban/tasks/"
+                        (url-hexify-string task-id) "/tracker-reference")
+         :body `((repo_slug . ,repo) (number . ,number))
+         :query `((board . ,board)))
+        (lambda (reason)
+          (hermes--promise-rejected
+           (format "Tracker backlink was written, but the Kanban backlink failed; retry to repair: %s"
+                   reason))))))))
 
 (defun hermes-tracker-link-kanban ()
   "Explicitly link current Tracker TODO to a selected Kanban card."
   (interactive)
-  (let* ((repo hermes-tracker--repo-slug) (number hermes-tracker--todo-number)
+  (let* ((buffer (current-buffer))
+         (repo hermes-tracker--repo-slug) (number hermes-tracker--todo-number)
          (board (read-string "Kanban board: " "default"))
          (task-id (read-string "Kanban task id: ")))
     (unless (string-match-p "\\`t_[0-9a-f]\\{8\\}\\'" task-id)
       (user-error "Kanban task id must match t_<8 lowercase hex>"))
     (hermes--promise-then
-     (hermes-dashboard-transport-api-request-async
-      "GET" (concat "/api/plugins/kanban/tasks/" (url-hexify-string task-id))
-      :query `((board . ,board)))
-     (lambda (payload) (hermes-tracker--link-card repo number board task-id payload))
-     #'hermes-tracker--report-error)
-    (message "Hermes Tracker: linking %s#%s and %s" repo number task-id)))
+     (hermes--promise-map
+      (hermes-dashboard-transport-api-request-async
+       "GET" (concat "/api/plugins/kanban/tasks/" (url-hexify-string task-id))
+       :query `((board . ,board)))
+      (lambda (payload)
+        (hermes-tracker--link-card repo number board task-id payload)))
+     (lambda (_)
+       (when (buffer-live-p buffer)
+         (with-current-buffer buffer (revert-buffer nil t)))
+       (message "Hermes Tracker: linked %s#%s and %s" repo number task-id))
+     #'hermes-tracker--report-error)))
 
 (provide 'hermes-tracker)
 ;;; hermes-tracker.el ends here

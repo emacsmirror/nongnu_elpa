@@ -72,8 +72,7 @@
    ((looking-at "^\\\\ No newline at end of file") '(0 . 0))
    ((looking-at "^\\+") '(0 . 1))
    ((looking-at "^-") '(1 . 0))
-   ((looking-at "^ ") '(1 . 1))
-   ((looking-at "^$") '(1 . 1))))
+   ((looking-at "^ ") '(1 . 1))))
 
 (defun hermes-kanban--consume-diff-hunk ()
   "Move over a valid unified diff hunk at point.

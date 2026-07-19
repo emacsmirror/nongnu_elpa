@@ -62,7 +62,9 @@ reconnect backoff shows as retrying rather than falsely live."
   (cond
    ((null hermes-kanban--events-tail)
     (propertize " ○" 'face 'shadow))
-   ((hermes-kanban--events-tail-socket hermes-kanban--events-tail)
+   ((and (equal hermes-kanban--slug
+                (hermes-kanban--events-tail-slug hermes-kanban--events-tail))
+         (hermes-kanban--events-tail-socket hermes-kanban--events-tail))
     (propertize " ●live" 'face 'success))
    (t (propertize " ◌retry" 'face 'warning))))
 
@@ -81,11 +83,14 @@ reconnect backoff shows as retrying rather than falsely live."
         (run-at-time hermes-kanban--events-debounce nil
                      #'hermes-kanban--events-refresh tail)))
 
-(defun hermes-kanban--events-handle-frame (tail text)
+(defun hermes-kanban--events-handle-frame (tail text &optional socket)
   "Advance TAIL's cursor from the JSON frame TEXT and schedule a refresh.
 TEXT is a plain `{events,cursor}' frame, parsed on this socket alone -- never
-through the chat client's JSON-RPC handler."
-  (when (hermes-kanban--events-tail-active tail)
+through the chat client's JSON-RPC handler.  Optional SOCKET identifies the
+connection that delivered TEXT so stale callbacks are ignored."
+  (when (and (hermes-kanban--events-tail-active tail)
+             (or (null socket)
+                 (eq socket (hermes-kanban--events-tail-socket tail))))
     (setf (hermes-kanban--events-tail-backoff tail) 1)
     (when-let* ((frame (ignore-errors
                          (json-parse-string text :object-type 'alist
@@ -114,11 +119,14 @@ through the chat client's JSON-RPC handler."
              (buffer-live-p (hermes-kanban--events-tail-buffer tail)))
     (hermes-kanban--events-connect tail)))
 
-(defun hermes-kanban--events-on-down (tail &optional message)
-  "Drop TAIL's socket, report optional MESSAGE, and reconnect with backoff."
-  (when message (message "Hermes kanban live: %s" message))
-  (setf (hermes-kanban--events-tail-socket tail) nil)
-  (hermes-kanban--events-reconnect tail))
+(defun hermes-kanban--events-on-down (tail socket &optional message)
+  "Drop TAIL's SOCKET when it is current, then reconnect with backoff.
+Report optional MESSAGE only for the current connection."
+  (when (or (null socket)
+            (eq socket (hermes-kanban--events-tail-socket tail)))
+    (when message (message "Hermes kanban live: %s" message))
+    (setf (hermes-kanban--events-tail-socket tail) nil)
+    (hermes-kanban--events-reconnect tail)))
 
 (defun hermes-kanban--events-connect (tail)
   "Resolve the events URL for TAIL and open its socket.
@@ -131,19 +139,24 @@ dropped connection, instead of permanently killing the tail."
    (lambda (url)
      (when (hermes-kanban--events-tail-active tail)
        (condition-case err
-           (setf (hermes-kanban--events-tail-socket tail)
-                 (hermes-dashboard-transport-open-websocket
-                  (plist-get url :url) (plist-get url :redacted-url)
-                  (plist-get url :secrets)
-                  :on-message (lambda (text)
-                                (hermes-kanban--events-handle-frame tail text))
-                  :on-close (lambda () (hermes-kanban--events-on-down tail))
-                  :on-error (lambda (msg)
-                              (hermes-kanban--events-on-down tail msg))))
+           (let (socket)
+             (setq socket
+                   (hermes-dashboard-transport-open-websocket
+                    (plist-get url :url) (plist-get url :redacted-url)
+                    (plist-get url :secrets)
+                    :on-message
+                    (lambda (text)
+                      (hermes-kanban--events-handle-frame tail text socket))
+                    :on-close
+                    (lambda () (hermes-kanban--events-on-down tail socket))
+                    :on-error
+                    (lambda (msg)
+                      (hermes-kanban--events-on-down tail socket msg))))
+             (setf (hermes-kanban--events-tail-socket tail) socket))
          (error (hermes-kanban--events-on-down
-                 tail (error-message-string err))))))
+                 tail nil (error-message-string err))))))
    (lambda (reason)
-     (hermes-kanban--events-on-down tail (format "%s" reason)))))
+     (hermes-kanban--events-on-down tail nil (format "%s" reason)))))
 
 (defun hermes-kanban--events-disconnect (tail)
   "Tear down TAIL: stop reconnecting, cancel timers, and close the socket."
@@ -163,6 +176,19 @@ dropped connection, instead of permanently killing the tail."
   (when hermes-kanban--events-tail
     (hermes-kanban--events-disconnect hermes-kanban--events-tail)
     (setq hermes-kanban--events-tail nil)))
+
+(defun hermes-kanban--events-retarget (slug cursor)
+  "Retarget an enabled live tail to SLUG, seeding it from CURSOR."
+  (when (and hermes-kanban--events-tail
+             (not (equal slug
+                         (hermes-kanban--events-tail-slug
+                          hermes-kanban--events-tail))))
+    (hermes-kanban--events-disconnect hermes-kanban--events-tail)
+    (setq hermes-kanban--events-tail
+          (hermes-kanban--events-tail-create
+           :buffer (current-buffer) :slug slug :cursor (or cursor 0)))
+    (hermes-kanban--events-connect hermes-kanban--events-tail)
+    (force-mode-line-update)))
 
 (defun hermes-kanban-toggle-live ()
   "Toggle the live-events tail for the current board buffer.
