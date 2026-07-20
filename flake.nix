@@ -2,9 +2,13 @@
   description = "Hermes Agent frontend for Emacs";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs.keymap-popup = {
+    url = "git+https://git.thanosapollo.org/emacs-keymap-popup";
+    flake = false;
+  };
 
   outputs =
-    { self, nixpkgs }:
+    { self, nixpkgs, keymap-popup }:
     let
       systems = [
         "x86_64-linux"
@@ -27,6 +31,7 @@
           # Keep in sync with SRCS in the Makefile.
           elispFiles = [
             "lisp/hermes-promise.el"
+            "lisp/hermes-notifications.el"
             "lisp/hermes-transport.el"
             "lisp/hermes-transport-cli.el"
             "lisp/hermes-dashboard-transport.el"
@@ -70,11 +75,8 @@
               && !(lib.elem name ignoredSourceNames || lib.hasSuffix ".elc" name);
           };
 
-          keymapPopupVersion = "0.3.1";
-          keymapPopupSrc = pkgs.fetchzip {
-            url = "https://elpa.gnu.org/packages/keymap-popup-${keymapPopupVersion}.tar";
-            hash = "sha256-hoH9SJ8LQS/uWNmwvauBJwMnnr4+DwhJpUFuHOihldM=";
-          };
+          keymapPopupVersion = "0.4.0";
+          keymapPopupSrc = keymap-popup;
 
           keymapPopup = emacsPackages.trivialBuild {
             pname = "keymap-popup";
