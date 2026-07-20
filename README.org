@@ -7,6 +7,7 @@ An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
 + Slash commands, approvals, clarify/sudo/secret prompts, interrupts, and steering
 + Markdown-rendered replies; diffs open as =[View Diff]= in =diff-mode=
 + *Kanban*, sessions, profiles, MCP, cron, inventory, and rollback browsers
++ Configurable desktop notifications with click-to-open actions
 + Provider onboarding (API keys) from Emacs
 + /Optional/ local eval endpoint (=hermes-exec=) for the Hermes Emacs MCP bridge
 
@@ -26,9 +27,22 @@ An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
 - =RET= to send.
 - =/= for slash commands.
 - =C-c C-o= for the actions menu.
+- =M-x hermes-close= closes local connections and Hermes buffers for restart.
 
 Point =hermes-dashboard-transport-url= at your running dashboard:
 
 #+begin_src sh
   hermes dashboard --no-open --tui --host 127.0.0.1 --port 9119
+#+end_src
+
+Desktop notifications default to completed chat replies, terminal chat errors,
+input requests, background-task results, and Kanban states that need attention.
+Cron failures use the same policy when cron failure monitoring is enabled.
+They are suppressed when the target buffer is already visible on the focused
+frame. Customize the event set, or set it to =nil= to disable notifications:
+
+#+begin_src emacs-lisp
+  (setq hermes-notifications-events
+        '(chat-reply chat-error prompt background
+          kanban-attention cron-failure kanban-done))
 #+end_src
