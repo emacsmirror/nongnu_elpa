@@ -231,24 +231,39 @@ symmetric (passphrase) encryption, which is not what the user asked for."
 (ert-deftest vm-epg-test-multipart-encrypted-t-on-decrypt-failure ()
   "REGRESSION: a failed decryption must still return t.
 Otherwise `vm-decode-mime-layout' falls through and re-renders the raw
-ciphertext parts as multipart/mixed."
+ciphertext parts as multipart/mixed.
+
+The cipher buffer is reached through the real accessors rather than by
+mocking them: `vm-buffer-of' is a `defsubst' and is inlined into the
+byte-compiled function under test, so a `cl-letf' redefinition of it would
+be silently ignored and the real code would `aref' a bogus value."
   (vm-test-skip-unless (vm-epg-test--gpg-p) "no OpenPGP configuration")
   (let* ((header (vm-epg-test--make-layout "application/pgp-encrypted"))
          (msg    (vm-epg-test--make-layout "application/octet-stream"))
          (top    (vm-epg-test--make-layout
                   "multipart/encrypted" (list header msg)))
-         (cipher-buf (generate-new-buffer " *vm-epg-test-cipher*")))
+         (cipher-buf (generate-new-buffer " *vm-epg-test-cipher*"))
+         ;; A minimal "message object" as `vm-buffer-of' dereferences it:
+         ;; (aref (aref message 1) 9) must be the buffer holding the cipher.
+         (msg-inner (make-vector 10 nil))
+         (msg-obj (make-vector 2 nil))
+         (msg-sym (make-symbol "vm-epg-test-msg"))
+         (vm-epg-auto-decrypt t))
     (unwind-protect
         (progn
           (with-current-buffer cipher-buf (insert "CIPHERTEXT"))
+          (aset msg-inner 9 cipher-buf)
+          (aset msg-obj 1 msg-inner)
+          (set msg-sym msg-obj)
+          ;; Wire the octet-stream layout to the message object and to the
+          ;; cipher region: slot 13 = message symbol, slots 9/10 = body
+          ;; start/end (see the `vm-mm-layout-*' accessors in vm-mime.el).
+          (aset msg 13 msg-sym)
+          (with-current-buffer cipher-buf
+            (aset msg 9 (point-min))
+            (aset msg 10 (point-max)))
           (cl-letf (((symbol-function 'vm-epg-state-set) #'ignore)
                     ((symbol-function 'vm-epg-get-mime-decoded) (lambda () nil))
-                    ((symbol-function 'vm-mm-layout-message) (lambda (_) 'm))
-                    ((symbol-function 'vm-buffer-of) (lambda (_) cipher-buf))
-                    ((symbol-function 'vm-mm-layout-body-start)
-                     (lambda (_) (with-current-buffer cipher-buf (point-min))))
-                    ((symbol-function 'vm-mm-layout-body-end)
-                     (lambda (_) (with-current-buffer cipher-buf (point-max))))
                     ((symbol-function 'epg-decrypt-string)
                      (lambda (&rest _) (error "decrypt failed"))))
             (with-temp-buffer
