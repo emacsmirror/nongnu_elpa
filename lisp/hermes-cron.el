@@ -555,7 +555,8 @@ The first render only records a baseline so pre-existing failures do not alert."
            "Hermes cron failed"
            (format "%s failed (%s)"
                    (hermes-transport--display-field job 'name)
-                   (or (hermes-transport--non-blank-string stamp) "just now"))))))
+                   (or (hermes-transport--non-blank-string stamp) "just now"))
+           'cron-failure (current-buffer)))))
     (setq hermes-cron--seen-runs next)))
 
 (defvar-local hermes-cron--auto-refresh-timer nil

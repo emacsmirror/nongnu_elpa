@@ -1231,6 +1231,74 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
 
 ;;; Group N: live events tail
 
+(ert-deftest hermes-kanban-notification-classifies-attention-and-done-events ()
+  "Kanban notification policy ignores routine activity and classifies outcomes."
+  (should (equal (hermes-kanban--event-notice
+                  '((task_id . "t1") (kind . "blocked")))
+                 '(:task-id "t1" :event kanban-attention
+                   :label "blocked" :urgency critical)))
+  (should (equal (hermes-kanban--event-notice
+                  '((task_id . "t2") (kind . "status")
+                    (payload . ((status . "review")))))
+                 '(:task-id "t2" :event kanban-attention
+                   :label "ready for review" :urgency normal)))
+  (should (equal (hermes-kanban--event-notice
+                  '((task_id . "t3") (kind . "completed")))
+                 '(:task-id "t3" :event kanban-done
+                   :label "completed" :urgency normal)))
+  (should-not (hermes-kanban--event-notice
+               '((task_id . "t4") (kind . "heartbeat")))))
+
+(ert-deftest hermes-kanban-notification-batch-keeps-last-transition-per-task ()
+  "One frame emits only the last meaningful transition for each task."
+  (should
+   (equal
+    (hermes-kanban--event-notices
+     '(((task_id . "t1") (kind . "blocked"))
+       ((task_id . "t1") (kind . "status")
+        (payload . ((status . "review"))))
+       ((task_id . "t2") (kind . "claimed"))
+       ((task_id . "t2") (kind . "timed_out"))))
+    '((:task-id "t1" :event kanban-attention
+       :label "ready for review" :urgency normal)
+      (:task-id "t2" :event kanban-attention
+       :label "timed out" :urgency critical)))))
+
+(ert-deftest hermes-kanban-notification-default-skips-done-but-shows-blocked ()
+  "The default event set emits attention notices but not routine completion."
+  (let ((tail (hermes-kanban--events-tail-create
+               :buffer (current-buffer) :cursor 1))
+        notifications)
+    (cl-letf (((symbol-function 'frame-focus-state) (lambda (&rest _) nil))
+              ((symbol-function 'require) (lambda (&rest _) t))
+              ((symbol-function 'notifications-notify)
+               (lambda (&rest args) (push args notifications) 12))
+              ((symbol-function 'run-at-time) (lambda (&rest _) 'timer)))
+      (hermes-kanban--events-handle-frame
+       tail
+       (concat "{\"events\":["
+               "{\"task_id\":\"done-task\",\"kind\":\"completed\"},"
+               "{\"task_id\":\"blocked-task\",\"kind\":\"blocked\"}"
+               "],\"cursor\":5}"))
+      (should (= 1 (length notifications)))
+      (should (string-match-p "blocked-task"
+                              (plist-get (car notifications) :body))))))
+
+(ert-deftest hermes-kanban-notification-click-selects-task-row ()
+  "Opening a Kanban notice displays its board and selects the matching task."
+  (with-temp-buffer
+    (hermes-kanban-mode)
+    (setq tabulated-list-entries
+          '(("t1" ["⚙️" "1" "worker" "First task"])
+            ("t2" ["⛔" "2" "worker" "Second task"])))
+    (tabulated-list-print t)
+    (let ((buffer (current-buffer)))
+      (cl-letf (((symbol-function 'pop-to-buffer) (lambda (&rest _) buffer)))
+        (hermes-kanban--open-notification-task buffer "t2"))
+      (should (equal (tabulated-list-get-id) "t2"))
+      (should (equal (hermes-kanban--notification-task-title buffer "t2")
+                     "Second task")))))
+
 (ert-deftest hermes-kanban-events-handle-frame-advances-cursor-and-schedules ()
   "A `{events,cursor}' frame advances the cursor and debounces one refresh."
   (let ((tail (hermes-kanban--events-tail-create

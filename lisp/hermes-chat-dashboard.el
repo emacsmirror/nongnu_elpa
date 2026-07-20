@@ -38,6 +38,7 @@
 (require 'hermes-chat-format)
 (require 'hermes-chat-buffer)
 (require 'hermes-chat-prompts)
+(require 'hermes-notifications)
 
 
 (defvar hermes-chat-dashboard-session-title)
@@ -392,6 +393,40 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
   (hermes-chat--dashboard-schedule-idle-reconciliation
    #'hermes-chat--drain-queued-message))
 
+(defun hermes-chat--interrupted-error-event-p (event)
+  "Return whether error EVENT represents an intentional interruption."
+  (member (hermes-chat--status-name (hermes-chat--error-status event))
+          '("interrupted" "cancelled" "canceled")))
+
+(defun hermes-chat--notify-terminal-event (assistant-id event)
+  "Notify for terminal EVENT belonging to ASSISTANT-ID."
+  (pcase (plist-get event :type)
+    ('done
+     (hermes-notifications-notify
+      'chat-reply "Hermes reply ready"
+      (let ((preview (hermes-notifications-preview
+                      (hermes-chat--entry-content-by-id assistant-id))))
+        (if (string-empty-p preview) "Reply completed" preview))
+      :buffer (current-buffer) :category "hermes.chat" :urgency 'normal))
+    ('error
+     (unless (hermes-chat--interrupted-error-event-p event)
+       (hermes-notifications-notify
+        'chat-error "Hermes chat error"
+        (let ((preview (hermes-notifications-preview
+                        (plist-get event :content))))
+          (if (string-empty-p preview) "The Hermes turn failed" preview))
+        :buffer (current-buffer) :category "hermes.chat.error"
+        :urgency 'critical)))))
+
+(defun hermes-chat--notify-prompt-request (prompt)
+  "Notify that PROMPT needs input without exposing its contents."
+  (hermes-notifications-notify
+   'prompt "Hermes input required"
+   (format "%s requested in %s"
+           (hermes-chat--prompt-display-name prompt) (buffer-name))
+   :buffer (current-buffer) :category "hermes.chat.prompt"
+   :urgency 'critical))
+
 (defun hermes-chat--render-dashboard-turn-event (assistant-id event)
   "Render ordinary dashboard EVENT for ASSISTANT-ID and settle its lifecycle."
   (hermes-chat--dashboard-note-unsettled-terminal assistant-id event)
@@ -400,8 +435,11 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
     (setq event (hermes-chat--interrupted-terminal-event assistant-id event))
     (when (hermes-chat--prompt-request-event-p event)
       (setq event (hermes-chat--record-prompt-request event assistant-id))
+      (hermes-chat--notify-prompt-request event)
       (hermes-chat--schedule-auto-prompt event))
     (funcall hermes-chat--turn-event-function assistant-id event)
+    (when (memq (plist-get event :type) '(done error))
+      (hermes-chat--notify-terminal-event assistant-id event))
     (when (memq (plist-get event :type) '(done error))
       (hermes-chat--dashboard-settle-terminal interrupted-p))
     (when (eq (plist-get event :type) 'done)
@@ -1204,7 +1242,14 @@ is not advanced here; an unrecorded result falls back to its current value."
      (hermes-chat--make-entry
       'background content 'done nil
       (list :number number :preview preview))
-     (hermes-chat--pending-assistant-node))))
+     (hermes-chat--pending-assistant-node))
+    (hermes-notifications-notify
+     'background "Hermes background task finished"
+     (if (string-empty-p preview)
+         (format "Background #%d finished" number)
+       (format "Background #%d: %s" number preview))
+     :buffer (current-buffer) :category "hermes.chat.background"
+     :urgency 'normal)))
 
 
 (provide 'hermes-chat-dashboard)

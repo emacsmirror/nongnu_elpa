@@ -10,6 +10,24 @@
 
 (require 'ert)
 (require 'hermes-test-helpers)
+
+(ert-deftest hermes-chat-prompt-notification-keeps-sensitive-content-generic ()
+  "A secret request notifies without copying its command or prompt contents."
+  (let (notice)
+    (cl-letf (((symbol-function 'hermes-notifications-notify)
+               (lambda (&rest arguments) (setq notice arguments))))
+      (let ((hermes-chat-auto-prompt-requests nil))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (hermes-test--emit-dashboard-prompt
+           client "secret.request"
+           '((command . "publish-private-token")
+             (description . "enter production credential")
+             (env_var . "PRIVATE_TOKEN")))
+          (should (eq (car notice) 'prompt))
+          (should (string-match-p "Secret" (nth 2 notice)))
+          (should-not (string-match-p "publish-private-token" (nth 2 notice)))
+          (should-not (string-match-p "production credential" (nth 2 notice))))))))
+
 (ert-deftest hermes-chat-handles-approval-request ()
   (let (respond-client respond-session respond-choice respond-all)
     (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)

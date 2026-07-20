@@ -138,6 +138,51 @@
          (should (equal (plist-get assistant :status) 'done))
          (should-not hermes-chat--pending-assistant-id))))))
 
+(ert-deftest hermes-chat-notification-follows-completed-reply ()
+  "A completed turn notifies with the settled assistant text and owning buffer."
+  (let (callback notice)
+    (cl-letf (((symbol-function 'hermes-notifications-notify)
+               (lambda (&rest arguments) (setq notice arguments))))
+      (hermes-test-with-chat-buffer
+       (let ((buffer (current-buffer))
+             (hermes-transport-send-function
+              (lambda (_prompt cb)
+                (setq callback cb)
+                'fake-process)))
+         (insert "notify me")
+         (hermes-chat-send)
+         (funcall callback '(:type delta :content "Finished\ncleanly"))
+         (funcall callback '(:type done))
+         (should (eq (car notice) 'chat-reply))
+         (should (equal (nth 2 notice) "Finished cleanly"))
+         (should (eq (plist-get (nthcdr 3 notice) :buffer) buffer)))))))
+
+(ert-deftest hermes-chat-notification-reports-terminal-error-not-interrupt ()
+  "A real terminal error notifies, while an intentional interrupt does not."
+  (let (callback notices)
+    (cl-letf (((symbol-function 'hermes-notifications-notify)
+               (lambda (&rest arguments) (push arguments notices))))
+      (hermes-test-with-chat-buffer
+       (let ((hermes-transport-send-function
+              (lambda (_prompt cb)
+                (setq callback cb)
+                'fake-process)))
+         (insert "fail")
+         (hermes-chat-send)
+         (funcall callback '(:type error :content "backend failed"))
+         (should (equal (mapcar #'car notices) '(chat-error)))
+         (should (equal (nth 2 (car notices)) "backend failed"))))
+      (setq notices nil)
+      (hermes-test-with-chat-buffer
+       (let ((hermes-transport-send-function
+              (lambda (_prompt cb)
+                (setq callback cb)
+                'fake-process)))
+         (insert "interrupt")
+         (hermes-chat-send)
+         (funcall callback '(:type error :status interrupted))
+         (should-not notices))))))
+
 (ert-deftest hermes-chat-transport-updates-do-not-record-transcript-undo ()
   (let (callback)
     (hermes-test-with-chat-buffer
@@ -872,6 +917,23 @@
    (hermes-chat--handle-background-complete
     (list :type 'background :task-id "bg_unknown" :content "done"))
    (should (string-match-p "Background #1 done" (buffer-string)))))
+
+(ert-deftest hermes-chat-background-notification-uses-launch-preview ()
+  "A background result notifies with its prompt preview, not result contents."
+  (let (notice)
+    (cl-letf (((symbol-function 'hermes-notifications-notify)
+               (lambda (&rest arguments) (setq notice arguments))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--background-counter 1
+             hermes-chat--background-tasks
+             (list (cons "bg_private"
+                         (list :number 1 :preview "check the build"))))
+       (hermes-chat--handle-background-complete
+        (list :type 'background :task-id "bg_private"
+              :content "private result contents"))
+       (should (eq (car notice) 'background))
+       (should (string-match-p "check the build" (nth 2 notice)))
+       (should-not (string-match-p "private result" (nth 2 notice)))))))
 
 (ert-deftest hermes-chat-background-complete-stays-above-pending-reply ()
   "A result arriving mid-turn is inserted above the live assistant reply."

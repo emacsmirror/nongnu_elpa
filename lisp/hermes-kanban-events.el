@@ -30,9 +30,12 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'seq)
+(require 'tabulated-list)
 (require 'hermes-promise)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
+(require 'hermes-notifications)
 
 (declare-function websocket-close "ext:websocket")
 
@@ -54,6 +57,109 @@
 
 (defconst hermes-kanban--events-backoff-max 30
   "Maximum reconnect backoff in seconds for the live-events tail.")
+
+(defconst hermes-kanban--notification-kind-specs
+  '(("blocked" kanban-attention "blocked" critical)
+    ("review" kanban-attention "ready for review" normal)
+    ("gave_up" kanban-attention "gave up" critical)
+    ("timed_out" kanban-attention "timed out" critical)
+    ("stale" kanban-attention "became stale" critical)
+    ("spawn_failed" kanban-attention "failed to start" critical)
+    ("crashed" kanban-attention "crashed" critical)
+    ("failed" kanban-attention "failed" critical)
+    ("block_loop_detected" kanban-attention "hit a block loop" critical)
+    ("completion_blocked_hallucination" kanban-attention
+     "failed completion validation" critical)
+    ("suspected_hallucinated_references" kanban-attention
+     "needs reference review" critical)
+    ("completed" kanban-done "completed" normal))
+  "Kanban event kinds that map to desktop-notification policy events.")
+
+(defun hermes-kanban--status-notification-spec (status)
+  "Return notification specification for task STATUS, or nil."
+  (pcase status
+    ("review" '(kanban-attention "ready for review" normal))
+    ("blocked" '(kanban-attention "blocked" critical))
+    ("done" '(kanban-done "completed" normal))))
+
+(defun hermes-kanban--event-notification-spec (event)
+  "Return notification specification for raw Kanban EVENT, or nil."
+  (let ((kind (hermes-transport--scalar-string
+               (hermes-transport--get event 'kind))))
+    (if (equal kind "status")
+        (hermes-kanban--status-notification-spec
+         (hermes-transport--scalar-string
+          (hermes-transport--get
+           (hermes-transport--get event 'payload) 'status)))
+      (cdr (assoc kind hermes-kanban--notification-kind-specs)))))
+
+(defun hermes-kanban--event-notice (event)
+  "Return desktop-notification data for raw Kanban EVENT, or nil."
+  (when-let* ((task-id (hermes-transport--scalar-string
+                        (hermes-transport--get event 'task_id)))
+              (spec (hermes-kanban--event-notification-spec event)))
+    (pcase-let ((`(,policy-event ,label ,urgency) spec))
+      (list :task-id task-id :event policy-event
+            :label label :urgency urgency))))
+
+(defun hermes-kanban--event-notices (events)
+  "Return the last meaningful notification per task in raw EVENTS."
+  (let* ((notices (delq nil (mapcar #'hermes-kanban--event-notice events)))
+         (task-ids (seq-uniq
+                    (mapcar (lambda (notice) (plist-get notice :task-id)) notices)
+                    #'equal)))
+    (mapcar
+     (lambda (task-id)
+       (car (last (seq-filter
+                   (lambda (notice)
+                     (equal task-id (plist-get notice :task-id)))
+                   notices))))
+     task-ids)))
+
+(defun hermes-kanban--notification-task-title (buffer task-id)
+  "Return TASK-ID's title from BUFFER's current rows, or TASK-ID."
+  (or (and (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (when-let* ((entry (and (listp tabulated-list-entries)
+                                     (assoc task-id tabulated-list-entries)))
+                         (columns (cadr entry)))
+               (hermes-notifications-preview
+                (aref columns (1- (length columns))) 96))))
+      task-id))
+
+(defun hermes-kanban--open-notification-task (buffer task-id)
+  "Display BUFFER and move to TASK-ID's row when it still exists."
+  (when (buffer-live-p buffer)
+    (pop-to-buffer buffer)
+    (with-current-buffer buffer
+      (goto-char (point-min))
+      (when-let* ((match (text-property-search-forward
+                          'tabulated-list-id task-id #'equal)))
+        (goto-char (prop-match-beginning match))
+        (beginning-of-line)))))
+
+(defun hermes-kanban--notify-event (tail notice)
+  "Notify for TAIL's classified Kanban NOTICE."
+  (let* ((buffer (hermes-kanban--events-tail-buffer tail))
+         (task-id (plist-get notice :task-id))
+         (title (hermes-kanban--notification-task-title buffer task-id))
+         (policy-event (plist-get notice :event)))
+    (hermes-notifications-notify
+     policy-event
+     (if (eq policy-event 'kanban-done)
+         "Hermes Kanban task completed"
+       "Hermes Kanban needs attention")
+     (format "%s is %s" title (plist-get notice :label))
+     :buffer buffer
+     :open (lambda ()
+             (hermes-kanban--open-notification-task buffer task-id))
+     :category "hermes.kanban"
+     :urgency (plist-get notice :urgency))))
+
+(defun hermes-kanban--notify-events (tail events)
+  "Notify for meaningful raw Kanban EVENTS received by TAIL."
+  (mapc (lambda (notice) (hermes-kanban--notify-event tail notice))
+        (hermes-kanban--event-notices events)))
 
 (defun hermes-kanban--live-indicator ()
   "Return the board mode-line live-status indicator.
@@ -99,6 +205,8 @@ connection that delivered TEXT so stale callbacks are ignored."
       (let ((cursor (hermes-transport--get frame 'cursor)))
         (when (numberp cursor)
           (setf (hermes-kanban--events-tail-cursor tail) cursor)))
+      (hermes-kanban--notify-events
+       tail (hermes-transport--get frame 'events))
       (hermes-kanban--events-schedule-refresh tail))))
 
 (defun hermes-kanban--events-reconnect (tail)

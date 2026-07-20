@@ -31,6 +31,7 @@
 (require 'cl-lib)
 (require 'tabulated-list)
 (require 'hermes-dashboard-transport)
+(require 'hermes-notifications)
 (require 'hermes-promise)
 (require 'hermes-chat)
 
@@ -328,16 +329,12 @@ Shared by the dashboard browser commands."
   (and (hermes-browser--request-current-p buffer generation)
        (hermes-browser--buffer-mode-p buffer mode)))
 
-(defun hermes-browser--notify (title body)
+(defun hermes-browser--notify (title body &optional event buffer)
   "Show desktop notification TITLE/BODY, falling back to the echo area.
 Uses `notifications-notify' when D-Bus notifications are available, and quietly
-degrades to a `message' on systems or builds without them."
-  (or (and (require 'notifications nil t)
-           (fboundp 'notifications-notify)
-           (ignore-errors
-             (notifications-notify :title title :body body :app-name "Hermes")
-             t))
-      (progn (message "%s: %s" title body) nil)))
+degrades to a `message' on systems or builds without them.  Optional EVENT
+applies the shared notification policy.  Optional BUFFER is the notice target."
+  (hermes-notifications-notify event title body :buffer buffer))
 
 ;;; Dynamic column widths
 

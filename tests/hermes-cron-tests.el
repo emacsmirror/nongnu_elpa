@@ -498,7 +498,8 @@
     (let ((hermes-cron-notify-on-failure t)
           notes)
       (cl-letf (((symbol-function 'hermes-browser--notify)
-                 (lambda (title body) (push (cons title body) notes))))
+                 (lambda (title body &optional event buffer)
+                   (push (list title body event buffer) notes))))
         (hermes-cron--note-failures
          '((jobs . (((id . "j") (name . "n") (last_status . "error")
                      (last_run_at . "t1"))))))
@@ -510,7 +511,40 @@
         (hermes-cron--note-failures
          '((jobs . (((id . "j") (name . "n") (last_status . "error")
                      (last_run_at . "t2"))))))
-        (should (= (length notes) 1))))))
+        (should (= (length notes) 1))
+        (should (eq (caddr (car notes)) 'cron-failure))
+        (should (eq (cadddr (car notes)) (current-buffer)))))))
+
+(ert-deftest hermes-cron-failure-notification-targets-owning-buffer ()
+  "Cron failure notices suppress and reopen their owning browser buffer."
+  (with-temp-buffer
+    (let ((hermes-cron-notify-on-failure t)
+          (focused t)
+          arguments
+          opened)
+      (cl-letf (((symbol-function 'frame-focus-state)
+                 (lambda (&rest _) focused))
+                ((symbol-function 'get-buffer-window)
+                 (lambda (&rest _) (and focused (selected-window))))
+                ((symbol-function 'require) (lambda (&rest _) t))
+                ((symbol-function 'notifications-notify)
+                 (lambda (&rest args) (setq arguments args) 17))
+                ((symbol-function 'pop-to-buffer)
+                 (lambda (buffer &rest _) (setq opened buffer))))
+        (hermes-cron--note-failures
+         '((jobs . (((id . "j") (name . "n") (last_status . "error")
+                     (last_run_at . "t1"))))))
+        (hermes-cron--note-failures
+         '((jobs . (((id . "j") (name . "n") (last_status . "error")
+                     (last_run_at . "t2"))))))
+        (should-not arguments)
+        (setq focused nil)
+        (hermes-cron--note-failures
+         '((jobs . (((id . "j") (name . "n") (last_status . "error")
+                     (last_run_at . "t3"))))))
+        (should (functionp (plist-get arguments :on-action)))
+        (funcall (plist-get arguments :on-action) 17 "default")
+        (should (eq opened (current-buffer)))))))
 
 (ert-deftest hermes-cron-note-failures-silent-when-disabled ()
   "No notification fires while `hermes-cron-notify-on-failure' is nil."
