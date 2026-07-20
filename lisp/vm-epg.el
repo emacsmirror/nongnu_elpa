@@ -499,7 +499,6 @@ If STATES is nil, clear it."
           (start (point))
           o)
       (if (re-search-forward (format vm-epg-cleartext-end-regexp
-				     ;; TODO Varför 1 här och 0 i pgg?
                                      (match-string 1))
                              (point-max) t)
           (delete-region start (match-end 0)))
@@ -1228,12 +1227,9 @@ fetched, so the caller can verify the message again."
 
 ;;; Digest algorithm name for micalg header
 
-;;; TODO Ny funktion
 (defun vm-epg-digest-algo-name (algo-id)
   "Return the lowercase name of digest algorithm with id ALGO-ID.
 Falls back to \"sha256\" for unknown IDs."
-  ;; `epg-digest-algorithm-alist' maps ID -> NAME, so look up by `assq' and
-  ;; take the cdr.  (Using `rassq'/`car' never matches and always falls back.)
   (let ((entry (assq algo-id epg-digest-algorithm-alist)))
     (if entry
         (downcase (cdr entry))
