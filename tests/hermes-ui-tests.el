@@ -12,6 +12,113 @@
 (require 'ert)
 (require 'hermes-test-helpers)
 
+(ert-deftest hermes-close-stops-local-services-and-kills-hermes-buffers ()
+  "Closing Hermes tears down local state without killing unrelated buffers."
+  (let ((chat (generate-new-buffer " *hermes-close-chat*"))
+        (dashboard (generate-new-buffer " *hermes-close-dashboard*"))
+        (kanban (generate-new-buffer " *hermes-close-kanban*"))
+        (unrelated (generate-new-buffer " *hermes-close-unrelated*"))
+        (hermes-dashboard-stale-refresh-interval nil)
+        tail
+        calls)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (hermes-chat-mode)
+            (add-hook 'hermes-chat-cleanup-functions
+                      (lambda () (push 'chat-cleanup calls)) nil t))
+          (with-current-buffer dashboard
+            (hermes-dashboard-mode))
+          (cl-letf (((symbol-function 'hermes-kanban--events-connect) #'ignore)
+                    ((symbol-function 'websocket-close)
+                     (lambda (socket) (push socket calls))))
+            (with-current-buffer kanban
+              (hermes-kanban-mode)
+              (setq hermes-kanban--slug "tests"
+                    hermes-kanban--latest-event-id 7)
+              (hermes-kanban-toggle-live)
+              (setq tail hermes-kanban--events-tail)
+              (setf (hermes-kanban--events-tail-socket tail) 'kanban-socket))
+            (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                    ((symbol-function 'hermes-capabilities-stop)
+                     (lambda () (push 'capabilities calls)))
+                    ((symbol-function 'hermes-exec-stop)
+                     (lambda () (push 'exec calls)))
+                    ((symbol-function 'hermes-dashboard-transport-stop-all)
+                     (lambda (&optional _message)
+                       (push 'transport calls)
+                       2)))
+              (hermes-close)))
+          (should-not (buffer-live-p chat))
+          (should-not (buffer-live-p dashboard))
+          (should-not (buffer-live-p kanban))
+          (should (buffer-live-p unrelated))
+          (should-not (hermes-kanban--events-tail-active tail))
+          (should-not (hermes-kanban--events-tail-socket tail))
+          (should (equal (sort calls
+                               (lambda (left right)
+                                 (string< (symbol-name left)
+                                          (symbol-name right))))
+                         '(capabilities chat-cleanup exec kanban-socket
+                           transport))))
+      (mapc (lambda (buffer)
+              (when (buffer-live-p buffer)
+                (kill-buffer buffer)))
+            (list chat dashboard kanban unrelated)))))
+
+(ert-deftest hermes-close-cancel-preserves-local-state ()
+  "Declining the close confirmation leaves buffers and transports alone."
+  (let ((chat (generate-new-buffer " *hermes-close-cancel*"))
+        stopped)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat
+            (hermes-chat-mode))
+          (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) nil))
+                    ((symbol-function 'hermes-dashboard-transport-stop-all)
+                     (lambda (&rest _) (setq stopped t))))
+            (hermes-close))
+          (should (buffer-live-p chat))
+          (should-not stopped))
+      (when (buffer-live-p chat)
+        (kill-buffer chat)))))
+
+(ert-deftest hermes-close-stops-pending-transient-browser-client ()
+  "Closing Hermes stops a browser client whose request has not settled."
+  (let* ((buffer (generate-new-buffer " *hermes-close-browser*"))
+         (client (make-hermes-dashboard-transport-client
+                  :process 'browser-process :websocket 'browser-socket))
+         (pending (hermes--promise-make))
+         (hermes-browser--transient-clients nil)
+         (hermes-dashboard-stale-refresh-interval nil)
+         closed
+         deleted)
+    (unwind-protect
+        (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+                   (lambda (&rest _) client))
+                  ((symbol-function 'websocket-close)
+                   (lambda (socket) (setq closed socket)))
+                  ((symbol-function 'delete-process)
+                   (lambda (process) (setq deleted process)))
+                  ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+                  ((symbol-function 'hermes-capabilities-stop) #'ignore)
+                  ((symbol-function 'hermes-exec-stop) #'ignore)
+                  ((symbol-function 'hermes-dashboard-transport-stop-all)
+                   (lambda (&rest _) 0)))
+          (with-current-buffer buffer
+            (hermes-dashboard-mode)
+            (hermes-browser--run-on-client (lambda (_client) pending)))
+          (should (memq client hermes-browser--transient-clients))
+          (hermes-close)
+          (should-not (buffer-live-p buffer))
+          (should (eq closed 'browser-socket))
+          (should (eq deleted 'browser-process))
+          (should-not (hermes-dashboard-transport-client-websocket client))
+          (should-not (hermes-dashboard-transport-client-process client))
+          (should-not hermes-browser--transient-clients))
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
+
 (ert-deftest hermes-dashboard-opens-special-mode-buffer-and-popup ()
   (let (shown-map)
     (cl-letf (((symbol-function 'keymap-popup)

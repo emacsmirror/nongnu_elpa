@@ -787,6 +787,18 @@
                  :start-mode 'spawn :host "127.0.0.1" :port 8766)))
         (should-not (eq c1 c2))))))
 
+(ert-deftest hermes-dashboard-transport-stop-all-stops-registered-clients ()
+  "Stopping all clients empties the shared registry and returns its size."
+  (let* ((hermes-dashboard-transport--clients (make-hash-table :test #'equal))
+         (first (make-hermes-dashboard-transport-client :endpoint-key 'first))
+         (second (make-hermes-dashboard-transport-client :endpoint-key 'second)))
+    (puthash 'first first hermes-dashboard-transport--clients)
+    (puthash 'second second hermes-dashboard-transport--clients)
+    (should (= 2 (hermes-dashboard-transport-stop-all "Restarting Hermes")))
+    (should (= 0 (hash-table-count hermes-dashboard-transport--clients)))
+    (should (hermes-dashboard-transport-client-stopping-p first))
+    (should (hermes-dashboard-transport-client-stopping-p second))))
+
 (ert-deftest hermes-dashboard-transport-release-stops-and-unregisters-at-zero ()
   "Release decrements references and tears the client down only at zero."
   (let ((hermes-dashboard-transport--clients (make-hash-table :test #'equal)))

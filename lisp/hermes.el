@@ -28,8 +28,10 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'ewoc)
 (require 'keymap-popup)
+(require 'seq)
 (require 'subr-x)
 (require 'hermes-chat)
 (require 'hermes-sessions)
@@ -723,6 +725,55 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
 (add-hook 'hermes-chat-state-change-hook #'hermes-dashboard--schedule-refresh)
 (setq hermes-onboarding-connected-function
       #'hermes-dashboard--provider-connected)
+
+(defun hermes--managed-buffer-p (buffer)
+  "Return whether BUFFER has a Hermes major mode."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (string-prefix-p "hermes-" (symbol-name major-mode)))))
+
+(defun hermes--managed-buffers ()
+  "Return every live buffer using a Hermes major mode."
+  (seq-filter #'hermes--managed-buffer-p (buffer-list)))
+
+(defun hermes--kill-managed-buffers (buffers)
+  "Kill live Hermes BUFFERS and return the number killed."
+  (let ((killed 0))
+    (dolist (buffer buffers killed)
+      (when (and (buffer-live-p buffer)
+                 (kill-buffer buffer))
+        (cl-incf killed)))))
+
+(defun hermes--call-if-defined (function)
+  "Call FUNCTION when it is defined."
+  (when (fboundp function)
+    (funcall function)))
+
+;;;###autoload
+(defun hermes-close ()
+  "Close local Hermes state so the frontend can restart cleanly.
+Stop optional capability and eval services, kill every buffer using a Hermes
+major mode, and force-stop remaining shared dashboard clients.  Durable Hermes
+sessions and backend data are preserved."
+  (interactive)
+  (let ((buffers (hermes--managed-buffers)))
+    (when (yes-or-no-p
+           (format "Close Hermes connections and kill %d buffer%s? "
+                   (length buffers)
+                   (if (= (length buffers) 1) "" "s")))
+      (mapc #'hermes--call-if-defined
+            '(hermes-capabilities-stop hermes-exec-stop))
+      (let* ((transient-connections
+              (hermes-browser-stop-all-transient-clients
+               "Hermes closed for restart"))
+             (killed (hermes--kill-managed-buffers buffers))
+             (connections
+              (+ transient-connections
+                 (hermes-dashboard-transport-stop-all
+                  "Hermes closed for restart"))))
+        (message "Hermes closed: %d buffer%s, %d connection%s"
+                 killed (if (= killed 1) "" "s")
+                 connections (if (= connections 1) "" "s"))))))
 
 ;;;###autoload
 (defun hermes ()

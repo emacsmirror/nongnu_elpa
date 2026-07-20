@@ -273,6 +273,22 @@
                     hermes-chat--dashboard-client)))
            (buffer-list)))
 
+(defvar hermes-browser--transient-clients nil
+  "Dashboard clients created for browser operations still in flight.")
+
+(defun hermes-browser-stop-all-transient-clients (&optional message)
+  "Stop every transient browser client and return the number stopped.
+MESSAGE is forwarded to `hermes-dashboard-transport-stop'."
+  (let ((clients (delete-dups
+                  (cl-remove-if-not
+                   #'hermes-dashboard-transport-client-p
+                   hermes-browser--transient-clients))))
+    (setq hermes-browser--transient-clients nil)
+    (mapc (lambda (client)
+            (hermes-dashboard-transport-stop client message))
+          clients)
+    (length clients)))
+
 (defun hermes-browser--with-client (fn)
   "Call FN with a connected CLIENT and a DONE cleanup thunk.
 Reuses a live chat connection when one exists; otherwise connects a transient
@@ -281,8 +297,13 @@ client that DONE stops.  Shared by the dashboard browser commands."
          (client (or existing
                      (hermes-dashboard-transport-start :callback #'ignore)))
          (done (lambda ()
-                 (unless existing
+                 (when (and (not existing)
+                            (memq client hermes-browser--transient-clients))
+                   (setq hermes-browser--transient-clients
+                         (delq client hermes-browser--transient-clients))
                    (hermes-dashboard-transport-stop client)))))
+    (unless existing
+      (push client hermes-browser--transient-clients))
     (funcall fn client done)))
 
 (defun hermes-browser--run-on-client (make-promise &optional on-success)

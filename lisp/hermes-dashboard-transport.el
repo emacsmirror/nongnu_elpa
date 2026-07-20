@@ -552,6 +552,20 @@ transport error when a pending request has no reject callback."
             (hermes-dashboard-transport-client-stored-session-id client) nil))
     client))
 
+(defun hermes-dashboard-transport-stop-all (&optional message)
+  "Stop every shared dashboard client and return the number stopped.
+MESSAGE is forwarded to `hermes-dashboard-transport-stop'."
+  (let ((clients
+         (delete-dups
+          (cl-remove-if-not
+           #'hermes-dashboard-transport-client-p
+           (hash-table-values hermes-dashboard-transport--clients)))))
+    (mapc (lambda (client)
+            (hermes-dashboard-transport-stop client message))
+          clients)
+    (clrhash hermes-dashboard-transport--clients)
+    (length clients)))
+
 ;;; Reconnect
 
 (defun hermes-dashboard-transport-reconnect (client &optional message)
