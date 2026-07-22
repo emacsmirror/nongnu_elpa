@@ -232,6 +232,20 @@
                          (cons "end" (list (cons "line" 1)
                                            (cons "character" 6))))))))
 
+(ert-deftest codex-ide-context-line-character-absolute-when-narrowed ()
+  "Line numbers stay absolute when the buffer is narrowed."
+  (with-temp-buffer
+    (insert "first line\nsecond line\nthird line\n")
+    (goto-char (point-min))
+    (forward-line 2)
+    (let* ((pos (point))
+           (wide (codex-ide-context--line-character pos)))
+      (narrow-to-region pos (line-end-position))
+      (let ((narrowed (codex-ide-context--line-character pos)))
+        (should (equal (cdr (assoc "line" wide)) 2))
+        (should (equal narrowed wide))
+        (should (equal (cdr (assoc "character" narrowed)) 0))))))
+
 (ert-deftest codex-ide-context-relative-path ()
   "Paths under the workspace root are relativized."
   (should (equal (codex-ide-context--relative-path "/repo/src/lib.rs" "/repo")

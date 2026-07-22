@@ -6,7 +6,7 @@
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: ai, codex, tools, ide
-;; URL: https://git.thanosapollo.org/emacs-codex
+;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
 ;; This file is not part of GNU Emacs.
 
@@ -228,8 +228,9 @@ means the message needs no reply (broadcast, stray response, etc.)."
 
 (defun codex-ide-context--line-character (pos)
   "Return ((line . L) (character . C)) for buffer position POS.
-Line and character are zero-based, matching the Codex/LSP convention."
-  (let ((line (1- (line-number-at-pos pos)))
+Line and character are zero-based, matching the Codex/LSP convention.
+Line numbers are absolute, ignoring any buffer narrowing."
+  (let ((line (1- (line-number-at-pos pos t)))
         (character (save-excursion
                      (save-restriction
                        (widen)
