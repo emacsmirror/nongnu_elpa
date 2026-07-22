@@ -605,20 +605,28 @@ When INDENT is non-nil, indent the inserted region."
             ("replace"
              (unless (stringp text)
                (user-error "Replace requires text"))
-             (pcase-let ((`(,beg ,end)
-                          (codex-ide-harness--replace-range
-                           text
-                           (codex-ide-harness--position-from-args
-                            args "start" "line" "column" nil)
-                           (codex-ide-harness--position-from-args
-                            args "end" "end_line" "end_column" nil)
-                           indent)))
-               (codex-ide-harness--edit-result operation beg end)))
+             (let ((beg (codex-ide-harness--position-from-args
+                         args "start" "line" "column" nil))
+                   (end (codex-ide-harness--position-from-args
+                         args "end" "end_line" "end_column" nil)))
+               (unless beg
+                 (user-error "Replace requires start or line"))
+               (unless end
+                 (user-error "Replace requires end or end_line"))
+               (pcase-let ((`(,new-beg ,new-end)
+                            (codex-ide-harness--replace-range
+                             text beg end indent)))
+                 (codex-ide-harness--edit-result
+                  operation new-beg new-end))))
             ("delete"
              (let ((beg (codex-ide-harness--position-from-args
                          args "start" "line" "column" nil))
                    (end (codex-ide-harness--position-from-args
                          args "end" "end_line" "end_column" nil)))
+               (unless beg
+                 (user-error "Delete requires start or line"))
+               (unless end
+                 (user-error "Delete requires end or end_line"))
                (delete-region beg end)
                (codex-ide-harness--edit-result operation beg beg)))
             (_ (user-error "Unknown edit operation: %s" operation))))))))

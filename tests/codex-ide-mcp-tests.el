@@ -578,6 +578,31 @@
           (should (equal (cdr (assoc "operation" decoded)) "replace"))
           (should indented))))))
 
+(ert-deftest codex-ide-mcp-edit-delete-requires-positions ()
+  "Delete without positions signals a clear user-error."
+  (with-temp-buffer
+    (insert "abc")
+    (let ((err (should-error
+                (codex-ide-harness-edit
+                 `(:operation "delete" :buffer ,(buffer-name)))
+                :type 'user-error)))
+      (should (string-match-p "Delete requires start or line"
+                              (error-message-string err))))))
+
+(ert-deftest codex-ide-mcp-edit-replace-requires-end-position ()
+  "Replace without an end position signals a clear user-error."
+  (with-temp-buffer
+    (insert "abc")
+    (let ((err (should-error
+                (codex-ide-harness-edit
+                 `(:operation "replace"
+                   :text "x"
+                   :buffer ,(buffer-name)
+                   :start ,(point-min)))
+                :type 'user-error)))
+      (should (string-match-p "Replace requires end or end_line"
+                              (error-message-string err))))))
+
 (defun codex-ide-mcp-test--wait-for-job (job-id)
   "Poll harness JOB-ID until it is no longer running."
   (let ((deadline (+ (float-time) 2))
