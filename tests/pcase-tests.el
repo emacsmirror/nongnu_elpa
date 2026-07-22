@@ -70,25 +70,17 @@
                                           (collect `[,coll1 ,coll2 ,coll3] j)
                                           (finally-return coll1 coll2 coll3))))))))
 
-(ert-deftest pcase-flag-default ()
-  (should (equal '(5 6)
-                 (let ((loopy-default-flags '(pcase)))
-                   (eval (quote (loopy (list `(,a . ,b)
-                                             '((1 . 2) (3 . 4) (5 . 6)))
-                                       (finally-return a b))))))))
-
-(ert-deftest pcase-flag-default-disable ()
-  (should (equal '(5 6)
-                 (let ((loopy-default-flags '(pcase)))
-                   (eval (quote (loopy (flag -pcase)
-                                       (list (a . b)
-                                             '((1 . 2) (3 . 4) (5 . 6)))
-                                       (finally-return a b))))))))
-
-(ert-deftest pcase-flag-enable-disable ()
+(ert-deftest pcase-flag-enable-then-disable ()
   (should (equal '(5 6)
                  (eval (quote (loopy (flag pcase -pcase)
                                      (list (a . b)
+                                           '((1 . 2) (3 . 4) (5 . 6)))
+                                     (finally-return a b)))))))
+
+(ert-deftest pcase-flag-disable-then-enable ()
+  (should (equal '(5 6)
+                 (eval (quote (loopy (flag -pcase pcase)
+                                     (list `(,a . ,b)
                                            '((1 . 2) (3 . 4) (5 . 6)))
                                      (finally-return a b)))))))
 

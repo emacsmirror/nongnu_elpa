@@ -52,22 +52,6 @@
   :prefix "loopy-"
   :link '(url-link "https://codeberg.org/okamsn/loopy"))
 
-(make-obsolete-variable
- 'loopy-default-flags
- "Use a wrapping macro.
-This is necessary to better support using the macro in different
-packages from different authors.  See the updated Info node
-`(loopy)Customizing Macro Behavior'."
- "2025-10"
- 'set)
-;;;###autoload
-(defcustom loopy-default-flags nil
-  "Which flags should alter the behavior of `loopy' by default.
-
-This is a list of symbols, each symbol corresponding to a
-function in the variable `loopy--flag-settings'."
-  :type '(repeat symbol))
-
 (defun loopy--defalias-1 (alias definition)
   "Create ALIAS for DEFINITION."
   (declare (side-effect-free nil) ; Modify parsers.

@@ -430,11 +430,6 @@ Returns BODY without the `%s' argument."
                               (cons 'list arg-value))))
 
 (loopy-iter--def-special-processor flag
-  ;; Process any flags passed to the macro.  In case of conflicts, the
-  ;; processing order is:
-  ;;
-  ;; 1. Flags in `loopy-default-flags'.
-  ;; 2. Flags in the `flag' macro argument, which can undo the first group.
   (mapc #'loopy--apply-flag arg-value))
 
 (loopy-iter--def-special-processor without
@@ -566,13 +561,6 @@ to use `loopy' in general.
 
      (setq loopy-iter--keywords-internal loopy-iter-keywords
            loopy-iter--bare-names-internal loopy-iter-bare-names)
-
-     (when loopy-default-flags
-       (warn "`loopy-default-flags' is obsolete.  Use a wrapping macro.
-This is necessary to better support using the macro in different
-packages from different authors.  See the updated Info node
-`(loopy)Customizing Macro Behavior'.")
-       (mapc #'loopy--apply-flag loopy-default-flags))
 
      (setq body (thread-first body
                               loopy-iter--process-special-arg-override

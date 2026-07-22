@@ -544,11 +544,6 @@ Returns BODY without the `%s' argument."
         (nreverse new-body)))))
 
 (loopy--def-special-processor flag
-  ;; Process any flags passed to the macro.  In case of conflicts, the
-  ;; processing order is:
-  ;;
-  ;; 1. Flags in `loopy-default-flags'.
-  ;; 2. Flags in the `flag' macro argument, which can undo the first group.
   (mapc #'loopy--apply-flag arg-value)
   (seq-remove (lambda (x) (eq (car x) arg-name)) body))
 
@@ -980,12 +975,6 @@ see the Info node `(loopy)' distributed with this package."
    (setq loopy--parsers-internal loopy-parsers)
 
 ;;;;; Process the special macro arguments.
-   (when loopy-default-flags
-     (warn "`loopy-default-flags' is obsolete.  Use a wrapping macro.
-This is necessary to better support using the macro in different
-packages from different authors.  See the updated Info node
-`(loopy)Customizing Macro Behavior'.")
-     (mapc #'loopy--apply-flag loopy-default-flags))
 
    (setq body (loopy--process-special-arg-override body))
    (setq body (loopy--process-special-arg-loop-name body))

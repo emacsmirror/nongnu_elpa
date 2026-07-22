@@ -13,8 +13,13 @@ For Loopy Dash, see <https://codeberg.org/okamsn/loopy-dash>.
   `loopy-iter-bare-special-marco-arguments` (both aliases of the still existing
   `loopy-iter-bare-names`) ([#289]).
 
+- Remove deprecated user option `loopy-default-flags` ([#298], [#245]).  See the
+  heading for version 0.15.0 below for a wrapper macro to perform the same
+  function.
+
 [#288]: https://codeberg.org/okamsn/loopy/pulls/288
 [#289]: https://codeberg.org/okamsn/loopy/pulls/289
+[#298]: https://codeberg.org/okamsn/loopy/pulls/298
 
 ## 0.16.1
 
