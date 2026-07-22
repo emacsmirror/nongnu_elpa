@@ -1467,12 +1467,16 @@ no nodes are marked as search matches, so the search is cleared."
 
 (defun treeview-search-set-point (pos)
   "Move point to POS in the window of the current buffer (auxiliary function).
-There may be multiple windows displaying the current buffer. This function uses
-the window returned by `get-buffer-window'.  On the other hand, there may be no
-window displaying the current buffer.  In that case, point is moved by
-`goto-char'."
-  (let* ( (window (get-buffer-window)) )
-    (if window (set-window-point window pos) (goto-char pos))))
+This function exists because it's not enough to move the point with `goto-char'.
+In addition, `set-window-point' must be called with the window of the current
+buffer and the new position POS.  Otherwise, Emacs might not scroll to the new
+position if the latter is outside the visible area of the window.  There may be
+multiple windows displaying the current buffer. This function uses the window
+returned by `get-buffer-window'.  If that is nil, the call to `set-window-point'
+is suppressed."
+  (let ( (window (get-buffer-window)) )
+    (goto-char pos)
+    (when window (set-window-point window pos)) ))
 
 (defun treeview-search-update (text)
   "Update the search according to the search text TEXT.
