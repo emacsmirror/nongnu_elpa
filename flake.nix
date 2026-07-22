@@ -56,10 +56,10 @@
               && !(lib.elem name ignoredSourceNames || lib.hasSuffix ".elc" name);
           };
 
-          keymapPopupVersion = "0.3.1";
+          keymapPopupVersion = "0.4.0";
           keymapPopupSrc = pkgs.fetchzip {
             url = "https://elpa.gnu.org/packages/keymap-popup-${keymapPopupVersion}.tar";
-            hash = "sha256-hoH9SJ8LQS/uWNmwvauBJwMnnr4+DwhJpUFuHOihldM=";
+            hash = "sha256-htIwPC2XgFvcBrw7lCHvdMpQ7krlujZ8mrSuwxuswO8=";
           };
 
           keymapPopup = emacsPackages.trivialBuild {
@@ -99,7 +99,7 @@
 
             meta = with lib; {
               description = "Codex IDE integration for Emacs";
-              homepage = "https://git.thanosapollo.org/emacs-codex";
+              homepage = "https://git.thanosapollo.org/emacs-codex-ide";
               license = licenses.gpl3Plus;
               platforms = emacs.meta.platforms;
             };

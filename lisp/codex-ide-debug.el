@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo
 ;; Keywords: ai, codex, tools, debug
-;; URL: https://git.thanosapollo.org/emacs-codex
+;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
 ;; This file is not part of GNU Emacs.
 

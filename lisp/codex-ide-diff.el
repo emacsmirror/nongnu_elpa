@@ -6,7 +6,7 @@
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "28.1"))
 ;; Keywords: ai, codex, tools, diff
-;; URL: https://git.thanosapollo.org/emacs-codex
+;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
 ;; This file is not part of GNU Emacs.
 

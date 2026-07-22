@@ -25,5 +25,5 @@
  '(codex-ide :type git
              :host nil
              :repo "https://git.thanosapollo.org/emacs-codex-ide"
-             :files ("lisp/*.el")))
+             :files ("lisp/*.el" "LICENSE")))
 #+end_src

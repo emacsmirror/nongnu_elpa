@@ -6,7 +6,7 @@
 ;; Version: 0.1.0
 ;; Package-Requires: ((emacs "28.1") (compat "29.1.4.2") (keymap-popup "0.3.1") (eat "0.9.4"))
 ;; Keywords: ai, codex, tools, terminal
-;; URL: https://git.thanosapollo.org/emacs-codex
+;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
 ;; This file is not part of GNU Emacs.
 
