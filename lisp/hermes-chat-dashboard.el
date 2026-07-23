@@ -86,7 +86,9 @@ number and the prompt that launched it.")
 (defvar hermes-chat--interrupted-events)
 (defvar hermes-chat--interrupt-request-pending-p)
 (defvar hermes-chat--server-queued-assistant-id)
+(defvar hermes-chat--server-queued-user-id)
 (defvar hermes-chat--server-queued-after-idle-count)
+(defvar hermes-chat--busy-submit-context)
 (defvar hermes-chat--dashboard-idle-count)
 (defvar hermes-chat--dashboard-last-start-idle-count)
 (defvar hermes-chat--unsettled-submit-context)
@@ -98,6 +100,12 @@ number and the prompt that launched it.")
 Takes (ASSISTANT-ID EVENT); a nil ASSISTANT-ID reduces for the header only.
 Routing through a registry keeps this file free of upward references into
 the reducer defined in `hermes-chat'.")
+
+(defvar hermes-chat--busy-submit-event-function #'ignore
+  "Function holding an event while busy-submit policy is unresolved.")
+
+(defvar hermes-chat--busy-submit-abandon-function #'ignore
+  "Function abandoning an unresolved busy submission after session loss.")
 
 (defvar hermes-chat-cleanup-functions nil
   "Abnormal-free hook run when a chat buffer releases its resources.
@@ -243,6 +251,7 @@ so a new session can be started afterwards."
              (> hermes-chat--dashboard-last-start-idle-count
                 hermes-chat--server-queued-after-idle-count))
     (setq hermes-chat--server-queued-assistant-id nil
+          hermes-chat--server-queued-user-id nil
           hermes-chat--server-queued-after-idle-count nil
           hermes-chat--dashboard-running-p t
           hermes-chat--pending-assistant-id assistant-id
@@ -253,6 +262,19 @@ so a new session can be started afterwards."
     (hermes-chat--set-header-state
      :status 'streaming :activity "Hermes is responding"
      :assistant-id assistant-id)))
+
+(defun hermes-chat--dashboard-clear-server-queued-turn (message)
+  "Settle the backend-queued placeholder after session loss with MESSAGE."
+  (when-let* ((assistant-id hermes-chat--server-queued-assistant-id))
+    (hermes-chat--mark-assistant assistant-id 'error message t)
+    (hermes-chat--settle-transport-entries assistant-id 'error)
+    (when (equal assistant-id hermes-chat--pending-assistant-id)
+      (setq hermes-chat--pending-assistant-id nil
+            hermes-chat--process nil)
+      (hermes-chat--dashboard-finish-assistant assistant-id)))
+  (setq hermes-chat--server-queued-assistant-id nil
+        hermes-chat--server-queued-user-id nil
+        hermes-chat--server-queued-after-idle-count nil))
 
 (defun hermes-chat--dashboard-handle-message-start (assistant-id)
   "Record a message boundary and activate ASSISTANT-ID when server-queued."
@@ -315,6 +337,11 @@ so a new session can be started afterwards."
   "Return assistant id that should receive dashboard EVENT.
 FALLBACK-ID is the assistant id captured by the transport callback."
   (cond
+   ((and hermes-chat--server-queued-assistant-id
+         (hermes-chat--message-start-status-event-p event)
+         (> hermes-chat--dashboard-idle-count
+            (or hermes-chat--server-queued-after-idle-count 0)))
+    hermes-chat--server-queued-assistant-id)
    (hermes-chat--dashboard-stream-assistant-id)
    (hermes-chat--dashboard-suppress-stream-p
     (and (hermes-chat--dashboard-terminal-event-p event) fallback-id))
@@ -356,12 +383,16 @@ settlement order lives in one place."
                              (plist-get hermes-chat--unsettled-submit-context
                                         :assistant-id))
                       hermes-chat--unsettled-submit-context)))
+    (funcall hermes-chat--busy-submit-abandon-function)
+    (hermes-chat--dashboard-clear-server-queued-turn
+     "Hermes connection closed before queued turn started")
     (hermes-chat--forget-live-dashboard-session)
     (hermes-chat--clear-terminal-prompts event)
     (if (equal hermes-chat--pending-assistant-id assistant-id)
         (progn
           (when (equal assistant-id hermes-chat--server-queued-assistant-id)
             (setq hermes-chat--server-queued-assistant-id nil
+                  hermes-chat--server-queued-user-id nil
                   hermes-chat--server-queued-after-idle-count nil))
           (hermes-chat--handle-transport-event
            assistant-id (hermes-chat--closed-status-error-event event))
@@ -374,6 +405,9 @@ settlement order lives in one place."
 
 (defun hermes-chat--handle-reconnecting-status (event)
   "Handle a manual dashboard socket reconnect status EVENT."
+  (funcall hermes-chat--busy-submit-abandon-function)
+  (hermes-chat--dashboard-clear-server-queued-turn
+   "Hermes connection changed before queued turn started")
   (hermes-chat--forget-live-dashboard-session)
   (hermes-chat--clear-terminal-prompts event)
   (hermes-chat--insert-local-status
@@ -579,6 +613,18 @@ shared client."
       (setq hermes-chat--dashboard-running-p nil)
       (funcall (plist-get context :on-idle)))))
 
+(defun hermes-chat--dashboard-idle-reject (context message)
+  "Handle idle reconciliation rejection MESSAGE for CONTEXT."
+  (when (hermes-chat--dashboard-idle-context-valid-p context)
+    (if (and (stringp message)
+             (null hermes-chat--pending-assistant-id)
+             (string-match-p "session not found" (downcase message)))
+        (progn
+          (setq hermes-chat--dashboard-running-p nil)
+          (funcall (plist-get context :on-idle)))
+      (hermes-chat--dashboard-reconcile-idle-later
+       (hermes-chat--dashboard-next-idle-context context)))))
+
 (defun hermes-chat--dashboard-reconcile-idle (context)
   "Poll the session described by CONTEXT until the backend reports idle."
   (hermes-chat--in-buffer (plist-get context :buffer)
@@ -591,11 +637,9 @@ shared client."
                       (hermes-chat--in-buffer (plist-get context :buffer)
                         (hermes-chat--dashboard-handle-idle-result
                          context result)))
-           :reject (lambda (_message)
+           :reject (lambda (message)
                      (hermes-chat--in-buffer (plist-get context :buffer)
-                       (when (hermes-chat--dashboard-idle-context-valid-p context)
-                         (hermes-chat--dashboard-reconcile-idle-later
-                          (hermes-chat--dashboard-next-idle-context context))))))
+                       (hermes-chat--dashboard-idle-reject context message))))
         (error
          (hermes-chat--dashboard-reconcile-idle-later
           (hermes-chat--dashboard-next-idle-context context)))))))
@@ -633,16 +677,18 @@ shared client."
                      (and (not (hermes-chat--dashboard-control-error-event-p
                                 event))
                           (hermes-chat--dashboard-event-for-session-p event))))
-        (when-let* ((target-id (if dashboard-p
-                                   (hermes-chat--dashboard-event-assistant-id
-                                    assistant-id event)
-                                 assistant-id)))
-          (if (and dashboard-p
-                   (hermes-chat--dashboard-suppressed-content-event-p
-                    event))
-              (hermes-chat--handle-suppressed-dashboard-terminal-event
-               target-id event)
-            (hermes-chat--handle-transport-event target-id event)))))))
+        (unless (and dashboard-p
+                     (funcall hermes-chat--busy-submit-event-function event))
+          (when-let* ((target-id (if dashboard-p
+                                     (hermes-chat--dashboard-event-assistant-id
+                                      assistant-id event)
+                                   assistant-id)))
+            (if (and dashboard-p
+                     (hermes-chat--dashboard-suppressed-content-event-p
+                      event))
+                (hermes-chat--handle-suppressed-dashboard-terminal-event
+                 target-id event)
+              (hermes-chat--handle-transport-event target-id event))))))))
 
 (defun hermes-chat--dashboard-bind-stream-callback (client assistant-id)
   "Bind CLIENT events to ASSISTANT-ID in the current buffer."

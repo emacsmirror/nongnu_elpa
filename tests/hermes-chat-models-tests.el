@@ -223,6 +223,22 @@
        (should-not prompted)
        (should-not applied)))))
 
+(ert-deftest hermes-chat-switch-model-allows-locally-finished-turn ()
+  "A terminal event releases the model picker without waiting for session.info."
+  (let (requested)
+    (cl-letf (((symbol-function
+                'hermes-dashboard-transport-model-options-cached)
+               (lambda (_client &rest _args) (setq requested t))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client (hermes-test--dashboard-client)
+             hermes-chat--dashboard-active-session-id "sid-1"
+             hermes-chat--dashboard-session-ready-p t
+             hermes-chat--dashboard-running-p t)
+       (hermes-chat--run-turn-reducer nil '(:type done))
+       (hermes-chat-switch-model)
+       (should requested)
+       (should-not hermes-chat--dashboard-running-p)))))
+
 (ert-deftest hermes-chat-switch-model-ignores-catalog-after-reset ()
   "A delayed catalog cannot prompt after the chat lifetime changes."
   (let (resolve prompted)

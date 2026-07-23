@@ -70,8 +70,12 @@ without each one repeating the liveness guard."
   "Idle count observed at the most recent dashboard `message.start'.")
 (defvar-local hermes-chat--server-queued-assistant-id nil
   "Assistant entry waiting for a backend-owned queued turn to start.")
+(defvar-local hermes-chat--server-queued-user-id nil
+  "User entry owned by the backend's queued next turn.")
 (defvar-local hermes-chat--server-queued-after-idle-count nil
   "Idle count that must advance before the server-queued turn can start.")
+(defvar-local hermes-chat--busy-submit-context nil
+  "Busy dashboard submission awaiting its policy result.")
 (defvar-local hermes-chat--unsettled-submit-context nil
   "Dashboard submit context whose RPC result has not arrived yet.")
 (defvar-local hermes-chat--prepared-submit-assistant-id nil
@@ -426,7 +430,9 @@ text-property changes in the undo list."
           hermes-chat--dashboard-idle-count 0
           hermes-chat--dashboard-last-start-idle-count 0
           hermes-chat--server-queued-assistant-id nil
+          hermes-chat--server-queued-user-id nil
           hermes-chat--server-queued-after-idle-count nil
+          hermes-chat--busy-submit-context nil
           hermes-chat--unsettled-submit-context nil
           hermes-chat--prepared-submit-assistant-id nil
           hermes-chat--interrupted-assistant-id nil
@@ -458,7 +464,9 @@ text-property changes in the undo list."
         hermes-chat--dashboard-stream-assistant-id nil
         hermes-chat--dashboard-suppress-stream-p nil
         hermes-chat--server-queued-assistant-id nil
+        hermes-chat--server-queued-user-id nil
         hermes-chat--server-queued-after-idle-count nil
+        hermes-chat--busy-submit-context nil
         hermes-chat--unsettled-submit-context nil
         hermes-chat--prepared-submit-assistant-id nil
         hermes-chat--interrupted-assistant-id nil
@@ -1007,6 +1015,36 @@ This feeds the dashboard's per-session tool list via
 ;; Session identity for the header; written by the chat reducer via
 ;; `hermes-chat--capture-session-identity', rendered here.
 
+(defface hermes-chat-header-profile
+  '((t :inherit (font-lock-variable-name-face bold)))
+  "Face for the profile leading a Hermes chat header."
+  :group 'hermes)
+
+(defface hermes-chat-header-model
+  '((t :inherit font-lock-type-face))
+  "Face for model names in a Hermes chat header."
+  :group 'hermes)
+
+(defface hermes-chat-header-reasoning
+  '((t :inherit font-lock-keyword-face))
+  "Face for reasoning effort in a Hermes chat header."
+  :group 'hermes)
+
+(defface hermes-chat-header-tier
+  '((t :inherit font-lock-builtin-face))
+  "Face for service-tier flags in a Hermes chat header."
+  :group 'hermes)
+
+(defface hermes-chat-header-warning
+  '((t :inherit warning))
+  "Face for risk-bearing runtime flags in a Hermes chat header."
+  :group 'hermes)
+
+(defface hermes-chat-header-context
+  '((t :inherit font-lock-number-face))
+  "Face for context token values in a Hermes chat header."
+  :group 'hermes)
+
 (defvar-local hermes-chat--profile nil
   "Profile name for this chat's dashboard session, or nil for the default.")
 
@@ -1023,11 +1061,11 @@ This feeds the dashboard's per-session tool list via
   "Runtime flag plist (:reasoning-effort :fast :yolo) from `session.info'.
 Shown as annotations after the model in the chat header.")
 
-(defun hermes-chat--header-agent-name ()
-  "Return the agent/profile name shown in the chat header."
-  (or (hermes-transport--non-empty-string hermes-chat--agent-name)
-      (hermes-transport--non-empty-string hermes-chat--profile)
-      "Hermes"))
+(defun hermes-chat--header-profile-name ()
+  "Return the selected profile name shown in the chat header."
+  (or (hermes-transport--non-empty-string hermes-chat--profile)
+      (hermes-transport--non-empty-string hermes-chat--agent-name)
+      "default"))
 
 (defun hermes-chat--header-detail (label)
   "Return the live detail to append after LABEL in the header, or nil.
@@ -1062,31 +1100,48 @@ self-explanatory."
          'face (hermes-chat--header-status-face status))))))
 
 (defun hermes-chat--header-model-segment ()
-  "Return the header model segment with runtime flag annotations, or nil.
-The flags come from `session.info': reasoning effort, fast/priority tier,
-and approval bypass (YOLO)."
+  "Return the propertized header model segment, or nil."
   (and-let* ((model (hermes-transport--non-empty-string hermes-chat--model)))
-    (let ((flags (delq nil
-                       (list (plist-get hermes-chat--runtime-flags
-                                        :reasoning-effort)
-                             (and (plist-get hermes-chat--runtime-flags :fast)
-                                  "fast")
-                             (and (plist-get hermes-chat--runtime-flags :yolo)
-                                  "YOLO")))))
-      (if flags
-          (format "%s (%s)" model (string-join flags ", "))
-        model))))
+    (propertize model 'face 'hermes-chat-header-model)))
+
+(defun hermes-chat--header-runtime-segments ()
+  "Return propertized runtime-flag segments for the chat header."
+  (delq nil
+        (list
+         (when-let* ((effort (hermes-transport--non-empty-string
+                              (plist-get hermes-chat--runtime-flags
+                                         :reasoning-effort))))
+           (propertize effort 'face 'hermes-chat-header-reasoning))
+         (and (plist-get hermes-chat--runtime-flags :fast)
+              (propertize "fast" 'face 'hermes-chat-header-tier))
+         (and (plist-get hermes-chat--runtime-flags :yolo)
+              (propertize "YOLO" 'face 'hermes-chat-header-warning)))))
+
+(defun hermes-chat--header-context-segment ()
+  "Return the propertized context-window segment, or nil."
+  (when-let* ((context (hermes-chat--format-context hermes-chat--context)))
+    (concat (propertize "ctx " 'face 'shadow)
+            (propertize (string-remove-prefix "ctx " context)
+                        'face 'hermes-chat-header-context))))
+
+(defun hermes-chat--header-parts ()
+  "Return ordered semantic segments for the Hermes chat header."
+  (delq nil
+        (append
+         (list (propertize (hermes-chat--header-profile-name)
+                           'face 'hermes-chat-header-profile)
+               (hermes-chat--header-status-segment)
+               (hermes-chat--header-model-segment))
+         (hermes-chat--header-runtime-segments)
+         (list (hermes-chat--header-context-segment)))))
 
 (defun hermes-chat--header-line ()
-  "Return the chat buffer header line: agent, status, model, and context."
-  (let* ((parts (delq nil
-                      (list (propertize (hermes-chat--header-agent-name)
-                                        'face 'mode-line-emphasis)
-                            (hermes-chat--header-status-segment)
-                            (hermes-chat--header-model-segment)
-                            (hermes-chat--format-context hermes-chat--context))))
-         (text (concat " " (string-join parts "  |  ") " "))
-         (width (max 20 (window-total-width))))
+  "Return the profile-first semantic header line for this chat."
+  (let* ((separator (propertize "  |  " 'face 'shadow))
+         (text (concat " " (string-join (hermes-chat--header-parts)
+                                         separator)
+                       " "))
+         (width (max 1 (window-total-width))))
     ;; Double % so the context percentage is not read as a mode-line %-spec.
     (string-replace "%" "%%" (truncate-string-to-width text width nil nil "…"))))
 

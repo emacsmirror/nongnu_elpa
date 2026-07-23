@@ -47,7 +47,8 @@
          (effects (cdr result)))
     (should (equal (mapcar #'car effects)
                    '(clear-tools refresh-header clear-prompts mark-status
-                     drop-thinking settle finish clear-pending drain)))
+                     drop-thinking settle finish clear-pending
+                     set-dashboard-running drain)))
     (should (eq (cdr (assq 'mark-status effects)) 'done))
     (should (eq (cdr (assq 'clear-prompts effects)) original))
     (should-not (assq 'mark-done effects))
@@ -85,14 +86,16 @@
       ;; refresh-header precedes drain so the header settles before re-submit.
       (should (equal (mapcar #'car (cdr r))
                      '(clear-tools refresh-header clear-prompts mark-done
-                       drop-thinking settle finish clear-pending drain)))
+                       drop-thinking settle finish clear-pending
+                       set-dashboard-running drain)))
       (should (eq (cdr (assq 'settle (cdr r))) 'done)))
     (let* ((event '(:type error :content "boom"))
            (estatus (hermes-chat--error-status event))
            (r (hermes-chat--turn-reduce state event now)))
       (should (equal (mapcar #'car (cdr r))
                      '(clear-tools refresh-header clear-prompts append-error
-                       settle finish clear-pending drain)))
+                       settle finish clear-pending set-dashboard-running
+                       drain)))
       (should (equal (cdr (assq 'append-error (cdr r))) (cons "boom" estatus)))
       (should (eq (cdr (assq 'settle (cdr r))) estatus)))
     (let* ((event '(:type unknown :event "weird"))
@@ -108,7 +111,8 @@
          (r (hermes-chat--turn-reduce state event '(5 5))))
     (should (equal (mapcar #'car (cdr r))
                    '(clear-tools refresh-header clear-prompts mark-done
-                     warning drop-thinking settle finish clear-pending drain)))
+                     warning drop-thinking settle finish clear-pending
+                     set-dashboard-running drain)))
     (should (equal (cdr (assq 'warning (cdr r))) "not saved to history"))))
 
 (ert-deftest hermes-chat-turn-reduce-delta-emits-append-effect ()

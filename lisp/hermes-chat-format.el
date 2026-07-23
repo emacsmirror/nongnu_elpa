@@ -232,7 +232,7 @@ carries no verb."
 CONTEXT is a plist of :used, :max, and :percent."
   (and-let* ((max (plist-get context :max))
              ((and (numberp max) (> max 0))))
-    (format "%s/%s ctx (%d%%)"
+    (format "ctx %s/%s · %d%%"
             (hermes-chat--abbrev-tokens (plist-get context :used))
             (hermes-chat--abbrev-tokens max)
             (or (plist-get context :percent) 0))))

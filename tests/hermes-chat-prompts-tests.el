@@ -116,6 +116,26 @@
           (should-not (cl-find #'hermes-chat--run-auto-prompt timer-calls
                                :key #'car :test #'eq)))))))
 
+(ert-deftest hermes-chat-clarify-does-not-auto-open-minibuffer ()
+  "A visible clarification waits for the chat input or `C-c C-a'."
+  (let (timer-calls)
+    (cl-letf (((symbol-function 'run-at-time)
+               (lambda (_secs _repeat function &rest args)
+                 (push (cons function args) timer-calls)
+                 'fake-timer))
+              ((symbol-function 'get-buffer-window)
+               (lambda (_buffer &optional _all-frames) (selected-window))))
+      (let ((noninteractive nil)
+            (hermes-chat-auto-prompt-requests t))
+        (hermes-test-with-dashboard-prompt-session (client)
+          (setq timer-calls nil)
+          (hermes-test--emit-dashboard-prompt
+           client "clarify.request"
+           '((request_id . "req-input")
+             (question . "Which branch should I use?")))
+          (should-not (cl-find #'hermes-chat--run-auto-prompt timer-calls
+                               :key #'car :test #'eq)))))))
+
 (ert-deftest hermes-chat-auto-prompt-defers-while-minibuffer-active ()
   (let (timer-calls prompted
         (depth 1))
@@ -249,6 +269,137 @@ stays available."
         (should (equal respond-request "req-clarify"))
         (should (equal respond-answer "feature"))
         (should-not (gethash "req-clarify" hermes-chat--pending-prompts))))))
+
+(ert-deftest hermes-chat-send-answers-pending-clarify-from-input ()
+  "RET sends chat input as the pending clarification response."
+  (let (respond-request respond-answer)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client request-id answer &optional resolve _reject)
+                 (setq respond-request request-id
+                       respond-answer answer)
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-input")
+           (question . "Which branch should I use?")
+           (choices . ["master" "feature"])))
+        (insert "feature")
+        (hermes-chat-send)
+        (should (equal respond-request "req-input"))
+        (should (equal respond-answer "feature"))
+        (should-not (gethash "req-input" hermes-chat--pending-prompts))
+        (should-not (hermes-test--queued-contents))
+        (should (string-empty-p (hermes-chat-input-string)))))))
+
+(ert-deftest hermes-chat-send-treats-slash-as-clarify-answer ()
+  "A pending clarification owns slash-leading chat input."
+  (let (respond-answer)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request-id answer &optional resolve _reject)
+                 (setq respond-answer answer)
+                 (funcall resolve '((status . "ok"))))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-path")
+           (question . "Which path should I use?")))
+        (insert "/tmp/project")
+        (hermes-chat-send)
+        (should (equal respond-answer "/tmp/project"))))))
+
+(ert-deftest hermes-chat-send-restores-rejected-clarify-answer ()
+  "A rejected chat-tail clarification keeps its answer recoverable."
+  (let (reject)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request-id _answer &optional _resolve reject-fn)
+                 (setq reject reject-fn))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-reject")
+           (question . "Which branch should I use?")))
+        (insert "feature")
+        (hermes-chat-send)
+        (funcall reject "clarify failed")
+        (should (equal (hermes-chat-input-string) "feature"))
+        (should-not (hermes-chat--prompt-response-in-flight-p
+                     "req-reject"))))))
+
+(ert-deftest hermes-chat-send-rejects-second-pending-clarify-answer ()
+  "A second RET cannot lose text while the first response is in flight."
+  (let (requests first-resolve)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request-id answer &optional resolve _reject)
+                 (push answer requests)
+                 (setq first-resolve (or first-resolve resolve)))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-double")
+           (question . "Which branch should I use?")))
+        (insert "first")
+        (hermes-chat-send)
+        (insert "second")
+        (should-error (hermes-chat-send) :type 'user-error)
+        (should (equal requests '("first")))
+        (should (equal (hermes-chat-input-string) "second"))
+        (funcall first-resolve '((status . "ok")))
+        (should-not (gethash "req-double" hermes-chat--pending-prompts))
+        (should (equal (hermes-chat-input-string) "second"))))))
+
+(ert-deftest hermes-chat-rejected-clarify-does-not-queue-over-new-draft ()
+  "A late clarification rejection appends its answer after a new draft."
+  (let (reject)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request-id _answer &optional _resolve reject-fn)
+                 (setq reject reject-fn))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-late")
+           (question . "Which branch should I use?")))
+        (insert "feature")
+        (hermes-chat-send)
+        (insert "new draft")
+        (funcall reject "clarify failed")
+        (should (equal (hermes-chat-input-string) "new draft\nfeature"))
+        (should-not (hermes-test--queued-contents))))))
+
+(ert-deftest hermes-chat-stale-clarify-rejection-ignores-reset-buffer ()
+  "A clarification rejection cannot mutate a replacement chat lifecycle."
+  (let (reject)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+               (lambda (_client _request-id _answer &optional _resolve reject-fn)
+                 (setq reject reject-fn))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "clarify.request"
+         '((request_id . "req-stale")
+           (question . "Which branch should I use?")))
+        (insert "feature")
+        (hermes-chat-send)
+        (hermes-chat--reset-transcript)
+        (insert "replacement draft")
+        (let ((before (buffer-string)))
+          (funcall reject "clarify failed")
+          (should (equal (buffer-string) before)))
+        (should (equal (hermes-chat-input-string) "replacement draft"))
+        (should-not (hermes-test--queued-contents))))))
+
+(ert-deftest hermes-chat-send-restores-clarify-answer-after-signal ()
+  "A synchronous clarification failure restores the chat-tail answer."
+  (cl-letf (((symbol-function 'hermes-dashboard-transport-clarify-respond)
+             (lambda (&rest _args) (error "clarify failed"))))
+    (hermes-test-with-dashboard-prompt-session (client)
+      (hermes-test--emit-dashboard-prompt
+       client "clarify.request"
+       '((request_id . "req-signal")
+         (question . "Which branch should I use?")))
+      (insert "feature")
+      (hermes-chat-send)
+      (should (equal (hermes-chat-input-string) "feature"))
+      (should-not (hermes-chat--prompt-response-in-flight-p "req-signal")))))
 
 (ert-deftest hermes-chat-handles-sudo-request ()
   (let (respond-request respond-password)
@@ -449,6 +600,54 @@ stays available."
       (should-not (string-match-p "Approval response sent" (buffer-string)))
       (should (string-match-p "Approval request no longer pending"
                               (hermes-test--header-line-string))))))
+
+(ert-deftest hermes-chat-stale-approval-response-keeps-new-request ()
+  (let (resolve-first)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (setq resolve-first (plist-get args :resolve)))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm first")
+           (description . "first approval")))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm second")
+           (description . "second approval")))
+        (funcall resolve-first '((resolved . 0)))
+        (let ((prompt (gethash "approval:sid-prompt"
+                               hermes-chat--pending-prompts)))
+          (should prompt)
+          (should (equal (plist-get prompt :prompt-count) 1))
+          (should (string-match-p "second approval"
+                                  (plist-get prompt :content)))
+          (should-not (plist-get prompt :response-token)))))))
+
+(ert-deftest hermes-chat-missing-approval-rejection-keeps-new-request ()
+  (let (reject-first)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-approval-respond)
+               (lambda (_client &rest args)
+                 (setq reject-first (plist-get args :reject)))))
+      (hermes-test-with-dashboard-prompt-session (client)
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm first")
+           (description . "first approval")))
+        (hermes-chat-respond-to-prompt "approval:sid-prompt" "once")
+        (hermes-test--emit-dashboard-prompt
+         client "approval.request"
+         '((command . "rm second")
+           (description . "second approval")))
+        (funcall reject-first "no pending approval")
+        (let ((prompt (gethash "approval:sid-prompt"
+                               hermes-chat--pending-prompts)))
+          (should prompt)
+          (should (equal (plist-get prompt :prompt-count) 1))
+          (should (string-match-p "second approval"
+                                  (plist-get prompt :content)))
+          (should-not (plist-get prompt :response-token)))))))
 
 (ert-deftest hermes-chat-clears-prompt-request-on-terminal-event ()
   (hermes-test-with-dashboard-prompt-session (client)

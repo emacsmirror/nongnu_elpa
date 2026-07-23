@@ -1189,6 +1189,246 @@
        (funcall (car (last callbacks)) '(:type done))
        (should (equal sent '("second" "first")))))))
 
+(ert-deftest hermes-chat-dashboard-send-defers-busy-policy-to-backend ()
+  "A normal busy send reaches `prompt.submit' without a client interrupt."
+  (let ((client (hermes-test--dashboard-client)) submits interrupts)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (push text submits)
+                 (funcall (plist-get args :resolve)
+                          `((status . ,(if (equal text "first")
+                                           "streaming"
+                                         "queued"))))))
+              ((symbol-function 'hermes-dashboard-transport-session-interrupt)
+               (lambda (&rest _args) (setq interrupts t))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (insert "second")
+         (hermes-chat-send)
+         (should (equal submits '("second" "first")))
+         (should-not interrupts)
+         (should-not (hermes-test--queued-contents)))))))
+
+(ert-deftest hermes-chat-dashboard-busy-send-preserves-local-fifo-order ()
+  "A normal busy send stays behind messages already queued explicitly."
+  (let ((client (hermes-test--dashboard-client)) submits)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (push text submits)
+                 (funcall (plist-get args :resolve)
+                          '((status . "streaming"))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (hermes-chat-queue-message "queued-first")
+         (insert "busy-second")
+         (hermes-chat-send)
+         (should (equal submits '("first")))
+         (should (equal (hermes-test--queued-contents)
+                        '("queued-first" "busy-second"))))))))
+
+(ert-deftest hermes-chat-dashboard-busy-submit-signal-preserves-input ()
+  "A synchronous busy-submit failure restores the deleted input."
+  (let ((client (hermes-test--dashboard-client)) signaled)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (if (equal text "first")
+                     (funcall (plist-get args :resolve)
+                              '((status . "streaming")))
+                   (error "submit failed")))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (insert "second")
+         (condition-case err
+             (hermes-chat-send)
+           (error (setq signaled (error-message-string err))))
+         (should-not signaled)
+         (should (equal (hermes-chat-input-string) "second")))))))
+
+(ert-deftest hermes-chat-dashboard-streaming-busy-result-settles-old-turn ()
+  "A busy send that finds the backend idle starts a clean new local turn."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client _text &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((status . "streaming"))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (let ((first-id hermes-chat--pending-assistant-id))
+           (insert "second")
+           (hermes-chat-send)
+           (should (eq (plist-get (ewoc-data (gethash first-id hermes-chat--nodes))
+                                  :status)
+                       'done))
+           (hermes-test--emit-dashboard-event
+            client "message.delta" '((text . "second answer")))
+           (should (equal
+                    (plist-get (hermes-test--last-assistant-entry) :content)
+                    "second answer"))))))))
+
+(ert-deftest hermes-chat-dashboard-buffers-new-turn-before-streaming-ack ()
+  "A new turn cannot capture events until its busy-submit result is known."
+  (let ((client (hermes-test--dashboard-client)) second-resolve)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (if (equal text "first")
+                     (funcall (plist-get args :resolve)
+                              '((status . "streaming")))
+                   (setq second-resolve (plist-get args :resolve))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (let ((first-id hermes-chat--pending-assistant-id))
+           (insert "second")
+           (hermes-chat-send)
+           (hermes-test--emit-dashboard-event client "message.start" nil)
+           (hermes-test--emit-dashboard-event
+            client "message.delta" '((text . "early second answer")))
+           (funcall second-resolve '((status . "streaming")))
+           (should (string-empty-p
+                    (plist-get (ewoc-data (gethash first-id hermes-chat--nodes))
+                               :content)))
+           (should (equal
+                    (plist-get (hermes-test--last-assistant-entry) :content)
+                    "early second answer"))))))))
+
+(ert-deftest hermes-chat-dashboard-buffers-queued-turn-before-ack ()
+  "Queued-turn boundaries remain ordered when events beat the RPC response."
+  (let ((client (hermes-test--dashboard-client)) second-resolve)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (if (equal text "first")
+                     (funcall (plist-get args :resolve)
+                              '((status . "streaming")))
+                   (setq second-resolve (plist-get args :resolve))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (insert "second")
+         (hermes-chat-send)
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "first answer")))
+         (hermes-test--emit-dashboard-event
+          client "message.complete" '((text . "done") (status . "done")))
+         (hermes-test--emit-dashboard-idle client)
+         (hermes-test--emit-dashboard-event client "message.start" nil)
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "early second answer")))
+         (funcall second-resolve '((status . "queued")))
+         (should (equal (plist-get (hermes-test--assistant-entry) :content)
+                        "done"))
+         (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
+                        "early second answer")))))))
+
+(ert-deftest hermes-chat-dashboard-close-clears-backend-queued-turn ()
+  "Session loss cannot leave a backend-queued placeholder active."
+  (let ((client (hermes-test--dashboard-client)) callback)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setq callback (plist-get args :callback))
+                 (setf (hermes-dashboard-transport-client-callback client) callback)
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (funcall (plist-get args :resolve)
+                          `((status . ,(if (equal text "first")
+                                           "streaming"
+                                         "queued")))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (insert "second")
+         (hermes-chat-send)
+         (funcall callback
+                  '(:type status
+                    :status "closed"
+                    :content "Hermes dashboard WebSocket closed"))
+         (should-not hermes-chat--server-queued-assistant-id)
+         (should-not hermes-chat--server-queued-user-id)
+         (should-not (hermes-chat--active-turn-p)))))))
+
 (ert-deftest hermes-chat-send-queues-multiple-messages-in-fifo-order ()
   (let (sent callbacks)
     (hermes-test-with-chat-buffer
@@ -1212,8 +1452,8 @@
        (should (equal sent '("third" "second" "first")))
        (should-not (hermes-test--queued-contents))))))
 
-(ert-deftest hermes-chat-dashboard-queue-waits-for-confirmed-idle ()
-  "A terminal message does not drain before `session.info' reports idle."
+(ert-deftest hermes-chat-dashboard-queued-send-keeps-current-stream ()
+  "A backend-queued send takes ownership only at the next message start."
   (let ((client (hermes-test--dashboard-client)) submits)
     (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _args) (error "CLI fallback should not run")))
@@ -1230,24 +1470,33 @@
                (lambda (_client text &rest args)
                  (push text submits)
                  (when-let* ((resolve (plist-get args :resolve)))
-                   (funcall resolve '((status . "streaming")))))))
+                   (funcall resolve
+                            `((status . ,(if (equal text "first")
+                                             "streaming"
+                                           "queued"))))))))
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
          (insert "first")
          (hermes-chat-send)
          (insert "second")
          (hermes-chat-send)
+         (should (equal submits '("second" "first")))
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "still working")))
          (hermes-test--emit-dashboard-event
           client "message.complete" '((text . "done") (status . "done")))
-         (should (equal submits '("first")))
-         (should (equal (hermes-test--queued-contents) '("second")))
          (hermes-test--emit-dashboard-event
           client "session.info" '((running . :false)))
-         (should (equal submits '("second" "first")))
-         (should-not (hermes-test--queued-contents)))))))
+         (hermes-test--emit-dashboard-event client "message.start" nil)
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "second answer")))
+         (should (equal (plist-get (hermes-test--assistant-entry) :content)
+                        "done"))
+         (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
+                        "second answer")))))))
 
-(ert-deftest hermes-chat-dashboard-rejected-drain-retains-queue-head ()
-  "A rejected queued submit rolls back its optimistic turn without losing text."
+(ert-deftest hermes-chat-dashboard-rejected-busy-submit-preserves-input ()
+  "A rejected busy submit restores its text without a fake turn."
   (let ((client (hermes-test--dashboard-client)) submits)
     (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _args) (error "CLI fallback should not run")))
@@ -1279,7 +1528,8 @@
          (hermes-test--emit-dashboard-event
           client "session.info" '((running . :false)))
          (should (equal submits '("second" "first")))
-         (should (equal (hermes-test--queued-contents) '("second")))
+         (should-not (hermes-test--queued-contents))
+         (should (equal (hermes-chat-input-string) "second"))
          (should (= (cl-count 'user (hermes-chat--entries)
                               :key (lambda (entry) (plist-get entry :role)))
                     1))
@@ -1288,9 +1538,9 @@
                     1))
          (should-not hermes-chat--pending-assistant-id))))))
 
-(ert-deftest hermes-chat-dashboard-error-reconciles-missing-idle-event ()
-  "A terminal backend error drains after resume confirms idle without session.info."
-  (let ((client (hermes-test--dashboard-client)) scheduled submits)
+(ert-deftest hermes-chat-dashboard-error-settles-without-idle-event ()
+  "A terminal backend error releases local busy state without session.info."
+  (let ((client (hermes-test--dashboard-client)) submits)
     (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _args) (error "CLI fallback should not run")))
               ((symbol-function 'hermes-dashboard-transport-start)
@@ -1309,13 +1559,8 @@
                  (when-let* ((resolve (plist-get args :resolve)))
                    (funcall resolve '((status . "streaming"))))))
               ((symbol-function 'hermes-dashboard-transport-session-resume)
-               (lambda (_client _session-id &rest args)
-                 (funcall (plist-get args :resolve)
-                          '((session_id . "sid-active") (running . nil)))))
-              ((symbol-function 'run-at-time)
-               (lambda (_delay _repeat function &rest args)
-                 (setq scheduled (cons function args))
-                 'fake-timer)))
+               (lambda (&rest _args)
+                 (ert-fail "Terminal events should not require reconciliation"))))
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
          (insert "first")
@@ -1324,9 +1569,8 @@
          (hermes-chat-send)
          (hermes-test--emit-dashboard-event
           client "error" '((message . "agent initialization failed")))
-         (should scheduled)
-         (apply (car scheduled) (cdr scheduled))
          (should (equal submits '("second" "first")))
+         (should-not hermes-chat--dashboard-running-p)
          (should-not (hermes-test--queued-contents)))))))
 
 (ert-deftest hermes-chat-dashboard-busy-queued-result-stays-server-owned ()
@@ -1413,15 +1657,15 @@
          (insert "second")
          (hermes-chat-send)
          (hermes-test--emit-dashboard-event
-          client "message.complete" '((text . "first done") (status . "done")))
-         (hermes-test--emit-dashboard-idle client)
-         (hermes-test--emit-dashboard-event
           client "message.delta" '((text . "continued run")))
+         (should (equal submits '("second" "first")))
          (should-not interrupts)
          (should-not (hermes-test--queued-contents))
          (should (= (cl-count 'user (hermes-chat--entries)
                               :key (lambda (entry) (plist-get entry :role)))
                     1))
+         (should (eq (plist-get (car (last (hermes-chat--entries))) :role)
+                     'assistant))
          (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
                         "continued run")))))))
 
@@ -1924,6 +2168,80 @@
          (hermes-chat-interrupt-and-send)
          (should (= interrupts 1))
          (should-not (hermes-test--queued-contents)))))))
+
+(ert-deftest hermes-chat-interrupt-clears-backend-queued-turn ()
+  "An accepted interrupt settles the queued prompt discarded by Hermes."
+  (let ((client (hermes-test--dashboard-client)) interrupt-resolve)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (funcall (plist-get args :resolve)
+                          `((status . ,(if (equal text "first")
+                                           "streaming"
+                                         "queued"))))))
+              ((symbol-function 'hermes-dashboard-transport-session-interrupt)
+               (lambda (_client &rest args)
+                 (setq interrupt-resolve (plist-get args :resolve)))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (insert "second")
+         (hermes-chat-send)
+         (hermes-chat-interrupt)
+         (hermes-test--emit-dashboard-event
+          client "message.complete" '((status . "interrupted")))
+         (funcall interrupt-resolve '((status . "ok")))
+         (hermes-test--emit-dashboard-idle client)
+         (should-not hermes-chat--server-queued-assistant-id)
+         (should-not hermes-chat--server-queued-user-id)
+         (should-not hermes-chat--pending-assistant-id)
+         (should-not hermes-chat--dashboard-running-p)
+         (should-not (hermes-chat--active-turn-p)))))))
+
+(ert-deftest hermes-chat-interrupt-waits-for-busy-submit-result ()
+  "Interrupt cannot race an unresolved busy submission acknowledgement."
+  (let ((client (hermes-test--dashboard-client)) busy-resolve (interrupts 0))
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client text &rest args)
+                 (if (equal text "first")
+                     (funcall (plist-get args :resolve)
+                              '((status . "streaming")))
+                   (setq busy-resolve (plist-get args :resolve)))))
+              ((symbol-function 'hermes-dashboard-transport-session-interrupt)
+               (lambda (&rest _args) (cl-incf interrupts))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (insert "second")
+         (hermes-chat-send)
+         (should-error (hermes-chat-interrupt) :type 'user-error)
+         (should (zerop interrupts))
+         (funcall busy-resolve '((status . "queued")))
+         (hermes-chat-interrupt)
+         (should (= interrupts 1)))))))
 
 (ert-deftest hermes-chat-interrupt-and-send-queues-text-after-interrupt ()
   "With input text, the interrupt fires and the text is queued for the next turn."
@@ -2983,7 +3301,7 @@
            (should (equal (plist-get commentary :content)
                           "I\\n need\\n to inspect^J repo and cite files"))))))))
 
-(ert-deftest hermes-chat-queues-input-tail-during-stream ()
+(ert-deftest hermes-chat-explicit-queue-keeps-input-tail-during-stream ()
   (let ((client (hermes-test--dashboard-client))
         callback)
     (cl-letf (((symbol-function 'hermes-transport-send)
@@ -3016,7 +3334,7 @@
                           "answer continues"))
            (should (equal (plist-get assistant :status) 'streaming)))
          (should hermes-chat--pending-assistant-id)
-         (hermes-chat-send)
+         (hermes-chat-queue-message)
          (should (equal (hermes-test--queued-contents) '("draft survives")))
          (should (equal (hermes-chat-input-string) "")))))))
 
@@ -3085,6 +3403,26 @@
            (should (equal (plist-get assistant :content) "retry ok"))
            (should (equal (plist-get assistant :status) 'done)))
          (should-not hermes-chat--pending-assistant-id))))))
+
+(ert-deftest hermes-chat-idle-reconciliation-settles-missing-finished-session ()
+  "A missing durable row cannot keep a locally finished chat busy forever."
+  (let ((client (hermes-test--dashboard-client)) idle rescheduled)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-session-resume)
+               (lambda (_client _session-id &rest args)
+                 (funcall (plist-get args :reject) "session not found")))
+              ((symbol-function 'run-at-time)
+               (lambda (&rest _args) (setq rescheduled t))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-live"
+             hermes-chat--session-id "sid-missing"
+             hermes-chat--dashboard-running-p t)
+       (setq rescheduled nil)
+       (hermes-chat--dashboard-reconcile-idle
+        (hermes-chat--dashboard-idle-context (lambda () (setq idle t))))
+       (should idle)
+       (should-not rescheduled)
+       (should-not hermes-chat--dashboard-running-p)))))
 
 (ert-deftest hermes-chat-dashboard-resume-running-restores-inflight-guard ()
   (let* ((client-1 (hermes-test--dashboard-client))
@@ -3157,9 +3495,9 @@
                         (plist-get second-assistant :content))))
          (insert "third")
          (hermes-chat-send)
-         (should (equal (hermes-test--queued-contents) '("third")))
+         (should-not (hermes-test--queued-contents))
          (should (equal (hermes-chat-input-string) ""))
-         (should (equal submit-sessions '("sid-live-1"))))))))
+         (should (equal submit-sessions '("sid-live-1" "sid-live-1"))))))))
 
 (ert-deftest hermes-chat-dashboard-resume-running-without-detached-guards-retry ()
   (let ((client (hermes-test--dashboard-client))
@@ -3750,45 +4088,109 @@
          (should (memq 'commentary roles))
          (should (memq 'assistant roles)))))))
 
-(ert-deftest hermes-chat-header-shows-agent-status-model ()
-  "The header renders agent name, status, and model from `session.info'."
+(ert-deftest hermes-chat-header-shows-profile-status-model ()
+  "The header renders profile, status, and model from chat state."
   (hermes-test-with-chat-buffer
+   (setq hermes-chat--profile "coder")
    (hermes-chat--update-header-for-event
     '(:type status :event "session.info" :status "ready"
             :model "claude-opus-4-8" :agent-name "planner"))
    (let ((header (hermes-test--header-line-string)))
-     (should (string-match-p "planner" header))
+     (should (string-prefix-p " coder" header))
+     (should-not (string-match-p "planner" header))
      (should (string-match-p "claude-opus-4-8" header))
      (should (string-match-p "Ready" header))
      (should-not (string-match-p "Hermes" header))
      (should-not (string-match-p "session " header)))))
 
-(ert-deftest hermes-chat-header-falls-back-to-hermes-without-agent ()
-  "Without an agent name the header still shows Hermes."
+(ert-deftest hermes-chat-header-profile-falls-back-to-default ()
+  "Without explicit or backend profile state the header shows default."
   (hermes-test-with-chat-buffer
-   (should (string-match-p "Hermes" (hermes-test--header-line-string)))))
+   (should (string-prefix-p " default" (hermes-test--header-line-string)))))
 
-(ert-deftest hermes-chat-header-annotates-model-with-runtime-flags ()
-  "Reasoning effort, fast tier, and yolo from `session.info' annotate the model."
+(ert-deftest hermes-chat-header-profile-falls-back-to-backend-profile ()
+  "The backend profile is used when no explicit profile was selected."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--agent-name "planner")
+   (should (string-prefix-p " planner" (hermes-test--header-line-string)))))
+
+(ert-deftest hermes-chat-header-separates-runtime-flags-from-model ()
+  "Reasoning effort, fast tier, and yolo render as separate segments."
   (hermes-test-with-chat-buffer
    (hermes-chat--update-header-for-event
     '(:type status :event "session.info" :status "ready"
             :model "gpt-5.5" :reasoning-effort "high" :fast t :yolo t))
-   (should (equal (hermes-chat--header-model-segment)
-                  "gpt-5.5 (high, fast, YOLO)"))
+   (should (equal (substring-no-properties (hermes-chat--header-model-segment))
+                  "gpt-5.5"))
+   (should (equal (mapcar #'substring-no-properties
+                          (hermes-chat--header-runtime-segments))
+                  '("high" "fast" "YOLO")))
    ;; A later session.info clearing fast/yolo updates the captured flags.
    (hermes-chat--update-header-for-event
     '(:type status :event "session.info" :status "ready"
             :model "gpt-5.5" :fast nil :yolo nil))
-   (should (equal (hermes-chat--header-model-segment) "gpt-5.5 (high)"))))
+   (should (equal (mapcar #'substring-no-properties
+                          (hermes-chat--header-runtime-segments))
+                  '("high")))))
 
 (ert-deftest hermes-chat-header-model-segment-without-flags-is-bare ()
   "Without runtime flags the model segment is the bare model id."
   (hermes-test-with-chat-buffer
    (setq hermes-chat--model "gpt-5.5")
-   (should (equal (hermes-chat--header-model-segment) "gpt-5.5"))
+   (should (equal (substring-no-properties (hermes-chat--header-model-segment))
+                  "gpt-5.5"))
    (setq hermes-chat--model nil)
    (should-not (hermes-chat--header-model-segment))))
+
+(ert-deftest hermes-chat-header-uses-compact-semantic-layout ()
+  "The compact header orders profile, activity, runtime, and context metadata."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--profile "scout"
+         hermes-chat--agent-name "default"
+         hermes-chat--model "grok-4.5"
+         hermes-chat--runtime-flags
+         '(:reasoning-effort "medium" :fast t :yolo t)
+         hermes-chat--context '(:used 24705 :max 500000 :percent 5)
+         hermes-chat--status-state '(:status ready :activity "Ready"))
+   (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
+     (should (equal (substring-no-properties (hermes-chat--header-line))
+                    (concat " scout  |  ✓ Ready  |  grok-4.5  |  medium"
+                            "  |  fast  |  YOLO  |  ctx 25k/500k · 5%% "))))))
+
+(ert-deftest hermes-chat-header-segments-carry-semantic-faces ()
+  "Profile, model, runtime flags, and context values use distinct faces."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--profile "scout"
+         hermes-chat--model "grok-4.5"
+         hermes-chat--runtime-flags
+         '(:reasoning-effort "medium" :fast t :yolo t)
+         hermes-chat--context '(:used 24705 :max 500000 :percent 5))
+   (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
+     (let ((header (hermes-chat--header-line)))
+       (dolist (case '(("scout" . hermes-chat-header-profile)
+                       ("grok-4.5" . hermes-chat-header-model)
+                       ("medium" . hermes-chat-header-reasoning)
+                       ("fast" . hermes-chat-header-tier)
+                       ("YOLO" . hermes-chat-header-warning)
+                       ("25k/500k" . hermes-chat-header-context)))
+         (let ((position (string-match-p (regexp-quote (car case)) header)))
+           (should position)
+           (should (eq (get-text-property position 'face header)
+                       (cdr case)))))))))
+
+(ert-deftest hermes-chat-header-truncates-to-narrow-window ()
+  "A narrow header fits its window and preserves the leading profile face."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--profile "scout"
+         hermes-chat--model "grok-4.5")
+   (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 10)))
+     (let* ((header (hermes-chat--header-line))
+            (profile-position (string-match-p "scout" header)))
+       (should (<= (string-width header) 10))
+       (should (string-suffix-p "…" header))
+       (should profile-position)
+       (should (eq (get-text-property profile-position 'face header)
+                   'hermes-chat-header-profile))))))
 
 (ert-deftest hermes-chat-format-tool-event-keeps-detail-and-emoji ()
   "Tool lines keep the command/skill detail and carry the tool emoji."
@@ -3811,7 +4213,7 @@
 (ert-deftest hermes-chat-format-context ()
   "Context usage renders abbreviated tokens and a percentage."
   (should (equal (hermes-chat--format-context '(:used 45000 :max 200000 :percent 22))
-                 "45k/200k ctx (22%)"))
+                 "ctx 45k/200k · 22%"))
   (should-not (hermes-chat--format-context '(:used 0 :max 0 :percent 0)))
   (should-not (hermes-chat--format-context nil)))
 
@@ -3824,7 +4226,7 @@
             :context (:used 45000 :max 200000 :percent 22)))
    ;; The header doubles % so the redisplay engine renders a literal "22%"
    ;; instead of eating "%)" as a mode-line spec.
-   (should (string-match-p "45k/200k ctx (22%%)" (hermes-chat--header-line)))))
+   (should (string-match-p "ctx 45k/200k · 22%%" (hermes-chat--header-line)))))
 
 (ert-deftest hermes-chat-done-event-records-usage ()
   "A done event records usage in header state; the compact header omits the gauge."
