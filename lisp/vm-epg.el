@@ -345,7 +345,6 @@ Switch mode on/off according to ARG.
           (setq pointer (cdr pointer))))
       (setq keys (cdr keys)))))
 
-;;; TODO Ny funktion som behöver granskas extra
 (defun vm-epg-get-recipient-keys (context)
   "Return a list of EPG key objects for the current message recipients.
 Uses CONTEXT for key lookup."
@@ -462,7 +461,6 @@ If STATES is nil, clear it."
   :type 'integer
   :group 'vm-epg)
 
-;;; TODO definieras på annan plats i pgg
 (defun vm-epg-make-presentation-copy ()
   "Make a presentation copy for cleartext PGP messages."
   (let* ((m (car vm-message-pointer))
@@ -672,7 +670,6 @@ the cleanup here after verification/decoding."
 
 ;;; Cleartext sign/encrypt/verify/decrypt
 
-;;; TODO Definieras på annan plats i pgg
 ;;;###autoload
 (defun vm-epg-cleartext-encrypt (sign)
   "Encrypt the composition as cleartext; with a prefix also SIGN it."
@@ -700,7 +697,6 @@ the cleanup here after verification/decoding."
       (delete-region start end)
       (insert encrypted))))
 
-;;; TODO Definierad på annan plats i pgg
 ;;;###autoload
 (defun vm-epg-cleartext-sign ()
   "Sign the message body as cleartext PGP."
@@ -1283,13 +1279,9 @@ and `vm-mime-composition-armor-from-lines' is t."
       (insert "\n"))
     ;; sign
     (save-excursion
-      ;; TODO Här skiljer EPG från PGG, granskas
       (let* ((context (epg-make-context 'OpenPGP))
              ;; RFC 3156: the signature must be computed over the MIME
-             ;; canonical (CRLF) form of the body.  The verifier canonicalizes
-             ;; to CRLF before checking (see
-             ;; `vm-mime-display-internal-multipart/signed'), so sign the same
-             ;; bytes here or the signature will never validate.
+             ;; canonical (CRLF) form of the body.
              (body-text (let ((lf-text (buffer-substring-no-properties
                                         body-start (point-max))))
                           (with-temp-buffer
