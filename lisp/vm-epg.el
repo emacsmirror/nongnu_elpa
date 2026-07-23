@@ -1285,7 +1285,17 @@ and `vm-mime-composition-armor-from-lines' is t."
     (save-excursion
       ;; TODO Här skiljer EPG från PGG, granskas
       (let* ((context (epg-make-context 'OpenPGP))
-             (body-text (buffer-substring-no-properties body-start (point-max)))
+             ;; RFC 3156: the signature must be computed over the MIME
+             ;; canonical (CRLF) form of the body.  The verifier canonicalizes
+             ;; to CRLF before checking (see
+             ;; `vm-mime-display-internal-multipart/signed'), so sign the same
+             ;; bytes here or the signature will never validate.
+             (body-text (let ((lf-text (buffer-substring-no-properties
+                                        body-start (point-max))))
+                          (with-temp-buffer
+                            (insert lf-text)
+                            (vm-epg-make-crlf (point-min) (point-max))
+                            (buffer-string))))
              signature)
         (setf (epg-context-armor context) t)
         (vm-epg-set-signer context)

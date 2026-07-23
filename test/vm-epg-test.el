@@ -30,6 +30,13 @@
   "Return non-nil if a usable OpenPGP configuration exists."
   (ignore-errors (epg-find-configuration 'OpenPGP)))
 
+(defun vm-epg-test--secret-key-p ()
+  "Return non-nil if a usable OpenPGP secret key exists (needed to sign)."
+  (ignore-errors
+    (and (vm-epg-test--gpg-p)
+         ;; `epg-list-keys' with a non-nil MODE lists secret keys.
+         (epg-list-keys (epg-make-context 'OpenPGP) nil t))))
+
 (defun vm-epg-test--make-layout (type &optional parts)
   "Build a minimal MIME layout vector of content TYPE with PARTS."
   (let ((v (make-vector 17 nil)))
@@ -224,24 +231,39 @@ symmetric (passphrase) encryption, which is not what the user asked for."
 (ert-deftest vm-epg-test-multipart-encrypted-t-on-decrypt-failure ()
   "REGRESSION: a failed decryption must still return t.
 Otherwise `vm-decode-mime-layout' falls through and re-renders the raw
-ciphertext parts as multipart/mixed."
+ciphertext parts as multipart/mixed.
+
+The cipher buffer is reached through the real accessors rather than by
+mocking them: `vm-buffer-of' is a `defsubst' and is inlined into the
+byte-compiled function under test, so a `cl-letf' redefinition of it would
+be silently ignored and the real code would `aref' a bogus value."
   (vm-test-skip-unless (vm-epg-test--gpg-p) "no OpenPGP configuration")
   (let* ((header (vm-epg-test--make-layout "application/pgp-encrypted"))
          (msg    (vm-epg-test--make-layout "application/octet-stream"))
          (top    (vm-epg-test--make-layout
                   "multipart/encrypted" (list header msg)))
-         (cipher-buf (generate-new-buffer " *vm-epg-test-cipher*")))
+         (cipher-buf (generate-new-buffer " *vm-epg-test-cipher*"))
+         ;; A minimal "message object" as `vm-buffer-of' dereferences it:
+         ;; (aref (aref message 1) 9) must be the buffer holding the cipher.
+         (msg-inner (make-vector 10 nil))
+         (msg-obj (make-vector 2 nil))
+         (msg-sym (make-symbol "vm-epg-test-msg"))
+         (vm-epg-auto-decrypt t))
     (unwind-protect
         (progn
           (with-current-buffer cipher-buf (insert "CIPHERTEXT"))
+          (aset msg-inner 9 cipher-buf)
+          (aset msg-obj 1 msg-inner)
+          (set msg-sym msg-obj)
+          ;; Wire the octet-stream layout to the message object and to the
+          ;; cipher region: slot 13 = message symbol, slots 9/10 = body
+          ;; start/end (see the `vm-mm-layout-*' accessors in vm-mime.el).
+          (aset msg 13 msg-sym)
+          (with-current-buffer cipher-buf
+            (aset msg 9 (point-min))
+            (aset msg 10 (point-max)))
           (cl-letf (((symbol-function 'vm-epg-state-set) #'ignore)
                     ((symbol-function 'vm-epg-get-mime-decoded) (lambda () nil))
-                    ((symbol-function 'vm-mm-layout-message) (lambda (_) 'm))
-                    ((symbol-function 'vm-buffer-of) (lambda (_) cipher-buf))
-                    ((symbol-function 'vm-mm-layout-body-start)
-                     (lambda (_) (with-current-buffer cipher-buf (point-min))))
-                    ((symbol-function 'vm-mm-layout-body-end)
-                     (lambda (_) (with-current-buffer cipher-buf (point-max))))
                     ((symbol-function 'epg-decrypt-string)
                      (lambda (&rest _) (error "decrypt failed"))))
             (with-temp-buffer
@@ -307,6 +329,103 @@ The armor-stripping searches originally omitted the NOERROR argument."
       ;; Must complete without signalling.
       (should (progn (vm-epg-cleartext-cleanup 'verified) t))
       (should (string-match-p "OUTPUT" (buffer-string))))))
+
+;;; ---------------------------------------------------------------------------
+;;; REGRESSION: cleartext (sign-only) signatures must validate
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest vm-epg-test-sign-signs-crlf-canonical-body ()
+  "REGRESSION: the detached signature must be computed over the CRLF form.
+The verifier (`vm-mime-display-internal-multipart/signed') canonicalizes the
+signed content to CRLF (RFC 3156) with `vm-epg-make-crlf' before checking, so
+the signer must hash those same CRLF bytes.  The original code signed the raw
+LF buffer text, so every sent sign-only message -- even one sent to oneself --
+verified as an invalid signature.
+
+This test needs no GnuPG: it mocks `epg-sign-string' and asserts that the
+bytes handed to it are CRLF-canonical."
+  (let ((mail-header-separator "--text follows this line--")
+        (signed-bytes nil))
+    (cl-letf (((symbol-function 'vm-epg-prepare-composition)
+               (lambda ()
+                 (goto-char (point-max))
+                 (unless (bolp) (insert "\n"))
+                 (vm-pgp-goto-body-start)))
+              ((symbol-function 'vm-epg-set-signer) #'ignore)
+              ((symbol-function 'epg-sign-string)
+               (lambda (_ctx text _mode) (setq signed-bytes text) "SIGNATURE")))
+      (with-temp-buffer
+        (insert "To: me@example.com\n"
+                "Subject: sign test\n"
+                mail-header-separator "\n"
+                "first line\n"
+                "second line\n"
+                "third line\n")
+        (vm-epg-sign-internal)
+        ;; Something was signed ...
+        (should signed-bytes)
+        ;; ... and it is CRLF-canonical: it contains CRLF and no bare LF (an LF
+        ;; either at the start of the string or not preceded by CR).
+        (should (string-match-p "\r\n" signed-bytes))
+        (should-not (string-match-p "\\(?:\\`\\|[^\r]\\)\n" signed-bytes))))))
+
+(ert-deftest vm-epg-test-sign-verify-roundtrip ()
+  "REGRESSION: a self-signed cleartext message must verify as good.
+End-to-end check with a real GnuPG: `vm-epg-sign-internal' signs the body, and
+the resulting multipart/signed part is verified exactly as the display code
+does (extract the first part, canonicalize to CRLF, detached-verify against the
+signature).  With the old LF-signing bug the signature came out invalid.
+
+Requires a usable secret key; skipped otherwise, and skipped if signing itself
+is unavailable (e.g. a passphrase cannot be supplied non-interactively)."
+  (vm-test-skip-unless (vm-epg-test--secret-key-p) "no OpenPGP secret key")
+  (let ((mail-header-separator "--text follows this line--")
+        signature signed-part)
+    (cl-letf (((symbol-function 'vm-epg-prepare-composition)
+               (lambda ()
+                 (goto-char (point-max))
+                 (unless (bolp) (insert "\n"))
+                 (vm-pgp-goto-body-start)))
+              ;; Use GnuPG's default secret key as the signer.
+              ((symbol-function 'vm-epg-set-signer) #'ignore))
+      (with-temp-buffer
+        (insert "To: me@example.com\n"
+                "Subject: roundtrip\n"
+                mail-header-separator "\n"
+                "one\ntwo\nthree\n")
+        ;; Sign for real; skip (do not fail) if GnuPG cannot sign here.
+        (condition-case err
+            (vm-epg-sign-internal)
+          (error (ert-skip (format "signing unavailable: %s"
+                                   (error-message-string err)))))
+        ;; Extract the transmitted first part and the signature just as a
+        ;; receiver would -- with the LF line endings stored in the buffer.
+        (goto-char (point-min))
+        (re-search-forward "boundary=\"\\([^\"]+\\)\"")
+        (let ((boundary (match-string 1)))
+          (goto-char (point-min))
+          (re-search-forward (concat "^--" (regexp-quote boundary) "\n"))
+          (let ((p-start (point)))
+            (re-search-forward (concat "\n--" (regexp-quote boundary) "\n"))
+            (setq signed-part (buffer-substring-no-properties
+                               p-start (match-beginning 0)))
+            (goto-char (match-end 0))
+            (re-search-forward "application/pgp-signature\n\n")
+            (let ((s-start (point)))
+              (re-search-forward (concat "\n--" (regexp-quote boundary) "--"))
+              (setq signature (buffer-substring-no-properties
+                               s-start (match-beginning 0))))))
+        ;; Canonicalize the signed part to CRLF, exactly like the display code.
+        (setq signed-part
+              (with-temp-buffer
+                (insert signed-part)
+                (vm-epg-make-crlf (point-min) (point-max))
+                (buffer-string)))
+        (let ((context (epg-make-context 'OpenPGP)))
+          (epg-verify-string context signature signed-part)
+          (let ((result (epg-context-result-for context 'verify)))
+            (should result)
+            (should (eq (epg-signature-status (car result)) 'good))))))))
 
 (provide 'vm-epg-test)
 
