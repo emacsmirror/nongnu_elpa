@@ -683,27 +683,27 @@
         (when (get-buffer "*Hermes Kanban Log*")
           (kill-buffer "*Hermes Kanban Log*"))))))
 
-(ert-deftest hermes-kanban-task-detail-renders-tracker-backlink ()
-  "A canonical card-side tracker-ref renders and navigates reciprocally."
-  (let (opened)
-    (cl-letf (((symbol-function 'pop-to-buffer) #'switch-to-buffer)
-              ((symbol-function 'hermes-tracker-open-todo)
-               (lambda (repo number) (setq opened (list repo number)))))
-      (unwind-protect
-          (progn
-            (hermes-kanban--display-task
-             '((task . ((id . "t_1234abcd") (title . "Tracked")
-                        (status . "todo")
-                        (body . "Body\n\n```tracker-ref\n{\"number\":3,\"repo_slug\":\"proj\"}\n```"))))
-             "default")
-            (with-current-buffer "*Hermes Kanban Task*"
-              (should (equal hermes-kanban-task--tracker-reference
-                             '(:repo-slug "proj" :number 3)))
-              (should (string-match-p "Tracker: proj#3" (buffer-string)))
-              (hermes-kanban-open-tracker))
-            (should (equal opened '("proj" 3))))
-        (when (get-buffer "*Hermes Kanban Task*")
-          (kill-buffer "*Hermes Kanban Task*"))))))
+(ert-deftest hermes-kanban-task-detail-runs-extension-functions ()
+  "Task detail extensions receive the payload and board in the task buffer."
+  (let (observed)
+    (unwind-protect
+        (let ((hermes-kanban-task-detail-functions
+               (list (lambda (payload board)
+                       (setq observed (list (current-buffer) payload board))
+                       (insert "\nExtension content\n")))))
+          (hermes-kanban--display-task
+           '((task . ((id . "t_1234abcd") (title . "Task")
+                      (status . "todo") (body . "Body"))))
+           "default")
+          (with-current-buffer "*Hermes Kanban Task*"
+            (should (equal (car observed) (current-buffer)))
+            (should (equal (cadr observed)
+                           '((task . ((id . "t_1234abcd") (title . "Task")
+                                      (status . "todo") (body . "Body"))))))
+            (should (equal (caddr observed) "default"))
+            (should (string-match-p "Extension content" (buffer-string)))))
+      (when (get-buffer "*Hermes Kanban Task*")
+        (kill-buffer "*Hermes Kanban Task*")))))
 
 (ert-deftest hermes-kanban-format-task-detail-renders-markdown-sections ()
   "Task detail formatting includes Markdown task sections and rows."

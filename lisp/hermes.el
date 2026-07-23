@@ -3,7 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
-;; Version: 0.1.0
+;; Version: 0.2.0
 ;; URL: https://git.thanosapollo.org/emacs-hermes
 ;; Keywords: tools, convenience
 ;; Package-Requires: ((emacs "29.1") (keymap-popup "0.3.1") (websocket "1.15") (markdown-mode "2.6"))
@@ -41,7 +41,6 @@
 (require 'hermes-cron)
 (require 'hermes-profiles)
 (require 'hermes-kanban)
-(require 'hermes-tracker)
 (require 'hermes-mcp)
 (require 'hermes-browser)
 (require 'hermes-onboarding)
@@ -150,7 +149,6 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "A" ("Subagents" hermes-list-subagents)
   "C" ("Cron jobs" hermes-list-crons)
   "K" ("Kanban" hermes-list-kanban)
-  "T" ("Tracker" hermes-list-tracker-repositories)
   "X" ("MCP servers" hermes-list-mcp)
   "?" ("Help" hermes-dashboard-popup))
 

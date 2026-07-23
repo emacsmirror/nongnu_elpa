@@ -141,6 +141,7 @@
   (should (eq (keymap-lookup hermes-dashboard-mode-map "c") #'hermes-chat))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "m") #'hermes-dashboard-switch-model))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "X") #'hermes-list-mcp))
+  (should-not (keymap-lookup hermes-dashboard-mode-map "T"))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "g") #'hermes-dashboard-refresh))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "n") #'hermes-dashboard-next))
   (should (eq (keymap-lookup hermes-dashboard-mode-map "p") #'hermes-dashboard-previous))

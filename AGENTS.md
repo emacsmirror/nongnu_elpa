@@ -1,8 +1,7 @@
 # hermes-el
 
 An Emacs-native frontend for Hermes Agent. The dashboard, chat UI, management
-browsers, Tracker cockpit, capability provider, and optional eval bridge live in
-this repository.
+browsers, capability provider, and optional eval bridge live in this repository.
 
 ## Public document policy
 
@@ -31,10 +30,8 @@ Relevant paths in a Hermes Agent checkout include:
 - `apps/desktop/src/hermes.ts`
 - `apps/desktop/src/app/desktop-controller.tsx`
 
-Hermes Tracker is authoritative for its separate `/api/v1` contract, especially
-`src/hermes_tracker/api/v1.py` and the API contract tests. The Python
-`hermes-emacs-plugin` is authoritative for the stdio MCP bridge paired with
-`hermes-exec.el`.
+The Python `hermes-emacs-plugin` is authoritative for the stdio MCP bridge
+paired with `hermes-exec.el`.
 
 Use core Emacs EWOC and ERC, emacs-jabber, Gnosis, and keymap-popup as design
 references.
@@ -92,9 +89,8 @@ provisioning, semantic faces, responsive columns, request generations, and the
   `hermes-kanban.el`.
 - `hermes-kanban-log.el` owns worker-log diff parsing and navigation.
 - `hermes-kanban-events.el` owns the dedicated plain-JSON Kanban event socket.
-- `hermes-tracker.el` is an optional client for the separate Hermes Tracker
-  service. It owns Tracker auth, TODO views and mutations, evidence-gated
-  closure, and canonical Tracker-to-Kanban references.
+- `hermes-kanban-task-detail-functions` lets optional addons append actions to
+  task detail buffers without adding dependencies to core Hermes.
 
 Other independent integrations:
 
@@ -116,12 +112,6 @@ All Hermes Agent feature work goes through the dashboard configured by
 WebSocket JSON-RPC. Never shell to the local Hermes CLI for feature data because
 it reads local state and ignores the configured remote dashboard. The one-shot
 chat fallback remains a smoke-test exception.
-
-Hermes Tracker is a separate service with separate credentials. It uses
-`hermes-tracker-url`, HTTPS outside loopback, auth-source credentials, and
-idempotency keys for mutations. Tracker and dashboard credentials must never be
-shared. Cross-link operations may compose Tracker REST calls with dashboard
-Kanban plugin calls.
 
 Never perform synchronous network I/O on Emacs's main thread. New work should
 use these seams:
@@ -182,7 +172,7 @@ Late callbacks are a primary correctness risk.
   is opt-in. Suppress notices for a target already visible on the focused frame,
   keep sensitive prompt details out of bodies, and make click actions return to
   the owning buffer or task row.
-- Use `read-string-from-buffer` for multiline Tracker descriptions, comments,
+- Use `read-string-from-buffer` for multiline descriptions, comments,
   acceptance criteria, and verification evidence. Use `read-string` for
   single-line scalar fields.
 
@@ -273,7 +263,7 @@ For required independent review:
 Reviewers should inspect source and tests, not trust summaries. A green test is
 evidence only when its assertions exercise the claimed behavior.
 
-## Kanban and Tracker handoffs
+## Kanban and issue handoffs
 
 - Keep one coherent feature in one execution unit unless a real dependency,
   different accountable role, high-risk review gate, or publication boundary
@@ -285,7 +275,7 @@ evidence only when its assertions exercise the claimed behavior.
 - Handoffs include changed files, exact commands and observed results, diff or
   commit scope, review verdict, remaining blockers, and whether live Emacs
   dogfood ran.
-- Close Tracker work only with concrete verification evidence. A status label
+- Close tracked work only with concrete verification evidence. A status label
   or success claim is not proof.
 - Do not include private paths, credentials, host details, raw logs, or local
   scratch files in cards, comments, commits, or handoffs.
