@@ -123,16 +123,18 @@ for all accounts regardless of the argument."
 
 (defun jabber-keepalive-timeout ()
   "Treat any connection that did not answer as lost and disconnect it."
-  (cancel-timer jabber-keepalive-timer)
-  (setq jabber-keepalive-timer nil)
+  (let ((pending jabber-keepalive-pending))
+    (setq jabber-keepalive-timeout-timer nil
+          jabber-keepalive-pending nil)
+    (dolist (c pending)
+      (message "%s: keepalive timeout, connection to %s considered lost"
+	       (current-time-string)
+	       (plist-get (fsm-get-state-data c) :server))
 
-  (dolist (c jabber-keepalive-pending)
-    (message "%s: keepalive timeout, connection to %s considered lost"
-	     (current-time-string)
-	     (plist-get (fsm-get-state-data c) :server))
-
-    (run-hook-with-args 'jabber-lost-connection-hooks c)
-    (jabber-disconnect-one c nil)))
+      (run-hook-with-args 'jabber-lost-connection-hooks c)
+      (jabber-disconnect-one c nil))
+    (unless jabber-connections
+      (jabber-keepalive-stop))))
 
 ;;;; Whitespace pings - less traffic, no error checking on our side
 ;;;
