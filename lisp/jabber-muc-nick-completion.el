@@ -137,7 +137,9 @@ TEXT is the message body used to detect personal-mention bonus."
                                         jabber-muc-completion-delimiter
                                         nick)
                                        (substring
-                                        nick 0 (- (length nick) 2))
+                                        nick 0
+                                        (- (length nick)
+                                           (length jabber-muc-completion-delimiter)))
                                      nick)
                                    times)))
                   (cons nick

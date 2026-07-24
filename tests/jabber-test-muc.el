@@ -18,6 +18,7 @@
 
 (require 'jabber-chatbuffer)
 (require 'jabber-muc)
+(require 'jabber-muc-nick-completion)
 
 (defmacro jabber-test-muc-with-rooms (rooms &rest body)
   "Run BODY with ROOMS as active groupchats.
@@ -978,6 +979,31 @@ entry with JC=nil."
            (item ((affiliation . "member") (role . "participant"))))
        nil nil "me"))
     (should timer-scheduled)))
+
+;;; Group 22: MUC nick completion sorting
+
+(ert-deftest jabber-test-muc-sort-nicks-default-delimiter ()
+  "Nick sorting honors activity with the default completion delimiter."
+  (let ((jabber-muc-completion-delimiter ": ")
+        (jabber-muc-participant-last-speaking
+         '(("room@muc" ("zoe" . 20) ("alice" . 10)))))
+    (should
+     (equal '("zoe: " "alice: " "bob: ")
+            (jabber-sort-nicks '("alice: " "zoe: " "bob: ") "room@muc")))))
+
+(ert-deftest jabber-test-muc-sort-nicks-custom-delimiters ()
+  "Nick sorting honors activity with shorter and longer delimiters."
+  (let ((jabber-muc-participant-last-speaking
+         '(("room@muc" ("zoe" . 20) ("alice" . 10)))))
+    (dolist (delimiter '(">" " -> "))
+      (let ((jabber-muc-completion-delimiter delimiter))
+        (should
+         (equal (mapcar (lambda (nick) (concat nick delimiter))
+                        '("zoe" "alice" "bob"))
+                (jabber-sort-nicks
+                 (mapcar (lambda (nick) (concat nick delimiter))
+                         '("alice" "zoe" "bob"))
+                 "room@muc")))))))
 
 (provide 'jabber-test-muc)
 ;;; jabber-test-muc.el ends here
