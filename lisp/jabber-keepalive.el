@@ -74,8 +74,7 @@ The JC argument makes it possible to add this function to
 for all accounts regardless of the argument."
   (interactive)
 
-  (when jabber-keepalive-timer
-    (jabber-keepalive-stop))
+  (jabber-keepalive-stop)
 
   (setq jabber-keepalive-timer
 	(run-with-timer jabber-keepalive-interval
@@ -88,13 +87,19 @@ for all accounts regardless of the argument."
   (interactive)
 
   (when jabber-keepalive-timer
-    (cancel-timer jabber-keepalive-timer)
-    (setq jabber-keepalive-timer nil)))
+    (cancel-timer jabber-keepalive-timer))
+  (when (timerp jabber-keepalive-timeout-timer)
+    (cancel-timer jabber-keepalive-timeout-timer))
+  (setq jabber-keepalive-timer nil
+        jabber-keepalive-timeout-timer nil
+        jabber-keepalive-pending nil))
 
 (defun jabber-keepalive-do ()
   "Send a ping to every connection and arm the timeout timer."
   (when jabber-keepalive-debug
     (message "%s: sending keepalive packet(s)" (current-time-string)))
+  (when (timerp jabber-keepalive-timeout-timer)
+    (cancel-timer jabber-keepalive-timeout-timer))
   (setq jabber-keepalive-timeout-timer
 	(run-with-timer jabber-keepalive-timeout
 			nil
