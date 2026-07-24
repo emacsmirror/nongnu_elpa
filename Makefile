@@ -15,6 +15,7 @@ endif
 
 EMACS_CMD ?= emacs
 EMACS_OPTS ?= -Q --batch
+EMACSCLIENT ?= emacsclient
 
 JOBS         ?= $(shell nproc 2>/dev/null || echo 4)
 TEST_RESULTS := .test-results
@@ -53,6 +54,7 @@ TESTS ?= tests/jabber-test-activity.el \
          tests/jabber-test-vcard-avatars.el \
          tests/jabber-test-reactions.el \
          tests/jabber-test-receipts.el \
+         tests/jabber-test-reload.el \
          tests/jabber-test-roster.el \
          tests/jabber-test-sm.el \
          tests/jabber-test-srv.el \
@@ -96,7 +98,7 @@ lint-check-declare:
 	@$(ENV_MAKE) do-lint-check-declare
 
 do-lint-check-declare:
-	for file in lisp/*.el ; do \
+	for file in admin/*.el lisp/*.el ; do \
 	$(EMACS_CMD) $(EMACS_OPTS) --eval="(check-declare-file \"$$file\")" ; \
 	done
 
@@ -104,7 +106,7 @@ lint-checkdoc:
 	@$(ENV_MAKE) do-lint-checkdoc
 
 do-lint-checkdoc:
-	for file in lisp/*.el ; do \
+	for file in admin/*.el lisp/*.el ; do \
 	case "$$file" in lisp/jabber-autoloads.el) continue;; esac; \
 	$(EMACS_CMD) $(EMACS_OPTS) --eval="(checkdoc-file \"$$file\")" ; \
 	done
@@ -121,8 +123,8 @@ lint-relint:
 	-f 'relint-batch' "lisp"
 
 lint-test-compile:
-	$(EMACS_CMD) $(EMACS_OPTS) -L lisp -L tests \
-	-f batch-byte-compile tests/*.el
+	$(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests \
+	-f batch-byte-compile admin/*.el tests/*.el
 
 lint-native-comp: autoload
 	@$(ENV_MAKE) do-lint-native-comp
@@ -157,7 +159,7 @@ do-test: autoload do-module
 # jabber-db-path is preset to nil so no test can ever open the user's
 # real database; tests that need storage let-bind it to a temp file.
 $(TEST_RESULTS)/%.stamp: tests/%.el
-	@output=$$($(EMACS_CMD) $(EMACS_OPTS) -L lisp -L tests \
+	@output=$$($(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests \
 	  --eval="(setq jabber-db-path nil)" \
 	  -l ert -l $< -f ert-run-tests-batch-and-exit 2>&1); \
 	rc=$$?; \
@@ -179,7 +181,7 @@ test-oneshot:
 # pollution and in-place mutation of shared literals that the per-file
 # `do-test' runs (one Emacs per file) cannot see.
 do-test-oneshot: autoload do-module
-	$(EMACS_CMD) $(EMACS_OPTS) -L lisp -L tests -l ert \
+	$(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests -l ert \
 	  --eval="(setq jabber-db-path nil)" \
 	  --eval="(require 'jabber)" \
 	  $(addprefix -l ,$(TESTS)) \
@@ -214,28 +216,9 @@ do-test-summary: $(TEST_STAMPS)
 	[ $$failed -eq 0 ]
 
 load: clean-elc
-	@emacsclient --eval "(progn \
-	  (dolist (sym '(jabber-global-keymap jabber-common-keymap \
-	               jabber-chat-mode-map jabber-console-mode-map \
-	               jabber-browse-mode-map \
-	               jabber-roster-popup-map \
-	               jabber-roster-presence-map jabber-roster-discovery-map \
-	               jabber-roster-contact-action-map \
-	               jabber-info-menu-map jabber-muc-menu-map \
-	               jabber-service-menu-map \
-	               jabber-chat-encryption-menu-map \
-	               jabber-chat-operations-menu-map \
-	               jabber-omemo-trust-mode-map \
-	               jabber-bookmarks-edit-map jabber-bookmarks-mode-map)) \
-	    (when (boundp sym) (makunbound sym))))" > /dev/null
-	@emacsclient --eval "(load-file \"$(CURDIR)/lisp/jabber-keymap.el\")" > /dev/null || \
-	    printf "\033[31mFAIL\033[0m lisp/jabber-keymap.el\n"
-	@emacsclient --eval "(load-file \"$(CURDIR)/lisp/jabber-chatbuffer.el\")" > /dev/null || \
-	    printf "\033[31mFAIL\033[0m lisp/jabber-chatbuffer.el\n"
-	@for f in lisp/*.el; do \
-	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
-	    printf "\033[31mFAIL\033[0m $$f\n"; \
-	done
+	@$(EMACSCLIENT) --eval "(progn \
+	  (load-file \"$(CURDIR)/admin/jabber-reload.el\") \
+	  (jabber-reload \"$(CURDIR)\"))" > /dev/null
 	@printf "\033[32mLoaded all lisp/*.el into Emacs\033[0m\n"
 
 clean-elc:

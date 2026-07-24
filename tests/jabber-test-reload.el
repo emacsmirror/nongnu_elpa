@@ -1,0 +1,198 @@
+;;; jabber-test-reload.el --- Tests for Jabber live reload  -*- lexical-binding: t; -*-
+
+;;; Commentary:
+
+;; Dependency ordering and rollback for live reload.
+
+;;; Code:
+
+(require 'cl-lib)
+(require 'ert)
+(require 'jabber-reload)
+
+(defconst jabber-test-reload--root
+  (expand-file-name
+   ".." (file-name-directory (or load-file-name buffer-file-name))))
+
+(defvar jabber-test-reload-mode-map (make-sparse-keymap))
+
+(defun jabber-test-reload--position (suffix files)
+  "Return the position of SUFFIX in FILES."
+  (seq-position files suffix
+                (lambda (file expected)
+                  (string-suffix-p expected file))))
+
+(ert-deftest jabber-test-reload-orders-real-source-graph ()
+  "Order the current source tree by its declared dependencies."
+  (let* ((records
+          (mapcar #'jabber-reload--record
+                  (jabber-reload--source-files jabber-test-reload--root)))
+         (providers (jabber-reload--provider-alist records))
+         (dependencies (jabber-reload--dependencies records providers))
+         (files (plist-get (jabber-reload--plan jabber-test-reload--root)
+                           :files)))
+    (should (= (length files)
+               (1- (length (file-expand-wildcards
+                            (expand-file-name "lisp/*.el"
+                                              jabber-test-reload--root))))))
+    (should-not (seq-some
+                 (lambda (file)
+                   (string-suffix-p "jabber-autoloads.el" file))
+                 files))
+    (dolist (entry dependencies)
+      (dolist (dependency (cdr entry))
+        (should (< (seq-position files dependency)
+                   (seq-position files (car entry))))))))
+
+(ert-deftest jabber-test-reload-scans-supported-load-time-forms ()
+  "Find requirements in every supported load-time container."
+  (dolist (case
+           '(((and (require 'jabber-and)) jabber-and)
+             ((condition-case nil nil
+                  (error (require 'jabber-condition)))
+              jabber-condition)
+             ((condition-case-unless-debug nil nil
+                  (error (require 'jabber-condition-debug)))
+              jabber-condition-debug)
+             ((cond (t (require 'jabber-cond))) jabber-cond)
+             ((eval-and-compile (require 'jabber-eval-and)) jabber-eval-and)
+             ((eval-when-compile (require 'jabber-eval-when)) jabber-eval-when)
+             ((if t (require 'jabber-if)) jabber-if)
+             ((let ((x (require 'jabber-let))) x) jabber-let)
+             ((let (x) (require 'jabber-let-bare)) jabber-let-bare)
+             ((let* ((x (require 'jabber-let-star))) x) jabber-let-star)
+             ((let* (x) (require 'jabber-let-star-bare))
+              jabber-let-star-bare)
+             ((or (require 'jabber-or)) jabber-or)
+             ((progn (require 'jabber-progn)) jabber-progn)
+             ((unless nil (require 'jabber-unless)) jabber-unless)
+             ((when t (require 'jabber-when)) jabber-when)))
+    (should (memq (cadr case)
+                  (jabber-reload--requires (car case))))))
+
+(ert-deftest jabber-test-reload-rejects-malformed-source-before-loading ()
+  "Reject truncated source before reloading any file."
+  (let* ((root (make-temp-file "jabber-reload-" t))
+         (directory (expand-file-name "lisp" root))
+         (file (expand-file-name "jabber-broken.el" directory))
+         load-started)
+    (unwind-protect
+        (progn
+          (make-directory directory)
+          (write-region "(provide 'jabber-prefix)\n(defun broken ("
+                        nil file nil 'silent)
+          (cl-letf (((symbol-function 'load-file)
+                     (lambda (_file) (setq load-started t))))
+            (should-error (jabber-reload root) :type 'end-of-file)
+            (should-not load-started)))
+      (delete-directory root t))))
+
+(ert-deftest jabber-test-reload-rejects-dependency-cycle ()
+  "Report every file remaining in a dependency cycle."
+  (let ((condition
+         (should-error
+          (jabber-reload--topological-order
+           '("/tmp/a.el" "/tmp/b.el")
+           '(("/tmp/a.el" "/tmp/b.el")
+             ("/tmp/b.el" "/tmp/a.el")))
+          :type 'error)))
+    (should (string-match-p "a\\.el, b\\.el" (error-message-string condition)))))
+
+(ert-deftest jabber-test-reload-rejects-duplicate-provider ()
+  "Reject two source files that provide the same feature."
+  (should-error
+   (jabber-reload--provider-alist
+    '((:file "/tmp/a.el" :provides (jabber-test-feature))
+      (:file "/tmp/b.el" :provides (jabber-test-feature))))
+   :type 'error))
+
+(ert-deftest jabber-test-reload-restores-maps-after-failure ()
+  "Restore key bindings and exact map objects after a load error."
+  (let* ((old-map jabber-test-reload-mode-map)
+         (old-binding (lookup-key ctl-x-map (kbd "C-j")))
+         condition)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-reload--plan)
+                   (lambda (_root)
+                     '(:files ("good.el" "bad.el")
+                       :maps (jabber-test-reload-mode-map))))
+                  ((symbol-function 'load-file)
+                   (lambda (file)
+                     (if (equal file "good.el")
+                         (progn
+                           (setq jabber-test-reload-mode-map
+                                 (make-sparse-keymap))
+                           (define-key ctl-x-map (kbd "C-j") #'ignore))
+                       (error "Reload failed")))))
+          (setq condition (should-error (jabber-reload "/tmp")
+                                        :type 'error))
+          (should (equal (error-message-string condition) "Reload failed"))
+          (should (eq jabber-test-reload-mode-map old-map))
+          (should (eq (lookup-key ctl-x-map (kbd "C-j")) old-binding)))
+      (setq jabber-test-reload-mode-map old-map)
+      (define-key ctl-x-map (kbd "C-j") old-binding))))
+
+(ert-deftest jabber-test-reload-restores-functions-after-failure ()
+  "Restore command definitions used by live buffers after a load error."
+  (let* ((command 'jabber-test-reload-command)
+         (had-function (fboundp command))
+         (saved-function (and had-function (symbol-function command)))
+         (saved-map jabber-test-reload-mode-map)
+         (old-map (make-sparse-keymap)))
+    (unwind-protect
+        (progn
+          (fset command (lambda () (interactive) 'old))
+          (define-key old-map (kbd "RET") command)
+          (setq jabber-test-reload-mode-map old-map)
+          (with-temp-buffer
+            (setq major-mode 'jabber-test-reload-mode)
+            (use-local-map old-map)
+            (cl-letf (((symbol-function 'jabber-reload--plan)
+                       (lambda (_root)
+                         '(:files ("good.el" "bad.el")
+                           :maps (jabber-test-reload-mode-map))))
+                      ((symbol-function 'load-file)
+                       (lambda (file)
+                         (if (equal file "good.el")
+                             (let ((new-map (make-sparse-keymap)))
+                               (fset command
+                                     (lambda () (interactive) 'new))
+                               (define-key new-map (kbd "RET") command)
+                               (setq jabber-test-reload-mode-map new-map))
+                           (error "Reload failed")))))
+              (should-error (jabber-reload "/tmp") :type 'error)
+              (should (eq (current-local-map) old-map))
+              (should (eq (funcall (local-key-binding (kbd "RET")))
+                          'old)))))
+      (setq jabber-test-reload-mode-map saved-map)
+      (if had-function
+          (fset command saved-function)
+        (fmakunbound command)))))
+
+(ert-deftest jabber-test-reload-rebinds-live-buffer-map ()
+  "Replace the exact old mode map without replacing an equal copy."
+  (let ((old-map jabber-test-reload-mode-map)
+        (stale-map (copy-keymap jabber-test-reload-mode-map))
+        (new-map (make-sparse-keymap)))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (setq major-mode 'jabber-test-reload-mode)
+            (use-local-map stale-map)
+            (should-not
+             (jabber-reload--capture-buffer-maps
+              '(jabber-test-reload-mode-map))))
+          (with-temp-buffer
+            (setq major-mode 'jabber-test-reload-mode)
+            (use-local-map old-map)
+            (let ((buffers
+                   (jabber-reload--capture-buffer-maps
+                    '(jabber-test-reload-mode-map))))
+              (setq jabber-test-reload-mode-map new-map)
+              (jabber-reload--set-buffer-maps buffers nil)
+              (should (eq (current-local-map) new-map))
+              (should-not (eq (current-local-map) old-map)))))
+      (setq jabber-test-reload-mode-map old-map))))
+
+(provide 'jabber-test-reload)
+;;; jabber-test-reload.el ends here
