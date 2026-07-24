@@ -472,36 +472,58 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
 (defun aidermacs--show-file-selection-buffer (files)
   "Display a buffer with a list of FILES that were edited.
 User can select a file to view its diff."
-  (when-let (buf (get-buffer "*aidermacs-edited-files*"))
-    (kill-buffer buf))
+  ;; Filter: only keep files that actually changed content
+  (let* ((project-root (aidermacs-project-root))
+         (actually-modified
+          (cl-remove-if-not
+           (lambda (file)
+             (let* ((full-path (expand-file-name file project-root))
+                    (pre-edit-pair (assoc full-path aidermacs--pre-edit-file-buffers))
+                    (pre-edit-buffer (cdr pre-edit-pair)))
+               (when (and pre-edit-buffer (buffer-live-p pre-edit-buffer))
+                 (with-current-buffer pre-edit-buffer
+                   (not (string= (buffer-string)
+                                (with-temp-buffer
+                                  (insert-file-contents full-path)
+                                  (buffer-string))))))))
+           files)))
 
-  (let ((buf (get-buffer-create "*aidermacs-edited-files*"))
-        (pre-edit-file-buffers aidermacs--pre-edit-file-buffers))
-    (with-current-buffer buf
-      (let ((inhibit-read-only t))
-        (erase-buffer)
-        (aidermacs-file-diff-selection-mode)
-        (setq-local default-directory (aidermacs-project-root))
-        (setq-local aidermacs--pre-edit-file-buffers pre-edit-file-buffers)
+    ;; If nothing actually changed, clean up and return
+    (if (null actually-modified)
+        (progn
+          (message "No files were actually modified")
+          (aidermacs--cleanup-temp-buffers))
+      ;; Continue with actually-modified list instead of original files
+      (when-let (buf (get-buffer "*aidermacs-edited-files*"))
+        (kill-buffer buf))
+      (let ((buf (get-buffer-create "*aidermacs-edited-files*"))
+            (pre-edit-file-buffers aidermacs--pre-edit-file-buffers))
+        (with-current-buffer buf
+          (let ((inhibit-read-only t))
+            (erase-buffer)
+            (aidermacs-file-diff-selection-mode)
+            (setq-local default-directory project-root)
+            (setq-local aidermacs--pre-edit-file-buffers pre-edit-file-buffers)
 
-        (insert "Files modified by Aider:\n")
-        (insert "=======================\n\n")
-        (insert "Press RET on a file to view diff, q to quit\n\n")
+            (insert "Files modified by Aider:\n")
+            (insert "=======================\n\n")
+            (insert "Press RET on a file to view diff, q to quit\n\n")
 
-        (dolist (file files)
-          (insert-text-button file
-                             'action (lambda (_)
-                                      (aidermacs--show-ediff-for-file file))
-                             'follow-link t
-                             'help-echo "Click to view diff for this file")
-          (insert "\n"))
+            ;; Use actually-modified instead of files
+            (dolist (file actually-modified)
+              (insert-text-button file
+                                 'action (lambda (_)
+                                          (aidermacs--show-ediff-for-file file))
+                                 'follow-link t
+                                 'help-echo "Click to view diff for this file")
+              (insert "\n"))
 
-        (goto-char (point-min))
-        (forward-line 5)))
+            (goto-char (point-min))
+            (forward-line 5)))
 
-    ;; Display the buffer after the hooks are completed
-    (run-with-timer 0 nil (lambda () (interactive)
-                          (switch-to-buffer-other-window buf)))))
+        ;; Display the buffer after the hooks are completed
+        (run-with-timer 0 nil (lambda () (interactive)
+                              (switch-to-buffer-other-window buf)))))))
 
 
 (defun aidermacs--show-ediff-for-file (file)
