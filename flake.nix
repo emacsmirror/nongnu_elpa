@@ -17,7 +17,7 @@
 
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
-      keymapPopupVersion = "0.3.1";
+      keymapPopupVersion = "0.4.0";
 
       # Build everything for one concrete Emacs.  Called once per
       # variant (full build, and emacs-nox) so the test matrix can
@@ -43,7 +43,7 @@
             version = keymapPopupVersion;
             src = pkgs.fetchurl {
               url = "https://elpa.gnu.org/packages/keymap-popup-${keymapPopupVersion}.tar";
-              hash = "sha256-C+ECWpChsO6MUG+oAPJDhZruWphkxy7VLe9YFAzShFQ=";
+              hash = "sha256-ZySAozyALV4fSfqNtFd3YOtW7ZBSFpCr+hAdnPm9v0E=";
             };
             packageRequires = [ ];
           };
@@ -127,7 +127,7 @@
           pkgs = import nixpkgs { inherit system; };
         in {
           inherit pkgs;
-          full = mkVariant pkgs (pkgs.emacs30 or pkgs.emacs29 or pkgs.emacs);
+          full = mkVariant pkgs pkgs.emacs31-pgtk;
           # emacs-nox has no image support and does not preload many
           # libraries (e.g. `image'); this is what Debian ships, so it
           # catches build-only-on-nox bugs the full build hides.

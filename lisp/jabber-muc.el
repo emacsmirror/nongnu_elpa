@@ -36,6 +36,7 @@
 (require 'jabber-lifecycle)
 (require 'jabber-muc-protocol)
 (require 'jabber-muc-state)
+(require 'jabber-ping)
 (require 'jabber-presence-events)
 (require 'jabber-bookmarks)
 (require 'jabber-chat)

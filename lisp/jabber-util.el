@@ -30,6 +30,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'jabber-muc-state)
 (require 'jabber-presence-display)
 (require 'jabber-state)
 (require 'jabber-stanza)
