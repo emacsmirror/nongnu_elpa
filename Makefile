@@ -227,8 +227,10 @@ load: clean-elc
 	               jabber-omemo-trust-mode-map \
 	               jabber-bookmarks-edit-map jabber-bookmarks-mode-map)) \
 	    (when (boundp sym) (makunbound sym))))" > /dev/null
-	@emacsclient --eval "(load-file \"$(CURDIR)/lisp/jabber-util.el\")" > /dev/null || \
-	    printf "\033[31mFAIL\033[0m lisp/jabber-util.el\n"
+	@emacsclient --eval "(load-file \"$(CURDIR)/lisp/jabber-keymap.el\")" > /dev/null || \
+	    printf "\033[31mFAIL\033[0m lisp/jabber-keymap.el\n"
+	@emacsclient --eval "(load-file \"$(CURDIR)/lisp/jabber-chatbuffer.el\")" > /dev/null || \
+	    printf "\033[31mFAIL\033[0m lisp/jabber-chatbuffer.el\n"
 	@for f in lisp/*.el; do \
 	  emacsclient --eval "(load-file \"$(CURDIR)/$$f\")" > /dev/null || \
 	    printf "\033[31mFAIL\033[0m $$f\n"; \
