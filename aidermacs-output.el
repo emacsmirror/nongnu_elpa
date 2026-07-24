@@ -98,6 +98,10 @@ When nil, skip preparing temp buffers and showing ediff comparisons."
   "Alist of (filename . temp-buffer) storing file state before Aider edits.
 These contain the original content of files that might be modified by Aider.")
 
+(defvar-local aidermacs--pre-edit-prepared nil
+  "Non-nil when pre-edit file states have been captured for current edit cycle.
+Prevents duplicate captures during the same editing command.")
+
 (defvar aidermacs--pre-ediff-window-config nil
   "Window configuration before starting ediff sessions.")
 
@@ -142,8 +146,7 @@ and syntax highlighting to match the original file."
 
 (defun aidermacs--cleanup-temp-buffers ()
   "Clean up all temporary buffers created for ediff sessions.
-This is called when all ediff sessions are complete.
-Kills all pre-edit buffers that were created to store original file content."
+Kills all pre-edit buffers and resets the preparation flag."
   (interactive)
   (with-current-buffer (get-buffer (aidermacs-get-buffer-name))
     ;; Clean up buffers in the tracking list
@@ -151,14 +154,17 @@ Kills all pre-edit buffers that were created to store original file content."
       (let ((temp-buffer (cdr file-pair)))
         (when (and temp-buffer (buffer-live-p temp-buffer))
           (kill-buffer temp-buffer))))
-    ;; Clear the list after cleanup
-    (setq aidermacs--pre-edit-file-buffers nil)))
+    ;; Clear the list and reset flag after cleanup
+    (setq aidermacs--pre-edit-file-buffers nil)
+    (setq aidermacs--pre-edit-prepared nil)))
 
 (defun aidermacs--prepare-for-code-edit ()
   "Prepare for code edits by capturing current file states in memory buffers.
-Creates temporary buffers containing the original content of all tracked files.
-This is skipped if `aidermacs-show-diff-after-change' is nil."
-  (when aidermacs-show-diff-after-change
+This is skipped if `aidermacs-show-diff-after-change' is nil.
+If called multiple times during the same edit cycle, subsequent calls are ignored
+until `aidermacs--cleanup-temp-buffers' is called."
+  (when (and aidermacs-show-diff-after-change
+             (not aidermacs--pre-edit-prepared))
     (aidermacs--cleanup-temp-buffers)
     ;; Filter out empty strings and whitespace-only strings
     (when-let* ((files (cl-remove-if (lambda (file)
@@ -179,9 +185,7 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
                                    ;; Skip if clean-file is empty after removing read-only suffix
                                    (when (and (not (string-empty-p clean-file))
                                               (file-exists-p full-path))
-                                     ;; Only capture state if we don't already have it
-                                     (or (assoc full-path aidermacs--pre-edit-file-buffers)
-                                         (aidermacs--capture-file-state full-path)))))
+                                     (aidermacs--capture-file-state full-path))))
                                files))
                  :test (lambda (a b) (equal (car a) (car b)))))
           (setq attempts (1+ attempts))
@@ -192,7 +196,9 @@ This is skipped if `aidermacs-show-diff-after-change' is nil."
 
         (if (zerop (length aidermacs--pre-edit-file-buffers))
             (message "Warning: Failed to capture file states after %d attempts" max-attempts)
-          (message "Prepared code edit for %d files" (length aidermacs--pre-edit-file-buffers)))))))
+          (progn
+            (setq aidermacs--pre-edit-prepared t)
+            (message "Prepared code edit for %d files" (length aidermacs--pre-edit-file-buffers))))))))
 
 (defun aidermacs--ediff-quit-handler ()
   "Handle ediff session cleanup.
@@ -255,8 +261,7 @@ Only adds the hook if it's not already present."
          ;; Applied edit to <filename>
          ((string-match "Applied edit to \\(\\./\\)?\\(.+\\)" line)
           (when-let* ((file (match-string 2 line)))
-            (add-to-list 'aidermacs--tracked-files file)
-            (aidermacs--prepare-for-code-edit)))
+            (add-to-list 'aidermacs--tracked-files file)))
 
          ;; Added <filename> to the chat.
          ((string-match "Added \\(\\./\\)?\\(.+\\) to the chat" line)
