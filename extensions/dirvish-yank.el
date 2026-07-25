@@ -48,7 +48,8 @@ The value can be a symbol or a function that returns a fileset."
   :type '(choice (const :tag "prompt for confirmation" ask)
                  (const :tag "always overwrite" always)
                  (const :tag "skip transferring files with same names" skip)
-                 (const :tag "overwrite and backup the original file" backup)))
+                 (const :tag "overwrite and backup the original file" backup)
+                 (const :tag "duplicate the original file" duplicate)))
 
 (defcustom dirvish-yank-new-name-style 'append-to-ext
   "Control the way to compose new filename."
@@ -224,18 +225,18 @@ is t."
     (set-process-filter proc #'dirvish-yank-proc-filter)
     (push buf dirvish-yank-log-buffers)))
 
-(defun dirvish-yank--newbase (base-name fileset dest)
+(defun dirvish-yank--newbase (base-name fileset dest &optional sep)
   "Ensure an unique filename for BASE-NAME at DEST with FILESET."
-  (let ((bname~ base-name) (idx 1))
+  (let ((bname~ base-name) (idx 1) (sep (or sep "~")))
     (while (member bname~ fileset)
       (setq bname~
             (pcase dirvish-yank-new-name-style
-              ('append-to-ext (format "%s%s~" base-name idx))
+              ('append-to-ext (format "%s%s%s" base-name idx sep))
               ('append-to-filename
-               (format "%s%s~.%s"
+               (format "%s%s%s.%s"
                        (file-name-sans-extension base-name)
-                       idx (file-name-extension base-name)))
-              ('prepend-to-filename (format "%s~%s" idx base-name)))
+                       idx sep (file-name-extension base-name)))
+              ('prepend-to-filename (format "%s%s%s" idx sep base-name)))
             idx (1+ idx)))
     (cons (expand-file-name base-name dest) (expand-file-name bname~ dest))))
 
@@ -244,8 +245,9 @@ is t."
   (cl-loop
    with overwrite = (eq dirvish-yank-overwrite-existing-files 'always)
    with backup = (eq dirvish-yank-overwrite-existing-files 'backup)
+   with duplicate = (eq dirvish-yank-overwrite-existing-files 'duplicate)
    with skip = (eq dirvish-yank-overwrite-existing-files 'skip)
-   with (result to-rename) = ()
+   with (result to-rename to-copy) = ()
    with dfiles = (directory-files dest nil nil t)
    for src in srcs
    for help-form = (format-message "\
@@ -257,27 +259,30 @@ File `%s' exists, type one of the following keys to continue.
 - N answer n for all remaining files
 - b to overwrite and backup this files
 - B answer b for all remaining files
+- d duplicate file by appending \"-copy\"
+- D answer d for all the remaining files
 - q or ESC to abort the task" src)
    for base = (file-name-nondirectory src)
    for collision = (member base dfiles) do
-   (cond ((equal src (concat dest base))
-          ;; user may want to make symlink in the same directory
-          (if (memq method '(dired-make-relative-symlink make-symbolic-link))
-              (push (cons src (cdr (dirvish-yank--newbase base dfiles dest)))
-                    result)
-            (user-error
-             "DIRVISH[yank]: source and target are the same file `%s'" src)))
+   (cond ((and (equal src (concat dest base))
+               ;; user may want to make symlink in the same directory
+               (memq method '(dired-make-relative-symlink make-symbolic-link)))
+          (push (cons src (cdr (dirvish-yank--newbase base dfiles dest)))
+                result))
          (overwrite (push (cons src dest) result))
          ((and backup collision)
           (push (dirvish-yank--newbase base dfiles dest) to-rename)
+          (push (cons src dest) result))
+         ((and duplicate collision)
+          (push (dirvish-yank--newbase base dfiles dest "-copy") to-copy)
           (push (cons src dest) result))
          ((and skip collision))
          (collision
           (cl-case (read-char-choice
                     (concat (format-message "Overwrite `%s'?" base)
-                            (format " [Type yn!bq or %s] "
+                            (format " [Type y!nNbBdDq or %s for help] "
                                     (key-description (vector help-char))))
-                    '(?y ?\s ?! ?n ?\177 ?N ?b ?B ?q ?\e))
+                    '(?y ?\s ?! ?n ?\177 ?N ?b ?B ?d ?D ?q ?\e))
             ((?y ?\s) (push (cons src dest) result))
             (?! (setq overwrite t) (push (cons src dest) result))
             ((?n ?\177) nil)
@@ -287,11 +292,17 @@ File `%s' exists, type one of the following keys to continue.
             (?B (setq backup t)
                 (push (dirvish-yank--newbase base dfiles dest) to-rename)
                 (push (cons src dest) result))
+            (?d (push (dirvish-yank--newbase base dfiles dest "-copy") to-copy)
+                (push (cons src dest) result))
+            (?D (setq duplicate t)
+                (push (dirvish-yank--newbase base dfiles dest "-copy") to-copy)
+                (push (cons src dest) result))
             ((?q ?\e) (user-error "DIRVISH[yank]: task aborted"))))
          (t (push (cons src dest) result)))
    finally return
    (prog1 result
-     (cl-loop for (from . to) in to-rename do (rename-file from to)))))
+     (cl-loop for (from . to) in to-rename do (rename-file from to))
+     (cl-loop for (from . to) in to-copy do (copy-file from to)))))
 
 (defun dirvish-yank--inject-env (include-regexp)
   "Return a `setq' form that replicates part of the calling environment.
