@@ -236,7 +236,7 @@ unaffected."
 (defcustom jabber-bug-reference-alist
   '(("jabber-el@conference\\.hmm\\.st"
      "\\(#\\([0-9]+\\)\\)"
-     "https://codeberg.org/emacs-jabber/emacs-jabber/issues/%s"))
+     "https://todos.thanosapollo.org/r/emacs-jabber/%s"))
   "Alist mapping JID patterns to `bug-reference-mode' configurations.
 Each entry has the form (JID-REGEXP BUG-REGEXP URL-FORMAT).
 

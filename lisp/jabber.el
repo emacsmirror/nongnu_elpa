@@ -3,7 +3,7 @@
 ;; Author: Magnus Henoch <mange@freemail.hu>
 ;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 ;; Keywords: comm
-;; Homepage: https://codeberg.org/emacs-jabber/emacs-jabber
+;; Homepage: https://git.thanosapollo.org/emacs-jabber/about/
 ;; Package-Requires: ((emacs "29.1") (fsm "0.2.0") (keymap-popup "0.2"))
 ;; Version: 0.12.2
 
