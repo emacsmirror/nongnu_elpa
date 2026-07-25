@@ -1,7 +1,7 @@
 .PHONY: all build dev autoload module compile lint lint-check-declare lint-checkdoc \
         lint-package-lint lint-relint lint-test-compile lint-native-comp \
         clean clean-elc clean-module install uninstall check test test-oneshot load \
-        do-build do-dev do-lint do-module do-test do-test-oneshot do-test-summary \
+        do-build do-dev do-compile do-lint do-module do-test do-test-oneshot do-test-summary \
         do-lint-check-declare do-lint-checkdoc do-lint-native-comp
 
 NIX := $(shell command -v nix 2>/dev/null)
@@ -70,12 +70,12 @@ all: build
 build:
 	@$(ENV_MAKE) do-build
 
-do-build: autoload compile do-module
+do-build: do-compile do-module
 
 dev:
 	@$(ENV_MAKE) do-dev
 
-do-dev: autoload compile do-module do-lint
+do-dev: do-compile do-module do-lint
 	$(MAKE) do-test
 	$(MAKE) do-test-oneshot
 
@@ -89,7 +89,10 @@ module:
 do-module:
 	$(MAKE) -C src
 
-compile: autoload
+compile:
+	@$(ENV_MAKE) do-compile
+
+do-compile: autoload
 	$(EMACS_CMD) $(EMACS_OPTS) -L . -L lisp \
 	--eval="(setq print-length nil load-prefer-newer t)" \
 	-f batch-byte-compile lisp/*.el
