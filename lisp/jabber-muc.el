@@ -138,6 +138,20 @@ this many seconds, the room is skipped and the next one is tried."
 		(string :tag "JID of room")
 		(string :tag "Nickname"))))
 
+(defcustom jabber-muc-nick-color-faces
+  '(font-lock-keyword-face
+    font-lock-function-name-face
+    font-lock-variable-name-face
+    font-lock-type-face
+    font-lock-constant-face
+    font-lock-builtin-face
+    font-lock-string-face)
+  "Faces used to color foreign nicknames in MUC transcripts.
+Nicknames are assigned deterministically to faces in this list.
+An empty list uses `jabber-chat-nick-foreign-plaintext' instead."
+  :type '(repeat face)
+  :group 'jabber-chat)
+
 (defcustom jabber-muc-autojoin nil
   "List of MUC rooms to automatically join on connection.
 This list is saved in your Emacs customizations.  You can also store
@@ -1489,6 +1503,17 @@ Return nil if X-MUC is nil."
 			 (jabber-xml-node-attributes
 			  (car (jabber-xml-get-children x-muc 'item))))))
 
+(defun jabber-muc--nick-face (nickname)
+  "Return the face for foreign MUC NICKNAME."
+  (if (null jabber-muc-nick-color-faces)
+      '((:weight semi-bold) jabber-chat-nick-foreign-plaintext)
+    (let* ((bytes (encode-coding-string nickname 'utf-8))
+           (hash (secure-hash 'sha1 bytes nil nil t))
+           (number (+ (ash (aref hash 0) 8) (aref hash 1)))
+           (face (nth (mod number (length jabber-muc-nick-color-faces))
+                      jabber-muc-nick-color-faces)))
+      (list '(:slant italic :weight semi-bold) face))))
+
 (defun jabber-muc-print-prompt (msg &optional local dont-print-nick-p)
   "Print MUC prompt for message plist MSG.
 LOCAL is non-nil when MSG was sent by us (uses local-nick face).
@@ -1501,8 +1526,8 @@ When DONT-PRINT-NICK-P is non-nil, omit the nickname."
 	 (jabber-chat--format-time timestamp delayed)
 	 (if dont-print-nick-p "" nick)
 	 (if local
-	     'jabber-chat-nick-plaintext
-	   'jabber-chat-nick-foreign-plaintext))
+	     '((:weight semi-bold) jabber-chat-nick-plaintext)
+	   (jabber-muc--nick-face nick)))
       (jabber-muc-system-prompt))))
 
 (defun jabber-muc-private-print-prompt (msg)

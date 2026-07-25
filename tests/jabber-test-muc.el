@@ -1005,5 +1005,65 @@ entry with JC=nil."
                          '("alice" "zoe" "bob"))
                  "room@muc")))))))
 
+;;; Group 23: MUC nickname faces
+
+(ert-deftest jabber-test-muc-nick-face-stable ()
+  "A known nickname selects a stable face."
+  (should
+   (equal '((:slant italic :weight semi-bold) font-lock-keyword-face)
+          (jabber-muc--nick-face "alice"))))
+
+(ert-deftest jabber-test-muc-nick-face-stable-multibyte ()
+  "A multibyte nickname is hashed as UTF-8."
+  (should
+   (equal '((:slant italic :weight semi-bold) font-lock-constant-face)
+          (jabber-muc--nick-face "Θάνος"))))
+
+(ert-deftest jabber-test-muc-nick-face-custom-palette ()
+  "Nickname selection stays within a custom palette."
+  (let ((jabber-muc-nick-color-faces
+         '(font-lock-comment-face font-lock-doc-face)))
+    (should
+     (memq (cadr (jabber-muc--nick-face "alice"))
+           jabber-muc-nick-color-faces))))
+
+(ert-deftest jabber-test-muc-nick-face-empty-palette ()
+  "An empty nickname palette restores the existing face."
+  (let ((jabber-muc-nick-color-faces nil))
+    (should
+     (equal '((:weight semi-bold) jabber-chat-nick-foreign-plaintext)
+            (jabber-muc--nick-face "alice")))))
+
+(ert-deftest jabber-test-muc-print-prompt-colors-foreign-nick ()
+  "A foreign MUC prompt receives its selected nickname face."
+  (let (prompt-args)
+    (cl-letf (((symbol-function 'jabber-chat--format-time)
+               (lambda (&rest _args) "12:34"))
+              ((symbol-function 'jabber-chat--insert-prompt)
+               (lambda (&rest args)
+                 (setq prompt-args args))))
+      (jabber-muc-print-prompt
+       '(:from "room@conference.example.com/alice" :timestamp nil))
+      (should
+       (equal '("12:34" "alice"
+                ((:slant italic :weight semi-bold)
+                 font-lock-keyword-face))
+              prompt-args)))))
+
+(ert-deftest jabber-test-muc-print-prompt-keeps-local-face ()
+  "A local MUC prompt retains the existing nickname face."
+  (let (prompt-args)
+    (cl-letf (((symbol-function 'jabber-chat--format-time)
+               (lambda (&rest _args) "12:34"))
+              ((symbol-function 'jabber-chat--insert-prompt)
+               (lambda (&rest args)
+                 (setq prompt-args args))))
+      (jabber-muc-print-prompt
+       '(:from "room@conference.example.com/me" :timestamp nil) t)
+      (should
+       (equal '("12:34" "me"
+                ((:weight semi-bold) jabber-chat-nick-plaintext))
+              prompt-args)))))
+
 (provide 'jabber-test-muc)
 ;;; jabber-test-muc.el ends here
