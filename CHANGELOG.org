@@ -1,5 +1,16 @@
 #+TITLE: Changelog
 
+* [0.12.3]
+#+date: 2026-07-25
+
+** Added
+- Distinct theme-aware nickname colors in group chats
+- Save images that Emacs cannot display
+
+** Fixes
+- More reliable keepalive monitoring with multiple accounts
+- Nickname completion works with custom delimiters
+
 * [0.12.2]
 #+date: 2026-07-13
 
