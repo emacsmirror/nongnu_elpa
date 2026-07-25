@@ -29,13 +29,13 @@
 (require 'dirvish)
 (require 'transient)
 
-(defcustom dirvish-yank-sources 'all
+(defcustom dirvish-yank-sources 'all-marked
   "The way to collect source files.
 The value can be a symbol or a function that returns a fileset."
   :group 'dirvish
   :type '(choice (const :tag "Marked files in current buffer" buffer)
                  (const :tag "Marked files in current session" session)
-                 (const :tag "Marked files in all Dired buffers" all)
+                 (const :tag "Marked files in all Dired buffers" all-marked)
                  (function :tag "Custom function")))
 
 (defcustom dirvish-yank-auto-unmark t
@@ -119,10 +119,10 @@ RANGE can be `buffer', `session', `all'."
     with buffers = (pcase range
                      ('buffer (list (current-buffer)))
                      ('session (mapcar #'cdr (dv-roots (dirvish-curr))))
-                     ('all (cl-loop for b in (buffer-list)
-                                    when (with-current-buffer b
-                                           (derived-mode-p 'dired-mode))
-                                    collect b)))
+                     ('all-marked (cl-loop for b in (buffer-list)
+                                           when (with-current-buffer b
+                                                  (derived-mode-p 'dired-mode))
+                                           collect b)))
     for buffer in (seq-filter #'buffer-live-p buffers) append
     (with-current-buffer buffer
       (when (save-excursion (goto-char (point-min))
@@ -341,10 +341,11 @@ It sets the value for every variable matching INCLUDE-REGEXP."
 (defun dirvish-yank--apply (method dest)
   "Apply yank METHOD to DEST."
   (setq dest (expand-file-name (or dest (dired-current-directory))))
-  (let ((srcs (or (and (not (member dirvish-yank-sources '(all session buffer)))
-		       (functionp dirvish-yank-sources)
+  (let ((srcs (or (and (not (member dirvish-yank-sources
+                                    '(all-marked session buffer)))
+                       (functionp dirvish-yank-sources)
                        (funcall dirvish-yank-sources))
-		  (dirvish-yank--get-srcs dirvish-yank-sources)
+                  (dirvish-yank--get-srcs dirvish-yank-sources)
                   (user-error "DIRVISH[yank]: no marked files"))))
     (dirvish-yank-default-handler method srcs dest)))
 
