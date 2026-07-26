@@ -974,6 +974,140 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
       (should-not (plist-get msg :edited))
       (should (= 0 updates)))))
 
+(ert-deftest jabber-test-message-correct-omemo-synchronous-error-clears-pending ()
+  "A synchronous OMEMO send error clears pending correction state."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-group nil)
+    (setq-local jabber-chatting-with "alice@example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chat-encryption 'omemo)
+    (let ((msg (list :id "original-1"
+                     :from "me@example.com"
+                     :body "original"
+                     :timestamp (current-time)))
+          (updates 0))
+      (jabber-chat-ewoc-enter (list :local msg))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "corrected"))
+                ((symbol-function 'jabber-chat-send)
+                 (lambda (&rest _) (error "send failed")))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (&rest _)
+                   (list (list :row-id 1 :from "me@example.com"))))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (&rest _) (cl-incf updates))))
+        (should-error (jabber-correct-last-message)))
+      (should-not jabber-message-correct--pending-outgoing)
+      (should (equal "original" (plist-get msg :body)))
+      (should-not (plist-get msg :edited))
+      (should (= 0 updates)))))
+
+(ert-deftest jabber-test-message-correct-omemo-success-after-buffer-kill-is-inert ()
+  "An OMEMO success callback cannot commit after its buffer is killed."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-group nil)
+    (setq-local jabber-chatting-with "alice@example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chat-encryption 'omemo)
+    (let ((buffer (current-buffer))
+          (msg (list :id "original-1"
+                     :from "me@example.com"
+                     :body "original"
+                     :timestamp (current-time)))
+          (updates 0)
+          success)
+      (jabber-chat-ewoc-enter (list :local msg))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "corrected"))
+                ((symbol-function 'jabber-chat-send)
+                 (lambda (_jc _body _extra on-success _on-failure)
+                   (setq success on-success)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (&rest _)
+                   (list (list :row-id 1 :from "me@example.com"))))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (&rest _) (cl-incf updates))))
+        (jabber-correct-last-message)
+        (kill-buffer buffer)
+        (funcall success))
+      (should (equal "original" (plist-get msg :body)))
+      (should-not (plist-get msg :edited))
+      (should (= 0 updates)))))
+
+(ert-deftest jabber-test-message-correct-omemo-duplicate-success-is-inert ()
+  "A duplicate OMEMO success callback commits only once."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-group nil)
+    (setq-local jabber-chatting-with "alice@example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chat-encryption 'omemo)
+    (let ((msg (list :id "original-1"
+                     :from "me@example.com"
+                     :body "original"
+                     :timestamp (current-time)))
+          (updates 0)
+          success)
+      (jabber-chat-ewoc-enter (list :local msg))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "corrected"))
+                ((symbol-function 'jabber-chat-send)
+                 (lambda (_jc _body _extra on-success _on-failure)
+                   (setq success on-success)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (&rest _)
+                   (list (list :row-id 1 :from "me@example.com"))))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (&rest _) (cl-incf updates))))
+        (jabber-correct-last-message)
+        (funcall success)
+        (funcall success))
+      (should (equal "corrected" (plist-get msg :body)))
+      (should (plist-get msg :edited))
+      (should-not jabber-message-correct--pending-outgoing)
+      (should (= 1 updates)))))
+
+(ert-deftest jabber-test-message-correct-omemo-failure-after-success-is-inert ()
+  "A stale OMEMO failure callback cannot undo a committed correction."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-group nil)
+    (setq-local jabber-chatting-with "alice@example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chat-encryption 'omemo)
+    (let ((msg (list :id "original-1"
+                     :from "me@example.com"
+                     :body "original"
+                     :timestamp (current-time)))
+          (updates 0)
+          success
+          failure)
+      (jabber-chat-ewoc-enter (list :local msg))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "corrected"))
+                ((symbol-function 'jabber-chat-send)
+                 (lambda (_jc _body _extra on-success on-failure)
+                   (setq success on-success
+                         failure on-failure)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (&rest _)
+                   (list (list :row-id 1 :from "me@example.com"))))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (&rest _) (cl-incf updates))))
+        (jabber-correct-last-message)
+        (funcall success)
+        (funcall failure "late failure"))
+      (should (equal "corrected" (plist-get msg :body)))
+      (should (plist-get msg :edited))
+      (should-not jabber-message-correct--pending-outgoing)
+      (should (= 1 updates)))))
+
 (ert-deftest jabber-test-message-correct-blocks-overlapping-omemo-edits ()
   "A second edit cannot race an OMEMO correction awaiting transport."
   (jabber-test-message-correct-with-ewoc

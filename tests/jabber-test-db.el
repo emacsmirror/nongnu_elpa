@@ -1327,6 +1327,56 @@ the corrected jabber-muc-create-buffer order."
        (when (file-directory-p jabber-test-db--dir)
          (delete-directory jabber-test-db--dir t)))))
 
+(defmacro jabber-test-db-with-migration-fixture (version ddl &rest body)
+  "Create a database at VERSION from DDL, migrate it, then run BODY."
+  (declare (indent 2) (debug t))
+  `(let* ((jabber-test-db--dir (make-temp-file "jabber-db-test" t))
+          (jabber-db-path (expand-file-name "test.sqlite" jabber-test-db--dir))
+          (jabber-db--connection nil))
+     (unwind-protect
+         (progn
+           (let ((db (sqlite-open jabber-db-path)))
+             (dolist (statement ,ddl)
+               (sqlite-execute db statement))
+             (sqlite-execute db (format "PRAGMA user_version=%d" ,version))
+             (sqlite-close db))
+           (jabber-db-ensure-open)
+           ,@body)
+       (jabber-db-close)
+       (when (file-directory-p jabber-test-db--dir)
+         (delete-directory jabber-test-db--dir t)))))
+
+(defconst jabber-test-db--v3-ddl
+  '("CREATE TABLE message (id INTEGER PRIMARY KEY)"
+    "CREATE TABLE omemo_store (
+  account TEXT PRIMARY KEY,
+  store_blob BLOB NOT NULL)")
+  "Minimal valid tables needed to migrate a v3 database.")
+
+(defconst jabber-test-db--v4-ddl
+  (append jabber-test-db--v3-ddl
+          '("CREATE TABLE caps_cache (
+  hash TEXT NOT NULL,
+  ver TEXT NOT NULL,
+  identities TEXT NOT NULL,
+  features TEXT NOT NULL,
+  PRIMARY KEY (hash, ver))"))
+  "Minimal valid tables needed to migrate a v4 database.")
+
+(defconst jabber-test-db--v7-reaction-ddl
+  '("CREATE TABLE message (id INTEGER PRIMARY KEY)"
+    "CREATE TABLE message_reaction (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender TEXT NOT NULL,
+  reaction TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender, reaction))"
+    "INSERT INTO message (id) VALUES (1)"
+    "INSERT INTO message_reaction
+  (message_id, sender, reaction, updated_at)
+VALUES (1, 'friend@example.com', '👍', 100)")
+  "Minimal v7 reaction data used to exercise actor repair.")
+
 (ert-deftest jabber-test-db-v1-to-v2-migration ()
   "Migrating from v1 adds occupant_id, drops raw_xml, and runs through v3."
   (skip-unless (fboundp 'sqlite-open))
@@ -1365,6 +1415,62 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
                                    "SELECT body, resource FROM message LIMIT 1"))))
       (should (string= "preserved" (nth 0 row)))
       (should (string= "laptop" (nth 1 row))))))
+
+(ert-deftest jabber-test-db-migration-from-v3 ()
+  "A v3 database applies caps, reaction, OMEMO, and reply migrations."
+  (jabber-test-db-with-migration-fixture 3 jabber-test-db--v3-ddl
+    (should (= jabber-db--schema-version
+               (caar (sqlite-select jabber-db--connection
+                                    "PRAGMA user_version"))))
+    (let ((tables (mapcar #'car
+                          (sqlite-select jabber-db--connection
+                            "SELECT name FROM sqlite_master WHERE type='table'"))))
+      (should (member "caps_cache" tables))
+      (should (member "message_reaction" tables))
+      (should (member "message_reaction_actor" tables)))))
+
+(ert-deftest jabber-test-db-migration-from-v4 ()
+  "A v4 database applies reaction, OMEMO, and reply migrations."
+  (jabber-test-db-with-migration-fixture 4 jabber-test-db--v4-ddl
+    (should (= jabber-db--schema-version
+               (caar (sqlite-select jabber-db--connection
+                                    "PRAGMA user_version"))))
+    (let ((tables (mapcar #'car
+                          (sqlite-select jabber-db--connection
+                            "SELECT name FROM sqlite_master WHERE type='table'"))))
+      (should (member "message_reaction" tables))
+      (should (member "message_reaction_actor" tables)))))
+
+(ert-deftest jabber-test-db-v7-repairs-missing-reaction-actors ()
+  "Opening a v7 database creates and backfills missing actor metadata."
+  (jabber-test-db-with-migration-fixture 7 jabber-test-db--v7-reaction-ddl
+    (should (equal '("friend@example.com" 100)
+                   (car (sqlite-select jabber-db--connection
+                          "SELECT sender, updated_at
+FROM message_reaction_actor"))))))
+
+(ert-deftest jabber-test-db-v7-repairs-stale-reaction-actors-idempotently ()
+  "Opening a v7 database updates stale actor metadata only once."
+  (jabber-test-db-with-migration-fixture
+      7
+      (append jabber-test-db--v7-reaction-ddl
+              '("CREATE TABLE message_reaction_actor (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender))"
+                "INSERT INTO message_reaction_actor
+  (message_id, sender, updated_at)
+VALUES (1, 'friend@example.com', 50)"))
+    (should (equal '(100)
+                   (car (sqlite-select jabber-db--connection
+                          "SELECT updated_at FROM message_reaction_actor"))))
+    (jabber-db-close)
+    (jabber-db-ensure-open)
+    (should (equal '(1 100)
+                   (car (sqlite-select jabber-db--connection
+                          "SELECT count(*), MAX(updated_at)
+FROM message_reaction_actor"))))))
 
 (ert-deftest jabber-test-db-check-direction-on-fresh-db ()
   "CHECK constraint rejects invalid direction on fresh databases."

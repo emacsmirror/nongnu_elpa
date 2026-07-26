@@ -139,6 +139,43 @@ and NEW-OCCUPANT-ID are both available."
 
 ;;; Apply correction
 
+(defun jabber-message-correct--matching-candidates
+    (candidates new-from muc-p new-occupant-id legacy-authorized-p)
+  "Return CANDIDATES that NEW-FROM may correct.
+MUC-P, NEW-OCCUPANT-ID, and LEGACY-AUTHORIZED-P describe the
+incoming correction."
+  (seq-filter
+   (lambda (candidate)
+     (let ((original-from (plist-get candidate :from))
+           (original-occupant-id (plist-get candidate :occupant-id)))
+       (and (jabber-message-correct--valid-sender-p
+             original-from new-from muc-p
+             original-occupant-id new-occupant-id)
+            (or (not muc-p)
+                (and original-occupant-id new-occupant-id)
+                (and (null original-occupant-id)
+                     (null new-occupant-id)
+                     legacy-authorized-p)))))
+   candidates))
+
+(defun jabber-message-correct--update-buffer
+    (buffer muc-p replace-id original-from new-body)
+  "Apply NEW-BODY to the matching message in BUFFER.
+MUC-P selects lookup by REPLACE-ID and ORIGINAL-FROM."
+  (when buffer
+    (with-current-buffer buffer
+      (when-let* ((node
+                   (if muc-p
+                       (jabber-chat-ewoc-find-by-id-and-sender
+                        replace-id original-from)
+                     (jabber-chat-ewoc-find-by-id replace-id)))
+                  (data (ewoc-data node))
+                  (msg (cadr data)))
+        (setq msg (plist-put msg :body new-body))
+        (setq msg (plist-put msg :edited t))
+        (setcar (cdr data) msg)
+        (jabber-chat-ewoc-invalidate node)))))
+
 (defun jabber-message-correct--apply
     (replace-id new-body new-from muc-p buffer &optional new-occupant-id
                 account peer legacy-authorized-p)
@@ -157,21 +194,9 @@ dropped.  Returns non-nil when the correction was accepted."
                 account peer replace-id)))
          (matches
           (and scoped-p
-               (seq-filter
-                (lambda (candidate)
-                  (let ((original-from (plist-get candidate :from))
-                        (original-occupant-id
-                         (plist-get candidate :occupant-id)))
-                    (and
-                     (jabber-message-correct--valid-sender-p
-                      original-from new-from muc-p
-                      original-occupant-id new-occupant-id)
-                     (or (not muc-p)
-                         (and original-occupant-id new-occupant-id)
-                         (and (null original-occupant-id)
-                              (null new-occupant-id)
-                              legacy-authorized-p)))))
-                candidates)))
+               (jabber-message-correct--matching-candidates
+                candidates new-from muc-p new-occupant-id
+                legacy-authorized-p)))
          (original (and (= (length matches) 1) (car matches)))
          (original-from
           (if scoped-p
@@ -206,19 +231,8 @@ dropped.  Returns non-nil when the correction was accepted."
           (jabber-db-correct-message-row
            (plist-get original :row-id) new-body)
         (jabber-db-correct-message replace-id new-body))
-      (when buffer
-        (with-current-buffer buffer
-          (when-let* ((node
-                       (if muc-p
-                           (jabber-chat-ewoc-find-by-id-and-sender
-                            replace-id original-from)
-                         (jabber-chat-ewoc-find-by-id replace-id)))
-                      (data (ewoc-data node))
-                      (msg  (cadr data)))
-            (setq msg (plist-put msg :body new-body))
-            (setq msg (plist-put msg :edited t))
-            (setcar (cdr data) msg)
-            (jabber-chat-ewoc-invalidate node))))
+      (jabber-message-correct--update-buffer
+       buffer muc-p replace-id original-from new-body)
       t))))
 
 ;;; Inhibit DB storage of correction stanzas
@@ -270,6 +284,46 @@ dropped.  Returns non-nil when the correction was accepted."
     (let ((buffer-undo-list t))
       (ewoc-invalidate ewoc node))))
 
+(defun jabber-message-correct--outgoing-candidates
+    (account peer id stored-from)
+  "Return stored correction candidates matching STORED-FROM.
+ACCOUNT, PEER, and ID scope the database lookup."
+  (seq-filter
+   (lambda (candidate)
+     (equal stored-from (plist-get candidate :from)))
+   (jabber-db-message-correction-candidates account peer id)))
+
+(defun jabber-message-correct--update-outgoing-buffer
+    (buffer group id from new-body fallback-length)
+  "Update outgoing message ID in BUFFER with NEW-BODY.
+GROUP and FROM select the MUC lookup.  FALLBACK-LENGTH updates
+the stored fallback range."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (when-let* ((node
+                   (if group
+                       (jabber-chat-ewoc-find-by-id-and-sender id from)
+                     (jabber-chat-ewoc-find-by-id id))))
+        (plist-put (cadr (ewoc-data node))
+                   :fallback-range
+                   (and fallback-length (list 0 fallback-length)))
+        (jabber-message-correct--update-ewoc
+         jabber-chat-ewoc node new-body))
+      (setq jabber-message-correct--pending-outgoing nil))))
+
+(defun jabber-message-correct--send
+    (jc group body extra &optional success failure)
+  "Send correction BODY and EXTRA on JC.
+Use the MUC transport when GROUP is non-nil.  SUCCESS and FAILURE
+are optional transport callbacks."
+  (if group
+      (if success
+          (jabber-muc-send jc body extra success failure)
+        (jabber-muc-send jc body extra))
+    (if success
+        (jabber-chat-send jc body extra success failure)
+      (jabber-chat-send jc body extra))))
+
 ;;; Interactive command
 
 (defun jabber-correct-last-message ()
@@ -298,12 +352,8 @@ correction replaces the whole message, XEP-0461 linkage included."
                 (peer (jabber-jid-user
                        (or group jabber-chatting-with)))
                 (stored-from (if group (plist-get msg :from) account))
-                (db-matches
-                 (seq-filter
-                  (lambda (candidate)
-                    (equal stored-from (plist-get candidate :from)))
-                  (jabber-db-message-correction-candidates
-                   account peer id)))
+                (db-matches (jabber-message-correct--outgoing-candidates
+                             account peer id stored-from))
                 (row-id (and (= (length db-matches) 1)
                              (plist-get (car db-matches) :row-id)))
                 (extra (cons (jabber-message-correct--replace-element id)
@@ -321,20 +371,9 @@ correction replaces the whole message, XEP-0461 linkage included."
                      (setcar token nil)
                      (when row-id
                        (jabber-db-correct-message-row row-id new-body))
-                     (when (buffer-live-p buffer)
-                       (with-current-buffer buffer
-                         (when-let* ((current-node
-                                      (if group
-                                          (jabber-chat-ewoc-find-by-id-and-sender
-                                           id (plist-get msg :from))
-                                        (jabber-chat-ewoc-find-by-id id))))
-                           (plist-put (cadr (ewoc-data current-node))
-                                      :fallback-range
-                                      (and fb-len (list 0 fb-len)))
-                           (jabber-message-correct--update-ewoc
-                            jabber-chat-ewoc current-node new-body))
-                         (setq jabber-message-correct--pending-outgoing
-                               nil))))))
+                     (jabber-message-correct--update-outgoing-buffer
+                      buffer group id (plist-get msg :from)
+                      new-body fb-len))))
                 (failure
                  (lambda (_reason)
                    (when (car token)
@@ -351,21 +390,15 @@ correction replaces the whole message, XEP-0461 linkage included."
                (progn
                  (setq jabber-message-correct--pending-outgoing token)
                  (condition-case err
-                     (if group
-                         (jabber-muc-send
-                          jabber-buffer-connection new-body extra
-                          commit failure)
-                       (jabber-chat-send
-                        jabber-buffer-connection new-body extra
-                        commit failure))
+                     (jabber-message-correct--send
+                      jabber-buffer-connection group new-body extra
+                      commit failure)
                    (error
                     (funcall failure (error-message-string err))
                     (signal (car err) (cdr err)))))
              (funcall commit)
-             (if group
-                 (jabber-muc-send jabber-buffer-connection new-body extra)
-               (jabber-chat-send
-                jabber-buffer-connection new-body extra)))))))))
+             (jabber-message-correct--send
+              jabber-buffer-connection group new-body extra))))))))
 
 (provide 'jabber-message-correct)
 ;;; jabber-message-correct.el ends here

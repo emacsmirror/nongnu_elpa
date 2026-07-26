@@ -293,6 +293,73 @@ Delete it and start fresh? "
 delete %s manually to continue"
                     version jabber-db--schema-version jabber-db-path)))))
 
+(defun jabber-db--migrate-v1-to-v2 (db)
+  "Migrate DB from schema version 1 to version 2."
+  (sqlite-execute db "ALTER TABLE message ADD COLUMN occupant_id TEXT")
+  (sqlite-execute db "ALTER TABLE message DROP COLUMN raw_xml")
+  (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_msg_occupant_id
+  ON message(account, peer, occupant_id) WHERE occupant_id IS NOT NULL")
+  (sqlite-execute db "PRAGMA user_version=2"))
+
+(defun jabber-db--migrate-v2-to-v3 (db)
+  "Migrate DB from schema version 2 to version 3."
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS message_oob (
+  id         INTEGER PRIMARY KEY,
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  url        TEXT NOT NULL,
+  desc       TEXT)")
+  (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_oob_message_id
+  ON message_oob(message_id)")
+  (sqlite-execute db "\
+INSERT INTO message_oob (message_id, url, desc)
+  SELECT id, oob_url, oob_desc FROM message WHERE oob_url IS NOT NULL")
+  (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_url")
+  (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_desc")
+  (sqlite-execute db "PRAGMA user_version=3"))
+
+(defun jabber-db--migrate-v3-to-v4 (db)
+  "Migrate DB from schema version 3 to version 4."
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS caps_cache (
+  hash       TEXT NOT NULL,
+  ver        TEXT NOT NULL,
+  identities TEXT NOT NULL,
+  features   TEXT NOT NULL,
+  PRIMARY KEY (hash, ver))")
+  (sqlite-execute db "PRAGMA user_version=4"))
+
+(defun jabber-db--migrate-v4-to-v5 (db)
+  "Migrate DB from schema version 4 to version 5."
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS message_reaction (
+  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
+  sender     TEXT NOT NULL,
+  reaction   TEXT NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender, reaction))")
+  (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_reaction_message_id
+  ON message_reaction(message_id)")
+  (jabber-db--ensure-reaction-actor-table db)
+  (jabber-db--backfill-reaction-actors db)
+  (sqlite-execute db "PRAGMA user_version=5"))
+
+(defun jabber-db--migrate-v5-to-v6 (db)
+  "Migrate DB from schema version 5 to version 6."
+  (sqlite-execute db
+                  "ALTER TABLE omemo_store ADD COLUMN spk_rotated_at INTEGER")
+  (sqlite-execute db "PRAGMA user_version=6"))
+
+(defun jabber-db--migrate-v6-to-v7 (db)
+  "Migrate DB from schema version 6 to version 7."
+  (dolist (column '("reply_to_id TEXT" "reply_to_jid TEXT"
+                    "fallback_start INTEGER" "fallback_end INTEGER"))
+    (sqlite-execute db (concat "ALTER TABLE message ADD COLUMN " column)))
+  (sqlite-execute db "PRAGMA user_version=7"))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
@@ -303,65 +370,22 @@ delete %s manually to continue"
                               jabber-db--schema-version))
       (setq version jabber-db--schema-version))
     (when (= version 1)
-      (sqlite-execute db "ALTER TABLE message ADD COLUMN occupant_id TEXT")
-      (sqlite-execute db "ALTER TABLE message DROP COLUMN raw_xml")
-      (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_msg_occupant_id
-  ON message(account, peer, occupant_id) WHERE occupant_id IS NOT NULL")
-      (sqlite-execute db "PRAGMA user_version=2")
+      (jabber-db--migrate-v1-to-v2 db)
       (setq version 2))
     (when (= version 2)
-      (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS message_oob (
-  id         INTEGER PRIMARY KEY,
-  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
-  url        TEXT NOT NULL,
-  desc       TEXT)")
-      (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_oob_message_id
-  ON message_oob(message_id)")
-      (sqlite-execute db "\
-INSERT INTO message_oob (message_id, url, desc)
-  SELECT id, oob_url, oob_desc FROM message WHERE oob_url IS NOT NULL")
-      (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_url")
-      (sqlite-execute db "ALTER TABLE message DROP COLUMN oob_desc")
-      (sqlite-execute db "PRAGMA user_version=3")
+      (jabber-db--migrate-v2-to-v3 db)
       (setq version 3))
     (when (= version 3)
-      (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS caps_cache (
-  hash       TEXT NOT NULL,
-  ver        TEXT NOT NULL,
-  identities TEXT NOT NULL,
-  features   TEXT NOT NULL,
-  PRIMARY KEY (hash, ver))")
-      (sqlite-execute db "PRAGMA user_version=4")
+      (jabber-db--migrate-v3-to-v4 db)
       (setq version 4))
     (when (= version 4)
-      (sqlite-execute db "\
-CREATE TABLE IF NOT EXISTS message_reaction (
-  message_id INTEGER NOT NULL REFERENCES message(id) ON DELETE CASCADE,
-  sender     TEXT NOT NULL,
-  reaction   TEXT NOT NULL,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (message_id, sender, reaction))")
-      (sqlite-execute db "\
-CREATE INDEX IF NOT EXISTS idx_reaction_message_id
-  ON message_reaction(message_id)")
-      (jabber-db--ensure-reaction-actor-table db)
-      (jabber-db--backfill-reaction-actors db)
-      (sqlite-execute db "PRAGMA user_version=5")
+      (jabber-db--migrate-v4-to-v5 db)
       (setq version 5))
     (when (= version 5)
-      (sqlite-execute db
-                      "ALTER TABLE omemo_store ADD COLUMN spk_rotated_at INTEGER")
-      (sqlite-execute db "PRAGMA user_version=6")
+      (jabber-db--migrate-v5-to-v6 db)
       (setq version 6))
     (when (= version 6)
-      (dolist (col '("reply_to_id TEXT" "reply_to_jid TEXT"
-                     "fallback_start INTEGER" "fallback_end INTEGER"))
-        (sqlite-execute db (concat "ALTER TABLE message ADD COLUMN " col)))
-      (sqlite-execute db "PRAGMA user_version=7")
+      (jabber-db--migrate-v6-to-v7 db)
       (setq version 7))
     (when (= version 7)
       (jabber-db--repair-reaction-actors db))))

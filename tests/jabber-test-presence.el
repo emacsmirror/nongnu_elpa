@@ -233,6 +233,32 @@
 
 ;;; Group 4: jabber-presence--update-resource
 
+(ert-deftest jabber-test-presence-resource-transition-does-not-mutate-input ()
+  "Computing a resource transition leaves the current plist unchanged."
+  (let* ((current '(connected t show "chat" status "Here" priority 1))
+         (before (copy-sequence current))
+         (metadata '(:show "away" :status "BRB" :priority 5 :error nil))
+         (transition
+          (jabber-presence--resource-transition
+           nil "phone" current metadata))
+         (updated (plist-get transition :resource)))
+    (should (equal before current))
+    (should-not (eq current updated))
+    (should (equal "away" (plist-get updated 'show)))
+    (should (= 5 (plist-get updated 'priority)))))
+
+(ert-deftest jabber-test-presence-resource-transition-bare-error ()
+  "A bare error transition requests a complete buddy reset."
+  (let* ((metadata '(:show nil :status "Server error"
+                     :priority 0 :error nil))
+         (transition
+          (jabber-presence--resource-transition
+           "error" "" '(connected t) metadata)))
+    (should (equal "error" (plist-get transition :newstatus)))
+    (should-not (plist-get transition :resource))
+    (should (plist-get transition :clear-all))
+    (should (equal "Server error" (plist-get transition :status)))))
+
 (ert-deftest jabber-test-presence-update-resource-normal-presence ()
   "Normal presence sets connected, show, status, priority on resource plist."
   (jabber-test-presence-with-obarray
