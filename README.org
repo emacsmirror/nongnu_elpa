@@ -15,10 +15,6 @@ See the [[https://xmpp.org/software/jabber-el/][xmpp.org page]] for the full lis
 + Source:
   + [[https://git.thanosapollo.org/emacs-jabber/about/][git.thanosapollo.org]]
 
-+ Discuss the project in these XMPP MUCs:
-  + =jabber-el@conference.hmm.st= for the project
-  + =emacs@conference.conversations.im= for Emacs peer support including jabber.el
-
 * Requirements
 
 + Emacs 29.1 or later, compiled with dynamic module support
