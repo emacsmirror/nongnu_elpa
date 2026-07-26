@@ -56,6 +56,7 @@ TESTS ?= tests/jabber-test-activity.el \
          tests/jabber-test-receipts.el \
          tests/jabber-test-reload.el \
          tests/jabber-test-roster.el \
+         tests/jabber-test-rtt.el \
          tests/jabber-test-sm.el \
          tests/jabber-test-srv.el \
          tests/jabber-test-styling.el \
