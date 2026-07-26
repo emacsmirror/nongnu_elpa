@@ -43,6 +43,8 @@
 
 (require 'jit-lock)
 
+(require 'org-faces)
+
 (eval-when-compile (require 'cl-lib))
 
 (defgroup jabber-styling nil
@@ -99,8 +101,7 @@ Appended beneath the language mode's own font-lock faces, exactly
 as `org-src-font-lock-fontify-block' applies `org-block': being a
 background face, it tints the block without overriding the code's
 foreground colors.  Inherits `org-block' so blocks match the
-user's Org theme; the inheritance is ignored when Org is not
-loaded.")
+user's Org theme.")
 
 (defface jabber-styling-pre-block-fence '((t :inherit org-block-begin-line :extend t))
   "Face for the ``` fence lines delimiting a code block.

@@ -12,6 +12,14 @@
 (require 'jabber-disco)
 (require 'jabber-styling)
 
+;;; Load contract
+
+(ert-deftest jabber-test-styling-loads-org-faces ()
+  "Loading styling makes its inherited Org faces available."
+  (should (featurep 'org-faces))
+  (should (facep 'org-block))
+  (should (facep 'org-block-begin-line)))
+
 ;;; Group 1: jabber-styling--classify-block
 
 (ert-deftest jabber-test-styling-classify-plain ()
