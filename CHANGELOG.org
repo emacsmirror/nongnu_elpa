@@ -1,5 +1,18 @@
 #+TITLE: Changelog
 
+* [0.12.4]
+#+date: 2026-07-26
+
+** Added
+- Debian package build and installed-package tests to release checks
+
+** Changed
+- Hardened OMEMO message corrections and real-time text handling
+
+** Fixes
+- Reproducible autoload generation for Debian packages
+- Load Org faces before rendering styled messages
+
 * [0.12.3]
 #+date: 2026-07-25
 

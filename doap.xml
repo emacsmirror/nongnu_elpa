@@ -581,6 +581,12 @@
 
     <release>
       <Version>
+        <revision>0.12.4</revision>
+        <created>2026-07-26</created>
+      </Version>
+    </release>
+    <release>
+      <Version>
         <revision>0.12.3</revision>
         <created>2026-07-25</created>
       </Version>
