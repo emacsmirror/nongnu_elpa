@@ -248,4 +248,8 @@ Restore Jabber function and keymap bindings if any file fails."
         (jabber-reload--set-buffer-maps buffers t)))))
 
 (provide 'jabber-reload)
+
+;; Local Variables:
+;; no-update-autoloads: t
+;; End:
 ;;; jabber-reload.el ends here

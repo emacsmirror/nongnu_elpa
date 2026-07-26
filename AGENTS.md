@@ -59,11 +59,15 @@ make test      # Parallel ERT files plus the OMEMO module
 make lint      # check-declare, checkdoc, package-lint, relint, test compile
 make module    # Build the OMEMO dynamic module
 make dev       # Autoloads, compile, module, lint, isolated and one-shot tests
+make release-check # Local gates plus the Debian dh_elpa build and installed tests
 ```
 
 Use `make dev` before submission. Tests must use temporary databases and must
 never open a user's live Jabber database; the Makefile sets `jabber-db-path` to
 nil for batch tests.
+
+Always run `make release-check` before creating or pushing a release tag. Do not
+tag or push a release unless it passes.
 
 ## Contributions
 

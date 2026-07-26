@@ -1,0 +1,55 @@
+#!/bin/sh
+
+set -eu
+
+root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+image=${DEBIAN_IMAGE:-debian@sha256:7469781d68f44940c9494eeba6e7ab89063947f794320d61c193bf027aeb7761}
+packaging_ref=${DEBIAN_PACKAGING_REF:-f3706291daca6578ba4e2b45086b1b04bac15421}
+
+command -v docker >/dev/null 2>&1 || {
+    echo "docker is required for the Debian test" >&2
+    exit 1
+}
+
+docker run --rm \
+    -e DEBIAN_FRONTEND=noninteractive \
+    -e DEBIAN_PACKAGING_REF="$packaging_ref" \
+    -v "$root:/source:ro" \
+    "$image" \
+    sh -eu -c '
+apt-get update
+apt-get install -y --no-install-recommends \
+    autopkgtest build-essential ca-certificates debhelper devscripts dh-elpa \
+    elpa-fsm elpa-keymap-popup git gpg libmbedtls-dev pkgconf
+
+git config --global --add safe.directory /source
+mkdir -p /build/source /build/packaging
+git -C /source ls-files -z --cached --others --exclude-standard |
+    tar -C /source --null -T - -cf - |
+    tar -xf - -C /build/source
+
+git -C /build/packaging init -q
+git -C /build/packaging fetch -q --depth=1 \
+    https://salsa.debian.org/emacsen-team/emacs-jabber.git \
+    "$DEBIAN_PACKAGING_REF"
+git -C /build/packaging checkout -q --detach FETCH_HEAD
+cp -a /build/packaging/debian /build/source/
+
+cd /build/source
+dpkg-buildpackage --build=binary --no-sign
+apt-get install -y /build/*.deb
+dh_elpa_test --autopkgtest
+
+autoload_file=$(find /usr/share/emacs/site-lisp -name jabber-autoloads.el \
+    -print -quit)
+test -n "$autoload_file"
+if grep -q jabber-reload "$autoload_file"; then
+    echo "jabber-reload leaked into the installed autoload file" >&2
+    exit 1
+fi
+
+# Debian temporarily excludes this test.  Run the same installed-package
+# suite again without the exclusion so a release cannot rely on it.
+sed -i "/^ert_selectors[[:space:]]*=/d" debian/elpa-test
+dh_elpa_test --autopkgtest
+'

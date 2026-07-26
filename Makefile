@@ -1,6 +1,7 @@
 .PHONY: all build dev autoload module compile lint lint-check-declare lint-checkdoc \
         lint-package-lint lint-relint lint-test-compile lint-native-comp \
-        clean clean-elc clean-module install uninstall check test test-oneshot load \
+        clean clean-elc clean-module install uninstall check test test-oneshot test-debian \
+        release-check load \
         do-build do-dev do-compile do-lint do-module do-test do-test-oneshot do-test-summary \
         do-lint-check-declare do-lint-checkdoc do-lint-native-comp
 
@@ -179,6 +180,14 @@ $(TEST_RESULTS)/%.stamp: tests/%.el
 
 test-oneshot:
 	@$(ENV_MAKE) do-test-oneshot
+
+test-debian:
+	./admin/test-debian
+
+# Run the complete local and Debian gates before version commits and tags.
+release-check: dev
+	@if [ -n "$(NIX)" ]; then nix flake check; fi
+	$(MAKE) test-debian
 
 # Mirror Debian's dh_elpa_test: load every test file into one Emacs
 # process and run the whole suite twice.  Surfaces cross-test state

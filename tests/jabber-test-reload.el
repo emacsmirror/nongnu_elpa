@@ -24,17 +24,14 @@
 
 (ert-deftest jabber-test-reload-orders-real-source-graph ()
   "Order the current source tree by its declared dependencies."
-  (let* ((records
-          (mapcar #'jabber-reload--record
-                  (jabber-reload--source-files jabber-test-reload--root)))
+  (let* ((source-files
+          (jabber-reload--source-files jabber-test-reload--root))
+         (records (mapcar #'jabber-reload--record source-files))
          (providers (jabber-reload--provider-alist records))
          (dependencies (jabber-reload--dependencies records providers))
          (files (plist-get (jabber-reload--plan jabber-test-reload--root)
                            :files)))
-    (should (= (length files)
-               (1- (length (file-expand-wildcards
-                            (expand-file-name "lisp/*.el"
-                                              jabber-test-reload--root))))))
+    (should (= (length files) (length source-files)))
     (should-not (seq-some
                  (lambda (file)
                    (string-suffix-p "jabber-autoloads.el" file))

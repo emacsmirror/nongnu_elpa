@@ -87,6 +87,8 @@ SENT-VAR is bound to the stanza passed to `jabber-send-sexp'."
                    (lambda (_jc) 'our-key))
                   ((symbol-function 'jabber-openpgp--recipient-key)
                    (lambda (_jid) 'their-key))
+                  ((symbol-function 'epg-find-configuration)
+                   (lambda (_protocol) '((program . "gpg"))))
                   ((symbol-function 'epg-encrypt-string)
                    (lambda (&rest _) "-----BEGIN PGP MESSAGE-----\n\nZm9v\n-----END PGP MESSAGE-----"))
                   ((symbol-function 'jabber-send-sexp)
