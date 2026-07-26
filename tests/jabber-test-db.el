@@ -1105,6 +1105,23 @@ the corrected jabber-muc-create-buffer order."
         (should (equal "room1@x.com/mod" (plist-get room1 :retracted-by)))
         (should-not (plist-get room2 :retracted))))))
 
+(ert-deftest jabber-test-db-retract-shared-server-id-is-room-scoped ()
+  "Retraction changes one room when two rooms share a server id."
+  (jabber-test-db-with-db
+    (dolist (room '("one@conference.x" "two@conference.x"))
+      (jabber-db-store-message
+       "me@x.com" room "in" "groupchat" room 1700000000
+       "alice" nil "shared-server-id"))
+    (jabber-db-retract-message-in-peer
+     "me@x.com" "one@conference.x" "shared-server-id"
+     "one@conference.x/mod")
+    (should
+     (equal '(("one@conference.x" "one@conference.x/mod")
+              ("two@conference.x" nil))
+            (sqlite-select
+             jabber-db--connection
+             "SELECT peer, retracted_by FROM message ORDER BY peer")))))
+
 ;;; Group: Failed-decrypt replacement
 
 (ert-deftest jabber-test-db-store-replaces-failed-decrypt-by-stanza-id ()
@@ -1141,6 +1158,42 @@ the corrected jabber-muc-create-buffer order."
                                '("srv-2"))))
       (should (= 1 (length rows)))
       (should (string= "decrypted text" (caar rows))))))
+
+(ert-deftest jabber-test-db-server-id-is-scoped-to-room ()
+  "Two rooms may store the same server-assigned stanza id."
+  (jabber-test-db-with-db
+    (dolist (room '("one@conference.x" "two@conference.x"))
+      (jabber-db-store-message
+       "me@x.com" room "in" "groupchat" room 1700000000
+       "alice" nil "shared-server-id"))
+    (should
+     (equal '(("one@conference.x" "one@conference.x")
+              ("two@conference.x" "two@conference.x"))
+            (sqlite-select
+             jabber-db--connection
+             "SELECT peer, body FROM message ORDER BY peer")))))
+
+(ert-deftest jabber-test-db-server-id-placeholder-update-is-room-scoped ()
+  "A server-id retry updates only the matching room's placeholder."
+  (jabber-test-db-with-db
+    (jabber-db-store-message
+     "me@x.com" "one@conference.x" "in" "groupchat"
+     "[OMEMO: could not decrypt]" 1700000000
+     "alice" nil "shared-server-id")
+    (jabber-db-store-message
+     "me@x.com" "two@conference.x" "in" "groupchat"
+     "room two" 1700000000
+     "alice" nil "shared-server-id")
+    (jabber-db-store-message
+     "me@x.com" "one@conference.x" "in" "groupchat"
+     "room one" 1700000000
+     "alice" nil "shared-server-id" nil nil t)
+    (should
+     (equal '(("one@conference.x" "room one")
+              ("two@conference.x" "room two"))
+            (sqlite-select
+             jabber-db--connection
+             "SELECT peer, body FROM message ORDER BY peer")))))
 
 (ert-deftest jabber-test-db-store-no-replace-when-still-undecryptable ()
   "Re-storing with another failed-decrypt body does not update."
@@ -1417,6 +1470,23 @@ VALUES ('me@x.com', 'friend@x.com', 'in', 'chat', 'preserved', 2000, 'laptop')")
   "Returns nil for unknown server-id."
   (jabber-test-db-with-db
     (should (null (jabber-db-occupant-id-by-server-id "nonexistent")))))
+
+(ert-deftest jabber-test-db-occupant-id-by-server-id-is-peer-scoped ()
+  "The same server id resolves to each room's own occupant."
+  (jabber-test-db-with-db
+    (jabber-db-store-message "me@x.com" "one@conference.x" "in" "groupchat"
+                             "one" 1700000000 "nick" nil "shared" "occ-one")
+    (jabber-db-store-message "me@x.com" "two@conference.x" "in" "groupchat"
+                             "two" 1700000000 "nick" nil "shared" "occ-two")
+    (should-not (jabber-db-occupant-id-by-server-id "shared"))
+    (should
+     (equal "occ-one"
+            (jabber-db-occupant-id-by-server-id-in-peer
+             "me@x.com" "one@conference.x" "shared")))
+    (should
+     (equal "occ-two"
+            (jabber-db-occupant-id-by-server-id-in-peer
+             "me@x.com" "two@conference.x" "shared")))))
 
 (ert-deftest jabber-test-db-occupant-id-by-stanza-id ()
   "Returns occupant-id for a known stanza-id."

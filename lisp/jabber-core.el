@@ -319,6 +319,9 @@ override the defaults from `jabber-account-list'."
 			  (setq state-data (plist-put state-data :sm-resuming t))
 			;; Otherwise clear MUC data and SM state.
 			(jabber-lifecycle-dispatch-session-reset fsm)
+			(setq state-data
+			      (jabber-sm--discard-pending
+			       state-data "connection closed before transport handoff"))
 			(setq state-data (jabber-sm--reset state-data)))
 
 		      (unless expected
@@ -678,6 +681,9 @@ override the defaults from `jabber-account-list'."
 		      ;; SM resume was hoped for but server doesn't offer SM here.
 		      ((plist-get state-data :sm-resuming)
 		       (jabber-lifecycle-dispatch-session-reset fsm)
+		       (setq state-data
+			     (jabber-sm--discard-pending
+			      state-data "stream resumption unavailable"))
 		       (setq state-data (jabber-sm--reset state-data))
 		       (setq state-data (plist-put state-data :sm-resuming nil))
 		       ;; Fall through to normal bind.
@@ -841,6 +847,9 @@ override the defaults from `jabber-account-list'."
 		     (message "Stream Management resume failed, falling back to auth")
 		     ;; Resume failed: clean up MUC state now, reset SM, do full auth.
 		     (jabber-lifecycle-dispatch-session-reset fsm)
+		     (setq state-data
+			   (jabber-sm--discard-pending
+			    state-data "stream resumption failed"))
 		     (setq state-data (jabber-sm--reset state-data))
 		     (setq state-data (plist-put state-data :sm-resuming nil))
 		     (list :sasl-auth state-data))

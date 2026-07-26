@@ -22,6 +22,14 @@
 (require 'jabber-sm)
 (require 'jabber-stanza)
 
+(defun jabber-sm--discard-pending (state-data reason)
+  "Fail pending entries in STATE-DATA with REASON, then clear them."
+  (dolist (entry (plist-get state-data :sm-pending-queue))
+    (when (keywordp (car-safe entry))
+      (jabber-sm--run-pending-callback
+       (plist-get entry :failure) reason)))
+  (plist-put state-data :sm-pending-queue nil))
+
 (defun jabber-sm--count-inbound (jc state-data stanza)
   "Record inbound STANZA and send a periodic acknowledgement when due.
 JC is the Jabber connection.  Return updated STATE-DATA."
@@ -40,14 +48,31 @@ JC is the Jabber connection.  Return updated STATE-DATA."
   "Send queued stanzas on JC up to the in-flight limit.
 STATE-DATA is the FSM plist.  Return updated state data."
   (let ((queue (sort (plist-get state-data :sm-pending-queue)
-                     (lambda (a b) (< (car a) (car b))))))
+                     (lambda (a b)
+                       (< (jabber-sm--pending-priority a)
+                          (jabber-sm--pending-priority b)))))
+        failed)
     (while (and queue
+                (not failed)
                 (or (null jabber-sm-max-in-flight)
                     (< (jabber-sm--in-flight-count state-data)
                        jabber-sm-max-in-flight)))
-      (let ((sexp (cdr (pop queue))))
-        (jabber-send-sexp--raw jc sexp)
-        (setq state-data (jabber-sm--count-outbound state-data sexp))))
+      (let* ((entry (pop queue))
+             (sexp (jabber-sm--pending-stanza entry)))
+        (condition-case err
+            (progn
+              (jabber-send-sexp--raw jc sexp)
+              (setq state-data
+                    (jabber-sm--count-outbound state-data sexp))
+              (when (keywordp (car-safe entry))
+                (jabber-sm--run-pending-callback
+                 (plist-get entry :success))))
+          (error
+           (setq failed t)
+           (when (keywordp (car-safe entry))
+             (jabber-sm--run-pending-callback
+              (plist-get entry :failure)
+              (error-message-string err)))))))
     (plist-put state-data :sm-pending-queue queue)))
 
 (defun jabber-sm--check-stall (jc)

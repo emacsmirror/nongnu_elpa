@@ -717,6 +717,31 @@ WHERE stanza_id = 'stanza-000001'"))))
 WHERE stanza_id = 'stanza-000001'"))))
         (should (equal '("Message 1" 0) row))))))
 
+(ert-deftest jabber-test-mam-undecryptable-correction-preserves-plaintext ()
+  "An archived correction decrypt failure never replaces stored plaintext."
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
+           (jabber-mam--tx-depth 1)
+           (jabber-muc-participants nil)
+           (correction
+            (jabber-test-mam--make-correction-message
+             "archive-correction-failed" "correction-failed"
+             "stanza-000001" "friend@example.com/phone"
+             "OMEMO encrypted message")))
+      (jabber-mam--process-message jc (jabber-test-mam--make-message 1))
+      (cl-letf (((symbol-function 'jabber-chat--decrypt-if-needed)
+                 (lambda (_jc inner)
+                   (jabber-chat--set-body
+                    inner "[OMEMO: could not decrypt]"))))
+        (jabber-mam--process-message jc correction))
+      (should
+       (equal '(("Message 1" 0))
+              (sqlite-select
+               (jabber-db-ensure-open)
+               "SELECT body, edited FROM message \
+WHERE stanza_id = 'stanza-000001'"))))))
+
 
 (ert-deftest jabber-test-mam-cleanup-all-commits-transaction ()
   "cleanup-all commits open transaction and resets state."

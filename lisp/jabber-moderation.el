@@ -111,7 +111,7 @@ server id.  JC is the connection the stanza arrived on."
     (let* ((moderator (jabber-moderation--moderator xml-data moderated))
            (reason-el (car (jabber-xml-get-children retraction 'reason)))
            (reason (car (jabber-xml-node-children reason-el)))
-           (buf (jabber-muc-find-buffer room)))
+           (buf (jabber-muc-find-buffer room jc)))
       (when moderator
         (jabber-db-retract-message-in-peer
          (jabber-connection-bare-jid jc) room stanza-id moderator reason))
@@ -141,11 +141,12 @@ RETRACTED-BY and REASON are stored on the message plist."
     (setcar (cdr data) msg)
     (jabber-chat-ewoc-invalidate node)))
 
-(defun jabber-moderation--mark-local-retracted (_jc _xml-data data)
-  "Mark the moderated message in DATA as retracted locally."
+(defun jabber-moderation--mark-local-retracted (jc _xml-data data)
+  "Mark the moderated message in DATA as retracted locally on JC."
   (pcase-let ((`(,room ,server-id ,moderator ,reason) data))
-    (jabber-db-retract-message server-id moderator reason)
-    (when-let* ((buf (jabber-muc-find-buffer room)))
+    (jabber-db-retract-message-in-peer
+     (jabber-connection-bare-jid jc) room server-id moderator reason)
+    (when-let* ((buf (jabber-muc-find-buffer room jc)))
       (with-current-buffer buf
         (jabber-moderation--mark-ewoc-retracted server-id moderator reason)))))
 
@@ -195,11 +196,14 @@ individual moderation IQs for each."
          (server-id (and msg (plist-get msg :server-id))))
     (unless server-id
       (user-error "No server-assigned stanza ID on this message"))
-    (let ((occupant-id (jabber-db-occupant-id-by-server-id server-id)))
+    (let* ((account
+            (jabber-connection-bare-jid jabber-buffer-connection))
+           (occupant-id
+            (jabber-db-occupant-id-by-server-id-in-peer
+             account jabber-group server-id)))
       (unless occupant-id
         (user-error "No occupant-id for this message"))
-      (let* ((account (jabber-connection-bare-jid jabber-buffer-connection))
-             (ids (jabber-db-server-ids-by-occupant-id
+      (let* ((ids (jabber-db-server-ids-by-occupant-id
                    account jabber-group occupant-id))
              (count (length ids)))
         (unless ids

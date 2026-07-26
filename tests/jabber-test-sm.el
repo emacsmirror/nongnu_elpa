@@ -566,6 +566,72 @@
          (result (jabber-sm--reset sd)))
     (should (null (plist-get result :sm-pending-queue)))))
 
+(ert-deftest jabber-test-sm-drain-runs-transport-success-callback ()
+  "A queued stanza commits only after queue drain writes it."
+  (let* ((jabber-sm-max-in-flight nil)
+         (successes 0)
+         (failures 0)
+         (msg '(message ((to . "a@b")) (body () "queued")))
+         (sd (list :sm-enabled t
+                   :sm-outbound-count 0
+                   :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-pending-queue nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd msg
+           (lambda () (cl-incf successes))
+           (lambda (_reason) (cl-incf failures))))
+    (should (= 0 successes))
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (&rest _) nil)))
+      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
+    (should (= 1 successes))
+    (should (= 0 failures))
+    (should (null (plist-get sd :sm-pending-queue)))))
+
+(ert-deftest jabber-test-sm-drain-runs-transport-failure-callback ()
+  "A failed queue-drain write fails once and removes that entry."
+  (let* ((jabber-sm-max-in-flight nil)
+         (successes 0)
+         (failures 0)
+         (msg '(message ((to . "a@b")) (body () "queued")))
+         (sd (list :sm-enabled t
+                   :sm-outbound-count 0
+                   :sm-last-acked 0
+                   :sm-outbound-queue nil
+                   :sm-pending-queue nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd msg
+           (lambda () (cl-incf successes))
+           (lambda (_reason) (cl-incf failures))))
+    (cl-letf (((symbol-function 'jabber-send-sexp--raw)
+               (lambda (&rest _) (error "transport failed"))))
+      (setq sd (jabber-sm--drain-pending 'fake-jc sd)))
+    (should (= 0 successes))
+    (should (= 1 failures))
+    (should (null (plist-get sd :sm-pending-queue)))))
+
+(ert-deftest jabber-test-sm-discard-pending-isolates-failure-callbacks ()
+  "Discard runs every failure callback even when one callback errors."
+  (let* ((called nil)
+         (msg '(message ((to . "a@b")) (body () "queued")))
+         (sd (list :sm-pending-queue nil)))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd msg nil
+           (lambda (_reason)
+             (push 'first called)
+             (error "restoration failed"))))
+    (setq sd
+          (jabber-sm--enqueue-pending
+           sd msg nil
+           (lambda (_reason) (push 'second called))))
+    (setq sd (jabber-sm--discard-pending sd "session reset"))
+    (should (equal called '(second first)))
+    (should (null (plist-get sd :sm-pending-queue)))))
+
 ;;; Priority queue
 
 (ert-deftest jabber-test-sm-stanza-priority-message ()

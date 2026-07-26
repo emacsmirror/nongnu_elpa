@@ -381,6 +381,17 @@ area after both messages."
           (jabber-chat--run-send-hooks stanza "> q\nanswer" "m-9")))
       (should (equal "orig-9" (plist-get stored-reply :reply-to-id))))))
 
+(ert-deftest jabber-test-chat-outgoing-handler-skips-corrections ()
+  "The outgoing DB hook does not store a correction as a new message."
+  (let ((jabber-chat--sending-correction t)
+        (jabber-chatting-with "friend@example.com")
+        (jabber-buffer-connection 'fake-jc)
+        stored)
+    (cl-letf (((symbol-function 'jabber-db-store-message)
+               (lambda (&rest _) (setq stored t))))
+      (jabber-db--outgoing-handler "corrected" "correction-id"))
+    (should-not stored)))
+
 (ert-deftest jabber-test-chat-send-hooks-stamp-origin-id ()
   "The default send hooks stamp an XEP-0359 origin-id on outgoing stanzas."
   (with-temp-buffer
@@ -662,13 +673,16 @@ area after both messages."
 
 ;;; Group: decrypt dedup cache
 
-(defun jabber-test-chat--encrypted-stanza (from id &optional origin-id)
+(defun jabber-test-chat--encrypted-stanza
+    (from id &optional origin-id ciphertext)
   "Build a fresh OMEMO-shaped encrypted stanza from FROM with ID.
-Optional ORIGIN-ID adds a XEP-0359 <origin-id/> child."
+Optional ORIGIN-ID adds a XEP-0359 <origin-id/> child.
+CIPHERTEXT defaults to ID."
   (append
    (list 'message (list (cons 'from from) (cons 'id id))
          (list 'encrypted
-               (list (cons 'xmlns "eu.siacs.conversations.axolotl"))))
+               (list (cons 'xmlns "eu.siacs.conversations.axolotl"))
+               (list 'payload nil (or ciphertext id))))
    (and origin-id
         (list (list 'origin-id
                     (list (cons 'xmlns "urn:xmpp:sid:0")
@@ -686,8 +700,7 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
   `(let ((jabber-chat-decrypt-handlers nil)
          (jabber-chat--sorted-decrypt-handlers-cache nil)
          (jabber-chat--crypto-loaded t)
-         (jabber-chat--decrypt-cache (make-hash-table :test #'equal))
-         (jabber-chat--decrypt-cache-fifo nil))
+         (jabber-chat--decrypt-cache (make-hash-table :test #'equal)))
      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                 (lambda (_jc) "me@x.com")))
        ,@body)))
@@ -715,8 +728,8 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
         (should (string= "secret text" (jabber-test-chat--body-text first)))
         (should (string= "secret text" (jabber-test-chat--body-text second)))))))
 
-(ert-deftest jabber-test-chat-decrypt-dedup-prefers-origin-id ()
-  "Deliveries matching on origin-id dedup even when id attrs differ."
+(ert-deftest jabber-test-chat-decrypt-dedup-keeps-behavioral-message-id ()
+  "Different ciphertexts decrypt even when their origin-id matches."
   (jabber-test-chat--with-decrypt-cache
     (let ((runs 0))
       (jabber-chat-register-decrypt-handler
@@ -734,7 +747,191 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
       (jabber-chat--decrypt-if-needed
        nil (jabber-test-chat--encrypted-stanza
             "alice@x.com/phone" "id-b" "origin-1"))
+      (should (= 2 runs)))))
+
+(ert-deftest jabber-test-chat-decrypt-dedup-rejects-changed-message-id ()
+  "A changed raw id cannot run or reuse the same ciphertext."
+  (jabber-test-chat--with-decrypt-cache
+    (let ((runs 0))
+      (jabber-chat-register-decrypt-handler
+       'test-omemo
+       :detect (lambda (xml) (jabber-xml-child-with-xmlns
+                              xml "eu.siacs.conversations.axolotl"))
+       :decrypt (lambda (_jc xml _parsed)
+                  (cl-incf runs)
+                  (jabber-chat--set-body xml "secret text"))
+       :priority 10
+       :error-label "OMEMO")
+      (jabber-chat--decrypt-if-needed
+       nil (jabber-test-chat--encrypted-stanza
+            "alice@x.com/phone" "id-a" nil "same-ciphertext"))
+      (let ((second
+             (jabber-chat--decrypt-if-needed
+              nil (jabber-test-chat--encrypted-stanza
+                   "alice@x.com/phone" "id-b" nil "same-ciphertext"))))
+        (should (= 1 runs))
+        (should (string= "[OMEMO: could not decrypt]"
+                         (jabber-test-chat--body-text second)))))))
+
+(ert-deftest jabber-test-chat-decrypt-dedup-binds-replace-target ()
+  "Changed correction metadata cannot replay the same plaintext."
+  (jabber-test-chat--with-decrypt-cache
+    (let ((runs 0)
+          second)
+      (jabber-chat-register-decrypt-handler
+       'test-omemo
+       :detect (lambda (xml) (jabber-xml-child-with-xmlns
+                              xml "eu.siacs.conversations.axolotl"))
+       :decrypt (lambda (_jc xml _parsed)
+                  (cl-incf runs)
+                  (jabber-chat--set-body xml "corrected"))
+       :priority 10
+       :error-label "OMEMO")
+      (jabber-chat--decrypt-if-needed
+       nil '(message ((from . "alice@x.com/phone")
+                      (id . "correction-1"))
+                     (body () "fallback")
+                     (encrypted
+                      ((xmlns . "eu.siacs.conversations.axolotl"))
+                      (payload () "same-ciphertext"))
+                     (replace ((xmlns . "urn:xmpp:message-correct:0")
+                               (id . "original-1")))))
+      (setq second
+            (jabber-chat--decrypt-if-needed
+             nil '(message ((from . "alice@x.com/phone")
+                            (id . "correction-1"))
+                           (body () "fallback")
+                           (encrypted
+                            ((xmlns . "eu.siacs.conversations.axolotl"))
+                            (payload () "same-ciphertext"))
+                           (replace
+                            ((xmlns . "urn:xmpp:message-correct:0")
+                             (id . "original-2"))))))
+      (should (= 1 runs))
+      (should (string= "[OMEMO: could not decrypt]"
+                       (jabber-test-chat--body-text second))))))
+
+(ert-deftest jabber-test-chat-decrypt-dedup-binds-inner-delay ()
+  "A changed delay wrapper cannot run the same ciphertext twice."
+  (jabber-test-chat--with-decrypt-cache
+    (let ((runs 0)
+          (base '(message ((from . "room@conference.x/alice")
+                           (type . "groupchat")
+                           (id . "correction-1"))
+                          (body () "fallback")
+                          (encrypted
+                           ((xmlns . "eu.siacs.conversations.axolotl"))
+                           (payload () "same-ciphertext"))
+                          (replace ((xmlns . "urn:xmpp:message-correct:0")
+                                    (id . "original-1"))))))
+      (jabber-chat-register-decrypt-handler
+       'test-omemo
+       :detect (lambda (xml) (jabber-xml-child-with-xmlns
+                              xml "eu.siacs.conversations.axolotl"))
+       :decrypt (lambda (_jc xml _parsed)
+                  (cl-incf runs)
+                  (jabber-chat--set-body xml "corrected"))
+       :priority 10
+       :error-label "OMEMO")
+      (jabber-chat--decrypt-if-needed nil (copy-tree base))
+      (let ((second
+             (jabber-chat--decrypt-if-needed
+              nil (append (copy-tree base)
+                          '((delay ((xmlns . "urn:xmpp:delay")
+                                    (stamp . "2026-07-26T10:00:00Z"))))))))
+        (should (= 1 runs))
+        (should (string= "[OMEMO: could not decrypt]"
+                         (jabber-test-chat--body-text second)))))))
+
+(ert-deftest jabber-test-chat-decrypt-dedup-normalizes-muc-mam-item ()
+  "MUC live and MAM forms differing only in archive item metadata dedup."
+  (jabber-test-chat--with-decrypt-cache
+    (let ((runs 0)
+          (live '(message ((from . "room@conference.x/alice")
+                           (to . "me@x.com/resource")
+                           (type . "groupchat")
+                           (id . "message-1"))
+                          (body () "fallback")
+                          (encrypted
+                           ((xmlns . "eu.siacs.conversations.axolotl"))
+                           (payload () "ciphertext"))))
+          (archived
+           '(message ((from . "room@conference.x/alice")
+                      (type . "groupchat")
+                      (id . "message-1"))
+                     (body () "fallback")
+                     (encrypted
+                      ((xmlns . "eu.siacs.conversations.axolotl"))
+                      (payload () "ciphertext"))
+                     (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                        (item ((jid . "alice@example.com")))))))
+      (jabber-chat-register-decrypt-handler
+       'test-omemo
+       :detect (lambda (xml) (jabber-xml-child-with-xmlns
+                              xml "eu.siacs.conversations.axolotl"))
+       :decrypt (lambda (_jc xml _parsed)
+                  (cl-incf runs)
+                  (jabber-chat--set-body xml "secret"))
+       :priority 10
+       :error-label "OMEMO")
+      (jabber-chat--decrypt-if-needed nil (copy-tree live))
+      (jabber-chat--decrypt-if-needed nil (copy-tree archived))
       (should (= 1 runs)))))
+
+(ert-deftest jabber-test-chat-decrypt-dedup-retains-muc-invite ()
+  "Changed MUC invitation metadata rejects repeated ciphertext."
+  (jabber-test-chat--with-decrypt-cache
+    (let ((runs 0))
+      (jabber-chat-register-decrypt-handler
+       'test-omemo
+       :detect (lambda (xml) (jabber-xml-child-with-xmlns
+                              xml "eu.siacs.conversations.axolotl"))
+       :decrypt (lambda (_jc xml _parsed)
+                  (cl-incf runs)
+                  (jabber-chat--set-body xml "secret"))
+       :priority 10
+       :error-label "OMEMO")
+      (dolist (reason '("first" "second"))
+        (jabber-chat--decrypt-if-needed
+         nil `(message ((from . "room@conference.x")
+                        (type . "normal")
+                        (id . "invite-1"))
+                       (encrypted
+                        ((xmlns . "eu.siacs.conversations.axolotl"))
+                        (payload () "same-ciphertext"))
+                       (x ((xmlns . "http://jabber.org/protocol/muc#user"))
+                          (invite ((from . "alice@example.com"))
+                                  (reason () ,reason))))))
+      (should (= 1 runs)))))
+
+(ert-deftest jabber-test-chat-decrypt-dedup-normalizes-attribute-order ()
+  "Attribute order does not change ciphertext or wrapper identity."
+  (jabber-test-chat--with-decrypt-cache
+    (let ((runs 0))
+      (jabber-chat-register-decrypt-handler
+       'test-omemo
+       :detect (lambda (xml) (jabber-xml-child-with-xmlns
+                              xml "eu.siacs.conversations.axolotl"))
+       :decrypt (lambda (_jc xml _parsed)
+                  (cl-incf runs)
+                  (jabber-chat--set-body xml "secret"))
+       :priority 10
+       :error-label "OMEMO")
+      (jabber-chat--decrypt-if-needed
+       nil '(message ((from . "alice@x.com/phone") (id . "one"))
+                     (encrypted
+                      ((xmlns . "eu.siacs.conversations.axolotl")
+                       (test . "yes"))
+                      (payload ((b . "2") (a . "1")) "cipher"))))
+      (let ((second
+             (jabber-chat--decrypt-if-needed
+              nil '(message ((id . "one") (from . "alice@x.com/phone"))
+                            (encrypted
+                             ((test . "yes")
+                              (xmlns . "eu.siacs.conversations.axolotl"))
+                             (payload ((a . "1") (b . "2")) "cipher"))))))
+        (should (= 1 runs))
+        (should (string= "secret" (jabber-test-chat--body-text second)))))))
 
 (ert-deftest jabber-test-chat-decrypt-dedup-no-cross-sender-collision ()
   "Two senders using the same stanza id are decrypted independently."
@@ -801,11 +998,36 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
         (should (string= "recovered text"
                          (jabber-test-chat--body-text second)))))))
 
-(ert-deftest jabber-test-chat-decrypt-dedup-evicts-oldest ()
-  "The cache is bounded; the oldest entry is evicted first."
+(ert-deftest jabber-test-chat-decrypt-dedup-caches-post-ratchet-failure ()
+  "A corrupt payload cannot send consumed ciphertext through the ratchet twice."
   (jabber-test-chat--with-decrypt-cache
-    (let ((jabber-chat--decrypt-cache-max 2)
-          (runs 0))
+    (let ((runs 0))
+      (jabber-chat-register-decrypt-handler
+       'test-omemo
+       :detect (lambda (xml) (jabber-xml-child-with-xmlns
+                              xml "eu.siacs.conversations.axolotl"))
+       :decrypt (lambda (_jc _xml _parsed)
+                  (cl-incf runs)
+                  (setq jabber-chat--decrypt-consumed-p t)
+                  (error "Payload authentication failed"))
+       :priority 10
+       :error-label "OMEMO")
+      (let ((first (jabber-chat--decrypt-if-needed
+                    nil (jabber-test-chat--encrypted-stanza
+                         "alice@x.com/phone" "corrupt")))
+            (second (jabber-chat--decrypt-if-needed
+                     nil (jabber-test-chat--encrypted-stanza
+                          "alice@x.com/phone" "corrupt"))))
+        (should (= 1 runs))
+        (should (string= "[OMEMO: could not decrypt]"
+                         (jabber-test-chat--body-text first)))
+        (should (string= "[OMEMO: could not decrypt]"
+                         (jabber-test-chat--body-text second)))))))
+
+(ert-deftest jabber-test-chat-decrypt-dedup-retains-old-ciphertext ()
+  "Old ciphertext remains blocked after many later messages."
+  (jabber-test-chat--with-decrypt-cache
+    (let ((runs 0))
       (jabber-chat-register-decrypt-handler
        'test-omemo
        :detect (lambda (xml) (jabber-xml-child-with-xmlns
@@ -815,15 +1037,13 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
                   (jabber-chat--set-body xml "secret text"))
        :priority 10
        :error-label "OMEMO")
-      (dolist (id '("e-1" "e-2" "e-3"))
+      (dotimes (i 513)
         (jabber-chat--decrypt-if-needed
-         nil (jabber-test-chat--encrypted-stanza "alice@x.com/phone" id)))
-      ;; "e-1" was evicted, so it decrypts again; "e-3" is cached.
+         nil (jabber-test-chat--encrypted-stanza
+              "alice@x.com/phone" (format "e-%d" i))))
       (jabber-chat--decrypt-if-needed
-       nil (jabber-test-chat--encrypted-stanza "alice@x.com/phone" "e-1"))
-      (jabber-chat--decrypt-if-needed
-       nil (jabber-test-chat--encrypted-stanza "alice@x.com/phone" "e-3"))
-      (should (= 4 runs)))))
+       nil (jabber-test-chat--encrypted-stanza "alice@x.com/phone" "e-0"))
+      (should (= 513 runs)))))
 
 ;;; Group 8: jabber-chat-goto-address error handling
 
@@ -983,6 +1203,58 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
     (should (= 200 (image-property image :max-height)))
     (should (= 600 (image-property scaled :max-width)))
     (should (= 400 (image-property scaled :max-height)))))
+
+;;; Group: Backlog message identity
+
+(defmacro jabber-test-chat--with-backlog-ewoc (&rest body)
+  "Run BODY with isolated backlog EWOC state."
+  (declare (indent 0) (debug t))
+  `(with-temp-buffer
+     (let ((jabber-chat-ewoc (ewoc-create #'ignore nil nil 'nosep))
+           (jabber-chat--msg-nodes (make-hash-table :test #'equal))
+           (jabber-print-rare-time nil)
+           (jabber-group "room@conference.example.com"))
+       (cl-letf (((symbol-function 'jabber-muc-our-nick-p)
+                  (lambda (&rest _) nil)))
+         ,@body))))
+
+(ert-deftest jabber-test-chat-backlog-scopes-colliding-muc-client-ids ()
+  "Backlog messages from different occupants may share a client id."
+  (jabber-test-chat--with-backlog-ewoc
+    (dolist (from '("room@conference.example.com/alice"
+                    "room@conference.example.com/bob"))
+      (jabber-chat-insert-backlog-entry
+       (list :id "same" :from from :direction "in"
+             :msg-type "groupchat" :timestamp (current-time))))
+    (should (ewoc-nth jabber-chat-ewoc 1))
+    (should (gethash
+             '(:muc "room@conference.example.com/alice" "same")
+             jabber-chat--msg-nodes))
+    (should (gethash
+             '(:muc "room@conference.example.com/bob" "same")
+             jabber-chat--msg-nodes))))
+
+(ert-deftest jabber-test-chat-backlog-then-live-dedups-server-id ()
+  "A live replay does not duplicate a backlog server identity."
+  (jabber-test-chat--with-backlog-ewoc
+    (let ((msg (list :id "client" :server-id "server"
+                     :from "room@conference.example.com/alice"
+                     :direction "in" :msg-type "groupchat"
+                     :timestamp (current-time))))
+      (jabber-chat-insert-backlog-entry msg)
+      (should-not (jabber-chat-ewoc-enter (list :muc-foreign msg)))
+      (should-not (ewoc-nth jabber-chat-ewoc 1)))))
+
+(ert-deftest jabber-test-chat-live-then-backlog-dedups-server-id ()
+  "A backlog replay does not duplicate a live server identity."
+  (jabber-test-chat--with-backlog-ewoc
+    (let ((msg (list :id "client" :server-id "server"
+                     :from "room@conference.example.com/alice"
+                     :direction "in" :msg-type "groupchat"
+                     :timestamp (current-time))))
+      (jabber-chat-ewoc-enter (list :muc-foreign msg))
+      (jabber-chat-insert-backlog-entry msg)
+      (should-not (ewoc-nth jabber-chat-ewoc 1)))))
 
 ;;; Group 11: jabber-chat-create-buffer
 

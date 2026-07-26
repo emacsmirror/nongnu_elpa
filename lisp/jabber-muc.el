@@ -237,7 +237,9 @@ The format is that of `mode-line-format' and `header-line-format'."
 
 ;; Global reference declarations
 
-(declare-function jabber-omemo--send-muc "jabber-omemo.el" (jc body &optional extra-elements))
+(declare-function jabber-omemo--send-muc "jabber-omemo.el"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
 (declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo" (jc group))
 (declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body &optional extra-elements))
@@ -248,7 +250,18 @@ The format is that of `mode-line-format' and `header-line-format'."
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
                   (replace-id new-body new-from muc-p buffer
-                              &optional new-occupant-id))
+                              &optional new-occupant-id account peer
+                              legacy-authorized-p))
+(declare-function jabber-message-correct--muc-current-target-p
+                  "jabber-message-correct" (jc from stanza-id))
+(declare-function jabber-message-correct--muc-presence-enter
+                  "jabber-message-correct" (jc from))
+(declare-function jabber-message-correct--muc-presence-leave
+                  "jabber-message-correct" (jc from))
+(declare-function jabber-message-correct--record-muc-original
+                  "jabber-message-correct" (jc from stanza-id))
+(declare-function jabber-message-correct--muc-room-leave
+                  "jabber-message-correct" (jc group))
 (declare-function jabber-reactions--reaction-only-p "jabber-reactions"
                   (xml-data))
 (declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
@@ -296,9 +309,26 @@ or `get-buffer-create'."
 		(cons ?u (if jc (plist-get (fsm-get-state-data jc) :username) ""))
 		(cons ?s (if jc (plist-get (fsm-get-state-data jc) :server) "")))))
 
-(defun jabber-muc-find-buffer (group)
-  "Find an existing MUC buffer for GROUP, or nil."
-  (jabber-buffer-registry-find 'muc group))
+(defun jabber-muc--buffer-key (jc group)
+  "Return the account-scoped buffer registry key for JC and GROUP."
+  (list (jabber-connection-bare-jid jc) group))
+
+(defun jabber-muc-find-buffer (group &optional jc)
+  "Find an existing MUC buffer for GROUP on JC, or nil.
+Without JC, return a buffer only when GROUP has one unambiguous
+live buffer."
+  (if jc
+      (jabber-buffer-registry-find 'muc
+                                   (jabber-muc--buffer-key jc group))
+    (let (found ambiguous)
+      (dolist (buffer (buffer-list))
+        (when (and (buffer-live-p buffer)
+                   (equal group
+                          (buffer-local-value 'jabber-group buffer)))
+          (if found
+              (setq ambiguous t)
+            (setq found buffer))))
+      (unless ambiguous found))))
 
 (defun jabber-muc-create-buffer (jc group)
   "Prepare a buffer for chatroom GROUP.
@@ -337,7 +367,8 @@ JC is the Jabber connection."
 
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
-    (jabber-buffer-registry-register 'muc group)
+    (jabber-buffer-registry-register
+     'muc (jabber-muc--buffer-key jc group))
 
     (current-buffer)))
 
@@ -402,7 +433,8 @@ JC is the Jabber connection."
 
     (current-buffer)))
 
-(defun jabber-muc-send (jc body &optional extra-elements)
+(defun jabber-muc-send
+    (jc body &optional extra-elements success-callback failure-callback)
   "Send BODY to MUC room in current buffer.
 
 JC is the Jabber connection.
@@ -413,7 +445,8 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
   (pcase jabber-chat-encryption
     ('omemo
      (require 'jabber-omemo)
-     (jabber-omemo--send-muc jc body extra-elements))
+     (jabber-omemo--send-muc
+      jc body extra-elements success-callback failure-callback))
     ('openpgp
      (require 'jabber-openpgp)
      (jabber-openpgp--send-muc jc body extra-elements))
@@ -429,7 +462,9 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
                       (body () ,body)
                       ,@extra-elements)))
        (jabber-chat--run-send-hooks stanza body id)
-       (jabber-send-sexp jc stanza)))))
+       (jabber-send-sexp jc stanza)
+       (when success-callback
+         (funcall success-callback))))))
 
 (defun jabber-muc-add-groupchat (group nickname &optional jc)
   "Remember participating in GROUP under NICKNAME via JC."
@@ -438,6 +473,8 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
 (defun jabber-muc-remove-groupchat (group &optional jc)
   "Remove GROUP from internal bookkeeping.
 If JC is given, only remove that connection's entry."
+  (when (and jc (fboundp 'jabber-message-correct--muc-room-leave))
+    (jabber-message-correct--muc-room-leave jc group))
   (jabber-muc-leave-remove group jc)
   (jabber-mam--cancel-muc-query group)
   ;; Only clear participants when no account remains in the room.
@@ -1576,7 +1613,7 @@ live messages with extra metadata, not history."
               (msg-from (jabber-xml-get-attribute xml-data 'from)))
     (string= delay-from (jabber-jid-user msg-from))))
 
-(defun jabber-muc--display-message (_jc xml-data group nick type msg-plist)
+(defun jabber-muc--display-message (jc xml-data group nick type msg-plist)
   "Display a MUC message and conditionally run alert hooks.
 Insert an EWOC entry into the MUC buffer for GROUP.  _JC is the Jabber
 connection, XML-DATA the parsed stanza, NICK the sender nickname, TYPE
@@ -1586,7 +1623,7 @@ messages."
   (let ((error-p (eq type :muc-error))
         (printers (append jabber-muc-printers jabber-chat-printers))
         (body-text (plist-get msg-plist :body))
-        (buffer (jabber-muc-find-buffer group)))
+        (buffer (jabber-muc-find-buffer group jc)))
     ;; Only insert into EWOC when the buffer already exists.
     ;; Messages are persisted in the DB regardless; backlog loads
     ;; when the user opens the room.
@@ -1638,9 +1675,21 @@ JC is the Jabber connection."
                (plist-get msg-plist :body)
                from
                t
-               (jabber-muc-find-buffer group)
-               (jabber-db--extract-occupant-id xml-data))
-            (jabber-muc--display-message jc xml-data group nick type msg-plist)))))))
+               (jabber-muc-find-buffer group jc)
+               (jabber-db--extract-occupant-id xml-data)
+               (jabber-connection-bare-jid jc) group
+               (jabber-message-correct--muc-current-target-p
+                jc from replace-id))
+            (jabber-muc--display-message jc xml-data group nick type msg-plist)
+            (when (and (fboundp
+                        'jabber-message-correct--record-muc-original)
+                       (plist-get msg-plist :body)
+                       (not (jabber--decrypt-failure-body-p
+                             (plist-get msg-plist :body)))
+                       (not (jabber-muc--history-message-p xml-data))
+                       (jabber-xml-get-attribute xml-data 'id))
+              (jabber-message-correct--record-muc-original
+               jc from (jabber-xml-get-attribute xml-data 'id)))))))))
 
 (defun jabber-muc--format-actor-reason (actor reason)
   "Format optional \" by ACTOR\" / \" - \\='REASON\\='\" suffix."
@@ -1696,9 +1745,10 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
     (when (string= type "error")
       (run-with-timer 0 nil #'jabber-muc--autojoin-next jc))))
 
-(defun jabber-muc--process-other-leave (_jc group nickname status-codes
+(defun jabber-muc--process-other-leave (jc group nickname status-codes
                                             item actor reason)
   "Handle another participant leaving GROUP.
+JC is the connection.
 NICKNAME is the departing user.  STATUS-CODES, ITEM, ACTOR and REASON
 come from the stanza."
   (let* ((plist (jabber-muc-participant-plist group nickname))
@@ -1708,8 +1758,11 @@ come from the stanza."
                          (concat " <"
                                  (jabber-jid-user jid)
                                  ">")))))
+    (when (fboundp 'jabber-message-correct--muc-presence-leave)
+      (jabber-message-correct--muc-presence-leave
+       jc (concat group "/" nickname)))
     (jabber-muc-remove-participant group nickname)
-    (when-let* ((buffer (jabber-muc-find-buffer group)))
+    (when-let* ((buffer (jabber-muc-find-buffer group jc)))
       (with-current-buffer buffer
         (jabber-chat-buffer-with-scrolltobottom
           (when (and (fboundp 'jabber-chatstates--muc-remove-nick)
@@ -1831,6 +1884,9 @@ Silently ignore; the user may lack permissions."
   "On JC, handle a participant entering or updating presence in GROUP.
 NICKNAME is the user.  SYMBOL is their JID symbol.  STATUS-CODES,
 X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
+  (when (fboundp 'jabber-message-correct--muc-presence-enter)
+    (jabber-message-correct--muc-presence-enter
+     jc (concat group "/" nickname)))
   ;; Self-presence: check nickname too since some servers (e.g.
   ;; ejabberd mod_irc) omit the 110 status code.
   (when (or (member jabber-muc-status-self-presence status-codes)
@@ -1854,12 +1910,12 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
     (when (and (not self-p) (null old-plist))
       (when-let* ((jid (plist-get new-plist 'jid))
                   (bare (jabber-jid-user jid))
-                  (buf (jabber-muc-find-buffer group)))
+                  (buf (jabber-muc-find-buffer group jc)))
         (with-current-buffer buf
           (when (and (eq jabber-chat-encryption 'omemo)
                      (fboundp 'jabber-omemo--prefetch-sessions))
             (jabber-omemo--prefetch-sessions jc bare)))))
-    (when-let* ((buffer (jabber-muc-find-buffer group)))
+    (when-let* ((buffer (jabber-muc-find-buffer group jc)))
       (let ((report (jabber-muc-report-delta nickname old-plist new-plist
                                              reason actor)))
         (when report

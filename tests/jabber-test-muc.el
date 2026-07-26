@@ -563,7 +563,8 @@ entry with JC=nil."
         (progn
           (with-current-buffer buf
             (setq-local jabber-chat-encryption 'omemo))
-          (cl-letf (((symbol-function 'jabber-muc-find-buffer) (lambda (_) buf))
+          (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                     (lambda (_group &optional _jc) buf))
                     ((symbol-function 'jabber-omemo--prefetch-sessions)
                      (lambda (_ jid) (push jid prefetch-calls)))
                     ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
@@ -593,7 +594,8 @@ entry with JC=nil."
         (progn
           (with-current-buffer buf
             (setq-local jabber-chat-encryption 'plaintext))
-          (cl-letf (((symbol-function 'jabber-muc-find-buffer) (lambda (_) buf))
+          (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                     (lambda (_group &optional _jc) buf))
                     ((symbol-function 'jabber-omemo--prefetch-sessions)
                      (lambda (_ jid) (push jid prefetch-calls)))
                     ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
@@ -623,7 +625,8 @@ entry with JC=nil."
         (progn
           (with-current-buffer buf
             (setq-local jabber-chat-encryption 'omemo))
-          (cl-letf (((symbol-function 'jabber-muc-find-buffer) (lambda (_) buf))
+          (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                     (lambda (_group &optional _jc) buf))
                     ((symbol-function 'jabber-omemo--prefetch-sessions)
                      (lambda (_ jid) (push jid prefetch-calls)))
                     ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
@@ -656,7 +659,8 @@ entry with JC=nil."
         (progn
           (with-current-buffer buf
             (setq-local jabber-chat-encryption 'omemo))
-          (cl-letf (((symbol-function 'jabber-muc-find-buffer) (lambda (_) buf))
+          (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                     (lambda (_group &optional _jc) buf))
                     ((symbol-function 'jabber-omemo--prefetch-sessions)
                      (lambda (_ jid) (push jid prefetch-calls)))
                     ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
@@ -951,6 +955,31 @@ entry with JC=nil."
                  "This room is now non-anonymous")
                (nreverse notices))))))
 
+(ert-deftest jabber-test-muc-buffer-registry-is-account-scoped ()
+  "Two accounts may hold distinct buffers for the same room."
+  (let ((jabber-buffer-registry--buffers
+         (make-hash-table :test #'equal))
+        (a (generate-new-buffer " *muc-account-a*"))
+        (b (generate-new-buffer " *muc-account-b*"))
+        (group "room@conference.example.com"))
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                   (lambda (jc)
+                     (if (eq jc 'jc-a) "a@example.com" "b@example.com"))))
+          (with-current-buffer a
+            (setq-local jabber-group group)
+            (jabber-buffer-registry-register
+             'muc (jabber-muc--buffer-key 'jc-a group)))
+          (with-current-buffer b
+            (setq-local jabber-group group)
+            (jabber-buffer-registry-register
+             'muc (jabber-muc--buffer-key 'jc-b group)))
+          (should (eq a (jabber-muc-find-buffer group 'jc-a)))
+          (should (eq b (jabber-muc-find-buffer group 'jc-b)))
+          (should-not (jabber-muc-find-buffer group)))
+      (kill-buffer a)
+      (kill-buffer b))))
+
 (ert-deftest jabber-muc-test-process-enter-schedules-next ()
   "Self-presence in process-enter schedules autojoin-next via timer."
   (let* ((jabber-muc--autojoin-queue nil)
@@ -970,7 +999,8 @@ entry with JC=nil."
               ((symbol-function 'jabber-muc-participant-plist) (lambda (&rest _) nil))
               ((symbol-function 'jabber-muc-modify-participant) #'ignore)
               ((symbol-function 'jabber-muc-report-delta) (lambda (&rest _) nil))
-              ((symbol-function 'jabber-muc-find-buffer) (lambda (_) nil)))
+              ((symbol-function 'jabber-muc-find-buffer)
+               (lambda (_group &optional _jc) nil)))
       (jabber-muc--process-enter
        'fake-jc "room@muc" "me"
        (jabber-jid-symbol "room@muc/me")

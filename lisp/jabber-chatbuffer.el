@@ -406,29 +406,57 @@ at the bottom of the window."
                  (setcdr cons (+ (cdr cons) shift)))))
         (setq list (cdr list))))))
 
+(defun jabber-chat-ewoc--muc-data-p (data)
+  "Return non-nil when DATA is a MUC message entry."
+  (memq (car-safe data) '(:muc-local :muc-foreign :muc-error)))
+
+(defun jabber-chat-ewoc--client-id-key (msg id muc-p)
+  "Return the index key for MSG client ID ID.
+MUC-P makes client IDs sender-scoped."
+  (if (and muc-p (plist-get msg :from))
+      (list :muc (plist-get msg :from) id)
+    id))
+
+(defun jabber-chat-ewoc-duplicate-p (data)
+  "Return non-nil when message DATA is already displayed."
+  (let* ((msg (cadr data))
+         (msg-p (listp msg))
+         (id (and msg-p (plist-get msg :id)))
+         (sid (and msg-p (plist-get msg :server-id)))
+         (id-key (and id
+                      (jabber-chat-ewoc--client-id-key
+                       msg id (jabber-chat-ewoc--muc-data-p data)))))
+    (or (and id-key (gethash id-key jabber-chat--msg-nodes))
+        (and sid (gethash sid jabber-chat--msg-nodes)))))
+
+(defun jabber-chat-ewoc-register-node (node data)
+  "Register EWOC NODE under the message identities in DATA."
+  (let* ((msg (cadr data))
+         (msg-p (listp msg))
+         (id (and msg-p (plist-get msg :id)))
+         (sid (and msg-p (plist-get msg :server-id)))
+         (id-key (and id
+                      (jabber-chat-ewoc--client-id-key
+                       msg id (jabber-chat-ewoc--muc-data-p data)))))
+    (when id-key (puthash id-key node jabber-chat--msg-nodes))
+    (when sid (puthash sid node jabber-chat--msg-nodes))
+    node))
+
 (defun jabber-chat-ewoc-enter (data)
   "Insert DATA into the chat ewoc and register by stanza ID.
 DATA is (TYPE MSG-PLIST).  When the plist has a non-nil :id or
 :server-id, the returned ewoc node is stored in
 `jabber-chat--msg-nodes' for O(1) lookup.  Returns the ewoc node,
 or nil if the message was a duplicate."
-  (let* ((msg (cadr data))
-         (msg-p (listp msg))
-         (id (and msg-p (plist-get msg :id)))
-         (sid (and msg-p (plist-get msg :server-id))))
-    ;; Skip if this stanza ID is already displayed.
-    (unless (or (and id (gethash id jabber-chat--msg-nodes))
-                (and sid (gethash sid jabber-chat--msg-nodes)))
-      (let* ((preinsert-point (and (markerp jabber-point-insert)
-                                   (marker-position jabber-point-insert)))
-             (node (let ((buffer-undo-list t))
-                     (ewoc-enter-last jabber-chat-ewoc data))))
+  (unless (jabber-chat-ewoc-duplicate-p data)
+    (let ((preinsert-point (and (markerp jabber-point-insert)
+                                (marker-position jabber-point-insert))))
+      (let ((node (let ((buffer-undo-list t))
+                    (ewoc-enter-last jabber-chat-ewoc data))))
         (when preinsert-point
           (jabber-chat-buffer--shift-undo-list
            (- jabber-point-insert preinsert-point)))
-        (when id (puthash id node jabber-chat--msg-nodes))
-        (when sid (puthash sid node jabber-chat--msg-nodes))
-        node))))
+        (jabber-chat-ewoc-register-node node data)))))
 
 (defun jabber-chat-ewoc--msg-matches-id-p (msg stanza-id)
   "Return non-nil when MSG has STANZA-ID as :id, :origin-id or :server-id."
@@ -437,23 +465,29 @@ or nil if the message was a duplicate."
            (equal stanza-id (plist-get msg :origin-id))
            (equal stanza-id (plist-get msg :server-id)))))
 
-(defun jabber-chat-ewoc--find-by-id-scan (stanza-id)
-  "Scan `jabber-chat-ewoc' for a node matching STANZA-ID."
+(defun jabber-chat-ewoc--find-by-id-scan (stanza-id &optional sender)
+  "Scan `jabber-chat-ewoc' for STANZA-ID, optionally from SENDER."
   (let ((node (and jabber-chat-ewoc (ewoc-nth jabber-chat-ewoc 0)))
         found)
     (while (and node (not found))
-      (if (jabber-chat-ewoc--msg-matches-id-p
-           (cadr (ewoc-data node)) stanza-id)
+      (let ((msg (cadr (ewoc-data node))))
+        (if (and (jabber-chat-ewoc--msg-matches-id-p msg stanza-id)
+                 (or (null sender)
+                     (equal sender (plist-get msg :from))))
           (setq found node)
-        (setq node (ewoc-next jabber-chat-ewoc node))))
+          (setq node (ewoc-next jabber-chat-ewoc node)))))
     found))
 
 (defun jabber-chat-ewoc--backfill-node-ids (node)
   "Backfill non-nil message IDs from NODE into `jabber-chat--msg-nodes'."
   (let* ((msg (cadr (ewoc-data node)))
          (id (and (listp msg) (plist-get msg :id)))
-         (sid (and (listp msg) (plist-get msg :server-id))))
-    (when id (puthash id node jabber-chat--msg-nodes))
+         (sid (and (listp msg) (plist-get msg :server-id)))
+         (id-key (and id
+                      (jabber-chat-ewoc--client-id-key
+                       msg id (jabber-chat-ewoc--muc-data-p
+                               (ewoc-data node))))))
+    (when id-key (puthash id-key node jabber-chat--msg-nodes))
     (when sid (puthash sid node jabber-chat--msg-nodes))))
 
 (defun jabber-chat-ewoc-find-by-id (stanza-id)
@@ -463,6 +497,26 @@ or nil if the message was a duplicate."
         (when-let* ((node (jabber-chat-ewoc--find-by-id-scan stanza-id)))
           (jabber-chat-ewoc--backfill-node-ids node)
           node))))
+
+(defun jabber-chat-ewoc-find-by-id-and-sender (stanza-id sender)
+  "Return the ewoc node for STANZA-ID sent by full JID SENDER."
+  (when (and stanza-id sender jabber-chat--msg-nodes)
+    (or (gethash (list :muc sender stanza-id) jabber-chat--msg-nodes)
+        (when-let* ((node (jabber-chat-ewoc--find-by-id-scan
+                           stanza-id sender)))
+          (jabber-chat-ewoc--backfill-node-ids node)
+          node))))
+
+(defun jabber-chat-ewoc-unregister-node (node)
+  "Remove all message index entries that refer to ewoc NODE."
+  (when jabber-chat--msg-nodes
+    (let (keys)
+      (maphash (lambda (key value)
+                 (when (eq value node)
+                   (push key keys)))
+               jabber-chat--msg-nodes)
+      (dolist (key keys)
+        (remhash key jabber-chat--msg-nodes)))))
 
 (defun jabber-chat-ewoc-invalidate (node)
   "Redraw ewoc NODE without recording undo."
@@ -498,13 +552,17 @@ or nil if the message was a duplicate."
 ;; can change across reload), so we settle point on the anchored message.
 
 (defun jabber-chat-buffer--node-stanza-id (node)
-  "Return the stanza id of message ewoc NODE, or nil.
-Prefer :id, fall back to :server-id."
+  "Return the stable index key of message ewoc NODE, or nil."
   (and node
-       (let ((msg (cadr (ewoc-data node))))
+       (let* ((data (ewoc-data node))
+              (msg (cadr data)))
          (and (listp msg)
-              (or (plist-get msg :id)
-                  (plist-get msg :server-id))))))
+              (if (jabber-chat-ewoc--muc-data-p data)
+                  (or (plist-get msg :server-id)
+                      (when-let* ((id (plist-get msg :id)))
+                        (jabber-chat-ewoc--client-id-key msg id t)))
+                (or (plist-get msg :id)
+                    (plist-get msg :server-id)))))))
 
 (defun jabber-chat-buffer--window-anchor (window)
   "Return a view anchor for WINDOW.
@@ -558,7 +616,9 @@ the bottom when that message is no longer loaded."
            ;; a half-typed message's cursor.
            (jabber-chat-buffer--recenter-input-window window))
           (`(msg . ,id)
-           (if-let* ((node (jabber-chat-ewoc-find-by-id id)))
+           (if-let* ((node (if (stringp id)
+                               (jabber-chat-ewoc-find-by-id id)
+                             (gethash id jabber-chat--msg-nodes))))
                (let ((pos (ewoc-location node)))
                  (set-window-start window pos)
                  (set-window-point window pos))

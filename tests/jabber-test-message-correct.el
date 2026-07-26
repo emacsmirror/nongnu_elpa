@@ -179,6 +179,58 @@ WHERE stanza_id = 'stanza-abc'"))
              (plist (car rows)))
         (should-not (plist-get plist :edited))))))
 
+(ert-deftest jabber-test-message-correct-db-candidates-are-conversation-scoped ()
+  "Correction candidates never cross account or peer boundaries."
+  (jabber-test-message-correct-with-db
+    (dolist (row '(("me-a@example.com" "friend@example.com" "one")
+                   ("me-b@example.com" "friend@example.com" "two")
+                   ("me-a@example.com" "other@example.com" "three")))
+      (jabber-db-store-message
+       (nth 0 row) (nth 1 row) "in" "chat" (nth 2 row)
+       (floor (float-time)) nil "shared-id"))
+    (let ((candidates
+           (jabber-db-message-correction-candidates
+            "me-a@example.com" "friend@example.com" "shared-id")))
+      (should (= 1 (length candidates)))
+      (should (equal "friend@example.com"
+                     (plist-get (car candidates) :from))))))
+
+(ert-deftest jabber-test-message-correct-db-update-targets-one-row ()
+  "Correction updates the selected primary row only."
+  (jabber-test-message-correct-with-db
+    (dotimes (i 2)
+      (jabber-db-store-message
+       "me@example.com" "room@conference.example.com" "in" "groupchat"
+       (format "body-%d" i) (+ (floor (float-time)) i)
+       (if (zerop i) "alice" "bob") "shared-id"))
+    (let* ((rows (jabber-db-message-correction-candidates
+                  "me@example.com" "room@conference.example.com" "shared-id"))
+           (alice (seq-find
+                   (lambda (row)
+                     (equal (plist-get row :from)
+                            "room@conference.example.com/alice"))
+                   rows)))
+      (jabber-db-correct-message-row (plist-get alice :row-id) "fixed")
+      (should
+       (equal '(("fixed" 1) ("body-1" 0))
+              (sqlite-select
+               jabber-db--connection
+               "SELECT body, edited FROM message ORDER BY id"))))))
+
+(ert-deftest jabber-test-message-correct-db-unscoped-update-rejects-collision ()
+  "The compatibility update refuses an ambiguous global stanza ID."
+  (jabber-test-message-correct-with-db
+    (dolist (account '("me-a@example.com" "me-b@example.com"))
+      (jabber-db-store-message
+       account "friend@example.com" "in" "chat" account
+       (floor (float-time)) nil "shared-id"))
+    (jabber-db-correct-message "shared-id" "unsafe")
+    (should
+     (equal '(("me-a@example.com" 0) ("me-b@example.com" 0))
+            (sqlite-select
+             jabber-db--connection
+             "SELECT body, edited FROM message ORDER BY account")))))
+
 ;;; Group 4: ewoc apply correction
 
 (ert-deftest jabber-test-message-correct-apply-updates-ewoc ()
@@ -386,7 +438,8 @@ must not mutate the DB or the ewoc."
     (cl-letf (((symbol-function 'jabber-muc-message-p) (lambda (_) t))
               ((symbol-function 'jabber-chat--decrypt-if-needed)
                (lambda (_jc xml) xml))
-              ((symbol-function 'jabber-muc-find-buffer) (lambda (_) nil))
+              ((symbol-function 'jabber-muc-find-buffer)
+               (lambda (_group &optional _jc) nil))
               ((symbol-function 'jabber-muc--display-message) #'ignore)
               ((symbol-function 'jabber-message-correct--apply)
                (lambda (&rest _) (setq apply-called t))))
@@ -788,6 +841,179 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
       (should (jabber-xml-child-with-xmlns sent "urn:xmpp:message-correct:0"))
       (should-not (jabber-xml-child-with-xmlns sent "urn:xmpp:reply:0"))
       (should-not (jabber-xml-child-with-xmlns sent "urn:xmpp:fallback:0")))))
+
+(ert-deftest jabber-test-message-correct-omemo-failure-preserves-local-state ()
+  "An asynchronous OMEMO pre-send failure leaves local history unchanged."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-group nil)
+    (setq-local jabber-chatting-with "alice@example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chat-encryption 'omemo)
+    (let ((msg (list :id "original-1"
+                     :from "me@example.com"
+                     :body "original"
+                     :timestamp (current-time)))
+          db-updated)
+      (jabber-chat-ewoc-enter (list :local msg))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "proposed correction"))
+                ((symbol-function 'jabber-chat-send)
+                 (lambda (_jc _body _extra _success failure)
+                   (funcall failure "no recipient sessions")))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (&rest _)
+                   (list (list :row-id 1 :from "me@example.com"))))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (&rest _) (setq db-updated t))))
+        (jabber-correct-last-message))
+      (should (equal "original" (plist-get msg :body)))
+      (should-not (plist-get msg :edited))
+      (should-not db-updated))))
+
+(ert-deftest jabber-test-message-correct-omemo-success-commits-once ()
+  "An OMEMO correction commits only from its transport-success callback."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-group nil)
+    (setq-local jabber-chatting-with "alice@example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chat-encryption 'omemo)
+    (let ((msg (list :id "original-1"
+                     :from "me@example.com"
+                     :body "original"
+                     :timestamp (current-time)))
+          (updates 0))
+      (jabber-chat-ewoc-enter (list :local msg))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "corrected"))
+                ((symbol-function 'jabber-chat-send)
+                 (lambda (_jc _body _extra success _failure)
+                   (funcall success)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (&rest _)
+                   (list (list :row-id 1 :from "me@example.com"))))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (_row-id _body) (cl-incf updates))))
+        (jabber-correct-last-message))
+      (should (equal "corrected" (plist-get msg :body)))
+      (should (plist-get msg :edited))
+      (should (= 1 updates)))))
+
+(ert-deftest jabber-test-message-correct-own-muc-echo-matches-stored-sender ()
+  "A locally sent MUC echo is corrected using its full stored sender."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-group "room@conference.example.com")
+    (setq-local jabber-chatting-with nil)
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chat-encryption 'omemo)
+    (let ((msg (list :id "original-1"
+                     :from "room@conference.example.com/me"
+                     :body "original"
+                     :timestamp (current-time)))
+          queried
+          updates)
+      (jabber-chat-ewoc-enter (list :muc-local msg))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "corrected"))
+                ((symbol-function 'jabber-muc-send)
+                 (lambda (_jc _body _extra success _failure)
+                   (funcall success)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (account peer id)
+                   (setq queried (list account peer id))
+                   (list (list :row-id 7
+                               :from "room@conference.example.com/me"))))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (row-id body)
+                   (setq updates (list row-id body)))))
+        (jabber-correct-last-message))
+      (should (equal '("me@example.com"
+                       "room@conference.example.com"
+                       "original-1")
+                     queried))
+      (should (equal '(7 "corrected") updates))
+      (should (equal "corrected" (plist-get msg :body))))))
+
+(ert-deftest jabber-test-message-correct-omemo-late-success-after-failure-is-inert ()
+  "A stale success callback cannot commit after the send has failed."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-group nil)
+    (setq-local jabber-chatting-with "alice@example.com")
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chat-encryption 'omemo)
+    (let ((msg (list :id "original-1"
+                     :from "me@example.com"
+                     :body "original"
+                     :timestamp (current-time)))
+          (updates 0)
+          success
+          failure)
+      (jabber-chat-ewoc-enter (list :local msg))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) "corrected"))
+                ((symbol-function 'jabber-chat-send)
+                 (lambda (_jc _body _extra on-success on-failure)
+                   (setq success on-success
+                         failure on-failure)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-message-correction-candidates)
+                 (lambda (&rest _)
+                   (list (list :row-id 1 :from "me@example.com"))))
+                ((symbol-function 'jabber-db-correct-message-row)
+                 (lambda (&rest _) (cl-incf updates))))
+        (jabber-correct-last-message)
+        (funcall failure "connection reset")
+        (funcall success))
+      (should (equal "original" (plist-get msg :body)))
+      (should-not (plist-get msg :edited))
+      (should (= 0 updates)))))
+
+(ert-deftest jabber-test-message-correct-blocks-overlapping-omemo-edits ()
+  "A second edit cannot race an OMEMO correction awaiting transport."
+  (jabber-test-message-correct-with-ewoc
+    (setq-local jabber-message-correct--pending-outgoing '(pending))
+    (let ((prompted nil))
+      (cl-letf (((symbol-function 'read-string)
+                 (lambda (&rest _) (setq prompted t))))
+        (should-error (jabber-correct-last-message) :type 'user-error))
+      (should-not prompted))))
+
+(ert-deftest jabber-test-message-correct-muc-continuity-rejects-rejoin ()
+  "Legacy MUC correction continuity is reset across occupant presence lifetimes."
+  (let ((jabber-message-correct--muc-presence-sessions
+         (make-hash-table :test #'equal))
+        (jabber-message-correct--muc-last-message-ids
+         (make-hash-table :test #'equal))
+        (from "room@conference.example.com/alice"))
+    (jabber-message-correct--muc-presence-enter 'jc-a from)
+    (jabber-message-correct--record-muc-original 'jc-a from "original-1")
+    (should (jabber-message-correct--muc-current-target-p
+             'jc-a from "original-1"))
+    (jabber-message-correct--muc-presence-leave 'jc-a from)
+    (jabber-message-correct--muc-presence-enter 'jc-a from)
+    (should-not (jabber-message-correct--muc-current-target-p
+                 'jc-a from "original-1"))))
+
+(ert-deftest jabber-test-message-correct-muc-continuity-is-connection-scoped ()
+  "Two accounts in one room cannot authorize each other's correction target."
+  (let ((jabber-message-correct--muc-presence-sessions
+         (make-hash-table :test #'equal))
+        (jabber-message-correct--muc-last-message-ids
+         (make-hash-table :test #'equal))
+        (from "room@conference.example.com/alice"))
+    (jabber-message-correct--muc-presence-enter 'jc-a from)
+    (jabber-message-correct--muc-presence-enter 'jc-b from)
+    (jabber-message-correct--record-muc-original 'jc-a from "account-a-id")
+    (should (jabber-message-correct--muc-current-target-p
+             'jc-a from "account-a-id"))
+    (should-not (jabber-message-correct--muc-current-target-p
+                 'jc-b from "account-a-id"))))
 
 (provide 'jabber-test-message-correct)
 

@@ -243,7 +243,8 @@ files."
 
 (declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
 (declare-function jabber-chat-send "jabber-chat.el"
-                  (jc body &optional extra-elements))
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
 (defvar jabber-xml-data)                ; jabber.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 

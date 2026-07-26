@@ -10,6 +10,9 @@
 (require 'jabber-chat)
 (require 'jabber-omemo)
 
+(defvar jabber-group nil)
+(defvar jabber-muc-participants nil)
+
 ;;; Test infrastructure
 
 (defmacro jabber-test-omemo-message-with-db (&rest body)
@@ -174,20 +177,76 @@ Clears OMEMO in-memory caches and tears down on exit."
                             (body () "hello plain"))))
     (should-not (jabber-omemo--detect-encrypted xml-data))))
 
-(ert-deftest jabber-test-omemo-message-detect-encrypted-muc-echo ()
-  "detect-encrypted returns muc-echo plist and consumes cache."
-  (let ((jabber-omemo--sent-muc-plaintexts (make-hash-table :test #'equal)))
-    (puthash "msg-001" "secret text" jabber-omemo--sent-muc-plaintexts)
-    (let* ((xml-data '(message ((from . "room@conf.example.com/me")
-                                (id . "msg-001")
-                                (type . "groupchat"))
-                               (body () "fallback")))
-           (result (jabber-omemo--detect-encrypted xml-data)))
-      (should result)
-      (should (eq 'muc-echo (plist-get result :type)))
-      (should (string= "secret text" (plist-get result :cached)))
-      ;; Cache entry consumed
-      (should-not (gethash "msg-001" jabber-omemo--sent-muc-plaintexts)))))
+(ert-deftest jabber-test-omemo-message-muc-echo-requires-exact-occupant ()
+  "Only the exact local occupant echo may recover sent plaintext."
+  (let* ((jc 'connection)
+         (room "room@conf.example.com")
+         (id "msg-001")
+         (key (jabber-omemo--muc-echo-key
+               jc room (concat room "/me") id))
+         (jabber-omemo--sent-muc-plaintexts
+          (make-hash-table :test #'equal))
+         (xml-data `(message ((from . ,(concat room "/me"))
+                              (id . ,id)
+                              (type . "groupchat"))
+                             (body () "fallback")))
+         (detected '(:type omemo :parsed (:payload "ciphertext"))))
+    (puthash key "secret text" jabber-omemo--sent-muc-plaintexts)
+    (jabber-omemo--decrypt-handler jc xml-data detected)
+    (should (string= "secret text"
+                     (car (jabber-xml-node-children
+                           (car (jabber-xml-get-children
+                                 xml-data 'body))))))
+    (should-not (gethash key jabber-omemo--sent-muc-plaintexts))))
+
+(ert-deftest jabber-test-omemo-message-muc-echo-rejects-foreign-occupant ()
+  "A foreign occupant reusing our message id cannot read cached plaintext."
+  (let* ((jc 'connection)
+         (room "room@conf.example.com")
+         (id "msg-001")
+         (key (jabber-omemo--muc-echo-key
+               jc room (concat room "/me") id))
+         (jabber-omemo--sent-muc-plaintexts
+          (make-hash-table :test #'equal))
+         (xml-data `(message ((from . ,(concat room "/mallory"))
+                              (id . ,id)
+                              (type . "groupchat"))
+                             (body () "fallback")))
+         (runs 0))
+    (puthash key "secret text" jabber-omemo--sent-muc-plaintexts)
+    (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+               (lambda (_jc xml _parsed)
+                 (cl-incf runs)
+                 (jabber-chat--set-body xml "decrypted foreign"))))
+      (jabber-omemo--decrypt-handler
+       jc xml-data '(:type omemo :parsed (:payload "ciphertext"))))
+    (should (= 1 runs))
+    (should (gethash key jabber-omemo--sent-muc-plaintexts))))
+
+(ert-deftest jabber-test-omemo-message-muc-echo-rejects-other-room ()
+  "Another room reusing our message id cannot read cached plaintext."
+  (let* ((jc 'connection)
+         (room "room@conf.example.com")
+         (other "other@conf.example.com")
+         (id "msg-001")
+         (key (jabber-omemo--muc-echo-key
+               jc room (concat room "/me") id))
+         (jabber-omemo--sent-muc-plaintexts
+          (make-hash-table :test #'equal))
+         (xml-data `(message ((from . ,(concat other "/me"))
+                              (id . ,id)
+                              (type . "groupchat"))
+                             (body () "fallback")))
+         (runs 0))
+    (puthash key "secret text" jabber-omemo--sent-muc-plaintexts)
+    (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+               (lambda (_jc xml _parsed)
+                 (cl-incf runs)
+                 (jabber-chat--set-body xml "decrypted other"))))
+      (jabber-omemo--decrypt-handler
+       jc xml-data '(:type omemo :parsed (:payload "ciphertext"))))
+    (should (= 1 runs))
+    (should (gethash key jabber-omemo--sent-muc-plaintexts))))
 
 ;;; Group 5: Trust label formatting
 
@@ -321,21 +380,54 @@ Clears OMEMO in-memory caches and tears down on exit."
 
 (ert-deftest jabber-test-omemo-message-httpupload-send-url-handles-aesgcm ()
   "Send-url override returns non-nil for aesgcm:// URLs."
-  (cl-letf (((symbol-function 'jabber-omemo--ensure-sessions)
-             (lambda (_jc _jid callback) (funcall callback nil)))
-            ((symbol-function 'jabber-omemo--send-encrypted)
-             (lambda (&rest _) nil))
-            ((symbol-function 'jabber-connection-bare-jid)
-             (lambda (_jc) "me@example.com"))
-            ((symbol-function 'jabber-jid-user)
-             (lambda (jid) jid))
-            ((symbol-function 'jabber-muc-joined-p)
-             (lambda (_group &optional _jc) nil))
-            ((symbol-function 'jabber-chat-create-buffer)
-             (lambda (_jc _jid) (current-buffer))))
-    (should (jabber-omemo--httpupload-send-url
-             'fake-jc "alice@example.com"
-             "aesgcm://host/file#abc123"))))
+  (let (sent)
+    (cl-letf (((symbol-function 'jabber-muc-joined-p)
+               (lambda (_group &optional _jc) nil))
+              ((symbol-function 'jabber-chat-create-buffer)
+               (lambda (_jc _jid) (current-buffer)))
+              ((symbol-function 'jabber-omemo--send-chat)
+               (lambda (jc body &rest _)
+                 (setq sent (list jc body (current-buffer))))))
+      (should (jabber-omemo--httpupload-send-url
+               'fake-jc "alice@example.com"
+               "aesgcm://host/file#abc123"))
+      (should (equal (list 'fake-jc "aesgcm://host/file#abc123"
+                           (current-buffer))
+                     sent)))))
+
+(ert-deftest jabber-test-omemo-message-httpupload-stall-fails-on-reset ()
+  "A reset cancels a direct upload URL send before its late callback."
+  (let ((chat-buffer (generate-new-buffer " *omemo-upload-chat-test*"))
+        (jabber-omemo--pending-send-operations
+         (make-hash-table :test #'eq))
+        (failures 0)
+        (encrypted 0)
+        continuation)
+    (unwind-protect
+        (progn
+          (with-current-buffer chat-buffer
+            (setq-local jabber-chatting-with "alice@example.com"))
+          (cl-letf (((symbol-function 'jabber-muc-joined-p)
+                     (lambda (_group &optional _jc) nil))
+                    ((symbol-function 'jabber-chat-create-buffer)
+                     (lambda (_jc _jid) chat-buffer))
+                    ((symbol-function 'jabber-jid-user) #'identity)
+                    ((symbol-function 'jabber-omemo--display-pending)
+                     (lambda (&rest _) 'pending-node))
+                    ((symbol-function 'jabber-omemo--ensure-sessions)
+                     (lambda (_jc _jid callback)
+                       (setq continuation callback)))
+                    ((symbol-function 'jabber-omemo--send-encrypted)
+                     (lambda (&rest _) (cl-incf encrypted)))
+                    ((symbol-function 'jabber-omemo--send-failed)
+                     (lambda (&rest _) (cl-incf failures))))
+            (jabber-omemo--httpupload-send-url
+             'fake-jc "alice@example.com" "aesgcm://host/file#abc123")
+            (jabber-omemo--session-reset 'fake-jc)
+            (funcall continuation '((1 . session))))
+          (should (= 1 failures))
+          (should (= 0 encrypted)))
+      (kill-buffer chat-buffer))))
 
 (ert-deftest jabber-test-omemo-message-httpupload-send-url-muc-from-any-buffer ()
   "An aesgcm URL for a joined room is sent in that room's buffer.
@@ -532,8 +624,8 @@ buffer-local `jabber-group'."
 
 ;;; Group 13: Decrypt handler error recovery
 
-(ert-deftest jabber-test-omemo-message-decrypt-handler-swallows-not-for-us ()
-  "decrypt-handler returns xml-data unchanged when stanza is not for us."
+(ert-deftest jabber-test-omemo-message-decrypt-handler-swallows-bodyless-not-for-us ()
+  "decrypt-handler leaves a bodyless stanza unchanged when it is not for us."
   (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
              (lambda (&rest _)
                (signal 'jabber-omemo-not-for-us '(42)))))
@@ -543,6 +635,21 @@ buffer-local `jabber-group'."
            (detected (list :type 'omemo :parsed nil))
            (result (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)))
       (should (eq result xml-data)))))
+
+(ert-deftest jabber-test-omemo-message-decrypt-handler-rejects-payload-not-for-us ()
+  "decrypt-handler re-signals when a payload-bearing stanza is not for us."
+  (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+             (lambda (&rest _)
+               (signal 'jabber-omemo-not-for-us '(42)))))
+    (let ((xml-data '(message ((from . "alice@example.com/phone")
+                               (type . "chat"))
+                              (body () "OMEMO encrypted message")
+                              (encrypted nil)))
+          (detected (list :type 'omemo
+                          :parsed (list :payload "ciphertext"))))
+      (should-error
+       (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)
+       :type 'jabber-omemo-not-for-us))))
 
 (ert-deftest jabber-test-omemo-message-decrypt-handler-no-publish-on-prekey-failure ()
   "decrypt-handler does NOT republish bundle on prekey failure (Dino-style)."
@@ -634,6 +741,148 @@ buffer-local `jabber-group'."
 
 ;;; Group 14: MUC send hook buffer
 
+(ert-deftest jabber-test-omemo-message-chat-stalled-device-list-fails-on-reset ()
+  "A reset fails a chat send stalled before recipient sessions arrive."
+  (let ((jabber-omemo--pending-send-operations
+         (make-hash-table :test #'eq))
+        (jabber-chatting-with "friend@example.com")
+        (successes 0)
+        (failures 0)
+        (encrypted 0)
+        continuation)
+    (cl-letf (((symbol-function 'jabber-jid-user) #'identity)
+              ((symbol-function 'jabber-omemo--ensure-sessions)
+               (lambda (_jc _jid callback)
+                 (setq continuation callback)))
+              ((symbol-function 'jabber-omemo--send-encrypted)
+               (lambda (&rest _) (cl-incf encrypted)))
+              ((symbol-function 'jabber-omemo--send-failed)
+               (lambda (&rest _) nil)))
+      (jabber-omemo--send-chat
+       'fake-jc "corrected"
+       '((replace ((xmlns . "urn:xmpp:message-correct:0")
+                   (id . "old"))))
+       (lambda () (cl-incf successes))
+       (lambda (_reason) (cl-incf failures)))
+      (jabber-omemo--session-reset 'fake-jc)
+      (funcall continuation '((1 . session)))
+      (should (= 0 successes))
+      (should (= 1 failures))
+      (should (= 0 encrypted))
+      (should-not
+       (gethash 'fake-jc jabber-omemo--pending-send-operations)))))
+
+(ert-deftest jabber-test-omemo-message-chat-setup-error-finishes-operation ()
+  "A synchronous session setup error fails and unregisters the send."
+  (let ((jabber-omemo--pending-send-operations
+         (make-hash-table :test #'eq))
+        (jabber-chatting-with "friend@example.com")
+        (failures 0))
+    (cl-letf (((symbol-function 'jabber-jid-user) #'identity)
+              ((symbol-function 'jabber-omemo--ensure-sessions)
+               (lambda (&rest _) (error "setup failed")))
+              ((symbol-function 'jabber-omemo--send-failed)
+               (lambda (&rest _) nil)))
+      (jabber-omemo--send-chat
+       'fake-jc "corrected"
+       '((replace ((xmlns . "urn:xmpp:message-correct:0")
+                   (id . "old"))))
+       #'ignore
+       (lambda (_reason) (cl-incf failures))))
+    (should (= 1 failures))
+    (should-not
+     (gethash 'fake-jc jabber-omemo--pending-send-operations))))
+
+(ert-deftest jabber-test-omemo-message-ordinary-chat-stall-fails-on-reset ()
+  "A reset fails an ordinary chat send and makes its late callback inert."
+  (let ((jabber-omemo--pending-send-operations
+         (make-hash-table :test #'eq))
+        (jabber-chatting-with "friend@example.com")
+        (failures 0)
+        (encrypted 0)
+        continuation)
+    (cl-letf (((symbol-function 'jabber-jid-user) #'identity)
+              ((symbol-function 'jabber-omemo--display-pending)
+               (lambda (&rest _) 'pending-node))
+              ((symbol-function 'jabber-omemo--ensure-sessions)
+               (lambda (_jc _jid callback)
+                 (setq continuation callback)))
+              ((symbol-function 'jabber-omemo--send-encrypted)
+               (lambda (&rest _) (cl-incf encrypted)))
+              ((symbol-function 'jabber-omemo--send-failed)
+               (lambda (&rest _) (cl-incf failures))))
+      (jabber-omemo--send-chat 'fake-jc "hello")
+      (jabber-omemo--session-reset 'fake-jc)
+      (funcall continuation '((1 . session)))
+      (should (= 1 failures))
+      (should (= 0 encrypted))
+      (should-not
+       (gethash 'fake-jc jabber-omemo--pending-send-operations)))))
+
+(ert-deftest jabber-test-omemo-message-muc-stalled-bundle-fails-on-reset ()
+  "A reset fails a MUC send stalled while own sessions are fetched."
+  (let ((jabber-omemo--pending-send-operations
+         (make-hash-table :test #'eq))
+        (jabber-group "room@conf.example.com")
+        (jabber-muc-participants nil)
+        (successes 0)
+        (failures 0)
+        (encrypted 0)
+        continuation)
+    (cl-letf (((symbol-function 'jabber-omemo--muc-participant-jids)
+               (lambda (&rest _) '("alice@example.com")))
+              ((symbol-function 'jabber-omemo--ensure-sessions-multi)
+               (lambda (_jc _jids callback)
+                 (funcall callback '((1 . participant-session)))))
+              ((symbol-function 'jabber-omemo--ensure-sessions)
+               (lambda (_jc _jid callback)
+                 (setq continuation callback)))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-omemo--send-encrypted-muc)
+               (lambda (&rest _) (cl-incf encrypted)))
+              ((symbol-function 'jabber-omemo--send-failed)
+               (lambda (&rest _) nil)))
+      (jabber-omemo--send-muc
+       'fake-jc "corrected"
+       '((replace ((xmlns . "urn:xmpp:message-correct:0")
+                   (id . "old"))))
+       (lambda () (cl-incf successes))
+       (lambda (_reason) (cl-incf failures)))
+      (jabber-omemo--session-reset 'fake-jc)
+      (funcall continuation '((2 . own-session)))
+      (should (= 0 successes))
+      (should (= 1 failures))
+      (should (= 0 encrypted))
+      (should-not
+       (gethash 'fake-jc jabber-omemo--pending-send-operations)))))
+
+(ert-deftest jabber-test-omemo-message-ordinary-muc-stall-fails-on-reset ()
+  "A reset fails an ordinary MUC send and makes its late callback inert."
+  (let ((jabber-omemo--pending-send-operations
+         (make-hash-table :test #'eq))
+        (jabber-group "room@conf.example.com")
+        (jabber-muc-participants nil)
+        (failures 0)
+        (encrypted 0)
+        continuation)
+    (cl-letf (((symbol-function 'jabber-omemo--muc-participant-jids)
+               (lambda (&rest _) '("alice@example.com")))
+              ((symbol-function 'jabber-omemo--ensure-sessions-multi)
+               (lambda (_jc _jids callback)
+                 (setq continuation callback)))
+              ((symbol-function 'jabber-omemo--send-encrypted-muc)
+               (lambda (&rest _) (cl-incf encrypted)))
+              ((symbol-function 'jabber-omemo--send-failed)
+               (lambda (&rest _) (cl-incf failures))))
+      (jabber-omemo--send-muc 'fake-jc "hello")
+      (jabber-omemo--session-reset 'fake-jc)
+      (funcall continuation '((1 . session)))
+      (should (= 1 failures))
+      (should (= 0 encrypted))
+      (should-not
+       (gethash 'fake-jc jabber-omemo--pending-send-operations)))))
+
 (defmacro jabber-test-omemo-message--with-muc-send-stubs (sent-var &rest body)
   "Run BODY with the MUC encrypt/send path stubbed.
 SENT-VAR is bound to the stanza passed to `jabber-send-sexp'."
@@ -677,6 +926,33 @@ SENT-VAR is bound to the stanza passed to `jabber-send-sexp'."
        'fake-jc "hello" "room@conf.example.com" nil muc-buffer)
       (should sent)
       (should-not (jabber-xml-get-children sent 'probe)))))
+
+(ert-deftest jabber-test-omemo-message-correction-handoff-skips-new-echo ()
+  "A successful correction runs its callback without inserting a new node."
+  (let ((entered nil)
+        (successes 0)
+        (jabber-chat-send-hooks nil))
+    (cl-letf (((symbol-function 'jabber-omemo-encrypt-message)
+               (lambda (_plaintext)
+                 '(:iv "iv" :key "key" :payload "payload")))
+              ((symbol-function 'jabber-omemo--build-encrypted-xml)
+               (lambda (&rest _)
+                 '(encrypted
+                   ((xmlns . "eu.siacs.conversations.axolotl")))))
+              ((symbol-function 'jabber-chat-ewoc-enter)
+               (lambda (&rest _) (setq entered t)))
+              ((symbol-function 'jabber-send-sexp)
+               (lambda (_jc _stanza success _failure)
+                 (funcall success))))
+      (jabber-omemo--send-encrypted
+       'fake-jc "corrected" "friend@example.com" nil
+       (current-buffer) nil "correction-1"
+       '((replace ((xmlns . "urn:xmpp:message-correct:0")
+                   (id . "original-1"))))
+       (lambda () (cl-incf successes))
+       #'ignore))
+    (should (= 1 successes))
+    (should-not entered)))
 
 ;;; Group 12: Signed pre-key rotation
 

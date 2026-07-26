@@ -243,6 +243,36 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
                               "SELECT COUNT(*) FROM message"))))
             (should (= 1 count))))))))
 
+(ert-deftest jabber-chat-test-sent-correction-uses-recipient-buffer ()
+  "A sent-carbon correction redraws the recipient chat buffer."
+  (let ((recipient-buffer (generate-new-buffer " *carbon-recipient*"))
+        applied-buffer)
+    (unwind-protect
+        (let ((inner `(message ((from . "me@example.com/phone")
+                                (to . "friend@example.com")
+                                (type . "chat")
+                                (id . "correction-1"))
+                               (body () "corrected")
+                               (replace ((xmlns . ,jabber-message-correct-xmlns)
+                                         (id . "original-1"))))))
+          (cl-letf (((symbol-function 'jabber-muc-message-p)
+                     (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-chat--unwrap-carbon)
+                     (lambda (&rest _) (cons inner recipient-buffer)))
+                    ((symbol-function 'jabber-chat--decrypt-if-needed)
+                     (lambda (_jc stanza) stanza))
+                    ((symbol-function 'jabber-chat--store-carbon) #'ignore)
+                    ((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_jc) "me@example.com"))
+                    ((symbol-function 'jabber-message-correct--apply)
+                     (lambda (&rest args)
+                       (setq applied-buffer (nth 4 args)))))
+            (jabber-process-chat
+             'fake-jc
+             '(message ((from . "me@example.com/resource"))))
+            (should (eq applied-buffer recipient-buffer))))
+      (kill-buffer recipient-buffer))))
+
 (provide 'jabber-test-carbons)
 
 ;;; jabber-test-carbons.el ends here

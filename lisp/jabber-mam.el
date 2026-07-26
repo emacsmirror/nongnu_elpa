@@ -363,7 +363,8 @@ JC is the Jabber connection.  XML-DATA is the stanza."
                (jabber-message-correct--replace-id inner-msg)
                body (plist-get fields :from)
                (string= (plist-get fields :type) "groupchat") nil
-               (jabber-db--extract-occupant-id inner-msg)))
+               (jabber-db--extract-occupant-id inner-msg)
+               (plist-get fields :our-jid) peer nil))
              (:store
               (jabber-db-store-message
                (plist-get fields :our-jid) peer

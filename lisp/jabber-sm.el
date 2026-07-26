@@ -203,13 +203,32 @@ timeout handling and are useless when stale."
     ('iq 1)
     (_ 2)))
 
-(defun jabber-sm--enqueue-pending (state-data sexp)
+(defun jabber-sm--enqueue-pending
+    (state-data sexp &optional success-callback failure-callback)
   "Append SEXP to the pending queue in STATE-DATA.
-Each entry is stored as (PRIORITY . SEXP) for priority-based drain.
+Callbacks run after transport handoff or queue disposal.
 Return updated STATE-DATA."
   (plist-put state-data :sm-pending-queue
              (nconc (plist-get state-data :sm-pending-queue)
-                    (list (cons (jabber-sm--stanza-priority sexp) sexp)))))
+                    (list
+                     (if (or success-callback failure-callback)
+                         (list :priority (jabber-sm--stanza-priority sexp)
+                               :stanza sexp
+                               :success success-callback
+                               :failure failure-callback)
+                       (cons (jabber-sm--stanza-priority sexp) sexp))))))
+
+(defun jabber-sm--pending-priority (entry)
+  "Return the priority stored in pending ENTRY."
+  (if (keywordp (car-safe entry))
+      (plist-get entry :priority)
+    (car entry)))
+
+(defun jabber-sm--pending-stanza (entry)
+  "Return the stanza stored in pending ENTRY."
+  (if (keywordp (car-safe entry))
+      (plist-get entry :stanza)
+    (cdr entry)))
 
 ;;; Ack send/receive
 

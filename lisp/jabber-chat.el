@@ -263,7 +263,9 @@ holding state for the next composed message stay inert."
 ;; Global reference declarations
 
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
-(declare-function jabber-omemo--send-chat "jabber-omemo" (jc body &optional extra-elements))
+(declare-function jabber-omemo--send-chat "jabber-omemo"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
 (declare-function jabber-openpgp--send-chat "jabber-openpgp" (jc body &optional extra-elements))
 (declare-function jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy" (jc body &optional extra-elements))
 (declare-function jabber-muc-private-create-buffer "jabber-muc.el"
@@ -282,7 +284,8 @@ holding state for the next composed message stay inert."
                   (xml-data))
 (declare-function jabber-message-correct--apply "jabber-message-correct"
                   (replace-id new-body new-from muc-p buffer
-                              &optional new-occupant-id))
+                              &optional new-occupant-id account peer
+                              legacy-authorized-p))
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
 (declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
@@ -435,20 +438,25 @@ JC is the Jabber connection."
 		     ((string= direction "out") :local)
 		     (t :foreign)))
 	 (node-data (list node-type msg-plist)))
-
-    ;; Insert after existing rare timestamp?
-    (let ((node
-           (if (and jabber-print-rare-time
-                    (ewoc-nth jabber-chat-ewoc 0)
-                    (eq (car (ewoc-data (ewoc-nth jabber-chat-ewoc 0))) :rare-time)
-                    (not (jabber-rare-time-needed message-time (cadr (ewoc-data (ewoc-nth jabber-chat-ewoc 0))))))
-               (ewoc-enter-after jabber-chat-ewoc (ewoc-nth jabber-chat-ewoc 0) node-data)
-             (let ((n (ewoc-enter-first jabber-chat-ewoc node-data)))
-               (when jabber-print-rare-time
-                 (ewoc-enter-first jabber-chat-ewoc (list :rare-time message-time)))
-               n))))
-      (when-let* ((id (plist-get msg-plist :id)))
-        (puthash id node jabber-chat--msg-nodes)))))
+    (unless (jabber-chat-ewoc-duplicate-p node-data)
+      ;; Insert after existing rare timestamp?
+      (let ((node
+             (if (and jabber-print-rare-time
+                      (ewoc-nth jabber-chat-ewoc 0)
+                      (eq (car (ewoc-data (ewoc-nth jabber-chat-ewoc 0)))
+                          :rare-time)
+                      (not (jabber-rare-time-needed
+                            message-time
+                            (cadr (ewoc-data
+                                   (ewoc-nth jabber-chat-ewoc 0))))))
+                 (ewoc-enter-after
+                  jabber-chat-ewoc (ewoc-nth jabber-chat-ewoc 0) node-data)
+               (let ((n (ewoc-enter-first jabber-chat-ewoc node-data)))
+                 (when jabber-print-rare-time
+                   (ewoc-enter-first
+                    jabber-chat-ewoc (list :rare-time message-time)))
+                 n))))
+        (jabber-chat-ewoc-register-node node node-data)))))
 
 (defun jabber-chat--insert-backlog-chunked (buffer entries callback
                                                    &optional generation)
@@ -666,46 +674,88 @@ body with \"[LABEL: could not decrypt]\" and return XML-DATA."
 (defvar jabber-chat--crypto-loaded nil
   "Non-nil after crypto modules have been loaded.")
 
+(defvar jabber-chat--decrypt-consumed-p nil
+  "Non-nil when a decrypt handler consumed state before failing.")
+
 ;;; Decrypt dedup cache
 
 (defvar jabber-chat--decrypt-cache (make-hash-table :test #'equal)
   "Decryption outcomes for recently seen encrypted stanzas.
-Keys are (ACCOUNT BARE-FROM STANZA-ID) lists; values are the
-decrypted body string, or the symbol `no-body' for successful
-decrypts that produced no body (heartbeats, stanzas addressed to
-another device).  Ratchet decryption is stateful: a stanza
-delivered twice (offline push plus MAM catchup, MAM unwrapping,
-stream resumption replay) must not reach the ratchet a second
-time, so the cached outcome is replayed instead.  Failures are
-never cached, keeping transient failures retryable.")
+Keys bind the account and sender to encrypted payload identity.
+Values pair the outer stanza context with the decrypted outcome.
+Ratchet decryption is stateful, so repeated ciphertext must never
+reach the ratchet twice.  A repeat with changed outer behavior is
+rejected instead of replaying plaintext under the changed wrapper.
+Failures are never cached, keeping transient failures retryable.")
 
-(defvar jabber-chat--decrypt-cache-fifo nil
-  "Keys of `jabber-chat--decrypt-cache' in insertion order, newest first.")
+(defun jabber-chat--decrypt-cache-canonical-xml (node)
+  "Return a stable representation of XML NODE."
+  (if (not (consp node))
+      node
+    (let ((attrs (sort (copy-tree (jabber-xml-node-attributes node))
+                       (lambda (a b)
+                         (string< (symbol-name (car a))
+                                  (symbol-name (car b)))))))
+      (cons (jabber-xml-node-name node)
+            (cons attrs
+                  (mapcar #'jabber-chat--decrypt-cache-canonical-xml
+                          (jabber-xml-node-children node)))))))
 
-(defconst jabber-chat--decrypt-cache-max 512
-  "Maximum number of entries kept in `jabber-chat--decrypt-cache'.")
+(defun jabber-chat--decrypt-cache-muc-user-child (child)
+  "Return canonical MUC user CHILD, or nil for archive-only item data."
+  (if (and (consp child)
+           (equal (jabber-xml-get-xmlns child) jabber-muc-xmlns-user))
+      (let ((children
+             (cl-remove-if
+              (lambda (node)
+                (and (consp node) (eq (jabber-xml-node-name node) 'item)))
+              (jabber-xml-node-children child))))
+        (when children
+          (cons (jabber-xml-node-name child)
+                (cons (jabber-xml-node-attributes child) children))))
+    child))
+
+(defun jabber-chat--decrypt-cache-canonical-stanza (xml-data)
+  "Return the behavior context form for encrypted XML-DATA."
+  (let* ((attrs (copy-tree (jabber-xml-node-attributes xml-data)))
+         (groupchat (equal (cdr (assq 'type attrs)) "groupchat"))
+         (attrs (if groupchat (assq-delete-all 'to attrs) attrs))
+         (children
+          (delq nil
+                (mapcar (if groupchat
+                            #'jabber-chat--decrypt-cache-muc-user-child
+                          #'identity)
+                        (jabber-xml-node-children xml-data)))))
+    (jabber-chat--decrypt-cache-canonical-xml
+     (cons (jabber-xml-node-name xml-data) (cons attrs children)))))
 
 (defun jabber-chat--decrypt-cache-key (jc xml-data)
-  "Return the dedup cache key for XML-DATA received on JC, or nil.
-Prefers the XEP-0359 origin-id over the id attribute since it
-survives MAM archival unchanged.  A stanza with neither id, or
-without a from attribute, cannot be deduplicated."
+  "Return the ciphertext dedup key for XML-DATA received on JC."
   (when-let* ((from (jabber-xml-get-attribute xml-data 'from))
-              (id (or (jabber-chat--origin-id xml-data)
-                      (jabber-xml-get-attribute xml-data 'id))))
-    (list (jabber-connection-bare-jid jc) (jabber-jid-user from) id)))
+              (encrypted
+               (or (jabber-xml-child-with-xmlns
+                    xml-data "eu.siacs.conversations.axolotl")
+                   (jabber-xml-child-with-xmlns
+                    xml-data "jabber:x:encrypted")
+                   (jabber-xml-child-with-xmlns
+                    xml-data "urn:xmpp:openpgp:0"))))
+    (list (jabber-connection-bare-jid jc)
+          from
+          (secure-hash
+           'sha256
+           (prin1-to-string
+            (jabber-chat--decrypt-cache-canonical-xml encrypted))))))
+
+(defun jabber-chat--decrypt-cache-context (xml-data)
+  "Return a digest of XML-DATA's behaviorally relevant wrapper."
+  (secure-hash
+   'sha256
+   (prin1-to-string
+    (jabber-chat--decrypt-cache-canonical-stanza xml-data))))
 
 (defun jabber-chat--decrypt-cache-put (key value)
-  "Store VALUE for KEY, evicting the oldest entry past the size bound."
-  (unless (gethash key jabber-chat--decrypt-cache)
-    (push key jabber-chat--decrypt-cache-fifo))
-  (puthash key value jabber-chat--decrypt-cache)
-  (when (> (hash-table-count jabber-chat--decrypt-cache)
-           jabber-chat--decrypt-cache-max)
-    (let ((oldest (car (last jabber-chat--decrypt-cache-fifo))))
-      (remhash oldest jabber-chat--decrypt-cache)
-      (setq jabber-chat--decrypt-cache-fifo
-            (nbutlast jabber-chat--decrypt-cache-fifo)))))
+  "Store decrypt VALUE for ciphertext identity KEY."
+  (puthash key value jabber-chat--decrypt-cache))
 
 (defun jabber-chat--decrypt-outcome (xml-data)
   "Return the cacheable decrypt outcome for XML-DATA.
@@ -739,13 +789,23 @@ connection."
       xml-data
     (let* ((key (and (jabber-xml-encrypted-p xml-data)
                      (jabber-chat--decrypt-cache-key jc xml-data)))
-           (cached (and key (gethash key jabber-chat--decrypt-cache))))
+           (context (and key (jabber-chat--decrypt-cache-context xml-data)))
+           (cached (and key (gethash key jabber-chat--decrypt-cache)))
+           (outcome (plist-get cached :outcome)))
       (cond
-       ((eq cached 'no-body) xml-data)
-       ((stringp cached) (jabber-chat--set-body xml-data cached))
-       (t (jabber-chat--dispatch-decrypt jc xml-data key))))))
+       ((and cached (not (equal context (plist-get cached :context))))
+        (jabber-chat--set-body
+         xml-data
+         (format "[%s: could not decrypt]" (plist-get cached :label))))
+       ((eq outcome 'failed)
+        (jabber-chat--set-body
+         xml-data
+         (format "[%s: could not decrypt]" (plist-get cached :label))))
+       ((eq outcome 'no-body) xml-data)
+       ((stringp outcome) (jabber-chat--set-body xml-data outcome))
+       (t (jabber-chat--dispatch-decrypt jc xml-data key context))))))
 
-(defun jabber-chat--dispatch-decrypt (jc xml-data key)
+(defun jabber-chat--dispatch-decrypt (jc xml-data key context)
   "Run the first matching decrypt handler on XML-DATA over JC.
 When KEY is non-nil and a handler ran, record the outcome in
 `jabber-chat--decrypt-cache'.  Returns XML-DATA."
@@ -754,12 +814,16 @@ When KEY is non-nil and a handler ran, record the outcome in
   (cl-loop for (_id . props) in (jabber-chat--sorted-decrypt-handlers)
            for parsed = (funcall (plist-get props :detect) xml-data)
            when parsed
-           return (let ((result (jabber-chat--try-decrypt
-                                 jc xml-data parsed props)))
+           return (let* ((jabber-chat--decrypt-consumed-p nil)
+                         (result (jabber-chat--try-decrypt
+                                  jc xml-data parsed props))
+                         (outcome (jabber-chat--decrypt-outcome result)))
                     (when key
-                      (when-let* ((outcome
-                                   (jabber-chat--decrypt-outcome result)))
-                        (jabber-chat--decrypt-cache-put key outcome)))
+                      (when (or outcome jabber-chat--decrypt-consumed-p)
+                        (jabber-chat--decrypt-cache-put
+                         key (list :context context
+                                   :outcome (or outcome 'failed)
+                                   :label (plist-get props :error-label)))))
                     result)
            finally return xml-data))
 
@@ -851,7 +915,12 @@ JC is the Jabber connection."
       (unless (jabber-chat--reaction-only-p xml-data)
         (when is-carbon
           (jabber-chat--store-carbon jc xml-data))
-        (let ((replace-id (jabber-message-correct--replace-id xml-data)))
+        (let* ((replace-id (jabber-message-correct--replace-id xml-data))
+               (account (jabber-connection-bare-jid jc))
+               (peer (jabber-jid-user
+                      (if (equal (jabber-jid-user from) account)
+                          (jabber-xml-get-attribute xml-data 'to)
+                        from))))
           (cond
            ((and replace-id (not jabber-chat-mam-syncing))
             (jabber-message-correct--apply
@@ -859,8 +928,9 @@ JC is the Jabber connection."
              (plist-get msg-plist :body)
              from
              nil
-             (jabber-chat-find-buffer from)
-             (jabber-db--extract-occupant-id xml-data)))
+             (or carbon-buffer (jabber-chat-find-buffer from))
+             (jabber-db--extract-occupant-id xml-data)
+             account peer))
            (error-p
             (jabber-chat--display-error from msg-plist))
            ((run-hook-with-args-until-success 'jabber-chat-printers
@@ -870,13 +940,16 @@ JC is the Jabber connection."
              (jabber-chat--select-buffer jc from carbon-buffer)
              nil from msg-plist))))))))
 
-(defun jabber-chat-send (jc body &optional extra-elements)
+(defun jabber-chat-send
+    (jc body &optional extra-elements success-callback failure-callback)
   "Send BODY through connection JC, and display it in chat buffer.
 JC is the Jabber connection.
 EXTRA-ELEMENTS, when non-nil, is a list of XML sexp elements to
 splice into the stanza after the body (e.g. OOB, hints)."
   (pcase jabber-chat-encryption
-    ('omemo (jabber-omemo--send-chat jc body extra-elements))
+    ('omemo
+     (jabber-omemo--send-chat
+      jc body extra-elements success-callback failure-callback))
     ('openpgp (require 'jabber-openpgp)
               (jabber-openpgp--send-chat jc body extra-elements))
     ('openpgp-legacy (require 'jabber-openpgp-legacy)
@@ -900,7 +973,9 @@ splice into the stanza after the body (e.g. OOB, hints)."
              (jabber-maybe-print-rare-time
               (jabber-chat-ewoc-enter (list :local msg-plist))))))
        ;; ...and send it...
-       (jabber-send-sexp jc stanza-to-send)))))
+       (jabber-send-sexp jc stanza-to-send)
+       (when success-callback
+         (funcall success-callback))))))
 
 (defun jabber-find-previous-visible-node (node)
   "Return first visible EWOC node preceding NODE.

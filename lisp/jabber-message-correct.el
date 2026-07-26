@@ -46,6 +46,17 @@
 (defconst jabber-message-correct-xmlns "urn:xmpp:message-correct:0"
   "XML namespace for XEP-0308 Last Message Correction.")
 
+(defvar jabber-message-correct--muc-presence-sessions
+  (make-hash-table :test #'equal)
+  "Active legacy MUC participant lifetimes keyed by connection and sender.")
+
+(defvar jabber-message-correct--muc-last-message-ids
+  (make-hash-table :test #'equal)
+  "Latest accepted legacy MUC message IDs by connection and sender.")
+
+(defvar-local jabber-message-correct--pending-outgoing nil
+  "Token for an OMEMO correction awaiting transport handoff.")
+
 ;;; Parsing
 
 (defun jabber-message-correct--replace-id (xml-data)
@@ -72,20 +83,105 @@ and NEW-OCCUPANT-ID are both available."
     (string= (jabber-jid-user original-from)
              (jabber-jid-user new-from))))
 
+(defun jabber-message-correct--muc-key (jc from)
+  "Return the legacy MUC continuity key for JC and full JID FROM."
+  (list jc from))
+
+(defun jabber-message-correct--muc-presence-enter (jc from)
+  "Start a participant lifetime for FROM observed on JC."
+  (let ((key (jabber-message-correct--muc-key jc from)))
+    (unless (gethash key jabber-message-correct--muc-presence-sessions)
+      (remhash key jabber-message-correct--muc-last-message-ids)
+      (puthash key t jabber-message-correct--muc-presence-sessions))))
+
+(defun jabber-message-correct--muc-presence-leave (jc from)
+  "End the participant lifetime for FROM observed on JC."
+  (let ((key (jabber-message-correct--muc-key jc from)))
+    (remhash key jabber-message-correct--muc-presence-sessions)
+    (remhash key jabber-message-correct--muc-last-message-ids)))
+
+(defun jabber-message-correct--record-muc-original (jc from stanza-id)
+  "Record accepted STANZA-ID from legacy MUC sender FROM on JC."
+  (let ((key (jabber-message-correct--muc-key jc from)))
+    (when (gethash key jabber-message-correct--muc-presence-sessions)
+      (puthash key stanza-id jabber-message-correct--muc-last-message-ids))))
+
+(defun jabber-message-correct--muc-current-target-p (jc from stanza-id)
+  "Return non-nil when STANZA-ID is FROM's latest live message on JC."
+  (let ((key (jabber-message-correct--muc-key jc from)))
+    (and (gethash key jabber-message-correct--muc-presence-sessions)
+         (equal stanza-id
+                (gethash key
+                         jabber-message-correct--muc-last-message-ids)))))
+
+(defun jabber-message-correct--muc-session-reset (jc)
+  "Forget legacy MUC correction continuity belonging to JC."
+  (dolist (table (list jabber-message-correct--muc-presence-sessions
+                       jabber-message-correct--muc-last-message-ids))
+    (maphash (lambda (key _value)
+               (when (eq (car key) jc)
+                 (remhash key table)))
+             table)))
+
+(defun jabber-message-correct--muc-room-leave (jc group)
+  "Forget legacy MUC correction continuity for GROUP on JC."
+  (dolist (table (list jabber-message-correct--muc-presence-sessions
+                       jabber-message-correct--muc-last-message-ids))
+    (maphash
+     (lambda (key _value)
+       (when (and (eq (car key) jc)
+                  (equal group (jabber-jid-user (cadr key))))
+         (remhash key table)))
+     table)))
+
+(add-hook 'jabber-lifecycle-session-reset-functions
+          #'jabber-message-correct--muc-session-reset)
+
 ;;; Apply correction
 
 (defun jabber-message-correct--apply
-    (replace-id new-body new-from muc-p buffer &optional new-occupant-id)
+    (replace-id new-body new-from muc-p buffer &optional new-occupant-id
+                account peer legacy-authorized-p)
   "Apply correction REPLACE-ID with NEW-BODY sent by NEW-FROM.
 MUC-P non-nil for groupchat.  BUFFER is the chat buffer or nil.
 NEW-OCCUPANT-ID is the correction stanza's XEP-0421 occupant-id.
+ACCOUNT and PEER scope persistence.  LEGACY-AUTHORIZED-P permits
+the current-presence MUC fallback when occupant-id is unavailable.
 Validates sender against the stored original message (via DB lookup)
 before writing.  If the original is not in the DB the correction is
 dropped.  Returns non-nil when the correction was accepted."
-  (let ((original-from (jabber-db-message-sender-by-stanza-id replace-id))
-        (original-occupant-id (and muc-p
-                                   (jabber-db-occupant-id-by-stanza-id
-                                    replace-id))))
+  (let* ((scoped-p (and account peer))
+         (candidates
+          (and scoped-p
+               (jabber-db-message-correction-candidates
+                account peer replace-id)))
+         (matches
+          (and scoped-p
+               (seq-filter
+                (lambda (candidate)
+                  (let ((original-from (plist-get candidate :from))
+                        (original-occupant-id
+                         (plist-get candidate :occupant-id)))
+                    (and
+                     (jabber-message-correct--valid-sender-p
+                      original-from new-from muc-p
+                      original-occupant-id new-occupant-id)
+                     (or (not muc-p)
+                         (and original-occupant-id new-occupant-id)
+                         (and (null original-occupant-id)
+                              (null new-occupant-id)
+                              legacy-authorized-p)))))
+                candidates)))
+         (original (and (= (length matches) 1) (car matches)))
+         (original-from
+          (if scoped-p
+              (plist-get original :from)
+            (jabber-db-message-sender-by-stanza-id replace-id)))
+         (original-occupant-id
+          (if scoped-p
+              (plist-get original :occupant-id)
+            (and muc-p
+                 (jabber-db-occupant-id-by-stanza-id replace-id)))))
     (cond
      ;; A correction that failed to decrypt must never overwrite the
      ;; original body with the placeholder (issue #134).
@@ -93,19 +189,30 @@ dropped.  Returns non-nil when the correction was accepted."
       (message "XEP-0308: dropped correction %s with undecryptable body"
                replace-id)
       nil)
+     ((and scoped-p (/= (length matches) 1))
+      (message "XEP-0308: correction target %s is missing or ambiguous"
+               replace-id)
+      nil)
      ((null original-from)
       (message "XEP-0308: correction for unknown message %s dropped" replace-id)
       nil)
      ((not (jabber-message-correct--valid-sender-p
             original-from new-from muc-p original-occupant-id new-occupant-id))
-      (message "XEP-0308: rejected correction from %s for message by %s"
+     (message "XEP-0308: rejected correction from %s for message by %s"
                new-from original-from)
       nil)
      (t
-      (jabber-db-correct-message replace-id new-body)
+      (if scoped-p
+          (jabber-db-correct-message-row
+           (plist-get original :row-id) new-body)
+        (jabber-db-correct-message replace-id new-body))
       (when buffer
         (with-current-buffer buffer
-          (when-let* ((node (jabber-chat-ewoc-find-by-id replace-id))
+          (when-let* ((node
+                       (if muc-p
+                           (jabber-chat-ewoc-find-by-id-and-sender
+                            replace-id original-from)
+                         (jabber-chat-ewoc-find-by-id replace-id)))
                       (data (ewoc-data node))
                       (msg  (cadr data)))
             (setq msg (plist-put msg :body new-body))
@@ -171,9 +278,11 @@ Prompts with the existing body pre-filled.  When the corrected
 message is a reply, re-attach its <reply> element: per XEP-0308 the
 correction replaces the whole message, XEP-0461 linkage included."
   (interactive)
+  (when jabber-message-correct--pending-outgoing
+    (user-error "A correction is still waiting to be sent"))
   (pcase (jabber-message-correct--find-last-sent jabber-chat-ewoc)
     ('nil (user-error "No sent message found to correct"))
-    (`(,node ,id ,body ,msg)
+    (`(,_node ,id ,body ,msg)
      (let ((new-body (read-string "Correction: " body)))
        (when (string= new-body body)
          (user-error "No change"))
@@ -182,14 +291,81 @@ correction replaces the whole message, XEP-0461 linkage included."
               (reply-els (and-let* ((reply-id (plist-get msg :reply-to-id)))
                            (jabber-message-reply--elements
                             reply-id (plist-get msg :reply-to-jid) fb-len))))
-         (plist-put msg :fallback-range (and fb-len (list 0 fb-len)))
-         (jabber-message-correct--update-ewoc jabber-chat-ewoc node new-body)
-         (jabber-db-correct-message id new-body)
-         (let ((extra (cons (jabber-message-correct--replace-element id)
-                            reply-els)))
-           (if (bound-and-true-p jabber-group)
-               (jabber-muc-send jabber-buffer-connection new-body extra)
-             (jabber-chat-send jabber-buffer-connection new-body extra))))))))
+         (let* ((buffer (current-buffer))
+                (group (bound-and-true-p jabber-group))
+                (account
+                 (jabber-connection-bare-jid jabber-buffer-connection))
+                (peer (jabber-jid-user
+                       (or group jabber-chatting-with)))
+                (stored-from (if group (plist-get msg :from) account))
+                (db-matches
+                 (seq-filter
+                  (lambda (candidate)
+                    (equal stored-from (plist-get candidate :from)))
+                  (jabber-db-message-correction-candidates
+                   account peer id)))
+                (row-id (and (= (length db-matches) 1)
+                             (plist-get (car db-matches) :row-id)))
+                (extra (cons (jabber-message-correct--replace-element id)
+                             reply-els))
+                (omemo-p (eq jabber-chat-encryption 'omemo))
+                (token (list t id))
+                (commit
+                 (lambda ()
+                   (when (and (car token)
+                              (or (not omemo-p)
+                                  (and (buffer-live-p buffer)
+                                       (with-current-buffer buffer
+                                         (eq token
+                                             jabber-message-correct--pending-outgoing)))))
+                     (setcar token nil)
+                     (when row-id
+                       (jabber-db-correct-message-row row-id new-body))
+                     (when (buffer-live-p buffer)
+                       (with-current-buffer buffer
+                         (when-let* ((current-node
+                                      (if group
+                                          (jabber-chat-ewoc-find-by-id-and-sender
+                                           id (plist-get msg :from))
+                                        (jabber-chat-ewoc-find-by-id id))))
+                           (plist-put (cadr (ewoc-data current-node))
+                                      :fallback-range
+                                      (and fb-len (list 0 fb-len)))
+                           (jabber-message-correct--update-ewoc
+                            jabber-chat-ewoc current-node new-body))
+                         (setq jabber-message-correct--pending-outgoing
+                               nil))))))
+                (failure
+                 (lambda (_reason)
+                   (when (car token)
+                     (setcar token nil)
+                     (when (buffer-live-p buffer)
+                       (with-current-buffer buffer
+                         (when (eq token
+                                   jabber-message-correct--pending-outgoing)
+                           (setq jabber-message-correct--pending-outgoing
+                                 nil))))))))
+           (when (and jabber-db-path (/= (length db-matches) 1))
+             (user-error "Stored correction target is missing or ambiguous"))
+           (if omemo-p
+               (progn
+                 (setq jabber-message-correct--pending-outgoing token)
+                 (condition-case err
+                     (if group
+                         (jabber-muc-send
+                          jabber-buffer-connection new-body extra
+                          commit failure)
+                       (jabber-chat-send
+                        jabber-buffer-connection new-body extra
+                        commit failure))
+                   (error
+                    (funcall failure (error-message-string err))
+                    (signal (car err) (cdr err)))))
+             (funcall commit)
+             (if group
+                 (jabber-muc-send jabber-buffer-connection new-body extra)
+               (jabber-chat-send
+                jabber-buffer-connection new-body extra)))))))))
 
 (provide 'jabber-message-correct)
 ;;; jabber-message-correct.el ends here

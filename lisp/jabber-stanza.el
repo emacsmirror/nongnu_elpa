@@ -84,21 +84,44 @@ Set to a string to also append XML input and output to that file."
          (concat xml (jabber-sm--make-request-xml))
        xml))))
 
-(defun jabber-send-sexp--immediate (jc sexp)
-  "Send SEXP to JC immediately and update Stream Management state."
-  (jabber-send-sexp--raw jc sexp)
-  (jabber-sm--count-outbound (fsm-get-state-data jc) sexp))
+(defun jabber-sm--run-pending-callback (callback &optional argument)
+  "Run CALLBACK with optional ARGUMENT without disrupting send state."
+  (when callback
+    (condition-case err
+        (if argument
+            (funcall callback argument)
+          (funcall callback))
+      (error
+       (message "SM callback failed: %s" (error-message-string err))))))
 
-(defun jabber-send-sexp (jc sexp)
-  "Send SEXP to JC, respecting Stream Management back-pressure."
+(defun jabber-send-sexp--immediate
+    (jc sexp &optional success-callback failure-callback)
+  "Send SEXP on JC, update SM state, and run transport callbacks."
+  (condition-case err
+      (prog1
+          (progn
+            (jabber-send-sexp--raw jc sexp)
+            (jabber-sm--count-outbound (fsm-get-state-data jc) sexp))
+        (jabber-sm--run-pending-callback success-callback))
+    (error
+     (if failure-callback
+         (jabber-sm--run-pending-callback
+          failure-callback (error-message-string err))
+       (signal (car err) (cdr err))))))
+
+(defun jabber-send-sexp
+    (jc sexp &optional success-callback failure-callback)
+  "Send SEXP on JC with SM back-pressure and transport callbacks."
   (let ((state-data (fsm-get-state-data jc)))
     (if (jabber-sm--should-queue-p state-data sexp)
         (progn
-          (jabber-sm--enqueue-pending state-data sexp)
+          (jabber-sm--enqueue-pending
+           state-data sexp success-callback failure-callback)
           (when (eq (jabber-xml-node-name sexp) 'message)
             (message "SM: message queued (waiting for server ack, %d pending)"
                      (length (plist-get state-data :sm-pending-queue)))))
-      (jabber-send-sexp--immediate jc sexp))))
+      (jabber-send-sexp--immediate
+       jc sexp success-callback failure-callback))))
 
 (defun jabber-send-sexp-if-connected (jc sexp)
   "Send SEXP through JC only after its session is established."

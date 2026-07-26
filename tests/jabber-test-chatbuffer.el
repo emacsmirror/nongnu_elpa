@@ -1104,6 +1104,55 @@ forced to the bottom (the only path that overwrites point)."
       (should (equal sent '(new . "hello")))
       (should (eq jabber-buffer-connection 'new)))))
 
+;;; Group 15: MUC message identity
+
+(ert-deftest jabber-test-chatbuffer-muc-client-id-is-sender-scoped ()
+  "Two MUC occupants using one client ID both remain addressable."
+  (with-temp-buffer
+    (let ((jabber-group "room@conference.example.com")
+          (jabber-chat-ewoc (ewoc-create #'ignore nil nil 'nosep))
+          (jabber-chat--msg-nodes (make-hash-table :test #'equal)))
+      (let ((alice (jabber-chat-ewoc-enter
+                    (list :muc-foreign
+                          (list :id "same-id"
+                                :server-id "server-a"
+                                :from "room@conference.example.com/alice"
+                                :body "alice"))))
+            (bob (jabber-chat-ewoc-enter
+                  (list :muc-foreign
+                        (list :id "same-id"
+                              :server-id "server-b"
+                              :from "room@conference.example.com/bob"
+                              :body "bob")))))
+        (should alice)
+        (should bob)
+        (should (eq alice
+                    (jabber-chat-ewoc-find-by-id-and-sender
+                     "same-id" "room@conference.example.com/alice")))
+        (should (eq bob
+                    (jabber-chat-ewoc-find-by-id-and-sender
+                     "same-id" "room@conference.example.com/bob")))
+        (should (eq alice (jabber-chat-ewoc-find-by-id "server-a")))
+        (should (eq bob (jabber-chat-ewoc-find-by-id "server-b")))))))
+
+(ert-deftest jabber-test-chatbuffer-unregister-removes-composite-keys ()
+  "Removing a MUC node drops its client and server index keys."
+  (with-temp-buffer
+    (let ((jabber-group "room@conference.example.com")
+          (jabber-chat-ewoc (ewoc-create #'ignore nil nil 'nosep))
+          (jabber-chat--msg-nodes (make-hash-table :test #'equal)))
+      (let ((node (jabber-chat-ewoc-enter
+                   (list :muc-foreign
+                         (list :id "client-id"
+                               :server-id "server-id"
+                               :from "room@conference.example.com/alice"
+                               :body "hello")))))
+        (jabber-chat-ewoc-unregister-node node)
+        (should-not (gethash "server-id" jabber-chat--msg-nodes))
+        (should-not
+         (gethash '(:muc "room@conference.example.com/alice" "client-id")
+                  jabber-chat--msg-nodes))))))
+
 (provide 'jabber-test-chatbuffer)
 
 ;;; jabber-test-chatbuffer.el ends here

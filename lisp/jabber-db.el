@@ -47,6 +47,7 @@
 (defvar jabber-chatting-with)           ; jabber-chat.el
 (defvar jabber-chat-send-hooks)        ; jabber-chat.el
 (defvar jabber-chat-encryption)        ; jabber-chatbuffer.el
+(defvar jabber-chat--sending-correction) ; jabber-chat.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-message-chain nil)       ; jabber-core.el
 (defvar jabber-post-connect-hooks nil) ; jabber-core.el
@@ -519,12 +520,13 @@ Return a symbol indicating the match type: `stanza_id', `server_id',
 Optional TYPE is the message type; stanza_id dedup is skipped for
 \"groupchat\" because MUC servers recycle short message IDs."
   (cond
-   ;; Server-assigned IDs (XEP-0359) are globally unique; check first.
+   ;; Server-assigned IDs are unique only within the assigning entity.
+   ;; PEER is that entity for the stored conversation.
    ((and server-id
          (caar (sqlite-select
                 db "SELECT 1 FROM message \
-WHERE server_id = ? AND account = ? LIMIT 1"
-                (list server-id account))))
+WHERE server_id = ? AND account = ? AND peer = ? LIMIT 1"
+                (list server-id account peer))))
     'server_id)
    ;; Stanza IDs (origin-id or message id attr) can be recycled by
    ;; MUC servers, so only use them for 1:1 chat dedup.
@@ -584,14 +586,9 @@ Skip retracted messages to prevent MAM replays from undoing retractions.
 ACCOUNT and PEER scope the row; STANZA-ID and SERVER-ID identify it;
 OOB-ENTRIES replaces the row's OOB metadata when BODY is upgraded."
   (let* ((id-val (if (eq dup-id-col 'stanza_id) stanza-id server-id))
-         ;; stanza_id needs peer scope; server_id is globally unique.
-         (where-clause (if (eq dup-id-col 'stanza_id)
-                           (format "%s = ? AND account = ? AND peer = ?"
-                                   dup-id-col)
-                         (format "%s = ? AND account = ?" dup-id-col)))
-         (where-params (if (eq dup-id-col 'stanza_id)
-                           (list id-val account peer)
-                         (list id-val account)))
+         (where-clause
+          (format "%s = ? AND account = ? AND peer = ?" dup-id-col))
+         (where-params (list id-val account peer))
          (retracted (caar (sqlite-select
                            db
                            (format "SELECT 1 FROM message WHERE %s \
@@ -644,7 +641,7 @@ AND stanza_id IS NULL AND server_id IS NULL"
      (list stanza-id server-id account peer timestamp body))))
 
 (defun jabber-db--backfill-reply-fields (db account peer stanza-id reply)
-  "Fill NULL reply columns for ACCOUNT/PEER's row with STANZA-ID from REPLY.
+  "Fill NULL reply columns in DB for ACCOUNT/PEER using STANZA-ID and REPLY.
 Completes rows stored before the reply elements were attached to
 the outgoing stanza (e.g. the OMEMO pending echo)."
   (pcase-let ((`(,fb-start . ,fb-end)
@@ -730,12 +727,16 @@ AND timestamp <= ? AND delivered_at IS NOT NULL AND displayed_at IS NULL"
                     (list timestamp account peer ref-timestamp))))
 
 (defun jabber-db-retract-message (server-id retracted-by &optional reason)
-  "Mark the message with SERVER-ID as retracted by RETRACTED-BY.
-Optional REASON is the human-readable retraction reason string."
+  "Retract globally unambiguous SERVER-ID by RETRACTED-BY.
+Optional REASON is the human-readable retraction reason string.
+Conversation-aware callers should use
+`jabber-db-retract-message-in-peer'."
   (when (and jabber-db--connection server-id)
     (sqlite-execute jabber-db--connection
-                    "UPDATE message SET retracted_by = ?, retraction_reason = ? WHERE server_id = ?"
-                    (list retracted-by reason server-id))))
+                    "UPDATE message SET retracted_by = ?, retraction_reason = ? \
+WHERE server_id = ? AND \
+(SELECT COUNT(*) FROM message WHERE server_id = ?) = 1"
+                    (list retracted-by reason server-id server-id))))
 
 (defun jabber-db-retract-message-in-peer (account peer server-id retracted-by
                                                   &optional reason)
@@ -749,19 +750,27 @@ WHERE account = ? AND peer = ? AND server_id = ?"
                     (list retracted-by reason account peer server-id))))
 
 (defun jabber-db-occupant-id-by-server-id (server-id)
-  "Return the occupant-id for the message with SERVER-ID, or nil."
+  "Return occupant-id for globally unambiguous SERVER-ID, or nil."
   (when (and jabber-db--connection server-id)
     (caar (sqlite-select jabber-db--connection
                          "SELECT occupant_id FROM message \
-WHERE server_id = ? LIMIT 1"
+WHERE server_id = ? GROUP BY server_id HAVING COUNT(*) = 1"
                          (list server-id)))))
 
+(defun jabber-db-occupant-id-by-server-id-in-peer (account peer server-id)
+  "Return occupant-id for SERVER-ID in PEER on ACCOUNT, or nil."
+  (when (and jabber-db--connection account peer server-id)
+    (caar (sqlite-select jabber-db--connection
+                         "SELECT occupant_id FROM message \
+WHERE account = ? AND peer = ? AND server_id = ? LIMIT 1"
+                         (list account peer server-id)))))
+
 (defun jabber-db-occupant-id-by-stanza-id (stanza-id)
-  "Return the occupant-id for the message with STANZA-ID, or nil."
+  "Return the occupant ID for globally unique STANZA-ID, or nil."
   (when (and jabber-db--connection stanza-id)
     (caar (sqlite-select jabber-db--connection
                          "SELECT occupant_id FROM message \
-WHERE stanza_id = ? LIMIT 1"
+WHERE stanza_id = ? GROUP BY stanza_id HAVING COUNT(*) = 1"
                          (list stanza-id)))))
 
 (defun jabber-db-server-ids-by-occupant-id (account peer occupant-id)
@@ -776,11 +785,44 @@ AND server_id IS NOT NULL AND retracted_by IS NULL"
                            (list account peer occupant-id)))))
 
 (defun jabber-db-correct-message (stanza-id new-body)
-  "Replace body of message with STANZA-ID with NEW-BODY and mark as edited."
+  "Correct globally unique STANZA-ID with NEW-BODY.
+Protocol handlers should use `jabber-db-correct-message-row' after a
+conversation-scoped lookup."
   (when (and jabber-db--connection stanza-id)
     (sqlite-execute jabber-db--connection
-                    "UPDATE message SET body = ?, edited = 1 WHERE stanza_id = ?"
+                    "UPDATE message SET body = ?, edited = 1 WHERE id = (\
+SELECT MIN(id) FROM message WHERE stanza_id = ? \
+GROUP BY stanza_id HAVING COUNT(*) = 1)"
                     (list new-body stanza-id))))
+
+(defun jabber-db-message-correction-candidates (account peer stanza-id)
+  "Return correction candidates for STANZA-ID in ACCOUNT's PEER chat."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (mapcar
+     (lambda (row)
+       (seq-let (row-id direction row-peer resource row-account occupant-id
+                        timestamp)
+           row
+         (list :row-id row-id
+               :from (if (string= direction "in")
+                         (if resource
+                             (concat row-peer "/" resource)
+                           row-peer)
+                       row-account)
+               :occupant-id occupant-id
+               :timestamp timestamp)))
+     (sqlite-select
+      db
+      "SELECT id, direction, peer, resource, account, occupant_id, timestamp \
+FROM message WHERE account = ? AND peer = ? AND stanza_id = ?"
+      (list account peer stanza-id)))))
+
+(defun jabber-db-correct-message-row (row-id new-body)
+  "Replace the body of primary message ROW-ID with NEW-BODY."
+  (when (and jabber-db--connection row-id)
+    (sqlite-execute jabber-db--connection
+                    "UPDATE message SET body = ?, edited = 1 WHERE id = ?"
+                    (list new-body row-id))))
 
 (defun jabber-db-delete-peer-messages (account peer)
   "Delete all messages for PEER on ACCOUNT."
@@ -790,7 +832,7 @@ AND server_id IS NOT NULL AND retracted_by IS NULL"
 		    (list account peer))))
 
 (defun jabber-db-message-sender-by-stanza-id (stanza-id)
-  "Return the from-JID of the stored message with STANZA-ID, or nil.
+  "Return the sender of globally unique STANZA-ID, or nil.
 For incoming messages returns the full sender JID (peer/resource or peer).
 For outgoing messages returns the account bare JID, enabling validation
 of carbon copies of corrections sent from another device."
@@ -798,7 +840,8 @@ of carbon copies of corrections sent from another device."
     (when-let* ((row (car (sqlite-select
                            jabber-db--connection
                            "SELECT direction, peer, resource, account \
-FROM message WHERE stanza_id = ? LIMIT 1"
+FROM message WHERE stanza_id = ? \
+GROUP BY stanza_id HAVING COUNT(*) = 1"
                            (list stanza-id)))))
       (seq-let (direction peer resource account) row
         (if (string= direction "in")
@@ -1237,7 +1280,8 @@ BODY is the message text.  ID is the stanza id for dedup.
 Called from `jabber-chat-send-hooks'.  Reply metadata is read from
 `jabber-chat--send-hook-stanza' when the hooks that emit the reply
 elements have already run."
-  (when (and jabber-chatting-with jabber-buffer-connection)
+  (when (and jabber-chatting-with jabber-buffer-connection
+             (not (bound-and-true-p jabber-chat--sending-correction)))
     (jabber-db-store-message
      (jabber-connection-bare-jid jabber-buffer-connection)
      (jabber-jid-user jabber-chatting-with)
