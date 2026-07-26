@@ -5,7 +5,7 @@
 ;; Version: 1.8.0
 ;; Package-Requires: ((emacs "27.1") (project "0.8.1"))
 ;; Keywords: convenience, frames
-;; Homepage: https://github.com/mclear-tools/tabspaces
+;; Homepage: https://codeberg.org/mclear-tools/tabspaces
 
 ;; Copyright (C) 2022 Colin McLear
 
