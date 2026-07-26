@@ -1430,9 +1430,6 @@ JC is the Jabber connection."
 		 ,@(unless (zerop (length reason))
 		     `((reason . ,reason))))))))
 
-;; FIXME: If this file is loaded before `jabber-chat', it will prevent
-;; `jabber-body-printers' to have its default set of functions, because
-;; the var will have been set here already.
 (add-hook 'jabber-body-printers #'jabber-muc-print-invite)
 
 (defun jabber-muc--parse-mediated-invite (xml-data)
