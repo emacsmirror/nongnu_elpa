@@ -29,6 +29,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'color)
 (require 'ewoc)
 (require 'jabber-widget)
 (require 'jabber-buffer-registry)
@@ -39,6 +40,7 @@
 (require 'jabber-ping)
 (require 'jabber-presence-events)
 (require 'jabber-bookmarks)
+(require 'jabber-chatbuffer)
 (require 'jabber-chat)
 (require 'jabber-db)
 (require 'jabber-presence)
@@ -138,19 +140,179 @@ this many seconds, the room is skipped and the next one is tried."
 		(string :tag "JID of room")
 		(string :tag "Nickname"))))
 
-(defcustom jabber-muc-nick-color-faces
-  '(font-lock-keyword-face
-    font-lock-function-name-face
-    font-lock-variable-name-face
-    font-lock-type-face
-    font-lock-constant-face
-    font-lock-builtin-face
-    font-lock-string-face)
-  "Faces used to color foreign nicknames in MUC transcripts.
-Nicknames are assigned deterministically to faces in this list.
-An empty list uses `jabber-chat-nick-foreign-plaintext' instead."
-  :type '(repeat face)
+(defface jabber-muc-nick-local-face
+  '((t :inherit jabber-chat-nick-plaintext :weight semi-bold))
+  "Face for the local nickname in MUC transcripts."
+  :group 'jabber-faces)
+
+(defun jabber-muc--linear-rgb-component (component)
+  "Return linear-light value for sRGB COMPONENT."
+  (if (<= component 0.04045)
+      (/ component 12.92)
+    (expt (/ (+ component 0.055) 1.055) 2.4)))
+
+(defun jabber-muc--color-rgb (color)
+  "Return normalized RGB components for COLOR."
+  (let ((values (color-values-from-color-spec color)))
+    (if values
+        (mapcar (lambda (component) (/ component 65535.0)) values)
+      (color-name-to-rgb color))))
+
+(defun jabber-muc--relative-luminance (rgb)
+  "Return relative luminance for normalized RGB."
+  (pcase-let ((`(,red ,green ,blue)
+               (mapcar #'jabber-muc--linear-rgb-component rgb)))
+    (+ (* 0.2126 red) (* 0.7152 green) (* 0.0722 blue))))
+
+(defun jabber-muc--contrast-ratio (first second)
+  "Return the contrast ratio between normalized RGB colors FIRST and SECOND."
+  (let ((a (jabber-muc--relative-luminance first))
+        (b (jabber-muc--relative-luminance second)))
+    (/ (+ (max a b) 0.05)
+       (+ (min a b) 0.05))))
+
+(defconst jabber-muc--hsluv-matrix
+  '((3.240969941904521 -1.537383177570093 -0.498610760293)
+    (-0.96924363628087 1.87596750150772 0.041555057407175)
+    (0.055630079696993 -0.20397695888897 1.056971514242878))
+  "HSLuv matrix for converting XYZ to linear sRGB.")
+
+(defun jabber-muc--hsluv-bounds (lightness)
+  "Return the RGB gamut bounds at HSLuv LIGHTNESS."
+  (let* ((sub1 (/ (expt (+ lightness 16) 3) 1560896.0))
+         (sub2 (if (> sub1 0.0088564516)
+                   sub1
+                 (/ lightness 903.2962962))))
+    (cl-loop
+     for (m1 m2 m3) in jabber-muc--hsluv-matrix
+     append
+     (cl-loop
+      for channel in '(0 1)
+      for top1 = (* (- (* 284517 m1) (* 94839 m3)) sub2)
+      for top2 = (- (* (+ (* 838422 m3) (* 769860 m2) (* 731718 m1))
+                           lightness sub2)
+                    (* 769860 channel lightness))
+      for bottom = (+ (* (- (* 632260 m3) (* 126452 m2)) sub2)
+                      (* 126452 channel))
+      collect (cons (/ top1 bottom) (/ top2 bottom))))))
+
+(defun jabber-muc--hsluv-max-chroma (lightness hue)
+  "Return maximum HSLuv chroma for LIGHTNESS and HUE."
+  (let ((angle (* float-pi (/ hue 180.0))))
+    (cl-loop
+     for (slope . intercept) in (jabber-muc--hsluv-bounds lightness)
+     for divisor = (- (sin angle) (* slope (cos angle)))
+     for length = (unless (zerop divisor) (/ intercept divisor))
+     when (and length (>= length 0))
+     minimize length)))
+
+(defun jabber-muc--hsluv-rgb (hue saturation lightness)
+  "Convert HSLuv HUE, SATURATION, and LIGHTNESS to sRGB."
+  (cond
+   ((< lightness 0.00000001) '(0.0 0.0 0.0))
+   ((> lightness 99.9999999) '(1.0 1.0 1.0))
+   (t
+    (let* ((angle (* float-pi (/ hue 180.0)))
+           (chroma (* (jabber-muc--hsluv-max-chroma lightness hue)
+                      (/ saturation 100.0)))
+           (u (* (cos angle) chroma))
+           (v (* (sin angle) chroma))
+           (y (if (<= lightness 8)
+                  (/ lightness 903.2962962)
+                (expt (/ (+ lightness 16) 116.0) 3)))
+           (var-u (+ (/ u (* 13 lightness)) 0.19783000664283))
+           (var-v (+ (/ v (* 13 lightness)) 0.46831999493879))
+           (x (/ (* 9 y var-u) (* 4 var-v)))
+           (z (/ (- (* 9 y) (* 15 var-v y) (* var-v x))
+                 (* 3 var-v))))
+      (mapcar #'color-clamp (color-xyz-to-srgb x y z))))))
+
+(defun jabber-muc--nick-color (hue saturation variation background)
+  "Return a readable nickname color for HUE, SATURATION, and VARIATION.
+Adapt the result to BACKGROUND."
+  (let* ((background-rgb (jabber-muc--color-rgb background))
+         (lighter-p
+          (> (jabber-muc--contrast-ratio '(1.0 1.0 1.0) background-rgb)
+             (jabber-muc--contrast-ratio '(0.0 0.0 0.0) background-rgb)))
+         (preferred-lightness
+          (if lighter-p
+              (+ 64 (* 18 variation))
+            (- 46 (* 18 variation))))
+         (lightnesses
+          (cons preferred-lightness
+                (if lighter-p
+                    (number-sequence
+                     (* 5 (ceiling preferred-lightness 5)) 95 5)
+                  (number-sequence
+                   (* 5 (floor preferred-lightness 5)) 5 -5))))
+         (colors (mapcar (lambda (lightness)
+                           (apply #'color-rgb-to-hex
+                                  (append
+                                   (jabber-muc--hsluv-rgb
+                                    hue saturation lightness)
+                                   '(2))))
+                         lightnesses))
+         (color (cl-find-if
+                 (lambda (candidate)
+                   (>= (jabber-muc--contrast-ratio
+                        (jabber-muc--color-rgb candidate)
+                        background-rgb)
+                       4.5))
+                 colors)))
+    (or color (if lighter-p "#ffffff" "#000000"))))
+
+(defun jabber-muc--nick-color-components (nickname)
+  "Return base hue, display hue, saturation, and variation for NICKNAME."
+  (let* ((hash (secure-hash
+                'sha1 (encode-coding-string nickname 'utf-8) nil nil t))
+         (value (+ (aref hash 0) (ash (aref hash 1) 8)))
+         (hue (* 360.0 (/ value 65536.0)))
+         (offset-value (+ (aref hash 4)
+                          (ash (aref hash 5) 8)
+                          (ash (aref hash 6) 16)
+                          (ash (aref hash 7) 24)))
+         (offset (- (* 36 (/ offset-value 4294967296.0)) 18))
+         (display-hue (mod (+ hue offset) 360.0))
+         (saturation (+ 60 (* 40 (/ (aref hash 2) 255.0))))
+         (variation (/ (aref hash 3) 255.0)))
+    (list hue display-hue saturation variation)))
+
+(defun jabber-muc--nick-hue (nickname)
+  "Return the XEP-0392 hue angle for NICKNAME."
+  (car (jabber-muc--nick-color-components nickname)))
+
+(defun jabber-muc--default-background ()
+  "Return the current default face background."
+  (let ((background (face-background 'default nil t)))
+    (if (and background
+             (not (equal background "unspecified-bg")))
+        background
+      (if (eq (frame-parameter nil 'background-mode) 'dark)
+          "#000000"
+        "#ffffff"))))
+
+(define-obsolete-variable-alias
+  'jabber-muc-nick-color-faces 'jabber-muc-colorize-nicks "0.13.0")
+
+(defcustom jabber-muc-colorize-nicks t
+  "Non-nil means color foreign MUC nicknames consistently."
+  :type 'boolean
   :group 'jabber-chat)
+
+(defun jabber-muc--refresh-nick-faces (&optional _theme)
+  "Refresh nickname faces in live MUC buffers."
+  (dolist (buffer (buffer-list))
+    (with-current-buffer buffer
+      (when (and (eq major-mode 'jabber-chat-mode)
+                 (bound-and-true-p jabber-group)
+                 (bound-and-true-p jabber-chat-ewoc))
+        (let ((anchors (jabber-chat-buffer--capture-view))
+              (buffer-undo-list t))
+          (ewoc-refresh jabber-chat-ewoc)
+          (jabber-chat-buffer--restore-view anchors))))))
+
+(add-hook 'enable-theme-functions #'jabber-muc--refresh-nick-faces)
+(add-hook 'disable-theme-functions #'jabber-muc--refresh-nick-faces)
 
 (defcustom jabber-muc-autojoin nil
   "List of MUC rooms to automatically join on connection.
@@ -1542,14 +1704,15 @@ Return nil if X-MUC is nil."
 
 (defun jabber-muc--nick-face (nickname)
   "Return the face for foreign MUC NICKNAME."
-  (if (null jabber-muc-nick-color-faces)
+  (if (null jabber-muc-colorize-nicks)
       '((:weight semi-bold) jabber-chat-nick-foreign-plaintext)
-    (let* ((bytes (encode-coding-string nickname 'utf-8))
-           (hash (secure-hash 'sha1 bytes nil nil t))
-           (number (+ (ash (aref hash 0) 8) (aref hash 1)))
-           (face (nth (mod number (length jabber-muc-nick-color-faces))
-                      jabber-muc-nick-color-faces)))
-      (list '(:slant italic :weight semi-bold) face))))
+    (pcase-let ((`(,_base-hue ,display-hue ,saturation ,variation)
+                 (jabber-muc--nick-color-components nickname)))
+      (list :weight 'semi-bold
+            :foreground
+            (jabber-muc--nick-color
+             display-hue saturation variation
+             (jabber-muc--default-background))))))
 
 (defun jabber-muc-print-prompt (msg &optional local dont-print-nick-p)
   "Print MUC prompt for message plist MSG.
@@ -1559,12 +1722,13 @@ When DONT-PRINT-NICK-P is non-nil, omit the nickname."
 	(timestamp (plist-get msg :timestamp))
 	(delayed (plist-get msg :delayed)))
     (if (stringp nick)
-	(jabber-chat--insert-prompt
-	 (jabber-chat--format-time timestamp delayed)
-	 (if dont-print-nick-p "" nick)
-	 (if local
-	     '((:weight semi-bold) jabber-chat-nick-plaintext)
-	   (jabber-muc--nick-face nick)))
+        (let ((face (if local
+                        'jabber-muc-nick-local-face
+                      (jabber-muc--nick-face nick))))
+	  (jabber-chat--insert-prompt
+	   (jabber-chat--format-time timestamp delayed)
+	   (if dont-print-nick-p "" nick)
+	   face))
       (jabber-muc-system-prompt))))
 
 (defun jabber-muc-private-print-prompt (msg)
@@ -1579,7 +1743,7 @@ When DONT-PRINT-NICK-P is non-nil, omit the nickname."
     (jabber-chat--insert-prompt
      (jabber-chat--format-time timestamp delayed)
      (concat group-name "/" nick)
-     'jabber-chat-nick-foreign-plaintext)))
+     '((:weight semi-bold) jabber-chat-nick-foreign-plaintext))))
 
 (defun jabber-muc-system-prompt (&rest _ignore)
   "Print system prompt for MUC."

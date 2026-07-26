@@ -1037,47 +1037,253 @@ entry with JC=nil."
 
 ;;; Group 23: MUC nickname faces
 
+(defun jabber-test-muc--relative-luminance (color)
+  "Return relative luminance for COLOR."
+  (let ((linear
+         (lambda (component)
+           (if (<= component 0.04045)
+               (/ component 12.92)
+             (expt (/ (+ component 0.055) 1.055) 2.4)))))
+    (pcase-let ((`(,red ,green ,blue)
+                 (let ((values (color-values-from-color-spec color)))
+                   (if values
+                       (mapcar (lambda (component) (/ component 65535.0))
+                               values)
+                     (color-name-to-rgb color)))))
+      (+ (* 0.2126 (funcall linear red))
+         (* 0.7152 (funcall linear green))
+         (* 0.0722 (funcall linear blue))))))
+
+(defun jabber-test-muc--contrast-ratio (first second)
+  "Return the contrast ratio between FIRST and SECOND."
+  (let ((a (jabber-test-muc--relative-luminance first))
+        (b (jabber-test-muc--relative-luminance second)))
+    (/ (+ (max a b) 0.05)
+       (+ (min a b) 0.05))))
+
+(defun jabber-test-muc--hue-distance (first second)
+  "Return the circular distance between hue angles FIRST and SECOND."
+  (min (mod (- first second) 360.0)
+       (mod (- second first) 360.0)))
+
+(ert-deftest jabber-test-muc-nick-colors-follow-theme-changes ()
+  "Theme changes refresh direct nickname faces."
+  (should (memq #'jabber-muc--refresh-nick-faces
+                enable-theme-functions))
+  (should (memq #'jabber-muc--refresh-nick-faces
+                disable-theme-functions)))
+
+(ert-deftest jabber-test-muc-refresh-nick-faces-refreshes-muc-ewoc ()
+  "Theme changes redisplay existing MUC messages."
+  (with-temp-buffer
+    (setq major-mode 'jabber-chat-mode)
+    (setq-local jabber-group "room@conference.example.com")
+    (setq-local jabber-chat-ewoc 'ewoc)
+    (let (refreshed)
+      (cl-letf (((symbol-function 'buffer-list)
+                 (lambda () (list (current-buffer))))
+                ((symbol-function 'ewoc-refresh)
+                 (lambda (ewoc) (setq refreshed ewoc))))
+        (jabber-muc--refresh-nick-faces)
+        (should (eq 'ewoc refreshed))))))
+
+(ert-deftest jabber-test-muc-refresh-nick-faces-preserves-history-view ()
+  "Theme changes preserve a MUC window reading history."
+  (save-window-excursion
+    (with-temp-buffer
+      (switch-to-buffer (current-buffer))
+      (setq major-mode 'jabber-chat-mode)
+      (setq-local jabber-group "room@conference.example.com")
+      (setq-local jabber-chat--msg-nodes (make-hash-table :test #'equal))
+      (setq-local jabber-chat-ewoc
+                  (ewoc-create
+                   (lambda (data)
+                     (insert (plist-get (cadr data) :body) "\n"))))
+      (dotimes (index 100)
+        (ewoc-enter-last
+         jabber-chat-ewoc
+         (list :muc-foreign
+               (list :server-id (format "message-%03d" index)
+                     :body (format "Message %03d" index)))))
+      (let* ((window (selected-window))
+             (anchor-id "message-040")
+             (anchor (jabber-chat-ewoc-find-by-id anchor-id))
+             (position (ewoc-location anchor)))
+        (set-window-start window position)
+        (set-window-point window position)
+        (redisplay t)
+        (cl-letf (((symbol-function 'buffer-list)
+                   (lambda () (list (current-buffer)))))
+          (jabber-muc--refresh-nick-faces))
+        (setq anchor (jabber-chat-ewoc-find-by-id anchor-id)
+              position (ewoc-location anchor))
+        (should (= position (window-start window)))
+        (should (= position (window-point window)))))))
+
+(ert-deftest jabber-test-muc-nick-hue-matches-xep-0392 ()
+  "Nickname hues match the XEP-0392 test vectors."
+  (dolist (entry '(("Romeo" . 327.255249)
+                   ("juliet@capulet.lit" . 209.410400)
+                   ("😺" . 331.199341)
+                   ("council" . 359.994507)
+                   ("Board" . 171.430664)))
+    (should (< (abs (- (jabber-muc--nick-hue (car entry))
+                       (cdr entry)))
+               0.0001))))
+
+(ert-deftest jabber-test-muc-display-hue-stays-near-xep-hue ()
+  "Display hue stays within eighteen degrees of the XEP hue."
+  (dolist (nick '("wanderer000" "wanderer017" "wanderer178"
+                  "wanderer001" "wanderer209" "willow205"))
+    (pcase-let ((`(,base ,display . ,_rest)
+                 (jabber-muc--nick-color-components nick)))
+      (should (<= (min (mod (- base display) 360.0)
+                       (mod (- display base) 360.0))
+                  18.0)))))
+
+(ert-deftest jabber-test-muc-nick-color-components-are-stable ()
+  "Hash-derived nickname color components remain stable."
+  (cl-mapc
+   (lambda (actual expected)
+     (should (< (abs (- actual expected)) 0.000001)))
+   (jabber-muc--nick-color-components "wanderer000")
+   '(21.5386962890625 36.36425671633333
+     96.86274509803921 0.01568627450980392)))
+
+(ert-deftest jabber-test-muc-color-matches-xep-0392 ()
+  "Nickname colors match the XEP-0392 RGB test vectors."
+  (dolist (entry '(("Romeo" . (0.865 0.000 0.686))
+                   ("juliet@capulet.lit" . (0.000 0.515 0.573))
+                   ("😺" . (0.872 0.000 0.659))
+                   ("council" . (0.918 0.000 0.394))
+                   ("Board" . (0.000 0.527 0.457))))
+    (cl-mapc (lambda (actual expected)
+               (should (< (abs (- actual expected)) 0.001)))
+             (jabber-muc--hsluv-rgb
+              (jabber-muc--nick-hue (car entry)) 100 50)
+             (cdr entry))))
+
+(ert-deftest jabber-test-muc-hsluv-matches-reference-vectors ()
+  "HSLuv conversion handles varied saturation and lightness."
+  (dolist (entry '(((76.4373779 75 70) . (0.7311863 0.6755247 0.3317136))
+                   ((75.8715820 60 80) . (0.8374650 0.7814542 0.4900905))))
+    (cl-mapc (lambda (actual expected)
+               (should (< (abs (- actual expected)) 0.0001)))
+             (apply #'jabber-muc--hsluv-rgb (car entry))
+             (cdr entry))))
+
+(ert-deftest jabber-test-muc-nick-colors-are-distinct-and-readable ()
+  "Generated nickname colors stay distinct and readable on common backgrounds."
+  (dolist (background '("#000000" "#202020" "#eeeeee" "#ffffff"
+                        "black" "white"))
+    (dolist (saturation '(60 80 100))
+      (dolist (variation '(0 0.5 1))
+        (let ((colors
+               (mapcar (lambda (hue)
+                         (jabber-muc--nick-color
+                          hue saturation variation background))
+                       '(15 60 105 150 195 240 285 330))))
+          (should (>= (length (delete-dups (copy-sequence colors))) 6))
+          (dolist (color colors)
+            (should (>= (jabber-test-muc--contrast-ratio color background)
+                        4.5))))))))
+
+(ert-deftest jabber-test-muc-nick-colors-are-readable-on-midtones ()
+  "Generated nickname colors choose the stronger contrast on midtones."
+  (dolist (background '("#414141" "#777777" "#989898"))
+    (dolist (saturation '(60 100))
+      (dolist (variation '(0 1))
+        (dolist (hue '(15 60 105 150 195 240 285 330))
+          (should (>= (jabber-test-muc--contrast-ratio
+                       (jabber-muc--nick-color
+                        hue saturation variation background)
+                       background)
+                      4.5)))))))
+
+(ert-deftest jabber-test-muc-local-nick-face-keeps-plaintext-style ()
+  "The local MUC nickname retains its established face and weight."
+  (should (eq 'jabber-chat-nick-plaintext
+              (face-attribute 'jabber-muc-nick-local-face :inherit nil nil)))
+  (should (eq 'semi-bold
+              (face-attribute 'jabber-muc-nick-local-face :weight nil nil)))
+  (should (eq 'unspecified
+              (face-attribute 'jabber-muc-nick-local-face :slant nil nil))))
+
 (ert-deftest jabber-test-muc-nick-face-stable ()
-  "A known nickname selects a stable face."
-  (should
-   (equal '((:slant italic :weight semi-bold) font-lock-keyword-face)
-          (jabber-muc--nick-face "alice"))))
+  "A known nickname gets a stable semi-bold foreground."
+  (cl-letf (((symbol-function 'jabber-muc--default-background)
+             (lambda () "#202020")))
+    (let ((face (jabber-muc--nick-face "alice")))
+      (should
+       (equal (apply #'jabber-muc--nick-color
+                     (append (cdr (jabber-muc--nick-color-components "alice"))
+                             '("#202020")))
+              (plist-get face :foreground)))
+      (should (eq 'semi-bold (plist-get face :weight)))
+      (should-not (plist-member face :slant)))))
 
-(ert-deftest jabber-test-muc-nick-face-stable-multibyte ()
-  "A multibyte nickname is hashed as UTF-8."
-  (should
-   (equal '((:slant italic :weight semi-bold) font-lock-constant-face)
-          (jabber-muc--nick-face "Θάνος"))))
+(ert-deftest jabber-test-muc-nick-face-varies-clustered-hues ()
+  "Later hash bytes distinguish synthetic clustered hues."
+  (cl-letf (((symbol-function 'jabber-muc--default-background)
+             (lambda () "#202020")))
+    (dolist (nicks '(("wanderer000" "wanderer017" "wanderer178")
+                     ("wanderer001" "wanderer209" "willow205")))
+      (let ((faces (mapcar #'jabber-muc--nick-face nicks)))
+        (should (= (length faces)
+                   (length (delete-dups faces))))))))
 
-(ert-deftest jabber-test-muc-nick-face-custom-palette ()
-  "Nickname selection stays within a custom palette."
-  (let ((jabber-muc-nick-color-faces
-         '(font-lock-comment-face font-lock-doc-face)))
-    (should
-     (memq (cadr (jabber-muc--nick-face "alice"))
-           jabber-muc-nick-color-faces))))
+(ert-deftest jabber-test-muc-display-hue-separates-clustered-hues ()
+  "Display hue separates synthetic clustered pairs."
+  (dolist (pair '(("wanderer000" "wanderer017")
+                  ("wanderer000" "wanderer178")
+                  ("wanderer001" "wanderer209")
+                  ("wanderer001" "willow205")))
+    (pcase-let* ((`(,base-a ,display-a . ,_)
+                  (jabber-muc--nick-color-components (car pair)))
+                 (`(,base-b ,display-b . ,_)
+                  (jabber-muc--nick-color-components (cadr pair))))
+      (should (> (jabber-test-muc--hue-distance display-a display-b)
+                 (jabber-test-muc--hue-distance base-a base-b))))))
 
-(ert-deftest jabber-test-muc-nick-face-empty-palette ()
-  "An empty nickname palette restores the existing face."
-  (let ((jabber-muc-nick-color-faces nil))
+(ert-deftest jabber-test-muc-nick-face-disabled ()
+  "Disabling nickname colors restores the existing face."
+  (let ((jabber-muc-colorize-nicks nil))
     (should
      (equal '((:weight semi-bold) jabber-chat-nick-foreign-plaintext)
             (jabber-muc--nick-face "alice")))))
+
+(ert-deftest jabber-test-muc-obsolete-palette-option-retains-toggle ()
+  "Obsolete palette values retain enabled and disabled behavior."
+  (with-suppressed-warnings ((obsolete jabber-muc-nick-color-faces))
+    (let ((jabber-muc-nick-color-faces nil))
+      (should-not jabber-muc-colorize-nicks)
+      (should
+       (equal '((:weight semi-bold) jabber-chat-nick-foreign-plaintext)
+              (jabber-muc--nick-face "alice"))))
+    (let ((jabber-muc-nick-color-faces '(font-lock-keyword-face)))
+      (should jabber-muc-colorize-nicks)
+      (should (plist-member (jabber-muc--nick-face "alice") :foreground)))))
 
 (ert-deftest jabber-test-muc-print-prompt-colors-foreign-nick ()
   "A foreign MUC prompt receives its selected nickname face."
   (let (prompt-args)
     (cl-letf (((symbol-function 'jabber-chat--format-time)
                (lambda (&rest _args) "12:34"))
+              ((symbol-function 'jabber-muc--default-background)
+               (lambda () "#202020"))
               ((symbol-function 'jabber-chat--insert-prompt)
                (lambda (&rest args)
                  (setq prompt-args args))))
       (jabber-muc-print-prompt
        '(:from "room@conference.example.com/alice" :timestamp nil))
       (should
-       (equal '("12:34" "alice"
-                ((:slant italic :weight semi-bold)
-                 font-lock-keyword-face))
+       (equal `("12:34" "alice"
+                (:weight semi-bold
+                 :foreground
+                 ,(apply #'jabber-muc--nick-color
+                         (append
+                          (cdr (jabber-muc--nick-color-components "alice"))
+                          '("#202020")))))
               prompt-args)))))
 
 (ert-deftest jabber-test-muc-print-prompt-keeps-local-face ()
@@ -1092,7 +1298,24 @@ entry with JC=nil."
        '(:from "room@conference.example.com/me" :timestamp nil) t)
       (should
        (equal '("12:34" "me"
-                ((:weight semi-bold) jabber-chat-nick-plaintext))
+                jabber-muc-nick-local-face)
+              prompt-args)))))
+
+(ert-deftest jabber-test-muc-private-print-prompt-is-semi-bold ()
+  "A private MUC prompt uses a semi-bold nickname."
+  (let (prompt-args)
+    (cl-letf (((symbol-function 'jabber-chat--format-time)
+               (lambda (&rest _args) "12:34"))
+              ((symbol-function 'jabber-jid-rostername)
+               (lambda (_jid) "Room"))
+              ((symbol-function 'jabber-chat--insert-prompt)
+               (lambda (&rest args)
+                 (setq prompt-args args))))
+      (jabber-muc-private-print-prompt
+       '(:from "room@conference.example.com/alice" :timestamp nil))
+      (should
+       (equal '("12:34" "Room/alice"
+                ((:weight semi-bold) jabber-chat-nick-foreign-plaintext))
               prompt-args)))))
 
 (provide 'jabber-test-muc)
