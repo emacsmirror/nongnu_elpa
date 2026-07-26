@@ -372,7 +372,7 @@ Uses CONTEXT and `vm-epg-get-author' to identify the sender."
 
 ;;; Composition helpers
 
-(defun vm-pgp-goto-body-start ()
+(defun vm-epg-goto-body-start ()
   "Go to the start of the message body and return point."
   (goto-char (point-min))
   (search-forward (concat "\n" mail-header-separator "\n"))
@@ -393,8 +393,7 @@ Uses CONTEXT and `vm-epg-get-author' to identify the sender."
   (delete-region (point) (point-max))
   (insert "\n")
   ;; skip headers
-  (vm-pgp-goto-body-start))
-;;; TODO pgg gör mycket mer här
+  (vm-epg-goto-body-start))
 
 ;;; Modeline state
 
@@ -717,7 +716,6 @@ the cleanup here after verification/decoding."
       (delete-region start end)
       (insert signed))))
 
-;;; TODO Ny funktion, granskas
 (defun vm-epg-format-verify-result (result)
   "Format EPG verification RESULT (a list of `epg-signature' objects) as a string."
   (if (null result)
@@ -1148,7 +1146,6 @@ fetched, so the caller can verify the message again."
 (defun vm-epg-attach-public-key ()
   "Attach your public key to a composition."
   (interactive)
-  ;; TODO vm-pgg tittar efter pgg-default-user-id här
   (let* ((author (or (and vm-epg-get-author-headers (vm-epg-get-author))
                      (read-string "User ID: ")))
          (context (epg-make-context 'OpenPGP))
@@ -1169,7 +1166,6 @@ fetched, so the caller can verify the message again."
       (goto-char (point-max))
       (insert "\n")
       (setq start (point))
-      ;; TODO pgg använder pgg-default-user-id
       (vm-attach-object buffer
                         :type "application/pgp-keys"
                         :params (list (concat "name=\"" author ".asc\""))
@@ -1179,7 +1175,6 @@ fetched, so the caller can verify the message again."
             (end (point)))
         (put-text-property start end 'vm-mime-disposition disposition)))))
 
-;;; TODO Ny funktion att granska
 ;;;###autoload
 (defun vm-epg-insert-public-key ()
   "Insert your public key into the composition at point."
@@ -1272,7 +1267,7 @@ and `vm-mime-composition-armor-from-lines' is t."
         (micalg "sha256")
         body-start)
     ;; prepare body
-    (setq body-start (vm-marker (vm-pgp-goto-body-start)))
+    (setq body-start (vm-marker (vm-epg-goto-body-start)))
     (insert "Content-Type: " (or content-type "text/plain") "\n")
     (insert "Content-Transfer-Encoding: " (or encoding "7bit") "\n")
     (unless (looking-at "\n")
@@ -1338,7 +1333,7 @@ and `vm-mime-composition-armor-from-lines' is t."
         (encoding (vm-mail-mode-get-header-contents "Content-Transfer-Encoding:"))
         (boundary (vm-epg-make-multipart-boundary "pgp+encrypted"))
         body-start)
-    (setq body-start (vm-marker (vm-pgp-goto-body-start)))
+    (setq body-start (vm-marker (vm-epg-goto-body-start)))
     (insert "Content-Type: " (or content-type "text/plain") "\n")
     (insert "Content-Transfer-Encoding: " (or encoding "7bit") "\n")
     (insert "\n")
