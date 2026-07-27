@@ -49,7 +49,7 @@ This package provides support for using [[https://cisco.github.io/ChezScheme/][C
 *** Generative AI (LLMs)
 
   Use of generative AI (LLMs, diffusion models and similar technology) is not
-  acceptable for contributions to or interactions with the xmobar project.
+  acceptable for contributions to or interactions with this project.
 
   This includes words, images and code, as well as bug reports, commit
   messages, email (mailing list or private) and IRC messages.
