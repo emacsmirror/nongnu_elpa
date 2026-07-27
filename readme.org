@@ -1,3 +1,9 @@
+#+html: <p align=right>
+#+html: <a href="http://elpa.nongnu.org/nongnu/geiser-chicken.html"><img alt="NonGNU Elpa" src="http://elpa.nongnu.org/nongnu/geiser-chicken.svg"/> </a>
+#+html: <a href="http://elpa.nongnu.org/nongnu-devel/geiser-chicken.html"><img alt="NonGNU Devel Elpa" src="http://elpa.nongnu.org/nongnu-devel/geiser-chicken.svg"/></a>
+#+html: <a href="https://melpa.org/#/geiser-chicken"><img alt="MELPA" src="https://melpa.org/packages/geiser-chicken-badge.svg"/></a>
+#+html: </p>
+
 * Chicken and Geiser talk to each other
 
   Geiser is a generic Emacs/Scheme interaction mode, featuring an
