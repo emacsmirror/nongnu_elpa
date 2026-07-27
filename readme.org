@@ -6,3 +6,12 @@ This package provides support for using [[https://github.com/ashinn/chibi-scheme
 Provided [[https://gitlab.com/emacs-geiser/core][geiser-core]] is installed in your system, if this package's
 directory is in your load path, just add ~(require 'geiser-chibi)~ to
 your initialisation files and then ~M-x run-chibi~ to start a REPL.
+
+* Contributing
+*** Generative AI (LLMs)
+
+  Use of generative AI (LLMs, diffusion models and similar technology) is not
+  acceptable for contributions to or interactions with the xmobar project.
+
+  This includes words, images and code, as well as bug reports, commit
+  messages, email (mailing list or private) and IRC messages.
