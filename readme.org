@@ -44,3 +44,12 @@
           $ cd `csi -p '(chicken-home)'`
           $ curl http://3e8.org/pub/chicken-doc/chicken-doc-repo.tgz | sudo tar zx
          #+END_EXAMPLE
+
+* Contributing
+*** Generative AI (LLMs)
+
+  Use of generative AI (LLMs, diffusion models and similar technology) is not
+  acceptable for contributions to or interactions with the xmobar project.
+
+  This includes words, images and code, as well as bug reports, commit
+  messages, email (mailing list or private) and IRC messages.
