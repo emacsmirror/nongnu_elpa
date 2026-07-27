@@ -1,9 +1,4 @@
 #+TITLE: Chez and Geiser talk to each other
-#+OPTIONS: d:nil
-#+EXPORT_FILE_NAME: geiser-chez.texi
-#+TEXINFO_DIR_CATEGORY: Emacs
-#+TEXINFO_DIR_TITLE: Geiser Chez: (geiser-chez).
-#+TEXINFO_DIR_DESC: Support for Chez in Geiser
 
 #+html: <p align=right>
 #+html: <a href="http://elpa.nongnu.org/nongnu/geiser-chez.html"><img alt="NonGNU Elpa" src="http://elpa.nongnu.org/nongnu/geiser-chez.svg"/> </a>
@@ -50,3 +45,11 @@ This package provides support for using [[https://cisco.github.io/ChezScheme/][C
    REPL session from a remote directory or file, the REPL process will be run
    in the machine where the tramp-accessed file lives, after copying there any
    necessary scheme libraries.
+* Contributing
+*** Generative AI (LLMs)
+
+  Use of generative AI (LLMs, diffusion models and similar technology) is not
+  acceptable for contributions to or interactions with the xmobar project.
+
+  This includes words, images and code, as well as bug reports, commit
+  messages, email (mailing list or private) and IRC messages.
