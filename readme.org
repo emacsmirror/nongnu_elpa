@@ -1,3 +1,9 @@
+#+html: <p align=right>
+#+html: <a href="http://elpa.nongnu.org/nongnu/geiser.html"><img alt="NonGNU Elpa" src="http://elpa.nongnu.org/nongnu/geiser.svg"/> </a>
+#+html: <a href="http://elpa.nongnu.org/nongnu-devel/geiser.html"><img alt="NonGNU Devel Elpa" src="http://elpa.nongnu.org/nongnu-devel/geiser.svg"/></a>
+#+html: <a href="https://melpa.org/#/geiser"><img alt="MELPA" src="https://melpa.org/packages/geiser-badge.svg"/></a>
+#+html: </p>
+
 * Overview
 
   Geiser is a generic Emacs/Scheme interaction mode, featuring an
