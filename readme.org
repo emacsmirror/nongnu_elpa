@@ -222,3 +222,12 @@
   leave as many functions unimplemented as you see fit (there is even an
   explicit list of unsupported features), and geiser will still know how
   to use the ones that are implemented.
+
+* Contributing
+*** Generative AI (LLMs)
+
+  Use of generative AI (LLMs, diffusion models and similar technology) is not
+  acceptable for contributions to or interactions with the xmobar project.
+
+  This includes words, images and code, as well as bug reports, commit
+  messages, email (mailing list or private) and IRC messages.
