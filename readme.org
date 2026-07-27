@@ -7,3 +7,12 @@ package-install RET geiser-racket~.
 
 Files with the `.rkt` and `.ssl` extensions should be automatically
 recognized as racket-flavoured geiser buffers.
+
+* Contributing
+*** Generative AI (LLMs)
+
+  Use of generative AI (LLMs, diffusion models and similar technology) is not
+  acceptable for contributions to or interactions with the xmobar project.
+
+  This includes words, images and code, as well as bug reports, commit
+  messages, email (mailing list or private) and IRC messages.
