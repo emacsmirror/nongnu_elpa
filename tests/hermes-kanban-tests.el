@@ -41,6 +41,10 @@
     (should (equal (hermes-kanban--entry-status
                     (vector "⚙️ running" "2" "elisp-dev" "Do thing"))
                    "running")))
+  (let ((running (hermes-kanban-format-status "running")))
+    (should (equal (substring-no-properties running) "⚙️ running"))
+    (should (eq (get-text-property 0 'face running)
+                'hermes-kanban-running-face)))
   (should (equal (hermes-kanban--format-status-count
                   '((ready . 2)) "ready")
                  "2"))
@@ -510,18 +514,21 @@
           (kill-buffer "*Hermes Kanban Boards*"))))))
 
 (ert-deftest hermes-kanban-open-board-renders-tasks ()
-  "Opening a board fetches /board with its slug and flattens the columns."
+  "Opening a board fetches tasks and shows automatic triage orchestration."
   (cl-letf (((symbol-function 'window-body-width)
              (lambda (&optional _window _pixelwise) 80))
             ((symbol-function 'hermes-kanban--api)
              (lambda (method path &optional _body query)
                (should (equal method "GET"))
-               (should (equal path "/board"))
-               (should (equal (cdr (assq 'board query)) "emacs-lisp"))
-               (hermes--promise-resolved '((columns . (((name . "todo")
-							(tasks . (((id . "t1") (status . "todo")
-								   (title . "Do thing")))))))
-					   (assignees . ("elisp-dev")))))))
+               (hermes--promise-resolved
+                (if (equal path "/orchestration")
+                    '((auto_decompose . t))
+                  (should (equal path "/board"))
+                  (should (equal (cdr (assq 'board query)) "emacs-lisp"))
+                  '((columns . (((name . "todo")
+                                 (tasks . (((id . "t1") (status . "todo")
+                                            (title . "Do thing")))))))
+                    (assignees . ("elisp-dev"))))))))
     (unwind-protect
         (progn
           (hermes-kanban--render-board "emacs-lisp" "Emacs Lisp")
@@ -534,7 +541,11 @@
                        80))
             (should (>= (cadr (aref tabulated-list-format 0)) 6))
             (should (>= (cadr (aref tabulated-list-format 3)) 20))
-            (should (equal (caar tabulated-list-entries) "t1"))))
+            (should (equal (caar tabulated-list-entries) "t1"))
+            (should (eq hermes-kanban--orchestration-mode 'auto))
+            (should (string-match-p
+                     "Triage: auto"
+                     (hermes-kanban--triage-mode-indicator)))))
       (when (get-buffer "*Hermes Kanban*") (kill-buffer "*Hermes Kanban*")))))
 
 (ert-deftest hermes-kanban-board-discards-late-response ()
@@ -560,6 +571,33 @@
             (with-current-buffer "*Hermes Kanban*"
               (should (equal hermes-kanban--slug "b"))
               (should (equal (caar tabulated-list-entries) "b-task"))))
+        (when (get-buffer "*Hermes Kanban*")
+          (kill-buffer "*Hermes Kanban*"))))))
+
+(ert-deftest hermes-kanban-board-discards-late-orchestration-response ()
+  "Older orchestration state cannot replace the latest board refresh state."
+  (let ((settings-a (hermes--promise-make))
+        (settings-b (hermes--promise-make))
+        (settings-call 0))
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (_method path &optional _body query)
+                 (if (equal path "/orchestration")
+                     (prog1 (if (zerop settings-call) settings-a settings-b)
+                       (setq settings-call (1+ settings-call)))
+                   (hermes--promise-resolved
+                    `((columns . (((name . "todo") (tasks . []))))
+                      (assignees)
+                      (board . ,(cdr (assq 'board query)))))))))
+      (unwind-protect
+          (progn
+            (hermes-kanban--render-board "a" "Board A")
+            (hermes-kanban--render-board "b" "Board B")
+            (hermes--promise-resolve
+             settings-b '((auto_decompose . :json-false)))
+            (hermes--promise-resolve settings-a '((auto_decompose . t)))
+            (with-current-buffer "*Hermes Kanban*"
+              (should (equal hermes-kanban--slug "b"))
+              (should (eq hermes-kanban--orchestration-mode 'manual))))
         (when (get-buffer "*Hermes Kanban*")
           (kill-buffer "*Hermes Kanban*"))))))
 
@@ -629,6 +667,49 @@
               (should (string-match-p "details here" (buffer-string)))))
         (dolist (b '("*Hermes Kanban*" "*Hermes Kanban Task*"))
           (when (get-buffer b) (kill-buffer b)))))))
+
+(ert-deftest hermes-kanban-open-task-fetches-task-by-id ()
+  "Opening a task fetches fresh detail by id and board."
+  (let (request)
+    (cl-letf (((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional _body query)
+                 (setq request (list method path query))
+                 (hermes--promise-resolved
+                  '((task . ((id . "t1") (title . "Do thing")
+                             (status . "running") (body . "details"))))))))
+      (unwind-protect
+          (progn
+            (hermes-kanban-open-task "t1" "emacs-lisp")
+            (should (equal request
+                           '("GET" "/tasks/t1" ((board . "emacs-lisp")))))
+            (with-current-buffer "*Hermes Kanban Task*"
+              (should (equal hermes-kanban-task--task-id "t1"))
+              (should (equal hermes-kanban-task--board-slug "emacs-lisp"))))
+        (when (get-buffer "*Hermes Kanban Task*")
+          (kill-buffer "*Hermes Kanban Task*"))))))
+
+(ert-deftest hermes-kanban-open-board-task-selects-task-row ()
+  "Opening a task's board selects that task after rendering."
+  (cl-letf (((symbol-function 'hermes-kanban--api)
+             (lambda (_method path &optional _body _query)
+               (hermes--promise-resolved
+                (if (equal path "/orchestration")
+                    '((auto_decompose . :json-false))
+                  '((columns
+                     . (((name . "todo")
+                         (tasks . (((id . "t1") (status . "todo")
+                                    (title . "First"))
+                                   ((id . "t2") (status . "todo")
+                                    (title . "Second")))))))
+                    (assignees)))))))
+    (unwind-protect
+        (progn
+          (hermes-kanban-open-board-task "emacs-lisp" "t2")
+          (with-current-buffer "*Hermes Kanban*"
+            (should (equal hermes-kanban--slug "emacs-lisp"))
+            (should (equal (tabulated-list-get-id) "t2"))))
+      (when (get-buffer "*Hermes Kanban*")
+        (kill-buffer "*Hermes Kanban*")))))
 
 (ert-deftest hermes-kanban-task-detail-discards-late-response ()
   "A late task A refresh cannot replace the newer task B detail."
@@ -1068,7 +1149,7 @@
 						   log-query query)
 					     '((task_id . "t1") (path . "/logs/t1.log")
 					       (exists . t) (size_bytes . 12)
-					       (content . "hello from worker\n")
+					       (content . "a/foo.el → b/foo.el\n@@ -0,0 +1,4 @@\n+one\n+two\n… omitted 2 diff line(s) across 1 additional file(s)/section(s)\n")
 					       (truncated . :json-false)))
 					    (t (error "unexpected path: %s" path)))))))
       (unwind-protect
@@ -1087,7 +1168,10 @@
               (let ((text (buffer-string)))
                 (should (string-match-p "Worker log for t1" text))
                 (should (string-match-p "/logs/t1.log" text))
-                (should (string-match-p "hello from worker" text)))))
+                (should (hermes-kanban-test--line-has-face-p
+                         text "@@ -0,0 +1,4 @@" 'diff-hunk-header))
+                (should (hermes-kanban-test--line-has-face-p
+                         text "+one" 'diff-added)))))
         (dolist (b '("*Hermes Kanban*" "*Hermes Kanban Log*"))
           (when (get-buffer b) (kill-buffer b)))))))
 
@@ -1157,6 +1241,25 @@
     (should (hermes-kanban-test--line-has-face-p
              text "+after" 'diff-added))))
 
+(ert-deftest hermes-kanban-format-log-fontifies-truncated-hermes-diff ()
+  "Worker log formatting accepts Hermes' explicit diff omission marker."
+  (let* ((content (concat "  ┊ review diff\n"
+                          "a/foo.el → b/foo.el\n"
+                          "@@ -0,0 +1,4 @@\n"
+                          "+one\n"
+                          "+two\n"
+                          "… omitted 2 diff line(s) across "
+                          "1 additional file(s)/section(s)\n"))
+         (text (hermes-kanban--format-log
+                `((task_id . "t1") (exists . t) (content . ,content)))))
+    (should (hermes-kanban-test--line-has-face-p
+             text "@@ -0,0 +1,4 @@" 'diff-hunk-header))
+    (should (hermes-kanban-test--line-has-face-p
+             text "+one" 'diff-added))
+    (should (hermes-kanban-test--line-has-face-p
+             text "+two" 'diff-added))
+    (should (string-match-p "… omitted 2 diff line" text))))
+
 (ert-deftest hermes-kanban-format-log-does-not-fontify-ordinary-plus-minus-lines ()
   "Worker log formatting ignores ordinary plus/minus lines without hunks."
   (let* ((content (concat "worker said\n"
@@ -1188,6 +1291,30 @@
     (insert "@@ -1,2 +1,2 @@\n-old\n+new\n\n")
     (goto-char (point-min))
     (should-not (hermes-kanban--consume-diff-hunk))))
+
+(ert-deftest hermes-kanban-log-refontify-restores-stale-buffer-faces ()
+  "Refontifying a stale log buffer restores embedded diff faces."
+  (with-temp-buffer
+    (hermes-kanban-log-mode)
+    (let ((inhibit-read-only t))
+      (insert (concat "worker said\n"
+                      "diff --git a/foo.el b/foo.el\n"
+                      "--- a/foo.el\n"
+                      "+++ b/foo.el\n"
+                      "@@ -1 +1 @@\n"
+                      "-old\n"
+                      "+new\n")))
+    (set-buffer-modified-p nil)
+    (should-not (hermes-kanban-test--line-has-face-p
+                 (buffer-string) "+new" 'diff-added))
+    (hermes-kanban-log--refontify-buffer)
+    (should (hermes-kanban-test--line-has-face-p
+             (buffer-string) "@@ -1 +1 @@" 'diff-hunk-header))
+    (should (hermes-kanban-test--line-has-face-p
+             (buffer-string) "-old" 'diff-removed))
+    (should (hermes-kanban-test--line-has-face-p
+             (buffer-string) "+new" 'diff-added))
+    (should-not (buffer-modified-p))))
 
 (ert-deftest hermes-kanban-log-mode-navigates-embedded-diff-hunks ()
   "Log-mode n/p commands move across embedded unified diff hunks.
@@ -1504,12 +1631,15 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
         (should reverted)))))
 
 (ert-deftest hermes-kanban-create-triage-task-posts-triage-body ()
-  "Creating a triage idea POSTs the backend triage flag and refreshes."
-  (let (call refreshed)
+  "Creating a triage idea sends Markdown and uses automatic routing."
+  (let (call refreshed reported)
     (cl-letf (((symbol-function 'read-string)
                (lambda (&rest _) "Rough idea"))
+              ((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) "## Context\n\nImprove creation."))
               ((symbol-function 'completing-read)
-               (lambda (&rest _) "specifier"))
+               (lambda (&rest _)
+                 (ert-fail "Triage should not ask for an assignee")))
               ((symbol-function 'read-number)
                (lambda (&rest _) 3))
               ((symbol-function 'hermes-kanban--api)
@@ -1518,19 +1648,116 @@ Incomplete header-shaped blocks that the fontifier rejects are skipped."
                  (hermes--promise-resolved '((task . ((id . "t1")))))))
               ((symbol-function 'hermes-kanban--render-board)
                (lambda (slug name &optional _in-place)
-                 (setq refreshed (list slug name)))))
+                 (setq refreshed (list slug name))))
+              ((symbol-function 'message)
+               (lambda (format-string &rest args)
+                 (setq reported (apply #'format format-string args)))))
       (with-temp-buffer
         (hermes-kanban-mode)
         (setq hermes-kanban--slug "main"
               hermes-kanban--name "Main"
-              hermes-kanban--assignees '("specifier"))
+              hermes-kanban--assignees '("specifier")
+              hermes-kanban--orchestration-mode 'auto)
         (hermes-kanban-create-triage-task)
         (should (equal call
                        '("POST" "/tasks"
                          ((title . "Rough idea") (priority . 3)
-                          (assignee . "specifier") (triage . t))
+                          (body . "## Context\n\nImprove creation.")
+                          (triage . t))
                          ((board . "main")))))
-        (should (equal refreshed '("main" "Main")))))))
+        (should (equal refreshed '("main" "Main")))
+        (should (equal
+                 reported
+                 "Created triage task t1; queued for automatic decomposition"))))))
+
+(ert-deftest hermes-kanban-create-task-keeps-optional-assignee ()
+  "Creating a normal task sends its description and chosen assignee."
+  (let (call)
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) "Implement task"))
+              ((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) "Detailed acceptance criteria."))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) "coder"))
+              ((symbol-function 'read-number)
+               (lambda (&rest _) 1))
+              ((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional body query)
+                 (setq call (list method path body query))
+                 (hermes--promise-resolved '((task . ((id . "t2")))))))
+              ((symbol-function 'hermes-kanban--render-board) #'ignore)
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-kanban-mode)
+        (setq hermes-kanban--slug "main"
+              hermes-kanban--name "Main"
+              hermes-kanban--assignees '("coder"))
+        (hermes-kanban-create-task)
+        (should (equal call
+                       '("POST" "/tasks"
+                         ((title . "Implement task") (priority . 1)
+                          (body . "Detailed acceptance criteria.")
+                          (assignee . "coder"))
+                         ((board . "main")))))))))
+
+(ert-deftest hermes-kanban-create-task-does-not-reopen-board-during-switch ()
+  "A late task creation result does not supersede an in-flight board switch."
+  (let ((created (hermes--promise-make))
+        (new-board (hermes--promise-make)))
+    (cl-letf (((symbol-function 'read-string)
+               (lambda (&rest _) "Implement task"))
+              ((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) "Description"))
+              ((symbol-function 'completing-read)
+               (lambda (&rest _) "coder"))
+              ((symbol-function 'read-number)
+               (lambda (&rest _) 1))
+              ((symbol-function 'hermes-kanban--api)
+               (lambda (method path &optional _body query)
+                 (cond
+                  ((equal method "POST") created)
+                  ((equal path "/orchestration")
+                   (hermes--promise-resolved
+                    '((auto_decompose . :json-false))))
+                  ((equal (cdr (assq 'board query)) "new") new-board)
+                  (t
+                   (hermes--promise-resolved
+                    '((columns . (((name . "todo") (tasks . []))))
+                      (assignees)))))))
+              ((symbol-function 'message) #'ignore))
+      (unwind-protect
+          (with-current-buffer (get-buffer-create "*Hermes Kanban*")
+            (hermes-kanban-mode)
+            (setq hermes-kanban--slug "old"
+                  hermes-kanban--name "Old")
+            (hermes-kanban-create-task)
+            (hermes-kanban--render-board "new" "New")
+            (hermes--promise-resolve
+             created '((task . ((id . "t1")))))
+            (hermes--promise-resolve
+             new-board
+             '((columns . (((name . "todo")
+                            (tasks . (((id . "new-task") (status . "todo")
+                                       (title . "New")))))))
+               (assignees)))
+            (should (equal hermes-kanban--slug "new"))
+            (should (equal (caar tabulated-list-entries) "new-task")))
+        (when (get-buffer "*Hermes Kanban*")
+          (kill-buffer "*Hermes Kanban*"))))))
+
+(ert-deftest hermes-kanban-create-task-body-omits-empty-description ()
+  "Task creation omits blank optional description and assignee fields."
+  (should (equal (hermes-kanban--create-task-body
+                  "Title" " \n" 0 "" t)
+                 '((title . "Title") (priority . 0) (triage . t)))))
+
+(ert-deftest hermes-kanban-triage-mode-indicator-distinguishes-manual-mode ()
+  "Manual orchestration is visible and visually distinct in the mode line."
+  (with-temp-buffer
+    (setq-local hermes-kanban--orchestration-mode 'manual)
+    (let ((indicator (hermes-kanban--triage-mode-indicator)))
+      (should (string-match-p "Triage: manual" indicator))
+      (should (eq (get-text-property 1 'face indicator) 'warning)))))
 
 (ert-deftest hermes-kanban-specify-triage-task-posts-and-refreshes-detail ()
   "Specifying a triage task reports its new title and refreshes its detail."

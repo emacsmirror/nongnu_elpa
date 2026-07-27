@@ -108,7 +108,10 @@ load: clean
 	    (let ((map (intern-soft (format \"%s-map\" major-mode)))) \
 	      (when (and (string-prefix-p \"hermes-\" (symbol-name major-mode)) \
 	                 map (boundp map) (keymapp (symbol-value map))) \
-	        (use-local-map (symbol-value map))))))" > /dev/null
+	        (use-local-map (symbol-value map)))) \
+	    (when (and (derived-mode-p 'hermes-kanban-log-mode) \
+	               (fboundp 'hermes-kanban-log--refontify-buffer)) \
+	      (hermes-kanban-log--refontify-buffer))))" > /dev/null
 	@printf "\033[32mLoaded all modules into Emacs\033[0m\n"
 
 clean:

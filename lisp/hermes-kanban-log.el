@@ -74,6 +74,12 @@
    ((looking-at "^-") '(1 . 0))
    ((looking-at "^ ") '(1 . 1))))
 
+(defun hermes-kanban--diff-omission-line-p ()
+  "Return non-nil at Hermes' explicit truncated-diff summary."
+  (looking-at
+   (concat "^… omitted [0-9]+ diff line(s)"
+           "\\(?: across [0-9]+ additional file(s)/section(s)\\)?$")))
+
 (defun hermes-kanban--consume-diff-hunk ()
   "Move over a valid unified diff hunk at point.
 Return non-nil when the consumed hunk contains an added or removed line."
@@ -87,7 +93,9 @@ Return non-nil when the consumed hunk contains an added or removed line."
         (while (and valid
                     (not (and (<= old-left 0) (<= new-left 0)))
                     (not (eobp)))
-          (if-let* ((line-counts (hermes-kanban--diff-body-line-counts)))
+          (let ((line-counts (hermes-kanban--diff-body-line-counts)))
+            (cond
+             (line-counts
               (let ((old-count (car line-counts))
                     (new-count (cdr line-counts)))
                 (if (or (> old-count old-left)
@@ -98,8 +106,11 @@ Return non-nil when the consumed hunk contains an added or removed line."
                     (setq saw-change t))
                   (setq old-left (- old-left old-count)
                         new-left (- new-left new-count))
-                  (forward-line 1)))
-            (setq valid nil)))
+                  (forward-line 1))))
+             ((and saw-change (hermes-kanban--diff-omission-line-p))
+              (setq old-left 0
+                    new-left 0))
+             (t (setq valid nil)))))
         (when (or (> old-left 0) (> new-left 0))
           (setq valid nil))
         (while (and valid
@@ -172,6 +183,30 @@ Return non-nil when the consumed hunk contains an added or removed line."
   "Return CONTENT normalized, ANSI-colored, and diff-fontified for display."
   (hermes-kanban--fontify-log-diffs
    (ansi-color-apply (hermes-kanban--sanitize-log-content content))))
+
+(defun hermes-kanban-log--refontify-buffer ()
+  "Reapply embedded diff faces in the current worker-log buffer."
+  (save-restriction
+    (widen)
+    (let ((content (buffer-substring-no-properties (point-min) (point-max)))
+          (base (point-min))
+          (inhibit-read-only t))
+      (with-silent-modifications
+        (dolist (block (hermes-kanban--diff-blocks content))
+          (let* ((start (+ base (car block)))
+                 (end (+ base (cdr block)))
+                 (fontified (hermes-kanban--fontify-diff-string
+                             (substring content (car block) (cdr block))))
+                 (offset 0))
+            (remove-list-of-text-properties start end '(face font-lock-face))
+            (while (< offset (length fontified))
+              (let* ((next (next-single-property-change
+                            offset 'face fontified (length fontified)))
+                     (face (get-text-property offset 'face fontified)))
+                (when face
+                  (put-text-property (+ start offset) (+ start next)
+                                     'face face))
+                (setq offset next)))))))))
 
 (defun hermes-kanban-log--valid-hunk-header-p ()
   "Return non-nil when point is at a validated embedded diff hunk header.

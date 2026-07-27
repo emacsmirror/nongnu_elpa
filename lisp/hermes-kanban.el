@@ -213,6 +213,10 @@ text property, so commands can keep using backend status values."
       (add-text-properties 0 (length text) `(hermes-kanban-status ,raw) text))
     text))
 
+(defun hermes-kanban-format-status (status)
+  "Return STATUS with the standard Kanban icon and semantic face."
+  (hermes-kanban--format-status status))
+
 (defun hermes-kanban--format-status-indicator (status)
   "Return STATUS as a compact task-table indicator.
 Known statuses use only their icon.  Unknown statuses fall back to their
@@ -489,6 +493,16 @@ This uses the dashboard's recoverable archive endpoint and never hard-deletes."
 (defvar-local hermes-kanban--latest-event-id nil
   "Most recent task-event id from the last board render, for live seeding.")
 
+(defvar-local hermes-kanban--orchestration-mode 'unknown
+  "Current triage orchestration mode: `auto', `manual', or `unknown'.")
+
+(defun hermes-kanban--triage-mode-indicator ()
+  "Return the current triage orchestration mode for the mode line."
+  (pcase hermes-kanban--orchestration-mode
+    ('auto (propertize " [Triage: auto]" 'face 'success))
+    ('manual (propertize " [Triage: manual]" 'face 'warning))
+    (_ (propertize " [Triage: …]" 'face 'shadow))))
+
 (defun hermes-kanban--task-created-desc-p (left right)
   "Return non-nil when LEFT is newer (created_at) than RIGHT.
 LEFT and RIGHT are task plists/alists as produced by the dashboard.
@@ -543,8 +557,8 @@ the board detail buffer shows the most recently created tasks at the top."
   "c" ("Comment" hermes-kanban-comment)
   :group "Triage"
   "i" ("New rough idea" hermes-kanban-create-triage-task)
-  "S" ("Specify rough idea" hermes-kanban-specify-triage-task)
-  "x" ("Decompose rough idea" hermes-kanban-decompose-triage-task)
+  "S" ("Specify as one task" hermes-kanban-specify-triage-task)
+  "x" ("Decompose now" hermes-kanban-decompose-triage-task)
   :group "Board"
   "+" ("New task" hermes-kanban-create-task)
   "D" ("Delete task" hermes-kanban-delete)
@@ -587,6 +601,7 @@ the board detail buffer shows the most recently created tasks at the top."
             (hermes-transport--get payload 'latest_event_id)
             mode-line-process
             (list (format " [%s]" (or name slug "board"))
+                  '(:eval (hermes-kanban--triage-mode-indicator))
                   '(:eval (hermes-kanban--live-indicator)))
             tabulated-list-sort-key nil
             tabulated-list-entries
@@ -599,10 +614,38 @@ the board detail buffer shows the most recently created tasks at the top."
        (hermes-browser--visible-window-width))
       (tabulated-list-print t))))
 
-(defun hermes-kanban--render-board (slug name &optional in-place)
+(defun hermes-kanban--refresh-orchestration-mode (request-id slug)
+  "Refresh orchestration mode for REQUEST-ID and board SLUG."
+  (hermes--promise-then
+   (hermes-kanban--api "GET" "/orchestration")
+   (lambda (settings)
+     (when-let* ((buffer (get-buffer "*Hermes Kanban*")))
+       (with-current-buffer buffer
+         (when (and (derived-mode-p 'hermes-kanban-mode)
+                    (equal hermes-kanban--slug slug)
+                    (hermes-kanban--request-current-p
+                     'hermes-kanban--board-request-id request-id))
+           (setq hermes-kanban--orchestration-mode
+                 (if (hermes-kanban--truthy-p
+                      (hermes-transport--get settings 'auto_decompose))
+                     'auto
+                   'manual))
+           (force-mode-line-update)))))
+   (lambda (_) nil)))
+
+(defun hermes-kanban--goto-task-row (task-id)
+  "Move point to TASK-ID in the current Kanban board."
+  (goto-char (point-min))
+  (when-let* ((match (text-property-search-forward
+                      'tabulated-list-id task-id #'equal)))
+    (goto-char (prop-match-beginning match))
+    (beginning-of-line)))
+
+(defun hermes-kanban--render-board (slug name &optional in-place task-id)
   "Fetch and render board SLUG (display NAME) in the detail buffer.
 With IN-PLACE non-nil, refresh without re-displaying the buffer (used by revert,
-which already runs in the displayed window)."
+which already runs in the displayed window).  When TASK-ID is non-nil, select
+that task after rendering."
   (let ((request-id (hermes-kanban--begin-request
                      'hermes-kanban--board-request-id)))
     (hermes-kanban--then
@@ -610,7 +653,15 @@ which already runs in the displayed window)."
      (lambda (payload)
        (when (hermes-kanban--request-current-p
               'hermes-kanban--board-request-id request-id)
-         (hermes-kanban--display-board payload slug name in-place))))))
+         (hermes-kanban--display-board payload slug name in-place)
+         (hermes-kanban--refresh-orchestration-mode request-id slug)
+         (when task-id
+           (with-current-buffer "*Hermes Kanban*"
+             (hermes-kanban--goto-task-row task-id))))))))
+
+(defun hermes-kanban-open-board-task (board-slug task-id)
+  "Open BOARD-SLUG, select TASK-ID, and return the request promise."
+  (hermes-kanban--render-board board-slug board-slug nil task-id))
 
 (defun hermes-kanban--revert (&rest _)
   "Refresh the current board detail buffer in place."
@@ -896,8 +947,8 @@ and an absent branch or run id is omitted."
   "c" ("Comment" hermes-kanban-comment)
   "a" ("Change assignee" hermes-kanban-change-assignee)
   :group "Triage"
-  "S" ("Specify rough idea" hermes-kanban-specify-triage-task)
-  "x" ("Decompose rough idea" hermes-kanban-decompose-triage-task)
+  "S" ("Specify as one task" hermes-kanban-specify-triage-task)
+  "x" ("Decompose now" hermes-kanban-decompose-triage-task)
   :group "Recovery"
   "R" ("Reclaim task" hermes-kanban-reclaim)
   "K" ("Terminate run" hermes-kanban-terminate-run)
@@ -974,21 +1025,29 @@ the board-known assignee names for cold profile-cache completion fallback."
       (goto-char (point-min))
       (unless in-place (pop-to-buffer (current-buffer))))))
 
-(defun hermes-kanban-show ()
-  "Show the kanban task at point."
-  (interactive)
-  (let ((board-slug hermes-kanban--slug)
-        (assignees hermes-kanban--assignees)
-        (id (hermes-kanban--id-at-point))
-        (request-id (hermes-kanban--begin-request
+(defun hermes-kanban--open-task (task-id board-slug assignees)
+  "Display TASK-ID from BOARD-SLUG with ASSIGNEES and return its promise."
+  (let ((request-id (hermes-kanban--begin-request
                      'hermes-kanban--task-request-id)))
     (hermes-kanban--then
-     (hermes-kanban--api "GET" (hermes-kanban--task-path id)
+     (hermes-kanban--api "GET" (hermes-kanban--task-path task-id)
                          nil (hermes-kanban--query-for-board board-slug))
      (lambda (payload)
        (when (hermes-kanban--request-current-p
               'hermes-kanban--task-request-id request-id)
          (hermes-kanban--display-task payload board-slug nil assignees))))))
+
+(defun hermes-kanban-open-task (task-id &optional board-slug)
+  "Display TASK-ID from optional BOARD-SLUG and return its promise."
+  (hermes-kanban--open-task task-id board-slug nil))
+
+(defun hermes-kanban-show ()
+  "Show the kanban task at point."
+  (interactive)
+  (hermes-kanban--open-task
+   (hermes-kanban--id-at-point)
+   hermes-kanban--slug
+   hermes-kanban--assignees))
 
 (defun hermes-kanban--task-id-for-command ()
   "Return the current task id for a board or task-detail command."
@@ -1245,31 +1304,63 @@ view."
                          `((body . ,body)) query)
      (lambda (_) (message "Comment added to task %s" id) (funcall refresh)))))
 
-(defun hermes-kanban--create-task-body (title priority assignee triage)
-  "Return a task creation body from TITLE, PRIORITY, ASSIGNEE, and TRIAGE."
+(defun hermes-kanban--create-task-body
+    (title description priority assignee triage)
+  "Return a task body from TITLE, DESCRIPTION, PRIORITY, ASSIGNEE, and TRIAGE."
   (append `((title . ,title) (priority . ,priority))
+          (and (not (string-empty-p (string-trim description)))
+               `((body . ,description)))
           (and (not (string-empty-p assignee)) `((assignee . ,assignee)))
           (and triage '((triage . t)))))
+
+(defun hermes-kanban--created-task-summary (result triage orchestration-mode)
+  "Return a creation summary for RESULT, TRIAGE, and ORCHESTRATION-MODE."
+  (let ((id (or (hermes-transport--non-empty-string
+                 (hermes-transport--display-field
+                  (hermes-transport--get result 'task) 'id))
+                "task")))
+    (cond
+     ((not triage) (format "Created task %s" id))
+     ((eq orchestration-mode 'auto)
+      (format "Created triage task %s; queued for automatic decomposition" id))
+     ((eq orchestration-mode 'manual)
+      (format "Created triage task %s; use x to decompose" id))
+     (t (format "Created triage task %s" id)))))
 
 (defun hermes-kanban--create-task (triage)
   "Create a task on the current board.
 When TRIAGE is non-nil, create it in the triage column."
-  (let ((title (read-string (if triage "Rough idea: " "Title: ")))
-        (who (completing-read (if triage
-                                 "Specifier (optional): "
-                               "Assignee (optional): ")
-                              (hermes-kanban--profile-candidates) nil nil))
-        (priority (read-number "Priority: " 0))
-        (slug hermes-kanban--slug)
-        (name hermes-kanban--name))
+  (let ((title (read-string (if triage "Rough idea title: " "Title: "))))
     (when (string-empty-p (string-trim title))
       (user-error "Title is required"))
-    (hermes-kanban--then
-     (hermes-kanban--api
-      "POST" "/tasks"
-      (hermes-kanban--create-task-body title priority who triage)
-      (hermes-kanban--board-query))
-     (lambda (_) (hermes-kanban--render-board slug name)))))
+    (let ((description (read-string-from-buffer "Description: " ""))
+          (assignee (if triage
+                        ""
+                      (completing-read "Assignee (optional): "
+                                       (hermes-kanban--profile-candidates)
+                                       nil nil)))
+          (priority (read-number "Priority: " 0))
+          (slug hermes-kanban--slug)
+          (name hermes-kanban--name)
+          (buffer (current-buffer))
+          (board-request-id hermes-kanban--board-request-id)
+          (orchestration-mode hermes-kanban--orchestration-mode))
+      (hermes-kanban--then
+       (hermes-kanban--api
+        "POST" "/tasks"
+        (hermes-kanban--create-task-body
+         title description priority assignee triage)
+        (hermes-kanban--board-query))
+       (lambda (result)
+         (when (buffer-live-p buffer)
+           (with-current-buffer buffer
+             (when (and (derived-mode-p 'hermes-kanban-mode)
+                        (equal hermes-kanban--slug slug)
+                        (hermes-kanban--request-current-p
+                         'hermes-kanban--board-request-id board-request-id))
+               (hermes-kanban--render-board slug name))))
+         (message "%s" (hermes-kanban--created-task-summary
+                        result triage orchestration-mode)))))))
 
 (defun hermes-kanban-create-task ()
   "Create a normal task on the current board."
