@@ -5,3 +5,12 @@ This package provides support for using [[https://www.gnu.org/software/mit-schem
 
 The easiest way to install ~geiser-mit~ is from MELPA, using ~M-x
 package-install RET geiser-mit~.
+
+* Contributing
+*** Generative AI (LLMs)
+
+  Use of generative AI (LLMs, diffusion models and similar technology) is not
+  acceptable for contributions to or interactions with the xmobar project.
+
+  This includes words, images and code, as well as bug reports, commit
+  messages, email (mailing list or private) and IRC messages.
