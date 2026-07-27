@@ -1,3 +1,9 @@
+#+html: <p align=right>
+#+html: <a href="http://elpa.nongnu.org/nongnu/geiser-chibi.html"><img alt="NonGNU Elpa" src="http://elpa.nongnu.org/nongnu/geiser-chibi.svg"/> </a>
+#+html: <a href="http://elpa.nongnu.org/nongnu-devel/geiser-chibi.html"><img alt="NonGNU Devel Elpa" src="http://elpa.nongnu.org/nongnu-devel/geiser-chibi.svg"/></a>
+#+html: <a href="https://melpa.org/#/geiser-chibi"><img alt="MELPA" src="https://melpa.org/packages/geiser-chibi-badge.svg"/></a>
+#+html: </p>
+
 * Chibi and Geiser talk to each other
 
 This package provides support for using [[https://github.com/ashinn/chibi-scheme/][Chibi Scheme]] in Emacs with
