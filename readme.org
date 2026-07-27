@@ -1,3 +1,9 @@
+#+html: <p align=right>
+#+html: <a href="http://elpa.nongnu.org/nongnu/geiser-mit.html"><img alt="NonGNU Elpa" src="http://elpa.nongnu.org/nongnu/geiser-mit.svg"/> </a>
+#+html: <a href="http://elpa.nongnu.org/nongnu-devel/geiser-mit.html"><img alt="NonGNU Devel Elpa" src="http://elpa.nongnu.org/nongnu-devel/geiser-mit.svg"/></a>
+#+html: <a href="https://melpa.org/#/geiser-mit"><img alt="MELPA" src="https://melpa.org/packages/geiser-mit-badge.svg"/></a>
+#+html: </p>
+
 * MIT Scheme and Geiser talk to each other
 
 This package provides support for using [[https://www.gnu.org/software/mit-scheme/][MIT/GNU Scheme]] in Emacs with
