@@ -1,3 +1,9 @@
+#+html: <p align=right>
+#+html: <a href="http://elpa.nongnu.org/nongnu/geiser-racket.html"><img alt="NonGNU Elpa" src="http://elpa.nongnu.org/nongnu/geiser-racket.svg"/> </a>
+#+html: <a href="http://elpa.nongnu.org/nongnu-devel/geiser-racket.html"><img alt="NonGNU Devel Elpa" src="http://elpa.nongnu.org/nongnu-devel/geiser-racket.svg"/></a>
+#+html: <a href="https://melpa.org/#/geiser-racket"><img alt="MELPA" src="https://melpa.org/packages/geiser-racket-badge.svg"/></a>
+#+html: </p>
+
 * Racket and Geiser talk to each other
 
 This package provides support for using [[http://racket-lang.org][Racket]] in Emacs with [[http://geiser.nongnu.org][Geiser]].
