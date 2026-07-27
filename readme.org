@@ -53,3 +53,11 @@ In a typical shell session, these would be the precise commands:
   #+begin_example
      gsi -:d@ ~/.emacs.d/elpa/gambit-xxxxxx/src/geiser/gambit.scm -
   #+end_example
+* Contributing
+*** Generative AI (LLMs)
+
+  Use of generative AI (LLMs, diffusion models and similar technology) is not
+  acceptable for contributions to or interactions with the xmobar project.
+
+  This includes words, images and code, as well as bug reports, commit
+  messages, email (mailing list or private) and IRC messages.
