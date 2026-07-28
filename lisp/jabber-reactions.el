@@ -87,9 +87,12 @@ The first occurrence of each non-empty string is kept."
 
 (defun jabber-reactions--target-id (msg muc-p)
   "Return the XEP-0444 target message ID from MSG.
-Use :server-id for MUC messages when MUC-P is non-nil, and :id for
-1:1 chat messages.  Return nil when the needed ID is unavailable."
-  (plist-get msg (if muc-p :server-id :id)))
+Use :server-id for MUC messages when MUC-P is non-nil.  For 1:1
+chat messages prefer :origin-id and fall back to :id."
+  (if muc-p
+      (plist-get msg :server-id)
+    (or (plist-get msg :origin-id)
+        (plist-get msg :id))))
 
 (defun jabber-reactions--message-attributes (to type outgoing-id)
   "Return message attributes for reaction stanza TO TYPE OUTGOING-ID."

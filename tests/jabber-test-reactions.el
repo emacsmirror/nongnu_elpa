@@ -40,11 +40,14 @@
                   '(nil "" "👍" "" "🎉" "👍" nil "🎉" "❤️"))
                  '("👍" "🎉" "❤️"))))
 
-(ert-deftest jabber-test-reactions-target-id-selects-chat-id ()
-  "Direct chat reactions target the message :id."
+(ert-deftest jabber-test-reactions-target-id-prefers-chat-origin-id ()
+  "Direct chat reactions prefer the message :origin-id."
   (should (equal (jabber-reactions--target-id '(:id "client-1"
+                                                    :origin-id "origin-1"
                                                     :server-id "server-1")
                                               nil)
+                 "origin-1"))
+  (should (equal (jabber-reactions--target-id '(:id "client-1") nil)
                  "client-1")))
 
 (ert-deftest jabber-test-reactions-target-id-selects-muc-server-id ()
