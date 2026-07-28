@@ -69,6 +69,16 @@ Incoming receipts are always processed regardless of this setting."
 (defvar-local jabber-receipts--pending-displayed-id nil
   "Stanza ID of latest unread markable message in this buffer.")
 
+(defun jabber-receipts--sender-authorized-p (jc from)
+  "Return non-nil when FROM may observe presence for JC."
+  (let ((bare-jid (jabber-jid-user from)))
+    (or (and (jabber-jid-resource from)
+             (jabber-muc-joined-p bare-jid jc))
+        (when-let* ((contact (jabber-jid-symbol bare-jid))
+                    ((memq contact
+                           (plist-get (fsm-get-state-data jc) :roster))))
+          (member (get contact 'subscription) '("from" "both"))))))
+
 ;;; Send hook
 
 (defun jabber-receipts--send-hook (_body _id)
@@ -148,6 +158,7 @@ CARBON-TYPE is nil, `received', or `sent'."
     (when (and jabber-chat-send-receipts
                id
                (null carbon-type)
+               (jabber-receipts--sender-authorized-p jc from)
                (not (jabber-xml-get-attribute effective 'jabber-mam--origin))
                (jabber-xml-get-children effective 'body)
                (let ((req (jabber-xml-child-with-xmlns
@@ -167,6 +178,7 @@ JC is the connection, FROM is the sender, CARBON-TYPE is nil,
 `received', or `sent'."
   (when-let* ((id (jabber-xml-get-attribute effective 'id))
               ((not (eq carbon-type 'sent)))
+              ((jabber-receipts--sender-authorized-p jc from))
               ((not (jabber-xml-get-attribute effective 'jabber-mam--origin)))
               ((jabber-xml-get-children effective 'body))
               (marker (jabber-xml-child-with-xmlns
@@ -301,6 +313,8 @@ Does not downgrade from \"seen\" to \"delivered\"."
              (derived-mode-p 'jabber-chat-mode)
              jabber-receipts--pending-displayed-id
              jabber-chatting-with
+             (jabber-receipts--sender-authorized-p
+              jabber-buffer-connection jabber-chatting-with)
              (get-buffer-window (current-buffer) 'visible))
     (jabber-send-sexp-if-connected
      jabber-buffer-connection
