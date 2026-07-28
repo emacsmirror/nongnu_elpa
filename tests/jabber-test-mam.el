@@ -350,6 +350,15 @@ SELECT body FROM message WHERE stanza_id = 'stanza-000001'")))))))
         (jabber-mam--query-targets '(("muc-query" . "room-a@muc"))))
     (should (jabber-mam--valid-sender-p jc "room-a@muc/nick" "muc-query"))))
 
+(ert-deftest jabber-test-mam-valid-sender-accepts-one-shot-query-room ()
+  "A one-shot marker does not hide the MUC query target."
+  (let ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+        (jabber-mam--query-targets
+         '(("muc-query" . one-shot)
+           ("muc-query" . "room-a@muc"))))
+    (should
+     (jabber-mam--valid-sender-p jc "room-a@muc/nick" "muc-query"))))
+
 (ert-deftest jabber-test-mam-valid-sender-rejects-other-joined-room ()
   "MUC MAM results from another joined room do not match QUERYID."
   (let ((jc (jabber-test-mam--make-fake-jc "me@example.com"))

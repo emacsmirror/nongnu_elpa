@@ -285,6 +285,15 @@ OUTER in place."
   "Return non-nil if QUERYID is an active MAM query."
   (cl-find queryid jabber-mam--syncing :key #'cdr :test #'string=))
 
+(defun jabber-mam--query-target (queryid)
+  "Return the archive target for QUERYID, excluding control markers."
+  (cdr
+   (cl-find-if
+    (lambda (entry)
+      (and (string= queryid (car entry))
+           (not (eq (cdr entry) 'one-shot))))
+    jabber-mam--query-targets)))
+
 (defun jabber-mam--valid-sender-p (jc from queryid)
   "Return non-nil if FROM is a valid MAM result sender for JC.
 Valid senders are the entity recorded for QUERYID: our own bare JID
@@ -293,13 +302,12 @@ nil FROM is accepted only for own-archive queries because some
 servers omit the attribute when the message originates from the
 user's own archive.
 QUERYID identifies the active query for target lookup."
-  (let ((target (cdr (assoc queryid jabber-mam--query-targets
-                            #'string=))))
+  (let ((target (jabber-mam--query-target queryid)))
     (if (null from)
-        (or (null target) (eq target 'one-shot))
+        (null target)
       (let ((bare (jabber-jid-user from))
             (our-jid (jabber-connection-bare-jid jc)))
-        (if (and target (not (eq target 'one-shot)))
+        (if target
             (string= bare target)
           (string= bare our-jid))))))
 
