@@ -4,7 +4,7 @@ set -eu
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 image=${DEBIAN_IMAGE:-debian@sha256:7469781d68f44940c9494eeba6e7ab89063947f794320d61c193bf027aeb7761}
-packaging_ref=${DEBIAN_PACKAGING_REF:-f3706291daca6578ba4e2b45086b1b04bac15421}
+packaging_ref=${DEBIAN_PACKAGING_REF:-60cf56e3e0e5e20a8c27c60ca745f255b031d66c}
 
 command -v docker >/dev/null 2>&1 || {
     echo "docker is required for the Debian test" >&2
@@ -47,9 +47,4 @@ if grep -q jabber-reload "$autoload_file"; then
     echo "jabber-reload leaked into the installed autoload file" >&2
     exit 1
 fi
-
-# Debian temporarily excludes this test.  Run the same installed-package
-# suite again without the exclusion so a release cannot rely on it.
-sed -i "/^ert_selectors[[:space:]]*=/d" debian/elpa-test
-dh_elpa_test --autopkgtest
 '
