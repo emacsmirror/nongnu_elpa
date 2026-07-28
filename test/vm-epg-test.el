@@ -319,16 +319,14 @@ of `message', so a key whose printed representation contained e.g. %d raised
 (ert-deftest vm-epg-test-cleartext-cleanup-handles-missing-signature ()
   "REGRESSION: cleanup must not raise a `search-failed' error on malformed input.
 The armor-stripping searches originally omitted the NOERROR argument."
-  (let ((vm-epg-cleartext-output "OUTPUT")
-        (vm-epg-cleartext-output-face nil))
-    (with-temp-buffer
-      (insert "-----BEGIN PGP SIGNED MESSAGE-----\n"
-              "Hash: SHA256\n\n"
-              "body text with no signature block\n")
-      (goto-char (point-min))
-      ;; Must complete without signalling.
-      (should (progn (vm-epg-cleartext-cleanup 'verified) t))
-      (should (string-match-p "OUTPUT" (buffer-string))))))
+  (with-temp-buffer
+    (insert "-----BEGIN PGP SIGNED MESSAGE-----\n"
+            "Hash: SHA256\n\n"
+            "body text with no signature block\n")
+    (goto-char (point-min))
+    ;; Must complete without signalling.
+    (should (progn (vm-epg-cleartext-cleanup 'verified "OUTPUT" nil) t))
+    (should (string-match-p "OUTPUT" (buffer-string)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; REGRESSION: cleartext (sign-only) signatures must validate

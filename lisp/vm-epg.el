@@ -86,7 +86,6 @@
 (defvar vm-message-pointer)
 (defvar vm-presentation-buffer)
 (defvar vm-summary-buffer)
-(defvar vm-epg-cleartext-state)
 
 ;;; Custom group and faces
 
@@ -600,20 +599,24 @@ If STATES is nil, clear it."
 
 ;;; Cleartext cleanup
 ;;
-;; `vm-epg-cleartext-output' holds text to be inserted and
-;; `vm-epg-cleartext-output-face' the face to apply to it.
-;; These are set by the verify/decrypt functions and consumed by
-;; `vm-epg-cleartext-cleanup', which is called from the advice on
-;; `vm-mime-display-internal-text/plain'.
+;; The cleartext verify/decrypt commands both compute a result -- the human
+;; readable OUTPUT text to show and the FACE to show it in -- and then hand
+;; that result to `vm-epg-cleartext-cleanup', which strips the ASCII armor and
+;; inserts the output in its place.
+;;
+;; This result cannot be returned normally to the display advice: the two are
+;; separated by VM's own `vm-mime-display-internal-text/plain' and
+;; `vm-mime-transfer-decode-region', whose return values we do not control.
+;; The single dynamic variable `vm-epg-cleartext-result' bridges that gap: the
+;; display advice binds it, the verify/decrypt commands running underneath
+;; store their result into it, and the advice applies the result after the
+;; original display function returns.  See `vm-epg-cleartext-set-result'.
 
-(defvar vm-epg-cleartext-output nil
-  "Text output from the last EPG cleartext operation.")
-
-(defvar vm-epg-cleartext-output-face nil
-  "Face to apply to `vm-epg-cleartext-output'.")
-
-(defun vm-epg-cleartext-cleanup (status)
-  "Remove ASCII armor and insert EPG output depending on STATUS."
+(defun vm-epg-cleartext-cleanup (status &optional output face)
+  "Remove the ASCII armor at point and insert EPG OUTPUT in its place.
+STATUS is `verified' or `error'.  OUTPUT is the text to insert (the empty
+string if nil).  FACE is the face to apply to it; when nil a face is chosen
+from STATUS (`vm-epg-good-signature' or `vm-epg-bad-signature')."
   (let (start end)
     (setq start (and (re-search-forward "^-----BEGIN PGP SIGNED MESSAGE-----$"
                                         nil t)
@@ -632,13 +635,11 @@ If STATES is nil, clear it."
     ;; add output from PGP
     (insert "\n")
     (let ((start (point)) end)
-      ;; TODO Behöver granskas, skiljer sig
-      (insert (or vm-epg-cleartext-output ""))
+      (insert (or output ""))
       (vm-epg-crlf-cleanup start (point))
       (setq end (point))
       (put-text-property start end 'face
-			 ;; TODO Är tillägget med vm-epg-cleartext-output-face rätt eller en hallucination?
-                         (or vm-epg-cleartext-output-face
+                         (or face
                              (if (eq status 'error)
                                  'vm-epg-bad-signature
                                'vm-epg-good-signature))))))
@@ -658,25 +659,45 @@ If STATES is nil, clear it."
           (vm-epg-cleartext-automode)
           (widen))))))
 
+(defvar vm-epg-cleartext-result 'none
+  "Result of a cleartext verify/decrypt run under the display advice.
+`vm-epg--display-cleartext-automode' binds this to nil around the display of
+a text part; a verify/decrypt command running underneath then stores its
+result here via `vm-epg-cleartext-set-result', and the advice applies it
+afterwards.  Values:
+  none  -- not running under the display advice (the global default);
+  nil   -- under the advice, but no cleartext result was produced;
+  plist -- a result, with keys :status, :output and :face.")
+
+(defun vm-epg-cleartext-set-result (status output face)
+  "Record the cleartext STATUS, OUTPUT and FACE for the display advice.
+Return non-nil when running under `vm-epg--display-cleartext-automode' (which
+will do the cleanup); return nil otherwise, so the caller knows it must run
+`vm-epg-cleartext-cleanup' itself."
+  (unless (eq vm-epg-cleartext-result 'none)
+    (setq vm-epg-cleartext-result
+          (list :status status :output output :face face))
+    t))
+
 (advice-add 'vm-mime-display-internal-text/plain
             :around #'vm-epg--display-cleartext-automode)
 (defun vm-epg--display-cleartext-automode (orig-fun &rest args)
   "Decode or check signature on clear text message parts.
 Faces would be lost if charset conversion happens after our work, so we do
 the cleanup here after verification/decoding."
-  (let ((vm-epg-cleartext-state nil)
-	;; TODO Lokalt definierad version av globala variabler? Hallucination?
-        (vm-epg-cleartext-output nil)
-        (vm-epg-cleartext-output-face nil)
+  (let ((vm-epg-cleartext-result nil)
         (start (point))
         end)
     (let ((ret (apply orig-fun args)))
-      (when vm-epg-cleartext-state
+      (when vm-epg-cleartext-result
         (setq end (point))
         (save-restriction
           (narrow-to-region start end)
           (goto-char (point-min))
-          (vm-epg-cleartext-cleanup vm-epg-cleartext-state)
+          (vm-epg-cleartext-cleanup
+           (plist-get vm-epg-cleartext-result :status)
+           (plist-get vm-epg-cleartext-result :output)
+           (plist-get vm-epg-cleartext-result :face))
           (widen)))
       ret)))
 
@@ -825,14 +846,14 @@ fetched, so the caller can verify the message again."
                 'verified
               'error))
       (vm-epg-state-set status)
-      (setq vm-epg-cleartext-output (vm-epg-format-verify-result result))
-      (setq vm-epg-cleartext-output-face
-            (if (eq status 'verified)
-                'vm-epg-good-signature
-              'vm-epg-bad-signature))
-      (if (boundp 'vm-epg-cleartext-state)
-          (setq vm-epg-cleartext-state status)
-        (vm-epg-cleartext-cleanup status)))))
+      (let ((output (vm-epg-format-verify-result result))
+            (face (if (eq status 'verified)
+                      'vm-epg-good-signature
+                    'vm-epg-bad-signature)))
+        ;; When running under the display advice, hand it the result to apply
+        ;; later; otherwise strip the armor and insert the output right here.
+        (unless (vm-epg-cleartext-set-result status output face)
+          (vm-epg-cleartext-cleanup status output face))))))
 
 ;;;###autoload
 (defun vm-epg-cleartext-decrypt ()
