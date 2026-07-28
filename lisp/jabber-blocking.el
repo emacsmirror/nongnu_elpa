@@ -28,6 +28,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'jabber-util)
 (require 'jabber-xml)
 (require 'jabber-iq)
@@ -38,6 +39,46 @@
 
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-chatting-with)           ; jabber-chat.el
+
+(defun jabber-blocking--item-jids (query)
+  "Return the JIDs in blocking QUERY."
+  (delq nil
+        (mapcar (lambda (item)
+                  (jabber-xml-get-attribute item 'jid))
+                (jabber-xml-get-children query 'item))))
+
+(defun jabber-blocking--apply-push (current query)
+  "Apply blocking push QUERY to CURRENT and return the new list."
+  (pcase (jabber-xml-node-name query)
+    ('block
+     (delete-dups (append current (jabber-blocking--item-jids query))))
+    ('unblock
+     (let ((jids (jabber-blocking--item-jids query)))
+       (and jids
+            (cl-remove-if (lambda (jid) (member jid jids)) current))))
+    (_ current)))
+
+(defun jabber-blocking--valid-push-p (from state-data)
+  "Return non-nil when FROM can push blocking state for STATE-DATA."
+  (let ((bare (concat (plist-get state-data :username) "@"
+                      (plist-get state-data :server))))
+    (or (null from)
+        (string= from (plist-get state-data :server))
+        (string= from bare)
+        (string= from (concat bare "/" (plist-get state-data :resource))))))
+
+(defun jabber-blocking--process-push (jc xml-data)
+  "Process an XEP-0191 blocking push in XML-DATA on JC."
+  (let* ((state-data (fsm-get-state-data jc))
+         (from (jabber-xml-get-attribute xml-data 'from))
+         (id (jabber-xml-get-attribute xml-data 'id))
+         (query (jabber-iq-query xml-data)))
+    (when (and (jabber-blocking--valid-push-p from state-data)
+               (memq (jabber-xml-node-name query) '(block unblock)))
+      (plist-put state-data :blocking-list
+                 (jabber-blocking--apply-push
+                  (plist-get state-data :blocking-list) query))
+      (jabber-send-iq jc from "result" nil nil nil nil nil id))))
 
 ;;;###autoload
 (defun jabber-blocking-block-jid (jc jid)
@@ -97,6 +138,7 @@ JC is the Jabber connection."
          (jids (mapcar (lambda (item)
                          (jabber-xml-get-attribute item 'jid))
                        blocklist)))
+    (plist-put (fsm-get-state-data jc) :blocking-list jids)
     (if (null jids)
         (message "Blocklist for %s is empty"
                  (jabber-connection-bare-jid jc))
@@ -151,6 +193,8 @@ JC is the Jabber connection."
       (when (yes-or-no-p (format "Block %s? " jid))
         (jabber-blocking-block-jid jc jid)))))
 
+(add-to-list 'jabber-iq-set-xmlns-alist
+             (cons jabber-blocking-xmlns #'jabber-blocking--process-push))
 (jabber-disco-advertise-feature jabber-blocking-xmlns)
 
 (provide 'jabber-blocking)
