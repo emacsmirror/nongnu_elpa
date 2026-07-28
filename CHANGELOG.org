@@ -1,5 +1,14 @@
 #+TITLE: Changelog
 
+* [0.12.5]
+#+date: 2026-07-28
+
+** Fixes
+- Stop archived OMEMO failures from flooding =*Messages*=
+- Preserve unsent messages across connection recovery
+- Improve privacy and interoperability for receipts, blocking, bookmarks, MAM,
+  and reactions
+
 * [0.12.4]
 #+date: 2026-07-26
 
