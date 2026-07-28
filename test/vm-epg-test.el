@@ -350,7 +350,7 @@ bytes handed to it are CRLF-canonical."
                (lambda ()
                  (goto-char (point-max))
                  (unless (bolp) (insert "\n"))
-                 (vm-pgp-goto-body-start)))
+                 (vm-epg-goto-body-start)))
               ((symbol-function 'vm-epg-set-signer) #'ignore)
               ((symbol-function 'epg-sign-string)
                (lambda (_ctx text _mode) (setq signed-bytes text) "SIGNATURE")))
@@ -385,7 +385,7 @@ is unavailable (e.g. a passphrase cannot be supplied non-interactively)."
                (lambda ()
                  (goto-char (point-max))
                  (unless (bolp) (insert "\n"))
-                 (vm-pgp-goto-body-start)))
+                 (vm-epg-goto-body-start)))
               ;; Use GnuPG's default secret key as the signer.
               ((symbol-function 'vm-epg-set-signer) #'ignore))
       (with-temp-buffer
@@ -426,6 +426,103 @@ is unavailable (e.g. a passphrase cannot be supplied non-interactively)."
           (let ((result (epg-context-result-for context 'verify)))
             (should result)
             (should (eq (epg-signature-status (car result)) 'good))))))))
+
+;;; ---------------------------------------------------------------------------
+;;; REGRESSION: inline cleartext armor must be MIME-encoded, not inserted raw
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest vm-epg-test-cleartext-sign-encodes-armor ()
+  "REGRESSION: the inline PGP armor must be transfer-encoded with the body.
+When the body needs MIME encoding (e.g. a non-ASCII character forces
+quoted-printable), `vm-epg-cleartext-sign' used to MIME-encode the body first
+and then insert the ASCII armor verbatim into the quoted-printable part.  A
+base64 signature line ending in `=' is then read as a quoted-printable soft
+line break and merges with the following line (e.g. the last signature line
+with `-----END PGP SIGNATURE-----'), corrupting the signature on the
+receiving side.
+
+The fix signs the raw body and MIME-encodes afterwards, so the armor's `='
+bytes are escaped as `=3D'.  This test needs no GnuPG: it mocks
+`epg-sign-string' to return armor whose last line ends in `=' inside a body
+that forces quoted-printable, and asserts the stored armor is QP-escaped and
+survives a decode intact."
+  (let ((mail-header-separator "--text follows this line--")
+        ;; Realistic cleartext armor: the signed text is inline and
+        ;; human-readable, so it keeps the non-ASCII body (here \345 = LATIN
+        ;; SMALL LETTER A WITH RING).  That non-ASCII byte is what forces the
+        ;; whole part to quoted-printable.  The signature line ends in `=',
+        ;; like real base64.
+        (armor (concat "-----BEGIN PGP SIGNED MESSAGE-----\n"
+                       "Hash: SHA512\n\n"
+                       "Hej och h\345!\n"
+                       "-----BEGIN PGP SIGNATURE-----\n\n"
+                       "AbCdEf0123456789AbCdEf0123456789AbCdEf0123456=\n"
+                       "-----END PGP SIGNATURE-----\n")))
+    (cl-letf (((symbol-function 'vm-epg-set-signer) #'ignore)
+              ((symbol-function 'epg-sign-string)
+               (lambda (&rest _) armor)))
+      (with-temp-buffer
+        (mail-mode)
+        (setq vm-send-using-mime t)
+        (insert "To: me@example.com\n"
+                "Subject: sign test\n"
+                mail-header-separator "\n"
+                ;; A non-ASCII byte forces quoted-printable transfer encoding.
+                "Hej och h\345!\n")
+        (vm-epg-cleartext-sign)
+        (let ((text (buffer-string)))
+          ;; The composition really was quoted-printable encoded ...
+          (should (string-match-p "Content-Transfer-Encoding:[ \t]*quoted-printable"
+                                  text))
+          ;; ... and the armor's `=' bytes were escaped, so no bare `=' at end
+          ;; of a signature line remains to be read as a soft line break.
+          (should (string-match-p "=3D" text))
+          (should-not (string-match-p "456=\n" text))
+          ;; Decoding the body reproduces the armor with its lines intact.
+          (goto-char (point-min))
+          (search-forward (concat "\n" mail-header-separator "\n"))
+          (let ((body (buffer-substring-no-properties (point) (point-max))))
+            (with-temp-buffer
+              (insert body)
+              (quoted-printable-decode-region (point-min) (point-max))
+              (goto-char (point-min))
+              (should (search-forward
+                       "456=\n-----END PGP SIGNATURE-----" nil t)))))))))
+
+(ert-deftest vm-epg-test-cleartext-sign-verify-roundtrip ()
+  "REGRESSION: an inline cleartext-signed non-ASCII message must verify good.
+End-to-end with a real GnuPG: sign a body containing a non-ASCII character
+(forcing quoted-printable), then decode the body as a receiver would and
+detached-verify.  With the old code the armor was inserted raw into the
+quoted-printable part, a `='-terminated signature line merged with the next
+line, and verification failed."
+  (vm-test-skip-unless (vm-epg-test--secret-key-p) "no OpenPGP secret key")
+  (let ((mail-header-separator "--text follows this line--"))
+    (cl-letf (((symbol-function 'vm-epg-set-signer) #'ignore))
+      (with-temp-buffer
+        (mail-mode)
+        (setq vm-send-using-mime t)
+        (insert "To: me@example.com\n"
+                "Subject: roundtrip\n"
+                mail-header-separator "\n"
+                "Hej och h\345!\n")
+        (condition-case err
+            (vm-epg-cleartext-sign)
+          (error (ert-skip (format "signing unavailable: %s"
+                                   (error-message-string err)))))
+        ;; Extract and MIME-decode the body exactly as a receiver would.
+        (goto-char (point-min))
+        (search-forward (concat "\n" mail-header-separator "\n"))
+        (let ((armor (buffer-substring-no-properties (point) (point-max))))
+          (with-temp-buffer
+            (insert armor)
+            (quoted-printable-decode-region (point-min) (point-max))
+            (let ((context (epg-make-context 'OpenPGP)))
+              (setf (epg-context-armor context) t)
+              (epg-verify-string context (buffer-string))
+              (let ((result (epg-context-result-for context 'verify)))
+                (should result)
+                (should (eq (epg-signature-status (car result)) 'good))))))))))
 
 (provide 'vm-epg-test)
 

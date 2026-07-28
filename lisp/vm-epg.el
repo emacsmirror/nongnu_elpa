@@ -379,13 +379,16 @@ Uses CONTEXT and `vm-epg-get-author' to identify the sender."
   (goto-char (match-end 0))
   (point))
 
-(defun vm-epg-prepare-composition ()
-  "Prepare the composition buffer for encrypting or signing."
-  ;; encode message if not already encoded
+(defun vm-epg-encode-composition-maybe ()
+  "MIME-encode the composition unless it is already encoded."
   (unless (vm-mail-mode-get-header-contents "MIME-Version:")
     (if vm-do-fcc-before-mime-encode
         (vm-do-fcc-before-mime-encode))
-    (vm-mime-encode-composition))
+    (vm-mime-encode-composition)))
+
+(defun vm-epg-normalize-composition-body ()
+  "Show headers, trim trailing whitespace, ensure a final newline and
+move point to the start of the body.  Does not MIME-encode."
   (vm-mail-mode-show-headers)
   ;; ensure newline at the end
   (goto-char (point-max))
@@ -394,6 +397,16 @@ Uses CONTEXT and `vm-epg-get-author' to identify the sender."
   (insert "\n")
   ;; skip headers
   (vm-epg-goto-body-start))
+
+(defun vm-epg-prepare-composition ()
+  "Prepare the composition buffer for encrypting or signing.
+MIME-encodes the composition first -- this is required for PGP/MIME
+detached signatures, which per RFC 3156 are computed over the MIME
+canonical (transfer-encoded) form of the body -- and then normalizes
+the body."
+  ;; encode message if not already encoded
+  (vm-epg-encode-composition-maybe)
+  (vm-epg-normalize-composition-body))
 
 ;;; Modeline state
 
@@ -674,7 +687,10 @@ the cleanup here after verification/decoding."
   "Encrypt the composition as cleartext; with a prefix also SIGN it."
   (interactive "P")
   (save-excursion
-    (vm-epg-prepare-composition)
+    ;; Normalize but do NOT MIME-encode yet: the armor must be inserted into
+    ;; the raw body and transfer-encoded together with it (see
+    ;; `vm-epg-encode-composition-maybe' below).
+    (vm-epg-normalize-composition-body)
     (let* ((start (point))
            (end (point-max))
            (context (epg-make-context 'OpenPGP))
@@ -694,14 +710,27 @@ the cleanup here after verification/decoding."
           (error
            (error "Encrypt error: %s" (error-message-string err)))))
       (delete-region start end)
-      (insert encrypted))))
+      (insert encrypted))
+    ;; Transfer-encode the composition *after* the armor is in place, so any
+    ;; MIME encoding (e.g. quoted-printable for a non-ASCII body) is applied to
+    ;; the armor too.  When called from the PGP/MIME `vm-epg-encrypt-internal'
+    ;; path the composition is already encoded, so this is a no-op there.
+    (vm-epg-encode-composition-maybe)))
 
 ;;;###autoload
 (defun vm-epg-cleartext-sign ()
   "Sign the message body as cleartext PGP."
   (interactive)
   (save-excursion
-    (vm-epg-prepare-composition)
+    ;; Normalize but do NOT MIME-encode yet.  The OpenPGP cleartext signature
+    ;; framework (RFC 4880 sec. 7) signs the *content*, and per RFC 2045 the
+    ;; content is the transfer-*decoded* octets, so the verifier checks the
+    ;; signature against the armor after MIME decoding.  We must therefore
+    ;; sign the raw body and then transfer-encode the resulting armor as a
+    ;; whole: otherwise a base64 signature line ending in "=" is read as a
+    ;; quoted-printable soft line break and merges with the next line (e.g.
+    ;; "-----END PGP SIGNATURE-----"), corrupting the signature.
+    (vm-epg-normalize-composition-body)
     (let* ((start (point))
            (end (point-max))
            (context (epg-make-context 'OpenPGP))
@@ -714,7 +743,10 @@ the cleanup here after verification/decoding."
         (error
          (error "Signing error: %s" (error-message-string err))))
       (delete-region start end)
-      (insert signed))))
+      (insert signed))
+    ;; Now transfer-encode, so the armor's "=" bytes are escaped (=3D) and
+    ;; survive the recipient's MIME decoding intact.
+    (vm-epg-encode-composition-maybe)))
 
 (defun vm-epg-format-verify-result (result)
   "Format EPG verification RESULT (a list of `epg-signature' objects) as a string."
