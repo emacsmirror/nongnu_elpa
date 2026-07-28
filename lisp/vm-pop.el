@@ -991,10 +991,11 @@ popdrop
 	;; the CRLF or the LF newline convention is used on the inbox
 	;; associated with this crashbox.  This setting assumes the LF
 	;; newline convention is used.
-	(defvar buffer-file-type) ;; FIXME: Removed in Emacs-24.4.
-	(let ((buffer-file-type t)
-	      (selective-display nil))
-	  (write-region start end target t 0))
+	(progn
+	  (defvar buffer-file-type) ;; FIXME: Removed in Emacs-24.4.
+	  (let ((buffer-file-type t)
+		(selective-display nil))
+	    (write-region start end target t 0)))
       (let ((b (current-buffer)))
 	(with-current-buffer target
 	  (let ((buffer-read-only nil))
