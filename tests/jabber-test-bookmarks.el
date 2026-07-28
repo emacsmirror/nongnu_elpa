@@ -434,7 +434,7 @@
               ((symbol-function 'fsm-get-state-data)
                (lambda (_jc) '(:username "user"))))
       (jabber-bookmarks2--handle-event
-       'fake-jc nil nil
+       'fake-jc "user@example.com" nil
        `((item ((id . "room@c.example.com"))
                (conference ((xmlns . ,jabber-bookmarks2-xmlns)
                             (autojoin . "true"))
@@ -443,6 +443,24 @@
     (let ((cached (gethash "user@example.com" jabber-bookmarks)))
       (should (= 1 (length cached)))
       (should (string= (plist-get (car cached) :jid) "room@c.example.com")))))
+
+(ert-deftest jabber-test-bookmarks-event-ignores-foreign-sender ()
+  "A foreign bare JID cannot inject bookmark changes."
+  (let ((jabber-bookmarks (make-hash-table :test 'equal))
+        joined)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "user@example.com"))
+              ((symbol-function 'jabber-muc-joined-p)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-muc-join)
+               (lambda (&rest args) (setq joined args))))
+      (jabber-bookmarks2--handle-event
+       'fake-jc "attacker@example.net" jabber-bookmarks2-xmlns
+       `((item ((id . "room@c.example.com"))
+               (conference ((xmlns . ,jabber-bookmarks2-xmlns)
+                            (autojoin . "true")))))))
+    (should-not joined)
+    (should-not (gethash "user@example.com" jabber-bookmarks))))
 
 (ert-deftest jabber-test-bookmarks-event-item-no-autojoin-leaves ()
   "Item without autojoin leaves if currently joined."
@@ -460,7 +478,7 @@
               ((symbol-function 'jabber-muc-leave)
                (lambda (_jc group) (push group left))))
       (jabber-bookmarks2--handle-event
-       'fake-jc nil nil
+       'fake-jc "user@example.com" nil
        `((item ((id . "room@c.example.com"))
                (conference ((xmlns . ,jabber-bookmarks2-xmlns)))))))
     (should (member "room@c.example.com" left))))
@@ -481,7 +499,7 @@
               ((symbol-function 'jabber-muc-leave)
                (lambda (_jc group) (push group left))))
       (jabber-bookmarks2--handle-event
-       'fake-jc nil nil
+       'fake-jc "user@example.com" nil
        '((retract ((id . "room@c.example.com"))))))
     (should (member "room@c.example.com" left))
     ;; Cache should be t (empty)
@@ -499,7 +517,7 @@
               ((symbol-function 'jabber-muc-join)
                (lambda (&rest _) (cl-incf join-count))))
       (jabber-bookmarks2--handle-event
-       'fake-jc nil nil
+       'fake-jc "user@example.com" nil
        `((item ((id . "room@c.example.com"))
                (conference ((xmlns . ,jabber-bookmarks2-xmlns)
                             (autojoin . "true")))))))
@@ -519,7 +537,7 @@
               ((symbol-function 'jabber-muc-leave)
                (lambda (&rest _) (cl-incf leave-count))))
       (jabber-bookmarks2--handle-event
-       'fake-jc nil nil
+       'fake-jc "user@example.com" nil
        '((retract ((id . "room@c.example.com"))))))
     (should (= 0 leave-count))
     (should (eq t (gethash "user@example.com" jabber-bookmarks)))))

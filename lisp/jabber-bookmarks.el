@@ -207,12 +207,13 @@ Replaces any existing entry with the same :jid."
                               'face 'shadow)))))
     (jabber-muc-leave jc jid)))
 
-(defun jabber-bookmarks2--handle-event (jc _from _node items)
+(defun jabber-bookmarks2--handle-event (jc from _node items)
   "Handle PubSub event notifications for bookmarks.
-JC is the connection.  ITEMS is the list of <item> and <retract>
-child elements from the event.
+JC is the connection.  FROM is the event sender.  ITEMS is the
+list of <item> and <retract> child elements from the event.
 Legacy accounts ignore these events."
-  (unless (jabber-bookmarks--legacy-p jc)
+  (when (and (string= from (jabber-connection-bare-jid jc))
+             (not (jabber-bookmarks--legacy-p jc)))
     (dolist (child items)
       (pcase (jabber-xml-node-name child)
         ('item
