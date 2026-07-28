@@ -532,6 +532,27 @@ If STATES is nil, clear it."
     (vm-select-folder-buffer)
     (setq vm-epg-cleartext-decoded (car vm-message-pointer))))
 
+(defun vm-epg-cleartext-candidate-p (m)
+  "Return non-nil if message M may carry inline (cleartext) PGP armor.
+True when M has no MIME layout, or its top-level part is `text/plain'.
+
+This is deliberately looser than `vm-mime-plain-message-p': the charset and
+encoded-header restrictions of the latter are irrelevant to inline PGP.  The
+armor lines are 7-bit ASCII regardless of the part's charset, encoded
+*headers* never affect the *body*, and verification runs on the
+transfer-decoded body before any charset conversion.  Requiring `us-ascii'
+and unencoded headers merely suppressed verification for perfectly valid
+messages such as an `iso-8859-1' body with RFC 2047 headers.
+
+Restricted to `text/plain' because the verify/cleanup/display path is wired
+only to that subtype (see the advice on `vm-mime-display-internal-text/plain'
+and `vm-epg-cleartext-cleanup')."
+  (save-match-data
+    (let ((o (vm-mm-layout m))
+          (case-fold-search t))
+      (or (not (vectorp o))
+          (vm-mime-types-match "text/plain" (car (vm-mm-layout-type o)))))))
+
 (defun vm-epg-cleartext-automode ()
   "Check for PGP ASCII armor and trigger automatic verification/decryption."
   (save-excursion
@@ -542,7 +563,7 @@ If STATES is nil, clear it."
       (if vm-presentation-buffer
           (set-buffer vm-presentation-buffer))
       (goto-char (point-min))
-      (when (and (vm-mime-plain-message-p (car vm-message-pointer))
+      (when (and (vm-epg-cleartext-candidate-p (car vm-message-pointer))
                  (re-search-forward vm-epg-cleartext-begin-regexp
                                     (+ (point) vm-epg-cleartext-search-limit)
                                     t))
@@ -647,17 +668,25 @@ from STATUS (`vm-epg-good-signature' or `vm-epg-bad-signature')."
 (advice-add 'vm-mime-transfer-decode-region
             :around #'vm-epg--transfer-cleartext-automode)
 (defun vm-epg--transfer-cleartext-automode (orig-fun &optional layout
-                                                      &rest args)
-  "Decode or check signature on clear text message parts."
-  (let ((vm-epg-part-start (point)))
-    (apply orig-fun layout args)
-    (when (and (vm-mime-text-type-layout-p layout)
-               (< vm-epg-part-start (point)))
-      (save-excursion
-        (save-restriction
-          (narrow-to-region vm-epg-part-start (point))
-          (vm-epg-cleartext-automode)
-          (widen))))))
+                                                      start end &rest args)
+  "Decode or check signature on clear text message parts.
+Runs `vm-epg-cleartext-automode' over the freshly transfer-decoded region
+\[START, END], where the body is decoded but not yet charset-converted -- the
+form the cleartext signature is computed over.
+
+The region is taken from the decode arguments rather than from how far point
+moved: transfer-decoding advances point only for encodings that actually
+transform the text (base64, quoted-printable, uuencode).  A 7bit or 8bit part
+is left untouched, so a point-motion test would wrongly skip exactly the
+plain PGP-signed messages this is meant to handle."
+  (apply orig-fun layout start end args)
+  (when (and (vm-mime-text-type-layout-p layout)
+             start end (< start end))
+    (save-excursion
+      (save-restriction
+        (narrow-to-region start end)
+        (vm-epg-cleartext-automode)
+        (widen)))))
 
 (defvar vm-epg-cleartext-result 'none
   "Result of a cleartext verify/decrypt run under the display advice.
@@ -822,7 +851,6 @@ fetched, so the caller can verify the message again."
   ;; verify
   (save-excursion
     (goto-char (point-min))
-    ;; TODO Här skiljer sig EPG från PGG, granskas
     (let* ((buffer-read-only nil)
            (context (epg-make-context 'OpenPGP))
            (message-text (buffer-substring-no-properties (point) (point-max)))
@@ -870,7 +898,6 @@ fetched, so the caller can verify the message again."
   (goto-char (point-min))
 
   ;; decrypt
-  ;; TODO Här skiljer sig EPG från PGG, granskas
   (let (start end cipher plain)
     (setq start (and (re-search-forward "^-----BEGIN PGP MESSAGE-----$" nil t)
                      (match-beginning 0))

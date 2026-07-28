@@ -329,6 +329,55 @@ The armor-stripping searches originally omitted the NOERROR argument."
     (should (string-match-p "OUTPUT" (buffer-string)))))
 
 ;;; ---------------------------------------------------------------------------
+;;; REGRESSION: auto-verify must not be gated on us-ascii / unencoded headers
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest vm-epg-test-cleartext-candidate-p ()
+  "REGRESSION: an iso-8859-1 text/plain part is a cleartext-armor candidate.
+Auto-verification used to be gated on `vm-mime-plain-message-p', which
+requires a us-ascii charset and unencoded headers -- irrelevant to inline
+PGP and so it suppressed verification for perfectly valid messages (e.g. an
+iso-8859-1 body with RFC 2047 headers).  `vm-epg-cleartext-candidate-p'
+accepts any text/plain part (and a message with no MIME layout), and rejects
+non-text parts."
+  ;; No MIME layout at all -> candidate.
+  (cl-letf (((symbol-function 'vm-mm-layout) (lambda (_) nil)))
+    (should (vm-epg-cleartext-candidate-p 'msg)))
+  ;; text/plain, iso-8859-1 -> candidate (the case that used to be rejected).
+  (let ((layout (vm-epg-test--make-layout "text/plain")))
+    (aset layout 0 '("text/plain" "charset=iso-8859-1"))
+    (cl-letf (((symbol-function 'vm-mm-layout) (lambda (_) layout)))
+      (should (vm-epg-cleartext-candidate-p 'msg))))
+  ;; A non-text part -> not a candidate.
+  (let ((layout (vm-epg-test--make-layout "application/pgp-encrypted")))
+    (cl-letf (((symbol-function 'vm-mm-layout) (lambda (_) layout)))
+      (should-not (vm-epg-cleartext-candidate-p 'msg)))))
+
+;;; ---------------------------------------------------------------------------
+;;; REGRESSION: transfer-decode advice must fire for 7bit/8bit parts
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest vm-epg-test-transfer-advice-fires-without-point-motion ()
+  "REGRESSION: cleartext automode must run for a part that decodes in place.
+The advice on `vm-mime-transfer-decode-region' used to trigger only when
+point advanced during decoding.  A 7bit or 8bit part is left untouched by
+transfer-decoding, so point does not move and auto-verification was skipped
+-- exactly for the plain PGP-signed messages it is meant to handle.  The
+advice now scans the decode region [START, END] instead."
+  (let ((layout (vm-epg-test--make-layout "text/plain"))
+        (automode-called nil))
+    ;; 8bit encoding: the real `vm-mime-transfer-decode-region' matches no
+    ;; decode branch and leaves point where it is.
+    (aset layout 2 "8bit")
+    (cl-letf (((symbol-function 'vm-epg-cleartext-automode)
+               (lambda () (setq automode-called t))))
+      (with-temp-buffer
+        (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
+        ;; Call through the real (advised) function; point does not move.
+        (vm-mime-transfer-decode-region layout (point-min) (point-max))
+        (should automode-called)))))
+
+;;; ---------------------------------------------------------------------------
 ;;; REGRESSION: cleartext (sign-only) signatures must validate
 ;;; ---------------------------------------------------------------------------
 
