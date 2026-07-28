@@ -402,14 +402,42 @@
         (setq after-resend (jabber-sm--count-outbound after-resend sexp)))
       (should (= (plist-get after-resend :sm-outbound-count) 10)))))
 
+(ert-deftest jabber-test-sm-handle-failed-resume-preserves-unacked ()
+  "A failed resume carries unacknowledged stanzas into the new session."
+  (let* ((msg-a '(message ((to . "a@x")) (body () "a")))
+         (msg-b '(message ((to . "b@x")) (body () "b")))
+         (msg-c '(message ((to . "c@x")) (body () "c")))
+         (pending (list (cons 0 msg-c)))
+         (sd (list :sm-enabled t
+                   :sm-id "expired"
+                   :sm-outbound-count 2
+                   :sm-outbound-queue (list (cons 1 msg-a)
+                                            (cons 2 msg-b))
+                   :sm-pending-queue pending
+                   :sm-last-acked 0
+                   :sm-resuming t))
+         (failed '(failed ((xmlns . "urn:xmpp:sm:3") (h . "1"))))
+         (result (jabber-sm--handle-failed-resume sd failed)))
+    (should-not (plist-get result :sm-enabled))
+    (should-not (plist-get result :sm-id))
+    (should-not (plist-get result :sm-resuming))
+    (should
+     (equal (mapcar #'jabber-sm--pending-stanza
+                    (plist-get result :sm-pending-queue))
+            (list msg-b msg-c)))))
+
 (ert-deftest jabber-test-sm-resume-failure-binds-without-reauthentication ()
   "A failed post-SASL resume continues with resource binding."
-  (let* ((fsm 'fake-jc)
+  (let* ((msg '(message ((to . "a@x")) (body () "unacked")))
+         (fsm 'fake-jc)
          (state-data
           (list :resource "emacs"
                 :sm-enabled t
                 :sm-id "expired"
                 :sm-resuming t
+                :sm-outbound-count 1
+                :sm-outbound-queue (list (cons 1 msg))
+                :sm-last-acked 0
                 :stream-features
                 `(features ()
                            (bind ((xmlns . ,jabber-bind-xmlns)))
@@ -434,7 +462,28 @@
         (should (eq next-state :bind))
         (should sent-iq)
         (should-not stream-header-sent)
-        (should-not (plist-get entered-data :sm-resuming))))))
+        (should-not (plist-get entered-data :sm-resuming))
+        (should
+         (equal (mapcar #'jabber-sm--pending-stanza
+                        (plist-get entered-data :sm-pending-queue))
+                (list msg)))))))
+
+(ert-deftest jabber-test-sm-new-session-drains-recovered-stanzas ()
+  "A newly established session sends stanzas recovered from failed resume."
+  (let* ((msg '(message ((to . "a@x")) (body () "unacked")))
+         (state-data (jabber-sm--reset nil))
+         (enter (gethash :session-established
+                         (get 'jabber-connection :fsm-enter)))
+         sent)
+    (setq state-data
+          (plist-put state-data :sm-pending-queue (list (cons 0 msg))))
+    (cl-letf (((symbol-function 'jabber-lifecycle-dispatch-session-bootstrap)
+               #'ignore)
+              ((symbol-function 'jabber-send-sexp--raw)
+               (lambda (_jc sexp) (push sexp sent))))
+      (pcase-let ((`(,result nil) (funcall enter 'fake-jc state-data)))
+        (should (equal sent (list msg)))
+        (should-not (plist-get result :sm-pending-queue))))))
 
 ;;; Ack XML generation
 

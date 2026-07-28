@@ -319,6 +319,23 @@ Return (UPDATED-STATE-DATA . STANZAS-TO-RESEND)."
     (setq state-data (plist-put state-data :sm-resuming nil))
     (cons state-data to-resend)))
 
+(defun jabber-sm--handle-failed-resume (state-data stanza)
+  "Prepare STATE-DATA for a new session after failed resume STANZA.
+Preserve stanzas the server did not acknowledge and existing
+pending entries."
+  (let ((h (jabber-xml-get-attribute stanza 'h)))
+    (when h
+      (setq state-data (jabber-sm--process-ack state-data stanza))))
+  (let ((outbound (mapcar
+                   (lambda (entry)
+                     (cons (jabber-sm--stanza-priority (cdr entry))
+                           (cdr entry)))
+                   (plist-get state-data :sm-outbound-queue)))
+        (pending (plist-get state-data :sm-pending-queue)))
+    (setq state-data (jabber-sm--reset state-data))
+    (plist-put state-data :sm-pending-queue
+               (append outbound pending))))
+
 ;;; FSM routing helper
 
 (defun jabber-sm--maybe-enable-or-establish (state-data)

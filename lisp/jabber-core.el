@@ -842,14 +842,9 @@ override the defaults from `jabber-account-list'."
 		       (list :session-established new-state-data)))
 		    ((jabber-sm--failed-p stanza)
 		     (message "Stream Management resume failed, binding a new session")
-		     ;; Resume failed after authentication.  Reset the old session
-		     ;; and bind a new resource on the current stream.
 		     (jabber-lifecycle-dispatch-session-reset fsm)
 		     (setq state-data
-			   (jabber-sm--discard-pending
-			    state-data "stream resumption failed"))
-		     (setq state-data (jabber-sm--reset state-data))
-		     (setq state-data (plist-put state-data :sm-resuming nil))
+			   (jabber-sm--handle-failed-resume state-data stanza))
 		     (if (jabber-xml-get-children
 			  (plist-get state-data :stream-features) 'bind)
 			 (list :bind
@@ -883,7 +878,9 @@ override the defaults from `jabber-account-list'."
 			  (setq state-data (plist-put state-data :sm-resumed nil))
 			  (run-hook-with-args 'jabber-post-resume-hooks fsm))
 		      ;; Normal connect: feature modules fetch initial session data.
-		      (jabber-lifecycle-dispatch-session-bootstrap fsm))
+		      (jabber-lifecycle-dispatch-session-bootstrap fsm)
+		      (setq state-data
+			    (jabber-sm--drain-pending fsm state-data)))
 		    (list (plist-put state-data :ever-session-established t) nil))
 
 (define-state jabber-connection :session-established
