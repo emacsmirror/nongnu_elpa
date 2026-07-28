@@ -112,6 +112,10 @@ to share one SQLite transaction.")
   "Alist of (QUERYID . CALLBACK) for per-query completion hooks.
 CALLBACK is called with no arguments when the query finishes.")
 
+(defvar jabber-mam--peer-syncing nil
+  "Alist of active automatic peer catch-ups.
+Each entry has the shape ((JC PEER) . TOKEN).")
+
 (defvar jabber-mam--sync-received nil
   "Alist of (QUERYID . PLIST) for sync-buffer reconciliation.
 PLIST keys: :ids (hash-table), :min-ts, :max-ts, :account, :peer.
@@ -137,6 +141,48 @@ TARGET is a room JID for MUC MAM, or nil for 1:1 MAM.")
   (format "mam-%d-%d"
           (cl-incf jabber-mam--queryid-counter)
           (floor (float-time))))
+
+(defun jabber-mam--begin-peer-sync (jc peer)
+  "Record an automatic MAM catch-up for JC and PEER.
+Return its unique token, or nil when one was already active."
+  (let ((key (list jc peer)))
+    (unless (assoc key jabber-mam--peer-syncing #'equal)
+      (let ((token (make-symbol "jabber-mam-peer-sync-")))
+        (push (cons key token) jabber-mam--peer-syncing)
+        token))))
+
+(defun jabber-mam--peer-sync-active-p (jc peer token)
+  "Return non-nil when TOKEN owns JC and PEER's catch-up."
+  (eq token
+      (cdr (assoc (list jc peer) jabber-mam--peer-syncing #'equal))))
+
+(defun jabber-mam--end-peer-sync (jc peer token)
+  "Forget TOKEN's automatic MAM catch-up for JC and PEER."
+  (when-let* ((entry (assoc (list jc peer)
+                            jabber-mam--peer-syncing #'equal))
+              ((eq token (cdr entry))))
+    (setq jabber-mam--peer-syncing
+          (delq entry jabber-mam--peer-syncing))
+    t))
+
+(defun jabber-mam--finish-peer-sync (jc peer token)
+  "Finish TOKEN's peer catch-up for JC and PEER."
+  (when (jabber-mam--end-peer-sync jc peer token)
+    (run-hook-with-args 'jabber-mam-peer-syncing-functions
+                        peer "chat" nil)))
+
+(defun jabber-mam--complete-query (queryid)
+  "Remove and run the completion callback for QUERYID."
+  (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
+                         #'string=)))
+    (setq jabber-mam--completion-callbacks
+          (delq cb jabber-mam--completion-callbacks))
+    (condition-case err
+        (funcall (cdr cb))
+      (error
+       (message "MAM: completion callback error: %s"
+                (error-message-string err))))
+    t))
 
 (defun jabber-mam--build-query (queryid &optional with start after-id max
                                         before-id)
@@ -461,6 +507,10 @@ When BEFORE-ID is non-nil, the query is one-shot (no forward pagination)."
        (setq jabber-mam--syncing
              (cl-remove queryid jabber-mam--syncing
                         :key #'cdr :test #'string=))
+       (setq jabber-mam--query-targets
+             (cl-remove queryid jabber-mam--query-targets
+                        :key #'car :test #'string=))
+       (jabber-mam--complete-query queryid)
        (message "MAM: query failed to send: %s"
                 (error-message-string err))))))
 
@@ -495,12 +545,7 @@ CLOSURE is (QUERYID WITH START TO)."
               (message "MAM: sync complete%s"
                        (if to (format " for %s" to)
                          (if with (format " for %s" with) ""))))
-            ;; Fire per-query completion callback if registered.
-            (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
-                                   #'string=)))
-              (setq jabber-mam--completion-callbacks
-                    (delq cb jabber-mam--completion-callbacks))
-              (funcall (cdr cb)))
+            (jabber-mam--complete-query queryid)
             ;; Redraw affected buffers from DB.
             (jabber-mam--redraw-dirty))
         ;; More pages: yield to the event loop for redisplay and input,
@@ -546,11 +591,7 @@ On item-not-found (stale sync point), falls back to time-based query."
                       jabber-mam--completion-callbacks))
               (jabber-mam--query jc nil new-queryid nil start to)))
         ;; Permanent error: fire completion callback so callers aren't stuck.
-        (when-let* ((cb (assoc queryid jabber-mam--completion-callbacks
-                               #'string=)))
-          (setq jabber-mam--completion-callbacks
-                (delq cb jabber-mam--completion-callbacks))
-          (funcall (cdr cb)))
+        (jabber-mam--complete-query queryid)
         (message "MAM: query failed: %s"
                  (jabber-sexp2xml xml-data))))))
 
@@ -587,17 +628,17 @@ Added to `jabber-post-connect-hooks'."
 
 ;;; 1:1 chat MAM catch-up
 
-(defun jabber-mam--chat-catch-up (jc peer)
+(defun jabber-mam--chat-catch-up (jc peer token)
   "Sync missed messages for PEER via MAM.
-JC is the Jabber connection.  PEER is the bare JID.
+JC is the Jabber connection.  PEER is the bare JID.  TOKEN identifies
+the automatic peer sync attempt.
 Registers a completion callback to clear the syncing indicator."
   (let* ((account (jabber-connection-bare-jid jc))
          (last-id (jabber-db-last-server-id account peer))
          (queryid (jabber-mam--make-queryid)))
     (push (cons queryid
                 (lambda ()
-                  (run-hook-with-args 'jabber-mam-peer-syncing-functions
-                                      peer "chat" nil)))
+                  (jabber-mam--finish-peer-sync jc peer token)))
           jabber-mam--completion-callbacks)
     (if last-id
         (jabber-mam--query jc last-id queryid peer nil nil)
@@ -609,24 +650,38 @@ Registers a completion callback to clear the syncing indicator."
                       t))))
         (jabber-mam--query jc nil queryid peer start nil)))))
 
+(defun jabber-mam--handle-chat-disco (jc closure-data result)
+  "Start a peer catch-up after disco completes.
+JC is the connection.  CLOSURE-DATA is (PEER TOKEN).  RESULT is
+the disco response."
+  (pcase-let ((`(,peer ,token) closure-data))
+    (when (jabber-mam--peer-sync-active-p jc peer token)
+      (if (and (listp result)
+               (not (eq (car result) 'error))
+               (member jabber-mam-xmlns (cadr result)))
+          (condition-case err
+              (jabber-mam--chat-catch-up jc peer token)
+            (error
+             (jabber-mam--finish-peer-sync jc peer token)
+             (message "MAM: peer catch-up failed to start: %s"
+                      (error-message-string err))))
+        (jabber-mam--finish-peer-sync jc peer token)))))
+
 (defun jabber-mam-chat-opened (jc peer)
   "Trigger 1:1 MAM catch-up when opening a chat with PEER.
 JC is the Jabber connection.  Called from `jabber-chat-create-buffer'.
 Sets the syncing indicator immediately; clears it when the catch-up
 query completes (or when disco reveals MAM is not supported)."
-  (when jabber-mam-enable
+  (when-let* ((token (and jabber-mam-enable
+                          (jabber-mam--begin-peer-sync jc peer))))
     (run-hook-with-args 'jabber-mam-peer-syncing-functions peer "chat" t)
-    (jabber-disco-get-info
-     jc (jabber-connection-bare-jid jc) nil
-     (lambda (jc closure-data result)
-       (let ((peer (car closure-data)))
-         (if (and (listp result)
-                  (not (eq (car result) 'error))
-                  (member jabber-mam-xmlns (cadr result)))
-             (jabber-mam--chat-catch-up jc peer)
-           (run-hook-with-args 'jabber-mam-peer-syncing-functions
-                               peer "chat" nil))))
-     (list peer))))
+    (condition-case err
+        (jabber-disco-get-info
+         jc (jabber-connection-bare-jid jc) nil
+         #'jabber-mam--handle-chat-disco (list peer token))
+      (error
+       (jabber-mam--finish-peer-sync jc peer token)
+       (signal (car err) (cdr err))))))
 
 ;;; MUC MAM catch-up
 
@@ -755,6 +810,10 @@ the server are deleted.  The buffer is refreshed in place after sync."
 (defun jabber-mam--cleanup-connection (jc)
   "Clean up MAM state for connection JC.
 Called from `jabber-lost-connection-hooks' on involuntary disconnect."
+  (dolist (entry (copy-sequence jabber-mam--peer-syncing))
+    (when (eq (caar entry) jc)
+      (jabber-mam--finish-peer-sync
+       jc (cadar entry) (cdr entry))))
   (let ((jc-queries (cl-remove-if-not
                      (lambda (entry) (eq (car entry) jc))
                      jabber-mam--syncing)))
@@ -768,12 +827,7 @@ Called from `jabber-lost-connection-hooks' on involuntary disconnect."
       ;; Fire and remove leaked completion callbacks and query targets.
       (dolist (entry jc-queries)
         (let ((qid (cdr entry)))
-          (when-let* ((cb (assoc qid jabber-mam--completion-callbacks
-                                 #'string=)))
-            (setq jabber-mam--completion-callbacks
-                  (delq cb jabber-mam--completion-callbacks))
-            (condition-case err (funcall (cdr cb))
-              (error (message "MAM: cleanup callback error: %S" err))))
+          (jabber-mam--complete-query qid)
           (setq jabber-mam--query-targets
                 (cl-remove qid jabber-mam--query-targets
                            :key #'car :test #'string=))))
@@ -788,12 +842,15 @@ Called from `jabber-pre-disconnect-hook'."
         (jabber-mam--tx-end))
     (error nil))
   ;; Fire remaining completion callbacks to clear syncing flags.
-  (dolist (cb jabber-mam--completion-callbacks)
-    (condition-case err (funcall (cdr cb))
-      (error (message "MAM: cleanup callback error: %S" err))))
+  (dolist (cb (copy-sequence jabber-mam--completion-callbacks))
+    (jabber-mam--complete-query (car cb)))
+  (dolist (entry (copy-sequence jabber-mam--peer-syncing))
+    (jabber-mam--finish-peer-sync
+     (caar entry) (cadar entry) (cdr entry)))
   (setq jabber-mam--syncing nil
         jabber-mam--tx-depth 0
         jabber-mam--completion-callbacks nil
+        jabber-mam--peer-syncing nil
         jabber-mam--query-targets nil
         jabber-mam--sync-received nil)
   (jabber-mam--redraw-dirty))
@@ -812,12 +869,7 @@ depth.  Called when leaving a room to stop wasting bandwidth."
                        :key #'cdr :test #'string=))
       (setq jabber-mam--query-targets
             (delq target-entry jabber-mam--query-targets))
-      (when-let* ((cb (assoc qid jabber-mam--completion-callbacks
-                             #'string=)))
-        (setq jabber-mam--completion-callbacks
-              (delq cb jabber-mam--completion-callbacks))
-        (condition-case err (funcall (cdr cb))
-          (error (message "MAM: cleanup callback error: %S" err))))
+      (jabber-mam--complete-query qid)
       (condition-case nil
           (jabber-mam--tx-end)
         (error nil))
