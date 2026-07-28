@@ -222,7 +222,11 @@ Return the details (plist)."
                       (concat "user-" username))))
     (when user-plist
       (mastodon-client--make-user-active user-plist)
-      user-plist)))
+      ;; user-plist doesn't contain :access_token but i think we ought to
+      ;; return a plist containing it here, so that we set
+      ;; `mastodon-client--active-user-details-plist' correctly in `mastodon-client--active-user':
+      ;; user-plist
+      )))
 
 (defun mastodon-client--current-user-active-p ()
   "Return user-details if the current user is active.
