@@ -905,9 +905,23 @@ override the defaults from `jabber-account-list'."
 		     (jabber-sm--send-ack fsm state-data)
 		     (list :session-established state-data :keep))
 		    ((jabber-sm--a-p stanza)
-		     (setq state-data (jabber-sm--process-ack state-data stanza))
-		     (setq state-data (jabber-sm--drain-pending fsm state-data))
-		     (list :session-established state-data :keep))
+		     (condition-case err
+			 (progn
+			   (setq state-data
+				 (jabber-sm--process-ack state-data stanza))
+			   (setq state-data
+				 (jabber-sm--drain-pending fsm state-data))
+			   (list :session-established state-data :keep))
+		       (jabber-sm-handled-count-too-high
+			(let ((h (cadr err))
+			      (sent (caddr err)))
+			  (jabber-sm--send-count-too-high-error fsm h sent)
+			  (list nil
+				(plist-put
+				 state-data :disconnection-reason
+				 (format
+				  "Server acknowledged %d stanzas after %d sent"
+				  h sent)))))))
 		    (t
 		     ;; Only message/presence/iq stanzas reach here; <r/>/<a/> are
 		     ;; SM control elements and must not be counted (XEP-0198 §4).

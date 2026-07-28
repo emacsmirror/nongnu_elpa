@@ -205,19 +205,18 @@
     (should (= (length (plist-get result :sm-outbound-queue)) 1))
     (should (= (caar (plist-get result :sm-outbound-queue)) 3))))
 
-(ert-deftest jabber-test-sm-process-ack-ahead-recovers ()
-  "Ack-ahead recovery keeps outbound counters consistent."
+(ert-deftest jabber-test-sm-process-ack-ahead-signals-protocol-error ()
+  "An acknowledgement beyond the sent count is a protocol error."
   (let* ((sd (list :sm-enabled t
                    :sm-outbound-count 11501
                    :sm-outbound-queue (list (cons 11501 'a))
                    :sm-last-acked 11501
                    :sm-stall-since 1.0))
          (ack '(a ((xmlns . "urn:xmpp:sm:3") (h . "11502"))))
-         (result (jabber-sm--process-ack sd ack)))
-    (should (= (plist-get result :sm-outbound-count) 11502))
-    (should (= (plist-get result :sm-last-acked) 11502))
-    (should (= (jabber-sm--in-flight-count result) 0))
-    (should-not (plist-get result :sm-stall-since)))
+         (before (copy-tree sd)))
+    (should-error (jabber-sm--process-ack sd ack)
+                  :type 'jabber-sm-handled-count-too-high)
+    (should (equal before sd)))
   (dolist (h '("11502" "11501"))
     (let* ((sd (list :sm-enabled t
                      :sm-outbound-count 11502
@@ -228,6 +227,28 @@
            (ack `(a ((xmlns . "urn:xmpp:sm:3") (h . ,h))))
            (result (jabber-sm--process-ack sd ack)))
       (should (equal result before)))))
+
+(ert-deftest jabber-test-sm-stall-reconnects-with-unacked-state ()
+  "An acknowledgement stall reconnects without fabricating an ack."
+  (let* ((outbound '((1 . first)))
+         (pending '((0 message nil (body nil "second"))))
+         (connection 'fake-process)
+         (state-data (list :connection connection
+                           :sm-outbound-count 1
+                           :sm-last-acked 0
+                           :sm-outbound-queue outbound
+                           :sm-pending-queue pending
+                           :sm-stall-since 1.0))
+         deleted)
+    (cl-letf (((symbol-function 'processp) (lambda (_process) t))
+              ((symbol-function 'delete-process)
+               (lambda (process) (setq deleted process))))
+      (jabber-sm--recover-stall 'fake-jc state-data))
+    (should (eq connection deleted))
+    (should (equal outbound (plist-get state-data :sm-outbound-queue)))
+    (should (equal pending (plist-get state-data :sm-pending-queue)))
+    (should (equal "Stream Management acknowledgement timeout"
+                   (plist-get state-data :disconnection-reason)))))
 
 ;;; FSM routing helper
 
@@ -454,19 +475,26 @@
 
 ;;; h-count validation
 
-(ert-deftest jabber-test-sm-process-ack-h-too-high ()
-  "Warning when server acks more stanzas than sent."
+(ert-deftest jabber-test-sm-session-rejects-ack-h-too-high ()
+  "An impossible acknowledgement closes the stream with the XEP error."
   (let* ((sd (list :sm-enabled t
                    :sm-outbound-count 3
                    :sm-outbound-queue (list (cons 1 'a) (cons 2 'b) (cons 3 'c))
                    :sm-last-acked 0))
          (ack '(a ((xmlns . "urn:xmpp:sm:3") (h . "99"))))
-         (messages nil))
-    (cl-letf (((symbol-function 'message)
-               (lambda (fmt &rest args) (push (apply #'format fmt args) messages))))
-      (jabber-sm--process-ack sd ack))
-    (should (cl-some (lambda (m) (string-match-p "more stanzas than sent" m))
-                     messages))))
+         (handler (gethash :session-established
+                           (get 'jabber-connection :fsm-event)))
+         sent)
+    (cl-letf (((symbol-function 'jabber-send-string)
+               (lambda (_jc string) (setq sent string))))
+      (let ((result (funcall handler 'fake-jc sd (list :stanza ack) nil)))
+        (should-not (car result))
+        (should (string-match-p "handled-count-too-high" sent))
+        (should (string-match-p "h='99'" sent))
+        (should (string-match-p "send-count='3'" sent))
+        (should (string-match-p "acknowledged 99 stanzas"
+                                (plist-get (cadr result)
+                                           :disconnection-reason)))))))
 
 ;;; Back-pressure
 

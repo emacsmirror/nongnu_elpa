@@ -91,15 +91,27 @@ STATE-DATA is the FSM plist.  Return updated state data."
       (plist-put state-data :sm-stall-since nil))))
 
 (defun jabber-sm--recover-stall (jc state-data)
-  "Recover an acknowledgement stall on JC with STATE-DATA."
+  "Reconnect JC after an acknowledgement stall in STATE-DATA."
   (let ((pending-count (length (plist-get state-data :sm-pending-queue))))
-    (message "SM: ack stall detected, recovering (%d stanzas pending)"
+    (message "SM: ack stall detected, reconnecting (%d stanzas pending)"
              pending-count)
-    (plist-put state-data :sm-last-acked
-               (plist-get state-data :sm-outbound-count))
-    (plist-put state-data :sm-outbound-queue nil)
-    (plist-put state-data :sm-stall-since nil)
-    (jabber-sm--drain-pending jc state-data)))
+    (plist-put state-data :disconnection-reason
+               "Stream Management acknowledgement timeout")
+    (if-let* ((connection (plist-get state-data :connection))
+              ((processp connection)))
+        (delete-process connection)
+      (fsm-send jc '(:connection-dead)))))
+
+(defun jabber-sm--send-count-too-high-error (jc h sent)
+  "Reject on JC an acknowledgement H beyond SENT."
+  (jabber-send-string
+   jc
+   (format
+    (concat "<stream:error>"
+            "<undefined-condition xmlns='urn:ietf:params:xml:ns:xmpp-streams'/>"
+            "<handled-count-too-high xmlns='%s' h='%d' send-count='%d'/>"
+            "</stream:error>")
+    jabber-sm-xmlns h sent)))
 
 (defun jabber-sm--send-ack (jc state-data)
   "Send an acknowledgement to JC using STATE-DATA."

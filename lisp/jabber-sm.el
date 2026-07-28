@@ -70,12 +70,15 @@ Set to nil to disable back-pressure (send everything immediately)."
                  (const :tag "No limit" nil)))
 
 (defcustom jabber-sm-stall-timeout 90
-  "Seconds before declaring an SM ack stall and forcing recovery.
+  "Seconds before reconnecting after an SM acknowledgement stall.
 When the server has not acknowledged outbound stanzas for this
-many seconds while the pending queue is non-empty, force-advance
-the ack counter and drain queued stanzas."
+many seconds while the pending queue is non-empty, reconnect so
+Stream Management can resume without discarding unacknowledged data."
   :type 'integer
   :group 'jabber-sm)
+
+(define-error 'jabber-sm-handled-count-too-high
+  "Server acknowledged more stanzas than were sent")
 
 ;;; Counter arithmetic (handles 2^32 wraparound per XEP-0198 section 5)
 
@@ -249,7 +252,8 @@ Return updated STATE-DATA."
 (defun jabber-sm--process-ack (state-data stanza)
   "Process an incoming <a/> ack STANZA, pruning the outbound queue.
 Only advance `:sm-last-acked' forward -- ignore stale acks whose h
-is at or behind the current value (can happen after stall recovery).
+is at or behind the current value.
+Signal `jabber-sm-handled-count-too-high' for an impossible ack.
 Return updated STATE-DATA."
   (let* ((h (string-to-number (or (jabber-xml-get-attribute stanza 'h) "0")))
          (sent (plist-get state-data :sm-outbound-count))
@@ -260,12 +264,7 @@ Return updated STATE-DATA."
      ((jabber-sm--counter-<= h last-acked)
       state-data)
      ((not (jabber-sm--counter-<= h sent))
-      (message "SM warning: server acked more stanzas than sent (h=%d, sent=%d)"
-               h sent)
-      (setq state-data (plist-put state-data :sm-outbound-count h))
-      (setq state-data (plist-put state-data :sm-last-acked h))
-      (setq state-data (plist-put state-data :sm-outbound-queue pruned))
-      (plist-put state-data :sm-stall-since nil))
+      (signal 'jabber-sm-handled-count-too-high (list h sent)))
      (t
       (setq state-data (plist-put state-data :sm-last-acked h))
       (setq state-data (plist-put state-data :sm-outbound-queue pruned))
