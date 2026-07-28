@@ -1300,6 +1300,10 @@ into your VM init file."
       (when action 
         (funcall (intern (format "vm-pgg-%s" action)))))))
 
+(display-warning
+ 'vm-pgg
+ "vm-pgg is deprecated and will be removed; please use vm-epg instead.")
+
 (provide 'vm-pgg)
 
 ;;; vm-pgg.el ends here
