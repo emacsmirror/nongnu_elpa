@@ -393,7 +393,10 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (stamp (nth 1 parsed))
            (inner-msg (nth 2 parsed))
            (encrypted (jabber-xml-encrypted-p inner-msg))
-           (inner-msg (jabber-chat--decrypt-if-needed jc inner-msg))
+           (inner-msg
+            (let ((inhibit-message t)
+                  (message-log-max nil))
+              (jabber-chat--decrypt-if-needed jc inner-msg)))
            (fields (jabber-mam--extract-fields jc inner-msg stamp))
            (peer (plist-get fields :peer))
            (body (plist-get fields :body))

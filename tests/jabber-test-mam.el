@@ -290,6 +290,22 @@ INSERT INTO omemo_skipped_keys
                      (caar (sqlite-select jabber-db--connection "\
 SELECT body FROM message WHERE stanza_id = 'stanza-000001'")))))))
 
+(ert-deftest jabber-test-mam-decrypts-without-message-noise ()
+  "Archived decryption does not write per-message diagnostics."
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
+           (jabber-muc-participants nil)
+           (stanza (jabber-test-mam--make-message 1))
+           message-settings)
+      (cl-letf (((symbol-function 'jabber-chat--decrypt-if-needed)
+                 (lambda (_jc message)
+                   (setq message-settings
+                         (list inhibit-message message-log-max))
+                   message)))
+        (jabber-mam--process-message jc stanza))
+      (should (equal '(t nil) message-settings)))))
+
 ;;; Group 4: Parse helpers
 
 (ert-deftest jabber-test-mam-parse-result ()
