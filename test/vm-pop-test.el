@@ -426,6 +426,87 @@
                  "pop:mail.example.com:110:pass:user:*")))
     (should (equal (nth 5 result) "*"))))
 
+;;; vm-pop-retrieve-to-target tests
+
+(defconst vm-pop-test--retrieved-message
+  (concat "From: sender@example.com\r\n"
+          "To: recipient@example.com\r\n"
+          "Subject: POP retrieval test\r\n"
+          "\r\n"
+          "Hello, world.\r\n"
+          ".\r\n")
+  "A complete POP RETR response body, terminated by the \".\" line.")
+
+(defmacro vm-pop-test--with-retrieval (target-form &rest body)
+  "Run `vm-pop-retrieve-to-target' on a mocked session, then execute BODY.
+TARGET-FORM is evaluated to produce the target passed to the function.
+BODY is executed in the mock session buffer with `target' bound to the
+target and `result' bound to the function's return value."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-pop-session (list vm-pop-test--retrieved-message)
+     (setq vm-folder-type 'From_)
+     (let* ((target ,target-form)
+            (statblob (make-vector 12 nil))
+            (result (vm-pop-retrieve-to-target
+                     vm-test-mock-process target statblob)))
+       (ignore result)
+       ,@body)))
+
+(ert-deftest vm-pop-test-retrieve-to-target-file-writes-message ()
+  "Test that retrieving to a file target actually writes the message.
+Regression test: a stray `defvar' became the then-branch of the
+\(if (stringp target) ...) form, so nothing was ever written to the
+crashbox while the message was still deleted from the session buffer,
+making retrieved mail disappear."
+  (let ((target-file (make-temp-file "vm-pop-test-crashbox-")))
+    (unwind-protect
+        (vm-pop-test--with-retrieval target-file
+          (should result)
+          (let ((contents (with-temp-buffer
+                            (insert-file-contents target)
+                            (buffer-string))))
+            (should (string-prefix-p "From " contents))
+            (should (string-match-p "Subject: POP retrieval test" contents))
+            (should (string-match-p "Hello, world\\." contents))
+            ;; CRLF must have been converted to LF on the way out
+            (should-not (string-match-p "\r" contents))))
+      (delete-file target-file))))
+
+(ert-deftest vm-pop-test-retrieve-to-target-file-appends ()
+  "Test that retrieving to a file target appends to existing content."
+  (let ((target-file (make-temp-file "vm-pop-test-crashbox-" nil nil
+                                     "From preexisting@example.com\n\n")))
+    (unwind-protect
+        (vm-pop-test--with-retrieval target-file
+          (let ((contents (with-temp-buffer
+                            (insert-file-contents target)
+                            (buffer-string))))
+            (should (string-match-p "preexisting@example.com" contents))
+            (should (string-match-p "Subject: POP retrieval test" contents))))
+      (delete-file target-file))))
+
+(ert-deftest vm-pop-test-retrieve-to-target-buffer-inserts-message ()
+  "Test that retrieving to a buffer target inserts the message."
+  (let ((target-buffer (generate-new-buffer " *vm-pop-test-target*")))
+    (unwind-protect
+        (vm-pop-test--with-retrieval target-buffer
+          (should result)
+          (let ((contents (with-current-buffer target
+                            (buffer-string))))
+            (should (string-prefix-p "From " contents))
+            (should (string-match-p "Subject: POP retrieval test" contents))
+            (should (string-match-p "Hello, world\\." contents))))
+      (kill-buffer target-buffer))))
+
+(ert-deftest vm-pop-test-retrieve-to-target-consumes-session-text ()
+  "Test that the retrieved message is removed from the session buffer."
+  (let ((target-buffer (generate-new-buffer " *vm-pop-test-target*")))
+    (unwind-protect
+        (vm-pop-test--with-retrieval target-buffer
+          (should-not (string-match-p "Subject: POP retrieval test"
+                                      (buffer-string))))
+      (kill-buffer target-buffer))))
+
 (provide 'vm-pop-test)
 
 ;;; vm-pop-test.el ends here

@@ -1236,7 +1236,6 @@ shorter pieces, rebuild it from them."
 
 (defvar buffer-display-table)
 (defvar standard-display-table)
-(defvar buffer-file-type)
 
 (defun vm-generate-new-presentation-buffer (folder-buffer name)
   "Generate a new Presentation buffer for FOLDER-BUFFER.  NAME is
@@ -1252,8 +1251,6 @@ a string denoting the folder name."
 	    mode-popup-menu (and vm-use-menus
 				 (vm-menu-support-possible-p)
 				 (vm-menu-mode-menu))
-	    ;; Default to binary file type for DOS/NT.
-	    buffer-file-type t
 	    ;; Tell XEmacs/MULE not to mess with the text on writes.
 	    buffer-read-only t
 	    mode-line-format vm-mode-line-format)
@@ -4924,8 +4921,6 @@ file with the name should be overwritten."
 	  (condition-case err
 	      (with-current-buffer work-buffer
 		(setq selective-display nil)
-		;; Tell DOS/Windows NT whether the file is binary
-		(setq buffer-file-type (not (vm-mime-text-type-layout-p layout)))
 		;; Tell XEmacs/MULE not to mess with the bits unless
 		;; this is a text type.
 		(if (fboundp 'set-buffer-file-coding-system)
@@ -4972,8 +4967,6 @@ file with the name should be overwritten."
 	(unwind-protect
 	    (with-current-buffer work-buffer
 	      (setq selective-display nil)
-	      ;; Tell DOS/Windows NT whether the file is binary
-	      (setq buffer-file-type t)
 	      ;; Tell XEmacs/MULE not to mess with the bits unless
 	      ;; this is a text type.
 	      (if (fboundp 'set-buffer-file-coding-system)
@@ -7914,12 +7907,7 @@ buffer."
 	  ;; changed by insert-file-contents.  The
 	  ;; value we bind to it to here isn't
 	  ;; important.
-	  (buffer-file-coding-system (vm-binary-coding-system))
-	  ;; For NTEmacs 19: need to do this to make
-	  ;; sure CRs aren't eaten.
-	  ;; No need for this any more -- USR 2019-04-01
-	  ;; (file-name-buffer-file-type-alist '(("." . t)))
-	  )
+	  (buffer-file-coding-system (vm-binary-coding-system)))
       (condition-case data
 	  (insert-file-contents file)
 	(error
