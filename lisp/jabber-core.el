@@ -646,9 +646,27 @@ override the defaults from `jabber-account-list'."
 		 (list nil (plist-put state-data
 				      :disconnection-expected t)))))
 
+(defun jabber--send-bind-request (jc state-data)
+  "Request resource binding for JC using STATE-DATA."
+  (let ((handle-bind
+         (lambda (jc xml-data success)
+           (fsm-send jc (list (if success :bind-success :bind-failure)
+                              xml-data))))
+        (resource (plist-get state-data :resource)))
+    (jabber-send-iq jc nil "set"
+                    `(bind ((xmlns . ,jabber-bind-xmlns))
+                           ,@(when resource
+                               `((resource () ,resource))))
+                    handle-bind t handle-bind nil)))
+
 (define-enter-state jabber-connection :bind
 		    (fsm state-data)
-		    (jabber-send-stream-header fsm)
+		    (if (plist-get state-data :bind-after-sm-failure)
+			(progn
+			  (setq state-data
+				(plist-put state-data :bind-after-sm-failure nil))
+			  (jabber--send-bind-request fsm state-data))
+		      (jabber-send-stream-header fsm))
 		    (list state-data nil))
 
 (define-state jabber-connection :bind
@@ -688,36 +706,15 @@ override the defaults from `jabber-account-list'."
 		       (setq state-data (plist-put state-data :sm-resuming nil))
 		       ;; Fall through to normal bind.
 		       (if (jabber-xml-get-children stanza 'bind)
-			   (let ((handle-bind
-				  (lambda (jc xml-data success)
-				    (fsm-send jc (list
-						  (if success :bind-success :bind-failure)
-						  xml-data))))
-				 (resource (plist-get state-data :resource)))
-			     (jabber-send-iq fsm nil "set"
-					     `(bind ((xmlns . ,jabber-bind-xmlns))
-						    ,@(when resource
-							`((resource () ,resource))))
-					     handle-bind t
-					     handle-bind nil)
+			   (progn
+			     (jabber--send-bind-request fsm state-data)
 			     (list :bind state-data))
 			 (message "Server doesn't permit resource binding")
 			 (list nil state-data)))
 		      ;; Normal bind flow.
 		      ((jabber-xml-get-children stanza 'bind)
-		       (let ((handle-bind
-			      (lambda (jc xml-data success)
-				(fsm-send jc (list
-					      (if success :bind-success :bind-failure)
-					      xml-data))))
-			     (resource (plist-get state-data :resource)))
-			 (jabber-send-iq fsm nil "set"
-					 `(bind ((xmlns . ,jabber-bind-xmlns))
-						,@(when resource
-						    `((resource () ,resource))))
-					 handle-bind t
-					 handle-bind nil)
-			 (list :bind state-data)))
+		       (jabber--send-bind-request fsm state-data)
+		       (list :bind state-data))
 		      (t
 		       (message "Server doesn't permit resource binding")
 		       (list nil state-data))))
@@ -844,15 +841,22 @@ override the defaults from `jabber-account-list'."
 			     (jabber-sm--drain-pending fsm new-state-data))
 		       (list :session-established new-state-data)))
 		    ((jabber-sm--failed-p stanza)
-		     (message "Stream Management resume failed, falling back to auth")
-		     ;; Resume failed: clean up MUC state now, reset SM, do full auth.
+		     (message "Stream Management resume failed, binding a new session")
+		     ;; Resume failed after authentication.  Reset the old session
+		     ;; and bind a new resource on the current stream.
 		     (jabber-lifecycle-dispatch-session-reset fsm)
 		     (setq state-data
 			   (jabber-sm--discard-pending
 			    state-data "stream resumption failed"))
 		     (setq state-data (jabber-sm--reset state-data))
 		     (setq state-data (plist-put state-data :sm-resuming nil))
-		     (list :sasl-auth state-data))
+		     (if (jabber-xml-get-children
+			  (plist-get state-data :stream-features) 'bind)
+			 (list :bind
+			       (plist-put state-data
+					  :bind-after-sm-failure t))
+		       (message "Server doesn't permit resource binding")
+		       (list nil state-data)))
 		    (t
 		     (or
 		      (jabber-process-stream-error stanza state-data)

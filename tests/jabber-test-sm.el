@@ -10,6 +10,7 @@
 (require 'jabber-xml)
 (require 'jabber-sm)
 (require 'jabber-sm-runtime)
+(require 'jabber-core)
 
 (defvar jabber-connections)
 
@@ -379,6 +380,40 @@
       (dolist (sexp to-resend)
         (setq after-resend (jabber-sm--count-outbound after-resend sexp)))
       (should (= (plist-get after-resend :sm-outbound-count) 10)))))
+
+(ert-deftest jabber-test-sm-resume-failure-binds-without-reauthentication ()
+  "A failed post-SASL resume continues with resource binding."
+  (let* ((fsm 'fake-jc)
+         (state-data
+          (list :resource "emacs"
+                :sm-enabled t
+                :sm-id "expired"
+                :sm-resuming t
+                :stream-features
+                `(features ()
+                           (bind ((xmlns . ,jabber-bind-xmlns)))
+                           (sm ((xmlns . ,jabber-sm-xmlns))))))
+         (event `(:stanza (failed ((xmlns . ,jabber-sm-xmlns)))))
+         (handler (gethash :sm-resume
+                           (get 'jabber-connection :fsm-event)))
+         (enter-bind (gethash :bind
+                              (get 'jabber-connection :fsm-enter)))
+         sent-iq
+         stream-header-sent)
+    (cl-letf (((symbol-function 'jabber-lifecycle-dispatch-session-reset)
+               #'ignore)
+              ((symbol-function 'jabber-send-stream-header)
+               (lambda (_jc) (setq stream-header-sent t)))
+              ((symbol-function 'jabber-send-iq)
+               (lambda (&rest args) (setq sent-iq args))))
+      (pcase-let* ((`(,next-state ,next-data)
+                     (funcall handler fsm state-data event #'ignore))
+                   (`(,entered-data nil)
+                    (funcall enter-bind fsm next-data)))
+        (should (eq next-state :bind))
+        (should sent-iq)
+        (should-not stream-header-sent)
+        (should-not (plist-get entered-data :sm-resuming))))))
 
 ;;; Ack XML generation
 
