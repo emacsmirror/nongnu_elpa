@@ -416,12 +416,13 @@ JC is the Jabber connection.  XML-DATA is the stanza."
                                (current-time))))))
            (pcase action
              (:correct
-              (jabber-message-correct--apply
-               (jabber-message-correct--replace-id inner-msg)
-               body (plist-get fields :from)
-               (string= (plist-get fields :type) "groupchat") nil
-               (jabber-db--extract-occupant-id inner-msg)
-               (plist-get fields :our-jid) peer nil))
+              (unless (jabber--decrypt-failure-body-p body)
+                (jabber-message-correct--apply
+                 (jabber-message-correct--replace-id inner-msg)
+                 body (plist-get fields :from)
+                 (string= (plist-get fields :type) "groupchat") nil
+                 (jabber-db--extract-occupant-id inner-msg)
+                 (plist-get fields :our-jid) peer nil)))
              (:store
               (jabber-db-store-message
                (plist-get fields :our-jid) peer

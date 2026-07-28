@@ -822,13 +822,21 @@ WHERE stanza_id = 'stanza-000001'"))))
             (jabber-test-mam--make-correction-message
              "archive-correction-failed" "correction-failed"
              "stanza-000001" "friend@example.com/phone"
-             "OMEMO encrypted message")))
+             "OMEMO encrypted message"))
+           messages)
       (jabber-mam--process-message jc (jabber-test-mam--make-message 1))
       (cl-letf (((symbol-function 'jabber-chat--decrypt-if-needed)
                  (lambda (_jc inner)
                    (jabber-chat--set-body
-                    inner "[OMEMO: could not decrypt]"))))
+                    inner "[OMEMO: could not decrypt]")))
+                ((symbol-function 'message)
+                 (lambda (format-string &rest args)
+                   (push (apply #'format format-string args) messages))))
         (jabber-mam--process-message jc correction))
+      (should-not
+       (cl-find-if
+        (lambda (text) (string-prefix-p "XEP-0308:" text))
+        messages))
       (should
        (equal '(("Message 1" 0))
               (sqlite-select
