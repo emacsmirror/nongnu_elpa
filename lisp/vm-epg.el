@@ -1012,7 +1012,6 @@ fetched, so the caller can verify the message again."
               :action 'vm-epg-mime-decrypt
               :layout layout)))
           (t
-	   ;; TODO Här skiljer sig EPG och PGG, granskas
            (let* ((cipher
                    (with-current-buffer (vm-buffer-of
                                          (vm-mm-layout-message message))
@@ -1031,30 +1030,30 @@ fetched, so the caller can verify the message again."
                   (insert (error-message-string err))
                   (put-text-property start (point) 'face 'vm-epg-error))))
              (when plain
-             (let* ((epg-buf (get-buffer-create " *vm-epg-decrypted*"))
-                    parsed)
-               (with-current-buffer epg-buf
-                 (erase-buffer)
-                 (insert plain)
-                 (vm-epg-crlf-cleanup (point-min) (point-max))
-                 (setq parsed (vm-mime-parse-entity-safe
-                               nil :passing-message-only t)))
-               (if parsed
-                   (vm-decode-mime-layout parsed)
-                 (insert-buffer-substring epg-buf)))
-             ;; check if the decrypted content was also signed
-             (let ((verify-result (epg-context-result-for context 'verify)))
-               (when verify-result
-                 (let ((sig (car verify-result)))
-                   (if (eq (epg-signature-status sig) 'good)
-                       (progn
-                         (vm-epg-state-set 'signed 'verified)
-                         (let ((start (point)))
-                           (insert "\n" (vm-epg-format-verify-result verify-result) "\n")
-                           (put-text-property start (point) 'face
-                                              'vm-epg-good-signature)))
-                     (vm-epg-state-set 'signed 'error)))))
-             t))))
+               (let* ((epg-buf (get-buffer-create " *vm-epg-decrypted*"))
+                      parsed)
+		 (with-current-buffer epg-buf
+                   (erase-buffer)
+                   (insert plain)
+                   (vm-epg-crlf-cleanup (point-min) (point-max))
+                   (setq parsed (vm-mime-parse-entity-safe
+				 nil :passing-message-only t)))
+		 (if parsed
+                     (vm-decode-mime-layout parsed)
+                   (insert-buffer-substring epg-buf)))
+               ;; check if the decrypted content was also signed
+               (let ((verify-result (epg-context-result-for context 'verify)))
+		 (when verify-result
+                   (let ((sig (car verify-result)))
+                     (if (eq (epg-signature-status sig) 'good)
+			 (progn
+                           (vm-epg-state-set 'signed 'verified)
+                           (let ((start (point)))
+                             (insert "\n" (vm-epg-format-verify-result verify-result) "\n")
+                             (put-text-property start (point) 'face
+						'vm-epg-good-signature)))
+                       (vm-epg-state-set 'signed 'error)))))
+               t))))
     ;; Always report the part as handled -- even on decrypt failure or an
     ;; unrecognised structure -- so VM does not fall through and re-render the
     ;; raw ciphertext parts as multipart/mixed.
@@ -1096,7 +1095,6 @@ fetched, so the caller can verify the message again."
            (setq start (point))
            (vm-mime-insert-mime-body signature)
            (setq end (point))
-	   ;; TODO Här skiljer sig EPG från PGG, granskas
            (let ((sig-string (buffer-substring-no-properties start end)))
              (delete-region start end)
              ;; collect the raw signed content (with CRLF per RFC 3156)
@@ -1169,7 +1167,6 @@ fetched, so the caller can verify the message again."
         (vm-mime-insert-mime-body layout)
         (setq end (point-marker))
         (vm-mime-transfer-decode-region layout start end)
-	;; TODO Här skiljer sig EPG från PGG, granskas
         (let* ((key-text (buffer-substring-no-properties start end))
                (context (epg-make-context 'OpenPGP))
                import-result)
@@ -1206,7 +1203,6 @@ fetched, so the caller can verify the message again."
     (goto-char (point-min))
     (search-forward "\n\n")
     (goto-char (match-end 0))
-    ;; TODO Här skiljer sig EPG från PGG, granskas
     (let* ((key-text (buffer-substring-no-properties (point) (point-max)))
            (context (epg-make-context 'OpenPGP)))
       (condition-case err
@@ -1238,7 +1234,6 @@ fetched, so the caller can verify the message again."
     (with-current-buffer buffer
       (erase-buffer)
       (setq start (point))
-      ;; TODO Samma felmeddelande tillagt ovan, ändrad kod
       (insert (epg-export-keys-to-string context keys))
       (when (= start (point))
         (error "%s has no public key!" author)))
