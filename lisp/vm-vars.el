@@ -7366,12 +7366,6 @@ information is derived from `vm-mime-mule-charset-to-coding-alist' (which see)."
 (defconst vm-mime-encoded-word-regexp
   "=\\?\\([^?*]+\\)\\(\\*\\([^?*]+\\)\\)?\\?\\([BbQq]\\)\\?\\([^?]+\\)\\?=")
 
-;; for MS-DOS and Windows NT
-;;    nil value means text file
-;;      t value means binary file
-;; presumably it controls whether LF -> CRLF mapping is done
-;; when writing to files.
-(defvar buffer-file-type)
 (defvar vm-mf-attachment-file nil)
 (defvar vm-frame-list nil)
 (if (not (boundp 'shell-command-switch))

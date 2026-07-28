@@ -1974,16 +1974,8 @@ available for the IMAP server."
 	(insert-before-markers "\n"))
     (insert-before-markers (vm-trailing-message-separator))
     (if (stringp target)
-	;; Set file type to binary for DOS/Windows.  I don't know if
-	;; this is correct to do or not; it depends on whether the
-	;; the CRLF or the LF newline convention is used on the inbox
-	;; associated with this crashbox.  This setting assumes the LF
-	;; newline convention is used.
-	(progn
-	  (defvar buffer-file-type) ;; FIXME: Removed in Emacs-24.4.
-	  (let ((buffer-file-type t)
-	        (selective-display nil))
-	    (write-region ***start end target t 0)))
+	(let ((selective-display nil))
+	  (write-region ***start end target t 0))
       (let ((b (current-buffer)))
 	(with-current-buffer target
 	  ;;----------------------------

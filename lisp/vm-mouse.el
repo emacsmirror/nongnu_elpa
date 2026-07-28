@@ -280,8 +280,6 @@ Mouse'."
 (defun vm-mouse-send-url-to-mozilla-new-window (url)
   (vm-mouse-send-url-to-mozilla url nil t))
 
-(defvar buffer-file-type)
-
 (defun vm-mouse-send-url-to-mosaic (url &optional new-mosaic new-window)
   (vm-mouse-send-url-to-xxxx-mosaic 'mosaic url new-mosaic new-window))
 
@@ -312,7 +310,6 @@ Mouse'."
 		 (insert url ?\n)
 		 ;; newline convention used should be the local
 		 ;; one, whatever that is.
-		 (setq buffer-file-type nil)
 		 (if (fboundp 'set-buffer-file-coding-system)
 		     (set-buffer-file-coding-system
 		      (vm-line-ending-coding-system) nil))
