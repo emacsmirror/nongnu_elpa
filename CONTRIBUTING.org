@@ -1,0 +1,33 @@
+#+title: Contributing to emacs-jabber
+
+* Changes
+- Base changes on =master=.
+- Keep commits focused.
+- Add or update tests for changed behavior.
+- Run =make dev= before submission.
+
+* Patches
+
+Create a patch series:
+
+#+begin_src sh
+git format-patch --cover-letter origin/master
+#+end_src
+
+Send it to =emacs-jabber@thanosapollo.org=:
+
+#+begin_src sh
+git send-email --to=emacs-jabber@thanosapollo.org 000*.patch
+#+end_src
+
+Use =[PATCH] Short description= as the subject. For a revised series, use
+=[PATCH v2]= and summarize changes since the previous version.
+
+* Bugs
+
+Send bug reports to =emacs-jabber@thanosapollo.org= with
+=[BUG] Short description= as the subject. Include the emacs-jabber version,
+Emacs version, reproduction steps, and relevant backtrace.
+
+* Discussion
+- Join =jabber-el@conference.hmm.st= for development discussions.
