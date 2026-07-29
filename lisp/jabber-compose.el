@@ -61,7 +61,7 @@ the recipient list."
 
     (insert (substitute-command-keys "\\<widget-field-keymap>Completion available with \\[widget-complete].\n"))
     (push (cons :recipients
-		(widget-create '(repeat :tag "Recipients" jid)
+		(widget-create '(repeat :tag "Recipients" jabber-widget-jid)
 			       :value (when recipient
 					(list recipient))))
 	  jabber-widget-alist)

@@ -1318,5 +1318,140 @@ entry with JC=nil."
                 ((:weight semi-bold) jabber-chat-nick-foreign-plaintext))
               prompt-args)))))
 
+(ert-deftest jabber-test-muc-receive-config-opens-data-form-in-origin ()
+  "A live originating buffer opens a dedicated configuration form."
+  (let (shown-form shown-actions)
+    (cl-letf (((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'jabber-xdata-form-open)
+               (lambda (form actions)
+                 (setq shown-form form
+                       shown-actions actions))))
+      (with-temp-buffer
+        (jabber-muc--receive-config
+         'fake-jc
+         '(iq ((from . "room@conference.example.org") (type . "result"))
+              (query ((xmlns . "http://jabber.org/protocol/muc#owner"))
+                     (x ((xmlns . "jabber:x:data") (type . "form"))
+                        (field ((var . "FORM_TYPE") (type . "hidden"))
+                               (value nil
+                                      "http://jabber.org/protocol/muc#roomconfig"))
+                        (field ((var . "roles") (type . "list-multi"))
+                               (value nil "moderator")
+                               (option nil (value nil "moderator"))
+                               (option nil (value nil "participant"))))))
+         (list (current-buffer) "room@conference.example.org"))))
+    (should (equal (plist-get
+                    (jabber-xdata-field shown-form "roles") :values)
+                   '("moderator")))
+    (should (equal (plist-get shown-form :title)
+                   "Configuration: room@conference.example.org"))
+    (should (equal (mapcar (lambda (action)
+                            (plist-get action :label))
+                          shown-actions)
+                   '("Submit" "Cancel")))))
+
+(ert-deftest jabber-test-muc-overlapping-forms-keep-room-context ()
+  "Submitting an older form uses its original room and connection."
+  (let (opened sent)
+    (cl-letf (((symbol-function 'pop-to-buffer) #'ignore)
+              ((symbol-function 'jabber-xdata-form-open)
+               (lambda (_form actions)
+                 (setq opened (append opened (list actions)))))
+              ((symbol-function 'jabber-connection-active-p) #'identity)
+              ((symbol-function 'jabber-send-iq)
+               (lambda (jc to _type _query &rest _ignore)
+                 (setq sent (list jc to)))))
+      (with-temp-buffer
+        (dolist (request '((first-jc "one@conference.example.org")
+                           (second-jc "two@conference.example.org")))
+          (jabber-muc--receive-config
+           (nth 0 request)
+           '(iq ((type . "result"))
+                (query ((xmlns . "http://jabber.org/protocol/muc#owner"))
+                       (x ((xmlns . "jabber:x:data") (type . "form")))))
+           (list (current-buffer) (nth 1 request)))))
+      (with-temp-buffer
+        (setq-local jabber-xdata-form--form '(:fields nil))
+        (let ((jabber-connections '(first-jc second-jc)))
+          (call-interactively
+           (plist-get (car (car opened)) :command)))))
+    (should (equal sent '(first-jc "one@conference.example.org")))))
+
+(ert-deftest jabber-test-muc-submit-config-preserves-form-values ()
+  "MUC configuration submits hidden and ordered list-multi values."
+  (let (sent-query)
+    (cl-letf (((symbol-function 'jabber-connection-active-p) #'identity)
+              ((symbol-function 'jabber-send-iq)
+               (lambda (_jc to type query &rest _ignore)
+                 (should (equal to "room@conference.example.org"))
+                 (should (equal type "set"))
+                 (setq sent-query query))))
+      (with-temp-buffer
+        (setq-local jabber-muc--config-connection 'fake-jc)
+        (setq-local jabber-muc--config-group "room@conference.example.org")
+        (setq-local jabber-xdata-form--form
+                    (jabber-xdata-parse
+                     '(x ((xmlns . "jabber:x:data") (type . "form"))
+                         (field ((var . "FORM_TYPE") (type . "hidden"))
+                                (value nil "urn:roomconfig"))
+                         (field ((var . "roles") (type . "list-multi"))
+                                (value nil "visitor")
+                                (value nil "moderator")
+                                (option nil (value nil "moderator"))
+                                (option nil (value nil "visitor"))))))
+        (let ((jabber-connections '(fake-jc)))
+          (jabber-muc-submit-config))))
+    (let* ((xdata (car (jabber-xml-get-children sent-query 'x)))
+           (fields (jabber-xml-get-children xdata 'field)))
+      (should (equal
+               (mapcar (lambda (value)
+                         (car (jabber-xml-node-children value)))
+                       (jabber-xml-get-children (cadr fields) 'value))
+               '("moderator" "visitor")))
+      (should (equal
+               (car (jabber-xml-node-children
+                     (car (jabber-xml-get-children (car fields) 'value))))
+               "urn:roomconfig")))))
+
+(ert-deftest jabber-test-muc-cancel-config-sends-cancel-form ()
+  "Canceling a room configuration sends XEP-0004 type cancel."
+  (let (sent-query)
+    (cl-letf (((symbol-function 'jabber-connection-active-p) #'identity)
+              ((symbol-function 'jabber-send-iq)
+               (lambda (_jc _to _type query &rest _ignore)
+                 (setq sent-query query))))
+      (with-temp-buffer
+        (setq-local jabber-muc--config-connection 'fake-jc)
+        (setq-local jabber-muc--config-group "room@conference.example.org")
+        (let ((jabber-connections '(fake-jc)))
+          (jabber-muc-cancel-config))))
+    (let ((xdata (car (jabber-xml-get-children sent-query 'x))))
+      (should (equal (jabber-xml-get-attribute xdata 'type) "cancel")))))
+
+(ert-deftest jabber-test-muc-config-rejects-reconnecting-connection ()
+  "MUC submit and cancel reject a reconnecting FSM before sending."
+  (let ((reconnecting (make-symbol "reconnecting"))
+        jabber-connections called)
+    (setq jabber-connections (list reconnecting))
+    (put reconnecting :state :connecting)
+    (cl-letf (((symbol-function 'jabber-send-iq)
+               (lambda (&rest _ignore) (setq called t))))
+      (with-temp-buffer
+        (setq-local jabber-muc--config-connection reconnecting)
+        (setq-local jabber-muc--config-group
+                    "room@conference.example.org")
+        (should-error (jabber-muc-submit-config) :type 'user-error)
+        (should-error (jabber-muc-cancel-config) :type 'user-error)))
+    (should-not called)))
+
+(ert-deftest jabber-test-muc-config-resolves-established-replacement ()
+  "MUC configuration resolves an established replacement connection."
+  (let ((jabber-muc--config-connection 'dead-jc))
+    (cl-letf (((symbol-function 'jabber-find-active-connection)
+               (lambda (_jc) 'live-jc))
+              ((symbol-function 'jabber-connection-active-p)
+               (lambda (jc) (eq jc 'live-jc))))
+      (should (eq (jabber-muc--config-active-connection) 'live-jc)))))
+
 (provide 'jabber-test-muc)
 ;;; jabber-test-muc.el ends here

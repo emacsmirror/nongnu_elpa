@@ -22,6 +22,7 @@ JOBS         ?= $(shell nproc 2>/dev/null || echo 4)
 TEST_RESULTS := .test-results
 
 TESTS ?= tests/jabber-test-activity.el \
+         tests/jabber-test-ahc.el \
          tests/jabber-test-avatar.el \
          tests/jabber-test-bookmarks.el \
          tests/jabber-test-carbons.el \
@@ -63,6 +64,7 @@ TESTS ?= tests/jabber-test-activity.el \
          tests/jabber-test-styling.el \
          tests/jabber-test-time.el \
          tests/jabber-test-util.el \
+         tests/jabber-test-xdata.el \
          tests/jabber-test-xml.el
 
 TEST_STAMPS := $(patsubst tests/%.el,$(TEST_RESULTS)/%.stamp,$(TESTS))

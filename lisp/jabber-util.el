@@ -116,11 +116,20 @@ Return nil if none found."
     (when (string= bare-jid (jabber-connection-bare-jid jc))
       (cl-return jc))))
 
+(defun jabber-connection-active-p (jc)
+  "Return non-nil when JC has an established XMPP session."
+  (and (memq jc jabber-connections)
+       (eq (get jc :state) :session-established)))
+
 (defun jabber-find-active-connection (dead-jc)
   "Find an active connection for dead connection DEAD-JC.
 Return nil if none found."
   (let ((jid (jabber-connection-bare-jid dead-jc)))
-    (jabber-find-connection jid)))
+    (cl-find-if
+     (lambda (jc)
+       (and (jabber-connection-active-p jc)
+            (string= jid (jabber-connection-bare-jid jc))))
+     jabber-connections)))
 
 (defun jabber-jid-username (jid)
   "Return the username portion of JID, or nil if none found.

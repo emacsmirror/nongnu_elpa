@@ -31,7 +31,7 @@
 (require 'cl-lib)
 (require 'color)
 (require 'ewoc)
-(require 'jabber-widget)
+(require 'seq)
 (require 'jabber-buffer-registry)
 (require 'jabber-disco)
 (require 'jabber-lifecycle)
@@ -45,6 +45,7 @@
 (require 'jabber-db)
 (require 'jabber-presence)
 (require 'jabber-version)
+(require 'jabber-xdata-form)
 
 (defvar jabber-muc-participants nil
   "Alist of groupchats and participants.
@@ -69,6 +70,12 @@ Keys are group JID strings, values are t.")
 (defvar-local jabber-muc--auto-configure nil
   "When non-nil, automatically open the config form on room creation.
 Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
+
+(defvar-local jabber-muc--config-connection nil
+  "Connection associated with the current room configuration form.")
+
+(defvar-local jabber-muc--config-group nil
+  "Room JID associated with the current configuration form.")
 
 (defvar jabber-role-history ()
   "Keeps track of previously used roles.")
@@ -992,51 +999,90 @@ JC is the Jabber connection."
   (jabber-send-iq jc group
 		  "get"
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner)))
-		  #'jabber-process-data #'jabber-muc-render-config
-		  #'jabber-process-data "MUC configuration request failed"))
+		  #'jabber-muc--receive-config
+                  (list (current-buffer) group)
+		  #'jabber-muc--config-error group))
 
-(defun jabber-muc-render-config (jc xml-data)
-  "Render MUC configuration form.
+(defun jabber-muc--config-xdata (xml-data)
+  "Return the XEP-0004 configuration form from XML-DATA."
+  (seq-find
+   (lambda (x)
+     (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns))
+   (jabber-xml-get-children (jabber-iq-query xml-data) 'x)))
 
-JC is the Jabber connection.
-XML-DATA is the parsed tree data from the stream (stanzas)
-obtained from `xml-parse-region'."
-  (let ((query (jabber-iq-query xml-data))
-	xdata)
-    (dolist (x (jabber-xml-get-children query 'x))
-      (if (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)
-	  (setq xdata x)))
-    (if (not xdata)
-	(message "No configuration possible.")
-      (jabber-widget-init-buffer (jabber-xml-get-attribute xml-data 'from))
-      (setq jabber-buffer-connection jc)
-      (jabber-widget-render-xdata-form xdata)
-      (widget-create 'push-button :notify #'jabber-muc-submit-config "Submit")
-      (widget-insert "\t")
-      (widget-create 'push-button :notify #'jabber-muc-cancel-config "Cancel")
-      (widget-insert "\n")
-      (widget-setup)
-      (widget-minor-mode 1)
-      (pop-to-buffer (current-buffer)))))
+(defun jabber-muc--config-form (xdata group)
+  "Return parsed XDATA titled for room GROUP."
+  (plist-put (jabber-xdata-parse xdata)
+             :title (format "Configuration: %s" group)))
 
-(defun jabber-muc-submit-config (&rest _ignore)
-  "Submit MUC configuration form."
-  (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
+(defun jabber-muc--receive-config (jc xml-data context)
+  "Open XML-DATA's MUC configuration form using JC and CONTEXT.
+CONTEXT contains the originating buffer and room JID."
+  (let ((buffer (car context))
+        (group (cadr context))
+        (xdata (jabber-muc--config-xdata xml-data)))
+    (cond
+     ((not (buffer-live-p buffer))
+      (message "MUC configuration arrived after its buffer was closed"))
+     ((null xdata)
+     (message "No configuration possible for %s" group))
+     (t
+      (with-current-buffer buffer
+        (pop-to-buffer buffer)
+        (jabber-xdata-form-open
+         (jabber-muc--config-form xdata group)
+         (list
+          (list :key "RET" :label "Submit"
+                :command
+                (lambda ()
+                  (interactive)
+                  (jabber-muc-submit-config jc group))
+                :submits-form t)
+          (list :key "q" :label "Cancel"
+                :command
+                (lambda ()
+                  (interactive)
+                  (jabber-muc-cancel-config jc group))))))))))
+
+(defun jabber-muc--config-error (_jc xml-data group)
+  "Report a failed configuration request for GROUP from XML-DATA."
+  (message "MUC configuration request failed for %s: %s"
+           group (jabber-parse-error (jabber-iq-error xml-data))))
+
+(defun jabber-muc--config-active-connection (&optional connection)
+  "Return an active connection corresponding to CONNECTION."
+  (let ((connection (or connection jabber-muc--config-connection)))
+    (or (and (jabber-connection-active-p connection)
+             connection)
+        (when-let* ((replacement
+                     (and connection
+                          (ignore-errors
+                            (jabber-find-active-connection
+                             connection))))
+                    ((jabber-connection-active-p replacement)))
+          replacement)
+        (user-error "The MUC configuration connection is no longer active"))))
+
+(defun jabber-muc-submit-config (&optional connection group)
+  "Submit the current form to GROUP using CONNECTION."
+  (interactive)
+  (jabber-send-iq (jabber-muc--config-active-connection connection)
+                  (or group jabber-muc--config-group)
 		  "set"
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
-			  ,(jabber-widget-parse-xdata-form))
+			  ,(jabber-xdata-form-submit-form))
 		  #'jabber-report-success "MUC configuration"
-		  #'jabber-report-success "MUC configuration")
-  (quit-window t))
+		  #'jabber-report-success "MUC configuration"))
 
-(defun jabber-muc-cancel-config (&rest _ignore)
-  "Cancel MUC configuration form."
-  (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
+(defun jabber-muc-cancel-config (&optional connection group)
+  "Cancel the current form for GROUP using CONNECTION."
+  (interactive)
+  (jabber-send-iq (jabber-muc--config-active-connection connection)
+                  (or group jabber-muc--config-group)
 		  "set"
 		  `(query ((xmlns . ,jabber-muc-xmlns-owner))
 			  (x ((xmlns . ,jabber-xdata-xmlns) (type . "cancel"))))
-		  nil nil nil nil)
-  (quit-window t))
+		  nil nil nil nil))
 
 
 (defun jabber-muc--validate-disco-result (result)

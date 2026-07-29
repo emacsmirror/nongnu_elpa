@@ -12,6 +12,15 @@
 
 (defvar jabber-jid-obarray (make-vector 127 0))
 
+(ert-deftest jabber-test-util-connection-active-requires-session ()
+  "Only a listed FSM with an established session is active."
+  (let* ((connection (make-symbol "connection"))
+         (jabber-connections (list connection)))
+    (put connection :state :connecting)
+    (should-not (jabber-connection-active-p connection))
+    (put connection :state :session-established)
+    (should (jabber-connection-active-p connection))))
+
 ;;; Group 1: JID functions
 
 (ert-deftest jabber-test-util-jid-username-normal ()
