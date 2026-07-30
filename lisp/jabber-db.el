@@ -605,7 +605,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                                            stanza-id server-id oob-entries
                                            dup-id-col)
   "Update an existing duplicate in DB matched by DUP-ID-COL.
-Normalize TIMESTAMP and replace failed-decrypt placeholders with BODY.
+Normalize TIMESTAMP when non-nil and replace failed placeholders with BODY.
 Skip retracted messages to prevent MAM replays from undoing retractions.
 ACCOUNT and PEER scope the row; STANZA-ID and SERVER-ID identify it;
 OOB-ENTRIES replaces the row's OOB metadata when BODY is upgraded."
@@ -620,12 +620,12 @@ AND retracted_by IS NOT NULL LIMIT 1"
                                    where-clause)
                            where-params))))
     (unless retracted
-      ;; Normalize timestamp only when it differs.
-      (sqlite-execute
-       db
-       (format "UPDATE message SET timestamp = ? WHERE %s AND timestamp != ?"
-               where-clause)
-       (append (list timestamp) where-params (list timestamp)))
+      (when timestamp
+        (sqlite-execute
+         db
+         (format "UPDATE message SET timestamp = ? WHERE %s AND timestamp != ?"
+                 where-clause)
+         (append (list timestamp) where-params (list timestamp))))
       ;; Replace failed-decrypt placeholder if new body is real text.
       (when (and body
                  (not (jabber--decrypt-failure-body-p body)))
@@ -689,8 +689,8 @@ ACCOUNT is the bare JID of the local account.
 PEER is the bare JID of the contact or room.
 DIRECTION is \"in\" or \"out\".
 TYPE is the message type (\"chat\", \"groupchat\", \"headline\").
-BODY is the message text.
-TIMESTAMP is a unix epoch integer.
+BODY is the message text.  TIMESTAMP is a unix epoch integer, or
+nil when the source has no authoritative timestamp.
 Optional RESOURCE is the sender resource.
 Optional STANZA-ID is the XEP-0359 origin id.
 Optional SERVER-ID is the XEP-0359 server-assigned id.
@@ -701,13 +701,14 @@ Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted.
 Optional REPLY is a reply metadata plist from
 `jabber-db--extract-reply-fields'."
   (when-let* ((db (jabber-db-ensure-open)))
-    (let ((dup-id-col (jabber-db--detect-duplicate
-                       db account peer timestamp body stanza-id server-id
-                       type)))
+    (let* ((stored-timestamp (or timestamp (floor (float-time))))
+           (dup-id-col (jabber-db--detect-duplicate
+                        db account peer stored-timestamp body stanza-id
+                        server-id type)))
       (pcase dup-id-col
         ('nil
          (jabber-db--insert-message db account peer resource occupant-id
-                                    direction type body timestamp
+                                    direction type body stored-timestamp
                                     stanza-id server-id encrypted oob-entries
                                     reply))
         ((or 'stanza_id 'server_id)
@@ -718,8 +719,8 @@ Optional REPLY is a reply metadata plist from
            (jabber-db--backfill-reply-fields db account peer stanza-id
                                              reply)))
         ('content
-         (jabber-db--upgrade-content-match db account peer timestamp body
-                                           stanza-id server-id))))))
+         (jabber-db--upgrade-content-match
+          db account peer stored-timestamp body stanza-id server-id))))))
 
 ;;; Receipt updates
 

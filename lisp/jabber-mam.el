@@ -358,18 +358,19 @@ cannot be determined."
 (defun jabber-mam--track-sync-ids (qid archive-id stanza-id ts)
   "Update sync-received tracking for query QID.
 ARCHIVE-ID and STANZA-ID are recorded as seen.  TS updates the
-min/max timestamp range."
+min/max timestamp range when non-nil."
   (when-let* ((sync-data (cdr (assoc qid jabber-mam--sync-received
                                      #'string=)))
               (ids (plist-get sync-data :ids)))
     (when archive-id (puthash archive-id t ids))
     (when stanza-id (puthash stanza-id t ids))
-    (when (or (null (plist-get sync-data :min-ts))
-              (< ts (plist-get sync-data :min-ts)))
-      (plist-put sync-data :min-ts ts))
-    (when (or (null (plist-get sync-data :max-ts))
-              (> ts (plist-get sync-data :max-ts)))
-      (plist-put sync-data :max-ts ts))))
+    (when ts
+      (when (or (null (plist-get sync-data :min-ts))
+                (< ts (plist-get sync-data :min-ts)))
+        (plist-put sync-data :min-ts ts))
+      (when (or (null (plist-get sync-data :max-ts))
+                (> ts (plist-get sync-data :max-ts)))
+        (plist-put sync-data :max-ts ts)))))
 
 (defun jabber-mam--store-new-message-p (jc inner-msg)
   "Return non-nil when INNER-MSG should be stored as a new message for JC."
@@ -408,34 +409,33 @@ JC is the Jabber connection.  XML-DATA is the stanza."
            (fields (jabber-mam--extract-fields jc inner-msg stamp))
            (peer (plist-get fields :peer))
            (body (plist-get fields :body))
+           (timestamp (and-let* ((time (plist-get fields :timestamp)))
+                        (floor (float-time time))))
            (action (jabber-mam--message-action jc inner-msg fields)))
       (pcase action
         ((or :correct :store)
-         (let ((ts (floor (float-time
-                           (or (plist-get fields :timestamp)
-                               (current-time))))))
-           (pcase action
-             (:correct
-              (unless (jabber--decrypt-failure-body-p body)
-                (jabber-message-correct--apply
-                 (jabber-message-correct--replace-id inner-msg)
-                 body (plist-get fields :from)
-                 (string= (plist-get fields :type) "groupchat") nil
-                 (jabber-db--extract-occupant-id inner-msg)
-                 (plist-get fields :our-jid) peer nil)))
-             (:store
-              (jabber-db-store-message
-               (plist-get fields :our-jid) peer
-               (plist-get fields :direction) (plist-get fields :type)
-               body ts (jabber-jid-resource (plist-get fields :from))
-               (plist-get fields :stanza-id) archive-id
+         (pcase action
+           (:correct
+            (unless (jabber--decrypt-failure-body-p body)
+              (jabber-message-correct--apply
+               (jabber-message-correct--replace-id inner-msg)
+               body (plist-get fields :from)
+               (string= (plist-get fields :type) "groupchat") nil
                (jabber-db--extract-occupant-id inner-msg)
-               (plist-get fields :oob-entries) encrypted
-               (jabber-db--extract-reply-fields inner-msg))))
-           (jabber-mam--track-sync-ids qid archive-id
-                                       (plist-get fields :stanza-id) ts)
-           (jabber-mam--mark-dirty peer (plist-get fields :type))
-           (setcdr (cdr xml-data) nil)))
+               (plist-get fields :our-jid) peer nil)))
+           (:store
+            (jabber-db-store-message
+             (plist-get fields :our-jid) peer
+             (plist-get fields :direction) (plist-get fields :type)
+             body timestamp (jabber-jid-resource (plist-get fields :from))
+             (plist-get fields :stanza-id) archive-id
+             (jabber-db--extract-occupant-id inner-msg)
+             (plist-get fields :oob-entries) encrypted
+             (jabber-db--extract-reply-fields inner-msg))))
+         (jabber-mam--track-sync-ids qid archive-id
+                                     (plist-get fields :stanza-id) timestamp)
+         (jabber-mam--mark-dirty peer (plist-get fields :type))
+         (setcdr (cdr xml-data) nil))
         (:unwrap
          (jabber-mam--unwrap-into xml-data inner-msg archive-id))))))
 

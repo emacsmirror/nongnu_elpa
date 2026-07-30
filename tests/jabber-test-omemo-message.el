@@ -636,6 +636,94 @@ buffer-local `jabber-group'."
            (result (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)))
       (should (eq result xml-data)))))
 
+(ert-deftest jabber-test-omemo-message-empty-decrypt-failure-remains-bodyless ()
+  "A failed empty OMEMO stanza stays bodyless and retryable."
+  (let* ((detected (list :type 'omemo :parsed (list :payload nil)))
+         (jabber-chat-decrypt-handlers
+          (list
+           (cons 'omemo
+                 (list :detect (lambda (_xml) detected)
+                       :decrypt #'jabber-omemo--decrypt-handler
+                       :priority 10
+                       :error-label "OMEMO"))))
+         (jabber-chat--sorted-decrypt-handlers-cache nil)
+         (jabber-chat--decrypt-cache (make-hash-table :test #'equal))
+         (calls 0))
+    (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+               (lambda (&rest _)
+                 (cl-incf calls)
+                 (signal 'jabber-omemo-no-session
+                         '("alice@example.com" 999)))))
+      (dotimes (_ 2)
+        (let* ((xml-data '(message ((from . "alice@example.com/phone")
+                                    (type . "chat"))
+                                   (encrypted nil)))
+               (result (jabber-chat--dispatch-decrypt
+                        'fake-jc xml-data 'cache-key 'context)))
+          (should-not (jabber-xml-get-children result 'body)))))
+    (should (= calls 2))
+    (should-not (gethash 'cache-key jabber-chat--decrypt-cache))))
+
+(ert-deftest jabber-test-omemo-message-empty-generic-error-remains-bodyless ()
+  "A generic failure on an empty OMEMO stanza stays bodyless."
+  (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+             (lambda (&rest _) (error "Sender JID unknown"))))
+    (let* ((xml-data '(message ((from . "room@example.com/nick")
+                                (type . "groupchat"))
+                               (encrypted nil)))
+           (detected (list :type 'omemo :parsed (list :payload nil)))
+           (props (list :decrypt #'jabber-omemo--decrypt-handler
+                        :error-label "OMEMO"))
+           (result (jabber-chat--try-decrypt
+                    'fake-jc xml-data detected props)))
+      (should-not (jabber-xml-get-children result 'body)))))
+
+(ert-deftest jabber-test-omemo-message-empty-post-ratchet-failure-is-cached ()
+  "An empty failure after ratchet consumption is cached as bodyless."
+  (let* ((detected (list :type 'omemo :parsed (list :payload nil)))
+         (jabber-chat-decrypt-handlers
+          (list
+           (cons 'omemo
+                 (list :detect (lambda (_xml) detected)
+                       :decrypt #'jabber-omemo--decrypt-handler
+                       :priority 10
+                       :error-label "OMEMO"))))
+         (jabber-chat--sorted-decrypt-handlers-cache nil)
+         (jabber-chat--decrypt-cache (make-hash-table :test #'equal)))
+    (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+               (lambda (&rest _)
+                 (setq jabber-chat--decrypt-consumed-p t)
+                 (signal 'jabber-omemo-error
+                         '("failed after ratchet consumption")))))
+      (let* ((xml-data '(message ((from . "alice@example.com/phone")
+                                  (type . "chat"))
+                                 (encrypted nil)))
+             (result (jabber-chat--dispatch-decrypt
+                      'fake-jc xml-data 'cache-key 'context)))
+        (should-not (jabber-xml-get-children result 'body))
+        (should
+         (eq 'no-body
+             (plist-get (gethash 'cache-key jabber-chat--decrypt-cache)
+                        :outcome)))))))
+
+(ert-deftest jabber-test-omemo-message-empty-prekey-recovery-error-is-bodyless ()
+  "An empty pre-key failure stays bodyless when recovery also fails."
+  (let* ((detected (list :type 'omemo :parsed (list :payload nil)))
+         (props (list :decrypt #'jabber-omemo--decrypt-handler
+                      :error-label "OMEMO")))
+    (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
+               (lambda (&rest _)
+                 (signal 'jabber-omemo-prekey-failed
+                         '("alice@example.com" 999 "bad pre-key"))))
+              ((symbol-function 'jabber-omemo--recover-prekey-failure)
+               (lambda (&rest _) (error "Recovery failed"))))
+      (let* ((xml-data '(message ((from . "alice@example.com/phone")
+                                  (type . "chat"))
+                                 (encrypted nil)))
+             (result (jabber-chat--try-decrypt
+                      'fake-jc xml-data detected props)))
+        (should-not (jabber-xml-get-children result 'body))))))
+
 (ert-deftest jabber-test-omemo-message-decrypt-handler-rejects-payload-not-for-us ()
   "decrypt-handler re-signals when a payload-bearing stanza is not for us."
   (cl-letf (((symbol-function 'jabber-omemo--decrypt-stanza)
@@ -668,7 +756,8 @@ buffer-local `jabber-group'."
                (lambda (&rest _) nil)))
       (let ((xml-data '(message ((from . "alice@example.com/phone")
                                   (type . "chat"))))
-            (detected (list :type 'omemo :parsed nil)))
+            (detected (list :type 'omemo
+                            :parsed (list :payload "ciphertext"))))
         (should-error
          (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)
          :type 'jabber-omemo-prekey-failed)
@@ -682,7 +771,8 @@ buffer-local `jabber-group'."
                        '("alice@example.com" 999)))))
     (let ((xml-data '(message ((from . "alice@example.com/phone")
                                 (type . "chat"))))
-          (detected (list :type 'omemo :parsed nil)))
+          (detected (list :type 'omemo
+                          :parsed (list :payload "ciphertext"))))
       (should-error
        (jabber-omemo--decrypt-handler 'fake-jc xml-data detected)
        :type 'jabber-omemo-no-session))))

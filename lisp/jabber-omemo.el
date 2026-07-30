@@ -1241,6 +1241,15 @@ is the connection."
              sender-jid sender-did)
     (jabber-omemo--ensure-sessions jc sender-jid #'ignore)))
 
+(defun jabber-omemo--empty-error-result (xml-data payload err)
+  "Return XML-DATA for an empty OMEMO stanza, or re-signal ERR.
+PAYLOAD is non-nil when the stanza carries user content."
+  (if payload
+      (signal (car err) (cdr err))
+    (setq jabber-chat--decrypt-retryable-failure-p
+          (not jabber-chat--decrypt-consumed-p))
+    xml-data))
+
 (defun jabber-omemo--decrypt-handler (jc xml-data detected)
   "Decrypt OMEMO message on JC in XML-DATA.
 DETECTED is the plist from `jabber-omemo--detect-encrypted'.
@@ -1249,13 +1258,17 @@ Catches structured OMEMO errors:
 - `jabber-omemo-not-for-us': silently return XML-DATA unchanged
   (the stanza is for a different device on the same JID, or a
   heartbeat that doesn't concern us).
+- Other failures on empty OMEMO messages also return XML-DATA
+  unchanged because those stanzas carry no user content.
 - `jabber-omemo-prekey-failed': drop the stale session and
   schedule a rebuild via `jabber-omemo--recover-prekey-failure',
-  then re-signal so the dispatcher reports the failure to the
-  user.  Bundle repair happens via the lifecycle-driven
+  then re-signal payload failures so the dispatcher reports them to
+  the user.  Empty failures remain bodyless.  Bundle repair happens
+  via the lifecycle-driven
   `--publish-bundle-if-needed' trigger, not from the decrypt path.
-Other OMEMO errors propagate unchanged so the dispatcher can
-replace the body with a generic decrypt-failed placeholder."
+Other payload failures propagate unchanged so the dispatcher can
+replace the body with a generic decrypt-failed placeholder.  Other
+empty failures remain bodyless."
   (let* ((from (jabber-xml-get-attribute xml-data 'from))
          (id (jabber-xml-get-attribute xml-data 'id))
          (group (and from (jabber-jid-user from)))
@@ -1263,7 +1276,8 @@ replace the body with a generic decrypt-failed placeholder."
                         (jabber-omemo--muc-echo-key jc group from id)))
          (cached (and echo-key
                       (gethash echo-key
-                               jabber-omemo--sent-muc-plaintexts))))
+                               jabber-omemo--sent-muc-plaintexts)))
+         (payload (plist-get (plist-get detected :parsed) :payload)))
     (if cached
         (progn
           (remhash echo-key jabber-omemo--sent-muc-plaintexts)
@@ -1274,15 +1288,22 @@ replace the body with a generic decrypt-failed placeholder."
          (jabber-omemo--decrypt-stanza
           jc xml-data (plist-get detected :parsed))
        (jabber-omemo-not-for-us
-        (if (plist-get (plist-get detected :parsed) :payload)
-            (signal (car err) (cdr err))
-          xml-data))
+        (jabber-omemo--empty-error-result xml-data payload err))
        (jabber-omemo-prekey-failed
         (message "OMEMO: pre-key decrypt failed: %s"
                  (error-message-string err))
         (pcase-let ((`(,sender-jid ,sender-did ,_reason) (cdr err)))
-          (jabber-omemo--recover-prekey-failure jc sender-jid sender-did))
-        (signal (car err) (cdr err)))))
+          (let ((recovery-error
+                 (condition-case recovery-err
+                     (progn
+                       (jabber-omemo--recover-prekey-failure
+                        jc sender-jid sender-did)
+                       nil)
+                   (error recovery-err))))
+            (jabber-omemo--empty-error-result
+             xml-data payload (or recovery-error err)))))
+       (error
+        (jabber-omemo--empty-error-result xml-data payload err))))
        (_ xml-data)))))
 
 (defun jabber-omemo--send-heartbeat (jc to device-id heartbeat-bytes)

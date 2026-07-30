@@ -546,7 +546,7 @@ skipped message keys, so no fresh-session fallback is needed."
         (should-error (jabber-omemo--decrypt-handler
                        'fake-jc
                        '(message ((from . "alice@example.com/phone")))
-                       '(:type omemo :parsed fake-parsed))
+                       '(:type omemo :parsed (:payload "ciphertext")))
                       :type 'jabber-omemo-prekey-failed)
         (should (equal '("me@example.com" "alice@example.com" 7) deleted))
         (should (equal "alice@example.com" ensured))

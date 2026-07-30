@@ -67,6 +67,18 @@ TYPE defaults to \"chat\"."
                                            (id . ,stanza-id))
                                           (body () ,(format "Message %d" index))))))))
 
+(defun jabber-test-mam--without-delay (stanza)
+  "Return a copy of MAM result STANZA without its delay element."
+  (let* ((copy (copy-tree stanza))
+         (result (jabber-xml-child-with-xmlns copy jabber-mam-xmlns))
+         (forwarded (car (jabber-xml-get-children result 'forwarded))))
+    (setcdr (cdr forwarded)
+            (cl-remove-if
+             (lambda (child)
+               (eq (jabber-xml-node-name child) 'delay))
+             (jabber-xml-node-children forwarded)))
+    copy))
+
 (defun jabber-test-mam--make-correction-message
     (archive-id stanza-id replace-id from body)
   "Build a fake MAM correction stanza.
@@ -232,6 +244,44 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
                                    0 (+ 1700000000 (* count 86400))
                                    -1)))
         (should (= count (length rows)))))))
+
+(ert-deftest jabber-test-mam-replay-without-delay-preserves-timestamp ()
+  "A replay without a delay stamp does not make an old message new."
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
+           (jabber-muc-participants nil)
+           (stanza (jabber-test-mam--make-message 1))
+           (replay (jabber-test-mam--without-delay stanza))
+           (ids (make-hash-table :test #'equal)))
+      (jabber-mam--process-message jc stanza)
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat"
+       "newer local message" 1800000000 nil nil "newer-server-id")
+      (let ((jabber-mam--sync-received
+             (list
+              (cons jabber-test-mam-queryid
+                    (list :ids ids :min-ts nil :max-ts nil
+                          :account "me@example.com"
+                          :peer "friend@example.com")))))
+        (cl-letf (((symbol-function 'current-time)
+                   (lambda () (seconds-to-time 1800000000))))
+          (jabber-mam--process-message jc replay))
+        (should
+         (equal '((1700086400))
+                (sqlite-select
+                 jabber-db--connection
+                 "SELECT timestamp FROM message WHERE server_id = ?"
+                 '("archive-000001"))))
+        (let ((sync-data (cdr (car jabber-mam--sync-received))))
+          (should-not (plist-get sync-data :min-ts))
+          (should-not (plist-get sync-data :max-ts)))
+        (jabber-mam--reconcile-sync jabber-test-mam-queryid)
+        (should
+         (sqlite-select
+          jabber-db--connection
+          "SELECT 1 FROM message WHERE server_id = ?"
+          '("newer-server-id")))))))
 
 ;;; Group 3: Transaction batching performance
 

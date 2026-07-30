@@ -677,6 +677,9 @@ body with \"[LABEL: could not decrypt]\" and return XML-DATA."
 (defvar jabber-chat--decrypt-consumed-p nil
   "Non-nil when a decrypt handler consumed state before failing.")
 
+(defvar jabber-chat--decrypt-retryable-failure-p nil
+  "Non-nil when a decrypt failure may be retried safely.")
+
 ;;; Decrypt dedup cache
 
 (defvar jabber-chat--decrypt-cache (make-hash-table :test #'equal)
@@ -686,7 +689,9 @@ Values pair the outer stanza context with the decrypted outcome.
 Ratchet decryption is stateful, so repeated ciphertext must never
 reach the ratchet twice.  A repeat with changed outer behavior is
 rejected instead of replaying plaintext under the changed wrapper.
-Failures are never cached, keeping transient failures retryable.")
+Failures before state consumption remain retryable.  Outcomes after
+state consumption are cached so ciphertext never reaches the ratchet
+twice.")
 
 (defun jabber-chat--decrypt-cache-canonical-xml (node)
   "Return a stable representation of XML NODE."
@@ -773,13 +778,14 @@ On first call, loads crypto modules so their handlers are registered.
 Tries handlers in :priority order.  Returns XML-DATA, possibly
 with its body replaced by decrypted plaintext (or an error
 placeholder).  Skips dispatch when XML-DATA has no `from' attribute.
-An encrypted stanza reaches its handler at most once per session:
+A cached outcome reaches its handler at most once per session:
 repeated deliveries are served from `jabber-chat--decrypt-cache'
-instead of re-running the ratchet.  A failed decrypt leaves a
-placeholder body and is not cached, so a later delivery may
-recover; handlers may additionally schedule their own repair (see
-`jabber-omemo--recover-prekey-failure').  JC is the Jabber
-connection."
+instead of re-running the ratchet.  Failures before state consumption
+remain retryable and may reach the handler again.  Outcomes after state
+consumption are cached; payload failures leave a placeholder body while
+empty failures stay bodyless.  Handlers may additionally schedule their
+own repair (see `jabber-omemo--recover-prekey-failure').  JC is the
+Jabber connection."
   (unless jabber-chat--crypto-loaded
     (condition-case nil (require 'jabber-omemo nil t) (error nil))
     (condition-case nil (require 'jabber-openpgp nil t) (error nil))
@@ -815,10 +821,12 @@ When KEY is non-nil and a handler ran, record the outcome in
            for parsed = (funcall (plist-get props :detect) xml-data)
            when parsed
            return (let* ((jabber-chat--decrypt-consumed-p nil)
+                         (jabber-chat--decrypt-retryable-failure-p nil)
                          (result (jabber-chat--try-decrypt
                                   jc xml-data parsed props))
                          (outcome (jabber-chat--decrypt-outcome result)))
-                    (when key
+                    (when (and key
+                               (not jabber-chat--decrypt-retryable-failure-p))
                       (when (or outcome jabber-chat--decrypt-consumed-p)
                         (jabber-chat--decrypt-cache-put
                          key (list :context context
