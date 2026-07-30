@@ -87,6 +87,91 @@ Third item is the send function.")
 
 ;;
 
+(defun jabber-conn--normalize-proxy (proxy)
+  "Return validated PROXY settings, or nil when PROXY is nil."
+  (when proxy
+    (let ((type (plist-get proxy :type))
+          (host (plist-get proxy :host))
+          (port (plist-get proxy :port)))
+      (unless (eq type 'socks5)
+        (error "Unsupported Jabber proxy type: %S" type))
+      (unless (and (stringp host) (> (length host) 0))
+        (error "Jabber SOCKS5 proxy host must be a non-empty string"))
+      (unless (and (integerp port) (<= 1 port) (<= port 65535))
+        (error "Jabber SOCKS5 proxy port must be between 1 and 65535"))
+      proxy)))
+
+(defun jabber-conn--socks5-request (host port)
+  "Return a SOCKS5 CONNECT request for HOST and PORT."
+  (let* ((name (encode-coding-string host 'utf-8 t))
+         (length (length name)))
+    (unless (<= length 255)
+      (error "SOCKS5 target hostname is longer than 255 bytes"))
+    (unless (and (integerp port) (<= 1 port) (<= port 65535))
+      (error "SOCKS5 target port must be between 1 and 65535"))
+    (concat (unibyte-string 5 1 0 3 length)
+            name
+            (unibyte-string (ash port -8) (logand port 255)))))
+
+(defun jabber-conn--socks5-parse-method (bytes)
+  "Parse a SOCKS5 method response from BYTES."
+  (if (< (length bytes) 2)
+      '(:status incomplete)
+    (let ((version (aref bytes 0))
+          (method (aref bytes 1)))
+      (cond
+       ((/= version 5)
+        '(:status error :message "Invalid SOCKS5 method response version"))
+       ((= method 0)
+        (list :status 'ok :rest (substring bytes 2)))
+       ((= method 255)
+        '(:status error :message "SOCKS5 proxy has no acceptable authentication method"))
+       (t
+        '(:status error :message "SOCKS5 proxy requires unsupported authentication"))))))
+
+(defconst jabber-conn--socks5-reply-errors
+  '((1 . "general server failure")
+    (2 . "connection not allowed")
+    (3 . "network unreachable")
+    (4 . "host unreachable")
+    (5 . "connection refused")
+    (6 . "TTL expired")
+    (7 . "command not supported")
+    (8 . "address type not supported"))
+  "SOCKS5 CONNECT reply error messages.")
+
+(defun jabber-conn--socks5-reply-length (bytes)
+  "Return the complete SOCKS5 reply length for BYTES.
+Return nil when more bytes are needed, or signal on an invalid address type."
+  (pcase (aref bytes 3)
+    (1 10)
+    (3 (when (>= (length bytes) 5)
+         (+ 7 (aref bytes 4))))
+    (4 22)
+    (_ (error "Invalid SOCKS5 reply address type"))))
+
+(defun jabber-conn--socks5-parse-reply (bytes)
+  "Parse a SOCKS5 CONNECT response from BYTES."
+  (if (< (length bytes) 4)
+      '(:status incomplete)
+    (cond
+     ((/= (aref bytes 0) 5)
+      '(:status error :message "Invalid SOCKS5 CONNECT response version"))
+     ((/= (aref bytes 2) 0)
+      '(:status error :message "Invalid SOCKS5 CONNECT response reserved byte"))
+     (t
+      (condition-case err
+          (let ((length (jabber-conn--socks5-reply-length bytes)))
+            (if (or (null length) (< (length bytes) length))
+                '(:status incomplete)
+              (let ((reply (aref bytes 1)))
+                (if (= reply 0)
+                    (list :status 'ok :rest (substring bytes length))
+                  (list :status 'error :message
+                        (or (alist-get reply jabber-conn--socks5-reply-errors)
+                            (format "unknown SOCKS5 failure %d" reply)))))))
+        (error (list :status 'error :message (error-message-string err))))))))
+
 (defun jabber-get-connect-function (type)
   "Get the connect function associated with TYPE.
 TYPE is a symbol; see `jabber-connection-type'."
@@ -99,15 +184,17 @@ TYPE is a symbol; see `jabber-connection-type'."
   (let ((entry (assq type jabber-connect-methods)))
     (nth 2 entry)))
 
-(defun jabber-srv-targets (server network-server port)
+(defun jabber-srv-targets (server network-server port &optional proxy)
   "Find connection targets for SERVER.
 If NETWORK-SERVER and/or PORT are specified, use them (always STARTTLS).
+When PROXY is non-nil, bypass SRV lookup and use the explicit target
+or SERVER on port 5222.
 Otherwise query SRV records; when `jabber-direct-tls-lookup' is non-nil,
 query both _xmpps-client and _xmpp-client per XEP-0368.
 
 Returns a list of (HOST PORT DIRECTTLS-P) where DIRECTTLS-P is
 non-nil for direct TLS targets."
-  (if (or network-server port)
+  (if (or proxy network-server port)
       ;; User override: cannot assume direct TLS without SRV.
       (list (list (or network-server server)
 		  (or port 5222)
@@ -130,7 +217,9 @@ PORT is the explicit port or nil for SRV/defaults.
 Send a message of the form (:connected CONNECTION) to FSM if
 connection succeeds.  Send a message (:connection-failed ERRORS) if
 connection fails."
-  (jabber-network-connect-async fsm server network-server port))
+  (jabber-network-connect-async
+   fsm server network-server port
+   (plist-get (fsm-get-state-data fsm) :proxy)))
 
 (defun jabber-conn--tls-parameters (server)
   "Build :tls-parameters for direct TLS to SERVER.
@@ -151,19 +240,79 @@ TCP timeout instead."
 		 (const :tag "No timeout" nil))
   :group 'jabber-conn)
 
-(defun jabber-conn--make-process (host port buffer directtls-p server)
+(defun jabber-conn--make-process
+    (host port buffer directtls-p server &optional proxy)
   "Create a network process connecting to HOST:PORT in BUFFER.
-When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER."
+When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER.
+When PROXY is non-nil, connect to its endpoint using binary coding."
   (let ((args (list :name "jabber"
 		    :buffer buffer
-		    :host host :service port
-		    :coding 'utf-8
+		    :host (or (plist-get proxy :host) host)
+		    :service (or (plist-get proxy :port) port)
+		    :coding (if proxy 'binary 'utf-8)
 		    :nowait t)))
     (when directtls-p
       (setq args (nconc args
 			(list :tls-parameters
 			      (jabber-conn--tls-parameters server)))))
     (apply #'make-network-process args)))
+
+(defun jabber-conn--socks5-step (state bytes host port)
+  "Advance SOCKS5 STATE with BYTES for HOST and PORT.
+Return a plist describing the next state, bytes to send, success,
+or an error."
+  (let* ((stage (plist-get state :stage))
+         (pending (concat (plist-get state :pending) bytes))
+         (result (if (eq stage 'method)
+                     (jabber-conn--socks5-parse-method pending)
+                   (jabber-conn--socks5-parse-reply pending))))
+    (pcase (plist-get result :status)
+      ('incomplete (list :state (list :stage stage :pending pending)))
+      ('error (list :error (plist-get result :message)))
+      ('ok
+       (if (eq stage 'method)
+           (list :state (list :stage 'reply
+                              :pending (plist-get result :rest))
+                 :send (jabber-conn--socks5-request host port))
+         (list :connected t :rest (plist-get result :rest)))))))
+
+(defun jabber-conn--socks5-filter (expected host port success failure)
+  "Return a SOCKS5 filter for EXPECTED connecting to HOST and PORT.
+Call SUCCESS after negotiation, or FAILURE with an error message."
+  (let ((state (list :stage 'method :pending (unibyte-string)))
+        settled)
+    (lambda (process bytes)
+      (when (and (eq process expected) (not settled))
+        (condition-case err
+            (let ((result (jabber-conn--socks5-step state bytes host port)))
+              (cond
+               ((plist-get result :error)
+                (setq settled t)
+                (funcall failure process (plist-get result :error)))
+               ((plist-get result :connected)
+                (setq settled t)
+                (set-process-filter process nil)
+                (set-process-coding-system process 'utf-8 'utf-8)
+                (funcall success process))
+               (t
+                (setq state (plist-get result :state))
+                (when-let* ((send (plist-get result :send)))
+                  (process-send-string process send)))))
+          (error
+           (setq settled t)
+           (funcall failure process (error-message-string err))))))))
+
+(defun jabber-conn--start-socks5 (process host port success failure)
+  "Start SOCKS5 negotiation on PROCESS for HOST and PORT.
+Call SUCCESS or FAILURE when negotiation reaches a terminal state."
+  (condition-case err
+      (progn
+        (set-process-coding-system process 'binary 'binary)
+        (set-process-filter
+         process
+         (jabber-conn--socks5-filter process host port success failure))
+        (process-send-string process (unibyte-string 5 1 0)))
+    (error (funcall failure process (error-message-string err)))))
 
 (defun jabber-conn--delete-failed-process (connection buffer)
   "Delete failed CONNECTION and BUFFER unless debug retention is enabled."
@@ -173,11 +322,14 @@ When DIRECTTLS-P is non-nil, use TLS-on-connect with SNI for SERVER."
              (not jabber-debug-keep-process-buffers))
     (kill-buffer buffer)))
 
-(defun jabber-network-connect-async (fsm server network-server port)
+(defun jabber-network-connect-async
+    (fsm server network-server port &optional proxy)
   "Asynchronously connect FSM to SERVER, trying each SRV target in turn.
-NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
+NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults.
+When PROXY is non-nil, establish SOCKS5 before reporting success."
   ;; Get all potential targets...
-  (let ((targets (jabber-srv-targets server network-server port))
+  (let* ((proxy (jabber-conn--normalize-proxy proxy))
+         (targets (jabber-srv-targets server network-server port proxy))
 	errors)
     ;; ...and connect to them one after another, asynchronously, until
     ;; connection succeeds.
@@ -201,10 +353,15 @@ NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
 			   (unless settled
 			     (setq settled t)
 			     (cancel-timeout)
-			     ;; This mustn't be `fsm-send-sync', because the FSM
-			     ;; needs to change the sentinel, which cannot be done
-			     ;; from inside the sentinel.
-			     (fsm-send fsm (list :connected c directtls-p))))
+			     ;; Direct success runs inside the old sentinel, so it
+			     ;; must remain asynchronous.  SOCKS success runs in
+			     ;; the filter and changes sentinel ownership before
+			     ;; a close can be delivered.
+			     (if proxy
+				 (fsm-send-sync
+				  fsm (list :connected c directtls-p))
+			       (fsm-send
+				fsm (list :connected c directtls-p)))))
 			 (connection-failed
 			   (c status)
 			   (unless settled
@@ -234,19 +391,25 @@ NETWORK-SERVER and PORT are explicit overrides, or nil to use SRV/defaults."
                      (setq process-buffer buffer)
                      (setq proc
                            (jabber-conn--make-process
-                            host svc buffer directtls-p server))
+                            host svc buffer directtls-p server proxy))
 		     (set-process-sentinel
 		      proc
 		      (lambda (connection status)
 			(cond
 			 ((string-match "^open" status)
-			  (connection-successful connection))
+			  (if proxy
+			      (jabber-conn--start-socks5
+			       connection host svc
+			       #'connection-successful #'connection-failed)
+			    (connection-successful connection)))
 			 ((string-match "^failed" status)
 			  (connection-failed connection status))
 			 ((string-match "^deleted" status)
 			  nil)
 			 (t
-			  (message "Unknown sentinel status `%s'" status)))))
+			  (if proxy
+			      (connection-failed connection status)
+			    (message "Unknown sentinel status `%s'" status))))))
 		     (when jabber-connection-timeout
 		       (setq timeout-timer
 			     (run-at-time

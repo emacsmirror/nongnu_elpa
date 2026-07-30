@@ -97,6 +97,9 @@ The following keys can be present in the alist:
   :connection-type is a symbol.  Valid symbols are `starttls'
   and `network'.
 
+  :proxy is a plist describing a SOCKS5 proxy.  It has the form
+  (:type socks5 :host HOST :port PORT).
+
 Only JID is mandatory.  The rest can be guessed at run-time.
 
 Examples:
@@ -126,7 +129,16 @@ One disabled account with a non-standard port:
 			   (const :format "" :connection-type)
 			   (choice :tag "Connection type"
 				   (const :tag "STARTTLS" starttls)
-				   (const :tag "Unencrypted" network))))))
+				   (const :tag "Unencrypted" network)))
+		     (cons :format "%v"
+			   (const :format "" :proxy)
+			   (list :tag "SOCKS5 proxy"
+				 (const :format "" :type)
+				 (const :format "" socks5)
+				 (const :format "" :host)
+				 (string :tag "Host")
+				 (const :format "" :port)
+				 (integer :tag "Port" 1080))))))
   :group 'jabber)
 
 (defcustom jabber-default-resource "emacs"

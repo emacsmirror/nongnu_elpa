@@ -216,6 +216,19 @@ XMPPS-ANSWERS is returned for _xmpps queries, XMPP-ANSWERS for _xmpp."
     (should (= (length result) 1))
     (should (equal (car result) '("example.com" 5223 nil)))))
 
+(ert-deftest jabber-test-srv-targets-proxy-bypasses-lookup ()
+  "Proxy targets use the configured host directly without SRV lookup."
+  (cl-letf (((symbol-function 'jabber-srv-lookup-mixed)
+             (lambda (&rest _) (ert-fail "Unexpected SRV lookup"))))
+    (let ((proxy '(:type socks5 :host "127.0.0.1" :port 9050)))
+      (should
+       (equal (jabber-srv-targets "example.com" nil nil proxy)
+              '(("example.com" 5222 nil))))
+      (should
+       (equal (jabber-srv-targets
+               "example.com" "xmpp.example.net" 443 proxy)
+              '(("xmpp.example.net" 443 nil)))))))
+
 (ert-deftest jabber-test-srv-targets-fallback ()
   "No SRV records falls back to server:5222."
   (cl-letf (((symbol-function 'jabber-srv-lookup-mixed)

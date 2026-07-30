@@ -179,13 +179,14 @@ With many prefix arguments, one less is passed to `jabber-connect'."
 				 (jabber-read-password (jabber-jid-user jid))))
 		   (network-server (cdr (assq :network-server alist)))
 		   (port (cdr (assq :port alist)))
-		   (connection-type (cdr (assq :connection-type alist))))
+		   (connection-type (cdr (assq :connection-type alist)))
+		   (proxy (cdr (assq :proxy alist))))
 	      (jabber-connect
 	       (jabber-jid-username jid)
 	       (jabber-jid-server jid)
 	       (or (jabber-jid-resource jid) jabber-default-resource)
 	       nil password network-server
-	       port connection-type)
+	       port connection-type proxy)
 	      (setq connected-one t))))
 	(unless connected-one
 	  (message "All configured Jabber accounts are already connected"))))))
@@ -193,17 +194,17 @@ With many prefix arguments, one less is passed to `jabber-connect'."
 ;;;###autoload (autoload 'jabber-connect "jabber" "Connect to the Jabber server and start a Jabber XML stream.\nWith prefix argument, register a new account.\nWith double prefix argument, specify more connection details." t)
 (defun jabber-connect (username server resource &optional
 				registerp password network-server
-				port connection-type)
+				port connection-type proxy)
   "Connect USERNAME@SERVER/RESOURCE to the Jabber server.
 When REGISTERP is non-nil, register a new account.
-Optional PASSWORD, NETWORK-SERVER, PORT and CONNECTION-TYPE
+Optional PASSWORD, NETWORK-SERVER, PORT, CONNECTION-TYPE and PROXY
 override the defaults from `jabber-account-list'."
   (interactive
    (let* ((jid (completing-read "Enter your JID: " jabber-account-list
 				nil nil nil 'jabber-account-history))
 	  (entry (assoc jid jabber-account-list))
 	  (alist (cdr entry))
-	  password network-server port connection-type registerp)
+	  password network-server port connection-type proxy registerp)
      (when (zerop (length jid))
        (error "No JID specified"))
      (unless (jabber-jid-username jid)
@@ -214,7 +215,8 @@ override the defaults from `jabber-account-list'."
        (setq password (cdr (assq :password alist)))
        (setq network-server (cdr (assq :network-server alist)))
        (setq port (cdr (assq :port alist)))
-       (setq connection-type (cdr (assq :connection-type alist))))
+       (setq connection-type (cdr (assq :connection-type alist)))
+       (setq proxy (cdr (assq :proxy alist))))
      (when (equal current-prefix-arg '(16))
        ;; Double prefix arg: ask about everything.
        ;; (except password, which is asked about later anyway)
@@ -246,7 +248,7 @@ override the defaults from `jabber-account-list'."
      (list (jabber-jid-username jid)
 	   (jabber-jid-server jid)
 	   (or (jabber-jid-resource jid) jabber-default-resource)
-	   registerp password network-server port connection-type)))
+	   registerp password network-server port connection-type proxy)))
 
   (require 'jabber)
 
@@ -260,15 +262,17 @@ override the defaults from `jabber-account-list'."
 	       jabber-connections))
       (message "Already connected to %s@%s"
 	       username server)
-    (push (start-jabber-connection username server resource
-				   registerp password
-				   network-server port connection-type)
-	  jabber-connections)))
+    (let ((proxy (jabber-conn--normalize-proxy proxy)))
+      (push (start-jabber-connection username server resource
+				     registerp password
+				     network-server port connection-type proxy)
+	    jabber-connections))))
 
 (define-state-machine jabber-connection
 		      :start ((username server resource
 					registerp password
-					network-server port connection-type)
+					network-server port connection-type
+					&optional proxy)
 			      "Start a Jabber connection."
 			      (let* ((connection-type
 				      (or connection-type jabber-default-connection-type))
@@ -288,7 +292,8 @@ override the defaults from `jabber-account-list'."
 					     :connection-type connection-type
 					     :encrypted (eq connection-type 'ssl)
 					     :network-server network-server
-					     :port port))))))
+					     :port port
+					     :proxy proxy))))))
 
 (define-enter-state jabber-connection nil
 		    (fsm state-data)
