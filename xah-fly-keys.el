@@ -4,7 +4,7 @@
 
 ;; Author: Xah Lee ( http://xahlee.info/ )
 ;; Maintainer: Xah Lee <xah@xahlee.org>
-;; Version: 28.11.20260712150256
+;; Version: 28.11.20260729193514
 ;; Created: 2013-09-10
 ;; Package-Requires: ((emacs "28.3"))
 ;; Keywords: convenience, vi, vim, ergoemacs, keybinding
@@ -2473,7 +2473,7 @@ URL `http://xahlee.info/emacs/emacs/elisp_run_current_file.html'
     ("php" . "php")
     ("pl" . "perl")
     ("ps1" . "pwsh")
-    ("py" . "python")
+    ("py" . "python3")
     ("py2" . "python2")
     ("py3" . "python3")
     ("rb" . "ruby")
