@@ -70,6 +70,7 @@ are not filtered against it."
 (defvar jabber-point-insert)
 
 (declare-function jabber-chat--unwrap-carbon "jabber-chat" (jc xml-data))
+(declare-function jabber-muc-find-buffer "jabber-muc" (group &optional jc))
 
 ;;; Pure helpers
 
@@ -284,12 +285,12 @@ as XEP-0428 fallback for reactions does not count as a real body."
         from
       (jabber-jid-user from))))
 
-(defun jabber-reactions--buffer-for-stanza (from type)
-  "Return the displayed chat buffer for incoming FROM and message TYPE."
+(defun jabber-reactions--buffer-for-stanza (jc from type)
+  "Return the displayed chat buffer for incoming FROM and message TYPE on JC."
   (when from
-    (jabber-buffer-registry-find
-     (if (string= type "groupchat") 'muc 'chat)
-     (jabber-jid-user from))))
+    (if (string= type "groupchat")
+        (jabber-muc-find-buffer (jabber-jid-user from) jc)
+      (jabber-buffer-registry-find 'chat (jabber-jid-user from)))))
 
 (defun jabber-reactions--storage-peer (jc message type)
   "Return the DB peer for reaction-bearing MESSAGE on JC with TYPE."
@@ -458,7 +459,8 @@ Update stored and visible reaction state for the sending entity."
                    jc message (car parsed) sender (cadr parsed))
                   :stale)
         (when-let* ((buffer (or carbon-buffer
-                                (jabber-reactions--buffer-for-stanza from type))))
+                                 (jabber-reactions--buffer-for-stanza
+                                  jc from type))))
           (with-current-buffer buffer
             (when-let* ((node (jabber-chat-ewoc-find-by-id (car parsed))))
               (jabber-reactions--apply-incoming-update node sender (cadr parsed)))))))))

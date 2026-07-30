@@ -9,6 +9,7 @@
 (require 'ert)
 (require 'jabber-db)
 (require 'jabber-reactions)
+(require 'jabber-muc)
 
 (declare-function jabber-db-replace-reactions
                   "jabber-db" (account peer type target-id sender reactions
@@ -361,6 +362,53 @@
         (jabber-reactions--handle-message 'fake-jc outer)
         (should (equal (plist-get (cadr (ewoc-data node)) :reactions)
                        '(("romeo@example.com" . ("🔥")))))))))
+
+(ert-deftest jabber-test-reactions-handle-muc-uses-account-buffer ()
+  "Incoming MUC reaction updates the buffer for its account."
+  (let ((jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+        (group "room@conference.example.com")
+        (a (generate-new-buffer " *reaction-muc-a*"))
+        (b (generate-new-buffer " *reaction-muc-b*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                   (lambda (jc)
+                     (if (eq jc 'jc-a) "a@example.com" "b@example.com")))
+                  ((symbol-function 'jabber-db-replace-reactions)
+                   (lambda (&rest _args) t))
+                  ((symbol-function 'jabber-chat-ewoc-invalidate) #'ignore))
+          (dolist (entry `((,a . jc-a) (,b . jc-b)))
+            (with-current-buffer (car entry)
+              (setq-local jabber-group group)
+              (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+              (let* ((msg '(:server-id "target-1" :body "hello"))
+                     (node (ewoc-enter-last jabber-chat-ewoc
+                                            (list :foreign msg))))
+                (setq-local jabber-chat--msg-nodes
+                            (make-hash-table :test #'equal))
+                (puthash "target-1" node jabber-chat--msg-nodes))
+              (jabber-buffer-registry-register
+               'muc (jabber-muc--buffer-key (cdr entry) group))))
+          (jabber-reactions--handle-message
+           'jc-a
+           `(message ((from . ,(concat group "/alice"))
+                      (type . "groupchat"))
+                     (reactions ((xmlns . ,jabber-reactions-xmlns)
+                                 (id . "target-1"))
+                                (reaction nil "👍"))))
+          (with-current-buffer a
+            (should (equal
+                     (plist-get
+                      (cadr (ewoc-data (gethash "target-1"
+                                               jabber-chat--msg-nodes)))
+                      :reactions)
+                     `((,(concat group "/alice") . ("👍"))))))
+          (with-current-buffer b
+            (should-not
+             (plist-get
+              (cadr (ewoc-data (gethash "target-1" jabber-chat--msg-nodes)))
+              :reactions))))
+      (kill-buffer a)
+      (kill-buffer b))))
 
 (ert-deftest jabber-test-reactions-handle-multiple-payloads-ignores-update ()
   "Incoming stanzas with multiple reactions payloads are ignored."
