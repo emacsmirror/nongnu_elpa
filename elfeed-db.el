@@ -379,33 +379,22 @@ The FEED-OR-ID may be a feed struct or a feed ID (url)."
 
 (defun elfeed-db-load ()
   "Load the database index from the filesystem."
-  (let ((index (expand-file-name "index" elfeed-db-directory))
-        (enable-local-variables nil)) ; don't set local variables from index!
-    (if (not (file-exists-p index))
-        (setf elfeed-db
-              (list :version elfeed-db-version
-                    :feeds (make-hash-table :test #'equal)
-                    :entries (make-hash-table :test #'equal)
-                    :index (avl-tree-create #'elfeed-db-compare)))
-      ;; Override the default value for major-mode. There is no
-      ;; preventing find-file-noselect from starting the default major
-      ;; mode while also having it handle buffer conversion. Some
-      ;; major modes crash Emacs when enabled in large buffers (e.g.
-      ;; org-mode). This includes the Elfeed index, so we must not let
-      ;; this happen.
-      (cl-letf (((default-value 'major-mode) 'fundamental-mode))
-        (with-current-buffer (find-file-noselect index :nowarn)
-          (goto-char (point-min))
-          ;; May need to skip over dummy database
-          (let ((db-1 (read (current-buffer)))
-                (db-2 (ignore-errors (read (current-buffer)))))
-            (setf elfeed-db (or db-2 db-1)))
-          (kill-buffer))))
-    ;; Perform an upgrade if necessary and possible
-    (unless (equal (plist-get elfeed-db :version) elfeed-db-version)
-      (setq elfeed-db nil)
+  (let* ((file (expand-file-name "index" elfeed-db-directory))
+         (db (if (file-exists-p file)
+                 (with-temp-buffer
+                   (insert-file-contents file)
+                   ;; May need to skip over dummy database
+                   (let ((db-1 (read (current-buffer)))
+                         (db-2 (ignore-errors (read (current-buffer)))))
+                     (or db-2 db-1)))
+               (list :version elfeed-db-version
+                     :feeds (make-hash-table :test #'equal)
+                     :entries (make-hash-table :test #'equal)
+                     :index (avl-tree-create #'elfeed-db-compare)))))
+    (unless (equal (plist-get db :version) elfeed-db-version)
       (error "Elfeed database format is outdated.  Please upgrade first using an older version of Elfeed"))
-    (setf elfeed-db-feeds (plist-get elfeed-db :feeds)
+    (setf elfeed-db db
+          elfeed-db-feeds (plist-get elfeed-db :feeds)
           elfeed-db-entries (plist-get elfeed-db :entries)
           elfeed-db-index (plist-get elfeed-db :index)
           ;; Internal function use required for security!
