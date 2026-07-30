@@ -3236,6 +3236,84 @@
            (should (equal (plist-get tool :status) "completed"))
            (should-not hermes-chat--pending-assistant-id)))))))
 
+(ert-deftest hermes-chat-dashboard-drops-late-settled-turn-events ()
+  "Late fallback events must not appear after a newer turn's final reply."
+  (let ((client (hermes-test--dashboard-client))
+        callback interrupt-resolve)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setq callback (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _args) 'prompt-request))
+              ((symbol-function 'hermes-dashboard-transport-session-interrupt)
+               (lambda (_client &rest args)
+                 (setq interrupt-resolve (plist-get args :resolve)))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (hermes-chat-interrupt)
+         (funcall callback
+                  '(:type done :session-id "sid-active" :status "interrupted"))
+         (funcall interrupt-resolve '((status . "ok")))
+         (hermes-chat--activate-backend-turn "second")
+         (funcall callback
+                  '(:type done :session-id "sid-active" :content "second reply"))
+         (funcall callback
+                  '(:type tool
+                    :session-id "sid-active"
+                    :tool-call-id "late-tool"
+                    :name "terminal"
+                    :status "completed"
+                    :preview "late output"))
+         (let ((entries (hermes-chat--entries)))
+           (should (equal
+                    (mapcar (lambda (entry) (plist-get entry :role)) entries)
+                    '(user assistant status user assistant)))
+           (should (equal
+                    (plist-get (hermes-test--last-assistant-entry) :content)
+                    "second reply"))))))))
+
+(ert-deftest hermes-chat-dashboard-handles-close-after-settled-turn ()
+  "A current transport close must clear session state after reply settlement."
+  (let ((client (hermes-test--dashboard-client))
+        callback)
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setq callback (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _args) 'prompt-request)))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "first")
+         (hermes-chat-send)
+         (funcall callback
+                  '(:type done :session-id "sid-active" :content "reply"))
+         (should (equal hermes-chat--dashboard-active-session-id "sid-active"))
+         (funcall callback
+                  '(:type status
+                    :status "closed"
+                    :content "Hermes dashboard WebSocket closed"))
+         (should-not hermes-chat--dashboard-active-session-id)
+         (should (equal
+                  (hermes-chat--status-name
+                   (plist-get hermes-chat--status-state :status))
+                  "closed")))))))
+
 (ert-deftest hermes-chat-dashboard-collapses-reasoning-into-toggle ()
   (let ((client (hermes-test--dashboard-client))
         callback)

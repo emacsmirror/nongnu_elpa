@@ -371,10 +371,18 @@ settlement order lives in one place."
          :header (hermes-chat--dashboard-suppressed-header-event event)
          :original event)))
 
-(defun hermes-chat--stale-assistant-event-p (assistant-id)
-  "Return non-nil when ASSISTANT-ID is older than the active pending turn."
-  (and hermes-chat--pending-assistant-id
-       (not (equal hermes-chat--pending-assistant-id assistant-id))))
+(defun hermes-chat--stale-assistant-event-p (assistant-id event)
+  "Return non-nil when EVENT belongs to an inactive ASSISTANT-ID."
+  (and (not (hermes-chat--session-info-event-p event))
+       (or (and hermes-chat--pending-assistant-id
+                (not (equal hermes-chat--pending-assistant-id assistant-id)))
+           (when-let* ((node (and hermes-chat--nodes
+                                  (gethash assistant-id hermes-chat--nodes)))
+                       (entry (ignore-errors (ewoc-data node))))
+             (and (not (equal assistant-id
+                              hermes-chat--interrupted-assistant-id))
+                  (hermes-chat--finished-status-p
+                   (plist-get entry :status)))))))
 
 (defun hermes-chat--handle-closed-status (assistant-id event)
   "Handle a transport closed status EVENT for ASSISTANT-ID."
@@ -500,9 +508,9 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
     (hermes-chat--dashboard-handle-reconnected event))
    ((hermes-chat--message-start-status-event-p event)
     (hermes-chat--dashboard-handle-message-start assistant-id))
-   ((hermes-chat--stale-assistant-event-p assistant-id) nil)
    ((hermes-chat--closed-status-event-p event)
     (hermes-chat--handle-closed-status assistant-id event))
+   ((hermes-chat--stale-assistant-event-p assistant-id event) nil)
    ((hermes-chat--server-queued-prior-event-p assistant-id event) nil)
    ((hermes-chat--interrupted-assistant-event-p assistant-id event)
     (hermes-chat--hold-interrupted-event event))
