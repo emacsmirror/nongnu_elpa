@@ -1,5 +1,12 @@
 #+title: Elfeed Changelog
 
+* Development
+
+- Bugfix: Use =insert-file-contents= to load database instead of
+  =find-file-noselect=. This avoids many interaction issues.
+- Bugfix: Use appropriate =header-line-highlight= face instead of =highlight= face
+  for header-line elements.
+
 * Version 4.1.0 (2026-06-28)
 
 - =elfeed-search-live-filter=: Use =while-no-input= for better responsiveness.
