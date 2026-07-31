@@ -633,6 +633,15 @@ If FRAME is nil, use the current frame."
 (defvar tabspaces-project-tab-map '()
   "Alist mapping full project paths to their respective tab names.")
 
+(defun tabspaces--remember-project-tab (project-directory tab-name)
+  "Record TAB-NAME as the tab for PROJECT-DIRECTORY in the project map.
+Replaces any existing entry for PROJECT-DIRECTORY.  Keys are strings,
+so `assoc-delete-all' is required; `assq-delete-all' compares with
+`eq' and never matches a string."
+  (setq tabspaces-project-tab-map
+        (cons (cons project-directory tab-name)
+              (assoc-delete-all project-directory tabspaces-project-tab-map))))
+
 (defun tabspaces--get-project-for-tab (tab-name)
   "Get project root path for TAB-NAME, or nil if not a project tab.
 Handles numbered tabs like \"ProjectName<2>\" by checking both exact
@@ -817,12 +826,9 @@ With universal argument PREFIX, always create a new tab for the project."
     (message "Tabspaces: Conditional execution completed")
 
     ;; Update tabspaces-project-tab-map (only for the main tab, not numbered
-    ;; duplicates).  Keys are strings, so `assoc-delete-all' is required;
-    ;; `assq-delete-all' compares with `eq' and never matches a string.
+    ;; duplicates).
     (unless (string-match-p "<[0-9]+>$" tab-name)
-      (setq tabspaces-project-tab-map
-            (cons (cons project-directory tab-name)
-                  (assoc-delete-all project-directory tabspaces-project-tab-map))))))
+      (tabspaces--remember-project-tab project-directory tab-name))))
 
 ;;;; Tabspace Sessions
 (defconst tabspaces-session-header
@@ -1151,16 +1157,20 @@ otherwise evaluated."
   (with-temp-buffer
     (insert-file-contents file)
     (condition-case err
-        (while t
-          (let ((form (read (current-buffer))))
-            (if (and (eq (car-safe form) 'setq)
-                     (= (length form) 3)
-                     (memq (nth 1 form)
-                           '(tabspaces-project-tab-map tabspaces--session-list))
-                     (eq (car-safe (nth 2 form)) 'quote))
-                (set (nth 1 form) (cadr (nth 2 form)))
-              (message "tabspaces: ignoring unexpected form in %s: %S"
-                       file (car-safe form)))))
+        ;; `read-circle' nil rejects #N=/#N# syntax, which would otherwise
+        ;; let a crafted file bind a circular structure to the session
+        ;; variables and hang or crash later traversals of them.
+        (let ((read-circle nil))
+          (while t
+            (let ((form (read (current-buffer))))
+              (if (and (eq (car-safe form) 'setq)
+                       (= (length form) 3)
+                       (memq (nth 1 form)
+                             '(tabspaces-project-tab-map tabspaces--session-list))
+                       (eq (car-safe (nth 2 form)) 'quote))
+                  (set (nth 1 form) (cadr (nth 2 form)))
+                (message "tabspaces: ignoring unexpected form in %s: %S"
+                         file (car-safe form))))))
       (end-of-file nil)
       (error
        (message "tabspaces: unreadable session file %s: %S" file err)))))
