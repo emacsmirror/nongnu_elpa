@@ -135,10 +135,7 @@ lint-test-compile:
 	-f batch-byte-compile admin/*.el tests/*.el
 
 lint-test-autoloads:
-	@if grep -R -n -E '\((load|load-file|require)[[:space:]].*jabber-autoloads' tests; then \
-	  echo "tests must not load or require generated jabber-autoloads" >&2; \
-	  exit 1; \
-	fi
+	@./admin/check-test-autoloads tests/*.el
 
 lint-native-comp: autoload
 	@$(ENV_MAKE) do-lint-native-comp

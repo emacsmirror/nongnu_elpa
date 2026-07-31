@@ -1,0 +1,36 @@
+#!/bin/sh
+
+set -eu
+
+pattern='\((load|load-file|require)[[:space:]]+[^)]*jabber-autoloads'
+
+for fixture in \
+    "(load
+     \"lisp/jabber-autoloads.el\")" \
+    "(load-file
+     \"lisp/jabber-autoloads.el\")" \
+    "(require
+     'jabber-autoloads)"
+do
+    printf '%s\n' "$fixture" | grep -z -E -q "$pattern" || {
+        echo "autoload dependency check missed its multiline fixture" >&2
+        exit 1
+    }
+done
+
+if printf '%s\n' '(string-suffix-p "jabber-autoloads.el" file)' |
+    grep -z -E -q "$pattern"
+then
+    echo "autoload dependency check rejected filename inspection" >&2
+    exit 1
+fi
+
+found=
+for file do
+    if grep -z -E -q "$pattern" "$file"; then
+        echo "$file: tests must not load or require generated jabber-autoloads" >&2
+        found=1
+    fi
+done
+
+[ -z "$found" ]
