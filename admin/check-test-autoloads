@@ -5,7 +5,7 @@
 (defun jabber-check-test-autoloads--target-p (value)
   "Return non-nil when VALUE names the generated Jabber autoload file."
   (cond
-   ((eq value 'jabber-autoloads) t)
+   ((symbolp value) (string= (symbol-name value) "jabber-autoloads"))
    ((stringp value)
     (string-match-p
      "\\(?:\\`\\|/\\)jabber-autoloads\\(?:\\.el[cn]?\\)?\\'" value))
@@ -19,7 +19,9 @@
    (consp form)
    (not (eq (car form) 'quote))
    (or (and (memq (car form) jabber-check-test-autoloads--operations)
-            (jabber-check-test-autoloads--target-p (cadr form)))
+            (or (jabber-check-test-autoloads--target-p (cadr form))
+                (and (eq (car form) 'require)
+                     (jabber-check-test-autoloads--target-p (caddr form)))))
        (jabber-check-test-autoloads--dependency-p (car form))
        (jabber-check-test-autoloads--dependency-p (cdr form)))))
 
@@ -35,7 +37,9 @@
              "(require\n ;; )\n 'jabber-autoloads)"
              "(load \"jabber-\\x61utoloads.el\")"
              "(load-file \"jabber-\\141utoloads.el\")"
-             "(require 'jabber-\\autoloads)"))
+             "(require 'jabber-\\autoloads)"
+             "(ignore-errors (require 'unrelated \"jabber-autoloads.el\"))"
+             "(ignore-errors (require '#:jabber-autoloads))"))
     (unless (jabber-check-test-autoloads--dependency-p
              (jabber-check-test-autoloads--read fixture))
       (error "Autoload dependency check missed fixture: %s" fixture)))
