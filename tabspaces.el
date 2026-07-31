@@ -2,7 +2,7 @@
 
 ;; Author: Colin McLear <mclear@fastmail.com>
 ;; Maintainer: Colin McLear
-;; Version: 1.8.0
+;; Version: 1.9.0
 ;; Package-Requires: ((emacs "27.1") (project "0.8.1"))
 ;; Keywords: convenience, frames
 ;; Homepage: https://codeberg.org/mclear-tools/tabspaces
@@ -57,11 +57,15 @@
 (declare-function magit-init "magit-status")
 (declare-function magit-status-setup-buffer "magit-status")
 (declare-function ibuffer-current-buffer "ibuffer" (&optional must-be-live))
+(declare-function vterm "vterm")
+(declare-function eat "eat")
 
 ;; Forward declarations for buffer-kind handlers.  These special variables
 ;; are defined in their respective packages, which we do not require here.
 (defvar eshell-buffer-name)
 (defvar dired-buffers)
+(defvar vterm-buffer-name)
+(defvar eat-buffer-name)
 
 ;;;; Variables
 
@@ -126,6 +130,37 @@ the value of `project-switch-commands'."
   :group 'tabspaces
   :type 'sexp)
 
+(defcustom tabspaces-project-fallback-to-tab t
+  "When non-nil, project.el commands fall back to the current tab's project.
+A buffer that belongs to no project (e.g. *scratch*, an org file
+elsewhere on disk) normally makes `project-current' return nil, so
+project.el commands prompt or fail even though the surrounding
+workspace has an obvious project.  With this option, the current
+tab's project (per `tabspaces-project-tab-map') is used as a
+fallback.  A buffer that is itself inside a project keeps its own
+project; the tab never overrides it."
+  :group 'tabspaces
+  :type 'boolean)
+
+(defcustom tabspaces-project-switch-opens-workspace nil
+  "When non-nil, `project-switch-project' opens a tabspaces workspace.
+Routes the stock \\[project-switch-project] through
+`tabspaces-open-or-create-project-and-workspace', so vanilla
+project.el switching also creates or reuses the project's tab.
+Takes effect when `tabspaces-mode' is enabled; re-enable the mode
+after changing this option."
+  :group 'tabspaces
+  :type 'boolean)
+
+(defcustom tabspaces-initialize-project-with-vc t
+  "When non-nil, put newly created projects under version control.
+Uses magit when available, otherwise `vc-create-repo'.  When nil,
+write an empty \".project\" marker file into the new directory
+instead; add \".project\" to `project-vc-extra-root-markers' so
+project.el recognizes such directories as projects."
+  :group 'tabspaces
+  :type 'boolean)
+
 (defcustom tabspaces-fully-resolve-paths nil
   "Resolve \".\", \"..\", etc. in project paths."
   :group 'tabspaces
@@ -145,6 +180,16 @@ the value of `project-switch-commands'."
   "File for saving tabspaces session."
   :group 'tabspaces
   :type 'file)
+
+(defcustom tabspaces-session-auto-save-delay nil
+  "Idle seconds before auto-saving sessions, or nil to disable.
+When non-nil and `tabspaces-session' is enabled, sessions are saved
+after this many seconds of idle time, so a crash or a killed Emacs
+loses at most the changes since the last idle period.  Capturing
+window configurations briefly cycles through the tabs.  The default
+\(nil) saves only on exit, via `kill-emacs-hook'."
+  :group 'tabspaces
+  :type '(choice (const :tag "Disabled" nil) number))
 
 (defcustom tabspaces-session-project-session-store 'project
   "Determines where project session files are stored.
@@ -180,6 +225,14 @@ Can be one of:
                     (boundp 'tabspaces--idle-timer)
                     tabspaces--idle-timer)
            (tabspaces--setup-idle-timer))))
+
+(defvar tabspaces-project-tab-map '()
+  "Alist mapping full project paths to their respective tab names.")
+
+(defvar tabspaces--in-project-switch nil
+  "Non-nil while a tabspaces command drives `project-switch-project'.
+Lets `tabspaces--project-switch-advice' distinguish internal calls
+\(which must run the stock command) from a direct user invocation.")
 
 ;;;; Echo Area Display
 
@@ -407,12 +460,14 @@ non-nil, then specify a tab index in the given frame."
 
 ;;;###autoload
 (defun tabspaces--project-name ()
-  "Get name for project from vc.
-If not in a project return buffer filename, or `-' if not visiting a file."
-  (let ((buf (buffer-file-name)))
-    (cond ((and buf (vc-registered buf))
-           (file-name-nondirectory (directory-file-name (vc-root-dir))))
-          (t "-"))))
+  "Get name of the current buffer's project via project.el.
+Return `-' if the buffer is not part of a project.  Covers both
+version-controlled projects and projects recognized through markers
+in `project-vc-extra-root-markers'."
+  (let ((project (project-current)))
+    (if project
+        (file-name-nondirectory (directory-file-name (project-root project)))
+      "-")))
 
 ;;;###autoload
 (defun tabspaces--name-tab-by-project-or-default ()
@@ -442,6 +497,30 @@ of side effects and always return a string."
         (delete-window))
       (tab-bar-switch-to-recent-tab))))
 
+;;;; Tab-Anchored Project Context
+
+(defvar tabspaces--resolving-tab-project nil
+  "Non-nil while `tabspaces--tab-project' resolves the tab's own root.
+Guards against re-entry: resolving the root runs
+`project-find-functions', which includes `tabspaces--tab-project'
+itself when `tabspaces-mode' is enabled.")
+
+(defun tabspaces--tab-project (_dir)
+  "Return the current tab's project when no other backend claims _DIR.
+Runs at the tail end of `project-find-functions', so it only fires
+when earlier backends (e.g. `project-try-vc') found nothing.  This
+anchors project context to the workspace: project.el commands issued
+from a buffer outside any project (e.g. *scratch*) operate on the
+tab's project instead of prompting.  Controlled by
+`tabspaces-project-fallback-to-tab'."
+  (when (and tabspaces-project-fallback-to-tab
+             (not tabspaces--resolving-tab-project))
+    (let ((root (tabspaces--get-project-for-tab (tabspaces--current-tab-name))))
+      (when (and root (file-directory-p root))
+        (let ((tabspaces--resolving-tab-project t))
+          (or (project--find-in-directory root)
+              (cons 'transient root)))))))
+
 ;;;; Interactive Functions
 
 ;;;;; Open Project & File
@@ -456,7 +535,11 @@ use the project.el command-menu, then use
 When called, this function will use the project corresponding
 to the selected directory DIR."
   (interactive (list (project-prompt-project-dir)))
-  (let ((project-switch-commands tabspaces-project-switch-commands))
+  (let ((project-switch-commands tabspaces-project-switch-commands)
+        ;; Honor this command's no-workspace contract even when
+        ;; `tabspaces-project-switch-opens-workspace' routes
+        ;; `project-switch-project' through workspaces.
+        (tabspaces--in-project-switch t))
     (project-switch-project dir)))
 
 ;;;;; Buffer Functions
@@ -615,6 +698,42 @@ If FRAME is nil, use the current frame."
 ;;;;; Close Workspace
 (defalias 'tabspaces-close-workspace #'tab-bar-close-tab)
 
+;;;;; Rename Workspace
+(defalias 'tabspaces-rename-workspace #'tab-bar-rename-tab
+  "Rename the current workspace/tab.
+While `tabspaces-mode' is enabled, renaming also updates
+`tabspaces-project-tab-map' (via advice on `tab-bar-rename-tab'),
+so per-project session saving keeps tracking the renamed tab.")
+
+(defun tabspaces--sync-tab-rename (orig-fun name &optional tab-number)
+  "Update `tabspaces-project-tab-map' when a project tab is renamed.
+Installed as :around advice on `tab-bar-rename-tab', which also
+serves `tab-bar-rename-tab-by-name'.  Without this, renaming a
+project tab leaves the map stale, and per-project session save
+silently reclassifies the tab as a non-project tab.  ORIG-FUN,
+NAME, and TAB-NUMBER are the advised function and its arguments.
+
+The renamed tab is identified by diffing tab names before and after
+the call rather than by index, because TAB-NUMBER's clamping rules
+differ across Emacs versions (0, negative, and oversized values do
+not mean what `tab-bar-select-tab' makes them mean).  If tab names
+are not unique the diff can be ambiguous, in which case the map is
+left alone."
+  (let* ((names-of (lambda ()
+                     (mapcar (lambda (tab) (alist-get 'name tab))
+                             (funcall tab-bar-tabs-function))))
+         (before (funcall names-of))
+         (result (funcall orig-fun name tab-number))
+         (after (funcall names-of))
+         (old-names (seq-difference before after))
+         (new-names (seq-difference after before)))
+    (when (and (= 1 (length old-names))
+               (= 1 (length new-names)))
+      (let ((entry (rassoc (car old-names) tabspaces-project-tab-map)))
+        (when entry
+          (setcdr entry (car new-names)))))
+    result))
+
 ;;;;; Close Workspace & Kill Buffers
 (defun tabspaces-kill-buffers-close-workspace ()
   "Kill all buffers in the workspace and then close the workspace itself."
@@ -629,9 +748,6 @@ If FRAME is nil, use the current frame."
       (tab-bar-close-tab))))
 
 ;;;;; Open or Create Project in Workspace
-
-(defvar tabspaces-project-tab-map '()
-  "Alist mapping full project paths to their respective tab names.")
 
 (defun tabspaces--remember-project-tab (project-directory tab-name)
   "Record TAB-NAME as the tab for PROJECT-DIRECTORY in the project map.
@@ -705,6 +821,17 @@ Checks for conflicts against EXISTING-TAB-NAMES."
             counter (1+ counter)))
     new-name))
 
+(defun tabspaces--project-switch-advice (orig-fun dir &rest args)
+  "Route `project-switch-project' through tabspaces workspaces.
+Installed as :around advice when
+`tabspaces-project-switch-opens-workspace' is non-nil.  A user
+invocation hands DIR to
+`tabspaces-open-or-create-project-and-workspace'; internal calls
+fall through to ORIG-FUN with ARGS."
+  (if tabspaces--in-project-switch
+      (apply orig-fun dir args)
+    (tabspaces-open-or-create-project-and-workspace dir)))
+
 ;; Replace read-directory-name so that we can create new projects when necessary
 (defun tabspaces--read-directory-name (prompt &optional dir default mustmatch)
   "Read a directory name, and create it if it does not exist."
@@ -743,6 +870,10 @@ With universal argument PREFIX, always create a new tab for the project."
   (interactive
    (list (tabspaces-prompt-project-dir) current-prefix-arg))
   (let* ((project-switch-commands tabspaces-project-switch-commands)
+         ;; Mark internal `project-switch-project' calls so the advice
+         ;; installed by `tabspaces-project-switch-opens-workspace' does
+         ;; not re-enter this command.
+         (tabspaces--in-project-switch t)
          ;; Open new tabs onto *scratch* so the prior tab's current buffer
          ;; isn't inherited into the new workspace's buffer-list (issue #80).
          (tab-bar-new-tab-choice (lambda () (get-buffer-create "*scratch*")))
@@ -776,21 +907,30 @@ With universal argument PREFIX, always create a new tab for the project."
       (tab-bar-rename-tab tab-name)
       (let ((default-directory project-directory))
         (message "Tabspaces: default directory set to %s" default-directory)
-        (if (fboundp 'magit-init)
-            (magit-init project-directory)
-          (call-interactively #'vc-create-repo))
+        (if tabspaces-initialize-project-with-vc
+            (if (fboundp 'magit-init)
+                (magit-init project-directory)
+              (call-interactively #'vc-create-repo))
+          ;; Marker file so project.el can recognize the directory; see
+          ;; `tabspaces-initialize-project-with-vc'.
+          (write-region "" nil (expand-file-name ".project" project-directory)
+                        nil 'silent))
         (delete-other-windows)
         (when (and tabspaces-initialize-project-with-todo
                    (not (file-exists-p (expand-file-name tabspaces-todo-file-name project-directory))))
           (with-temp-buffer
             (write-file (expand-file-name tabspaces-todo-file-name project-directory))))
-        (if (fboundp 'magit-status-setup-buffer)
-            (magit-status-setup-buffer project-directory)
-          (project-vc-dir))
+        (when tabspaces-initialize-project-with-vc
+          (if (fboundp 'magit-status-setup-buffer)
+              (magit-status-setup-buffer project-directory)
+            (project-vc-dir)))
         (dired-jump-other-window))
       ;; Remember new project
-      (let ((pr (project--find-in-directory default-directory)))
-        (project-remember-project pr)))
+      (let ((pr (project--find-in-directory project-directory)))
+        (if pr
+            (project-remember-project pr)
+          (message "Tabspaces: %s not recognized as a project; add \".project\" to `project-vc-extra-root-markers'"
+                   project-directory))))
 
      ;; If project and tab exist, but we want a new tab
      ((and project-exists
@@ -957,8 +1097,8 @@ Optional SESSION-FILE parameter specifies where to save the session file.
 If not provided, uses the location specified by
 `tabspaces-session-project-session-store'."
   (interactive)
-  (unless (vc-root-dir)
-    (error "Not in a version controlled project"))
+  (unless (project-current)
+    (error "Not in a project"))
   (let ((tabspaces--session-list nil) ;; Start from an empty list.
         (ctab (tabspaces--current-tab-name))
         (current-session (or session-file
@@ -1060,11 +1200,44 @@ Otherwise, saves everything to the global session file (traditional behavior)."
    (tabspaces-session
     (tabspaces-save-session))))
 
+;;;; Session Auto-Save
+
+(defvar tabspaces--session-auto-save-timer nil
+  "Idle timer that periodically saves tabspaces sessions.")
+
+(defun tabspaces--session-auto-save ()
+  "Save sessions from the idle timer, quietly.
+Skips while the minibuffer is active, since capturing window
+configurations switches tabs.  Messages are suppressed so the
+periodic save does not spam the echo area; errors still surface."
+  (when (and tabspaces-session
+             (not (active-minibuffer-window)))
+    (let ((inhibit-message t))
+      (tabspaces--save-session-smart))))
+
+(defun tabspaces--cancel-session-auto-save ()
+  "Cancel the session auto-save idle timer."
+  (when tabspaces--session-auto-save-timer
+    (cancel-timer tabspaces--session-auto-save-timer)
+    (setq tabspaces--session-auto-save-timer nil)))
+
+(defun tabspaces--setup-session-auto-save ()
+  "Start the session auto-save idle timer if configured.
+Does nothing unless both `tabspaces-session' and
+`tabspaces-session-auto-save-delay' are non-nil."
+  (tabspaces--cancel-session-auto-save)
+  (when (and tabspaces-session tabspaces-session-auto-save-delay)
+    (setq tabspaces--session-auto-save-timer
+          (run-with-idle-timer tabspaces-session-auto-save-delay t
+                               #'tabspaces--session-auto-save))))
+
 ;; Restore session functions
 (defun tabspaces--get-project-session-file ()
   "Get the session file path based on configuration."
-  (let* ((project-root (or (vc-root-dir)
-                           (error "Not in a version controlled project")))
+  (let* ((project-root (let ((project (project-current)))
+                         (if project
+                             (project-root project)
+                           (error "Not in a project"))))
          (project-name (file-name-nondirectory (directory-file-name project-root)))
          (session-name (concat "." project-name "-tabspaces-session.el")))
     (cond
@@ -1473,6 +1646,68 @@ expects the restored tabs to already exist should account for this."
                 (message "tabspaces: shell restore skipped (%s): %S" dir err)
                 nil))))))))
 
+(tabspaces-register-buffer-kind
+ 'vterm
+ (lambda (b)
+   (with-current-buffer b
+     (when (derived-mode-p 'vterm-mode)
+       (list :kind 'vterm
+             :dir default-directory
+             :name (buffer-name)))))
+ (lambda (rec)
+   (let ((name (plist-get rec :name))
+         (dir  (plist-get rec :dir)))
+     (cond
+      ((not (and dir (stringp dir) (file-directory-p dir))) nil)
+      ((not (require 'vterm nil t))
+       (message "tabspaces: vterm not installed; skipping %s" name)
+       nil)
+      (t (or (tabspaces-reuse-existing-buffer name)
+             (condition-case err
+                 (let ((default-directory dir)
+                       ;; `vterm' with a non-nil, non-string argument
+                       ;; creates a new session named with
+                       ;; `vterm-buffer-name', adding a `<N>' suffix on
+                       ;; collision.  Cross-tab collisions are captured by
+                       ;; the restore loop's substitution alist.
+                       (vterm-buffer-name name))
+                   (let ((buf (vterm t)))
+                     ;; `vterm' returns the buffer in current releases;
+                     ;; older ones only select it.
+                     (if (bufferp buf) buf (current-buffer))))
+               (error
+                (message "tabspaces: vterm restore skipped (%s): %S" dir err)
+                nil))))))))
+
+(tabspaces-register-buffer-kind
+ 'eat
+ (lambda (b)
+   (with-current-buffer b
+     (when (derived-mode-p 'eat-mode)
+       (list :kind 'eat
+             :dir default-directory
+             :name (buffer-name)))))
+ (lambda (rec)
+   (let ((name (plist-get rec :name))
+         (dir  (plist-get rec :dir)))
+     (cond
+      ((not (and dir (stringp dir) (file-directory-p dir))) nil)
+      ((not (require 'eat nil t))
+       (message "tabspaces: eat not installed; skipping %s" name)
+       nil)
+      (t (or (tabspaces-reuse-existing-buffer name)
+             (condition-case err
+                 (let ((default-directory dir)
+                       ;; Like eshell: `eat' with a non-nil second argument
+                       ;; creates a new session named `eat-buffer-name',
+                       ;; uniquified on collision.
+                       (eat-buffer-name name))
+                   (let ((buf (eat nil t)))
+                     (if (bufferp buf) buf (current-buffer))))
+               (error
+                (message "tabspaces: eat restore skipped (%s): %S" dir err)
+                nil))))))))
+
 ;;;; Define Keymaps
 (defvar tabspaces-command-map
   (let ((map (make-sparse-keymap)))
@@ -1480,6 +1715,7 @@ expects the restored tabs to already exist should account for this."
     (define-key map (kbd "b") 'tabspaces-switch-to-buffer)
     (define-key map (kbd "d") 'tabspaces-close-workspace)
     (define-key map (kbd "k") 'tabspaces-kill-buffers-close-workspace)
+    (define-key map (kbd "n") 'tabspaces-rename-workspace)
     (define-key map (kbd "o") 'tabspaces-open-or-create-project-and-workspace)
     (define-key map (kbd "r") 'tabspaces-remove-current-buffer)
     (define-key map (kbd "R") 'tabspaces-remove-selected-buffer)
@@ -1512,12 +1748,22 @@ This uses Emacs `tab-bar' and `project.el'."
            (tabspaces--set-buffer-predicate frame))
          (add-hook 'after-make-frame-functions #'tabspaces--set-buffer-predicate)
          (add-to-list 'tab-bar-tab-post-open-functions #'tabspaces--tab-post-open-function)
+         ;; Anchor project context to the tab for buffers outside any
+         ;; project.  Depth 90 keeps it after the stock backends, so it
+         ;; only fires when they find nothing.
+         (add-hook 'project-find-functions #'tabspaces--tab-project 90)
+         ;; Keep `tabspaces-project-tab-map' in sync across tab renames.
+         (advice-add 'tab-bar-rename-tab :around #'tabspaces--sync-tab-rename)
+         (when tabspaces-project-switch-opens-workspace
+           (advice-add 'project-switch-project :around
+                       #'tabspaces--project-switch-advice))
          ;; Option to always use filtered buffers when minor mode is enabled.
          (when tabspaces-use-filtered-buffers-as-default
            ;; Remap switch-to-buffer
            (define-key (current-global-map) [remap switch-to-buffer] #'tabspaces-switch-to-buffer))
          (when tabspaces-session
-           (add-hook 'kill-emacs-hook #'tabspaces--save-session-smart))
+           (add-hook 'kill-emacs-hook #'tabspaces--save-session-smart)
+           (tabspaces--setup-session-auto-save))
          (when tabspaces-session-auto-restore
            (tabspaces--restore-session-on-startup))
          ;; Setup echo area display if enabled
@@ -1534,7 +1780,11 @@ This uses Emacs `tab-bar' and `project.el'."
            (define-key (current-global-map) [remap switch-to-buffer] nil))
          (setq tab-bar-tab-post-open-functions (remove #'tabspaces--tab-post-open-function tab-bar-tab-post-open-functions))
          (remove-hook 'after-make-frame-functions #'tabspaces--set-buffer-predicate)
+         (remove-hook 'project-find-functions #'tabspaces--tab-project)
+         (advice-remove 'tab-bar-rename-tab #'tabspaces--sync-tab-rename)
+         (advice-remove 'project-switch-project #'tabspaces--project-switch-advice)
          (remove-hook 'kill-emacs-hook #'tabspaces--save-session-smart)
+         (tabspaces--cancel-session-auto-save)
          ;; Cancel a pending deferred restore (daemon case: mode disabled
          ;; before the first client frame ever connected).
          (remove-hook 'server-after-make-frame-hook #'tabspaces--deferred-startup-restore)

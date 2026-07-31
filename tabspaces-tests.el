@@ -261,5 +261,150 @@ stale local reference and never touched `buried-buffer-list'."
                  '("b" "a")))
   (should-not (tabspaces--report-dupes '("a" "b" "c"))))
 
+;;;; Rename sync
+
+(ert-deftest tabspaces-test-sync-tab-rename ()
+  "Renaming a project tab updates `tabspaces-project-tab-map'.
+Non-project tabs leave the map untouched."
+  (let* ((tabs (list (list 'tab (cons 'name "projA"))
+                     (list 'current-tab (cons 'name "other"))))
+         (tab-bar-tabs-function (lambda (&optional _) tabs))
+         (tabspaces-project-tab-map (list (cons "/path/a" "projA")))
+         (orig (lambda (name &optional tab-number)
+                 (setf (alist-get 'name (nth (1- tab-number) tabs)) name))))
+    ;; Project tab: map entry follows the rename.
+    (tabspaces--sync-tab-rename orig "renamed" 1)
+    (should (equal (cdr (assoc "/path/a" tabspaces-project-tab-map))
+                   "renamed"))
+    ;; Non-project tab: map untouched.
+    (tabspaces--sync-tab-rename orig "elsewhere" 2)
+    (should (equal tabspaces-project-tab-map '(("/path/a" . "renamed"))))))
+
+;;;; Tab-anchored project context
+
+(ert-deftest tabspaces-test-tab-project-fallback ()
+  "Buffers with no project of their own fall back to the tab's project."
+  (let* ((dir (make-temp-file "tabspaces-test-proj" t))
+         (tabspaces-project-tab-map (list (cons dir "projTab"))))
+    (unwind-protect
+        (cl-letf (((symbol-function 'tabspaces--current-tab-name)
+                   (lambda () "projTab")))
+          ;; Enabled: returns a project rooted at the tab's directory.
+          (let* ((tabspaces-project-fallback-to-tab t)
+                 (project (tabspaces--tab-project "/nowhere/")))
+            (should project)
+            (should (equal (directory-file-name (project-root project))
+                           (directory-file-name dir))))
+          ;; Disabled: returns nil.
+          (let ((tabspaces-project-fallback-to-tab nil))
+            (should-not (tabspaces--tab-project "/nowhere/"))))
+      (delete-directory dir))
+    ;; Tab not in the map: returns nil.
+    (let ((tabspaces-project-fallback-to-tab t)
+          (tabspaces-project-tab-map nil))
+      (cl-letf (((symbol-function 'tabspaces--current-tab-name)
+                 (lambda () "unknown")))
+        (should-not (tabspaces--tab-project "/nowhere/"))))))
+
+;;;; Non-VC projects
+
+(ert-deftest tabspaces-test-project-session-file-without-vc ()
+  "Per-project session paths derive from project.el, not vc.
+Regression test: `tabspaces--get-project-session-file' used to call
+`vc-root-dir' and error out in marker-only projects."
+  (cl-letf (((symbol-function 'project-current)
+             (lambda (&rest _) '(transient . "/tmp/projA/"))))
+    (let ((tabspaces-session-project-session-store 'project))
+      (should (equal (tabspaces--get-project-session-file)
+                     "/tmp/projA/.projA-tabspaces-session.el")))))
+
+(ert-deftest tabspaces-test-project-name-uses-project-el ()
+  "Tab naming goes through project.el and handles the no-project case."
+  (cl-letf (((symbol-function 'project-current)
+             (lambda (&rest _) '(transient . "/tmp/projB/"))))
+    (should (equal (tabspaces--project-name) "projB")))
+  (cl-letf (((symbol-function 'project-current)
+             (lambda (&rest _) nil)))
+    (should (equal (tabspaces--project-name) "-"))))
+
+;;;; Project-switch integration
+
+(ert-deftest tabspaces-test-project-switch-advice-reentry ()
+  "External calls route to the workspace command; internal calls do not."
+  (let ((calls nil))
+    (cl-letf (((symbol-function
+                'tabspaces-open-or-create-project-and-workspace)
+               (lambda (dir) (push (cons 'workspace dir) calls))))
+      (let ((tabspaces--in-project-switch nil))
+        (tabspaces--project-switch-advice
+         (lambda (dir) (push (cons 'stock dir) calls)) "/p/"))
+      (let ((tabspaces--in-project-switch t))
+        (tabspaces--project-switch-advice
+         (lambda (dir) (push (cons 'stock dir) calls)) "/p/")))
+    (should (equal (nreverse calls)
+                   '((workspace . "/p/") (stock . "/p/"))))))
+
+;;;; Session auto-save
+
+(ert-deftest tabspaces-test-session-auto-save-timer ()
+  "The idle timer starts only when configured, and cancels cleanly."
+  (let ((tabspaces--session-auto-save-timer nil))
+    ;; Disabled by default (delay nil): no timer.
+    (let ((tabspaces-session t)
+          (tabspaces-session-auto-save-delay nil))
+      (tabspaces--setup-session-auto-save)
+      (should-not tabspaces--session-auto-save-timer))
+    ;; Enabled: timer exists; cancel clears it.
+    (let ((tabspaces-session t)
+          (tabspaces-session-auto-save-delay 1))
+      (unwind-protect
+          (progn
+            (tabspaces--setup-session-auto-save)
+            (should (timerp tabspaces--session-auto-save-timer)))
+        (tabspaces--cancel-session-auto-save))
+      (should-not tabspaces--session-auto-save-timer))))
+
+(ert-deftest tabspaces-test-session-auto-save-guards ()
+  "The idle-timer callback saves only when sessions are enabled."
+  (let ((saves 0))
+    (cl-letf (((symbol-function 'tabspaces--save-session-smart)
+               (lambda () (cl-incf saves))))
+      (let ((tabspaces-session nil))
+        (tabspaces--session-auto-save)
+        (should (= saves 0)))
+      (let ((tabspaces-session t))
+        (tabspaces--session-auto-save)
+        (should (= saves 1))))))
+
+;;;; Mode wiring
+
+(ert-deftest tabspaces-test-mode-wiring ()
+  "Enabling the mode installs hooks and advice; disabling removes them."
+  (let ((tabspaces-session nil)
+        (tabspaces-session-auto-restore nil)
+        (tabspaces-echo-area-enable nil)
+        (tabspaces-project-switch-opens-workspace t))
+    (unwind-protect
+        (progn
+          (tabspaces-mode 1)
+          (should (memq #'tabspaces--tab-project project-find-functions))
+          (should (advice-member-p #'tabspaces--sync-tab-rename
+                                   'tab-bar-rename-tab))
+          (should (advice-member-p #'tabspaces--project-switch-advice
+                                   'project-switch-project)))
+      (tabspaces-mode -1))
+    (should-not (memq #'tabspaces--tab-project project-find-functions))
+    (should-not (advice-member-p #'tabspaces--sync-tab-rename
+                                 'tab-bar-rename-tab))
+    (should-not (advice-member-p #'tabspaces--project-switch-advice
+                                 'project-switch-project))))
+
+;;;; Buffer-kind handlers
+
+(ert-deftest tabspaces-test-buffer-kind-handlers-registered ()
+  "Built-in buffer kinds include the terminal handlers."
+  (dolist (kind '(dired eshell shell vterm eat))
+    (should (assq kind tabspaces--buffer-kind-handlers))))
+
 (provide 'tabspaces-tests)
 ;;; tabspaces-tests.el ends here
