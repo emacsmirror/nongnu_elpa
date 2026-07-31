@@ -259,12 +259,6 @@ If LITERALLY is non-nil return the content literally."
       (setf (aref new-vector i) (aref vector i)))
     new-vector))
 
-(defun elfeed-readable-p (value)
-  "Return non-nil if VALUE can be serialized."
-  (condition-case _
-      (prog1 t (read (prin1-to-string value)))
-    (error nil)))
-
 (defun elfeed-clipboard-get ()
   "Try to get a sensible value from the system clipboard.
 It will try the `interprogram-paste-function' first and otherwise fall
@@ -520,6 +514,8 @@ Make sure that window points are updated properly."
   #'libxml-available-p "4.0.0")
 (define-obsolete-function-alias 'elfeed-get-url-at-point
   #'thing-at-point-url-at-point "4.0.0")
+(define-obsolete-function-alias 'elfeed-readable-p
+  #'readablep "4.1.0")
 
 (provide 'elfeed-lib)
 ;;; elfeed-lib.el ends here

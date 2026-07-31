@@ -477,7 +477,7 @@ since the scanner is not guarded against them."
 
 (defun elfeed-meta--put (thing key value)
   "Set metadata to VALUE on THING under KEY."
-  (unless (elfeed-readable-p value) (error "New value must be readable"))
+  (unless (readablep value) (error "New value must be readable"))
   (let ((new-plist (plist-put (elfeed-meta--plist thing) key value)))
     (elfeed-meta--set-plist thing (elfeed-db--plist-fixup new-plist))
     value))
