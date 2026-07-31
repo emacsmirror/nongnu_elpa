@@ -1,4 +1,5 @@
 .PHONY: all build dev autoload module compile lint lint-check-declare lint-checkdoc \
+        lint-test-autoloads \
         lint-package-lint lint-relint lint-test-compile lint-native-comp \
         clean clean-elc clean-module install uninstall check test test-oneshot test-debian \
         release-check load \
@@ -133,6 +134,12 @@ lint-test-compile:
 	$(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests \
 	-f batch-byte-compile admin/*.el tests/*.el
 
+lint-test-autoloads:
+	@if grep -R -n -E '\((load|load-file|require)[[:space:]].*jabber-autoloads' tests; then \
+	  echo "tests must not load or require generated jabber-autoloads" >&2; \
+	  exit 1; \
+	fi
+
 lint-native-comp: autoload
 	@$(ENV_MAKE) do-lint-native-comp
 
@@ -153,7 +160,8 @@ do-lint-native-comp:
 lint:
 	@$(ENV_MAKE) do-lint
 
-do-lint: do-lint-check-declare do-lint-checkdoc lint-package-lint lint-relint lint-test-compile
+do-lint: do-lint-check-declare do-lint-checkdoc lint-package-lint lint-relint \
+         lint-test-compile lint-test-autoloads
 
 test:
 	@$(ENV_MAKE) -j$(JOBS) -Otarget do-test

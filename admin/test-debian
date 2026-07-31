@@ -36,7 +36,9 @@ git -C /build/packaging checkout -q --detach FETCH_HEAD
 cp -a /build/packaging/debian /build/source/
 
 cd /build/source
+make lint-test-autoloads
 dpkg-buildpackage --build=binary --no-sign
+rm -f lisp/jabber-autoloads.el
 apt-get install -y /build/*.deb
 dh_elpa_test --autopkgtest
 

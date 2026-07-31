@@ -7,10 +7,13 @@
 ;;; Code:
 
 (require 'ert)
-(require 'jabber)
-(require 'jabber-autoloads)
+(require 'jabber-bookmarks)
+(require 'jabber-chat-commands)
+(require 'jabber-disco-menu)
+(require 'jabber-keymap)
+(require 'jabber-muc-menu)
 (require 'jabber-omemo-trust)
-(require 'keymap-popup)
+(require 'jabber-roster-menu)
 
 ;;; Helpers
 
