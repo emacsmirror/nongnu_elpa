@@ -1,7 +1,7 @@
 ;;; auto-dim-other-buffers.el --- Makes windows without focus less prominent -*- lexical-binding: t -*-
 ;; Author: Michal Nazarewicz <mina86@mina86.com>
 ;; URL: https://github.com/mina86/auto-dim-other-buffers.el
-;; Version: 2.2.2
+;; Version: 2.2.3
 ;; Package-Requires: ((emacs "27.1"))
 ;; Keywords: faces
 
@@ -350,8 +350,10 @@ Dim previously selected window if selection has changed."
 
 (defun adob--rescan-windows ()
   "Rescan all windows in selected frame and dim all non-selected windows."
-  (let* ((selected-window (selected-window))
-         (selected-buffer (window-buffer selected-window)))
+  (let ((selected-window
+         (or (and (not auto-dim-other-buffers-dim-on-switch-to-minibuffer)
+                  (minibuffer-selected-window))
+             (selected-window))))
     (save-current-buffer
       (dolist (wnd (window-list nil 'n))
         (let ((buf (window-buffer wnd)))
