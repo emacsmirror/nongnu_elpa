@@ -81,15 +81,17 @@
 
 (defcustom tabspaces-include-buffers '("*scratch*")
   "Buffers that should always get included in a new tab or frame.
-This is a list of regular expressions that match buffer names,
-which overrides buffers excluded by `tabspaces-exclude-buffers'."
+This is a list of buffer names, matched exactly (not as regular
+expressions), which overrides buffers excluded by
+`tabspaces-exclude-buffers'."
   :group 'tabspaces
   :type '(repeat string))
 
 (defcustom tabspaces-exclude-buffers nil
   "Buffers that should always get excluded in a new tab or frame.
-This is a list of regular expressions that match buffer names,
-which does not override buffers inside `tabspaces-include-buffers'."
+This is a list of buffer names, matched exactly (not as regular
+expressions), which does not override buffers inside
+`tabspaces-include-buffers'."
   :group 'tabspaces
   :type '(repeat string))
 
@@ -129,6 +131,33 @@ the value of `project-switch-commands'."
   :group 'tabspaces
   :type 'boolean)
 
+(defcustom tabspaces-session t
+  "Whether to save tabspaces across sessions."
+  :group 'tabspaces
+  :type 'boolean)
+
+(defcustom tabspaces-session-auto-restore nil
+  "Whether to restore tabspaces on session startup."
+  :group 'tabspaces
+  :type 'boolean)
+
+(defcustom tabspaces-session-file (locate-user-emacs-file "tabsession.el")
+  "File for saving tabspaces session."
+  :group 'tabspaces
+  :type 'file)
+
+(defcustom tabspaces-session-project-session-store 'project
+  "Determines where project session files are stored.
+Can be one of:
+- \\='project (default) - Store in the project root directory
+- a string path - Store all project sessions in this directory
+- a function - Called with project root path to determine session file location"
+  :group 'tabspaces
+  :type '(choice
+          (const :tag "In project directory" project)
+          (directory :tag "In specific directory")
+          (function :tag "Custom function")))
+
 (defcustom tabspaces-echo-area-enable nil
   "Display tabs in echo area instead of tab-bar when enabled."
   :group 'tabspaces
@@ -163,37 +192,25 @@ the value of `project-switch-commands'."
 (defvar tabspaces--original-tab-bar-show nil
   "Original value of `tab-bar-show' before echo area display is enabled.")
 
-(defvar tabspaces--last-echo-display nil
-  "Last tabs display string to avoid duplicate messages.")
-
-(defun tabspaces--filter-messages-buffer ()
-  "Remove tab display messages from *Messages* buffer."
-  (when (and (get-buffer "*Messages*")
-             tabspaces--last-echo-display)
-    (with-current-buffer "*Messages*"
-      (save-excursion
-        (let ((inhibit-read-only t))
-          (goto-char (point-max))
-          (forward-line -1)
-          (when (looking-at-p (regexp-quote tabspaces--last-echo-display))
-            (delete-region (line-beginning-position)
-                           (min (1+ (line-end-position)) (point-max)))))))))
+(defvar tabspaces--echo-area-active nil
+  "Non-nil when `tabspaces--echo-area-setup' has modified `tab-bar-show'.
+Guards `tabspaces--echo-area-cleanup' so it only restores
+`tab-bar-show' when setup actually ran.")
 
 (defun tabspaces--echo-area-format-tabs ()
   "Format all tabs for echo area display using the configured tab-bar formatter.
-Returns a formatted string containing all tabs, or nil if only one tab exists."
-  (when (> (length (tab-bar-tabs)) 1)
-    (let* ((tabs (tab-bar-tabs))
-           (current-tab (tab-bar--current-tab-find tabs))
-           (tab-strings '()))
-      (dotimes (i (length tabs))
-        (let* ((tab (nth i tabs))
-               (current-p (eq tab current-tab))
-               ;; Convert 0-based tab index to 1-based for display
-               (display-index (if (< i 9) (1+ i) 0))
-               (formatted-name (funcall tab-bar-tab-name-format-function tab display-index)))
-          (push formatted-name tab-strings)))
-      (mapconcat #'identity (reverse tab-strings) ""))))
+Returns a formatted string containing all tabs, or nil if only one tab
+exists."
+  (let ((tabs (tab-bar-tabs)))
+    (when (> (length tabs) 1)
+      (let ((i 0))
+        (mapconcat (lambda (tab)
+                     (setq i (1+ i))
+                     ;; Display indexes are 1-based; the 10th and later tabs
+                     ;; display as 0, matching `tab-bar-select-tab' key digits.
+                     (funcall tab-bar-tab-name-format-function
+                              tab (if (< i 10) i 0)))
+                   tabs "")))))
 
 (defun tabspaces--echo-area-display (&rest _)
   "Display formatted tabs in the echo area without logging to *Messages*.
@@ -203,12 +220,10 @@ Optional ARGS are ignored, allowing use as advice."
     (let ((tabs-display (funcall tabspaces-echo-area-format-function)))
       (when tabs-display
         (setq tabspaces--tabs-visible t)
-        ;; Mark this as a tab display message for filtering
-        (setq tabspaces--last-echo-display tabs-display)
-        ;; Display the message normally
-        (message "%s" tabs-display)
-        ;; Then remove it from *Messages* buffer
-        (run-with-timer 0.01 nil #'tabspaces--filter-messages-buffer)))))
+        ;; Binding `message-log-max' to nil keeps the display out of the
+        ;; *Messages* buffer entirely.
+        (let ((message-log-max nil))
+          (message "%s" tabs-display))))))
 
 (defun tabspaces--idle-display ()
   "Display tabs in echo area after idle period.
@@ -216,7 +231,7 @@ Only displays if echo area feature is enabled, multiple tabs exist,
 and the minibuffer is not active."
   (when (and tabspaces-echo-area-enable
              (> (length (tab-bar-tabs)) 1)
-             (not (minibufferp (current-buffer))))
+             (not (active-minibuffer-window)))
     (tabspaces--echo-area-display)))
 
 (defun tabspaces--setup-idle-timer ()
@@ -262,6 +277,7 @@ Hides the visual tab-bar and sets up idle timer for tab display."
     (unless tab-bar-mode (tab-bar-mode 1))
     ;; Store original setting and hide visual tab-bar
     (setq tabspaces--original-tab-bar-show tab-bar-show)
+    (setq tabspaces--echo-area-active t)
     (setq tab-bar-show nil)
     ;; Force tab-bar update after brief delay to override other configurations
     (run-with-timer 0.1 nil
@@ -275,14 +291,15 @@ Hides the visual tab-bar and sets up idle timer for tab display."
 (defun tabspaces--echo-area-cleanup ()
   "Clean up echo area tab display configuration.
 Restores original tab-bar visibility and removes timer."
-  ;; Restore original tab-bar visibility setting
-  (when (boundp 'tabspaces--original-tab-bar-show)
-    (setq tab-bar-show tabspaces--original-tab-bar-show))
+  ;; Restore original tab-bar visibility, but only if setup ran; otherwise
+  ;; this would clobber the user's `tab-bar-show' with nil.
+  (when tabspaces--echo-area-active
+    (setq tab-bar-show tabspaces--original-tab-bar-show)
+    (setq tabspaces--echo-area-active nil))
   ;; Clean up timer
   (tabspaces--cancel-idle-timer)
   ;; Reset state variables
-  (setq tabspaces--tabs-visible nil
-        tabspaces--last-echo-display nil))
+  (setq tabspaces--tabs-visible nil))
 
 (defun tabspaces-show-workspaces ()
   "Display current workspaces in the echo area on command."
@@ -372,10 +389,7 @@ non-nil, then specify a tab index in the given frame."
              (let ((tab (nth tabnum (frame-parameter frame 'tabs))))
                (if (eq 'current-tab (car tab))
                    (frame-parameter frame 'buffer-list)
-                 (or
-                  (cdr (assq 'wc-bl tab))
-                  (mapcar 'get-buffer
-                          (car (cdr (assq #'tabspaces--buffer-list (assq 'ws tab))))))))
+                 (cdr (assq 'wc-bl tab))))
            (frame-parameter frame 'buffer-list))))
     (seq-filter #'buffer-live-p list)))
 
@@ -403,14 +417,13 @@ If not in a project return buffer filename, or `-' if not visiting a file."
 ;;;###autoload
 (defun tabspaces--name-tab-by-project-or-default ()
   "Return project name if in a project, or default tab-bar name if not.
-The default tab-bar name uses the buffer name along with a counter."
-  (let ((project-name (tabspaces--project-name))
-        (tab (tab-bar-tab-name-current)))
-    (cond ((string= tab project-name)
-           (tab-bar-switch-to-tab tab))
-          ((string= "-" project-name)
-           (tab-bar-tab-name-current-with-count))
-          (t (tabspaces--project-name)))))
+The default tab-bar name uses the buffer name along with a counter.
+Intended for use as `tab-bar-tab-name-function', so it must be free
+of side effects and always return a string."
+  (let ((project-name (tabspaces--project-name)))
+    (if (string= "-" project-name)
+        (tab-bar-tab-name-current-with-count)
+      project-name)))
 
 ;;;###autoload
 (defun tabspaces--add-to-default-tabspace (buffer)
@@ -450,11 +463,11 @@ to the selected directory DIR."
 
 (defun tabspaces-remove-buffer (&optional buffer)
   "Bury and remove BUFFER from current tabspace.
-If BUFFER is nil, remove current buffer. If
+If BUFFER is nil, remove current buffer.  If
 `tabspaces-remove-to-default' is t then add the buffer to the
-default tabspace after remove, unless we're already in the default tabspace, in which case remove from the default as well."
+default tabspace after remove, unless we're already in the default
+tabspace, in which case remove from the default as well."
   (let* ((buffer (get-buffer (or buffer (current-buffer))))
-         (buffer-list (frame-parameter nil 'buffer-list))
          (in-default-tab (string= (tabspaces--current-tab-name)
                                   tabspaces-default-tab)))
     ;; delete window of buffer
@@ -469,11 +482,14 @@ default tabspace after remove, unless we're already in the default tabspace, in 
           (bury-buffer)
         (delete-window)))
      (t
-      (message (format "Buffer `%s' removed from `%s' tabspace."
-                       buffer (tabspaces--current-tab-name)))))
+      (message "Buffer `%s' removed from `%s' tabspace."
+               buffer (tabspaces--current-tab-name))))
     (bury-buffer buffer)
-    ;; Delete buffer from tabspace buffer list
-    (delete buffer buffer-list)
+    ;; Delete buffer from tabspace buffer lists
+    (set-frame-parameter nil 'buffer-list
+                         (delete buffer (frame-parameter nil 'buffer-list)))
+    (set-frame-parameter nil 'buried-buffer-list
+                         (delete buffer (frame-parameter nil 'buried-buffer-list)))
     ;; If specified AND we're not in default tab, add buffer to default tabspace
     (when (and tabspaces-remove-to-default (not in-default-tab))
       (tabspaces--add-to-default-tabspace buffer))))
@@ -588,13 +604,8 @@ If FRAME is nil, use the current frame."
 (defun tabspaces-switch-or-create-workspace (&optional workspace)
   "Switch to tab if it exists, otherwise create a new tabbed workspace."
   (interactive
-   (let ((tabs (tabspaces--list-tabspaces)))
-     (cond ((eq tabs nil)
-            (tab-new)
-            (tab-rename (completing-read "Workspace name: " tabs)))
-           (t
-            (list
-             (completing-read "Select or create tab: " tabs nil nil))))))
+   (list (completing-read "Select or create tab: "
+                          (tabspaces--list-tabspaces) nil nil)))
   (cond ((member workspace (tabspaces--list-tabspaces))
          (tab-bar-switch-to-tab workspace))
         (t
@@ -642,7 +653,8 @@ match and base name without suffix."
         (tab-bar-rename-tab-by-name old-name new-name)))))
 
 (defun tabspaces-generate-descriptive-tab-name (project-path existing-tab-names)
-  "Generate a unique tab name from the PROJECT-PATH checking against EXISTING-TAB-NAMES."
+  "Generate a unique tab name from PROJECT-PATH.
+Checks for conflicts against EXISTING-TAB-NAMES."
   (let* ((parts (reverse (split-string (directory-file-name project-path) "/")))
          (base-name (car parts))
          (parent-dir (nth 1 parts))
@@ -675,8 +687,8 @@ match and base name without suffix."
          (grandparent-dir (nth 2 parts)))
     (format "%s (%s/%s)" base-name (or grandparent-dir "") parent-dir)))
 
-;; Function to generate a unique numbered tab name
-(defun generate-unique-numbered-tab-name (base-name existing-names)
+(defun tabspaces--generate-unique-numbered-tab-name (base-name existing-names)
+  "Return BASE-NAME, suffixed with <N> if it collides with EXISTING-NAMES."
   (let ((counter 2)
         (new-name base-name))
     (while (member new-name existing-names)
@@ -776,7 +788,7 @@ With universal argument PREFIX, always create a new tab for the project."
            (member tab-name existing-tab-names)
            create-new-tab)
       (message "Tabspaces - Creating new tab for existing project and tab")
-      (let ((new-tab-name (generate-unique-numbered-tab-name tab-name existing-tab-names)))
+      (let ((new-tab-name (tabspaces--generate-unique-numbered-tab-name tab-name existing-tab-names)))
         (tab-bar-new-tab)
         (tab-bar-rename-tab new-tab-name)
         (setq tab-name new-tab-name))
@@ -804,11 +816,13 @@ With universal argument PREFIX, always create a new tab for the project."
 
     (message "Tabspaces: Conditional execution completed")
 
-    ;; Update tabspaces-project-tab-map (only for the main tab, not numbered duplicates)
+    ;; Update tabspaces-project-tab-map (only for the main tab, not numbered
+    ;; duplicates).  Keys are strings, so `assoc-delete-all' is required;
+    ;; `assq-delete-all' compares with `eq' and never matches a string.
     (unless (string-match-p "<[0-9]+>$" tab-name)
       (setq tabspaces-project-tab-map
             (cons (cons project-directory tab-name)
-                  (assq-delete-all project-directory tabspaces-project-tab-map))))))
+                  (assoc-delete-all project-directory tabspaces-project-tab-map))))))
 
 ;;;; Tabspace Sessions
 (defconst tabspaces-session-header
@@ -816,33 +830,6 @@ With universal argument PREFIX, always create a new tab for the project."
 ;; Tabspaces Session File for Emacs
 ;; -------------------------------------------------------------------------
 " "Header to place in Tabspaces session file.")
-
-(defcustom tabspaces-session t
-  "Whether to save tabspaces across sessions."
-  :group 'tabspaces
-  :type 'boolean)
-
-(defcustom tabspaces-session-auto-restore nil
-  "Whether to restore tabspaces on session startup."
-  :group 'tabspaces
-  :type 'boolean)
-
-(defcustom tabspaces-session-file (concat user-emacs-directory "tabsession.el")
-  "File for saving tabspaces session."
-  :group 'tabspaces
-  :type 'string)
-
-(defcustom tabspaces-session-project-session-store 'project
-  "Determines where project session files are stored.
-Can be one of:
-- 'project (default) - Store in the project root directory
-- a string path - Store all project sessions in this directory
-- a function - Called with project root path to determine session file location"
-  :group 'tabspaces
-  :type '(choice
-          (const :tag "In project directory" project)
-          (directory :tag "In specific directory")
-          (function :tag "Custom function")))
 
 (defvar tabspaces--session-list nil
   "Store `tabspaces' session tabs and buffers.")
@@ -917,6 +904,22 @@ Each record is either a file path string or a plist of the form
 `tabspaces--buffer-kind-handlers'."
   (delq nil (mapcar #'tabspaces--buffer-record bufs)))
 
+(defun tabspaces--write-session-file (file session-list &optional note)
+  "Write SESSION-LIST and `tabspaces-project-tab-map' to FILE.
+NOTE, if non-nil, is an extra comment line placed after the header."
+  (with-temp-file file
+    (insert ";; -*- mode: emacs-lisp; lexical-binding:t; coding: utf-8-emacs; -*-\n"
+            tabspaces-session-header
+            ";; Created " (current-time-string) "\n\n")
+    (when note
+      (insert ";; " note "\n\n"))
+    (insert ";; Project to tab name mapping:\n"
+            "(setq tabspaces-project-tab-map '"
+            (format "%S" tabspaces-project-tab-map) ")\n\n"
+            ";; Tabs and buffers:\n"
+            "(setq tabspaces--session-list '"
+            (format "%S" session-list) ")")))
+
 ;; Save global session
 ;;;###autoload
 (defun tabspaces-save-session ()
@@ -938,18 +941,8 @@ Each record is either a file path string or a plist of the form
     ;; As tab-bar-select-tab starts counting from 1, we need to add 1 to the index.
     (tab-bar-select-tab (+ curr 1)))
   ;; Write to file
-  (with-temp-file tabspaces-session-file
-    (point-min)
-    (insert ";; -*- mode: emacs-lisp; lexical-binding:t; coding: utf-8-emacs; -*-\n"
-            tabspaces-session-header
-            ";; Created " (current-time-string) "\n\n"
-            ";; Project to tab name mapping:\n")
-    (insert "(setq tabspaces-project-tab-map '"
-            (format "%S" tabspaces-project-tab-map) ")\n\n"
-            ";; Tabs and buffers:\n")
-    (insert "(setq tabspaces--session-list '"
-            (format "%S" tabspaces--session-list) ")"))
-  (message "Global tabspaces session file \'%s\' saved" tabspaces-session-file))
+  (tabspaces--write-session-file tabspaces-session-file tabspaces--session-list)
+  (message "Global tabspaces session file '%s' saved" tabspaces-session-file))
 
 ;; Save current project session
 (defun tabspaces-save-current-project-session (&optional session-file)
@@ -972,18 +965,8 @@ If not provided, uses the location specified by
                        ctab
                        (window-state-get nil t))) ;; t means include buffer names
     ;; Write to file
-    (with-temp-file current-session
-      (point-min)
-      (insert ";; -*- mode: emacs-lisp; lexical-binding:t; coding: utf-8-emacs; -*-\n"
-              tabspaces-session-header
-              ";; Created " (current-time-string) "\n\n"
-              ";; Project to tab name mapping:\n")
-      (insert "(setq tabspaces-project-tab-map '"
-              (format "%S" tabspaces-project-tab-map) ")\n\n"
-              ";; Tab and buffers:\n")
-      (insert "(setq tabspaces--session-list '"
-              (format "%S" tabspaces--session-list) ")"))
-    (message "Current project tabspaces session file \'%s\' saved" current-session)))
+    (tabspaces--write-session-file current-session tabspaces--session-list)
+    (message "Current project tabspaces session file '%s' saved" current-session)))
 
 ;; Save all project sessions
 (defun tabspaces-save-all-project-sessions ()
@@ -1013,17 +996,7 @@ to its respective project directory based on
                                      ctab
                                      (window-state-get nil t)))
                   ;; Write to file
-                  (with-temp-file session-file
-                    (point-min)
-                    (insert ";; -*- mode: emacs-lisp; lexical-binding:t; coding: utf-8-emacs; -*-\n"
-                            tabspaces-session-header
-                            ";; Created " (current-time-string) "\n\n"
-                            ";; Project to tab name mapping:\n")
-                    (insert "(setq tabspaces-project-tab-map '"
-                            (format "%S" tabspaces-project-tab-map) ")\n\n"
-                            ";; Tab and buffers:\n")
-                    (insert "(setq tabspaces--session-list '"
-                            (format "%S" tabspaces--session-list) ")"))
+                  (tabspaces--write-session-file session-file tabspaces--session-list)
                   (push project-root saved-projects)))))
           ;; Restore original tab
           (tab-bar-select-tab (+ curr 1))
@@ -1056,18 +1029,9 @@ This preserves non-project workspaces when using per-project session mode."
           (tab-bar-select-tab (+ curr 1))
           ;; Only write if there are non-project tabs
           (when non-project-session-list
-            (with-temp-file tabspaces-session-file
-              (point-min)
-              (insert ";; -*- mode: emacs-lisp; lexical-binding:t; coding: utf-8-emacs; -*-\n"
-                      tabspaces-session-header
-                      ";; Created " (current-time-string) "\n\n"
-                      ";; Non-project tabs only (project tabs saved separately)\n\n"
-                      ";; Project to tab name mapping:\n")
-              (insert "(setq tabspaces-project-tab-map '"
-                      (format "%S" tabspaces-project-tab-map) ")\n\n"
-                      ";; Tabs and buffers:\n")
-              (insert "(setq tabspaces--session-list '"
-                      (format "%S" non-project-session-list) ")"))
+            (tabspaces--write-session-file
+             tabspaces-session-file non-project-session-list
+             "Non-project tabs only (project tabs saved separately)")
             (message "Saved %d non-project tab(s) to global session" (length non-project-session-list))))
       (error
        (message "Error saving non-project tabs: %s" (error-message-string err))
@@ -1175,6 +1139,32 @@ restore loop."
     (push 'malformed-record tabspaces--restore-unknown-kinds)
     nil)))
 
+(defun tabspaces--load-session-file (file)
+  "Read session data from FILE without evaluating arbitrary code.
+Session files written by tabspaces contain only `setq' forms that
+assign quoted literals to `tabspaces-project-tab-map' and
+`tabspaces--session-list'.  Read those assignments and apply them;
+ignore anything else.  Project session files live inside project
+directories, which may come from untrusted sources (e.g. a cloned
+repository), so the file must never be handed to `load-file' or
+otherwise evaluated."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (condition-case err
+        (while t
+          (let ((form (read (current-buffer))))
+            (if (and (eq (car-safe form) 'setq)
+                     (= (length form) 3)
+                     (memq (nth 1 form)
+                           '(tabspaces-project-tab-map tabspaces--session-list))
+                     (eq (car-safe (nth 2 form)) 'quote))
+                (set (nth 1 form) (cadr (nth 2 form)))
+              (message "tabspaces: ignoring unexpected form in %s: %S"
+                       file (car-safe form)))))
+      (end-of-file nil)
+      (error
+       (message "tabspaces: unreadable session file %s: %S" file err)))))
+
 (defun tabspaces--rewrite-window-state (state subst)
   "Return STATE with buffer NAMEs substituted per alist SUBST.
 SUBST is an alist of (saved-name . actual-name) pairs.  Walks the
@@ -1213,10 +1203,12 @@ on undocumented nil-marker behaviour."
 (defun tabspaces-restore-session (&optional project-or-session-file)
   "Restore tabspaces session.
 If PROJECT-OR-SESSION-FILE is:
-- nil: if in a project tab and per-project storage is enabled, restore current project's session;
-       otherwise restore the global session from `tabspaces-session-file'
+- nil: if in a project tab and per-project storage is enabled,
+  restore the current project's session; otherwise restore the
+  global session from `tabspaces-session-file'
 - a file path: restore that specific session file
-- a project path: restore that project's session based on `tabspaces-session-project-session-store'"
+- a project path: restore that project's session based on
+  `tabspaces-session-project-session-store'"
   (interactive)
   (let ((session-file
          (cond
@@ -1242,7 +1234,7 @@ If PROJECT-OR-SESSION-FILE is:
 
     (if (file-exists-p session-file)
         (progn
-          (load-file session-file)
+          (tabspaces--load-session-file session-file)
           (let ((tabspaces--restore-unknown-kinds nil)
                 (skipped-remote 0))
             ;; Use placeholder buffer to avoid pollution.  Cleanup runs in
@@ -1258,7 +1250,12 @@ If PROJECT-OR-SESSION-FILE is:
                                (let ((remote
                                       (cond ((stringp rec) (file-remote-p rec))
                                             ((consp rec)
-                                             (file-remote-p (plist-get rec :dir))))))
+                                             ;; A handler may omit :dir, and
+                                             ;; (file-remote-p nil) signals an
+                                             ;; error, so guard the type.
+                                             (let ((dir (plist-get rec :dir)))
+                                               (and (stringp dir)
+                                                    (file-remote-p dir)))))))
                                  (cond
                                   (remote (cl-incf skipped-remote))
                                   (t (let ((buf (tabspaces--restore-buffer-record rec))
@@ -1502,13 +1499,13 @@ This uses Emacs `tab-bar' and `project.el'."
   (cond (tabspaces-mode
          ;; Set up tabspace isolated buffers
          (dolist (frame (frame-list))
-           (tabspaces--set-buffer-predicate frame)
-           (add-hook 'after-make-frame-functions #'tabspaces--set-buffer-predicate)
-           (add-to-list 'tab-bar-tab-post-open-functions #'tabspaces--tab-post-open-function)
-           ;; Option to always use filtered buffers when minor mode is enabled.
-           (when tabspaces-use-filtered-buffers-as-default
-             ;; Remap switch-to-buffer
-             (define-key (current-global-map) [remap switch-to-buffer] #'tabspaces-switch-to-buffer)))
+           (tabspaces--set-buffer-predicate frame))
+         (add-hook 'after-make-frame-functions #'tabspaces--set-buffer-predicate)
+         (add-to-list 'tab-bar-tab-post-open-functions #'tabspaces--tab-post-open-function)
+         ;; Option to always use filtered buffers when minor mode is enabled.
+         (when tabspaces-use-filtered-buffers-as-default
+           ;; Remap switch-to-buffer
+           (define-key (current-global-map) [remap switch-to-buffer] #'tabspaces-switch-to-buffer))
          (when tabspaces-session
            (add-hook 'kill-emacs-hook #'tabspaces--save-session-smart))
          (when tabspaces-session-auto-restore
@@ -1519,12 +1516,18 @@ This uses Emacs `tab-bar' and `project.el'."
          ;; Remove all modifications
          (dolist (frame (frame-list))
            (tabspaces--reset-buffer-predicate frame))
-         (when tabspaces-use-filtered-buffers-as-default
+         ;; Remove the remap whenever it points at our command, regardless of
+         ;; the current option value: the option may have been toggled off
+         ;; after the mode was enabled.
+         (when (eq (lookup-key (current-global-map) [remap switch-to-buffer])
+                   #'tabspaces-switch-to-buffer)
            (define-key (current-global-map) [remap switch-to-buffer] nil))
          (setq tab-bar-tab-post-open-functions (remove #'tabspaces--tab-post-open-function tab-bar-tab-post-open-functions))
          (remove-hook 'after-make-frame-functions #'tabspaces--set-buffer-predicate)
          (remove-hook 'kill-emacs-hook #'tabspaces--save-session-smart)
-         (remove-hook 'emacs-startup-hook #'tabspaces-restore-session)
+         ;; Cancel a pending deferred restore (daemon case: mode disabled
+         ;; before the first client frame ever connected).
+         (remove-hook 'server-after-make-frame-hook #'tabspaces--deferred-startup-restore)
          ;; Cleanup echo area display
          (tabspaces--echo-area-cleanup))))
 
