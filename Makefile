@@ -135,7 +135,7 @@ lint-test-compile:
 	-f batch-byte-compile admin/*.el tests/*.el
 
 lint-test-autoloads:
-	@./admin/check-test-autoloads tests/*.el
+	@$(EMACS_CMD) $(EMACS_OPTS) --script admin/check-test-autoloads tests/*.el
 
 lint-native-comp: autoload
 	@$(ENV_MAKE) do-lint-native-comp

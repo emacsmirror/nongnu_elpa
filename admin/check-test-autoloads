@@ -1,36 +1,66 @@
-#!/bin/sh
+;;; check-test-autoloads --- Reject generated autoload dependencies -*- lexical-binding: t; -*-
 
-set -eu
+(defconst jabber-check-test-autoloads--operations '(load load-file require))
 
-pattern='\((load|load-file|require)[[:space:]]+[^)]*jabber-autoloads'
+(defun jabber-check-test-autoloads--target-p (value)
+  "Return non-nil when VALUE names the generated Jabber autoload file."
+  (cond
+   ((eq value 'jabber-autoloads) t)
+   ((stringp value)
+    (string-match-p
+     "\\(?:\\`\\|/\\)jabber-autoloads\\(?:\\.el[cn]?\\)?\\'" value))
+   ((consp value)
+    (or (jabber-check-test-autoloads--target-p (car value))
+        (jabber-check-test-autoloads--target-p (cdr value))))))
 
-for fixture in \
-    "(load
-     \"lisp/jabber-autoloads.el\")" \
-    "(load-file
-     \"lisp/jabber-autoloads.el\")" \
-    "(require
-     'jabber-autoloads)"
-do
-    printf '%s\n' "$fixture" | grep -z -E -q "$pattern" || {
-        echo "autoload dependency check missed its multiline fixture" >&2
-        exit 1
-    }
-done
+(defun jabber-check-test-autoloads--dependency-p (form)
+  "Return non-nil when FORM directly loads generated Jabber autoloads."
+  (and
+   (consp form)
+   (not (eq (car form) 'quote))
+   (or (and (memq (car form) jabber-check-test-autoloads--operations)
+            (jabber-check-test-autoloads--target-p (cadr form)))
+       (jabber-check-test-autoloads--dependency-p (car form))
+       (jabber-check-test-autoloads--dependency-p (cdr form)))))
 
-if printf '%s\n' '(string-suffix-p "jabber-autoloads.el" file)' |
-    grep -z -E -q "$pattern"
-then
-    echo "autoload dependency check rejected filename inspection" >&2
-    exit 1
-fi
+(defun jabber-check-test-autoloads--read (source)
+  "Read one Elisp form from SOURCE."
+  (car (read-from-string source)))
 
-found=
-for file do
-    if grep -z -E -q "$pattern" "$file"; then
-        echo "$file: tests must not load or require generated jabber-autoloads" >&2
-        found=1
-    fi
-done
+(defun jabber-check-test-autoloads--self-test ()
+  "Verify reader-sensitive rejection and allowance fixtures."
+  (dolist (fixture
+           '("(load\n ;; )\n \"jabber-autoloads.el\")"
+             "(load-file\n ;; )\n \"jabber-autoloads.el\")"
+             "(require\n ;; )\n 'jabber-autoloads)"
+             "(load \"jabber-\\x61utoloads.el\")"
+             "(load-file \"jabber-\\141utoloads.el\")"
+             "(require 'jabber-\\autoloads)"))
+    (unless (jabber-check-test-autoloads--dependency-p
+             (jabber-check-test-autoloads--read fixture))
+      (error "Autoload dependency check missed fixture: %s" fixture)))
+  (when (jabber-check-test-autoloads--dependency-p
+         '(string-suffix-p "jabber-autoloads.el" file))
+    (error "Autoload dependency check rejected filename inspection")))
 
-[ -z "$found" ]
+(defun jabber-check-test-autoloads--file-p (file)
+  "Return non-nil when FILE directly loads generated Jabber autoloads."
+  (with-temp-buffer
+    (insert-file-contents file)
+    (catch 'found
+      (condition-case nil
+          (while t
+            (when (jabber-check-test-autoloads--dependency-p
+                   (read (current-buffer)))
+              (throw 'found t)))
+        (end-of-file nil)))))
+
+(jabber-check-test-autoloads--self-test)
+(let (failed)
+  (dolist (file command-line-args-left)
+    (when (jabber-check-test-autoloads--file-p file)
+      (message "%s: tests must not load generated jabber-autoloads" file)
+      (setq failed t)))
+  (kill-emacs (if failed 1 0)))
+
+;;; check-test-autoloads ends here
