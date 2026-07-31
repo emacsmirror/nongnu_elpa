@@ -8,6 +8,7 @@
 
 (require 'ert)
 (require 'jabber-chat)
+(require 'jabber-message-reply)
 (require 'jabber-omemo)
 
 (defvar jabber-group nil)
@@ -908,6 +909,271 @@ buffer-local `jabber-group'."
       (should (= 0 encrypted))
       (should-not
        (gethash 'fake-jc jabber-omemo--pending-send-operations)))))
+
+(ert-deftest jabber-test-omemo-message-parent-thread-reply-has-no-pending-echo ()
+  "A pending encrypted thread reply never appears in its parent buffer."
+  (with-temp-buffer
+    (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+    (setq-local jabber-chat--msg-nodes (make-hash-table :test #'equal))
+    (setq-local jabber-message-reply--thread
+                '(:thread-id "thread-1" :thread-parent-id nil))
+    (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+      (cl-letf (((symbol-function 'jabber-db--outgoing-handler) #'ignore))
+        (should-not
+         (jabber-omemo--display-pending
+          (current-buffer) "reply" "reply-1"))))
+    (should-not (ewoc-nth jabber-chat-ewoc 0))))
+
+(ert-deftest jabber-test-omemo-message-pending-thread-reply-is-stored-threaded ()
+  "A pending encrypted reply remains threaded if encryption later fails."
+  (jabber-test-omemo-message-with-db
+    (with-temp-buffer
+      (setq-local jabber-chatting-with "friend@example.com")
+      (setq-local jabber-buffer-connection 'fake-jc)
+      (setq-local jabber-chat-encryption 'omemo)
+      (setq-local jabber-message-reply--thread
+                  '(:thread-id "thread-1" :thread-parent-id nil))
+      (jabber-db-register-message-thread
+       "me@example.com" "friend@example.com" "chat"
+       "thread-1" nil "root-1" nil 1)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com")))
+        (jabber-omemo--display-pending
+         (current-buffer) "reply" "pending-1"))
+      (should
+       (equal '("thread-1")
+              (car
+               (sqlite-select
+                jabber-db--connection
+                "SELECT thread_id FROM message WHERE stanza_id = ?"
+                '("pending-1")))))
+      (should-not
+       (seq-find
+        (lambda (msg) (equal "pending-1" (plist-get msg :id)))
+        (jabber-db-backlog
+         "me@example.com" "friend@example.com" t 0 nil "chat"))))))
+
+(ert-deftest jabber-test-omemo-message-thread-buffer-keeps-pending-echo ()
+  "A pending encrypted reply remains visible in its thread buffer."
+  (with-temp-buffer
+    (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+    (setq-local jabber-chat--msg-nodes (make-hash-table :test #'equal))
+    (setq-local jabber-message-thread-id "thread-1")
+    (setq-local jabber-message-reply--thread
+                '(:thread-id "thread-1" :thread-parent-id nil))
+    (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+      (cl-letf (((symbol-function 'jabber-db--outgoing-handler) #'ignore))
+        (should
+         (jabber-omemo--display-pending
+          (current-buffer) "reply" "reply-1"))))
+    (should (ewoc-nth jabber-chat-ewoc -1))))
+
+(defun jabber-test-omemo-message--thread-send-result (source-kind outcome)
+  "Run an OMEMO thread send from SOURCE-KIND through OUTCOME."
+  (jabber-test-omemo-message-with-db
+    (let ((parent (generate-new-buffer " *omemo-thread-parent*"))
+          (thread (generate-new-buffer " *omemo-thread-buffer*"))
+          (jabber-omemo--pending-send-operations
+           (make-hash-table :test #'eq))
+          sent continuation (session-calls 0))
+      (unwind-protect
+          (progn
+            (dolist (buffer (list parent thread))
+              (with-current-buffer buffer
+                (setq-local jabber-buffer-connection 'fake-jc)
+                (setq-local jabber-chatting-with "friend@example.com")
+                (setq-local jabber-chat-encryption 'omemo)
+                (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+                (setq-local jabber-chat--msg-nodes
+                            (make-hash-table :test #'equal))))
+            (with-current-buffer thread
+              (setq-local jabber-message-thread-id "thread-1")
+              (setq-local jabber-message-thread-parent-id nil)
+              (setq-local jabber-chat-send-hooks
+                          '(jabber-message-thread--send-hook
+                            jabber-db--outgoing-handler)))
+            (with-current-buffer parent
+              (setq-local jabber-message-reply--id "root-1")
+              (setq-local jabber-message-reply--jid "friend@example.com")
+              (setq-local jabber-message-reply--thread
+                          '(:thread-id "thread-1"
+                            :thread-parent-id nil))
+              (setq-local jabber-chat-send-hooks
+                          '(jabber-message-reply--send-hook
+                            jabber-db--outgoing-handler)))
+            (jabber-db-store-message
+             "me@example.com" "friend@example.com" "in" "chat"
+             "root" 1 nil "root-1" nil nil nil nil nil
+             '(:thread-id "thread-1" :thread-parent-id nil))
+            (let ((root-id
+                   (caar (sqlite-select
+                          jabber-db--connection
+                          "SELECT id FROM message WHERE stanza_id = ?"
+                          '("root-1")))))
+              (with-current-buffer thread
+                (ewoc-enter-last
+                 jabber-chat-ewoc
+                 (list :foreign
+                       (list :db-id root-id :id "root-1" :body "root"
+                             :thread-id "thread-1")))))
+            (let ((source-buffer
+                   (if (eq source-kind 'parent) parent thread)))
+              (with-current-buffer source-buffer
+                (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+                  (cl-letf
+                      (((symbol-function 'jabber-connection-bare-jid)
+                        (lambda (_jc) "me@example.com"))
+                       ((symbol-function 'jabber-message-thread-find-buffer)
+                        (lambda (&rest _) thread))
+                       ((symbol-function 'jabber-omemo--ensure-sessions)
+                        (lambda (_jc _jid callback)
+                          (setq session-calls (1+ session-calls))
+                          (cond
+                           ((and (eq outcome 'delayed-dead)
+                                 (= session-calls 1))
+                            (setq continuation callback))
+                           ((eq outcome 'failure)
+                            (funcall callback nil))
+                           (t
+                            (funcall callback '((1 . session)))))))
+                       ((symbol-function 'jabber-omemo-encrypt-message)
+                        (lambda (_plaintext)
+                          '(:iv "iv" :key "key" :payload "payload")))
+                       ((symbol-function 'jabber-omemo--build-encrypted-xml)
+                        (lambda (&rest _)
+                          '(encrypted
+                            ((xmlns . "eu.siacs.conversations.axolotl")))))
+                       ((symbol-function 'jabber-send-sexp)
+                        (lambda (_jc _stanza &optional success _failure)
+                          (setq sent t)
+                          (when success (funcall success)))))
+                    (jabber-omemo--send-chat 'fake-jc "reply")
+                    (when (eq outcome 'delayed-dead)
+                      (kill-buffer source-buffer)
+                      (funcall continuation '((1 . session))))))))
+            (let* ((row (car (sqlite-select
+                              jabber-db--connection
+                              "SELECT stanza_id, thread_id FROM message \
+WHERE body = 'reply'")))
+                   (node (and (buffer-live-p thread)
+                              (with-current-buffer thread
+                                (ewoc-nth jabber-chat-ewoc -1)))))
+              (list
+               :sent sent
+               :active
+               (gethash 'fake-jc jabber-omemo--pending-send-operations)
+               :stored-thread (cadr row)
+               :parent-empty
+               (or (not (buffer-live-p parent))
+                   (not (with-current-buffer parent
+                          (ewoc-nth jabber-chat-ewoc 0))))
+               :status (and node (plist-get (cadr (ewoc-data node)) :status))
+               :live-thread
+               (and node (plist-get (cadr (ewoc-data node)) :thread-id))
+               :restored
+               (when-let* ((source
+                            (and (buffer-live-p
+                                  (if (eq source-kind 'parent)
+                                      parent thread))
+                                 (if (eq source-kind 'parent)
+                                     parent thread))))
+                 (with-current-buffer source (buffer-string))))))
+        (when (buffer-live-p parent) (kill-buffer parent))
+        (when (buffer-live-p thread) (kill-buffer thread))))))
+
+(ert-deftest jabber-test-omemo-message-thread-send-pending-lifecycle ()
+  "Pending thread ownership survives success and failure from both views."
+  (dolist (source '(parent thread))
+    (dolist (outcome '(success failure))
+      (let ((result
+             (jabber-test-omemo-message--thread-send-result source outcome)))
+        (should (equal "thread-1" (plist-get result :stored-thread)))
+        (should (plist-get result :parent-empty))
+        (should (equal "thread-1" (plist-get result :live-thread)))
+        (should (eq (if (eq outcome 'success) :sent :undelivered)
+                    (plist-get result :status)))
+        (should (eq (eq outcome 'success) (plist-get result :sent)))
+        (should-not (plist-get result :active))
+        (should (eq (eq outcome 'failure)
+                    (string-suffix-p "reply"
+                                     (plist-get result :restored))))))))
+
+(ert-deftest jabber-test-omemo-message-concurrent-sends-keep-thread-owner ()
+  "Reverse OMEMO completion cannot move reply and thread metadata."
+  (jabber-test-omemo-message-with-db
+    (with-temp-buffer
+      (setq-local jabber-buffer-connection 'fake-jc)
+      (setq-local jabber-chatting-with "friend@example.com")
+      (setq-local jabber-chat-encryption 'omemo)
+      (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+      (setq-local jabber-chat--msg-nodes (make-hash-table :test #'equal))
+      (setq-local jabber-chat-send-hooks
+                  '(jabber-message-reply--send-hook
+                    jabber-db--outgoing-handler))
+      (jabber-db-store-message
+       "me@example.com" "friend@example.com" "in" "chat" "root" 1
+       "phone" "root-1" nil nil nil nil nil
+       '(:thread-id "thread-1"))
+      (let ((jabber-omemo--pending-send-operations
+             (make-hash-table :test #'eq))
+            callbacks sent
+            (ticks 10))
+        (cl-letf (((symbol-function 'float-time)
+                   (lambda (&optional _) (cl-incf ticks)))
+                  ((symbol-function 'jabber-connection-bare-jid)
+                   (lambda (_) "me@example.com"))
+                  ((symbol-function 'jabber-omemo--ensure-sessions)
+                   (lambda (_jc jid callback)
+                     (if (equal jid "friend@example.com")
+                         (push callback callbacks)
+                       (funcall callback '((2 . own-session))))))
+                  ((symbol-function 'jabber-omemo-encrypt-message)
+                   (lambda (_) '(:iv "iv" :key "key" :payload "payload")))
+                  ((symbol-function 'jabber-omemo--build-encrypted-xml)
+                   (lambda (&rest _) '(encrypted ())))
+                  ((symbol-function 'jabber-chat--display-local-message)
+                   #'ignore)
+                  ((symbol-function 'jabber-send-sexp)
+                   (lambda (_jc stanza &optional success _failure)
+                     (push stanza sent)
+                     (when success (funcall success)))))
+          (setq-local jabber-message-reply--id "root-1")
+          (setq-local jabber-message-reply--jid "friend@example.com")
+          (setq-local jabber-message-reply--thread
+                      '(:thread-id "thread-1"))
+          (jabber-omemo--send-chat 'fake-jc "first")
+          (jabber-omemo--send-chat 'fake-jc "second")
+          (funcall (car callbacks) '((1 . peer-session)))
+          (funcall (cadr callbacks) '((1 . peer-session)))
+          (let ((first (car sent))
+                (second (cadr sent)))
+            (should (= 1 (length (jabber-xml-get-children first 'thread))))
+            (should (equal "thread-1"
+                           (car (jabber-xml-node-children
+                                 (car (jabber-xml-get-children first 'thread))))))
+            (should (jabber-xml-child-with-xmlns first "urn:xmpp:reply:0"))
+            (should-not (jabber-xml-get-children second 'thread))
+            (should-not
+             (jabber-xml-child-with-xmlns second "urn:xmpp:reply:0")))
+          (should
+           (equal '(("first" "thread-1") ("second" nil))
+                  (sqlite-select
+                   jabber-db--connection
+                   "SELECT body, thread_id FROM message \
+WHERE body IN ('first', 'second') ORDER BY body"))))))))
+
+(ert-deftest jabber-test-omemo-message-dead-thread-source-cancels-send ()
+  "A delayed OMEMO thread send stops when its source buffer dies."
+  (dolist (source '(parent thread))
+    (let ((result
+           (jabber-test-omemo-message--thread-send-result
+            source 'delayed-dead)))
+      (should-not (plist-get result :sent))
+      (should-not (plist-get result :active))
+      (should (equal "thread-1" (plist-get result :stored-thread)))
+      (should (plist-get result :parent-empty))
+      (when (eq source 'parent)
+        (should (eq :undelivered (plist-get result :status)))))))
 
 (ert-deftest jabber-test-omemo-message-muc-stalled-bundle-fails-on-reset ()
   "A reset fails a MUC send stalled while own sessions are fetched."

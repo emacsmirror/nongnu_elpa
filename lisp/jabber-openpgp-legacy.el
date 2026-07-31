@@ -258,10 +258,7 @@ envelope."
         (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
           (plist-put msg-plist :body body)
           (plist-put msg-plist :status :sent)
-          (when (run-hook-with-args-until-success 'jabber-chat-printers
-                                                  msg-plist :local :printp)
-            (jabber-maybe-print-rare-time
-             (jabber-chat-ewoc-enter (list :local msg-plist))))))
+          (jabber-chat--display-local-message jc msg-plist)))
       (jabber-send-sexp jc stanza))))
 
 ;;; Message encryption (send) - MUC

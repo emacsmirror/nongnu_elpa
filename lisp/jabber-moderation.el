@@ -37,6 +37,7 @@
 (require 'jabber-iq)
 (require 'jabber-muc)
 (require 'jabber-db)
+(require 'jabber-message-thread)
 (require 'cl-lib)
 
 (defvar jabber-chat-ewoc)              ; jabber-chatbuffer.el
@@ -93,6 +94,16 @@ moderation action stanzas must come from the bare MUC service."
   (or tombstone-p
       (not (jabber-jid-resource from))))
 
+(defun jabber-moderation--target-buffers (jc room server-id)
+  "Return live buffers containing SERVER-ID in ROOM on JC."
+  (let ((thread-targets
+         (jabber-message-thread-update-targets
+          jc room "groupchat" server-id t)))
+    (cond
+     ((eq thread-targets 'closed) nil)
+     (thread-targets thread-targets)
+     (t (delq nil (list (jabber-muc-find-buffer room jc)))))))
+
 (defun jabber-moderation--handle-message (jc xml-data)
   "Handle moderated message retraction in XML-DATA.
 Live <retract/> action stanzas update an existing message.  Archived
@@ -111,15 +122,15 @@ server id.  JC is the connection the stanza arrived on."
     (let* ((moderator (jabber-moderation--moderator xml-data moderated))
            (reason-el (car (jabber-xml-get-children retraction 'reason)))
            (reason (car (jabber-xml-node-children reason-el)))
-           (buf (jabber-muc-find-buffer room jc)))
+           (buffers (jabber-moderation--target-buffers jc room stanza-id)))
       (when moderator
         (jabber-db-retract-message-in-peer
          (jabber-connection-bare-jid jc) room stanza-id moderator reason))
-      (when buf
-        (with-current-buffer buf
+      (dolist (buffer buffers)
+        (with-current-buffer buffer
           (jabber-moderation--mark-ewoc-retracted
-           stanza-id moderator reason))))
-    t))
+           stanza-id moderator reason)))
+      t)))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-moderation--handle-message)
 
@@ -146,8 +157,8 @@ RETRACTED-BY and REASON are stored on the message plist."
   (pcase-let ((`(,room ,server-id ,moderator ,reason) data))
     (jabber-db-retract-message-in-peer
      (jabber-connection-bare-jid jc) room server-id moderator reason)
-    (when-let* ((buf (jabber-muc-find-buffer room jc)))
-      (with-current-buffer buf
+    (dolist (buffer (jabber-moderation--target-buffers jc room server-id))
+      (with-current-buffer buffer
         (jabber-moderation--mark-ewoc-retracted server-id moderator reason)))))
 
 (defun jabber-moderation--send-retract (jc room server-id &optional reason)

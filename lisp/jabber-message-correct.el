@@ -177,10 +177,12 @@ MUC-P selects lookup by REPLACE-ID and ORIGINAL-FROM."
         (jabber-chat-ewoc-invalidate node)))))
 
 (defun jabber-message-correct--apply
-    (replace-id new-body new-from muc-p buffer &optional new-occupant-id
+    (replace-id new-body new-from muc-p buffers &optional new-occupant-id
                 account peer legacy-authorized-p)
   "Apply correction REPLACE-ID with NEW-BODY sent by NEW-FROM.
-MUC-P non-nil for groupchat.  BUFFER is the chat buffer or nil.
+MUC-P non-nil for groupchat.  BUFFERS is a chat buffer, a list of
+buffers, nil, or a function resolving buffers from the accepted
+original message plist.
 NEW-OCCUPANT-ID is the correction stanza's XEP-0421 occupant-id.
 ACCOUNT and PEER scope persistence.  LEGACY-AUTHORIZED-P permits
 the current-presence MUC fallback when occupant-id is unavailable.
@@ -231,8 +233,12 @@ dropped.  Returns non-nil when the correction was accepted."
           (jabber-db-correct-message-row
            (plist-get original :row-id) new-body)
         (jabber-db-correct-message replace-id new-body))
-      (jabber-message-correct--update-buffer
-       buffer muc-p replace-id original-from new-body)
+      (let ((targets (if (functionp buffers)
+                         (funcall buffers original)
+                       buffers)))
+        (dolist (buffer (if (listp targets) targets (list targets)))
+          (jabber-message-correct--update-buffer
+           buffer muc-p replace-id original-from new-body)))
       t))))
 
 ;;; Inhibit DB storage of correction stanzas
@@ -344,7 +350,12 @@ correction replaces the whole message, XEP-0461 linkage included."
                        msg new-body))
               (reply-els (and-let* ((reply-id (plist-get msg :reply-to-id)))
                            (jabber-message-reply--elements
-                            reply-id (plist-get msg :reply-to-jid) fb-len))))
+                            reply-id (plist-get msg :reply-to-jid) fb-len)))
+              (thread (jabber-message-reply--thread-fields msg))
+              (thread-els
+               (jabber-message-thread-protocol-elements
+                (plist-get thread :thread-id)
+                (plist-get thread :thread-parent-id))))
          (let* ((buffer (current-buffer))
                 (group (bound-and-true-p jabber-group))
                 (account
@@ -356,8 +367,9 @@ correction replaces the whole message, XEP-0461 linkage included."
                              account peer id stored-from))
                 (row-id (and (= (length db-matches) 1)
                              (plist-get (car db-matches) :row-id)))
-                (extra (cons (jabber-message-correct--replace-element id)
-                             reply-els))
+                (extra (append
+                        (list (jabber-message-correct--replace-element id))
+                        reply-els thread-els))
                 (omemo-p (eq jabber-chat-encryption 'omemo))
                 (token (list t id))
                 (commit

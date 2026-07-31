@@ -237,6 +237,114 @@
                    (markable ((xmlns . ,jabber-chat-markers-xmlns))))))
       (should (equal "msg-200" jabber-receipts--pending-displayed-id)))))
 
+(ert-deftest jabber-test-receipts-closed-thread-does-not-display ()
+  "A closed dedicated thread cannot acknowledge an unseen reply."
+  (let ((parent (generate-new-buffer " *jabber-receipts-parent*"))
+        sent)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-receipts--sender-authorized-p)
+                   (lambda (&rest _) t))
+                  ((symbol-function 'jabber-receipts--find-buffer)
+                   (lambda (&rest _) parent))
+                  ((symbol-function 'jabber-message-thread-display-target)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'get-buffer-window)
+                   (lambda (buffer &rest _) (eq buffer parent)))
+                  ((symbol-function 'jabber-send-sexp-if-connected)
+                   (lambda (&rest _) (setq sent t))))
+          (jabber-receipts--track-displayed
+           'jc
+           `(message ((from . "alice@example.com")
+                      (id . "reply-1") (type . "chat"))
+                     (body () "reply")
+                     (thread () "thread-1")
+                     (markable ((xmlns . ,jabber-chat-markers-xmlns))))
+           "alice@example.com" nil)
+          (should-not sent)
+          (with-current-buffer parent
+            (should-not jabber-receipts--pending-displayed-id)))
+      (kill-buffer parent))))
+
+(ert-deftest jabber-test-receipts-open-thread-owns-pending-marker ()
+  "An open dedicated thread owns its reply's pending marker."
+  (let ((parent (generate-new-buffer " *jabber-receipts-parent*"))
+        (thread (generate-new-buffer " *jabber-receipts-thread*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-receipts--sender-authorized-p)
+                   (lambda (&rest _) t))
+                  ((symbol-function 'jabber-receipts--find-buffer)
+                   (lambda (&rest _) parent))
+                  ((symbol-function 'jabber-message-thread-display-target)
+                   (lambda (&rest _) thread))
+                  ((symbol-function 'get-buffer-window) #'ignore))
+          (jabber-receipts--track-displayed
+           'jc
+           `(message ((from . "alice@example.com")
+                      (id . "reply-1") (type . "chat"))
+                     (body () "reply")
+                     (thread () "thread-1")
+                     (markable ((xmlns . ,jabber-chat-markers-xmlns))))
+           "alice@example.com" nil)
+          (with-current-buffer parent
+            (should-not jabber-receipts--pending-displayed-id))
+          (with-current-buffer thread
+            (should (equal "reply-1"
+                           jabber-receipts--pending-displayed-id))))
+      (kill-buffer parent)
+      (kill-buffer thread))))
+
+(ert-deftest jabber-test-receipts-disabled-threads-use-parent ()
+  "Disabling dedicated buffers restores parent marker ownership."
+  (let ((parent (generate-new-buffer " *jabber-receipts-parent*")))
+    (unwind-protect
+        (let ((jabber-message-thread-use-buffers nil))
+          (cl-letf (((symbol-function 'jabber-receipts--sender-authorized-p)
+                     (lambda (&rest _) t))
+                    ((symbol-function 'jabber-receipts--find-buffer)
+                     (lambda (&rest _) parent))
+                    ((symbol-function 'jabber-message-thread-display-target)
+                     (lambda (&rest _) 'parent))
+                    ((symbol-function 'get-buffer-window) #'ignore))
+            (jabber-receipts--track-displayed
+             'jc
+             `(message ((from . "alice@example.com")
+                        (id . "reply-1") (type . "chat"))
+                       (body () "reply")
+                       (thread () "thread-1")
+                       (markable ((xmlns . ,jabber-chat-markers-xmlns))))
+             "alice@example.com" nil)
+            (with-current-buffer parent
+              (should (equal "reply-1"
+                             jabber-receipts--pending-displayed-id)))))
+      (kill-buffer parent))))
+
+(ert-deftest jabber-test-receipts-muc-private-thread-uses-parent ()
+  "MUC-private thread metadata keeps parent marker ownership."
+  (let ((parent (generate-new-buffer " *jabber-receipts-private*")))
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-receipts--sender-authorized-p)
+                   (lambda (&rest _) t))
+                  ((symbol-function 'jabber-receipts--find-buffer)
+                   (lambda (&rest _) parent))
+                  ((symbol-function 'jabber-muc-joined-p)
+                   (lambda (&rest _) t))
+                  ((symbol-function 'jabber-message-thread-display-target)
+                   (lambda (&rest _)
+                     (ert-fail "Routed a MUC-private marker to a thread")))
+                  ((symbol-function 'get-buffer-window) #'ignore))
+          (jabber-receipts--track-displayed
+           'jc
+           `(message ((from . "room@example.com/Alice")
+                      (id . "reply-1") (type . "chat"))
+                     (body () "reply")
+                     (thread () "thread-1")
+                     (markable ((xmlns . ,jabber-chat-markers-xmlns))))
+           "room@example.com/Alice" nil)
+          (with-current-buffer parent
+            (should (equal "reply-1"
+                           jabber-receipts--pending-displayed-id))))
+      (kill-buffer parent))))
+
 (ert-deftest jabber-test-receipts-displayed-does-not-set-pending-id ()
   "Incoming displayed marker does not queue another displayed marker."
   (cl-letf (((symbol-function 'jabber-db-update-receipt) #'ignore)

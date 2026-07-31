@@ -26,6 +26,7 @@
 (require 'jabber-mam)
 (require 'jabber-message-correct)
 (require 'jabber-message-reply)
+(require 'jabber-message-thread)
 (require 'jabber-moderation)
 (require 'jabber-muc)
 (require 'jabber-muc-menu)
@@ -196,6 +197,12 @@ before sending with RET."
   :group "Messages"
   "E" ("Edit last message" jabber-correct-last-message)
   "r" ("Reply to message" jabber-chat-reply)
+  "t" ("Reply in thread" jabber-message-thread-open
+       :if #'jabber-message-thread-available-p)
+  "T" ("Send draft as new thread" jabber-message-thread-start
+       :if #'jabber-message-thread-available-p)
+  "l" ("Browse threads..." jabber-message-thread-browse
+       :if #'jabber-message-thread-available-p)
   :group "MUC"
   "m" ("MUC Actions" jabber-chat-muc-actions-menu
        :if (lambda () (bound-and-true-p jabber-group)))
@@ -243,6 +250,8 @@ before sending with RET."
 
 (dolist (binding jabber-chat-command-bindings)
   (keymap-set jabber-chat-mode-map (car binding) (cdr binding)))
+
+(keymap-set jabber-chat-mode-map "C-c C-t" #'jabber-message-thread-open)
 
 (provide 'jabber-chat-commands)
 

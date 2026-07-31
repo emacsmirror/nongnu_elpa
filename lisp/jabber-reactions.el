@@ -35,6 +35,7 @@
 (require 'jabber-disco)
 (require 'jabber-util)
 (require 'jabber-muc-state)
+(require 'jabber-message-thread)
 
 (defconst jabber-reactions-xmlns "urn:xmpp:reactions:0"
   "XEP-0444 Message Reactions namespace.")
@@ -458,12 +459,25 @@ Update stored and visible reaction state for the sending entity."
       (unless (eq (jabber-reactions--persist-update
                    jc message (car parsed) sender (cadr parsed))
                   :stale)
-        (when-let* ((buffer (or carbon-buffer
+        (when-let* ((peer (jabber-reactions--storage-peer jc message type)))
+          (let* ((thread-targets
+                  (jabber-message-thread-update-targets
+                   jc peer type (car parsed) (string= type "groupchat")))
+                 (buffers
+                  (cond
+                   ((eq thread-targets 'closed) nil)
+                   (thread-targets thread-targets)
+                   (t (delq nil
+                            (list
+                             (or carbon-buffer
                                  (jabber-reactions--buffer-for-stanza
-                                  jc from type))))
-          (with-current-buffer buffer
-            (when-let* ((node (jabber-chat-ewoc-find-by-id (car parsed))))
-              (jabber-reactions--apply-incoming-update node sender (cadr parsed)))))))))
+                                  jc from type))))))))
+            (dolist (buffer buffers)
+              (with-current-buffer buffer
+                (when-let* ((node
+                             (jabber-chat-ewoc-find-by-id (car parsed))))
+                  (jabber-reactions--apply-incoming-update
+                   node sender (cadr parsed)))))))))))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-reactions--handle-message -5)
 (add-to-list 'jabber-history-inhibit-received-message-functions

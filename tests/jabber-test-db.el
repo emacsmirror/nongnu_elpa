@@ -51,6 +51,30 @@ and tears down on exit."
           (db2 (jabber-db-ensure-open)))
       (should (eq db1 db2)))))
 
+(ert-deftest jabber-test-db-ensure-open-migrates-live-connection ()
+  "Ensure-open migrates an existing connection after a code reload."
+  (jabber-test-db-with-db
+    (sqlite-execute jabber-db--connection "DROP TABLE message_thread")
+    (sqlite-execute jabber-db--connection "DROP INDEX idx_msg_thread")
+    (sqlite-execute
+     jabber-db--connection
+     "ALTER TABLE message DROP COLUMN thread_parent_id")
+    (sqlite-execute
+     jabber-db--connection
+     "ALTER TABLE message DROP COLUMN thread_id")
+    (sqlite-execute jabber-db--connection "PRAGMA user_version=7")
+    (let ((db jabber-db--connection))
+      (should (eq db (jabber-db-ensure-open)))
+      (should (= jabber-db--schema-version
+                 (caar (sqlite-select db "PRAGMA user_version"))))
+      (should
+       (member "thread_id"
+               (mapcar #'car
+                       (sqlite-select
+                        db
+                        "SELECT name FROM pragma_table_info('message')"))))
+      (should (jabber-db--table-exists-p db "message_thread")))))
+
 (ert-deftest jabber-test-db-close-and-reopen ()
   "Closing and reopening the database works."
   (jabber-test-db-with-db
@@ -81,6 +105,7 @@ and tears down on exit."
                             "SELECT name FROM sqlite_master WHERE type='table'"))))
       (should (member "message" tables))
       (should (member "message_fts" tables))
+      (should (member "message_thread" tables))
       (should (member "chat_settings" tables)))))
 
 ;;; Group 2: Store and retrieve
@@ -1892,6 +1917,545 @@ CREATE TABLE omemo_store (
       (when (file-directory-p jabber-test-db--dir)
         (delete-directory jabber-test-db--dir t)))))
 
+;; Group: Thread metadata persistence
+
+(ert-deftest jabber-test-db-migration-v7-to-v8 ()
+  "Migration v7->v8 adds thread storage without losing messages."
+  (let* ((jabber-test-db--dir (make-temp-file "jabber-db-test" t))
+         (jabber-db-path (expand-file-name "test.sqlite" jabber-test-db--dir))
+         (jabber-db--connection nil))
+    (unwind-protect
+        (progn
+          (let ((db (sqlite-open jabber-db-path)))
+            (sqlite-execute db "\
+CREATE TABLE message (
+  id INTEGER PRIMARY KEY, account TEXT NOT NULL, peer TEXT NOT NULL,
+  direction TEXT NOT NULL, type TEXT, body TEXT,
+  timestamp INTEGER NOT NULL, stanza_id TEXT, server_id TEXT,
+  reply_to_id TEXT, reply_to_jid TEXT,
+  fallback_start INTEGER, fallback_end INTEGER)")
+            (sqlite-execute db "\
+INSERT INTO message
+  (account, peer, direction, type, body, timestamp, stanza_id)
+VALUES ('me@x.com', 'alice@x.com', 'in', 'chat', 'kept', 1, 'root-1')")
+            (sqlite-execute db "\
+CREATE TABLE message_reaction (
+  message_id INTEGER NOT NULL, sender TEXT NOT NULL,
+  reaction TEXT NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender, reaction))")
+            (sqlite-execute db "\
+CREATE TABLE message_reaction_actor (
+  message_id INTEGER NOT NULL, sender TEXT NOT NULL,
+  updated_at INTEGER NOT NULL, PRIMARY KEY (message_id, sender))")
+            (sqlite-execute db "PRAGMA user_version=7")
+            (sqlite-close db))
+          (jabber-db-ensure-open)
+          (should (= jabber-db--schema-version
+                     (caar (sqlite-select jabber-db--connection
+                                          "PRAGMA user_version"))))
+          (let ((cols (mapcar #'car
+                              (sqlite-select jabber-db--connection
+                                "SELECT name FROM pragma_table_info('message')"))))
+            (should (member "thread_id" cols))
+            (should (member "thread_parent_id" cols)))
+          (should (jabber-db--table-exists-p
+                   jabber-db--connection "message_thread"))
+          (should
+           (member
+            "read_message_id"
+            (mapcar #'car
+                    (sqlite-select jabber-db--connection
+                      "SELECT name FROM pragma_table_info('message_thread')"))))
+          (should
+           (member
+            "root_message_id"
+            (mapcar #'car
+                    (sqlite-select jabber-db--connection
+                      "SELECT name FROM pragma_table_info('message_thread')"))))
+          (should (equal "kept"
+                         (caar (sqlite-select jabber-db--connection
+                                  "SELECT body FROM message")))))
+      (jabber-db-close)
+      (when (file-directory-p jabber-test-db--dir)
+        (delete-directory jabber-test-db--dir t)))))
+
+(ert-deftest jabber-test-db-migration-v7-to-v8-retries-after-failure ()
+  "A failed v8 migration rolls back and can be retried safely."
+  (let* ((dir (make-temp-file "jabber-db-v8-retry" t))
+         (path (expand-file-name "test.sqlite" dir))
+         (db (sqlite-open path)))
+    (unwind-protect
+        (progn
+          (sqlite-execute db "\
+CREATE TABLE message (
+  id INTEGER PRIMARY KEY, account TEXT NOT NULL, peer TEXT NOT NULL,
+  direction TEXT NOT NULL, type TEXT, body TEXT,
+  timestamp INTEGER NOT NULL, stanza_id TEXT, server_id TEXT,
+  reply_to_id TEXT, reply_to_jid TEXT,
+  fallback_start INTEGER, fallback_end INTEGER)")
+          (sqlite-execute db "\
+INSERT INTO message
+  (account, peer, direction, type, body, timestamp, stanza_id)
+VALUES ('me@x.com', 'alice@x.com', 'in', 'chat', 'kept', 1, 'root-1')")
+          (sqlite-execute db "\
+CREATE TABLE message_reaction (
+  message_id INTEGER NOT NULL, sender TEXT NOT NULL,
+  reaction TEXT NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender, reaction))")
+          (sqlite-execute db "\
+CREATE TABLE message_reaction_actor (
+  message_id INTEGER NOT NULL, sender TEXT NOT NULL,
+  updated_at INTEGER NOT NULL, PRIMARY KEY (message_id, sender))")
+          (sqlite-execute db "PRAGMA user_version=7")
+          (let ((sqlite-execute-real (symbol-function 'sqlite-execute))
+                failed)
+            (cl-letf
+                (((symbol-function 'sqlite-execute)
+                  (lambda (&rest args)
+                    (if (and (not failed)
+                             (string-match-p
+                              "ADD COLUMN thread_parent_id" (nth 1 args)))
+                        (progn
+                          (setq failed t)
+                          (error "Forced migration failure"))
+                      (apply sqlite-execute-real args)))))
+              (should-error (jabber-db--migrate db))))
+          (should (= 7 (caar (sqlite-select db "PRAGMA user_version"))))
+          (should-not
+           (member "thread_id"
+                   (mapcar #'car
+                           (sqlite-select
+                            db "SELECT name FROM pragma_table_info('message')"))))
+          (should (equal "kept"
+                         (caar (sqlite-select db "SELECT body FROM message"))))
+          (jabber-db--migrate db)
+          (should (= 8 (caar (sqlite-select db "PRAGMA user_version"))))
+          (dolist (column '("thread_id" "thread_parent_id"))
+            (should
+             (member column
+                     (mapcar #'car
+                             (sqlite-select
+                              db
+                              "SELECT name FROM pragma_table_info('message')")))))
+          (should (equal "kept"
+                         (caar (sqlite-select db "SELECT body FROM message")))))
+      (when (sqlitep db)
+        (sqlite-close db))
+      (when (file-directory-p dir)
+        (delete-directory dir t)))))
+
+(ert-deftest jabber-test-db-thread-metadata-round-trip ()
+  "Thread metadata stored with a message comes back in the backlog."
+  (jabber-test-db-with-db
+    (jabber-db-store-message
+     "me@x.com" "alice@x.com" "in" "chat" "reply" 2
+     "phone" "reply-1" nil nil nil nil nil
+     '(:thread-id "thread-1" :thread-parent-id "parent-1"))
+    (let ((msg (car (jabber-db-thread-backlog
+                     "me@x.com" "alice@x.com" "chat" "thread-1" t))))
+      (should (equal "thread-1" (plist-get msg :thread-id)))
+      (should (equal "parent-1" (plist-get msg :thread-parent-id))))))
+
+(ert-deftest jabber-test-db-thread-backfill-uses-exact-muc-row ()
+  "Thread backfill does not touch a MUC row with a recycled client ID."
+  (jabber-test-db-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message
+       "me@x.com" "room@x.com" "in" "groupchat" "first" now
+       "Alice" "same-id" "server-a")
+      (jabber-db-store-message
+       "me@x.com" "room@x.com" "in" "groupchat" "second" (1+ now)
+       "Bob" "same-id" "server-b")
+      (jabber-db-store-message
+       "me@x.com" "room@x.com" "in" "groupchat" "second" (1+ now)
+       "Bob" "same-id" "server-b" nil nil nil nil
+       '(:thread-id "thread-b")))
+    (should
+     (equal '(("server-a" nil) ("server-b" "thread-b"))
+            (sqlite-select
+             jabber-db--connection
+             "SELECT server_id, thread_id FROM message ORDER BY server_id")))
+    (should
+     (member "first"
+             (mapcar (lambda (msg) (plist-get msg :body))
+                     (jabber-db-backlog
+                      "me@x.com" "room@x.com" nil nil nil "groupchat"))))))
+
+(ert-deftest jabber-test-db-thread-first-observed-message-is-root ()
+  "A remote thread's first observed message becomes its local root."
+  (jabber-test-db-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "root" now
+       "phone" "root-1")
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "reply" (1+ now)
+       "phone" "reply-1" nil nil nil nil
+       '(:reply-to-id "root-1")
+       '(:thread-id "thread-1"))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "later reply" (+ now 2)
+       "phone" "reply-2" nil nil nil nil nil
+       '(:thread-id "thread-1"))
+      (should
+       (jabber-db-message-thread-known-p
+        "me@x.com" "alice@x.com" "chat" "thread-1"))
+      (should
+       (jabber-db-message-thread-root-p
+        "me@x.com" "alice@x.com" "chat" "thread-1" "reply-1" nil
+        (plist-get
+         (jabber-db-message-thread-summary
+          "me@x.com" "alice@x.com" "chat" "thread-1")
+         :root-message-id)))
+      (should
+       (equal '(:thread-id "thread-1" :root t)
+              (jabber-db-message-thread-location
+               "me@x.com" "alice@x.com" "chat" "reply-1" nil)))
+      (should-not
+       (jabber-db-message-thread-root-p
+        "me@x.com" "alice@x.com" "chat" "thread-1" "root-1" nil))
+      (should-not
+       (jabber-db-message-thread-for-message
+        "me@x.com" "alice@x.com" "chat" "reply-1" nil))
+      (should
+       (equal "thread-1"
+              (jabber-db-message-thread-for-message
+               "me@x.com" "alice@x.com" "chat" "reply-2" nil)))
+      (should
+       (equal '(:thread-id "thread-1" :root nil)
+              (jabber-db-message-thread-location
+               "me@x.com" "alice@x.com" "chat" "reply-2" nil)))
+      (should-not
+       (jabber-db-message-thread-for-message
+        "me@x.com" "alice@x.com" "chat" "root-1" nil)))))
+
+(ert-deftest jabber-test-db-thread-backlog-and-summary ()
+  "Parent backlog hides replies and exposes reply count and unread state."
+  (jabber-test-db-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "root" now
+       "phone" "root-1")
+      (jabber-db-register-message-thread
+       "me@x.com" "alice@x.com" "chat" "thread-1" nil "root-1" nil now)
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "first reply" (1+ now)
+       "phone" "reply-1" nil nil nil nil nil
+       '(:thread-id "thread-1"))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "out" "chat" "second reply" (+ now 2)
+       nil "reply-2" nil nil nil nil nil
+       '(:thread-id "thread-1"))
+      (let* ((parent (jabber-db-backlog "me@x.com" "alice@x.com"))
+             (unthreaded-view
+              (jabber-db-backlog
+               "me@x.com" "alice@x.com" nil nil nil nil t))
+             (thread (jabber-db-thread-backlog
+                      "me@x.com" "alice@x.com" "chat" "thread-1" t))
+             (summary (plist-get (car parent) :thread-summary)))
+        (should (equal '("root") (mapcar (lambda (msg)
+                                           (plist-get msg :body))
+                                         parent)))
+        (should
+         (equal '("second reply" "first reply" "root")
+                (mapcar (lambda (msg) (plist-get msg :body))
+                        unthreaded-view)))
+        (should (equal '("second reply" "first reply" "root")
+                       (mapcar (lambda (msg) (plist-get msg :body)) thread)))
+        (should (= 2 (plist-get summary :reply-count)))
+        (should (plist-get summary :unread)))
+    (jabber-db-mark-message-thread-read
+     "me@x.com" "alice@x.com" "chat" "thread-1")
+      (should-not
+       (plist-get
+        (plist-get (car (jabber-db-backlog "me@x.com" "alice@x.com"))
+                   :thread-summary)
+        :unread))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "same-second reply" (+ now 2)
+       "phone" "reply-3" nil nil nil nil nil
+       '(:thread-id "thread-1"))
+      (should
+       (plist-get
+        (plist-get (car (jabber-db-backlog "me@x.com" "alice@x.com"))
+                   :thread-summary)
+        :unread)))))
+
+(ert-deftest jabber-test-db-message-threads-orders-by-latest-activity ()
+  "List one chat's threads by activity with root and summary data."
+  (jabber-test-db-with-db
+    (jabber-db-store-message
+     "me@x.com" "alice@x.com" "in" "chat" "Older root" 10
+     "phone" "root-old")
+    (jabber-db-register-message-thread
+     "me@x.com" "alice@x.com" "chat" "thread-old" nil
+     "root-old" nil 10)
+    (jabber-db-store-message
+     "me@x.com" "alice@x.com" "in" "chat" "Recent root" 20
+     "phone" "root-recent")
+    (jabber-db-register-message-thread
+     "me@x.com" "alice@x.com" "chat" "thread-recent" nil
+     "root-recent" nil 20)
+    (jabber-db-store-message
+     "me@x.com" "alice@x.com" "in" "chat" "Late reply" 30
+     "tablet" "reply-old" nil nil nil nil nil
+     '(:thread-id "thread-old"))
+    (jabber-db-store-message
+     "me@x.com" "alice@x.com" "out" "chat" "Latest reply" 31
+     nil "reply-latest" nil nil nil nil nil
+     '(:thread-id "thread-old"))
+    (jabber-db-store-message
+     "me@x.com" "other@x.com" "in" "chat" "Other chat" 40
+     nil "root-other" nil nil nil nil nil
+     '(:thread-id "thread-other"))
+    (let* ((threads
+            (jabber-db-message-threads
+             "me@x.com" "alice@x.com" "chat"))
+           (active (car threads))
+           (recent (cadr threads)))
+      (should (equal '("thread-old" "thread-recent")
+                     (mapcar (lambda (thread)
+                               (plist-get thread :thread-id))
+                             threads)))
+      (should (= 10 (floor (float-time
+                            (plist-get active :created-at)))))
+      (should (= 31 (floor (float-time
+                            (plist-get active :latest-at)))))
+      (should (= 2 (plist-get active :reply-count)))
+      (should (= 1 (plist-get active :local-reply-count)))
+      (should (plist-get active :unread))
+      (should (equal "Older root"
+                     (plist-get (plist-get active :root-message) :body)))
+      (should (equal "alice@x.com/phone"
+                     (plist-get (plist-get active :root-message) :from)))
+      (should (= 20 (floor (float-time
+                            (plist-get recent :latest-at))))))))
+
+(ert-deftest jabber-test-db-message-threads-preserves-muc-root-identity ()
+  "List a MUC thread without confusing a recycled client stanza ID."
+  (jabber-test-db-with-db
+    (jabber-db-store-message
+     "me@x.com" "room@conference.x.com" "in" "groupchat"
+     "Alice root" 10 "Alice" "same-id" "root-server" nil nil nil nil
+     '(:thread-id "thread-1"))
+    (jabber-db-store-message
+     "me@x.com" "room@conference.x.com" "in" "groupchat"
+     "Alice reply" 20 "Alice" "same-id" "reply-server" nil nil nil nil
+     '(:thread-id "thread-1"))
+    (let* ((threads
+            (jabber-db-message-threads
+             "me@x.com" "room@conference.x.com" "groupchat"))
+           (thread (car threads))
+           (root (plist-get thread :root-message)))
+      (should (= 1 (length threads)))
+      (should (= 1 (plist-get thread :reply-count)))
+      (should (equal "Alice root" (plist-get root :body)))
+      (should (equal "root-server" (plist-get root :server-id)))
+      (should (equal "room@conference.x.com/Alice"
+                     (plist-get root :from))))))
+
+(ert-deftest jabber-test-db-message-threads-root-is-not-unread ()
+  "Do not treat an incoming thread root as an unread reply."
+  (jabber-test-db-with-db
+    (dolist (type '("chat" "groupchat"))
+      (let ((peer (if (equal type "chat")
+                      "alice@x.com"
+                    "room@conference.x.com")))
+        (jabber-db-store-message
+         "me@x.com" peer "in" type "Root only" 10 "Alice"
+         "root-id" "root-server" nil nil nil nil
+         '(:thread-id "thread-1"))
+        (sqlite-execute
+         jabber-db--connection
+         "UPDATE message_thread SET root_message_id = NULL
+WHERE account = ? AND peer = ? AND type = ? AND thread_id = ?"
+         (list "me@x.com" peer type "thread-1"))
+        (let ((thread
+               (car (jabber-db-message-threads
+                     "me@x.com" peer type))))
+          (should (= 0 (plist-get thread :reply-count)))
+          (should-not (plist-get thread :unread)))))))
+
+(ert-deftest jabber-test-db-message-threads-carries-retraction-state ()
+  "Expose root retraction state without discarding stored metadata."
+  (jabber-test-db-with-db
+    (jabber-db-store-message
+     "me@x.com" "alice@x.com" "in" "chat" "Sensitive root" 10
+     "phone" "root-id" "root-server")
+    (jabber-db-register-message-thread
+     "me@x.com" "alice@x.com" "chat" "thread-1" nil
+     "root-id" nil 10)
+    (jabber-db-retract-message-in-peer
+     "me@x.com" "alice@x.com" "root-server" "moderator@x.com")
+    (let ((root
+           (plist-get
+            (car (jabber-db-message-threads
+                  "me@x.com" "alice@x.com" "chat"))
+            :root-message)))
+      (should (plist-get root :retracted))
+      (should (equal "Sensitive root" (plist-get root :body))))))
+
+(ert-deftest jabber-test-db-thread-summaries-only-aggregate-visible-roots ()
+  "Backlog attachment aggregates only threads visible in the page."
+  (jabber-test-db-with-db
+    (dolist (thread '(("thread-1" "root-1")
+                      ("thread-2" "root-2")))
+      (jabber-db-register-message-thread
+       "me@x.com" "alice@x.com" "chat"
+       (car thread) nil (cadr thread) nil 1))
+    (let ((real-summary (symbol-function 'jabber-db--thread-summary))
+          (calls 0)
+          (root '(:id "root-1" :msg-type "chat")))
+      (cl-letf (((symbol-function 'jabber-db--thread-summary)
+                 (lambda (&rest args)
+                   (setq calls (1+ calls))
+                   (apply real-summary args))))
+        (jabber-db--attach-thread-summaries
+         jabber-db--connection "me@x.com" "alice@x.com" (list root)))
+      (should (= calls 1))
+      (should
+       (equal "thread-1"
+              (plist-get (plist-get root :thread-summary) :thread-id))))))
+
+(ert-deftest jabber-test-db-thread-location-disambiguates-muc-client-id ()
+  "Exact row identity disambiguates recycled MUC client stanza IDs."
+  (jabber-test-db-with-db
+    (jabber-db-store-message
+     "me@x.com" "room@conference.x.com" "in" "groupchat"
+     "Alice root" 1 "Alice" "same-id" nil nil nil nil nil
+     '(:thread-id "thread-a"))
+    (jabber-db-store-message
+     "me@x.com" "room@conference.x.com" "in" "groupchat"
+     "Bob root" 2 "Bob" "same-id" nil nil nil nil nil
+     '(:thread-id "thread-b"))
+    (let* ((candidates
+            (jabber-db-message-correction-candidates
+             "me@x.com" "room@conference.x.com" "same-id"))
+           (alice
+            (seq-find
+             (lambda (candidate)
+               (equal "room@conference.x.com/Alice"
+                      (plist-get candidate :from)))
+             candidates))
+           (bob
+            (seq-find
+             (lambda (candidate)
+               (equal "room@conference.x.com/Bob"
+                      (plist-get candidate :from)))
+             candidates)))
+      (should
+       (equal '(:thread-id "thread-a" :root t)
+              (jabber-db-message-thread-location-by-row
+               "me@x.com" "room@conference.x.com" "groupchat"
+               (plist-get alice :row-id))))
+      (should
+       (equal '(:thread-id "thread-b" :root t)
+              (jabber-db-message-thread-location-by-row
+               "me@x.com" "room@conference.x.com" "groupchat"
+               (plist-get bob :row-id))))
+      (should
+       (equal '("Alice root")
+              (mapcar
+               (lambda (msg) (plist-get msg :body))
+               (jabber-db-thread-backlog
+                "me@x.com" "room@conference.x.com" "groupchat"
+                "thread-a" t)))))))
+
+(ert-deftest jabber-test-db-thread-muc-root-prefers-row-and-server-id ()
+  "A recycled MUC client ID does not turn a reply into the root."
+  (jabber-test-db-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message
+       "me@x.com" "room@conference.x.com" "in" "groupchat"
+       "root" now "Alice" "same-id" "root-server" nil nil nil nil
+       '(:thread-id "thread-a"))
+      (jabber-db-store-message
+       "me@x.com" "room@conference.x.com" "in" "groupchat"
+       "reply" (1+ now) "Alice" "same-id" "reply-server" nil nil nil nil
+       '(:thread-id "thread-a"))
+      (let* ((parent
+              (jabber-db-backlog
+               "me@x.com" "room@conference.x.com" nil nil nil
+               "groupchat"))
+             (summary (plist-get (car parent) :thread-summary)))
+        (should (equal '("root")
+                       (mapcar (lambda (msg) (plist-get msg :body))
+                               parent)))
+        (should (= 1 (plist-get summary :reply-count)))
+        (should
+         (equal '(:thread-id "thread-a" :root nil)
+                (jabber-db-message-thread-location
+                 "me@x.com" "room@conference.x.com" "groupchat"
+                 "reply-server" t)))))))
+
+(ert-deftest jabber-test-db-thread-muc-root-row-beats-client-id ()
+  "A stored root row takes precedence over a recycled MUC client ID."
+  (jabber-test-db-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message
+       "me@x.com" "room@conference.x.com" "in" "groupchat"
+       "root" now "Alice" "same-id" nil nil nil nil nil
+       '(:thread-id "thread-a"))
+      (jabber-db-store-message
+       "me@x.com" "room@conference.x.com" "in" "groupchat"
+       "reply" (1+ now) "Alice" "same-id" nil nil nil nil nil
+       '(:thread-id "thread-a"))
+      (jabber-db-store-message
+       "me@x.com" "room@conference.x.com" "in" "groupchat"
+       "unrelated" (+ now 2) "Bob" "same-id")
+      (let* ((summary
+              (jabber-db-message-thread-summary
+               "me@x.com" "room@conference.x.com" "groupchat"
+               "thread-a"))
+             (messages
+              (jabber-db-thread-backlog
+               "me@x.com" "room@conference.x.com" "groupchat"
+               "thread-a" t))
+             (root (seq-find
+                    (lambda (msg)
+                      (equal "root" (plist-get msg :body)))
+                    messages))
+             (reply (seq-find
+                     (lambda (msg)
+                       (equal "reply" (plist-get msg :body)))
+                     messages)))
+        (should (equal '("reply" "root")
+                       (mapcar (lambda (msg) (plist-get msg :body))
+                               messages)))
+        (should
+         (jabber-db-message-thread-root-p
+          "me@x.com" "room@conference.x.com" "groupchat"
+          "thread-a" "same-id" nil (plist-get root :db-id)))
+        (should-not
+         (jabber-db-message-thread-root-p
+          "me@x.com" "room@conference.x.com" "groupchat"
+          "thread-a" "same-id" nil (plist-get reply :db-id)))
+        (should-not
+         (jabber-db-message-thread-root-p
+          "me@x.com" "room@conference.x.com" "groupchat"
+          "thread-a" "same-id" nil))
+        (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                   (lambda (_jc) "me@x.com"))
+                  ((symbol-function 'jabber-message-thread-find-buffer)
+                   (lambda (&rest _) nil)))
+          (should
+           (eq 'parent
+               (jabber-message-thread-display-target
+                'jc "room@conference.x.com" "groupchat"
+                (list :thread-id "thread-a" :id "same-id"
+                      :db-id (plist-get root :db-id)))))
+          (should-not
+           (jabber-message-thread-display-target
+            'jc "room@conference.x.com" "groupchat"
+            (list :thread-id "thread-a" :id "same-id"
+                  :db-id (plist-get reply :db-id))))
+          (should-not
+           (jabber-message-thread-display-target
+            'jc "room@conference.x.com" "groupchat"
+            '(:thread-id "thread-a" :id "same-id"))))
+        (should (= (plist-get root :db-id)
+                   (plist-get summary :root-message-id)))))))
+
 ;;; Group: Reply metadata persistence
 
 (ert-deftest jabber-test-db-reply-metadata-round-trip ()
@@ -2122,6 +2686,24 @@ CREATE TABLE omemo_store (
                  (lambda (_jc) "me@example.com")))
         (jabber-db--message-handler 'fake-jc xml))
       (should (null (jabber-db-query "me@example.com" "friend@example.com"))))))
+
+(ert-deftest jabber-test-db-muc-self-message-stored-outgoing ()
+  "A live MUC echo from our nickname is not counted as incoming."
+  (jabber-test-db-with-db
+    (let ((jabber-muc--rooms (make-hash-table :test #'equal))
+          (xml '(message ((from . "room@example.com/me")
+                          (type . "groupchat")
+                          (id . "message-1"))
+                         (body nil "mine"))))
+      (jabber-muc-join-set "room@example.com" 'fake-jc "me")
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com")))
+        (jabber-db--message-handler 'fake-jc xml))
+      (should
+       (equal "out"
+              (plist-get
+               (car (jabber-db-query "me@example.com" "room@example.com"))
+               :direction))))))
 
 (ert-deftest jabber-test-db-replace-reactions-chat-by-stanza-id ()
   "Direct-chat reactions are stored against the target stanza id."

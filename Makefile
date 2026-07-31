@@ -41,6 +41,7 @@ TESTS ?= tests/jabber-test-activity.el \
          tests/jabber-test-menu.el \
          tests/jabber-test-message-correct.el \
          tests/jabber-test-message-reply.el \
+         tests/jabber-test-message-thread.el \
          tests/jabber-test-modeline.el \
          tests/jabber-test-moderation.el \
          tests/jabber-test-muc.el \

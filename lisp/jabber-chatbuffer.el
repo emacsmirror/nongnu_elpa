@@ -665,8 +665,17 @@ reload, so a reader scrolled up in history is not yanked to the top."
            (msg-type (when (and (bound-and-true-p jabber-group)
                                 (not resource))
                        "groupchat"))
-           (entries (jabber-db-backlog account peer count nil resource
-                                       msg-type)))
+           (entries
+            (if (bound-and-true-p jabber-message-thread-id)
+                (jabber-db-thread-backlog
+                 account peer
+                 (or (bound-and-true-p jabber-message-thread-type)
+                     msg-type "chat")
+                 jabber-message-thread-id count)
+              (jabber-db-backlog
+               account peer count nil resource msg-type
+               (and (boundp 'jabber-message-thread-use-buffers)
+                    (not jabber-message-thread-use-buffers))))))
       (if (null entries)
           (progn
             (setq jabber-chat-earliest-backlog (float-time))
@@ -709,15 +718,47 @@ sync starts, nil when it ends."
 
 (defun jabber-chat--handle-mam-sync-complete (peers)
   "Refresh chat buffers that received MAM messages.
-PEERS is a list of (PEER . TYPE) pairs."
+PEERS is a list of (ACCOUNT PEER TYPE) entries."
   (dolist (entry peers)
-    (let* ((peer (car entry))
-           (type (cdr entry))
-           (kind (if (string= type "groupchat") 'muc 'chat))
-           (buffer (jabber-buffer-registry-find kind peer)))
-      (when (and buffer (buffer-live-p buffer))
-        (with-current-buffer buffer
-          (jabber-chat-buffer-refresh))))))
+    (pcase-let* ((`(,account ,peer ,type) entry)
+           (parent-buffers
+            (seq-filter
+             (lambda (candidate)
+               (with-current-buffer candidate
+                 (and (eq major-mode 'jabber-chat-mode)
+                      (not (bound-and-true-p jabber-message-thread-id))
+                      (bound-and-true-p jabber-buffer-connection)
+                      (equal account
+                             (jabber-connection-bare-jid
+                              jabber-buffer-connection))
+                      (if (string= type "groupchat")
+                          (equal peer (bound-and-true-p jabber-group))
+                        (and (not (bound-and-true-p jabber-group))
+                             (equal peer
+                                    (and
+                                     (bound-and-true-p jabber-chatting-with)
+                                     (jabber-jid-user
+                                      jabber-chatting-with))))))))
+             (buffer-list))))
+      (dolist (thread-buffer (buffer-list))
+        (with-current-buffer thread-buffer
+          (when (and (bound-and-true-p jabber-message-thread-id)
+                     (bound-and-true-p jabber-buffer-connection)
+                     (equal account
+                            (jabber-connection-bare-jid
+                             jabber-buffer-connection))
+                     (equal peer
+                            (bound-and-true-p jabber-message-thread-peer))
+                     (equal type
+                            (bound-and-true-p jabber-message-thread-type)))
+            (when (get-buffer-window thread-buffer t)
+              (jabber-db-mark-message-thread-read
+               account peer type jabber-message-thread-id))
+            (jabber-chat-buffer-refresh))))
+      (dolist (parent-buffer parent-buffers)
+        (when (buffer-live-p parent-buffer)
+          (with-current-buffer parent-buffer
+            (jabber-chat-buffer-refresh)))))))
 
 (add-hook 'jabber-mam-sync-complete-functions #'jabber-chat--handle-mam-sync-complete)
 

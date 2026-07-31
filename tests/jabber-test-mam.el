@@ -283,6 +283,25 @@ When COMPLETE is non-nil, mark the archive as fully consumed."
           "SELECT 1 FROM message WHERE server_id = ?"
           '("newer-server-id")))))))
 
+(ert-deftest jabber-test-mam-preserves-archived-thread-fields ()
+  "A MAM result stores XEP-0201 metadata from the forwarded stanza."
+  (jabber-test-mam-with-db
+    (let* ((jc (jabber-test-mam--make-fake-jc "me@example.com"))
+           (jabber-mam--syncing (list (cons jc jabber-test-mam-queryid)))
+           (jabber-muc-participants nil)
+           (stanza (jabber-test-mam--make-message 1))
+           (result (jabber-xml-child-with-xmlns stanza jabber-mam-xmlns))
+           (forwarded (car (jabber-xml-get-children result 'forwarded)))
+           (inner (car (jabber-xml-get-children forwarded 'message))))
+      (nconc inner '((thread ((parent . "parent-1")) "thread-1")))
+      (jabber-mam--process-message jc stanza)
+      (let ((stored (car (jabber-db-thread-backlog
+                          "me@example.com" "friend@example.com" "chat"
+                          "thread-1" t))))
+        (should (equal "thread-1" (plist-get stored :thread-id)))
+        (should (equal "parent-1"
+                       (plist-get stored :thread-parent-id)))))))
+
 ;;; Group 3: Transaction batching performance
 
 (ert-deftest jabber-test-mam-transaction-batching ()
@@ -598,12 +617,16 @@ OUR-NICK is our nickname; every 3rd message is from us."
 (ert-deftest jabber-test-mam-mark-dirty-dedup ()
   "jabber-mam--mark-dirty does not add the same peer twice."
   (let ((jabber-mam--dirty-peers nil))
-    (jabber-mam--mark-dirty "peer@example.com" "chat")
-    (jabber-mam--mark-dirty "peer@example.com" "chat")
-    (jabber-mam--mark-dirty "peer@example.com" "chat")
-    (should (= 1 (length jabber-mam--dirty-peers)))
-    (should (equal '("peer@example.com" . "chat")
-                   (car jabber-mam--dirty-peers)))))
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (jc) (symbol-name jc))))
+      (jabber-mam--mark-dirty 'account-a "peer@example.com" "chat")
+      (jabber-mam--mark-dirty 'account-a "peer@example.com" "chat")
+      (jabber-mam--mark-dirty 'account-b "peer@example.com" "chat")
+      (should (= 2 (length jabber-mam--dirty-peers)))
+      (should (member '("account-a" "peer@example.com" "chat")
+                      jabber-mam--dirty-peers))
+      (should (member '("account-b" "peer@example.com" "chat")
+                      jabber-mam--dirty-peers)))))
 
 (ert-deftest jabber-test-mam-dirty-peers-reset-on-new-sync ()
   "Starting a new sync cycle resets the dirty peer list."
@@ -747,6 +770,63 @@ OUR-NICK is our nickname; every 3rd message is from us."
         (should (= 2 (caar (sqlite-select db
                      "SELECT count(*) FROM message WHERE account = ? AND peer = ?"
                      (list account peer)))))))))
+
+(ert-deftest jabber-test-mam-reconcile-prunes-empty-thread ()
+  "Reconciliation removes thread metadata after its last message is deleted."
+  (jabber-test-mam-with-db
+    (let ((account "me@example.com")
+          (peer "friend@example.com"))
+      (jabber-db-store-message
+       account peer "in" "chat" "root" 1700000100
+       "phone" "root-1" "server-root" nil nil nil nil
+       '(:thread-id "thread-1"))
+      (jabber-db-store-message
+       account peer "in" "chat" "reply" 1700000100
+       "phone" "reply-1" "server-reply" nil nil nil nil
+       '(:thread-id "thread-1"))
+      (jabber-db-store-message
+       account peer "in" "chat" "kept" 1700000100
+       "phone" "kept-1" "server-kept")
+      (let* ((ids (make-hash-table :test #'equal))
+             (jabber-mam--sync-received
+              (list (cons "test-q"
+                          (list :ids ids :min-ts 1700000100
+                                :max-ts 1700000100
+                                :account account :peer peer)))))
+        (puthash "server-kept" t ids)
+        (jabber-mam--reconcile-sync "test-q")
+        (should-not
+         (jabber-db-message-thread-known-p
+          account peer "chat" "thread-1"))))))
+
+(ert-deftest jabber-test-mam-reconcile-keeps-rootless-thread-with-reply ()
+  "Reconciliation retains thread metadata while a reply survives."
+  (jabber-test-mam-with-db
+    (let ((account "me@example.com")
+          (peer "friend@example.com"))
+      (jabber-db-store-message
+       account peer "in" "chat" "root" 1700000100
+       "phone" "root-1" "server-root" nil nil nil nil
+       '(:thread-id "thread-1"))
+      (jabber-db-store-message
+       account peer "in" "chat" "reply" 1700000100
+       "phone" "reply-1" "server-reply" nil nil nil nil
+       '(:thread-id "thread-1"))
+      (let* ((ids (make-hash-table :test #'equal))
+             (jabber-mam--sync-received
+              (list (cons "test-q"
+                          (list :ids ids :min-ts 1700000100
+                                :max-ts 1700000100
+                                :account account :peer peer)))))
+        (puthash "server-reply" t ids)
+        (jabber-mam--reconcile-sync "test-q")
+        (should
+         (jabber-db-message-thread-known-p
+          account peer "chat" "thread-1"))
+        (should (= 1 (plist-get
+                      (jabber-db-message-thread-summary
+                       account peer "chat" "thread-1")
+                      :reply-count)))))))
 
 (ert-deftest jabber-test-mam-reconcile-noop-when-empty ()
   "Reconciliation is a no-op when no messages were received."

@@ -134,6 +134,35 @@
       (should-not jabber-message-reply--jid)
       (should-not jabber-message-reply--fallback-text))))
 
+(ert-deftest jabber-test-message-reply-send-hook-preserves-thread ()
+  "An ordinary reply reuses the target message's thread context."
+  (with-temp-buffer
+    (setq-local jabber-message-reply--id "orig-id")
+    (setq-local jabber-message-reply--thread
+                '(:thread-id "thread-1" :thread-parent-id "parent-1"))
+    (let* ((jabber-chat--send-hook-stanza
+            '(message ((type . "chat")) (body () "reply")))
+           (elements (jabber-message-reply--send-hook "reply" "new-id")))
+      (should
+       (equal '((thread ((parent . "parent-1")) "thread-1"))
+              (cl-remove-if-not
+               (lambda (element) (eq (car element) 'thread))
+               elements)))
+      (should-not jabber-message-reply--thread))))
+
+(ert-deftest jabber-test-message-reply-send-hook-does-not-duplicate-thread ()
+  "An explicit outgoing thread element wins over pending reply context."
+  (with-temp-buffer
+    (setq-local jabber-message-reply--id "orig-id")
+    (setq-local jabber-message-reply--thread
+                '(:thread-id "thread-1" :thread-parent-id nil))
+    (let* ((jabber-chat--send-hook-stanza
+            '(message ((type . "chat"))
+                      (body () "reply")
+                      (thread () "thread-1")))
+           (elements (jabber-message-reply--send-hook "reply" "new-id")))
+      (should-not (cl-find 'thread elements :key #'car)))))
+
 (ert-deftest jabber-test-message-reply-send-hook-nil-when-no-reply ()
   "Send hook returns nil when no reply state is set."
   (with-temp-buffer
@@ -394,7 +423,55 @@ The <fallback> range is start=0, so the quote must land at
           (should (string-prefix-p quote input))
           (should (string-suffix-p "my draft" input))
           (should (equal quote jabber-message-reply--fallback-text))
-          (should (equal "orig-1" jabber-message-reply--id)))))))
+          (should (equal "orig-1" jabber-message-reply--id))
+          (should-not jabber-message-reply--thread))))))
+
+(ert-deftest jabber-test-message-reply-captures-thread-context ()
+  "Replying to a threaded message records its exact thread context."
+  (with-temp-buffer
+    (let ((ewoc (ewoc-create
+                 (lambda (data)
+                   (insert (format "%s\n" (plist-get (cadr data) :body)))))))
+      (setq-local jabber-chat-ewoc ewoc)
+      (let ((node
+             (ewoc-enter-last
+              ewoc
+              '(:foreign (:id "orig-1"
+                          :from "alice@example.com/phone"
+                          :body "Hello"
+                          :thread-id "thread-1"
+                          :thread-parent-id "parent-1")))))
+        (goto-char (point-max))
+        (setq-local jabber-point-insert (point-marker))
+        (goto-char (ewoc-location node))
+        (jabber-chat-reply)
+        (should
+         (equal '(:thread-id "thread-1" :thread-parent-id "parent-1")
+                jabber-message-reply--thread))))))
+
+(ert-deftest jabber-test-message-reply-captures-thread-summary-context ()
+  "A locally registered root supplies reply context through its summary."
+  (with-temp-buffer
+    (let ((ewoc (ewoc-create
+                 (lambda (data)
+                   (insert (format "%s\n" (plist-get (cadr data) :body)))))))
+      (setq-local jabber-chat-ewoc ewoc)
+      (let ((node
+             (ewoc-enter-last
+              ewoc
+              '(:foreign (:id "orig-1"
+                          :from "alice@example.com/phone"
+                          :body "Hello"
+                          :thread-summary
+                          (:thread-id "thread-1"
+                           :thread-parent-id "parent-1"))))))
+        (goto-char (point-max))
+        (setq-local jabber-point-insert (point-marker))
+        (goto-char (ewoc-location node))
+        (jabber-chat-reply)
+        (should
+         (equal '(:thread-id "thread-1" :thread-parent-id "parent-1")
+                jabber-message-reply--thread))))))
 
 (ert-deftest jabber-test-message-reply-quote-not-nested ()
   "Replying to a reply quotes only the answer, not the old quote."
@@ -476,10 +553,13 @@ The <fallback> range is start=0, so the quote must land at
     (setq-local jabber-message-reply--id "orig-1")
     (setq-local jabber-message-reply--jid "alice@example.com")
     (setq-local jabber-message-reply--fallback-text "> Alice:\n> Hello\n")
+    (setq-local jabber-message-reply--thread
+                '(:thread-id "thread-1" :thread-parent-id nil))
     (jabber-chat-cancel-reply)
     (should (equal "my text" (buffer-string)))
     (should-not jabber-message-reply--id)
-    (should-not jabber-message-reply--fallback-text)))
+    (should-not jabber-message-reply--fallback-text)
+    (should-not jabber-message-reply--thread)))
 
 (ert-deftest jabber-test-message-reply-cancel-keeps-edited-input ()
   "Cancelling a reply leaves edited input untouched but clears state."

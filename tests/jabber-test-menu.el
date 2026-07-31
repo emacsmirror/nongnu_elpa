@@ -55,5 +55,23 @@ inherited bindings from parent mode keymaps."
           (push (format "%s" cmd) missing))))
     (should (null missing))))
 
+(ert-deftest jabber-test-menu-thread-commands ()
+  "Expose thread roots in the menu and keep normal thread sending on RET."
+  (should
+   (eq (keymap-lookup jabber-chat-operations-menu-map "t")
+       'jabber-message-thread-open))
+  (should
+   (eq (keymap-lookup jabber-chat-operations-menu-map "T")
+       'jabber-message-thread-start))
+  (should
+   (eq (keymap-lookup jabber-chat-operations-menu-map "l")
+       'jabber-message-thread-browse))
+  (should
+   (eq (keymap-lookup jabber-chat-mode-map "C-c C-t")
+       'jabber-message-thread-open))
+  (should
+   (eq (keymap-lookup jabber-chat-mode-map "RET")
+       'jabber-chat-goto-reply-target-or-send)))
+
 (provide 'jabber-test-menu)
 ;;; jabber-test-menu.el ends here

@@ -31,6 +31,8 @@
 (require 'jabber-buffer-registry)
 (require 'jabber-chatbuffer)
 (require 'jabber-db)
+(require 'jabber-message-reply)
+(require 'jabber-message-thread)
 (require 'jabber-reactions)
 (require 'ewoc)
 (require 'goto-addr)
@@ -260,13 +262,108 @@ holding state for the next composed message stay inert."
               (nconc stanza (funcall global-hook body id))))
         (nconc stanza (funcall hook body id))))))
 
+(defun jabber-chat--root-reply-element (id jid)
+  "Return a root reply element for ID and optional JID."
+  `(reply ((xmlns . "urn:xmpp:reply:0")
+           ,@(and jid (list (cons 'to jid)))
+           (id . ,id))))
+
+(defun jabber-chat--captured-thread (stanza correction-p)
+  "Return the thread captured from STANZA or buffer state.
+CORRECTION-P keeps unrelated pending composition state untouched."
+  (or (jabber-message-thread-protocol-fields stanza)
+      (and (not correction-p) jabber-message-reply--thread)
+      (and (not correction-p) jabber-message-thread-id
+           (list :thread-id jabber-message-thread-id
+                 :thread-parent-id jabber-message-thread-parent-id))))
+
+(defun jabber-chat--reply-fallback-length (body)
+  "Return the pending reply fallback length valid for BODY."
+  (and jabber-message-reply--fallback-text
+       (not (string-empty-p jabber-message-reply--fallback-text))
+       (string-prefix-p jabber-message-reply--fallback-text body)
+       (length jabber-message-reply--fallback-text)))
+
+(defun jabber-chat--captured-reply-elements (body correction-p)
+  "Return one pending reply extension for BODY unless CORRECTION-P."
+  (unless correction-p
+    (cond
+     (jabber-message-reply--id
+      (jabber-message-reply--elements
+       jabber-message-reply--id jabber-message-reply--jid
+       (jabber-chat--reply-fallback-length body)))
+     (jabber-message-thread--root-reply-id
+      (list (jabber-chat--root-reply-element
+             jabber-message-thread--root-reply-id
+             jabber-message-thread--root-reply-jid))))))
+
+(defun jabber-chat--send-context-state (correction-p)
+  "Return restorable one-shot state unless CORRECTION-P."
+  (unless correction-p
+    (list :reply-id jabber-message-reply--id
+          :reply-jid jabber-message-reply--jid
+          :fallback-text jabber-message-reply--fallback-text
+          :reply-thread jabber-message-reply--thread
+          :root-reply-id jabber-message-thread--root-reply-id
+          :root-reply-jid jabber-message-thread--root-reply-jid)))
+
+(defun jabber-chat--clear-send-context ()
+  "Clear one-shot reply state after capturing an asynchronous send."
+  (setq jabber-message-reply--id nil
+        jabber-message-reply--jid nil
+        jabber-message-reply--fallback-text nil
+        jabber-message-reply--thread nil
+        jabber-message-thread--root-reply-id nil
+        jabber-message-thread--root-reply-jid nil))
+
+(defun jabber-chat--capture-send-context (body extra-elements)
+  "Capture one-shot reply and thread state for an asynchronous send.
+BODY determines the XEP-0428 fallback range.  EXTRA-ELEMENTS take
+precedence over buffer-local thread state."
+  (let* ((stanza `(message () ,@extra-elements))
+         (correction-p
+          (jabber-xml-child-with-xmlns stanza "urn:xmpp:message-correct:0"))
+         (thread (jabber-chat--captured-thread stanza correction-p))
+         (thread-elements
+          (unless (or correction-p
+                      (jabber-message-thread-protocol-has-core-p stanza))
+            (jabber-message-thread-protocol-elements
+             (plist-get thread :thread-id)
+             (plist-get thread :thread-parent-id))))
+         (reply-elements
+          (jabber-chat--captured-reply-elements body correction-p))
+         (state (jabber-chat--send-context-state correction-p)))
+    (unless correction-p
+      (jabber-chat--clear-send-context))
+    (list :extra-elements
+          (append (copy-tree extra-elements) thread-elements reply-elements)
+          :state state)))
+
+(defun jabber-chat--restore-send-context (context)
+  "Restore one-shot state from failed asynchronous send CONTEXT.
+Do not overwrite a newer reply selection."
+  (when-let* ((state (plist-get context :state)))
+    (unless (or jabber-message-reply--id
+                jabber-message-thread--root-reply-id)
+      (setq jabber-message-reply--id (plist-get state :reply-id)
+            jabber-message-reply--jid (plist-get state :reply-jid)
+            jabber-message-reply--fallback-text
+            (plist-get state :fallback-text)
+            jabber-message-reply--thread (plist-get state :reply-thread)
+            jabber-message-thread--root-reply-id
+            (plist-get state :root-reply-id)
+            jabber-message-thread--root-reply-jid
+            (plist-get state :root-reply-jid)))))
+
 ;; Global reference declarations
 
 (declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
 (declare-function jabber-omemo--send-chat "jabber-omemo"
                   (jc body &optional extra-elements success-callback
                       failure-callback))
-(declare-function jabber-openpgp--send-chat "jabber-openpgp" (jc body &optional extra-elements))
+(declare-function jabber-openpgp--send-chat "jabber-openpgp"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
 (declare-function jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy" (jc body &optional extra-elements))
 (declare-function jabber-muc-private-create-buffer "jabber-muc.el"
                   (jc group nickname))
@@ -388,21 +485,25 @@ JC is the Jabber connection."
 
       ;; insert backlog
       (when (null jabber-chat-earliest-backlog)
-	(let ((backlog-entries (jabber-db-backlog
-				(jabber-connection-bare-jid jc)
-				(jabber-jid-user chat-with))))
-	  (if (null backlog-entries)
-	      (setq jabber-chat-earliest-backlog (float-time))
-	    ;; backlog-entries is DESC; last element is oldest.
-	    (setq jabber-chat-earliest-backlog
-		  (float-time (plist-get (car (last backlog-entries)) :timestamp)))
-	    ;; ewoc-enter-first with DESC input produces ascending display.
-	    ;; Insert in chunks to keep the UI responsive.
-	    (cl-incf jabber-chat--backlog-generation)
-	    (jabber-chat--insert-backlog-chunked
-	     (current-buffer) backlog-entries
-	     #'jabber-chat-display-buffer-images
-	     jabber-chat--backlog-generation))))
+        (let ((backlog-entries
+               (jabber-db-backlog
+                (jabber-connection-bare-jid jc)
+                (jabber-jid-user chat-with)
+                nil nil nil nil
+                (not jabber-message-thread-use-buffers))))
+          (if (null backlog-entries)
+              (setq jabber-chat-earliest-backlog (float-time))
+            ;; backlog-entries is DESC; last element is oldest.
+            (setq jabber-chat-earliest-backlog
+                  (float-time
+                   (plist-get (car (last backlog-entries)) :timestamp)))
+            ;; ewoc-enter-first with DESC input produces ascending display.
+            ;; Insert in chunks to keep the UI responsive.
+            (cl-incf jabber-chat--backlog-generation)
+            (jabber-chat--insert-backlog-chunked
+             (current-buffer) backlog-entries
+             #'jabber-chat-display-buffer-images
+             jabber-chat--backlog-generation))))
 
       (jabber-chat-buffer-recenter-input))
 
@@ -596,7 +697,8 @@ updates the original row instead."
          stanza-id
          nil (jabber-db--extract-occupant-id xml-data) nil
          encrypted
-         (jabber-chat--reply-fields xml-data))))))
+         (jabber-chat--reply-fields xml-data)
+         (jabber-message-thread--fields xml-data))))))
 
 (defun jabber-chat--select-buffer (jc from &optional carbon-buffer)
   "Return the chat buffer for an incoming message from FROM.
@@ -844,22 +946,31 @@ MSG-PLIST, then run `jabber-message-hooks' and
 contains an error element.  FROM is the sender JID.  JC is the
 Jabber connection, used to detect self-authored carbons.
 _XML-DATA is reserved for future use by OMEMO."
-  (let ((body-text (plist-get msg-plist :body))
+  (let* ((body-text (plist-get msg-plist :body))
         (self-p (string= (jabber-jid-user from)
-                         (jabber-connection-bare-jid jc))))
-    (with-current-buffer chat-buffer
-      (jabber-chat-buffer-with-scrolltobottom
-       (jabber-chatstates--clear-typing)
-       (jabber-maybe-print-rare-time
-        (jabber-chat-ewoc-enter
-         (list (if error-p :error :foreign) msg-plist))))
-      (when (and (not error-p) (not self-p))
-        (let ((inhibit-message jabber-chat-mam-syncing))
-          (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
-            (run-hook-with-args hook
-                                from (current-buffer) body-text
-                                (funcall jabber-alert-message-function
-                                         from (current-buffer) body-text))))))))
+                         (jabber-connection-bare-jid jc)))
+         (alert-buffer
+          (or chat-buffer
+              (and (not error-p)
+                   (not self-p)
+                   (plist-get msg-plist :thread-id)
+                   (jabber-chat--select-buffer jc from)))))
+    (when chat-buffer
+      (with-current-buffer chat-buffer
+        (jabber-chat-buffer-with-scrolltobottom
+         (jabber-chatstates--clear-typing)
+         (jabber-maybe-print-rare-time
+          (jabber-chat-ewoc-enter
+           (list (if error-p :error :foreign) msg-plist))))))
+    (when (and (not error-p) (not self-p))
+      (let ((inhibit-message
+             (and chat-buffer
+                  (buffer-local-value 'jabber-chat-mam-syncing chat-buffer))))
+        (dolist (hook '(jabber-message-hooks jabber-alert-message-hooks))
+          (run-hook-with-args
+           hook from alert-buffer body-text
+           (funcall jabber-alert-message-function
+                    from alert-buffer body-text)))))))
 
 (defun jabber-chat--find-buffer (from)
   "Return an existing chat buffer for FROM, or nil; never create one."
@@ -921,14 +1032,28 @@ JC is the Jabber connection."
            (error-p (jabber-xml-get-children xml-data 'error))
            (msg-plist (jabber-chat--msg-plist-from-stanza xml-data)))
       (unless (jabber-chat--reaction-only-p xml-data)
-        (when is-carbon
-          (jabber-chat--store-carbon jc xml-data))
         (let* ((replace-id (jabber-message-correct--replace-id xml-data))
                (account (jabber-connection-bare-jid jc))
                (peer (jabber-jid-user
                       (if (equal (jabber-jid-user from) account)
                           (jabber-xml-get-attribute xml-data 'to)
-                        from))))
+                        from)))
+               (thread-target
+                (if replace-id
+                    'correction
+                  (if (and (plist-get msg-plist :thread-id)
+                           (not (jabber-muc-sender-p from)))
+                    (jabber-message-thread-display-target
+                     jc peer "chat" msg-plist)
+                    'parent)))
+               (chat-buffer
+                (cond
+                 ((eq thread-target 'correction) nil)
+                 ((eq thread-target 'parent)
+                  (jabber-chat--select-buffer jc from carbon-buffer))
+                 ((eq thread-target 'closed) nil)
+                 ((listp thread-target) thread-target)
+                 (t thread-target))))
           (cond
            ((and replace-id (not jabber-chat-mam-syncing))
             (jabber-message-correct--apply
@@ -936,7 +1061,17 @@ JC is the Jabber connection."
              (plist-get msg-plist :body)
              from
              nil
-             (or carbon-buffer (jabber-chat-find-buffer from))
+             (lambda (original)
+               (let ((targets
+                      (jabber-message-thread-update-targets-for-row
+                       jc peer "chat" (plist-get original :row-id))))
+                 (cond
+                  ((eq targets 'closed) nil)
+                  (targets targets)
+                  (t (delq nil
+                           (list
+                            (or carbon-buffer
+                                (jabber-chat-find-buffer from))))))))
              (jabber-db--extract-occupant-id xml-data)
              account peer))
            (error-p
@@ -944,9 +1079,46 @@ JC is the Jabber connection."
            ((run-hook-with-args-until-success 'jabber-chat-printers
                                               msg-plist :foreign :printp)
             (jabber-chat--display-message
-             jc xml-data
-             (jabber-chat--select-buffer jc from carbon-buffer)
-             nil from msg-plist))))))))
+             jc xml-data chat-buffer nil from msg-plist)))
+          (when is-carbon
+            (jabber-chat--store-carbon jc xml-data)))))))
+
+(defun jabber-chat--local-message-buffer (jc msg-plist)
+  "Return MSG-PLIST's live local-echo buffer on JC, or nil."
+  (let* ((source (current-buffer))
+         (thread-id (plist-get msg-plist :thread-id))
+         (peer (and (bound-and-true-p jabber-chatting-with)
+                    (jabber-jid-user jabber-chatting-with)))
+         (account (jabber-connection-bare-jid jc))
+         (location
+          (and thread-id peer (plist-get msg-plist :id)
+               (jabber-db-message-thread-location
+                account peer "chat" (plist-get msg-plist :id) nil))))
+    (cond
+     ((and thread-id (not jabber-message-thread-use-buffers))
+      (or (jabber-message-thread--parent-buffer
+           account peer "chat")
+          source))
+     ((or (null thread-id) (plist-get location :root)) source)
+     (location
+      (jabber-message-thread-find-buffer account peer "chat" thread-id))
+     ((equal thread-id
+             (bound-and-true-p jabber-message-thread-id))
+      source)
+     (t
+      (or (jabber-message-thread-find-buffer
+           account peer "chat" thread-id)
+          source)))))
+
+(defun jabber-chat--display-local-message (jc msg-plist)
+  "Display local MSG-PLIST in its canonical live buffer on JC."
+  (when-let* ((buffer (jabber-chat--local-message-buffer jc msg-plist)))
+    (with-current-buffer buffer
+      (when (run-hook-with-args-until-success
+             'jabber-chat-printers msg-plist :local :printp)
+        (let ((node (jabber-chat-ewoc-enter (list :local msg-plist))))
+          (jabber-maybe-print-rare-time node)
+          node)))))
 
 (defun jabber-chat-send
     (jc body &optional extra-elements success-callback failure-callback)
@@ -959,7 +1131,8 @@ splice into the stanza after the body (e.g. OOB, hints)."
      (jabber-omemo--send-chat
       jc body extra-elements success-callback failure-callback))
     ('openpgp (require 'jabber-openpgp)
-              (jabber-openpgp--send-chat jc body extra-elements))
+              (jabber-openpgp--send-chat
+               jc body extra-elements success-callback failure-callback))
     ('openpgp-legacy (require 'jabber-openpgp-legacy)
                      (jabber-openpgp-legacy--send-chat jc body extra-elements))
     (_
@@ -977,9 +1150,7 @@ splice into the stanza after the body (e.g. OOB, hints)."
        (unless (assq 'replace extra-elements)
          (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza-to-send)))
            (plist-put msg-plist :status :sent)
-	   (when (run-hook-with-args-until-success 'jabber-chat-printers msg-plist :local :printp)
-             (jabber-maybe-print-rare-time
-              (jabber-chat-ewoc-enter (list :local msg-plist))))))
+	   (jabber-chat--display-local-message jc msg-plist)))
        ;; ...and send it...
        (jabber-send-sexp jc stanza-to-send)
        (when success-callback
@@ -1199,7 +1370,8 @@ DELAYED marks the message as delayed unconditionally."
       :unstyled (and (jabber-xml-child-with-xmlns
                       xml-data "urn:xmpp:styling:0")
                      t))
-     (jabber-chat--reply-fields xml-data))))
+     (jabber-chat--reply-fields xml-data)
+     (jabber-message-thread--fields xml-data))))
 
 (defun jabber-chat--msg-plist-from-stanza (xml-data &optional delayed)
   "Extract display fields from XML-DATA into a message plist.
@@ -1251,6 +1423,29 @@ mouse hover and reachable from the keyboard with \\[display-local-help]."
               (string-join
                (mapcar #'jabber-chat--reaction-entry-string entries)
                "  ")))))
+
+(defun jabber-chat--insert-thread-summary (msg)
+  "Insert a compact thread marker for MSG."
+  (when (jabber-message-thread-available-p)
+    (when-let* ((summary (plist-get msg :thread-summary)))
+      (let* ((count (plist-get summary :reply-count))
+             (label (format "[%d %s]"
+                            count
+                            (if (= count 1) "Reply" "Replies"))))
+        (insert "\n")
+        (insert-text-button
+         label
+         'face (if (plist-get summary :unread)
+                   '(:inherit link :weight bold)
+                 'shadow)
+         'follow-link t
+         'help-echo "Open thread"
+         'action
+         (lambda (button)
+           (jabber-message-thread-open
+            (save-excursion
+              (goto-char (button-start button))
+              (jabber-message-thread--message-at-point)))))))))
 
 (defun jabber-chat--reply-context-label (msg)
   "Return a compact reply context label for MSG, or nil.
@@ -1347,6 +1542,7 @@ anywhere else, behave like `jabber-chat-buffer-send'."
       (insert (propertize " (edited)" 'face 'shadow)))
     (jabber-chat--insert-status-indicator msg)
     (jabber-chat--insert-reactions msg)
+    (jabber-chat--insert-thread-summary msg)
     (insert "\n")))
 
 (defun jabber-chat-pp--foreign (data)
@@ -1362,6 +1558,7 @@ anywhere else, behave like `jabber-chat-buffer-send'."
     (when (plist-get msg :edited)
       (insert (propertize " (edited)" 'face 'shadow)))
     (jabber-chat--insert-reactions msg)
+    (jabber-chat--insert-thread-summary msg)
     (insert "\n")))
 
 (defun jabber-chat--insert-tombstone (msg)
@@ -1392,7 +1589,8 @@ anywhere else, behave like `jabber-chat-buffer-send'."
       (when (plist-get msg :edited)
         (insert (propertize " (edited)" 'face 'shadow)))
       (jabber-chat--insert-status-indicator msg)
-      (jabber-chat--insert-reactions msg))
+      (jabber-chat--insert-reactions msg)
+      (jabber-chat--insert-thread-summary msg))
     (insert "\n")))
 
 (defun jabber-chat-pp--muc-foreign (data)
@@ -1409,7 +1607,8 @@ anywhere else, behave like `jabber-chat-buffer-send'."
               (append jabber-muc-printers jabber-chat-printers)))
       (when (plist-get msg :edited)
         (insert (propertize " (edited)" 'face 'shadow)))
-      (jabber-chat--insert-reactions msg))
+      (jabber-chat--insert-reactions msg)
+      (jabber-chat--insert-thread-summary msg))
     (insert "\n")))
 
 (defun jabber-chat-pp--error (data)

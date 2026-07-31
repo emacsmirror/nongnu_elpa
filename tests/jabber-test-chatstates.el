@@ -22,6 +22,20 @@
              (type . ,type))
             (body nil "hello")))
 
+(defun jabber-test-chatstates--thread-message (from type state thread-id)
+  "Return a threaded message from FROM with TYPE and chat STATE."
+  `(message ((from . ,from)
+             (type . ,type))
+            (thread () ,thread-id)
+            (,state ((xmlns . ,jabber-chatstates-xmlns)))))
+
+(defun jabber-test-chatstates--thread-body-message (from type thread-id)
+  "Return a threaded body message from FROM with TYPE."
+  `(message ((from . ,from)
+             (type . ,type))
+            (thread () ,thread-id)
+            (body nil "hello")))
+
 (defun jabber-test-chatstates--reaction-message (from type)
   "Return a bodyless reaction message sexp from FROM with TYPE."
   `(message ((from . ,from)
@@ -47,6 +61,22 @@
   (let (data)
     (ewoc-map (lambda (item) (push item data)) jabber-chat-ewoc)
     (nreverse data)))
+
+(defun jabber-test-chatstates--create-thread-buffer (parent type)
+  "Create a test thread with PARENT and message TYPE."
+  (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_jc) "me@example.org"))
+            ((symbol-function 'jabber-message-thread-find-buffer)
+             (lambda (&rest _) nil))
+            ((symbol-function 'jabber-chat-mode-setup) #'ignore)
+            ((symbol-function 'jabber-buffer-registry-register) #'ignore)
+            ((symbol-function 'jabber-db-thread-backlog) #'ignore))
+    (jabber-message-thread-create-buffer
+     'fake-jc
+     (if (equal type "groupchat")
+         "room@conference.example"
+       "alice@example.org")
+     type "thread-1" nil parent)))
 
 ;;; Group 1: Composing notification fix
 
@@ -106,6 +136,144 @@ nil after the first message, breaking subsequent composing detection."
         (jabber-chatstates-after-change)
         (should-not sent-states)))))
 
+(ert-deftest jabber-test-chatstates-direct-thread-composing-keeps-thread ()
+  "A direct thread composing notification includes its ThreadID."
+  (let (sent)
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc stanza) (setq sent stanza)))
+              ((symbol-function 'jabber-chatstates-kick-timer) #'ignore))
+      (with-temp-buffer
+        (setq-local jabber-chatstates-confirm t)
+        (setq-local jabber-chatstates-requested t)
+        (setq-local jabber-chatting-with "them@example.com")
+        (setq-local jabber-buffer-connection 'fake-jc)
+        (setq-local jabber-message-thread-id "thread-1")
+        (setq-local jabber-message-thread-parent-id "parent-1")
+        (setq-local jabber-point-insert (point-min))
+        (setq-local jabber-chatstates-composing-sent nil)
+        (insert "draft")
+        (jabber-chatstates-after-change)))
+    (should
+     (equal sent
+            `(message ((to . "them@example.com") (type . "chat"))
+                      (thread ((parent . "parent-1")) "thread-1")
+                      (composing ((xmlns . ,jabber-chatstates-xmlns))))))))
+
+(ert-deftest jabber-test-chatstates-muc-thread-composing-keeps-thread ()
+  "A MUC thread composing notification targets the room and ThreadID."
+  (let (sent)
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc stanza) (setq sent stanza)))
+              ((symbol-function 'jabber-chatstates-kick-timer) #'ignore))
+      (with-temp-buffer
+        (setq-local jabber-chatstates-confirm t)
+        (setq-local jabber-chatstates-requested t)
+        (setq-local jabber-group "room@conference.example")
+        (setq-local jabber-buffer-connection 'fake-jc)
+        (setq-local jabber-message-thread-id "thread-1")
+        (setq-local jabber-message-thread-parent-id nil)
+        (setq-local jabber-point-insert (point-min))
+        (setq-local jabber-chatstates-composing-sent nil)
+        (insert "draft")
+        (jabber-chatstates-after-change)))
+    (should
+     (equal sent
+            `(message ((to . "room@conference.example")
+                       (type . "groupchat"))
+                      (thread () "thread-1")
+                      (composing ((xmlns . ,jabber-chatstates-xmlns))))))))
+
+(ert-deftest jabber-test-chatstates-new-direct-thread-inherits-hooks ()
+  "A new direct thread inherits negotiated chat-state sending."
+  (let ((parent (generate-new-buffer " *jabber-direct-thread-parent*"))
+        thread)
+    (unwind-protect
+        (progn
+          (with-current-buffer parent
+            (setq-local jabber-chatstates-requested t)
+            (add-hook 'post-command-hook
+                      #'jabber-chatstates-after-change nil t))
+          (setq thread
+                (jabber-test-chatstates--create-thread-buffer parent "chat"))
+          (with-current-buffer thread
+            (should (memq #'jabber-chatstates-after-change post-command-hook))
+            (should (memq #'jabber-chatstates-send-gone kill-buffer-hook))))
+      (when (buffer-live-p thread)
+        (with-current-buffer thread
+          (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t))
+        (kill-buffer thread))
+      (kill-buffer parent))))
+
+(ert-deftest jabber-test-chatstates-new-direct-thread-inherits-opt-out ()
+  "A new direct thread inherits its parent's negotiated opt-out."
+  (let ((parent (generate-new-buffer " *jabber-opt-out-parent*"))
+        thread sent)
+    (unwind-protect
+        (progn
+          (with-current-buffer parent
+            (setq-local jabber-chatstates-requested nil))
+          (setq thread
+                (jabber-test-chatstates--create-thread-buffer parent "chat"))
+          (with-current-buffer thread
+            (setq-local jabber-buffer-connection 'fake-jc)
+            (setq-local jabber-point-insert (point-min))
+            (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+                       (lambda (&rest _) (setq sent t))))
+              (should-not jabber-chatstates-requested)
+              (should-not
+               (jabber-chatstates-when-sending "message" "message-1"))
+              (insert "draft")
+              (jabber-chatstates-after-change)
+              (jabber-chatstates-send-gone)
+              (should-not sent))
+            (should-not
+             (memq #'jabber-chatstates-after-change post-command-hook))
+            (should-not
+             (memq #'jabber-chatstates-send-gone kill-buffer-hook))))
+      (when (buffer-live-p thread)
+        (kill-buffer thread))
+      (kill-buffer parent))))
+
+(ert-deftest jabber-test-chatstates-new-muc-thread-enables-sending ()
+  "A new MUC thread enables chat states without a gone hook."
+  (let ((parent (generate-new-buffer " *jabber-muc-thread-parent*"))
+        thread)
+    (unwind-protect
+        (progn
+          (setq thread
+                (jabber-test-chatstates--create-thread-buffer
+                 parent "groupchat"))
+          (with-current-buffer thread
+            (should (memq #'jabber-chatstates-after-change post-command-hook))
+            (should-not
+             (memq #'jabber-chatstates-send-gone kill-buffer-hook))))
+      (when (buffer-live-p thread)
+        (kill-buffer thread))
+      (kill-buffer parent))))
+
+(ert-deftest jabber-test-chatstates-muc-thread-kill-cancels-timers ()
+  "Killing a MUC thread cancels state timers without sending gone."
+  (let ((parent (generate-new-buffer " *jabber-muc-timer-parent*"))
+        thread timer sent)
+    (unwind-protect
+        (progn
+          (setq thread
+                (jabber-test-chatstates--create-thread-buffer
+                 parent "groupchat"))
+          (with-current-buffer thread
+            (setq timer (run-with-timer 3600 nil #'ignore))
+            (setq-local jabber-chatstates-paused-timer timer))
+          (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+                     (lambda (&rest _) (setq sent t))))
+            (kill-buffer thread))
+          (should-not sent)
+          (should-not (memq timer timer-list)))
+      (when (and timer (memq timer timer-list))
+        (cancel-timer timer))
+      (when (buffer-live-p thread)
+        (kill-buffer thread))
+      (kill-buffer parent))))
+
 (ert-deftest jabber-test-chatstates-send-hook-returns-active ()
   "Send hook returns active element when chatstates-confirm is t."
   (with-temp-buffer
@@ -152,6 +320,40 @@ nil after the first message, breaking subsequent composing detection."
       (jabber-chatstates-send-paused)
       (should jabber-chatstates-inactive-timer)
       (cancel-timer jabber-chatstates-inactive-timer))))
+
+(ert-deftest jabber-test-chatstates-timer-keeps-originating-thread ()
+  "A paused timer sends from the thread buffer that started it."
+  (let ((origin (generate-new-buffer " *jabber-chatstate-origin*"))
+        callback
+        callback-args
+        sent)
+    (unwind-protect
+        (cl-letf (((symbol-function 'run-with-timer)
+                   (lambda (_seconds _repeat function &rest args)
+                     (setq callback function
+                           callback-args args)
+                     'fake-timer))
+                  ((symbol-function 'jabber-send-sexp-if-connected)
+                   (lambda (_jc stanza) (setq sent stanza))))
+          (with-current-buffer origin
+            (setq-local jabber-chatstates-confirm t)
+            (setq-local jabber-chatstates-requested t)
+            (setq-local jabber-chatting-with "them@example.com")
+            (setq-local jabber-buffer-connection 'fake-jc)
+            (setq-local jabber-message-thread-id "thread-1")
+            (setq-local jabber-message-thread-parent-id nil)
+            (setq-local jabber-chatstates-paused-timer nil)
+            (setq-local jabber-chatstates-inactive-timer nil)
+            (jabber-chatstates-kick-timer))
+          (with-temp-buffer
+            (apply callback callback-args))
+          (should
+           (equal sent
+                  `(message ((to . "them@example.com") (type . "chat"))
+                            (thread () "thread-1")
+                            (paused
+                             ((xmlns . ,jabber-chatstates-xmlns)))))))
+      (kill-buffer origin))))
 
 (ert-deftest jabber-test-chatstates-paused-not-sent-when-not-requested ()
   "send-paused is a no-op after negotiation opt-out."
@@ -222,6 +424,43 @@ nil after the first message, breaking subsequent composing detection."
         (setq-local jabber-chatstates-inactive-timer nil)
         (jabber-chatstates-send-gone)
         (should-not sent)))))
+
+(ert-deftest jabber-test-chatstates-direct-thread-gone-keeps-thread ()
+  "A direct thread gone notification includes its ThreadID."
+  (let (sent)
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc stanza) (setq sent stanza))))
+      (with-temp-buffer
+        (setq-local jabber-chatstates-confirm t)
+        (setq-local jabber-chatstates-requested t)
+        (setq-local jabber-chatting-with "them@example.com")
+        (setq-local jabber-buffer-connection 'fake-jc)
+        (setq-local jabber-message-thread-id "thread-1")
+        (setq-local jabber-message-thread-parent-id nil)
+        (setq-local jabber-chatstates-paused-timer nil)
+        (setq-local jabber-chatstates-inactive-timer nil)
+        (jabber-chatstates-send-gone)))
+    (should
+     (equal sent
+            `(message ((to . "them@example.com") (type . "chat"))
+                      (thread () "thread-1")
+                      (gone ((xmlns . ,jabber-chatstates-xmlns))))))))
+
+(ert-deftest jabber-test-chatstates-muc-thread-does-not-send-gone ()
+  "Closing a MUC thread does not send a gone notification."
+  (let (sent)
+    (cl-letf (((symbol-function 'jabber-send-sexp-if-connected)
+               (lambda (_jc stanza) (setq sent stanza))))
+      (with-temp-buffer
+        (setq-local jabber-chatstates-confirm t)
+        (setq-local jabber-chatstates-requested t)
+        (setq-local jabber-group "room@conference.example")
+        (setq-local jabber-buffer-connection 'fake-jc)
+        (setq-local jabber-message-thread-id "thread-1")
+        (setq-local jabber-chatstates-paused-timer nil)
+        (setq-local jabber-chatstates-inactive-timer nil)
+        (jabber-chatstates-send-gone)))
+    (should-not sent)))
 
 (ert-deftest jabber-test-chatstates-after-change-cancels-inactive-timer ()
   "Typing again cancels the inactive timer."
@@ -435,15 +674,350 @@ nil after the first message, breaking subsequent composing detection."
 
 ;;; Group 4: Incoming MUC routing
 
+(ert-deftest jabber-test-chatstates-direct-thread-routes-exclusively ()
+  "A direct threaded state updates and enables only its thread buffer."
+  (let ((parent (generate-new-buffer " *jabber-chatstate-parent*"))
+        (thread (generate-new-buffer " *jabber-chatstate-thread*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer parent
+            (setq-local jabber-chatting-with "alice@example.org")
+            (setq-local jabber-chat-ewoc (ewoc-create #'ignore)))
+          (with-current-buffer thread
+            (setq-local jabber-chatting-with "alice@example.org")
+            (setq-local jabber-message-thread-id "thread-1")
+            (setq-local jabber-chat-ewoc (ewoc-create #'ignore)))
+          (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                     (lambda (_from _jc) (buffer-name parent)))
+                    ((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_jc) "me@example.org"))
+                    ((symbol-function 'jabber-message-thread-find-buffer)
+                     (lambda (_account _peer _type _thread-id) thread)))
+            (jabber-handle-incoming-message-chatstates
+             'fake-jc
+             (jabber-test-chatstates--thread-message
+              "alice@example.org/resource" "chat" 'composing "thread-1")))
+          (with-current-buffer parent
+            (should-not (jabber-test-chatstates--ewoc-data))
+            (should-not
+             (memq #'jabber-chatstates-after-change post-command-hook)))
+          (with-current-buffer thread
+            (should (eq jabber-chatstates-last-state 'composing))
+            (should (equal (jabber-test-chatstates--ewoc-data)
+                           '((:typing "alice@example.org is typing..."))))
+            (should (memq #'jabber-chatstates-after-change post-command-hook))
+            (should (memq #'jabber-chatstates-send-gone kill-buffer-hook))))
+      (dolist (buffer (list parent thread))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t))
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-chatstates-disabled-thread-routes-to-parent ()
+  "A state-only threaded stanza uses the parent when buffers are disabled."
+  (let ((parent (generate-new-buffer " *jabber-disabled-state-parent*"))
+        (stale-thread (generate-new-buffer " *jabber-disabled-state-thread*"))
+        (jabber-message-thread-use-buffers nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer parent
+            (setq-local jabber-chatting-with "alice@example.org")
+            (setq-local jabber-chat-ewoc (ewoc-create #'ignore)))
+          (with-current-buffer stale-thread
+            (setq-local jabber-message-thread-id "thread-1")
+            (setq-local jabber-chat-ewoc (ewoc-create #'ignore)))
+          (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                     (lambda (&rest _) (buffer-name parent)))
+                    ((symbol-function 'jabber-message-thread-find-buffer)
+                     (lambda (&rest _)
+                       (ert-fail "Looked up a stale thread buffer"))))
+            (jabber-handle-incoming-message-chatstates
+             'fake-jc
+             (jabber-test-chatstates--thread-message
+              "alice@example.org/resource" "chat" 'composing "thread-1")))
+          (with-current-buffer parent
+            (should (eq jabber-chatstates-last-state 'composing))
+            (should (equal (jabber-test-chatstates--ewoc-data)
+                           '((:typing "alice@example.org is typing...")))))
+          (with-current-buffer stale-thread
+            (should-not jabber-chatstates-last-state)
+            (should-not (jabber-test-chatstates--ewoc-data))))
+      (dolist (buffer (list parent stale-thread))
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t))
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-chatstates-direct-thread-gone-renews-thread-id ()
+  "Incoming gone retires the direct thread ID before further typing."
+  (let ((parent (generate-new-buffer " *jabber-gone-parent*"))
+        (thread (generate-new-buffer " *jabber-gone-thread*"))
+        (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+        content-elements sent)
+    (unwind-protect
+        (progn
+          (with-current-buffer parent
+            (setq-local jabber-chatting-with "alice@example.org"))
+          (with-current-buffer thread
+            (setq-local jabber-chatting-with "alice@example.org")
+            (setq-local jabber-message-thread-id "thread-1")
+            (setq-local jabber-message-thread-type "chat")
+            (setq-local jabber-message-thread-peer "alice@example.org")
+            (setq-local jabber-buffer-connection 'fake-jc)
+            (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+            (setq-local jabber-point-insert (point-min))
+            (jabber-buffer-registry-register
+             'thread
+             '("me@example.org" "alice@example.org" "chat" "thread-1")))
+          (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                     (lambda (_from _jc) (buffer-name parent)))
+                    ((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_jc) "me@example.org"))
+                    ((symbol-function 'jabber-message-thread--generate-id)
+                     (lambda () "thread-2"))
+                    ((symbol-function 'jabber-send-sexp-if-connected)
+                     (lambda (_jc stanza) (setq sent stanza))))
+            (jabber-handle-incoming-message-chatstates
+             'fake-jc
+             (jabber-test-chatstates--thread-message
+              "alice@example.org/resource" "chat" 'gone "thread-1"))
+            (with-current-buffer thread
+              (should (equal jabber-message-thread-id "thread-2"))
+              (should (equal jabber-message-thread-parent-id "thread-1"))
+              (goto-char (point-max))
+              (insert "reply")
+              (jabber-chatstates-after-change)
+              (setq content-elements
+                    (append
+                     (jabber-message-thread--send-hook "reply" "message-1")
+                     (jabber-chatstates-when-sending
+                      "reply" "message-1")))))
+          (should
+           (equal sent
+                  `(message
+                    ((to . "alice@example.org") (type . "chat"))
+                    (thread ((parent . "thread-1")) "thread-2")
+                    (composing
+                     ((xmlns . ,jabber-chatstates-xmlns))))))
+          (should
+           (equal content-elements
+                  `((thread ((parent . "thread-1")) "thread-2")
+                    (active ((xmlns . ,jabber-chatstates-xmlns))))))
+          (should-not
+           (jabber-message-thread-find-buffer
+            "me@example.org" "alice@example.org" "chat" "thread-1"))
+          (should
+           (eq (jabber-message-thread-find-buffer
+                "me@example.org" "alice@example.org" "chat" "thread-2")
+               thread)))
+      (when (buffer-live-p thread)
+        (with-current-buffer thread
+          (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t)))
+      (dolist (buffer (list parent thread))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-chatstates-direct-state-without-type-still-routes ()
+  "A direct state without a type attribute keeps legacy routing."
+  (with-temp-buffer
+    (let ((parent (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (setq-local jabber-chatting-with "alice@example.org")
+      (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from _jc) (buffer-name parent))))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         `(message ((from . "alice@example.org/resource"))
+                   (composing
+                    ((xmlns . ,jabber-chatstates-xmlns))))))
+      (should (eq jabber-chatstates-last-state 'composing))
+      (should (memq #'jabber-chatstates-after-change post-command-hook))
+      (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t))))
+
+(ert-deftest jabber-test-chatstates-threaded-error-disables-owner-only ()
+  "A threaded error disables its chat or groupchat owner, not its parent."
+  (dolist (owner-type '("chat" "groupchat"))
+    (let ((parent (generate-new-buffer " *jabber-error-parent*"))
+          (thread (generate-new-buffer " *jabber-error-thread*")))
+      (unwind-protect
+          (progn
+            (dolist (buffer (list parent thread))
+              (with-current-buffer buffer
+                (setq-local jabber-chatstates-requested t)
+                (add-hook 'post-command-hook
+                          #'jabber-chatstates-after-change nil t)
+                (add-hook 'kill-buffer-hook
+                          #'jabber-chatstates-send-gone nil t)))
+            (with-current-buffer thread
+              (setq-local jabber-message-thread-id "thread-1"))
+            (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                       (lambda (_jc) "me@example.org"))
+                      ((symbol-function 'jabber-message-thread-find-buffer)
+                       (lambda (_account _peer type _thread-id)
+                         (and (equal type owner-type) thread))))
+              (jabber-handle-incoming-message-chatstates
+               'fake-jc
+               `(message
+                 ((from . "peer@example.org/resource") (type . "error"))
+                 (thread () "thread-1")
+                 (error ((type . "cancel"))))))
+            (with-current-buffer parent
+              (should jabber-chatstates-requested)
+              (should
+               (memq #'jabber-chatstates-after-change post-command-hook)))
+            (with-current-buffer thread
+              (should-not jabber-chatstates-requested)
+              (should-not
+               (memq #'jabber-chatstates-after-change post-command-hook))
+              (should-not
+               (memq #'jabber-chatstates-send-gone kill-buffer-hook))))
+        (dolist (buffer (list parent thread))
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (remove-hook 'kill-buffer-hook
+                           #'jabber-chatstates-send-gone t))
+            (kill-buffer buffer)))))))
+
+(ert-deftest jabber-test-chatstates-muc-thread-routes-exclusively ()
+  "A MUC threaded state updates and enables only its thread buffer."
+  (let ((parent (generate-new-buffer " *jabber-muc-chatstate-parent*"))
+        (thread (generate-new-buffer " *jabber-muc-chatstate-thread*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer parent
+            (setq-local jabber-group "room@conference.example")
+            (setq-local jabber-chat-ewoc (ewoc-create #'ignore)))
+          (with-current-buffer thread
+            (setq-local jabber-group "room@conference.example")
+            (setq-local jabber-message-thread-id "thread-1")
+            (setq-local jabber-chat-ewoc (ewoc-create #'ignore)))
+          (cl-letf (((symbol-function 'jabber-buffer-registry-find)
+                     (lambda (_kind _key) parent))
+                    ((symbol-function 'jabber-muc-find-buffer)
+                     (lambda (_group _jc) parent))
+                    ((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_jc) "me@example.org"))
+                    ((symbol-function 'jabber-message-thread-find-buffer)
+                     (lambda (_account _peer _type _thread-id) thread))
+                    ((symbol-function 'jabber-muc-nickname) #'ignore))
+            (jabber-handle-incoming-message-chatstates
+             'fake-jc
+             (jabber-test-chatstates--thread-message
+              "room@conference.example/alice"
+              "groupchat" 'composing "thread-1")))
+          (with-current-buffer parent
+            (should-not jabber-chatstates--muc-composers)
+            (should-not (jabber-test-chatstates--ewoc-data)))
+          (with-current-buffer thread
+            (should (equal jabber-chatstates--muc-composers '("alice")))
+            (should (equal (jabber-test-chatstates--ewoc-data)
+                           '((:typing "alice is typing..."))))
+            (should (memq #'jabber-chatstates-after-change post-command-hook))
+            (should-not
+             (memq #'jabber-chatstates-send-gone kill-buffer-hook))))
+      (dolist (buffer (list parent thread))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-chatstates-muc-thread-ignores-gone ()
+  "A MUC gone state does not change thread composer or send state."
+  (with-temp-buffer
+    (let ((thread (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (setq-local jabber-group "room@conference.example")
+      (setq-local jabber-message-thread-id "thread-1")
+      (setq-local jabber-chatstates--muc-composers '("alice"))
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.org"))
+                ((symbol-function 'jabber-message-thread-find-buffer)
+                 (lambda (&rest _) thread))
+                ((symbol-function 'jabber-muc-nickname) #'ignore))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--thread-message
+          "room@conference.example/alice"
+          "groupchat" 'gone "thread-1")))
+      (should (equal jabber-chatstates--muc-composers '("alice")))
+      (should-not
+       (memq #'jabber-chatstates-after-change post-command-hook)))))
+
+(ert-deftest jabber-test-chatstates-muc-ignores-state-without-nick ()
+  "A MUC state from the bare room JID does not add a composer."
+  (with-temp-buffer
+    (let ((muc-buffer (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (setq-local jabber-group "room@conference.example")
+      (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                 (lambda (_group _jc) muc-buffer))
+                ((symbol-function 'jabber-muc-nickname) #'ignore))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--message
+          "room@conference.example" "groupchat" 'composing)))
+      (should-not jabber-chatstates--muc-composers)
+      (should-not (jabber-test-chatstates--ewoc-data)))))
+
+(ert-deftest jabber-test-chatstates-unknown-thread-state-stays-out-of-parent ()
+  "A state-only unknown thread does not update the parent buffer."
+  (with-temp-buffer
+    (rename-buffer " *jabber-unknown-thread-chatstate*" t)
+    (let ((parent (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (setq-local jabber-chatting-with "alice@example.org")
+      (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from _jc) (buffer-name parent)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.org"))
+                ((symbol-function 'jabber-message-thread-find-buffer)
+                 (lambda (&rest _) nil)))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--thread-message
+          "alice@example.org/resource" "chat" 'composing "unknown")))
+      (should-not jabber-chatstates-last-state)
+      (should-not (jabber-test-chatstates--ewoc-data)))))
+
+(ert-deftest jabber-test-chatstates-thread-body-clears-thread-state ()
+  "A threaded body message clears composing in its displayed thread."
+  (let ((parent (generate-new-buffer " *jabber-body-parent*"))
+        (thread (generate-new-buffer " *jabber-body-thread*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer thread
+            (setq-local jabber-chatting-with "alice@example.org")
+            (setq-local jabber-message-thread-id "thread-1")
+            (setq-local jabber-chatstates-last-state 'composing)
+            (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+            (setq-local jabber-chatstates--ewoc-node
+                        (ewoc-enter-last
+                         jabber-chat-ewoc
+                         '(:typing "alice@example.org is typing..."))))
+          (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                     (lambda (_from _jc) (buffer-name parent)))
+                    ((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_jc) "me@example.org"))
+                    ((symbol-function 'jabber-message-thread-display-target)
+                     (lambda (&rest _) thread)))
+            (jabber-handle-incoming-message-chatstates
+             'fake-jc
+             (jabber-test-chatstates--thread-body-message
+              "alice@example.org/resource" "chat" "thread-1")))
+          (with-current-buffer thread
+            (should-not jabber-chatstates-last-state)
+            (should-not jabber-chatstates--ewoc-node)
+            (should-not (jabber-test-chatstates--ewoc-data))))
+      (kill-buffer parent)
+      (kill-buffer thread))))
+
 (ert-deftest jabber-test-chatstates-groupchat-composing-routes-to-muc-buffer ()
   "Incoming groupchat composing updates the room buffer by bare JID."
   (let ((entered nil)
-        (seen-group nil))
+        (seen-context nil))
     (with-temp-buffer
       (let ((muc-buffer (current-buffer)))
-        (cl-letf (((symbol-function 'jabber-buffer-registry-find)
-                   (lambda (_kind group)
-                     (setq seen-group group)
+        (cl-letf (((symbol-function 'jabber-muc-find-buffer)
+                   (lambda (group jc)
+                     (setq seen-context (list group jc))
                      muc-buffer))
                   ((symbol-function 'jabber-muc-nickname) #'ignore)
                   ((symbol-function 'jabber-chat-ewoc-enter)
@@ -454,7 +1028,9 @@ nil after the first message, breaking subsequent composing detection."
            'fake-jc
            (jabber-test-chatstates--message
             "room@conference.example/alice" "groupchat" 'composing))
-          (should (string= seen-group "room@conference.example"))
+          (should
+           (equal seen-context
+                  '("room@conference.example" fake-jc)))
           (should (equal jabber-chatstates--muc-composers '("alice")))
           (should (equal entered '(:typing "alice is typing..."))))))))
 

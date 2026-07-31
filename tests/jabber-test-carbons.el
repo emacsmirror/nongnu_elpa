@@ -37,12 +37,13 @@
 ;;; Test helpers
 
 (defun jabber-test-carbons--make-carbon (type from inner-from inner-to
-                                              &optional id body)
+                                              &optional id body extra-elements)
   "Build a carbon-wrapped message stanza.
 TYPE is `sent' or `received'.  FROM is the outer stanza's from.
 INNER-FROM and INNER-TO are attributes on the inner message.
 Optional ID is the inner message's stanza id.
-Optional BODY overrides the default \"Hello\"."
+Optional BODY overrides the default \"Hello\".
+EXTRA-ELEMENTS are appended to the inner message."
   (let ((inner-attrs `((from . ,inner-from)
                        (to . ,inner-to)
                        (type . "chat"))))
@@ -51,7 +52,8 @@ Optional BODY overrides the default \"Hello\"."
               (,type ((xmlns . "urn:xmpp:carbons:2"))
                      (forwarded ((xmlns . "urn:xmpp:forward:0"))
                                 (message ,inner-attrs
-                                         (body nil ,(or body "Hello"))))))))
+                                         (body nil ,(or body "Hello"))
+                                         ,@extra-elements))))))
 
 (defun jabber-test-carbons--make-carbon-with-namespaces
     (type wrapper-xmlns forwarded-xmlns)
@@ -243,6 +245,52 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
                               "SELECT COUNT(*) FROM message"))))
             (should (= 1 count))))))))
 
+(ert-deftest jabber-chat-test-sent-carbon-thread-root-displays-before-storage ()
+  "A first-seen sent-carbon thread root remains visible and stored."
+  (jabber-test-carbons-with-db
+    (let ((buffer (generate-new-buffer " *carbon-thread-root*"))
+          (display-count 0)
+          displayed-message
+          displayed-buffer)
+      (unwind-protect
+          (let ((stanza
+                 (jabber-test-carbons--make-carbon
+                  'sent "me@example.com" "me@example.com/phone"
+                  "friend@example.com" "root-1" "Thread root"
+                  '((thread () "thread-1")))))
+            (cl-letf
+                (((symbol-function 'jabber-connection-bare-jid)
+                  (lambda (_jc) "me@example.com"))
+                 ((symbol-function 'jabber-chat-create-buffer)
+                  (lambda (&rest _) buffer))
+                 ((symbol-function 'jabber-chat--decrypt-if-needed)
+                  (lambda (_jc inner) inner))
+                 ((symbol-function 'jabber-chat--display-message)
+                  (lambda (_jc _xml target _local _from msg)
+                    (setq display-count (1+ display-count)
+                          displayed-buffer target
+                          displayed-message msg))))
+              (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+                (jabber-process-chat 'connection stanza)))
+            (should (= display-count 1))
+            (should (eq displayed-buffer buffer))
+            (should (equal "thread-1"
+                           (plist-get displayed-message :thread-id)))
+            (should
+             (equal '("thread-1")
+                    (car
+                     (sqlite-select
+                      jabber-db--connection
+                      "SELECT thread_id FROM message"))))
+            (should
+             (equal "thread-1"
+                    (plist-get
+                     (jabber-db-message-thread-summary
+                      "me@example.com" "friend@example.com" "chat"
+                      "thread-1")
+                     :thread-id))))
+        (kill-buffer buffer)))))
+
 (ert-deftest jabber-chat-test-sent-correction-uses-recipient-buffer ()
   "A sent-carbon correction redraws the recipient chat buffer."
   (let ((recipient-buffer (generate-new-buffer " *carbon-recipient*"))
@@ -266,7 +314,9 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
                      (lambda (_jc) "me@example.com"))
                     ((symbol-function 'jabber-message-correct--apply)
                      (lambda (&rest args)
-                       (setq applied-buffer (nth 4 args)))))
+                       (setq applied-buffer
+                             (car (funcall (nth 4 args)
+                                           '(:row-id 7)))))))
             (jabber-process-chat
              'fake-jc
              '(message ((from . "me@example.com/resource"))))

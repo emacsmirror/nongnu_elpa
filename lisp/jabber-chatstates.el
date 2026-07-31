@@ -37,6 +37,8 @@
 (require 'jabber-chat)
 (require 'jabber-chatbuffer)
 (require 'jabber-disco)
+(require 'jabber-message-thread)
+(require 'jabber-muc)
 (require 'jabber-muc-state)
 (require 'jabber-reactions)
 (require 'jabber-xml)
@@ -184,17 +186,55 @@ It can be sent and cancelled several times.")
   (and-let* ((self-nick (jabber-muc-nickname group jc)))
     (string= nick self-nick)))
 
-(defun jabber-chatstates--handle-muc-state (jc from state)
-  "Apply incoming MUC chat STATE from FROM on JC."
-  (when-let* ((group (jabber-jid-user from))
-              (nick (jabber-jid-resource from))
-              (buffer (jabber-buffer-registry-find 'muc group)))
-    (with-current-buffer buffer
-      (unless (jabber-chatstates--muc-self-nick-p group nick jc)
-        (setq jabber-chatstates--muc-composers
-              (jabber-chatstates--muc-composers-for-state
-               jabber-chatstates--muc-composers nick state)))
-      (jabber-chatstates--update-muc-ewoc))))
+(defun jabber-chatstates--enable-send-hooks (groupchat-p)
+  "Enable local chat-state hooks, excluding gone for GROUPCHAT-P."
+  (setq jabber-chatstates-requested t)
+  (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t)
+  (add-hook 'kill-buffer-hook #'jabber-chatstates-stop-timer nil t)
+  (unless groupchat-p
+    (add-hook 'kill-buffer-hook #'jabber-chatstates-send-gone nil t)))
+
+(defun jabber-chatstates--direct-parent-sends-p (parent-buffer)
+  "Return non-nil when PARENT-BUFFER negotiated chat-state sending."
+  (and (buffer-live-p parent-buffer)
+       (buffer-local-value 'jabber-chatstates-requested parent-buffer)
+       (memq #'jabber-chatstates-after-change
+             (buffer-local-value 'post-command-hook parent-buffer))))
+
+(defun jabber-chatstates--thread-buffer-setup (parent-buffer)
+  "Set up chat-state sending using PARENT-BUFFER's conversation."
+  (cond
+   ((bound-and-true-p jabber-group)
+    (when jabber-chatstates-confirm
+      (jabber-chatstates--enable-send-hooks t)))
+   (t
+    (setq jabber-chatstates-requested
+          (and (buffer-live-p parent-buffer)
+               (buffer-local-value
+                'jabber-chatstates-requested parent-buffer)))
+    (when (and jabber-chatstates-confirm
+               (jabber-chatstates--direct-parent-sends-p parent-buffer))
+      (jabber-chatstates--enable-send-hooks nil)))))
+
+(add-hook 'jabber-message-thread-buffer-created-functions
+          #'jabber-chatstates--thread-buffer-setup)
+
+(defun jabber-chatstates--handle-muc-state (buffer jc from state)
+  "Apply incoming MUC chat STATE from FROM on JC in BUFFER."
+  (let ((group (jabber-jid-user from))
+        (nick (jabber-jid-resource from)))
+    (when (and group nick)
+      (with-current-buffer buffer
+        (unless (eq state 'gone)
+          (unless (jabber-chatstates--muc-self-nick-p group nick jc)
+            (when (and state
+                       jabber-chatstates-confirm
+                       (bound-and-true-p jabber-message-thread-id))
+              (jabber-chatstates--enable-send-hooks t))
+            (setq jabber-chatstates--muc-composers
+                  (jabber-chatstates--muc-composers-for-state
+                   jabber-chatstates--muc-composers nick state)))
+          (jabber-chatstates--update-muc-ewoc))))))
 
 (add-hook 'jabber-chat-send-hooks #'jabber-chatstates-when-sending)
 (defun jabber-chatstates-when-sending (_text _id)
@@ -215,6 +255,25 @@ It can be sent and cancelled several times.")
 (defvar-local jabber-chatstates-inactive-timer nil
   "Timer that counts down from `paused' state to `inactive'.")
 
+(defun jabber-chatstates--conversation ()
+  "Return the current chat target and message type, or nil."
+  (cond
+   ((bound-and-true-p jabber-group)
+    (list jabber-group "groupchat"))
+   ((bound-and-true-p jabber-chatting-with)
+    (list jabber-chatting-with "chat"))))
+
+(defun jabber-chatstates--stanza (state)
+  "Return a standalone chat STATE stanza for the current buffer."
+  (when-let* ((conversation (jabber-chatstates--conversation)))
+    `(message
+      ((to . ,(car conversation))
+       (type . ,(cadr conversation)))
+      ,@(jabber-message-thread--elements
+         (bound-and-true-p jabber-message-thread-id)
+         (bound-and-true-p jabber-message-thread-parent-id))
+      (,state ((xmlns . ,jabber-chatstates-xmlns))))))
+
 (defun jabber-chatstates-stop-timer ()
   "Stop the `paused' and `inactive' timers."
   (when jabber-chatstates-paused-timer
@@ -222,67 +281,66 @@ It can be sent and cancelled several times.")
   (when jabber-chatstates-inactive-timer
     (cancel-timer jabber-chatstates-inactive-timer)))
 
+(defun jabber-chatstates--call-in-buffer (buffer function)
+  "Call FUNCTION in BUFFER when BUFFER is still live."
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
+      (funcall function))))
+
+(defun jabber-chatstates--run-with-buffer-timer (seconds function)
+  "Call FUNCTION after SECONDS in the current live buffer."
+  (run-with-timer seconds nil #'jabber-chatstates--call-in-buffer
+                  (current-buffer) function))
+
 (defun jabber-chatstates-kick-timer ()
   "Start (or restart) the `paused' timer as approriate."
   (jabber-chatstates-stop-timer)
   (setq jabber-chatstates-paused-timer
-        (run-with-timer 5 nil #'jabber-chatstates-send-paused)))
+        (jabber-chatstates--run-with-buffer-timer
+         5 #'jabber-chatstates-send-paused)))
 
 (defun jabber-chatstates-send-paused ()
   "Send a `paused' state notification, then start the inactive timer."
-  (when (and jabber-chatstates-confirm
-             jabber-chatstates-requested
-             jabber-chatting-with)
+  (when-let* (((and jabber-chatstates-confirm
+                    jabber-chatstates-requested))
+              (stanza (jabber-chatstates--stanza 'paused)))
     (setq jabber-chatstates-composing-sent nil)
     (jabber-send-sexp-if-connected
-     jabber-buffer-connection
-     `(message
-       ((to . ,jabber-chatting-with)
-        (type . "chat"))
-       (paused ((xmlns . ,jabber-chatstates-xmlns)))))
+     jabber-buffer-connection stanza)
     (setq jabber-chatstates-inactive-timer
-          (run-with-timer 30 nil #'jabber-chatstates-send-inactive))))
+          (jabber-chatstates--run-with-buffer-timer
+           30 #'jabber-chatstates-send-inactive))))
 
 (defun jabber-chatstates-send-inactive ()
   "Send an `inactive' state notification."
-  (when (and jabber-chatstates-confirm
-             jabber-chatstates-requested
-             jabber-chatting-with)
+  (when-let* (((and jabber-chatstates-confirm
+                    jabber-chatstates-requested))
+              (stanza (jabber-chatstates--stanza 'inactive)))
     (jabber-send-sexp-if-connected
-     jabber-buffer-connection
-     `(message
-       ((to . ,jabber-chatting-with)
-        (type . "chat"))
-       (inactive ((xmlns . ,jabber-chatstates-xmlns)))))))
+     jabber-buffer-connection stanza)))
 
 (defun jabber-chatstates-send-gone ()
   "Send a `gone' state notification and cancel timers.
 Added to `kill-buffer-hook' in chat buffers."
-  (when (and jabber-chatstates-confirm
-             jabber-chatstates-requested
-             jabber-chatting-with)
+  (when-let* (((and jabber-chatstates-confirm
+                    jabber-chatstates-requested
+                    (not (bound-and-true-p jabber-group))))
+              (stanza (jabber-chatstates--stanza 'gone)))
     (jabber-chatstates-stop-timer)
     (jabber-send-sexp-if-connected
-     jabber-buffer-connection
-     `(message
-       ((to . ,jabber-chatting-with)
-        (type . "chat"))
-       (gone ((xmlns . ,jabber-chatstates-xmlns)))))))
+     jabber-buffer-connection stanza)))
 
 (defun jabber-chatstates-after-change ()
   "Post-command-hook: emit `composing'/`active' when typing state flips."
   (let* ((composing-now (not (= (point-max) jabber-point-insert)))
          (state (if composing-now 'composing 'active)))
-    (when (and jabber-chatstates-confirm
-               jabber-chatting-with
-               jabber-chatstates-requested
-               (not (eq composing-now jabber-chatstates-composing-sent)))
+    (when-let* (((and jabber-chatstates-confirm
+                      jabber-chatstates-requested
+                      (not (eq composing-now
+                               jabber-chatstates-composing-sent))))
+                (stanza (jabber-chatstates--stanza state)))
       (jabber-send-sexp-if-connected
-       jabber-buffer-connection
-       `(message
-         ((to . ,jabber-chatting-with)
-          (type . "chat"))
-         (,state ((xmlns . ,jabber-chatstates-xmlns)))))
+       jabber-buffer-connection stanza)
       (when (setq jabber-chatstates-composing-sent composing-now)
         (jabber-chatstates-kick-timer)))))
 
@@ -293,10 +351,9 @@ Added to `kill-buffer-hook' in chat buffers."
   (and (jabber-xml-get-children xml-data 'body)
        (not (jabber-reactions--reaction-only-p xml-data))))
 
-(defun jabber-chatstates--handle-direct-state (jc xml-data from)
-  "Update the direct chat buffer from XML-DATA sent by FROM on JC."
-  (when-let* ((buffer (get-buffer (jabber-chat-get-buffer from jc))))
-    (with-current-buffer buffer
+(defun jabber-chatstates--handle-direct-state (buffer xml-data)
+  "Update direct chat BUFFER from XML-DATA."
+  (with-current-buffer buffer
       (cond
        ;; If we get an error message, we shouldn't report any
        ;; events, as the requests are mirrored from us.
@@ -309,11 +366,14 @@ Added to `kill-buffer-hook' in chat buffers."
         (let ((state (jabber-chatstates--message-state xml-data))
               (body-message-p (jabber-chatstates--real-body-message-p
                                xml-data)))
+          (when (and (eq state 'gone)
+                     (bound-and-true-p jabber-message-thread-id))
+            (jabber-chatstates-stop-timer)
+            (setq jabber-chatstates-composing-sent nil)
+            (jabber-message-thread--renew-id))
           ;; Set up hooks for composition notification
           (when (and jabber-chatstates-confirm state)
-            (setq jabber-chatstates-requested t)
-            (add-hook 'post-command-hook #'jabber-chatstates-after-change nil t)
-            (add-hook 'kill-buffer-hook #'jabber-chatstates-send-gone nil t))
+            (jabber-chatstates--enable-send-hooks nil))
           (when (and body-message-p (not state))
             (remove-hook 'post-command-hook #'jabber-chatstates-after-change t)
             (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t)
@@ -321,17 +381,75 @@ Added to `kill-buffer-hook' in chat buffers."
 
           (when (or state body-message-p)
             (setq jabber-chatstates-last-state state)
-            (jabber-chatstates--update-ewoc state))))))))
+            (jabber-chatstates--update-ewoc state)))))))
+
+(defun jabber-chatstates--parent-buffer (jc from type)
+  "Return FROM's ordinary chat buffer on JC for message TYPE."
+  (if (equal type "groupchat")
+      (jabber-muc-find-buffer (jabber-jid-user from) jc)
+    (get-buffer (jabber-chat-get-buffer from jc))))
+
+(defun jabber-chatstates--thread-buffer (jc from type thread-id)
+  "Return THREAD-ID's open buffer for FROM and TYPE on JC."
+  (let ((account (jabber-connection-bare-jid jc))
+        (peer (jabber-jid-user from)))
+    (if (equal type "error")
+        (let ((chat (jabber-message-thread-find-buffer
+                     account peer "chat" thread-id))
+              (groupchat (jabber-message-thread-find-buffer
+                          account peer "groupchat" thread-id)))
+          (cond
+           ((and chat groupchat) nil)
+           (chat chat)
+           (groupchat groupchat)))
+      (jabber-message-thread-find-buffer
+       account peer type thread-id))))
+
+(defun jabber-chatstates--thread-content-buffer (jc xml-data from type)
+  "Return threaded content XML-DATA's display buffer on JC."
+  (let ((target
+         (jabber-message-thread-display-target
+          jc (jabber-jid-user from) type
+          (jabber-chat--msg-plist-from-stanza xml-data))))
+    (cond
+     ((eq target 'parent)
+      (jabber-chatstates--parent-buffer jc from type))
+     ((buffer-live-p target) target))))
+
+(defun jabber-chatstates--target-buffer (jc xml-data from type)
+  "Return XML-DATA's chat-state buffer for FROM and TYPE on JC."
+  (let ((fields (jabber-message-thread--fields xml-data))
+        (body-message-p (jabber-chatstates--real-body-message-p xml-data)))
+    (cond
+     ((or (not jabber-message-thread-use-buffers)
+          (and (equal type "chat") (jabber-muc-sender-p from)))
+      (jabber-chatstates--parent-buffer jc from type))
+     ((not (jabber-message-thread-protocol-has-core-p xml-data))
+      (jabber-chatstates--parent-buffer jc from type))
+     ((not fields)
+      (and body-message-p
+           (jabber-chatstates--parent-buffer jc from type)))
+     ((equal type "error")
+      (jabber-chatstates--thread-buffer
+       jc from type (plist-get fields :thread-id)))
+     (body-message-p
+      (jabber-chatstates--thread-content-buffer jc xml-data from type))
+     (t
+      (jabber-chatstates--thread-buffer
+       jc from type (plist-get fields :thread-id))))))
 
 (defun jabber-handle-incoming-message-chatstates (jc xml-data)
   "Update the chat buffer's typing indicator from XML-DATA on JC."
-  (when-let* ((from (jabber-xml-get-attribute xml-data 'from)))
-    (if (string= (jabber-xml-get-attribute xml-data 'type) "groupchat")
+  (when-let* ((from (jabber-xml-get-attribute xml-data 'from))
+              (type (or (jabber-xml-get-attribute xml-data 'type) "chat"))
+              (buffer (jabber-chatstates--target-buffer
+                       jc xml-data from type)))
+    (if (string= type "groupchat")
         (let ((state (jabber-chatstates--message-state xml-data)))
           (when (and (not (string= (jabber-xml-get-attribute xml-data 'type) "error"))
                      (or state (jabber-chatstates--real-body-message-p xml-data)))
-            (jabber-chatstates--handle-muc-state jc from state)))
-      (jabber-chatstates--handle-direct-state jc xml-data from))))
+            (jabber-chatstates--handle-muc-state buffer jc from state)))
+      (jabber-chatstates--handle-direct-state buffer xml-data))))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-handle-incoming-message-chatstates 50)
 

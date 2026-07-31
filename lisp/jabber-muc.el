@@ -77,6 +77,9 @@ Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
 (defvar-local jabber-muc--config-group nil
   "Room JID associated with the current configuration form.")
 
+(defvar-local jabber-muc-private-p nil
+  "Non-nil in a private chat buffer addressed to a MUC occupant.")
+
 (defvar jabber-role-history ()
   "Keeps track of previously used roles.")
 
@@ -411,7 +414,9 @@ The format is that of `mode-line-format' and `header-line-format'."
                       failure-callback))
 (declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
 (declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo" (jc group))
-(declare-function jabber-openpgp--send-muc "jabber-openpgp.el" (jc body &optional extra-elements))
+(declare-function jabber-openpgp--send-muc "jabber-openpgp.el"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
 (declare-function jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy.el" (jc body &optional extra-elements))
 (declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
 (declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
@@ -518,10 +523,12 @@ JC is the Jabber connection."
 
       (setq-local jabber-chat-earliest-backlog nil)
       (when (null jabber-chat-earliest-backlog)
-        (let ((backlog-entries (jabber-db-backlog
-                                (jabber-connection-bare-jid jc)
-                                (jabber-jid-user group)
-                                nil nil nil "groupchat")))
+        (let ((backlog-entries
+               (jabber-db-backlog
+                (jabber-connection-bare-jid jc)
+                (jabber-jid-user group)
+                nil nil nil "groupchat"
+                (not jabber-message-thread-use-buffers))))
           (if (null backlog-entries)
               (setq jabber-chat-earliest-backlog (float-time))
             (setq jabber-chat-earliest-backlog
@@ -570,6 +577,7 @@ JC is the Jabber connection."
       ;; Set jabber-chatting-with before mode-setup so the DB peer
       ;; lookup uses the correct JID.
       (setq-local jabber-chatting-with (concat group "/" nickname))
+      (setq-local jabber-muc-private-p t)
       (jabber-chat-mode-setup jc #'jabber-chat-pp)
       ;; MUC private messages are addressed to an occupant JID, not a
       ;; real bare JID, so OMEMO/OpenPGP session setup cannot work.
@@ -581,15 +589,17 @@ JC is the Jabber connection."
         (jabber-chat-encryption--update-header)))
 
     (setq-local jabber-chatting-with (concat group "/" nickname))
+    (setq-local jabber-muc-private-p t)
     (jabber-buffer-registry-register 'muc-private (format "%s/%s" group nickname))
     (setq jabber-send-function #'jabber-chat-send)
     (setq header-line-format jabber-muc-private-header-line-format)
 
     (setq-local jabber-chat-earliest-backlog nil)
     (when (null jabber-chat-earliest-backlog)
-      (let ((backlog-entries (jabber-db-backlog
-                              (jabber-connection-bare-jid jc)
-                              group nil nil nickname)))
+      (let ((backlog-entries
+             (jabber-db-backlog
+              (jabber-connection-bare-jid jc)
+              group nil nil nickname nil t)))
         (if (null backlog-entries)
             (setq jabber-chat-earliest-backlog (float-time))
           (setq jabber-chat-earliest-backlog
@@ -618,7 +628,8 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
       jc body extra-elements success-callback failure-callback))
     ('openpgp
      (require 'jabber-openpgp)
-     (jabber-openpgp--send-muc jc body extra-elements))
+     (jabber-openpgp--send-muc
+      jc body extra-elements success-callback failure-callback))
     ('openpgp-legacy
      (require 'jabber-openpgp-legacy)
      (jabber-openpgp-legacy--send-muc jc body extra-elements))
@@ -1820,17 +1831,23 @@ live messages with extra metadata, not history."
               (msg-from (jabber-xml-get-attribute xml-data 'from)))
     (string= delay-from (jabber-jid-user msg-from))))
 
-(defun jabber-muc--display-message (jc xml-data group nick type msg-plist)
+(defun jabber-muc--display-message
+    (jc xml-data group nick type msg-plist &optional target-buffer)
   "Display a MUC message and conditionally run alert hooks.
 Insert an EWOC entry into the MUC buffer for GROUP.  _JC is the Jabber
 connection, XML-DATA the parsed stanza, NICK the sender nickname, TYPE
 one of `:muc-local', `:muc-foreign', or `:muc-error', and MSG-PLIST
 the message property list.  Alert hooks are skipped for history
 messages."
-  (let ((error-p (eq type :muc-error))
-        (printers (append jabber-muc-printers jabber-chat-printers))
-        (body-text (plist-get msg-plist :body))
-        (buffer (jabber-muc-find-buffer group jc)))
+  (let* ((error-p (eq type :muc-error))
+         (printers (append jabber-muc-printers jabber-chat-printers))
+         (body-text (plist-get msg-plist :body))
+         (buffer (unless (eq target-buffer 'closed)
+                   (or target-buffer (jabber-muc-find-buffer group jc))))
+         (alert-buffer
+          (or buffer
+              (and (eq target-buffer 'closed)
+                   (jabber-muc-find-buffer group jc)))))
     ;; Only insert into EWOC when the buffer already exists.
     ;; Messages are persisted in the DB regardless; backlog loads
     ;; when the user opens the room.
@@ -1856,9 +1873,9 @@ messages."
                                    'jabber-chat-mam-syncing buffer))))
         (dolist (hook '(jabber-muc-hooks jabber-alert-muc-hooks))
           (run-hook-with-args hook
-                              nick group buffer body-text
+                              nick group alert-buffer body-text
                               (funcall jabber-alert-muc-function
-                                       nick group buffer
+                                       nick group alert-buffer
                                        body-text)))))))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-muc-process-message)
@@ -1875,19 +1892,44 @@ JC is the Jabber connection."
                (nick (jabber-jid-resource from))
                (type (jabber-muc--classify-message jc group nick xml-data))
                (msg-plist (jabber-chat--msg-plist-from-stanza xml-data))
-               (replace-id (jabber-message-correct--replace-id xml-data)))
+               (replace-id (jabber-message-correct--replace-id xml-data))
+               (thread-target
+                (if replace-id
+                    'correction
+                  (if (plist-get msg-plist :thread-id)
+                    (jabber-message-thread-display-target
+                     jc group "groupchat" msg-plist)
+                    'parent)))
+               (target-buffer
+                (cond
+                 ((eq thread-target 'correction) 'closed)
+                 ((eq thread-target 'parent)
+                  (jabber-muc-find-buffer group jc))
+                 ((null thread-target) 'closed)
+                 ((bufferp thread-target) thread-target)
+                 (t 'closed))))
           (if (and replace-id (not (jabber-muc--history-message-p xml-data)))
               (jabber-message-correct--apply
                replace-id
                (plist-get msg-plist :body)
                from
                t
-               (jabber-muc-find-buffer group jc)
+               (lambda (original)
+                 (let ((targets
+                        (jabber-message-thread-update-targets-for-row
+                         jc group "groupchat"
+                         (plist-get original :row-id))))
+                   (cond
+                    ((eq targets 'closed) nil)
+                    (targets targets)
+                    (t (delq nil
+                             (list (jabber-muc-find-buffer group jc)))))))
                (jabber-db--extract-occupant-id xml-data)
                (jabber-connection-bare-jid jc) group
                (jabber-message-correct--muc-current-target-p
                 jc from replace-id))
-            (jabber-muc--display-message jc xml-data group nick type msg-plist)
+            (jabber-muc--display-message
+             jc xml-data group nick type msg-plist target-buffer)
             (when (and (fboundp
                         'jabber-message-correct--record-muc-original)
                        (plist-get msg-plist :body)

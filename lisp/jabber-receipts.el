@@ -36,6 +36,7 @@
 (require 'jabber-muc)
 (require 'jabber-db)
 (require 'jabber-disco)
+(require 'jabber-message-thread)
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 
 (defgroup jabber-receipts nil
@@ -106,6 +107,20 @@ For regular JIDs, look up the 1:1 chat buffer."
       (get-buffer (jabber-muc-private-get-buffer
                    (jabber-jid-user from) (jabber-jid-resource from) jc))
     (get-buffer (jabber-chat-get-buffer from jc))))
+
+(defun jabber-receipts--display-buffer (jc effective from)
+  "Return the buffer that can mark EFFECTIVE from FROM displayed on JC.
+Return nil when a dedicated thread owns the message but is closed."
+  (let* ((peer (jabber-jid-user from))
+         (parent (jabber-receipts--find-buffer from jc))
+         (private-p (and (jabber-jid-resource from)
+                         (jabber-muc-joined-p peer jc)))
+         (msg (jabber-chat--msg-plist-from-stanza effective)))
+    (if (or private-p (not (plist-get msg :thread-id)))
+        parent
+      (pcase (jabber-message-thread-display-target jc peer "chat" msg)
+        ('parent parent)
+        ((and target (pred buffer-live-p)) target)))))
 
 (defun jabber-receipts--effective-stanza (jc xml-data)
   "Return (EFFECTIVE-XML . CARBON-TYPE) for XML-DATA on JC.
@@ -184,7 +199,7 @@ JC is the connection, FROM is the sender, CARBON-TYPE is nil,
               (marker (jabber-xml-child-with-xmlns
                        effective jabber-chat-markers-xmlns))
               ((eq (jabber-xml-node-name marker) 'markable)))
-    (when-let* ((buffer (jabber-receipts--find-buffer from jc)))
+    (when-let* ((buffer (jabber-receipts--display-buffer jc effective from)))
       (with-current-buffer buffer
         (when jabber-chat-send-receipts
           (if (get-buffer-window buffer 'visible)
@@ -231,43 +246,65 @@ overwrite an earlier `<displayed/>' from another resource."
     (< (or (plist-get order current) -1)
        (or (plist-get order new) -1))))
 
+(defun jabber-receipts--update-buffer-status
+    (buffer ref-id column timestamp status)
+  "Update REF-ID's visible status in BUFFER.
+COLUMN, TIMESTAMP, and STATUS describe the receipt.  Return the
+pair (ACCEPTED . CASCADE-EPOCH)."
+  (with-current-buffer buffer
+    (when-let* ((node (jabber-chat-ewoc-find-by-id ref-id)))
+      (let* ((msg (cadr (ewoc-data node)))
+             (current-status (plist-get msg :status))
+             (msg-ts (plist-get msg :timestamp))
+             (msg-epoch (and msg-ts (floor (float-time msg-ts))))
+             (displayed-p (string= column "displayed_at"))
+             (forward-p (or (not displayed-p)
+                            (not msg-epoch)
+                            (> msg-epoch
+                               jabber-receipts--latest-displayed-ts)))
+             (inhibit-read-only t))
+        (when (and forward-p
+                   (or (null current-status)
+                       (jabber-receipts--status-upgrades-p
+                        current-status status)))
+          (plist-put msg :status status)
+          (jabber-chat-ewoc-invalidate node)
+          (jabber-receipts--update-header-line column timestamp)
+          (when displayed-p
+            (when msg-epoch
+              (setq jabber-receipts--latest-displayed-ts msg-epoch))
+            (jabber-receipts--cascade-displayed node))
+          (cons t (and displayed-p msg-epoch)))))))
+
 (defun jabber-receipts--update-status (jc from ref-id column)
   "Update receipt status for message REF-ID from FROM on JC.
-COLUMN is \"delivered_at\" or \"displayed_at\".
-Never downgrades: a `:delivered' update is ignored if the message
-is already `:displayed'."
-  (let ((timestamp (floor (float-time)))
-        (account (jabber-connection-bare-jid jc))
-        (peer (jabber-jid-user from))
-        (status (if (string= column "displayed_at") :displayed :delivered)))
-    (if-let* ((buffer (jabber-receipts--find-buffer from jc)))
-        (with-current-buffer buffer
-          (when-let* ((node (jabber-chat-ewoc-find-by-id ref-id)))
-            (let* ((msg (cadr (ewoc-data node)))
-                   (current-status (plist-get msg :status))
-                   (msg-ts (plist-get msg :timestamp))
-                   (msg-epoch (and msg-ts (floor (float-time msg-ts))))
-                   (displayed-p (string= column "displayed_at"))
-                   (forward-p (or (not displayed-p)
-                                  (not msg-epoch)
-                                  (> msg-epoch jabber-receipts--latest-displayed-ts)))
-                   (inhibit-read-only t))
-              (when (and forward-p
-                         (or (null current-status)
-                             (jabber-receipts--status-upgrades-p
-                              current-status status)))
-                (jabber-db-update-receipt account peer ref-id column timestamp)
-                (plist-put msg :status status)
-                (jabber-chat-ewoc-invalidate node)
-                (jabber-receipts--update-header-line column timestamp)
-                (when displayed-p
-                  (when msg-epoch
-                    (setq jabber-receipts--latest-displayed-ts msg-epoch))
-                  (jabber-receipts--cascade-displayed node)
-                  (when msg-epoch
-                    (jabber-db-cascade-displayed
-                     account peer timestamp msg-epoch)))))))
-      (jabber-db-update-receipt account peer ref-id column timestamp))))
+COLUMN is \"delivered_at\" or \"displayed_at\".  Never downgrade a
+visible message from `:displayed' to `:delivered'."
+  (let* ((timestamp (floor (float-time)))
+         (account (jabber-connection-bare-jid jc))
+         (peer (jabber-jid-user from))
+         (status (if (string= column "displayed_at") :displayed :delivered))
+         (thread-targets
+          (jabber-message-thread-update-targets
+           jc peer "chat" ref-id))
+         (buffers
+          (cond
+           ((eq thread-targets 'closed) nil)
+           (thread-targets thread-targets)
+           (t (delq nil (list (jabber-receipts--find-buffer from jc))))))
+         accepted
+         cascade-epoch)
+    (dolist (buffer buffers)
+      (when-let* ((result
+                   (jabber-receipts--update-buffer-status
+                    buffer ref-id column timestamp status)))
+        (setq accepted t
+              cascade-epoch (or (cdr result) cascade-epoch))))
+    (when (or accepted (null buffers))
+      (jabber-db-update-receipt account peer ref-id column timestamp))
+    (when cascade-epoch
+      (jabber-db-cascade-displayed
+       account peer timestamp cascade-epoch))))
 
 (defun jabber-receipts--cascade-displayed (node)
   "Walk backward from NODE, promoting :delivered nodes to :displayed.

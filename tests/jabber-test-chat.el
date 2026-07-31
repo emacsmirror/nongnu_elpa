@@ -1289,6 +1289,28 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
         (when (buffer-live-p buf)
           (kill-buffer buf))))))
 
+(ert-deftest jabber-test-chat-disabled-threads-load-original-backlog ()
+  "Load threaded messages into a newly created parent chat buffer."
+  (let* ((jc (jabber-test-chat--make-fake-jc "me@example.com"))
+         (peer "emma@example.com/laptop")
+         (jabber-message-thread-use-buffers nil)
+         (jabber-chat-buffer-format " *jabber-test-disabled-%j-%a*")
+         backlog-args
+         buffer)
+    (cl-letf (((symbol-function 'jabber-db-backlog)
+               (lambda (&rest args)
+                 (setq backlog-args args)
+                 nil))
+              ((symbol-function 'jabber-db-get-chat-encryption)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-mam-chat-opened) #'ignore))
+      (unwind-protect
+          (progn
+            (setq buffer (jabber-chat-create-buffer jc peer))
+            (should (eq t (nth 6 backlog-args))))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
 ;;; Group: reaction rendering
 
 (ert-deftest jabber-test-chat-reaction-entry-string-carries-help-echo ()

@@ -29,8 +29,9 @@
 (defvar-local jabber-buffer-connection nil
   "Jabber connection associated with the current buffer.")
 
-(defun jabber-chat-buffer-send ()
-  "Send the input composed below the prompt in the current buffer."
+(defun jabber-chat-buffer-send (&optional extra-elements)
+  "Send the input composed below the prompt in the current buffer.
+EXTRA-ELEMENTS are optional XML elements for the outgoing stanza."
   (interactive)
   (when (cl-plusp (- (point-max) jabber-point-insert))
     (unless (memq jabber-buffer-connection jabber-connections)
@@ -38,7 +39,10 @@
             (or (jabber-find-active-connection jabber-buffer-connection)
                 (jabber-read-account t))))
     (let ((body (delete-and-extract-region jabber-point-insert (point-max))))
-      (funcall jabber-send-function jabber-buffer-connection body))))
+      (if extra-elements
+          (funcall jabber-send-function
+                   jabber-buffer-connection body extra-elements)
+        (funcall jabber-send-function jabber-buffer-connection body)))))
 
 (provide 'jabber-input)
 

@@ -807,6 +807,26 @@ again, and the ewoc created on the first call must survive."
         (funcall callback)
         (should (equal '(insert-start images restore) events))))))
 
+(ert-deftest jabber-test-chatbuffer-disabled-threads-refresh-as-plain-chat ()
+  "Include threaded messages in the original parent refresh path."
+  (jabber-test-chatbuffer-with-ewoc
+    (let ((jabber-message-thread-use-buffers nil)
+          (jabber-buffer-connection 'fake-jc)
+          (jabber-chatting-with "friend@example.com")
+          (jabber-group nil)
+          (jabber-chat-buffer-msg-count nil)
+          backlog-args)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-backlog)
+                 (lambda (&rest args)
+                   (setq backlog-args args)
+                   nil))
+                ((symbol-function 'jabber-muc-sender-p)
+                 (lambda (&rest _) nil)))
+        (jabber-chat-buffer-refresh)
+        (should (eq t (nth 6 backlog-args)))))))
+
 (ert-deftest jabber-test-chatbuffer-refresh-empty-skips-completion-callbacks ()
   "Empty refresh preserves behavior by skipping insert completion callbacks."
   (jabber-test-chatbuffer-with-ewoc
@@ -1086,6 +1106,23 @@ forced to the bottom (the only path that overwrites point)."
       (should (equal sent '(connection . "hello")))
       (should (string= (buffer-string) "Prompt: ")))))
 
+(ert-deftest jabber-test-input-send-passes-extra-elements ()
+  "Pass optional stanza elements through the shared input sender."
+  (with-temp-buffer
+    (insert "Prompt: hello")
+    (let ((jabber-connections '(connection))
+          sent)
+      (setq-local jabber-buffer-connection 'connection)
+      (setq-local jabber-point-insert (copy-marker 9))
+      (setq-local jabber-send-function
+                  (lambda (jc body &optional extra-elements)
+                    (setq sent (list jc body extra-elements))))
+      (jabber-chat-buffer-send '((thread () "thread-1")))
+      (should
+       (equal sent
+              '(connection "hello" ((thread () "thread-1")))))
+      (should (string= (buffer-string) "Prompt: ")))))
+
 (ert-deftest jabber-test-input-send-reuses-active-connection ()
   "Replace a stale connection before sending input."
   (with-temp-buffer
@@ -1152,6 +1189,30 @@ forced to the bottom (the only path that overwrites point)."
         (should-not
          (gethash '(:muc "room@conference.example.com/alice" "client-id")
                   jabber-chat--msg-nodes))))))
+
+(ert-deftest jabber-test-chatbuffer-mam-refresh-is-account-scoped ()
+  "A MAM completion refreshes only the account that produced it."
+  (let ((first (generate-new-buffer " *jabber-mam-first*"))
+        (second (generate-new-buffer " *jabber-mam-second*"))
+        refreshed)
+    (unwind-protect
+        (progn
+          (dolist (entry `((,first account-a) (,second account-b)))
+            (with-current-buffer (car entry)
+              (setq-local major-mode 'jabber-chat-mode)
+              (setq-local jabber-buffer-connection (cadr entry))
+              (setq-local jabber-chatting-with "friend@example.com")))
+          (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (jc)
+                       (if (eq jc 'account-a) "me-a@example.com"
+                         "me-b@example.com")))
+                    ((symbol-function 'jabber-chat-buffer-refresh)
+                     (lambda () (push (current-buffer) refreshed))))
+            (jabber-chat--handle-mam-sync-complete
+             '(("me-a@example.com" "friend@example.com" "chat"))))
+          (should (equal (list first) refreshed)))
+      (kill-buffer first)
+      (kill-buffer second))))
 
 (provide 'jabber-test-chatbuffer)
 

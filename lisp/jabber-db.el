@@ -38,6 +38,7 @@
 (require 'subr-x)
 (require 'jabber-util)
 (require 'jabber-xml)
+(require 'jabber-message-thread-protocol)
 (require 'jabber-muc-protocol)
 (require 'jabber-muc-state)
 (eval-when-compile
@@ -81,6 +82,10 @@ the connection and the full message stanza.
 If any of the functions returns non-nil, the stanza is not logged
 in the message history.")
 
+(defvar jabber-db-message-thread-stored-functions nil
+  "Functions run after a threaded message is stored.
+Each function receives ACCOUNT, PEER, TYPE, THREAD-ID, and TIMESTAMP.")
+
 ;;; Database connection
 
 (defvar jabber-db--connection nil
@@ -108,7 +113,9 @@ in the message history.")
   reply_to_id  TEXT,
   reply_to_jid TEXT,
   fallback_start INTEGER,
-  fallback_end INTEGER)"
+  fallback_end INTEGER,
+  thread_id TEXT,
+  thread_parent_id TEXT)"
     "CREATE INDEX IF NOT EXISTS idx_msg_peer_ts
   ON message(account, peer, timestamp)"
     "CREATE INDEX IF NOT EXISTS idx_msg_stanza_id
@@ -117,6 +124,21 @@ in the message history.")
   ON message(account, server_id) WHERE server_id IS NOT NULL"
     "CREATE INDEX IF NOT EXISTS idx_msg_occupant_id
   ON message(account, peer, occupant_id) WHERE occupant_id IS NOT NULL"
+    "CREATE INDEX IF NOT EXISTS idx_msg_thread
+  ON message(account, peer, type, thread_id, timestamp)
+  WHERE thread_id IS NOT NULL"
+    "CREATE TABLE IF NOT EXISTS message_thread (
+  account TEXT NOT NULL,
+  peer TEXT NOT NULL,
+  type TEXT NOT NULL,
+  thread_id TEXT NOT NULL,
+  parent_thread_id TEXT,
+  root_message_id INTEGER,
+  root_stanza_id TEXT,
+  root_server_id TEXT,
+  created_at INTEGER NOT NULL,
+  read_message_id INTEGER,
+  PRIMARY KEY (account, peer, type, thread_id))"
     "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
   body, content='message', content_rowid='id')"
     "CREATE TRIGGER IF NOT EXISTS message_ai AFTER INSERT ON message BEGIN
@@ -268,7 +290,7 @@ WHERE updated_at < (
     (jabber-db--ensure-reaction-actor-table db)
     (jabber-db--backfill-reaction-actors db)))
 
-(defconst jabber-db--schema-version 7
+(defconst jabber-db--schema-version 8
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -360,6 +382,44 @@ CREATE INDEX IF NOT EXISTS idx_reaction_message_id
     (sqlite-execute db (concat "ALTER TABLE message ADD COLUMN " column)))
   (sqlite-execute db "PRAGMA user_version=7"))
 
+(defun jabber-db--migrate-v7-to-v8-steps (db)
+  "Apply the schema changes from version 7 to version 8 in DB."
+  (dolist (column '("thread_id TEXT" "thread_parent_id TEXT"))
+    (sqlite-execute db (concat "ALTER TABLE message ADD COLUMN " column)))
+  (when (cl-every
+         (lambda (column)
+           (member column
+                   (mapcar #'car
+                           (sqlite-select
+                            db "SELECT name FROM pragma_table_info('message')"))))
+         '("account" "peer" "type" "timestamp"))
+    (sqlite-execute db "\
+CREATE INDEX IF NOT EXISTS idx_msg_thread
+  ON message(account, peer, type, thread_id, timestamp)
+  WHERE thread_id IS NOT NULL"))
+  (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS message_thread (
+  account TEXT NOT NULL, peer TEXT NOT NULL, type TEXT NOT NULL,
+  thread_id TEXT NOT NULL, parent_thread_id TEXT,
+  root_message_id INTEGER, root_stanza_id TEXT, root_server_id TEXT,
+  created_at INTEGER NOT NULL, read_message_id INTEGER,
+  PRIMARY KEY (account, peer, type, thread_id))")
+  (sqlite-execute db "PRAGMA user_version=8"))
+
+(defun jabber-db--migrate-v7-to-v8 (db)
+  "Migrate DB atomically from schema version 7 to version 8."
+  (sqlite-execute db "SAVEPOINT jabber_schema_v8")
+  (condition-case err
+      (prog1
+          (jabber-db--migrate-v7-to-v8-steps db)
+        (sqlite-execute db "RELEASE jabber_schema_v8"))
+    (error
+     (ignore-errors
+       (sqlite-execute db "ROLLBACK TO jabber_schema_v8"))
+     (ignore-errors
+       (sqlite-execute db "RELEASE jabber_schema_v8"))
+     (signal (car err) (cdr err)))))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
@@ -388,27 +448,38 @@ CREATE INDEX IF NOT EXISTS idx_reaction_message_id
       (jabber-db--migrate-v6-to-v7 db)
       (setq version 7))
     (when (= version 7)
+      (jabber-db--migrate-v7-to-v8 db)
+      (setq version 8))
+    (when (= version 8)
       (jabber-db--repair-reaction-actors db))))
 
 (defun jabber-db-ensure-open ()
   "Open the SQLite database, creating it if needed.  Idempotent.
+Migrate an existing connection when the package schema has advanced.
 Return the database connection, or nil if storage is disabled."
   (when jabber-db-path
-    (unless (and jabber-db--connection
-                 (sqlitep jabber-db--connection))
-      (let ((dir (file-name-directory jabber-db-path)))
-        (unless (file-directory-p dir)
-          (make-directory dir t)))
-      (let ((db (sqlite-open jabber-db-path)))
-        (when (jabber-db--handle-unknown-schema db)
-          ;; Database was deleted; re-open fresh.
-          (setq db (sqlite-open jabber-db-path)))
-        (setq jabber-db--connection db))
-      (sqlite-execute jabber-db--connection "PRAGMA journal_mode=WAL")
-      (sqlite-execute jabber-db--connection "PRAGMA synchronous=NORMAL")
-      (sqlite-execute jabber-db--connection "PRAGMA foreign_keys=ON")
-      (jabber-db--migrate jabber-db--connection))
-    jabber-db--connection))
+    (let ((connection-live-p
+           (and jabber-db--connection
+                (sqlitep jabber-db--connection))))
+      (unless connection-live-p
+        (let ((dir (file-name-directory jabber-db-path)))
+          (unless (file-directory-p dir)
+            (make-directory dir t)))
+        (let ((db (sqlite-open jabber-db-path)))
+          (when (jabber-db--handle-unknown-schema db)
+            ;; Database was deleted; re-open fresh.
+            (setq db (sqlite-open jabber-db-path)))
+          (setq jabber-db--connection db))
+        (sqlite-execute jabber-db--connection "PRAGMA journal_mode=WAL")
+        (sqlite-execute jabber-db--connection "PRAGMA synchronous=NORMAL")
+        (sqlite-execute jabber-db--connection "PRAGMA foreign_keys=ON")
+        (jabber-db--migrate jabber-db--connection))
+      (when (and connection-live-p
+                 (< (caar (sqlite-select jabber-db--connection
+                                         "PRAGMA user_version"))
+                    jabber-db--schema-version))
+        (jabber-db--migrate jabber-db--connection))
+      jabber-db--connection)))
 
 (defun jabber-db-close ()
   "Close the database connection."
@@ -496,6 +567,10 @@ the same layering reason as `jabber-db--stanza-id-element'."
           :reply-to-jid (jabber-xml-get-attribute reply-el 'to)
           :fallback-range (jabber-db--reply-fallback-range xml-data))))
 
+(defun jabber-db--extract-thread-fields (xml-data)
+  "Return valid XEP-0201 thread metadata from XML-DATA, or nil."
+  (jabber-message-thread-protocol-fields xml-data))
+
 (defun jabber-db--reply-fallback-range (xml-data)
   "Return the XEP-0428 fallback range for replies in XML-DATA.
 Same return values as `jabber-chat--reply-fallback-range': a
@@ -573,11 +648,11 @@ WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? LIMIT 1"
 (defun jabber-db--insert-message (db account peer resource occupant-id
                                      direction type body timestamp
                                      stanza-id server-id encrypted
-                                     oob-entries reply)
+                                     oob-entries reply thread)
   "Insert a new message row into DB for ACCOUNT and attach OOB-ENTRIES.
 PEER, RESOURCE, OCCUPANT-ID, DIRECTION, TYPE, BODY, TIMESTAMP,
 STANZA-ID, SERVER-ID and ENCRYPTED fill the corresponding columns.
-REPLY is a plist from `jabber-db--extract-reply-fields', or nil."
+REPLY and THREAD contain parsed reply and thread metadata."
   (pcase-let ((`(,fb-start . ,fb-end)
                (jabber-db--fallback-range-cols
                 (plist-get reply :fallback-range))))
@@ -586,20 +661,23 @@ REPLY is a plist from `jabber-db--extract-reply-fields', or nil."
      "INSERT INTO message \
 (account, peer, resource, occupant_id, direction, type, body, timestamp, \
 stanza_id, server_id, encrypted, reply_to_id, reply_to_jid, \
-fallback_start, fallback_end) \
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+fallback_start, fallback_end, thread_id, thread_parent_id) \
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
      (list account peer resource occupant-id direction type body timestamp
            stanza-id server-id (if encrypted 1 0)
            (plist-get reply :reply-to-id)
            (plist-get reply :reply-to-jid)
-           fb-start fb-end)))
-  (when oob-entries
-    (let ((msg-id (caar (sqlite-select db "SELECT last_insert_rowid()"))))
+           fb-start fb-end
+           (plist-get thread :thread-id)
+           (plist-get thread :thread-parent-id))))
+  (let ((msg-id (caar (sqlite-select db "SELECT last_insert_rowid()"))))
+    (when oob-entries
       (dolist (entry oob-entries)
         (sqlite-execute
          db
          "INSERT INTO message_oob (message_id, url, desc) VALUES (?, ?, ?)"
-         (list msg-id (car entry) (cdr entry)))))))
+         (list msg-id (car entry) (cdr entry)))))
+    msg-id))
 
 (defun jabber-db--update-duplicate-ids (db account peer timestamp body
                                            stanza-id server-id oob-entries
@@ -680,10 +758,84 @@ WHERE stanza_id = ? AND account = ? AND peer = ? AND reply_to_id IS NULL"
            (plist-get reply :reply-to-jid)
            fb-start fb-end stanza-id account peer))))
 
+(defun jabber-db--duplicate-row-id
+    (db account peer timestamp body stanza-id server-id duplicate-kind)
+  "Return the exact duplicate row in DB described by DUPLICATE-KIND.
+ACCOUNT and PEER scope all identifiers.  TIMESTAMP and BODY identify a
+content match; STANZA-ID and SERVER-ID identify protocol matches."
+  (pcase duplicate-kind
+    ('server_id
+     (caar (sqlite-select
+            db "SELECT id FROM message \
+WHERE account = ? AND peer = ? AND server_id = ? ORDER BY id DESC LIMIT 1"
+            (list account peer server-id))))
+    ('stanza_id
+     (caar (sqlite-select
+            db "SELECT id FROM message \
+WHERE account = ? AND peer = ? AND stanza_id = ? ORDER BY id DESC LIMIT 1"
+            (list account peer stanza-id))))
+    ('content
+     (caar (sqlite-select
+            db "SELECT id FROM message \
+WHERE account = ? AND peer = ? AND timestamp = ? AND body = ? \
+ORDER BY id DESC LIMIT 1"
+            (list account peer timestamp body))))))
+
+(defun jabber-db--backfill-thread-fields (db message-id thread)
+  "Fill missing THREAD columns for MESSAGE-ID in DB."
+  (when (and thread message-id)
+    (sqlite-execute
+     db
+     "UPDATE message SET thread_id = ?, thread_parent_id = ? \
+WHERE id = ? AND thread_id IS NULL"
+     (list (plist-get thread :thread-id)
+           (plist-get thread :thread-parent-id)
+           message-id))))
+
+(defun jabber-db-register-message-thread
+    (account peer type thread-id parent-thread-id root-stanza-id
+             root-server-id created-at &optional root-message-id)
+  "Register THREAD-ID for ACCOUNT, PEER, and TYPE.
+PARENT-THREAD-ID, ROOT-STANZA-ID, ROOT-SERVER-ID, CREATED-AT, and
+ROOT-MESSAGE-ID describe its lineage and root message."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute
+     db
+     "INSERT INTO message_thread \
+(account, peer, type, thread_id, parent_thread_id, root_message_id, \
+root_stanza_id, root_server_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+ON CONFLICT(account, peer, type, thread_id) DO UPDATE SET \
+parent_thread_id = COALESCE(message_thread.parent_thread_id, excluded.parent_thread_id), \
+root_message_id = COALESCE(message_thread.root_message_id, excluded.root_message_id), \
+root_stanza_id = COALESCE(message_thread.root_stanza_id, excluded.root_stanza_id), \
+root_server_id = COALESCE(message_thread.root_server_id, excluded.root_server_id)"
+     (list account peer type thread-id parent-thread-id root-message-id
+           root-stanza-id root-server-id created-at))))
+
+(defun jabber-db--ensure-message-thread
+    (account peer type timestamp stanza-id server-id _reply thread)
+  "Register THREAD after storing a message for ACCOUNT, PEER, and TYPE.
+TIMESTAMP, STANZA-ID, and SERVER-ID identify its first observed root."
+  (when-let* ((thread-id (plist-get thread :thread-id)))
+    (unless (jabber-db-message-thread-known-p account peer type thread-id)
+      (let ((root-message-id
+             (when-let* ((db (jabber-db-ensure-open)))
+               (caar
+                (sqlite-select
+                 db
+                 "SELECT id FROM message \
+WHERE account = ? AND peer = ? AND type = ? AND thread_id = ? \
+ORDER BY id DESC LIMIT 1"
+                 (list account peer type thread-id))))))
+        (jabber-db-register-message-thread
+         account peer type thread-id
+         (plist-get thread :thread-parent-id)
+         stanza-id server-id timestamp root-message-id)))))
+
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
                                         server-id occupant-id oob-entries
-                                        encrypted reply)
+                                        encrypted reply thread)
   "Store a message in the database.
 ACCOUNT is the bare JID of the local account.
 PEER is the bare JID of the contact or room.
@@ -699,28 +851,63 @@ Optional OOB-ENTRIES is a list of (URL . DESC) cons cells for
 jabber:x:oob elements.
 Optional ENCRYPTED is non-nil if the message was OMEMO-encrypted.
 Optional REPLY is a reply metadata plist from
-`jabber-db--extract-reply-fields'."
+`jabber-db--extract-reply-fields'.
+Optional THREAD is a thread metadata plist from
+`jabber-db--extract-thread-fields'."
   (when-let* ((db (jabber-db-ensure-open)))
     (let* ((stored-timestamp (or timestamp (floor (float-time))))
            (dup-id-col (jabber-db--detect-duplicate
                         db account peer stored-timestamp body stanza-id
-                        server-id type)))
+                        server-id type))
+           message-id)
       (pcase dup-id-col
         ('nil
-         (jabber-db--insert-message db account peer resource occupant-id
-                                    direction type body stored-timestamp
-                                    stanza-id server-id encrypted oob-entries
-                                    reply))
+         (setq message-id
+               (jabber-db--insert-message
+                db account peer resource occupant-id direction type body
+                stored-timestamp stanza-id server-id encrypted oob-entries
+                reply thread)))
         ((or 'stanza_id 'server_id)
          (jabber-db--update-duplicate-ids db account peer timestamp body
                                           stanza-id server-id oob-entries
                                           dup-id-col)
+         (setq message-id
+               (jabber-db--duplicate-row-id
+                db account peer stored-timestamp body stanza-id server-id
+                dup-id-col))
          (when (and reply stanza-id)
            (jabber-db--backfill-reply-fields db account peer stanza-id
                                              reply)))
         ('content
          (jabber-db--upgrade-content-match
-          db account peer stored-timestamp body stanza-id server-id))))))
+          db account peer stored-timestamp body stanza-id server-id)
+         (setq message-id
+               (jabber-db--duplicate-row-id
+                db account peer stored-timestamp body stanza-id server-id
+                dup-id-col))))
+      (jabber-db--backfill-thread-fields db message-id thread)
+      (jabber-db--ensure-message-thread
+       account peer type stored-timestamp stanza-id server-id reply thread)
+      (when-let* ((thread-id (plist-get thread :thread-id)))
+        (run-hook-with-args
+         'jabber-db-message-thread-stored-functions
+         account peer type thread-id stored-timestamp)))))
+
+(defun jabber-db-prune-empty-message-threads (account peer)
+  "Delete thread metadata without a surviving message for ACCOUNT and PEER."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute
+     db
+     "DELETE FROM message_thread AS mt \
+WHERE mt.account = ? AND mt.peer = ? AND NOT EXISTS ( \
+SELECT 1 FROM message AS m WHERE m.account = mt.account AND m.peer = mt.peer \
+AND m.type = mt.type AND (m.thread_id = mt.thread_id \
+OR (mt.root_message_id IS NOT NULL AND m.id = mt.root_message_id) \
+OR (mt.type = 'groupchat' AND mt.root_server_id IS NOT NULL \
+AND m.server_id = mt.root_server_id) \
+OR (mt.type != 'groupchat' AND mt.root_stanza_id IS NOT NULL \
+AND m.stanza_id = mt.root_stanza_id)))"
+     (list account peer))))
 
 ;;; Receipt updates
 
@@ -854,7 +1041,10 @@ FROM message WHERE account = ? AND peer = ? AND stanza_id = ?"
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db
 		    "DELETE FROM message WHERE account = ? AND peer = ?"
-		    (list account peer))))
+		    (list account peer))
+    (sqlite-execute db
+                    "DELETE FROM message_thread WHERE account = ? AND peer = ?"
+                    (list account peer))))
 
 (defun jabber-db-message-sender-by-stanza-id (stanza-id)
   "Return the sender of globally unique STANZA-ID, or nil.
@@ -993,6 +1183,14 @@ ORDER BY message_id, updated_at, rowid"
 
 ;;; Retrieval
 
+(defconst jabber-db--backlog-columns
+  "SELECT id, account, peer, direction, body, timestamp, \
+resource, type, encrypted, stanza_id, delivered_at, displayed_at, \
+server_id, retracted_by, retraction_reason, edited, \
+reply_to_id, reply_to_jid, fallback_start, fallback_end, \
+thread_id, thread_parent_id FROM message"
+  "Columns shared by parent and thread backlog queries.")
+
 (defun jabber-db--row-to-plist (row)
   "Convert a backlog ROW to a message plist.
 ROW columns match the SELECT in `jabber-db-backlog'.
@@ -1000,7 +1198,8 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
   (seq-let (id account peer direction body timestamp resource type
                encrypted stanza-id delivered-at
                displayed-at server-id retracted-by retraction-reason edited
-               reply-to-id reply-to-jid fallback-start fallback-end)
+               reply-to-id reply-to-jid fallback-start fallback-end
+               thread-id thread-parent-id)
       row
     (let ((from (cond
                  ;; Incoming: peer/resource (or just peer if no resource).
@@ -1028,6 +1227,8 @@ The :oob-entries key is populated later by `jabber-db--attach-oob-entries'."
             :reply-to-jid reply-to-jid
             :fallback-range (jabber-db--decode-fallback-range
                              fallback-start fallback-end)
+            :thread-id thread-id
+            :thread-parent-id thread-parent-id
             :direction direction
             :msg-type type
             :oob-entries nil
@@ -1068,8 +1269,249 @@ WHERE message_id IN (%s) ORDER BY message_id, id"
             (plist-put p :oob-desc (cdar entries)))))))
   plists)
 
+(defun jabber-db--thread-summary (db account peer type thread-row)
+  "Return THREAD-ROW's summary from DB for ACCOUNT, PEER, and TYPE."
+  (seq-let (thread-id parent-id root-message-id root-stanza-id root-server-id
+                      read-message-id)
+      thread-row
+    (seq-let (reply-count latest-in-id local-reply-count)
+        (car
+         (sqlite-select
+          db
+          "SELECT count(*), MAX(CASE WHEN direction = 'in' THEN id END), \
+COALESCE(SUM(CASE WHEN direction = 'out' THEN 1 ELSE 0 END), 0) \
+FROM message WHERE account = ? AND peer = ? AND type = ? AND thread_id = ? \
+AND NOT (CASE WHEN ? IS NOT NULL THEN id = ? \
+WHEN ? = 'groupchat' AND ? IS NOT NULL THEN server_id = ? \
+WHEN ? IS NOT NULL THEN stanza_id = ? ELSE 0 END)"
+          (list account peer type thread-id
+                root-message-id root-message-id
+                type root-server-id root-server-id
+                root-stanza-id root-stanza-id)))
+      (list :thread-id thread-id
+            :thread-type type
+            :thread-parent-id parent-id
+            :root-message-id root-message-id
+            :root-stanza-id root-stanza-id
+            :root-server-id root-server-id
+            :reply-count reply-count
+            :local-reply-count local-reply-count
+            :unread (and latest-in-id
+                         (or (null read-message-id)
+                             (> latest-in-id read-message-id)))))))
+
+(defun jabber-db-message-thread-summary (account peer type thread-id)
+  "Return THREAD-ID's summary for ACCOUNT, PEER, and TYPE, or nil."
+  (when-let* ((db (jabber-db-ensure-open))
+              (row
+               (car (sqlite-select
+                     db
+                     "SELECT thread_id, parent_thread_id, root_message_id, \
+root_stanza_id, root_server_id, read_message_id, account, peer, type \
+FROM message_thread \
+WHERE account = ? AND peer = ? AND type = ? AND thread_id = ?"
+                     (list account peer type thread-id)))))
+    (jabber-db--thread-summary db account peer type row)))
+
+(defconst jabber-db--message-threads-sql
+  "SELECT mt.thread_id, mt.parent_thread_id, mt.created_at,
+COALESCE(MAX(m.timestamp), mt.created_at) AS latest_at,
+root.id, root.stanza_id, root.server_id, root.resource,
+root.direction, root.body, root.timestamp,
+root.retracted_by, root.retraction_reason,
+COALESCE(SUM(CASE WHEN m.id IS NULL THEN 0
+WHEN (CASE WHEN mt.root_message_id IS NOT NULL
+THEN m.id = mt.root_message_id
+WHEN mt.type = 'groupchat' AND mt.root_server_id IS NOT NULL
+THEN m.server_id = mt.root_server_id
+WHEN mt.root_stanza_id IS NOT NULL
+THEN m.stanza_id = mt.root_stanza_id ELSE 0 END) THEN 0 ELSE 1 END), 0),
+COALESCE(SUM(CASE WHEN m.id IS NULL OR m.direction != 'out' THEN 0
+WHEN (CASE WHEN mt.root_message_id IS NOT NULL
+THEN m.id = mt.root_message_id
+WHEN mt.type = 'groupchat' AND mt.root_server_id IS NOT NULL
+THEN m.server_id = mt.root_server_id
+WHEN mt.root_stanza_id IS NOT NULL
+THEN m.stanza_id = mt.root_stanza_id ELSE 0 END) THEN 0 ELSE 1 END), 0),
+MAX(CASE WHEN m.direction = 'in' AND NOT (CASE
+WHEN mt.root_message_id IS NOT NULL THEN m.id = mt.root_message_id
+WHEN mt.type = 'groupchat' AND mt.root_server_id IS NOT NULL
+THEN m.server_id = mt.root_server_id
+WHEN mt.root_stanza_id IS NOT NULL
+THEN m.stanza_id = mt.root_stanza_id ELSE 0 END) THEN m.id END),
+mt.read_message_id
+FROM message_thread mt
+LEFT JOIN message root ON root.account = mt.account AND root.peer = mt.peer
+AND root.type = mt.type AND (CASE WHEN mt.root_message_id IS NOT NULL
+THEN root.id = mt.root_message_id
+WHEN mt.type = 'groupchat' AND mt.root_server_id IS NOT NULL
+THEN root.server_id = mt.root_server_id
+WHEN mt.root_stanza_id IS NOT NULL
+THEN root.stanza_id = mt.root_stanza_id ELSE 0 END)
+LEFT JOIN message m ON m.account = mt.account AND m.peer = mt.peer
+AND m.type = mt.type AND m.thread_id = mt.thread_id
+WHERE mt.account = ? AND mt.peer = ? AND mt.type = ?
+GROUP BY mt.account, mt.peer, mt.type, mt.thread_id
+ORDER BY latest_at DESC, mt.created_at DESC, mt.thread_id"
+  "Query all message threads in one conversation by latest activity.")
+
+(defun jabber-db--thread-root-from
+    (account peer type resource direction)
+  "Return a root sender from ACCOUNT, PEER, TYPE, RESOURCE, and DIRECTION."
+  (cond
+   ((equal direction "in")
+    (if resource (concat peer "/" resource) peer))
+   ((and (equal type "groupchat") resource)
+    (concat peer "/" resource))
+   (t account)))
+
+(defun jabber-db--thread-list-row-to-plist (account peer type row)
+  "Convert a thread listing ROW for ACCOUNT, PEER, and TYPE to a plist."
+  (seq-let (thread-id parent-id created-at latest-at root-id root-stanza-id
+                      root-server-id root-resource root-direction root-body
+                      root-timestamp root-retracted-by root-retraction-reason
+                      reply-count local-reply-count latest-in-id read-message-id)
+      row
+    (list :thread-id thread-id
+          :thread-type type
+          :thread-parent-id parent-id
+          :created-at (seconds-to-time created-at)
+          :latest-at (seconds-to-time latest-at)
+          :reply-count reply-count
+          :local-reply-count local-reply-count
+          :unread (and latest-in-id
+                       (or (null read-message-id)
+                           (> latest-in-id read-message-id)))
+          :root-message
+          (and root-id
+               (list :db-id root-id :id root-stanza-id
+                     :server-id root-server-id
+                     :from (jabber-db--thread-root-from
+                            account peer type root-resource root-direction)
+                     :resource root-resource :body (or root-body "")
+                     :timestamp (seconds-to-time root-timestamp)
+                     :retracted (and root-retracted-by t)
+                     :retracted-by root-retracted-by
+                     :retraction-reason root-retraction-reason
+                     :thread-id thread-id :thread-parent-id parent-id
+                     :direction root-direction :msg-type type)))))
+
+(defun jabber-db-message-threads (account peer type)
+  "Return ACCOUNT and PEER's TYPE threads by latest activity."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (mapcar
+     (lambda (row)
+       (jabber-db--thread-list-row-to-plist account peer type row))
+     (sqlite-select db jabber-db--message-threads-sql
+                    (list account peer type)))))
+
+(defun jabber-db-message-thread-known-p (account peer type thread-id)
+  "Return non-nil when THREAD-ID is known for ACCOUNT, PEER, and TYPE."
+  (and thread-id
+       (jabber-db-message-thread-summary account peer type thread-id)
+       t))
+
+(defun jabber-db-message-thread-root-p
+    (account peer type thread-id stanza-id server-id &optional message-id)
+  "Return non-nil when MESSAGE-ID identifies THREAD-ID's root.
+ACCOUNT, PEER, and TYPE scope the lookup.  SERVER-ID and STANZA-ID
+are fallback wire identifiers when the thread has no database row ID."
+  (when-let* ((summary
+               (jabber-db-message-thread-summary
+                account peer type thread-id)))
+    (cond
+     ((plist-get summary :root-message-id)
+      (and message-id
+           (equal message-id (plist-get summary :root-message-id))))
+     ((and (equal type "groupchat")
+           (plist-get summary :root-server-id))
+      (and server-id
+           (equal server-id (plist-get summary :root-server-id))))
+     ((plist-get summary :root-stanza-id)
+      (and stanza-id
+           (equal stanza-id (plist-get summary :root-stanza-id)))))))
+
+(defun jabber-db--message-thread-location
+    (db account peer type column value)
+  "Return VALUE's thread location from DB.
+ACCOUNT, PEER, and TYPE scope the trusted internal COLUMN."
+  (when-let* ((row
+               (car (sqlite-select
+                     db
+                     (format
+                      "SELECT COALESCE(m.thread_id, mt.thread_id), \
+CASE WHEN mt.root_message_id IS NOT NULL THEN mt.root_message_id = m.id \
+WHEN m.type = 'groupchat' AND mt.root_server_id IS NOT NULL \
+THEN mt.root_server_id = m.server_id \
+WHEN mt.root_stanza_id IS NOT NULL THEN mt.root_stanza_id = m.stanza_id \
+ELSE 0 END \
+FROM message m LEFT JOIN message_thread mt \
+ON mt.account = m.account AND mt.peer = m.peer AND mt.type = m.type \
+AND (mt.thread_id = m.thread_id OR (m.thread_id IS NULL AND \
+CASE WHEN mt.root_message_id IS NOT NULL THEN mt.root_message_id = m.id \
+WHEN m.type = 'groupchat' AND mt.root_server_id IS NOT NULL \
+THEN mt.root_server_id = m.server_id \
+WHEN mt.root_stanza_id IS NOT NULL THEN mt.root_stanza_id = m.stanza_id \
+ELSE 0 END)) \
+WHERE m.account = ? AND m.peer = ? AND m.type = ? AND %s = ? \
+AND COALESCE(m.thread_id, mt.thread_id) IS NOT NULL LIMIT 1"
+                      column)
+                     (list account peer type value)))))
+    (list :thread-id (car row) :root (= (cadr row) 1))))
+
+(defun jabber-db-message-thread-location
+    (account peer type message-id server-id-p)
+  "Return MESSAGE-ID's thread location for ACCOUNT, PEER, and TYPE.
+The result contains `:thread-id' and non-nil `:root' when the
+message is the thread root.  SERVER-ID-P selects server IDs."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (jabber-db--message-thread-location
+     db account peer type
+     (if server-id-p "m.server_id" "m.stanza_id")
+     message-id)))
+
+(defun jabber-db-message-thread-location-by-row
+    (account peer type row-id)
+  "Return ROW-ID's thread location for ACCOUNT, PEER, and TYPE."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (jabber-db--message-thread-location
+     db account peer type "m.id" row-id)))
+
+(defun jabber-db-message-thread-for-message
+    (account peer type message-id server-id-p)
+  "Return MESSAGE-ID's reply thread for ACCOUNT, PEER, and TYPE.
+Thread roots return nil so their canonical owner remains the parent
+buffer.  SERVER-ID-P selects server IDs."
+  (when-let* ((location
+               (jabber-db-message-thread-location
+                account peer type message-id server-id-p))
+              ((not (plist-get location :root))))
+    (plist-get location :thread-id)))
+
+(defun jabber-db--attach-thread-summaries (db account peer plists)
+  "Attach DB thread summaries for ACCOUNT and PEER to root PLISTS."
+  (dolist (row (sqlite-select
+                db
+                "SELECT thread_id, parent_thread_id, root_message_id, \
+root_stanza_id, root_server_id, read_message_id, account, peer, type \
+FROM message_thread \
+WHERE account = ? AND peer = ?"
+                (list account peer)))
+    (let* ((type (nth 8 row))
+           (root (seq-find
+                  (lambda (msg)
+                    (and (equal (plist-get msg :msg-type) type)
+                     (jabber-db--message-thread-root-p
+                      msg type (nth 2 row) (nth 3 row) (nth 4 row))))
+                  plists)))
+      (when root
+        (plist-put
+         root :thread-summary
+         (jabber-db--thread-summary db account peer type row)))))
+  plists)
+
 (defun jabber-db-backlog (account peer &optional count start-time resource
-                                  msg-type)
+                                  msg-type include-thread-replies)
   "Return the last COUNT messages for PEER on ACCOUNT.
 Messages are returned as plists with keys :from, :body, :timestamp,
 :delayed, :direction, :msg-type, etc.
@@ -1079,7 +1521,8 @@ If nil, `jabber-backlog-days' is used to compute the cutoff.
 RESOURCE, when non-nil, filters to messages from that resource only.
 This is used for MUC private message buffers.
 MSG-TYPE, when non-nil, filters to messages of that type only
-\(e.g. \"groupchat\" for MUC buffers)."
+\(e.g. \"groupchat\" for MUC buffers).
+INCLUDE-THREAD-REPLIES non-nil keeps replies in the result."
   (when-let* ((db (jabber-db-ensure-open)))
     (let* ((n (or count jabber-backlog-number))
            (cutoff (cond
@@ -1087,22 +1530,36 @@ MSG-TYPE, when non-nil, filters to messages of that type only
                     (jabber-backlog-days
                      (floor (- (float-time) (* jabber-backlog-days 86400.0))))
                     (t 0)))
-           (base-cols "SELECT id, account, peer, direction, body, timestamp, \
-resource, type, encrypted, stanza_id, delivered_at, displayed_at, \
-server_id, retracted_by, retraction_reason, edited, \
-reply_to_id, reply_to_jid, fallback_start, fallback_end FROM message")
+           (parent-clause
+            (if include-thread-replies
+                ""
+              " AND (thread_id IS NULL OR EXISTS (\
+SELECT 1 FROM message_thread mt WHERE mt.account = message.account \
+AND mt.peer = message.peer AND mt.type = message.type \
+AND mt.thread_id = message.thread_id \
+AND (CASE WHEN mt.root_message_id IS NOT NULL \
+THEN mt.root_message_id = message.id \
+WHEN message.type = 'groupchat' AND mt.root_server_id IS NOT NULL \
+THEN mt.root_server_id = message.server_id \
+WHEN mt.root_stanza_id IS NOT NULL \
+THEN mt.root_stanza_id = message.stanza_id ELSE 0 END)))"))
            (sql (cond
                  (resource
-                  (concat base-cols " WHERE account = ? AND peer = ? \
+                  (concat jabber-db--backlog-columns
+                          " WHERE account = ? AND peer = ? \
 AND type = 'chat' AND (resource = ? OR direction = 'out') \
-AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?"))
+AND timestamp >= ?" parent-clause
+" ORDER BY timestamp DESC LIMIT ?"))
                  (msg-type
-                  (concat base-cols " WHERE account = ? AND peer = ? \
-AND type = ? AND timestamp >= ? \
+                  (concat jabber-db--backlog-columns
+                          " WHERE account = ? AND peer = ? \
+AND type = ? AND timestamp >= ?" parent-clause " \
 ORDER BY timestamp DESC LIMIT ?"))
                  (t
-                  (concat base-cols " WHERE account = ? AND peer = ? \
-AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?"))))
+                  (concat jabber-db--backlog-columns
+                          " WHERE account = ? AND peer = ? \
+AND timestamp >= ?" parent-clause
+" ORDER BY timestamp DESC LIMIT ?"))))
            (params (cond
                     (resource
                      (list account peer resource cutoff
@@ -1115,8 +1572,77 @@ AND timestamp >= ? ORDER BY timestamp DESC LIMIT ?"))))
                            (if (eq n t) -1 n)))))
            (rows (sqlite-select db sql params))
            (plists (mapcar #'jabber-db--row-to-plist rows)))
+      (jabber-db--attach-thread-summaries
+       db account peer
+       (jabber-db--attach-reactions
+        (jabber-db--attach-oob-entries db plists))))))
+
+(defun jabber-db--message-thread-root-p
+    (msg type root-message-id root-stanza-id root-server-id)
+  "Return non-nil when MSG matches a supplied thread root ID.
+TYPE selects groupchat server IDs.  ROOT-MESSAGE-ID is the database
+row ID.  ROOT-STANZA-ID and ROOT-SERVER-ID are wire identifiers."
+  (cond
+   (root-message-id
+    (equal root-message-id (plist-get msg :db-id)))
+   ((and (equal type "groupchat") root-server-id)
+    (equal root-server-id (plist-get msg :server-id)))
+   (root-stanza-id
+    (equal root-stanza-id (plist-get msg :id)))))
+
+(defun jabber-db-thread-backlog
+    (account peer type thread-id &optional count start-time)
+  "Return THREAD-ID's root and replies for ACCOUNT, PEER, and TYPE.
+Results are reverse chronological, limited by COUNT after START-TIME."
+  (when-let* ((db (jabber-db-ensure-open))
+              (thread-row
+               (car (sqlite-select
+                     db
+                     "SELECT root_message_id, root_stanza_id, root_server_id \
+FROM message_thread WHERE account = ? AND peer = ? AND type = ? \
+AND thread_id = ?"
+                     (list account peer type thread-id)))))
+    (let* ((root-message-id (nth 0 thread-row))
+           (root-stanza-id (nth 1 thread-row))
+           (root-server-id (nth 2 thread-row))
+           (cutoff (floor (or start-time 0)))
+           (rows (sqlite-select
+                  db
+                  (concat jabber-db--backlog-columns "\
+ WHERE account = ? AND peer = ? AND type = ? AND timestamp >= ? \
+AND (thread_id = ? OR CASE WHEN ? IS NOT NULL THEN id = ? \
+WHEN ? = 'groupchat' AND ? IS NOT NULL THEN server_id = ? \
+WHEN ? IS NOT NULL THEN stanza_id = ? ELSE 0 END) \
+ORDER BY timestamp DESC")
+                  (list account peer type cutoff thread-id
+                        root-message-id root-message-id
+                        type root-server-id root-server-id
+                        root-stanza-id root-stanza-id)))
+           (plists (mapcar #'jabber-db--row-to-plist rows))
+           (root (seq-find
+                  (lambda (msg)
+                    (jabber-db--message-thread-root-p
+                     msg type root-message-id root-stanza-id root-server-id))
+                  plists))
+           (limit (or count jabber-backlog-number))
+           (replies (seq-remove (lambda (msg) (eq msg root)) plists))
+           (selected (if (eq limit t) replies
+                       (seq-take replies (max 0 (1- limit)))))
+           (result (append selected (and root (list root)))))
       (jabber-db--attach-reactions
-       (jabber-db--attach-oob-entries db plists)))))
+       (jabber-db--attach-oob-entries db result)))))
+
+(defun jabber-db-mark-message-thread-read
+    (account peer type thread-id)
+  "Mark stored THREAD-ID replies read for ACCOUNT, PEER, and TYPE."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute
+     db
+     "UPDATE message_thread SET read_message_id = COALESCE((\
+SELECT MAX(id) FROM message WHERE account = ? AND peer = ? AND type = ? \
+AND thread_id = ?), read_message_id) \
+WHERE account = ? AND peer = ? AND type = ? AND thread_id = ?"
+     (list account peer type thread-id account peer type thread-id))))
 
 (defun jabber-db--raw-row-to-plist (row)
   "Convert a raw query ROW to a plist.
@@ -1269,6 +1795,14 @@ XML-DATA is the parsed stanza."
                        (car (jabber-xml-get-children xml-data 'body)))))
            (timestamp (jabber-message-timestamp xml-data))
            (type (jabber-xml-get-attribute xml-data 'type))
+           (peer (jabber-jid-user from))
+           (resource (jabber-jid-resource from))
+           (direction
+            (if (and (equal type "groupchat")
+                     resource
+                     (equal resource (jabber-muc-nickname peer jc)))
+                "out"
+              "in"))
            (stanza-id (jabber-xml-get-attribute xml-data 'id))
            (server-id
             ;; Trust only the stanza-id assigned by our own server
@@ -1286,25 +1820,27 @@ XML-DATA is the parsed stanza."
       (when (and from body)
         (jabber-db-store-message
          (jabber-connection-bare-jid jc)
-         (jabber-jid-user from)
-         "in"
+         peer
+         direction
          (or type "chat")
          body
          (floor (float-time (or timestamp (current-time))))
-         (jabber-jid-resource from)
+         resource
          stanza-id
          server-id
          (jabber-db--extract-occupant-id xml-data)
          oob-entries
          encrypted
-         (jabber-db--extract-reply-fields xml-data))))))
+         (jabber-db--extract-reply-fields xml-data)
+         (jabber-db--extract-thread-fields xml-data))))))
 
-(defun jabber-db--outgoing-handler (body id)
+(defun jabber-db--outgoing-handler (body id &optional reply thread)
   "Store outgoing chat message in the database.
 BODY is the message text.  ID is the stanza id for dedup.
 Called from `jabber-chat-send-hooks'.  Reply metadata is read from
 `jabber-chat--send-hook-stanza' when the hooks that emit the reply
-elements have already run."
+elements have already run.  Optional REPLY and THREAD supply metadata
+for messages stored before those hooks run."
   (when (and jabber-chatting-with jabber-buffer-connection
              (not (bound-and-true-p jabber-chat--sending-correction)))
     (jabber-db-store-message
@@ -1319,8 +1855,14 @@ elements have already run."
      id
      nil nil nil
      (memq jabber-chat-encryption '(omemo openpgp openpgp-legacy))
-     (and (bound-and-true-p jabber-chat--send-hook-stanza)
-          (jabber-db--extract-reply-fields jabber-chat--send-hook-stanza))))
+     (or reply
+         (and (bound-and-true-p jabber-chat--send-hook-stanza)
+              (jabber-db--extract-reply-fields
+               jabber-chat--send-hook-stanza)))
+     (or thread
+         (and (bound-and-true-p jabber-chat--send-hook-stanza)
+              (jabber-db--extract-thread-fields
+               jabber-chat--send-hook-stanza)))))
   nil)
 
 (defun jabber-db--store-outgoing (jc to body type)

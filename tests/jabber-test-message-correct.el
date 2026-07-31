@@ -794,6 +794,41 @@ XEP-0425 retraction takes precedence over XEP-0308 edit display."
                              (car (jabber-xml-get-children fb-el 'body))
                              'end)))))))
 
+(ert-deftest jabber-test-message-correct-threaded-root-keeps-thread ()
+  "Direct and MUC root corrections retain one XEP-0201 element."
+  (dolist (kind '(chat groupchat))
+    (jabber-test-message-correct-with-ewoc
+      (setq-local jabber-buffer-connection 'fake-jc)
+      (setq-local jabber-chat-encryption 'plaintext)
+      (if (eq kind 'groupchat)
+          (setq-local jabber-group "room@example.com")
+        (setq-local jabber-chatting-with "alice@example.com"))
+      (jabber-chat-ewoc-enter
+       (list (if (eq kind 'groupchat) :muc-local :local)
+             (list :id "root-1"
+                   :from (if (eq kind 'groupchat)
+                             "room@example.com/me"
+                           "me@example.com")
+                   :body "root"
+                   :thread-id "thread-1"
+                   :thread-parent-id "parent-1"
+                   :timestamp (current-time))))
+      (let ((jabber-db-path nil)
+            sent)
+        (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                   (lambda (_) "me@example.com"))
+                  ((symbol-function 'read-string)
+                   (lambda (&rest _) "corrected root"))
+                  ((symbol-function 'jabber-send-sexp)
+                   (lambda (_jc stanza &rest _) (setq sent stanza))))
+          (jabber-correct-last-message))
+        (let ((threads (jabber-xml-get-children sent 'thread)))
+          (should (= 1 (length threads)))
+          (should (equal "thread-1"
+                         (car (jabber-xml-node-children (car threads)))))
+          (should (equal "parent-1"
+                         (jabber-xml-get-attribute (car threads) 'parent))))))))
+
 (ert-deftest jabber-test-message-correct-drops-stale-fallback ()
   "Editing the quote away keeps the reply element but drops the range."
   (jabber-test-message-correct-with-ewoc

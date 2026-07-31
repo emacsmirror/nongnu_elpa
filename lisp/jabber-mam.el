@@ -90,7 +90,7 @@ starts, nil when it ends).")
 
 (defvar jabber-mam-sync-complete-functions nil
   "Hook run after MAM stores messages for one or more peers.
-Each function receives one argument: a list of (PEER . TYPE) pairs.")
+Each function receives one argument: a list of (ACCOUNT PEER TYPE) entries.")
 
 ;;; Internal state
 
@@ -100,7 +100,7 @@ Alist of (JC . QUERYID) for active queries.")
 
 (defvar jabber-mam--dirty-peers nil
   "Peers that received MAM messages during sync.
-Alist of (PEER . TYPE) where TYPE is the message type string.
+Each entry is (ACCOUNT PEER TYPE), where ACCOUNT is the local bare JID.
 Accumulated during sync, drained after COMMIT.")
 
 (defvar jabber-mam--tx-depth 0
@@ -424,17 +424,19 @@ JC is the Jabber connection.  XML-DATA is the stanza."
                (jabber-db--extract-occupant-id inner-msg)
                (plist-get fields :our-jid) peer nil)))
            (:store
-            (jabber-db-store-message
-             (plist-get fields :our-jid) peer
-             (plist-get fields :direction) (plist-get fields :type)
-             body timestamp (jabber-jid-resource (plist-get fields :from))
-             (plist-get fields :stanza-id) archive-id
-             (jabber-db--extract-occupant-id inner-msg)
-             (plist-get fields :oob-entries) encrypted
-             (jabber-db--extract-reply-fields inner-msg))))
+            (let ((jabber-db-message-thread-stored-functions nil))
+              (jabber-db-store-message
+               (plist-get fields :our-jid) peer
+               (plist-get fields :direction) (plist-get fields :type)
+               body timestamp (jabber-jid-resource (plist-get fields :from))
+               (plist-get fields :stanza-id) archive-id
+               (jabber-db--extract-occupant-id inner-msg)
+               (plist-get fields :oob-entries) encrypted
+               (jabber-db--extract-reply-fields inner-msg)
+               (jabber-db--extract-thread-fields inner-msg)))))
          (jabber-mam--track-sync-ids qid archive-id
                                      (plist-get fields :stanza-id) timestamp)
-         (jabber-mam--mark-dirty peer (plist-get fields :type))
+         (jabber-mam--mark-dirty jc peer (plist-get fields :type))
          (setcdr (cdr xml-data) nil))
         (:unwrap
          (jabber-mam--unwrap-into xml-data inner-msg archive-id))))))
@@ -449,11 +451,11 @@ comparing with the account username to handle nick changes."
       (string= nick (plist-get (fsm-get-state-data jc) :username))))
 
 
-(defun jabber-mam--mark-dirty (peer type)
+(defun jabber-mam--mark-dirty (jc peer type)
   "Record that PEER's buffer needs redisplay after sync.
-TYPE is the message type (\"groupchat\" for MUC)."
-  (unless (cl-find peer jabber-mam--dirty-peers :key #'car :test #'string=)
-    (push (cons peer type) jabber-mam--dirty-peers)))
+JC identifies the local account.  TYPE is the message type."
+  (let ((entry (list (jabber-connection-bare-jid jc) peer type)))
+    (cl-pushnew entry jabber-mam--dirty-peers :test #'equal)))
 
 
 (defun jabber-mam--redraw-dirty ()
@@ -772,6 +774,7 @@ AND retracted_by IS NULL"
                                   (list row-id))
                   (cl-incf deleted))))
             (when (> deleted 0)
+              (jabber-db-prune-empty-message-threads account peer)
               (message "MAM: removed %d messages not found on server"
                        deleted))))))
     (setq jabber-mam--sync-received
@@ -811,7 +814,7 @@ the server are deleted.  The buffer is refreshed in place after sync."
                                         peer type nil)))
             jabber-mam--completion-callbacks)
       (run-hook-with-args 'jabber-mam-peer-syncing-functions peer type t))
-    (jabber-mam--mark-dirty peer (if group "groupchat" "chat"))
+    (jabber-mam--mark-dirty jc peer (if group "groupchat" "chat"))
     (message "MAM: syncing last %d messages for %s..." count peer)
     (if muc-p
         (jabber-mam--query jc nil queryid nil nil peer t count)

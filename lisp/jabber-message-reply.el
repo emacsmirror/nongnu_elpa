@@ -34,6 +34,7 @@
 (require 'ewoc)
 (require 'jabber-util)
 (require 'jabber-disco)
+(require 'jabber-message-thread-protocol)
 (require 'jabber-muc-protocol)
 (require 'jabber-xml)
 
@@ -44,6 +45,7 @@
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-chatting-with)           ; jabber-chatbuffer.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
+(defvar jabber-chat--send-hook-stanza)  ; jabber-chat.el
 
 (defconst jabber-message-reply-xmlns "urn:xmpp:reply:0"
   "XEP-0461 Message Replies namespace.")
@@ -61,6 +63,9 @@
 
 (defvar-local jabber-message-reply--fallback-text nil
   "Fallback quote string inserted into the composition area.")
+
+(defvar-local jabber-message-reply--thread nil
+  "Thread metadata for the message being replied to.")
 
 ;;; Pure functions
 
@@ -143,7 +148,27 @@ XEP-0461 asks.  Returns nil if unavailable."
     (or (plist-get msg :origin-id)
         (plist-get msg :id))))
 
+(defun jabber-message-reply--thread-fields (msg)
+  "Return MSG's direct or registered thread metadata, or nil."
+  (let* ((summary (plist-get msg :thread-summary))
+         (thread-id (or (plist-get msg :thread-id)
+                        (plist-get summary :thread-id))))
+    (when thread-id
+      (list :thread-id thread-id
+            :thread-parent-id
+            (or (plist-get msg :thread-parent-id)
+                (plist-get summary :thread-parent-id))))))
+
 ;;; Send hook
+
+(defun jabber-message-reply--thread-elements ()
+  "Return pending thread metadata unless the stanza already has it."
+  (unless (and (bound-and-true-p jabber-chat--send-hook-stanza)
+               (jabber-message-thread-protocol-has-core-p
+                jabber-chat--send-hook-stanza))
+    (jabber-message-thread-protocol-elements
+     (plist-get jabber-message-reply--thread :thread-id)
+     (plist-get jabber-message-reply--thread :thread-parent-id))))
 
 (defun jabber-message-reply--send-hook (body _id)
   "Add <reply> and <fallback> elements when replying to a message.
@@ -157,15 +182,19 @@ message being composed, not to a re-sent old one."
              (not (bound-and-true-p jabber-chat--sending-correction)))
     (let ((reply-id jabber-message-reply--id)
           (reply-jid jabber-message-reply--jid)
-          (fb-text jabber-message-reply--fallback-text))
+          (fb-text jabber-message-reply--fallback-text)
+          (thread-elements (jabber-message-reply--thread-elements)))
       (setq jabber-message-reply--id nil
             jabber-message-reply--jid nil
-            jabber-message-reply--fallback-text nil)
-      (jabber-message-reply--elements
-       reply-id reply-jid
-       (and fb-text (not (string-empty-p fb-text))
-            (string-prefix-p fb-text body)
-            (length fb-text))))))
+            jabber-message-reply--fallback-text nil
+            jabber-message-reply--thread nil)
+      (append
+       thread-elements
+       (jabber-message-reply--elements
+        reply-id reply-jid
+        (and fb-text (not (string-empty-p fb-text))
+             (string-prefix-p fb-text body)
+             (length fb-text)))))))
 
 (add-hook 'jabber-chat-send-hooks #'jabber-message-reply--send-hook)
 
@@ -224,7 +253,9 @@ even when a draft is already present."
            (fallback (jabber-message-reply--build-fallback-text author body)))
       (setq jabber-message-reply--id id
             jabber-message-reply--jid (if (stringp jid) jid (format "%s" jid))
-            jabber-message-reply--fallback-text fallback)
+            jabber-message-reply--fallback-text fallback
+            jabber-message-reply--thread
+            (jabber-message-reply--thread-fields msg))
       (goto-char jabber-point-insert)
       (insert fallback)
       (message "Replying to %s (C-c C-k to cancel)" author))))
@@ -239,7 +270,8 @@ input area; edited input is left alone."
     (let ((fb-text jabber-message-reply--fallback-text))
       (setq jabber-message-reply--id nil
             jabber-message-reply--jid nil
-            jabber-message-reply--fallback-text nil)
+            jabber-message-reply--fallback-text nil
+            jabber-message-reply--thread nil)
       (when (and fb-text (not (string-empty-p fb-text)))
         (let ((end (+ jabber-point-insert (length fb-text))))
           (when (and (<= end (point-max))

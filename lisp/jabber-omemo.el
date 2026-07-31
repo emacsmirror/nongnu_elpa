@@ -43,6 +43,7 @@
 (require 'jabber-disco)
 (require 'jabber-httpupload)
 (require 'jabber-iq)
+(require 'jabber-message-thread-protocol)
 (require 'jabber-muc-state)
 
 (declare-function jabber-muc-modify-participant "jabber-muc"
@@ -87,6 +88,9 @@ rotation, so in-flight pre-key messages still decrypt."
 (defvar jabber-message-reply--id)       ; jabber-message-reply.el
 (defvar jabber-message-reply--jid)      ; jabber-message-reply.el
 (defvar jabber-message-reply--fallback-text) ; jabber-message-reply.el
+(defvar jabber-message-reply--thread)   ; jabber-message-reply.el
+(defvar jabber-message-thread-id)       ; jabber-message-thread.el
+(defvar jabber-message-thread-parent-id) ; jabber-message-thread.el
 
 (defvar jabber-omemo--available nil
   "Non-nil when the jabber-omemo-core native module is loaded.")
@@ -1409,43 +1413,76 @@ all-sessions is a list of (DEVICE-ID . SESSION-PTR)."
   (dolist (jc (hash-table-keys jabber-omemo--pending-send-operations))
     (jabber-omemo--fail-send-operations jc reason)))
 
-(defun jabber-omemo--display-pending (buffer body id)
-  "Display BODY in BUFFER as a message with :sending status.
-ID is the stanza id.  Persists to DB immediately.
-Returns the ewoc node, or nil if BUFFER is dead."
-  (when (buffer-live-p buffer)
-    (with-current-buffer buffer
-      (let* ((reply-id (bound-and-true-p jabber-message-reply--id))
-             (reply-jid (bound-and-true-p jabber-message-reply--jid))
-             (fb-text (bound-and-true-p jabber-message-reply--fallback-text))
-             (msg-plist (list :id id
-                              :body body
-                              :timestamp (current-time)
-                              :status :sending
-                              :encrypted t)))
-        (when reply-id
-          (plist-put msg-plist :reply-to-id reply-id)
-          (plist-put msg-plist :reply-to-jid reply-jid)
-          ;; Record the quote range so replying to this pending echo
-          ;; does not re-quote its own quote.
-          (when (and fb-text (not (string-empty-p fb-text))
-                     (string-prefix-p fb-text body))
-            (plist-put msg-plist :fallback-range (list 0 (length fb-text)))))
-        (jabber-db--outgoing-handler body id)
-        (when (run-hook-with-args-until-success
-               'jabber-chat-printers msg-plist :local :printp)
-          (let ((node (jabber-chat-ewoc-enter (list :local msg-plist))))
-            (jabber-maybe-print-rare-time node)
-            node))))))
+(defun jabber-omemo--pending-thread (extra-elements)
+  "Return pending thread metadata from EXTRA-ELEMENTS or buffer state."
+  (or (and extra-elements
+           (jabber-message-thread-protocol-fields
+            `(message () ,@extra-elements)))
+      (bound-and-true-p jabber-message-reply--thread)
+      (when (bound-and-true-p jabber-message-thread-id)
+        (list :thread-id jabber-message-thread-id
+              :thread-parent-id
+              (bound-and-true-p jabber-message-thread-parent-id)))))
 
-(defun jabber-omemo--send-failed (buffer node body reason)
-  "Mark NODE as :undelivered and restore BODY to input area.
-BUFFER is the chat buffer.  REASON is shown via `message'."
+(defun jabber-omemo--pending-message (body id extra-elements)
+  "Return the pending message plist for BODY, ID, and EXTRA-ELEMENTS."
+  (let* ((stanza `(message () (body () ,body) ,@extra-elements))
+         (reply (jabber-db--extract-reply-fields stanza))
+         (thread (jabber-omemo--pending-thread extra-elements))
+         (msg (list :id id :body body :timestamp (current-time)
+                    :status :sending :encrypted t)))
+    (append msg reply thread)))
+
+(defun jabber-omemo--enter-pending (msg)
+  "Enter MSG as pending, or reuse its freshly loaded database node."
+  (when (run-hook-with-args-until-success
+         'jabber-chat-printers msg :local :printp)
+    (let* ((entered (jabber-chat-ewoc-enter (list :local msg)))
+           (node (or entered
+                     (jabber-chat-ewoc-find-by-id (plist-get msg :id)))))
+      (when node
+        (let ((stored (cadr (ewoc-data node))))
+          (plist-put stored :status :sending)
+          (when-let* ((thread-id (plist-get msg :thread-id)))
+            (plist-put stored :thread-id thread-id)
+            (plist-put stored :thread-parent-id
+                       (plist-get msg :thread-parent-id)))
+          (unless entered
+            (jabber-chat-ewoc-invalidate node)))
+        (when entered
+          (jabber-maybe-print-rare-time node))
+        node))))
+
+(defun jabber-omemo--display-pending (buffer body id &optional jc extra-elements)
+  "Display BODY in BUFFER as a message with :sending status.
+ID is the stanza id.  JC and EXTRA-ELEMENTS provide send context.
+Persists to DB immediately.  Return the owning buffer and ewoc node."
   (when (buffer-live-p buffer)
     (with-current-buffer buffer
-      (when node
-        (plist-put (cadr (ewoc-data node)) :status :undelivered)
-        (jabber-chat-ewoc-invalidate node))
+      (let* ((msg (jabber-omemo--pending-message body id extra-elements))
+             (thread (and (plist-get msg :thread-id) msg))
+             (reply (and (plist-get msg :reply-to-id) msg)))
+        (jabber-db--outgoing-handler body id reply thread)
+        (when-let* ((target
+                     (if jc
+                         (jabber-chat--local-message-buffer jc msg)
+                       (and (or (null thread)
+                                (bound-and-true-p jabber-message-thread-id))
+                            buffer))))
+          (with-current-buffer target
+            (when-let* ((node (jabber-omemo--enter-pending msg)))
+              (list :buffer target :node node))))))))
+
+(defun jabber-omemo--send-failed (buffer node body reason &optional node-buffer)
+  "Mark NODE as :undelivered and restore BODY to input area.
+BUFFER is the composition buffer.  REASON is shown via `message'.
+NODE-BUFFER owns NODE when it differs from BUFFER."
+  (when (and node (buffer-live-p (or node-buffer buffer)))
+    (with-current-buffer (or node-buffer buffer)
+      (plist-put (cadr (ewoc-data node)) :status :undelivered)
+      (jabber-chat-ewoc-invalidate node)))
+  (when (buffer-live-p buffer)
+    (with-current-buffer buffer
       (goto-char (point-max))
       (insert body)))
   (message "%s" reason))
@@ -1461,11 +1498,21 @@ envelope (e.g. XEP-0308 replace)."
          (is-correction (assq 'replace extra-elements))
          (buffer (current-buffer))
          (id (format "emacs-msg-%.6f" (float-time)))
-         (node (unless is-correction
-                 (jabber-omemo--display-pending buffer body id)))
+         (send-context
+          (jabber-chat--capture-send-context body extra-elements))
+         (extra-elements (plist-get send-context :extra-elements))
+         (pending (unless is-correction
+                    (jabber-omemo--display-pending
+                     buffer body id jc extra-elements)))
+         (node (plist-get pending :node))
+         (node-buffer (plist-get pending :buffer))
          (raw-failed
-          (lambda (reason)
-            (jabber-omemo--send-failed buffer node body reason)
+         (lambda (reason)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer
+                (jabber-chat--restore-send-context send-context)))
+            (jabber-omemo--send-failed
+             buffer node body reason node-buffer)
             (when failure-callback
               (funcall failure-callback reason))))
          (operation
@@ -1500,7 +1547,8 @@ envelope (e.g. XEP-0308 replace)."
                             (jabber-omemo--send-encrypted
                              jc body chat-with
                              (append recipient-sessions own-sessions)
-                             buffer node id extra-elements succeeded failed)
+                             buffer node id extra-elements succeeded failed
+                             node-buffer)
                           (error
                            (funcall failed
                                     (error-message-string send-error)))))))
@@ -1513,7 +1561,7 @@ envelope (e.g. XEP-0308 replace)."
 (defun jabber-omemo--send-encrypted (jc body chat-with all-sessions
                                         &optional buffer node id
                                         extra-elements success-callback
-                                        failure-callback)
+                                        failure-callback node-buffer)
   "Build and send an OMEMO-encrypted stanza.
 JC is the connection.  BODY is the plaintext.  CHAT-WITH is the
 recipient full/bare JID for addressing.  ALL-SESSIONS is a list
@@ -1522,7 +1570,7 @@ Optional BUFFER, NODE, ID support immediate display: when NODE is
 non-nil, update its status from :sending to :sent instead of
 inserting a new ewoc entry.  EXTRA-ELEMENTS are spliced into the
 stanza outside the encryption envelope.  SUCCESS-CALLBACK and
-FAILURE-CALLBACK report transport completion."
+FAILURE-CALLBACK report transport completion.  NODE-BUFFER owns NODE."
   (let* ((chat-with (or chat-with jabber-chatting-with))
          (id (or id (format "emacs-msg-%.6f" (float-time))))
          (is-correction (assq 'replace extra-elements))
@@ -1539,28 +1587,31 @@ FAILURE-CALLBACK report transport completion."
                            ,(jabber-hints-store)
                            ,(jabber-eme-encryption jabber-omemo-xmlns "OMEMO")
                            ,@extra-elements)))
-    (when (buffer-live-p buffer)
-      (with-current-buffer buffer
-        ;; This runs from an async IQ callback where current buffer
-        ;; is not the chat buffer; the send hooks read buffer-local
-        ;; state, so restore the chat buffer first.
-        (jabber-chat--run-send-hooks stanza body id)
-        (cond
-         (node
-          (plist-put (cadr (ewoc-data node)) :status :sent)
-          (jabber-chat-ewoc-invalidate node))
-         ((not is-correction)
-          (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
-            (plist-put msg-plist :body body)
-            (plist-put msg-plist :status :sent)
-            (when (run-hook-with-args-until-success
-                   'jabber-chat-printers msg-plist :local :printp)
-              (jabber-maybe-print-rare-time
-               (jabber-chat-ewoc-enter (list :local msg-plist)))))))))
-    (if (or success-callback failure-callback)
-        (jabber-send-sexp
-         jc stanza success-callback failure-callback)
-      (jabber-send-sexp jc stanza))))
+    (if (and buffer (not (buffer-live-p buffer)))
+        (when failure-callback
+          (funcall failure-callback
+                   "OMEMO: chat buffer closed before send"))
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer
+          ;; This runs from an async IQ callback where current buffer
+          ;; is not the chat buffer; the send hooks read buffer-local
+          ;; state, so restore the chat buffer first.
+          (jabber-chat--run-send-hooks stanza body id)
+          (cond
+           (node
+            (when (buffer-live-p (or node-buffer buffer))
+              (with-current-buffer (or node-buffer buffer)
+                (plist-put (cadr (ewoc-data node)) :status :sent)
+                (jabber-chat-ewoc-invalidate node))))
+           ((not is-correction)
+            (let ((msg-plist (jabber-chat--msg-plist-from-stanza stanza)))
+              (plist-put msg-plist :body body)
+              (plist-put msg-plist :status :sent)
+              (jabber-chat--display-local-message jc msg-plist))))))
+      (if (or success-callback failure-callback)
+          (jabber-send-sexp
+           jc stanza success-callback failure-callback)
+        (jabber-send-sexp jc stanza)))))
 
 (defun jabber-omemo--send-muc
     (jc body &optional extra-elements success-callback failure-callback)
@@ -1570,10 +1621,17 @@ EXTRA-ELEMENTS are spliced into the stanza outside the encryption
 envelope."
   (let* ((group jabber-group)
          (buffer (current-buffer))
+         (id (format "emacs-msg-%.6f" (float-time)))
+         (send-context
+          (jabber-chat--capture-send-context body extra-elements))
+         (extra-elements (plist-get send-context :extra-elements))
          (participants (cdr (assoc group jabber-muc-participants)))
          (bare-jids (jabber-omemo--muc-participant-jids group participants))
          (raw-failed
-          (lambda (reason)
+         (lambda (reason)
+            (when (buffer-live-p buffer)
+              (with-current-buffer buffer
+                (jabber-chat--restore-send-context send-context)))
             (jabber-omemo--send-failed buffer nil body reason)
             (when failure-callback
               (funcall failure-callback reason))))
@@ -1614,7 +1672,7 @@ envelope."
                               (jabber-omemo--send-encrypted-muc
                                jc body group
                                (append all-sessions own-sessions)
-                               buffer extra-elements succeeded failed)
+                               buffer id extra-elements succeeded failed)
                             (error
                              (funcall failed
                                       (error-message-string send-error)))))))
@@ -1625,13 +1683,14 @@ envelope."
          (funcall failed (error-message-string err)))))))
 
 (defun jabber-omemo--send-encrypted-muc (jc body group all-sessions
-                                            &optional buffer extra-elements
+                                            &optional buffer id extra-elements
                                             success-callback failure-callback)
   "Build and send an OMEMO-encrypted MUC stanza.
 JC is the connection.  BODY is the plaintext.  GROUP is the room JID.
 ALL-SESSIONS is a list of (DEVICE-ID . SESSION-PTR) for all
 participants plus own other devices.  BUFFER is the MUC buffer whose
-buffer-local state the send hooks must see.  EXTRA-ELEMENTS are
+buffer-local state the send hooks must see.  ID is the captured stanza ID.
+EXTRA-ELEMENTS are
 spliced into the stanza outside the encryption envelope.
 SUCCESS-CALLBACK and FAILURE-CALLBACK report transport completion.
 No local echo: the MUC server mirrors the message back."
@@ -1639,7 +1698,7 @@ No local echo: the MUC server mirrors the message back."
          (enc-result (jabber-omemo-encrypt-message plaintext))
          (encrypted-xml (jabber-omemo--build-encrypted-xml
                          jc all-sessions enc-result))
-         (id (format "emacs-msg-%.6f" (float-time)))
+         (id (or id (format "emacs-msg-%.6f" (float-time))))
          (nick (jabber-muc-nickname group jc))
          (echo-key (and nick
                         (jabber-omemo--muc-echo-key
