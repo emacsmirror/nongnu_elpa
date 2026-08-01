@@ -5852,20 +5852,29 @@ utf-8)'. "
   :group 'vm-mime
   :type '(repeat symbol))
 
-(defcustom vm-drop-buffer-name-chars "[[:cntrl:]/]"
+(defcustom vm-drop-buffer-name-chars
+  (if (memq system-type '(windows-nt ms-dos cygwin))
+      "[[:cntrl:]/\\:*?\"<>|]"
+    "[[:cntrl:]/]")
   "*Regexp matching chars to replace by \"_\" in composition buffer names.
 A composition buffer is named after its recipient and subject, and that
 name is what the auto-save file is named after, so characters a file
 name cannot hold are replaced.  Set to nil to leave names alone.
 
+The default matches control characters and the directory separator.  On
+MS-Windows it also matches the rest of the set that platform forbids in
+a file name -- \\=`\\\\\\=', \\=`:\\=', \\=`*\\=', \\=`?\\=', \\=`\"\\=', \\=`<\\=', \\=`>\\=' and \\=`|\\='.  That
+larger set is not used elsewhere because it includes \\=`:\\=', which would
+turn every \"Re:\" in a subject into \"Re_\".
+
 This used to be a US-ASCII whitelist, which replaced every accented
-letter as well: a reply to \"Ren\\='e\" was named \"reply to Ren_\".  The
-default now matches only control characters and the directory
-separator.  To get the old behaviour back, set this to
-\"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
+letter as well: a reply to \"Ren\\='e\" was named \"reply to Ren_\".  To
+get that back, set this to \"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
   :group 'vm-compose
   :type '(choice (const :tag "Disabled" nil)
 		 (regexp :tag "Control characters and /" "[[:cntrl:]/]")
+		 (regexp :tag "Also unsafe on MS-Windows"
+			 "[[:cntrl:]/\\:*?\"<>|]")
 		 (regexp :tag "US-ASCII only" "[^ a-zA-Z0-9.,_\"'+-]")
 		 (regexp :tag "Custom regexp")))
 

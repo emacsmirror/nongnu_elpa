@@ -122,13 +122,36 @@ US-ASCII whitelist, so a reply to \"Ren\\='e\" was named \"reply to Ren_\"."
                    "mail to 山田"))))
 
 (ert-deftest vm-reply-test-sanitize-buffer-name-drops-separator ()
-  "Test that the default still replaces what a file name cannot hold."
-  (let ((vm-drop-buffer-name-chars
-         (default-value 'vm-drop-buffer-name-chars))
+  "Test that the default replaces what a file name cannot hold.
+The buffer name is what the auto-save file is named after."
+  (let ((vm-drop-buffer-name-chars "[[:cntrl:]/]")
         (vm-buffer-name-limit 80))
-    (should (equal (vm-sanitize-buffer-name "re: a/b") "re: a_b"))
-    (should (equal (vm-sanitize-buffer-name "re: a\tb") "re: a_b"))
-    (should (equal (vm-sanitize-buffer-name "re: a\nb") "re: a_b"))))
+    (dolist (bad '("/" "\t" "\n"))
+      (should (equal (vm-sanitize-buffer-name (concat "re: a" bad "b"))
+                     "re: a_b")))))
+
+(ert-deftest vm-reply-test-sanitize-buffer-name-windows-set ()
+  "Test the wider set used on MS-Windows, where those characters are illegal."
+  (let ((vm-drop-buffer-name-chars "[[:cntrl:]/\\:*?\"<>|]")
+        (vm-buffer-name-limit 80))
+    (dolist (bad '("/" "\\" ":" "*" "?" "\"" "<" ">" "|" "\t"))
+      (should (equal (vm-sanitize-buffer-name (concat "a" bad "b")) "a_b")))
+    (should (equal (vm-sanitize-buffer-name "René") "René"))))
+
+(ert-deftest vm-reply-test-sanitize-buffer-name-keeps-subject-colon ()
+  "Test that a subject colon survives off MS-Windows.
+The MS-Windows set has to include `:', which would otherwise turn every
+\"Re:\" into \"Re_\"; that is why it is not the default everywhere."
+  (let ((vm-drop-buffer-name-chars "[[:cntrl:]/]")
+        (vm-buffer-name-limit 80))
+    (should (equal (vm-sanitize-buffer-name "mail to x on \"Re: hello\"")
+                   "mail to x on \"Re: hello\"")))
+  ;; and the default here does the same, unless this is MS-Windows
+  (unless (memq system-type '(windows-nt ms-dos cygwin))
+    (let ((vm-drop-buffer-name-chars
+           (default-value 'vm-drop-buffer-name-chars))
+          (vm-buffer-name-limit 80))
+      (should (equal (vm-sanitize-buffer-name "re: hello") "re: hello")))))
 
 ;;; vm-strip-ignored-addresses tests
 
