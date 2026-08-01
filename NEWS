@@ -34,14 +34,19 @@ VM 8.?.?
   * Add vm-expunge-label command to completely remove a label from a folder.
     Removes the label from all messages and from the folder's label list so
     it no longer appears in completions.
+  * A message that arrives already labelled now has its labels added to the
+    folder's label list, so they appear in label completion.  Previously a
+    folder only learned labels from its own stored list and from labels
+    added by hand, so a message saved in from another folder carried a
+    label the destination folder never heard about.
   * Add commands to reconcile a folder's label list with the labels its
-    messages actually carry.  The list drifts in both directions: deleting a
-    label from the last message holding it leaves the label in the folder,
-    where it clutters completion, while a message that arrives already
-    labelled (saved in from another folder, say) brings a label the folder
-    never learns about, so it is missing from completion.
-      - vm-list-unused-labels reports both kinds of discrepancy.
-      - vm-expunge-unused-labels removes labels no message carries.
+    messages actually carry, for a folder whose list has already gone
+    astray:
+      - vm-list-unused-labels reports labels listed but on no message, and
+        labels on messages but not listed.
+      - vm-expunge-unused-labels removes labels no message carries, which
+        otherwise accumulate: deleting a label from the last message
+        holding it does not remove it from the folder.
       - vm-sync-labels makes the list agree with the messages both ways.
     None of them changes a message, and all can be undone with vm-undo.
   * Handle ImageMagick V7 deprecation of convert command in favor of sub-commands.

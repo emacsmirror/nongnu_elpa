@@ -1877,6 +1877,21 @@ Supports version 4 format of attribute storage, for backward compatibility."
 (defun vm-startup-apply-labels (labels)
   (mapcar (function (lambda (s) (intern s vm-label-obarray))) labels))
 
+(defun vm-register-message-labels (messages)
+  "Add the labels carried by MESSAGES to the current folder's label list.
+Nothing else does.  A folder learns its labels from its own stored list,
+read by `vm-gobble-labels' when it is visited, and from labels the user
+adds by hand; a message that arrives already labelled -- new mail with a
+label in its `X-VM-v5-Data', or a message saved in from another folder --
+would otherwise carry a label the folder never hears about, and that
+label would be missing from label completion.
+
+Called for newly assimilated messages.  See `vm-sync-labels' for
+repairing a folder whose list has already drifted."
+  (dolist (m messages)
+    (dolist (label (vm-labels-of m))
+      (intern label vm-label-obarray))))
+
 ;; Go to the message specified in a bookmark and eat the bookmark.
 ;; Returns non-nil if successful, nil otherwise.
 (defun vm-gobble-bookmark ()
@@ -4811,6 +4826,7 @@ files."
 	(mapc (lambda (m)
 		(vm-set-decoded-labels-of m (copy-sequence labels)))
 	      new-messages))
+      (vm-register-message-labels new-messages)
       (when vm-summary-show-threads
 	;; get numbering of new messages done now
 	;; so that the sort code only has to worry about the

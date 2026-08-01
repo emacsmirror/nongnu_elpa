@@ -4582,14 +4582,14 @@ that no message carries, and @kbd{M-x vm-expunge-unused-labels} removes
 them, asking for confirmation first.
 
 @findex vm-sync-labels
-The list can also be short.  A folder learns its labels from its own
-stored list when you visit it, and from labels you add by hand; a
-message that arrives already labelled --- saved in from another folder,
-say --- brings a label the folder does not know about, so that label
-never appears in completions even though it is in use.
-@kbd{M-x vm-sync-labels} makes the list agree with the messages in both
-directions, adding what is used and removing what is not.
-@code{vm-list-unused-labels} reports both kinds of discrepancy.
+The list can also be short.  A message that arrives already labelled has
+its labels added to the folder's list, so ordinarily this takes care of
+itself; but a folder written by an older VM, or edited by other means,
+may hold a label that is in use and yet missing from the list, in which
+case it never appears in completions.  @kbd{M-x vm-sync-labels} makes
+the list agree with the messages in both directions, adding what is used
+and removing what is not.  @code{vm-list-unused-labels} reports both
+kinds of discrepancy.
 
 No message is changed by any of these commands; only the folder's label
 list.  All of them can be undone with @code{vm-undo}.
