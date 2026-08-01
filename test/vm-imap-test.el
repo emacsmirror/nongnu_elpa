@@ -520,6 +520,58 @@
                     "imap:mail.example.com:143:Archive/2024:login:user:pass")
                    "Archive/2024"))))
 
+;;; vm-imap-save-composition tests
+
+(defmacro vm-imap-test-with-composition (&rest body)
+  "Run BODY in a mail buffer holding an IMAP-FCC header and no parent folder.
+With no parent folder there is no IMAP maildrop to inherit, which is
+the case that sends `vm-imap-save-composition' to
+`vm-imap-default-account'."
+  (declare (indent 0))
+  `(with-temp-buffer
+     (insert "To: someone@example.com\n"
+             "IMAP-FCC: Sent\n"
+             mail-header-separator "\n"
+             "body\n")
+     (let ((vm-mail-buffer nil)
+           ;; `error' formats through `format-message', which would
+           ;; otherwise curve the quotes in the expected strings
+           (text-quoting-style 'grave))
+       ,@body)))
+
+(ert-deftest vm-imap-test-save-composition-no-default-account ()
+  "Test that a nil `vm-imap-default-account' is reported clearly.
+Regression test for issue #427: the guard used to skip the error in
+exactly this case, leaving `maildrop' nil for `vm-imap-make-session'."
+  (vm-imap-test-with-composition
+    (let ((vm-imap-default-account nil)
+          (vm-imap-account-alist nil))
+      (should (equal (should-error (vm-imap-save-composition) :type 'error)
+                     '(error "Set `vm-imap-default-account' to use IMAP-FCC"))))))
+
+(ert-deftest vm-imap-test-save-composition-unknown-default-account ()
+  "Test that a default account missing from the alist is reported clearly."
+  (vm-imap-test-with-composition
+    (let ((vm-imap-default-account "nosuch")
+          (vm-imap-account-alist
+           '(("imap:mail.example.com:143:*:login:user:*" "work"))))
+      (should (equal (should-error (vm-imap-save-composition) :type 'error)
+                     '(error "No IMAP account named \"nosuch\" in `vm-imap-account-alist'"))))))
+
+(ert-deftest vm-imap-test-save-composition-uses-default-account ()
+  "Test that the default account's spec is what the session is made from."
+  (vm-imap-test-with-composition
+    (let ((vm-imap-default-account "work")
+          (vm-imap-account-alist
+           '(("imap:mail.example.com:143:*:login:user:*" "work")))
+          (session-spec 'unset))
+      (cl-letf (((symbol-function 'vm-imap-make-session)
+                 (lambda (spec &rest _) (setq session-spec spec) nil)))
+        ;; nil session => "could not connect", after the spec is chosen
+        (should-error (vm-imap-save-composition) :type 'error))
+      (should (equal session-spec
+                     "imap:mail.example.com:143:*:login:user:*")))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here
