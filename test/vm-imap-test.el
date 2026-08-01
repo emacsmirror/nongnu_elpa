@@ -572,6 +572,35 @@ exactly this case, leaving `maildrop' nil for `vm-imap-make-session'."
       (should (equal session-spec
                      "imap:mail.example.com:143:*:login:user:*")))))
 
+;;; vm-imap-get-password / auth-source tests
+
+(ert-deftest vm-imap-test-get-password-from-authinfo ()
+  "Test that an IMAP password is read from auth-source.
+Regression test for issue #460: VM called the long-removed
+`auth-source-user-or-password' behind an `fboundp' guard, so on current
+Emacs the authinfo lookup silently did nothing and, with no way to
+prompt, this errored instead of returning the password."
+  (let ((file (make-temp-file "vm-authinfo")))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "machine imap.example.com login user port 143"
+                    " password s3cret\n"))
+          (let ((auth-sources (list file))
+                (auth-source-do-cache nil)
+                (vm-imap-passwords nil)
+                (vm-imap-account-alist nil))
+            (auth-source-forget-all-cached)
+            (should (equal (vm-imap-get-password
+                            "INBOX"
+                            "imap:imap.example.com:143:inbox:login:user:*"
+                            "user" "imap.example.com" 143
+                            nil        ; ask-password
+                            "testing")
+                           "s3cret"))))
+      (delete-file file)
+      (auth-source-forget-all-cached))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here

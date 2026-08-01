@@ -507,6 +507,31 @@ making retrieved mail disappear."
                                       (buffer-string))))
       (kill-buffer target-buffer))))
 
+;;; vm-pop-get-password / auth-source tests
+
+(ert-deftest vm-pop-test-get-password-from-authinfo ()
+  "Test that a POP password is read from auth-source.
+Regression test for issue #460; see the IMAP counterpart."
+  (let ((file (make-temp-file "vm-authinfo")))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "machine pop.example.com login user port 110"
+                    " password s3cret\n"))
+          (let ((auth-sources (list file))
+                (auth-source-do-cache nil)
+                (vm-pop-passwords nil)
+                (vm-pop-folder-alist nil))
+            (auth-source-forget-all-cached)
+            (should (equal (vm-pop-get-password
+                            "pop.example.com"
+                            "pop:pop.example.com:110:pass:user:*"
+                            "user" "pop.example.com" 110
+                            nil)       ; ask-password
+                           "s3cret"))))
+      (delete-file file)
+      (auth-source-forget-all-cached))))
+
 (provide 'vm-pop-test)
 
 ;;; vm-pop-test.el ends here

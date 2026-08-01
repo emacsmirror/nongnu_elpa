@@ -877,6 +877,77 @@
     (vm-call-process "printf" nil t '("A\\0B\\0C"))
     (should (equal (buffer-string) "A\0B\0C"))))
 
+;;; auth-source tests
+
+(defmacro vm-misc-test-with-authinfo (lines &rest body)
+  "Run BODY with `auth-sources' pointing at a temp authinfo of LINES."
+  (declare (indent 1))
+  `(let ((file (make-temp-file "vm-authinfo")))
+     (unwind-protect
+         (progn
+           (with-temp-file file (insert ,lines))
+           (let ((auth-sources (list file))
+                 (auth-source-do-cache nil))
+             (auth-source-forget-all-cached)
+             ,@body))
+       (delete-file file)
+       (auth-source-forget-all-cached))))
+
+(ert-deftest vm-misc-test-auth-source-password-found ()
+  "Test that a password is read from auth-source by host, port and user."
+  (vm-misc-test-with-authinfo
+      "machine mail.example.com login user port 143 password s3cret\n"
+    (should (equal (vm-auth-source-password '("mail.example.com") 143 "user")
+                   "s3cret"))))
+
+(ert-deftest vm-misc-test-auth-source-password-string-port ()
+  "Test that a service-name port works as well as a numeric one.
+POP passes the port through as a string when it is not all digits."
+  (vm-misc-test-with-authinfo
+      "machine pop.example.com login user port pop3 password s3cret\n"
+    (should (equal (vm-auth-source-password '("pop.example.com") "pop3" "user")
+                   "s3cret"))))
+
+(ert-deftest vm-misc-test-auth-source-password-second-host ()
+  "Test that the second name is tried when the first does not match.
+VM looks up both the account name and the real host name."
+  (vm-misc-test-with-authinfo
+      "machine mail.example.com login user port 143 password s3cret\n"
+    (should (equal (vm-auth-source-password
+                    '("work-account" "mail.example.com") 143 "user")
+                   "s3cret"))))
+
+(ert-deftest vm-misc-test-auth-source-password-account-name-wins ()
+  "Test that the account name is preferred over the host name."
+  (vm-misc-test-with-authinfo
+      (concat "machine work-account login user port 143 password by-account\n"
+              "machine mail.example.com login user port 143 password by-host\n")
+    (should (equal (vm-auth-source-password
+                    '("work-account" "mail.example.com") 143 "user")
+                   "by-account"))))
+
+(ert-deftest vm-misc-test-auth-source-password-wrong-user ()
+  "Test that an entry for a different user is not used."
+  (vm-misc-test-with-authinfo
+      "machine mail.example.com login someone-else port 143 password s3cret\n"
+    (should (null (vm-auth-source-password '("mail.example.com") 143 "user")))))
+
+(ert-deftest vm-misc-test-auth-source-password-no-match ()
+  "Test that nil is returned when nothing matches."
+  (vm-misc-test-with-authinfo
+      "machine other.example.com login user port 143 password s3cret\n"
+    (should (null (vm-auth-source-password '("mail.example.com") 143 "user")))))
+
+(ert-deftest vm-misc-test-auth-source-password-nil-hosts-skipped ()
+  "Test that a nil host in the list is ignored, not searched for.
+`vm-imap-account-name-for-spec' returns nil when the spec is not in
+`vm-imap-account-alist'."
+  (vm-misc-test-with-authinfo
+      "machine mail.example.com login user port 143 password s3cret\n"
+    (should (equal (vm-auth-source-password '(nil "mail.example.com") 143 "user")
+                   "s3cret"))
+    (should (null (vm-auth-source-password '(nil) 143 "user")))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

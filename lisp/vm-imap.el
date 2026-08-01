@@ -1275,7 +1275,7 @@ Returns the process or nil if the session could not be created."
 		       (vm-imap-quote-string user) (vm-imap-quote-string pass)))
 	      (unless (vm-imap-read-ok-response process)
 		(vm-inform 0 "IMAP login failed for %s" folder)
-		(vm-imap-forget-password source-nopwd-nombox host port)
+		(vm-imap-forget-password source-nopwd-nombox host port user)
 		;; don't sleep unless we're running synchronously.
 		(if vm-imap-ok-to-ask	; (eq interactive t) ?
 		    (sleep-for 2))
@@ -1373,24 +1373,11 @@ cache, the auth-source package or by interactively querying the user.
 The argument ASK-PASSWORD says whether the interactive querying should
 be done.  The argument PURPOSE is a string displayed to the user in
 case of errors."
-  (let ((pass (car (cdr (assoc source vm-imap-passwords))))
-	authinfo)
-    (when (and (null pass)
-	       (boundp 'auth-sources)
-	       (fboundp 'auth-source-user-or-password))
-      (cond ((and (setq authinfo
-			(auth-source-user-or-password
-			 '("login" "password")
-			 (vm-imap-account-name-for-spec source)
-			 port))
-		  (equal user (car authinfo)))
-	     (setq pass (cadr authinfo)))
-	    ((and (setq authinfo
-			(auth-source-user-or-password
-			 '("login" "password")
-			 host port))
-		  (equal user (car authinfo)))
-	     (setq pass (cadr authinfo)))))
+  (let ((pass (car (cdr (assoc source vm-imap-passwords)))))
+    (when (null pass)
+      (setq pass (vm-auth-source-password
+		  (list (vm-imap-account-name-for-spec source) host)
+		  port user)))
     (while (and (null pass) ask-password)
       (setq pass
 	    (read-passwd (format "IMAP password for %s: " folder)))
@@ -1401,22 +1388,16 @@ case of errors."
       (error "Need password for %s for %s" folder purpose))
     pass))
 
-(defun vm-imap-forget-password (source host port)
+(defun vm-imap-forget-password (source host port user)
   "Forget the cached password for the IMAP account corresponding to
-SOURCE, and also for HOST at PORT.  The forgetting is done inside VM
-as well in auth-source (if it is being used)."
+SOURCE, and also for USER at HOST on PORT.  The forgetting is done
+inside VM as well in auth-source (if it is being used)."
   (setq vm-imap-passwords
 	(vm-delete (lambda (pair)
 		     (equal (car pair) source))
 		   vm-imap-passwords))
-  (when (fboundp 'auth-source-forget-user-or-password)
-    (auth-source-forget-user-or-password 
-     '("login" "password")
-     (vm-imap-account-name-for-spec source) port)
-    (auth-source-forget-user-or-password 
-     '("login" "password")
-     host port))
-  )
+  (vm-auth-source-forget-password
+   (list (vm-imap-account-name-for-spec source) host) port user))
 
 (defun vm-imap-check-for-server-spec (source host port auth user pass 
 					     _use-ssl use-ssh)

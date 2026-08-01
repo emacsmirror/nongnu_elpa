@@ -26,6 +26,7 @@
 (require 'vm-macro)
 (require 'vm-message)
 (require 'vm-vars)
+(require 'auth-source)
 
 ;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
 (declare-function find-coding-system "vm-xemacs" (coding-system-or-name))
@@ -1786,6 +1787,37 @@ Returns the exit status."
 		       (if (vm-imagemagick-program-is-magick-p program)
 			   (cons "identify" args)
 			 args)))))
+
+;;; auth-source access
+
+;; VM asks auth-source for a password under two names: the account name
+;; from vm-imap-account-alist / vm-pop-folder-alist, and the real host
+;; name.  Users write either one in ~/.authinfo, so both are tried.
+
+(defun vm-auth-source-password (hosts port user)
+  "Return the auth-source password for USER at PORT on any of HOSTS.
+HOSTS is a list of machine names to try in order; nil entries are
+ignored.  Returns nil if `auth-sources' has no matching entry."
+  (catch 'done
+    (dolist (host hosts)
+      (when host
+	(let ((found (car (auth-source-search :host host :port port
+					      :user user :max 1))))
+	  (when found
+	    (let ((secret (plist-get found :secret)))
+	      ;; auth-source returns the secret as a lambda when the
+	      ;; backend can defer decryption (e.g. authinfo.gpg)
+	      (throw 'done (if (functionp secret)
+			       (funcall secret)
+			     secret)))))))
+    nil))
+
+(defun vm-auth-source-forget-password (hosts port user)
+  "Forget any cached auth-source password for USER at PORT on HOSTS.
+HOSTS is a list of machine names; nil entries are ignored."
+  (dolist (host hosts)
+    (when host
+      (auth-source-forget+ :host host :port port :user user))))
 
 (provide 'vm-misc)
 ;;; vm-misc.el ends here
