@@ -4579,9 +4579,20 @@ you delete from the last message holding it stays in the folder's label
 list and keeps appearing in completions.  Over time these accumulate.
 @kbd{M-x vm-list-unused-labels} shows the labels of the current folder
 that no message carries, and @kbd{M-x vm-expunge-unused-labels} removes
-them, asking for confirmation first.  No message is changed by either
-command; only the folder's label list.  The removal can be undone with
-@code{vm-undo}.
+them, asking for confirmation first.
+
+@findex vm-sync-labels
+The list can also be short.  A folder learns its labels from its own
+stored list when you visit it, and from labels you add by hand; a
+message that arrives already labelled --- saved in from another folder,
+say --- brings a label the folder does not know about, so that label
+never appears in completions even though it is in use.
+@kbd{M-x vm-sync-labels} makes the list agree with the messages in both
+directions, adding what is used and removing what is not.
+@code{vm-list-unused-labels} reports both kinds of discrepancy.
+
+No message is changed by any of these commands; only the folder's label
+list.  All of them can be undone with @code{vm-undo}.
 
 @vindex vm-flush-interval
 @cindex auto-save
