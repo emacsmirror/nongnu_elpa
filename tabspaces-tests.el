@@ -142,6 +142,17 @@ compares string keys with `eq' and silently kept the old entry."
     (should (equal (tabspaces--get-project-for-tab "projA<2>") "/path/a"))
     (should-not (tabspaces--get-project-for-tab "other"))))
 
+(ert-deftest tabspaces-test-normalize-prefix ()
+  "Legacy kbd-syntax strings and raw key sequences both normalize."
+  ;; Legacy printable string in kbd syntax.
+  (should (equal (tabspaces--normalize-prefix "C-c TAB") (kbd "C-c TAB")))
+  ;; Raw sequence (contains control characters) passes through.
+  (should (equal (tabspaces--normalize-prefix (kbd "C-c TAB")) (kbd "C-c TAB")))
+  ;; Vectors pass through.
+  (should (equal (tabspaces--normalize-prefix [f5]) [f5]))
+  ;; nil is not a string; passes through untouched.
+  (should-not (tabspaces--normalize-prefix nil)))
+
 (ert-deftest tabspaces-test-unique-numbered-tab-name ()
   "Numbered suffixes skip names already in use."
   (should (equal (tabspaces--generate-unique-numbered-tab-name "proj" nil)

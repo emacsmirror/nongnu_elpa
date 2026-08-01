@@ -98,11 +98,14 @@ expressions), which does not override buffers inside
   "When t, remap `switch-to-buffer' to `tabspaces-switch-to-buffer'."
   :type 'boolean)
 
-(defcustom tabspaces-keymap-prefix "C-c TAB"
-  "Key prefix for the tabspaces-prefix-map keymap.
-Set to nil to disable automatic keymap binding."
+(defcustom tabspaces-keymap-prefix (kbd "C-c TAB")
+  "Key sequence prefix for the tabspaces command map.
+The value is a key sequence as returned by `kbd'.  For backward
+compatibility, a string of printable characters (the option's
+former format) is interpreted as `kbd' syntax.  Set to nil to
+disable automatic keymap binding."
   :type '(choice (const :tag "Disabled" nil)
-                 string))
+                 key-sequence))
 
 (defcustom tabspaces-initialize-project-with-todo t
   "Whether to create a `tabspaces-todo-file-name' file in new workspaces.
@@ -828,6 +831,8 @@ It's also possible to enter an arbitrary directory not in the list."
       (when (equal pr-dir "")
         (message "Please select a project or directory")
         (sit-for 1)))
+    ;; `equal', not `file-equal-p': dir-choice is the literal menu
+    ;; entry string above, not a file name.
     (if (equal pr-dir dir-choice)
         (tabspaces--read-directory-name "Select directory: " nil nil nil)
       pr-dir)))
@@ -1687,10 +1692,22 @@ expects the restored tabs to already exist should account for this."
   "Keymap for tabspace/workspace commands after `tabspaces-keymap-prefix'.")
 (fset 'tabspaces-command-map tabspaces-command-map)
 
+(defun tabspaces--normalize-prefix (value)
+  "Return VALUE as a raw key sequence.
+A string of printable characters is treated as `kbd' syntax, for
+compatibility with the former string format of
+`tabspaces-keymap-prefix'.  Raw sequences with modifiers always
+contain control characters, so the two formats do not collide."
+  (if (and (stringp value)
+           (string-match-p "\\`[[:print:]]+\\'" value))
+      (kbd value)
+    value))
+
 (defvar tabspaces-mode-map
   (let ((map (make-sparse-keymap)))
     (when tabspaces-keymap-prefix
-      (define-key map (kbd tabspaces-keymap-prefix) 'tabspaces-command-map))
+      (define-key map (tabspaces--normalize-prefix tabspaces-keymap-prefix)
+                  'tabspaces-command-map))
     map)
   "Keymap for Tabspaces mode.")
 
