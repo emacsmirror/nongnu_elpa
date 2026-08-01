@@ -1306,6 +1306,26 @@ the one it has on disk."
       (should (string-match "\\[ATTACHMENT renamed\\.txt, text/plain\\]"
                             (buffer-string))))))
 
+(ert-deftest vm-mime-test-rename-attachment-keeps-one-tag ()
+  "Test that renaming leaves the tag as a single run of properties.
+The tag is `rear-nonsticky', so text inserted into it inherits nothing.
+Replacing the name with `insert-and-inherit' therefore split the tag's
+property run in three, and `vm-mime-attachment-button-extents' -- which
+is how the encoder finds attachments -- then saw two attachments where
+there was one, so the file would have been sent twice."
+  (vm-mime-test-with-attachment-tag nil
+    (vm-mime-set-attachment-name-at-point "renamed.txt")
+    (should (= 1 (length (vm-mime-attachment-button-extents
+                          (point-min) (point-max) 'vm-mime-object))))
+    ;; the whole tag is one unbroken run carrying the new name
+    (goto-char (point-min))
+    (let* ((start (progn (search-forward "[ATTACHMENT") (match-beginning 0)))
+           (change (next-single-property-change start 'vm-mime-type)))
+      (should (equal (buffer-substring-no-properties start change)
+                     "[ATTACHMENT renamed.txt, text/plain]"))
+      (should (equal (get-text-property (1+ start) 'vm-mime-parameters)
+                     '("name=\"renamed.txt\""))))))
+
 (ert-deftest vm-mime-test-rename-attachment-reaches-encoding ()
   "Test that the new name is what gets sent."
   (vm-mime-test-with-attachment-tag nil

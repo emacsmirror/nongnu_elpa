@@ -6171,26 +6171,32 @@ Content-Disposition filename parameter, and updates the visible tag."
       (let* ((start (car bounds))
 	     (end (cdr bounds))
 	     (inhibit-read-only t)
-	     (disposition (get-text-property start 'vm-mime-disposition)))
-	(put-text-property
-	 start end 'vm-mime-parameters
-	 (vm-mime-set-parameter-in-list
-	  (get-text-property start 'vm-mime-parameters) "name" name))
-	(put-text-property
-	 start end 'vm-mime-disposition
-	 (cons (car disposition)
-	       (vm-mime-set-parameter-in-list
-		(cdr disposition) "filename" name)))
-	;; and show it.  Replace only the name inside the tag, using
-	;; insert-and-inherit so the tag's properties carry over.
+	     ;; the whole tag carries one set of properties; work on a
+	     ;; copy and put it back over the tag once the text is right
+	     (props (copy-sequence (text-properties-at start)))
+	     (disposition (plist-get props 'vm-mime-disposition)))
+	(setq props (plist-put props 'vm-mime-parameters
+			       (vm-mime-set-parameter-in-list
+				(plist-get props 'vm-mime-parameters)
+				"name" name)))
+	(setq props (plist-put props 'vm-mime-disposition
+			       (cons (car disposition)
+				     (vm-mime-set-parameter-in-list
+				      (cdr disposition) "filename" name))))
 	(save-excursion
 	  (goto-char start)
 	  (when (looking-at "\\[ATTACHMENT \\([^,]*\\),")
 	    (let ((name-start (match-beginning 1))
 		  (name-end (match-end 1)))
+	      (setq end (+ end (- (length name) (- name-end name-start))))
 	      (delete-region name-start name-end)
 	      (goto-char name-start)
-	      (insert-and-inherit name)))))))))
+	      ;; Not insert-and-inherit: the tag is rear-nonsticky, so
+	      ;; inserted text inherits nothing and the tag's property
+	      ;; run would be split in three -- which the encoder reads
+	      ;; as two attachments where there is one.
+	      (insert name))))
+	(set-text-properties start end props))))))
 
 ;;;###autoload
 (defun vm-mime-rename-attachment ()
