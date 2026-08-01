@@ -893,6 +893,87 @@ These are less common message/* subtypes."
         (should (string-match "multipart/mixed"
                               (vm-test-message-header m "Content-Type")))))))
 
+;;; vm-save-all-attachments tests
+
+(defmacro vm-mime-test-with-save-stubs (answer record &rest body)
+  "Run BODY with `vm-save-all-attachments' cut off from the folder machinery.
+ANSWER is returned by any file-name prompt; RECORD, if a symbol, is set
+to the default that prompt was offered."
+  (declare (indent 2))
+  `(cl-letf (((symbol-function 'vm-retrieve-operable-messages)
+              (lambda (&rest _) nil))
+             ((symbol-function 'vm-check-for-killed-folder) #'ignore)
+             ((symbol-function 'vm-check-for-killed-summary) #'ignore)
+             ((symbol-function 'vm-select-folder-buffer-and-validate)
+              (lambda (&rest _) nil))
+             ((symbol-function 'vm-select-operable-messages)
+              (lambda (&rest _) (list 'fake-message)))
+             ((symbol-function 'vm-interactive-p) (lambda () nil))
+             ;; vm-warn sleeps; nothing here is watching the echo area
+             ((symbol-function 'vm-warn) (lambda (&rest _) nil))
+             ((symbol-function 'vm-read-file-name)
+              (lambda (_prompt _dir default &rest _)
+                ,@(when record `((setq ,record default)))
+                ,answer))
+             ((symbol-function 'vm-mime-send-body-to-file)
+              (lambda (_layout file &rest _)
+                (with-temp-file file (insert "saved")) t)))
+     ,@body))
+
+(defun vm-mime-test-parse-here ()
+  "Parse the current buffer as a MIME entity."
+  (vm-mime-parse-entity nil :default-type '("text/plain")
+                        :default-encoding "7bit"))
+
+(ert-deftest vm-mime-test-save-all-attachments-directory-answer ()
+  "Test that answering the filename prompt with a directory does not error.
+Regression test for issue #366: the directory was offered as the default,
+so RET returned it as the file name; VM then asked to overwrite the
+directory and `delete-file\' failed with \"is a directory\"."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-att" t))))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "Content-Type: multipart/mixed; boundary=B\n"
+                  "\n"
+                  "--B\n"
+                  "Content-Type: application/octet-stream\n"
+                  "Content-Disposition: attachment\n"
+                  "\n"
+                  "payload\n"
+                  "--B--\n")
+          (let ((layout (vm-mime-test-parse-here)))
+            (cl-letf (((symbol-function 'vm-mm-layout) (lambda (_m) layout)))
+              (vm-mime-test-with-save-stubs dir nil
+                ;; must not signal; nothing gets written
+                (vm-save-all-attachments nil dir)))
+            (should (null (directory-files dir nil "\\`[^.]")))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-save-all-attachments-content-type-name ()
+  "Test that a Content-Type name is offered when Content-Disposition has none.
+Such a part used to be prompted for with the bare directory as its
+default, which is not a file name at all."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-att" t)))
+        (offered nil))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "Content-Type: multipart/mixed; boundary=B\n"
+                  "\n"
+                  "--B\n"
+                  "Content-Type: application/pdf; name=\"report.pdf\"\n"
+                  "Content-Disposition: attachment\n"
+                  "\n"
+                  "payload\n"
+                  "--B--\n")
+          (let* ((layout (vm-mime-test-parse-here))
+                 (want (expand-file-name "report.pdf" dir)))
+            (cl-letf (((symbol-function 'vm-mm-layout) (lambda (_m) layout)))
+              (vm-mime-test-with-save-stubs want offered
+                (vm-save-all-attachments nil dir)))
+            (should (equal offered want))
+            (should (file-exists-p want))))
+      (delete-directory dir t))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
