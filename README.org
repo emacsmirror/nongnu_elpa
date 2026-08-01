@@ -585,7 +585,7 @@ The following functions form the public integration points:
 - =(tabspaces--current-tab-name)= - Returns current workspace name
 - =(tabspaces--local-buffer-p buffer)= - Predicate testing if buffer belongs to current workspace
 
-These functions use the =--= prefix (typically indicating internal functions) but are autoloaded and form the stable integration API. Below are integration examples for popular frameworks.
+These functions use the =--= prefix (typically indicating internal functions) but form the stable integration API. They are available once the package is loaded, for instance after enabling =tabspaces-mode=. Below are integration examples for popular frameworks.
 
 ***** Consult
 
