@@ -109,6 +109,27 @@
       (should (<= (length result) 20))
       (should (string-suffix-p "..." result)))))
 
+(ert-deftest vm-reply-test-sanitize-buffer-name-keeps-accents ()
+  "Test that the default keeps accented letters in a composition name.
+Regression test for issue #29: `vm-drop-buffer-name-chars' was a
+US-ASCII whitelist, so a reply to \"Ren\\='e\" was named \"reply to Ren_\"."
+  (let ((vm-drop-buffer-name-chars
+         (default-value 'vm-drop-buffer-name-chars))
+        (vm-buffer-name-limit 80))
+    (should (equal (vm-sanitize-buffer-name "reply to René")
+                   "reply to René"))
+    (should (equal (vm-sanitize-buffer-name "mail to 山田")
+                   "mail to 山田"))))
+
+(ert-deftest vm-reply-test-sanitize-buffer-name-drops-separator ()
+  "Test that the default still replaces what a file name cannot hold."
+  (let ((vm-drop-buffer-name-chars
+         (default-value 'vm-drop-buffer-name-chars))
+        (vm-buffer-name-limit 80))
+    (should (equal (vm-sanitize-buffer-name "re: a/b") "re: a_b"))
+    (should (equal (vm-sanitize-buffer-name "re: a\tb") "re: a_b"))
+    (should (equal (vm-sanitize-buffer-name "re: a\nb") "re: a_b"))))
+
 ;;; vm-strip-ignored-addresses tests
 
 (ert-deftest vm-reply-test-strip-ignored-addresses-empty ()
