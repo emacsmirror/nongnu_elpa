@@ -5878,8 +5878,14 @@ COMPOSITION's name will be read from the minibuffer."
 	   nil :keep-list nil :discard-regexp "Content-Transfer-Encoding:")
 	  (insert "Content-Transfer-Encoding: binary\n")
 	  (set-buffer composition)
+	  ;; Append.  vm-attach-object inserts at point, which is right
+	  ;; for vm-attach-file -- the user put it there -- but here the
+	  ;; composition is a buffer we have just been named, whose point
+	  ;; is wherever it was last left, quite possibly in the middle of
+	  ;; what the user was typing.
+	  (goto-char (point-max))
 	  ;; FIXME need to copy the disposition from the original
-	  (vm-attach-object work-buffer 
+	  (vm-attach-object work-buffer
 			    :type (car (vm-mm-layout-type layout)) 
 			    :params (cdr (vm-mm-layout-type layout))
 			    :description (vm-mm-layout-description 

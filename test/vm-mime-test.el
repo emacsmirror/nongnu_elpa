@@ -1055,6 +1055,68 @@ default, which is not a file name at all."
             (should (file-exists-p want))))
       (delete-directory dir t))))
 
+;;; vm-attach-object-to-composition tests
+
+(defmacro vm-mime-test-with-attachable (layout-var comp-var body-text &rest body)
+  "Bind LAYOUT-VAR to a small attachment layout and COMP-VAR to a composition.
+The composition holds BODY-TEXT with point left at the start of its body,
+which is where the buffer's point would sit while the user is typing."
+  (declare (indent 3))
+  `(let ((src (generate-new-buffer " *vm-test-src*"))
+         (,comp-var (generate-new-buffer " *vm-test-comp*"))
+         ,layout-var)
+     (unwind-protect
+         (progn
+           (with-current-buffer src
+             (insert "Content-Type: text/plain; name=\"note.txt\"\n"
+                     "Content-Disposition: attachment; filename=\"note.txt\"\n"
+                     "\n"
+                     "payload\n")
+             (setq ,layout-var
+                   (vm-mime-parse-entity nil
+                     :default-type '("text/plain")
+                     :default-encoding "7bit")))
+           (with-current-buffer ,comp-var
+             (mail-mode)
+             (insert "To: someone@example.com\n"
+                     mail-header-separator "\n"
+                     ,body-text)
+             (goto-char (point-min))
+             (search-forward mail-header-separator)
+             (forward-line 1))
+           (let ((vm-send-using-mime t))
+             (cl-letf (((symbol-function 'vm-check-for-killed-summary) #'ignore)
+                       ((symbol-function 'vm-error-if-folder-empty) #'ignore))
+               ,@body)))
+       (when (buffer-live-p src) (kill-buffer src))
+       (when (buffer-live-p ,comp-var) (kill-buffer ,comp-var)))))
+
+(ert-deftest vm-mime-test-attach-object-to-composition-appends ()
+  "Test that attaching to another buffer appends rather than splitting it.
+Regression test for issue #100: the tag went in at the composition
+buffer's point, which is wherever the user last left it -- so attaching
+from the reader dropped the tag into the middle of what they were typing."
+  (vm-mime-test-with-attachable layout comp "first line\nsecond line\n"
+    (vm-attach-object-to-composition layout comp)
+    (with-current-buffer comp
+      (let ((text (buffer-string)))
+        (should (string-match "first line\nsecond line\n\\[ATTACHMENT " text))
+        ;; and nothing was inserted between the body lines
+        (should-not (string-match "first line\n\\[ATTACHMENT " text))))))
+
+(ert-deftest vm-mime-test-attach-object-to-composition-order ()
+  "Test that consecutive attachments keep their order."
+  (vm-mime-test-with-attachable layout comp "body\n"
+    (vm-attach-object-to-composition layout comp)
+    (with-current-buffer comp (goto-char (point-min)))  ; user moves away
+    (vm-attach-object-to-composition layout comp)
+    (with-current-buffer comp
+      (should (= 2 (cl-count-if (lambda (l) (string-prefix-p "[ATTACHMENT " l))
+                                (split-string (buffer-string) "\n"))))
+      ;; both after the body, not before it
+      (should (string-match "body\n\\[ATTACHMENT [^\n]*\n\\[ATTACHMENT "
+                            (buffer-string))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
