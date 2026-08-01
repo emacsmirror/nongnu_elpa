@@ -95,6 +95,9 @@ Enables O(1) lookup for in-place updates (receipts, corrections).")
 (defvar-local jabber-chat-mam-syncing nil
   "Non-nil while this buffer's peer has an active MAM sync.")
 
+(defvar-local jabber-chat-header-line-format-override nil
+  "Buffer-specific chat header format, or nil to use the default.")
+
 (defvar-local jabber-chat--backlog-generation 0
   "Generation counter for chunked backlog inserts.
 Incremented before each new insert sequence so stale timers from a
@@ -354,9 +357,10 @@ at the bottom of the window."
          (let ((buffer-undo-list t))
            (ewoc-refresh jabber-chat-ewoc))
          (setq header-line-format
-               (if (bound-and-true-p jabber-group)
-                   jabber-muc-header-line-format
-                 jabber-chat-header-line-format))
+               (or jabber-chat-header-line-format-override
+                   (if (bound-and-true-p jabber-group)
+                       jabber-muc-header-line-format
+                     jabber-chat-header-line-format)))
          (when-let* ((peer (jabber-chat--peer-jid))
                      (saved (jabber-db-get-chat-encryption
                              (jabber-connection-bare-jid

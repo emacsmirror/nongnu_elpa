@@ -152,6 +152,8 @@
                    (lambda (&rest _) nil))
                   ((symbol-function 'jabber-chat-mode-setup) #'ignore)
                   ((symbol-function 'jabber-buffer-registry-register) #'ignore)
+                  ((symbol-function 'jabber-db-message-thread-summary)
+                   (lambda (&rest _) '(:title "100% ready")))
                   ((symbol-function 'jabber-db-thread-backlog) #'ignore))
           (setq thread
                 (jabber-message-thread-create-buffer
@@ -159,6 +161,10 @@
                  "thread-1" nil parent))
           (with-current-buffer thread
             (setq-local jabber-chat-receipt-message " seen 10:00")
+            (should (equal " 100%% ready · Thread in alice@example.com"
+                           (jabber-message-thread--header)))
+            (should (equal "100% ready" jabber-message-thread-title))
+            (setq-local jabber-message-thread-title nil)
             (should (equal " Thread in alice@example.com"
                            (jabber-message-thread--header)))
             (should (member '(:eval jabber-chat-receipt-message)
@@ -166,6 +172,47 @@
       (kill-buffer parent)
       (when (buffer-live-p thread)
         (kill-buffer thread)))))
+
+(ert-deftest jabber-test-message-thread-redisplay-keeps-thread-header ()
+  "Redisplaying direct and group threads preserves their header."
+  (dolist (type '("chat" "groupchat"))
+    (let ((parent (generate-new-buffer " *jabber-thread-redisplay-parent*"))
+          (jabber-chat-header-line-format '("direct header"))
+          (jabber-muc-header-line-format '("room header"))
+          thread)
+      (unwind-protect
+          (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_jc) "me@example.com"))
+                    ((symbol-function 'jabber-message-thread-find-buffer)
+                     (lambda (&rest _) nil))
+                    ((symbol-function 'jabber-chat-mode-setup) #'ignore)
+                    ((symbol-function 'jabber-buffer-registry-register) #'ignore)
+                    ((symbol-function 'jabber-db-message-thread-summary)
+                     (lambda (&rest _) '(:title "Roadmap")))
+                    ((symbol-function 'jabber-db-thread-backlog) #'ignore)
+                    ((symbol-function 'ewoc-refresh) #'ignore)
+                    ((symbol-function 'jabber-chat--peer-jid) #'ignore)
+                    ((symbol-function 'jabber-chat-encryption--update-header)
+                     #'ignore)
+                    ((symbol-function 'jabber-chat-buffer-recenter-input)
+                     #'ignore))
+            (setq thread
+                  (jabber-message-thread-create-buffer
+                   'fake-jc
+                   (if (equal type "groupchat")
+                       "room@example.com"
+                     "alice@example.com")
+                   type "thread-1" nil parent))
+            (with-current-buffer thread
+              (jabber-chat-redisplay)
+              (should
+               (equal
+                '((:eval (jabber-message-thread--header))
+                  (:eval jabber-chat-receipt-message))
+                header-line-format))))
+        (kill-buffer parent)
+        (when (buffer-live-p thread)
+          (kill-buffer thread))))))
 
 (ert-deftest jabber-test-message-thread-first-send-links-root ()
   "The first local reply links to the root and later replies do not."
@@ -316,6 +363,63 @@
            (current-buffer)))
       (should (equal jabber-message-thread-id "thread-2"))
       (should (equal jabber-message-thread-parent-id "thread-1")))))
+
+(ert-deftest jabber-test-message-thread-renewed-title-persists-after-reopen ()
+  "A reopened renewed thread inherits title and lineage."
+  (let* ((dir (make-temp-file "jabber-thread-renew" t))
+         (jabber-db-path (expand-file-name "test.sqlite" dir))
+         (jabber-db--connection nil)
+         (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+         (parent (generate-new-buffer " *jabber-thread-renew-parent*"))
+         reopened)
+    (unwind-protect
+        (progn
+          (jabber-db-ensure-open)
+          (jabber-db-register-message-thread
+           "me@example.org" "alice@example.org" "chat"
+           "thread-1" nil nil nil 1)
+          (jabber-db-set-message-thread-title
+           "me@example.org" "alice@example.org" "chat" "thread-1" "Old")
+          (with-temp-buffer
+            (setq-local jabber-buffer-connection 'fake-jc)
+            (setq-local jabber-message-thread-id "thread-1")
+            (setq-local jabber-message-thread-peer "alice@example.org")
+            (setq-local jabber-message-thread-type "chat")
+            (setq-local jabber-message-thread-title "Old")
+            (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                       (lambda (_jc) "me@example.org"))
+                      ((symbol-function 'jabber-message-thread--generate-id)
+                       (lambda () "thread-2")))
+              (jabber-message-thread--renew-id)))
+          (jabber-db-close)
+          (jabber-db-ensure-open)
+          (let ((summary
+                 (jabber-db-message-thread-summary
+                  "me@example.org" "alice@example.org" "chat" "thread-2")))
+            (should (equal "thread-1"
+                           (plist-get summary :thread-parent-id)))
+            (should (equal "Old" (plist-get summary :title)))
+            (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                       (lambda (_jc) "me@example.org"))
+                      ((symbol-function 'jabber-message-thread-find-buffer)
+                       (lambda (&rest _) nil))
+                      ((symbol-function 'jabber-chat-mode-setup) #'ignore)
+                      ((symbol-function 'jabber-buffer-registry-register)
+                       #'ignore)
+                      ((symbol-function 'jabber-db-thread-backlog) #'ignore))
+              (setq reopened
+                    (jabber-message-thread-create-buffer
+                     'fake-jc "alice@example.org" "chat" "thread-2"
+                     (plist-get summary :thread-parent-id) parent)))
+            (with-current-buffer reopened
+              (should (equal "thread-1" jabber-message-thread-parent-id))
+              (should (equal "Old" jabber-message-thread-title)))))
+      (jabber-db-close)
+      (kill-buffer parent)
+      (when (buffer-live-p reopened)
+        (kill-buffer reopened))
+      (when (file-directory-p dir)
+        (delete-directory dir t)))))
 
 (ert-deftest jabber-test-message-thread-start-sends-muc-draft ()
   "Send a MUC draft as a public thread root."
@@ -479,11 +583,12 @@
                             :body "Same root")
              :reply-count 2 :latest-at ,latest :unread nil)
             (:thread-id "thread-3" :thread-type "chat"
+             :title "Release planning"
              :root-message (:body "Alice: Same root (2)")
              :reply-count 0 :latest-at ,latest :unread nil)))
          (items (jabber-message-thread--completion-items threads)))
     (should (equal '("Alice: Same root" "Alice: Same root (2)"
-                     "Alice: Same root (2) (2)")
+                     "Release planning")
                    (mapcar #'car items)))
     (should
      (equal
@@ -498,9 +603,38 @@
       (jabber-message-thread--completion-annotation
        (cdadr items))))
     (cl-letf (((symbol-function 'completing-read)
-               (lambda (&rest _) "Alice: Same root (2) (2)")))
+               (lambda (&rest _) "Release planning")))
       (should (eq (nth 2 threads)
                   (jabber-message-thread--read-thread threads))))))
+
+(ert-deftest jabber-test-message-thread-set-title-updates-storage-and-header ()
+  "Set or clear a thread title through its owning buffer."
+  (with-temp-buffer
+    (setq-local jabber-buffer-connection 'connection)
+    (setq-local jabber-message-thread-id "thread-1")
+    (setq-local jabber-message-thread-peer "alice@example.com")
+    (setq-local jabber-message-thread-type "chat")
+    (let (stored)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.com"))
+                ((symbol-function 'jabber-db-ensure-open) (lambda () t))
+                ((symbol-function 'jabber-db-set-message-thread-title)
+                 (lambda (&rest args)
+                   (push args stored)
+                   (jabber-db--normalize-message-thread-title
+                    (car (last args))))))
+        (jabber-message-thread-set-title "  Roadmap  ")
+        (should (equal "Roadmap" jabber-message-thread-title))
+        (should (equal " Roadmap · Thread in alice@example.com"
+                       (jabber-message-thread--header)))
+        (jabber-message-thread-set-title "  ")
+        (should-not jabber-message-thread-title)
+        (should
+         (equal
+          '(("me@example.com" "alice@example.com" "chat" "thread-1" "  ")
+            ("me@example.com" "alice@example.com" "chat" "thread-1"
+             "  Roadmap  "))
+          stored))))))
 
 (ert-deftest jabber-test-message-thread-completion-handles-missing-muc-root ()
   "Represent a stored MUC thread even when its root row is unavailable."
@@ -508,6 +642,14 @@
    (equal "(no text)"
           (jabber-message-thread--completion-label
            '(:thread-type "groupchat" :root-message nil)))))
+
+(ert-deftest jabber-test-message-thread-completion-truncates-title ()
+  "Keep a titled completion candidate within the compact width."
+  (let ((label
+         (jabber-message-thread--completion-label
+          (list :title (make-string 80 ?x) :thread-type "chat"))))
+    (should (= 72 (string-width label)))
+    (should (string-suffix-p "…" label))))
 
 (ert-deftest jabber-test-message-thread-completion-hides-retracted-root ()
   "Never expose retained plaintext for a retracted root."

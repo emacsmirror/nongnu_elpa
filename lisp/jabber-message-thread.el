@@ -39,6 +39,7 @@
 (defvar jabber-chat-earliest-backlog)
 (defvar jabber-chat-ewoc)
 (defvar jabber-chat-encryption)
+(defvar jabber-chat-header-line-format-override)
 (defvar jabber-chat-send-hooks)
 (defvar jabber-chat--send-hook-stanza)
 (defvar jabber-chatting-with)
@@ -82,6 +83,9 @@ original parent chat buffer paths.  Thread metadata remains stored."
 
 (defvar-local jabber-message-thread-peer nil
   "Bare contact or room JID for the current thread buffer.")
+
+(defvar-local jabber-message-thread-title nil
+  "Local display title for the current thread buffer, or nil.")
 
 (defvar-local jabber-message-thread--root-reply-id nil
   "Root message ID to link from the first locally sent reply.")
@@ -128,6 +132,13 @@ Return nil when THREAD-ID is empty or equals PARENT-ID."
               (account
                (jabber-connection-bare-jid jabber-buffer-connection))
               (new-id (jabber-message-thread--generate-id)))
+    (jabber-db-register-message-thread
+     account jabber-message-thread-peer jabber-message-thread-type
+     new-id old-id nil nil (floor (float-time)))
+    (when jabber-message-thread-title
+      (jabber-db-set-message-thread-title
+       account jabber-message-thread-peer jabber-message-thread-type
+       new-id jabber-message-thread-title))
     (jabber-buffer-registry--remove-current)
     (setq jabber-message-thread-id new-id
           jabber-message-thread-parent-id old-id
@@ -181,7 +192,12 @@ Return nil when THREAD-ID is empty or equals PARENT-ID."
 
 (defun jabber-message-thread--header ()
   "Return the header text for the current thread buffer."
-  (format " Thread in %s"
+  (format " %sThread in %s"
+          (if jabber-message-thread-title
+              (concat
+               (string-replace "%" "%%" jabber-message-thread-title)
+               " · ")
+            "")
           (jabber-jid-displayname jabber-message-thread-peer)))
 
 (defun jabber-message-thread--setup-kind (peer type)
@@ -226,15 +242,22 @@ ROOT-MSG supplies the initial XEP-0461 link."
           (setq-local jabber-message-thread-parent-id parent-id)
           (setq-local jabber-message-thread-type type)
           (setq-local jabber-message-thread-peer peer)
+          (setq-local jabber-message-thread-title
+                      (plist-get
+                       (jabber-db-message-thread-summary
+                        account peer type thread-id)
+                       :title))
           (jabber-message-thread--setup-kind peer type)
           (jabber-chat-mode-setup jc #'jabber-chat-pp)
           (setq-local jabber-send-function
                       (if (equal type "groupchat")
                           #'jabber-muc-send
                         #'jabber-chat-send))
-          (setq-local header-line-format
+          (setq-local jabber-chat-header-line-format-override
                       '((:eval (jabber-message-thread--header))
                         (:eval jabber-chat-receipt-message)))
+          (setq-local header-line-format
+                      jabber-chat-header-line-format-override)
           (add-hook 'jabber-chat-send-hooks
                     #'jabber-message-thread--send-hook nil t)
           (setq-local jabber-message-thread--root-reply-id
@@ -442,7 +465,8 @@ PEER and TYPE scope the exact stored message lookup."
 
 (defun jabber-message-thread--completion-label (thread)
   "Return THREAD's compact completion label."
-  (let* ((root (plist-get thread :root-message))
+  (let* ((title (plist-get thread :title))
+         (root (plist-get thread :root-message))
          (from (plist-get root :from))
          (body (string-trim
                 (replace-regexp-in-string
@@ -456,7 +480,11 @@ PEER and TYPE scope the exact stored message lookup."
          (nick (and (equal (plist-get thread :thread-type) "groupchat")
                     (stringp from)
                     (jabber-jid-resource from))))
-    (if nick (format "%s: %s" nick preview) preview)))
+    (cond
+     ((and (stringp title) (not (string-empty-p title)))
+      (truncate-string-to-width title 72 nil nil "…"))
+     (nick (format "%s: %s" nick preview))
+     (t preview))))
 
 (defun jabber-message-thread--unique-label (label used)
   "Return a unique completion LABEL and record it in USED."
@@ -536,6 +564,24 @@ PEER and TYPE scope the exact stored message lookup."
                  (jabber-db-message-threads account peer type))))
     (jabber-message-thread--open-stored
      jabber-buffer-connection account peer type parent summary)))
+
+;;;###autoload
+(defun jabber-message-thread-set-title (title)
+  "Set the current thread's local TITLE, or clear it when empty."
+  (interactive
+   (list (read-string "Thread title (empty clears): "
+                      jabber-message-thread-title)))
+  (unless jabber-message-thread-id
+    (user-error "Not in a thread buffer"))
+  (unless (jabber-db-ensure-open)
+    (user-error "Message threads require persistent message storage"))
+  (let ((account
+         (jabber-connection-bare-jid jabber-buffer-connection)))
+    (setq jabber-message-thread-title
+          (jabber-db-set-message-thread-title
+           account jabber-message-thread-peer jabber-message-thread-type
+           jabber-message-thread-id title))
+    (force-mode-line-update t)))
 
 (defun jabber-message-thread--refresh-thread-root
     (account peer type thread-id)
