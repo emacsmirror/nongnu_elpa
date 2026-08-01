@@ -720,10 +720,10 @@ prevent forged carbons (CVE-2017-5589)."
             (pcase type
               ('sent
                (let ((to (jabber-xml-get-attribute inner-msg 'to)))
-                 (let ((buffer (and to (jabber-chat--find-buffer to))))
-                   (cons inner-msg
-                         (and (jabber-chat--buffer-account-p buffer jc)
-                              buffer)))))
+                 (cons inner-msg
+                       (and to
+                            (jabber-chat--find-buffer-on-connection
+                             jc to)))))
               ('received
                (cons inner-msg nil)))))))))
 
@@ -1014,14 +1014,14 @@ contains an error element.  FROM is the sender JID.  JC is the
 Jabber connection, used to detect self-authored carbons.
 _XML-DATA is reserved for future use by OMEMO."
   (let* ((body-text (plist-get msg-plist :body))
-        (self-p (string= (jabber-jid-user from)
-                         (jabber-connection-bare-jid jc)))
+         (self-p (string= (jabber-jid-user from)
+                          (jabber-connection-bare-jid jc)))
          (alert-buffer
           (or chat-buffer
               (and (not error-p)
                    (not self-p)
                    (plist-get msg-plist :thread-id)
-                   (jabber-chat--find-buffer from)))))
+                   (jabber-chat--find-buffer-on-connection jc from)))))
     (when chat-buffer
       (with-current-buffer chat-buffer
         (jabber-chat-buffer-with-scrolltobottom
@@ -1045,6 +1045,33 @@ _XML-DATA is reserved for future use by OMEMO."
       (jabber-muc-private-find-buffer
        (jabber-jid-user from) (jabber-jid-resource from))
     (jabber-chat-find-buffer from)))
+
+(defun jabber-chat--buffer-peer-p (buffer from muc-private-p)
+  "Return non-nil when BUFFER is the chat for FROM and MUC-PRIVATE-P."
+  (and (buffer-live-p buffer)
+       (with-current-buffer buffer
+         (and (eq major-mode 'jabber-chat-mode)
+              (bound-and-true-p jabber-chatting-with)
+              (not (bound-and-true-p jabber-message-thread-id))
+              (if muc-private-p
+                  (and (bound-and-true-p jabber-muc-private-p)
+                       (equal jabber-chatting-with from))
+                (and (not (bound-and-true-p jabber-group))
+                     (not (bound-and-true-p jabber-muc-private-p))
+                     (equal (jabber-jid-user jabber-chatting-with)
+                            (jabber-jid-user from))))))))
+
+(defun jabber-chat--find-buffer-on-connection (jc from)
+  "Return FROM's existing chat buffer on JC, or nil; never create one."
+  (let* ((muc-private-p (jabber-muc-sender-p from))
+         (registered (jabber-chat--find-buffer from)))
+    (if (jabber-chat--buffer-account-p registered jc)
+        registered
+      (seq-find
+       (lambda (buffer)
+         (and (jabber-chat--buffer-account-p buffer jc)
+              (jabber-chat--buffer-peer-p buffer from muc-private-p)))
+       (buffer-list)))))
 
 (defun jabber-chat--log-error (from msg-plist)
   "Log the error in MSG-PLIST from FROM to the echo area when no buffer is open."
@@ -1076,11 +1103,11 @@ count and redraw it instead of adding a new line."
       (jabber-maybe-print-rare-time
        (jabber-chat-ewoc-enter (list :error msg-plist))))))
 
-(defun jabber-chat--display-error (from msg-plist)
-  "Show the error in MSG-PLIST for FROM without resurrecting a killed buffer.
+(defun jabber-chat--display-error (jc from msg-plist)
+  "Show MSG-PLIST's error from FROM on JC without creating a buffer.
 If a chat buffer for FROM exists, insert the error there, collapsing a
 repeat of the previous identical error.  Otherwise log to the echo area."
-  (if-let* ((buffer (jabber-chat--find-buffer from)))
+  (if-let* ((buffer (jabber-chat--find-buffer-on-connection jc from)))
       (with-current-buffer buffer
         (jabber-chat-buffer-with-scrolltobottom
          (jabber-chat--enter-error-collapsed msg-plist)))
@@ -1131,11 +1158,12 @@ JC is the Jabber connection."
                   (t (delq nil
                            (list
                             (or carbon-buffer
-                                (jabber-chat-find-buffer from))))))))
+                                (jabber-chat--find-buffer-on-connection
+                                 jc from))))))))
              (jabber-db--extract-occupant-id xml-data)
              account peer))
            (error-p
-            (jabber-chat--display-error from msg-plist))
+            (jabber-chat--display-error jc from msg-plist))
            ((run-hook-with-args-until-success 'jabber-chat-printers
                                               msg-plist :foreign :printp)
             (let ((chat-buffer
@@ -1143,7 +1171,8 @@ JC is the Jabber connection."
                     ((eq thread-target 'parent)
                      (if (jabber-xml-get-attribute
                           xml-data 'jabber-mam--origin)
-                         (jabber-chat--find-buffer counterpart)
+                         (jabber-chat--find-buffer-on-connection
+                          jc counterpart)
                        (jabber-chat--select-buffer
                         jc counterpart carbon-buffer)))
                     ((eq thread-target 'closed) nil)

@@ -1266,7 +1266,7 @@
     (unwind-protect
         (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                    (lambda (_jc) "me@example.com"))
-                  ((symbol-function 'jabber-chat--find-buffer)
+                  ((symbol-function 'jabber-chat--find-buffer-on-connection)
                    (lambda (&rest _) parent))
                   ((symbol-function 'jabber-chat--select-buffer)
                    (lambda (&rest _)
@@ -1285,11 +1285,44 @@
                                 (buffer-string))))))
       (kill-buffer parent))))
 
+(ert-deftest jabber-test-message-thread-closed-alert-finds-buffer-by-account ()
+  "A closed reply alerts through the parent buffer on its connection."
+  (let ((account-a-buffer (generate-new-buffer " *alert-account-a*"))
+        (account-b-buffer (generate-new-buffer " *alert-account-b*"))
+        (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+        seen)
+    (unwind-protect
+        (progn
+          (dolist (entry `((,account-b-buffer account-b)
+                           (,account-a-buffer account-a)))
+            (with-current-buffer (car entry)
+              (setq-local major-mode 'jabber-chat-mode)
+              (setq-local jabber-buffer-connection (cadr entry))
+              (setq-local jabber-chatting-with "friend@example.com")
+              (jabber-buffer-registry-register 'chat "friend@example.com")))
+          (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (jc)
+                       (pcase jc
+                         ('account-a "a@example.com")
+                         ('account-b "b@example.com")))))
+            (let ((jabber-message-hooks
+                   (list (lambda (_from buffer _body _alert)
+                           (setq seen buffer))))
+                  (jabber-alert-message-hooks nil)
+                  (jabber-alert-message-function
+                   (lambda (&rest _) "alert")))
+              (jabber-chat--display-message
+               'account-b nil nil nil "friend@example.com"
+               '(:body "reply" :thread-id "thread-1"))))
+          (should (eq seen account-b-buffer)))
+      (kill-buffer account-a-buffer)
+      (kill-buffer account-b-buffer))))
+
 (ert-deftest jabber-test-message-thread-closed-chat-alert-without-parent-is-safe ()
   "A closed reply without a parent leaves buffer-dependent hooks inert."
   (cl-letf (((symbol-function 'jabber-connection-bare-jid)
              (lambda (_jc) "me@example.com"))
-            ((symbol-function 'jabber-chat--find-buffer)
+            ((symbol-function 'jabber-chat--find-buffer-on-connection)
              (lambda (&rest _) nil))
             ((symbol-function 'jabber-chat--select-buffer)
              (lambda (&rest _)

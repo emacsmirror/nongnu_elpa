@@ -1542,6 +1542,56 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
       (should displayed)
       (should-not created))))
 
+(ert-deftest jabber-test-chat-mam-replay-finds-buffer-by-account ()
+  "MAM replay uses the peer buffer belonging to its connection."
+  (let ((account-a-buffer (generate-new-buffer " *mam-account-a*"))
+        (account-b-buffer (generate-new-buffer " *mam-account-b*"))
+        (account-b-thread (generate-new-buffer " *mam-account-b-thread*"))
+        (jabber-buffer-registry--buffers (make-hash-table :test #'equal))
+        displayed)
+    (unwind-protect
+        (progn
+          (dolist (entry `((,account-b-buffer account-b)
+                           (,account-a-buffer account-a)))
+            (with-current-buffer (car entry)
+              (setq-local major-mode 'jabber-chat-mode)
+              (setq-local jabber-buffer-connection (cadr entry))
+              (setq-local jabber-chatting-with "friend@example.com")
+              (jabber-buffer-registry-register 'chat "friend@example.com")))
+          (with-current-buffer account-b-thread
+            (setq-local major-mode 'jabber-chat-mode)
+            (setq-local jabber-buffer-connection 'account-b)
+            (setq-local jabber-chatting-with "friend@example.com")
+            (setq-local jabber-message-thread-id "thread-1"))
+          (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (jc)
+                       (pcase jc
+                         ('account-a "a@example.com")
+                         ('account-b "b@example.com"))))
+                    ((symbol-function 'jabber-chat--decrypt-if-needed)
+                     (lambda (_jc stanza) stanza))
+                    ((symbol-function 'buffer-list)
+                     (lambda (&rest _)
+                       (list account-b-thread account-b-buffer
+                             account-a-buffer)))
+                    ((symbol-function 'jabber-chat-create-buffer)
+                     (lambda (&rest _)
+                       (ert-fail "MAM replay created a chat buffer")))
+                    ((symbol-function 'jabber-chat--display-message)
+                     (lambda (_jc _xml buffer &rest _)
+                       (setq displayed buffer))))
+            (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+              (jabber-process-chat
+               'account-b
+               '(message ((from . "friend@example.com/phone")
+                          (to . "b@example.com") (type . "chat")
+                          (jabber-mam--origin . "t"))
+                         (body () "archived")))))
+          (should (eq displayed account-b-buffer)))
+      (kill-buffer account-a-buffer)
+      (kill-buffer account-b-buffer)
+      (kill-buffer account-b-thread))))
+
 (ert-deftest jabber-test-chat-disabled-threads-load-original-backlog ()
   "Load threaded messages into a newly created parent chat buffer."
   (let* ((jc (jabber-test-chat--make-fake-jc "me@example.com"))
