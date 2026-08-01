@@ -751,12 +751,44 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
       (vm-with-string-as-temp-buffer string 'vm-decode-mime-encoded-words)
     string ))
 
+(defun vm-reencode-mime-absorb-separating-whitespace ()
+  "Make whitespace between two to-be-encoded runs part of the first.
+RFC 2047 says whitespace *between* two encoded words is a separator and
+not part of the text, so a decoder drops it -- `vm-decode-mime-encoded-words'
+does exactly that.  Whitespace carries no `vm-charset' property of its
+own, so encoding the runs and leaving the space between them literal
+turns \"f\\=\\o\\=\\o b\\=\\ar\" into two encoded words with a space between,
+which decodes back as \"f\\=\\o\\=\\ob\\=\\ar\".
+
+Give such whitespace the charset of the run before it, so it is encoded
+along with it and stays significant."
+  (let ((start (point-min))
+	charset pos)
+    (while (< start (point-max))
+      (setq charset (get-text-property start 'vm-charset))
+      (setq pos (or (next-single-property-change start 'vm-charset)
+		    (point-max)))
+      (when (and (null charset)
+		 (> start (point-min))
+		 (< pos (point-max))
+		 (get-text-property (1- start) 'vm-charset)
+		 (get-text-property pos 'vm-charset)
+		 (string-match "\\`[ \t\n]+\\'"
+			       (buffer-substring-no-properties start pos)))
+	(let ((prev-charset (get-text-property (1- start) 'vm-charset))
+	      (prev-coding (get-text-property (1- start) 'vm-coding)))
+	  (put-text-property start pos 'vm-charset prev-charset)
+	  (when prev-coding
+	    (put-text-property start pos 'vm-coding prev-coding))))
+      (setq start pos))))
+
 (defun vm-reencode-mime-encoded-words ()
   "Reencode in mime the words in the current buffer that need
 encoding.  The words that need encoding are expected to have
 text-properties set with the appropriate characte set.  This would
 have been done if the contents of the buffer are the result of a
 previous mime decoding."
+  (vm-reencode-mime-absorb-separating-whitespace)
   (let ((charset nil)
 	start coding pos q-encoding
 	old-size

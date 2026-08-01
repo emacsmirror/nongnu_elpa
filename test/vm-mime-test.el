@@ -1117,6 +1117,71 @@ from the reader dropped the tag into the middle of what they were typing."
       (should (string-match "body\n\\[ATTACHMENT [^\n]*\n\\[ATTACHMENT "
                             (buffer-string))))))
 
+;;; vm-reencode-mime-encoded-words tests
+
+(defun vm-mime-test-decoded-string (text &rest spans)
+  "Return TEXT marked up as `vm-decode-mime-encoded-words' would leave it.
+Each SPAN is (START END CHARSET CODING); the text between spans carries
+no charset, exactly as whitespace separating two encoded words does not."
+  (let ((s (copy-sequence text)))
+    (dolist (span spans)
+      (let ((start (nth 0 span)) (end (nth 1 span))
+            (charset (nth 2 span)) (coding (nth 3 span)))
+        (put-text-property start end 'vm-charset charset s)
+        (put-text-property start end 'vm-coding coding s)
+        (put-text-property start end 'vm-string t s)))
+    s))
+
+(ert-deftest vm-mime-test-reencode-keeps-separating-space ()
+  "Test that a space between two encoded runs survives a round trip.
+Regression test for issue #383: the space carries no charset, so it was
+left literal between two encoded words -- and RFC 2047 says whitespace
+between encoded words is a separator, so decoding threw it away and
+\"foo bar\" came back as \"foobar\"."
+  (let* ((vm-display-using-mime t)
+         (input (vm-mime-test-decoded-string
+                 "fóó bàr"
+                 '(0 3 "iso-8859-1" iso-8859-1)
+                 '(4 7 "iso-8859-1" iso-8859-1)))
+         (encoded (vm-reencode-mime-encoded-words-in-string input))
+         (decoded (vm-decode-mime-encoded-words-in-string encoded)))
+    (should (equal (substring-no-properties decoded) "fóó bàr"))))
+
+(ert-deftest vm-mime-test-reencode-keeps-multiple-spaces ()
+  "Test that a run of whitespace between encoded runs survives."
+  (let* ((vm-display-using-mime t)
+         (input (vm-mime-test-decoded-string
+                 "fóó \t bàr"
+                 '(0 3 "iso-8859-1" iso-8859-1)
+                 '(6 9 "iso-8859-1" iso-8859-1)))
+         (encoded (vm-reencode-mime-encoded-words-in-string input))
+         (decoded (vm-decode-mime-encoded-words-in-string encoded)))
+    (should (equal (substring-no-properties decoded) "fóó \t bàr"))))
+
+(ert-deftest vm-mime-test-reencode-leaves-plain-text-between ()
+  "Test that ordinary text between encoded runs is still left alone.
+Only whitespace is a separator; anything else is real content and must
+not be swept into the preceding encoded word."
+  (let* ((vm-display-using-mime t)
+         (input (vm-mime-test-decoded-string
+                 "fóó and bàr"
+                 '(0 3 "iso-8859-1" iso-8859-1)
+                 '(8 11 "iso-8859-1" iso-8859-1)))
+         (encoded (vm-reencode-mime-encoded-words-in-string input))
+         (decoded (vm-decode-mime-encoded-words-in-string encoded)))
+    (should (string-match " and " encoded))
+    (should (equal (substring-no-properties decoded) "fóó and bàr"))))
+
+(ert-deftest vm-mime-test-reencode-leaves-leading-trailing-space ()
+  "Test that whitespace with no encoded run on both sides is left alone."
+  (let* ((vm-display-using-mime t)
+         (input (vm-mime-test-decoded-string
+                 " fóó "
+                 '(1 4 "iso-8859-1" iso-8859-1)))
+         (encoded (vm-reencode-mime-encoded-words-in-string input)))
+    (should (string-prefix-p " " encoded))
+    (should (string-suffix-p " " encoded))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
