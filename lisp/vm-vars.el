@@ -5863,9 +5863,10 @@ name cannot hold are replaced.  Set to nil to leave names alone.
 
 The default matches control characters and the directory separator.  On
 MS-Windows it also matches the rest of the set that platform forbids in
-a file name -- \\=`\\\\\\=', \\=`:\\=', \\=`*\\=', \\=`?\\=', \\=`\"\\=', \\=`<\\=', \\=`>\\=' and \\=`|\\='.  That
-larger set is not used elsewhere because it includes \\=`:\\=', which would
-turn every \"Re:\" in a subject into \"Re_\".
+a file name: backslash, colon, asterisk, question mark, double quote,
+less-than, greater-than and vertical bar.  That larger set is not used
+elsewhere because it includes the colon, which would turn every \"Re:\"
+in a subject into \"Re_\".
 
 This used to be a US-ASCII whitelist, which replaced every accented
 letter as well: a reply to \"Ren\\='e\" was named \"reply to Ren_\".  To
