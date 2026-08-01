@@ -31,7 +31,7 @@
 
 ;; (require 'cl-seq)
 (require 'seq)
-(require 'cl-extra)
+(require 'cl-extra); for cl-some
 (require 'org-history-debug)
 
 ;; -=-= code
@@ -137,9 +137,9 @@ Uses REL-FILE-NAME (relative to git root) or variable `buffer-file-name'
                            (ignore-errors (read (current-buffer)))))))))
     (org-history-debug-print "org-history-dirl--dir-locals-p N1" rel-file-name config)
     (or (org-history-dirl--contains-mode-p (org-history-dirl--filter-list-by-car majormode config) majormode minormode) ; Per-mode entry
-        (not (org-history-debug-print "org-history-dirl--dir-locals-p N2"))
+        ;; (not (org-history-debug-print "org-history-dirl--dir-locals-p N2"))
         (org-history-dirl--dir-locals-per-file-p rel-file-name config majormode minormode) ; Per-file
-        (not (org-history-debug-print "org-history-dirl--dir-locals-p N3"))
+        ;; (not (org-history-debug-print "org-history-dirl--dir-locals-p N3"))
         (org-history-dirl--dir-locals-per-file-p nil config majormode minormode)))) ; per-folder Default (nil) entry
 
 ;; (let ((default-directory (vc-git-root buffer-file-name)))
