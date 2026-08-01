@@ -4545,21 +4545,37 @@ created."
        (let ((directory (if (functionp directory)
                             (funcall directory msg)
                           directory)))
-         (setq file 
+         (setq file
 	       (if file
 		   (expand-file-name (file-name-nondirectory file) directory)
-		 (vm-read-file-name
-		  (format "Save %s (no filename given) to: " type)
-		  (or directory
-		      vm-mime-all-attachments-directory
-		      vm-mime-attachment-save-directory)
-		  (or directory
-		      vm-mime-all-attachments-directory
-		      vm-mime-attachment-save-directory)
-		  nil nil
-		  vm-mime-save-all-attachments-history)
-		 ))
-         
+		 (let* ((dir (or directory
+				 vm-mime-all-attachments-directory
+				 vm-mime-attachment-save-directory))
+			;; Content-Disposition gave no filename, but the
+			;; part may still name itself in its Content-Type.
+			(name (vm-mime-get-parameter layout "name"))
+			(answer
+			 (vm-read-file-name
+			  (format "Save %s (no filename given) to: " type)
+			  dir
+			  (if name
+			      (expand-file-name (file-name-nondirectory name)
+						dir)
+			    dir)
+			  nil nil
+			  vm-mime-save-all-attachments-history)))
+		   ;; A directory is not a file name -- and it is what
+		   ;; answering the prompt with RET used to give, since
+		   ;; the directory was offered as the default.  Saving
+		   ;; there would ask to "overwrite" the directory and
+		   ;; then fail in delete-file.
+		   (if (and answer (file-directory-p answer))
+		       (progn
+			 (vm-warn 0 2 "%s is a directory, not a file name"
+				  answer)
+			 nil)
+		     answer))))
+
          (if (and file (file-exists-p file))
              (if (y-or-n-p (format "Overwrite `%s'? " file))
                  (delete-file file)
