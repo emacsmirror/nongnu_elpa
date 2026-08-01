@@ -137,6 +137,8 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
                   'sent "me@example.com" "me@example.com/phone"
                   "friend@example.com"))
          (test-buffer (generate-new-buffer " *test-carbon*")))
+    (with-current-buffer test-buffer
+      (setq-local jabber-buffer-connection 'fake-jc))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com"))
               ((symbol-function 'jabber-chat--find-buffer)
@@ -152,6 +154,62 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
                            "friend@example.com"))
             (should (eq (cdr result) test-buffer)))
         (kill-buffer test-buffer)))))
+
+(ert-deftest jabber-chat-test-sent-carbon-session-is-account-scoped ()
+  "A sent carbon adopts the session only in its account's chat buffer."
+  (let ((account-a-buffer (generate-new-buffer " *carbon-account-a*"))
+        (account-b-buffer (generate-new-buffer " *carbon-account-b*"))
+        stored)
+    (unwind-protect
+        (progn
+          (with-current-buffer account-a-buffer
+            (setq-local jabber-buffer-connection 'account-a)
+            (setq-local jabber-chatting-with "friend@example.com")
+            (setq-local jabber-message-thread-session-id "session-a"))
+          (with-current-buffer account-b-buffer
+            (setq-local jabber-buffer-connection 'account-b)
+            (setq-local jabber-chatting-with "friend@example.com")
+            (setq-local jabber-message-thread-session-id "session-old-b"))
+          (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (jc)
+                       (pcase jc
+                         ('account-a "a@example.com")
+                         ('account-b "b@example.com"))))
+                    ((symbol-function 'jabber-chat--find-buffer)
+                     (lambda (_) account-a-buffer))
+                    ((symbol-function 'jabber-chat-create-buffer)
+                     (lambda (jc peer)
+                       (should (eq jc 'account-b))
+                       (should (equal peer "friend@example.com"))
+                       account-b-buffer))
+                    ((symbol-function 'jabber-chat--decrypt-if-needed)
+                     (lambda (_jc stanza) stanza))
+                    ((symbol-function 'jabber-message-thread-display-target)
+                     (lambda (&rest _) 'parent))
+                    ((symbol-function 'jabber-chat--display-message) #'ignore)
+                    ((symbol-function 'jabber-chat--store-carbon) #'ignore)
+                    ((symbol-function 'jabber-db-set-chat-thread)
+                     (lambda (&rest args) (push args stored))))
+            (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+              (jabber-process-chat
+               'account-b
+               (jabber-test-carbons--make-carbon
+                'sent "b@example.com" "b@example.com/phone"
+                "friend@example.com" "carbon-1" "hello"
+                '((thread () "session-b"))))))
+          (should
+           (equal "session-a"
+                  (buffer-local-value
+                   'jabber-message-thread-session-id account-a-buffer)))
+          (should
+           (equal "session-b"
+                  (buffer-local-value
+                   'jabber-message-thread-session-id account-b-buffer)))
+          (should
+           (equal '(("b@example.com" "friend@example.com" "session-b"))
+                  stored)))
+      (kill-buffer account-a-buffer)
+      (kill-buffer account-b-buffer))))
 
 (ert-deftest jabber-chat-test-bodyless-sent-carbon-does-not-create-buffer ()
   "A bodyless sent carbon does not create a chat buffer."

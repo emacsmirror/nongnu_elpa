@@ -87,6 +87,9 @@ original parent chat buffer paths.  Thread metadata remains stored."
 (defvar-local jabber-message-thread-title nil
   "Local display title for the current thread buffer, or nil.")
 
+(defvar-local jabber-message-thread-session-id nil
+  "Current XEP-0201 session ID for an ordinary parent chat buffer.")
+
 (defvar-local jabber-message-thread--root-reply-id nil
   "Root message ID to link from the first locally sent reply.")
 

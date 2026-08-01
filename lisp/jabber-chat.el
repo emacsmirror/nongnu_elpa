@@ -279,7 +279,68 @@ CORRECTION-P keeps unrelated pending composition state untouched."
       (and (not correction-p) jabber-message-reply--thread)
       (and (not correction-p) jabber-message-thread-id
            (list :thread-id jabber-message-thread-id
-                 :thread-parent-id jabber-message-thread-parent-id))))
+                 :thread-parent-id jabber-message-thread-parent-id))
+      (and (not correction-p)
+           (when-let* ((thread-id (jabber-chat--ensure-session-thread)))
+             (list :thread-id thread-id :thread-parent-id nil)))))
+
+(defun jabber-chat--parent-session-buffer-p ()
+  "Return non-nil in an ordinary one-to-one parent chat buffer."
+  (and (bound-and-true-p jabber-chatting-with)
+       (not (bound-and-true-p jabber-group))
+       (not (bound-and-true-p jabber-muc-private-p))
+       (not jabber-message-thread-id)))
+
+(defun jabber-chat--store-session-thread (thread-id &optional jc)
+  "Make THREAD-ID current in this parent chat buffer and persist it.
+JC, when non-nil, identifies the account connection."
+  (when (and thread-id (jabber-chat--parent-session-buffer-p))
+    (let ((account (jabber-connection-bare-jid
+                    (or jc jabber-buffer-connection)))
+          (peer (jabber-jid-user jabber-chatting-with)))
+      (unless (equal thread-id jabber-message-thread-session-id)
+        (setq jabber-message-thread-session-id thread-id)
+        (jabber-db-set-chat-thread account peer thread-id))
+      thread-id)))
+
+(defun jabber-chat--ensure-session-thread ()
+  "Return this parent chat's session ID, creating it when needed."
+  (when (jabber-chat--parent-session-buffer-p)
+    (or jabber-message-thread-session-id
+        (jabber-chat--store-session-thread
+         (jabber-message-thread--generate-id)))))
+
+(defun jabber-chat--session-send-hook (_body _id)
+  "Attach the parent chat session when no explicit thread is present."
+  (unless (or (bound-and-true-p jabber-chat--sending-correction)
+              (and (bound-and-true-p jabber-chat--send-hook-stanza)
+                   (jabber-message-thread-protocol-has-core-p
+                    jabber-chat--send-hook-stanza)))
+    (when-let* ((thread-id (jabber-chat--ensure-session-thread)))
+      (jabber-message-thread-protocol-elements thread-id nil))))
+
+(defun jabber-chat--buffer-account-p (buffer jc)
+  "Return non-nil when BUFFER belongs to JC's account."
+  (and (buffer-live-p buffer)
+       (when-let* ((buffer-jc
+                    (buffer-local-value 'jabber-buffer-connection buffer)))
+         (equal (jabber-connection-bare-jid buffer-jc)
+                (jabber-connection-bare-jid jc)))))
+
+(defun jabber-chat--adopt-parent-session
+    (jc chat-buffer xml-data from msg-plist)
+  "Adopt a live parent session from MSG-PLIST in CHAT-BUFFER.
+JC identifies the receiving account.  XML-DATA and FROM distinguish
+live direct messages from archive traffic."
+  (when (and (jabber-chat--buffer-account-p chat-buffer jc)
+             (not (plist-get msg-plist :delayed))
+             (not (jabber-xml-get-attribute xml-data 'jabber-mam--origin))
+             (not (jabber-muc-sender-p from)))
+    (with-current-buffer chat-buffer
+      (jabber-chat--store-session-thread
+       (or (plist-get msg-plist :thread-id)
+           (jabber-message-thread--generate-id))
+       jc))))
 
 (defun jabber-chat--reply-fallback-length (body)
   "Return the pending reply fallback length valid for BODY."
@@ -481,6 +542,11 @@ JC is the Jabber connection."
       (setq-local jabber-chatting-with chat-with)
       (jabber-buffer-registry-register 'chat (jabber-jid-user chat-with))
 
+      (setq-local jabber-message-thread-session-id
+                  (jabber-db-get-chat-thread
+                   (jabber-connection-bare-jid jc)
+                   (jabber-jid-user chat-with)))
+
       (jabber-chat-mode-setup jc #'jabber-chat-pp)
       (setq jabber-send-function #'jabber-chat-send)
       (setq header-line-format jabber-chat-header-line-format)
@@ -654,8 +720,10 @@ prevent forged carbons (CVE-2017-5589)."
             (pcase type
               ('sent
                (let ((to (jabber-xml-get-attribute inner-msg 'to)))
-                 (cons inner-msg
-                       (when to (jabber-chat--find-buffer to)))))
+                 (let ((buffer (and to (jabber-chat--find-buffer to))))
+                   (cons inner-msg
+                         (and (jabber-chat--buffer-account-p buffer jc)
+                              buffer)))))
               ('received
                (cons inner-msg nil)))))))))
 
@@ -1082,7 +1150,10 @@ JC is the Jabber connection."
                     ((listp thread-target) thread-target)
                     (t thread-target))))
               (jabber-chat--display-message
-               jc xml-data chat-buffer nil from msg-plist))))
+               jc xml-data chat-buffer nil from msg-plist)
+              (when (eq thread-target 'parent)
+                (jabber-chat--adopt-parent-session
+                 jc chat-buffer xml-data from msg-plist)))))
           (when is-carbon
             (jabber-chat--store-carbon jc xml-data)))))))
 
@@ -1299,6 +1370,7 @@ reference a stable id instead of the message id attribute."
                              (id . ,id))))))
 
 (add-hook 'jabber-chat-send-hooks #'jabber-chat--origin-id-send-hook)
+(add-hook 'jabber-chat-send-hooks #'jabber-chat--session-send-hook 80)
 
 (defun jabber-chat--stanza-id-element (xml-data &optional expected-by)
   "Return the first valid XEP-0359 <stanza-id/> child in XML-DATA.

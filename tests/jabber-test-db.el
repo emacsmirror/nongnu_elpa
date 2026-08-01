@@ -2147,7 +2147,7 @@ CREATE TABLE message_reaction_actor (
           (should
            (equal
             '(("child" 1) ("muc" 1) ("opened" 1) ("participated" 1)
-              ("replied" 1) ("session" 0))
+              ("replied" 0) ("session" 0))
             (sqlite-select
              db
              "SELECT thread_id, dedicated FROM message_thread
@@ -2298,8 +2298,8 @@ CREATE TABLE chat_settings (
                      (jabber-db-backlog
                       "me@x.com" "room@x.com" nil nil nil "groupchat"))))))
 
-(ert-deftest jabber-test-db-thread-first-observed-message-is-root ()
-  "A remote thread's first observed message becomes its local root."
+(ert-deftest jabber-test-db-opened-thread-first-observed-message-is-root ()
+  "An opened remote thread keeps its first observed message as local root."
   (jabber-test-db-with-db
     (let ((now (floor (float-time))))
       (jabber-db-store-message
@@ -2310,6 +2310,9 @@ CREATE TABLE chat_settings (
        "phone" "reply-1" nil nil nil nil
        '(:reply-to-id "root-1")
        '(:thread-id "thread-1"))
+      (jabber-db-register-message-thread
+       "me@x.com" "alice@x.com" "chat" "thread-1" nil
+       "reply-1" nil (1+ now))
       (jabber-db-store-message
        "me@x.com" "alice@x.com" "in" "chat" "later reply" (+ now 2)
        "phone" "reply-2" nil nil nil nil nil
@@ -2376,6 +2379,41 @@ CREATE TABLE chat_settings (
              jabber-db--connection
              "SELECT dedicated FROM message_thread WHERE thread_id = ?"
              '("wire-session"))))))
+
+(ert-deftest jabber-test-db-wire-session-replies-stay-in-parent-chat ()
+  "Replies do not turn XEP-0201 sessions into dedicated UI threads."
+  (jabber-test-db-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "same root" now
+       nil "same-root" nil nil nil nil nil
+       '(:thread-id "same-session"))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "out" "chat" "same reply" (1+ now)
+       nil "same-reply" nil nil nil nil
+       '(:reply-to-id "same-root")
+       '(:thread-id "same-session"))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "plain root" (+ now 2)
+       nil "plain-root")
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "out" "chat" "plain reply" (+ now 3)
+       nil "plain-reply" nil nil nil nil
+       '(:reply-to-id "plain-root")
+       '(:thread-id "new-session")))
+    (should
+     (equal '(("new-session" 0) ("same-session" 0))
+            (sqlite-select
+             jabber-db--connection
+             "SELECT thread_id, dedicated FROM message_thread
+ORDER BY thread_id")))
+    (let ((jc (jabber-test-db--make-fake-jc "me@x.com")))
+      (dolist (thread-id '("same-session" "new-session"))
+        (should
+         (eq 'parent
+             (jabber-message-thread-display-target
+              jc "alice@x.com" "chat"
+              (list :thread-id thread-id :id "following"))))))))
 
 (ert-deftest jabber-test-db-message-threads-limits-dedicated-results ()
   "List only the 50 most recently active dedicated threads."

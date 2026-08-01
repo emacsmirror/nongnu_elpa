@@ -1284,6 +1284,217 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
         (when (buffer-live-p buf)
           (kill-buffer buf))))))
 
+(ert-deftest jabber-test-chat-create-buffer-restores-parent-session ()
+  "Creating a parent chat restores its current logical session."
+  (let* ((jc (jabber-test-chat--make-fake-jc "me@example.com"))
+         (peer "emma@example.com/laptop")
+         (jabber-chat-buffer-format " *jabber-test-session-%j-%a*")
+         buffer)
+    (cl-letf (((symbol-function 'jabber-db-backlog)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-db-get-chat-encryption)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-db-get-chat-thread)
+               (lambda (account bare-peer)
+                 (should (equal account "me@example.com"))
+                 (should (equal bare-peer "emma@example.com"))
+                 "session-1")))
+      (unwind-protect
+          (progn
+            (setq buffer (jabber-chat-create-buffer jc peer))
+            (should
+             (equal "session-1"
+                    (buffer-local-value
+                     'jabber-message-thread-session-id buffer))))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))))))
+
+(ert-deftest jabber-test-chat-capture-creates-parent-session ()
+  "The first parent send creates, persists, and captures a session ID."
+  (with-temp-buffer
+    (setq-local jabber-buffer-connection
+                (jabber-test-chat--make-fake-jc "me@example.com"))
+    (setq-local jabber-chatting-with "emma@example.com/laptop")
+    (let (stored)
+      (cl-letf (((symbol-function 'jabber-message-thread--generate-id)
+                 (lambda () "session-1"))
+                ((symbol-function 'jabber-db-set-chat-thread)
+                 (lambda (&rest args) (setq stored args))))
+        (let ((context (jabber-chat--capture-send-context "hello" nil)))
+          (should
+           (equal '((thread nil "session-1"))
+                  (plist-get context :extra-elements)))
+          (should (equal "session-1" jabber-message-thread-session-id))
+          (should
+           (equal '("me@example.com" "emma@example.com" "session-1")
+                  stored)))))))
+
+(ert-deftest jabber-test-chat-parent-session-scope ()
+  "Only ordinary one-to-one parent buffers own chat sessions."
+  (with-temp-buffer
+    (setq-local jabber-chatting-with "emma@example.com/laptop")
+    (should (jabber-chat--parent-session-buffer-p))
+    (setq-local jabber-group "room@example.com")
+    (should-not (jabber-chat--parent-session-buffer-p))
+    (setq-local jabber-group nil)
+    (setq-local jabber-muc-private-p t)
+    (should-not (jabber-chat--parent-session-buffer-p))
+    (setq-local jabber-muc-private-p nil)
+    (setq-local jabber-message-thread-id "dedicated-thread")
+    (should-not (jabber-chat--parent-session-buffer-p))))
+
+(ert-deftest jabber-test-chat-plaintext-reuses-parent-session ()
+  "Plaintext sends generate one session ID and keep using it."
+  (with-temp-buffer
+    (setq-local jabber-buffer-connection
+                (jabber-test-chat--make-fake-jc "me@example.com"))
+    (setq-local jabber-chatting-with "emma@example.com/laptop")
+    (setq-local jabber-chat-encryption 'plaintext)
+    (let ((jabber-chat-send-hooks '(jabber-chat--session-send-hook))
+          generated sent stored)
+      (cl-letf (((symbol-function 'jabber-message-thread--generate-id)
+                 (lambda ()
+                   (setq generated (1+ (or generated 0)))
+                   "session-1"))
+                ((symbol-function 'jabber-db-set-chat-thread)
+                 (lambda (&rest args) (push args stored)))
+                ((symbol-function 'jabber-chat--display-local-message)
+                 #'ignore)
+                ((symbol-function 'jabber-send-sexp)
+                 (lambda (_jc stanza &rest _)
+                   (push stanza sent))))
+        (jabber-chat-send jabber-buffer-connection "first")
+        (jabber-chat-send jabber-buffer-connection "second"))
+      (should (= generated 1))
+      (should
+       (equal '(("me@example.com" "emma@example.com" "session-1"))
+              stored))
+      (dolist (stanza sent)
+        (should
+         (equal '(:thread-id "session-1" :thread-parent-id nil)
+                (jabber-message-thread-protocol-fields stanza)))))))
+
+(ert-deftest jabber-test-chat-session-does-not-override-explicit-thread ()
+  "Explicit reply or dedicated metadata takes precedence over a session."
+  (with-temp-buffer
+    (setq-local jabber-message-thread-session-id "session-1")
+    (should
+     (equal '(:thread-id "thread-1" :thread-parent-id nil)
+            (jabber-chat--captured-thread
+             '(message () (thread () "thread-1")) nil)))
+    (setq-local jabber-message-reply--thread
+                '(:thread-id "reply-thread" :thread-parent-id nil))
+    (should
+     (equal jabber-message-reply--thread
+            (jabber-chat--captured-thread '(message ()) nil)))
+    (setq-local jabber-message-reply--thread nil)
+    (setq-local jabber-message-thread-id "dedicated-thread")
+    (should
+     (equal '(:thread-id "dedicated-thread" :thread-parent-id nil)
+            (jabber-chat--captured-thread '(message ()) nil)))))
+
+(ert-deftest jabber-test-chat-live-message-adopts-parent-session ()
+  "A live parent message makes its thread the current chat session."
+  (let ((buffer (generate-new-buffer " *jabber-test-live-session*"))
+        stored)
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (setq-local jabber-buffer-connection 'connection)
+            (setq-local jabber-chatting-with "emma@example.com/laptop"))
+          (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_) "me@example.com"))
+                    ((symbol-function 'jabber-chat--decrypt-if-needed)
+                     (lambda (_jc stanza) stanza))
+                    ((symbol-function 'jabber-chat--select-buffer)
+                     (lambda (&rest _) buffer))
+                    ((symbol-function 'jabber-chat--display-message) #'ignore)
+                    ((symbol-function 'jabber-db-set-chat-thread)
+                     (lambda (&rest args) (setq stored args))))
+            (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+              (jabber-process-chat
+               'connection
+               '(message ((from . "emma@example.com/laptop")
+                          (to . "me@example.com") (type . "chat"))
+                         (body () "hello")
+                         (thread () "session-2")))))
+          (should
+           (equal "session-2"
+                  (buffer-local-value
+                   'jabber-message-thread-session-id buffer)))
+          (should
+           (equal '("me@example.com" "emma@example.com" "session-2")
+                  stored)))
+      (kill-buffer buffer))))
+
+(ert-deftest jabber-test-chat-live-unthreaded-message-starts-session ()
+  "A live unthreaded parent message starts a local logical session."
+  (let ((buffer (generate-new-buffer " *jabber-test-new-session*"))
+        stored)
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (setq-local jabber-buffer-connection 'connection)
+            (setq-local jabber-chatting-with "emma@example.com/laptop"))
+          (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_) "me@example.com"))
+                    ((symbol-function 'jabber-chat--decrypt-if-needed)
+                     (lambda (_jc stanza) stanza))
+                    ((symbol-function 'jabber-chat--select-buffer)
+                     (lambda (&rest _) buffer))
+                    ((symbol-function 'jabber-chat--display-message) #'ignore)
+                    ((symbol-function 'jabber-message-thread--generate-id)
+                     (lambda () "session-new"))
+                    ((symbol-function 'jabber-db-set-chat-thread)
+                     (lambda (&rest args) (setq stored args))))
+            (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+              (jabber-process-chat
+               'connection
+               '(message ((from . "emma@example.com/laptop")
+                          (to . "me@example.com") (type . "chat"))
+                         (body () "hello")))))
+          (should
+           (equal "session-new"
+                  (buffer-local-value
+                   'jabber-message-thread-session-id buffer)))
+          (should
+           (equal '("me@example.com" "emma@example.com" "session-new")
+                  stored)))
+      (kill-buffer buffer))))
+
+(ert-deftest jabber-test-chat-mam-does-not-change-parent-session ()
+  "MAM replay cannot replace a live parent session."
+  (let ((buffer (generate-new-buffer " *jabber-test-mam-session*")))
+    (unwind-protect
+        (progn
+          (with-current-buffer buffer
+            (setq-local jabber-buffer-connection 'connection)
+            (setq-local jabber-chatting-with "emma@example.com/laptop")
+            (setq-local jabber-message-thread-session-id "session-live"))
+          (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_) "me@example.com"))
+                    ((symbol-function 'jabber-chat--decrypt-if-needed)
+                     (lambda (_jc stanza) stanza))
+                    ((symbol-function 'jabber-chat--find-buffer)
+                     (lambda (&rest _) buffer))
+                    ((symbol-function 'jabber-chat--display-message) #'ignore)
+                    ((symbol-function 'jabber-db-set-chat-thread)
+                     (lambda (&rest _)
+                       (ert-fail "Persisted a MAM session"))))
+            (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+              (jabber-process-chat
+               'connection
+               '(message ((from . "emma@example.com/laptop")
+                          (to . "me@example.com") (type . "chat")
+                          (jabber-mam--origin . "t"))
+                         (body () "archived")
+                         (thread () "session-old")))))
+          (should
+           (equal "session-live"
+                  (buffer-local-value
+                   'jabber-message-thread-session-id buffer))))
+      (kill-buffer buffer))))
+
 (ert-deftest jabber-test-chat-with-starts-mam-after-buffer-creation ()
   "Explicitly opening a chat starts MAM after creating its buffer."
   (let ((buffer (generate-new-buffer " *jabber-test-chat-with*"))

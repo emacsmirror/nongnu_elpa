@@ -1202,15 +1202,23 @@ WHERE body = 'reply'")))
                            (car (jabber-xml-node-children
                                  (car (jabber-xml-get-children first 'thread))))))
             (should (jabber-xml-child-with-xmlns first "urn:xmpp:reply:0"))
-            (should-not (jabber-xml-get-children second 'thread))
+            (should (= 1 (length (jabber-xml-get-children second 'thread))))
             (should-not
-             (jabber-xml-child-with-xmlns second "urn:xmpp:reply:0")))
-          (should
-           (equal '(("first" "thread-1") ("second" nil))
-                  (sqlite-select
-                   jabber-db--connection
-                   "SELECT body, thread_id FROM message \
-WHERE body IN ('first', 'second') ORDER BY body"))))))))
+             (equal "thread-1"
+                    (car (jabber-xml-node-children
+                          (car (jabber-xml-get-children second 'thread))))))
+            (should-not
+             (jabber-xml-child-with-xmlns second "urn:xmpp:reply:0"))
+            (should
+             (equal
+              `(("first" "thread-1")
+                ("second"
+                 ,(car (jabber-xml-node-children
+                        (car (jabber-xml-get-children second 'thread))))))
+              (sqlite-select
+               jabber-db--connection
+               "SELECT body, thread_id FROM message \
+WHERE body IN ('first', 'second') ORDER BY body")))))))))
 
 (ert-deftest jabber-test-omemo-message-dead-thread-source-cancels-send ()
   "A delayed OMEMO thread send stops when its source buffer dies."

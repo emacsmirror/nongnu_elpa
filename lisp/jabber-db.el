@@ -450,7 +450,7 @@ WHERE EXISTS (
   SELECT 1 FROM message AS m
   WHERE m.account = mt.account AND m.peer = mt.peer AND m.type = mt.type
   AND m.thread_id = mt.thread_id
-  AND (m.direction = 'out' OR m.reply_to_id IS NOT NULL))"))
+  AND m.direction = 'out' AND m.reply_to_id IS NULL)"))
   (sqlite-execute db "PRAGMA user_version=9"))
 
 (defun jabber-db--migrate-v8-to-v9 (db)
@@ -966,10 +966,9 @@ WHERE account = ? AND peer = ? AND type = ? AND thread_id = ?"
     (list account peer type thread-id))))
 
 (defun jabber-db--ensure-message-thread
-    (account peer type timestamp stanza-id server-id reply thread)
+    (account peer type timestamp stanza-id server-id thread)
   "Register THREAD after storing a message for ACCOUNT, PEER, and TYPE.
-TIMESTAMP, STANZA-ID, and SERVER-ID identify its first observed root.
-REPLY promotes a wire session to a dedicated thread."
+TIMESTAMP, STANZA-ID, and SERVER-ID identify its first observed root."
   (when-let* ((thread-id (plist-get thread :thread-id))
               (db (jabber-db-ensure-open)))
     (let* ((new-p (not (jabber-db--message-thread-stored-p
@@ -988,7 +987,7 @@ ORDER BY id DESC LIMIT 1"
       (jabber-db--register-message-thread
        account peer type thread-id parent-id stanza-id server-id timestamp
        root-message-id
-       (or (equal type "groupchat") parent-id reply)))))
+       (or (equal type "groupchat") parent-id)))))
 
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
@@ -1045,7 +1044,7 @@ Optional THREAD is a thread metadata plist from
                 dup-id-col))))
       (jabber-db--backfill-thread-fields db message-id thread)
       (jabber-db--ensure-message-thread
-       account peer type stored-timestamp stanza-id server-id reply thread)
+       account peer type stored-timestamp stanza-id server-id thread)
       (when-let* ((thread-id (plist-get thread :thread-id)))
         (run-hook-with-args
          'jabber-db-message-thread-stored-functions
