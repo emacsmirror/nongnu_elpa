@@ -108,6 +108,17 @@ and tears down on exit."
       (should (member "message_thread" tables))
       (should (member "chat_settings" tables)))))
 
+(ert-deftest jabber-test-db-thread-schema-has-dedicated-state ()
+  "Fresh databases distinguish dedicated threads from wire sessions."
+  (jabber-test-db-with-db
+    (should
+     (member
+      "dedicated"
+      (mapcar #'car
+              (sqlite-select
+               jabber-db--connection
+               "SELECT name FROM pragma_table_info('message_thread')"))))))
+
 ;;; Group 2: Store and retrieve
 
 (ert-deftest jabber-test-db-store-and-query ()
@@ -2029,7 +2040,8 @@ CREATE TABLE message_reaction_actor (
           (should (equal "kept"
                          (caar (sqlite-select db "SELECT body FROM message"))))
           (jabber-db--migrate db)
-          (should (= 8 (caar (sqlite-select db "PRAGMA user_version"))))
+          (should (= jabber-db--schema-version
+                     (caar (sqlite-select db "PRAGMA user_version"))))
           (dolist (column '("thread_id" "thread_parent_id"))
             (should
              (member column
@@ -2039,6 +2051,67 @@ CREATE TABLE message_reaction_actor (
                               "SELECT name FROM pragma_table_info('message')")))))
           (should (equal "kept"
                          (caar (sqlite-select db "SELECT body FROM message")))))
+      (when (sqlitep db)
+        (sqlite-close db))
+      (when (file-directory-p dir)
+        (delete-directory dir t)))))
+
+(ert-deftest jabber-test-db-migration-v8-to-v9-classifies-dedicated-threads ()
+  "Migration v8->v9 preserves sessions and identifies dedicated threads."
+  (let* ((dir (make-temp-file "jabber-db-v9" t))
+         (path (expand-file-name "test.sqlite" dir))
+         (db (sqlite-open path)))
+    (unwind-protect
+        (progn
+          (sqlite-execute db "\
+CREATE TABLE message (
+  id INTEGER PRIMARY KEY, account TEXT NOT NULL, peer TEXT NOT NULL,
+  direction TEXT NOT NULL, type TEXT, timestamp INTEGER NOT NULL,
+  thread_id TEXT, reply_to_id TEXT)")
+          (sqlite-execute db "\
+CREATE TABLE message_thread (
+  account TEXT NOT NULL, peer TEXT NOT NULL, type TEXT NOT NULL,
+  thread_id TEXT NOT NULL, parent_thread_id TEXT,
+  root_message_id INTEGER, root_stanza_id TEXT, root_server_id TEXT,
+  created_at INTEGER NOT NULL, read_message_id INTEGER,
+  PRIMARY KEY (account, peer, type, thread_id))")
+          (sqlite-execute db "\
+INSERT INTO message_thread
+  (account, peer, type, thread_id, parent_thread_id, created_at,
+   read_message_id)
+VALUES
+  ('me@x.com', 'alice@x.com', 'chat', 'session', NULL, 1, NULL),
+  ('me@x.com', 'alice@x.com', 'chat', 'participated', NULL, 2, NULL),
+  ('me@x.com', 'alice@x.com', 'chat', 'child', 'parent', 3, NULL),
+  ('me@x.com', 'alice@x.com', 'chat', 'opened', NULL, 4, 7),
+  ('me@x.com', 'alice@x.com', 'chat', 'replied', NULL, 5, NULL),
+  ('me@x.com', 'room@x.com', 'groupchat', 'muc', NULL, 6, NULL)")
+          (sqlite-execute db "\
+INSERT INTO message
+  (account, peer, direction, type, timestamp, thread_id, reply_to_id)
+VALUES
+  ('me@x.com', 'alice@x.com', 'out', 'chat', 2, 'participated', NULL),
+  ('me@x.com', 'alice@x.com', 'in', 'chat', 5, 'replied', 'root-1')")
+          (sqlite-execute db "\
+CREATE TABLE message_reaction (
+  message_id INTEGER NOT NULL, sender TEXT NOT NULL,
+  reaction TEXT NOT NULL, updated_at INTEGER NOT NULL,
+  PRIMARY KEY (message_id, sender, reaction))")
+          (sqlite-execute db "\
+CREATE TABLE message_reaction_actor (
+  message_id INTEGER NOT NULL, sender TEXT NOT NULL,
+  updated_at INTEGER NOT NULL, PRIMARY KEY (message_id, sender))")
+          (sqlite-execute db "PRAGMA user_version=8")
+          (jabber-db--migrate db)
+          (should (= 9 (caar (sqlite-select db "PRAGMA user_version"))))
+          (should
+           (equal
+            '(("child" 1) ("muc" 1) ("opened" 1) ("participated" 1)
+              ("replied" 1) ("session" 0))
+            (sqlite-select
+             db
+             "SELECT thread_id, dedicated FROM message_thread
+ORDER BY thread_id"))))
       (when (sqlitep db)
         (sqlite-close db))
       (when (file-directory-p dir)
@@ -2128,6 +2201,61 @@ CREATE TABLE message_reaction_actor (
       (should-not
        (jabber-db-message-thread-for-message
         "me@x.com" "alice@x.com" "chat" "root-1" nil)))))
+
+(ert-deftest jabber-test-db-wire-session-stays-in-parent-chat ()
+  "A wire ThreadID alone does not create a dedicated UI thread."
+  (jabber-test-db-with-db
+    (let ((now (floor (float-time))))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "first" now
+       "phone" "session-1" nil nil nil nil nil
+       '(:thread-id "wire-session"))
+      (jabber-db-store-message
+       "me@x.com" "alice@x.com" "in" "chat" "second" (1+ now)
+       "phone" "session-2" nil nil nil nil nil
+       '(:thread-id "wire-session")))
+    (let ((parent (jabber-db-backlog "me@x.com" "alice@x.com")))
+      (should (equal '("second" "first")
+                     (mapcar (lambda (msg) (plist-get msg :body)) parent)))
+      (should-not (seq-some (lambda (msg)
+                              (plist-get msg :thread-summary))
+                            parent)))
+    (should-not
+     (jabber-db-message-thread-known-p
+      "me@x.com" "alice@x.com" "chat" "wire-session"))
+    (should-not
+     (jabber-db-message-thread-location
+      "me@x.com" "alice@x.com" "chat" "session-2" nil))
+    (should
+     (equal '((0))
+            (sqlite-select
+             jabber-db--connection
+             "SELECT dedicated FROM message_thread WHERE thread_id = ?"
+             '("wire-session"))))))
+
+(ert-deftest jabber-test-db-message-threads-limits-dedicated-results ()
+  "List only the 50 most recently active dedicated threads."
+  (jabber-test-db-with-db
+    (dotimes (index 55)
+      (let ((thread-id (format "thread-%02d" index))
+            (root-id (format "root-%02d" index)))
+        (jabber-db-store-message
+         "me@x.com" "alice@x.com" "in" "chat" root-id index
+         "phone" root-id)
+        (jabber-db-register-message-thread
+         "me@x.com" "alice@x.com" "chat" thread-id nil
+         root-id nil index)))
+    (jabber-db-store-message
+     "me@x.com" "alice@x.com" "in" "chat" "session" 100
+     "phone" "session-root" nil nil nil nil nil
+     '(:thread-id "wire-session"))
+    (let ((threads
+           (jabber-db-message-threads
+            "me@x.com" "alice@x.com" "chat")))
+      (should (= 50 (length threads)))
+      (should (equal "thread-54" (plist-get (car threads) :thread-id)))
+      (should (equal "thread-05" (plist-get (car (last threads))
+                                             :thread-id))))))
 
 (ert-deftest jabber-test-db-thread-backlog-and-summary ()
   "Parent backlog hides replies and exposes reply count and unread state."
@@ -2265,6 +2393,9 @@ CREATE TABLE message_reaction_actor (
          "me@x.com" peer "in" type "Root only" 10 "Alice"
          "root-id" "root-server" nil nil nil nil
          '(:thread-id "thread-1"))
+        (jabber-db-register-message-thread
+         "me@x.com" peer type "thread-1" nil
+         "root-id" "root-server" 10)
         (sqlite-execute
          jabber-db--connection
          "UPDATE message_thread SET root_message_id = NULL

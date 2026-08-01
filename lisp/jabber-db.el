@@ -138,6 +138,7 @@ Each function receives ACCOUNT, PEER, TYPE, THREAD-ID, and TIMESTAMP.")
   root_server_id TEXT,
   created_at INTEGER NOT NULL,
   read_message_id INTEGER,
+  dedicated INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (account, peer, type, thread_id))"
     "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
   body, content='message', content_rowid='id')"
@@ -290,7 +291,7 @@ WHERE updated_at < (
     (jabber-db--ensure-reaction-actor-table db)
     (jabber-db--backfill-reaction-actors db)))
 
-(defconst jabber-db--schema-version 8
+(defconst jabber-db--schema-version 9
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -420,6 +421,50 @@ CREATE TABLE IF NOT EXISTS message_thread (
        (sqlite-execute db "RELEASE jabber_schema_v8"))
      (signal (car err) (cdr err)))))
 
+(defun jabber-db--migrate-v8-to-v9-steps (db)
+  "Apply the schema changes from version 8 to version 9 in DB."
+  (sqlite-execute db "\
+ALTER TABLE message_thread
+ADD COLUMN dedicated INTEGER NOT NULL DEFAULT 0")
+  (sqlite-execute db "\
+UPDATE message_thread AS mt SET dedicated = 1
+WHERE mt.type = 'groupchat'
+OR mt.parent_thread_id IS NOT NULL
+OR mt.read_message_id IS NOT NULL
+OR EXISTS (
+  SELECT 1 FROM message AS root
+  WHERE root.id = mt.root_message_id
+  AND (root.thread_id IS NULL OR root.thread_id != mt.thread_id))")
+  (when (cl-every
+         (lambda (column)
+           (member column
+                   (mapcar #'car
+                           (sqlite-select
+                            db "SELECT name FROM pragma_table_info('message')"))))
+         '("account" "peer" "type" "thread_id" "direction" "reply_to_id"))
+    (sqlite-execute db "\
+UPDATE message_thread AS mt SET dedicated = 1
+WHERE EXISTS (
+  SELECT 1 FROM message AS m
+  WHERE m.account = mt.account AND m.peer = mt.peer AND m.type = mt.type
+  AND m.thread_id = mt.thread_id
+  AND (m.direction = 'out' OR m.reply_to_id IS NOT NULL))"))
+  (sqlite-execute db "PRAGMA user_version=9"))
+
+(defun jabber-db--migrate-v8-to-v9 (db)
+  "Migrate DB atomically from schema version 8 to version 9."
+  (sqlite-execute db "SAVEPOINT jabber_schema_v9")
+  (condition-case err
+      (prog1
+          (jabber-db--migrate-v8-to-v9-steps db)
+        (sqlite-execute db "RELEASE jabber_schema_v9"))
+    (error
+     (ignore-errors
+       (sqlite-execute db "ROLLBACK TO jabber_schema_v9"))
+     (ignore-errors
+       (sqlite-execute db "RELEASE jabber_schema_v9"))
+     (signal (car err) (cdr err)))))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
@@ -451,6 +496,9 @@ CREATE TABLE IF NOT EXISTS message_thread (
       (jabber-db--migrate-v7-to-v8 db)
       (setq version 8))
     (when (= version 8)
+      (jabber-db--migrate-v8-to-v9 db)
+      (setq version 9))
+    (when (= version 9)
       (jabber-db--repair-reaction-actors db))))
 
 (defun jabber-db-ensure-open ()
@@ -792,45 +840,71 @@ WHERE id = ? AND thread_id IS NULL"
            (plist-get thread :thread-parent-id)
            message-id))))
 
-(defun jabber-db-register-message-thread
+(defun jabber-db--register-message-thread
     (account peer type thread-id parent-thread-id root-stanza-id
-             root-server-id created-at &optional root-message-id)
-  "Register THREAD-ID for ACCOUNT, PEER, and TYPE.
-PARENT-THREAD-ID, ROOT-STANZA-ID, ROOT-SERVER-ID, CREATED-AT, and
-ROOT-MESSAGE-ID describe its lineage and root message."
+             root-server-id created-at root-message-id dedicated-p)
+  "Store THREAD-ID metadata and DEDICATED-P for ACCOUNT, PEER, and TYPE."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute
      db
      "INSERT INTO message_thread \
 (account, peer, type, thread_id, parent_thread_id, root_message_id, \
-root_stanza_id, root_server_id, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) \
+root_stanza_id, root_server_id, created_at, dedicated) \
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) \
 ON CONFLICT(account, peer, type, thread_id) DO UPDATE SET \
 parent_thread_id = COALESCE(message_thread.parent_thread_id, excluded.parent_thread_id), \
 root_message_id = COALESCE(message_thread.root_message_id, excluded.root_message_id), \
 root_stanza_id = COALESCE(message_thread.root_stanza_id, excluded.root_stanza_id), \
-root_server_id = COALESCE(message_thread.root_server_id, excluded.root_server_id)"
+root_server_id = COALESCE(message_thread.root_server_id, excluded.root_server_id), \
+dedicated = MAX(message_thread.dedicated, excluded.dedicated)"
      (list account peer type thread-id parent-thread-id root-message-id
-           root-stanza-id root-server-id created-at))))
+           root-stanza-id root-server-id created-at
+           (if dedicated-p 1 0)))))
+
+(defun jabber-db-register-message-thread
+    (account peer type thread-id parent-thread-id root-stanza-id
+             root-server-id created-at &optional root-message-id)
+  "Register THREAD-ID as a dedicated thread for ACCOUNT and PEER.
+TYPE, PARENT-THREAD-ID, ROOT-STANZA-ID, ROOT-SERVER-ID, CREATED-AT,
+and ROOT-MESSAGE-ID describe its identity and root message."
+  (jabber-db--register-message-thread
+   account peer type thread-id parent-thread-id root-stanza-id
+   root-server-id created-at root-message-id t))
+
+(defun jabber-db--message-thread-stored-p
+    (db account peer type thread-id)
+  "Return non-nil when DB stores THREAD-ID for ACCOUNT, PEER, and TYPE."
+  (caar
+   (sqlite-select
+    db
+    "SELECT 1 FROM message_thread
+WHERE account = ? AND peer = ? AND type = ? AND thread_id = ?"
+    (list account peer type thread-id))))
 
 (defun jabber-db--ensure-message-thread
-    (account peer type timestamp stanza-id server-id _reply thread)
+    (account peer type timestamp stanza-id server-id reply thread)
   "Register THREAD after storing a message for ACCOUNT, PEER, and TYPE.
-TIMESTAMP, STANZA-ID, and SERVER-ID identify its first observed root."
-  (when-let* ((thread-id (plist-get thread :thread-id)))
-    (unless (jabber-db-message-thread-known-p account peer type thread-id)
-      (let ((root-message-id
-             (when-let* ((db (jabber-db-ensure-open)))
-               (caar
-                (sqlite-select
-                 db
-                 "SELECT id FROM message \
+TIMESTAMP, STANZA-ID, and SERVER-ID identify its first observed root.
+REPLY promotes a wire session to a dedicated thread."
+  (when-let* ((thread-id (plist-get thread :thread-id))
+              (db (jabber-db-ensure-open)))
+    (let* ((new-p (not (jabber-db--message-thread-stored-p
+                        db account peer type thread-id)))
+           (parent-id (plist-get thread :thread-parent-id))
+           (root-message-id
+            (and
+             new-p
+             (caar
+              (sqlite-select
+               db
+               "SELECT id FROM message \
 WHERE account = ? AND peer = ? AND type = ? AND thread_id = ? \
 ORDER BY id DESC LIMIT 1"
-                 (list account peer type thread-id))))))
-        (jabber-db-register-message-thread
-         account peer type thread-id
-         (plist-get thread :thread-parent-id)
-         stanza-id server-id timestamp root-message-id)))))
+               (list account peer type thread-id))))))
+      (jabber-db--register-message-thread
+       account peer type thread-id parent-id stanza-id server-id timestamp
+       root-message-id
+       (or (equal type "groupchat") parent-id reply)))))
 
 (defun jabber-db-store-message (account peer direction type body timestamp
                                         &optional resource stanza-id
@@ -1309,7 +1383,8 @@ WHEN ? IS NOT NULL THEN stanza_id = ? ELSE 0 END)"
                      "SELECT thread_id, parent_thread_id, root_message_id, \
 root_stanza_id, root_server_id, read_message_id, account, peer, type \
 FROM message_thread \
-WHERE account = ? AND peer = ? AND type = ? AND thread_id = ?"
+WHERE account = ? AND peer = ? AND type = ? AND thread_id = ? \
+AND dedicated = 1"
                      (list account peer type thread-id)))))
     (jabber-db--thread-summary db account peer type row)))
 
@@ -1341,19 +1416,23 @@ WHEN mt.root_stanza_id IS NOT NULL
 THEN m.stanza_id = mt.root_stanza_id ELSE 0 END) THEN m.id END),
 mt.read_message_id
 FROM message_thread mt
-LEFT JOIN message root ON root.account = mt.account AND root.peer = mt.peer
-AND root.type = mt.type AND (CASE WHEN mt.root_message_id IS NOT NULL
-THEN root.id = mt.root_message_id
-WHEN mt.type = 'groupchat' AND mt.root_server_id IS NOT NULL
-THEN root.server_id = mt.root_server_id
-WHEN mt.root_stanza_id IS NOT NULL
-THEN root.stanza_id = mt.root_stanza_id ELSE 0 END)
+LEFT JOIN message root ON
+(mt.root_message_id IS NOT NULL AND root.id = mt.root_message_id
+AND root.account = mt.account AND root.peer = mt.peer AND root.type = mt.type)
+OR (mt.root_message_id IS NULL AND mt.type = 'groupchat'
+AND mt.root_server_id IS NOT NULL AND root.server_id = mt.root_server_id
+AND root.account = mt.account AND root.peer = mt.peer AND root.type = mt.type)
+OR (mt.root_message_id IS NULL
+AND NOT (mt.type = 'groupchat' AND mt.root_server_id IS NOT NULL)
+AND mt.root_stanza_id IS NOT NULL AND root.stanza_id = mt.root_stanza_id
+AND root.account = mt.account AND root.peer = mt.peer AND root.type = mt.type)
 LEFT JOIN message m ON m.account = mt.account AND m.peer = mt.peer
 AND m.type = mt.type AND m.thread_id = mt.thread_id
-WHERE mt.account = ? AND mt.peer = ? AND mt.type = ?
+WHERE mt.account = ? AND mt.peer = ? AND mt.type = ? AND mt.dedicated = 1
 GROUP BY mt.account, mt.peer, mt.type, mt.thread_id
-ORDER BY latest_at DESC, mt.created_at DESC, mt.thread_id"
-  "Query all message threads in one conversation by latest activity.")
+ORDER BY latest_at DESC, mt.created_at DESC, mt.thread_id
+LIMIT 50"
+  "Query dedicated threads in one conversation by latest activity.")
 
 (defun jabber-db--thread-root-from
     (account peer type resource direction)
@@ -1406,7 +1485,7 @@ ORDER BY latest_at DESC, mt.created_at DESC, mt.thread_id"
                     (list account peer type)))))
 
 (defun jabber-db-message-thread-known-p (account peer type thread-id)
-  "Return non-nil when THREAD-ID is known for ACCOUNT, PEER, and TYPE."
+  "Return non-nil when THREAD-ID is dedicated for ACCOUNT, PEER, and TYPE."
   (and thread-id
        (jabber-db-message-thread-summary account peer type thread-id)
        t))
@@ -1439,7 +1518,7 @@ ACCOUNT, PEER, and TYPE scope the trusted internal COLUMN."
                (car (sqlite-select
                      db
                      (format
-                      "SELECT COALESCE(m.thread_id, mt.thread_id), \
+                      "SELECT mt.thread_id, \
 CASE WHEN mt.root_message_id IS NOT NULL THEN mt.root_message_id = m.id \
 WHEN m.type = 'groupchat' AND mt.root_server_id IS NOT NULL \
 THEN mt.root_server_id = m.server_id \
@@ -1447,6 +1526,7 @@ WHEN mt.root_stanza_id IS NOT NULL THEN mt.root_stanza_id = m.stanza_id \
 ELSE 0 END \
 FROM message m LEFT JOIN message_thread mt \
 ON mt.account = m.account AND mt.peer = m.peer AND mt.type = m.type \
+AND mt.dedicated = 1 \
 AND (mt.thread_id = m.thread_id OR (m.thread_id IS NULL AND \
 CASE WHEN mt.root_message_id IS NOT NULL THEN mt.root_message_id = m.id \
 WHEN m.type = 'groupchat' AND mt.root_server_id IS NOT NULL \
@@ -1454,7 +1534,7 @@ THEN mt.root_server_id = m.server_id \
 WHEN mt.root_stanza_id IS NOT NULL THEN mt.root_stanza_id = m.stanza_id \
 ELSE 0 END)) \
 WHERE m.account = ? AND m.peer = ? AND m.type = ? AND %s = ? \
-AND COALESCE(m.thread_id, mt.thread_id) IS NOT NULL LIMIT 1"
+AND mt.thread_id IS NOT NULL LIMIT 1"
                       column)
                      (list account peer type value)))))
     (list :thread-id (car row) :root (= (cadr row) 1))))
@@ -1495,7 +1575,7 @@ buffer.  SERVER-ID-P selects server IDs."
                 "SELECT thread_id, parent_thread_id, root_message_id, \
 root_stanza_id, root_server_id, read_message_id, account, peer, type \
 FROM message_thread \
-WHERE account = ? AND peer = ?"
+WHERE account = ? AND peer = ? AND dedicated = 1"
                 (list account peer)))
     (let* ((type (nth 8 row))
            (root (seq-find
@@ -1533,10 +1613,13 @@ INCLUDE-THREAD-REPLIES non-nil keeps replies in the result."
            (parent-clause
             (if include-thread-replies
                 ""
-              " AND (thread_id IS NULL OR EXISTS (\
+              " AND (thread_id IS NULL OR NOT EXISTS (\
 SELECT 1 FROM message_thread mt WHERE mt.account = message.account \
 AND mt.peer = message.peer AND mt.type = message.type \
-AND mt.thread_id = message.thread_id \
+AND mt.thread_id = message.thread_id AND mt.dedicated = 1) OR EXISTS (\
+SELECT 1 FROM message_thread mt WHERE mt.account = message.account \
+AND mt.peer = message.peer AND mt.type = message.type \
+AND mt.thread_id = message.thread_id AND mt.dedicated = 1 \
 AND (CASE WHEN mt.root_message_id IS NOT NULL \
 THEN mt.root_message_id = message.id \
 WHEN message.type = 'groupchat' AND mt.root_server_id IS NOT NULL \

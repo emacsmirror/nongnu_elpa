@@ -249,7 +249,7 @@
         (with-temp-buffer
           (insert "Prompt: root message")
           (let ((jabber-connections '(connection))
-                sent created popped)
+                sent created popped registered)
             (setq-local jabber-buffer-connection 'connection)
             (setq-local jabber-chatting-with "alice@example.com/resource")
             (setq-local jabber-point-insert (copy-marker 9))
@@ -261,6 +261,10 @@
                   (lambda () t))
                  ((symbol-function 'jabber-message-thread--generate-id)
                   (lambda () "thread-1"))
+                 ((symbol-function 'jabber-connection-bare-jid)
+                  (lambda (_jc) "me@example.com"))
+                 ((symbol-function 'jabber-db-register-message-thread)
+                  (lambda (&rest args) (setq registered args)))
                  ((symbol-function 'jabber-message-thread-create-buffer)
                   (lambda (&rest args)
                     (setq created args)
@@ -278,6 +282,11 @@
                  (equal created
                         (list 'connection "alice@example.com" "chat"
                               "thread-1" nil parent nil)))
+                (should
+                 (equal (seq-take registered 7)
+                        '("me@example.com" "alice@example.com" "chat"
+                          "thread-1" nil nil nil)))
+                (should (numberp (nth 7 registered)))
                 (should (eq popped thread-buffer))
                 (should (string= (buffer-string) "Prompt: "))))))
       (kill-buffer thread-buffer))))
@@ -315,7 +324,7 @@
         (with-temp-buffer
           (insert "root message")
           (let ((jabber-connections '(connection))
-                sent created)
+                sent created registered)
             (setq-local jabber-buffer-connection 'connection)
             (setq-local jabber-group "room@example.com")
             (setq-local jabber-point-insert (copy-marker (point-min)))
@@ -327,6 +336,10 @@
                   (lambda () t))
                  ((symbol-function 'jabber-message-thread--generate-id)
                   (lambda () "thread-1"))
+                 ((symbol-function 'jabber-connection-bare-jid)
+                  (lambda (_jc) "me@example.com"))
+                 ((symbol-function 'jabber-db-register-message-thread)
+                  (lambda (&rest args) (setq registered args)))
                  ((symbol-function 'jabber-message-thread-create-buffer)
                   (lambda (&rest args)
                     (setq created args)
@@ -340,7 +353,11 @@
                 (should
                  (equal created
                         (list 'connection "room@example.com" "groupchat"
-                              "thread-1" nil parent nil)))))))
+                              "thread-1" nil parent nil)))
+                (should
+                 (equal (seq-take registered 7)
+                        '("me@example.com" "room@example.com" "groupchat"
+                          "thread-1" nil nil nil)))))))
       (kill-buffer thread-buffer))))
 
 (ert-deftest jabber-test-message-thread-start-requires-a-draft ()

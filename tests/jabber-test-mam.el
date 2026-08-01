@@ -780,6 +780,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
        account peer "in" "chat" "root" 1700000100
        "phone" "root-1" "server-root" nil nil nil nil
        '(:thread-id "thread-1"))
+      (jabber-db-register-message-thread
+       account peer "chat" "thread-1" nil
+       "root-1" "server-root" 1700000100)
       (jabber-db-store-message
        account peer "in" "chat" "reply" 1700000100
        "phone" "reply-1" "server-reply" nil nil nil nil
@@ -808,6 +811,9 @@ OUR-NICK is our nickname; every 3rd message is from us."
        account peer "in" "chat" "root" 1700000100
        "phone" "root-1" "server-root" nil nil nil nil
        '(:thread-id "thread-1"))
+      (jabber-db-register-message-thread
+       account peer "chat" "thread-1" nil
+       "root-1" "server-root" 1700000100)
       (jabber-db-store-message
        account peer "in" "chat" "reply" 1700000100
        "phone" "reply-1" "server-reply" nil nil nil nil

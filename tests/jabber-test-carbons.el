@@ -274,8 +274,8 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
                               "SELECT COUNT(*) FROM message"))))
             (should (= 1 count))))))))
 
-(ert-deftest jabber-chat-test-sent-carbon-thread-root-displays-before-storage ()
-  "A first-seen sent-carbon thread root remains visible and stored."
+(ert-deftest jabber-chat-test-sent-carbon-wire-session-stays-in-parent ()
+  "A first-seen sent-carbon wire session remains visible and stored."
   (jabber-test-carbons-with-db
     (let ((buffer (generate-new-buffer " *carbon-thread-root*"))
           (display-count 0)
@@ -313,13 +313,15 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
                      (sqlite-select
                       jabber-db--connection
                       "SELECT thread_id FROM message"))))
+            (should-not
+             (jabber-db-message-thread-summary
+              "me@example.com" "friend@example.com" "chat" "thread-1"))
             (should
-             (equal "thread-1"
-                    (plist-get
-                     (jabber-db-message-thread-summary
-                      "me@example.com" "friend@example.com" "chat"
-                      "thread-1")
-                     :thread-id))))
+             (equal '((0))
+                    (sqlite-select
+                     jabber-db--connection
+                     "SELECT dedicated FROM message_thread
+WHERE thread_id = 'thread-1'"))))
         (kill-buffer buffer)))))
 
 (ert-deftest jabber-chat-test-sent-correction-uses-recipient-buffer ()

@@ -567,9 +567,14 @@ ACCOUNT, PEER, and TYPE scope the thread."
   (pcase-let* ((`(,peer ,type)
                 (jabber-message-thread--parent-context))
                (thread-id (jabber-message-thread--generate-id))
+               (account
+                (jabber-connection-bare-jid jabber-buffer-connection))
+               (created-at (floor (float-time)))
                (parent-buffer (current-buffer)))
     (jabber-chat-buffer-send
      (jabber-message-thread--elements thread-id nil))
+    (jabber-db-register-message-thread
+     account peer type thread-id nil nil nil created-at)
     (pop-to-buffer
      (jabber-message-thread-create-buffer
       jabber-buffer-connection peer type thread-id nil parent-buffer nil))))
