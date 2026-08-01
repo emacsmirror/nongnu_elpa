@@ -4341,13 +4341,10 @@ buffer for message composition is queried from the minibufer."
 ;;	-> void
 ;; vm-delete-all-attachments :: (&optional count :: int) -> void
 ;; vm-mime-delete-all-attachments -- alias to the above
-;; vm-save-all-attachments :: (&optional 
-;;			       count :: int, directory :: path,
-;;			       no-delete-after-saving :: bool) -> void
+;; vm-save-all-attachments :: (&optional
+;;			       count :: int, directory :: path) -> void
 ;; vm-mime-save-all-attachments -- alias to the above
-;; vm-save-attachments :: (&optional
-;;			   count :: int, 
-;;			   no-delete-after-saving :: bool) -> void
+;; vm-save-attachments :: (&optional count :: int) -> void
 ;;----------------------------------------------------------------------------
 
 ;;;###autoload
@@ -4499,9 +4496,7 @@ are also included."
 	       'vm-delete-all-attachments "8.2.0")
 
 ;;;###autoload
-(defun vm-save-all-attachments (&optional count
-					  directory
-					  _no-delete-after-saving)
+(defun vm-save-all-attachments (&optional count directory)
   "Save all attachments in the next COUNT messages or marked
 messages.  For the purpose of this function, an \"attachment\" is
 a mime part part which has \"attachment\" as its disposition or
@@ -4598,8 +4593,7 @@ created."
 (make-obsolete 'vm-mime-save-all-attachments
   'vm-save-all-attachments "8.2.0")
 
-(defun vm-save-attachments (&optional count
-				      _no-delete-after-saving)
+(defun vm-save-attachments (&optional count)
   "Save all attachments in the next COUNT messages or marked
 messages.  For the purpose of this function, an \"attachment\" is
 a mime part part which has \"attachment\" as its disposition or
