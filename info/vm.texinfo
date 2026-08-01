@@ -4616,6 +4616,29 @@ This removes the label from all messages that have it and also removes
 it from the folder's label list, so it will no longer appear in label
 completions.  This operation can be undone with @code{vm-undo}.
 
+@findex vm-list-unused-labels
+@findex vm-expunge-unused-labels
+@cindex unused labels
+A folder remembers every label it has ever been given, so a label that
+you delete from the last message holding it stays in the folder's label
+list and keeps appearing in completions.  Over time these accumulate.
+@kbd{M-x vm-list-unused-labels} shows the labels of the current folder
+that no message carries, and @kbd{M-x vm-expunge-unused-labels} removes
+them, asking for confirmation first.
+
+@findex vm-sync-labels
+The list can also be short.  A message that arrives already labelled has
+its labels added to the folder's list, so ordinarily this takes care of
+itself; but a folder written by an older VM, or edited by other means,
+may hold a label that is in use and yet missing from the list, in which
+case it never appears in completions.  @kbd{M-x vm-sync-labels} makes
+the list agree with the messages in both directions, adding what is used
+and removing what is not.  @code{vm-list-unused-labels} reports both
+kinds of discrepancy.
+
+No message is changed by any of these commands; only the folder's label
+list.  All of them can be undone with @code{vm-undo}.
+
 @vindex vm-flush-interval
 @cindex auto-save
 All message attributes are stored in the folder.  In order for

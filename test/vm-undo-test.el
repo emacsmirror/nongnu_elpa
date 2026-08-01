@@ -342,6 +342,195 @@ non-boundary records had message structs."
     ;; Should not add another nil
     (should (equal vm-undo-record-list '(nil record1)))))
 
+;;; unused label tests
+
+(defmacro vm-undo-test-with-labels (obarray-labels message-labels &rest body)
+  "Run BODY in a three-message folder with labels set up.
+OBARRAY-LABELS is the folder's label list; MESSAGE-LABELS is a list of
+label lists, one per message."
+  (declare (indent 2))
+  `(vm-test-with-folder
+       "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test 1
+
+Body 1
+
+From sender@example.com Mon Jan  1 00:00:01 2024
+From: sender@example.com
+Subject: Test 2
+
+Body 2
+
+From sender@example.com Mon Jan  1 00:00:02 2024
+From: sender@example.com
+Subject: Test 3
+
+Body 3
+"
+     (setq major-mode 'vm-mode)
+     (setq vm-label-obarray (make-vector 29 0))
+     (dolist (label ,obarray-labels)
+       (intern label vm-label-obarray))
+     (let ((i 0))
+       (dolist (labels ,message-labels)
+         (vm-set-decoded-labels-of (nth i vm-message-list) labels)
+         (setq i (1+ i))))
+     (cl-letf (((symbol-function 'vm-follow-summary-cursor) #'ignore)
+               ((symbol-function 'vm-select-folder-buffer-and-validate)
+                (lambda (&rest _) nil))
+               ((symbol-function 'vm-error-if-folder-read-only) #'ignore)
+               ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+               ((symbol-function 'vm-mark-folder-modified-p) #'ignore)
+               ((symbol-function 'vm-inform) #'ignore))
+       ,@body)))
+
+(ert-deftest vm-undo-test-unused-labels-finds-them ()
+  "Test that `vm-unused-labels' reports labels no message carries."
+  (vm-undo-test-with-labels
+      '("important" "work" "stale" "gone")
+      '(("important" "work") ("important") nil)
+    (should (equal (vm-unused-labels) '("gone" "stale")))))
+
+(ert-deftest vm-undo-test-unused-labels-none ()
+  "Test that `vm-unused-labels' returns nil when every label is in use."
+  (vm-undo-test-with-labels
+      '("important" "work")
+      '(("important") ("work") nil)
+    (should (null (vm-unused-labels)))))
+
+(ert-deftest vm-undo-test-expunge-unused-labels ()
+  "Test that `vm-expunge-unused-labels' removes exactly the unused ones.
+Regression test for issue #269: deleting a label from the last message
+holding it left it in the folder, so it kept appearing in completions."
+  (vm-undo-test-with-labels
+      '("important" "work" "stale" "gone")
+      '(("important" "work") ("important") nil)
+    (vm-expunge-unused-labels)
+    (should (null (vm-unused-labels)))
+    (should (equal (sort (vm-obarray-to-string-list vm-label-obarray)
+                         #'string-lessp)
+                   '("important" "work")))))
+
+(ert-deftest vm-undo-test-expunge-unused-labels-leaves-messages-alone ()
+  "Test that `vm-expunge-unused-labels' changes no message."
+  (vm-undo-test-with-labels
+      '("important" "stale")
+      '(("important") ("important") nil)
+    (vm-expunge-unused-labels)
+    (should (equal (vm-labels-of (nth 0 vm-message-list)) '("important")))
+    (should (equal (vm-labels-of (nth 1 vm-message-list)) '("important")))
+    (should (null (vm-labels-of (nth 2 vm-message-list))))))
+
+(ert-deftest vm-undo-test-expunge-unused-labels-declined ()
+  "Test that declining the confirmation removes nothing."
+  (vm-undo-test-with-labels
+      '("important" "stale")
+      '(("important") nil nil)
+    ;; vm-interactive-p is a macro over called-interactively-p, so that
+    ;; is what has to be stubbed to make the command think it is
+    ;; interactive and reach the confirmation
+    (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t))
+              ((symbol-function 'yes-or-no-p) (lambda (_) nil)))
+      (should-error (vm-expunge-unused-labels) :type 'error))
+    (should (equal (vm-unused-labels) '("stale")))))
+
+(ert-deftest vm-undo-test-list-unused-labels ()
+  "Test that `vm-list-unused-labels' reports them without changing anything."
+  (vm-undo-test-with-labels
+      '("important" "stale" "gone")
+      '(("important") nil nil)
+    (vm-list-unused-labels)
+    (let ((buf (get-buffer "*VM unused labels*")))
+      (should buf)
+      (with-current-buffer buf
+        (let ((text (buffer-string)))
+          (should (string-match "2 unused labels" text))
+          (should (string-match "^  gone$" text))
+          (should (string-match "^  stale$" text))
+          (should-not (string-match "important" text))))
+      (kill-buffer buf))
+    ;; nothing removed
+    (should (equal (vm-unused-labels) '("gone" "stale")))))
+
+(ert-deftest vm-undo-test-missing-labels-finds-them ()
+  "Test that `vm-missing-labels' reports labels the folder does not list.
+A message saved in from another folder brings its labels with it, but
+nothing interns them, so they never reach completion."
+  (vm-undo-test-with-labels
+      '("important")
+      '(("important") ("arrived-with-message") ("another" "important"))
+    (should (equal (vm-missing-labels) '("another" "arrived-with-message")))))
+
+(ert-deftest vm-undo-test-missing-labels-none ()
+  "Test that `vm-missing-labels' returns nil when the folder lists them all."
+  (vm-undo-test-with-labels
+      '("important" "work" "spare")
+      '(("important") ("work") nil)
+    (should (null (vm-missing-labels)))))
+
+(ert-deftest vm-undo-test-sync-labels ()
+  "Test that `vm-sync-labels' fixes the list in both directions."
+  (vm-undo-test-with-labels
+      '("important" "stale")
+      '(("important") ("newcomer") nil)
+    (vm-sync-labels)
+    (should (null (vm-unused-labels)))
+    (should (null (vm-missing-labels)))
+    (should (equal (sort (vm-obarray-to-string-list vm-label-obarray)
+                         #'string-lessp)
+                   '("important" "newcomer")))))
+
+(ert-deftest vm-undo-test-sync-labels-leaves-messages-alone ()
+  "Test that `vm-sync-labels' changes no message."
+  (vm-undo-test-with-labels
+      '("stale")
+      '(("newcomer") ("newcomer") nil)
+    (vm-sync-labels)
+    (should (equal (vm-labels-of (nth 0 vm-message-list)) '("newcomer")))
+    (should (equal (vm-labels-of (nth 1 vm-message-list)) '("newcomer")))
+    (should (null (vm-labels-of (nth 2 vm-message-list))))))
+
+(ert-deftest vm-undo-test-sync-labels-records-undo ()
+  "Test that both directions of the sync are undoable."
+  (vm-undo-test-with-labels
+      '("stale")
+      '(("newcomer") nil nil)
+    (let ((vm-undo-record-list nil)
+          (vm-undo-record-pointer nil))
+      (vm-sync-labels)
+      ;; an added label is undone by uninterning it, a removed one by
+      ;; re-interning it
+      (should (member '(unintern "newcomer" vm-label-obarray)
+                      vm-undo-record-list))
+      (should (member '(intern "stale" vm-label-obarray)
+                      vm-undo-record-list))
+      ;; and the recorded forms actually reverse the change when evalled
+      (dolist (record vm-undo-record-list) (eval record t))
+      (should (equal (sort (vm-obarray-to-string-list vm-label-obarray)
+                           #'string-lessp)
+                     '("stale"))))))
+
+(ert-deftest vm-undo-test-sync-labels-nothing-to-do ()
+  "Test that a folder already in agreement is left alone."
+  (vm-undo-test-with-labels
+      '("important")
+      '(("important") nil nil)
+    (vm-sync-labels)
+    (should (equal (vm-obarray-to-string-list vm-label-obarray)
+                   '("important")))))
+
+(ert-deftest vm-undo-test-expunge-unused-labels-records-undo ()
+  "Test that the removal can be undone."
+  (vm-undo-test-with-labels
+      '("important" "stale")
+      '(("important") nil nil)
+    (let ((vm-undo-record-list nil)
+          (vm-undo-record-pointer nil))
+      (vm-expunge-unused-labels)
+      (should (member '(intern "stale" vm-label-obarray)
+                      vm-undo-record-list)))))
+
 (provide 'vm-undo-test)
 
 ;;; vm-undo-test.el ends here

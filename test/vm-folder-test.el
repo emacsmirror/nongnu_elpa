@@ -602,6 +602,65 @@ Body of third message.
   (vm-test-with-folder-fixture "emails" "multipart-mixed.eml"
     (should (>= (vm-test-message-count) 1))))
 
+;;; label registration tests
+
+(defun vm-folder-test-message-with-labels (labels)
+  "Return an mbox message whose X-VM-v5-Data carries LABELS."
+  (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+          "X-VM-v5-Data: ("
+          (prin1-to-string (make-vector vm-attributes-vector-length nil))
+          "\n\t"
+          (prin1-to-string (make-vector vm-cached-data-vector-length nil))
+          "\n\t"
+          (prin1-to-string labels)
+          ")\n"
+          "From: sender@example.com\n"
+          "Subject: Test\n"
+          "\n"
+          "Body\n"))
+
+(ert-deftest vm-folder-test-register-message-labels ()
+  "Test that `vm-register-message-labels' adds labels to the folder's list."
+  (vm-test-with-folder "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    (setq vm-label-obarray (make-vector 29 0))
+    (vm-set-decoded-labels-of (car vm-message-list) '("one" "two"))
+    (vm-register-message-labels vm-message-list)
+    (should (equal (sort (vm-obarray-to-string-list vm-label-obarray)
+                         #'string-lessp)
+                   '("one" "two")))))
+
+(ert-deftest vm-folder-test-register-message-labels-empty ()
+  "Test that messages with no labels register nothing."
+  (vm-test-with-folder "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    (setq vm-label-obarray (make-vector 29 0))
+    (vm-register-message-labels vm-message-list)
+    (should (null (vm-obarray-to-string-list vm-label-obarray)))))
+
+(ert-deftest vm-folder-test-assimilate-registers-labels ()
+  "Test that a message arriving already labelled registers its labels.
+Otherwise the label is in use but missing from the folder's list, so it
+never appears in label completion -- what `vm-sync-labels' exists to
+repair after the fact."
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (insert (vm-folder-test-message-with-labels '("came-with-message")))
+    (goto-char (point-min))
+    (setq vm-label-obarray (make-vector 29 0))
+    (vm-assimilate-new-messages :read-attributes t :run-hooks nil)
+    (should (equal (vm-labels-of (car vm-message-list)) '("came-with-message")))
+    (should (equal (vm-obarray-to-string-list vm-label-obarray)
+                   '("came-with-message")))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

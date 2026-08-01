@@ -465,6 +465,161 @@ number of messages that will be affected."
     (vm-inform 5 "Label \"%s\" expunged from %d message%s"
                label count (if (= count 1) "" "s"))))
 
+;;;###autoload
+(defun vm-unused-labels ()
+  "Return the labels of the current folder that no message carries.
+The list is sorted.  A label becomes unused when it is deleted from
+the last message holding it: `vm-delete-message-labels' leaves it in
+the folder's label list, so it keeps turning up in completions."
+  (let ((used (make-vector 29 0))
+	(unused nil))
+    (dolist (m vm-message-list)
+      (dolist (label (vm-labels-of m))
+	(intern label used)))
+    (mapatoms (lambda (s)
+		(unless (intern-soft (symbol-name s) used)
+		  (setq unused (cons (symbol-name s) unused))))
+	      vm-label-obarray)
+    (sort unused #'string-lessp)))
+
+;;;###autoload
+(defun vm-missing-labels ()
+  "Return the labels carried by messages but absent from the folder's list.
+The list is sorted.  Labels only reach `vm-label-obarray' from the
+folder's own stored list, read at visit time, and from labels added
+interactively; a message that arrives already labelled -- saved in from
+another folder, say -- brings a label the folder does not know about, so
+it never appears in completions."
+  (let ((missing (make-vector 29 0))
+	(list nil))
+    (dolist (m vm-message-list)
+      (dolist (label (vm-labels-of m))
+	(unless (intern-soft label vm-label-obarray)
+	  (intern label missing))))
+    (mapatoms (lambda (s) (setq list (cons (symbol-name s) list))) missing)
+    (sort list #'string-lessp)))
+
+;;;###autoload
+(defun vm-sync-labels ()
+  "Make the folder's label list agree with the labels its messages carry.
+Adds labels that messages use but the folder does not list, and removes
+those the folder lists but no message uses.  Afterwards label completion
+offers exactly the labels in use.
+
+No message is changed; only the folder's label list.
+
+This operation can be undone with `vm-undo'.
+
+When called interactively, prompts for confirmation, saying what will be
+added and removed.  See also `vm-list-unused-labels'."
+  (interactive)
+  (vm-follow-summary-cursor)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (vm-error-if-folder-read-only)
+  (let* ((missing (vm-missing-labels))
+	 (unused (vm-unused-labels)))
+    (cond
+     ((and (null missing) (null unused))
+      (vm-inform 5 "Label list already matches the messages"))
+     ((and (vm-interactive-p)
+	   (not (yes-or-no-p
+		 (format "Label list: %s%s%s? "
+			 (if missing
+			     (format "add %s" (mapconcat #'identity missing ", "))
+			   "")
+			 (if (and missing unused) "; " "")
+			 (if unused
+			     (format "remove %s" (mapconcat #'identity unused ", "))
+			   "")))))
+      (error "Aborted"))
+     (t
+      (dolist (label missing)
+	(vm-undo-record (list 'unintern label 'vm-label-obarray))
+	(intern label vm-label-obarray))
+      (dolist (label unused)
+	(vm-undo-record (list 'intern label 'vm-label-obarray))
+	(unintern label vm-label-obarray))
+      ;; no message changed, but the folder's label list did, and that
+      ;; is only written out when the folder is modified
+      (vm-mark-folder-modified-p)
+      (vm-update-summary-and-mode-line)
+      (vm-inform 5 "Label list synced: %d added, %d removed"
+		 (length missing) (length unused))))))
+
+;;;###autoload
+(defun vm-list-unused-labels ()
+  "List the labels of the current folder that no message carries.
+These are exactly the labels `vm-expunge-unused-labels' would remove.
+Nothing is changed."
+  (interactive)
+  (vm-follow-summary-cursor)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (let ((unused (vm-unused-labels))
+	(missing (vm-missing-labels))
+	(folder (buffer-name)))
+    (if (and (null unused) (null missing))
+	(vm-inform 5 "No unused labels")
+      (with-output-to-temp-buffer "*VM unused labels*"
+	(if (null unused)
+	    (princ (format "No unused labels in %s.\n" folder))
+	  (princ (format "%d unused label%s in %s -- listed by the folder, on\
+ no message:\n\n"
+			 (length unused)
+			 (if (= (length unused) 1) "" "s")
+			 folder))
+	  (dolist (label unused)
+	    (princ (format "  %s\n" label)))
+	  (princ "\nRemove them with M-x vm-expunge-unused-labels\n"))
+	(when missing
+	  (princ (format "\n%d label%s on messages that the folder does not\
+ list, so absent\nfrom completion:\n\n"
+			 (length missing)
+			 (if (= (length missing) 1) "" "s")))
+	  (dolist (label missing)
+	    (princ (format "  %s\n" label)))
+	  (princ "\nAdd them with M-x vm-sync-labels\n"))))))
+
+;;;###autoload
+(defun vm-expunge-unused-labels ()
+  "Remove from the current folder every label that no message carries.
+Such labels accumulate as messages are relabelled or expunged --
+deleting a label from the last message holding it does not remove it
+from the folder -- and they clutter label completion ever after.
+Use `vm-list-unused-labels' to see them first.
+
+No message is changed; only the folder's label list.
+
+This operation can be undone with `vm-undo'.
+
+When called interactively, prompts for confirmation, listing the
+labels that will be removed."
+  (interactive)
+  (vm-follow-summary-cursor)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (vm-error-if-folder-read-only)
+  (let ((unused (vm-unused-labels)))
+    (cond
+     ((null unused)
+      (vm-inform 5 "No unused labels"))
+     ((and (vm-interactive-p)
+	   (not (yes-or-no-p
+		 (format "Remove %d unused label%s (%s)? "
+			 (length unused)
+			 (if (= (length unused) 1) "" "s")
+			 (mapconcat #'identity unused ", ")))))
+      (error "Aborted"))
+     (t
+      (dolist (label unused)
+	;; record undo to re-intern it, as vm-expunge-label does
+	(vm-undo-record (list 'intern label 'vm-label-obarray))
+	(unintern label vm-label-obarray))
+      ;; no message changed, but the folder's label list did, and that
+      ;; is only written out when the folder is modified
+      (vm-mark-folder-modified-p)
+      (vm-update-summary-and-mode-line)
+      (vm-inform 5 "%d unused label%s removed"
+		 (length unused) (if (= (length unused) 1) "" "s"))))))
+
 (defun vm-add-or-delete-message-labels (string m-list add)
   "Add or delete the labels given in STRING for all messages in
 M-LIST.  STRING is a MIME-decoded string with text properties.
