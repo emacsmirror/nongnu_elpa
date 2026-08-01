@@ -260,6 +260,48 @@ Body
       (vm-set-written-flag msg t)
       (should (vm-written-flag msg)))))
 
+;;; vm-auto-select-folder-for-save tests
+
+(defmacro vm-save-test-with-auto-folder (folder-name &rest body)
+  "Run BODY in a folder whose auto-folder-alist maps the message to FOLDER-NAME."
+  (declare (indent 1))
+  `(vm-test-with-folder
+       "From sender@example.com Mon Jan  1 00:00:00 2024
+From: newsletter@lists.example.org
+Subject: Weekly digest
+Message-ID: <test@example.com>
+
+Newsletter content
+"
+     (let ((vm-auto-folder-alist
+            (list (list "From" (cons "newsletter@" ,folder-name))))
+           (vm-save-using-auto-folders t))
+       ,@body)))
+
+(ert-deftest vm-save-test-auto-select-for-save-passes-other-folder ()
+  "Test that a folder other than the current one is still suggested."
+  (vm-save-test-with-auto-folder "newsletters"
+    (should (equal "newsletters"
+                   (vm-auto-select-folder-for-save vm-message-pointer)))))
+
+(ert-deftest vm-save-test-auto-select-for-save-skips-current-folder ()
+  "Test that the folder the message is already in is not suggested.
+Regression test for issue #163: `vm-auto-folder-alist' would offer to
+save a message into the very folder holding it.  `vm-auto-archive-messages'
+already skipped that case; the interactive save prompt did not."
+  (vm-save-test-with-auto-folder "newsletters"
+    ;; make the auto-selected folder resolve to this very buffer
+    (cl-letf (((symbol-function 'vm-get-file-buffer)
+               (let ((this (current-buffer)))
+                 (lambda (f) (and (equal f "newsletters") this)))))
+      (should (null (vm-auto-select-folder-for-save vm-message-pointer))))))
+
+(ert-deftest vm-save-test-auto-select-for-save-no-match ()
+  "Test that no match still yields nil."
+  (vm-save-test-with-auto-folder "newsletters"
+    (let ((vm-auto-folder-alist nil))
+      (should (null (vm-auto-select-folder-for-save vm-message-pointer))))))
+
 (provide 'vm-save-test)
 
 ;;; vm-save-test.el ends here

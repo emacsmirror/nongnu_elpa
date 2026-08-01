@@ -105,6 +105,18 @@ specified, use `vm-auto-folder-alist'."
 	(error (error "error processing vm-auto-folder-alist: %s"
 		      (prin1-to-string error-data))))))
 
+(defun vm-auto-select-folder-for-save (mp &optional auto-folder-alist)
+  "Like `vm-auto-select-folder', but never names the current folder.
+Saving a message into the folder it is already in is not something to
+suggest, so in that case return nil and let the caller fall back on its
+other heuristics, such as `vm-last-save-folder'.
+
+`vm-auto-archive-messages' skips such a message for the same reason."
+  (let ((folder (vm-auto-select-folder mp auto-folder-alist)))
+    (unless (and folder
+		 (eq (vm-get-file-buffer folder) (current-buffer)))
+      folder)))
+
 ;;;###autoload
 (defun vm-auto-archive-messages (&optional prompt)
   "Save all unfiled messages that auto-match a folder via
@@ -210,8 +222,8 @@ The saved messages are flagged as `filed'."
       ;; (vm-session-initialization)
       (vm-select-folder-buffer)
       (vm-error-if-folder-empty)
-      (setq default 
-	    (or (vm-auto-select-folder vm-message-pointer)
+      (setq default
+	    (or (vm-auto-select-folder-for-save vm-message-pointer)
 		vm-last-save-folder))
       (setq default-is-imap
 	    (and default (vm-imap-folder-spec-p default)))
