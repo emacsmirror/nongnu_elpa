@@ -36,6 +36,72 @@ make relint-lint         # Regular expression linting
 
 Note: `make elint-lint` is broken (max-lisp-eval-depth), `make elisp-lint` has many false positives.
 
+## Testing
+
+```bash
+cd test && make test            # whole suite (ert, batch)
+cd test && make test-verbose    # with deeper printing
+cd test && make test-one testel=vm-imap-test.el
+```
+
+Every bug fix ships a regression test in the matching `test/vm-*-test.el`, in
+the same commit. **Verify the test actually fails without the fix**: stash the
+lisp change, run the test, restore.
+
+Gotchas found the hard way:
+
+- **Delete the stale `.elc` first** (`rm -f lisp/*.elc`). ert loads the
+  byte-compiled file in preference to newer source, so a fix-reverted run that
+  still passes is usually this, not a bad test.
+- **`error` formats through `format-message`**, so expected message strings come
+  back with curved quotes. Bind `text-quoting-style` to `'grave` in the test.
+- **`vm-interactive-p` is a macro** over `called-interactively-p`. Stubbing
+  `(symbol-function 'vm-interactive-p)` does nothing; stub
+  `called-interactively-p` instead.
+- Tests that reach into folder machinery need `vm-select-folder-buffer-and-validate`,
+  `vm-select-operable-messages` and friends stubbed; see `vm-test-with-folder`
+  in `test/vm-test-init.el` and the existing stub macros for the pattern.
+
+## Contributing workflow
+
+One branch and one merge request per issue:
+
+```sh
+git switch -c issue-NNN-brief-description central/alpha
+# work, test, commit with "Closes #NNN" (or "Re #NNN" if it does not resolve it)
+git push -o merge_request.create \
+         -o merge_request.target_project=emacs-vm/vm \
+         -o merge_request.target=alpha \
+         -o merge_request.remove_source_branch \
+         -u origin issue-NNN-brief-description
+```
+
+- **Cut branches from `central/alpha`, never from a local integration branch.**
+  A local branch that has other topic branches merged into it silently stacks
+  them into the next MR; GitLab then takes the MR title and description from
+  the *oldest* commit in the range, so the MR ends up describing — and closing
+  — the wrong issue. Check with `git rev-list --count central/alpha..<branch>`.
+- `origin` is the personal fork, `central` is `emacs-vm/vm` (project id
+  59241204). Issues and merge requests live on `central`; branches go to
+  `origin` and the MR is cross-project.
+- `alpha` is the integration branch and is not the default branch, so
+  merging an MR there does **not** auto-close the issue. That happens when
+  `alpha` reaches `main`.
+- Editing an existing MR (target, title, description) or labelling and closing
+  an issue needs the REST API and a token with `api` scope — push options
+  cannot do it.
+- An issue investigated but not reproducible gets the `irreproducible` label,
+  and is closed too when it is a Launchpad import.
+
+Test files are conflict-prone, since independent branches all append new tests
+to the end of the same file. The resolution is always keep-both.
+
+## NEWS
+
+`NEWS` records new functionality and user-visible changes of behaviour —
+new commands, renamed or removed variables, changed defaults. **Bug fixes do
+not go in NEWS**; that is what the issue tracker is for.
+
 ## Architecture
 
 ### Module Organization (lisp/)
