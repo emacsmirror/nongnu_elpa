@@ -661,6 +661,64 @@ repair after the fact."
     (should (equal (vm-obarray-to-string-list vm-label-obarray)
                    '("came-with-message")))))
 
+;;; fetched-message bookkeeping tests
+
+(ert-deftest vm-folder-test-unregister-fetched-message-registered ()
+  "Test that unregistering a fetched message drops it and counts down."
+  (vm-test-with-folder "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    (let* ((m (car vm-message-list))
+           (vm-fetched-messages (list m))
+           (vm-fetched-message-count 1))
+      (vm-unregister-fetched-message m)
+      (should (null vm-fetched-messages))
+      (should (= vm-fetched-message-count 0)))))
+
+(ert-deftest vm-folder-test-unregister-fetched-message-not-registered ()
+  "Test that unregistering a message that was never fetched changes nothing.
+`vm-expunge-message' calls this for every expunged message, registered
+or not.  The count was decremented unconditionally, so expunging drove
+it below the length of the list -- and once it went negative the
+`vm-external-fetched-message-limit' comparison stopped being true, so
+fetched bodies were never evicted again."
+  (vm-test-with-folder "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: One
+
+Body
+
+From sender@example.com Mon Jan  1 00:00:01 2024
+From: sender@example.com
+Subject: Two
+
+Body
+"
+    (let* ((fetched (car vm-message-list))
+           (other (nth 1 vm-message-list))
+           (vm-fetched-messages (list fetched))
+           (vm-fetched-message-count 1))
+      (vm-unregister-fetched-message other)
+      (should (equal vm-fetched-messages (list fetched)))
+      (should (= vm-fetched-message-count 1)))))
+
+(ert-deftest vm-folder-test-unregister-fetched-message-count-never-negative ()
+  "Test that repeated unregistering cannot drive the count below zero."
+  (vm-test-with-folder "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    (let* ((m (car vm-message-list))
+           (vm-fetched-messages nil)
+           (vm-fetched-message-count 0))
+      (dotimes (_ 5) (vm-unregister-fetched-message m))
+      (should (= vm-fetched-message-count 0)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
