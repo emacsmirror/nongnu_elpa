@@ -18,14 +18,13 @@ projects, whether version-controlled or recognized through project.el root
 markers. It should work with emacs 27+. It is tested to work
 with a single frame workflow, but should work with multiple frames as well.
 
-While other great packages exist for managing workspaces, such as [[https://github.com/alphapapa/bufler.el][bufler]],
-[[https://github.com/nex3/perspective-el][perspective]] and [[https://github.com/Bad-ptr/persp-mode.el][persp-mode]], this package is less complex than those alternatives, and works
-entirely based on the built-in (to emacs 27+) tab-bar and project packages. If
-you like simple, this may be the workspace package for you. That said, bufler,
-perspective or persp-mode, etc. may better fit your needs.
-
-*NOTE*: version 1.2 renames several functions and streamlines tab and project
-creation. Apologies if this breaks your workflow. Please update your configuration accordingly.
+While other great packages exist for managing workspaces, such as [[https://github.com/alphapapa/activities.el][activities]],
+[[https://github.com/florommel/bufferlo][bufferlo]], [[https://github.com/alphapapa/bufler.el][bufler]], [[https://github.com/nex3/perspective-el][perspective]] and [[https://github.com/Bad-ptr/persp-mode.el][persp-mode]], this package is less complex
+than most alternatives, and works entirely based on the built-in (to emacs 27+)
+tab-bar and project packages. If you like simple, this may be the workspace
+package for you. That said, one of the others may better fit your needs.
+[[https://github.com/karthink/project-x][project-x]] is a complement rather than an alternative: it extends project.el
+itself, and pairs well with tabspaces.
 
 ** Basic Usage
 
