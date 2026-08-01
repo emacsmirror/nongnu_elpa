@@ -5852,14 +5852,21 @@ utf-8)'. "
   :group 'vm-mime
   :type '(repeat symbol))
 
-(defcustom vm-drop-buffer-name-chars "[^ a-zA-Z0-9.,_\"'+-]"
-  "*Regexp used to replace chars in composition buffer names.
-If non-nil buffer names will be cleaned to avoid save problems.
-If t, 8bit chars are replaced by a \"_\", if a string it should
-be a regexp matching all chars to be replaced by a \"_\"."
+(defcustom vm-drop-buffer-name-chars "[[:cntrl:]/]"
+  "*Regexp matching chars to replace by \"_\" in composition buffer names.
+A composition buffer is named after its recipient and subject, and that
+name is what the auto-save file is named after, so characters a file
+name cannot hold are replaced.  Set to nil to leave names alone.
+
+This used to be a US-ASCII whitelist, which replaced every accented
+letter as well: a reply to \"Ren\\='e\" was named \"reply to Ren_\".  The
+default now matches only control characters and the directory
+separator.  To get the old behaviour back, set this to
+\"[^ a-zA-Z0-9.,_\\\"\\='+-]\"."
   :group 'vm-compose
   :type '(choice (const :tag "Disabled" nil)
-		 (regexp :tag "Enabled" "[^ a-zA-Z0-9.,_\"'+-]")
+		 (regexp :tag "Control characters and /" "[[:cntrl:]/]")
+		 (regexp :tag "US-ASCII only" "[^ a-zA-Z0-9.,_\"'+-]")
 		 (regexp :tag "Custom regexp")))
 
 (defconst vm-buffer-name-limit 80

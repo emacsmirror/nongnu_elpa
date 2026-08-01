@@ -35,6 +35,13 @@ VM 8.?.?
     Removes the label from all messages and from the folder's label list so
     it no longer appears in completions.
   * Handle ImageMagick V7 deprecation of convert command in favor of sub-commands.
+  * The default value of `vm-drop-buffer-name-chars' has changed from a
+    US-ASCII whitelist to "[[:cntrl:]/]".  Composition buffers are named
+    after their recipient, and the old value replaced every accented letter
+    by "_", so a reply to "René" was named "reply to Ren_".  Only characters
+    a file name cannot hold are replaced now, the buffer name being what the
+    auto-save file is named after.  Set the variable to
+    "[^ a-zA-Z0-9.,_\"'+-]" for the old behaviour.
 
 
 VM 8.3.2 released 2025-12-29
