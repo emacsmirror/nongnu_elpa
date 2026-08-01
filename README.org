@@ -751,6 +751,35 @@ Use =tabspaces-todo-file-name= to change the name of that file, or =tabspaces-in
 to disable this feature completely.
 
 
+** Alternatives
+
+Emacs workspace packages differ mainly in what they scope buffers to and in
+how much machinery they bring along. This sketch describes each package's
+model; see their manuals for current details.
+
+- [[https://github.com/nex3/perspective-el][perspective]] :: Named workspaces, each with its own buffer list and window
+  layout. Perspectives live per frame and you switch between them by name.
+  State can be saved to and restored from disk.
+- [[https://github.com/Bad-ptr/persp-mode.el][persp-mode]] :: The same named-workspace idea, with perspectives shared
+  across frames and its own session save and restore.
+- [[https://github.com/protesilaos/beframe][beframe]] :: Scopes buffers to frames, with the frame as the unit of work.
+- [[https://github.com/florommel/bufferlo][bufferlo]] :: Like tabspaces, attaches local buffer lists to frames and
+  tabs through the built-in buffer-list parameters. It stays agnostic
+  about projects and persists tabs and frames via the bookmark system.
+- [[https://github.com/alphapapa/activities.el][activities]] :: Task-oriented "activities" layered over tab-bar or
+  frames, with suspend and resume across sessions built on bookmarks.
+  Persistence and task switching are its emphasis.
+- [[https://github.com/vmargb/project-x][project-x]] :: Extends project.el with per-project session saving, extra
+  root markers, and an optional tab mode. It overlaps with tabspaces'
+  project sessions while staying closer to plain project.el.
+
+Tabspaces sits at the intersection of tabs and projects: each tab-bar tab
+holds an isolated buffer list, tabs map to project.el projects (which need
+not be under version control; any directory project.el recognizes through
+root markers works), and sessions can be saved globally or per project. If
+you want one tab per project with the built-in libraries doing the work,
+that is the gap this package fills.
+
 ** Development
 
 I develop tabspaces with help from Claude Code, chiefly for bug-hunting,
