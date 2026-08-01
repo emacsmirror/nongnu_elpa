@@ -101,9 +101,9 @@ expressions), which does not override buffers inside
 (defcustom tabspaces-keymap-prefix (kbd "C-c TAB")
   "Key sequence prefix for the tabspaces command map.
 The value is a key sequence as returned by `kbd'.  For backward
-compatibility, a string of printable characters (the option's
-former format) is interpreted as `kbd' syntax.  Set to nil to
-disable automatic keymap binding."
+compatibility, a string in `kbd' syntax (the option's former
+format) is also accepted.  Set to nil to disable automatic keymap
+binding."
   :type '(choice (const :tag "Disabled" nil)
                  key-sequence))
 
@@ -1694,12 +1694,16 @@ expects the restored tabs to already exist should account for this."
 
 (defun tabspaces--normalize-prefix (value)
   "Return VALUE as a raw key sequence.
-A string of printable characters is treated as `kbd' syntax, for
+A string in canonical `kbd' syntax is converted with `kbd', for
 compatibility with the former string format of
-`tabspaces-keymap-prefix'.  Raw sequences with modifiers always
-contain control characters, so the two formats do not collide."
+`tabspaces-keymap-prefix'.  Canonical syntax is what
+`key-description' produces, so a string qualifies exactly when the
+conversion round-trips back to it.  Raw key sequences never
+round-trip and so pass through unchanged, as do vectors and nil."
   (if (and (stringp value)
-           (string-match-p "\\`[[:print:]]+\\'" value))
+           (condition-case nil
+               (equal (key-description (kbd value)) value)
+             (error nil)))
       (kbd value)
     value))
 

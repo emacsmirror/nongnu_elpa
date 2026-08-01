@@ -144,14 +144,40 @@ compares string keys with `eq' and silently kept the old entry."
 
 (ert-deftest tabspaces-test-normalize-prefix ()
   "Legacy kbd-syntax strings and raw key sequences both normalize."
-  ;; Legacy printable string in kbd syntax.
+  ;; Legacy strings in kbd syntax.
   (should (equal (tabspaces--normalize-prefix "C-c TAB") (kbd "C-c TAB")))
-  ;; Raw sequence (contains control characters) passes through.
+  (should (equal (tabspaces--normalize-prefix "SPC") (kbd "SPC")))
+  (should (equal (tabspaces--normalize-prefix "M-o") (kbd "M-o")))
+  ;; Raw sequences pass through, including the all-printable SPC,
+  ;; which kbd would otherwise collapse to the empty sequence.
   (should (equal (tabspaces--normalize-prefix (kbd "C-c TAB")) (kbd "C-c TAB")))
+  (should (equal (tabspaces--normalize-prefix (kbd "SPC")) (kbd "SPC")))
   ;; Vectors pass through.
   (should (equal (tabspaces--normalize-prefix [f5]) [f5]))
   ;; nil is not a string; passes through untouched.
   (should-not (tabspaces--normalize-prefix nil)))
+
+(ert-deftest tabspaces-test-keymap-prefix-binding ()
+  "Binding the normalized prefix makes the command map reachable.
+Covers both value formats end-to-end through `define-key'."
+  (pcase-dolist (`(,value . ,key)
+                 `((,(kbd "C-c TAB") . ,(kbd "C-c TAB"))
+                   ("C-c TAB" . ,(kbd "C-c TAB"))
+                   (,(kbd "SPC") . ,(kbd "SPC"))
+                   ("SPC" . ,(kbd "SPC"))
+                   ([f5] . [f5])))
+    (let ((map (make-sparse-keymap)))
+      (define-key map (tabspaces--normalize-prefix value)
+                  'tabspaces-command-map)
+      (should (eq (lookup-key map key) 'tabspaces-command-map)))))
+
+(ert-deftest tabspaces-test-keymap-prefix-widget ()
+  "The default value and nil both satisfy the option's custom type."
+  (require 'wid-edit)
+  (let ((widget (widget-convert (get 'tabspaces-keymap-prefix 'custom-type))))
+    (should (widget-apply widget :match
+                          (default-value 'tabspaces-keymap-prefix)))
+    (should (widget-apply widget :match nil))))
 
 (ert-deftest tabspaces-test-unique-numbered-tab-name ()
   "Numbered suffixes skip names already in use."
