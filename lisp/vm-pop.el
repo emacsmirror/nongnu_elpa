@@ -562,7 +562,7 @@ Returns the process or nil if the session could not be created."
 		   (unless (vm-pop-read-response process)
 
 		     (vm-warn 0 0 "POP login failed for %s" popdrop)
-		     (vm-pop-forget-password source-nopwd host port)
+		     (vm-pop-forget-password source-nopwd host port user)
 		     ;; don't sleep unless we're running synchronously.
 		     (when vm-pop-ok-to-ask
 		       (sleep-for 2))
@@ -621,24 +621,11 @@ Returns the process or nil if the session could not be created."
   "Return the password for POPDROP at server SOURCE.  It corresponds
 to the USER login at HOST and PORT.  ASK-PASSWORD says whether
 passwords can be queried interactively."
-  (let ((pass (car (cdr (assoc source vm-pop-passwords))))
-	authinfo)
-    (when (and (null pass)
-	       (boundp 'auth-sources)
-	       (fboundp 'auth-source-user-or-password))
-      (cond ((and (setq authinfo
-			(auth-source-user-or-password
-			 '("login" "password")
-			 (vm-pop-find-name-for-spec source)
-			 port))
-		  (equal user (car authinfo)))
-	     (setq pass (cadr authinfo)))
-	    ((and (setq authinfo
-			(auth-source-user-or-password
-			 '("login" "password")
-			 host port))
-		  (equal user (car authinfo)))
-	     (setq pass (cadr authinfo)))))
+  (let ((pass (car (cdr (assoc source vm-pop-passwords)))))
+    (when (null pass)
+      (setq pass (vm-auth-source-password
+		  (list (vm-pop-find-name-for-spec source) host)
+		  port user)))
     (while (and (null pass) ask-password)
       (setq pass
 	    (read-passwd
@@ -651,20 +638,14 @@ passwords can be queried interactively."
     pass)  )
 
 
-(defun vm-pop-forget-password (source host port)
-  "Forget the cached password for SOURCE corresponding to HOST at PORT."
+(defun vm-pop-forget-password (source host port user)
+  "Forget the cached password for SOURCE, and for USER at HOST on PORT."
   (setq vm-pop-passwords
 	(vm-delete (lambda (pair)
 		     (equal (car pair) source))
 		   vm-pop-passwords))
-  (when (fboundp 'auth-source-forget-user-or-password)
-    (auth-source-forget-user-or-password 
-     '("login" "password")
-     (vm-pop-find-name-for-spec source) port)
-    (auth-source-forget-user-or-password 
-     '("login" "password")
-     host port))
-  )
+  (vm-auth-source-forget-password
+   (list (vm-pop-find-name-for-spec source) host) port user))
 
 (defun vm-pop-end-session (process &optional keep-buffer verbose)
   "Kill the POP session represented by PROCESS.  PROCESS could be
