@@ -954,7 +954,8 @@ directory and `delete-file\' failed with \"is a directory\"."
 `vm-warn' pauses, so warning per part made refusing a message with
 several unnamed parts a sequence of two-second waits."
   (let ((dir (file-name-as-directory (make-temp-file "vm-att" t)))
-        (warnings 0))
+        (warnings 0)
+        (warned nil))
     (unwind-protect
         (with-temp-buffer
           (insert "Content-Type: multipart/mixed; boundary=B\n"
@@ -990,10 +991,21 @@ several unnamed parts a sequence of two-second waits."
                       ((symbol-function 'vm-read-file-name)
                        (lambda (&rest _) dir))
                       ((symbol-function 'vm-warn)
-                       (lambda (&rest _) (setq warnings (1+ warnings)))))
+                       (lambda (_level _secs fmt &rest args)
+                         (setq warnings (1+ warnings))
+                         (setq warned (apply #'format fmt args)))))
               (vm-save-all-attachments nil dir))
             ;; three parts refused, one warning
             (should (= warnings 1))
+            ;; and the directory is named once, not once per part
+            (should (string-match (regexp-quote dir) warned))
+            (should (= 1 (with-temp-buffer
+                           (insert warned)
+                           (goto-char (point-min))
+                           (let ((n 0))
+                             (while (search-forward dir nil t)
+                               (setq n (1+ n)))
+                             n))))
             (should (null (directory-files dir nil "\\`[^.]")))))
       (delete-directory dir t))))
 

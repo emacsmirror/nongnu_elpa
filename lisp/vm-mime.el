@@ -4601,10 +4601,13 @@ created."
 	(vm-present-current-message)))
     
     (when refused-directories
-      (setq refused-directories (nreverse refused-directories))
-      (vm-warn 0 2 "Not saved, %s a directory rather than a file name: %s"
-	       (if (cdr refused-directories) "these name" "this names")
-	       (mapconcat #'identity refused-directories ", ")))
+      ;; the same directory is the obvious answer for every part, so
+      ;; the list is usually the same name over and over
+      (setq refused-directories
+	    (delete-dups (nreverse refused-directories)))
+      (vm-warn 0 2 "Not saved: %s %s a directory, not a file name"
+	       (mapconcat #'identity refused-directories ", ")
+	       (if (cdr refused-directories) "name" "names")))
 
     (if (> failures 0)
 	(if (> successes 0)
