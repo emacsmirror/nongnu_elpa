@@ -29,7 +29,7 @@
 ;; This package provides several functions to facilitate a frame-based
 ;; tab workflow with one workspace per tab, integration with project.el (for
 ;; project-based workspaces) and buffer isolation per tab (i.e. a "tabspace"
-;; workspace). The package assumes project.el and tab-bar.el are both present
+;; workspace).  The package assumes project.el and tab-bar.el are both present
 ;; (they are built-in to Emacs 27.1+).
 
 ;; This file is not part of GNU Emacs.
@@ -112,8 +112,9 @@ Set to nil to disable automatic keymap binding."
                  string))
 
 (defcustom tabspaces-initialize-project-with-todo t
-  "When Non-nil create a `tabspaces-todo-file-name' file in the project
-when creating a workspace for it."
+  "Whether to create a `tabspaces-todo-file-name' file in new workspaces.
+When non-nil, create the file in the project when creating a
+workspace for it."
   :group 'tabspaces
   :type 'boolean)
 
@@ -365,7 +366,7 @@ Restores original tab-bar visibility and removes timer."
 (defun tabspaces-toggle-echo-area-display ()
   "Toggle echo area tab display feature on or off.
 When enabled, tabs will appear in the echo area after idle time and
-during tab operations. When disabled, tabs are only shown in the tab-bar."
+during tab operations.  When disabled, tabs are only shown in the tab-bar."
   (interactive)
   (if (or tabspaces--tabs-visible tabspaces-echo-area-enable)
       ;; Turn off: disable feature and clear current display
@@ -435,7 +436,7 @@ Only the current window buffers and buffers in
 (defun tabspaces--buffer-list (&optional frame tabnum)
   "Return a list of all live buffers associated with the current frame and tab.
 A non-nil value of FRAME selects a specific frame instead of the
-current one. If TABNUM is nil, the current tab is used. If it is
+current one.  If TABNUM is nil, the current tab is used.  If it is
 non-nil, then specify a tab index in the given frame."
   (let ((list
          (if tabnum
@@ -526,9 +527,9 @@ tab's project instead of prompting.  Controlled by
 ;;;;; Open Project & File
 (defun tabspaces-project-switch-project-open-file (dir)
   "Switch to another project by running an Emacs command.
-Open file using `project-find-file'. NOTE: this function does *not*
-open or switch to a new workspace. Rather it switches to a new
-project and opens a file via `completing-read'. If you prefer to
+Open file using `project-find-file'.  NOTE: this function does *not*
+open or switch to a new workspace.  Rather it switches to a new
+project and opens a file via `completing-read'.  If you prefer to
 use the project.el command-menu, then use
 `project-switch-project'
 
@@ -611,6 +612,7 @@ The arguments NORECORD and FORCE-SAME-WINDOW are passed to `switch-to-buffer'."
 
 ;; See https://emacs.stackexchange.com/a/53016/11934
 (defun tabspaces--report-dupes (xs)
+  "Return a list of the elements that appear more than once in XS."
   (let ((ys  ()))
     (while xs
       (unless (member (car xs) ys) ; Don't check it if already known to be a dup.
@@ -619,10 +621,11 @@ The arguments NORECORD and FORCE-SAME-WINDOW are passed to `switch-to-buffer'."
     ys))
 
 (defun tabspaces-switch-buffer-and-tab (buffer &optional norecord force-same-window)
-  "Switch to the tab of chosen buffer, or create buffer.
-If buffer does not exist in buffer-list user can either create a
-new tab with the new buffer or open a new buffer in the current
-tab."
+  "Switch to the tab of chosen BUFFER, or create buffer.
+If BUFFER does not exist in the `buffer-list', the user can either
+create a new tab with the new buffer or open a new buffer in the
+current tab.  NORECORD and FORCE-SAME-WINDOW are passed to
+`switch-to-buffer'."
   (interactive
    (list
     (let ((blst (cl-remove (buffer-name) (mapcar #'buffer-name (buffer-list)))))
@@ -685,7 +688,7 @@ If FRAME is nil, use the current frame."
 ;; Some of these are just wrappers around built-in functions.
 ;;;###autoload
 (defun tabspaces-switch-or-create-workspace (&optional workspace)
-  "Switch to tab if it exists, otherwise create a new tabbed workspace."
+  "Switch to the tab WORKSPACE, creating it if it does not exist."
   (interactive
    (list (completing-read "Select or create tab: "
                           (tabspaces--list-tabspaces) nil nil)))
@@ -805,7 +808,8 @@ Checks for conflicts against EXISTING-TAB-NAMES."
         simple-tab-name))))
 
 (defun tabspaces-generate-complex-name (project-path)
-  "Generate a complex name based on the grandparent and parent directory names."
+  "Generate a complex tab name from PROJECT-PATH.
+The name is based on the grandparent and parent directory names."
   (let* ((parts (reverse (split-string (directory-file-name project-path) "/")))
          (base-name (car parts))
          (parent-dir (nth 1 parts))
@@ -834,10 +838,11 @@ fall through to ORIG-FUN with ARGS."
 
 ;; Replace read-directory-name so that we can create new projects when necessary
 (defun tabspaces--read-directory-name (prompt &optional dir default mustmatch)
-  "Read a directory name, and create it if it does not exist."
+  "Read a directory name with PROMPT, and create it if it does not exist.
+DIR, DEFAULT, and MUSTMATCH are passed to `read-directory-name'."
   (let ((dir-name (read-directory-name prompt dir default mustmatch)))
     (unless (file-directory-p dir-name)
-      (when (y-or-n-p (format "Directory %s does not exist. Create it?" dir-name))
+      (when (y-or-n-p (format "Directory %s does not exist.  Create it?" dir-name))
         (make-directory dir-name t)))
     dir-name))
 
@@ -865,7 +870,7 @@ It's also possible to enter an arbitrary directory not in the list."
 
 ;;;###autoload
 (defun tabspaces-open-or-create-project-and-workspace (&optional project prefix)
-  "Open or create a project and its workspace with a descriptive tab name.
+  "Open or create PROJECT and its workspace with a descriptive tab name.
 With universal argument PREFIX, always create a new tab for the project."
   (interactive
    (list (tabspaces-prompt-project-dir) current-prefix-arg))
@@ -1001,7 +1006,7 @@ loaded are prepended to this list (see
   "Accumulator for unknown :kind values encountered during restore.
 Dynamically bound by `tabspaces-restore-session'.  Declared here so
 the helper `tabspaces--restore-buffer-record' can push to it from
-outside the let-binding scope under lexical-binding.")
+outside the let-binding scope under `lexical-binding'.")
 
 ;;;###autoload
 (defun tabspaces-register-buffer-kind (kind save-fn restore-fn)
@@ -1270,7 +1275,7 @@ Does nothing unless both `tabspaces-session' and
 
 ;;;###autoload
 (defun tabspaces-reuse-existing-buffer (name)
-  "Return the buffer named NAME iff it is in the current tab's buffer-list.
+  "Return the buffer named NAME iff it is in the current tab's `buffer-list'.
 Return nil if no such buffer exists, or if a buffer with NAME exists
 but in another tab.  Intended for use inside restore-fns registered
 via `tabspaces-register-buffer-kind': call this first and fall
@@ -1351,7 +1356,7 @@ otherwise evaluated."
 (defun tabspaces--rewrite-window-state (state subst)
   "Return STATE with buffer NAMEs substituted per alist SUBST.
 SUBST is an alist of (saved-name . actual-name) pairs.  Walks the
-three buffer-name reference shapes in window-state output: leaf
+three buffer name reference shapes in window-state output: leaf
 \(buffer NAME . _) entries, (next-buffers . (NAMES)) forward history
 lists, and (prev-buffers . ((NAME M1 M2) ...)) backward history with
 marker positions.  Substituted prev-buffers entries emit (NAME 1 1)
