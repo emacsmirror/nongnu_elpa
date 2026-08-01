@@ -81,8 +81,8 @@ It should accept two arguments: `date-str`, `color-hex`, `days-old`
 
 (defun org-history-outline-default-render-date (date-str color-hex days-old)
   "Default formatter for the outline date overlay.
-Arguments: DATE-STR is in form of YYYY-MM-DD, COLOR-HEX is list,
- DAYS-OLD is number.
+Arguments: DATE-STR is in form of YYYY-MM-DD, COLOR-HEX is string like
+ #e66519991999, DAYS-OLD is number.
 Returns a propertized string with a bracketed date using COLOR-HEX."
   (propertize (format "[%s]" date-str)
               'face `(:foreground ,color-hex :weight bold)
@@ -124,7 +124,7 @@ Automatically deletes older date overlays on the same headline when
          (ratio (/ (min days-old org-history-outline-max-days) (float org-history-outline-max-days)))
          (hue (* ratio 0.66)) ; 0.0 = Red, 0.66 = Blue
          (rgb (color-hsl-to-rgb hue 0.8 0.5))
-         (color-hex (apply #'color-rgb-to-hex rgb))
+         (color-hex (apply #'color-rgb-to-hex rgb)) ; string
 
          ;; --- THE CHARACTER CALCULATION SETUP ---
          (lend (line-end-position))
@@ -278,14 +278,13 @@ Call CALLBACK with one argument of calling buffer if success."
                                     ((not (zerop exit-code))
                                      (let ((err-msg (if (buffer-live-p output-buf)
                                                         (with-current-buffer output-buf (string-trim (buffer-string)))
-                                                      ;; (with-current-buffer output-buf (string-trim (buffer-string)))
                                                       "Unknown Git error")))
                                        (message "Git blame failed: %s" (if (string-empty-p err-msg) "Exit code non-zero" err-msg))))
 
                                     ;; Success Case: Output parsed out of the automatically filled output-buf
                                     (t
                                      (unless (buffer-live-p output-buf)
-                                       (error "Sentitne output-buf is not alive"))
+                                       (user-error "Sentitne output-buf is not alive")) ; we use user-error, because throwing a raw error inside the sentinel without catching it will break the sentinel execution flow.
 
                                      (with-current-buffer output-buf
                                        (funcall callback calling-buf)))) ; CALLBACK!
@@ -393,7 +392,7 @@ Argument BLAME-TABLE is from `org-history-outline--git-blame-cache'."
          (tasks-with-dates
           (mapcar (lambda (task)
                     ;; ISO 8601 strings sort chronologically when sorted alphabetically
-                    (let ((header-pos (1- (marker-position task)))
+                    (let ((header-pos (1- (marker-position task))) ; we use  (1-, because we created marker with 1+ [[file:~/sources/emacs-org-history/org-history.el::460::(push (copy-marker (1+ (point))) head-markers)) ; position of begining of heading +1]]
                           (latest "1970-01-01")
                           start end)
                       (set-marker task nil) ; free marker
