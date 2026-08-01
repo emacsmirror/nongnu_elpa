@@ -410,14 +410,22 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
       ;; Prepare headers
       (insert-buffer-substring folder-buffer hstart tstart)
       (goto-char (point-min))
-      (cond ((or (vm-mime-plain-message-p (car vmp)) is-decoded)
+      ;; The MIME headers must be kept if and only if the body we are
+      ;; about to insert is the raw, still-encoded one.  Dropping them
+      ;; while copying raw text leaves boundary lines in the body with
+      ;; nothing declaring them, and the send-time re-encoding then
+      ;; buries them in a fresh part -- the attachments are lost.
+      ;; Keeping them while copying decoded text is just as wrong.
+      (cond ((or (vm-mime-plain-message-p (car vmp))
+		 (and is-decoded presentation-buffer))
              (vm-reorder-message-headers
 	      nil :keep-list vm-postponed-message-headers
 	      :discard-regexp vm-postponed-message-discard-header-regexp))
             (t ; copy undecoded messages with mime headers
-             (vm-reorder-message-headers 
+             (vm-reorder-message-headers
 	      nil
-	      :keep-list (append '("MIME-Version:" "Content-type:")
+	      :keep-list (append '("MIME-Version:" "Content-type:"
+				   "Content-Transfer-Encoding:")
 				 vm-postponed-message-headers)
 	      :discard-regexp vm-postponed-message-discard-header-regexp)))
       (vm-decode-mime-encoded-words)

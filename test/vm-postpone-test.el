@@ -366,6 +366,72 @@
   (when (not (featurep 'xemacs))
     (should (equal (user-home-directory) (getenv "HOME")))))
 
+;;; vm-continue-postponed-message MIME handling
+
+(defvar vm-postpone-test-draft
+  (concat "From VM Sat Aug  1 12:00:00 2026\n"
+          "MIME-Version: 1.0\n"
+          "Content-Type: multipart/mixed; boundary=\"SEP\"\n"
+          "Content-Transfer-Encoding: 8bit\n"
+          "To: someone@example.com\n"
+          "Subject: draft with an attachment\n"
+          "\n"
+          "--SEP\n"
+          "Content-Type: text/plain; charset=us-ascii\n"
+          "Content-Transfer-Encoding: 7bit\n"
+          "\n"
+          "Here is the body.\n"
+          "\n"
+          "--SEP\n"
+          "Content-Type: text/plain; name=\"att.txt\"\n"
+          "Content-Disposition: attachment; filename=\"att.txt\"\n"
+          "Content-Transfer-Encoding: 7bit\n"
+          "\n"
+          "attachment payload\n"
+          "\n"
+          "--SEP--\n\n")
+  "A postponed draft carrying an attachment, as `vm-postpone-message' writes it.")
+
+(defun vm-postpone-test-continue (decoded)
+  "Continue the test draft and return the resulting composition as a string.
+DECODED is the value to give `vm-mime-decoded' in the folder buffer.
+There is no presentation buffer, so the body copied is the raw one."
+  (let (result)
+    (vm-test-with-folder vm-postpone-test-draft
+      (setq vm-message-pointer vm-message-list)
+      (setq vm-mime-decoded decoded)
+      (cl-letf (((symbol-function 'vm-session-initialization) #'ignore)
+                ((symbol-function 'vm-follow-summary-cursor) #'ignore)
+                ((symbol-function 'vm-select-folder-buffer-and-validate)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'vm-show-current-message) #'ignore))
+        (vm-continue-postponed-message t)
+        (setq result (buffer-string))))
+    result))
+
+(ert-deftest vm-postpone-test-continue-keeps-content-transfer-encoding ()
+  "Test that Content-Transfer-Encoding survives with the other MIME headers.
+Keeping Content-Type but dropping Content-Transfer-Encoding leaves the
+body declared as the default 7bit when it is not."
+  (let ((composition (vm-postpone-test-continue nil)))
+    (should (string-match "^MIME-Version: 1\\.0$" composition))
+    (should (string-match "boundary=\"SEP\"" composition))
+    (should (string-match "^Content-Transfer-Encoding: 8bit$" composition))))
+
+(ert-deftest vm-postpone-test-continue-raw-body-keeps-mime-headers ()
+  "Test that a raw body is never copied without its MIME headers.
+Regression test for the failure described in issue #141: when the
+headers say nothing about MIME but the body still carries boundary
+lines, sending re-encodes the whole thing and the attachments are lost.
+`vm-mime-decoded' is set here with no presentation buffer, so the body
+inserted is the raw one and the headers must be kept to match."
+  (let ((composition (vm-postpone-test-continue 'decoded)))
+    ;; the raw boundary lines did get copied ...
+    (should (string-match "^--SEP$" composition))
+    ;; ... so the headers describing them must be there too
+    (should (string-match "^MIME-Version: 1\\.0$" composition))
+    (should (string-match "boundary=\"SEP\"" composition))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here
