@@ -4566,7 +4566,8 @@ created."
  
   (let ((successes 0)
 	(failures 0)
-	(result nil))
+	(result nil)
+	(refused-directories nil))
     (vm-mime-operate-on-attachments
      count
      :name "saving"
@@ -4600,11 +4601,13 @@ created."
 		   ;; answering the prompt with RET used to give, since
 		   ;; the directory was offered as the default.  Saving
 		   ;; there would ask to "overwrite" the directory and
-		   ;; then fail in delete-file.
+		   ;; then fail in delete-file.  Collect these and report
+		   ;; them once at the end rather than pausing here for
+		   ;; each one.
 		   (if (and answer (file-directory-p answer))
 		       (progn
-			 (vm-warn 0 2 "%s is a directory, not a file name"
-				  answer)
+			 (setq refused-directories
+			       (cons answer refused-directories))
 			 nil)
 		     answer))))
 
@@ -4631,6 +4634,12 @@ created."
       (let ((vm-preview-lines nil))
 	(vm-present-current-message)))
     
+    (when refused-directories
+      (setq refused-directories (nreverse refused-directories))
+      (vm-warn 0 2 "Not saved, %s a directory rather than a file name: %s"
+	       (if (cdr refused-directories) "these name" "this names")
+	       (mapconcat #'identity refused-directories ", ")))
+
     (if (> failures 0)
 	(if (> successes 0)
 	    (vm-inform 5 "%d attachment%s saved; %s failed" 
