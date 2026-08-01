@@ -70,7 +70,7 @@
 ;;;; How this works:
 
 ;; For every visible header, we get a range of line numbers like
-;; 21–34; from .git/, we get the last modification in this range.
+;; 21-34; from .git/, we get the last modification in this range.
 ;; We put a read-only overlay on the last character of the Org header
 ;; with the date.
 ;; We accurately do "git commit --amend" if the current day is the day
@@ -85,7 +85,7 @@
 ;; 2) Org mode for the buffer.
 
 ;;; TODO:
-
+;; - 1) Support TRUMP.
 ;; - make it work with outline mode.
 ;; - command to add current folder to list, remake org-history-directories
 ;; - create alternative to "git blame" for first (not last)
@@ -201,11 +201,11 @@ Possible symbol values are:
 ;; -=-= functions: VC-git
 
 (defun org-history--vc-reset-cache (&optional file)
-  "Flush all common VC cache properties for `default-derectory' or FILE."
+  "Flush all common VC cache properties for `default-directory' or FILE."
   (if file
       (vc-file-clearprops file)
     ;; else
-    (when-let ((root (vc-root-dir)))
+    (when-let ((root (vc-root-dir))) ; nil is handled properly here
       (dolist (prop '(vc-backend vc-state vc-working-revision vc-name))
         (vc-file-setprop root prop nil)))))
 
@@ -235,7 +235,11 @@ Optional argument BACKEND is Git or may be other."
     (vc-register (list (or backend 'Git) (list file))))
 
   ;; `vc-register' have a bug, rise error if file 'edited and was added before, but not now
-  (vc-call-backend (or backend 'Git) 'register (list file))
+  ;; 'register can cause duplicate registrations or errors depending
+  ;;   on the Emacs version because vc-register already invokes the
+  ;;   backend's register function.
+  (unless (vc-backend file)
+    (vc-call-backend (or backend 'Git) 'register (list file)))
 
   ;; Refresh the state to update vc-state immediately
   (vc-refresh-state))
@@ -471,7 +475,7 @@ Optional arguments PAGE-BEG PAGE-END are position in current buffer."
              default-directory) ; this just in case. in case of nothing to save raise error at attempt to commit if no diff.
     (org-history-debug-print "org-history-hook-for-after-save N2")
     (let ((before-answer org-history-answer-was-given)
-          (git-root (vc-git-root buffer-file-name))
+          (git-root (vc-git-root buffer-file-name)) ; cause problem with TRUMP, we check if TRUMP is active at enabling org-history minor mode
           (is-file-tracked (eq 'Git (vc-backend buffer-file-name)))
           (current-date (format-time-string "%F"))) ; Y-%m-%d
       (let ((default-directory (or git-root default-directory))) ; use git-root
@@ -541,8 +545,8 @@ Optional arguments PAGE-BEG PAGE-END are position in current buffer."
 
             ;; 3. if tracking do commit
             (when (eq org-history-answer-was-given 'track-file)
-              ;; Ensure Git repo is initialized with baseline settings if empty
-              (unless (vc-git--run-command-string nil "log" "-1")
+              ;; Ensure Git repo is initialized PROPERLY with ALL variables, double calling "git init" dont cause trouble
+              (unless (vc-git--run-command-string nil "log" "-1") ; return nil if no commits
                 (let ((inhibit-message t))
                   (dolist (args org-history-git-init-commands)
                     (apply #'vc-git-command nil 0 nil args))))
@@ -567,26 +571,25 @@ Argument ORIG-FUN is `org-cycle' and its ARGS."
     ;; 2. Run the original org-cycle command so the heading actually changes state
     (apply orig-fun args)
 
-    ;; 3. Now perform your post-execution visibility checks safely
-    (org-history-debug-print "org-history--show-dates-at-unfold N1 %s %s %s"
-                             (bound-and-true-p org-history-mode)
-                             (org-at-heading-p)
-                             interactive-call)
-    (when (and
-               interactive-call			; 1. Only run if called interactively
-               (org-at-heading-p)			; 2. Only run if cursor is on a heading
-               (not (save-excursion			; 3. Ensure heading is currently open
-                      (end-of-line)
-                      (org-fold-folded-p nil 'outline))) ; 4. ; Unfolding? 'headline
+    (when (bound-and-true-p org-history-mode)
+      ;; 3. Now perform your post-execution visibility checks safely
+      (org-history-debug-print "org-history--show-dates-at-unfold N1 %s %s"
+                               (org-at-heading-p)
+                               interactive-call)
+      (when (and
+             interactive-call			; 1. Only run if called interactively
+             (org-at-heading-p)			; 2. Only run if cursor is on a heading
+             (not (save-excursion			; 3. Ensure heading is currently open
+                    (end-of-line)
+                    (org-fold-folded-p (point) 'outline))) ; 4. ; Unfolding? 'headline
 
-               (bound-and-true-p org-history-mode)
-               org-history-outline--git-blame-cache)	; 5. Only run if git blame was retrieved (especilly with async call) or without mode active
+             org-history-outline--git-blame-cache)	; 5. Only run if git blame was retrieved (especilly with async call) or without mode active
 
-      (org-history-debug-print "org-history--show-dates-at-unfold N2")
-      (let ((vc-handled-backends '(Git)))
-        (let ((start (line-beginning-position)) ;; (save-excursion (forward-line 1) (point))) ; with root header too.
-              (end (save-excursion (org-end-of-subtree t t) (point))))
-          (org-history-add-dates start end))))))
+        (org-history-debug-print "org-history--show-dates-at-unfold N2")
+        (let ((vc-handled-backends '(Git)))
+          (let ((start (line-beginning-position)) ;; (save-excursion (forward-line 1) (point))) ; with root header too.
+                (end (save-excursion (org-end-of-subtree t t) (point))))
+            (org-history-add-dates start end)))))))
 
 (defun org-history--cycle-hook (state)
   "Triggered by `org-shifttab' from `org-cycle-internal-global' after cycling.
@@ -620,12 +623,14 @@ STATE may be `overview', `contents', or `all'."
 ;; -=-= minor mode
 ;;;###autoload
 (define-minor-mode org-history-mode
-  "Minor mode for `org-mode' to showing date of last modified per outlier."
+  "Minor mode for `org-mode' to showing date of last modified per outline."
   :init-value nil
   ;; :keymap oai-mode-map
-  :group 'org-hnistory
+  :group 'org-history
   (unless (derived-mode-p 'org-mode)
     (user-error "Org-history minor mode failed to activate in buffer %s, not Org mode" (buffer-name (current-buffer))))
+  (when (file-remote-p buffer-file-name)
+    (user-error "Org-history dont support TRUMP for now. File %s is remote" buffer-file-name))
   (if org-history-mode
       (progn
         (org-history-debug-print "org-history-mode")
@@ -639,7 +644,7 @@ STATE may be `overview', `contents', or `all'."
               ;; else
               (setq org-history-answer-was-given 'dont-track-file))))
         (add-hook 'after-save-hook #'org-history-hook-for-after-save nil t)
-        (advice-add 'org-cycle :around #'org-history--show-dates-at-unfold) ; cycle one header
+        (advice-add 'org-cycle :around #'org-history--show-dates-at-unfold) ; cycle one header, set global,  we check org-history mode inside advice.
         (add-hook 'org-cycle-hook #'org-history--cycle-hook nil t) ; global cycling whole buffer
         (let ((orig-buffer (current-buffer))) ; lexical binding
           ;; we need delay, because dir-locals and file-locals run before
