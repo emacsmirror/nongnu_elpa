@@ -113,8 +113,17 @@ other heuristics, such as `vm-last-save-folder'.
 
 `vm-auto-archive-messages' skips such a message for the same reason."
   (let ((folder (vm-auto-select-folder mp auto-folder-alist)))
+    ;; Resolve a relative name the way vm-save-message does, against the
+    ;; folder directory rather than whatever default-directory the folder
+    ;; buffer happens to have, or the comparison misses.
     (unless (and folder
-		 (eq (vm-get-file-buffer folder) (current-buffer)))
+		 (eq (let ((default-directory
+			     (expand-file-name
+			      (or vm-foreign-folder-directory
+				  vm-folder-directory
+				  default-directory))))
+		       (vm-get-file-buffer folder))
+		     (current-buffer)))
       folder)))
 
 ;;;###autoload

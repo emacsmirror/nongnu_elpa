@@ -296,6 +296,25 @@ already skipped that case; the interactive save prompt did not."
                  (lambda (f) (and (equal f "newsletters") this)))))
       (should (null (vm-auto-select-folder-for-save vm-message-pointer))))))
 
+(ert-deftest vm-save-test-auto-select-for-save-relative-name ()
+  "Test that a relative folder name is resolved against the folder directory.
+`vm-save-message' expands the name that way, so comparing it against the
+current folder has to as well, or the match is missed whenever
+`default-directory' is not the folder directory."
+  (vm-save-test-with-auto-folder "newsletters"
+    (let ((vm-folder-directory "/folders/")
+          (vm-foreign-folder-directory nil)
+          (default-directory "/somewhere/else/")
+          (seen nil))
+      (cl-letf (((symbol-function 'vm-get-file-buffer)
+                 (let ((this (current-buffer)))
+                   (lambda (f)
+                     ;; record what the name expanded to
+                     (setq seen (expand-file-name f))
+                     (and (equal seen "/folders/newsletters") this)))))
+        (should (null (vm-auto-select-folder-for-save vm-message-pointer)))
+        (should (equal seen "/folders/newsletters"))))))
+
 (ert-deftest vm-save-test-auto-select-for-save-no-match ()
   "Test that no match still yields nil."
   (vm-save-test-with-auto-folder "newsletters"
