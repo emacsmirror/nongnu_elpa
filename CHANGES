@@ -26,6 +26,10 @@ the Git ChangeLog, the GitHub repo https://github.com/ProofGeneral/PG
     reduce splash screen time to make it less annoying
 
 ** Coq changes
+*** Align _CoqProject/_RocqProject parsing with rocq makefile (fixing
+    #113, #392 and #589). There is no escape character any more, in any
+    argument: write -arg "-w 'a b'" instead of -arg "-w \"a b\"", and
+    -R "C:\dev\lib" Top instead of -R "C:\\dev\\lib" Top.
 *** support Coq 8.19
 **** New option coq-compile-coqdep-warnings to configure the warning
      command line argument (-w) of coqdep. The default of this option
