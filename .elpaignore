@@ -1,6 +1,6 @@
 LICENSE
 .github
-test-*
-tests.sh
+*-test.el
+test.sh
 .dir-locals.el
 .gitignore
