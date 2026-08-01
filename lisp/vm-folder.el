@@ -5249,8 +5249,12 @@ registered as a fetched message, then there is no effect."
   (save-current-buffer
     (set-buffer (vm-buffer-of m))
     (let ((vm-folder-read-only nil))
-      (setq vm-fetched-messages (delq m vm-fetched-messages))
-      (vm-decrement vm-fetched-message-count)
+      ;; Only count down for a message that was actually on the list;
+      ;; otherwise the count drifts below the length of the list and
+      ;; vm-external-fetched-message-limit stops evicting when it should.
+      (when (memq m vm-fetched-messages)
+	(setq vm-fetched-messages (delq m vm-fetched-messages))
+	(vm-decrement vm-fetched-message-count))
       (vm-set-body-to-be-discarded-of m nil))))
 
 (defun vm-discard-fetched-messages ()
