@@ -69,8 +69,18 @@ Here are some screenshots of tabspaces (with my [[https://github.com/Lambda-Emac
 
 ** Installation
 
-You may install this package either from Melpa (=M-x package-install tabspaces
-RET=) or by cloning this repo and adding it to your load-path.
+Tabspaces is available from [[https://elpa.nongnu.org/nongnu/tabspaces.html][NonGNU ELPA]], which is enabled by default in Emacs 28
+and later, so =M-x package-install RET tabspaces RET= works out of the box. It
+is also on [[https://melpa.org/#/tabspaces][MELPA]], or you can clone this repo and add it to your load-path.
+
+If you have both archives enabled, note that package.el prefers MELPA's
+date-stamped snapshot versions (for example =20260801.1200=) over NonGNU ELPA's
+release versions (for example =1.10.0=), so MELPA wins by default. To install
+the reviewed NonGNU ELPA release instead, give it priority:
+
+#+begin_src emacs-lisp
+(setq package-archive-priorities '(("nongnu" . 10)))
+#+end_src
 
 ** Setup
 
