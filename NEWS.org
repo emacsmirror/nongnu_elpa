@@ -1,6 +1,6 @@
 #+title: Elfeed Changelog
 
-* Development
+* Version 4.1.1 (2026-08-01)
 
 - Bugfix: Use =insert-file-contents= to load database instead of
   =find-file-noselect=. This avoids many interaction issues.
