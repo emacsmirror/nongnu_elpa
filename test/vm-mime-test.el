@@ -893,6 +893,87 @@ These are less common message/* subtypes."
         (should (string-match "multipart/mixed"
                               (vm-test-message-header m "Content-Type")))))))
 
+;;; vm-mime-operate-on-attachments tests
+
+(defun vm-mime-test-collect-attachments (layout)
+  "Run `vm-mime-operate-on-attachments' over LAYOUT, returning the types seen.
+LAYOUT stands in for a real message, which the function only ever
+reaches through `vm-mm-layout'."
+  (let ((seen nil)
+        (message 'fake-message))
+    (cl-letf (((symbol-function 'vm-mm-layout)
+               (lambda (_m) layout))
+              ((symbol-function 'vm-retrieve-operable-messages)
+               (lambda (&rest _) nil)))
+      (vm-mime-operate-on-attachments
+       nil
+       :action (lambda (_msg _layout type _file) (push type seen))
+       :messages (list message)))
+    (nreverse seen)))
+
+(ert-deftest vm-mime-test-operate-on-attachments-empty-composite ()
+  "Test a composite part with no sub-parts as the last part.
+Regression test for issue #455: flattening replaced such a part with
+its (empty) sub-part list, emptying PARTS, and the loop then called
+`vm-mm-layout-type' on nil -- \"Wrong type argument: arrayp, nil\"."
+  (with-temp-buffer
+    (insert "Content-Type: multipart/mixed; boundary=OUTER\n"
+            "\n"
+            "--OUTER\n"
+            "Content-Type: multipart/mixed; boundary=NEVER-APPEARS\n"
+            "\n"
+            "the declared boundary is nowhere in this body\n"
+            "--OUTER--\n")
+    (let ((layout (vm-mime-parse-entity nil
+                    :default-type '("text/plain")
+                    :default-encoding "7bit")))
+      ;; precondition: the inner part is composite but has no sub-parts
+      (let ((inner (car (vm-mm-layout-parts layout))))
+        (should (vm-mime-composite-type-p (car (vm-mm-layout-type inner))))
+        (should (null (vm-mm-layout-parts inner))))
+      (should (null (vm-mime-test-collect-attachments layout))))))
+
+(ert-deftest vm-mime-test-operate-on-attachments-delivery-failure ()
+  "Test a Google-style delivery failure report.
+The real-world shape from issue #455: multipart/report whose last part
+is a message/rfc822 wrapping a multipart with an absent boundary."
+  (with-temp-buffer
+    (insert (vm-test-read-fixture "emails" "delivery-failure-report.eml"))
+    (let ((layout (vm-mime-parse-entity nil
+                    :default-type '("text/plain")
+                    :default-encoding "7bit")))
+      (should (equal (car (vm-mm-layout-type layout)) "multipart/report"))
+      (should (= (length (vm-mm-layout-parts layout)) 3))
+      ;; the attachment in the report is still found
+      (should (equal (vm-mime-test-collect-attachments layout)
+                     '("image/png"))))))
+
+(ert-deftest vm-mime-test-operate-on-attachments-nested-still-walked ()
+  "Test that ordinary nested parts are still visited after the fix."
+  (with-temp-buffer
+    (insert "Content-Type: multipart/mixed; boundary=OUTER\n"
+            "\n"
+            "--OUTER\n"
+            "Content-Type: multipart/mixed; boundary=INNER\n"
+            "\n"
+            "--INNER\n"
+            "Content-Type: text/plain\n"
+            "Content-Disposition: attachment; filename=\"a.txt\"\n"
+            "\n"
+            "first\n"
+            "--INNER--\n"
+            "--OUTER\n"
+            "Content-Type: application/pdf\n"
+            "Content-Disposition: attachment; filename=\"b.pdf\"\n"
+            "\n"
+            "second\n"
+            "--OUTER--\n")
+    (let ((layout (vm-mime-parse-entity nil
+                    :default-type '("text/plain")
+                    :default-encoding "7bit")))
+      (should (equal (vm-mime-test-collect-attachments layout)
+                     '("text/plain" "application/pdf"))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
