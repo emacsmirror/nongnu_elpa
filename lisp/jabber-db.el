@@ -139,6 +139,7 @@ Each function receives ACCOUNT, PEER, TYPE, THREAD-ID, and TIMESTAMP.")
   created_at INTEGER NOT NULL,
   read_message_id INTEGER,
   dedicated INTEGER NOT NULL DEFAULT 0,
+  title TEXT,
   PRIMARY KEY (account, peer, type, thread_id))"
     "CREATE VIRTUAL TABLE IF NOT EXISTS message_fts USING fts5(
   body, content='message', content_rowid='id')"
@@ -201,6 +202,7 @@ END"
   account TEXT NOT NULL,
   peer TEXT NOT NULL,
   encryption TEXT DEFAULT 'default',
+  thread_id TEXT,
   PRIMARY KEY (account, peer))"
     "CREATE TABLE IF NOT EXISTS message_oob (
   id         INTEGER PRIMARY KEY,
@@ -291,7 +293,7 @@ WHERE updated_at < (
     (jabber-db--ensure-reaction-actor-table db)
     (jabber-db--backfill-reaction-actors db)))
 
-(defconst jabber-db--schema-version 9
+(defconst jabber-db--schema-version 10
   "Current schema version.
 Bump this when adding migrations.  A database whose version
 exceeds this value is from a newer (or development) build and
@@ -465,6 +467,35 @@ WHERE EXISTS (
        (sqlite-execute db "RELEASE jabber_schema_v9"))
      (signal (car err) (cdr err)))))
 
+(defun jabber-db--migrate-v9-to-v10 (db)
+  "Add local thread state atomically to schema version 9 in DB."
+  (sqlite-execute db "SAVEPOINT jabber_schema_v10")
+  (condition-case err
+      (progn
+        (sqlite-execute db
+                        "ALTER TABLE message_thread ADD COLUMN title TEXT")
+        (sqlite-execute db "\
+CREATE TABLE IF NOT EXISTS chat_settings (
+  account TEXT NOT NULL, peer TEXT NOT NULL,
+  encryption TEXT DEFAULT 'default', thread_id TEXT,
+  PRIMARY KEY (account, peer))")
+        (unless
+            (member "thread_id"
+                    (mapcar #'car
+                            (sqlite-select
+                             db
+                             "SELECT name FROM pragma_table_info('chat_settings')")))
+          (sqlite-execute
+           db "ALTER TABLE chat_settings ADD COLUMN thread_id TEXT"))
+        (sqlite-execute db "PRAGMA user_version=10")
+        (sqlite-execute db "RELEASE jabber_schema_v10"))
+    (error
+     (ignore-errors
+       (sqlite-execute db "ROLLBACK TO jabber_schema_v10"))
+     (ignore-errors
+       (sqlite-execute db "RELEASE jabber_schema_v10"))
+     (signal (car err) (cdr err)))))
+
 (defun jabber-db--migrate (db)
   "Check user_version and apply migrations to DB."
   (let ((version (caar (sqlite-select db "PRAGMA user_version"))))
@@ -499,6 +530,9 @@ WHERE EXISTS (
       (jabber-db--migrate-v8-to-v9 db)
       (setq version 9))
     (when (= version 9)
+      (jabber-db--migrate-v9-to-v10 db)
+      (setq version 10))
+    (when (= version 10)
       (jabber-db--repair-reaction-actors db))))
 
 (defun jabber-db-ensure-open ()
@@ -557,8 +591,8 @@ a stuck open transaction in single-threaded Emacs)."
 ENCRYPTION is a symbol: `omemo', `plaintext', or `default'."
   (when-let* ((db (jabber-db-ensure-open)))
     (sqlite-execute db "\
-INSERT OR REPLACE INTO chat_settings (account, peer, encryption)
-  VALUES (?, ?, ?)"
+INSERT INTO chat_settings (account, peer, encryption) VALUES (?, ?, ?)
+ON CONFLICT(account, peer) DO UPDATE SET encryption = excluded.encryption"
 		    (list account peer (symbol-name encryption)))))
 
 (defun jabber-db-get-chat-encryption (account peer)
@@ -571,6 +605,22 @@ SELECT encryption FROM chat_settings
 					  (list account peer)))))
       (unless (string= val "default")
         (intern val)))))
+
+(defun jabber-db-set-chat-thread (account peer thread-id)
+  "Store the current parent chat THREAD-ID for ACCOUNT and PEER."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (sqlite-execute db "\
+INSERT INTO chat_settings (account, peer, thread_id) VALUES (?, ?, ?)
+ON CONFLICT(account, peer) DO UPDATE SET thread_id = excluded.thread_id"
+                    (list account peer thread-id))))
+
+(defun jabber-db-get-chat-thread (account peer)
+  "Return the current parent chat thread ID for ACCOUNT and PEER."
+  (when-let* ((db (jabber-db-ensure-open)))
+    (caar
+     (sqlite-select db "\
+SELECT thread_id FROM chat_settings WHERE account = ? AND peer = ?"
+                    (list account peer)))))
 
 ;;; Caps cache
 
@@ -870,6 +920,40 @@ and ROOT-MESSAGE-ID describe its identity and root message."
   (jabber-db--register-message-thread
    account peer type thread-id parent-thread-id root-stanza-id
    root-server-id created-at root-message-id t))
+
+(defun jabber-db--normalize-message-thread-title (title)
+  "Return TITLE trimmed onto one line, or nil when it is empty."
+  (when title
+    (let ((trimmed
+           (string-trim
+            (replace-regexp-in-string
+             "[[:space:][:cntrl:]]+" " " title))))
+      (unless (string-empty-p trimmed)
+        trimmed))))
+
+(defun jabber-db-set-message-thread-title
+    (account peer type thread-id title)
+  "Set dedicated THREAD-ID's local TITLE for ACCOUNT, PEER, and TYPE.
+Whitespace around TITLE is removed; an empty title clears it."
+  (let ((title (jabber-db--normalize-message-thread-title title)))
+    (when-let* ((db (jabber-db-ensure-open)))
+      (unless
+          (equal
+           1
+           (caar
+            (sqlite-select
+             db
+             "SELECT dedicated FROM message_thread
+WHERE account = ? AND peer = ? AND type = ? AND thread_id = ?"
+             (list account peer type thread-id))))
+        (user-error "Unknown dedicated message thread"))
+      (sqlite-execute
+       db
+       "UPDATE message_thread SET title = ?
+WHERE account = ? AND peer = ? AND type = ? AND thread_id = ?
+AND dedicated = 1"
+       (list title account peer type thread-id))
+      title)))
 
 (defun jabber-db--message-thread-stored-p
     (db account peer type thread-id)
@@ -1346,7 +1430,7 @@ WHERE message_id IN (%s) ORDER BY message_id, id"
 (defun jabber-db--thread-summary (db account peer type thread-row)
   "Return THREAD-ROW's summary from DB for ACCOUNT, PEER, and TYPE."
   (seq-let (thread-id parent-id root-message-id root-stanza-id root-server-id
-                      read-message-id)
+                      read-message-id title)
       thread-row
     (seq-let (reply-count latest-in-id local-reply-count)
         (car
@@ -1368,6 +1452,7 @@ WHEN ? IS NOT NULL THEN stanza_id = ? ELSE 0 END)"
             :root-message-id root-message-id
             :root-stanza-id root-stanza-id
             :root-server-id root-server-id
+            :title title
             :reply-count reply-count
             :local-reply-count local-reply-count
             :unread (and latest-in-id
@@ -1381,7 +1466,7 @@ WHEN ? IS NOT NULL THEN stanza_id = ? ELSE 0 END)"
                (car (sqlite-select
                      db
                      "SELECT thread_id, parent_thread_id, root_message_id, \
-root_stanza_id, root_server_id, read_message_id, account, peer, type \
+root_stanza_id, root_server_id, read_message_id, title, type \
 FROM message_thread \
 WHERE account = ? AND peer = ? AND type = ? AND thread_id = ? \
 AND dedicated = 1"
@@ -1414,7 +1499,7 @@ WHEN mt.type = 'groupchat' AND mt.root_server_id IS NOT NULL
 THEN m.server_id = mt.root_server_id
 WHEN mt.root_stanza_id IS NOT NULL
 THEN m.stanza_id = mt.root_stanza_id ELSE 0 END) THEN m.id END),
-mt.read_message_id
+mt.read_message_id, mt.title
 FROM message_thread mt
 LEFT JOIN message root ON
 (mt.root_message_id IS NOT NULL AND root.id = mt.root_message_id
@@ -1449,11 +1534,13 @@ LIMIT 50"
   (seq-let (thread-id parent-id created-at latest-at root-id root-stanza-id
                       root-server-id root-resource root-direction root-body
                       root-timestamp root-retracted-by root-retraction-reason
-                      reply-count local-reply-count latest-in-id read-message-id)
+                      reply-count local-reply-count latest-in-id read-message-id
+                      title)
       row
     (list :thread-id thread-id
           :thread-type type
           :thread-parent-id parent-id
+          :title title
           :created-at (seconds-to-time created-at)
           :latest-at (seconds-to-time latest-at)
           :reply-count reply-count
@@ -1573,11 +1660,11 @@ buffer.  SERVER-ID-P selects server IDs."
   (dolist (row (sqlite-select
                 db
                 "SELECT thread_id, parent_thread_id, root_message_id, \
-root_stanza_id, root_server_id, read_message_id, account, peer, type \
+root_stanza_id, root_server_id, read_message_id, title, type \
 FROM message_thread \
 WHERE account = ? AND peer = ? AND dedicated = 1"
                 (list account peer)))
-    (let* ((type (nth 8 row))
+    (let* ((type (nth 7 row))
            (root (seq-find
                   (lambda (msg)
                     (and (equal (plist-get msg :msg-type) type)

@@ -119,6 +119,17 @@ and tears down on exit."
                jabber-db--connection
                "SELECT name FROM pragma_table_info('message_thread')"))))))
 
+(ert-deftest jabber-test-db-thread-schema-has-local-title ()
+  "Fresh databases can store a local title for each thread."
+  (jabber-test-db-with-db
+    (should
+     (member
+      "title"
+      (mapcar #'car
+              (sqlite-select
+               jabber-db--connection
+               "SELECT name FROM pragma_table_info('message_thread')"))))))
+
 ;;; Group 2: Store and retrieve
 
 (ert-deftest jabber-test-db-store-and-query ()
@@ -702,6 +713,16 @@ and tears down on exit."
                             "SELECT name FROM sqlite_master WHERE type='table'"))))
       (should (member "chat_settings" tables)))))
 
+(ert-deftest jabber-test-db-chat-settings-has-thread-id ()
+  "The chat_settings table stores the current parent chat session."
+  (jabber-test-db-with-db
+    (should
+     (member "thread_id"
+             (mapcar #'car
+                     (sqlite-select
+                      jabber-db--connection
+                      "SELECT name FROM pragma_table_info('chat_settings')"))))))
+
 (ert-deftest jabber-test-db-set-and-get-encryption-omemo ()
   "Storing OMEMO encryption and reading it back returns the symbol."
   (jabber-test-db-with-db
@@ -734,6 +755,25 @@ and tears down on exit."
     (jabber-db-set-chat-encryption "me@example.com" "alice@example.com" 'plaintext)
     (should (eq 'plaintext
                 (jabber-db-get-chat-encryption "me@example.com" "alice@example.com")))))
+
+(ert-deftest jabber-test-db-chat-thread-round-trip-preserves-encryption ()
+  "Thread and encryption settings update independently."
+  (jabber-test-db-with-db
+    (jabber-db-set-chat-encryption
+     "me@example.com" "alice@example.com" 'omemo)
+    (jabber-db-set-chat-thread
+     "me@example.com" "alice@example.com" "session-1")
+    (should (equal "session-1"
+                   (jabber-db-get-chat-thread
+                    "me@example.com" "alice@example.com")))
+    (should (eq 'omemo
+                (jabber-db-get-chat-encryption
+                 "me@example.com" "alice@example.com")))
+    (jabber-db-set-chat-encryption
+     "me@example.com" "alice@example.com" 'plaintext)
+    (should (equal "session-1"
+                   (jabber-db-get-chat-thread
+                    "me@example.com" "alice@example.com")))))
 
 (ert-deftest jabber-test-db-chat-settings-account-isolation ()
   "Encryption settings are isolated per account."
@@ -2102,7 +2142,7 @@ CREATE TABLE message_reaction_actor (
   message_id INTEGER NOT NULL, sender TEXT NOT NULL,
   updated_at INTEGER NOT NULL, PRIMARY KEY (message_id, sender))")
           (sqlite-execute db "PRAGMA user_version=8")
-          (jabber-db--migrate db)
+          (jabber-db--migrate-v8-to-v9 db)
           (should (= 9 (caar (sqlite-select db "PRAGMA user_version"))))
           (should
            (equal
@@ -2112,6 +2152,110 @@ CREATE TABLE message_reaction_actor (
              db
              "SELECT thread_id, dedicated FROM message_thread
 ORDER BY thread_id"))))
+      (when (sqlitep db)
+        (sqlite-close db))
+      (when (file-directory-p dir)
+        (delete-directory dir t)))))
+
+(ert-deftest jabber-test-db-migration-v9-to-v10-adds-local-thread-state ()
+  "Migration v9->v10 preserves rows and adds local thread state."
+  (let* ((dir (make-temp-file "jabber-db-v10" t))
+         (path (expand-file-name "test.sqlite" dir))
+         (db (sqlite-open path)))
+    (unwind-protect
+        (progn
+          (sqlite-execute db "\
+CREATE TABLE message_thread (
+  account TEXT NOT NULL, peer TEXT NOT NULL, type TEXT NOT NULL,
+  thread_id TEXT NOT NULL, parent_thread_id TEXT,
+  root_message_id INTEGER, root_stanza_id TEXT, root_server_id TEXT,
+  created_at INTEGER NOT NULL, read_message_id INTEGER,
+  dedicated INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account, peer, type, thread_id))")
+          (sqlite-execute db "\
+INSERT INTO message_thread
+  (account, peer, type, thread_id, created_at, dedicated)
+VALUES ('me@x.com', 'alice@x.com', 'chat', 'thread-1', 1, 1)")
+          (sqlite-execute db "\
+CREATE TABLE chat_settings (
+  account TEXT NOT NULL, peer TEXT NOT NULL,
+  encryption TEXT DEFAULT 'default',
+  PRIMARY KEY (account, peer))")
+          (sqlite-execute db "\
+INSERT INTO chat_settings (account, peer, encryption)
+VALUES ('me@x.com', 'alice@x.com', 'omemo')")
+          (sqlite-execute db "PRAGMA user_version=9")
+          (jabber-db--migrate-v9-to-v10 db)
+          (should (= 10 (caar (sqlite-select db "PRAGMA user_version"))))
+          (should
+           (equal '(("thread-1" nil))
+                  (sqlite-select
+                   db "SELECT thread_id, title FROM message_thread")))
+          (should
+           (equal '(("omemo" nil))
+                  (sqlite-select
+                   db "SELECT encryption, thread_id FROM chat_settings"))))
+      (when (sqlitep db)
+        (sqlite-close db))
+      (when (file-directory-p dir)
+        (delete-directory dir t)))))
+
+(ert-deftest jabber-test-db-migration-v9-to-v10-retries-after-failure ()
+  "Migration v9->v10 rolls back a partial change and can retry."
+  (let* ((dir (make-temp-file "jabber-db-v10-retry" t))
+         (path (expand-file-name "test.sqlite" dir))
+         (db (sqlite-open path)))
+    (unwind-protect
+        (progn
+          (sqlite-execute db "\
+CREATE TABLE message_thread (
+  account TEXT NOT NULL, peer TEXT NOT NULL, type TEXT NOT NULL,
+  thread_id TEXT NOT NULL, parent_thread_id TEXT,
+  root_message_id INTEGER, root_stanza_id TEXT, root_server_id TEXT,
+  created_at INTEGER NOT NULL, read_message_id INTEGER,
+  dedicated INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (account, peer, type, thread_id))")
+          (sqlite-execute db "\
+CREATE TABLE chat_settings (
+  account TEXT NOT NULL, peer TEXT NOT NULL,
+  encryption TEXT DEFAULT 'default',
+  PRIMARY KEY (account, peer))")
+          (sqlite-execute db "PRAGMA user_version=9")
+          (let ((sqlite-execute-real (symbol-function 'sqlite-execute)))
+            (cl-letf (((symbol-function 'sqlite-execute)
+                       (lambda (connection sql &optional values)
+                         (if (equal sql "PRAGMA user_version=10")
+                             (error "Forced migration failure")
+                           (funcall sqlite-execute-real
+                                    connection sql values)))))
+              (should-error (jabber-db--migrate-v9-to-v10 db))))
+          (should (= 9 (caar (sqlite-select db "PRAGMA user_version"))))
+          (should-not
+           (member "title"
+                   (mapcar #'car
+                           (sqlite-select
+                            db
+                            "SELECT name FROM pragma_table_info('message_thread')"))))
+          (should-not
+           (member "thread_id"
+                   (mapcar #'car
+                           (sqlite-select
+                            db
+                            "SELECT name FROM pragma_table_info('chat_settings')"))))
+          (jabber-db--migrate-v9-to-v10 db)
+          (should (= 10 (caar (sqlite-select db "PRAGMA user_version"))))
+          (should
+           (member "title"
+                   (mapcar #'car
+                           (sqlite-select
+                            db
+                            "SELECT name FROM pragma_table_info('message_thread')"))))
+          (should
+           (member "thread_id"
+                   (mapcar #'car
+                           (sqlite-select
+                            db
+                            "SELECT name FROM pragma_table_info('chat_settings')")))))
       (when (sqlitep db)
         (sqlite-close db))
       (when (file-directory-p dir)
@@ -2256,6 +2400,47 @@ ORDER BY thread_id"))))
       (should (equal "thread-54" (plist-get (car threads) :thread-id)))
       (should (equal "thread-05" (plist-get (car (last threads))
                                              :thread-id))))))
+
+(ert-deftest jabber-test-db-thread-title-round-trip ()
+  "Store normalized local titles on dedicated threads only."
+  (jabber-test-db-with-db
+    (jabber-db-register-message-thread
+     "me@x.com" "alice@x.com" "chat" "thread-1" nil nil nil 1)
+    (jabber-db-store-message
+     "me@x.com" "alice@x.com" "in" "chat" "session" 2
+     "phone" "session-1" nil nil nil nil nil
+     '(:thread-id "wire-session"))
+    (jabber-db-set-message-thread-title
+     "me@x.com" "alice@x.com" "chat" "thread-1" "  Roadmap\n\t2026  ")
+    (should-error
+     (jabber-db-set-message-thread-title
+      "me@x.com" "alice@x.com" "chat" "wire-session" "Hidden")
+     :type 'user-error)
+    (should
+     (equal "Roadmap 2026"
+            (plist-get
+             (jabber-db-message-thread-summary
+              "me@x.com" "alice@x.com" "chat" "thread-1")
+             :title)))
+    (should
+     (equal "Roadmap 2026"
+            (plist-get
+             (car (jabber-db-message-threads
+                   "me@x.com" "alice@x.com" "chat"))
+             :title)))
+    (should
+     (equal '((nil))
+            (sqlite-select
+             jabber-db--connection
+             "SELECT title FROM message_thread WHERE thread_id = ?"
+             '("wire-session"))))
+    (jabber-db-set-message-thread-title
+     "me@x.com" "alice@x.com" "chat" "thread-1" "  ")
+    (should-not
+     (plist-get
+      (jabber-db-message-thread-summary
+       "me@x.com" "alice@x.com" "chat" "thread-1")
+      :title))))
 
 (ert-deftest jabber-test-db-thread-backlog-and-summary ()
   "Parent backlog hides replies and exposes reply count and unread state."
