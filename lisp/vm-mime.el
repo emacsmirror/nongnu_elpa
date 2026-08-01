@@ -6074,27 +6074,13 @@ there is no file name for this object.             USR, 2011-03-07"
 		(fb (vm-extent-property e 'vm-mime-forward-local-refs)))
 	   (setcar fb val) ))))
 
-(defun vm-mime-delete-attachment-button ()
-  (cond ((not (featurep 'xemacs))
-         ;; TODO
-         )
-	((featurep 'xemacs)
-	 (let ((e (vm-extent-at (point) 'vm-mime-type)))
-           (delete-region (vm-extent-start-position e)
-                          (vm-extent-end-position e))))))
-
-(defun vm-mime-delete-attachment-button-keep-infos ()
-  (cond ((not (featurep 'xemacs))
-         ;; TODO
-         )
-	((featurep 'xemacs)
-	 (let ((e (vm-extent-at (point) 'vm-mime-type)))
-           (save-excursion
-             (goto-char (1+ (vm-extent-start-position e)))
-             (insert " --- DELETED ")
-             (goto-char (vm-extent-end-position e))
-             (insert " ---")
-             (vm-delete-extent e))))))
+;; vm-mime-delete-attachment-button and
+;; vm-mime-delete-attachment-button-keep-infos were removed along with the
+;; attachment-menu entries that called them: the GNU Emacs arm of each was
+;; an empty placeholder, so on GNU Emacs they did nothing at all.  See #552
+;; for reimplementing them; vm-mime-attachment-tag-bounds gives the region
+;; the XEmacs versions got from the extent.  C-k on the tag deletes an
+;; attachment in the meantime, as the manual says.
 
 (defun vm-mime-set-parameter-in-list (params key value)
   "Return PARAMS with KEY set to VALUE, adding it if it is not there.

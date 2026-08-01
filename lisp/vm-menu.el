@@ -633,12 +633,11 @@ do not allow menubar buttons.")
      (vm-mime-rename-attachment)
      :active vm-send-using-mime
      :style button]
-    ["Delete"
-     (vm-mime-delete-attachment-button)
-     :style button]
-    ["Delete, but keep infos"
-     (vm-mime-delete-attachment-button-keep-infos)
-     :style button]
+    ;; "Delete" and "Delete, but keep infos" used to be here.  Their
+    ;; commands were never implemented for GNU Emacs -- the non-XEmacs
+    ;; arm of each was an empty placeholder -- so the entries silently
+    ;; did nothing, which is worse than not offering them.  See #552;
+    ;; C-k on the tag deletes an attachment in the meantime.
     ))
 
 (defconst vm-menu-image-menu
