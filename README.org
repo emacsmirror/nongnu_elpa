@@ -753,6 +753,13 @@ Use =tabspaces-todo-file-name= to change the name of that file, or =tabspaces-in
 to disable this feature completely.
 
 
+** Development
+
+I develop tabspaces with help from Claude Code, chiefly for bug-hunting,
+code review, and the test suite. I review every change before it lands,
+and AI-assisted commits carry an =Assisted-by= trailer in their commit
+messages.
+
 ** Acknowledgments
 Code for this package is derived from, or inspired by, a variety of sources.
 These include:
