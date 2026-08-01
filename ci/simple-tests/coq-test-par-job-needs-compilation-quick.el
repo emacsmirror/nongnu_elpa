@@ -783,6 +783,11 @@ relative ages.")
 	  (cdr test))))
    coq--par-job-needs-compilation-tests))
 
+(defconst test-coq-par-time-step 1.5
+  "Seconds between the time stamps of two successive groups of test files.
+Fractional to also compare sub-second parts, above 1 to stay ordered on
+file systems with whole-second time stamps.")
+
 (defun test-coq-par-sym-to-file (dir sym)
   "Convert a test file symbol SYM to a file name in directory DIR."
   (let ((file (cond
@@ -807,13 +812,11 @@ test the result and side effects with `assert'."
 	(compilation-result (nth 1 variant))
 	(delete-result (nth 2 variant))
 	(req-obj-result (nth 3 variant))
-	(different-counter 5)
-	(same-counter 5)
-	(different-not-ok t)
-	(same-not-ok t)
-	(last-different-time-stamp '(0 0))
 	(file-descr-flattened (coq-par-test-flatten-files file-descr))
-	same-time-stamp file-list
+	(time-stamp (time-subtract (current-time)
+				   (seconds-to-time
+				    (* test-coq-par-time-step
+				       (length file-descr)))))
 	obj-mod-result result)
     (message "test case %d/576: %s %s just-compiled: %s"
              counter (car variant) file-descr dep-just-compiled)
@@ -828,50 +831,18 @@ test the result and side effects with `assert'."
     (put job 'youngest-coqc-dependency '(0 0))
     (put job 'name id)
     ;; create files in order
-    (while different-not-ok
-      ;; (message "enter different loop %s at %s"
-      ;; 	       different-counter (current-time))
-      (setq different-not-ok nil)
-      (setq different-counter (1- different-counter))
-      (cl-assert (> different-counter 0)
-	      nil "create files with different time stamps failed")
-      (dolist (same-descr file-descr)
-	(when (symbolp same-descr)
-	  (setq same-descr (list same-descr)))
-	(setq file-list
-	      (mapcar (lambda (sym) (test-coq-par-sym-to-file dir sym))
-		      same-descr))
-	;; (message "try %s files %s" same-descr file-list)
-	(setq same-counter 8)
-	(setq same-not-ok t)
-	(while same-not-ok
-	  (setq same-counter (1- same-counter))
-	  (cl-assert (> same-counter 0)
-		  nil "create files with same time stamp failed")
-	  (dolist (file file-list)
-	    (with-temp-file file t))
-	  ;; check now that all the files in file-list have the same time stamp
-	  (setq same-not-ok nil)
-	  (setq same-time-stamp (nth 5 (file-attributes (car file-list))))
-	  ;; (message "got first time stamp %s" same-time-stamp)
-	  (dolist (file (cdr file-list))
-	    (let ((ots (nth 5 (file-attributes file))))
-	      ;; (message "got other time stamp %s" ots)
-	      (unless (equal same-time-stamp ots)
-		(setq same-not-ok t)))))
-	;; (message "successful finished %s" same-descr)
-	(when (member 'dep same-descr)
-	  (put job 'youngest-coqc-dependency
-	       (nth 5 (file-attributes (test-coq-par-sym-to-file dir 'dep)))))
-	;; (message "XX %s < %s = %s"
-	;; 	 last-different-time-stamp same-time-stamp
-	;; 	 (time-less-p last-different-time-stamp same-time-stamp))
-	(unless (time-less-p last-different-time-stamp same-time-stamp)
-	  ;; error - got the same time stamp
-	  ;; (message "unsuccsessful - need different retry")
-	  (setq different-not-ok t))
-	(setq last-different-time-stamp same-time-stamp)
-	(sleep-for 0 15)))
+    (dolist (same-descr file-descr)
+      (when (symbolp same-descr)
+	(setq same-descr (list same-descr)))
+      (dolist (sym same-descr)
+	(let ((file (test-coq-par-sym-to-file dir sym)))
+	  (with-temp-file file t)
+	  (should (set-file-times file time-stamp))))
+      (when (member 'dep same-descr)
+	(put job 'youngest-coqc-dependency
+	     (nth 5 (file-attributes (test-coq-par-sym-to-file dir 'dep)))))
+      (setq time-stamp
+	    (time-add time-stamp (seconds-to-time test-coq-par-time-step))))
     (when dep-just-compiled
       (put job 'youngest-coqc-dependency 'just-compiled))
     (setq result (coq-par-job-needs-compilation-quick job))
