@@ -141,6 +141,32 @@
       (when (buffer-live-p thread)
         (kill-buffer thread)))))
 
+(ert-deftest jabber-test-message-thread-header-renders-receipt-status ()
+  "A chat thread header includes its current receipt status."
+  (let ((parent (generate-new-buffer " *jabber-thread-header-parent*"))
+        thread)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                   (lambda (_jc) "me@example.com"))
+                  ((symbol-function 'jabber-message-thread-find-buffer)
+                   (lambda (&rest _) nil))
+                  ((symbol-function 'jabber-chat-mode-setup) #'ignore)
+                  ((symbol-function 'jabber-buffer-registry-register) #'ignore)
+                  ((symbol-function 'jabber-db-thread-backlog) #'ignore))
+          (setq thread
+                (jabber-message-thread-create-buffer
+                 'fake-jc "alice@example.com" "chat"
+                 "thread-1" nil parent))
+          (with-current-buffer thread
+            (setq-local jabber-chat-receipt-message " seen 10:00")
+            (should (equal " Thread in alice@example.com"
+                           (jabber-message-thread--header)))
+            (should (member '(:eval jabber-chat-receipt-message)
+                            header-line-format))))
+      (kill-buffer parent)
+      (when (buffer-live-p thread)
+        (kill-buffer thread)))))
+
 (ert-deftest jabber-test-message-thread-first-send-links-root ()
   "The first local reply links to the root and later replies do not."
   (with-temp-buffer

@@ -234,6 +234,10 @@ message.
 The functions should return a list of XML nodes they want to be
 added to the outgoing message.")
 
+(defvar jabber-chat-local-message-functions nil
+  "Functions called after a new outgoing message enters its chat buffer.
+Each function receives the message plist while its owning buffer is current.")
+
 (defvar jabber-chat--sending-correction nil
   "Non-nil while send hooks run for an XEP-0308 correction stanza.
 Hooks holding state for the next composed message (e.g. pending
@@ -1117,6 +1121,9 @@ JC is the Jabber connection."
              'jabber-chat-printers msg-plist :local :printp)
         (let ((node (jabber-chat-ewoc-enter (list :local msg-plist))))
           (jabber-maybe-print-rare-time node)
+          (when node
+            (run-hook-with-args
+             'jabber-chat-local-message-functions msg-plist))
           node)))))
 
 (defun jabber-chat-send

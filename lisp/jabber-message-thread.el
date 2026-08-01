@@ -233,7 +233,8 @@ ROOT-MSG supplies the initial XEP-0461 link."
                           #'jabber-muc-send
                         #'jabber-chat-send))
           (setq-local header-line-format
-                      '((:eval (jabber-message-thread--header))))
+                      '((:eval (jabber-message-thread--header))
+                        (:eval jabber-chat-receipt-message)))
           (add-hook 'jabber-chat-send-hooks
                     #'jabber-message-thread--send-hook nil t)
           (setq-local jabber-message-thread--root-reply-id

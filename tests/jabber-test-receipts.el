@@ -394,6 +394,77 @@
     (should (string-match-p "seen" jabber-chat-receipt-message))
     (should-not (string-match-p "delivered" jabber-chat-receipt-message))))
 
+(ert-deftest jabber-test-receipts-header-line-follows-latest-message ()
+  "An older displayed marker does not mark a later message as seen."
+  (with-temp-buffer
+    (let* ((jabber-chat-ewoc (ewoc-create #'ignore))
+           (jabber-chat--msg-nodes (make-hash-table :test #'equal))
+           (jabber-chat-receipt-message "")
+           (older (list :id "older" :status :delivered
+                        :timestamp (encode-time 0 0 10 1 1 2026)))
+           (latest (list :id "latest" :status :sent
+                         :timestamp (encode-time 0 1 10 1 1 2026)))
+           (older-node (jabber-chat-ewoc-enter (list :local older))))
+      (jabber-chat-ewoc-enter (list :local latest))
+      (jabber-receipts--update-buffer-status
+       (current-buffer) "latest" "delivered_at" 1700000000 :delivered)
+      (should (string-match-p "delivered" jabber-chat-receipt-message))
+      (jabber-receipts--update-buffer-status
+       (current-buffer) "older" "displayed_at" 1700000001 :displayed)
+      (should (eq :displayed (plist-get (cadr (ewoc-data older-node)) :status)))
+      (should (string-match-p "delivered" jabber-chat-receipt-message))
+      (should-not (string-match-p "seen" jabber-chat-receipt-message)))))
+
+(ert-deftest jabber-test-receipts-local-message-clears-stale-header ()
+  "A new outgoing message clears the previous message's receipt status."
+  (with-temp-buffer
+    (setq-local jabber-chat-receipt-message " seen 10:00")
+    (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+    (setq-local jabber-chat--msg-nodes (make-hash-table :test #'equal))
+    (let ((jabber-chat-printers (list (lambda (&rest _) t)))
+          (jabber-chat-local-message-functions
+           '(jabber-receipts--local-message-inserted)))
+      (cl-letf (((symbol-function 'jabber-chat--local-message-buffer)
+                 (lambda (&rest _) (current-buffer))))
+        (jabber-chat--display-local-message
+         'fake-jc
+         (list :id "new-id" :body "new" :status :sent
+               :timestamp (current-time)))))
+    (should (equal "" jabber-chat-receipt-message))))
+
+(ert-deftest jabber-test-receipts-thread-send-clears-only-thread-header ()
+  "A thread reply clears stale status only in its owning thread buffer."
+  (let ((parent (generate-new-buffer " *jabber-receipts-parent*"))
+        (thread (generate-new-buffer " *jabber-receipts-thread*")))
+    (unwind-protect
+        (progn
+          (dolist (buffer (list parent thread))
+            (with-current-buffer buffer
+              (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+              (setq-local jabber-chat--msg-nodes
+                          (make-hash-table :test #'equal))))
+          (with-current-buffer parent
+            (setq-local jabber-chat-receipt-message " seen parent")
+            (let ((jabber-chat-printers (list (lambda (&rest _) t)))
+                  (jabber-chat-local-message-functions
+                   '(jabber-receipts--local-message-inserted)))
+              (cl-letf (((symbol-function 'jabber-chat--local-message-buffer)
+                         (lambda (&rest _) thread)))
+                (with-current-buffer thread
+                  (setq-local jabber-chat-receipt-message " seen thread"))
+                (jabber-chat--display-local-message
+                 'fake-jc
+                 (list :id "reply-id" :body "reply" :status :sent
+                       :timestamp (current-time))))))
+          (should (equal " seen parent"
+                         (buffer-local-value
+                          'jabber-chat-receipt-message parent)))
+          (should (equal ""
+                         (buffer-local-value
+                          'jabber-chat-receipt-message thread))))
+      (kill-buffer parent)
+      (kill-buffer thread))))
+
 ;;; Group 5: EWOC cascade
 
 (ert-deftest jabber-test-receipts-ewoc-cascade-promotes-delivered ()

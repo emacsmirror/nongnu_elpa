@@ -1471,6 +1471,9 @@ Persists to DB immediately.  Return the owning buffer and ewoc node."
                             buffer))))
           (with-current-buffer target
             (when-let* ((node (jabber-omemo--enter-pending msg)))
+              (run-hook-with-args
+               'jabber-chat-local-message-functions
+               (cadr (ewoc-data node)))
               (list :buffer target :node node))))))))
 
 (defun jabber-omemo--send-failed (buffer node body reason &optional node-buffer)

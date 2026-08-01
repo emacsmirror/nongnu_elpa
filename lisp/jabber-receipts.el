@@ -246,6 +246,13 @@ overwrite an earlier `<displayed/>' from another resource."
     (< (or (plist-get order current) -1)
        (or (plist-get order new) -1))))
 
+(defun jabber-receipts--latest-local-node ()
+  "Return the most recent outgoing message node in the current buffer."
+  (let ((node (and jabber-chat-ewoc (ewoc-nth jabber-chat-ewoc -1))))
+    (while (and node (not (eq (car (ewoc-data node)) :local)))
+      (setq node (ewoc-prev jabber-chat-ewoc node)))
+    node))
+
 (defun jabber-receipts--update-buffer-status
     (buffer ref-id column timestamp status)
   "Update REF-ID's visible status in BUFFER.
@@ -269,7 +276,8 @@ pair (ACCEPTED . CASCADE-EPOCH)."
                         current-status status)))
           (plist-put msg :status status)
           (jabber-chat-ewoc-invalidate node)
-          (jabber-receipts--update-header-line column timestamp)
+          (when (eq node (jabber-receipts--latest-local-node))
+            (jabber-receipts--update-header-line column timestamp))
           (when displayed-p
             (when msg-epoch
               (setq jabber-receipts--latest-displayed-ts msg-epoch))
@@ -339,6 +347,18 @@ Does not downgrade from \"seen\" to \"delivered\"."
       (setq jabber-chat-receipt-message
             (propertize (format " %s %s" label time-str) 'face face))
       (force-mode-line-update))))
+
+(defun jabber-receipts--clear-header-line ()
+  "Clear receipt status when sending a new outgoing message."
+  (setq jabber-chat-receipt-message "")
+  (force-mode-line-update))
+
+(defun jabber-receipts--local-message-inserted (_msg)
+  "Clear the old receipt status when a new outgoing message is inserted."
+  (jabber-receipts--clear-header-line))
+
+(add-hook 'jabber-chat-local-message-functions
+          #'jabber-receipts--local-message-inserted)
 
 (jabber-chain-add 'jabber-message-chain #'jabber-receipts--handle-message 50)
 

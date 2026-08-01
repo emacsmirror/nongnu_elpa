@@ -10,6 +10,7 @@
 (require 'jabber-chat)
 (require 'jabber-message-reply)
 (require 'jabber-omemo)
+(require 'jabber-receipts)
 
 (defvar jabber-group nil)
 (defvar jabber-muc-participants nil)
@@ -967,6 +968,55 @@ buffer-local `jabber-group'."
          (jabber-omemo--display-pending
           (current-buffer) "reply" "reply-1"))))
     (should (ewoc-nth jabber-chat-ewoc -1))))
+
+(ert-deftest jabber-test-omemo-message-pending-clears-receipt-header ()
+  "A pending OMEMO message immediately owns the receipt header."
+  (with-temp-buffer
+    (setq-local jabber-buffer-connection 'fake-jc)
+    (setq-local jabber-chatting-with "friend@example.com")
+    (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+    (setq-local jabber-chat--msg-nodes (make-hash-table :test #'equal))
+    (setq-local jabber-chat-receipt-message " seen 10:00")
+    (let ((jabber-chat-printers (list (lambda (&rest _) t)))
+          (jabber-omemo--pending-send-operations
+           (make-hash-table :test #'eq))
+          continuation)
+      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_) "me@example.com"))
+                ((symbol-function 'jabber-db--outgoing-handler) #'ignore)
+                ((symbol-function 'jabber-omemo--ensure-sessions)
+                 (lambda (_jc _jid callback)
+                   (setq continuation callback))))
+        (jabber-omemo--send-chat 'fake-jc "hello")
+        (let ((node (ewoc-nth jabber-chat-ewoc -1)))
+          (should (eq :sending
+                      (plist-get (cadr (ewoc-data node)) :status)))
+          (should (equal "" jabber-chat-receipt-message))
+          (funcall continuation nil)
+          (should (eq :undelivered
+                      (plist-get (cadr (ewoc-data node)) :status)))
+          (should (equal "" jabber-chat-receipt-message)))))))
+
+(ert-deftest jabber-test-omemo-message-reused-pending-clears-receipt-header ()
+  "Reusing a pending OMEMO node still clears its stale receipt header."
+  (with-temp-buffer
+    (setq-local jabber-chat-ewoc (ewoc-create #'ignore))
+    (setq-local jabber-chat--msg-nodes (make-hash-table :test #'equal))
+    (setq-local jabber-chat-receipt-message " seen 10:00")
+    (setq-local header-line-format '((:eval jabber-chat-receipt-message)))
+    (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+      (cl-letf (((symbol-function 'jabber-db--outgoing-handler) #'ignore))
+        (let* ((existing
+                (jabber-chat-ewoc-enter
+                 (list :local
+                       (list :id "pending-1" :body "old"
+                             :status :sent :timestamp (current-time)))))
+               (pending
+                (jabber-omemo--display-pending
+                 (current-buffer) "retry" "pending-1")))
+          (should (eq existing (plist-get pending :node)))
+          (should (equal "" jabber-chat-receipt-message))
+          (should (equal "" (format-mode-line header-line-format))))))))
 
 (defun jabber-test-omemo-message--thread-send-result (source-kind outcome)
   "Run an OMEMO thread send from SOURCE-KIND through OUTCOME."
