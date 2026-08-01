@@ -66,6 +66,17 @@ with \"Missing separator\"."
               " second@example.org\n")
     (should-error (vm-mail-check-recipients) :type 'error)))
 
+(ert-deftest vm-rfaddons-test-check-recipients-percent-in-address ()
+  "Test that a \"%\" in an address does not break the error message.
+The message has the address interpolated into it and was passed to
+`error' as the format string, so \"%\" -- legal in a local part, and
+used by percent-hack routing -- gave \"Not enough arguments for format
+string\" instead of the missing-separator complaint."
+  (vm-rfaddons-test-with-headers
+      "To: a%s@example.com b%d@example.org\n"
+    (let ((err (should-error (vm-mail-check-recipients) :type 'error)))
+      (should (string-match "Missing separator" (cadr err))))))
+
 (ert-deftest vm-rfaddons-test-check-recipients-strip ()
   "Test the helper that removes the parts allowed to contain \"@\"."
   (should (equal (vm-mail-check-recipients-strip
