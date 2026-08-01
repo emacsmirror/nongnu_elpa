@@ -255,12 +255,6 @@ stale local reference and never touched `buried-buffer-list'."
     ;; nil subst returns state unchanged.
     (should (eq (tabspaces--rewrite-window-state state nil) state))))
 
-(ert-deftest tabspaces-test-report-dupes ()
-  "Duplicate detection returns each duplicated element once."
-  (should (equal (tabspaces--report-dupes '("a" "b" "a" "c" "a" "b"))
-                 '("b" "a")))
-  (should-not (tabspaces--report-dupes '("a" "b" "c"))))
-
 ;;;; Rename sync
 
 (ert-deftest tabspaces-test-sync-tab-rename ()
