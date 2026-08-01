@@ -18,6 +18,20 @@
                               :server (nth 1 parts)))
     jc))
 
+(defmacro jabber-test-chat--with-db (&rest body)
+  "Run BODY with a fresh temporary Jabber database."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (make-temp-file "jabber-chat-test" t))
+          (jabber-db-path (expand-file-name "test.sqlite" dir))
+          (jabber-db--connection nil))
+     (unwind-protect
+         (progn
+           (jabber-db-ensure-open)
+           ,@body)
+       (jabber-db-close)
+       (when (file-directory-p dir)
+         (delete-directory dir t)))))
+
 ;; jabber-chat uses this constant from jabber-muc, which has too many
 ;; dependencies to load in isolation.  Define it here for tests.
 (defvar jabber-muc-xmlns-user "http://jabber.org/protocol/muc#user")
@@ -1426,6 +1440,79 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
            (equal '("me@example.com" "emma@example.com" "session-2")
                   stored)))
       (kill-buffer buffer))))
+
+(ert-deftest jabber-test-chat-child-thread-preserves-parent-session ()
+  "A live child thread cannot become the ordinary parent chat session."
+  (jabber-test-chat--with-db
+    (let* ((jc (jabber-test-chat--make-fake-jc "me@example.com"))
+           (buffer (generate-new-buffer " *jabber-test-child-session*"))
+           displayed)
+      (unwind-protect
+          (progn
+            (with-current-buffer buffer
+              (setq-local major-mode 'jabber-chat-mode)
+              (setq-local jabber-buffer-connection jc)
+              (setq-local jabber-chatting-with "friend@example.com/phone")
+              (setq-local jabber-message-thread-session-id "session-S"))
+            (jabber-db-set-chat-thread
+             "me@example.com" "friend@example.com" "session-S")
+            (cl-letf (((symbol-function 'jabber-chat--decrypt-if-needed)
+                       (lambda (_jc stanza) stanza))
+                      ((symbol-function 'jabber-chat--select-buffer)
+                       (lambda (&rest _) buffer))
+                      ((symbol-function 'jabber-chat--display-message)
+                       (lambda (_jc _xml target &rest _)
+                         (push target displayed))))
+              (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+                (jabber-process-chat
+                 jc
+                 '(message ((from . "friend@example.com/phone")
+                            (to . "me@example.com") (type . "chat")
+                            (id . "child-1"))
+                           (body () "child root")
+                           (thread ((parent . "session-S")) "thread-T"))))
+              (should
+               (equal "session-S"
+                      (buffer-local-value
+                       'jabber-message-thread-session-id buffer)))
+              (should
+               (equal "session-S"
+                      (jabber-db-get-chat-thread
+                       "me@example.com" "friend@example.com")))
+              (let ((jabber-db-message-thread-stored-functions nil))
+                (jabber-db-store-message
+                 "me@example.com" "friend@example.com" "in" "chat"
+                 "child root" 1 "phone" "child-1" nil nil nil nil nil
+                 '(:thread-id "thread-T" :thread-parent-id "session-S")))
+              (should
+               (jabber-db-message-thread-known-p
+                "me@example.com" "friend@example.com" "chat" "thread-T"))
+              (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+                (jabber-process-chat
+                 jc
+                 '(message ((from . "friend@example.com/phone")
+                            (to . "me@example.com") (type . "chat")
+                            (id . "child-2"))
+                           (body () "later child")
+                           (thread ((parent . "session-S")) "thread-T"))))
+              (should
+               (equal "session-S"
+                      (buffer-local-value
+                       'jabber-message-thread-session-id buffer)))
+              (with-current-buffer buffer
+                (let ((context
+                       (jabber-chat--capture-send-context "parent send" nil)))
+                  (should
+                   (equal '(:thread-id "session-S" :thread-parent-id nil)
+                          (jabber-message-thread-protocol-fields
+                           `(message ()
+                                     ,@(plist-get context :extra-elements)))))
+                  (should
+                   (eq buffer
+                       (jabber-chat--local-message-buffer
+                        jc '(:thread-id "session-S" :id "local-1"))))))
+              (should (equal (list nil buffer) displayed))))
+        (kill-buffer buffer)))))
 
 (ert-deftest jabber-test-chat-live-unthreaded-message-starts-session ()
   "A live unthreaded parent message starts a local logical session."

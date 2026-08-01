@@ -333,6 +333,7 @@ JC, when non-nil, identifies the account connection."
 JC identifies the receiving account.  XML-DATA and FROM distinguish
 live direct messages from archive traffic."
   (when (and (jabber-chat--buffer-account-p chat-buffer jc)
+             (not (plist-get msg-plist :thread-parent-id))
              (not (plist-get msg-plist :delayed))
              (not (jabber-xml-get-attribute xml-data 'jabber-mam--origin))
              (not (jabber-muc-sender-p from)))
