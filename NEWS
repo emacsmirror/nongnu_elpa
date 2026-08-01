@@ -49,6 +49,11 @@ VM 8.?.?
         holding it does not remove it from the folder.
       - vm-sync-labels makes the list agree with the messages both ways.
     None of them changes a message, and all can be undone with vm-undo.
+
+  * Add vm-mime-rename-attachment, to send an attachment under a name other
+    than the one the file has on disk.  Put point on the attachment tag in
+    the composition and run the command, or pick "Rename..." from the
+    attachment menu on mouse-3.  The file itself is not touched.
   * Handle ImageMagick V7 deprecation of convert command in favor of sub-commands.
   * The default value of `vm-drop-buffer-name-chars' has changed from a
     US-ASCII whitelist to "[[:cntrl:]/]".  Composition buffers are named
