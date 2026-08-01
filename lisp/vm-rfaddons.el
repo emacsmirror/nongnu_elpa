@@ -1174,8 +1174,12 @@ headers. (Rob F)"
                     (car header-list) address)
                    "[\n\t ]+" " ")))))
       (setq header-list (cdr header-list)))
+    ;; "%s" matters: the message has an address interpolated into it, and
+    ;; "%" is legal in a local part -- percent-hack routing uses it -- so
+    ;; passing it as the format string fails with "Not enough arguments
+    ;; for format string" instead of saying what is wrong.
     (if errors
-        (error errors))))
+        (error "%s" errors))))
 
 
 (defcustom vm-mail-prompt-if-subject-empty t
