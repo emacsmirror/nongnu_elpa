@@ -1125,6 +1125,29 @@ See the advice in `vm-rfaddons-infect-vm'. (Rob F)"
  
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
+(defun vm-mail-check-recipients-strip (address)
+  "Remove from ADDRESS the parts that may legitimately contain an \"@\".
+That is MIME encoded words and quoted strings, both of which occur in
+display names.  What is left should hold exactly one address.
+
+`vm-parse-addresses' decodes encoded words, marking what it decoded with
+the `vm-string' text property, so those are removed by property; a word
+still in its encoded form is removed by matching."
+  (let ((start 0)
+	(len (length address))
+	(pieces nil))
+    ;; drop the decoded encoded words
+    (while (< start len)
+      (let ((end (or (next-single-property-change start 'vm-string address)
+		     len)))
+	(unless (get-text-property start 'vm-string address)
+	  (push (substring-no-properties address start end) pieces))
+	(setq start end)))
+    (vm-replace-in-string
+     (vm-replace-in-string (apply #'concat (nreverse pieces))
+			   vm-mime-encoded-word-regexp "")
+     "\"[^\"]*\"" "")))
+
 (defun vm-mail-check-recipients ()
   "Check if the recipients are specified correctly.
 Actually it checks only if there are any missing commas or the like in the
@@ -1136,12 +1159,20 @@ headers. (Rob F)"
         (errors nil))
     (while header-list
       (setq contents (vm-mail-mode-get-header-contents (car header-list)))
-      (if (and contents (string-match "@[^,\"]*@" contents))
-          (setq errors (vm-replace-in-string
-                        (format "vm-mail-check-recipients: Missing separator in %s \"%s\"!  "
-                                (car header-list)
-                                (match-string 0 contents))
-                        "[\n\t ]+" " ")))
+      ;; Split into addresses first, respecting quoting and comments, and
+      ;; look for a second "@" within one of them.  Testing the whole
+      ;; header at once cannot tell a missing comma from a display name
+      ;; that contains an "@" -- an encoded word holding an address, say,
+      ;; which is legal and which Exchange and Outlook both produce.
+      (dolist (address (vm-parse-addresses contents))
+        (let ((bare (vm-mail-check-recipients-strip address)))
+          (when (string-match "@[^,]*@" bare)
+            (setq errors
+                  (vm-replace-in-string
+                   (format
+                    "vm-mail-check-recipients: Missing separator in %s \"%s\"!  "
+                    (car header-list) address)
+                   "[\n\t ]+" " ")))))
       (setq header-list (cdr header-list)))
     (if errors
         (error errors))))
