@@ -23,8 +23,7 @@ While other great packages exist for managing workspaces, such as [[https://gith
 than most alternatives, and works entirely based on the built-in (to emacs 27+)
 tab-bar and project packages. If you like simple, this may be the workspace
 package for you. That said, one of the others may better fit your needs.
-[[https://github.com/karthink/project-x][project-x]] is a complement rather than an alternative: it extends project.el
-itself, and pairs well with tabspaces.
+[[https://github.com/vmargb/project-x][project-x]] extends project.el itself and pairs well with tabspaces.
 
 ** Basic Usage
 
