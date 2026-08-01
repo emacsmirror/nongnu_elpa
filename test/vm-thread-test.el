@@ -518,6 +518,17 @@ Standalone message, not part of thread.
     ;; vm-th-root of child should return root's message
     (should (eq (vm-th-root child) root-msg))))
 
+;;; nil-message robustness
+
+(ert-deftest vm-thread-test-build-thread-list-nil-message ()
+  "Test that `vm-build-thread-list' tolerates a nil message.
+Issue #463 reported \"Wrong type argument: arrayp, nil\" from
+`vm-so-sortable-subject' under `vm-build-thread-list' when an IMAP
+retrieval failed partway.  The null guard that fixes it landed in
+2011; this pins it so the crash cannot come back."
+  (let ((vm-thread-debug nil))
+    (should (null (vm-build-thread-list nil)))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here
