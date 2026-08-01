@@ -1,10 +1,10 @@
 ;;; tabspaces.el --- Leverage tab-bar and project for buffer-isolated workspaces  -*- lexical-binding: t -*-
 
-;; Copyright (C) 2022 Colin McLear
+;; Copyright (C) 2022-2026 Colin McLear
 
 ;; Author: Colin McLear <mclear@fastmail.com>
 ;; Maintainer: Colin McLear
-;; Version: 1.9.0
+;; Version: 1.10.0
 ;; Package-Requires: ((emacs "27.1") (project "0.8.1"))
 ;; Keywords: convenience, frames
 ;; Homepage: https://codeberg.org/mclear-tools/tabspaces
