@@ -1914,12 +1914,32 @@ to the next undeleted message after marking the current message as read.
 @findex vm-toggle-flag-message
 @kindex !
 As you read messages, you might want to flag important messages so
-that you can come back to them later.  You can do so by typing
-@code{!} (@code{vm-toggle-flag-message}).  You can also turn off the
-flag on a flagged message by typing @code{!} again.  In the Summary
-display, the flagged messages are highlighted using the
+that you can come back to them later.  You can do so with
+@code{M-x vm-toggle-flag-message}.  Running it again on a flagged
+message turns the flag off.  In the Summary display, the flagged
+messages are highlighted using the
 @code{vm-summary-high-priority-face}.  (@xref{predefined summary
 faces}.)
+
+@findex vm-current-key-bindings
+@findex vm-legacy-key-bindings
+@cindex optional key bindings
+This command has an @emph{optional} key binding, @kbd{!}, which is not
+installed by default; typing @kbd{!} without it reports that the key
+has an optional binding.  A handful of inessential bindings (@kbd{a},
+@kbd{b}, @kbd{e}, @kbd{i}, @kbd{w}, @kbd{L}, @kbd{M-l}, @kbd{!},
+@kbd{<}, @kbd{>}, @kbd{*}, @kbd{%}) were removed from the standard key
+map in version 8.2.0 because they differ from version to version.  To
+install the current set, add
+
+@example
+(vm-current-key-bindings)
+@end example
+
+@noindent
+to your @code{vm-preferences-file} (@pxref{Starting Up}), or
+@code{(vm-legacy-key-bindings)} for the version 7.19 set.  You can of
+course bind the keys to operations of your own choosing instead.
 
 
 @cindex longlines.el
@@ -3690,6 +3710,31 @@ folder from which you start composing the new message (which is called
 the ``parent folder'' for you composition).  If the parent folder is
 not an @acronym{IMAP} folder or if there is no parent folder, then the message
 copy will be saved in a folder on @code{vm-imap-default-account}.
+
+@vindex mail-default-headers
+@cindex default headers
+Adding the header by hand to every message is tedious.  To have it
+added to all your compositions automatically, set Emacs's
+@code{mail-default-headers}, whose contents VM inserts into the header
+section of each new composition:
+
+@lisp
+(setq mail-default-headers "FCC: ~/Mail/sent\n")
+@end lisp
+
+@noindent
+or, for an @acronym{IMAP} account:
+
+@lisp
+(setq mail-default-headers "IMAP-FCC: Sent\n")
+@end lisp
+
+@noindent
+Note the trailing newline; the value is inserted verbatim.  With
+Gmail, the sent folder is named @samp{[Gmail]/Sent Mail}, but Gmail
+also files a copy of everything you send through its @acronym{SMTP}
+server, so an @samp{@acronym{IMAP}-FCC:} header is only needed if you
+send by some other route.
 
 @vindex vm-do-fcc-before-mime-encode
 The variable @code{vm-do-fcc-before-mime-encode} allows you save the fcc
@@ -7436,6 +7481,34 @@ mbox's from the old System V format can be handled.)  In a
 @code{From_with-Content-Length} type mbox, the @code{From} separator
 line stores the length of the message.  So, no trailing separator line
 is required.
+
+@cindex From-stuffing
+@cindex From_ line in message body
+@inindex From-stuffing
+Since the separator line is just text, a body line that itself begins
+with @samp{From } is ambiguous.  Many Unix tools resolve this by
+@dfn{From-stuffing}: rewriting such a body line as @samp{>From } when
+writing the folder, and undoing it when reading.  @strong{VM does not
+From-stuff.}  It relies instead on a narrow separator pattern: for
+@code{From_} and @code{BellFrom_} folders a line only starts a message
+if it matches @code{"^From .*[0-9]$"}, that is, it must also end in a
+digit, as the timestamp of a real separator line does.  An ordinary
+body line beginning with @samp{From } therefore does not usually end a
+message.  This is a heuristic, not a guarantee; a body line such as
+@samp{From then on we had 3} would be misread.  For
+@code{From_with-Content-Length} folders the question does not arise,
+since the body length is taken from the @samp{Content-Length:} header
+rather than by scanning.
+
+VM does understand From-stuffing done by others: @samp{>From } lines
+are skipped wherever they appear in a message's header section, which
+is where some delivery agents insert them.
+
+One place uses the looser test: @code{vm-count-messages-in-file}, which
+runs @code{grep -c "^From "} to report a folder's message count without
+visiting it.  A body line beginning with @samp{From } inflates that
+count, which affects only the reported total, not how the folder is
+parsed.
 
 @cindex @acronym{MMDF} format
 @cindex Babyl format
