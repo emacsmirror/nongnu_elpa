@@ -4662,10 +4662,15 @@ May throw exceptions."
 	  (vm-buffer-type:exit)
 	  ;;-------------------
 	  ))
-      (when (and (null maildrop)  vm-imap-default-account)
-	(setq maildrop(vm-imap-spec-for-account vm-imap-default-account))
+      (when (null maildrop)
+	;; No parent IMAP folder to inherit the account from, so fall
+	;; back on the default account.
+	(when (null vm-imap-default-account)
+	  (error "Set `vm-imap-default-account' to use IMAP-FCC"))
+	(setq maildrop (vm-imap-spec-for-account vm-imap-default-account))
 	(when (null maildrop)
-	  (error "Set `vm-imap-default-account' to use IMAP-FCC")))
+	  (error "No IMAP account named \"%s\" in `vm-imap-account-alist'"
+		 vm-imap-default-account)))
       (setq process (vm-imap-make-session maildrop t :purpose "IMAP-FCC"))
       (if (null process)
 	  (error "Could not connect to the IMAP server for IMAP-FCC"))
