@@ -949,6 +949,54 @@ directory and `delete-file\' failed with \"is a directory\"."
             (should (null (directory-files dir nil "\\`[^.]")))))
       (delete-directory dir t))))
 
+(ert-deftest vm-mime-test-save-all-attachments-warns-once ()
+  "Test that several refused parts produce a single warning.
+`vm-warn' pauses, so warning per part made refusing a message with
+several unnamed parts a sequence of two-second waits."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-att" t)))
+        (warnings 0))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "Content-Type: multipart/mixed; boundary=B\n"
+                  "\n"
+                  "--B\n"
+                  "Content-Type: application/octet-stream\n"
+                  "Content-Disposition: attachment\n"
+                  "\n"
+                  "one\n"
+                  "--B\n"
+                  "Content-Type: application/octet-stream\n"
+                  "Content-Disposition: attachment\n"
+                  "\n"
+                  "two\n"
+                  "--B\n"
+                  "Content-Type: application/octet-stream\n"
+                  "Content-Disposition: attachment\n"
+                  "\n"
+                  "three\n"
+                  "--B--\n")
+          (let ((layout (vm-mime-test-parse-here)))
+            (should (= (length (vm-mm-layout-parts layout)) 3))
+            (cl-letf (((symbol-function 'vm-mm-layout) (lambda (_m) layout))
+                      ((symbol-function 'vm-retrieve-operable-messages)
+                       (lambda (&rest _) nil))
+                      ((symbol-function 'vm-check-for-killed-folder) #'ignore)
+                      ((symbol-function 'vm-check-for-killed-summary) #'ignore)
+                      ((symbol-function 'vm-select-folder-buffer-and-validate)
+                       (lambda (&rest _) nil))
+                      ((symbol-function 'vm-select-operable-messages)
+                       (lambda (&rest _) (list 'fake-message)))
+                      ((symbol-function 'vm-interactive-p) (lambda () nil))
+                      ((symbol-function 'vm-read-file-name)
+                       (lambda (&rest _) dir))
+                      ((symbol-function 'vm-warn)
+                       (lambda (&rest _) (setq warnings (1+ warnings)))))
+              (vm-save-all-attachments nil dir))
+            ;; three parts refused, one warning
+            (should (= warnings 1))
+            (should (null (directory-files dir nil "\\`[^.]")))))
+      (delete-directory dir t))))
+
 (ert-deftest vm-mime-test-save-all-attachments-content-type-name ()
   "Test that a Content-Type name is offered when Content-Disposition has none.
 Such a part used to be prompted for with the bare directory as its
