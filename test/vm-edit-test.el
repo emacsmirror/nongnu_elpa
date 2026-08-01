@@ -116,6 +116,71 @@ Body
             (should (null (vm-edit-buffer-of msg))))
         (kill-buffer edit-buf)))))
 
+;;; editing an external (headers-only) message
+
+(defvar vm-edit-test-folder
+  (concat "From sender@example.com Sat Aug  1 12:00:00 2026\n"
+          "From: sender@example.com\n"
+          "To: me@example.com\n"
+          "Subject: an external message\n"
+          "\n"
+          "the body as fetched from the server\n"
+          "\n")
+  "A one-message folder, used as an IMAP message held in external mode.")
+
+(defun vm-edit-test-make-external (m)
+  "Register M as a fetched IMAP message, as `vm-register-fetched-message' does.
+Its body is present but marked for discarding once the fetched-message
+limit evicts it, or when the folder discards fetched bodies wholesale."
+  (vm-set-message-access-method-of m 'imap)
+  (vm-set-body-to-be-retrieved-flag m nil t)
+  (setq vm-fetched-messages (list m)
+        vm-fetched-message-count 1)
+  (vm-set-body-to-be-discarded-of m t))
+
+(ert-deftest vm-edit-test-end-keeps-edited-external-body ()
+  "Test that editing an external message stops its body being discarded.
+Regression test for issue #376.  An external message keeps a
+body-to-be-discarded flag; after an edit the edited text exists only in
+the folder, so discarding it throws the edit away and the server's copy
+comes back in its place."
+  (vm-test-with-folder vm-edit-test-folder
+    (let* ((m (car vm-message-list))
+           (vm-enable-external-messages '(imap))
+           (edit-buf (generate-new-buffer " *vm-edit-test*")))
+      (unwind-protect
+          (progn
+            (vm-edit-test-make-external m)
+            (should (vm-body-to-be-discarded-of m))
+            ;; stand in for the user's edit session
+            (setq vm-message-pointer vm-message-list)
+            (with-current-buffer edit-buf
+              (insert-buffer-substring
+               (vm-buffer-of m) (vm-headers-of m) (vm-text-end-of m))
+              (goto-char (point-min))
+              (should (search-forward "as fetched from the server" nil t))
+              (replace-match "as edited by hand")
+              (setq vm-message-pointer (list m)
+                    vm-mail-buffer (vm-buffer-of m))
+              (set-buffer-modified-p t)
+              (cl-letf (((symbol-function 'vm-present-current-message) #'ignore)
+                        ((symbol-function 'vm-update-summary-and-mode-line)
+                         #'ignore)
+                        ((symbol-function 'vm-display)
+                         (lambda (&rest _) nil)))
+                (vm-edit-message-end)))
+            ;; the edit landed, and the message is no longer registered
+            ;; as a fetched one whose body may be thrown away
+            (should (vm-edited-flag m))
+            (should-not (vm-body-to-be-discarded-of m))
+            (should-not (memq m vm-fetched-messages))
+            ;; so discarding fetched bodies leaves the edited one alone
+            (vm-discard-fetched-messages)
+            (should (string-match "as edited by hand"
+                                  (vm-test-message-body m)))
+            (should-not (vm-body-to-be-retrieved-of m)))
+        (when (buffer-live-p edit-buf) (kill-buffer edit-buf))))))
+
 (provide 'vm-edit-test)
 
 ;;; vm-edit-test.el ends here

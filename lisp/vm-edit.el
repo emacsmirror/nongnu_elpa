@@ -276,6 +276,15 @@ thread have their cached data discarded."
 	      (point) (vm-text-end-of (vm-real-message-of (car mp))))
 	     (vm-discard-cached-data-internal (list (car mp))))
 	   (vm-set-edited-flag-of (car mp) t)
+	   ;; The edited body exists only here now.  While the message is
+	   ;; registered as a fetched one, that body gets discarded --
+	   ;; when the fetched-message limit evicts it, or wholesale by
+	   ;; vm-discard-fetched-messages -- and the server's unedited
+	   ;; copy comes back in its place, silently losing the edit.
+	   ;; Unregister it, so the edited body is kept like any other.
+	   (let ((mm (vm-real-message-of (car mp))))
+	     (when (vm-body-to-be-discarded-of mm)
+	       (vm-unregister-fetched-message mm)))
 	   (vm-set-edit-buffer-of (car mp) nil))
 	  (set-buffer (vm-buffer-of (car mp)))
 	  (if (eq (vm-real-message-of (car mp))
