@@ -132,21 +132,50 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
         (should-not (cdr result))))))
 
 (ert-deftest jabber-chat-test-unwrap-carbon-valid-sent ()
-  "Unwrap-carbon returns inner message and buffer for valid sent carbon."
+  "Unwrap-carbon finds an existing buffer for a valid sent carbon."
   (let* ((stanza (jabber-test-carbons--make-carbon
                   'sent "me@example.com" "me@example.com/phone"
                   "friend@example.com"))
          (test-buffer (generate-new-buffer " *test-carbon*")))
     (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-chat--find-buffer)
+               (lambda (to)
+                 (should (equal to "friend@example.com"))
+                 test-buffer))
               ((symbol-function 'jabber-chat-create-buffer)
-               (lambda (_jc _to) test-buffer)))
+               (lambda (&rest _)
+                 (ert-fail "Carbon unwrapping created a chat buffer"))))
       (unwind-protect
           (let ((result (jabber-chat--unwrap-carbon 'fake-jc stanza)))
             (should (equal (jabber-xml-get-attribute (car result) 'to)
                            "friend@example.com"))
             (should (eq (cdr result) test-buffer)))
         (kill-buffer test-buffer)))))
+
+(ert-deftest jabber-chat-test-bodyless-sent-carbon-does-not-create-buffer ()
+  "A bodyless sent carbon does not create a chat buffer."
+  (let ((stanza
+         '(message ((from . "me@example.com") (type . "chat"))
+                   (sent ((xmlns . "urn:xmpp:carbons:2"))
+                         (forwarded
+                          ((xmlns . "urn:xmpp:forward:0"))
+                          (message ((from . "me@example.com/phone")
+                                    (to . "friend@example.com")
+                                    (type . "chat"))
+                                   (active
+                                    ((xmlns . "http://jabber.org/protocol/chatstates"))))))))
+        created)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-chat-create-buffer)
+               (lambda (&rest _) (setq created t)))
+              ((symbol-function 'jabber-chat--decrypt-if-needed)
+               (lambda (_jc inner) inner))
+              ((symbol-function 'jabber-chat--store-carbon) #'ignore))
+      (let ((jabber-chat-printers nil))
+        (jabber-process-chat 'connection stanza))
+      (should-not created))))
 
 (ert-deftest jabber-chat-test-unwrap-carbon-valid-received ()
   "Unwrap-carbon returns inner message with no buffer for valid received carbon."
@@ -262,7 +291,9 @@ the carbon wrapper.  FORWARDED-XMLNS is the namespace for
                 (((symbol-function 'jabber-connection-bare-jid)
                   (lambda (_jc) "me@example.com"))
                  ((symbol-function 'jabber-chat-create-buffer)
-                  (lambda (&rest _) buffer))
+                  (lambda (_jc jid)
+                    (should (equal jid "friend@example.com"))
+                    buffer))
                  ((symbol-function 'jabber-chat--decrypt-if-needed)
                   (lambda (_jc inner) inner))
                  ((symbol-function 'jabber-chat--display-message)

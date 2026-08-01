@@ -683,7 +683,7 @@ the disco response."
 
 (defun jabber-mam-chat-opened (jc peer)
   "Trigger 1:1 MAM catch-up when opening a chat with PEER.
-JC is the Jabber connection.  Called from `jabber-chat-create-buffer'.
+JC is the Jabber connection.  Called from `jabber-chat-with'.
 Sets the syncing indicator immediately; clears it when the catch-up
 query completes (or when disco reveals MAM is not supported)."
   (when-let* ((token (and jabber-mam-enable

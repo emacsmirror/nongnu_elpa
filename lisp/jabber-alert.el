@@ -43,8 +43,9 @@
   "Hooks run when a new message arrives.
 
 Arguments are FROM, BUFFER, TEXT and TITLE.  FROM is the JID of
-the sender, BUFFER is the the buffer where the message can be
-read, and TEXT is the text of the message.  TITLE is the string
+the sender.  BUFFER is an existing buffer where the message can be
+read, or nil when none is open.  TEXT is the text of the message.
+TITLE is the string
 returned by `jabber-alert-message-function' for these arguments,
 so that hooks do not have to call it themselves.
 
@@ -309,7 +310,8 @@ Examples:
 (defun jabber-message-default-message (from buffer _text)
   "Return the default alert string for a message from FROM in BUFFER."
   (when (or jabber-message-alert-same-buffer
-	    (not (memq (selected-window) (get-buffer-window-list buffer))))
+	    (not (and (buffer-live-p buffer)
+	              (memq (selected-window) (get-buffer-window-list buffer)))))
     (if (jabber-muc-sender-p from)
 	(format "Private message from %s in %s"
 		(jabber-jid-resource from)
@@ -330,13 +332,13 @@ FROM selects the per-JID sound override; TITLE gates the action."
 	(funcall jabber-play-sound-file sound-file)))))
 
 (defun jabber-message-display (_from buffer _text title)
-  "Display BUFFER where a new message has arrived (when TITLE is non-nil)."
-  (when title
+  "Display live BUFFER for a new message when TITLE is non-nil."
+  (when (and title (buffer-live-p buffer))
     (display-buffer buffer)))
 
 (defun jabber-message-switch (_from buffer _text title)
-  "Switch to BUFFER where a new message has arrived (when TITLE is non-nil)."
-  (when title
+  "Switch to live BUFFER for a new message when TITLE is non-nil."
+  (when (and title (buffer-live-p buffer))
     (switch-to-buffer buffer)))
 
 (defun jabber-message-scroll (_from buffer _text _title)
@@ -355,11 +357,12 @@ This hook is opt-in; it is not enabled by default."
   ;;    the end of the buffer.  We advance it to the end.
   ;; 3. The user was perusing history in this window.  There is no
   ;;    simple way to distinguish this from 2, so the user loses.
-  (let ((windows (get-buffer-window-list buffer nil t))
-	(new-point-max (with-current-buffer buffer (point-max))))
-    (dolist (w windows)
-      (unless (eq w (selected-window))
-	(set-window-point w new-point-max)))))
+  (when (buffer-live-p buffer)
+    (let ((windows (get-buffer-window-list buffer nil t))
+	  (new-point-max (with-current-buffer buffer (point-max))))
+      (dolist (w windows)
+	(unless (eq w (selected-window))
+	  (set-window-point w new-point-max))))))
 
 ;; MUC alert hooks
 (defun jabber-muc-default-message (nick group buffer _text)

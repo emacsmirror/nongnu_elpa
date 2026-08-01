@@ -507,11 +507,6 @@ JC is the Jabber connection."
 
       (jabber-chat-buffer-recenter-input))
 
-    ;; Catch up missed 1:1 messages from MAM.  Run this after the setup
-    ;; branch so initial creation and reopening an existing buffer both
-    ;; request one catch-up.
-    (jabber-mam-chat-opened jc (jabber-jid-user chat-with))
-
     ;; Make sure the connection variable is up to date.
     (setq jabber-buffer-connection jc)
 
@@ -636,7 +631,7 @@ or nil if XML-DATA is not a carbon."
 
 (defun jabber-chat--unwrap-carbon (jc xml-data)
   "If XML-DATA is a carbon-forwarded message, unwrap it.
-Return (EFFECTIVE-XML-DATA . CHAT-BUFFER-OR-NIL).
+Return (EFFECTIVE-XML-DATA . EXISTING-CHAT-BUFFER-OR-NIL).
 JC is the Jabber connection.
 
 Validates that the outer stanza's `from' matches our bare JID to
@@ -656,7 +651,7 @@ prevent forged carbons (CVE-2017-5589)."
               ('sent
                (let ((to (jabber-xml-get-attribute inner-msg 'to)))
                  (cons inner-msg
-                       (when to (jabber-chat-create-buffer jc to)))))
+                       (when to (jabber-chat--find-buffer to)))))
               ('received
                (cons inner-msg nil)))))))))
 
@@ -954,7 +949,7 @@ _XML-DATA is reserved for future use by OMEMO."
               (and (not error-p)
                    (not self-p)
                    (plist-get msg-plist :thread-id)
-                   (jabber-chat--select-buffer jc from)))))
+                   (jabber-chat--find-buffer from)))))
     (when chat-buffer
       (with-current-buffer chat-buffer
         (jabber-chat-buffer-with-scrolltobottom
@@ -1034,10 +1029,11 @@ JC is the Jabber connection."
       (unless (jabber-chat--reaction-only-p xml-data)
         (let* ((replace-id (jabber-message-correct--replace-id xml-data))
                (account (jabber-connection-bare-jid jc))
-               (peer (jabber-jid-user
-                      (if (equal (jabber-jid-user from) account)
-                          (jabber-xml-get-attribute xml-data 'to)
-                        from)))
+               (counterpart
+                (if (equal (jabber-jid-user from) account)
+                    (jabber-xml-get-attribute xml-data 'to)
+                  from))
+               (peer (jabber-jid-user counterpart))
                (thread-target
                 (if replace-id
                     'correction
@@ -1045,15 +1041,7 @@ JC is the Jabber connection."
                            (not (jabber-muc-sender-p from)))
                     (jabber-message-thread-display-target
                      jc peer "chat" msg-plist)
-                    'parent)))
-               (chat-buffer
-                (cond
-                 ((eq thread-target 'correction) nil)
-                 ((eq thread-target 'parent)
-                  (jabber-chat--select-buffer jc from carbon-buffer))
-                 ((eq thread-target 'closed) nil)
-                 ((listp thread-target) thread-target)
-                 (t thread-target))))
+                    'parent))))
           (cond
            ((and replace-id (not jabber-chat-mam-syncing))
             (jabber-message-correct--apply
@@ -1078,8 +1066,19 @@ JC is the Jabber connection."
             (jabber-chat--display-error from msg-plist))
            ((run-hook-with-args-until-success 'jabber-chat-printers
                                               msg-plist :foreign :printp)
-            (jabber-chat--display-message
-             jc xml-data chat-buffer nil from msg-plist)))
+            (let ((chat-buffer
+                   (cond
+                    ((eq thread-target 'parent)
+                     (if (jabber-xml-get-attribute
+                          xml-data 'jabber-mam--origin)
+                         (jabber-chat--find-buffer counterpart)
+                       (jabber-chat--select-buffer
+                        jc counterpart carbon-buffer)))
+                    ((eq thread-target 'closed) nil)
+                    ((listp thread-target) thread-target)
+                    (t thread-target))))
+              (jabber-chat--display-message
+               jc xml-data chat-buffer nil from msg-plist))))
           (when is-carbon
             (jabber-chat--store-carbon jc xml-data)))))))
 
@@ -2594,6 +2593,7 @@ JC is the Jabber connection."
 		 (list
 		  account jid current-prefix-arg)))
   (let ((buffer (jabber-chat-create-buffer jc jid)))
+    (jabber-mam-chat-opened jc (jabber-jid-user jid))
     (if other-window
 	(switch-to-buffer-other-window buffer)
       (switch-to-buffer buffer))))

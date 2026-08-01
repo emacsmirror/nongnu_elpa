@@ -1258,12 +1258,11 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
 
 ;;; Group 11: jabber-chat-create-buffer
 
-(ert-deftest jabber-test-chat-create-buffer-notifies-mam-on-create-and-reopen ()
-  "Creating and reopening a chat buffer each notify MAM once."
+(ert-deftest jabber-test-chat-create-buffer-does-not-start-mam ()
+  "Creating or reopening a chat buffer does not start MAM catch-up."
   (let* ((jc1 (jabber-test-chat--make-fake-jc "me@example.com"))
          (jc2 (jabber-test-chat--make-fake-jc "me@example.com"))
          (peer "emma@example.com/laptop")
-         (bare-peer "emma@example.com")
          (jabber-chat-buffer-format " *jabber-test-chat-%j-%a*")
          (calls nil)
          buf)
@@ -1277,17 +1276,60 @@ Stubs `jabber-connection-bare-jid' to a fixed account."
       (unwind-protect
           (progn
             (setq buf (jabber-chat-create-buffer jc1 peer))
-            (should (= 1 (length calls)))
-            (should (equal (list (cons jc1 bare-peer)) calls))
+            (should-not calls)
             (should (eq buf (jabber-chat-create-buffer jc2 peer)))
-            (should (= 2 (length calls)))
-            (should (equal (list (cons jc2 bare-peer)
-                                 (cons jc1 bare-peer))
-                           calls))
+            (should-not calls)
             (with-current-buffer buf
               (should (eq jc2 jabber-buffer-connection))))
         (when (buffer-live-p buf)
           (kill-buffer buf))))))
+
+(ert-deftest jabber-test-chat-with-starts-mam-after-buffer-creation ()
+  "Explicitly opening a chat starts MAM after creating its buffer."
+  (let ((buffer (generate-new-buffer " *jabber-test-chat-with*"))
+        events)
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-chat-create-buffer)
+                   (lambda (jc jid)
+                     (push (list 'create jc jid) events)
+                     buffer))
+                  ((symbol-function 'jabber-mam-chat-opened)
+                   (lambda (jc peer)
+                     (push (list 'mam jc peer) events)))
+                  ((symbol-function 'switch-to-buffer)
+                   (lambda (target &rest _) target)))
+          (should (eq buffer
+                      (jabber-chat-with 'connection
+                                        "emma@example.com/laptop")))
+          (should (equal (nreverse events)
+                         '((create connection "emma@example.com/laptop")
+                           (mam connection "emma@example.com")))))
+      (kill-buffer buffer))))
+
+(ert-deftest jabber-test-chat-mam-replay-does-not-create-buffer ()
+  "A printable MAM replay does not create a chat buffer."
+  (let ((stanza
+         '(message ((from . "emma@example.com/laptop")
+                    (to . "me@example.com")
+                    (type . "chat")
+                    (jabber-mam--origin . "t"))
+                   (body () "archived")))
+        created
+        displayed)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "me@example.com"))
+              ((symbol-function 'jabber-chat--decrypt-if-needed)
+               (lambda (_jc message) message))
+              ((symbol-function 'jabber-chat--find-buffer)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-chat-create-buffer)
+               (lambda (&rest _) (setq created t)))
+              ((symbol-function 'jabber-chat--display-message)
+               (lambda (&rest _) (setq displayed t))))
+      (let ((jabber-chat-printers (list (lambda (&rest _) t))))
+        (jabber-process-chat 'connection stanza))
+      (should displayed)
+      (should-not created))))
 
 (ert-deftest jabber-test-chat-disabled-threads-load-original-backlog ()
   "Load threaded messages into a newly created parent chat buffer."

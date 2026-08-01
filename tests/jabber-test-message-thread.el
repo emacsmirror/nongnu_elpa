@@ -1081,8 +1081,11 @@
     (unwind-protect
         (cl-letf (((symbol-function 'jabber-connection-bare-jid)
                    (lambda (_jc) "me@example.com"))
+                  ((symbol-function 'jabber-chat--find-buffer)
+                   (lambda (&rest _) parent))
                   ((symbol-function 'jabber-chat--select-buffer)
-                   (lambda (&rest _) parent)))
+                   (lambda (&rest _)
+                     (ert-fail "Closed thread alert created a parent buffer"))))
           (let ((jabber-message-hooks
                  (list (lambda (_from buffer _body _alert)
                          (setq seen buffer))))
@@ -1096,6 +1099,35 @@
             (should (equal "" (with-current-buffer parent
                                 (buffer-string))))))
       (kill-buffer parent))))
+
+(ert-deftest jabber-test-message-thread-closed-chat-alert-without-parent-is-safe ()
+  "A closed reply without a parent leaves buffer-dependent hooks inert."
+  (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+             (lambda (_jc) "me@example.com"))
+            ((symbol-function 'jabber-chat--find-buffer)
+             (lambda (&rest _) nil))
+            ((symbol-function 'jabber-chat--select-buffer)
+             (lambda (&rest _)
+               (ert-fail "Closed thread alert created a parent buffer")))
+            ((symbol-function 'display-buffer)
+             (lambda (&rest _)
+               (ert-fail "Alert displayed a missing buffer")))
+            ((symbol-function 'switch-to-buffer)
+             (lambda (&rest _)
+               (ert-fail "Alert switched to a missing buffer")))
+            ((symbol-function 'get-buffer-window-list)
+             (lambda (&rest _)
+               (ert-fail "Alert scrolled a missing buffer"))))
+    (dolist (hook '(jabber-message-display
+                    jabber-message-switch
+                    jabber-message-scroll))
+      (let ((jabber-message-hooks nil)
+            (jabber-alert-message-hooks (list hook))
+            (jabber-alert-message-function
+             (lambda (&rest _) "alert")))
+        (jabber-chat--display-message
+         'jc nil nil nil "alice@example.com"
+         '(:body "reply" :thread-id "thread-1"))))))
 
 (ert-deftest jabber-test-message-thread-closed-muc-alert-has-parent-buffer ()
   "A closed MUC reply alerts with the room buffer without insertion."
