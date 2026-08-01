@@ -893,6 +893,88 @@ These are less common message/* subtypes."
         (should (string-match "multipart/mixed"
                               (vm-test-message-header m "Content-Type")))))))
 
+;;; attachment renaming tests
+
+(defmacro vm-mime-test-with-attachment-tag (file &rest body)
+  "Run BODY in a composition holding an attachment tag for FILE, point on it."
+  (declare (indent 1))
+  `(let ((path (make-temp-file "vm-attach")))
+     (unwind-protect
+         (progn
+           (with-temp-file path (insert "payload\n"))
+           (when ,file (rename-file path (setq path ,file) t))
+           (with-temp-buffer
+             (mail-mode)
+             (insert "To: someone@example.com\n"
+                     mail-header-separator "\n"
+                     "body\n")
+             (goto-char (point-max))
+             (let ((vm-send-using-mime t))
+               (vm-attach-file path "text/plain"))
+             (goto-char (point-min))
+             (search-forward "[ATTACHMENT")
+             (backward-char 3)
+             ,@body))
+       (when (file-exists-p path) (delete-file path)))))
+
+(ert-deftest vm-mime-test-set-parameter-in-list ()
+  "Test the MIME parameter list editor."
+  (should (equal (vm-mime-set-parameter-in-list '("name=\"a\"") "name" "b")
+                 '("name=\"b\"")))
+  ;; added when absent
+  (should (equal (vm-mime-set-parameter-in-list nil "name" "b")
+                 '("name=\"b\"")))
+  ;; other parameters kept, in order
+  (should (equal (vm-mime-set-parameter-in-list
+                  '("charset=\"utf-8\"" "name=\"a\"") "name" "b")
+                 '("charset=\"utf-8\"" "name=\"b\"")))
+  ;; quotes and backslashes in the value are escaped
+  (should (equal (vm-mime-set-parameter-in-list nil "name" "a\"b")
+                 '("name=\"a\\\"b\""))))
+
+(ert-deftest vm-mime-test-unquote-parameter-value ()
+  "Test that MIME parameter quoting is removed."
+  (should (equal (vm-mime-unquote-parameter-value "\"a.txt\"") "a.txt"))
+  (should (equal (vm-mime-unquote-parameter-value "a.txt") "a.txt"))
+  (should (equal (vm-mime-unquote-parameter-value "\"a\\\"b\"") "a\"b"))
+  (should (null (vm-mime-unquote-parameter-value nil))))
+
+(ert-deftest vm-mime-test-rename-attachment ()
+  "Test that renaming an attachment changes both name and filename.
+Issue #392 asked for a way to send a file under a different name than
+the one it has on disk."
+  (vm-mime-test-with-attachment-tag nil
+    (let ((before (vm-mime-attachment-name-at-point)))
+      (should (stringp before))
+      (vm-mime-set-attachment-name-at-point "renamed.txt")
+      (should (equal (vm-mime-attachment-name-at-point) "renamed.txt"))
+      ;; both MIME parameters carry it
+      (should (equal (get-text-property (point) 'vm-mime-parameters)
+                     '("name=\"renamed.txt\"")))
+      (should (member "filename=\"renamed.txt\""
+                      (cdr (get-text-property (point) 'vm-mime-disposition))))
+      ;; and the visible tag shows it
+      (should (string-match "\\[ATTACHMENT renamed\\.txt, text/plain\\]"
+                            (buffer-string))))))
+
+(ert-deftest vm-mime-test-rename-attachment-reaches-encoding ()
+  "Test that the new name is what gets sent."
+  (vm-mime-test-with-attachment-tag nil
+    (vm-mime-set-attachment-name-at-point "quarterly report.txt")
+    (let ((vm-send-using-mime t))
+      (vm-mime-encode-composition))
+    (let ((text (buffer-string)))
+      (should (string-match "name=\"quarterly report\\.txt\"" text))
+      (should (string-match "filename=\"quarterly report\\.txt\"" text)))))
+
+(ert-deftest vm-mime-test-rename-attachment-not-on-attachment ()
+  "Test that renaming away from an attachment tag is an error."
+  (with-temp-buffer
+    (mail-mode)
+    (insert "To: someone@example.com\n" mail-header-separator "\nbody\n")
+    (goto-char (point-min))
+    (should-error (vm-mime-set-attachment-name-at-point "x") :type 'error)))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

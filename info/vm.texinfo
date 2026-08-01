@@ -3111,6 +3111,16 @@ yank back the tag multiple times to duplicate the attachment in
 the message.  Or you can leave the tag killed and the attachment
 won't appear in the message when it is sent.
 
+@findex vm-mime-rename-attachment
+@cindex renaming an attachment
+@cindex attachment file name
+The name in the tag is the name the recipient will see, and the one
+their mail reader will suggest when they save the attachment.  It need
+not be the name the file has on your disk.  To change it, put point on
+the tag and use @kbd{M-x vm-mime-rename-attachment}, or choose
+@samp{Rename...} from the menu described next; the file itself is not
+touched.
+
 @cindex Content-Disposition
 If you click the right mouse button on the attachment tag, a menu
 will appear that allows you to change the content disposition of

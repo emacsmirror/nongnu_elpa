@@ -629,6 +629,10 @@ do not allow menubar buttons.")
       :active vm-send-using-mime
       :style radio
       :selected (not (vm-mime-attachment-forward-local-refs-at-point))])
+    ["Rename..."
+     (vm-mime-rename-attachment)
+     :active vm-send-using-mime
+     :style button]
     ["Delete"
      (vm-mime-delete-attachment-button)
      :style button]

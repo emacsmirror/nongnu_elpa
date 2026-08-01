@@ -6041,6 +6041,119 @@ there is no file name for this object.             USR, 2011-03-07"
              (insert " ---")
              (vm-delete-extent e))))))
 
+(defun vm-mime-set-parameter-in-list (params key value)
+  "Return PARAMS with KEY set to VALUE, adding it if it is not there.
+PARAMS is a list of \"key=value\" strings as carried by the
+`vm-mime-parameters' and `vm-mime-disposition' properties of an
+attachment tag."
+  (let ((entry (concat key "=" (vm-mime-quote-parameter-value value)))
+	(regexp (concat "\\`" (regexp-quote key) "="))
+	(found nil)
+	(result nil))
+    (dolist (param params)
+      (if (and (stringp param) (string-match regexp param))
+	  (progn (setq found t)
+		 (setq result (cons entry result)))
+	(setq result (cons param result))))
+    (setq result (nreverse result))
+    (if found result (append result (list entry)))))
+
+(defun vm-mime-quote-parameter-value (value)
+  "Return VALUE quoted for use in a MIME parameter."
+  (concat "\"" (vm-replace-in-string value "[\"\\\\]" "\\\\\\&") "\""))
+
+(defun vm-mime-attachment-tag-bounds ()
+  "Return (START . END) for the attachment tag at point, or nil."
+  (when (get-text-property (point) 'vm-mime-type)
+    (cons (or (previous-single-property-change
+	       (min (1+ (point)) (point-max)) 'vm-mime-type)
+	      (point-min))
+	  (or (next-single-property-change (point) 'vm-mime-type)
+	      (point-max)))))
+
+(defun vm-mime-unquote-parameter-value (value)
+  "Return VALUE with MIME parameter quoting removed."
+  (if (and value (string-match "\\`\"\\(\\(?:[^\"\\\\]\\|\\\\.\\)*\\)\"\\'" value))
+      (vm-replace-in-string (match-string 1 value) "\\\\\\(.\\)" "\\1")
+    value))
+
+(defun vm-mime-attachment-name-at-point ()
+  "Return the file name of the attachment at point, or nil.
+Any MIME parameter quoting is removed."
+  (let ((disposition
+	 (if (featurep 'xemacs)
+	     (vm-extent-property (vm-extent-at (point) 'vm-mime-disposition)
+				 'vm-mime-disposition)
+	   (get-text-property (point) 'vm-mime-disposition)))
+	(params
+	 (if (featurep 'xemacs)
+	     (vm-extent-property (vm-extent-at (point) 'vm-mime-type)
+				 'vm-mime-parameters)
+	   (get-text-property (point) 'vm-mime-parameters))))
+    (vm-mime-unquote-parameter-value
+     (or (vm-mime-get-xxx-parameter "filename" (cdr disposition))
+	 (vm-mime-get-xxx-parameter "name" params)))))
+
+(defun vm-mime-set-attachment-name-at-point (name)
+  "Give the attachment at point the file NAME.
+Sets it in both the Content-Type name parameter and the
+Content-Disposition filename parameter, and updates the visible tag."
+  (cond
+   ((featurep 'xemacs)
+    (let ((e (vm-extent-at (point) 'vm-mime-type)))
+      (unless e (error "No attachment here"))
+      (vm-set-extent-property
+       e 'vm-mime-parameters
+       (vm-mime-set-parameter-in-list
+	(vm-extent-property e 'vm-mime-parameters) "name" name))
+      (let ((disposition (vm-extent-property e 'vm-mime-disposition)))
+	(vm-set-extent-property
+	 e 'vm-mime-disposition
+	 (cons (car disposition)
+	       (vm-mime-set-parameter-in-list
+		(cdr disposition) "filename" name))))))
+   (t
+    (let ((bounds (vm-mime-attachment-tag-bounds)))
+      (unless bounds (error "No attachment here"))
+      (let* ((start (car bounds))
+	     (end (cdr bounds))
+	     (inhibit-read-only t)
+	     (disposition (get-text-property start 'vm-mime-disposition)))
+	(put-text-property
+	 start end 'vm-mime-parameters
+	 (vm-mime-set-parameter-in-list
+	  (get-text-property start 'vm-mime-parameters) "name" name))
+	(put-text-property
+	 start end 'vm-mime-disposition
+	 (cons (car disposition)
+	       (vm-mime-set-parameter-in-list
+		(cdr disposition) "filename" name)))
+	;; and show it.  Replace only the name inside the tag, using
+	;; insert-and-inherit so the tag's properties carry over.
+	(save-excursion
+	  (goto-char start)
+	  (when (looking-at "\\[ATTACHMENT \\([^,]*\\),")
+	    (let ((name-start (match-beginning 1))
+		  (name-end (match-end 1)))
+	      (delete-region name-start name-end)
+	      (goto-char name-start)
+	      (insert-and-inherit name)))))))))
+
+;;;###autoload
+(defun vm-mime-rename-attachment ()
+  "Give the attachment at point a different file name.
+The name is the one the recipient sees, and the one their mailer will
+suggest when they save it; the file the attachment was read from is not
+touched."
+  (interactive)
+  (let ((current (vm-mime-attachment-name-at-point)))
+    (unless (or current (get-text-property (point) 'vm-mime-type)
+		(and (featurep 'xemacs)
+		     (vm-extent-at (point) 'vm-mime-type)))
+      (error "No attachment here"))
+    (vm-mime-set-attachment-name-at-point
+     (read-string "Attachment file name: " current))))
+
 ;;;###autoload
 (defun vm-mime-change-content-disposition ()
   (interactive)

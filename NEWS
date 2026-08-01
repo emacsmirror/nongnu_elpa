@@ -34,6 +34,10 @@ VM 8.?.?
   * Add vm-expunge-label command to completely remove a label from a folder.
     Removes the label from all messages and from the folder's label list so
     it no longer appears in completions.
+  * Add vm-mime-rename-attachment, to send an attachment under a name other
+    than the one the file has on disk.  Put point on the attachment tag in
+    the composition and run the command, or pick "Rename..." from the
+    attachment menu on mouse-3.  The file itself is not touched.
   * Handle ImageMagick V7 deprecation of convert command in favor of sub-commands.
 
 
