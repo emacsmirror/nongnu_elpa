@@ -630,7 +630,7 @@ STATE may be `overview', `contents', or `all'."
   (unless (derived-mode-p 'org-mode)
     (user-error "Org-history minor mode failed to activate in buffer %s, not Org mode" (buffer-name (current-buffer))))
   (when (file-remote-p buffer-file-name)
-    (user-error "Org-history dont support TRUMP for now. File %s is remote" buffer-file-name))
+    (user-error "Org-history dont support TRUMP for now.  File %s is remote" buffer-file-name))
   (if org-history-mode
       (progn
         (org-history-debug-print "org-history-mode")
