@@ -1,0 +1,46 @@
+From: Mail Delivery Subsystem <mailer-daemon@googlemail.com>
+To: sender@example.com
+Subject: Delivery Status Notification (Failure)
+Content-Type: multipart/report; report-type=delivery-status;
+	boundary="000000000000f8e46b05b69d31c0"
+MIME-Version: 1.0
+
+--000000000000f8e46b05b69d31c0
+Content-Type: multipart/related; boundary="000000000000f8e49c05b69d31c1"
+
+--000000000000f8e49c05b69d31c1
+Content-Type: text/html; charset="UTF-8"
+
+<html><body>Address not found.</body></html>
+
+--000000000000f8e49c05b69d31c1
+Content-Type: image/png; name="icon.png"
+Content-Disposition: attachment; filename="icon.png"
+Content-Transfer-Encoding: base64
+Content-ID: <icon.png>
+
+iVBORw0KGgo=
+
+--000000000000f8e49c05b69d31c1--
+
+--000000000000f8e46b05b69d31c0
+Content-Type: message/delivery-status
+
+Reporting-MTA: dns; googlemail.com
+
+Action: failed
+Status: 5.1.1
+
+--000000000000f8e46b05b69d31c0
+Content-Type: message/rfc822
+
+From: sender@example.com
+To: nosuchuser@example.com
+Subject: the original message
+Content-Type: multipart/alternative; boundary="THIS-BOUNDARY-NEVER-APPEARS"
+
+The bounced copy was truncated by the reporting MTA, so the boundary
+this multipart declares is nowhere in the body.  VM parses it as a
+composite part with no sub-parts, which is what triggered issue #455.
+
+--000000000000f8e46b05b69d31c0--

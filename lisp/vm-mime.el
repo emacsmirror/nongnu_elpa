@@ -4395,33 +4395,40 @@ ACTION will get called with four arguments: MSG LAYOUT TYPE FILENAME."
                   (t (setq parts (list o))))
             
             (while parts
-              (while (vm-mime-composite-type-p
-		      (car (vm-mm-layout-type (car parts))))
-		(setq parts 
+	      ;; Replace a composite part by its sub-parts, repeatedly.
+	      ;; A composite with no sub-parts -- e.g. a multipart whose
+	      ;; boundary never appears, as seen in delivery-failure
+	      ;; reports -- just disappears, and if it was the last part
+	      ;; that empties the list, so test PARTS as well.
+              (while (and parts
+			  (vm-mime-composite-type-p
+			   (car (vm-mm-layout-type (car parts)))))
+		(setq parts
 		      (nconc (copy-sequence (vm-mm-layout-parts (car parts)))
 			     (cdr parts))))
-              
-              (setq layout (car parts)
-                    type (car (vm-mm-layout-type layout))
-                    disposition (car (vm-mm-layout-disposition layout))
-                    filename (vm-mime-get-disposition-filename layout) )
-              
-              (cond ((or filename
-                         (and disposition (string= disposition "attachment"))
-                         (and (not (vm-mime-types-match 
-				    "message/external-body" type))
-                              types
-                              (vm-mime-is-type-valid type types exceptions)))
-                     (when action-name
-                       (vm-inform 10
-			"%s part type=%s filename=%s disposition=%s"
-			action-name type filename disposition))
-                     (funcall action (car mlist) layout type filename))
-                    (action-name
-                     (vm-inform 10
-		      "No %s on part type=%s filename=%s disposition=%s"
-		      action-name type filename disposition)))
-              (setq parts (cdr parts)))))
+
+	      (when parts
+		(setq layout (car parts)
+		      type (car (vm-mm-layout-type layout))
+		      disposition (car (vm-mm-layout-disposition layout))
+		      filename (vm-mime-get-disposition-filename layout) )
+
+		(cond ((or filename
+			   (and disposition (string= disposition "attachment"))
+			   (and (not (vm-mime-types-match
+				      "message/external-body" type))
+				types
+				(vm-mime-is-type-valid type types exceptions)))
+		       (when action-name
+			 (vm-inform 10
+			  "%s part type=%s filename=%s disposition=%s"
+			  action-name type filename disposition))
+		       (funcall action (car mlist) layout type filename))
+		      (action-name
+		       (vm-inform 10
+			"No %s on part type=%s filename=%s disposition=%s"
+			action-name type filename disposition)))
+		(setq parts (cdr parts))))))
         (setq mlist (cdr mlist))))))
 
 ;;;###autoload
