@@ -331,8 +331,9 @@ Switch mode on/off according to ARG.
   "Return the email address of the message author."
   (car (vm-epg-get-emails vm-epg-get-author-headers)))
 
-(defun vm-epg-find-usable-key (keys usage)
-  "Find a usable key from KEYS for USAGE (\\='sign or \\='encrypt)."
+(defun vm-epg-find-usable-key (keys usage addr)
+  "Find a usable key from KEYS for USAGE (\\='sign or \\='encrypt).
+ADDR is the address the keys are for, used only for error messages."
   (catch 'found
     (while keys
       (let ((pointer (epg-key-sub-key-list (car keys))))
@@ -342,20 +343,23 @@ Switch mode on/off according to ARG.
                               '(revoked expired))))
               (throw 'found (car keys)))
           (setq pointer (cdr pointer))))
-      (setq keys (cdr keys)))))
+      (setq keys (cdr keys)))
+    ;; No usable key found
+    (error
+     "No usable %s key found for %s" usage addr)))
 
 (defun vm-epg-get-recipient-keys (context)
   "Return a list of EPG key objects for the current message recipients.
 Uses CONTEXT for key lookup."
-  (delq nil
-        (mapcar (lambda (addr)
-                  (vm-epg-find-usable-key
-                   (epg-list-keys context
-                                  (if (string-search "@" addr)
-                                      (concat "<" addr ">")
-                                    addr))
-                   'encrypt))
-                (vm-epg-get-recipients))))
+  (mapcar (lambda (addr)
+            (vm-epg-find-usable-key
+             (epg-list-keys context
+                            (if (string-search "@" addr)
+				(concat "<" addr ">")
+                              addr))
+             'encrypt
+	     addr))
+          (vm-epg-get-recipients)))
 
 (defun vm-epg-set-signer (context)
   "Set the signer in CONTEXT to the author.
@@ -364,10 +368,10 @@ Uses CONTEXT and `vm-epg-get-author' to identify the sender."
     (when author
       (let ((signer
 	     (vm-epg-find-usable-key
-	      (epg-list-keys context author t)
-	      'sign)))
-        (when signer
-          (setf (epg-context-signers context) (list signer)))))))
+	      (epg-list-keys context author 'secret)
+	      'sign
+	      author)))
+        (setf (epg-context-signers context) (list signer))))))
 
 ;;; Composition helpers
 
