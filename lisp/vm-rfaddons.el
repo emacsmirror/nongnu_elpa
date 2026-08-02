@@ -1127,15 +1127,18 @@ See the advice in `vm-rfaddons-infect-vm'. (Rob F)"
 ;;;###autoload
 (defun vm-mail-check-recipients-strip (address)
   "Remove from ADDRESS the parts that may legitimately contain an \"@\".
-That is MIME encoded words and quoted strings, both of which occur in
-display names.  What is left should hold exactly one address.
+That is MIME encoded words, quoted strings and RFC 5322 comments, all of
+which occur alongside the address proper.  What is left should hold
+exactly one address.
 
 `vm-parse-addresses' decodes encoded words, marking what it decoded with
 the `vm-string' text property, so those are removed by property; a word
 still in its encoded form is removed by matching."
   (let ((start 0)
 	(len (length address))
-	(pieces nil))
+	(pieces nil)
+	(stripped nil)
+	(previous nil))
     ;; drop the decoded encoded words
     (while (< start len)
       (let ((end (or (next-single-property-change start 'vm-string address)
@@ -1143,10 +1146,16 @@ still in its encoded form is removed by matching."
 	(unless (get-text-property start 'vm-string address)
 	  (push (substring-no-properties address start end) pieces))
 	(setq start end)))
-    (vm-replace-in-string
-     (vm-replace-in-string (apply #'concat (nreverse pieces))
-			   vm-mime-encoded-word-regexp "")
-     "\"[^\"]*\"" "")))
+    (setq stripped
+	  (vm-replace-in-string
+	   (vm-replace-in-string (apply #'concat (nreverse pieces))
+				 vm-mime-encoded-word-regexp "")
+	   "\"[^\"]*\"" ""))
+    ;; and the comments, innermost first so nested ones go too
+    (while (not (equal previous stripped))
+      (setq previous stripped)
+      (setq stripped (vm-replace-in-string stripped "([^()]*)" "")))
+    stripped))
 
 (defun vm-mail-check-recipients ()
   "Check if the recipients are specified correctly.
