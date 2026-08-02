@@ -6116,13 +6116,19 @@ attachment tag."
   (concat "\"" (vm-replace-in-string value "[\"\\\\]" "\\\\\\&") "\""))
 
 (defun vm-mime-attachment-tag-bounds ()
-  "Return (START . END) for the attachment tag at point, or nil."
-  (when (get-text-property (point) 'vm-mime-type)
-    (cons (or (previous-single-property-change
-	       (min (1+ (point)) (point-max)) 'vm-mime-type)
-	      (point-min))
-	  (or (next-single-property-change (point) 'vm-mime-type)
-	      (point-max)))))
+  "Return (START . END) for the attachment tag at point, or nil.
+Point counts as being on the tag when it is just past its closing
+bracket, which is where `end-of-line' leaves it."
+  (let ((pos (cond ((get-text-property (point) 'vm-mime-type) (point))
+		   ((and (> (point) (point-min))
+			 (get-text-property (1- (point)) 'vm-mime-type))
+		    (1- (point))))))
+    (when pos
+      (cons (or (previous-single-property-change
+		 (min (1+ pos) (point-max)) 'vm-mime-type)
+		(point-min))
+	    (or (next-single-property-change pos 'vm-mime-type)
+		(point-max))))))
 
 (defun vm-mime-unquote-parameter-value (value)
   "Return VALUE with MIME parameter quoting removed."
@@ -6133,16 +6139,21 @@ attachment tag."
 (defun vm-mime-attachment-name-at-point ()
   "Return the file name of the attachment at point, or nil.
 Any MIME parameter quoting is removed."
-  (let ((disposition
-	 (if (featurep 'xemacs)
-	     (vm-extent-property (vm-extent-at (point) 'vm-mime-disposition)
-				 'vm-mime-disposition)
-	   (get-text-property (point) 'vm-mime-disposition)))
-	(params
-	 (if (featurep 'xemacs)
-	     (vm-extent-property (vm-extent-at (point) 'vm-mime-type)
-				 'vm-mime-parameters)
-	   (get-text-property (point) 'vm-mime-parameters))))
+  (let* ((pos (if (featurep 'xemacs)
+		  (point)
+		;; go through the bounds, so that point just past the
+		;; tag counts as being on it
+		(car (vm-mime-attachment-tag-bounds))))
+	 (disposition
+	  (if (featurep 'xemacs)
+	      (vm-extent-property (vm-extent-at (point) 'vm-mime-disposition)
+				  'vm-mime-disposition)
+	    (and pos (get-text-property pos 'vm-mime-disposition))))
+	 (params
+	  (if (featurep 'xemacs)
+	      (vm-extent-property (vm-extent-at (point) 'vm-mime-type)
+				  'vm-mime-parameters)
+	    (and pos (get-text-property pos 'vm-mime-parameters)))))
     (vm-mime-unquote-parameter-value
      (or (vm-mime-get-xxx-parameter "filename" (cdr disposition))
 	 (vm-mime-get-xxx-parameter "name" params)))))
@@ -6184,22 +6195,27 @@ Content-Disposition filename parameter, and updates the visible tag."
 				     (vm-mime-set-parameter-in-list
 				      (cdr disposition) "filename" name))))
 	(save-excursion
-	  (goto-char start)
-	  ;; The tag reads "[ATTACHMENT <name>, <type>]".  Match the name
-	  ;; greedily up to the *last* ", " before the type, since a name
-	  ;; may itself contain a comma -- stopping at the first one
-	  ;; rewrote only part of it and left the rest behind.
-	  (when (looking-at "\\[ATTACHMENT \\(.*\\), [^,]*\\]")
-	    (let ((name-start (match-beginning 1))
-		  (name-end (match-end 1)))
-	      (setq end (+ end (- (length name) (- name-end name-start))))
-	      (delete-region name-start name-end)
-	      (goto-char name-start)
-	      ;; Not insert-and-inherit: the tag is rear-nonsticky, so
-	      ;; inserted text inherits nothing and the tag's property
-	      ;; run would be split in three -- which the encoder reads
-	      ;; as two attachments where there is one.
-	      (insert name))))
+	  (save-restriction
+	    ;; Narrow to this tag.  The name is matched greedily, because
+	    ;; it may itself contain a comma, and `looking-at' would
+	    ;; otherwise run past the end of the tag: two tags sharing a
+	    ;; line -- which happens as soon as the user joins them --
+	    ;; and the match would swallow the second one's text while
+	    ;; leaving its properties orphaned in the buffer.
+	    (narrow-to-region start end)
+	    (goto-char start)
+	    ;; The tag reads "[ATTACHMENT <name>, <type>]".
+	    (when (looking-at "\\[ATTACHMENT \\(.*\\), [^,]*\\]\\'")
+	      (let ((name-start (match-beginning 1))
+		    (name-end (match-end 1)))
+		(setq end (+ end (- (length name) (- name-end name-start))))
+		(delete-region name-start name-end)
+		(goto-char name-start)
+		;; Not insert-and-inherit: the tag is rear-nonsticky, so
+		;; inserted text inherits nothing and the tag's property
+		;; run would be split in three -- which the encoder reads
+		;; as two attachments where there is one.
+		(insert name)))))
 	(set-text-properties start end props))))))
 
 ;;;###autoload
@@ -6210,9 +6226,9 @@ suggest when they save it; the file the attachment was read from is not
 touched."
   (interactive)
   (let ((current (vm-mime-attachment-name-at-point)))
-    (unless (or current (get-text-property (point) 'vm-mime-type)
-		(and (featurep 'xemacs)
-		     (vm-extent-at (point) 'vm-mime-type)))
+    (unless (if (featurep 'xemacs)
+		(vm-extent-at (point) 'vm-mime-type)
+	      (vm-mime-attachment-tag-bounds))
       (error "No attachment here"))
     (vm-mime-set-attachment-name-at-point
      (read-string "Attachment file name: " current))))

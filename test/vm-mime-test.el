@@ -1350,6 +1350,62 @@ stayed right, so what the tag showed and what would be sent diverged."
     (should (= 1 (length (vm-mime-attachment-button-extents
                           (point-min) (point-max) 'vm-mime-object))))))
 
+(ert-deftest vm-mime-test-rename-attachment-adjacent-tags ()
+  "Test renaming one of two attachment tags sharing a line.
+Nothing stops a user joining the lines, and the manual encourages
+killing and yanking tags.  The name is matched greedily, so without
+narrowing to the tag the match ran on into the second tag: its visible
+text was swallowed while its property run survived, leaving an
+attachment that would still be sent but had no tag left to edit."
+  (let ((a (make-temp-file "vm-a")) (b (make-temp-file "vm-b")))
+    (unwind-protect
+        (progn
+          (with-temp-file a (insert "one\n"))
+          (with-temp-file b (insert "two\n"))
+          (with-temp-buffer
+            (mail-mode)
+            (insert "To: someone@example.com\n" mail-header-separator "\n"
+                    "body\n")
+            (goto-char (point-max))
+            (let ((vm-send-using-mime t))
+              (vm-attach-file a "text/plain")
+              (vm-attach-file b "text/plain"))
+            ;; join the two tag lines
+            (goto-char (point-min))
+            (search-forward "]")
+            (delete-char 1)
+            (should (= 2 (length (vm-mime-attachment-button-extents
+                                  (point-min) (point-max) 'vm-mime-object))))
+            (goto-char (point-min))
+            (search-forward "[ATTACHMENT")
+            (backward-char 3)
+            (vm-mime-set-attachment-name-at-point "renamed.txt")
+            ;; the second tag is untouched and still visible
+            (let ((line (buffer-substring-no-properties
+                         (line-beginning-position) (line-end-position))))
+              (should (string-match "\\[ATTACHMENT renamed\\.txt, text/plain\\]"
+                                    line))
+              (should (string-match
+                       (concat "\\[ATTACHMENT "
+                               (regexp-quote (file-name-nondirectory b))
+                               ", text/plain\\]")
+                       line)))
+            (should (= 2 (length (vm-mime-attachment-button-extents
+                                  (point-min) (point-max) 'vm-mime-object))))))
+      (delete-file a)
+      (delete-file b))))
+
+(ert-deftest vm-mime-test-rename-attachment-at-tag-end ()
+  "Test that point just past the tag still finds the attachment.
+`end-of-line' leaves point there, and it is not obviously outside the
+tag to a user."
+  (vm-mime-test-with-attachment-tag nil
+    (end-of-line)
+    (should (vm-mime-attachment-tag-bounds))
+    (vm-mime-set-attachment-name-at-point "renamed.txt")
+    (should (string-match "\\[ATTACHMENT renamed\\.txt, text/plain\\]"
+                          (buffer-string)))))
+
 (ert-deftest vm-mime-test-rename-attachment-reaches-encoding ()
   "Test that the new name is what gets sent."
   (vm-mime-test-with-attachment-tag nil
