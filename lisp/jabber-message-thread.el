@@ -187,6 +187,22 @@ Return nil when THREAD-ID is empty or equals PARENT-ID."
   (jabber-buffer-registry-find
    'thread (jabber-message-thread--key account peer type thread-id)))
 
+(defun jabber-message-thread-chat-state-target
+    (jc peer type thread-id parent-buffer)
+  "Return THREAD-ID's chat-state target on JC for PEER and TYPE.
+PARENT-BUFFER is the ordinary conversation view.  The result is
+`parent', a dedicated thread buffer, or nil."
+  (let ((thread-buffer
+         (jabber-message-thread-find-buffer
+          (jabber-connection-bare-jid jc) peer type thread-id)))
+    (cond
+     ((buffer-live-p thread-buffer) thread-buffer)
+     ((and (buffer-live-p parent-buffer)
+           (equal thread-id
+                  (buffer-local-value
+                   'jabber-message-thread-session-id parent-buffer)))
+      'parent))))
+
 (defun jabber-message-thread--buffer-name (parent-buffer thread-id)
   "Return a thread buffer name derived from PARENT-BUFFER and THREAD-ID."
   (format "%s [thread %s]*"

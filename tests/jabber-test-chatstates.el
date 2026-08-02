@@ -682,6 +682,7 @@ nil after the first message, breaking subsequent composing detection."
         (progn
           (with-current-buffer parent
             (setq-local jabber-chatting-with "alice@example.org")
+            (setq-local jabber-message-thread-session-id "thread-1")
             (setq-local jabber-chat-ewoc (ewoc-create #'ignore)))
           (with-current-buffer thread
             (setq-local jabber-chatting-with "alice@example.org")
@@ -956,6 +957,28 @@ nil after the first message, breaking subsequent composing detection."
           "room@conference.example" "groupchat" 'composing)))
       (should-not jabber-chatstates--muc-composers)
       (should-not (jabber-test-chatstates--ewoc-data)))))
+
+(ert-deftest jabber-test-chatstates-session-thread-state-routes-to-parent ()
+  "A state for the direct chat session updates its parent buffer."
+  (with-temp-buffer
+    (rename-buffer " *jabber-session-thread-chatstate*" t)
+    (let ((parent (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore)))
+      (setq-local jabber-chatting-with "alice@example.org")
+      (setq-local jabber-message-thread-session-id "session-42")
+      (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from _jc) (buffer-name parent)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.org"))
+                ((symbol-function 'jabber-message-thread-find-buffer)
+                 (lambda (&rest _) nil)))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--thread-message
+          "alice@example.org/resource" "chat" 'composing "session-42")))
+      (should (eq jabber-chatstates-last-state 'composing))
+      (should (equal (jabber-test-chatstates--ewoc-data)
+                     '((:typing "alice@example.org is typing...")))))))
 
 (ert-deftest jabber-test-chatstates-unknown-thread-state-stays-out-of-parent ()
   "A state-only unknown thread does not update the parent buffer."

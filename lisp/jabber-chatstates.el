@@ -405,6 +405,16 @@ Added to `kill-buffer-hook' in chat buffers."
       (jabber-message-thread-find-buffer
        account peer type thread-id))))
 
+(defun jabber-chatstates--thread-state-buffer (jc from type thread-id)
+  "Return THREAD-ID's chat-state buffer for FROM and TYPE on JC."
+  (let* ((parent (jabber-chatstates--parent-buffer jc from type))
+         (target
+          (jabber-message-thread-chat-state-target
+           jc (jabber-jid-user from) type thread-id parent)))
+    (cond
+     ((eq target 'parent) parent)
+     ((buffer-live-p target) target))))
+
 (defun jabber-chatstates--thread-content-buffer (jc xml-data from type)
   "Return threaded content XML-DATA's display buffer on JC."
   (let ((target
@@ -435,7 +445,7 @@ Added to `kill-buffer-hook' in chat buffers."
      (body-message-p
       (jabber-chatstates--thread-content-buffer jc xml-data from type))
      (t
-      (jabber-chatstates--thread-buffer
+      (jabber-chatstates--thread-state-buffer
        jc from type (plist-get fields :thread-id))))))
 
 (defun jabber-handle-incoming-message-chatstates (jc xml-data)
