@@ -475,9 +475,14 @@ the folder's label list, so it keeps turning up in completions."
 	(unused nil))
     (dolist (m vm-message-list)
       (dolist (label (vm-labels-of m))
-	(intern label used)))
+	;; Labels are lowercase by convention -- `vm-expunge-label' and
+	;; `vm-add-or-delete-message-labels' both downcase -- so compare
+	;; that way, or a message carrying "Work" against a folder
+	;; listing "work" makes the one label look both unused and
+	;; missing at once.
+	(intern (downcase label) used)))
     (mapatoms (lambda (s)
-		(unless (intern-soft (symbol-name s) used)
+		(unless (intern-soft (downcase (symbol-name s)) used)
 		  (setq unused (cons (symbol-name s) unused))))
 	      vm-label-obarray)
     (sort unused #'string-lessp)))
@@ -491,11 +496,15 @@ interactively; a message that arrives already labelled -- saved in from
 another folder, say -- brings a label the folder does not know about, so
 it never appears in completions."
   (let ((missing (make-vector 29 0))
+	(known (make-vector 29 0))
 	(list nil))
+    ;; compare downcased, as everything else that handles labels does
+    (mapatoms (lambda (s) (intern (downcase (symbol-name s)) known))
+	      vm-label-obarray)
     (dolist (m vm-message-list)
       (dolist (label (vm-labels-of m))
-	(unless (intern-soft label vm-label-obarray)
-	  (intern label missing))))
+	(unless (intern-soft (downcase label) known)
+	  (intern (downcase label) missing))))
     (mapatoms (lambda (s) (setq list (cons (symbol-name s) list))) missing)
     (sort list #'string-lessp)))
 

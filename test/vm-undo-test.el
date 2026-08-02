@@ -469,6 +469,26 @@ nothing interns them, so they never reach completion."
       '(("important") ("work") nil)
     (should (null (vm-missing-labels)))))
 
+(ert-deftest vm-undo-test-labels-compare-case-insensitively ()
+  "Test that label case does not make one label look like two.
+Labels are lowercase by convention -- `vm-expunge-label' and
+`vm-add-or-delete-message-labels' both downcase -- but a message can
+arrive carrying \"Work\" while the folder lists \"work\".  Comparing
+verbatim reported the one label as unused and missing at once."
+  (vm-undo-test-with-labels
+      '("work")
+      '(("Work") nil nil)
+    (should (null (vm-unused-labels)))
+    (should (null (vm-missing-labels)))))
+
+(ert-deftest vm-undo-test-sync-labels-leaves-case-alone ()
+  "Test that syncing does not rewrite the folder's canonical spelling."
+  (vm-undo-test-with-labels
+      '("work")
+      '(("Work") nil nil)
+    (vm-sync-labels)
+    (should (equal (vm-obarray-to-string-list vm-label-obarray) '("work")))))
+
 (ert-deftest vm-undo-test-sync-labels ()
   "Test that `vm-sync-labels' fixes the list in both directions."
   (vm-undo-test-with-labels
