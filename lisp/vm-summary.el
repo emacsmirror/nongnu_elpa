@@ -1334,24 +1334,31 @@ field in the summary.				 	USR, 2012-10-13"
 
 ;; Some yogurt-headed delivery agents don't provide a Date: header.
 (defun vm-grok-From_-date (message)
-  ;; This works only on the From_ types, obviously
-  (if (not (memq (vm-message-type-of message)
-		 '(BellFrom_ From_ From_-with-Content-Length)))
-      nil
-    (with-current-buffer (vm-buffer-of (vm-real-message-of message))
-      (save-excursion
-	(save-restriction
-	  (widen)
-	  (goto-char (vm-start-of message))
-	  (let ((case-fold-search nil))
-	    (if (or (looking-at
-		     ;; special case this so that the "remote from blah"
-		     ;; isn't included.
-		     "From [^ \t\n]*[ \t]+\\([^ \t\n].*\\) remote from .*")
-		    (looking-at "From [^ \t\n]*[ \t]+\\([^ \t\n].*\\)"))
-		(vm-buffer-substring-no-properties
-		 (match-beginning 1)
-		 (match-end 1)))))))))
+  ;; This works only on the From_ types, obviously.
+  ;; The From_ line belongs to the real message, so everything here -- the
+  ;; folder type, the buffer and the position -- has to come from the real
+  ;; message.  Taking the position from MESSAGE broke virtual folders: the
+  ;; location markers of a virtual message are shared between all of them
+  ;; and only point anywhere once `vm-make-virtual-copy' has run for the
+  ;; message being displayed, which during summary generation it has not.
+  (let ((m (vm-real-message-of message)))
+    (if (not (memq (vm-message-type-of m)
+		   '(BellFrom_ From_ From_-with-Content-Length)))
+	nil
+      (with-current-buffer (vm-buffer-of m)
+	(save-excursion
+	  (save-restriction
+	    (widen)
+	    (goto-char (vm-start-of m))
+	    (let ((case-fold-search nil))
+	      (if (or (looking-at
+		       ;; special case this so that the "remote from blah"
+		       ;; isn't included.
+		       "From [^ \t\n]*[ \t]+\\([^ \t\n].*\\) remote from .*")
+		      (looking-at "From [^ \t\n]*[ \t]+\\([^ \t\n].*\\)"))
+		  (vm-buffer-substring-no-properties
+		   (match-beginning 1)
+		   (match-end 1))))))))))
 
 (defconst vm-su-rfc822-date-format
   ;; The date format recognized here is the one specified in RFC 822.
@@ -1572,20 +1579,24 @@ The result is a mime-encoded string, but this is not certain.
 
 ;; Some yogurt-headed delivery agents don't even provide a From: header.
 (defun vm-grok-From_-author (message)
-  ;; This works only on the From_ types, obviously
-  (if (not (memq (vm-message-type-of message)
-		 '(From_ BellFrom_ From_-with-Content-Length)))
-      nil
-    (with-current-buffer (vm-buffer-of message)
-      (save-excursion
-	(save-restriction
-	  (widen)
-	  (goto-char (vm-start-of message))
-	  (let ((case-fold-search nil))
-	    (if (looking-at "From \\([^ \t\n]+\\)")
-		(vm-buffer-substring-no-properties
-		 (match-beginning 1)
-		 (match-end 1)))))))))
+  ;; This works only on the From_ types, obviously.
+  ;; See `vm-grok-From_-date' for why this has to work on the real message:
+  ;; a virtual message's own buffer holds a copy of the displayed message
+  ;; only, and its location markers point nowhere until then.
+  (let ((m (vm-real-message-of message)))
+    (if (not (memq (vm-message-type-of m)
+		   '(From_ BellFrom_ From_-with-Content-Length)))
+	nil
+      (with-current-buffer (vm-buffer-of m)
+	(save-excursion
+	  (save-restriction
+	    (widen)
+	    (goto-char (vm-start-of m))
+	    (let ((case-fold-search nil))
+	      (if (looking-at "From \\([^ \t\n]+\\)")
+		  (vm-buffer-substring-no-properties
+		   (match-beginning 1)
+		   (match-end 1))))))))))
 
 (defun vm-su-do-author (m)
   "Parses the From headers of the message M and stores the results in
