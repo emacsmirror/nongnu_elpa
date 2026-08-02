@@ -900,12 +900,16 @@ These are less common message/* subtypes."
 ANSWER is returned by any file-name prompt; RECORD, if a symbol, is set
 to the default that prompt was offered."
   (declare (indent 2))
-  `(cl-letf (((symbol-function 'vm-retrieve-operable-messages)
+  ;; vm-select-folder-buffer-and-validate is a defsubst, inlined into
+  ;; its callers once vm-mime.el is compiled, so stubbing it does
+  ;; nothing there.  Give it what it looks for instead.
+  `(progn
+     (setq major-mode 'vm-mode)
+     (setq vm-message-list (list 'fake-message))
+     (cl-letf (((symbol-function 'vm-retrieve-operable-messages)
               (lambda (&rest _) nil))
              ((symbol-function 'vm-check-for-killed-folder) #'ignore)
              ((symbol-function 'vm-check-for-killed-summary) #'ignore)
-             ((symbol-function 'vm-select-folder-buffer-and-validate)
-              (lambda (&rest _) nil))
              ((symbol-function 'vm-select-operable-messages)
               (lambda (&rest _) (list 'fake-message)))
              ((symbol-function 'vm-interactive-p) (lambda () nil))
@@ -918,7 +922,7 @@ to the default that prompt was offered."
              ((symbol-function 'vm-mime-send-body-to-file)
               (lambda (_layout file &rest _)
                 (with-temp-file file (insert "saved")) t)))
-     ,@body))
+       ,@body)))
 
 (defun vm-mime-test-parse-here ()
   "Parse the current buffer as a MIME entity."
@@ -978,13 +982,14 @@ several unnamed parts a sequence of two-second waits."
                   "--B--\n")
           (let ((layout (vm-mime-test-parse-here)))
             (should (= (length (vm-mm-layout-parts layout)) 3))
+            ;; see vm-mime-test-with-save-stubs
+            (setq major-mode 'vm-mode)
+            (setq vm-message-list (list 'fake-message))
             (cl-letf (((symbol-function 'vm-mm-layout) (lambda (_m) layout))
                       ((symbol-function 'vm-retrieve-operable-messages)
                        (lambda (&rest _) nil))
                       ((symbol-function 'vm-check-for-killed-folder) #'ignore)
                       ((symbol-function 'vm-check-for-killed-summary) #'ignore)
-                      ((symbol-function 'vm-select-folder-buffer-and-validate)
-                       (lambda (&rest _) nil))
                       ((symbol-function 'vm-select-operable-messages)
                        (lambda (&rest _) (list 'fake-message)))
                       ((symbol-function 'vm-interactive-p) (lambda () nil))
