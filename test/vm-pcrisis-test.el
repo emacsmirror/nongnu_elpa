@@ -808,6 +808,75 @@
   "Test that resend advice is installed."
   (should (advice-member-p #'vmpc--resend 'vm-resend-message)))
 
+;;; Rule dispatch per composition state (issue #451)
+;;
+;; #451 reported that pcrisis actions stopped firing on `m' and `r' while
+;; still being runnable by hand.  The advice tests above only prove the
+;; entry points are hooked; these cover the rest of the path, which is where
+;; a silent break would leave exactly that symptom.
+
+(defconst vm-pcrisis-test--states '(reply mail newmail forward resend automorph)
+  "Every state `vmpc-init-vars' is called with by the composition advices.")
+
+(ert-deftest vm-pcrisis-test-every-state-has-a-rules-variable ()
+  "Each composition state has the `vmpc-STATE-rules' variable it looks up.
+`vmpc-build-actions-to-run-list' resolves rules through
+\(symbol-value (intern (format \"vmpc-%s-rules\" vmpc-current-state))), so a
+state with no matching variable does not degrade to \"no rules\" -- it
+signals void-variable and takes the whole compose command down with it."
+  (dolist (state vm-pcrisis-test--states)
+    (let ((symbol (intern (format "vmpc-%s-rules" state))))
+      (should (boundp symbol)))))
+
+(ert-deftest vm-pcrisis-test-legacy-alist-names-are-aliases ()
+  "The pre-8.3 `vmpc-*-alist' names still reach the `vmpc-*-rules' variables.
+The rules variables were renamed; a VM 8.2.0 configuration setting the old
+names has to keep working, or its rules are silently never consulted, which
+is what #451 looked like from the outside."
+  (dolist (pair '((vmpc-actions-alist   . vmpc-default-rules)
+                  (vmpc-reply-alist     . vmpc-reply-rules)
+                  (vmpc-forward-alist   . vmpc-forward-rules)
+                  (vmpc-resend-alist    . vmpc-resend-rules)
+                  (vmpc-mail-alist      . vmpc-mail-rules)
+                  (vmpc-newmail-alist   . vmpc-newmail-rules)
+                  (vmpc-automorph-alist . vmpc-automorph-rules)))
+    (should (eq (indirect-variable (car pair)) (cdr pair)))))
+
+(ert-deftest vm-pcrisis-test-legacy-alist-value-reaches-rules ()
+  "Setting a legacy `vmpc-*-alist' name is visible under the new name."
+  (let ((vmpc-newmail-rules nil))
+    (setq vmpc-newmail-alist '(("cond" "act")))
+    (should (equal vmpc-newmail-rules '(("cond" "act"))))))
+
+(defvar vm-pcrisis-test--fired nil
+  "Set by the action in `vm-pcrisis-test-rule-dispatch-runs-action-per-state'.
+A global rather than a `let' binding because action bodies are `eval'ed, so
+they cannot see a lexical variable.")
+
+(ert-deftest vm-pcrisis-test-rule-dispatch-runs-action-per-state ()
+  "REGRESSION: a true condition mapped to an action runs it, in every state.
+This is the whole of what #451 said was broken -- rules configured, actions
+runnable by hand, but nothing triggered automatically.  Driven through
+`vmpc-build-true-conditions-list' and `vmpc-build-actions-to-run-list'
+rather than through the interactive commands, which need a terminal."
+  (dolist (state vm-pcrisis-test--states)
+    (let* ((rules-var (intern (format "vmpc-%s-rules" state)))
+           (saved (symbol-value rules-var))
+           (vmpc-conditions '(("always" t)))
+           (vmpc-actions '(("mark" (setq vm-pcrisis-test--fired t))))
+           (vmpc-actions-to-run nil)
+           (vmpc-true-conditions nil))
+      (setq vm-pcrisis-test--fired nil)
+      (unwind-protect
+          (progn
+            (set rules-var '(("always" "mark")))
+            (vmpc-init-vars state)
+            (should (member "always" (vmpc-build-true-conditions-list)))
+            (should (member "mark" (vmpc-build-actions-to-run-list)))
+            (vmpc-run-actions)
+            (should vm-pcrisis-test--fired))
+        (set rules-var saved)))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here
