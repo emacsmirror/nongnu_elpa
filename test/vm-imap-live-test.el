@@ -282,6 +282,118 @@ IMAP system flag, a VM label is an IMAP keyword."
       (should (member "\\Seen" flags))
       (should (member "vmtestlabel" flags)))))
 
+;;; ------------------------------------------------------------------
+;;; Tier 3 -- fault injection (issues #335, #286)
+;;; ------------------------------------------------------------------
+
+(require 'vm-imap-relay)
+
+(defmacro vm-imap-live-with-relayed-folder (spec &rest body)
+  "Set up a folder reachable through a relay and visit it with VM.
+SPEC is (RELAY-VAR MAILBOX-VAR SERVER-NAME).  BODY runs in the VM folder
+buffer, with the folder already visited through the relay and its
+UIDVALIDITY cached, so a rule set on the relay afterwards affects the *next*
+session -- which is the situation #335 describes."
+  (declare (indent 1) (debug t))
+  (let ((relay (nth 0 spec)) (mailbox (nth 1 spec)) (server-name (nth 2 spec)))
+    `(let* ((server (vm-imap-live-server ,server-name))
+            (account (car (plist-get server :accounts)))
+            (conn (vm-imap-live--open server))
+            (,mailbox nil))
+       (unwind-protect
+           (progn
+             (vm-imap-live-login conn server account)
+             (vm-imap-live-namespace conn)
+             (setq ,mailbox (vm-imap-live-mailbox-name conn))
+             (vm-imap-live-cmd-ok conn "CREATE \"%s\"" ,mailbox)
+             (vm-imap-live-append conn ,mailbox vm-imap-live-test--message)
+             (vm-imap-relay-with (,relay :host (plist-get server :host)
+                                         :port (plist-get server :port))
+               (let* ((via (list :name "via" :host "127.0.0.1"
+                                 :port (vm-imap-relay-port ,relay)
+                                 :tls nil :auth "login"
+                                 :accounts (list account)))
+                      (vm-imap-server-timeout vm-imap-live-timeout))
+                 (unwind-protect
+                     (progn
+                       (vm-visit-imap-folder
+                        (vm-imap-live-spec via account ,mailbox))
+                       ,@body)
+                   (when (eq major-mode 'vm-mode)
+                     (let ((vm-confirm-quit nil))
+                       (ignore-errors (vm-quit-no-change))))))))
+         (when ,mailbox
+           (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" ,mailbox)))
+         (vm-imap-live-close conn)))))
+
+(ert-deftest vm-imap-live-test-relay-passes-traffic-through ()
+  "The relay is transparent when given no rules.
+If this fails, nothing else in tier 3 means anything."
+  (vm-imap-live-skip-unless-server "plain")
+  (let* ((server (vm-imap-live-server "plain"))
+         (account (car (plist-get server :accounts))))
+    (vm-imap-relay-with (relay :host (plist-get server :host)
+                               :port (plist-get server :port))
+      (let* ((via (list :name "via" :host "127.0.0.1"
+                        :port (vm-imap-relay-port relay)
+                        :tls nil :auth "login" :accounts (list account)))
+             (conn (vm-imap-live--open via)))
+        (unwind-protect
+            (progn
+              (vm-imap-live-login conn via account)
+              (should (member "IMAP4REV1" (vm-imap-live-capabilities conn)))
+              (should-not (vm-imap-relay-dropped relay)))
+          (vm-imap-live-close conn))))))
+
+(ert-deftest vm-imap-live-test-dropped-select-is-not-a-uidvalidity-change ()
+  "REGRESSION: a connection lost at SELECT is not read as a new UIDVALIDITY.
+Issue #335: a trace showed the peer dropping after SELECT \"INBOX\" and VM
+treating that as the folder having been recreated, which triggers a
+destructive resync of the cache.
+
+It does not, on alpha.  VM raises a protocol error and leaves the cached
+UIDVALIDITY alone, and critically never reaches the \"Refresh cache?\"
+prompt -- `y-or-n-p' is stubbed here so that reaching it would be visible
+rather than hanging batch ert."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((prompts nil))
+    (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+      (let ((cached (vm-folder-imap-uid-validity)))
+        (should cached)
+        (should (= (length vm-message-list) 1))
+        ;; Kill the next SELECT mid-flight.
+        (setf (vm-imap-relay-drop-on relay) "SELECT")
+        (cl-letf (((symbol-function 'y-or-n-p)
+                   (lambda (prompt) (push prompt prompts) nil)))
+          (should-error (vm-get-new-mail) :type 'error))
+        (should (vm-imap-relay-dropped relay))
+        ;; The destructive branch was never offered...
+        (should-not (seq-find (lambda (p) (string-match-p "UID VALIDITY" p))
+                              prompts))
+        ;; ...and the cache is intact.
+        (should (equal (vm-folder-imap-uid-validity) cached))))))
+
+(ert-deftest vm-imap-live-test-dropped-connection-says-so ()
+  "REGRESSION: a dropped connection is reported as one, not as a timeout.
+`accept-process-output' returns nil both when it waited in vain and when the
+process is gone, and `vm-imap-accept-process-output' used to call both a
+timeout.  That named the wrong cause, and since `vm-imap-server-timeout'
+defaults to nil it blamed a timeout that was not configured at all -- which
+is the \"cannot tell a broken connection from anything else\" complaint
+behind #335 and #286."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+    (setf (vm-imap-relay-drop-on relay) "SELECT")
+    (let ((message
+           (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
+             (condition-case err (progn (vm-get-new-mail) nil)
+               (error (error-message-string err))))))
+      (should message)
+      (should (string-match-p "closed the connection" message))
+      (should-not (string-match-p "Timed out" message)))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here

@@ -462,9 +462,19 @@ for accessing MAILBOX."
   "Accept output from PROCESS for IMAP operations.
 The variable `vm-imap-server-timeout' specifies how many seconds
 to wait before timing out.  If a timeout occurs, a protocol error
-is signaled."
+is signaled.
+
+A closed connection is reported as such rather than as a timeout.
+`accept-process-output' returns nil both when it waited in vain and when
+there is nothing left to wait for, so the two have to be told apart by the
+process status.  Calling a dropped connection a timeout is wrong twice
+over: it names the wrong cause, and `vm-imap-server-timeout' is nil by
+default, so it blamed a timeout that was not even configured."
   (unless (vm-accept-process-output process vm-imap-server-timeout)
-    (vm-imap-protocol-error "Timed out for response from the IMAP server")))
+    (if (memq (process-status process) '(open run connect))
+	(vm-imap-protocol-error "Timed out for response from the IMAP server")
+      (vm-imap-protocol-error
+       "IMAP server closed the connection unexpectedly"))))
 
 
 ;; (defvar vm-imap-connection-mode 'online)  ; moved to vm-vars.el
