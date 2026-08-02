@@ -47,9 +47,32 @@ Opt-in twice over, so a plain =make test= never opens a socket:
 enable flag.  Without the config every live test skips and the run still
 succeeds.
 
-*** one-time dovecot setup
-Paths below are MacPorts'; adjust for your install.
+*** paths
+dovecot's location depends on how it was installed.  The commands below use
+=$DOVECOT_ETC=; set it once:
 
+#+begin_src sh
+DOVECOT_ETC=/opt/local/etc/dovecot            # MacPorts
+DOVECOT_ETC="$(brew --prefix)/etc/dovecot"    # Homebrew
+DOVECOT_ETC=/etc/dovecot                      # Linux distribution packages
+#+end_src
+
+| install       | prefix                  | reload                          |
+|---------------+-------------------------+---------------------------------|
+| MacPorts      | =/opt/local=            | =sudo port reload dovecot=      |
+| Homebrew arm  | =/opt/homebrew=         | =brew services restart dovecot= |
+| Homebrew x86  | =/usr/local=            | =brew services restart dovecot= |
+| Linux         | =/usr=, config in =/etc= | =sudo systemctl reload dovecot= |
+
+=doveadm reload= works anywhere, given the privileges to talk to the running
+instance.  =$(brew --prefix)= is the reliable way to get the Homebrew prefix
+rather than assuming which of the two it is.
+
+Two files matter: =$DOVECOT_ETC/users=, the =passwd-file= passdb named by the
+=passdb {}= block, and =dovecot.conf= or something it includes from
+=conf.d/=.  Confirm what your instance actually reads with =doveconf -n=.
+
+*** one-time dovecot setup
 Add two test users.  =doveadm pw= prompts for the password and prints the
 hash.  Check =doveadm pw -l= for the schemes your build actually has -- the
 MacPorts 2.3.21 build has no =SHA512-CRYPT=, so use =BLF-CRYPT=:
@@ -61,17 +84,15 @@ doveadm pw -s BLF-CRYPT
 =doveadm= may complain =net_connect_unix(.../stats-writer) failed: Permission
 denied= on the way; for =pw= that is noise, the hash is still printed.
 
-Append the users to the =passwd-file= passdb,
-=/opt/local/etc/dovecot/users=.  The userdb supplies uid, gid and home, so
-the remaining fields stay empty:
+Append the users to =$DOVECOT_ETC/users=.  The userdb supplies uid, gid and
+home, so the remaining fields stay empty:
 
 #+begin_example
 vmtest1:{BLF-CRYPT}$2y$05$...:::::
 vmtest2:{BLF-CRYPT}$2y$05$...:::::
 #+end_example
 
-Then reload dovecot -- =doveadm reload=, or on MacPorts
-=sudo port reload dovecot2=.  Either may need privileges.
+Then reload dovecot, per the table above.  It may need privileges.
 
 Two accounts, because the cross-account tests -- saving to another IMAP
 folder, IMAP-FCC -- need somewhere to save *to*.  Use throwaway accounts:
@@ -88,14 +109,15 @@ GnuTLS checks it and ignores a bare CN, and the name has to match the =:host=
 in the config:
 
 #+begin_src sh
-sudo mkdir -p /opt/local/etc/dovecot/ssl
+sudo mkdir -p "$DOVECOT_ETC/ssl"
 sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
      -subj /CN=localhost -addext subjectAltName=DNS:localhost \
-     -keyout /opt/local/etc/dovecot/ssl/vmtest-key.pem \
-     -out   /opt/local/etc/dovecot/ssl/vmtest-cert.pem
+     -keyout "$DOVECOT_ETC/ssl/vmtest-key.pem" \
+     -out   "$DOVECOT_ETC/ssl/vmtest-cert.pem"
 #+end_src
 
-Enable it in the dovecot config, then =doveadm reload=:
+Enable it in the dovecot config and reload.  dovecot.conf does no shell
+expansion, so write the paths out in full -- these are the MacPorts ones:
 
 #+begin_example
 ssl = yes
@@ -125,6 +147,7 @@ its tests then skip.
          :port     993
          :tls      t
          :auth     "login"
+         ;; $DOVECOT_ETC/ssl/vmtest-cert.pem, written out in full
          :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
          :accounts (("vmtest1" . "PASSWORD1")))))
 #+end_src
