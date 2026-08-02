@@ -1302,7 +1302,14 @@ into your VM init file."
 
 (display-warning
  'vm-pgg
- "vm-pgg is deprecated and will be removed; please use vm-epg instead.")
+ (concat
+  "vm-pgg is deprecated and will be removed; please use vm-epg instead.\n"
+  (when (featurep 'vm-epg)
+    (concat
+     "vm-epg is also loaded.  Do not load both: they define the same\n"
+     "vm-mime-display-internal-* handlers, so the one loaded last (vm-pgg)\n"
+     "now wins and vm-epg's customizations have no effect.\n"))
+  "Remove (require 'vm-pgg) from your configuration."))
 
 (provide 'vm-pgg)
 
