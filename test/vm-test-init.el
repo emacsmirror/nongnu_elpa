@@ -43,6 +43,10 @@
 ;; Add VM lisp directory to load path
 (add-to-list 'load-path vm-test-lisp-dir)
 
+;; ...and the test directory itself, so a test file can `require' a helper
+;; module that lives beside it, such as vm-imap-live-init.
+(add-to-list 'load-path vm-test-dir)
+
 ;;; Load VM modules
 
 (require 'vm-macro)

@@ -45,3 +45,5 @@ commit.msg
 /.claude/
 
 /test/coverage-results.txt
+
+/test/vm-imap-config.el
