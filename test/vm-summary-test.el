@@ -451,6 +451,83 @@ Second line here.
       (let ((name (vm-su-interesting-full-name msg)))
         (should (or (null name) (stringp name)))))))
 
+;;; From_ envelope parsing for virtual messages (issue #447)
+
+(defun vm-summary-test--make-virtual-message (real-m virtual-buffer)
+  "Return a virtual message in VIRTUAL-BUFFER mirroring REAL-M.
+Built the way `vm-build-virtual-message-list' builds one, in particular with
+a location-data vector of markers that point nowhere.  Those markers are
+shared by every virtual message in the folder and are only aimed at anything
+by `vm-make-virtual-copy', for the one message being displayed -- so during
+summary generation, which is what #447 is about, they point nowhere."
+  (let ((vector (make-vector vm-location-data-vector-length nil))
+        (i 0)
+        (message (copy-sequence real-m)))
+    (while (< i vm-location-data-vector-length)
+      (aset vector i (vm-marker nil))
+      (setq i (1+ i)))
+    (vm-set-location-data-of message vector)
+    (vm-set-softdata-of message (make-vector vm-softdata-vector-length nil))
+    (vm-set-real-message-sym-of message (vm-real-message-sym-of real-m))
+    (vm-set-buffer-of message virtual-buffer)
+    message))
+
+(defconst vm-summary-test--from_-folder
+  "From alice@example.com Mon Jan  1 00:00:00 2024
+Subject: No From header
+
+Body text
+"
+  "A From_ folder whose message has no From: or Date: header.
+`vm-su-do-author' only falls back to `vm-grok-From_-author', and the date
+only falls back to `vm-grok-From_-date', when the headers are absent.")
+
+(ert-deftest vm-summary-test-grok-from_-author-on-virtual-message ()
+  "REGRESSION: the From_ author of a virtual message reads the real folder.
+`vm-grok-From_-author' took its buffer and its position from the message it
+was handed.  For a virtual message that is the virtual folder buffer and the
+shared location markers, which point nowhere until the message is displayed,
+so generating the summary of a virtual folder signalled a marker error
+instead of returning the author (issue #447)."
+  (vm-test-with-folder vm-summary-test--from_-folder
+    (let ((real-m (car vm-message-list))
+          (virtual-buffer (generate-new-buffer " *vm-test-virtual*")))
+      (unwind-protect
+          (let ((virtual-m (vm-summary-test--make-virtual-message
+                            real-m virtual-buffer)))
+            ;; Mirror a From_-flavoured virtual folder.
+            (vm-set-message-type-of virtual-m 'From_)
+            (should (equal (vm-grok-From_-author virtual-m)
+                           "alice@example.com"))
+            (should (equal (vm-grok-From_-author virtual-m)
+                           (vm-grok-From_-author real-m))))
+        (kill-buffer virtual-buffer)))))
+
+(ert-deftest vm-summary-test-grok-from_-date-on-virtual-message ()
+  "REGRESSION: the From_ date of a virtual message reads the real folder.
+As for the author above: `vm-grok-From_-date' switched to the real message's
+buffer but then used the virtual message's own start marker, mixing the two."
+  (vm-test-with-folder vm-summary-test--from_-folder
+    (let ((real-m (car vm-message-list))
+          (virtual-buffer (generate-new-buffer " *vm-test-virtual*")))
+      (unwind-protect
+          (let ((virtual-m (vm-summary-test--make-virtual-message
+                            real-m virtual-buffer)))
+            (vm-set-message-type-of virtual-m 'From_)
+            (should (equal (vm-grok-From_-date virtual-m)
+                           "Mon Jan  1 00:00:00 2024"))
+            (should (equal (vm-grok-From_-date virtual-m)
+                           (vm-grok-From_-date real-m))))
+        (kill-buffer virtual-buffer)))))
+
+(ert-deftest vm-summary-test-grok-from_-ignores-non-from_-folders ()
+  "A folder type without a From_ envelope line yields nil, not a guess."
+  (vm-test-with-folder vm-summary-test--from_-folder
+    (let ((m (car vm-message-list)))
+      (vm-set-message-type-of m 'mmdf)
+      (should-not (vm-grok-From_-author m))
+      (should-not (vm-grok-From_-date m)))))
+
 (provide 'vm-summary-test)
 
 ;;; vm-summary-test.el ends here
