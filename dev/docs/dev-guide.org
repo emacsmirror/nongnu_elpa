@@ -20,3 +20,153 @@ gets Lisp nesting exceeds `max-lisp-eval-depth': 1601
 make elisp-lint
 *** lots of errors, many false positives.
 
+* testing
+** running the suite
+cd test && make test
+
+Other targets, all from =test/=:
+
+| make test          | whole suite, batch ert                     |
+| make test-verbose  | same, with deeper printing                 |
+| make test-one      | one file: make test-one testel=vm-imap-test.el |
+| make test-coverage | writes test/coverage-results.txt           |
+| make test-imap     | live IMAP tests, see below                 |
+
+Each target byte-compiles =lisp/= first, deliberately: macros and =defsubst=
+forms are inlined at compile time, so a test that stubs one of those passes
+from source and silently does nothing against a =.elc=.  If a fix-reverted run
+still passes, suspect a stale =.elc= before suspecting the test.
+
+** live IMAP tests
+Tests that talk to a real IMAP server, for the parts of =vm-imap.el= that
+cannot be reached with mocks.  Design and rationale:
+[[file:design/imap-live-tests.org][design/imap-live-tests.org]].
+
+Opt-in twice over, so a plain =make test= never opens a socket:
+=test/vm-imap-config.el= has to exist, and only =make test-imap= sets the
+enable flag.  Without the config every live test skips and the run still
+succeeds.
+
+*** one-time dovecot setup
+Paths below are MacPorts'; adjust for your install.
+
+Add two test users.  =doveadm pw= prompts for the password and prints the
+hash.  Check =doveadm pw -l= for the schemes your build actually has -- the
+MacPorts 2.3.21 build has no =SHA512-CRYPT=, so use =BLF-CRYPT=:
+
+#+begin_src sh
+doveadm pw -s BLF-CRYPT
+#+end_src
+
+=doveadm= may complain =net_connect_unix(.../stats-writer) failed: Permission
+denied= on the way; for =pw= that is noise, the hash is still printed.
+
+Append the users to the =passwd-file= passdb,
+=/opt/local/etc/dovecot/users=.  The userdb supplies uid, gid and home, so
+the remaining fields stay empty:
+
+#+begin_example
+vmtest1:{BLF-CRYPT}$2y$05$...:::::
+vmtest2:{BLF-CRYPT}$2y$05$...:::::
+#+end_example
+
+Then reload dovecot -- =doveadm reload=, or on MacPorts
+=sudo port reload dovecot2=.  Either may need privileges.
+
+Two accounts, because the cross-account tests -- saving to another IMAP
+folder, IMAP-FCC -- need somewhere to save *to*.  Use throwaway accounts:
+the tests create and delete mailboxes named =vmtest*=.  Never point the
+config at an account holding real mail.
+
+*** one-time TLS setup, for the TLS tests only
+The plain tests need nothing further.  For TLS, dovecot ships listening on
+993 but with =ssl = no= and no certificate, so the port accepts a connection
+and then cannot complete a handshake.
+
+Generate a self-signed certificate.  The =subjectAltName= matters: modern
+GnuTLS checks it and ignores a bare CN, and the name has to match the =:host=
+in the config:
+
+#+begin_src sh
+sudo mkdir -p /opt/local/etc/dovecot/ssl
+sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+     -subj /CN=localhost -addext subjectAltName=DNS:localhost \
+     -keyout /opt/local/etc/dovecot/ssl/vmtest-key.pem \
+     -out   /opt/local/etc/dovecot/ssl/vmtest-cert.pem
+#+end_src
+
+Enable it in the dovecot config, then =doveadm reload=:
+
+#+begin_example
+ssl = yes
+ssl_cert = </opt/local/etc/dovecot/ssl/vmtest-cert.pem
+ssl_key = </opt/local/etc/dovecot/ssl/vmtest-key.pem
+#+end_example
+
+Only implicit TLS on 993 is covered.  VM has no STARTTLS, and the
+=vm-stunnel-program= route is deliberately not tested.
+
+*** the config file
+Create =test/vm-imap-config.el=.  It is gitignored -- it holds passwords, so
+keep it that way.  Drop the second entry if you have not done the TLS setup;
+its tests then skip.
+
+#+begin_src elisp
+(setq vm-imap-test-servers
+      '((:name     "plain"
+         :host     "127.0.0.1"
+         :port     143
+         :tls      nil
+         :auth     "login"
+         :accounts (("vmtest1" . "PASSWORD1")
+                    ("vmtest2" . "PASSWORD2")))
+        (:name     "tls"
+         :host     "localhost"        ; must match the certificate's SAN
+         :port     993
+         :tls      t
+         :auth     "login"
+         :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
+         :accounts (("vmtest1" . "PASSWORD1")))))
+#+end_src
+
+A password cannot contain a colon.  VM's maildrop spec is
+=imap:HOST:PORT:MAILBOX:AUTH:USER:PASSWORD=, colon-delimited, and cannot
+express one.
+
+=:trustfile= is the self-signed certificate itself, which is its own trust
+anchor.  Without it Emacs either rejects the certificate or prompts, and a
+prompt under batch ert is a hang.
+
+*** running them
+#+begin_src sh
+cd test && make test-imap
+#+end_src
+
+Reading the result:
+
+- Everything skipped :: no config file, or it set no servers.
+- A configured server that cannot be reached fails, it does not skip.  That
+  is on purpose; a suite that quietly skips a server it was told about has no
+  coverage.
+- A slow cascade of timeouts rather than tidy authentication failures means
+  the password is wrong.  dovecot's anvil service escalates a per-IP penalty
+  on repeated auth failures until it exceeds the harness timeout, so check
+  the credentials before suspecting the harness.
+- TLS handshake failures :: =ssl = no= still set, the certificate's
+  =subjectAltName= not matching =:host=, or =:trustfile= pointing elsewhere.
+
+=mail_max_userip_connections= (10 by default) caps concurrent sessions per
+IP, so a test that leaks sessions will start failing its neighbours.
+
+*** optional: covering VM's cram-md5 auth
+Only =login= is exercised by default.  VM also has a =cram-md5= branch, which
+needs both a server mechanism and a matching hash, since dovecot ships with
+=auth_mechanisms = plain=:
+
+#+begin_example
+auth_mechanisms = plain cram-md5
+#+end_example
+
+and a =doveadm pw -s CRAM-MD5= hash for the user.  Then add a third server
+entry with =:auth "cram-md5"=.  Nothing tests this yet.
+
