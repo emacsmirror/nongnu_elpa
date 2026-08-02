@@ -14,6 +14,15 @@
 
 ;;; Code:
 
+;; Never test stale bytecode.  Emacs loads a .elc in preference to its
+;; .el even when the source is newer -- it warns, but it still loads the
+;; old build -- so a test run after an edit can silently exercise the
+;; previous compile and pass.  This has to be set before any vm module
+;; is required, and it lives here rather than in run-tests.el because
+;; `make test-one', `make test-coverage' and hand-written
+;; `emacs -batch' invocations all load this file but not that one.
+(setq load-prefer-newer t)
+
 (require 'ert)
 (require 'cl-lib)
 
