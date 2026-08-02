@@ -400,10 +400,14 @@ There is no presentation buffer, so the body copied is the raw one."
     (vm-test-with-folder vm-postpone-test-draft
       (setq vm-message-pointer vm-message-list)
       (setq vm-mime-decoded decoded)
+      ;; Satisfy vm-select-folder-buffer-and-validate rather than
+      ;; stubbing it: it is a defsubst, so once vm-postpone.el is
+      ;; byte-compiled its body is inlined into the caller and
+      ;; replacing its function cell does nothing.  All it wants is a
+      ;; buffer that looks like a folder.
+      (setq major-mode 'vm-mode)
       (cl-letf (((symbol-function 'vm-session-initialization) #'ignore)
                 ((symbol-function 'vm-follow-summary-cursor) #'ignore)
-                ((symbol-function 'vm-select-folder-buffer-and-validate)
-                 (lambda (&rest _) nil))
                 ((symbol-function 'vm-show-current-message) #'ignore))
         (vm-continue-postponed-message t)
         (setq result (buffer-string))))
