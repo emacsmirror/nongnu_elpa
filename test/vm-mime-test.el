@@ -977,6 +977,30 @@ there was one, so the file would have been sent twice."
       (should (equal (get-text-property (1+ start) 'vm-mime-parameters)
                      '("name=\"renamed.txt\""))))))
 
+(ert-deftest vm-mime-test-rename-attachment-name-with-comma ()
+  "Test renaming twice when the first name contained a comma.
+The tag reads \"[ATTACHMENT <name>, <type>]\" and the name was matched
+up to the first comma, so a comma in the name meant the next rename
+replaced only the part before it, leaving the rest in the tag:
+\"[ATTACHMENT second.txt,comma.txt, text/plain]\".  The encoded name
+stayed right, so what the tag showed and what would be sent diverged."
+  (vm-mime-test-with-attachment-tag nil
+    (vm-mime-set-attachment-name-at-point "with,comma.txt")
+    (should (equal (vm-mime-attachment-name-at-point) "with,comma.txt"))
+    (should (string-match "\\[ATTACHMENT with,comma\\.txt, text/plain\\]"
+                          (buffer-string)))
+    ;; rename again; the whole old name must go
+    (goto-char (point-min))
+    (search-forward "[ATTACHMENT")
+    (backward-char 3)
+    (vm-mime-set-attachment-name-at-point "second.txt")
+    (should (equal (vm-mime-attachment-name-at-point) "second.txt"))
+    (should (string-match "\\[ATTACHMENT second\\.txt, text/plain\\]"
+                          (buffer-string)))
+    (should-not (string-match "comma" (buffer-string)))
+    (should (= 1 (length (vm-mime-attachment-button-extents
+                          (point-min) (point-max) 'vm-mime-object))))))
+
 (ert-deftest vm-mime-test-rename-attachment-reaches-encoding ()
   "Test that the new name is what gets sent."
   (vm-mime-test-with-attachment-tag nil
