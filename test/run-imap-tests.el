@@ -6,9 +6,9 @@
 
 ;;; Commentary:
 
-;; Runs only the live IMAP tests, with `vm-imap-live-enabled' set.  This
-;; runner is the sole thing that sets that flag, which is what keeps `make
-;; test' from ever contacting a server.
+;; Runs only the live IMAP tests, for when that is all you care about.  They
+;; are not exclusive to this runner: given test/vm-imap-config.el they also
+;; run as part of `make test'.
 ;;
 ;; Run with: make test-imap
 ;;
@@ -27,8 +27,6 @@
 (load (expand-file-name "vm-test-init.el" vm-imap-test-runner-dir))
 
 (require 'vm-imap-live-init)
-
-(setq vm-imap-live-enabled t)
 
 (unless vm-imap-test-servers
   (message "No test/vm-imap-config.el, or it configured no servers.")

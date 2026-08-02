@@ -42,10 +42,18 @@ Tests that talk to a real IMAP server, for the parts of =vm-imap.el= that
 cannot be reached with mocks.  Design and rationale:
 [[file:design/imap-live-tests.org][design/imap-live-tests.org]].
 
-Opt-in twice over, so a plain =make test= never opens a socket:
-=test/vm-imap-config.el= has to exist, and only =make test-imap= sets the
-enable flag.  Without the config every live test skips and the run still
-succeeds.
+The opt-in is =test/vm-imap-config.el=.  Create it and these run as part of
+=make test= like any other test; without it they all skip and the suite still
+passes.  =make test-imap= runs only them, which is the convenient thing while
+working on IMAP.
+
+So on a configured machine =make test= does reach the network and takes
+longer.  To suppress that without deleting the config:
+
+#+begin_src sh
+emacs -batch -Q -L ../lisp --eval '(setq vm-imap-live-enabled nil)' \
+      -l run-tests.el
+#+end_src
 
 *** paths
 dovecot's location depends on how it was installed.  The commands below use

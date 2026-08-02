@@ -9,10 +9,14 @@
 ;; Support for testing vm-imap.el against a real IMAP server.  See
 ;; dev/docs/design/imap-live-tests.org.
 ;;
-;; These tests are opt-in twice over: a gitignored test/vm-imap-config.el has
-;; to exist, and `vm-imap-live-enabled' has to be set, which only
-;; test/run-imap-tests.el (make test-imap) does.  So `make test' never
-;; contacts a server, even on a configured machine.
+;; The opt-in is a gitignored test/vm-imap-config.el naming the servers to
+;; use.  With it in place these run as part of `make test' like anything else;
+;; without it they all skip.  `make test-imap' runs only this file, which is
+;; the convenient thing while working on IMAP.
+;;
+;; So on a configured machine `make test' does reach the network and does take
+;; longer.  Bind `vm-imap-live-enabled' to nil to suppress that without
+;; removing the config.
 ;;
 ;; Everything here talks to the server with its own minimal IMAP client
 ;; rather than with vm-imap.el.  That is deliberate: if fixtures were built
@@ -45,9 +49,11 @@
 ;;; Opt-in
 ;;; ------------------------------------------------------------------
 
-(defvar vm-imap-live-enabled nil
-  "Non-nil to run the live IMAP tests.
-Set by test/run-imap-tests.el only, so `make test' never uses the network.")
+(defvar vm-imap-live-enabled t
+  "Whether the live IMAP tests may run at all.
+They run only when `vm-imap-live-config-file' also exists, so the config is
+the real opt-in.  Bind this to nil to keep a configured checkout from using
+the network -- in CI, say -- without deleting the config.")
 
 (defvar vm-imap-live-config-file
   (expand-file-name "vm-imap-config.el" vm-test-dir)

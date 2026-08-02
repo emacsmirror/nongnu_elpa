@@ -35,11 +35,26 @@ Body of the smoke test message.\r
 ;;; Configuration sanity -- these run without a server
 ;;; ------------------------------------------------------------------
 
-(ert-deftest vm-imap-live-test-disabled-by-default ()
-  "The live tests are inert unless deliberately enabled.
-`make test' must never contact a server, even on a configured machine."
-  (skip-unless (not vm-imap-live-enabled))
+(ert-deftest vm-imap-live-test-inert-without-a-config ()
+  "With no config file, nothing here touches the network.
+The config is the opt-in: an unconfigured checkout must run the whole suite
+without a server, so every live test has to skip rather than fail."
+  (skip-unless (not vm-imap-test-servers))
   (should-not (vm-imap-live-available-p)))
+
+(ert-deftest vm-imap-live-test-runs-when-configured ()
+  "With a config file, and not suppressed, the live tests are live.
+The other half of the contract above: a configured checkout must actually
+exercise them, or the config silently buys nothing."
+  (skip-unless (and vm-imap-test-servers vm-imap-live-enabled))
+  (should (vm-imap-live-available-p))
+  (should (vm-imap-live-server "plain")))
+
+(ert-deftest vm-imap-live-test-enabled-flag-suppresses ()
+  "Binding `vm-imap-live-enabled' to nil suppresses the live tests.
+The escape hatch for a configured checkout that must not use the network."
+  (let ((vm-imap-live-enabled nil))
+    (should-not (vm-imap-live-available-p))))
 
 (ert-deftest vm-imap-live-test-spec-round-trips-through-vm ()
   "A spec built by the harness parses back to the same parts in VM.
