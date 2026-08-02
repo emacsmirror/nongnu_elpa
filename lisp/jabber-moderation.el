@@ -142,6 +142,7 @@ server id.  JC is the connection the stanza arrived on."
 (defun jabber-moderation--mark-ewoc-retracted (server-id retracted-by reason)
   "Mark the ewoc node with SERVER-ID as retracted in the current buffer.
 RETRACTED-BY and REASON are stored on the message plist."
+  (jabber-message-thread--mark-root-retracted server-id)
   (when-let* ((node (jabber-chat-ewoc-find-by-id server-id))
               (data (ewoc-data node))
               (msg (cadr data))

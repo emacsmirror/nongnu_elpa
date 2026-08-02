@@ -58,6 +58,9 @@ original parent chat buffer paths.  Thread metadata remains stored."
   :type 'boolean
   :group 'jabber-chat)
 
+(defconst jabber-message-thread--preview-width 48
+  "Maximum display width of an automatic thread preview.")
+
 (declare-function jabber-chat-mode "jabber-chatbuffer" ())
 (declare-function jabber-chat-mode-setup "jabber-chatbuffer" (jc ewoc-pp))
 (declare-function jabber-chat-pp "jabber-chat" (data))
@@ -86,6 +89,12 @@ original parent chat buffer paths.  Thread metadata remains stored."
 
 (defvar-local jabber-message-thread-title nil
   "Local display title for the current thread buffer, or nil.")
+
+(defvar-local jabber-message-thread-root-preview nil
+  "Display preview of the current thread's root message, or nil.")
+
+(defvar-local jabber-message-thread-parent-name nil
+  "Buffer-name prefix inherited from the parent conversation.")
 
 (defvar-local jabber-message-thread-session-id nil
   "Current XEP-0201 session ID for an ordinary parent chat buffer.")
@@ -203,21 +212,47 @@ PARENT-BUFFER is the ordinary conversation view.  The result is
                    'jabber-message-thread-session-id parent-buffer)))
       'parent))))
 
-(defun jabber-message-thread--buffer-name (parent-buffer thread-id)
-  "Return a thread buffer name derived from PARENT-BUFFER and THREAD-ID."
-  (format "%s [thread %s]*"
-          (string-remove-suffix "*" (buffer-name parent-buffer))
-          (substring thread-id 0 (min 8 (length thread-id)))))
+(defun jabber-message-thread--root-preview (root-msg)
+  "Return ROOT-MSG's normalized display preview, or nil."
+  (when root-msg
+    (if (plist-get root-msg :retracted)
+        "[Message retracted]"
+      (let ((body
+             (string-trim
+              (replace-regexp-in-string
+               "[[:space:][:cntrl:]]+" " "
+               (substring-no-properties
+                (or (plist-get root-msg :body) ""))))))
+        (truncate-string-to-width
+         (if (string-empty-p body) "(no text)" body)
+         jabber-message-thread--preview-width nil nil "…")))))
+
+(defun jabber-message-thread--buffer-name (parent-name label)
+  "Return a thread buffer name from PARENT-NAME and display LABEL."
+  (format "%s [%s]*"
+          parent-name (or label "Thread")))
+
+(defun jabber-message-thread--rename-buffer ()
+  "Rename the current thread buffer for its current display title."
+  (when jabber-message-thread-parent-name
+    (rename-buffer
+     (jabber-message-thread--buffer-name
+      jabber-message-thread-parent-name
+      (or jabber-message-thread-title
+          jabber-message-thread-root-preview))
+     t)))
 
 (defun jabber-message-thread--header ()
   "Return the header text for the current thread buffer."
-  (format " %sThread in %s"
-          (if jabber-message-thread-title
-              (concat
-               (string-replace "%" "%%" jabber-message-thread-title)
-               " · ")
-            "")
-          (jabber-jid-displayname jabber-message-thread-peer)))
+  (let ((label (or jabber-message-thread-title
+                   jabber-message-thread-root-preview)))
+    (format " %sThread in %s"
+            (if label
+                (concat
+                 (string-replace "%" "%%" label)
+                 " · ")
+              "")
+            (jabber-jid-displayname jabber-message-thread-peer))))
 
 (defun jabber-message-thread--setup-kind (peer type)
   "Set conversation variables and send function for PEER and TYPE."
@@ -243,58 +278,85 @@ PARENT-BUFFER is the ordinary conversation view.  The result is
       (setq jabber-chat-earliest-backlog (float-time)))))
 
 (defun jabber-message-thread-create-buffer
-    (jc peer type thread-id parent-id parent-buffer &optional root-msg)
+    (jc peer type thread-id parent-id parent-buffer
+        &optional root-msg display-msg)
   "Create or return THREAD-ID's buffer on JC for PEER and TYPE.
 PARENT-ID records lineage, PARENT-BUFFER names the sibling view, and
-ROOT-MSG supplies the initial XEP-0461 link."
+ROOT-MSG supplies the first outgoing reply's XEP-0461 link.
+DISPLAY-MSG supplies the preview when it differs from ROOT-MSG."
   (jabber-message-thread--ensure-buffers)
   (let* ((account (jabber-connection-bare-jid jc))
          (existing
           (jabber-message-thread-find-buffer account peer type thread-id)))
     (or existing
-        (with-current-buffer
-            (get-buffer-create
-             (generate-new-buffer-name
-              (jabber-message-thread--buffer-name parent-buffer thread-id)))
-          (jabber-chat-mode)
-          (setq-local jabber-message-thread-id thread-id)
-          (setq-local jabber-message-thread-parent-id parent-id)
-          (setq-local jabber-message-thread-type type)
-          (setq-local jabber-message-thread-peer peer)
-          (setq-local jabber-message-thread-title
-                      (plist-get
-                       (jabber-db-message-thread-summary
-                        account peer type thread-id)
-                       :title))
-          (jabber-message-thread--setup-kind peer type)
-          (jabber-chat-mode-setup jc #'jabber-chat-pp)
-          (setq-local jabber-send-function
-                      (if (equal type "groupchat")
-                          #'jabber-muc-send
-                        #'jabber-chat-send))
-          (setq-local jabber-chat-header-line-format-override
-                      '((:eval (jabber-message-thread--header))
-                        (:eval jabber-chat-receipt-message)))
-          (setq-local header-line-format
-                      jabber-chat-header-line-format-override)
-          (add-hook 'jabber-chat-send-hooks
-                    #'jabber-message-thread--send-hook nil t)
-          (setq-local jabber-message-thread--root-reply-id
-                      (and root-msg
-                           (if (equal type "groupchat")
-                               (plist-get root-msg :server-id)
-                             (or (plist-get root-msg :origin-id)
-                                 (plist-get root-msg :id))))
-                      jabber-message-thread--root-reply-jid
-                      (and root-msg (plist-get root-msg :from)))
-          (jabber-buffer-registry-register
-           'thread
-           (jabber-message-thread--key account peer type thread-id))
-          (jabber-message-thread--load-backlog
-           account peer type thread-id)
-          (run-hook-with-args
-           'jabber-message-thread-buffer-created-functions parent-buffer)
-          (current-buffer)))))
+        (let* ((parent-name
+                (string-remove-suffix "*" (buffer-name parent-buffer)))
+               (summary
+                (jabber-db-message-thread-summary
+                 account peer type thread-id))
+               (title (plist-get summary :title))
+               (root-preview
+                (jabber-message-thread--root-preview
+                 (or display-msg root-msg))))
+          (with-current-buffer
+              (get-buffer-create
+               (generate-new-buffer-name
+                (jabber-message-thread--buffer-name
+                 parent-name (or title root-preview))))
+            (jabber-chat-mode)
+            (setq-local jabber-message-thread-id thread-id)
+            (setq-local jabber-message-thread-parent-id parent-id)
+            (setq-local jabber-message-thread-type type)
+            (setq-local jabber-message-thread-peer peer)
+            (setq-local jabber-message-thread-title title)
+            (setq-local jabber-message-thread-root-preview root-preview)
+            (setq-local jabber-message-thread-parent-name parent-name)
+            (jabber-message-thread--setup-kind peer type)
+            (jabber-chat-mode-setup jc #'jabber-chat-pp)
+            (setq-local jabber-send-function
+                        (if (equal type "groupchat")
+                            #'jabber-muc-send
+                          #'jabber-chat-send))
+            (setq-local jabber-chat-header-line-format-override
+                        '((:eval (jabber-message-thread--header))
+                          (:eval jabber-chat-receipt-message)))
+            (setq-local header-line-format
+                        jabber-chat-header-line-format-override)
+            (add-hook 'jabber-chat-send-hooks
+                      #'jabber-message-thread--send-hook nil t)
+            (setq-local jabber-message-thread--root-reply-id
+                        (and root-msg
+                             (if (equal type "groupchat")
+                                 (plist-get root-msg :server-id)
+                               (or (plist-get root-msg :origin-id)
+                                   (plist-get root-msg :id))))
+                        jabber-message-thread--root-reply-jid
+                        (and root-msg (plist-get root-msg :from)))
+            (jabber-buffer-registry-register
+             'thread
+             (jabber-message-thread--key account peer type thread-id))
+            (jabber-message-thread--load-backlog
+             account peer type thread-id)
+            (run-hook-with-args
+             'jabber-message-thread-buffer-created-functions parent-buffer)
+            (current-buffer))))))
+
+(defun jabber-message-thread--mark-root-retracted (server-id)
+  "Replace the cached root preview when SERVER-ID identifies the root."
+  (when-let* ((thread-id
+               (bound-and-true-p jabber-message-thread-id))
+              (connection
+               (bound-and-true-p jabber-buffer-connection))
+              (account (jabber-connection-bare-jid connection))
+              (summary
+               (jabber-db-message-thread-summary
+                account jabber-message-thread-peer
+                jabber-message-thread-type thread-id))
+              ((equal server-id
+                      (plist-get summary :root-server-id))))
+    (setq jabber-message-thread-root-preview "[Message retracted]")
+    (jabber-message-thread--rename-buffer)
+    (force-mode-line-update t)))
 
 (defun jabber-message-thread-display-target
     (jc peer type msg)
@@ -562,7 +624,8 @@ PEER and TYPE scope the exact stored message lookup."
           connection peer type (plist-get summary :thread-id)
           (plist-get summary :thread-parent-id) parent
           (and (zerop (plist-get summary :local-reply-count))
-               (plist-get summary :root-message)))))
+               (plist-get summary :root-message))
+          (plist-get summary :root-message))))
     (jabber-db-mark-message-thread-read
      account peer type (plist-get summary :thread-id))
     (jabber-message-thread--refresh-root
@@ -600,6 +663,7 @@ PEER and TYPE scope the exact stored message lookup."
           (jabber-db-set-message-thread-title
            account jabber-message-thread-peer jabber-message-thread-type
            jabber-message-thread-id title))
+    (jabber-message-thread--rename-buffer)
     (force-mode-line-update t)))
 
 (defun jabber-message-thread--refresh-thread-root
@@ -635,14 +699,19 @@ ACCOUNT, PEER, and TYPE scope the thread."
                (account
                 (jabber-connection-bare-jid jabber-buffer-connection))
                (created-at (floor (float-time)))
-               (parent-buffer (current-buffer)))
+               (parent-buffer (current-buffer))
+               (root-msg
+                (list :body
+                      (buffer-substring-no-properties
+                       jabber-point-insert (point-max)))))
     (jabber-chat-buffer-send
      (jabber-message-thread--elements thread-id nil))
     (jabber-db-register-message-thread
      account peer type thread-id nil nil nil created-at)
     (pop-to-buffer
      (jabber-message-thread-create-buffer
-      jabber-buffer-connection peer type thread-id nil parent-buffer nil))))
+      jabber-buffer-connection peer type thread-id nil parent-buffer
+      nil root-msg))))
 
 ;;;###autoload
 (defun jabber-message-thread-open (&optional msg)
@@ -693,9 +762,9 @@ ACCOUNT, PEER, and TYPE scope the thread."
            (jabber-message-thread-create-buffer
             jabber-buffer-connection peer type thread-id
             (plist-get summary :thread-parent-id)
-            (current-buffer) (and (zerop (plist-get summary
-                                                    :local-reply-count))
-                                  msg))))
+            (current-buffer)
+            (and (zerop (plist-get summary :local-reply-count)) msg)
+            msg)))
       (jabber-db-mark-message-thread-read
        account peer type thread-id)
       (jabber-message-thread--refresh-root account peer type thread-id)

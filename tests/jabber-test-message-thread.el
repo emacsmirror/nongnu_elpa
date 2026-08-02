@@ -106,6 +106,37 @@
     (should (string-match-p "\\`[[:xdigit:]]\\{64\\}\\'" first))
     (should-not (equal first second))))
 
+(ert-deftest jabber-test-message-thread-root-preview ()
+  "Normalize and truncate a root message for display."
+  (should
+   (equal "First line with extra space"
+          (jabber-message-thread--root-preview
+           '(:body "  First\nline\twith  extra space  "))))
+  (let ((preview
+         (jabber-message-thread--root-preview
+          (list :body (make-string 60 ?x)))))
+    (should (= 48 (string-width preview)))
+    (should (string-suffix-p "…" preview)))
+  (should
+   (equal "[Message retracted]"
+          (jabber-message-thread--root-preview
+           '(:body "secret" :retracted t))))
+  (should
+   (equal "(no text)"
+          (jabber-message-thread--root-preview '(:body "  "))))
+  (should-not (jabber-message-thread--root-preview nil)))
+
+(ert-deftest jabber-test-message-thread-buffer-name-uses-display-label ()
+  "Name a thread buffer after its root preview instead of its opaque ID."
+  (let ((parent (generate-new-buffer "*jabber-chat-alice*")))
+    (unwind-protect
+        (should
+         (equal "*jabber-chat-alice [Release planning]*"
+                (jabber-message-thread--buffer-name
+                 (string-remove-suffix "*" (buffer-name parent))
+                 "Release planning")))
+      (kill-buffer parent))))
+
 (ert-deftest jabber-test-message-thread-send-hook ()
   "A thread buffer adds its thread element to outgoing messages."
   (with-temp-buffer
@@ -143,7 +174,7 @@
 
 (ert-deftest jabber-test-message-thread-header-renders-receipt-status ()
   "A chat thread header includes its current receipt status."
-  (let ((parent (generate-new-buffer " *jabber-thread-header-parent*"))
+  (let ((parent (generate-new-buffer "*jabber-thread-header-parent*"))
         thread)
     (unwind-protect
         (cl-letf (((symbol-function 'jabber-connection-bare-jid)
@@ -158,15 +189,19 @@
           (setq thread
                 (jabber-message-thread-create-buffer
                  'fake-jc "alice@example.com" "chat"
-                 "thread-1" nil parent))
+                 "thread-1" nil parent
+                 '(:body "Root message fallback")))
           (with-current-buffer thread
             (setq-local jabber-chat-receipt-message " seen 10:00")
             (should (equal " 100%% ready · Thread in alice@example.com"
                            (jabber-message-thread--header)))
             (should (equal "100% ready" jabber-message-thread-title))
             (setq-local jabber-message-thread-title nil)
-            (should (equal " Thread in alice@example.com"
+            (should (equal " Root message fallback · Thread in alice@example.com"
                            (jabber-message-thread--header)))
+            (should
+             (equal "*jabber-thread-header-parent [100% ready]*"
+                    (buffer-name thread)))
             (should (member '(:eval jabber-chat-receipt-message)
                             header-line-format))))
       (kill-buffer parent)
@@ -328,7 +363,8 @@
                 (should
                  (equal created
                         (list 'connection "alice@example.com" "chat"
-                              "thread-1" nil parent nil)))
+                              "thread-1" nil parent
+                              nil '(:body "root message"))))
                 (should
                  (equal (seq-take registered 7)
                         '("me@example.com" "alice@example.com" "chat"
@@ -457,7 +493,8 @@
                 (should
                  (equal created
                         (list 'connection "room@example.com" "groupchat"
-                              "thread-1" nil parent nil)))
+                              "thread-1" nil parent
+                              nil '(:body "root message"))))
                 (should
                  (equal (seq-take registered 7)
                         '("me@example.com" "room@example.com" "groupchat"
@@ -562,12 +599,14 @@
                   (setq created args)
                   thread-buffer))
                ((symbol-function 'pop-to-buffer) #'ignore))
-            (jabber-message-thread-open
-             '(:body "root" :thread-id "received-thread"))
-            (should
-             (equal (seq-take created 5)
-                    '(connection "alice@example.com" "chat"
-                                 "received-thread" "parent-thread")))))
+            (let ((parent (current-buffer))
+                  (msg '(:body "root" :thread-id "received-thread")))
+              (jabber-message-thread-open msg)
+              (should
+               (equal created
+                      (list 'connection "alice@example.com" "chat"
+                            "received-thread" "parent-thread"
+                            parent nil msg))))))
       (kill-buffer thread-buffer))))
 
 (ert-deftest jabber-test-message-thread-completion-items ()
@@ -609,32 +648,97 @@
 
 (ert-deftest jabber-test-message-thread-set-title-updates-storage-and-header ()
   "Set or clear a thread title through its owning buffer."
-  (with-temp-buffer
-    (setq-local jabber-buffer-connection 'connection)
-    (setq-local jabber-message-thread-id "thread-1")
-    (setq-local jabber-message-thread-peer "alice@example.com")
-    (setq-local jabber-message-thread-type "chat")
-    (let (stored)
-      (cl-letf (((symbol-function 'jabber-connection-bare-jid)
-                 (lambda (_jc) "me@example.com"))
-                ((symbol-function 'jabber-db-ensure-open) (lambda () t))
-                ((symbol-function 'jabber-db-set-message-thread-title)
-                 (lambda (&rest args)
-                   (push args stored)
-                   (jabber-db--normalize-message-thread-title
-                    (car (last args))))))
-        (jabber-message-thread-set-title "  Roadmap  ")
-        (should (equal "Roadmap" jabber-message-thread-title))
-        (should (equal " Roadmap · Thread in alice@example.com"
-                       (jabber-message-thread--header)))
-        (jabber-message-thread-set-title "  ")
-        (should-not jabber-message-thread-title)
-        (should
-         (equal
-          '(("me@example.com" "alice@example.com" "chat" "thread-1" "  ")
-            ("me@example.com" "alice@example.com" "chat" "thread-1"
-             "  Roadmap  "))
-          stored))))))
+  (let ((parent (generate-new-buffer "*jabber-chat-alice*"))
+        (thread (generate-new-buffer "*jabber-chat-alice [Initial root]*")))
+    (unwind-protect
+        (with-current-buffer thread
+          (setq-local jabber-buffer-connection 'connection)
+          (setq-local jabber-message-thread-id "thread-1")
+          (setq-local jabber-message-thread-peer "alice@example.com")
+          (setq-local jabber-message-thread-type "chat")
+          (setq-local jabber-message-thread-root-preview "Initial root")
+          (setq-local jabber-message-thread-parent-name
+                      "*jabber-chat-alice")
+          (kill-buffer parent)
+          (let ((long-title (make-string 60 ?x))
+                stored)
+            (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+                       (lambda (_jc) "me@example.com"))
+                      ((symbol-function 'jabber-db-ensure-open) (lambda () t))
+                      ((symbol-function 'jabber-db-set-message-thread-title)
+                       (lambda (&rest args)
+                         (push args stored)
+                         (jabber-db--normalize-message-thread-title
+                          (car (last args))))))
+              (jabber-message-thread-set-title "  Roadmap  ")
+              (should (equal "Roadmap" jabber-message-thread-title))
+              (should (equal " Roadmap · Thread in alice@example.com"
+                             (jabber-message-thread--header)))
+              (should (equal "*jabber-chat-alice [Roadmap]*"
+                             (buffer-name)))
+              (jabber-message-thread-set-title long-title)
+              (should
+               (equal (format "*jabber-chat-alice [%s]*" long-title)
+                      (buffer-name)))
+              (jabber-message-thread-set-title "  ")
+              (should-not jabber-message-thread-title)
+              (should
+               (equal " Initial root · Thread in alice@example.com"
+                      (jabber-message-thread--header)))
+              (should (equal "*jabber-chat-alice [Initial root]*"
+                             (buffer-name)))
+              (should
+               (equal
+                `(("me@example.com" "alice@example.com" "chat" "thread-1" "  ")
+                  ("me@example.com" "alice@example.com" "chat" "thread-1"
+                   ,long-title)
+                  ("me@example.com" "alice@example.com" "chat" "thread-1"
+                   "  Roadmap  "))
+                stored)))))
+      (when (buffer-live-p parent)
+        (kill-buffer parent))
+      (when (buffer-live-p thread)
+        (kill-buffer thread)))))
+
+(ert-deftest jabber-test-message-thread-retracted-root-clears-live-preview ()
+  "Hide cached root text when moderation arrives before backlog rendering."
+  (let ((thread (generate-new-buffer
+                 "*jabber-chat-room [Sensitive root text]*")))
+    (unwind-protect
+        (with-current-buffer thread
+          (setq-local jabber-buffer-connection 'connection)
+          (setq-local jabber-message-thread-id "thread-1")
+          (setq-local jabber-message-thread-peer "room@example.com")
+          (setq-local jabber-message-thread-type "groupchat")
+          (setq-local jabber-message-thread-root-preview
+                      "Sensitive root text")
+          (setq-local jabber-message-thread-parent-name
+                      "*jabber-chat-room")
+          (cl-letf (((symbol-function 'jabber-chat-ewoc-find-by-id)
+                     (lambda (_) nil))
+                    ((symbol-function 'jabber-chat-ewoc-invalidate)
+                     (lambda (&rest _)
+                       (ert-fail "Invalidated a missing root node")))
+                    ((symbol-function 'jabber-connection-bare-jid)
+                     (lambda (_) "me@example.com"))
+                    ((symbol-function 'jabber-db-message-thread-summary)
+                     (lambda (&rest _)
+                       '(:thread-type "groupchat"
+                         :root-message-id 7
+                         :root-server-id "root-1"))))
+              (jabber-moderation--mark-ewoc-retracted
+               "root-1" "room@example.com/Mod" "spam")
+              (should
+               (equal "[Message retracted]"
+                      jabber-message-thread-root-preview))
+              (should
+               (equal "*jabber-chat-room [[Message retracted]]*"
+                      (buffer-name)))
+              (should-not
+               (string-match-p "Sensitive"
+                               (jabber-message-thread--header)))))
+      (when (buffer-live-p thread)
+        (kill-buffer thread)))))
 
 (ert-deftest jabber-test-message-thread-completion-handles-missing-muc-root ()
   "Represent a stored MUC thread even when its root row is unavailable."
@@ -727,13 +831,14 @@
                (equal created
                       (list 'connection "alice@example.com" "chat"
                             "thread-1" nil parent
-                            (plist-get summary :root-message)))))
+                            (plist-get summary :root-message)
+                            (plist-get summary :root-message))))
             (should
              (equal marked
                     '("me@example.com" "alice@example.com" "chat"
                       "thread-1")))
             (should (equal refreshed marked))
-            (should (eq popped target-buffer))))
+            (should (eq popped target-buffer)))))
       (kill-buffer target-buffer))))
 
 (ert-deftest jabber-test-message-thread-browse-context-uses-parent-chat ()
@@ -783,7 +888,7 @@
               (should
                (equal created
                       (list 'connection "room@example.com" "groupchat"
-                            "thread-1" nil parent nil))))))
+                            "thread-1" nil parent nil nil))))))
       (kill-buffer target))))
 
 (ert-deftest jabber-test-message-thread-summary-marker ()
