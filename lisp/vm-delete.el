@@ -298,8 +298,18 @@ unmarked messages are not considerd for deletion."
 	     ;; ignore messages already flagged for deletion
 	     )
 	    ((and (eq vm-folder-access-method 'imap)
-		  (member "stale" (vm-labels-of (car mp))))
-	     ;; ignore messages with the `stale' label
+		  (or (member "stale" (vm-labels-of (car mp)))
+		      ;; ...and those that are stale but not yet labelled.
+		      ;; The label is only applied once the user declines to
+		      ;; expunge them, which happens *after* this runs from
+		      ;; `vm-arrived-messages-hook'.  A message left with a
+		      ;; mismatched UID validity by an interrupted retrieval
+		      ;; would otherwise claim the message id and get the
+		      ;; freshly fetched good copy flagged for deletion
+		      ;; instead of itself (issue #286).
+		      (not (equal (vm-imap-uid-validity-of (car mp))
+				  (vm-folder-imap-uid-validity)))))
+	     ;; ignore stale messages
 	     )
             (t
              (setq mid (vm-su-message-id (car mp)))

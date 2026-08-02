@@ -442,6 +442,86 @@ flags, which would break normal synchronisation instead."
         (setq checked t)))
     (should checked)))
 
+;;; ------------------------------------------------------------------
+;;; Tier 2 -- duplicate deletion and stale copies (issue #286)
+;;; ------------------------------------------------------------------
+;;
+;; These drive `vm-delete-duplicate-messages' in a real IMAP folder rather
+;; than a constructed one.  It needs the full folder context that only
+;; visiting gives -- vm-delete-test.el says as much, and tests the hash
+;; logic in isolation instead, which cannot catch a bug in the command.
+
+(defconst vm-imap-live-test--duplicate
+  "From: a@example.com\r
+To: vmtest@example.com\r
+Subject: duplicate\r
+Date: Mon, 01 Jan 2024 00:00:00 +0000\r
+Message-ID: <vmtest-dup@example.com>\r
+\r
+A copy.\r
+"
+  "A message appended twice, so the folder holds two copies of one id.")
+
+(ert-deftest vm-imap-live-test-duplicates-spare-the-good-copy ()
+  "REGRESSION: a stale copy does not get the good copy flagged for deletion.
+Issue #286.  An interrupted `vm-get-new-mail' leaves copies whose UID
+validity does not match the folder's, and a later fetch brings down good
+copies of the same messages.  `vm-delete-duplicate-messages', run from
+`vm-arrived-messages-hook', keeps whichever copy it meets first and flags
+the rest.  The stale copies come first, so the good ones were flagged --
+and then answering yes to \"Found N messages with invalid UIDs.  Expunge
+them?\" took the stale ones as well, losing every copy.
+
+VM already skipped messages carrying the `stale' label, but that label is
+only applied when the user *declines* that prompt, which is after this has
+run.  Staleness is now judged by UID validity, so the good copy survives and
+the stale one is left for the invalid-UID path to deal with."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+    (ignore relay)
+    ;; The macro already put one unrelated message in the mailbox; add two
+    ;; copies sharing a message id, then resync so VM sees all three.
+    ;; `conn' comes from the macro and is already logged in.
+    (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
+    (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
+    (vm-get-new-mail)
+    (let* ((messages vm-message-list)
+           (stale (nth 1 messages))
+           (good (nth 2 messages)))
+      (should (= (length messages) 3))
+      ;; Make the first copy look like the wreckage of an interrupted fetch.
+      (vm-set-imap-uid-validity-of stale "definitely-not-current")
+      (should-not (equal (vm-imap-uid-validity-of stale)
+                         (vm-folder-imap-uid-validity)))
+      (vm-delete-duplicate-messages)
+      ;; The good copy must survive; the stale one is not this command's
+      ;; business.
+      (should-not (vm-deleted-flag good))
+      (should-not (vm-deleted-flag stale)))))
+
+(ert-deftest vm-imap-live-test-duplicates-still-deleted-when-current ()
+  "Real duplicates are still flagged when both copies are current.
+Guards the fix above from becoming a blanket refusal to dedupe IMAP folders,
+which would leave duplicates behind instead."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+    (ignore relay)
+    (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
+    (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
+    (vm-get-new-mail)
+    (let* ((messages vm-message-list)
+           (first (nth 1 messages))
+           (second (nth 2 messages)))
+      (should (= (length messages) 3))
+      ;; Both current, as after an ordinary fetch.
+      (should (equal (vm-imap-uid-validity-of first)
+                     (vm-folder-imap-uid-validity)))
+      (vm-delete-duplicate-messages)
+      (should-not (vm-deleted-flag first))
+      (should (vm-deleted-flag second)))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
