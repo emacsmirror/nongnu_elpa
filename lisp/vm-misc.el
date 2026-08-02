@@ -1797,8 +1797,13 @@ Returns the exit status."
 (defun vm-auth-source-password (hosts port user)
   "Return the auth-source password for USER at PORT on any of HOSTS.
 HOSTS is a list of machine names to try in order; nil entries are
-ignored.  Returns nil if `auth-sources' has no matching entry."
+ignored.  Returns nil if `auth-sources' has no matching entry, and
+also when USER is nil: `auth-source-search' treats a nil :user as no
+constraint rather than as a wildcard to match, so it would hand back
+whichever entry for that host comes first -- someone else's password."
   (catch 'done
+    (unless user
+      (throw 'done nil))
     (dolist (host hosts)
       (when host
 	(let ((found (car (auth-source-search :host host :port port

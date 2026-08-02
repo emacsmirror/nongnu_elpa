@@ -932,6 +932,22 @@ VM looks up both the account name and the real host name."
       "machine mail.example.com login someone-else port 143 password s3cret\n"
     (should (null (vm-auth-source-password '("mail.example.com") 143 "user")))))
 
+(ert-deftest vm-misc-test-auth-source-password-nil-user ()
+  "Test that a nil user yields nothing rather than someone else's password.
+`auth-source-search' reads a nil :user as no constraint rather than as
+a wildcard to match, so it returns whichever entry for the host comes
+first -- which would be another account's password."
+  (vm-misc-test-with-authinfo
+      (concat "machine mail.example.com login alice port 143 password alice-pw\n"
+              "machine mail.example.com login bob port 143 password bob-pw\n")
+    ;; each named user still gets their own
+    (should (equal (vm-auth-source-password '("mail.example.com") 143 "alice")
+                   "alice-pw"))
+    (should (equal (vm-auth-source-password '("mail.example.com") 143 "bob")
+                   "bob-pw"))
+    ;; and an unnamed one gets nobody's
+    (should (null (vm-auth-source-password '("mail.example.com") 143 nil)))))
+
 (ert-deftest vm-misc-test-auth-source-password-no-match ()
   "Test that nil is returned when nothing matches."
   (vm-misc-test-with-authinfo
