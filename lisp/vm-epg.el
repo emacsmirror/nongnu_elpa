@@ -1181,7 +1181,7 @@ fetched, so the caller can verify the message again."
                 (setq import-result (epg-context-result-for context 'import))
                 (insert (format "Imported %d key(s).\n"
                                 (if import-result
-                                    (epg-import-result-considered import-result)
+                                    (epg-import-result-imported import-result)
                                   0))))
             (error
              (insert (format "Key import failed: %s\n"
