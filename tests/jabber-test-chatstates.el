@@ -714,6 +714,40 @@ nil after the first message, breaking subsequent composing detection."
             (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t))
           (kill-buffer buffer))))))
 
+(ert-deftest jabber-test-chatstates-parent-gone-retires-session-thread ()
+  "Incoming gone forces the parent chat to use a new session thread."
+  (with-temp-buffer
+    (rename-buffer " *jabber-parent-gone-chatstate*" t)
+    (let ((parent (current-buffer))
+          (jabber-chat-ewoc (ewoc-create #'ignore))
+          stored)
+      (setq-local jabber-buffer-connection 'fake-jc)
+      (setq-local jabber-chatting-with "alice@example.org")
+      (setq-local jabber-message-thread-session-id "session-old")
+      (cl-letf (((symbol-function 'jabber-chat-get-buffer)
+                 (lambda (_from _jc) (buffer-name parent)))
+                ((symbol-function 'jabber-connection-bare-jid)
+                 (lambda (_jc) "me@example.org"))
+                ((symbol-function 'jabber-message-thread-find-buffer)
+                 (lambda (&rest _) nil))
+                ((symbol-function 'jabber-message-thread--generate-id)
+                 (lambda () "session-new"))
+                ((symbol-function 'jabber-db-set-chat-thread)
+                 (lambda (&rest args) (push args stored))))
+        (jabber-handle-incoming-message-chatstates
+         'fake-jc
+         (jabber-test-chatstates--thread-message
+          "alice@example.org/resource" "chat" 'gone "session-old"))
+        (should-not jabber-message-thread-session-id)
+        (should
+         (equal (jabber-chat--session-send-hook "reply" "message-1")
+                '((thread nil "session-new")))))
+      (should
+       (equal (reverse stored)
+              '(("me@example.org" "alice@example.org" nil)
+                ("me@example.org" "alice@example.org" "session-new"))))
+      (remove-hook 'kill-buffer-hook #'jabber-chatstates-send-gone t))))
+
 (ert-deftest jabber-test-chatstates-disabled-thread-routes-to-parent ()
   "A state-only threaded stanza uses the parent when buffers are disabled."
   (let ((parent (generate-new-buffer " *jabber-disabled-state-parent*"))

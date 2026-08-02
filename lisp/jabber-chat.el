@@ -310,6 +310,16 @@ JC, when non-nil, identifies the account connection."
         (jabber-chat--store-session-thread
          (jabber-message-thread--generate-id)))))
 
+(defun jabber-chat--retire-session-thread (&optional jc)
+  "Retire this parent chat's current session and persist that on JC."
+  (when (and jabber-message-thread-session-id
+             (jabber-chat--parent-session-buffer-p))
+    (let ((account (jabber-connection-bare-jid
+                    (or jc jabber-buffer-connection)))
+          (peer (jabber-jid-user jabber-chatting-with)))
+      (setq jabber-message-thread-session-id nil)
+      (jabber-db-set-chat-thread account peer nil))))
+
 (defun jabber-chat--session-send-hook (_body _id)
   "Attach the parent chat session when no explicit thread is present."
   (unless (or (bound-and-true-p jabber-chat--sending-correction)

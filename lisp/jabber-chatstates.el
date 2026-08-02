@@ -351,8 +351,8 @@ Added to `kill-buffer-hook' in chat buffers."
   (and (jabber-xml-get-children xml-data 'body)
        (not (jabber-reactions--reaction-only-p xml-data))))
 
-(defun jabber-chatstates--handle-direct-state (buffer xml-data)
-  "Update direct chat BUFFER from XML-DATA."
+(defun jabber-chatstates--handle-direct-state (buffer jc xml-data)
+  "Update direct chat BUFFER from XML-DATA received on JC."
   (with-current-buffer buffer
       (cond
        ;; If we get an error message, we shouldn't report any
@@ -366,11 +366,12 @@ Added to `kill-buffer-hook' in chat buffers."
         (let ((state (jabber-chatstates--message-state xml-data))
               (body-message-p (jabber-chatstates--real-body-message-p
                                xml-data)))
-          (when (and (eq state 'gone)
-                     (bound-and-true-p jabber-message-thread-id))
+          (when (eq state 'gone)
             (jabber-chatstates-stop-timer)
             (setq jabber-chatstates-composing-sent nil)
-            (jabber-message-thread--renew-id))
+            (if (bound-and-true-p jabber-message-thread-id)
+                (jabber-message-thread--renew-id)
+              (jabber-chat--retire-session-thread jc)))
           ;; Set up hooks for composition notification
           (when (and jabber-chatstates-confirm state)
             (jabber-chatstates--enable-send-hooks nil))
@@ -459,7 +460,7 @@ Added to `kill-buffer-hook' in chat buffers."
           (when (and (not (string= (jabber-xml-get-attribute xml-data 'type) "error"))
                      (or state (jabber-chatstates--real-body-message-p xml-data)))
             (jabber-chatstates--handle-muc-state buffer jc from state)))
-      (jabber-chatstates--handle-direct-state buffer xml-data))))
+      (jabber-chatstates--handle-direct-state buffer jc xml-data))))
 
 (jabber-chain-add 'jabber-message-chain #'jabber-handle-incoming-message-chatstates 50)
 
