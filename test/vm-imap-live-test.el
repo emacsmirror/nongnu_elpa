@@ -282,6 +282,246 @@ IMAP system flag, a VM label is an IMAP keyword."
       (should (member "\\Seen" flags))
       (should (member "vmtestlabel" flags)))))
 
+;;; ------------------------------------------------------------------
+;;; Tier 3 -- fault injection (issues #335, #286)
+;;; ------------------------------------------------------------------
+
+(require 'vm-imap-relay)
+
+(defmacro vm-imap-live-with-relayed-folder (spec &rest body)
+  "Set up a folder reachable through a relay and visit it with VM.
+SPEC is (RELAY-VAR MAILBOX-VAR SERVER-NAME).  BODY runs in the VM folder
+buffer, with the folder already visited through the relay and its
+UIDVALIDITY cached, so a rule set on the relay afterwards affects the *next*
+session -- which is the situation #335 describes."
+  (declare (indent 1) (debug t))
+  (let ((relay (nth 0 spec)) (mailbox (nth 1 spec)) (server-name (nth 2 spec)))
+    `(let* ((server (vm-imap-live-server ,server-name))
+            (account (car (plist-get server :accounts)))
+            (conn (vm-imap-live--open server))
+            (,mailbox nil))
+       (unwind-protect
+           (progn
+             (vm-imap-live-login conn server account)
+             (vm-imap-live-namespace conn)
+             (setq ,mailbox (vm-imap-live-mailbox-name conn))
+             (vm-imap-live-cmd-ok conn "CREATE \"%s\"" ,mailbox)
+             (vm-imap-live-append conn ,mailbox vm-imap-live-test--message)
+             (vm-imap-relay-with (,relay :host (plist-get server :host)
+                                         :port (plist-get server :port))
+               (let* ((via (list :name "via" :host "127.0.0.1"
+                                 :port (vm-imap-relay-port ,relay)
+                                 :tls nil :auth "login"
+                                 :accounts (list account)))
+                      (vm-imap-server-timeout vm-imap-live-timeout))
+                 (unwind-protect
+                     (progn
+                       (vm-visit-imap-folder
+                        (vm-imap-live-spec via account ,mailbox))
+                       ,@body)
+                   (when (eq major-mode 'vm-mode)
+                     (let ((vm-confirm-quit nil))
+                       (ignore-errors (vm-quit-no-change))))))))
+         (when ,mailbox
+           (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" ,mailbox)))
+         (vm-imap-live-close conn)))))
+
+(ert-deftest vm-imap-live-test-relay-passes-traffic-through ()
+  "The relay is transparent when given no rules.
+If this fails, nothing else in tier 3 means anything."
+  (vm-imap-live-skip-unless-server "plain")
+  (let* ((server (vm-imap-live-server "plain"))
+         (account (car (plist-get server :accounts))))
+    (vm-imap-relay-with (relay :host (plist-get server :host)
+                               :port (plist-get server :port))
+      (let* ((via (list :name "via" :host "127.0.0.1"
+                        :port (vm-imap-relay-port relay)
+                        :tls nil :auth "login" :accounts (list account)))
+             (conn (vm-imap-live--open via)))
+        (unwind-protect
+            (progn
+              (vm-imap-live-login conn via account)
+              (should (member "IMAP4REV1" (vm-imap-live-capabilities conn)))
+              (should-not (vm-imap-relay-dropped relay)))
+          (vm-imap-live-close conn))))))
+
+(ert-deftest vm-imap-live-test-dropped-select-is-not-a-uidvalidity-change ()
+  "REGRESSION: a connection lost at SELECT is not read as a new UIDVALIDITY.
+Issue #335: a trace showed the peer dropping after SELECT \"INBOX\" and VM
+treating that as the folder having been recreated, which triggers a
+destructive resync of the cache.
+
+It does not, on alpha.  VM raises a protocol error and leaves the cached
+UIDVALIDITY alone, and critically never reaches the \"Refresh cache?\"
+prompt -- `y-or-n-p' is stubbed here so that reaching it would be visible
+rather than hanging batch ert."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((prompts nil))
+    (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+      (let ((cached (vm-folder-imap-uid-validity)))
+        (should cached)
+        (should (= (length vm-message-list) 1))
+        ;; Kill the next SELECT mid-flight.
+        (setf (vm-imap-relay-drop-on relay) "SELECT")
+        (cl-letf (((symbol-function 'y-or-n-p)
+                   (lambda (prompt) (push prompt prompts) nil)))
+          (should-error (vm-get-new-mail) :type 'error))
+        (should (vm-imap-relay-dropped relay))
+        ;; The destructive branch was never offered...
+        (should-not (seq-find (lambda (p) (string-match-p "UID VALIDITY" p))
+                              prompts))
+        ;; ...and the cache is intact.
+        (should (equal (vm-folder-imap-uid-validity) cached))))))
+
+(ert-deftest vm-imap-live-test-dropped-connection-says-so ()
+  "REGRESSION: a dropped connection is reported as one, not as a timeout.
+`accept-process-output' returns nil both when it waited in vain and when the
+process is gone, and `vm-imap-accept-process-output' used to call both a
+timeout.  That named the wrong cause, and since `vm-imap-server-timeout'
+defaults to nil it blamed a timeout that was not configured at all -- which
+is the \"cannot tell a broken connection from anything else\" complaint
+behind #335 and #286."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+    (setf (vm-imap-relay-drop-on relay) "SELECT")
+    (let ((message
+           (cl-letf (((symbol-function 'y-or-n-p) (lambda (_) nil)))
+             (condition-case err (progn (vm-get-new-mail) nil)
+               (error (error-message-string err))))))
+      (should message)
+      (should (string-match-p "closed the connection" message))
+      (should-not (string-match-p "Timed out" message)))))
+
+;;; ------------------------------------------------------------------
+;;; Tier 3 -- a refused STORE must not cost the user their change (#270)
+;;; ------------------------------------------------------------------
+
+(ert-deftest vm-imap-live-test-refused-store-keeps-the-local-label ()
+  "REGRESSION: a STORE the server refuses does not destroy the local label.
+Issue #270 asked whether VM could check that flags really were stored.  It
+was worse than not checking.  Uploading attributes and downloading them are
+two separate passes of a sync: `vm-imap-save-attributes' counts a refused
+STORE as an error and carries on, and the download pass then applied the
+server's flags to every message, including the one whose upload had just
+failed.  So the server's stale view overwrote the user's label, the change
+was gone, and the modflag left set for a retry had nothing left to retry.
+
+The download pass now leaves alone any message whose changes have not
+reached the server."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+    (let ((m (car vm-message-list)))
+      (vm-add-message-labels "vmtest-refused" 1)
+      (should (member "vmtest-refused" (vm-labels-of m)))
+      (should (vm-attribute-modflag-of m))
+      ;; The server now refuses every STORE.
+      (setf (vm-imap-relay-reject relay) "STORE")
+      (vm-get-new-mail)
+      ;; The label survives, and is still pending, so a later sync can retry.
+      (should (member "vmtest-refused" (vm-labels-of m)))
+      (should (vm-attribute-modflag-of m)))))
+
+(ert-deftest vm-imap-live-test-accepted-store-reaches-the-server ()
+  "The other half: an accepted STORE does sync and stops being pending.
+Guards the fix above from being a blanket refusal to ever apply server
+flags, which would break normal synchronisation instead."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((label "vmtest-accepted") (checked nil))
+    (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+      (let ((m (car vm-message-list)))
+        (vm-add-message-labels label 1)
+        (should (vm-attribute-modflag-of m))
+        (vm-get-new-mail)
+        (should (member label (vm-labels-of m)))
+        ;; Uploaded, so no longer pending.
+        (should-not (vm-attribute-modflag-of m))
+        (setq checked t)))
+    (should checked)))
+
+;;; ------------------------------------------------------------------
+;;; Tier 2 -- duplicate deletion and stale copies (issue #286)
+;;; ------------------------------------------------------------------
+;;
+;; These drive `vm-delete-duplicate-messages' in a real IMAP folder rather
+;; than a constructed one.  It needs the full folder context that only
+;; visiting gives -- vm-delete-test.el says as much, and tests the hash
+;; logic in isolation instead, which cannot catch a bug in the command.
+
+(defconst vm-imap-live-test--duplicate
+  "From: a@example.com\r
+To: vmtest@example.com\r
+Subject: duplicate\r
+Date: Mon, 01 Jan 2024 00:00:00 +0000\r
+Message-ID: <vmtest-dup@example.com>\r
+\r
+A copy.\r
+"
+  "A message appended twice, so the folder holds two copies of one id.")
+
+(ert-deftest vm-imap-live-test-duplicates-spare-the-good-copy ()
+  "REGRESSION: a stale copy does not get the good copy flagged for deletion.
+Issue #286.  An interrupted `vm-get-new-mail' leaves copies whose UID
+validity does not match the folder's, and a later fetch brings down good
+copies of the same messages.  `vm-delete-duplicate-messages', run from
+`vm-arrived-messages-hook', keeps whichever copy it meets first and flags
+the rest.  The stale copies come first, so the good ones were flagged --
+and then answering yes to \"Found N messages with invalid UIDs.  Expunge
+them?\" took the stale ones as well, losing every copy.
+
+VM already skipped messages carrying the `stale' label, but that label is
+only applied when the user *declines* that prompt, which is after this has
+run.  Staleness is now judged by UID validity, so the good copy survives and
+the stale one is left for the invalid-UID path to deal with."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+    (ignore relay)
+    ;; The macro already put one unrelated message in the mailbox; add two
+    ;; copies sharing a message id, then resync so VM sees all three.
+    ;; `conn' comes from the macro and is already logged in.
+    (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
+    (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
+    (vm-get-new-mail)
+    (let* ((messages vm-message-list)
+           (stale (nth 1 messages))
+           (good (nth 2 messages)))
+      (should (= (length messages) 3))
+      ;; Make the first copy look like the wreckage of an interrupted fetch.
+      (vm-set-imap-uid-validity-of stale "definitely-not-current")
+      (should-not (equal (vm-imap-uid-validity-of stale)
+                         (vm-folder-imap-uid-validity)))
+      (vm-delete-duplicate-messages)
+      ;; The good copy must survive; the stale one is not this command's
+      ;; business.
+      (should-not (vm-deleted-flag good))
+      (should-not (vm-deleted-flag stale)))))
+
+(ert-deftest vm-imap-live-test-duplicates-still-deleted-when-current ()
+  "Real duplicates are still flagged when both copies are current.
+Guards the fix above from becoming a blanket refusal to dedupe IMAP folders,
+which would leave duplicates behind instead."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+    (ignore relay)
+    (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
+    (vm-imap-live-append conn mailbox vm-imap-live-test--duplicate)
+    (vm-get-new-mail)
+    (let* ((messages vm-message-list)
+           (first (nth 1 messages))
+           (second (nth 2 messages)))
+      (should (= (length messages) 3))
+      ;; Both current, as after an ordinary fetch.
+      (should (equal (vm-imap-uid-validity-of first)
+                     (vm-folder-imap-uid-validity)))
+      (vm-delete-duplicate-messages)
+      (should-not (vm-deleted-flag first))
+      (should (vm-deleted-flag second)))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here

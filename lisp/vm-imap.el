@@ -462,9 +462,19 @@ for accessing MAILBOX."
   "Accept output from PROCESS for IMAP operations.
 The variable `vm-imap-server-timeout' specifies how many seconds
 to wait before timing out.  If a timeout occurs, a protocol error
-is signaled."
+is signaled.
+
+A closed connection is reported as such rather than as a timeout.
+`accept-process-output' returns nil both when it waited in vain and when
+there is nothing left to wait for, so the two have to be told apart by the
+process status.  Calling a dropped connection a timeout is wrong twice
+over: it names the wrong cause, and `vm-imap-server-timeout' is nil by
+default, so it blamed a timeout that was not even configured."
   (unless (vm-accept-process-output process vm-imap-server-timeout)
-    (vm-imap-protocol-error "Timed out for response from the IMAP server")))
+    (if (memq (process-status process) '(open run connect))
+	(vm-imap-protocol-error "Timed out for response from the IMAP server")
+      (vm-imap-protocol-error
+       "IMAP server closed the connection unexpectedly"))))
 
 
 ;; (defvar vm-imap-connection-mode 'online)  ; moved to vm-vars.el
@@ -3377,7 +3387,17 @@ messages previously retrieved are ignored."
 	    (setq m (car mp))
 	    (setq uid (vm-imap-uid-of m))
 	    (when (and (equal (vm-imap-uid-validity-of m) uid-validity)
-		       (vm-folder-imap-uid-msn uid))
+		       (vm-folder-imap-uid-msn uid)
+		       ;; Leave alone any message whose own changes have not
+		       ;; reached the server.  `vm-imap-save-attributes' runs
+		       ;; first and clears this flag for each message it
+		       ;; uploads successfully, counting the rest as errors
+		       ;; and carrying on.  For those, the server's flags are
+		       ;; known to be out of date, and applying them here
+		       ;; overwrites the user's labels and attributes with
+		       ;; the stale copy -- silently losing the change, and
+		       ;; leaving nothing for the next sync to retry.
+		       (not (vm-attribute-modflag-of m)))
 	      (setq mflags (vm-folder-imap-uid-message-flags uid))
 	      (vm-imap-update-message-flags m mflags t))
 	    (setq mp (cdr mp)
