@@ -6185,7 +6185,11 @@ Content-Disposition filename parameter, and updates the visible tag."
 				      (cdr disposition) "filename" name))))
 	(save-excursion
 	  (goto-char start)
-	  (when (looking-at "\\[ATTACHMENT \\([^,]*\\),")
+	  ;; The tag reads "[ATTACHMENT <name>, <type>]".  Match the name
+	  ;; greedily up to the *last* ", " before the type, since a name
+	  ;; may itself contain a comma -- stopping at the first one
+	  ;; rewrote only part of it and left the rest behind.
+	  (when (looking-at "\\[ATTACHMENT \\(.*\\), [^,]*\\]")
 	    (let ((name-start (match-beginning 1))
 		  (name-end (match-end 1)))
 	      (setq end (+ end (- (length name) (- name-end name-start))))
