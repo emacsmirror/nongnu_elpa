@@ -68,12 +68,20 @@ xemacs_AUTOLOADS = auto-autoloads.el
 AUTOLOADS = ${@EMACS_FLAVOR@_AUTOLOADS}
 
 # to list of object files
-emacs_OBJECTS = vm-autoloads.elc vm-cus-load.elc
+emacs_OBJECTS = vm-autoloads.elc
 xemacs_OBJECTS = auto-autoloads.elc custom-load.elc
 
 OBJECTS = ${@EMACS_FLAVOR@_OBJECTS} $(SOURCES:.el=.elc)
 
-INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS)
+# Generated lisp that is never byte-compiled, so it has no .elc to install.
+# `vm-custom-make-dependencies' writes vm-cus-load.el with a
+# `no-byte-compile: t' local variable, so listing vm-cus-load.elc in OBJECTS
+# asked install for a file that can never exist.
+emacs_LISP_ONLY = vm-cus-load.el
+xemacs_LISP_ONLY =
+LISP_ONLY = ${@EMACS_FLAVOR@_LISP_ONLY}
+
+INSTALL_FILES += $(OBJECTS:.elc=.el) $(OBJECTS) $(LISP_ONLY)
 
 # for autoload generation
 AUTOLOAD_PACKAGE_NAME = (setq autoload-package-name \"vm\")
@@ -114,7 +122,7 @@ EMACS_COMP = OTHERDIRS=@OTHERDIRS@ "$(EMACS_PROG)" $(FLAGS)
 	$(EMACS_COMP) -f batch-byte-compile $<
 
 ##############################################################################
-all: $(OBJECTS)
+all: $(OBJECTS) $(LISP_ONLY)
 
 $(OBJECTS): $(AUTOLOADS)
 
