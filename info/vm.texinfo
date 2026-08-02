@@ -3336,6 +3336,93 @@ sign flag will be turned off.  You can then fix the problem and send the
 message again with the assurance that it won't be double-signed but it
 @emph{will} be encrypted.
 
+@cindex @acronym{PGP}
+@cindex @acronym{OpenPGP}
+@cindex @acronym{PGP}/@acronym{MIME}
+@cindex vm-epg
+@cindex vm-pgg
+@inindex @acronym{PGP}/@acronym{MIME}
+For @acronym{OpenPGP} rather than @acronym{S/MIME}, VM provides the
+@samp{vm-epg} package, which uses the @samp{epg} (EasyPG) interface to
+@command{gpg} bundled with Emacs.  It is not loaded by default; add
+
+@lisp
+(require 'vm-epg)
+@end lisp
+
+@noindent
+to your @code{vm-preferences-file} (@pxref{Starting Up}).  To configure it,
+use @kbd{M-x customize-group @key{RET} vm-epg @key{RET}}.
+
+@strong{Do not load both @samp{vm-epg} and the older @samp{vm-pgg}.}  Both
+define the same @acronym{MIME} display handlers, so whichever is loaded last
+silently wins and the other's customizations have no effect.  @samp{vm-pgg}
+is built on the obsolete @samp{pgg} package, is deprecated, and warns when
+loaded; remove any @code{(require 'vm-pgg)} from your configuration when
+switching.
+
+@findex vm-epg-sign
+@findex vm-epg-encrypt
+@findex vm-epg-sign-and-encrypt
+In a composition, the following commands are available, as well as a
+@samp{PGP/MIME} menu:
+
+@table @kbd
+@item C-c # s
+@code{vm-epg-sign} --- sign the composition.
+@item C-c # e
+@code{vm-epg-encrypt} --- encrypt it.  With a prefix argument, also sign it.
+@item C-c # E
+@code{vm-epg-sign-and-encrypt} --- sign and encrypt it.
+@item C-c # k
+@code{vm-epg-attach-public-key} --- attach a public key.
+@item C-c # a
+@code{vm-epg-ask-hook} --- ask which of the above to do.
+@end table
+
+@noindent
+Unlike the @acronym{S/MIME} commands above, these act immediately rather
+than setting a flag for send time, and they rewrite the composition into its
+@acronym{PGP}/@acronym{MIME} form.  The work is done on a copy, so a failure
+--- a recipient with no usable key, for instance --- leaves your composition
+untouched.
+
+@vindex vm-epg-ask-function
+To be prompted at send time instead of remembering to run a command, add
+@code{vm-epg-ask-hook} to @code{vm-mail-send-hook}.  It must be
+@emph{last} in that hook, since signing covers the message as it stands:
+
+@lisp
+(add-hook 'vm-mail-send-hook #'vm-epg-ask-hook t)
+@end lisp
+
+@noindent
+@code{vm-epg-ask-function} selects what is asked; by default you are offered
+a choice of actions.
+
+@findex vm-epg-cleartext-sign
+@findex vm-epg-cleartext-encrypt
+@cindex inline @acronym{PGP}
+@cindex cleartext @acronym{PGP}
+The older @dfn{inline} (or @dfn{cleartext}) format, which puts the
+@acronym{ASCII} armor directly in the message body, is also supported, by
+@kbd{C-c # C-s} (@code{vm-epg-cleartext-sign}) and @kbd{C-c # C-e}
+(@code{vm-epg-cleartext-encrypt}).  Inline @acronym{PGP} cannot cover
+attachments and interacts badly with @acronym{MIME} transfer encodings, so
+prefer @acronym{PGP}/@acronym{MIME} for messages you send.  Incoming inline
+@acronym{PGP} is always handled regardless of which format you send.
+
+@vindex vm-epg-auto-decrypt
+@vindex vm-epg-auto-snarf
+@vindex vm-epg-fetch-missing-keys
+Displaying a @acronym{PGP} message decrypts encrypted parts, verifies
+signatures, and imports (@dfn{snarfs}) any public keys it carries, reporting
+the result in the modeline.  Set @code{vm-epg-auto-decrypt} or
+@code{vm-epg-auto-snarf} to @code{nil} to get a button to press instead of
+having it happen automatically.  When a signature was made by a key you do
+not have, @code{vm-epg-fetch-missing-keys} (on by default) fetches it from a
+keyserver, which means displaying a signed message may access the network.
+
 @node Replying, Forwarding Messages, Sending Secure @acronym{MIME}, Sending Messages
 @section Replying
 
