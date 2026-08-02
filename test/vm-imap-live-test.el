@@ -394,6 +394,54 @@ behind #335 and #286."
       (should (string-match-p "closed the connection" message))
       (should-not (string-match-p "Timed out" message)))))
 
+;;; ------------------------------------------------------------------
+;;; Tier 3 -- a refused STORE must not cost the user their change (#270)
+;;; ------------------------------------------------------------------
+
+(ert-deftest vm-imap-live-test-refused-store-keeps-the-local-label ()
+  "REGRESSION: a STORE the server refuses does not destroy the local label.
+Issue #270 asked whether VM could check that flags really were stored.  It
+was worse than not checking.  Uploading attributes and downloading them are
+two separate passes of a sync: `vm-imap-save-attributes' counts a refused
+STORE as an error and carries on, and the download pass then applied the
+server's flags to every message, including the one whose upload had just
+failed.  So the server's stale view overwrote the user's label, the change
+was gone, and the modflag left set for a retry had nothing left to retry.
+
+The download pass now leaves alone any message whose changes have not
+reached the server."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+    (let ((m (car vm-message-list)))
+      (vm-add-message-labels "vmtest-refused" 1)
+      (should (member "vmtest-refused" (vm-labels-of m)))
+      (should (vm-attribute-modflag-of m))
+      ;; The server now refuses every STORE.
+      (setf (vm-imap-relay-reject relay) "STORE")
+      (vm-get-new-mail)
+      ;; The label survives, and is still pending, so a later sync can retry.
+      (should (member "vmtest-refused" (vm-labels-of m)))
+      (should (vm-attribute-modflag-of m)))))
+
+(ert-deftest vm-imap-live-test-accepted-store-reaches-the-server ()
+  "The other half: an accepted STORE does sync and stops being pending.
+Guards the fix above from being a blanket refusal to ever apply server
+flags, which would break normal synchronisation instead."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((label "vmtest-accepted") (checked nil))
+    (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+      (let ((m (car vm-message-list)))
+        (vm-add-message-labels label 1)
+        (should (vm-attribute-modflag-of m))
+        (vm-get-new-mail)
+        (should (member label (vm-labels-of m)))
+        ;; Uploaded, so no longer pending.
+        (should-not (vm-attribute-modflag-of m))
+        (setq checked t)))
+    (should checked)))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here

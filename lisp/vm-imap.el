@@ -3387,7 +3387,17 @@ messages previously retrieved are ignored."
 	    (setq m (car mp))
 	    (setq uid (vm-imap-uid-of m))
 	    (when (and (equal (vm-imap-uid-validity-of m) uid-validity)
-		       (vm-folder-imap-uid-msn uid))
+		       (vm-folder-imap-uid-msn uid)
+		       ;; Leave alone any message whose own changes have not
+		       ;; reached the server.  `vm-imap-save-attributes' runs
+		       ;; first and clears this flag for each message it
+		       ;; uploads successfully, counting the rest as errors
+		       ;; and carrying on.  For those, the server's flags are
+		       ;; known to be out of date, and applying them here
+		       ;; overwrites the user's labels and attributes with
+		       ;; the stale copy -- silently losing the change, and
+		       ;; leaving nothing for the next sync to retry.
+		       (not (vm-attribute-modflag-of m)))
 	      (setq mflags (vm-folder-imap-uid-message-flags uid))
 	      (vm-imap-update-message-flags m mflags t))
 	    (setq mp (cdr mp)
