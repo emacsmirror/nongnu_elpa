@@ -207,6 +207,81 @@ the whole exercise: everything above only proves the harness works."
         (when (processp process)
           (ignore-errors (vm-imap-end-session process)))))))
 
+;;; ------------------------------------------------------------------
+;;; Tier 2 -- saving between IMAP folders keeps attributes (issue #38)
+;;; ------------------------------------------------------------------
+
+(defmacro vm-imap-live-with-two-mailboxes (spec &rest body)
+  "Create two throwaway mailboxes on the same account, run BODY, remove them.
+SPEC is (CONN-VAR SRC-VAR DST-VAR SERVER-NAME).  Same account both sides, so
+`vm-save-message-to-imap-folder' takes its server-to-server branch, which is
+the one #38 is about."
+  (declare (indent 1) (debug t))
+  (let ((conn (nth 0 spec)) (src (nth 1 spec))
+        (dst (nth 2 spec)) (server-name (nth 3 spec)))
+    `(let* ((server (vm-imap-live-server ,server-name))
+            (account (car (plist-get server :accounts)))
+            (,conn (vm-imap-live--open server))
+            (,src nil) (,dst nil))
+       (unwind-protect
+           (progn
+             (vm-imap-live-login ,conn server account)
+             (vm-imap-live-namespace ,conn)
+             (setq ,src (vm-imap-live-mailbox-name ,conn)
+                   ,dst (vm-imap-live-mailbox-name ,conn))
+             (vm-imap-live-cmd-ok ,conn "CREATE \"%s\"" ,src)
+             (vm-imap-live-cmd-ok ,conn "CREATE \"%s\"" ,dst)
+             ,@body)
+         (dolist (mailbox (list ,src ,dst))
+           (when mailbox
+             (ignore-errors (vm-imap-live-cmd ,conn "DELETE \"%s\"" mailbox))))
+         (vm-imap-live-close ,conn)))))
+
+(ert-deftest vm-imap-live-test-save-to-imap-keeps-attributes ()
+  "Attribute changes made in VM reach a message saved to another IMAP folder.
+Issue #38: saving between folders on one server uses the server's own COPY to
+avoid shifting the message over the network, and the worry was that local
+attribute changes would not be in the copy, since the server copies what the
+server has.
+
+They are.  `vm-imap-copy-message' flushes pending flags with
+`vm-imap-save-message-flags' before issuing UID COPY.  This is a
+characterisation test, not a fix: it passes on unmodified alpha and exists so
+the flush cannot be dropped unnoticed.
+
+Covers a system flag and a label, which take different paths -- \\Seen is an
+IMAP system flag, a VM label is an IMAP keyword."
+  (vm-imap-live-skip-unless-server "plain")
+  ;; Required here rather than at the top of the file: loading all of VM has
+  ;; side effects at load time, and only this test needs the folder-visiting
+  ;; commands.
+  (require 'vm)
+  (vm-imap-live-with-two-mailboxes (conn src dst "plain")
+    (vm-imap-live-append conn src vm-imap-live-test--message)
+    (let ((vm-imap-server-timeout vm-imap-live-timeout))
+      (unwind-protect
+          (progn
+            (vm-visit-imap-folder (vm-imap-live-spec server account src))
+            (let ((m (car vm-message-list)))
+              (should m)
+              ;; Change attributes the way a user would, and check VM agrees
+              ;; they are pending before the save.
+              (vm-set-new-flag m nil)
+              (vm-set-unread-flag m nil)
+              (vm-add-message-labels "vmtestlabel" 1)
+              (should-not (vm-unread-flag m))
+              (should (member "vmtestlabel" (vm-labels-of m)))
+              (should (vm-attribute-modflag-of m))
+              (vm-save-message-to-imap-folder
+               (vm-imap-live-spec server account dst) 1)))
+        (when (eq major-mode 'vm-mode)
+          (let ((vm-confirm-quit nil))
+            (ignore-errors (vm-quit-no-change))))))
+    ;; Read the destination back with the independent client.
+    (let ((flags (vm-imap-live-flags-of conn dst 1)))
+      (should (member "\\Seen" flags))
+      (should (member "vmtestlabel" flags)))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
