@@ -66,6 +66,13 @@ inherited bindings from parent mode keymaps."
   (should
    (eq (keymap-lookup jabber-chat-operations-menu-map "l")
        'jabber-message-thread-browse))
+  (let ((jabber-message-thread-id nil))
+    (should-not
+     (keymap-lookup jabber-chat-operations-menu-map "L")))
+  (let ((jabber-message-thread-id "thread-id"))
+    (should
+     (eq (keymap-lookup jabber-chat-operations-menu-map "L")
+         'jabber-message-thread-set-title)))
   (should
    (eq (keymap-lookup jabber-chat-mode-map "C-c C-t")
        'jabber-message-thread-open))

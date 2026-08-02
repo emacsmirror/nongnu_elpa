@@ -211,6 +211,8 @@ before sending with RET."
   "X" ("Retract all by occupant" jabber-moderation-retract-by-occupant
        :if (lambda () (bound-and-true-p jabber-group)))
   :group "Buffer"
+  "L" ("Set thread title..." jabber-message-thread-set-title
+       :if (lambda () (bound-and-true-p jabber-message-thread-id)))
   "n" ((lambda ()
          (format "Message count: %s"
                  (propertize
