@@ -1890,7 +1890,10 @@ Called for newly assimilated messages.  See `vm-sync-labels' for
 repairing a folder whose list has already drifted."
   (dolist (m messages)
     (dolist (label (vm-labels-of m))
-      (intern label vm-label-obarray))))
+      ;; downcased, as `vm-add-or-delete-message-labels' and
+      ;; `vm-expunge-label' both do -- a "Work" interned as it stands
+      ;; would not be found by an expunge, which downcases its argument
+      (intern (downcase label) vm-label-obarray))))
 
 ;; Go to the message specified in a bookmark and eat the bookmark.
 ;; Returns non-nil if successful, nil otherwise.

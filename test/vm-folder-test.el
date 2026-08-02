@@ -634,6 +634,23 @@ Body
                          #'string-lessp)
                    '("one" "two")))))
 
+(ert-deftest vm-folder-test-register-message-labels-downcases ()
+  "Test that a registered label is stored lowercase.
+`vm-expunge-label' downcases its argument, so a label interned as
+\"Work\" could never be expunged."
+  (vm-test-with-folder "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: Test
+
+Body
+"
+    (setq vm-label-obarray (make-vector 29 0))
+    (vm-set-decoded-labels-of (car vm-message-list) '("Work" "URGENT"))
+    (vm-register-message-labels vm-message-list)
+    (should (equal (sort (vm-obarray-to-string-list vm-label-obarray)
+                         #'string-lessp)
+                   '("urgent" "work")))))
+
 (ert-deftest vm-folder-test-register-message-labels-empty ()
   "Test that messages with no labels register nothing."
   (vm-test-with-folder "From sender@example.com Mon Jan  1 00:00:00 2024
