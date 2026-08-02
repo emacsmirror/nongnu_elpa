@@ -104,37 +104,6 @@ not go in NEWS**; that is what the issue tracker is for.
 
 ## Architecture
 
-### Module Organization (lisp/)
-
-The 54 Elisp modules follow clear functional separation:
-
-**Entry Point:** `vm.el` - Main package, requires core modules
-
-**Core Subsystems:**
-- `vm-folder.el` (5.5k lines) - Folder management, buffer handling
-- `vm-mime.el` (7.9k lines) - MIME parsing and encoding, largest module
-- `vm-vars.el` (7.4k lines) - All defcustom/defvar declarations
-- `vm-imap.el` (4.8k lines) - IMAP protocol implementation
-- `vm-pop.el` - POP3 protocol implementation
-
-**UI Layer:**
-- `vm-summary.el` - Message list display
-- `vm-page.el` / `vm-motion.el` - Message viewing and navigation
-- `vm-menu.el` / `vm-toolbar.el` / `vm-mouse.el` - Interactive elements
-- `vm-window.el` - Window/frame management
-
-**Operations:**
-- `vm-reply.el` - Composing replies
-- `vm-delete.el` / `vm-save.el` / `vm-mark.el` - Message operations
-- `vm-sort.el` / `vm-search.el` - Sorting and searching
-- `vm-virtual.el` / `vm-avirtual.el` - Virtual folder implementation
-
-**Build System:**
-- `vm-build.el` - Compilation harness
-- `vm-autoloads.el` - Generated autoloads (do not edit)
-- `vm-cus-load.el` - Generated custom groups (do not edit)
-- `vm-version-conf.el` - Generated version info (do not edit)
-
 ### Generated Files
 
 These files are auto-generated during build - do not edit directly:
