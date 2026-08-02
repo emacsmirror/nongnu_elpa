@@ -1579,9 +1579,12 @@ exactly as it was.  This matters because a failed sign or encrypt otherwise
 tends to leave a half-rewritten message -- headers already replaced, body
 not yet armored -- that the user cannot easily repair.
 
-The work buffer is killed on the way out, except when the failure struck
-while the composition was being overwritten: it then holds the only copy of
-FUNCTION's result, so it is left behind for the user to recover from."
+Should the failure instead strike while the composition is being
+overwritten, it is the work buffer that holds the only copy of FUNCTION's
+result.  It is then renamed to a unique, visible \"*VM-EPG-RECOVERY*\"
+buffer, and a warning says where to look.  Both matter: the work buffer's
+own name is a fixed one that the next vm-epg command would erase, and its
+leading space would keep it out of the buffer list."
   (let ((composition-buffer (current-buffer))
         (work-buffer (get-buffer-create " *VM-EPG-WORK*"))
         (overwriting nil))
@@ -1600,8 +1603,19 @@ FUNCTION's result, so it is left behind for the user to recover from."
           (erase-buffer)
           (insert-buffer-substring work-buffer)
           (setq overwriting nil))
-      (unless overwriting
-        (kill-buffer work-buffer)))))
+      (if (not overwriting)
+          (kill-buffer work-buffer)
+        ;; The composition was left half-overwritten, so the work buffer holds
+        ;; the only copy of FUNCTION's result.  Move it somewhere the user can
+        ;; actually find it and the next vm-epg command cannot erase it, then
+        ;; say so: the error itself is about to claim the echo area, so a
+        ;; `message' here would not survive.
+        (with-current-buffer work-buffer
+          (rename-buffer "*VM-EPG-RECOVERY*" t))
+        (display-warning
+         'vm-epg
+         (format "Composition may be incomplete; recover it from buffer %s"
+                 (buffer-name work-buffer)))))))
 
 ;;; Digest algorithm name for micalg header
 
@@ -1872,6 +1886,28 @@ to `add-hook':
             (error "Invalid action `%s' from `vm-epg-ask-function': no %s"
                    action command))
           (funcall command))))))
+
+;;; vm-pgg conflict detection
+
+(defun vm-epg-pgg-conflict-warning ()
+  "Return a warning about a vm-pgg/vm-epg conflict, or nil if there is none.
+The two packages define the same `vm-mime-display-internal-*' handlers, so
+whichever is loaded last wins outright and the other's customizations become
+dead settings.  Loading both is always a configuration error."
+  (when (featurep 'vm-pgg)
+    (concat
+     "vm-pgg is also loaded.  Do not load both: they define the same\n"
+     "vm-mime-display-internal-* handlers, so the one loaded last (vm-epg)\n"
+     "now wins and vm-pgg's customizations have no effect.\n"
+     "vm-pgg is deprecated; remove (require 'vm-pgg) from your config.")))
+
+;; Warn in this direction too.  vm-pgg warns when it is loaded after vm-epg,
+;; but the common migration order is the other way round -- an existing
+;; configuration already requires vm-pgg and gains a `(require 'vm-epg)' --
+;; and that case would otherwise pass in silence.
+(let ((warning (vm-epg-pgg-conflict-warning)))
+  (when warning
+    (display-warning 'vm-epg warning)))
 
 (provide 'vm-epg)
 

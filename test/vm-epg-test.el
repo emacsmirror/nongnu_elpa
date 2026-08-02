@@ -724,6 +724,147 @@ depend on the display and are largely unset in batch mode."
       (dolist (inherited (vm-epg-test--spec-inherits spec))
         (should (facep inherited))))))
 
+;;; ---------------------------------------------------------------------------
+;;; vm-epg-save-work: protecting the composition
+;;; ---------------------------------------------------------------------------
+
+(defun vm-epg-test--vm-epg-buffer-names ()
+  "Return the names of all live vm-epg work/recovery buffers."
+  (delq nil (mapcar (lambda (b)
+                      (and (string-match-p "VM-EPG" (buffer-name b))
+                           (buffer-name b)))
+                    (buffer-list))))
+
+(defun vm-epg-test--kill-vm-epg-buffers ()
+  "Kill any leftover vm-epg work/recovery buffers."
+  (dolist (name (vm-epg-test--vm-epg-buffer-names))
+    (kill-buffer name)))
+
+(ert-deftest vm-epg-test-save-work-leaves-composition-alone-on-error ()
+  "A failing FUNCTION leaves the composition untouched and leaks no buffer.
+The whole point of `vm-epg-save-work' is that a failed sign or encrypt does
+not leave a half-rewritten message behind."
+  (vm-epg-test--kill-vm-epg-buffers)
+  (unwind-protect
+      (with-temp-buffer
+        (insert "ORIGINAL COMPOSITION")
+        (should-error (vm-epg-save-work (lambda () (error "Signing failed")))
+                      :type 'error)
+        (should (equal (buffer-string) "ORIGINAL COMPOSITION"))
+        ;; The work buffer held only a copy of the untouched composition, so
+        ;; there is nothing to recover and it must not be left lying around.
+        (should-not (vm-epg-test--vm-epg-buffer-names)))
+    (vm-epg-test--kill-vm-epg-buffers)))
+
+(ert-deftest vm-epg-test-save-work-copies-result-back-on-success ()
+  "On success the work buffer's contents replace the composition and it dies."
+  (vm-epg-test--kill-vm-epg-buffers)
+  (unwind-protect
+      (with-temp-buffer
+        (insert "ORIGINAL")
+        (cl-letf (((symbol-function 'vm-mail-mode-show-headers) #'ignore))
+          (vm-epg-save-work (lambda () (erase-buffer) (insert "SIGNED"))))
+        (should (equal (buffer-string) "SIGNED"))
+        (should-not (vm-epg-test--vm-epg-buffer-names)))
+    (vm-epg-test--kill-vm-epg-buffers)))
+
+(ert-deftest vm-epg-test-save-work-preserves-result-if-overwrite-fails ()
+  "REGRESSION: a failure mid-overwrite must not destroy FUNCTION's result.
+Once the composition has been erased, the work buffer holds the only copy.
+It has to survive, under a name the user can find and that the next vm-epg
+command will not erase -- the work buffer's own name is fixed and starts
+with a space, so it is both reused and hidden from the buffer list."
+  (vm-epg-test--kill-vm-epg-buffers)
+  (unwind-protect
+      (let ((real (symbol-function #'insert-buffer-substring))
+            (calls 0))
+        (with-temp-buffer
+          (insert "ORIGINAL COMPOSITION")
+          (cl-letf (((symbol-function 'vm-mail-mode-show-headers) #'ignore)
+                    ((symbol-function 'insert-buffer-substring)
+                     ;; Call 1 fills the work buffer; call 2 is the copy back
+                     ;; into the composition, i.e. the dangerous window.
+                     (lambda (&rest args)
+                       (setq calls (1+ calls))
+                       (if (= calls 2)
+                           (error "Interrupted while overwriting")
+                         (apply real args)))))
+            (should-error (vm-epg-save-work
+                           (lambda () (erase-buffer) (insert "SIGNED RESULT")))
+                          :type 'error))
+          (should (= calls 2)))
+        ;; The result survived, under a visible name.
+        (let ((names (vm-epg-test--vm-epg-buffer-names)))
+          (should (= (length names) 1))
+          (let ((name (car names)))
+            (should (string-prefix-p "*VM-EPG-RECOVERY*" name))
+            (should-not (string-prefix-p " " name))
+            (should (equal (with-current-buffer name (buffer-string))
+                           "SIGNED RESULT")))))
+    (vm-epg-test--kill-vm-epg-buffers)))
+
+(ert-deftest vm-epg-test-save-work-recovery-survives-a-later-run ()
+  "REGRESSION: a later vm-epg command must not clobber a recovery buffer.
+The work buffer has one fixed name, so before it was renamed aside the next
+`vm-epg-save-work' call erased and then killed the only copy of the result."
+  (vm-epg-test--kill-vm-epg-buffers)
+  (unwind-protect
+      (let ((real (symbol-function #'insert-buffer-substring))
+            (calls 0))
+        ;; First run: fails mid-overwrite, leaving a recovery buffer.
+        (with-temp-buffer
+          (insert "FIRST")
+          (cl-letf (((symbol-function 'vm-mail-mode-show-headers) #'ignore)
+                    ((symbol-function 'insert-buffer-substring)
+                     (lambda (&rest args)
+                       (setq calls (1+ calls))
+                       (if (= calls 2)
+                           (error "Interrupted while overwriting")
+                         (apply real args)))))
+            (should-error (vm-epg-save-work
+                           (lambda () (erase-buffer) (insert "PRECIOUS")))
+                          :type 'error)))
+        ;; Second, unrelated and successful run.
+        (with-temp-buffer
+          (insert "SECOND")
+          (cl-letf (((symbol-function 'vm-mail-mode-show-headers) #'ignore))
+            (vm-epg-save-work (lambda () (erase-buffer) (insert "OTHER")))))
+        ;; The recovery buffer and its contents are still there.
+        (let ((names (vm-epg-test--vm-epg-buffer-names)))
+          (should (= (length names) 1))
+          (should (equal (with-current-buffer (car names) (buffer-string))
+                         "PRECIOUS"))))
+    (vm-epg-test--kill-vm-epg-buffers)))
+
+;;; ---------------------------------------------------------------------------
+;;; vm-pgg / vm-epg conflict detection
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest vm-epg-test-pgg-conflict-warning-when-vm-pgg-loaded ()
+  "REGRESSION: vm-epg warns when vm-pgg is also loaded.
+vm-pgg warns when it is loaded *after* vm-epg, but the migration order --
+an existing configuration that already requires vm-pgg gaining a
+\(require 'vm-epg) -- was silent in both directions even though vm-epg
+then overrides vm-pgg's MIME handlers."
+  ;; `features' is not a special variable, so under lexical binding it cannot
+  ;; be let-bound in a way the C-level `featurep' would see.  Register the
+  ;; feature for real and undo it afterwards.
+  (let ((already (featurep 'vm-pgg)))
+    (unwind-protect
+        (progn
+          (provide 'vm-pgg)
+          (let ((warning (vm-epg-pgg-conflict-warning)))
+            (should (stringp warning))
+            (should (string-match-p "vm-pgg" warning))
+            (should (string-match-p "vm-mime-display-internal" warning))))
+      (unless already
+        (setq features (delq 'vm-pgg features))))))
+
+(ert-deftest vm-epg-test-no-pgg-conflict-warning-when-vm-pgg-absent ()
+  "No conflict warning is produced when vm-pgg is not loaded."
+  (skip-unless (not (featurep 'vm-pgg)))
+  (should-not (vm-epg-pgg-conflict-warning)))
+
 (provide 'vm-epg-test)
 
 ;;; vm-epg-test.el ends here
