@@ -124,14 +124,27 @@ sudo openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
      -out   "$DOVECOT_ETC/ssl/vmtest-cert.pem"
 #+end_src
 
-Enable it in the dovecot config and reload.  dovecot.conf does no shell
-expansion, so write the paths out in full -- these are the MacPorts ones:
+Enable it in =$DOVECOT_ETC/conf.d/10-ssl.conf=, which =dovecot.conf= picks up
+through its =!include conf.d/*.conf=.  On this MacPorts install that file
+holds exactly one line, =ssl = no=, which is what leaves 993 listening but
+unable to handshake.  Replace it with:
 
 #+begin_example
 ssl = yes
 ssl_cert = </opt/local/etc/dovecot/ssl/vmtest-cert.pem
 ssl_key = </opt/local/etc/dovecot/ssl/vmtest-key.pem
 #+end_example
+
+Full paths, and the leading =<= on each: dovecot does no shell expansion, so
+=$DOVECOT_ETC= will not work here, and =<= means "read the file" rather than
+"use this string as the value".  =ssl_min_protocol= already defaults to
+TLSv1.2, which is fine.
+
+Reload, then check dovecot agrees:
+
+#+begin_src sh
+doveconf ssl ssl_cert ssl_key
+#+end_src
 
 Only implicit TLS on 993 is covered.  VM has no STARTTLS, and the
 =vm-stunnel-program= route is deliberately not tested.
