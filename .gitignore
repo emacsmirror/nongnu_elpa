@@ -9,7 +9,7 @@ configure.lineno
 *.dvi
 *.fn*
 *.ilg
-*.in*
+*.ind*
 *.ky*
 *.pdf
 *.pg*
