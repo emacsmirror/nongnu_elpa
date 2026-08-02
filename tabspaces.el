@@ -478,10 +478,15 @@ of side effects and always return a string."
 ;;;; Tab-Anchored Project Context
 
 (defvar tabspaces--resolving-tab-project nil
-  "Non-nil while `tabspaces--tab-project' resolves the tab's own root.
-Guards against re-entry: resolving the root runs
+  "Non-nil while `tabspaces--tab-project' resolves the tab's project.
+Guards against re-entry from two directions.  Resolving the root runs
 `project-find-functions', which includes `tabspaces--tab-project'
-itself when `tabspaces-mode' is enabled.")
+itself when `tabspaces-mode' is enabled.  Looking up the current tab's
+name can also re-enter: for tabs without an explicit name,
+`tab-bar--current-tab' recomputes the name via
+`tab-bar-tab-name-function', and a user-supplied name function may
+call `project-current'.  The binding must therefore cover the tab-name
+lookup, not just the root resolution.")
 
 (defun tabspaces--tab-project (_dir)
   "Return the current tab's project when no other backend claims _DIR.
@@ -493,11 +498,11 @@ tab's project instead of prompting.  Controlled by
 `tabspaces-project-fallback-to-tab'."
   (when (and tabspaces-project-fallback-to-tab
              (not tabspaces--resolving-tab-project))
-    (let ((root (tabspaces--get-project-for-tab (tabspaces--current-tab-name))))
+    (let* ((tabspaces--resolving-tab-project t)
+           (root (tabspaces--get-project-for-tab (tabspaces--current-tab-name))))
       (when (and root (file-directory-p root))
-        (let ((tabspaces--resolving-tab-project t))
-          (or (project--find-in-directory root)
-              (cons 'transient root)))))))
+        (or (project--find-in-directory root)
+            (cons 'transient root))))))
 
 ;;;; Interactive Functions
 

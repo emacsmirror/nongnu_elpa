@@ -337,6 +337,37 @@ Non-project tabs leave the map untouched."
                  (lambda () "unknown")))
         (should-not (tabspaces--tab-project "/nowhere/"))))))
 
+(ert-deftest tabspaces-test-tab-project-fallback-no-recursion ()
+  "A tab-name lookup that calls `project-current' must not recurse.
+Regression test for issue #83: tabs without an explicit name recompute
+their name via `tab-bar-tab-name-function', and a name function that
+queries project.el re-enters `tabspaces--tab-project' through the
+tab-name lookup.  The re-entry guard used to be bound only around the
+root resolution, so this overflowed `max-lisp-eval-depth'."
+  (let* ((dir (make-temp-file "tabspaces-test-proj" t))
+         (tabspaces-project-fallback-to-tab t)
+         (tabspaces-project-tab-map nil)
+         (project-find-functions (list #'tabspaces--tab-project)))
+    (unwind-protect
+        (cl-letf (((symbol-function 'tabspaces--current-tab-name)
+                   ;; Mimic the recomputation path: looking up the tab
+                   ;; name calls `project-current', which runs
+                   ;; `project-find-functions' and re-enters
+                   ;; `tabspaces--tab-project'.
+                   (lambda ()
+                     (project-current nil dir)
+                     "dynamic")))
+          ;; No map entry: resolves to nil instead of overflowing.
+          (should-not (tabspaces--tab-project dir))
+          ;; With a map entry the fallback still resolves; the guard
+          ;; must not disable it for the outer call.
+          (let* ((tabspaces-project-tab-map (list (cons dir "dynamic")))
+                 (project (tabspaces--tab-project "/nowhere/")))
+            (should project)
+            (should (equal (directory-file-name (project-root project))
+                           (directory-file-name dir)))))
+      (delete-directory dir))))
+
 ;;;; Non-VC projects
 
 (ert-deftest tabspaces-test-project-session-file-without-vc ()
