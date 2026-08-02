@@ -13,12 +13,13 @@ top_srcdir = @top_srcdir@
 TEST_INIT = vm-test-init.el
 TEST_RUNNER = run-tests.el
 COVERAGE_RUNNER = coverage-report.el
+IMAP_RUNNER = run-imap-tests.el
 
 ##############################################################################
 # Test targets
 ##############################################################################
 
-.PHONY: test test-coverage test-verbose test-one compile-lisp
+.PHONY: test test-coverage test-verbose test-one test-imap compile-lisp
 
 # Byte-compile the lisp first, so the tests exercise the compiled code
 # that users actually load.  It is not the same code: macros and
@@ -33,6 +34,13 @@ compile-lisp:
 # Run all tests in batch mode
 test: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
+
+# Run only the live IMAP tests, for when that is all you are working on.
+# They are not exclusive to this target: given a gitignored vm-imap-config.el
+# they also run as part of `make test', which is the opt-in.  Every test skips
+# when nothing is configured.  See dev/docs/design/imap-live-tests.org.
+test-imap: compile-lisp
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(IMAP_RUNNER)
 
 # Run tests with coverage collection
 test-coverage: compile-lisp
