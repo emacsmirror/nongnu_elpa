@@ -66,6 +66,29 @@ with \"Missing separator\"."
               " second@example.org\n")
     (should-error (vm-mail-check-recipients) :type 'error)))
 
+(ert-deftest vm-rfaddons-test-check-recipients-comment ()
+  "Test that an RFC 5322 comment containing \"@\" does not block sending.
+A parenthesised comment may hold anything, an address included, and the
+check counted its \"@\" as a second address."
+  (vm-rfaddons-test-with-headers
+      "To: a@example.com (the a@b guy)\n"
+    (should (null (vm-mail-check-recipients))))
+  (vm-rfaddons-test-with-headers
+      "To: Jane <jane@example.com> (jane@old)\n"
+    (should (null (vm-mail-check-recipients)))))
+
+(ert-deftest vm-rfaddons-test-check-recipients-nested-comment ()
+  "Test that nested comments are stripped too; RFC 5322 allows them."
+  (vm-rfaddons-test-with-headers
+      "To: a@example.com (outer (inner b@c) still)\n"
+    (should (null (vm-mail-check-recipients)))))
+
+(ert-deftest vm-rfaddons-test-check-recipients-comment-hides-nothing ()
+  "Test that a comment does not mask a real missing separator."
+  (vm-rfaddons-test-with-headers
+      "To: a@example.com (note) b@example.org\n"
+    (should-error (vm-mail-check-recipients) :type 'error)))
+
 (ert-deftest vm-rfaddons-test-check-recipients-percent-in-address ()
   "Test that a \"%\" in an address does not break the error message.
 The message has the address interpolated into it and was passed to
