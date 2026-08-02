@@ -23,8 +23,7 @@ SUBDIRS = lisp info pixmaps
 # the list of source (documentation) files
 SOURCES = NEWS
 SOURCES += CHANGES
-SOURCES += README
-SOURCES += TODO
+SOURCES += README.md
 SOURCES += example.vm
 
 # the version of this package
@@ -58,7 +57,7 @@ install-pkg:
 	@$(MKDIR) -p "$(DESTDIR)$(docdir)"
 	for i in $(SOURCES) ; do                                  \
 	    echo "Installing $$i in '$(DESTDIR)$(docdir)'" ;      \
-	    $(INSTALL_DATA) $$i "$(DESTDIR)$(docdir)" ;           \
+	    $(INSTALL_DATA) $$i "$(DESTDIR)$(docdir)" || exit 1 ; \
 	done ;
 
 uninstall: uninstall-pkg
@@ -147,7 +146,9 @@ test-coverage:
 
 ##############################################################################
 # xemacs package (not tested)
-PKGDIR =  $(shell pwd)/,,package/
+# @abs_builddir@ rather than $(shell pwd): $(shell ...) is GNU make only, and
+# BSD make expanded it to nothing, rooting the whole package tree at "/".
+PKGDIR =  @abs_builddir@/,,package/
 PKGINFO = $(PKGDIR)/lisp/vm/_pkg.el
 xemacs-package:
 	if [ "x@EMACS_FLAVOR@" != "xxemacs" ]; then \
