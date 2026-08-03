@@ -5679,6 +5679,17 @@ list of the message.  @var{ARG} should be a regular expression.
 @item principal
 matches message if @var{ARG} matches any part of the @samp{Reply-To} header
 of the message.  @var{ARG} should be a regular expression.
+@item addressee
+matches message if @var{ARG} matches any part of the @samp{To} header of the
+message, either an address or a full name.  @var{ARG} should be a regular
+expression.  Unlike @code{recipient}, this does not consider the @samp{Cc} or
+@samp{Bcc} headers.
+@vindex vm-summary-uninteresting-senders
+@item uninteresting-senders
+matches message if its author matches
+@code{vm-summary-uninteresting-senders}, which is normally set to match
+yourself.  This is the selector behind @code{outgoing}, and takes no
+@var{ARG}.
 @vindex vm-summary-uninteresting-senders
 @item outgoing
 matches message if your are the author of it, i.e. if the author matches
@@ -5797,6 +5808,27 @@ matches message if it has not been redistributed using
 @item marked
 matches message if it is marked, as with
 @code{vm-mark-message}.
+@item unmarked
+matches message if it is not marked.
+@item unwritten
+matches message if it has not been saved without its headers.
+@cindex message labels
+@findex vm-add-message-labels
+@kindex V l
+@item label
+matches message if @var{ARG} is one of its labels (@pxref{Message
+Attributes}).
+@var{ARG} is a label name, matched in full rather than as a regular
+expression, so @samp{(label "todo")} selects the messages labelled
+@samp{todo} and not those labelled @samp{todo-later}.  The command
+@code{vm-create-label-virtual-folder} (@kbd{V l}) is a short cut for using
+this selector interactively.
+@item collapsed
+matches message if it is the root of a thread that is currently collapsed in
+the summary (@pxref{Threading}).  Takes no @var{ARG}.
+@item expanded
+matches message if it is the root of a thread that is currently expanded in
+the summary.  Takes no @var{ARG}.
 @end table
 
 @unnumberedsubsec Selectors based on analyzing the text
@@ -5806,6 +5838,13 @@ matches message if it is marked, as with
 @item attachment
 matches if a message contains an attachment, i.e., its text matches
 @code{vm-vs-attachment-regexp}.
+@vindex vm-spam-words-file
+@item spam-word
+matches message if it contains one of the words listed in the file
+@code{vm-spam-words-file}.  @var{ARG} says where to look, and is one of
+@samp{header}, @samp{text} or @samp{header-or-text}; it defaults to
+@samp{header-or-text}.  As with @code{text}, a message held in an external
+source must have been loaded for its body to be searched.
 @item less-chars-than
 matches message if message has less than @var{ARG}
 characters.  @var{ARG} should be a number.
