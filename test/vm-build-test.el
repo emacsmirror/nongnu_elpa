@@ -117,6 +117,51 @@ trip it."
             (forward-line 1)))))
     (should (equal (nreverse offenders) nil))))
 
+
+;;; the build refuses an Emacs too old to run VM (issue #526)
+
+(defun vm-build-test--package-requires-emacs ()
+  "Return the Emacs version vm.el's Package-Requires header asks for."
+  (with-temp-buffer
+    (insert-file-contents (expand-file-name "vm.el" vm-test-lisp-dir))
+    (goto-char (point-min))
+    (when (re-search-forward ";; Package-Requires:.*(emacs \"\\([0-9.]+\\)\")"
+                             nil t)
+      (match-string 1))))
+
+(ert-deftest vm-build-test-minimum-emacs-version-is-read-from-vm-el ()
+  "The minimum version is read out of vm.el rather than copied into the build.
+Issue #526.  Two places already have to agree -- the Package-Requires header and
+`vm-min-emacs-version' -- and a third copy in the build would be one more to
+fall out of step.  This also checks those two agree with each other, which
+nothing else does."
+  (load (expand-file-name "vm-build.el" vm-test-lisp-dir) nil t)
+  (let ((minimum (vm-build-minimum-emacs-version vm-test-lisp-dir))
+        (declared (vm-build-test--package-requires-emacs)))
+    (should (stringp minimum))
+    (should (string-match-p "\\`[0-9]+\\.[0-9]" minimum))
+    (should (equal minimum declared))))
+
+(ert-deftest vm-build-test-refuses-an-old-emacs ()
+  "REGRESSION: building with too old an Emacs is an error, not a warning.
+Issue #526.  An Emacs too old to run VM will still byte-compile it, mostly
+without complaint, and the failure turns up at run time instead -- which is how
+#524 happened, with an old Emacs first on root's PATH.  vm.el checks the version
+when VM starts; this checks it where the wrong Emacs actually gets chosen."
+  (load (expand-file-name "vm-build.el" vm-test-lisp-dir) nil t)
+  (let ((minimum (vm-build-minimum-emacs-version vm-test-lisp-dir)))
+    ;; This Emacs is new enough, so the check passes and returns the minimum.
+    (should (equal minimum (vm-build-check-emacs-version vm-test-lisp-dir)))
+    ;; An older one is refused, and the message names both versions.
+    (let* ((emacs-version "26.3")
+           (message (condition-case err
+                        (progn (vm-build-check-emacs-version vm-test-lisp-dir)
+                               nil)
+                      (error (error-message-string err)))))
+      (should message)
+      (should (string-match-p (regexp-quote minimum) message))
+      (should (string-match-p "26\\.3" message)))))
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here

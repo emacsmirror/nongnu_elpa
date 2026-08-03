@@ -1,5 +1,35 @@
 ;; Add the current dir to the load-path  -*- lexical-binding: t; -*-
 (setq load-path (cons default-directory load-path))
+
+(defun vm-build-minimum-emacs-version (&optional directory)
+  "Return the oldest Emacs VM supports, as declared in vm.el.
+Read out of the source rather than copied, so there is no third place to keep
+in step with `vm-min-emacs-version' and the Package-Requires header.  Returns
+nil if vm.el cannot be found or does not say."
+  (let ((vm-el (expand-file-name "vm.el" (or directory default-directory))))
+    (when (file-readable-p vm-el)
+      (with-temp-buffer
+	(insert-file-contents vm-el)
+	(goto-char (point-min))
+	(when (re-search-forward
+	       "(defconst[ \t]+vm-min-emacs-version[ \t]+\"\\([0-9.]+\\)\""
+	       nil t)
+	  (match-string 1))))))
+
+(defun vm-build-check-emacs-version (&optional directory)
+  "Signal an error if this Emacs is too old to build VM.
+Issue #526: an Emacs too old to run VM will still byte-compile it, mostly
+without complaint, and the failure then turns up at run time -- which is how
+#524 happened, with an old Emacs first on root's PATH.  vm.el checks the
+version when VM starts; this checks it when VM is built, which is where the
+wrong Emacs actually gets chosen."
+  (let ((minimum (vm-build-minimum-emacs-version directory)))
+    (when (and minimum (version< emacs-version minimum))
+      (error "VM needs Emacs %s or newer to build; this is Emacs %s"
+	     minimum emacs-version))
+    minimum))
+
+(vm-build-check-emacs-version)
 ;(setq debug-on-error t)
 (setq debug-ignored-errors nil)
 ;(message "load-path: %S" load-path)
