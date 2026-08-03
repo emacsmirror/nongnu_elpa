@@ -1536,7 +1536,13 @@ recursion nor concurrent calls."
 (defun vmpc--mail (orig-fun &rest args)
   "Start a new message with pcrisis voodoo."
   (vm-follow-summary-cursor)
-  (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+  ;; No message needed, for the reason given at `vm-mail-from-folder': this
+  ;; composes a new message and wants the current one only as a parent, if
+  ;; there is one.  This copy of the validation is why the fix for issue #514
+  ;; did not reach anyone using Personality Crisis -- the advice ran first and
+  ;; still demanded a message, so `m' in an empty folder went on answering
+  ;; "Folder is empty".
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vmpc-init-vars 'mail)
   (vmpc-build-true-conditions-list)
   (vmpc-build-actions-to-run-list)
