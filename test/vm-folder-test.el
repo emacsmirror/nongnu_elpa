@@ -1156,6 +1156,97 @@ halves are actually wired together."
                            (vm-recover-folder-file-name)))))
       (delete-directory dir t))))
 
+
+;;; saving a folder reached through a link (issue #532)
+
+(defmacro vm-folder-test--with-linked-folder (spec &rest body)
+  "Build a folder, a symlink to it and a second hard link, then run BODY.
+SPEC is (REAL-VAR LINK-VAR HARD-VAR PRECIOUS), where PRECIOUS is the value for
+`vm-folder-file-precious-flag' and must be given -- nil is a meaningful value
+here, so it cannot also mean \"not supplied\".  BODY runs with the folder visited
+*through the symlink*, which is what issue #532 is about."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-linked" t)))
+          (,(car spec) (expand-file-name "testmailbox" dir))
+          (,(nth 1 spec) (expand-file-name "testlink" dir))
+          (,(nth 2 spec) (expand-file-name "testhard" dir))
+          (vm-folder-file-precious-flag ,(nth 3 spec))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (before (buffer-list)))
+     (require 'vm)
+     (unwind-protect
+         (progn
+           (with-temp-file ,(car spec)
+             (dotimes (i 3)
+               (insert (format "From s%d@example.com Mon Jan  1 00:00:00 2024\n" i)
+                       (format "From: S%d <s%d@example.com>\n" i i)
+                       (format "Subject: msg %d\n" i)
+                       (format "Message-ID: <linked-%d@example.com>\n" i)
+                       "\n"
+                       (format "Body %d.\n\n" i))))
+           (make-symbolic-link "testmailbox" ,(nth 1 spec))
+           (add-name-to-file ,(car spec) ,(nth 2 spec))
+           (vm-visit-folder ,(nth 1 spec))
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (set-buffer-modified-p nil)
+               (setq kill-buffer-hook nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-saving-through-a-symlink-keeps-the-link ()
+  "REGRESSION: saving a folder visited by symlink neither replaces nor bypasses it.
+Issue #532.  VM sets `file-precious-flag' in folder buffers -- \"mail folders are
+precious\" -- which makes Emacs write a temporary file and rename it over the
+folder.  That replaced the *symlink*, so two things went wrong at once: the link
+became a plain file, and the change was written to that new file while the real
+mailbox kept its old contents.  Anything else reading the mailbox saw a folder
+that had silently diverged.
+
+Emacs has a companion setting for the precious case, `file-preserve-symlinks-on-save',
+which resolves the link first so the rename lands on the file it points at."
+  (vm-folder-test--with-linked-folder (real link hard t)
+    (ignore hard)
+    (should (= 3 (length vm-message-list)))
+    ;; delete the first message and save, so "msg 0" must be gone from the file
+    ;; the link points at
+    (vm-delete-message 1)
+    (vm-expunge-folder)
+    (vm-save-folder)
+    ;; the link is still a link ...
+    (should (file-symlink-p link))
+    ;; ... and the change reached the mailbox it names.
+    (with-temp-buffer
+      (insert-file-contents real)
+      (should-not (string-match-p "Subject: msg 0" (buffer-string)))
+      (should (string-match-p "Subject: msg 1" (buffer-string))))))
+
+(ert-deftest vm-folder-test-hard-links-need-precious-flag-off ()
+  "A folder kept as a hard link survives a save only with the precious flag off.
+The other half of #532, which cannot be fixed and is documented instead: nothing
+can atomically replace a file and keep another name pointing at the same
+contents, so `vm-folder-file-precious-flag' has to be nil for a folder that is a
+hard link.  This pins that the documented workaround actually works."
+  (vm-folder-test--with-linked-folder (real link hard nil)
+    (ignore link)
+    (vm-delete-message 1)
+    (vm-expunge-folder)
+    (vm-save-folder)
+    ;; still two names for one file ...
+    (should (= 2 (file-attribute-link-number (file-attributes real))))
+    ;; ... and both see the change.
+    (dolist (name (list real hard))
+      (with-temp-buffer
+        (insert-file-contents name)
+        (should-not (string-match-p "Subject: msg 0" (buffer-string)))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
