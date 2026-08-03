@@ -96,6 +96,35 @@ git push -o merge_request.create \
 Test files are conflict-prone, since independent branches all append new tests
 to the end of the same file. The resolution is always keep-both.
 
+### Issue labels
+
+- `Analyzed` — investigated and commented on, but left open. Use it whenever
+  findings are posted without the issue being closed, so a reader can tell an
+  answered issue from an untouched one.
+- `Pending` — the fix is merged into `alpha` but has not reached `main`, so
+  the issue is still open only because merging to `alpha` does not close it.
+  The set is derivable: take the `Closes #NNN` / `Re #NNN` trailers of
+  `git log central/main..central/alpha`. Do not put it on a closed issue —
+  nothing is pending there.
+- `irreproducible` — as above.
+
+### Attributing comments written by Claude
+
+The API token belongs to Mark, so anything posted with it appears under his
+name. A comment Claude wrote must say so, as its first line:
+
+```
+> 🤖 Written by [Claude Code](https://claude.com/claude-code), not by @diekhans, and posted from his account.
+```
+
+This is not a formality. These comments state what was and was not
+reproduced, and how; a reader deciding whether to trust that needs to know it
+came from a tool run rather than from the maintainer's own testing. The same
+goes for anything else posted through the API under his account — issue
+descriptions, MR descriptions.
+
+Commits carry the equivalent through their `Co-Authored-By:` trailer.
+
 ## NEWS
 
 `NEWS` records new functionality and user-visible changes of behaviour —
