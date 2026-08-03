@@ -142,6 +142,78 @@ batch, but these will be slower than tier 1.
 =LOGIN= password in cleartext. Protocol bugs will want traces, so scrub
 before attaching one to a failure. Throwaway passwords regardless.
 
+* POP
+
+=vm-pop.el= is tested the same way and out of the same config file.  Two
+pieces, because POP needs less of a server than IMAP does and can be faked
+convincingly:
+
+- =test/vm-pop-mock.el= :: a POP3 server in the test process, listening on a
+  port the OS picks.  Needs no configuration and always runs, so
+  =vm-pop-mock-test.el= is part of the ordinary suite.  It serves the protocol
+  honestly -- greeting, =USER=/=PASS= or =APOP=, =STAT=, =LIST=, =UIDL=,
+  =RETR=, =TOP=, =DELE=, =RSET=, =NOOP=, =QUIT=, with dot-stuffing -- and
+  misbehaves on request: =:no-uidl=, =:refuse=, =:drop-on=,
+  =:truncate-retr=, =:lie-about-size=, =:slow-greeting=.  VM talks to it
+  through =vm-pop-make-session= and everything below, so the code under test
+  is the real client, not a stub of =vm-pop-send-command=.
+- =test/vm-pop-live-init.el= :: the live tier, against the same dovecot with
+  =pop3= added to =protocols=.  Skips unless =vm-pop-test-servers= is set.
+
+Config, in the same gitignored =test/vm-imap-config.el=:
+
+#+begin_src elisp
+(setq vm-pop-test-servers
+      '((:name     "pop"
+         :host     "127.0.0.1"
+         :port     110
+         :tls      nil
+         :auth     "pass"
+         :accounts (("vmtest1" . "PASSWORD1")))
+        (:name     "pop-tls"
+         :host     "localhost"          ; must match the cert subjectAltName
+         :port     995
+         :tls      t
+         :auth     "pass"
+         :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
+         :accounts (("vmtest1" . "PASSWORD1")))))
+#+end_src
+
+Names are load-bearing: the tests look for =pop= and =pop-tls=, as the IMAP
+ones look for =plain= and =tls=.  =:auth= is =pass= or =apop=; VM's POP spec
+is =pop:HOST:PORT:AUTH:USER:PASSWORD=, so passwords again cannot contain =:=.
+
+Run with =make test-pop= (mock plus live), or =make test= which includes both
+and skips the live half when no POP server is configured.
+
+** Seeding a maildrop
+
+POP3 has no =APPEND=: a client can only take messages out of a maildrop, so a
+fixture cannot be created over POP.  The live POP tests therefore need *both*
+protocols for the same account: the message goes in over IMAP, into =INBOX=,
+and is read back over POP.  Dovecot serves both for one user without further
+configuration.
+
+That makes =INBOX= shared state rather than a throwaway mailbox, so:
+
+- every fixture message carries an =X-VMTest-Id= header naming the run, and
+  the tests find their own message rather than assuming they are alone;
+- the fixture is removed over IMAP in an =unwind-protect=, whether or not the
+  test got as far as retrieving it;
+- nothing asserts that the maildrop starts or ends empty.
+
+** dovecot changes needed for POP
+
+1. =protocols = imap pop3= (add =pop3s= implicitly via =ssl = yes=; the 995
+   listener comes from the same =ssl_cert= as IMAPS).  Out of the box the
+   MacPorts and Homebrew configs list =imap= only, so 110 is not listening
+   and every live POP test skips or fails to connect.
+2. Nothing else: the same =passwd-file= passdb, the same certificate, the same
+   =disable_plaintext_auth = no= that lets =PASS= work on 110.
+
+Reload after editing -- on MacPorts the port is =dovecot=, so
+=sudo port reload dovecot=, not =dovecot2=.
+
 * dovecot changes needed
 
 Step-by-step instructions live in [[file:../dev-guide.org][dev-guide.org]] under
