@@ -1196,6 +1196,151 @@ DEFAULT-TRANSFER-ENCODING, unless specified, is assumed to be 7bit.
 ;;; MIME layout operations
 ;;----------------------------------------------------------------------------
 
+;;; RFC 2231 -- internationalized MIME parameter values
+;;
+;; A parameter value may be tagged with a character set and a language, and
+;; may be split into numbered segments:
+;;
+;;     Content-Disposition: attachment; filename*=UTF-8''r%C3%A4ksm%C3%B6rg%C3%A5s
+;;     Content-Type: application/pdf;
+;;       name*0*=UTF-8''%E5%A0%B1; name*1*=%E5%91%8A.pdf
+;;
+;; The segments carry raw bytes, and one character may straddle two of them,
+;; so the bytes are joined before the character set is applied.  The language
+;; tag is discarded: VM has nowhere to put it.
+
+(defconst vm-mime-rfc2231-value-regexp
+  "\\`\\([^']*\\)'\\([^']*\\)'\\(\\(?:.\\|\n\\)*\\)\\'"
+  "Match an RFC 2231 extended parameter value.
+Group 1 is the character set, group 2 the language, group 3 the
+percent-encoded text.")
+
+(defconst vm-mime-rfc2231-safe-chars "A-Za-z0-9!#$&+.^_~-"
+  "Characters that need no percent-encoding in an RFC 2231 parameter value.
+The attribute-char of RFC 2231 section 7, less anything whose literal meaning
+elsewhere in a header makes it not worth the risk.")
+
+(defun vm-mime-string-to-bytes (string)
+  "Return STRING as a unibyte string, without reinterpreting its characters."
+  (if (multibyte-string-p string)
+      (encode-coding-string string 'utf-8)
+    string))
+
+(defun vm-mime-percent-decode-to-bytes (string)
+  "Undo the percent-encoding of STRING, returning a unibyte string.
+A percent sign not followed by two hex digits stands for itself, since that
+is what senders that do not encode at all produce."
+  (let ((i 0) (n (length string)) (bytes nil) c)
+    (while (< i n)
+      (setq c (aref string i))
+      (cond ((and (eq c ?%) (<= (+ i 3) n)
+		  (string-match-p "\\`[0-9a-fA-F][0-9a-fA-F]\\'"
+				  (substring string (1+ i) (+ i 3))))
+	     (push (string-to-number (substring string (1+ i) (+ i 3)) 16)
+		   bytes)
+	     (setq i (+ i 3)))
+	    ((< c 256)
+	     (push c bytes)
+	     (setq i (1+ i)))
+	    (t
+	     ;; A character that was never encoded at all.  Keep its bytes.
+	     (dolist (b (append (encode-coding-string (char-to-string c) 'utf-8)
+				nil))
+	       (push b bytes))
+	     (setq i (1+ i)))))
+    (apply #'unibyte-string (nreverse bytes))))
+
+(defun vm-mime-decode-rfc2231-bytes (bytes charset)
+  "Decode BYTES, a unibyte string, according to the MIME CHARSET.
+CHARSET may be nil or unknown to Emacs, in which case the encoding is
+guessed rather than the bytes being shown raw."
+  (let ((coding (and charset (not (equal charset ""))
+		     (vm-mime-charset-to-coding charset))))
+    (decode-coding-string bytes
+			  (if (and coding (vm-coding-system-p coding)
+				   (not (eq coding 'undecided)))
+			      coding
+			    'undecided))))
+
+(defun vm-mime-decode-rfc2231-value (value)
+  "Decode VALUE, the value of a NAME* parameter, per RFC 2231.
+VALUE is CHARSET'LANGUAGE'TEXT with TEXT percent-encoded.  A value missing
+the character set section is still percent-decoded, since senders do send
+that."
+  (if (string-match vm-mime-rfc2231-value-regexp value)
+      (vm-mime-decode-rfc2231-bytes
+       (vm-mime-percent-decode-to-bytes (match-string 3 value))
+       (match-string 1 value))
+    (vm-mime-decode-rfc2231-bytes
+     (vm-mime-percent-decode-to-bytes value) nil)))
+
+(defun vm-mime-get-rfc2231-parameter (name param-list)
+  "Return parameter NAME from PARAM-LIST, decoded from RFC 2231 notation.
+Returns nil if NAME does not appear in that notation.
+
+Both forms are handled: a single extended value, NAME*=, and continuations
+NAME*0, NAME*1 and so on, in which each segment may independently be extended
+\(NAME*0*=).  The character set is taken from the first segment, which is
+where RFC 2231 section 4.1 puts it, and is applied only after the segments
+have been joined, because a character may be split across two of them."
+  (let ((single (vm-mime-get-xxx-parameter-internal
+		 (concat name "*") param-list)))
+    (if single
+	(vm-mime-decode-rfc2231-value single)
+      (let ((n 0) (bytes "") (found nil) charset segment extended)
+	(while (progn
+		 (setq extended (vm-mime-get-xxx-parameter-internal
+				 (format "%s*%d*" name n) param-list)
+		       segment (or extended
+				   (vm-mime-get-xxx-parameter-internal
+				    (format "%s*%d" name n) param-list)))
+		 segment)
+	  (setq found t)
+	  (if extended
+	      (let ((text segment))
+		(when (and (= n 0)
+			   (string-match vm-mime-rfc2231-value-regexp segment))
+		  (setq charset (match-string 1 segment)
+			text (match-string 3 segment)))
+		(setq bytes (concat bytes
+				    (vm-mime-percent-decode-to-bytes text))))
+	    ;; A plain segment is literal text; its percent signs are not
+	    ;; encoding.
+	    (setq bytes (concat bytes (vm-mime-string-to-bytes segment))))
+	  (setq n (1+ n)))
+	(and found (vm-mime-decode-rfc2231-bytes bytes charset))))))
+
+(defun vm-mime-encode-rfc2231-value (string)
+  "Return STRING percent-encoded for use in an RFC 2231 parameter value."
+  (mapconcat (lambda (byte)
+	       (if (string-match-p (concat "[" vm-mime-rfc2231-safe-chars "]")
+				   (char-to-string byte))
+		   (char-to-string byte)
+		 (format "%%%02X" byte)))
+	     (append (encode-coding-string string 'utf-8) nil)
+	     ""))
+
+(defun vm-mime-quote-parameter-value (value)
+  "Return VALUE quoted for use in a MIME parameter."
+  (concat "\"" (vm-replace-in-string value "[\"\\\\]" "\\\\\\&") "\""))
+
+(defun vm-mime-encode-parameter (name value)
+  "Return a MIME parameter string assigning VALUE to NAME.
+An ASCII VALUE is quoted, as it always was.  Anything else is written in the
+RFC 2231 extended notation, which is what current mail clients send and
+expect for international file names; the alternative, an RFC 2047 encoded
+word, is not permitted in a parameter value, though VM still accepts it on
+the way in."
+  (if (string-match-p "\\`[[:ascii:]]*\\'" value)
+      (concat name "=" (vm-mime-quote-parameter-value value))
+    (concat name "*=UTF-8''" (vm-mime-encode-rfc2231-value value))))
+
+(defun vm-mime-parameter-name-regexp (name)
+  "Return a regexp matching an assignment to parameter NAME.
+Matches the plain form and every RFC 2231 spelling of it, so that a parameter
+can be replaced without leaving an alternative spelling of it behind."
+  (concat "\\`" (regexp-quote name) "\\(\\*[0-9]*\\)?\\*?="))
+
 (defun vm-mime-get-xxx-parameter-internal (name param-list)
   "Return the parameter NAME from PARAM-LIST."
   (let ((match-end (1+ (length name)))
@@ -1213,16 +1358,15 @@ DEFAULT-TRANSFER-ENCODING, unless specified, is assumed to be 7bit.
 (defun vm-mime-get-xxx-parameter (name param-list)
   "Return the parameter NAME from PARAM-LIST.
 
-If parameter value continuations was used, i.e. the parameter was split into
-shorter pieces, rebuild it from them."  
-  (or (vm-mime-get-xxx-parameter-internal name param-list)
-      (let ((n 0) content p)
-        (while (setq p (vm-mime-get-xxx-parameter-internal
-                        (format "%s*%d" name n)
-                        param-list))
-          (setq n (1+ n)
-                content (concat content p)))
-        content)))
+RFC 2231 notation is decoded: a character-set-tagged value, NAME*=, and
+continuations, NAME*0 and so on, whether or not the segments are themselves
+tagged.  See `vm-mime-get-rfc2231-parameter'.
+
+The tagged form wins over a plain NAME= when a sender supplies both.  RFC
+2231 does not allow both, but senders do send them, and then the plain one is
+the deliberately lossy fallback -- an ASCII approximation of the real name."
+  (or (vm-mime-get-rfc2231-parameter name param-list)
+      (vm-mime-get-xxx-parameter-internal name param-list)))
 
 (defun vm-mime-get-parameter (layout param)
   (let ((string (vm-mime-get-xxx-parameter 
@@ -6011,10 +6155,12 @@ there is no file name for this object.             USR, 2011-03-07"
 ;; 	     (setq type 
 ;; 		   (concat type "; name=\"" file-name "\""))
 	     (setq params
-		   (append params (list (concat "name=\"" file-name "\""))))
-	     (setq disposition 
+		   (append params
+			   (list (vm-mime-encode-parameter "name" file-name))))
+	     (setq disposition
 		   (nconc disposition
-			  (list (concat "filename=\"" file-name "\""))))))
+			  (list (vm-mime-encode-parameter
+				 "filename" file-name))))))
 	  ((listp object) 
 	   (setq file-name (nth 4 object))
 	   (setq disposition (nth 3 object)))
@@ -6114,21 +6260,21 @@ there is no file name for this object.             USR, 2011-03-07"
 PARAMS is a list of \"key=value\" strings as carried by the
 `vm-mime-parameters' and `vm-mime-disposition' properties of an
 attachment tag."
-  (let ((entry (concat key "=" (vm-mime-quote-parameter-value value)))
-	(regexp (concat "\\`" (regexp-quote key) "="))
+  (let ((entry (vm-mime-encode-parameter key value))
+	(regexp (vm-mime-parameter-name-regexp key))
 	(found nil)
 	(result nil))
     (dolist (param params)
       (if (and (stringp param) (string-match regexp param))
-	  (progn (setq found t)
-		 (setq result (cons entry result)))
+	  ;; Replace the first spelling of KEY and drop any other, so that a
+	  ;; value set here cannot be overridden by a leftover NAME*= or by
+	  ;; the remaining segments of a continuation.
+	  (unless found
+	    (setq found t)
+	    (setq result (cons entry result)))
 	(setq result (cons param result))))
     (setq result (nreverse result))
     (if found result (append result (list entry)))))
-
-(defun vm-mime-quote-parameter-value (value)
-  "Return VALUE quoted for use in a MIME parameter."
-  (concat "\"" (vm-replace-in-string value "[\"\\\\]" "\\\\\\&") "\""))
 
 (defun vm-mime-attachment-tag-bounds ()
   "Return (START . END) for the attachment tag at point, or nil.

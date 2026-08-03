@@ -63,6 +63,16 @@ VM 8.?.?
     is named after.  The MS-Windows set is not used elsewhere because it
     must include ":", which would turn every "Re:" into "Re_".  Set the
     variable to "[^ a-zA-Z0-9.,_\"'+-]" for the old behaviour.
+  * MIME parameters with international characters are now understood and
+    generated, following RFC 2231.  An attachment sent by a current mail
+    client with a name like "räksmörgås.txt" arrives with a parameter
+    written filename*=UTF-8''r%C3%A4ksm%C3%B6rg%C3%A5s.txt; VM previously
+    showed such a name raw and unreadable, and it now decodes it, including
+    the split form (filename*0*=, filename*1*=) and character sets other
+    than UTF-8.  Attaching a file whose name is not pure ASCII now writes
+    that same notation instead of putting the name in the header verbatim.
+    Where a sender supplies both an international parameter and a plain
+    ASCII one, the international one is used, that being the real name.
 
 
 VM 8.3.2 released 2025-12-29
