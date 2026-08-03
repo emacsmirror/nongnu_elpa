@@ -63,6 +63,15 @@ VM 8.?.?
     is named after.  The MS-Windows set is not used elsewhere because it
     must include ":", which would turn every "Re:" into "Re_".  Set the
     variable to "[^ a-zA-Z0-9.,_\"'+-]" for the old behaviour.
+  * A folder visited through a symbolic link is saved through the link, instead
+    of the link being replaced by a plain file.  Worse than it sounds: the
+    change was written to that new file and the mailbox the link named kept its
+    old contents, so the two silently diverged.  VM keeps mail folders with
+    `file-precious-flag' set, which writes a temporary file and renames it into
+    place, and now also sets Emacs's companion `file-preserve-symlinks-on-save'.
+    A folder that is a *hard* link still needs `vm-folder-file-precious-flag'
+    set to nil: replacing a file atomically and keeping another name pointing at
+    it are not both possible.
   * vm-biff no longer switches itself on when it is loaded.  Merely loading a
     file should not change how Emacs behaves, and this one added itself to
     `vm-arrived-messages-hook' as it loaded -- which also meant it had to guard

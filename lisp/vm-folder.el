@@ -5217,6 +5217,17 @@ folder-access-data should be preserved."
   ;; mail folders are precious.  protect them by default.
   (make-local-variable 'file-precious-flag)
   (setq file-precious-flag vm-folder-file-precious-flag)
+  ;; That protection writes a temporary file and renames it over the folder,
+  ;; which replaces the folder's own name -- so a folder visited through a
+  ;; symbolic link had the link replaced by a plain file (issue #532).  Emacs
+  ;; has a companion setting for exactly this case: with it, the link is
+  ;; resolved first and the rename lands on the file it points at.  Its
+  ;; docstring says it matters only when `file-precious-flag' is set, which
+  ;; here it is by default, and that symlinks are preserved anyway when it is
+  ;; not -- so this is right either way.
+  (when (boundp 'file-preserve-symlinks-on-save) ; Emacs 28.1
+    (make-local-variable 'file-preserve-symlinks-on-save)
+    (setq file-preserve-symlinks-on-save t))
   ;; scroll in place messes with scroll-up and this loses
   (make-local-variable 'scroll-in-place)
   (setq scroll-in-place nil)

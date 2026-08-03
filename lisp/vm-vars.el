@@ -2736,7 +2736,17 @@ A value that's not t or nil means ask before removing empty folders."
 A non-nil value causes folders to be saved by writing to a
 temporary file and then replacing the folder with that file.  A
 nil value causes folders to be saved by writing directly to the
-folder without the use of a temporary file."
+folder without the use of a temporary file.
+
+The default protects a folder against a crash part way through a save,
+which would otherwise leave it truncated.  It has one cost: replacing the
+folder replaces its name, so a folder that is a *hard link* is left with
+the other names pointing at the old contents -- see issue #532.  Nothing
+can preserve a hard link and replace a file atomically at the same time,
+so set this to nil for folders kept as hard links, accepting the weaker
+guarantee against an interrupted save.
+
+Symbolic links are not affected; VM keeps those either way."
   :group 'vm-folders
   :type 'boolean)
 
