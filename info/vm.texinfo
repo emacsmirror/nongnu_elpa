@@ -1450,8 +1450,12 @@ change it in a running Emacs session, you must use @code{setq-default}.
 @node External Messages, Getting New Mail, Thunderbird Folders, Starting Up
 @section External Messages
 
+@cindex external messages
+@cindex headers-only mode
+@cindex headers only
 Under certain circumstances, it is possible to maintain VM folders in which
-only the headers of messages are loaded into the Folder buffer.  The message
+only the headers of messages are loaded into the Folder buffer.  This is
+sometimes called @dfn{headers-only} mode.  The message
 bodies are retained in external sources (file system or remote servers) and
 fetched on demand when the messages are viewed or other operations are
 performed on them.  Using external messages results in a smaller folder size
@@ -1475,6 +1479,28 @@ loaded immediately, and larger messages will be left on the server to be
 fetched on demand.  To treat all messages as external messages, you can set
 @code{vm-imap-max-message-size} to 0.
 
+@strong{Both} variables have to be set.  @code{vm-imap-max-message-size} is
+@code{nil} by default, and @code{nil} means no size limit at all -- so every
+message counts as small enough to load, and enabling
+@code{vm-enable-external-messages} on its own leaves nothing external.  A
+working configuration looks like this:
+
+@example
+(setq vm-enable-external-messages '(imap))
+(setq vm-imap-max-message-size 50000)   ; bytes; 0 for every message
+@end example
+
+Note when trying this out that visiting a folder previews its current message,
+and previewing an external message fetches it.  So the message you are looking
+at is normally loaded, and a folder where every message should be external will
+still show one that is not.
+
+@vindex vm-load-headers-only
+The obsolete variable @code{vm-load-headers-only} was replaced by
+@code{vm-enable-external-messages} in version 8.2.0.  Setting it has no
+effect, so older instructions that mention it need translating to the two
+settings above.
+
 @vindex vm-external-fetch-message-for-presentation
 Normally, the messages that are not present in the folder are fetched
 automatically when an attempt is made to view them.  You can disable this by
@@ -1483,7 +1509,7 @@ setting the variable @code{vm-external-fetch-message-for-presentation} to
 body.  You can load the missing message body using the @kbd{o} command
 described below.
 
-@vindex vm-fetched-message-limit
+@vindex vm-external-fetched-message-limit
 After fetching the bodies of external messages, VM stores them in the Folder
 buffer temporarily, so that repeated fetching is avoided.  The variable
 @code{vm-external-fetched-message-limit} controls how many message bodies are stored
