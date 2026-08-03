@@ -241,17 +241,41 @@ youngest or oldest date in its thread.  CRITERION must be one of
 (defsubst vm-th-set-date-of (id-sym date)
   (put id-sym 'date date))
 
-(defun vm-ts-subject-symbol (id-sym)
+(defun vm-th-reference-root-sym (id-sym &optional cache)
+  "Return the interned symbol of the root of ID-SYM\'s reference thread.
+That is the oldest ancestor reachable through parent links.
+
+CACHE, when given, is a hash table in which the answer is remembered for
+ID-SYM and for every id passed on the way up.  A caller that wants the root
+for every id in a thread would otherwise climb the same ancestry once per id,
+which costs the depth of the thread each time; that is what made
+`vm-thread-subtree' cubic in a thread\'s depth (issue #557).  A cache is only
+valid for as long as nothing is reparented, so it belongs to one walk."
+  (or (and cache (gethash id-sym cache))
+      (let ((sym id-sym) (path nil) parent hit)
+	(while (and (setq parent (vm-th-parent-of sym))
+		    (null (setq hit (and cache (gethash parent cache)))))
+	  (push sym path)
+	  (setq sym parent))
+	;; Either PARENT is nil and SYM is the root, or PARENT had a cached
+	;; root, which is therefore SYM\'s root too.
+	(let ((root (or hit sym)))
+	  (when cache
+	    (puthash id-sym root cache)
+	    (puthash sym root cache)
+	    (dolist (s path) (puthash s root cache)))
+	  root))))
+
+(defun vm-ts-subject-symbol (id-sym &optional root-cache)
   ;; the subject symbol is calculated from the oldest-subject field
   ;; stored in the reference root of ID-SYM.
   ;; if there is no such field exists, then nil is returned.
+  ;; ROOT-CACHE, if given, is passed to vm-th-reference-root-sym.
   (if (member (symbol-name id-sym) vm-traced-message-ids)
       (vm-thread-debug 'vm-ts-subject-symbol id-sym))
-  (let ((sym id-sym)
-	parent subject)
-    (while (setq parent (vm-th-parent-of sym))
-      (setq sym parent))
-    (if (setq subject (vm-th-oldest-subject-of sym))
+  (let ((subject (vm-th-oldest-subject-of
+		  (vm-th-reference-root-sym id-sym root-cache))))
+    (if subject
 	(intern subject vm-thread-subject-obarray))))
 
 (defsubst vm-ts-root-of (subject-sym)
@@ -1447,29 +1471,67 @@ Threads should have been built for this function to work."
 	;; canonical message for this message ID
 	(or (vm-thread-subtree-of msg)
 	    ;; otherwise calcuate the thread-subtree
-	    (let ((list (list m-sym))
-		  (loop-obarray (make-vector 29 0))
+	    (let* ((list (list m-sym))
+		  ;; The last cons of LIST.  The queue used to be extended
+		  ;; with nconc, which walks it from the head every time, so
+		  ;; extending it k times cost k^2 -- the other half of why
+		  ;; this was cubic (issue #557).
+		  (queue-tail list)
+		  ;; Which message IDs this walk has already expanded.  This
+		  ;; was an obarray of 29 buckets, which is fine for a small
+		  ;; thread and not for a large one: with k ids in it every
+		  ;; lookup scanned a bucket of k/29, so expanding k nodes
+		  ;; cost k^2/29.  That, not the list handling, is what made
+		  ;; building threads cubic in the depth of a thread -- see
+		  ;; issue #557.  Keyed by name rather than by symbol, as
+		  ;; interning was: ids interned in another folder's obarray
+		  ;; are the same node here.
+		  (expanded (make-hash-table :test 'equal))
+		  ;; Reference roots, for this walk only.  See
+		  ;; `vm-th-reference-root-sym'.
+		  (root-cache (make-hash-table :test 'eq))
+		  ;; What is in RESULT already.  The membership test below used to
+		  ;; be a memq over RESULT itself, and the accumulation an append
+		  ;; onto the end of it, so each of the two cost the length of the
+		  ;; result so far: one subtree of k messages took k^2 work.  And
+		  ;; `vm-build-threads' asks for the subtree of every message, so a
+		  ;; folder that is one long reference chain made the whole thing
+		  ;; cubic -- 2000 messages in one thread took a minute (#557).
+		  (in-result (make-hash-table :test 'eq))
 		  subject-sym id-sym id
+		  ;; Accumulated backwards and put in order once, at the end,
+		  ;; rather than copied on every addition.
 		  result)
 	      (when (member (vm-su-message-id msg) vm-traced-message-ids)
 		(with-current-buffer (vm-buffer-of msg)
 		  (vm-thread-debug 'vm-thread-subtree (vm-su-message-id msg))))
 	      (while list
 		(setq id-sym (car list)
-		      id (symbol-name id-sym)
-		      subject-sym (with-current-buffer (vm-buffer-of msg)
-				    (vm-ts-subject-symbol id-sym)))
+		      id (symbol-name id-sym))
 		(when (and (vm-th-messages-of id-sym)
-			   (not (memq (vm-th-message-of id-sym) result)))
-		  (setq result (append result (vm-th-messages-of id-sym))))
-		(when (null (intern-soft id loop-obarray))
-		  (intern id loop-obarray)
-		  (nconc list (copy-sequence (vm-th-children-of id-sym)))
-		  (when (and subject-sym (boundp subject-sym) 
+			   (not (gethash (vm-th-message-of id-sym) in-result)))
+		  (dolist (m (vm-th-messages-of id-sym))
+		    (push m result)
+		    (puthash m t in-result)))
+		(unless (gethash id expanded)
+		  (puthash id t expanded)
+		  (let ((more (copy-sequence (vm-th-children-of id-sym))))
+		    (when more
+		      (setcdr queue-tail more)
+		      (setq queue-tail (last more))))
+		  ;; Only wanted here, and computing it means climbing to the
+		  ;; thread root, so it is not computed for ids this walk has
+		  ;; already expanded.
+		  (setq subject-sym (with-current-buffer (vm-buffer-of msg)
+				      (vm-ts-subject-symbol id-sym root-cache)))
+		  (when (and subject-sym (boundp subject-sym)
 			     (eq id-sym (vm-ts-root-of subject-sym)))
-		    (nconc list 
-			   (copy-sequence (vm-ts-members-of subject-sym)))))
+		    (let ((more (copy-sequence (vm-ts-members-of subject-sym))))
+		      (when more
+			(setcdr queue-tail more)
+			(setq queue-tail (last more))))))
 		(setq list (cdr list)))
+	      (setq result (nreverse result))
 	      (when msg
 		(vm-set-thread-subtree-of msg result))
 	      result))

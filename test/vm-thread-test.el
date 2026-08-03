@@ -529,6 +529,78 @@ retrieval failed partway.  The null guard that fixes it landed in
   (let ((vm-thread-debug nil))
     (should (null (vm-build-thread-list nil)))))
 
+
+;;; the cost of building threads (issue #557)
+
+(defun vm-thread-test--write-chain (file n)
+  "Write a folder of N messages to FILE, each referencing the one before it."
+  (with-temp-file file
+    (dotimes (i n)
+      (insert (format "From s%d@example.com Mon Jan  1 00:00:00 2024\n" i)
+              (format "From: S%d <s%d@example.com>\n" i i)
+              (format "Subject: msg %d\n" i)
+              (format "Message-ID: <chain-%d@example.com>\n" i)
+              (if (> i 0)
+                  (format "References: <chain-%d@example.com>\n" (1- i))
+                "")
+              "\n"
+              (format "Body %d.\n\n" i)))))
+
+(ert-deftest vm-thread-test-reference-root-memoises-the-whole-path ()
+  "REGRESSION: resolving a reference root remembers every id on the way up.
+Issue #557.  `vm-thread-subtree' needs the subject symbol of every message in a
+subtree, and finding one means climbing to the thread's root.  Climbed afresh
+each time, that costs the depth of the thread per message, and with a subtree
+computed for every message it made thread building cubic in the folder: 2000
+messages in one reference chain took a minute, and 25 000 would have taken
+hours.
+
+Asserted as the mechanism rather than as a time, because a time is a property of
+the machine.  What has to hold is that one climb populates the cache for the
+whole path it walked, so the remaining messages of that thread cost nothing.  The
+measurements are on the issue.
+
+Also checks the cache cannot change the answer: root with and without it agree
+for every message."
+  (let* ((n 200)
+         (dir (file-name-as-directory (make-temp-file "vm-thread-cost" t)))
+         (file (expand-file-name "chain" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (before (buffer-list)))
+    (require 'vm)
+    (unwind-protect
+        (progn
+          (vm-thread-test--write-chain file n)
+          (vm-visit-folder file)
+          (should (= n (length vm-message-list)))
+          (vm-build-threads vm-message-list)
+          (let* ((deepest (vm-thread-symbol (car (last vm-message-list))))
+                 (root (vm-thread-symbol (car vm-message-list)))
+                 (cache (make-hash-table :test 'eq)))
+            ;; One climb from the deepest message ...
+            (should (eq root (vm-th-reference-root-sym deepest cache)))
+            ;; ... leaves every id it passed known, which is the whole chain.
+            (should (>= (hash-table-count cache) n))
+            ;; The answer does not depend on the cache.
+            (dolist (m vm-message-list)
+              (let ((id-sym (vm-thread-symbol m)))
+                (should (eq (vm-th-reference-root-sym id-sym)
+                            (vm-th-reference-root-sym id-sym cache)))
+                (should (eq root (vm-th-reference-root-sym id-sym cache)))))
+            ;; And the thread itself is right: the first message's subtree is
+            ;; the whole folder, and the last message is below it.
+            (should (= n (length (vm-thread-subtree (car vm-message-list)))))
+            (should (< 0 (vm-thread-indentation (car (last vm-message-list)))))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer)))
+      (delete-directory dir t))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here
