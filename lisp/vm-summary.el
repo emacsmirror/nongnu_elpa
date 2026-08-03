@@ -1063,10 +1063,20 @@ of multiple header lines which might match HEADER-NAME-REGEXP.
     (with-current-buffer (vm-buffer-of (vm-real-message-of message))
       (save-restriction
 	(widen)
-	(goto-char (vm-headers-of message))
-	(let ((case-fold-search t))
+	;; Find where the headers end *before* going to where they start.
+	;; This used to be evaluated as the bound of the search below, after
+	;; the goto-char, and `vm-text-of' computes the marker on first use --
+	;; so whether the search worked depended on that computation leaving
+	;; point alone.  It did not (issue #492), and the search then ran from
+	;; the body with a bound behind it, matching nothing: headers came back
+	;; empty for every message on first access.  That is issue #496, where
+	;; every subject read as "" and `vm-kill-subject' deleted the whole
+	;; folder.  #492 is fixed, but nothing should depend on it again.
+	(let ((header-end (vm-text-of message))
+	      (case-fold-search t))
+	  (goto-char (vm-headers-of message))
 	  (while (and (or (null contents) clump-sep)
-		      (re-search-forward regexp (vm-text-of message) t)
+		      (re-search-forward regexp header-end t)
 		      (save-excursion (goto-char (match-beginning 0))
 				      (vm-match-header)))
 	    (if contents
