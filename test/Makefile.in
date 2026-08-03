@@ -14,12 +14,13 @@ TEST_INIT = vm-test-init.el
 TEST_RUNNER = run-tests.el
 COVERAGE_RUNNER = coverage-report.el
 IMAP_RUNNER = run-imap-tests.el
+POP_RUNNER = run-pop-tests.el
 
 ##############################################################################
 # Test targets
 ##############################################################################
 
-.PHONY: test test-coverage test-verbose test-one test-imap compile-lisp
+.PHONY: test test-coverage test-verbose test-one test-imap test-pop compile-lisp
 
 # Byte-compile the lisp first, so the tests exercise the compiled code
 # that users actually load.  It is not the same code: macros and
@@ -41,6 +42,11 @@ test: compile-lisp
 # when nothing is configured.  See dev/docs/design/imap-live-tests.org.
 test-imap: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(IMAP_RUNNER)
+
+# Run only the POP tests.  The mock ones need no server and always run; the
+# live ones want a POP server in test/vm-imap-config.el and skip without one.
+test-pop: compile-lisp
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(POP_RUNNER)
 
 # Run tests with coverage collection
 test-coverage: compile-lisp

@@ -202,6 +202,72 @@ Reading the result:
 =mail_max_userip_connections= (10 by default) caps concurrent sessions per
 IP, so a test that leaks sessions will start failing its neighbours.
 
+** POP tests
+Two kinds, and only the second needs anything set up.
+
+*** the mock server, which always runs
+=test/vm-pop-mock.el= is a POP3 server inside the test process, on a port the
+operating system picks.  =make test= runs those tests everywhere, with no
+configuration and no network beyond the loopback interface.  They are where
+the failure paths live -- a download cut off half way, a server with no
+=UIDL=, a =DELE= answered =-ERR= -- since a real server will not do those on
+request.
+
+#+begin_src sh
+cd test && make test-pop
+#+end_src
+
+*** the live tests, against the same dovecot
+Add =pop3= to the protocols.  Out of the box the MacPorts and Homebrew
+configs list =imap= only, so nothing is listening on 110:
+
+#+begin_src sh
+grep -n '^protocols' "$DOVECOT_ETC"/dovecot.conf "$DOVECOT_ETC"/conf.d/*.conf
+#+end_src
+
+#+begin_example
+protocols = imap pop3
+#+end_example
+
+With =ssl = yes= already set for the IMAP TLS tests, 995 comes with it and
+uses the same certificate; there is nothing else to do.  Reload, then check:
+
+#+begin_src sh
+sudo port reload dovecot          # or the reload for your install
+doveconf -n protocols
+#+end_src
+
+Then add the POP servers to the same =test/vm-imap-config.el=.  The names
+=pop= and =pop-tls= are what the tests look for:
+
+#+begin_src elisp
+(setq vm-pop-test-servers
+      '((:name     "pop"
+         :host     "127.0.0.1"
+         :port     110
+         :tls      nil
+         :auth     "pass"
+         :accounts (("vmtest1" . "PASSWORD1")))
+        (:name     "pop-tls"
+         :host     "localhost"        ; must match the certificate's SAN
+         :port     995
+         :tls      t
+         :auth     "pass"
+         :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
+         :accounts (("vmtest1" . "PASSWORD1")))))
+#+end_src
+
+The live POP tests also need the IMAP server called =plain= for the same
+account, and skip without it: POP3 has no =APPEND=, so a fixture cannot be
+created over POP.  The message is put into =INBOX= over IMAP and read back
+over POP.
+
+That means these tests use your test account's real =INBOX= rather than a
+throwaway mailbox.  Each fixture carries an =X-VMTest-Id= header, the tests
+look for their own message rather than assuming the maildrop is empty, and the
+fixture is deleted and expunged over IMAP afterwards even when the test fails.
+Nothing else in the mailbox is touched.
+
 *** optional: covering VM's cram-md5 auth
 Only =login= is exercised by default.  VM also has a =cram-md5= branch, which
 needs both a server mechanism and a matching hash, since dovecot ships with
