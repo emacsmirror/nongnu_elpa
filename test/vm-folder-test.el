@@ -883,6 +883,102 @@ it is a better guess than showing the octets."
                            (vm-su-subject (car vm-message-list))))))
       (delete-directory dir t))))
 
+
+;;; a server folder's cache, opened as a folder of its own (issue #425)
+
+(ert-deftest vm-folder-test-cache-folder-name-p ()
+  "Cache folder names are recognised, and ordinary folder names are not."
+  (should (vm-cache-folder-name-p "imap-cache-b979c2934ac0b4ba3f08dabfdd1b2299"))
+  (should (vm-cache-folder-name-p "/home/someone/Mail/pop-cache-0123456789abcdef"))
+  (should-not (vm-cache-folder-name-p "INBOX"))
+  (should-not (vm-cache-folder-name-p "/home/someone/Mail/imap-cache-notes.txt"))
+  (should-not (vm-cache-folder-name-p nil)))
+
+(defmacro vm-folder-test--visiting (file &rest body)
+  "Visit FILE as a folder with `vm-warn' captured, run BODY, clean up.
+BODY can look at WARNINGS, the list of warning strings."
+  (declare (indent 1) (debug t))
+  `(let ((vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (before (buffer-list))
+         (warnings nil))
+     (require 'vm)
+     (unwind-protect
+         (cl-letf (((symbol-function 'vm-warn)
+                    (lambda (_level _secs format &rest args)
+                      (push (apply #'format format args) warnings))))
+           (vm-visit-folder ,file)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (with-current-buffer buffer (set-buffer-modified-p nil))
+           (kill-buffer buffer))))))
+
+(defun vm-folder-test--write-plain-folder (file)
+  "Write a one-message From_ folder to FILE."
+  (with-temp-file file
+    (insert "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+            "From: alice@example.com\n"
+            "Subject: one\n"
+            "\n"
+            "Body.\n\n")))
+
+(ert-deftest vm-folder-test-visiting-a-cache-folder-warns ()
+  "REGRESSION: opening a server folder's cache as a folder says so.
+Issue #425.  The cache reads perfectly as a folder, which is the trouble: it
+looks like the mailbox and is not connected to it, so nothing done in it reaches
+the server and the next real session sees none of it.  desktop.el restoring the
+buffer, or plain find-file, both land here."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-cache" t)))
+         (cache (expand-file-name (concat "imap-cache-" (md5 "spec")) dir)))
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-plain-folder cache)
+          (vm-folder-test--visiting cache
+            (should (cl-find-if (lambda (w) (string-match-p "local cache" w))
+                                warnings))
+            ;; It really was read as a folder -- that is why the warning is
+            ;; needed rather than an error.
+            (should (= 1 (length vm-message-list)))
+            (should-not vm-folder-access-method)))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-visiting-an-ordinary-folder-is-quiet ()
+  "An ordinary folder does not get the cache-folder warning.
+The control: a warning on every folder would be worse than none."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-cache" t)))
+         (plain (expand-file-name "ordinary-folder" dir)))
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-plain-folder plain)
+          (vm-folder-test--visiting plain
+            (should (= 1 (length vm-message-list)))
+            (should-not (cl-find-if (lambda (w) (string-match-p "local cache" w))
+                                    warnings))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-cache-folder-visited-properly-is-quiet ()
+  "Opened the right way, through vm-visit-imap-folder, a cache folder is quiet.
+`vm-mode-internal' gets told the access method then, and the warning is only for
+the case where it is not."
+  (let ((warnings nil))
+    (with-temp-buffer
+      (setq buffer-file-name (concat "/tmp/imap-cache-" (md5 "spec")))
+      (unwind-protect
+          (cl-letf (((symbol-function 'vm-warn)
+                     (lambda (_level _secs format &rest args)
+                       (push (apply #'format format args) warnings)))
+                    ((symbol-function 'vm-menu-install-menus) #'ignore)
+                    ((symbol-function 'vm-set-summary-redo-start-point) #'ignore))
+            (ignore-errors (vm-mode-internal 'imap))
+            (should (eq 'imap vm-folder-access-method))
+            (should-not (cl-find-if (lambda (w) (string-match-p "local cache" w))
+                                    warnings)))
+        (setq buffer-file-name nil)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
