@@ -50,6 +50,7 @@
 
 ;; vm-imap.el functions - cyclic dependency
 (declare-function vm-imap-make-filename-for-spec "vm-imap" (spec))
+(declare-function vm-imap-cache-file-for-folder-name "vm-imap" (name))
 (declare-function vm-imap-set-default-attributes "vm-imap" (m))
 (declare-function vm-imap-end-session "vm-imap"
 		  (process &optional imap-buffer keep-buffer))
@@ -4178,9 +4179,35 @@ Same as \\[vm-revert-folder]."
 
 (defalias 'vm-revert-folder 'vm-revert-buffer)
 
+(defun vm-recover-folder-file-name ()
+  "Read the name of the folder whose auto-save file is to be recovered.
+Defaults to the current folder, which is what one almost always wants and for
+a server folder is the only practical answer: its file is a cache named after
+the MD5 of the maildrop specification, so nobody can be expected to type
+imap-cache-d0c3b3a91bbebdf09dd2f78ab0f4c4cc from memory (issue #547).
+
+An IMAP folder may also be named as ACCOUNT:MAILBOX -- the form the mode line
+shows and `vm-visit-imap-folder' takes -- and its cache file is then worked out
+from `vm-imap-account-alist'."
+  (let* ((default (and buffer-file-name
+		       (memq major-mode '(vm-mode vm-virtual-mode))
+		       buffer-file-name))
+	 (answer (read-file-name
+		  (if default
+		      (format "Recover folder (default %s): "
+			      (file-name-nondirectory default))
+		    "Recover folder: ")
+		  nil default)))
+    (or (and (not (file-exists-p answer))
+	     ;; Not a file, so perhaps ACCOUNT:MAILBOX.  read-file-name has
+	     ;; expanded it against the current directory by now.
+	     (vm-imap-cache-file-for-folder-name
+	      (file-name-nondirectory answer)))
+	answer)))
+
 ;;;###autoload
 (defun vm-recover-file ()
-"Recover the autosave file for the current folder. 
+"Recover the autosave file for the current folder.
 Same as \\[vm-recover-folder]."
   (interactive)
   (vm-select-folder-buffer-if-possible)
@@ -4196,7 +4223,7 @@ Same as \\[vm-recover-folder]."
 	(progn
 	  (vm-display pres-buffer nil nil nil)
 	  (kill-buffer pres-buffer)))
-    (call-interactively 'recover-file)
+    (recover-file (vm-recover-folder-file-name))
     (setq vm-folder-access-method access-method)
     (setq vm-folder-access-data access-data) ; restore data
     (vm (current-buffer) :access-method access-method :reload 'reload)))

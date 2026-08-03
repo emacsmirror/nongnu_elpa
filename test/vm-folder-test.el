@@ -1088,6 +1088,74 @@ round-trips the list, and a version 1 file is still read, with the list empty."
             (kill-buffer buffer))))
       (delete-directory dir t))))
 
+
+;;; recovering a folder without knowing its file name (issue #547)
+
+(ert-deftest vm-folder-test-recover-defaults-to-the-current-folder ()
+  "REGRESSION: recovering a folder offers the folder you are in.
+Issue #547.  `vm-recover-folder' called `recover-file' interactively, which
+prompts for a file name with no default, so after a crash the user had to type
+the name of the folder's file -- and for a server folder that is a cache named
+after the MD5 of the maildrop specification, which nobody can produce from
+memory.  It is now offered as the default, so RET is enough."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-recover" t)))
+         (folder (expand-file-name "plain-folder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (before (buffer-list)))
+    (require 'vm)
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-plain-folder folder)
+          (vm-visit-folder folder)
+          (let (prompt-seen)
+            ;; Stand in for the user pressing RET: read-file-name returns the
+            ;; default it was given.
+            (cl-letf (((symbol-function 'read-file-name)
+                       (lambda (prompt &optional _dir default &rest _)
+                         (setq prompt-seen prompt)
+                         default)))
+              (should (equal folder (vm-recover-folder-file-name)))
+              ;; and the prompt says what RET will do
+              (should (string-match-p "plain-folder" prompt-seen)))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-recover-accepts-an-imap-folder-name ()
+  "An IMAP folder may be named ACCOUNT:MAILBOX at the recover prompt.
+The other half of #547: the file is unguessable, but the folder's name is not.
+Nothing else in the tree resolves one to the other, so this checks the two
+halves are actually wired together."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-recover" t)))
+         (spec "imap:mail.example.com:143:INBOX:login:someone:secret")
+         (vm-imap-folder-cache-directory dir)
+         (vm-imap-account-alist (list (list spec "myaccount")))
+         (cache (vm-imap-make-filename-for-spec spec)))
+    (require 'vm)
+    (unwind-protect
+        (with-temp-buffer
+          ;; Not a folder buffer, so there is no default; the user types a
+          ;; folder name and read-file-name expands it against the directory.
+          (cl-letf (((symbol-function 'read-file-name)
+                     (lambda (&rest _)
+                       (expand-file-name "myaccount:INBOX" dir))))
+            (should (equal cache (vm-recover-folder-file-name))))
+          ;; A name that resolves to nothing is handed back as a file, so a
+          ;; mistyped name is not silently turned into some other folder.
+          (cl-letf (((symbol-function 'read-file-name)
+                     (lambda (&rest _)
+                       (expand-file-name "no-such-account:INBOX" dir))))
+            (should (equal (expand-file-name "no-such-account:INBOX" dir)
+                           (vm-recover-folder-file-name)))))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
