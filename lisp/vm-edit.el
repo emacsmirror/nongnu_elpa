@@ -267,14 +267,40 @@ thread have their cached data discarded."
 	  (save-restriction
 	   (widen)
 	   (goto-char (vm-headers-of (vm-real-message-of (car mp))))
-	   (let ((vm-message-pointer mp)
-		 ;; opoint
-		 (buffer-read-only nil))
+	   (let* ((vm-message-pointer mp)
+		  ;; opoint
+		  (buffer-read-only nil)
+		  (mm (vm-real-message-of (car mp)))
+		  ;; Keep the text this is about to overwrite.  Replacing it
+		  ;; and then discarding the cached data are two steps, and
+		  ;; the second one can fail -- vm-discard-cached-data-internal
+		  ;; re-threads the message, and issue #307 is a report of that
+		  ;; signalling.  Without this the message body was already
+		  ;; overwritten by then and nothing could put it back: the
+		  ;; user's own vm-edit-message-abort only kills the edit
+		  ;; buffer, so an edit that failed half way was unrecoverable.
+		  (old-text (buffer-substring-no-properties
+			     (vm-headers-of mm) (vm-text-end-of mm)))
+		  (applied nil))
 	     ;; (setq opoint (point))
-	     (insert-buffer-substring edit-buf)
-	     (delete-region
-	      (point) (vm-text-end-of (vm-real-message-of (car mp))))
-	     (vm-discard-cached-data-internal (list (car mp))))
+	     (unwind-protect
+		 (progn
+		   (insert-buffer-substring edit-buf)
+		   (delete-region (point) (vm-text-end-of mm))
+		   (vm-discard-cached-data-internal (list (car mp)))
+		   (setq applied t))
+	       (unless applied
+		 ;; Put the old text back the same way round, so the markers
+		 ;; end up where they started, and let the error carry on to
+		 ;; the user.  The cached data may have been partly discarded
+		 ;; already; that costs a recomputation, where a half-written
+		 ;; body costs the message.
+		 (goto-char (vm-headers-of mm))
+		 (insert old-text)
+		 (delete-region (point) (vm-text-end-of mm))
+		 (vm-warn 0 2
+			  "Edit of message %s not applied; the message is unchanged"
+			  (vm-number-of (car mp))))))
 	   (vm-set-edited-flag-of (car mp) t)
 	   ;; The edited body exists only here now.  While the message is
 	   ;; registered as a fetched one, that body gets discarded --
