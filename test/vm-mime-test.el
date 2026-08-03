@@ -10,6 +10,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'vm-test-init)
 (require 'vm-mime)
 
@@ -1533,6 +1534,184 @@ would keep a layout belonging to the wrong buffer."
               ;; And a layout in the right buffer still verifies.
               (should (vm-mime-verify-cached-layout current current)))
           (kill-buffer elsewhere))))))
+
+;;; RFC 2231 -- internationalized MIME parameter values (issue #367)
+
+(ert-deftest vm-mime-test-rfc2231-plain-parameter-unchanged ()
+  "A plain parameter is still returned as it was."
+  (should (equal "report.pdf"
+                 (vm-mime-get-xxx-parameter
+                  "name" '("charset=us-ascii" "name=report.pdf")))))
+
+(ert-deftest vm-mime-test-rfc2231-extended-value ()
+  "NAME*=CHARSET''TEXT is percent-decoded and converted from its charset."
+  (should (equal "räksmörgås.txt"
+                 (vm-mime-get-xxx-parameter
+                  "filename"
+                  '("filename*=UTF-8''r%C3%A4ksm%C3%B6rg%C3%A5s.txt")))))
+
+(ert-deftest vm-mime-test-rfc2231-extended-value-latin-1 ()
+  "A charset other than UTF-8 is honoured."
+  (should (equal "naïve.txt"
+                 (vm-mime-get-xxx-parameter
+                  "filename" '("filename*=ISO-8859-1''na%EFve.txt")))))
+
+(ert-deftest vm-mime-test-rfc2231-language-tag-is-discarded ()
+  "The language section is accepted and ignored."
+  (should (equal "résumé.txt"
+                 (vm-mime-get-xxx-parameter
+                  "filename" '("filename*=UTF-8'fr'r%C3%A9sum%C3%A9.txt")))))
+
+(ert-deftest vm-mime-test-rfc2231-continuation-of-extended-segments ()
+  "Continuations are joined, and a character split across two of them survives.
+The bytes have to be concatenated before the charset is applied; decoding each
+segment on its own turns the split character into two replacement characters."
+  ;; U+00E4 is C3 A4 in UTF-8; the split falls between the two bytes.
+  (should (equal "räksmörgås"
+                 (vm-mime-get-xxx-parameter
+                  "name"
+                  '("name*0*=UTF-8''r%C3"
+                    "name*1*=%A4ksm%C3%B6rg%C3%A5s")))))
+
+(ert-deftest vm-mime-test-rfc2231-mixed-plain-and-extended-segments ()
+  "A continuation may mix extended and plain segments."
+  (should (equal "a-ä-b"
+                 (vm-mime-get-xxx-parameter
+                  "name" '("name*0*=UTF-8''a-%C3%A4-" "name*1=b")))))
+
+(ert-deftest vm-mime-test-rfc2231-plain-continuation-still-works ()
+  "The pre-existing plain continuation support is untouched."
+  (should (equal "a-very-long-file-name.txt"
+                 (vm-mime-get-xxx-parameter
+                  "name" '("name*0=a-very-" "name*1=long-file-" "name*2=name.txt")))))
+
+(ert-deftest vm-mime-test-rfc2231-extended-wins-over-plain ()
+  "When a sender supplies both, the tagged value is the real name.
+The plain one is the sender's deliberately lossy ASCII fallback."
+  (should (equal "Grüße.txt"
+                 (vm-mime-get-xxx-parameter
+                  "filename" '("filename=Gruesse.txt"
+                               "filename*=UTF-8''Gr%C3%BC%C3%9Fe.txt")))))
+
+(ert-deftest vm-mime-test-rfc2231-unknown-charset-does-not-error ()
+  "An unknown charset falls back to guessing rather than signalling."
+  (let ((value (vm-mime-get-xxx-parameter
+                "filename" '("filename*=x-nonexistent-charset''plain.txt"))))
+    (should (stringp value))
+    (should (string-match-p "plain\\.txt" value))))
+
+(ert-deftest vm-mime-test-rfc2231-missing-charset-section ()
+  "A percent-encoded value with no charset section is still decoded."
+  (should (equal "a b.txt"
+                 (vm-mime-get-xxx-parameter "name" '("name*=a%20b.txt")))))
+
+(ert-deftest vm-mime-test-rfc2231-absent-parameter-is-nil ()
+  "A parameter that is not there at all is nil, not the empty string."
+  (should-not (vm-mime-get-xxx-parameter "filename" '("charset=us-ascii")))
+  (should-not (vm-mime-get-xxx-parameter "filename" nil)))
+
+(ert-deftest vm-mime-test-rfc2231-lone-percent-is-literal ()
+  "A percent sign that is not an escape stands for itself.
+Senders that do no encoding at all still produce these."
+  (should (equal "50%.txt"
+                 (vm-mime-get-xxx-parameter "name" '("name*=UTF-8''50%.txt")))))
+
+(ert-deftest vm-mime-test-rfc2231-encode-ascii-is-quoted ()
+  "An ASCII value is written the old way, quoted."
+  (should (equal "name=\"report.pdf\""
+                 (vm-mime-encode-parameter "name" "report.pdf"))))
+
+(ert-deftest vm-mime-test-rfc2231-encode-quotes-are-escaped ()
+  "Quotes and backslashes in an ASCII value are escaped."
+  (should (equal "name=\"a\\\"b.txt\""
+                 (vm-mime-encode-parameter "name" "a\"b.txt"))))
+
+(ert-deftest vm-mime-test-rfc2231-encode-non-ascii-uses-rfc2231 ()
+  "A non-ASCII value is written in extended notation, tagged UTF-8."
+  (should (equal "filename*=UTF-8''r%C3%A4ksm%C3%B6rg%C3%A5s.txt"
+                 (vm-mime-encode-parameter "filename" "räksmörgås.txt"))))
+
+(ert-deftest vm-mime-test-rfc2231-encode-spaces-are-encoded ()
+  "A space in an extended value is percent-encoded, not left bare."
+  (let ((param (vm-mime-encode-parameter "filename" "über bericht.pdf")))
+    (should-not (string-match-p " " param))
+    (should (string-match-p "%20" param))))
+
+(ert-deftest vm-mime-test-rfc2231-round-trip ()
+  "What VM writes, VM reads back unchanged.
+Through `vm-mime-unquote-parameter-value', as the real callers do: the getter
+returns values as the structured-header parser leaves them, and the plain form
+is a quoted string."
+  (dolist (name '("report.pdf" "räksmörgås.txt" "über bericht.pdf"
+                  "報告.pdf" "50% done.txt"))
+    (should (equal name
+                   (vm-mime-unquote-parameter-value
+                    (vm-mime-get-xxx-parameter
+                     "filename"
+                     (list (vm-mime-encode-parameter "filename" name))))))))
+
+(ert-deftest vm-mime-test-rfc2231-set-parameter-replaces-extended ()
+  "Setting a parameter removes any other spelling of it.
+Otherwise a rename would leave the old NAME*= behind, and that one wins."
+  (let ((params (vm-mime-set-parameter-in-list
+                 '("charset=us-ascii" "name*=UTF-8''alt.txt") "name" "new.txt")))
+    (should (equal "new.txt" (vm-mime-unquote-parameter-value
+                             (vm-mime-get-xxx-parameter "name" params))))
+    (should (member "charset=us-ascii" params))
+    (should-not (cl-find-if (lambda (p) (string-match-p "\\`name\\*=" p))
+                            params))))
+
+(ert-deftest vm-mime-test-rfc2231-set-parameter-drops-continuation ()
+  "Setting a parameter removes every segment of a continuation."
+  (let ((params (vm-mime-set-parameter-in-list
+                 '("name*0*=UTF-8''a" "name*1*=b" "charset=us-ascii")
+                 "name" "new.txt")))
+    (should (equal "new.txt" (vm-mime-unquote-parameter-value
+                              (vm-mime-get-xxx-parameter "name" params))))
+    (should-not (cl-find-if (lambda (p) (string-match-p "\\`name\\*[0-9]" p))
+                            params))))
+
+(ert-deftest vm-mime-test-rfc2231-set-parameter-non-ascii ()
+  "Renaming to a non-ASCII name produces the extended notation."
+  (let ((params (vm-mime-set-parameter-in-list
+                 '("name=\"old.txt\"") "name" "Grüße.txt")))
+    (should (equal "Grüße.txt" (vm-mime-get-xxx-parameter "name" params)))))
+
+(ert-deftest vm-mime-test-rfc2231-attach-non-ascii-name-encodes ()
+  "Attaching a file with a non-ASCII name emits RFC 2231 in both headers,
+and the name survives to what actually gets sent."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-rfc2231" t))))
+    (unwind-protect
+        (vm-mime-test-with-attachment-tag (concat dir "räksmörgås.txt")
+          ;; What the tag carries, and how it spells it.
+          (should (equal "räksmörgås.txt" (vm-mime-attachment-name-at-point)))
+          (let ((params (get-text-property (car (vm-mime-attachment-tag-bounds))
+                                          'vm-mime-parameters)))
+            (should (cl-find-if (lambda (p) (string-match-p "\\`name\\*=UTF-8''" p))
+                                params)))
+          ;; And what goes on the wire.
+          (let ((vm-send-using-mime t))
+            (vm-mime-encode-composition))
+          (let ((text (buffer-string)))
+            (should (string-match-p "name\\*=UTF-8''r%C3%A4ksm%C3%B6rg%C3%A5s\\.txt"
+                                    text))
+            (should (string-match-p
+                     "filename\\*=UTF-8''r%C3%A4ksm%C3%B6rg%C3%A5s\\.txt" text))
+            ;; No raw non-ASCII left in a parameter, which is what RFC 2231 is for.
+            (should-not (string-match-p "name=\"räksmörgås" text))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-rfc2231-attach-ascii-name-unchanged ()
+  "An ASCII attachment name is still written the plain way."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-rfc2231" t))))
+    (unwind-protect
+        (vm-mime-test-with-attachment-tag (concat dir "report.txt")
+          (let ((vm-send-using-mime t))
+            (vm-mime-encode-composition))
+          (let ((text (buffer-string)))
+            (should (string-match-p "name=\"report\\.txt\"" text))
+            (should-not (string-match-p "name\\*=" text))))
+      (delete-directory dir t))))
 
 (provide 'vm-mime-test)
 
