@@ -309,12 +309,18 @@ body markers is tolerated."
 	    '(0 1 2 3 4))		; type through description
 	   ;; ignore disposition and qdisposition because of the hack
 	   ;; in vm-mime-frob-image-xxxx
-	   ;; Check if the markers are equal
+	   ;; Check if the markers are equal.  Buffer as well as position:
+	   ;; a layout parsed in one buffer and cached against a message in
+	   ;; another is invalid however well the offsets happen to line up,
+	   ;; and they do line up for the first message of a folder, which
+	   ;; starts at 1 just as a Presentation buffer does (issue #109).
 	   (unless external-body
 	     (vm-mapc
 	      (lambda (i)
-		(unless (equal (marker-position (aref cached i))
-			       (marker-position (aref current i)))
+		(unless (and (equal (marker-position (aref cached i))
+				    (marker-position (aref current i)))
+			     (eq (marker-buffer (aref cached i))
+				 (marker-buffer (aref current i))))
 		  (throw 'mismatch i)))
 	      '(7 9 10)))	  ; header-start, body-start, body-end
 	   ;; Check if the subparts are equal
@@ -1353,8 +1359,17 @@ source of the message."
 	;; make a modifiable copy of the message struct
 	(setq mm (copy-sequence m))
 	;; also a modifiable copy of the location data
-	;; other data will be shared with the Folder buffer
 	(vm-set-location-data-of mm (vm-copy (vm-location-data-of m)))
+	;; and of the soft data, because the cached MIME layout lives there
+	;; and its markers point into whichever buffer was parsed.  Sharing
+	;; the vector let a layout parsed here -- see vm-fetch-message, which
+	;; parses the current buffer -- overwrite the folder's cache with
+	;; markers into this buffer, which is then erased and refilled for
+	;; the next message.  That is issue #109: the part markers all end up
+	;; meaningless and no part has any text.  Copied shallowly, so every
+	;; field still refers to the same object it did before; nothing but
+	;; the layout is ever written through a presentation copy.
+	(vm-set-softdata-of mm (copy-sequence (vm-softdata-of m)))
 	(set-marker (vm-start-of mm) (point-min))
 	(set-marker (vm-headers-of mm) (+ (vm-start-of mm)
 					  (- (vm-headers-of real-m)

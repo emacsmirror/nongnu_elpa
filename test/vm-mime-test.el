@@ -1429,6 +1429,111 @@ tag to a user."
     (goto-char (point-min))
     (should-error (vm-mime-set-attachment-name-at-point "x") :type 'error)))
 
+;;; Presentation copies must not corrupt the folder's cached MIME layout
+;;; (issue #109)
+
+(defconst vm-mime-test--multipart-folder
+  "From sender@example.com Mon Jan  1 00:00:00 2024
+From: sender@example.com
+Subject: multipart
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary=\"BOUND\"
+
+--BOUND
+Content-Type: text/plain
+
+first part
+--BOUND
+Content-Type: text/plain
+
+second part
+--BOUND--
+"
+  "A two-part message, enough for a layout with subparts to go wrong in.")
+
+(ert-deftest vm-mime-test-presentation-copy-has-private-softdata ()
+  "REGRESSION: a presentation copy does not share the layout slot.
+Issue #109.  `vm-make-presentation-copy' copies the message struct shallowly,
+so the soft data vector -- which holds the cached MIME layout -- used to be
+shared with the real message.  `vm-fetch-message' then parses the presentation
+buffer and stores the result through the copy, overwriting the folder's cache
+with markers into a buffer that is about to be erased for the next message."
+  (let ((vm-use-menus nil))
+    (vm-test-with-folder vm-mime-test--multipart-folder
+      (let ((real (vm-test-first-message)))
+        (vm-make-presentation-copy real)
+        (let ((pres (with-current-buffer vm-presentation-buffer
+                      (car vm-message-pointer))))
+          (should-not (eq pres real))
+          ;; The location data was always private; the soft data must be too.
+          (should-not (eq (vm-softdata-of pres) (vm-softdata-of real)))
+          ;; Shallow: every field still refers to what it did before, so the
+          ;; copy still knows its folder buffer and its real message.
+          (should (eq (vm-buffer-of pres) (vm-buffer-of real)))
+          (should (eq (vm-real-message-of pres) real)))))))
+
+(ert-deftest vm-mime-test-presentation-parse-keeps-folder-layout ()
+  "REGRESSION: parsing in the presentation buffer leaves the folder cache alone.
+Issue #109, stated as the behaviour rather than the representation: after the
+presentation copy caches a layout parsed from the presentation buffer, the real
+message's cached layout must still describe the folder buffer."
+  (let ((vm-use-menus nil))
+    (vm-test-with-folder vm-mime-test--multipart-folder
+      (let* ((real (vm-test-first-message))
+             (folder-buffer (current-buffer)))
+        ;; Cache the folder's own layout first, as previewing does.
+        (vm-set-mime-layout-of real (vm-mime-parse-entity-safe real))
+        (should (eq folder-buffer
+                    (marker-buffer
+                     (vm-mm-layout-body-start (vm-mime-layout-of real)))))
+        (vm-make-presentation-copy real)
+        (let ((pres (with-current-buffer vm-presentation-buffer
+                      (car vm-message-pointer))))
+          ;; This is what vm-fetch-message does: parse the current buffer,
+          ;; with no message argument, and cache it against the copy.
+          (with-current-buffer vm-presentation-buffer
+            (vm-set-mime-layout-of pres (vm-mime-parse-entity-safe)))
+          ;; The copy may say what it likes about its own buffer...
+          (should (vm-mime-layout-of pres))
+          ;; ...but the folder's cache still points into the folder.
+          (let ((layout (vm-mime-layout-of real)))
+            (should (eq folder-buffer
+                        (marker-buffer (vm-mm-layout-body-start layout))))
+            (should (= 2 (length (vm-mm-layout-parts layout))))
+            (dolist (part (vm-mm-layout-parts layout))
+              (should (eq folder-buffer
+                          (marker-buffer (vm-mm-layout-body-start part)))))))))))
+
+(ert-deftest vm-mime-test-verify-cached-layout-checks-marker-buffer ()
+  "A cached layout from another buffer is invalid even at equal positions.
+Issue #109: `vm-mime-verify-cached-layout' compared only marker positions, and
+the offsets do coincide for the first message of a folder, which starts at 1
+just as a presentation buffer does -- so the repair in `vm-preview-current-message'
+would keep a layout belonging to the wrong buffer."
+  (let ((vm-use-menus nil))
+    (vm-test-with-folder vm-mime-test--multipart-folder
+      (let* ((real (vm-test-first-message))
+             (current (vm-mime-parse-entity-safe real))
+             (elsewhere (generate-new-buffer " *vm-mime-test-other*")))
+        ;; Wide enough that the positions below are reachable in it, the way
+        ;; a presentation buffer holding a copy of the message would be.
+        (with-current-buffer elsewhere
+          (insert (make-string (+ 10 (marker-position (aref current 10))) ?x)))
+        (unwind-protect
+            (let ((cached (vm-copy current)))
+              ;; Same layout, same positions, different buffer.
+              (dolist (i '(7 9 10))
+                (aset cached i (set-marker
+                                (make-marker)
+                                (marker-position (aref current i))
+                                elsewhere)))
+              (should (equal (marker-position (aref cached 9))
+                             (marker-position (aref current 9))))
+              (should-not (vm-mime-verify-cached-layout cached current))
+              ;; And a layout in the right buffer still verifies.
+              (should (vm-mime-verify-cached-layout current current)))
+          (kill-buffer elsewhere))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
