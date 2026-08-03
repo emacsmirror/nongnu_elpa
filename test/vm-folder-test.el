@@ -1247,6 +1247,75 @@ hard link.  This pins that the documented workaround actually works."
         (insert-file-contents name)
         (should-not (string-match-p "Subject: msg 0" (buffer-string)))))))
 
+
+;;; a count that runs past the end of the folder (issue #550)
+
+(defconst vm-folder-test--four-messages
+  (apply #'concat
+         (mapcar (lambda (i)
+                   (format (concat "From s%d@example.com Mon Jan  1 00:00:00 2024\n"
+                                   "From: S%d <s%d@example.com>\n"
+                                   "Subject: msg %d\n"
+                                   "Message-ID: <count-%d@example.com>\n"
+                                   "\nBody %d.\n\n")
+                           i i i i i i))
+                 (number-sequence 0 3)))
+  "A four-message folder, subjects \"msg 0\" through \"msg 3\".")
+
+(defmacro vm-folder-test--with-point-at (n &rest body)
+  "Run BODY in the four-message folder with the current message the Nth."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-folder vm-folder-test--four-messages
+     (setq major-mode 'vm-mode)
+     (setq vm-mail-buffer nil)
+     (setq vm-message-pointer (nthcdr ,n vm-message-list))
+     ,@body))
+
+(defun vm-folder-test--operable-subjects (count)
+  "Return the subjects `vm-select-operable-messages' gives for COUNT."
+  (mapcar #'vm-su-subject (vm-select-operable-messages count nil "Test")))
+
+(ert-deftest vm-folder-test-count-past-end-acts-on-what-is-there ()
+  "REGRESSION: a count larger than the messages left acts on the rest.
+Issue #550: `C-u 10 d' near the end of a folder signalled end-of-folder and
+deleted *nothing*.  `vm-select-operable-messages' called `vm-check-count', which
+signals rather than clamping.  Acting on as many as there are is what Emacs's own
+commands do at a boundary, and VM's commands report how many they acted on, so a
+short count is visible rather than silent."
+  (vm-folder-test--with-point-at 2
+    (should (equal '("msg 2" "msg 3") (vm-folder-test--operable-subjects 10))))
+  (vm-folder-test--with-point-at 3
+    (should (equal '("msg 3") (vm-folder-test--operable-subjects 10)))))
+
+(ert-deftest vm-folder-test-count-that-fits-is-unchanged ()
+  "A count within the folder still selects exactly that many.
+The control: clamping must not change the ordinary case."
+  (vm-folder-test--with-point-at 0
+    (should (equal '("msg 0" "msg 1") (vm-folder-test--operable-subjects 2))))
+  (vm-folder-test--with-point-at 2
+    (should (equal '("msg 2" "msg 3") (vm-folder-test--operable-subjects 2))))
+  ;; and a count of 1 is the current message
+  (vm-folder-test--with-point-at 1
+    (should (equal '("msg 1") (vm-folder-test--operable-subjects 1)))))
+
+(ert-deftest vm-folder-test-negative-count-is-measured-backwards ()
+  "REGRESSION: a backward count is limited by what lies behind, not ahead.
+`vm-check-count' was handed the absolute value of the count, so it always took
+its forward branch: a backward count was checked against the messages *ahead* of
+point.  At the second of four messages, `C-u -10' therefore signalled
+end-of-folder -- complaining about the end of the folder while walking towards
+its start."
+  (vm-folder-test--with-point-at 1
+    (should (equal '("msg 1" "msg 0") (vm-folder-test--operable-subjects -10))))
+  ;; and a backward count that fits is unaffected
+  (vm-folder-test--with-point-at 3
+    (should (equal '("msg 3" "msg 2") (vm-folder-test--operable-subjects -2)))))
+
+(ert-deftest vm-folder-test-count-zero-still-means-all ()
+  "A count of zero means the whole folder, which clamping must not disturb."
+  (vm-folder-test--with-point-at 0
+    (should (= 4 (length (vm-folder-test--operable-subjects 0))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

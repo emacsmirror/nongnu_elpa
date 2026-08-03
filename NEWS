@@ -63,6 +63,13 @@ VM 8.?.?
     is named after.  The MS-Windows set is not used elsewhere because it
     must include ":", which would turn every "Re:" into "Re_".  Set the
     variable to "[^ a-zA-Z0-9.,_\"'+-]" for the old behaviour.
+  * A count larger than the number of messages left now acts on the messages
+    that are there, instead of failing and doing nothing.  `C-u 10 d' with three
+    messages left deletes those three; it used to report "End of folder" and
+    delete none of them.  The commands say how many they acted on, so a short
+    count is visible.  A backward count is now measured backwards, too: it was
+    being checked against the messages *ahead* of point, so `C-u -10 d' near the
+    start of a folder complained about the end of it.
   * A folder visited through a symbolic link is saved through the link, instead
     of the link being replaced by a plain file.  Worse than it sounds: the
     change was written to that new file and the mailbox the link named kept its

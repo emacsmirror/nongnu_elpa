@@ -5072,7 +5072,19 @@ which is used in interactive confirmations."
 	   (if (= count 0)
 	       (setq mlist (copy-sequence vm-message-list))
 	     (unless (eq vm-circular-folders t)
-	       (vm-check-count count))
+	       ;; Operate on as many messages as there are, rather than
+	       ;; refusing to act.  This used to be a `vm-check-count', which
+	       ;; signals end-of-folder, so `C-u 10 d' with fewer than ten
+	       ;; messages left deleted nothing at all -- issue #550.  Doing as
+	       ;; much as was asked for is what Emacs's own commands do at a
+	       ;; boundary, and the commands here report how many they acted on,
+	       ;; so a short count is visible rather than silent.
+	       (setq count
+		     (min count
+			  (if (eq direction 'forward)
+			      (length vm-message-pointer)
+			    (1+ (- (length vm-message-list)
+				   (length vm-message-pointer)))))))
 	     (while (not (zerop count))
 	       (setq mlist (cons (car vm-message-pointer) mlist))
 	       (vm-decrement count)
