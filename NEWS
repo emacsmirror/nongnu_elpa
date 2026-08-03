@@ -63,6 +63,12 @@ VM 8.?.?
     is named after.  The MS-Windows set is not used elsewhere because it
     must include ":", which would turn every "Re:" into "Re_".  Set the
     variable to "[^ a-zA-Z0-9.,_\"'+-]" for the old behaviour.
+  * vm-biff no longer switches itself on when it is loaded.  Merely loading a
+    file should not change how Emacs behaves, and this one added itself to
+    `vm-arrived-messages-hook' as it loaded -- which also meant it had to guard
+    against doing that while being byte-compiled.  Turn it on with
+    `(vm-biff-mode 1)' instead of `(require \'vm-biff)'; the mode is autoloaded,
+    so no require is needed.  Suggested by Stefan Monnier.
   * RFC 3676 format=flowed is now handled.  A sender that does not know how
     wide your window is can wrap the text itself and mark each break it
     invented by leaving a space at the end of the line; VM now joins those
