@@ -1674,10 +1674,14 @@ The optional argument USE-SENDER may be nil, in which case the
 variable `vm-mail-use-sender-address' determines whether the sender
 address is used."
   (when (and (or use-sender vm-mail-use-sender-address)
-	     (memq major-mode '(vm-mode vm-virtual-mode 
+	     (memq major-mode '(vm-mode vm-virtual-mode
 					vm-summary-mode vm-presentation-mode)))
     (vm-select-folder-buffer)
-    (vm-get-header-contents (car vm-message-pointer) "From:")))
+    ;; "if possible" includes there being a message to take the sender from:
+    ;; an empty folder has none, and reading a header out of nil is an error
+    ;; rather than an absent recipient (issue #514).
+    (when vm-message-pointer
+      (vm-get-header-contents (car vm-message-pointer) "From:"))))
 
 
 ;;;###autoload

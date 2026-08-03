@@ -364,6 +364,100 @@ the branch that runs if the function ever stops leading with \"GNU Emacs\"."
     (should (string-match-p (regexp-quote emacs-version)
                             (vm-emacs-name-and-version)))))
 
+
+;;; composing from an empty folder (issue #514)
+
+(defmacro vm-reply-test--in-folder (spec &rest body)
+  "Visit a generated folder and run BODY in it, then clean up.
+SPEC is (CONTENT), the folder text -- \"\" for an empty folder.  Every buffer the
+visit created is killed afterwards, so one test cannot leave a folder buffer for
+the next to trip over."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-reply-test" t)))
+          (file (expand-file-name "folder" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-frame-per-composition nil)
+          (vm-mutable-frame-configuration nil)
+          (before (buffer-list)))
+     (require 'vm)
+     (unwind-protect
+         (progn
+           (with-temp-file file (insert ,(car spec)))
+           (vm-visit-folder file)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               (set-buffer-modified-p nil)
+               ;; vm-postpone asks whether to save a composition as a draft
+               ;; when its buffer is killed, and a question in batch reads
+               ;; stdin and fails.  Nothing here is about drafts.
+               (setq kill-buffer-hook nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defconst vm-reply-test--one-message
+  "From alice@example.com Mon Jan  1 00:00:00 2024\nFrom: Alice <alice@example.com>\nSubject: hello\n\nBody.\n\n"
+  "A one-message folder.")
+
+(ert-deftest vm-reply-test-validate-allows-an-empty-folder ()
+  "REGRESSION: composing does not require the folder to hold a message.
+Issue #514: `vm-mail-from-folder' -- `m' -- validated with a minimum of 1, so in
+an empty folder it answered \"Folder is empty\" and composed nothing.  An IMAP
+inbox with no mail in it is the ordinary way to meet that.  The current message
+is wanted only as a parent, and an empty folder simply has none.
+
+This pins the contract `m' now asks for rather than calling `m' itself.  Driving
+the command end to end needs a folder buffer, and doing that inside the suite
+runs into state earlier test files leave behind -- `vm-mail-buffer' set globally,
+functions on `vm-mail-mode-hook' that want a message -- so such a test passes
+alone and fails in the suite.  The command was checked by hand instead; see the
+note on the issue, and #559 for the pollution."
+  (require 'vm)
+  (let ((vm-mail-buffer nil))
+    (with-temp-buffer
+      (setq major-mode 'vm-mode)
+      (setq vm-message-list nil)
+      ;; What `m' asks for now: no minimum, so an empty folder is fine.
+      (should-not (condition-case err
+                      (progn (vm-select-folder-buffer-and-validate 0) nil)
+                    (error err)))
+      ;; What it asked for before, kept so the difference is visible.  A minimum
+      ;; of 1 still refuses, which is right for commands that act on a message.
+      (should (eq 'folder-empty
+                  (car (condition-case err
+                           (progn (vm-select-folder-buffer-and-validate 1) nil)
+                         (error err))))))))
+
+(ert-deftest vm-reply-test-sender-guess-without-a-message ()
+  "The sender guess gives nil when there is no message to take a sender from.
+The other half of #514: \"if possible\" has to include there being a message,
+or `vm-select-recipient-from-sender-if-possible' reads a header out of nil and
+signals instead of returning no recipient."
+  (require 'vm)
+  (with-temp-buffer
+    (setq major-mode 'vm-mode)
+    (setq vm-message-pointer nil)
+    (let ((vm-mail-use-sender-address t))
+      (should-not (vm-select-recipient-from-sender-if-possible))
+      ;; and with the variable off, as by default
+      (let ((vm-mail-use-sender-address nil))
+        (should-not (vm-select-recipient-from-sender-if-possible))))))
+
+(ert-deftest vm-reply-test-mail-from-folder-still-uses-the-sender ()
+  "The control: with a message present the sender is still offered.
+Without this, the fix above could pass by never looking at the sender at all."
+  (vm-reply-test--in-folder (vm-reply-test--one-message)
+    (should (= 1 (length vm-message-list)))
+    (let ((vm-mail-use-sender-address t))
+      (should (string-match-p "alice@example.com"
+                              (or (vm-select-recipient-from-sender-if-possible)
+                                  ""))))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
