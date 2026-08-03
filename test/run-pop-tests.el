@@ -13,7 +13,7 @@
 ;;
 ;; Two kinds are loaded.  The mock tests in vm-pop-mock-test.el need nothing:
 ;; they serve POP3 on a local port and always run.  The live tests in
-;; vm-pop-live-test.el need test/vm-imap-config.el to set
+;; vm-pop-live-test.el need test/vm-live-config.el to set
 ;; `vm-pop-test-servers', and skip without it, so an unconfigured machine is
 ;; not a failure -- see dev/docs/design/imap-live-tests.org.
 
@@ -29,7 +29,7 @@
 (require 'vm-pop-live-init)
 
 (unless vm-pop-test-servers
-  (message "No POP server in test/vm-imap-config.el.")
+  (message "No POP server in test/vm-live-config.el.")
   (message "The live POP tests will skip; the mock ones still run.  See %s"
            "dev/docs/design/imap-live-tests.org"))
 

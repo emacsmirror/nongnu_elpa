@@ -7,12 +7,12 @@
 ;;; Commentary:
 
 ;; Runs only the live IMAP tests, for when that is all you care about.  They
-;; are not exclusive to this runner: given test/vm-imap-config.el they also
+;; are not exclusive to this runner: given test/vm-live-config.el they also
 ;; run as part of `make test'.
 ;;
 ;; Run with: make test-imap
 ;;
-;; Requires test/vm-imap-config.el.  Without it every test skips and the run
+;; Requires test/vm-live-config.el.  Without it every test skips and the run
 ;; still succeeds, so an unconfigured machine is not a failure -- but a
 ;; configured server that cannot be reached is, see
 ;; dev/docs/design/imap-live-tests.org.
@@ -29,7 +29,7 @@
 (require 'vm-imap-live-init)
 
 (unless vm-imap-test-servers
-  (message "No test/vm-imap-config.el, or it configured no servers.")
+  (message "No test/vm-live-config.el, or it configured no servers.")
   (message "Every live IMAP test will skip.  See %s"
            "dev/docs/design/imap-live-tests.org"))
 

@@ -10,7 +10,7 @@
 ;; server -- the same Dovecot the live IMAP tests use, with pop3 added to its
 ;; protocols.  See dev/docs/design/imap-live-tests.org.
 ;;
-;; The opt-in is the same gitignored test/vm-imap-config.el, which sets
+;; The opt-in is the same gitignored test/vm-live-config.el, which sets
 ;; `vm-pop-test-servers' alongside `vm-imap-test-servers'.  Without POP entries
 ;; every test here skips.
 ;;
@@ -56,7 +56,7 @@ As with `vm-imap-live-enabled', the config file is the real opt-in; bind this
 to nil to keep a configured checkout off the network.")
 
 (defvar vm-pop-test-servers nil
-  "List of POP server plists, set by `vm-imap-live-config-file'.
+  "List of POP server plists, set by `vm-live-config-file'.
 Each is (:name NAME :host HOST :port PORT :tls BOOL :auth AUTH :accounts
 ALIST), where AUTH is \"pass\" or \"apop\" and ALIST maps user to password --
 the same shape as `vm-imap-test-servers', so one config file describes both.")

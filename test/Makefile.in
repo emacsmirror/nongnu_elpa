@@ -37,14 +37,14 @@ test: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
 
 # Run only the live IMAP tests, for when that is all you are working on.
-# They are not exclusive to this target: given a gitignored vm-imap-config.el
+# They are not exclusive to this target: given a gitignored vm-live-config.el
 # they also run as part of `make test', which is the opt-in.  Every test skips
 # when nothing is configured.  See dev/docs/design/imap-live-tests.org.
 test-imap: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(IMAP_RUNNER)
 
 # Run only the POP tests.  The mock ones need no server and always run; the
-# live ones want a POP server in test/vm-imap-config.el and skip without one.
+# live ones want a POP server in test/vm-live-config.el and skip without one.
 test-pop: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(POP_RUNNER)
 

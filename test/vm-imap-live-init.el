@@ -9,10 +9,11 @@
 ;; Support for testing vm-imap.el against a real IMAP server.  See
 ;; dev/docs/design/imap-live-tests.org.
 ;;
-;; The opt-in is a gitignored test/vm-imap-config.el naming the servers to
-;; use.  With it in place these run as part of `make test' like anything else;
-;; without it they all skip.  `make test-imap' runs only this file, which is
-;; the convenient thing while working on IMAP.
+;; The opt-in is a gitignored test/vm-live-config.el naming the servers to use;
+;; copy test/vm-live-config.el.template to create one.  With it in place these
+;; run as part of `make test' like anything else; without it they all skip.
+;; `make test-imap' runs only this file, which is the convenient thing while
+;; working on IMAP.
 ;;
 ;; So on a configured machine `make test' does reach the network and does take
 ;; longer.  Bind `vm-imap-live-enabled' to nil to suppress that without
@@ -51,17 +52,25 @@
 
 (defvar vm-imap-live-enabled t
   "Whether the live IMAP tests may run at all.
-They run only when `vm-imap-live-config-file' also exists, so the config is
-the real opt-in.  Bind this to nil to keep a configured checkout from using
-the network -- in CI, say -- without deleting the config.")
+They run only when `vm-live-config-file' also exists, so the config is the real
+opt-in.  Bind this to nil to keep a configured checkout from using the network
+-- in CI, say -- without deleting the config.")
 
-(defvar vm-imap-live-config-file
+(defvar vm-live-config-file
+  (expand-file-name "vm-live-config.el" vm-test-dir)
+  "Gitignored file describing the servers to test against, IMAP and POP alike.
+Copy test/vm-live-config.el.template to create it; that template documents the
+shape, and dev/docs/dev-guide.org has the server-side setup.")
+
+(defvar vm-live-config-obsolete-file
   (expand-file-name "vm-imap-config.el" vm-test-dir)
-  "Gitignored file describing the servers to test against.
-See dev/docs/design/imap-live-tests.org for its shape.")
+  "What `vm-live-config-file' used to be called.
+Still loaded, with a warning, so that an existing setup does not silently stop
+testing anything -- which is what renaming a file whose absence means \"skip\"
+would otherwise do.")
 
 (defvar vm-imap-test-servers nil
-  "List of server plists, set by `vm-imap-live-config-file'.")
+  "List of IMAP server plists, set by `vm-live-config-file'.")
 
 (defvar vm-imap-live-timeout 10
   "Seconds any single server interaction may take.
@@ -69,10 +78,17 @@ See dev/docs/design/imap-live-tests.org for its shape.")
 this a wedged test would hang forever.")
 
 (defun vm-imap-live-load-config ()
-  "Load `vm-imap-live-config-file' if it exists.  Return non-nil if loaded."
-  (when (file-readable-p vm-imap-live-config-file)
-    (load vm-imap-live-config-file nil t)
-    t))
+  "Load `vm-live-config-file' if it exists.  Return non-nil if loaded.
+Falls back to `vm-live-config-obsolete-file', warning about the name."
+  (cond ((file-readable-p vm-live-config-file)
+	 (load vm-live-config-file nil t)
+	 t)
+	((file-readable-p vm-live-config-obsolete-file)
+	 (message "%s is the old name for %s; rename it."
+		  (file-name-nondirectory vm-live-config-obsolete-file)
+		  (file-name-nondirectory vm-live-config-file))
+	 (load vm-live-config-obsolete-file nil t)
+	 t)))
 
 (defun vm-imap-live-available-p ()
   "Return non-nil if the harness is enabled and a server is configured."

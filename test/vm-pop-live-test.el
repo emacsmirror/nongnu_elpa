@@ -11,7 +11,7 @@
 ;; vm-pop-live-init.el for the harness and
 ;; dev/docs/design/imap-live-tests.org for how to configure a server.
 ;;
-;; Skipped unless test/vm-imap-config.el sets `vm-pop-test-servers'.  The mock
+;; Skipped unless test/vm-live-config.el sets `vm-pop-test-servers'.  The mock
 ;; tests in vm-pop-mock-test.el cover the protocol and the failure paths
 ;; without any server; what these add is the part a mock cannot vouch for --
 ;; that a real server, with its own idea of octet counts, line endings and

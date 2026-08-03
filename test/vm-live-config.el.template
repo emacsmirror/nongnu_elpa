@@ -1,0 +1,79 @@
+;;; vm-live-config.el --- Servers for the live tests -*- lexical-binding: t; -*-
+
+;; This is a template.  Copy it and fill in your own hosts and passwords:
+;;
+;;     cp test/vm-live-config.el.template test/vm-live-config.el
+;;
+;; test/vm-live-config.el is gitignored, and must stay that way: it holds
+;; passwords in the clear.  This template is checked in, so it must not.
+;;
+;; The file's presence is the opt-in for the live tests.  Without it every one
+;; of them skips and `make test' never touches the network; with it they run,
+;; as part of `make test' as well as `make test-imap' and `make test-pop'.
+;; Bind `vm-imap-live-enabled' or `vm-pop-live-enabled' to nil to suppress
+;; either half without deleting this file.
+;;
+;; Setting up the server side -- dovecot users, a certificate, pop3 in
+;; protocols -- is in dev/docs/dev-guide.org under "testing".  The design notes
+;; are in dev/docs/design/imap-live-tests.org.
+;;
+;; Two things bite:
+;;
+;;   - The :name values are load-bearing.  Tests ask for servers by name:
+;;     "plain" and "tls" for IMAP, "pop" and "pop-tls" for POP.  A server
+;;     under any other name is simply never used, and the tests that wanted
+;;     it skip without saying why.
+;;
+;;   - A password cannot contain a colon.  VM's maildrop specifications are
+;;     colon-delimited (imap:HOST:PORT:MAILBOX:AUTH:USER:PASSWORD and
+;;     pop:HOST:PORT:AUTH:USER:PASSWORD) and cannot express one.
+;;
+;; Drop any server you have not set up: its tests then skip, which is not a
+;; failure.  But a server that is listed and cannot be reached *is* a failure,
+;; on purpose -- a suite that quietly skips a server it was told about has no
+;; coverage.
+
+;;; Code:
+
+(setq vm-imap-test-servers
+      '((:name     "plain"
+	 :host     "127.0.0.1"
+	 :port     143
+	 :tls      nil
+	 :auth     "login"
+	 ;; Two accounts: the cross-account tests (#38, saving between
+	 ;; folders) need a second one.  Single-account tests use the first.
+	 :accounts (("vmtest1" . "PASSWORD1")
+		    ("vmtest2" . "PASSWORD2")))
+	(:name     "tls"
+	 ;; Must match the certificate's subjectAltName, not merely its CN:
+	 ;; GnuTLS ignores a bare CN, so "127.0.0.1" here with a certificate
+	 ;; issued for "localhost" fails verification.
+	 :host     "localhost"
+	 :port     993
+	 :tls      t
+	 :auth     "login"
+	 :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
+	 :accounts (("vmtest1" . "PASSWORD1")))))
+
+;; POP.  Needs pop3 in dovecot's protocols; it ships with imap only, so
+;; nothing listens on 110 until that is changed.  The live POP tests also use
+;; the IMAP server named "plain", for the same account: POP3 has no APPEND, so
+;; a fixture goes in over IMAP and is read back over POP.
+(setq vm-pop-test-servers
+      '((:name     "pop"
+	 :host     "127.0.0.1"
+	 :port     110
+	 :tls      nil
+	 ;; "pass" is USER/PASS; "apop" is the digest form.
+	 :auth     "pass"
+	 :accounts (("vmtest1" . "PASSWORD1")))
+	(:name     "pop-tls"
+	 :host     "localhost"		; the certificate's subjectAltName again
+	 :port     995
+	 :tls      t
+	 :auth     "pass"
+	 :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
+	 :accounts (("vmtest1" . "PASSWORD1")))))
+
+;;; vm-live-config.el ends here
