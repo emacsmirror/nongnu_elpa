@@ -1518,12 +1518,13 @@ summary buffer to select a folder."
        (concat				; salutation
 	"INSTRUCTIONS:
 
-- The preferd way submit a bug report is at:
+- The preferred way to report a bug is to open an issue at:
 
    https://gitlab.com/emacs-vm/vm/-/issues
 
-  The content of this mail maybe pasted into the issues to understand your
-  configuration.
+  Paste the configuration below into the issue.  If you would rather not
+  make your configuration public, send this mail instead: it goes only to
+  the VM maintainers.
 
 - You are using Emacs default messaging here.  *** NOT vm-mail-mode ***
 
