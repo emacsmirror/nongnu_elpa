@@ -522,6 +522,122 @@ which would leave duplicates behind instead."
       (should-not (vm-deleted-flag first))
       (should (vm-deleted-flag second)))))
 
+;;; ------------------------------------------------------------------
+;;; Tier 2 -- headers-only fetch must not corrupt the message (issue #500)
+;;; ------------------------------------------------------------------
+
+(defconst vm-imap-live-test--bulky
+  (concat "From: alice@example.com\r\n"
+          "To: vmtest@example.com\r\n"
+          "Subject: headers only fetch\r\n"
+          "Date: Mon, 01 Jan 2024 00:00:00 +0000\r\n"
+          "Message-ID: <vmtest-bulky@example.com>\r\n"
+          "X-VMTest-Last-Header: sentinel\r\n"
+          "\r\n"
+          (mapconcat (lambda (n) (format "VMTESTBODY line %03d\r\n" n))
+                     (number-sequence 1 60) ""))
+  "A message whose body is comfortably larger than the size limit below.
+Every body line carries VMTESTBODY, so body text appearing among the headers
+is unmistakable.  The last header is a sentinel for the same reason.")
+
+(defconst vm-imap-live-test--size-limit 200
+  "`vm-imap-max-message-size' for the headers-only tests.
+Smaller than `vm-imap-live-test--bulky', so VM fetches its headers only.")
+
+(defun vm-imap-live-test--header-section ()
+  "Return the header section of the message in the current buffer.
+Everything up to the first empty line, which is where a body must never
+appear."
+  (save-excursion
+    (goto-char (point-min))
+    (buffer-substring-no-properties
+     (point-min)
+     (if (re-search-forward "^\r?$" nil t) (point) (point-max)))))
+
+(ert-deftest vm-imap-live-test-headers-only-fetch-keeps-body-out-of-headers ()
+  "REGRESSION: fetching an external body puts it after the headers.
+Issue #500, via the deleted README.headers-only: with headers-only IMAP
+downloading, the body could be inserted in the *midst* of the headers rather
+than after them.  Reported as infrequent and never diagnosed; the warning was
+retired in 2f33c4b without a code change, so nothing has been shown either
+way since 2010.
+
+The suspect is `vm-fetch-message' (vm-mime.el).  After the handler inserts
+the fetched message it deletes \"the new headers\" with
+
+    (delete-region (vm-text-of mm)
+                   (or (re-search-forward \"\\\\n\\\\n\" (point-max) t)
+                       (point-max)))
+
+and that search starts from wherever the handler left point, not from the
+start of what was just inserted -- the IMAP handler ends at
+`insert-buffer-substring', which leaves point after the inserted text.
+
+This test states the invariant rather than the theory: however the fetch is
+implemented, the body must end up after the headers and the headers must
+survive intact."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-two-mailboxes (conn src _dst "plain")
+    (ignore _dst)
+    (vm-imap-live-append conn src vm-imap-live-test--bulky)
+    (let ((vm-imap-server-timeout vm-imap-live-timeout)
+          (vm-enable-external-messages '(imap))
+          (vm-imap-max-message-size vm-imap-live-test--size-limit)
+          ;; Never prompt about the large message; treat it as external.
+          (vm-imap-ok-to-ask nil))
+      (unwind-protect
+          (progn
+            (vm-visit-imap-folder (vm-imap-live-spec server account src))
+            (should (= (length vm-message-list) 1))
+            (let ((m (car vm-message-list)))
+              ;; Precondition: it has to have arrived headers-only, or the
+              ;; rest proves nothing about the fetch path.
+              ;;
+              ;; Today it never does, and this skips.  Headers-only
+              ;; downloading does not engage: with
+              ;; vm-enable-external-messages '(imap) and a message well over
+              ;; vm-imap-max-message-size, vm-body-to-be-retrieved-of comes
+              ;; back nil.  Reproduced repeatedly.
+              ;;
+              ;; Why is *not* established.  In vm-imap-retrieve-messages the
+              ;; annotation looks correct on inspection -- retrieve-list
+              ;; entries are (uid msn flag), the consumer reads (nth 2
+              ;; r-entry), the size table is already populated by then, and
+              ;; the size does exceed the limit -- and the same loop does set
+              ;; vm-byte-count-of, which arrives correctly as "1201", so the
+              ;; loop runs with a valid uid.  Something between computing the
+              ;; flag and observing the message clears or bypasses it, and I
+              ;; have not found what.  See the note on issue #500.
+              ;;
+              ;; A skip rather than a failure: this test is about what the
+              ;; fetch does to the message, and it becomes able to say
+              ;; something the moment headers-only downloading works.
+              (skip-unless (vm-body-to-be-retrieved-of m))
+              ;; The headers are intact and the body is absent so far.
+              (let ((headers (vm-imap-live-test--header-section)))
+                (should (string-match-p "X-VMTest-Last-Header: sentinel"
+                                        headers))
+                (should-not (string-match-p "VMTESTBODY" headers)))
+              ;; Now fetch the body, the way displaying the message does.
+              (vm-make-presentation-copy m)
+              (with-current-buffer (or vm-presentation-buffer (current-buffer))
+                (let ((headers (vm-imap-live-test--header-section))
+                      (whole (buffer-substring-no-properties
+                              (point-min) (point-max))))
+                  ;; The body arrived...
+                  (should (string-match-p "VMTESTBODY line 001" whole))
+                  ;; ...the headers survived...
+                  (should (string-match-p "X-VMTest-Last-Header: sentinel"
+                                          headers))
+                  (should (string-match-p "Subject: headers only fetch"
+                                          headers))
+                  ;; ...and no body line landed among them, which is #500.
+                  (should-not (string-match-p "VMTESTBODY" headers))))))
+        (when (eq major-mode 'vm-mode)
+          (let ((vm-confirm-quit nil))
+            (ignore-errors (vm-quit-no-change))))))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
