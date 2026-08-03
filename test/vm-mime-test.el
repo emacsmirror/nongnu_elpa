@@ -1713,6 +1713,87 @@ and the name survives to what actually gets sent."
             (should-not (string-match-p "name\\*=" text))))
       (delete-directory dir t))))
 
+;;; Raw 8-bit header text (issues #368, #11)
+
+(defconst vm-mime-test--utf8-bytes
+  (encode-coding-string "Grüße aus München" 'utf-8)
+  "UTF-8 bytes, as they sit in a folder buffer: RFC 6532 header text.")
+
+(defconst vm-mime-test--latin1-bytes
+  (encode-coding-string "Grüße" 'iso-8859-1)
+  "The same text in a single-byte encoding, which is not valid UTF-8.")
+
+(ert-deftest vm-mime-test-8bit-decodes-utf-8 ()
+  "Raw UTF-8 header bytes are decoded, which is RFC 6532."
+  (should (equal "Grüße aus München"
+                 (vm-decode-8bit-text vm-mime-test--utf8-bytes))))
+
+(ert-deftest vm-mime-test-8bit-falls-back-to-single-byte ()
+  "Bytes that are not valid UTF-8 are decoded by the next charset in the list.
+This is the \"liberal in what you accept\" of issue #11: the mail is malformed
+either way, and showing the text beats showing bytes."
+  (should (equal "Grüße" (vm-decode-8bit-text vm-mime-test--latin1-bytes))))
+
+(ert-deftest vm-mime-test-8bit-leaves-ascii-alone ()
+  "Text with no 8-bit byte in it comes back as it went in."
+  (should (equal "plain ascii" (vm-decode-8bit-text "plain ascii"))))
+
+(ert-deftest vm-mime-test-8bit-does-not-decode-twice ()
+  "Text that is already characters is not decoded again.
+Decoding \"Grüße\" as though it were bytes would produce mojibake, and this
+function is called from paths that may already have decoded encoded words."
+  (should (equal "Grüße" (vm-decode-8bit-text "Grüße"))))
+
+(ert-deftest vm-mime-test-8bit-honours-empty-charset-list ()
+  "With `vm-mime-8bit-header-charsets' nil, raw bytes are left as they are."
+  (let ((vm-mime-8bit-header-charsets nil))
+    (should (equal vm-mime-test--utf8-bytes
+                   (vm-decode-8bit-text vm-mime-test--utf8-bytes)))))
+
+(ert-deftest vm-mime-test-8bit-in-string-decoder ()
+  "The header-string decoder handles raw 8-bit as well as encoded words."
+  (should (equal "Grüße aus München"
+                 (vm-decode-mime-encoded-words-in-string
+                  vm-mime-test--utf8-bytes))))
+
+(ert-deftest vm-mime-test-8bit-and-encoded-word-together ()
+  "A header may hold an encoded word and raw 8-bit text at once.
+The encoded word states its charset and is decoded first; the raw run is then
+guessed at separately, so neither pass spoils the other's work."
+  (let ((mixed (concat "=?utf-8?Q?Gr=C3=BC=C3=9Fe?= und "
+                       vm-mime-test--utf8-bytes)))
+    (should (equal "Grüße und Grüße aus München"
+                   (vm-decode-mime-encoded-words-in-string mixed)))))
+
+(ert-deftest vm-mime-test-8bit-region-decodes-runs-separately ()
+  "`vm-decode-8bit-text-region' decodes each run and leaves the rest alone."
+  (with-temp-buffer
+    (insert "Subject: ")
+    (insert (decode-coding-string vm-mime-test--utf8-bytes 'binary))
+    (insert "\nFrom: ascii@example.com\n")
+    (vm-decode-8bit-text-region (point-min) (point-max))
+    (should (string-match-p "Subject: Grüße aus München" (buffer-string)))
+    (should (string-match-p "From: ascii@example.com" (buffer-string)))))
+
+(ert-deftest vm-mime-test-8bit-message-headers-decoded ()
+  "Decoding a message's headers in place turns raw bytes into characters.
+This is the display path: `vm-decode-mime-message-headers' is what the
+presentation buffer runs over the headers it just copied in."
+  (let ((vm-use-menus nil))
+    (vm-test-with-folder
+      (concat "From sender@example.com Mon Jan  1 00:00:00 2024\n"
+              "From: sender@example.com\n"
+              "Subject: " (decode-coding-string vm-mime-test--utf8-bytes 'binary)
+              "\n\nbody\n")
+      (let ((m (vm-test-first-message)))
+        (vm-decode-mime-message-headers m)
+        (save-restriction
+          (widen)
+          (should (string-match-p
+                   "Subject: Grüße aus München"
+                   (buffer-substring-no-properties (vm-start-of m)
+                                                   (vm-text-of m)))))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
