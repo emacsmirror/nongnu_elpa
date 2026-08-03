@@ -1319,6 +1319,34 @@ you use such systems."
   :group 'vm-mime
   :type 'boolean)
 
+(defcustom vm-send-using-flowed-text nil
+  "*Non-nil means send plain text as format=flowed, per RFC 3676.
+Each line of a paragraph but the last is sent with a space at the end of it,
+which tells the reader that the break was VM's choice rather than yours and
+may be undone -- so the recipient sees the text wrapped to their own window
+instead of to your fill column.  Breaks you made yourself, at the end of a
+paragraph or a line you deliberately kept short, are sent as they are.
+
+This is off by default: it changes what goes out on the wire, and a reader
+that does not know the format shows the trailing spaces as trailing spaces.
+Receiving the format is controlled separately, by
+`vm-mime-unflow-flowed-text'."
+  :group 'vm-mime
+  :type 'boolean)
+
+(defcustom vm-mime-unflow-flowed-text t
+  "*Non-nil means honour the format=flowed parameter of RFC 3676.
+A sender that does not know how wide your window is can wrap the text itself
+and mark each break it invented by leaving a space at the end of the line.
+With this set, VM joins those lines back together, so that
+`vm-fill-paragraphs-containing-long-lines' can wrap the paragraph to the width
+you actually have; breaks the author meant are kept either way.
+
+A nil value shows the text with the sender's own line breaks, which is what VM
+did before it knew about the format."
+  :group 'vm-mime
+  :type 'boolean)
+
 (defcustom vm-mime-8bit-header-charsets '(utf-8 iso-8859-1)
   "*Coding systems to try on header text that arrives as raw 8-bit bytes.
 RFC 5322 allows only ASCII in a header and RFC 2047 provides encoded words

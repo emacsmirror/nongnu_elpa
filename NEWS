@@ -63,6 +63,19 @@ VM 8.?.?
     is named after.  The MS-Windows set is not used elsewhere because it
     must include ":", which would turn every "Re:" into "Re_".  Set the
     variable to "[^ a-zA-Z0-9.,_\"'+-]" for the old behaviour.
+  * RFC 3676 format=flowed is now handled.  A sender that does not know how
+    wide your window is can wrap the text itself and mark each break it
+    invented by leaving a space at the end of the line; VM now joins those
+    lines back up, so `vm-fill-paragraphs-containing-long-lines' wraps the
+    paragraph to the width you actually have.  Breaks the author meant, a
+    change of quote depth and the "-- " signature separator are all left
+    alone, and delsp=yes is honoured.  Set `vm-mime-unflow-flowed-text' to nil
+    to see such mail with the sender's own line breaks, as before.
+    Sending it is separate and off by default: set `vm-send-using-flowed-text'
+    to have VM mark its own soft breaks, so recipients see your text wrapped
+    to their window rather than to your fill column.  Only lines that reach
+    about the fill column are marked, so deliberately short lines -- an
+    address block, a list -- are not re-wrapped at the other end.
   * Header text that arrives as raw 8-bit bytes is now shown as text rather
     than as octets, in the summary and in the message itself.  RFC 5322
     allows only ASCII in a header and RFC 2047 provides encoded words for
