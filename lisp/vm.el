@@ -1615,13 +1615,6 @@ draft messages."
         (require 'vm-window)
         (require 'vm-menu)
         (require 'vm-rfaddons)
-	;; The default loading of vm-pgg is disabled because it is an
-	;; add-on.  If and when it is integrated into VM, without advices
-	;; and other add-on features, then it can be loaded by
-	;; default.  USR, 2010-01-14
-        ;; (if (locate-library "pgg")
-        ;;     (require 'vm-pgg)
-        ;;   (message "vm-pgg disabled since pgg is missing!"))
         (add-hook 'kill-emacs-hook 'vm-garbage-collect-global)
 	(vm-load-init-file)
 	(when vm-enable-addons
