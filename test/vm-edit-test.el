@@ -181,6 +181,105 @@ comes back in its place."
             (should-not (vm-body-to-be-retrieved-of m)))
         (when (buffer-live-p edit-buf) (kill-buffer edit-buf))))))
 
+;;; a failed edit must leave the message alone (issue #307)
+
+(defmacro vm-edit-test--with-edit-session (spec &rest body)
+  "Set up an edit of the folder's first message and run BODY.
+SPEC is (MSG-VAR EDIT-BUF-VAR NEW-TEXT): the edit buffer is filled with the
+message and NEW-TEXT replaces its body, as a user's edit would.  BODY runs
+with the display functions stubbed, since there is no display in batch."
+  (declare (indent 1) (debug t))
+  `(let* ((,(car spec) (car vm-message-list))
+          (,(cadr spec) (generate-new-buffer " *vm-edit-test*")))
+     (unwind-protect
+         (progn
+           (setq vm-message-pointer vm-message-list)
+           ;; `vm-edit-message' associates the buffer with the message; the
+           ;; association is what `vm-edit-message-end' clears on success.
+           (vm-set-edit-buffer-of ,(car spec) ,(cadr spec))
+           (with-current-buffer ,(cadr spec)
+             (insert-buffer-substring
+              (vm-buffer-of ,(car spec))
+              (vm-headers-of ,(car spec)) (vm-text-end-of ,(car spec)))
+             (goto-char (point-min))
+             (should (search-forward "the body as fetched from the server" nil t))
+             (replace-match ,(nth 2 spec))
+             (setq vm-message-pointer (list ,(car spec))
+                   vm-mail-buffer (vm-buffer-of ,(car spec)))
+             (set-buffer-modified-p t))
+           (cl-letf (((symbol-function 'vm-present-current-message) #'ignore)
+                     ((symbol-function 'vm-update-summary-and-mode-line)
+                      #'ignore)
+                     ((symbol-function 'vm-display) (lambda (&rest _) nil)))
+             ,@body))
+       (when (buffer-live-p ,(cadr spec)) (kill-buffer ,(cadr spec))))))
+
+(ert-deftest vm-edit-test-end-applies-the-edit ()
+  "The ordinary case: ending an edit writes the new body and flags the message.
+The control for the test below -- if this stopped working, that one would pass
+by leaving the message alone for the wrong reason."
+  (vm-test-with-folder vm-edit-test-folder
+    (vm-edit-test--with-edit-session (m edit-buf "the body as edited by hand")
+      (with-current-buffer edit-buf (vm-edit-message-end))
+      (should (string-match "as edited by hand" (vm-test-message-body m)))
+      (should (vm-edited-flag m)))))
+
+(ert-deftest vm-edit-test-failed-edit-leaves-the-message-unchanged ()
+  "REGRESSION: an edit whose bookkeeping fails does not change the message.
+Issue #307.  `vm-edit-message-end' replaced the body first and discarded the
+cached data second, and the second step can signal -- the report is of
+`vm-discard-cached-data-internal' raising thread-integrity errors.  The body
+was already overwritten by then, and nothing could put it back:
+`vm-edit-message-abort' only kills the edit buffer.  \"Even though the edit was
+apparently aborted, the message body has still changed.\"
+
+Now the write is undone when the bookkeeping fails, and the error still
+reaches the user."
+  (vm-test-with-folder vm-edit-test-folder
+    (let ((original (vm-test-message-body (car vm-message-list))))
+      (vm-edit-test--with-edit-session (m edit-buf "the body as edited by hand")
+        (cl-letf (((symbol-function 'vm-discard-cached-data-internal)
+                   (lambda (&rest _) (error "thread integrity problem")))
+                  ((symbol-function 'vm-warn) (lambda (&rest _) nil)))
+          (with-current-buffer edit-buf
+            (should-error (vm-edit-message-end))))
+        ;; The message is exactly as it was ...
+        (should (equal original (vm-test-message-body m)))
+        (should-not (string-match-p "as edited by hand"
+                                    (vm-test-message-body m)))
+        ;; ... and is not marked as edited, since it was not.
+        (should-not (vm-edited-flag m))
+        ;; The edit buffer is still there, so the user's work is not lost
+        ;; and they can try again.
+        (should (buffer-live-p edit-buf))
+        (should (eq edit-buf (vm-edit-buffer-of m)))))))
+
+(ert-deftest vm-edit-test-failed-edit-keeps-the-folder-parsable ()
+  "After a failed edit the folder still holds one well-formed message.
+The restore puts the text back the same way round it was taken out, so the
+message's own markers -- and the separator before it -- have to survive."
+  (vm-test-with-folder vm-edit-test-folder
+    (vm-edit-test--with-edit-session (m edit-buf "the body as edited by hand")
+      (cl-letf (((symbol-function 'vm-discard-cached-data-internal)
+                 (lambda (&rest _) (error "thread integrity problem")))
+                ((symbol-function 'vm-warn) (lambda (&rest _) nil)))
+        (with-current-buffer edit-buf
+          (should-error (vm-edit-message-end))))
+      (should (= 1 (length vm-message-list)))
+      (save-restriction
+        (widen)
+        (let ((text (buffer-substring-no-properties (point-min) (point-max))))
+          ;; One From_ separator, one copy of the headers, one body.
+          (should (= 1 (cl-count-if (lambda (l) (string-prefix-p "From " l))
+                                    (split-string text "\n"))))
+          (should (= 1 (cl-count-if
+                        (lambda (l) (string-prefix-p "Subject: " l))
+                        (split-string text "\n"))))))
+      ;; And the markers still delimit the message they did before.
+      (should (string-match-p "\\`From: sender@example.com"
+                              (buffer-substring-no-properties
+                               (vm-headers-of m) (vm-text-of m)))))))
+
 (provide 'vm-edit-test)
 
 ;;; vm-edit-test.el ends here
