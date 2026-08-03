@@ -11,7 +11,7 @@ It uses Git version control to make automatic commits whenever you save a buffer
 
 A special feature allows auto-enabling the mode for current opened file in current directory by using `.dir-locals.el`, removing the need to manually list tracked files.
 
-*Version: 0.5.1*
+*Version: 0.5.2*
 
 * How this works?
 For every visible header, we get a range of line numbers like 21-34; from .git/, we get the last modification in this range.

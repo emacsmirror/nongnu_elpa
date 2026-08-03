@@ -4,7 +4,7 @@
 ;; Author: <github.com/Anoncheg1,codeberg.org/Anoncheg>
 ;; Keywords: org, outline, vc
 ;; URL: https://codeberg.org/Anoncheg/emacs-org-history
-;; Version: 0.5.1
+;; Version: 0.5.2
 ;; Created: 30 may 2026
 ;; Package-Requires: ((emacs "29.1"))
 ;; SPDX-License-Identifier: AGPL-3.0-or-later
