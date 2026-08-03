@@ -26,17 +26,22 @@
 
 ;;; Commentary:
 ;;
-;; Put this file into your load path and add the following line to your .vm
-;; file
+;; Turn this on with
 ;;
-;; (require 'vm-biff)
+;; (vm-biff-mode 1)
+;;
+;; in your .vm file.  Loading the file no longer switches it on by itself:
+;; merely loading a file should not change how Emacs behaves, and this one used
+;; to add to `vm-arrived-messages-hook' as it loaded.  Requiring it and calling
+;; the mode are both fine, and the autoloaded mode means the require is not
+;; needed.
 ;;
 ;; Try: M-x customize-group vm-biff RET
 ;;
-;; You should set `vm-auto-get-newmail', since otherwise this package 
+;; You should set `vm-auto-get-newmail', since otherwise this package
 ;; does not make any sense!  If getting mail is slow, use fetchmail to
 ;; retrieve it to a local file and uses that file as VM spool file!
-;; 
+;;
 ;;; Code:
 
 (require 'vm-misc)
@@ -520,9 +525,17 @@ AddToFunc SelectWindow
                  (run-at-time vm-biff-auto-remove nil
                               'vm-biff-timer-delete-popup wf))))))))
 
-; add hook only when explictly requring this module
-(unless (bound-and-true-p byte-compile-current-file)
-  (add-hook 'vm-arrived-messages-hook 'vm-biff-popup t))
+;;;###autoload
+(define-minor-mode vm-biff-mode
+  "A xlbiff like tool for VM: pop up a summary frame when mail arrives.
+
+You should also set `vm-auto-get-newmail', since otherwise nothing goes
+looking for new mail and this has nothing to pop up about."
+  :global t
+  :group 'vm-biff
+  (if vm-biff-mode
+      (add-hook 'vm-arrived-messages-hook #'vm-biff-popup t)
+    (remove-hook 'vm-arrived-messages-hook #'vm-biff-popup)))
 
 (provide 'vm-biff)
 ;;; vm-biff.el ends here.

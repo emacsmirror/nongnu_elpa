@@ -150,6 +150,45 @@
   (let ((result (vm-biff-x-p)))
     (should (or (eq result t) (eq result nil) result))))
 
+
+;;; loading must not change VM's behaviour (issue #512)
+
+(ert-deftest vm-biff-test-loading-does-not-install-the-hook ()
+  "REGRESSION: merely loading vm-biff does not switch it on.
+Issue #512, on Stefan Monnier's advice: loading a file should not change how
+Emacs behaves, and this one added `vm-biff-popup' to `vm-arrived-messages-hook'
+as it loaded -- which is also why it needed a guard against doing so while being
+byte-compiled.  The mode does it instead."
+  (require 'vm-biff)
+  (let ((vm-arrived-messages-hook nil)
+        (vm-biff-mode nil))
+    ;; Loading has already happened; the hook is untouched.
+    (should-not (memq 'vm-biff-popup vm-arrived-messages-hook))))
+
+(ert-deftest vm-biff-test-mode-toggles-the-hook ()
+  "`vm-biff-mode' adds the hook when switched on and removes it when off."
+  (require 'vm-biff)
+  (let ((vm-arrived-messages-hook nil)
+        (vm-biff-mode nil))
+    (vm-biff-mode 1)
+    (should vm-biff-mode)
+    (should (memq 'vm-biff-popup vm-arrived-messages-hook))
+    (vm-biff-mode -1)
+    (should-not vm-biff-mode)
+    (should-not (memq 'vm-biff-popup vm-arrived-messages-hook))))
+
+(ert-deftest vm-biff-test-mode-is-idempotent ()
+  "Switching the mode on twice leaves one copy of the hook function.
+`add-hook' guarantees this, but the old code path could be reached more than
+once -- loading the file again -- so it is worth pinning."
+  (require 'vm-biff)
+  (let ((vm-arrived-messages-hook nil)
+        (vm-biff-mode nil))
+    (vm-biff-mode 1)
+    (vm-biff-mode 1)
+    (should (= 1 (seq-count (lambda (f) (eq f 'vm-biff-popup))
+                            vm-arrived-messages-hook)))))
+
 (provide 'vm-biff-test)
 
 ;;; vm-biff-test.el ends here
