@@ -475,6 +475,75 @@ Body
         ;; Should return the message pointer (list starting at the message)
         (should (or (null result) (consp result)))))))
 
+
+;;; the summary arrow and the current message must agree (issue #528)
+
+(defun vm-motion-test--arrow-line ()
+  "Return the line number of the summary arrow, or nil if there is none."
+  (with-current-buffer vm-summary-buffer
+    (save-excursion
+      (goto-char (point-min))
+      (when (search-forward vm-summary-=> nil t)
+        (line-number-at-pos (match-beginning 0))))))
+
+(ert-deftest vm-motion-test-follow-summary-cursor-moves-the-arrow ()
+  "REGRESSION: selecting a summary line by point moves the arrow with it.
+Issue #528: clicking a different line in the summary makes that message current
+-- `vm-follow-summary-cursor' runs first in almost every command -- but the arrow
+only moved later, when the command got around to updating the summary.  A command
+that asks a question first, such as `vm-save-message' asking which folder, put its
+question while the arrow still pointed at the message the user had before
+clicking, so the answer applied to a message the display disagreed about.
+
+Here the click is simulated the way `mouse-set-point' leaves things: point on
+another summary line, nothing else."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-motion" t)))
+         (file (expand-file-name "folder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (vm-mail-buffer nil)
+         (before (buffer-list)))
+    (require 'vm)
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (dotimes (i 8)
+              (insert (format "From s%d@example.com Mon Jan  1 00:00:00 2024\n" i)
+                      (format "From: S%d <s%d@example.com>\n" i i)
+                      (format "Subject: message %d\n" i)
+                      (format "Message-ID: <motion-%d@example.com>\n" i)
+                      "\n"
+                      (format "Body %d.\n\n" i))))
+          (vm-visit-folder file)
+          (vm-goto-message 3)
+          (should (equal "3" (vm-number-of (car vm-message-pointer))))
+          (should (= 3 (vm-motion-test--arrow-line)))
+          ;; "Click" the seventh line.
+          (let ((folder (current-buffer)))
+            (set-buffer vm-summary-buffer)
+            (goto-char (point-min))
+            (should (search-forward "message 6" nil t))
+            (beginning-of-line)
+            (should (= 7 (line-number-at-pos (point))))
+            ;; What every command does before doing anything else.
+            (should (vm-follow-summary-cursor))
+            (with-current-buffer folder
+              ;; the message the command will act on ...
+              (should (equal "7" (vm-number-of (car vm-message-pointer))))
+              ;; ... is the one the arrow points at.
+              (should (= 7 (vm-motion-test--arrow-line))))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (set-buffer-modified-p nil)
+              (setq kill-buffer-hook nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
 (provide 'vm-motion-test)
 
 ;;; vm-motion-test.el ends here

@@ -29,6 +29,7 @@
 (eval-when-compile (require 'cl-lib))
 
 (declare-function vm-so-sortable-subject "vm-sort" (message))
+(declare-function vm-set-summary-pointer "vm-summary" (m))
 
 (cl-defun vm-record-and-change-message-pointer (old new &key present)
   "Change the `vm-message-pointer' of the folder from OLD to NEW, both
@@ -572,6 +573,16 @@ If a new message is selected then return t, otherwise nil. USR, 2010-03-08"
 		      ;; loading. USR, 2010-09-30
 		      (vm-record-and-change-message-pointer
 		       vm-message-pointer mp :present nil)
+		      ;; Move the summary arrow now rather than leaving it to
+		      ;; whenever the command gets around to updating the
+		      ;; summary.  A command that asks a question first --
+		      ;; vm-save-message asking which folder -- would otherwise
+		      ;; put that question while the arrow still points at the
+		      ;; message the user had before they clicked, so the answer
+		      ;; applies to a message the display disagrees about.  That
+		      ;; is issue #528.  This only moves the arrow; the message
+		      ;; is still not presented.
+		      (vm-set-summary-pointer (car mp))
 		      ;; return non-nil so the caller will know that
 		      ;; a new message was selected.
 		      t )))))))
