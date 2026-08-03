@@ -322,6 +322,48 @@ The MS-Windows set has to include `:', which would otherwise turn every
   (should (fboundp 'vm-forward-message-all-headers))
   (should (fboundp 'vm-forward-message-plain)))
 
+
+;;; X-Mailer names the editor (issue #520)
+
+(ert-deftest vm-reply-test-emacs-name-and-version ()
+  "REGRESSION: the editor is named, not just its version number.
+Issue #520.  `emacs-version' the variable has held only the number for years, so
+an X-Mailer built from it read \"VM 8.3.x under 31.0.50\" and did not say which
+editor sent the mail.  The function `emacs-version' does say, but with a build
+number, platform and date after it, which is more than a header wants."
+  (require 'vm)
+  (should (string-match-p "\\`GNU Emacs [0-9]" (vm-emacs-name-and-version)))
+  ;; Only the name and the version -- no build, platform or date.
+  (should-not (string-match-p "build\\|of [0-9]\\|(" (vm-emacs-name-and-version))))
+
+(ert-deftest vm-reply-test-emacs-name-and-version-other-emacsen ()
+  "The name and version are taken off the front of any of these strings.
+Includes the XEmacs form quoted on the issue, since VM still claims to support
+XEmacs and its `emacs-version' is a different shape."
+  (require 'vm)
+  (dolist (case
+           '(("GNU Emacs 30.2 (build 2, aarch64-apple-darwin24.6.0, NS appkit-2575.70)\n of 2025-09-25"
+              . "GNU Emacs 30.2")
+             ("GNU Emacs 31.0.50 (build 1, x86_64-pc-linux-gnu, GTK+ Version 3.24.43)\n of 2025-11-01"
+              . "GNU Emacs 31.0.50")
+             ("GNU Emacs 28.1 (build 1, x86_64-pc-linux-gnu)" . "GNU Emacs 28.1")
+             ("XEmacs 21.4 (patch 22) \"Instant Classic\" [Lucid] (i686-pc-linux, Mule) of Tue Jan 15 2002"
+              . "XEmacs 21.4")))
+    (cl-letf (((symbol-function 'emacs-version)
+               (lambda (&rest _) (car case))))
+      (should (equal (cdr case) (vm-emacs-name-and-version))))))
+
+(ert-deftest vm-reply-test-emacs-name-and-version-falls-back ()
+  "An unrecognisable version string still names the editor.
+The header is worth less without the name than with a guessed one, and this is
+the branch that runs if the function ever stops leading with \"GNU Emacs\"."
+  (require 'vm)
+  (cl-letf (((symbol-function 'emacs-version)
+             (lambda (&rest _) "something entirely unexpected")))
+    (should (string-match-p "Emacs" (vm-emacs-name-and-version)))
+    (should (string-match-p (regexp-quote emacs-version)
+                            (vm-emacs-name-and-version)))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

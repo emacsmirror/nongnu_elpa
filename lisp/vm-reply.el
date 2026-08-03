@@ -1750,10 +1750,8 @@ Binds the `vm-mail-mode-map' and hooks"
     (and newsgroups (insert "Newsgroups: " newsgroups "\n"))
     (and in-reply-to (insert "In-Reply-To: " in-reply-to "\n"))
     (and references (insert "References: " references "\n"))
-    (insert "X-Mailer: VM " (vm-version) " under ")
-    (if (boundp 'emacs-version)
-	   (insert emacs-version)
-      (insert "Unknown Emacs"))
+    (insert "X-Mailer: VM " (vm-version) " under "
+	    (vm-emacs-name-and-version))
     ;; (if (functionp 'emacsw32-version)
     ;; 	(insert " [" (emacsw32-version) "]"))
     (if (boundp 'system-configuration)
