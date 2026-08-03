@@ -411,12 +411,9 @@ an empty folder it answered \"Folder is empty\" and composed nothing.  An IMAP
 inbox with no mail in it is the ordinary way to meet that.  The current message
 is wanted only as a parent, and an empty folder simply has none.
 
-This pins the contract `m' now asks for rather than calling `m' itself.  Driving
-the command end to end needs a folder buffer, and doing that inside the suite
-runs into state earlier test files leave behind -- `vm-mail-buffer' set globally,
-functions on `vm-mail-mode-hook' that want a message -- so such a test passes
-alone and fails in the suite.  The command was checked by hand instead; see the
-note on the issue, and #559 for the pollution."
+This pins the contract `m' asks for.  The command itself is driven end to end
+by the test below, and again by `vm-pcrisis-test-mail-from-an-empty-folder',
+which covers the copy of this validation in the pcrisis advice."
   (require 'vm)
   (let ((vm-mail-buffer nil))
     (with-temp-buffer
@@ -447,6 +444,23 @@ signals instead of returning no recipient."
       ;; and with the variable off, as by default
       (let ((vm-mail-use-sender-address nil))
         (should-not (vm-select-recipient-from-sender-if-possible))))))
+
+(ert-deftest vm-reply-test-mail-from-an-empty-folder ()
+  "REGRESSION: `m' in an empty folder composes a message.
+Issue #514 driven through the command rather than through the validation it
+calls.  The advice pcrisis installs on this command has its own copy of that
+validation and its own test; this is the plain command, so the advice is taken
+off for the duration if the module happens to be loaded."
+  (require 'vm)
+  (let ((advised (advice-member-p 'vmpc--mail 'vm-mail-from-folder)))
+    (when advised (advice-remove 'vm-mail-from-folder 'vmpc--mail))
+    (unwind-protect
+        (vm-reply-test--in-folder ("")
+          (should (null vm-message-list))
+          (vm-mail-from-folder)
+          (should (eq major-mode 'mail-mode))
+          (should (string-match-p "^To:" (buffer-string))))
+      (when advised (advice-add 'vm-mail-from-folder :around #'vmpc--mail)))))
 
 (ert-deftest vm-reply-test-mail-from-folder-still-uses-the-sender ()
   "The control: with a message present the sender is still offered.

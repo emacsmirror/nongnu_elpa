@@ -877,6 +877,76 @@ rather than through the interactive commands, which need a terminal."
             (should vm-pcrisis-test--fired))
         (set rules-var saved)))))
 
+
+;;; composing from an empty folder with pcrisis loaded (issue #514)
+
+(ert-deftest vm-pcrisis-test-mail-from-an-empty-folder ()
+  "REGRESSION: `m' composes in an empty folder with pcrisis loaded.
+Issue #514: `vm-mail-from-folder' validated with a minimum of one message, so
+in an empty folder -- an IMAP inbox with no mail in it, the ordinary way to
+meet this -- it answered \"Folder is empty\" and composed nothing.  That was
+fixed in the command, but `vmpc--mail' advises the command and repeats the
+same validation before calling it, so for anyone using Personality Crisis the
+advice refused first and the fix never took effect.
+
+Loading vm-pcrisis.el is enough to be \"using\" it: the advice is installed at
+load time, unconditionally, so this ran for every VM user who had the module
+loaded at all.
+
+Driven end to end rather than by checking the validation call, because the
+whole defect was a second copy of that call in a place no one thought to
+look."
+  (require 'vm)
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-pcrisis-test" t)))
+         (file (expand-file-name "folder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-frame-per-composition nil)
+         (vm-mutable-frame-configuration nil)
+         ;; A signature file that happens to exist would be read into the
+         ;; composition, which has nothing to do with this.
+         (vm-signature-file nil)
+         (mail-signature nil))
+    (unwind-protect
+        (progn
+          (with-temp-file file (insert ""))
+          (vm-visit-folder file)
+          (should (null vm-message-list))
+          ;; The advice is what is under test, so it had better be there.
+          (should (advice-member-p 'vmpc--mail 'vm-mail-from-folder))
+          (vm-mail-from-folder)
+          (should (eq major-mode 'mail-mode))
+          (should (string-match-p "^To:" (buffer-string))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-pcrisis-test-mail-from-a-folder-with-a-message ()
+  "The control: `m' still composes when the folder does hold a message.
+Without this, the test above could pass by never validating at all."
+  (require 'vm)
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-pcrisis-test" t)))
+         (file (expand-file-name "folder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-frame-per-composition nil)
+         (vm-mutable-frame-configuration nil)
+         (vm-signature-file nil)
+         (mail-signature nil))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                    "From: Alice <alice@example.com>\n"
+                    "Subject: hello\n\nBody.\n\n"))
+          (vm-visit-folder file)
+          (should (= 1 (length vm-message-list)))
+          (vm-mail-from-folder)
+          (should (eq major-mode 'mail-mode)))
+      (delete-directory dir t))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here
