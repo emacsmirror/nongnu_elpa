@@ -225,7 +225,7 @@ Note: `vc-git-working-revision' - accept directory as argument,
         (vc-git-working-revision path)))))
 
 (defun org-history--vc-add-file (file &optional backend)
-  "Track FILE.
+  "Track FILE and add to next commit.
 Uses `default-derectory'.
 Optional argument BACKEND is Git or may be other."
   ;; Clear Emacs VC cache so it realizes Git now exists
@@ -234,12 +234,8 @@ Optional argument BACKEND is Git or may be other."
   (unless (vc-backend file) ; never added
     (vc-register (list (or backend 'Git) (list file))))
 
-  ;; `vc-register' have a bug, rise error if file 'edited and was added before, but not now
-  ;; 'register can cause duplicate registrations or errors depending
-  ;;   on the Emacs version because vc-register already invokes the
-  ;;   backend's register function.
-  (unless (vc-backend file)
-    (vc-call-backend (or backend 'Git) 'register (list file)))
+  ;; add to commit
+  (vc-call-backend (or backend 'Git) 'register (list file))
 
   ;; Refresh the state to update vc-state immediately
   (vc-refresh-state))
