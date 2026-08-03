@@ -46,4 +46,4 @@ commit.msg
 
 /test/coverage-results.txt
 
-/test/vm-imap-config.el
+/test/vm-live-config.el

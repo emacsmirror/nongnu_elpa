@@ -10,7 +10,7 @@
 ;; fixture and read it back, over both plain and TLS.  These do not test
 ;; vm-imap.el yet -- they establish the ground the ticket tests will stand on.
 ;;
-;; Skipped unless test/vm-imap-config.el exists and `make test-imap' set the
+;; Skipped unless test/vm-live-config.el exists and `make test-imap' set the
 ;; enable flag, so `make test' never touches the network.  See
 ;; dev/docs/design/imap-live-tests.org.
 

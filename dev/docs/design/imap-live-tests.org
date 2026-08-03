@@ -39,7 +39,7 @@ command or rewrite a tagged response. No new dependencies.
 * Opt-in
 
 The whole live suite is opt-in. Gate is the *presence* of
-=test/vm-imap-config.el= (gitignored) *and* the enable flag that only the
+=test/vm-live-config.el= (gitignored) *and* the enable flag that only the
 live runner sets. So:
 
 - =make test= :: never contacts a server, even on a configured box.
@@ -55,25 +55,17 @@ rots into permanent no-coverage.
 
 * Configuration
 
-No environment variables. One gitignored elisp file, =test/vm-imap-config.el=:
+No environment variables. One gitignored elisp file, =test/vm-live-config.el=,
+copied from =test/vm-live-config.el.template=, which is checked in and carries
+the documentation:
 
-#+begin_src elisp
-(setq vm-imap-test-servers
-      '((:name     "plain"
-         :host     "127.0.0.1"
-         :port     143
-         :tls      nil
-         :auth     "login"
-         :accounts (("vmtest1" . "PASSWORD1")
-                    ("vmtest2" . "PASSWORD2")))
-        (:name     "tls"
-         :host     "localhost"          ; must match the cert subjectAltName
-         :port     993
-         :tls      t
-         :auth     "login"
-         :trustfile "/opt/local/etc/dovecot/ssl/vmtest-ca.pem"
-         :accounts (("vmtest1" . "PASSWORD1")))))
+#+begin_src sh
+cp test/vm-live-config.el.template test/vm-live-config.el
 #+end_src
+
+It sets =vm-imap-test-servers= and =vm-pop-test-servers=, so one file describes
+both protocols. The template is the reference for their shape; do not copy a
+second copy of it into this document, which is how the two drift apart.
 
 - Two accounts are required for the cross-account tests (#38, FCC/save);
   single-account tests use the first.
@@ -82,7 +74,8 @@ No environment variables. One gitignored elisp file, =test/vm-imap-config.el=:
   take rather than raw specs.
 - Passwords must not contain =:=. VM's spec is colon-delimited
   (=imap:HOST:PORT:MAILBOX:AUTH:USER:PASSWORD=) and cannot express one.
-- =test/vm-imap-config.el= goes in =.gitignore=. Check it against the
+- =test/vm-live-config.el= goes in =.gitignore=; the =.template= must not,
+  which the exact-name pattern takes care of. Check it against the
   narrowed =*.ind*= pattern, not the old =*.in*=.
 
 * Namespace
@@ -160,24 +153,8 @@ convincingly:
 - =test/vm-pop-live-init.el= :: the live tier, against the same dovecot with
   =pop3= added to =protocols=.  Skips unless =vm-pop-test-servers= is set.
 
-Config, in the same gitignored =test/vm-imap-config.el=:
-
-#+begin_src elisp
-(setq vm-pop-test-servers
-      '((:name     "pop"
-         :host     "127.0.0.1"
-         :port     110
-         :tls      nil
-         :auth     "pass"
-         :accounts (("vmtest1" . "PASSWORD1")))
-        (:name     "pop-tls"
-         :host     "localhost"          ; must match the cert subjectAltName
-         :port     995
-         :tls      t
-         :auth     "pass"
-         :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
-         :accounts (("vmtest1" . "PASSWORD1")))))
-#+end_src
+Config, in the same gitignored =test/vm-live-config.el=; the template has the
+=vm-pop-test-servers= form ready to fill in.
 
 Names are load-bearing: the tests look for =pop= and =pop-tls=, as the IMAP
 ones look for =plain= and =tls=.  =:auth= is =pass= or =apop=; VM's POP spec

@@ -42,7 +42,8 @@ Tests that talk to a real IMAP server, for the parts of =vm-imap.el= that
 cannot be reached with mocks.  Design and rationale:
 [[file:design/imap-live-tests.org][design/imap-live-tests.org]].
 
-The opt-in is =test/vm-imap-config.el=.  Create it and these run as part of
+The opt-in is =test/vm-live-config.el=, copied from the checked-in
+=test/vm-live-config.el.template=.  Create it and these run as part of
 =make test= like any other test; without it they all skip and the suite still
 passes.  =make test-imap= runs only them, which is the convenient thing while
 working on IMAP.
@@ -150,32 +151,25 @@ Only implicit TLS on 993 is covered.  VM has no STARTTLS, and the
 =vm-stunnel-program= route is deliberately not tested.
 
 *** the config file
-Create =test/vm-imap-config.el=.  It is gitignored -- it holds passwords, so
-keep it that way.  Drop the second entry if you have not done the TLS setup;
-its tests then skip.
+Copy the checked-in template and edit it:
 
-#+begin_src elisp
-(setq vm-imap-test-servers
-      '((:name     "plain"
-         :host     "127.0.0.1"
-         :port     143
-         :tls      nil
-         :auth     "login"
-         :accounts (("vmtest1" . "PASSWORD1")
-                    ("vmtest2" . "PASSWORD2")))
-        (:name     "tls"
-         :host     "localhost"        ; must match the certificate's SAN
-         :port     993
-         :tls      t
-         :auth     "login"
-         ;; $DOVECOT_ETC/ssl/vmtest-cert.pem, written out in full
-         :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
-         :accounts (("vmtest1" . "PASSWORD1")))))
+#+begin_src sh
+cp test/vm-live-config.el.template test/vm-live-config.el
 #+end_src
 
-A password cannot contain a colon.  VM's maildrop spec is
-=imap:HOST:PORT:MAILBOX:AUTH:USER:PASSWORD=, colon-delimited, and cannot
-express one.
+=test/vm-live-config.el= is gitignored -- it holds passwords, so keep it that
+way.  The template is checked in and describes both protocols, IMAP and POP;
+drop any server you have not set up and its tests skip.
+
+The template says all this, but the two that bite:
+
+- The =:name= values are load-bearing.  Tests ask for servers by name --
+  ="plain"= and ="tls"= for IMAP, ="pop"= and ="pop-tls"= for POP -- so a
+  server under another name is never used and the tests wanting it skip
+  without saying why.
+- A password cannot contain a colon.  VM's maildrop specifications are
+  colon-delimited (=imap:HOST:PORT:MAILBOX:AUTH:USER:PASSWORD= and
+  =pop:HOST:PORT:AUTH:USER:PASSWORD=) and cannot express one.
 
 =:trustfile= is the self-signed certificate itself, which is its own trust
 anchor.  Without it Emacs either rejects the certificate or prompts, and a
@@ -237,25 +231,10 @@ sudo port reload dovecot          # or the reload for your install
 doveconf -n protocols
 #+end_src
 
-Then add the POP servers to the same =test/vm-imap-config.el=.  The names
-=pop= and =pop-tls= are what the tests look for:
-
-#+begin_src elisp
-(setq vm-pop-test-servers
-      '((:name     "pop"
-         :host     "127.0.0.1"
-         :port     110
-         :tls      nil
-         :auth     "pass"
-         :accounts (("vmtest1" . "PASSWORD1")))
-        (:name     "pop-tls"
-         :host     "localhost"        ; must match the certificate's SAN
-         :port     995
-         :tls      t
-         :auth     "pass"
-         :trustfile "/opt/local/etc/dovecot/ssl/vmtest-cert.pem"
-         :accounts (("vmtest1" . "PASSWORD1")))))
-#+end_src
+Then add the POP servers.  They live in the same
+=test/vm-live-config.el=, and =test/vm-live-config.el.template= already has
+them: uncomment or copy the =vm-pop-test-servers= form out of it and put your
+own passwords in.  The names =pop= and =pop-tls= are what the tests look for.
 
 The live POP tests also need the IMAP server called =plain= for the same
 account, and skip without it: POP3 has no =APPEND=, so a fixture cannot be
