@@ -191,6 +191,84 @@ Body
       ;; (the one at idx 1, since idx 0 is deleted)
       (should (= new-deletes 0)))))
 
+
+;;; k must not delete the whole folder (issue #496)
+
+(defun vm-delete-test--find-and-set-text-of-moving-point (m)
+  "The pre-#492 `vm-find-and-set-text-of': computes the marker, moves point.
+Kept here as the hazard `vm-get-header-contents' must not care about."
+  (with-current-buffer (vm-buffer-of m)
+    (save-restriction
+      (widen)
+      (goto-char (vm-headers-of m))
+      (search-forward "\n\n" (vm-text-end-of m) 0)
+      (vm-set-text-of m (point-marker)))))
+
+(defun vm-delete-test--cool-message (m)
+  "Forget what is cached about M, so the next access recomputes it."
+  (fillarray (vm-cached-data-of m) nil)
+  (aset (vm-location-data-of m) 3 nil))   ; vm-text-of
+
+(defconst vm-delete-test--subjects-folder
+  (concat "From s0@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: S0 <s0@example.com>\nSubject: shared subject\n"
+          "Message-ID: <k-0@example.com>\n\nBody 0.\n\n"
+          "From s1@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: S1 <s1@example.com>\nSubject: shared subject\n"
+          "Message-ID: <k-1@example.com>\n\nBody 1.\n\n"
+          "From s2@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: S2 <s2@example.com>\nSubject: unique two\n"
+          "Message-ID: <k-2@example.com>\n\nBody 2.\n\n"
+          "From s3@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: S3 <s3@example.com>\nSubject: unique three\n"
+          "Message-ID: <k-3@example.com>\n\nBody 3.\n\n")
+  "Four messages, the first two sharing a subject.")
+
+(ert-deftest vm-delete-test-kill-subject-reads-cold-subjects ()
+  "REGRESSION: reading a header does not depend on point being left alone.
+Issue #496: `k' sometimes deleted every message in the folder, on the first
+press after visiting.  `vm-get-header-contents' went to the start of the headers
+and then evaluated `(vm-text-of message)' as the bound of its search --
+and `vm-text-of' computes that marker on first use.  While that computation moved
+point (issue #492, since fixed), the search ran from the body with a bound behind
+it and matched nothing, so every header came back empty.  Every subject was then
+\"\", every message compared equal to the current one, and `vm-kill-subject'
+deleted the lot.
+
+The bound is now computed before point moves, so the old hazard is installed here
+deliberately: with it in place the subjects must still read correctly."
+  (vm-test-with-folder vm-delete-test--subjects-folder
+    (should (= 4 (vm-test-message-count)))
+    ;; Cold, as before anything has asked for a subject.
+    (mapc #'vm-delete-test--cool-message vm-message-list)
+    (cl-letf (((symbol-function 'vm-find-and-set-text-of)
+               (symbol-function
+                'vm-delete-test--find-and-set-text-of-moving-point)))
+      (should (equal '("shared subject" "shared subject"
+                       "unique two" "unique three")
+                     (mapcar #'vm-so-sortable-subject vm-message-list))))))
+
+(ert-deftest vm-delete-test-kill-subject-kills-only-the-subject ()
+  "REGRESSION: `k' deletes the messages sharing a subject and no others.
+The behaviour issue #496 is about, with the subject cache cold and the pre-#492
+hazard in place -- the combination that deleted the whole folder."
+  (vm-test-with-folder vm-delete-test--subjects-folder
+    (mapc #'vm-delete-test--cool-message vm-message-list)
+    (setq vm-message-pointer vm-message-list)
+    ;; `vm-kill-subject' validates that it is in a folder buffer.
+    (setq major-mode 'vm-mode)
+    (setq vm-mail-buffer nil)
+    (cl-letf (((symbol-function 'vm-find-and-set-text-of)
+               (symbol-function
+                'vm-delete-test--find-and-set-text-of-moving-point))
+              ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+              ((symbol-function 'vm-display) (lambda (&rest _) nil)))
+      ;; 0 means do not move afterwards, so the test does not need a summary.
+      (vm-kill-subject 0))
+    (should (equal '(t t nil nil)
+                   (mapcar (lambda (m) (and (vm-deleted-flag m) t))
+                           vm-message-list)))))
+
 (provide 'vm-delete-test)
 
 ;;; vm-delete-test.el ends here
