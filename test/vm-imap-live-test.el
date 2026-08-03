@@ -212,6 +212,32 @@ the whole exercise: everything above only proves the harness works."
 ;;; Tier 2 -- saving between IMAP folders keeps attributes (issue #38)
 ;;; ------------------------------------------------------------------
 
+(defun vm-imap-live-test--numbered (n)
+  "Return a small message carrying number N."
+  (format (concat "From: alice@example.com\r\n"
+                  "To: vmtest@example.com\r\n"
+                  "Subject: message %d\r\n"
+                  "Message-ID: <numbered-%d@example.com>\r\n"
+                  "\r\n"
+                  "Body %d.\r\n")
+          n n n))
+
+(defun vm-imap-live-test--exists (conn mailbox)
+  "Return how many messages MAILBOX holds, asked over CONN."
+  (let ((text (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)))
+    (if (string-match "\\([0-9]+\\) EXISTS" text)
+        (string-to-number (match-string 1 text))
+      (error "No EXISTS in SELECT response"))))
+
+(defun vm-imap-live-test--quit-folder ()
+  "Quit the current folder buffer and kill it, as ending a session does."
+  (let ((buffer (current-buffer))
+        (vm-confirm-quit nil))
+    (ignore-errors (vm-quit))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer (set-buffer-modified-p nil))
+      (kill-buffer buffer))))
+
 (defmacro vm-imap-live-with-two-mailboxes (spec &rest body)
   "Create two throwaway mailboxes on the same account, run BODY, remove them.
 SPEC is (CONN-VAR SRC-VAR DST-VAR SERVER-NAME).  Same account both sides, so
@@ -660,6 +686,64 @@ external by the time the test can look at it."
         (when (eq major-mode 'vm-mode)
           (let ((vm-confirm-quit nil))
             (ignore-errors (vm-quit-no-change))))))))
+
+
+;;; ------------------------------------------------------------------
+;;; Deletions owed to the server outlive the session (issue #556)
+;;; ------------------------------------------------------------------
+
+(ert-deftest vm-imap-live-test-offline-expunge-reaches-the-server-later ()
+  "REGRESSION: an expunge made offline is sent the next time we are online.
+Issue #556.  `vm-imap-messages-to-expunge' is buffer-local, and used to be
+written nowhere, so a session that could not reach the server dropped the
+deletions: the messages stayed on the server for good and the user was told
+nothing.  A later session did not fetch them again -- X-VM-IMAP-Retrieved
+remembers those UIDs -- so nothing looked wrong locally while the mail the user
+deleted was still in their mailbox.
+
+Three messages; delete two, go offline, expunge, save, quit.  The server should
+still have three, and the folder should have recorded what it owes.  Then visit
+again, online, and save: the two deletions should go out."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-mailbox (conn mailbox "plain"
+                              (list (vm-imap-live-test--numbered 1)
+                                    (vm-imap-live-test--numbered 2)
+                                    (vm-imap-live-test--numbered 3)))
+    (let* ((account (car (plist-get server :accounts)))
+           (spec (vm-imap-live-spec server account mailbox))
+           (cache (vm-imap-make-filename-for-spec spec))
+           (vm-imap-server-timeout vm-imap-live-timeout)
+           (vm-imap-ok-to-ask nil)
+           (vm-confirm-quit nil))
+      (unwind-protect
+          (progn
+            ;; ---- session one, going offline before the expunge
+            (vm-visit-imap-folder spec)
+            (should (= 3 (length vm-message-list)))
+            (vm-delete-message 1)
+            (vm-next-message 1)
+            (vm-delete-message 1)
+            (setq vm-imap-connection-mode 'offline)
+            (ignore-errors (vm-imap-end-session (vm-folder-imap-process)))
+            (vm-expunge-folder)
+            (should (= 2 (length vm-imap-messages-to-expunge)))
+            (vm-save-folder)
+            (vm-imap-live-test--quit-folder)
+            (setq vm-imap-connection-mode 'online)
+            ;; The folder knows what it owes ...
+            (with-temp-buffer
+              (insert-file-contents cache)
+              (should (string-match-p "X-VM-IMAP-To-Expunge" (buffer-string))))
+            ;; ... and the server still has everything.
+            (should (= 3 (vm-imap-live-test--exists conn mailbox)))
+            ;; ---- session two, online
+            (vm-visit-imap-folder spec)
+            (should (= 2 (length vm-imap-messages-to-expunge)))
+            (vm-save-folder)
+            (vm-imap-live-test--quit-folder)
+            (should (= 1 (vm-imap-live-test--exists conn mailbox))))
+        (when (file-exists-p cache) (delete-file cache))))))
 
 (provide 'vm-imap-live-test)
 

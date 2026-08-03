@@ -979,6 +979,115 @@ the case where it is not."
                                     warnings)))
         (setq buffer-file-name nil)))))
 
+
+;;; server deletions that have not been sent yet (issue #556)
+
+(ert-deftest vm-folder-test-imap-to-expunge-header-round-trip ()
+  "REGRESSION: pending server deletions survive being written to the folder.
+Issue #556.  `vm-imap-messages-to-expunge' is buffer-local and was never
+written anywhere, so a session that ended before it could reach the server
+dropped the deletions -- the user\'s mail stayed on the server for good, with
+nothing said.  It now goes into the folder beside X-VM-IMAP-Retrieved."
+  (vm-test-with-folder vm-folder-test--8bit-folder-text
+    (let ((pending '(("12" . "1785695783") ("7" . "1785695783"))))
+      (setq vm-imap-messages-to-expunge pending)
+      (vm-stuff-imap-to-expunge)
+      (save-restriction
+        (widen)
+        (should (string-match-p "X-VM-IMAP-To-Expunge:" (buffer-string))))
+      ;; Forget it, then read it back from the folder.
+      (setq vm-imap-messages-to-expunge nil)
+      (vm-gobble-imap-to-expunge)
+      (should (equal pending vm-imap-messages-to-expunge)))))
+
+(ert-deftest vm-folder-test-imap-to-expunge-header-empty ()
+  "An empty pending list round-trips as empty, not as garbage."
+  (vm-test-with-folder vm-folder-test--8bit-folder-text
+    (setq vm-imap-messages-to-expunge nil)
+    (vm-stuff-imap-to-expunge)
+    (vm-gobble-imap-to-expunge)
+    (should-not vm-imap-messages-to-expunge)))
+
+(ert-deftest vm-folder-test-imap-to-expunge-rewritten-not-duplicated ()
+  "Writing the header twice leaves one of it, with the newer value.
+It is rewritten on every save, so a folder must not collect a header per save."
+  (vm-test-with-folder vm-folder-test--8bit-folder-text
+    (setq vm-imap-messages-to-expunge '(("1" . "100")))
+    (vm-stuff-imap-to-expunge)
+    (setq vm-imap-messages-to-expunge '(("2" . "100")))
+    (vm-stuff-imap-to-expunge)
+    (save-restriction
+      (widen)
+      (should (= 1 (cl-count-if
+                    (lambda (line)
+                      (string-prefix-p "X-VM-IMAP-To-Expunge:" line))
+                    (split-string (buffer-string) "\n")))))
+    (setq vm-imap-messages-to-expunge nil)
+    (vm-gobble-imap-to-expunge)
+    (should (equal '(("2" . "100")) vm-imap-messages-to-expunge))))
+
+(ert-deftest vm-folder-test-index-file-carries-pending-expunges ()
+  "The index file carries the pending deletions, and still reads version 1.
+The index is an optional cache of the folder, so its version can move on: a
+reader that does not know version 2 discards the file and parses the folder,
+which is correct if slower.  This checks both directions -- a version 2 file
+round-trips the list, and a version 1 file is still read, with the list empty."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-index" t)))
+         (folder (expand-file-name "folder" dir))
+         (index (expand-file-name ".folder.inx" dir))
+         (pending '(("42" . "1785695783")))
+         (vm-index-file-suffix ".inx")
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (before (buffer-list)))
+    (require 'vm)
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-plain-folder folder)
+          (vm-visit-folder folder)
+          (setq vm-imap-messages-to-expunge pending)
+          (vm-write-index-file index)
+          (with-temp-buffer
+            (insert-file-contents index)
+            (goto-char (point-min))
+            ;; version 2 now
+            (should (re-search-forward "^2$" nil t))
+            (should (string-match-p "42" (buffer-string))))
+          (setq vm-imap-messages-to-expunge nil)
+          (should (vm-read-index-file index))
+          (should (equal pending vm-imap-messages-to-expunge))
+          ;; A version 1 file, as an older VM would have written: read, with
+          ;; no pending deletions, rather than refused.
+          (with-temp-buffer
+            (insert-file-contents index)
+            (goto-char (point-min))
+            (should (re-search-forward "^2$" nil t))
+            (replace-match "1")
+            ;; drop the field version 1 does not have
+            (goto-char (point-min))
+            (when (re-search-forward "^;; IMAP messages to expunge on the server$"
+                                     nil t)
+              (let ((start (match-beginning 0)))
+                (goto-char start)
+                (forward-line 1)
+                (let ((field-start (point)))
+                  (forward-sexp)
+                  (delete-region start (point)))))
+            (let ((coding-system-for-write 'raw-text))
+              (write-region (point-min) (point-max) index nil 'quiet)))
+          (setq vm-imap-messages-to-expunge pending)
+          (should (vm-read-index-file index))
+          (should-not vm-imap-messages-to-expunge))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

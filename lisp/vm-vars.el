@@ -6478,6 +6478,12 @@ folder needs to be updated.")
 (defconst vm-pop-retrieved-header "X-VM-POP-Retrieved:")
 (defconst vm-imap-retrieved-header-regexp "^X-VM-IMAP-Retrieved:")
 (defconst vm-imap-retrieved-header "X-VM-IMAP-Retrieved:")
+;; Deletions that have not reached the server yet.  Without this they lived
+;; only in vm-imap-messages-to-expunge, buffer-local, so a session that ended
+;; before it could reach the server dropped them and the messages stayed on
+;; the server for good (issue #556).
+(defconst vm-imap-to-expunge-header-regexp "^X-VM-IMAP-To-Expunge:")
+(defconst vm-imap-to-expunge-header "X-VM-IMAP-To-Expunge:")
 (defconst vm-external-storage-header-regexp "^X-VM-Storage:")
 (defconst vm-external-storage-header "X-VM-Storage:")
 (defconst vm-last-modified-header-regexp "^X-VM-Last-Modified:")
