@@ -1726,6 +1726,28 @@ draft messages."
   (or vm-version "unknown"))
 
 ;;;###autoload
+(defun vm-emacs-name-and-version ()
+  "Return the editor's name and version, as in \"GNU Emacs 30.2\".
+
+The variable `emacs-version' has held only the number for years now, so an
+X-Mailer built from it says which version sent the mail but not which editor
+\(issue #520).  The function `emacs-version' does say, but follows it with the
+build number, the platform and the build date, which is far more than an
+X-Mailer wants -- so take the name and the version off the front of it.  For
+XEmacs that yields \"XEmacs 21.4\" by the same rule.
+
+Falls back to naming the editor from `featurep' if that string is not in the
+shape expected, and to \"Unknown Emacs\" if there is nothing to go on."
+  (let ((full (if (fboundp 'emacs-version) (emacs-version) "")))
+    (cond ((string-match "\\`\\([^0-9\n]*[A-Za-z]\\)[ \t]+\\([0-9][^ \t\n(]*\\)"
+			 full)
+	   (concat (match-string 1 full) " " (match-string 2 full)))
+	  ((boundp 'emacs-version)
+	   (concat (if (featurep 'xemacs) "XEmacs " "GNU Emacs ")
+		   emacs-version))
+	  (t "Unknown Emacs"))))
+
+;;;###autoload
 (defun vm-version-commit ()
   "Display and the value of the variable `vm-version-commit'."
   (interactive)
