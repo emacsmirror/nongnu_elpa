@@ -1995,6 +1995,42 @@ repairing a folder whose list has already drifted."
 		       oldpoint (buffer-name)))))))
     t ))
 
+
+(defun vm-gobble-imap-to-expunge ()
+  "Read back the server deletions a previous session could not send.
+The companion of `vm-stuff-imap-to-expunge'; see issue #556.  Entries for a
+different UID validity are left for `vm-imap-expunge-remote-messages' to
+notice and refuse, as it does for any other stale UID."
+  (let ((case-fold-search t)
+	ob oldpoint lim)
+    (save-excursion
+      (save-restriction
+       (widen)
+       (goto-char (point-min))
+       (vm-skip-past-folder-header)
+       (vm-find-leading-message-separator)
+       (vm-skip-past-leading-message-separator)
+       (search-forward "\n\n" nil t)
+       (setq lim (point))
+       (goto-char (point-min))
+       (vm-skip-past-folder-header)
+       (vm-skip-past-leading-message-separator)
+       (if (re-search-forward vm-imap-to-expunge-header-regexp lim t)
+	   (condition-case ()
+	       (progn
+		 (setq oldpoint (point)
+		       ob (read (current-buffer)))
+		 (unless (listp ob)
+		   (error "Bad imap-to-expunge header at %d in buffer %s"
+			  oldpoint (buffer-name))
+		   (sit-for 1))
+		 (setq vm-imap-messages-to-expunge ob))
+	     (error
+	      (vm-warn 1 1
+		       "Bad imap-to-expunge header at %d in buffer %s, ignoring"
+		       oldpoint (buffer-name)))))))
+    t ))
+
 (defun vm-gobble-visible-header-variables ()
   (save-excursion
     (save-restriction
@@ -2711,6 +2747,55 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 	    old-buffer-modified-p (current-buffer)))))))
 
 ;; Insert the summary format variable header into the first message.
+
+(defun vm-stuff-imap-to-expunge ()
+  "Write into the folder the server deletions that have not been sent yet.
+The companion of `vm-gobble-imap-to-expunge'.  `vm-imap-messages-to-expunge'
+is buffer-local, so without this a session that ended before it could reach
+the server dropped the deletions and the messages stayed on the server for
+good, with nothing said -- issue #556."
+  (if vm-message-list
+      (save-excursion
+	(save-restriction
+	 (widen)
+	 (let ((old-buffer-modified-p (buffer-modified-p))
+	       (case-fold-search t)
+	       ;; As in vm-stuff-imap-retrieved: no file locking for VM's own
+	       ;; status headers.
+	       (buffer-file-name nil)
+	       (buffer-read-only nil)
+	       (print-length nil)
+	       (p vm-imap-messages-to-expunge)
+	       (curbuf (current-buffer))
+	       lim)
+	   (goto-char (point-min))
+	   (vm-skip-past-folder-header)
+	   (vm-find-leading-message-separator)
+	   (vm-skip-past-leading-message-separator)
+	   (search-forward "\n\n" nil t)
+	   (setq lim (point))
+	   (goto-char (point-min))
+	   (vm-skip-past-folder-header)
+	   (vm-find-leading-message-separator)
+	   (vm-skip-past-leading-message-separator)
+	   (if (re-search-forward vm-imap-to-expunge-header-regexp lim t)
+	       (progn (goto-char (match-beginning 0))
+		      (if (vm-match-header vm-imap-to-expunge-header)
+			  (delete-region (vm-matched-header-start)
+					 (vm-matched-header-end)))))
+	   (insert vm-imap-to-expunge-header)
+	   (if (null p)
+	       (insert " nil\n")
+	     (insert "\n   (\n")
+	     (while p
+	       (insert "\t")
+	       (prin1 (car p) curbuf)
+	       (insert "\n")
+	       (setq p (cdr p)))
+	     (insert "   )\n"))
+	   (vm-restore-buffer-modified-p	; folder-buffer
+	    old-buffer-modified-p (current-buffer)))))))
+
 (defun vm-stuff-summary ()
   (if vm-message-list
       (save-excursion
@@ -2922,8 +3007,9 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 	(let ((work-buffer nil))
 	  (unwind-protect
 	      (let (obj attr-list cache-list location-list label-list
-		    validity-check vis invis folder-type
-		    bookmark summary labels pop-retrieved imap-retrieved order
+		    validity-check vis invis folder-type index-version
+		    bookmark summary labels pop-retrieved imap-retrieved
+		    imap-to-expunge order
 		    v m (m-list nil) tail)
 		(vm-inform 5 "%s: Reading index file..." (buffer-name))
 		(setq work-buffer (vm-make-work-buffer))
@@ -2932,9 +3018,16 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 		(goto-char (point-min))
 
 		;; check version
+		;; Version 2 adds the not-yet-sent server deletions at the
+		;; end (issue #556).  Version 1 is still read, with that list
+		;; empty, and the next save writes version 2; an older VM
+		;; meeting a version 2 file signals here, and the handler
+		;; below ignores the index and parses the folder, which is
+		;; correct if slower.  The file is only ever a cache.
 		(setq obj (read work-buffer))
-		(if (not (eq obj 1))
+		(if (not (memq obj '(1 2)))
 		    (error "Unsupported index file version: %s" obj))
+		(setq index-version obj)
 
 		;; folder type
 		(setq folder-type (read work-buffer))
@@ -3010,10 +3103,15 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 		;; imap retrieved messages
 		(setq imap-retrieved (read work-buffer))
 
+		;; server deletions not sent yet -- version 2 and later
+		(setq imap-to-expunge (and (>= index-version 2)
+					   (read work-buffer)))
+
 		(setq vm-message-list m-list
 		      vm-folder-type folder-type
 		      vm-pop-retrieved-messages pop-retrieved
-		      vm-imap-retrieved-messages imap-retrieved)
+		      vm-imap-retrieved-messages imap-retrieved
+		      vm-imap-messages-to-expunge imap-to-expunge)
 
 		(vm-startup-apply-bookmark bookmark)
 		(and order (vm-startup-apply-message-order order))
@@ -3091,7 +3189,7 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 	  (setq work-buffer (vm-make-work-buffer))
 
 	  (princ ";; index file version\n" work-buffer)
-	  (prin1 1 work-buffer)
+	  (prin1 2 work-buffer)
 	  (terpri work-buffer)
 
 	  (princ ";; folder type\n" work-buffer)
@@ -3203,6 +3301,21 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 	      (princ ")\n" work-buffer)))
 	  (princ ";; retrieved IMAP messages\n" work-buffer)
 	  (let ((p vm-imap-retrieved-messages))
+	    (if (null p)
+		(princ "nil\n" work-buffer)
+	      (princ "(\n" work-buffer)
+	      (while p
+		(princ "\t" work-buffer)
+		(prin1 (car p) work-buffer)
+		(princ "\n" work-buffer)
+		(setq p (cdr p)))
+	      (princ ")\n" work-buffer)))
+
+	  ;; Version 2 and later.  Anything added here goes after the fields
+	  ;; an older reader knows about, so that reader stops at the version
+	  ;; check rather than misreading the file.
+	  (princ ";; IMAP messages to expunge on the server\n" work-buffer)
+	  (let ((p vm-imap-messages-to-expunge))
 	    (if (null p)
 		(princ "nil\n" work-buffer)
 	      (princ "(\n" work-buffer)
@@ -3722,6 +3835,7 @@ This function is only used in background tasks.  USR 2012-12-22."
 		       (vm-stuff-last-modified)
 		       (vm-stuff-pop-retrieved)
 		       (vm-stuff-imap-retrieved)
+		       (vm-stuff-imap-to-expunge)
 		       (vm-stuff-summary)
 		       (vm-stuff-labels)
 		       (and vm-message-order-changed
@@ -3759,6 +3873,7 @@ This function is only used in background tasks.  USR 2012-12-22."
 	 (vm-stuff-bookmark)
 	 (vm-stuff-pop-retrieved)
 	 (vm-stuff-imap-retrieved)
+	 (vm-stuff-imap-to-expunge)
 	 (vm-stuff-last-modified)
 	 (vm-stuff-header-variables)
 	 (vm-stuff-labels)
@@ -3862,7 +3977,17 @@ folder."
   (vm-display nil nil '(vm-save-folder) '(vm-save-folder))
   (if (eq major-mode 'vm-virtual-mode)
       (vm-virtual-save-folder prefix)
-    (if (buffer-modified-p)
+    ;; Pending server deletions count as work to do even when the buffer
+    ;; itself is unchanged: they may have been read back from the folder,
+    ;; where a previous session left them because it could not reach the
+    ;; server (issue #556).  Without this a visit that changes nothing saves
+    ;; nothing, and the deletions wait for a session that happens to modify
+    ;; something.
+    (if (or (buffer-modified-p)
+	    (and (eq vm-folder-access-method 'imap)
+		 vm-imap-messages-to-expunge)
+	    (and (eq vm-folder-access-method 'pop)
+		 vm-pop-messages-to-expunge))
 	(let ((buffer-undo-list t)) ;; (mp nil) (newlist nil)
 	  (when vm-expunge-before-save
 	    (vm-expunge-folder))
@@ -3897,6 +4022,7 @@ folder."
 	    (vm-stuff-bookmark)
 	    (vm-stuff-pop-retrieved)
 	    (vm-stuff-imap-retrieved)
+	    (vm-stuff-imap-to-expunge)
 	    (vm-stuff-last-modified)
 	    (vm-stuff-header-variables)
 	    (vm-stuff-labels)

@@ -503,6 +503,7 @@ deleted messages.  Use `###' to expunge deleted messages."
   (vm-gobble-bookmark)
   (vm-gobble-pop-retrieved)
   (vm-gobble-imap-retrieved)
+  (vm-gobble-imap-to-expunge)
   (vm-gobble-summary)
   (vm-gobble-labels))
 
