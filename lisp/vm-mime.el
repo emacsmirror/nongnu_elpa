@@ -2803,6 +2803,182 @@ possible.  Returns a boolean flag indicating success."
     nil))
   
 
+;;; RFC 3676 -- format=flowed
+;;
+;; A sender who does not know how wide the reader's window is can say so: it
+;; wraps the text at some width of its own and marks every break it invented
+;; by leaving a space at the end of the line.  The reader is then free to join
+;; those lines back up and re-wrap them.  A break with no space before it is
+;; the author's own and stays put.
+;;
+;;     Content-Type: text/plain; format=flowed
+;;
+;; Two wrinkles.  A line whose first character is a space, or that would
+;; otherwise look like a quote or a From_ line, is sent with an extra space in
+;; front of it -- "space-stuffing" -- which has to come off before anything
+;; else is looked at.  And delsp=yes says the space at a soft break is part of
+;; the marking rather than part of the text, so it comes off when the lines are
+;; joined; that is how a language that does not put spaces between words uses
+;; the format.
+
+(defun vm-mime-flowed-layout-p (layout)
+  "Return non-nil if LAYOUT is plain text sent as RFC 3676 format=flowed."
+  (and vm-mime-unflow-flowed-text
+       (vm-mime-types-match "text/plain" (car (vm-mm-layout-type layout)))
+       (let ((format (vm-mime-get-parameter layout "format")))
+	 (and format
+	      (equal "flowed"
+		     (downcase (vm-mime-unquote-parameter-value format)))))))
+
+(defun vm-mime-delsp-layout-p (layout)
+  "Return non-nil if LAYOUT carries the RFC 3676 delsp=yes parameter."
+  (let ((delsp (vm-mime-get-parameter layout "delsp")))
+    (and delsp
+	 (equal "yes" (downcase (vm-mime-unquote-parameter-value delsp))))))
+
+(defun vm-mime-flowed-quote-depth ()
+  "Return the number of quote characters at point, leaving point after them."
+  (skip-chars-forward ">"))
+
+(defun vm-mime-unflow-region (start end &optional delsp)
+  "Join the soft line breaks of RFC 3676 format=flowed between START and END.
+A line that ends in a space is joined to the one after it, provided that line
+is quoted to the same depth: quoting is part of the paragraph's identity, so
+text quoted twice is never joined to text quoted once.  Space-stuffing is
+undone first, as RFC 3676 section 4.4 requires.  With DELSP the space at the
+break is dropped rather than kept.
+
+The signature separator is not joined to, or joined from.  Strictly it is a
+flowed line, ending as it does in a space, but RFC 3676 section 4.3 asks that
+it be left as a line of its own; running it together with the text above or
+the signature below would stop anything recognising either.
+
+On a quoted line the space that follows the quote characters is put back after
+the stuffing is removed, so that quoted text still looks quoted.  A sender
+space-stuffs a quoted line precisely because the quote prefix is followed by
+one, and every reader displays it that way."
+  (save-excursion
+    (save-restriction
+      (narrow-to-region start end)
+      (goto-char (point-min))
+      (let (line-start depth stuffed joining)
+	(while (not (eobp))
+	  (setq line-start (point)
+		depth (vm-mime-flowed-quote-depth)
+		stuffed nil)
+	  ;; Un-stuff before deciding anything else about the line.
+	  (when (eq (char-after) ?\s)
+	    (delete-char 1)
+	    (setq stuffed t))
+	  (when (and stuffed (> depth 0))
+	    (insert " "))
+	  (setq joining t)
+	  (while joining
+	    (end-of-line)
+	    (if (and (eq (char-before) ?\s)
+		     (not (eobp))
+		     (not (vm-mime-flowed-signature-line-p line-start (point)))
+		     ;; The next line has to be quoted to the same depth, and
+		     ;; must not be the signature separator.
+		     (save-excursion
+		       (forward-char 1)
+		       (and (= depth (vm-mime-flowed-quote-depth))
+			    (not (looking-at " ?-- $")))))
+		(progn
+		  (when delsp (delete-char -1))
+		  (delete-char 1)		; the line break itself
+		  (delete-char depth)		; the next line's quoting
+		  ;; and its stuffing.  No quote prefix goes back in: the
+		  ;; joined text now follows the prefix of the line it was
+		  ;; appended to.
+		  (when (eq (char-after) ?\s)
+		    (delete-char 1)))
+	      (setq joining nil)))
+	  (unless (eobp) (forward-line 1)))))))
+
+(defun vm-mime-flowed-signature-line-p (start end)
+  "Return non-nil if the text between START and END is the signature separator.
+That is the line \"-- \" of RFC 3676 section 4.3, quoted or not."
+  (string-match-p "\\`>* ?-- \\'"
+		  (buffer-substring-no-properties start end)))
+
+(defun vm-mime-flowed-soft-break-width ()
+  "Return the width at which a line break is taken to be VM's rather than yours.
+A line filled out to about the fill column was broken there because that is
+where the text ran out of room; a much shorter line was broken there because
+you meant it to be -- an address, a list item, a line of code.  Only the first
+kind is offered to the reader to undo.  This is a guess, but the alternative is
+to flow everything and reflow the reader's view of text that was deliberately
+laid out."
+  (max 20 (- (or fill-column 70) 10)))
+
+(defun vm-mime-flow-region (start end)
+  "Mark the line breaks between START and END as soft, per RFC 3676.
+A line that runs to about the fill column and is followed by more of the same
+paragraph is given a trailing space, which tells the reader the break after it
+was made to fit a width and may be undone.  A paragraph ends at a blank line,
+at a change of quote depth, or at the signature separator, and its last line
+keeps its break.  So does a line short enough to have been broken on purpose;
+see `vm-mime-flowed-soft-break-width'.
+
+Space-stuffing is applied as section 4.4 requires: a line whose text begins
+with a space, or -- when the line is not quoted -- with a quote character or
+with \"From \", is sent with one extra space in front of that text, so that the
+reader can tell it from the format's own marks.  The quote characters of a
+quoted line are its quote prefix and are left alone; stuffing goes after them.
+
+Returns non-nil if any break was marked soft, which is the caller's cue to
+declare format=flowed.  Text of one-line paragraphs comes back unchanged apart
+from stuffing and does not need the parameter."
+  (let ((flowed nil)
+	(width (vm-mime-flowed-soft-break-width)))
+    (save-excursion
+      (save-restriction
+	(narrow-to-region start end)
+	;; Stuffing first: it shifts the text, and the width measured below
+	;; should be the width the reader will see.
+	(goto-char (point-min))
+	(while (not (eobp))
+	  (let ((depth (vm-mime-flowed-quote-depth)))
+	    ;; Point is now after the quote prefix, at the text itself.
+	    (when (if (> depth 0)
+		      ;; The space a mailer conventionally puts after the quote
+		      ;; characters is itself the stuffing -- the reader takes
+		      ;; one space off and puts one back to display the line.
+		      ;; Adding another would send "> " as ">  ".  A quoted
+		      ;; line with no space there gets one, so that it reads
+		      ;; the usual way at the other end.
+		      (not (eq (char-after) ?\s))
+		    (looking-at "[ >]\\|From "))
+	      (insert " ")))
+	  (forward-line 1))
+	(goto-char (point-min))
+	(while (not (eobp))
+	  (let ((bol (point))
+		(depth (save-excursion (vm-mime-flowed-quote-depth)))
+		eol)
+	    (end-of-line)
+	    (setq eol (point))
+	    (unless (or (= bol eol)		; a blank line ends a paragraph
+			(vm-mime-flowed-signature-line-p bol eol)
+			(eobp)			; the last line keeps its break
+			(< (- eol bol) width)	; a break you meant
+			;; A paragraph also ends where the next line is blank,
+			;; quoted differently, or the signature separator.
+			(save-excursion
+			  (forward-char 1)
+			  (or (eobp)
+			      (looking-at "$")
+			      (/= depth (save-excursion
+					  (vm-mime-flowed-quote-depth)))
+			      (looking-at " ?-- $"))))
+	      ;; A soft break: leave exactly one space before it.
+	      (unless (eq (char-before) ?\s)
+		(insert " "))
+	      (setq flowed t)))
+	  (forward-line 1))))
+    flowed))
+
 (defun vm-mime-display-internal-text/plain (layout &optional no-highlighting)
   "Display a text/plain mime part given by LAYOUT, carrying out
 any necessary MIME-decoding, CRLF-conversion, charset-conversion
@@ -2827,6 +3003,12 @@ in the text are highlighted and energized."
       (when need-conversion
 	(setq charset (vm-mime-charset-convert-region charset start end)))
       (vm-mime-charset-decode-region charset start end)
+      ;; Before anything looks at the line structure: the sender's line breaks
+      ;; are not all real.  What is left is one long line per paragraph, which
+      ;; the filling below then wraps to this window -- which is the point of
+      ;; the format.
+      (when (vm-mime-flowed-layout-p layout)
+	(vm-mime-unflow-region start end (vm-mime-delsp-layout-p layout)))
       (unless no-highlighting (vm-energize-urls-in-message-region start end))
       (when (and (or vm-word-wrap-paragraphs
 		     vm-fill-paragraphs-containing-long-lines)
@@ -7366,8 +7548,12 @@ Returns a pair consisting of a marker pointing to the start of the
 encoded MIME part and the transfer-encoding used.  But if
 WHOLE-MESSAGE is true then nil is returned."
   (let ((enriched (and (boundp 'enriched-mode) enriched-mode))
-	encoding charset description marker) ;; type params
+	encoding charset description marker flowed) ;; type params
     (narrow-to-region beg end)
+    ;; Mark the soft line breaks before the text is encoded or measured, and
+    ;; only for plain text: text/enriched carries its own line structure.
+    (when (and vm-send-using-flowed-text (not enriched))
+      (setq flowed (vm-mime-flow-region (point-min) (point-max))))
     ;; support enriched-mode for text/enriched composition
     (when enriched
       (let ((enriched-initial-annotation ""))
@@ -7428,14 +7614,16 @@ WHOLE-MESSAGE is true then nil is returned."
 	  (insert "MIME-Version: 1.0\n")
 	  (if enriched
 	      (insert "Content-Type: text/enriched; charset=" charset "\n")
-	    (insert "Content-Type: text/plain; charset=" charset "\n"))
+	    (insert "Content-Type: text/plain; charset=" charset
+		    (if flowed "; format=flowed" "") "\n"))
 	  (insert "Content-Transfer-Encoding: " encoding "\n")
 	  nil)
 
       (setq marker (point-marker))
       (if enriched
 	  (insert "Content-Type: text/enriched; charset=" charset "\n")
-	(insert "Content-Type: text/plain; charset=" charset "\n"))
+	(insert "Content-Type: text/plain; charset=" charset
+		(if flowed "; format=flowed" "") "\n"))
       (when description
 	(insert "Content-Description: " description "\n"))
       (insert "Content-Transfer-Encoding: " encoding "\n\n")

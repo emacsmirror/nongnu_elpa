@@ -1794,6 +1794,178 @@ presentation buffer runs over the headers it just copied in."
                    (buffer-substring-no-properties (vm-start-of m)
                                                    (vm-text-of m)))))))))
 
+;;; RFC 3676 format=flowed (issue #78)
+
+(defun vm-mime-test--unflow (text &optional delsp)
+  "Return TEXT with its soft line breaks joined."
+  (with-temp-buffer
+    (insert text)
+    (vm-mime-unflow-region (point-min) (point-max) delsp)
+    (buffer-string)))
+
+(defun vm-mime-test--flow (text &optional fill)
+  "Return (WIRE . FLOWED) for TEXT marked up as format=flowed."
+  (with-temp-buffer
+    (insert text)
+    (let* ((fill-column (or fill 70))
+           (flowed (vm-mime-flow-region (point-min) (point-max))))
+      (cons (buffer-string) flowed))))
+
+;;; receiving
+
+(ert-deftest vm-mime-test-flowed-joins-a-paragraph ()
+  "Lines ending in a space are joined; the paragraph break is not."
+  (should (equal "one two three\n\nnext\n"
+                 (vm-mime-test--unflow "one \ntwo \nthree\n\nnext\n"))))
+
+(ert-deftest vm-mime-test-flowed-keeps-hard-breaks ()
+  "A line that does not end in a space keeps its break."
+  (should (equal "one\ntwo\n" (vm-mime-test--unflow "one\ntwo\n"))))
+
+(ert-deftest vm-mime-test-flowed-joins-within-a-quote-depth ()
+  "Quoted text is joined, and still looks quoted afterwards."
+  (should (equal "> quoted and flowed continues here.\n"
+                 (vm-mime-test--unflow
+                  "> quoted and flowed \n> continues here.\n"))))
+
+(ert-deftest vm-mime-test-flowed-does-not-join-across-quote-depths ()
+  "A change of quote depth is a hard break however the line ends.
+Depth is part of what makes a paragraph, so text quoted twice is never run
+together with text quoted once."
+  (should (equal "> level one flowed \n>> level two.\n"
+                 (vm-mime-test--unflow "> level one flowed \n>> level two.\n"))))
+
+(ert-deftest vm-mime-test-flowed-removes-space-stuffing ()
+  "A space put in front of a line to protect it is taken off again."
+  (should (equal "stuffed line was flowed next.\n"
+                 (vm-mime-test--unflow " stuffed line was flowed \nnext.\n"))))
+
+(ert-deftest vm-mime-test-flowed-leaves-the-signature-separator-alone ()
+  "\"-- \" is neither joined to the text above nor to the signature below.
+It ends in a space, so it is a flowed line by the letter of RFC 3676, but
+section 4.3 asks for it to be left as a line of its own -- joining it would
+stop anything recognising the signature."
+  (should (equal "text before \n-- \nSignature\n"
+                 (vm-mime-test--unflow "text before \n-- \nSignature\n"))))
+
+(ert-deftest vm-mime-test-flowed-delsp-drops-the-space ()
+  "With delsp=yes the space at a soft break is part of the marking.
+That is how a language which does not put spaces between words uses flowed
+text; keeping the space would insert one into the middle of a word."
+  (should (equal "abcdef\n" (vm-mime-test--unflow "abc \ndef\n" t))))
+
+(ert-deftest vm-mime-test-flowed-layout-predicates ()
+  "The format and delsp parameters are recognised, and only when flowed."
+  (let ((flowed (vector '("text/plain" "charset=us-ascii" "format=flowed")))
+        (quoted (vector '("text/plain" "format=\"Flowed\"" "delsp=\"yes\"")))
+        (fixed (vector '("text/plain" "format=fixed")))
+        (plain (vector '("text/plain" "charset=us-ascii")))
+        (html (vector '("text/html" "format=flowed"))))
+    (should (vm-mime-flowed-layout-p flowed))
+    (should (vm-mime-flowed-layout-p quoted))
+    (should-not (vm-mime-flowed-layout-p fixed))
+    (should-not (vm-mime-flowed-layout-p plain))
+    ;; The format parameter means this only for plain text.
+    (should-not (vm-mime-flowed-layout-p html))
+    (should (vm-mime-delsp-layout-p quoted))
+    (should-not (vm-mime-delsp-layout-p flowed))))
+
+(ert-deftest vm-mime-test-flowed-can-be-switched-off ()
+  "With `vm-mime-unflow-flowed-text' nil, flowed text is shown as it arrived."
+  (let ((vm-mime-unflow-flowed-text nil))
+    (should-not (vm-mime-flowed-layout-p
+                 (vector '("text/plain" "format=flowed"))))))
+
+;;; sending
+
+(ert-deftest vm-mime-test-flow-marks-filled-lines ()
+  "A line filled out to the fill column is offered to the reader to re-wrap."
+  (let ((result (vm-mime-test--flow
+                 (concat "Emacs is an extensible, customizable, free/libre"
+                         " text editor and more,\n"
+                         "with a Lisp interpreter at its core.\n"))))
+    (should (cdr result))
+    (should (string-match-p "and more, \n" (car result)))
+    ;; The last line of the paragraph keeps its break.
+    (should (string-match-p "at its core\\.\n\\'" (car result)))))
+
+(ert-deftest vm-mime-test-flow-leaves-short-lines-alone ()
+  "Lines far short of the fill column were broken on purpose.
+An address block reflowed into a paragraph is worse than one that is not
+re-wrapped, so only lines that look filled are marked."
+  (let ((result (vm-mime-test--flow
+                 "Mark Diekhans\n1156 High Street\nSanta Cruz\n")))
+    (should-not (cdr result))
+    (should (equal "Mark Diekhans\n1156 High Street\nSanta Cruz\n"
+                   (car result)))))
+
+(ert-deftest vm-mime-test-flow-does-not-double-space-a-quote ()
+  "The space after the quote characters is the stuffing; no second one is added."
+  (let* ((text (concat "> Emacs is an extensible, customizable, free/libre"
+                       " text editor and\n"
+                       "> more, with a Lisp interpreter at its core.\n"))
+         (result (vm-mime-test--flow text)))
+    (should (cdr result))
+    (should-not (string-match-p ">  " (car result)))
+    ;; And it comes back as one quoted paragraph, still quoted once.
+    (should (equal (concat "> Emacs is an extensible, customizable, free/libre"
+                           " text editor and more, with a Lisp interpreter at"
+                           " its core.\n")
+                   (vm-mime-test--unflow (car result))))))
+
+(ert-deftest vm-mime-test-flow-stuffs-lines-that-need-it ()
+  "A line whose own text starts with a space or \"From \" is protected.
+A leading \">\" is taken as quoting rather than as text needing protection:
+nothing in a composition distinguishes the two, and in a reply it is quoting
+every time.  Such a line is normalised to \"> \", which is the spelling the
+reader will display either way."
+  (let ((result (vm-mime-test--flow " indented\n>literal angle\nFrom the top\n")))
+    (should (equal "  indented\n> literal angle\n From the top\n" (car result)))
+    ;; And the reader takes the protection off again.
+    (should (equal " indented\n> literal angle\nFrom the top\n"
+                   (vm-mime-test--unflow (car result))))))
+
+(ert-deftest vm-mime-test-flow-leaves-the-signature-separator-alone ()
+  "The signature separator is not given a soft break, and does not get one."
+  (let ((result (vm-mime-test--flow
+                 (concat "Some body text long enough to have been wrapped"
+                         " by the fill column.\n-- \nMark\n"))))
+    (should (string-match-p "\n-- \nMark\n" (car result)))))
+
+(ert-deftest vm-mime-test-flow-round-trips-the-words ()
+  "Flowing and unflowing preserves the words and the paragraph boundaries.
+Not the line breaks: undoing them is the whole point, and the reader re-wraps."
+  (let* ((text (concat "Emacs is an extensible, customizable, free/libre text"
+                       " editor and more,\nwith a Lisp interpreter at its"
+                       " core.\n\nSecond paragraph, which is short.\n"))
+         (wire (car (vm-mime-test--flow text)))
+         (back (vm-mime-test--unflow wire)))
+    (should (equal (split-string text "[ \n]+" t)
+                   (split-string back "[ \n]+" t)))
+    (should (= 2 (length (split-string back "\n\n" t))))))
+
+(ert-deftest vm-mime-test-flow-composition-declares-the-parameter ()
+  "Encoding a composition says format=flowed exactly when it flowed something."
+  (dolist (case '((t . "long") (t . "short") (nil . "long")))
+    (let ((vm-send-using-flowed-text (car case))
+          (long (equal (cdr case) "long")))
+      (with-temp-buffer
+        (mail-mode)
+        (insert "To: someone@example.com\n" mail-header-separator "\n")
+        (insert (if long
+                    (concat "Emacs is an extensible, customizable, free/libre"
+                            " text editor and more,\nwith a Lisp interpreter"
+                            " at its core.\n")
+                  "Short.\n"))
+        (let ((vm-send-using-mime t)
+              (fill-column 70))
+          (vm-mime-encode-composition))
+        (let ((text (buffer-string)))
+          (if (and (car case) long)
+              (should (string-match-p "Content-Type: text/plain;[^\n]*format=flowed"
+                                      text))
+            (should-not (string-match-p "format=flowed" text))))))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
