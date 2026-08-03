@@ -5031,12 +5031,24 @@ folder-access-data should be preserved."
   (when (not reload)
     (cond ((eq access-method 'pop)
 	   (setq vm-folder-access-method 'pop)
-	   (setq vm-folder-access-data 
+	   (setq vm-folder-access-data
 		 (make-vector vm-folder-pop-access-data-length nil)))
 	  ((eq access-method 'imap)
 	   (setq vm-folder-access-method 'imap)
-	   (setq vm-folder-access-data 
-		 (make-vector vm-folder-imap-access-data-length nil)))))
+	   (setq vm-folder-access-data
+		 (make-vector vm-folder-imap-access-data-length nil)))
+	  ((vm-cache-folder-name-p buffer-file-name)
+	   ;; A server folder's local cache, opened as though it were a folder
+	   ;; of its own -- by find-file, or by desktop.el restoring it, or by
+	   ;; recover-file outside vm-recover-file.  It reads correctly, which
+	   ;; is the trouble: it looks like the mailbox and is not connected to
+	   ;; it, so nothing here reaches the server and the next real session
+	   ;; will not see any of it.  Issue #425.
+	   (vm-warn 0 3 (concat "%s is the local cache of a server folder; "
+				"visit it with vm-visit-imap-folder or "
+				"vm-visit-pop-folder, or changes here will "
+				"be lost")
+		    (file-name-nondirectory buffer-file-name)))))
   (use-local-map vm-mode-map)
   ;; if the user saves after M-x recover-file, let them get new
   ;; mail again.

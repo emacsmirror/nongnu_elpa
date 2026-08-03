@@ -733,6 +733,20 @@ If HACK-ADDRESSES is t, then the strings are considered to be mail addresses,
 	(signal 'unrecognized-folder-type nil)
       (signal 'folder-empty nil))))
 
+(defconst vm-cache-folder-name-regexp "\\`\\(imap\\|pop\\)-cache-[0-9a-f]+\\'"
+  "Matches the name of a file VM uses as the local cache of a server folder.
+`vm-imap-make-filename-for-spec' and `vm-pop-make-filename-for-spec' build
+these names, from a prefix and the MD5 of the maildrop specification.")
+
+(defun vm-cache-folder-name-p (file)
+  "Return non-nil if FILE is VM's local cache of a POP or IMAP folder.
+Judged by the name, which is all there is to go on: the maildrop the cache
+belongs to is deliberately not recorded in it, so a cache folder cannot be
+reconnected to its server by reading it."
+  (and file
+       (string-match-p vm-cache-folder-name-regexp
+		       (file-name-nondirectory file))))
+
 (defun vm-copy (object)
   "Make a copy of OBJECT, which could be a list, vector, string or marker."
   (cond ((consp object)
