@@ -254,11 +254,20 @@ a POP server, find its cache file on the file system"
 		  ;; messages we've retrieved.  Delete the
 		  ;; message now.
 		  (vm-pop-send-command process (format "DELE %d" n))
-		  ;; DELE can't fail but Emacs or this code might
-		  ;; blow a gasket and spew filth down the
-		  ;; connection, so...
-		  (and (null (vm-pop-read-response process))
-		       (throw 'done (not (equal retrieved 0))))))
+		  ;; DELE can fail: RFC 1939 gives it a -ERR, and servers use
+		  ;; it -- a message already deleted, a maildrop lock lost
+		  ;; mid-session, a mailbox gone read-only.  Nothing is lost
+		  ;; when it does, since the message is still on the server
+		  ;; and a later session will fetch it, but the rest of this
+		  ;; maildrop is being abandoned and the caller is about to be
+		  ;; told the fetch succeeded.  Say so, as the expunge path
+		  ;; does in the same situation.
+		  (when (null (vm-pop-read-response process))
+		    (vm-warn 0 2
+			     (concat "DELE %d failed on %s, "
+				     "skipping rest of mailbox...")
+			     n popdrop)
+		    (throw 'done (not (equal retrieved 0))))))
 	      (vm-increment n))
 	     (not (equal retrieved 0)) ))
       (setq vm-pop-retrieved-messages pop-retrieved-messages)

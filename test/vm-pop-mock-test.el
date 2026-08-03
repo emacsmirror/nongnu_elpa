@@ -195,8 +195,7 @@ corruption, and it would look like a short message rather than an error."
 (ert-deftest vm-pop-mock-test-refused-delete-keeps-the-message ()
   "A refused DELE does not lose the message it could not delete.
 The message is still on the server, so a later session will fetch it: what
-must not happen is VM treating it as gone.  See also the note on #554 about
-what else a refused DELE currently does."
+must not happen is VM treating it as gone."
   (vm-pop-mock-test--retrieving (mock dest
 				 :refuse "\\`DELE"
 				 :messages (list vm-pop-mock-test--message-1
@@ -205,6 +204,27 @@ what else a refused DELE currently does."
     (should (vm-pop-mock-received-p mock "\\`DELE 1"))
     ;; Nothing was actually deleted, whatever VM was told.
     (should (equal '(1 2) (vm-pop-mock-live-messages mock)))))
+
+(ert-deftest vm-pop-mock-test-refused-delete-is-reported ()
+  "REGRESSION: a refused DELE is reported rather than passed over in silence.
+Issue #555.  DELE failing makes `vm-pop-move-mail' abandon the rest of the
+maildrop and return success -- message 2 here is never even fetched -- and it
+used to do that with nothing said, under a comment reading \"DELE can't
+fail\".  Nothing is lost, since the message is still on the server, but a fetch
+that stops after one of two messages and reports success has to say why."
+  (vm-pop-mock-test--retrieving (mock dest
+				 :refuse "\\`DELE"
+				 :messages (list vm-pop-mock-test--message-1
+						 vm-pop-mock-test--message-2))
+    (let ((warnings nil))
+      (cl-letf (((symbol-function 'vm-warn)
+		 (lambda (_level _delay format &rest args)
+		   (push (apply #'format format args) warnings))))
+	(vm-pop-move-mail (vm-pop-mock-spec mock) dest))
+      (should (cl-find-if (lambda (w) (string-match-p "DELE 1 failed" w))
+			  warnings))
+      ;; And the thing the warning is about: it did stop early.
+      (should-not (vm-pop-mock-received-p mock "\\`RETR 2")))))
 
 (ert-deftest vm-pop-mock-test-wrong-octet-count-is-survivable ()
   "A server that reports the wrong size still gets its message stored whole.
