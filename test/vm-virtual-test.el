@@ -400,6 +400,144 @@ It has multiple lines.
       (should (vm-vs-label msg "urgent"))
       (should-not (vm-vs-label msg "personal")))))
 
+
+;;; a virtual folder's own summary format (issue #107)
+
+(defun vm-virtual-test--write-folder (file n)
+  "Write a folder of N messages, each referencing the one before it, to FILE."
+  (with-temp-file file
+    (dotimes (i n)
+      (insert "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+              "From: alice@example.com\n"
+              (format "Subject: subject %d\n" i)
+              (format "Message-ID: <virt-%d@example.com>\n" i)
+              (if (> i 0)
+                  (format "References: <virt-%d@example.com>\n" (1- i))
+                "")
+              "\n"
+              (format "Body %d.\n\n" i)))))
+
+(defmacro vm-virtual-test--with-folders (spec &rest body)
+  "Visit a generated real folder and two virtual folders over it, run BODY.
+SPEC is (REAL-BUF-VAR VIRT-A-VAR VIRT-B-VAR &optional N).  Everything the visits
+created is killed afterwards."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-virtual" t)))
+          (file (expand-file-name "real-folder" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (before (buffer-list))
+          ,(car spec) ,(nth 1 spec) ,(nth 2 spec))
+     (require 'vm)
+     (unwind-protect
+         (progn
+           (vm-virtual-test--write-folder file ,(or (nth 3 spec) 3))
+           (setq vm-virtual-folder-alist
+                 (list (list "virt-a" (list (list file) '(any)))
+                       (list "virt-b" (list (list file) '(any)))))
+           (vm-visit-folder file)
+           (setq ,(car spec) (current-buffer))
+           (vm-visit-virtual-folder "virt-a")
+           (setq ,(nth 1 spec) (current-buffer))
+           (vm-visit-virtual-folder "virt-b")
+           (setq ,(nth 2 spec) (current-buffer))
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-virtual-test--summary (buffer)
+  "Return the text of BUFFER's summary."
+  (with-current-buffer buffer
+    (with-current-buffer vm-summary-buffer
+      (buffer-string))))
+
+(ert-deftest vm-virtual-test-summary-format-is-per-folder ()
+  "REGRESSION: a virtual folder summarizes with its own `vm-summary-format'.
+Issue #107.  `vm-summary-format' is buffer-local, but the cached summary line
+lives in the message's cached data, which a mirrored virtual message shares with
+its real message -- so whichever folder summarized first decided the line for all
+of them.  `vm-su-decoded-tokenized-summary' would only look at a virtual
+message's own summary slot when the message had no virtual mirrors, which for a
+mirrored virtual message is never: the mirror data it shares lists the virtual
+copies, itself among them.
+
+Two virtual folders over one real folder, each with its own format, is the case
+that cannot be faked by any amount of cache invalidation."
+  (vm-virtual-test--with-folders (real virt-a virt-b)
+    (with-current-buffer real
+      (setq-local vm-summary-format "REAL %s\n")
+      (vm-fix-my-summary))
+    (with-current-buffer virt-a
+      (setq-local vm-summary-format "AAA %s\n")
+      (vm-fix-my-summary))
+    (with-current-buffer virt-b
+      (setq-local vm-summary-format "BBB %s\n")
+      (vm-fix-my-summary))
+    (let ((sr (vm-virtual-test--summary real))
+          (sa (vm-virtual-test--summary virt-a))
+          (sb (vm-virtual-test--summary virt-b)))
+      (should (string-match-p "REAL subject 0" sr))
+      (should (string-match-p "AAA subject 0" sa))
+      (should (string-match-p "BBB subject 0" sb))
+      ;; And no folder is showing another's lines.
+      (should-not (string-match-p "AAA\\|BBB" sr))
+      (should-not (string-match-p "REAL\\|BBB" sa))
+      (should-not (string-match-p "REAL\\|AAA" sb)))))
+
+(ert-deftest vm-virtual-test-summary-stored-on-the-virtual-message ()
+  "A virtual message's summary line is kept on the virtual message.
+The representation behind the test above: the line belongs in the virtual
+message's own soft data, not in the cached data it shares with the real one."
+  (vm-virtual-test--with-folders (real virt-a virt-b)
+    (ignore virt-b)
+    (with-current-buffer virt-a
+      (setq-local vm-summary-format "AAA %s\n")
+      (vm-fix-my-summary)
+      (let* ((vm (car vm-message-list))
+             (rm (vm-real-message-of vm)))
+        (should (vm-virtual-message-p vm))
+        ;; The shared-cache condition that used to send this down the wrong
+        ;; branch still holds -- the fix is not to change the sharing.
+        (should (vm-virtual-messages-of vm))
+        (should (eq (vm-cached-data-of vm) (vm-cached-data-of rm)))
+        (should-not (eq (vm-softdata-of vm) (vm-softdata-of rm)))
+        ;; The summary is on the virtual message.
+        (should (vm-virtual-summary-of vm))))))
+
+(ert-deftest vm-virtual-test-summary-survives-folder-operations ()
+  "Virtual folder summaries survive the operations that broke this in 2012.
+This fix was made once before, in bzr rev 1430, and reverted in 1435 for
+\"causing errors for virtual folder summaries\".  The errors were not described,
+so these are the paths worth being sure of: an attribute change in the real
+folder, a deletion in a virtual folder, threading in a virtual folder,
+re-summarizing the real folder afterwards, and quitting the real folder with
+virtual folders open."
+  (vm-virtual-test--with-folders (real virt-a virt-b 4)
+    (with-current-buffer real
+      (vm-set-new-flag (car vm-message-list) nil)
+      (vm-update-summary-and-mode-line))
+    (with-current-buffer virt-a (vm-update-summary-and-mode-line))
+    (with-current-buffer virt-b (vm-update-summary-and-mode-line))
+    (with-current-buffer virt-a
+      (vm-delete-message 1)
+      (vm-update-summary-and-mode-line)
+      (let ((vm-summary-show-threads t))
+        (vm-build-threads vm-message-list)
+        (vm-do-summary))
+      (should (vm-virtual-test--summary virt-a)))
+    (with-current-buffer real
+      (vm-fix-my-summary)
+      (should (vm-virtual-test--summary real))
+      (let ((vm-confirm-quit nil))
+        (vm-quit-no-change)))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
