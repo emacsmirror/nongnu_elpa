@@ -601,6 +601,45 @@ prompt, this errored instead of returning the password."
       (delete-file file)
       (auth-source-forget-all-cached))))
 
+
+;;; naming a folder rather than its cache file (issue #547)
+
+(defconst vm-imap-test--spec
+  "imap:mail.example.com:143:INBOX:login:someone:secret"
+  "A maildrop specification, with an account nickname in the tests below.")
+
+(ert-deftest vm-imap-test-cache-file-for-folder-name ()
+  "REGRESSION: an IMAP folder can be named ACCOUNT:MAILBOX, not just by file.
+Issue #547.  A cache file is named after the MD5 of the maildrop
+specification -- imap-cache-d0c3b3a91bbebdf09dd2f78ab0f4c4cc -- so it cannot be
+recognised or typed from memory, which is what made `vm-recover-folder'
+unusable for a server folder.  The name resolved here is exactly the one
+`vm-imap-folder-for-spec' produces and the mode line shows."
+  (let* ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
+         (vm-imap-account-alist (list (list vm-imap-test--spec "myaccount")))
+         (cache (vm-imap-make-filename-for-spec vm-imap-test--spec)))
+    ;; the name a user sees for this folder ...
+    (should (equal "myaccount:INBOX"
+                   (vm-imap-folder-for-spec vm-imap-test--spec)))
+    ;; ... resolves to the file the folder is really cached in
+    (should (equal cache
+                   (vm-imap-cache-file-for-folder-name "myaccount:INBOX")))
+    ;; another mailbox on the same account is a different file
+    (should-not (equal cache
+                       (vm-imap-cache-file-for-folder-name "myaccount:Sent")))))
+
+(ert-deftest vm-imap-test-cache-file-for-folder-name-declines ()
+  "Anything that is not ACCOUNT:MAILBOX for a known account gives nil.
+The caller falls back to treating the answer as a file name, so guessing here
+would turn a mistyped file name into a wrong cache file."
+  (let ((vm-imap-folder-cache-directory "/tmp/vm-test-cache")
+        (vm-imap-account-alist (list (list vm-imap-test--spec "myaccount"))))
+    (dolist (name '("INBOX"                  ; no account part
+                    "/var/mail/someone"      ; a file
+                    "nosuchaccount:INBOX"    ; unknown account
+                    "myaccount:"))           ; no mailbox
+      (should-not (vm-imap-cache-file-for-folder-name name)))))
+
 (provide 'vm-imap-test)
 
 ;;; vm-imap-test.el ends here

@@ -379,6 +379,28 @@ format account:mailbox."
   (car (rassoc (list account) vm-imap-account-alist)))
 
 ;;;###autoload
+(defun vm-imap-cache-file-for-folder-name (name)
+  "Return the cache file of the IMAP folder NAME, or nil.
+NAME is ACCOUNT:MAILBOX, the form `vm-imap-folder-for-spec' produces and the
+one a user sees, and ACCOUNT must appear in `vm-imap-account-alist'.  Returns
+nil for anything else, so a caller can fall back to treating NAME as a file.
+
+A cache file is named after the MD5 of the maildrop specification, which is
+why one cannot be recognised or typed by hand -- see `vm-recover-folder'."
+  (when (string-match "\\`\\([^:]+\\):\\(.+\\)\\'" name)
+    (let* ((account (match-string 1 name))
+	   (mailbox (match-string 2 name))
+	   (spec (vm-imap-spec-for-account account)))
+      (when spec
+	(let ((comps (vm-imap-parse-spec-to-list spec)))
+	  ;; The mailbox is the fourth component.  Only the scheme, host,
+	  ;; mailbox and login survive `vm-imap-normalize-spec', so the file
+	  ;; this yields is the one the folder is really cached in.
+	  (setcar (nthcdr 3 comps) mailbox)
+	  (vm-imap-make-filename-for-spec
+	   (vm-imap-encode-list-to-spec comps)))))))
+
+;;;###autoload
 (defun vm-imap-parse-spec-to-list (spec)
   "Parses the IMAP maildrop specification SPEC and returns a list of
 its components."
