@@ -424,6 +424,10 @@ freshly parsing the message contents."
 	     (vm-mime-layout-of m))))
 
 (defun vm-mm-encoded-header (m)
+  "Return non-nil if M's headers need decoding before they can be displayed.
+The symbol `none' means they do not.  Encoded words need it, and so does raw
+8-bit text, which is legal under RFC 6532 and sent regardless; see
+`vm-decode-8bit-text'."
   (or (vm-mime-encoded-header-flag-of m)
       (progn (setq m (vm-real-message-of m))
 	     (vm-set-mime-encoded-header-flag-of
@@ -436,6 +440,11 @@ freshly parsing the message contents."
 		    (let ((case-fold-search t))
 		      (or (re-search-forward vm-mime-encoded-word-regexp
 					     (vm-text-of m) t)
+			  (and vm-mime-8bit-header-charsets
+			       (progn
+				 (goto-char (vm-headers-of m))
+				 (re-search-forward "[\200-\377]"
+						    (vm-text-of m) t)))
 			  'none))))))
 	     (vm-mime-encoded-header-flag-of m))))
 
@@ -694,13 +703,80 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
       (vm-error-free-call 'delete-file tempfile)))
   (vm-emit-mime-decoding-message "Decoding uuencoded stuff... done"))
 
+;;; Raw 8-bit header text -- RFC 6532, and mail that predates it
+;;
+;; A folder buffer holds bytes: VM reads it as raw text so that positions and
+;; MIME decoding work on the message as it arrived.  Header text is therefore
+;; ASCII plus whatever bytes the sender put there, and RFC 2047 encoded words
+;; are decoded from that.  Text that is simply 8-bit -- legal under RFC 6532,
+;; and sent regardless of any RFC for decades -- carries no character set of
+;; its own, so it has to be guessed.  See `vm-mime-8bit-header-charsets'.
+
+(defun vm-decode-8bit-text (string)
+  "Return STRING with raw 8-bit bytes decoded into characters.
+The coding systems in `vm-mime-8bit-header-charsets' are tried in order and
+the first one that leaves no undecodable byte behind wins.  STRING is
+returned unchanged if it holds no raw bytes, if none of the coding systems
+accounts for all of them, or if it cannot be handled as bytes at all -- text
+that is already decoded is never decoded twice."
+  (let ((bytes (cond ((not (multibyte-string-p string)) string)
+		     ;; A run taken from a multibyte buffer: only raw bytes
+		     ;; and ASCII can be turned back into bytes.  Anything
+		     ;; else has been decoded already.
+		     ((memq 'eight-bit (find-charset-string string))
+		      (condition-case nil
+			  (string-to-unibyte string)
+			(error nil))))))
+    (if (or (null bytes) (not (string-match-p "[\200-\377]" bytes)))
+	string
+      (let ((charsets vm-mime-8bit-header-charsets)
+	    (result nil)
+	    coding try)
+	(while (and charsets (null result))
+	  (setq coding (car charsets)
+		charsets (cdr charsets))
+	  (when (vm-coding-system-p coding)
+	    (setq try (decode-coding-string bytes coding))
+	    (unless (memq 'eight-bit (find-charset-string try))
+	      (setq result try))))
+	(or result string)))))
+
+(defun vm-decode-8bit-text-region (start end)
+  "Decode raw 8-bit bytes between START and END into characters.
+Each run of bytes is decoded on its own, so text that was already decoded --
+by `vm-decode-mime-encoded-words', which runs first and may have put real
+characters in the same header -- is left alone."
+  (when vm-mime-8bit-header-charsets
+    (save-excursion
+      (let ((end-marker (copy-marker end t))
+	    (buffer-read-only nil)
+	    (inhibit-read-only t)
+	    raw decoded)
+	(goto-char start)
+	;; In a multibyte buffer this finds the eight-bit characters that
+	;; undecodable bytes become; in a unibyte one, the bytes themselves.
+	(while (re-search-forward "[\200-\377]+" end-marker t)
+	  (setq raw (match-string-no-properties 0)
+		decoded (vm-decode-8bit-text raw))
+	  (unless (equal raw decoded)
+	    (delete-region (match-beginning 0) (match-end 0))
+	    (insert decoded)))
+	(set-marker end-marker nil)))))
+
 (defun vm-decode-mime-message-headers (&optional m)
-  (vm-decode-mime-encoded-words 
-   ;; the starting point with null m is (point) to match the
-   ;; previous duplicated code here. Not sure whether it's
-   ;; necessary. JCB, 2011-01-03
-   (if m (vm-headers-of m) (point))
-   (if m (vm-text-of m) (point-max))))
+  ;; The end is held as a marker because decoding shortens the text it
+  ;; decodes, so a position taken before the first pass is too far along for
+  ;; the second one.
+  (let ((start (if m (vm-headers-of m) (point)))
+	(end (copy-marker (if m (vm-text-of m) (point-max)) t)))
+    (unwind-protect
+	;; Encoded words first: they state their own character set, so they
+	;; are not a guess, and decoding them can leave real characters in
+	;; the same header as bytes that still need one.
+	(progn
+	  (vm-decode-mime-encoded-words start end)
+	  (vm-decode-8bit-text-region start end))
+      (set-marker end nil))))
 
 ;; optional argument rstart and rend delimit the region in
 ;; which to decode
@@ -750,11 +826,33 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
 	  (setq previous-end end)
 	  (delete-region match-start start))))))
 
+(defun vm-decode-header-text-in-buffer ()
+  "Decode the header text in the current buffer for display.
+Both passes, in the order that matters: RFC 2047 encoded words, which state
+their own character set, and then whatever raw 8-bit text is left, which does
+not and has to be guessed at."
+  (vm-decode-mime-encoded-words)
+  (vm-decode-8bit-text-region (point-min) (point-max)))
+
 (defun vm-decode-mime-encoded-words-in-string (string)
-  (if (and vm-display-using-mime
-	   (let ((case-fold-search t))
-	     (string-match vm-mime-encoded-word-regexp string)))
-      (vm-with-string-as-temp-buffer string 'vm-decode-mime-encoded-words)
+  "Return STRING with its header text decoded for display.
+RFC 2047 encoded words are decoded, and so is text that is simply raw 8-bit;
+see `vm-decode-8bit-text'.  Both are needed here rather than only the first,
+because this is what the summary lines and the composition headers are built
+from, and a folder buffer holds the bytes of the message as it arrived.
+
+The work happens in a buffer rather than on the string, so that a header
+holding both an encoded word and raw 8-bit text gets each run treated on its
+own -- once the encoded word is decoded the string holds real characters and
+raw bytes together, and there is no one character set for the whole of it."
+  (if (or (and vm-display-using-mime
+	       (let ((case-fold-search t))
+		 (string-match vm-mime-encoded-word-regexp string)))
+	  (and vm-mime-8bit-header-charsets
+	       ;; Matches raw bytes only; a character that has already been
+	       ;; decoded does not match, so decoded text takes this exit.
+	       (string-match-p "[\200-\377]" string)))
+      (vm-with-string-as-temp-buffer string 'vm-decode-header-text-in-buffer)
     string ))
 
 (defun vm-reencode-mime-absorb-separating-whitespace ()

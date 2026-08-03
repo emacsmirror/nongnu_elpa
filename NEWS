@@ -63,6 +63,16 @@ VM 8.?.?
     is named after.  The MS-Windows set is not used elsewhere because it
     must include ":", which would turn every "Re:" into "Re_".  Set the
     variable to "[^ a-zA-Z0-9.,_\"'+-]" for the old behaviour.
+  * Header text that arrives as raw 8-bit bytes is now shown as text rather
+    than as octets, in the summary and in the message itself.  RFC 5322
+    allows only ASCII in a header and RFC 2047 provides encoded words for
+    anything else, but mail carrying 8-bit headers has always existed and
+    RFC 6532 now makes UTF-8 legal there.  Such text says nothing about its
+    own character set, so VM guesses: the new variable
+    `vm-mime-8bit-header-charsets' lists the coding systems to try, in order,
+    defaulting to UTF-8 and then ISO-8859-1.  Set it to nil for the old
+    behaviour of leaving the bytes alone.  Only the display is affected --
+    the folder on disk keeps the bytes exactly as they arrived.
   * MIME parameters with international characters are now understood and
     generated, following RFC 2231.  An attachment sent by a current mail
     client with a name like "räksmörgås.txt" arrives with a parameter

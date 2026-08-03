@@ -1319,6 +1319,21 @@ you use such systems."
   :group 'vm-mime
   :type 'boolean)
 
+(defcustom vm-mime-8bit-header-charsets '(utf-8 iso-8859-1)
+  "*Coding systems to try on header text that arrives as raw 8-bit bytes.
+RFC 5322 allows only ASCII in a header and RFC 2047 provides encoded words
+for everything else, but plenty of mail carries 8-bit header text anyway,
+and RFC 6532 makes UTF-8 legal there.  Such text says nothing about its own
+character set, so VM tries these coding systems in order and takes the first
+that decodes the whole of the text.
+
+The order matters: UTF-8 first, because a byte sequence that is valid UTF-8
+is almost never anything else, and a single-byte encoding after it, since
+that cannot fail and so nothing is left undecoded.  Set this to nil to leave
+raw 8-bit header text exactly as it arrives, which is what VM did before."
+  :group 'vm-mime
+  :type '(repeat coding-system))
+
 (defcustom vm-mime-require-mime-version-header nil
   "*Non-nil means a message must contain MIME-Version to be considered MIME.
 The MIME standard requires that MIME messages contain a MIME-Version,

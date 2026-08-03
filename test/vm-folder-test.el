@@ -736,6 +736,153 @@ Body
       (dotimes (_ 5) (vm-unregister-fetched-message m))
       (should (= vm-fetched-message-count 0)))))
 
+;;; 8-bit headers must not damage the folder (issues #11, #368)
+
+(defconst vm-folder-test--8bit-folder-text
+  (concat "From rene@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: René Müller <rene@example.com>\n"
+          "To: vm@example.com\n"
+          "Subject: Grüße aus München\n"
+          "Date: Mon, 01 Jan 2024 00:00:00 +0000\n"
+          "Message-ID: <utf8-1@example.com>\n"
+          "\n"
+          "Körper des Briefes.\n\n")
+  "A message whose headers hold raw 8-bit text, as RFC 6532 permits.")
+
+(defun vm-folder-test--write-8bit-folder (file &optional coding)
+  "Write `vm-folder-test--8bit-folder-text' to FILE in CODING, default UTF-8.
+Written as bytes, which is what a folder on disk is."
+  (let ((coding-system-for-write 'binary))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert (encode-coding-string vm-folder-test--8bit-folder-text
+                                    (or coding 'utf-8)))
+      (write-region (point-min) (point-max) file nil 'quiet))))
+
+(defmacro vm-folder-test--with-visited-folder (file &rest body)
+  "Visit FILE as a VM folder, run BODY in it, then leave nothing behind.
+Every buffer the visit created is killed, unmodified, on the way out: a folder
+buffer left alive is global state, and the next test to visit a folder walks
+into it."
+  (declare (indent 1) (debug t))
+  ;; Menus are left switched on: with `vm-use-menus' nil the visit skips
+  ;; `vm-menu-initialize-vm-mode-menu-map', which is what defines the
+  ;; vm-menu-fsfemacs-*-menu variables, and the next test in the same Emacs
+  ;; to build a presentation buffer then reads one of them unbound.
+  `(let ((vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (before (buffer-list)))
+     (unwind-protect
+         (progn
+           (vm-visit-folder ,file)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (with-current-buffer buffer
+             (set-buffer-modified-p nil))
+           (kill-buffer buffer))))))
+
+(defun vm-folder-test--file-bytes (file)
+  "Return the contents of FILE as a unibyte string."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (let ((coding-system-for-read 'binary))
+      (insert-file-contents-literally file))
+    (buffer-string)))
+
+(ert-deftest vm-folder-test-8bit-headers-visit-and-summarize ()
+  "A folder with raw 8-bit headers is readable, and its summary is legible.
+Issue #11 reported that such a folder broke VM and had to be cleaned up with
+another mail reader; issue #368 is the same text being legal under RFC 6532.
+The bytes reach the summary as characters rather than as octets."
+  (let* ((vm-use-menus nil)
+         (dir (file-name-as-directory (make-temp-file "vm-8bit" t)))
+         (file (expand-file-name "folder" dir)))
+    (require 'vm)
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-8bit-folder file)
+          (vm-folder-test--with-visited-folder file
+            (should (= 1 (length vm-message-list)))
+            (let ((m (car vm-message-list)))
+              (should (equal "Grüße aus München" (vm-su-subject m)))
+              (should (equal "René Müller" (vm-su-full-name m))))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-8bit-headers-survive-a-save ()
+  "Visiting and saving a folder with 8-bit headers leaves its bytes alone.
+The decoding that makes such headers legible is for display only.  If it
+reached the folder buffer, saving would rewrite the file in some other
+encoding -- which is the corruption issue #11 complained about, only caused
+by VM rather than avoided by it."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-8bit" t)))
+         (file (expand-file-name "folder" dir))
+         (raw-subject (decode-coding-string
+                       (encode-coding-string "Subject: Grüße aus München"
+                                             'utf-8)
+                       'binary)))
+    (require 'vm)
+    (unwind-protect
+        (let ((before (progn (vm-folder-test--write-8bit-folder file)
+                             (vm-folder-test--file-bytes file))))
+          (vm-folder-test--with-visited-folder file
+            ;; Read the message the way a user does: summary line, then a
+            ;; presentation copy with its headers decoded.
+            (let ((m (car vm-message-list)))
+              (vm-su-subject m)
+              (should-not (eq 'none (vm-mm-encoded-header m)))
+              (vm-make-presentation-copy m)
+              (with-current-buffer vm-presentation-buffer
+                (vm-decode-mime-message-headers (car vm-message-pointer))
+                ;; The display shows it as text ...
+                (should (string-match-p "Subject: Grüße aus München"
+                                        (buffer-string)))))
+            ;; ... while the folder buffer still holds the bytes.
+            (save-restriction
+              (widen)
+              (should (string-match-p (regexp-quote raw-subject)
+                                      (buffer-string))))
+            (vm-save-folder))
+          (let ((after (vm-folder-test--file-bytes file)))
+            ;; VM adds its own X-VM- bookkeeping headers on the first save, so
+            ;; the file legitimately grows; what must not change is the
+            ;; sender's own text.
+            (should (string-match-p
+                     (regexp-quote
+                      (encode-coding-string "Subject: Grüße aus München"
+                                            'utf-8))
+                     after))
+            (should (string-match-p
+                     (regexp-quote
+                      (encode-coding-string "Körper des Briefes." 'utf-8))
+                     after))
+            ;; And nothing was re-encoded into some other set of bytes.
+            (should-not (string-match-p
+                         (regexp-quote
+                          (encode-coding-string "Grüße" 'iso-8859-1))
+                         after))
+            (should (>= (length after) (length before)))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-8bit-latin-1-headers-are-legible ()
+  "Headers in a single-byte encoding are shown as text too.
+There is no character set stated anywhere for them, so this is a guess, but
+it is a better guess than showing the octets."
+  (let* ((vm-use-menus nil)
+         (dir (file-name-as-directory (make-temp-file "vm-8bit" t)))
+         (file (expand-file-name "folder" dir)))
+    (require 'vm)
+    (unwind-protect
+        (progn
+          (vm-folder-test--write-8bit-folder file 'iso-8859-1)
+          (vm-folder-test--with-visited-folder file
+            (should (equal "Grüße aus München"
+                           (vm-su-subject (car vm-message-list))))))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
