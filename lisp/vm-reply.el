@@ -1684,8 +1684,33 @@ address is used."
       (vm-get-header-contents (car vm-message-pointer) "From:"))))
 
 
+(defun vm-mail-mode-parent-keymap ()
+  "Give `vm-mail-mode-map' the bindings of `mail-mode-map' as well.
+VM's composition keymap holds only VM's own bindings, and Mail mode's have to
+remain reachable behind them.
+
+This used to be done with
+
+    (nconc vm-mail-mode-map mail-mode-map)
+
+on GNU Emacs, `set-keymap-parents' being XEmacs's.  That works, in that
+`keymap-parent' afterwards is `mail-mode-map' -- the splice makes VM's keymap
+literally end in it -- but it is destructive, and doing it a second time walks
+to the end of the spliced list, which is now inside `mail-mode-map', and points
+that cell back at `mail-mode-map' itself.  A circular keymap: `lookup-key' on it
+does not return, and Emacs dies of a stack overflow.  Nothing but a global flag
+stood between VM and corrupting one of Emacs's own keymaps.
+
+`set-keymap-parent' does the same job without touching the parent, and, being
+what parenting actually means, can be repeated harmlessly.  It has been in GNU
+Emacs throughout the range of versions VM supports."
+  (cond ((fboundp 'set-keymap-parents)   ; XEmacs
+         (set-keymap-parents vm-mail-mode-map (list mail-mode-map)))
+        (t
+         (set-keymap-parent vm-mail-mode-map mail-mode-map))))
+
 ;;;###autoload
-(cl-defun vm-mail-internal (&key buffer-name to guessed-to subject 
+(cl-defun vm-mail-internal (&key buffer-name to guessed-to subject
 			       in-reply-to cc references newsgroups)
     "Create a message buffer and set it up according to args.
 Fills in the headers as given by the arguments.
@@ -1714,15 +1739,7 @@ Binds the `vm-mail-mode-map' and hooks"
     (when vm-send-using-mime
       (vm-mail-mode-remove-tm-hooks))
     (use-local-map vm-mail-mode-map)
-    ;; make mail-mode-map the parent of this vm-mail-mode-map, if we can.
-    ;; do it only once.
-    (unless vm-mail-mode-map-parented
-      (cond ((fboundp 'set-keymap-parents)
-	     (set-keymap-parents vm-mail-mode-map (list mail-mode-map))
-	     (setq vm-mail-mode-map-parented t))
-	    ((consp mail-mode-map)
-	     (nconc vm-mail-mode-map mail-mode-map)
-	     (setq vm-mail-mode-map-parented t))))
+    (vm-mail-mode-parent-keymap)
     (when (boundp 'dnd-protocol-alist)
       (set (make-local-variable 'dnd-protocol-alist)
 	   (append vm-dnd-protocol-alist dnd-protocol-alist)))

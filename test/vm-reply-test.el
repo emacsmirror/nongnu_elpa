@@ -472,6 +472,51 @@ Without this, the fix above could pass by never looking at the sender at all."
                               (or (vm-select-recipient-from-sender-if-possible)
                                   ""))))))
 
+
+;;; parenting the composition keymap (issue #560)
+
+(ert-deftest vm-reply-test-parenting-the-mail-keymap-is-repeatable ()
+  "REGRESSION: giving `vm-mail-mode-map' its parent twice is harmless.
+Issue #560: on GNU Emacs this was done with `(nconc vm-mail-mode-map
+mail-mode-map)\', which splices Mail mode\'s keymap onto the end of VM\'s.
+`keymap-parent\' then answers `mail-mode-map\', so it looks like parenting, but a
+second call walks to the end of the spliced list -- which is now inside
+`mail-mode-map\' -- and points that cell back at `mail-mode-map\'.  The keymap is
+then circular, `lookup-key\' on it does not return, and Emacs dies of a stack
+overflow.  A global flag was all that kept it to one call.
+
+Checked here on keymaps of our own, because the failure this guards against is
+Emacs crashing, and a test may not do that: it has to be able to report."
+  (require 'vm)
+  (let* ((mail-mode-map (make-sparse-keymap))
+         (vm-mail-mode-map (make-sparse-keymap)))
+    (define-key mail-mode-map "\C-c\C-q" 'from-the-parent)
+    (define-key vm-mail-mode-map "\C-c\C-v" 'from-vm)
+    (vm-mail-mode-parent-keymap)
+    (vm-mail-mode-parent-keymap)
+    ;; Neither keymap is a circular list.  `proper-list-p' answers nil for one,
+    ;; and unlike `lookup-key' it returns either way.
+    (should (proper-list-p vm-mail-mode-map))
+    (should (proper-list-p mail-mode-map))
+    ;; and the parenting did its job
+    (should (eq mail-mode-map (keymap-parent vm-mail-mode-map)))
+    (should (eq 'from-vm (lookup-key vm-mail-mode-map "\C-c\C-v")))
+    (should (eq 'from-the-parent (lookup-key vm-mail-mode-map "\C-c\C-q")))
+    ;; VM's own binding is not written into Mail mode's keymap
+    (should-not (lookup-key mail-mode-map "\C-c\C-v"))))
+
+(ert-deftest vm-reply-test-composing-parents-the-mail-keymap ()
+  "Composing a message leaves Mail mode's bindings reachable.
+The control for the test above, through the real keymaps: whatever the
+mechanism, `C-c C-q' has to keep coming from Mail mode once VM has installed
+its own map."
+  (vm-reply-test--in-folder (vm-reply-test--one-message)
+    (vm-mail-from-folder)
+    (should (eq major-mode 'mail-mode))
+    (should (eq mail-mode-map (keymap-parent vm-mail-mode-map)))
+    (should (proper-list-p mail-mode-map))
+    (should (commandp (lookup-key vm-mail-mode-map "\C-c\C-q")))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
