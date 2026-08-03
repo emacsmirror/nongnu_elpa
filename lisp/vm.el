@@ -1260,7 +1260,12 @@ current message is selected as the recipient of the new composition."
   
   (interactive)
   (vm-session-initialization)
-  (vm-select-folder-buffer-and-validate 1)
+  ;; No message needed: this composes a new message, and the current message is
+  ;; only wanted as a parent if there is one.  Demanding one meant that `m' in
+  ;; an empty folder answered "Folder is empty" and composed nothing, which is
+  ;; issue #514 -- an IMAP inbox with no mail in it is the ordinary way to meet
+  ;; that.
+  (vm-select-folder-buffer-and-validate 0)
   (let* ((guess (vm-select-recipient-from-sender-if-possible)))
     (vm-mail-internal :to nil :guessed-to guess :subject subject)
     (run-hooks 'vm-mail-hook)
