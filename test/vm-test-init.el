@@ -421,6 +421,125 @@ CATEGORY and FILENAME specify the fixture to load."
                         (looking-at "[ \t]"))))
           (buffer-substring-no-properties start (1- (point))))))))
 
+;;; Test isolation
+
+;; VM keeps much of its state in global variables -- the session flags, the
+;; password caches, the folder history, the compiled summary format cache --
+;; and a test that drives a real command sets them, exactly as a running VM
+;; would.  Whatever a test leaves behind is then the starting state of every
+;; test after it, so a test can pass under `make test-one' and fail in `make
+;; test' for a reason that appears in neither test.  That is issue #559, and it
+;; had already cost one test: the end-to-end half of #514 was dropped because
+;; of it.
+;;
+;; The alternative -- each test binding what it might touch -- needs the author
+;; to know everything the code under test reaches, and goes quietly out of date
+;; as VM changes.  So instead every test runs with the global default of every
+;; VM variable saved beforehand and put back afterwards, whether the test
+;; thought about it or not.
+
+(defvar vm-test-isolate-global-state t
+  "When non-nil, undo a test's effect on global state when it finishes.
+That means the global value of VM's variables, and the buffers the test
+created.  Set to nil to see the suite as it behaves without isolation, which
+is how issue #559 was diagnosed.")
+
+(defvar vm-test-isolation-exceptions
+  '(;; Sequences, not settings: these hand out values that must never be
+    ;; handed out twice, so winding them back would make two live objects
+    ;; share an identity -- the very kind of cross-test interference the
+    ;; rest of this is here to prevent.
+    vm-message-id-number
+    vm-imap-live--mailbox-counter
+    vm-pop-live--id-counter
+    ;; The isolation's own bookkeeping.
+    vm-test--isolated-variables
+    vm-test--isolated-variables-features)
+  "VM variables whose value must survive from one test to the next.")
+
+(defvar vm-test--isolated-variables nil
+  "Cached list of VM variables to save and restore.")
+
+(defvar vm-test--isolated-variables-features nil
+  "Value of `features' when `vm-test--isolated-variables' was computed.")
+
+(defun vm-test-isolated-variables ()
+  "Return the VM variables whose global value is saved around each test.
+Recomputed when a new module has been loaded, since that is when new
+variables come into existence; scanning the obarray for every test would
+cost more than the tests do."
+  (unless (eq features vm-test--isolated-variables-features)
+    (setq vm-test--isolated-variables-features features)
+    (setq vm-test--isolated-variables nil)
+    (mapatoms
+     (lambda (symbol)
+       (when (and (boundp symbol)
+                  (not (keywordp symbol))
+                  (string-prefix-p "vm-" (symbol-name symbol))
+                  (not (memq symbol vm-test-isolation-exceptions)))
+         (push symbol vm-test--isolated-variables)))))
+  vm-test--isolated-variables)
+
+(defun vm-test-snapshot-global-state ()
+  "Return the current global value of every variable to be isolated."
+  (let ((state nil))
+    (dolist (symbol (vm-test-isolated-variables))
+      ;; A variable can be special but have no default value -- `defvar' with
+      ;; no value, or a buffer-local-only variable -- and asking for one then
+      ;; signals rather than returning nil.
+      (condition-case nil
+          (push (cons symbol (default-value symbol)) state)
+        (error nil)))
+    state))
+
+(defun vm-test-restore-global-state (state)
+  "Put back the global values recorded by `vm-test-snapshot-global-state'."
+  (dolist (entry state)
+    ;; Only where it actually differs: assigning a default that was already
+    ;; correct is not harmless for a variable that has none, since it would
+    ;; give it one.
+    (unless (condition-case nil
+                (eq (default-value (car entry)) (cdr entry))
+              (error nil))
+      (condition-case nil
+          (set-default (car entry) (cdr entry))
+        (error nil)))))
+
+(defun vm-test-kill-new-buffers (buffers)
+  "Kill every live buffer that is not in BUFFERS.
+A folder buffer outlives its test just as readily as a variable does, and it
+carries a whole folder's worth of buffer-local state plus a name that the next
+test's `get-buffer' will find.  Session buffers are the common case, since VM
+keeps them for reuse and the variable holding them has just been wound back."
+  (dolist (buffer (buffer-list))
+    (unless (memq buffer buffers)
+      (when (buffer-live-p buffer)
+        (let ((process (get-buffer-process buffer)))
+          (when process
+            ;; Killing a buffer whose process is still live asks for
+            ;; confirmation, and a question in batch reads stdin.
+            (set-process-query-on-exit-flag process nil)
+            (ignore-errors (delete-process process))))
+        (with-current-buffer buffer
+          (set-buffer-modified-p nil)
+          ;; `vm-postpone' offers to save a composition as a draft from
+          ;; `kill-buffer-hook', which is another question.
+          (setq kill-buffer-hook nil))
+        (ignore-errors (kill-buffer buffer))))))
+
+(defun vm-test-run-test-isolated (run-test test)
+  "Run TEST through RUN-TEST, then undo its effect on global state."
+  (if (not vm-test-isolate-global-state)
+      (funcall run-test test)
+    (let ((state (vm-test-snapshot-global-state))
+          (buffers (buffer-list)))
+      (unwind-protect
+          (funcall run-test test)
+        (vm-test-restore-global-state state)
+        (vm-test-kill-new-buffers buffers)))))
+
+(advice-add 'ert-run-test :around #'vm-test-run-test-isolated)
+
 ;;; Test file discovery
 
 (defun vm-test-discover-test-files ()

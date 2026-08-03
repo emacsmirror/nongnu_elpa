@@ -15,12 +15,14 @@ TEST_RUNNER = run-tests.el
 COVERAGE_RUNNER = coverage-report.el
 IMAP_RUNNER = run-imap-tests.el
 POP_RUNNER = run-pop-tests.el
+LEAK_REPORT = leak-report.el
 
 ##############################################################################
 # Test targets
 ##############################################################################
 
-.PHONY: test test-coverage test-verbose test-one test-imap test-pop compile-lisp
+.PHONY: test test-coverage test-verbose test-one test-imap test-pop test-leaks \
+	compile-lisp
 
 # Byte-compile the lisp first, so the tests exercise the compiled code
 # that users actually load.  It is not the same code: macros and
@@ -47,6 +49,14 @@ test-imap: compile-lisp
 # live ones want a POP server in test/vm-live-config.el and skip without one.
 test-pop: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(POP_RUNNER)
+
+# Report which tests leave VM's global variables or stray buffers behind.
+# vm-test-init.el puts both back after every test, so this is not a way the
+# suite fails -- it is how to see what a fixture is not cleaning up, and what
+# the suite would depend on the order of if it were not for the isolation.
+# See issue #559.
+test-leaks: compile-lisp
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(LEAK_REPORT)
 
 # Run tests with coverage collection
 test-coverage: compile-lisp
