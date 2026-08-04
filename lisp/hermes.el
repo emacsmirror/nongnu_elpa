@@ -42,6 +42,7 @@
 (require 'hermes-profiles)
 (require 'hermes-kanban)
 (require 'hermes-mcp)
+(require 'hermes-config)
 (require 'hermes-browser)
 (require 'hermes-onboarding)
 
@@ -150,6 +151,7 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "C" ("Cron jobs" hermes-list-crons)
   "K" ("Kanban" hermes-list-kanban)
   "X" ("MCP servers" hermes-list-mcp)
+  "Z" ("Configuration" hermes-config)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
