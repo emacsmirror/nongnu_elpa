@@ -118,6 +118,14 @@ VM 8.?.?
     that same notation instead of putting the name in the header verbatim.
     Where a sender supplies both an international parameter and a plain
     ASCII one, the international one is used, that being the real name.
+  * Personality Crisis no longer switches itself on when it is loaded, as
+    vm-biff no longer does.  Loading vm-pcrisis.el installed seven pieces of
+    advice on VM's composition commands, so merely having the file loaded changed
+    how replying, forwarding, resending and starting a message behaved -- whether
+    or not any pcrisis rule had been set up, and with no way to turn it off.  Use
+    `(vmpc-mode 1)' instead of `(require \='vm-pcrisis)'; the mode is autoloaded,
+    so no require is needed, and `(vmpc-mode -1)' switches it off again.  An init
+    file that says only `(require \='vm-pcrisis)' will need the mode line added.
   * New hook `vm-startup-hook', run once when VM starts up -- at the end of
     `vm-session-initialization', the first time a VM command is used in an Emacs
     session.  VM had no such hook, which is the gap that produced the odd

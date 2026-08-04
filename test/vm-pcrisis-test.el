@@ -788,25 +788,40 @@
 
 ;;; Advice tests
 
+(defmacro vm-pcrisis-test-with-mode (&rest body)
+  "Run BODY with `vmpc-mode\=' on, restoring it afterwards.
+Since #561 the advice is installed by the mode rather than by loading the file,
+so a test about the advice has to switch it on."
+  (declare (indent 0) (debug t))
+  `(let ((was vmpc-mode))
+     (unwind-protect
+         (progn (vmpc-mode 1) ,@body)
+       (vmpc-mode (if was 1 -1)))))
+
 (ert-deftest vm-pcrisis-test-advice-reply-exists ()
-  "Test that reply advice is installed."
-  (should (advice-member-p #'vmpc--reply 'vm-do-reply)))
+  "Test that reply advice is installed when the mode is on."
+  (vm-pcrisis-test-with-mode
+    (should (advice-member-p #'vmpc--reply 'vm-do-reply))))
 
 (ert-deftest vm-pcrisis-test-advice-mail-exists ()
-  "Test that mail advice is installed."
-  (should (advice-member-p #'vmpc--mail 'vm-mail-from-folder)))
+  "Test that mail advice is installed when the mode is on."
+  (vm-pcrisis-test-with-mode
+    (should (advice-member-p #'vmpc--mail 'vm-mail-from-folder))))
 
 (ert-deftest vm-pcrisis-test-advice-newmail-exists ()
-  "Test that newmail advice is installed."
-  (should (advice-member-p #'vmpc--newmail 'vm-mail)))
+  "Test that newmail advice is installed when the mode is on."
+  (vm-pcrisis-test-with-mode
+    (should (advice-member-p #'vmpc--newmail 'vm-mail))))
 
 (ert-deftest vm-pcrisis-test-advice-forward-exists ()
-  "Test that forward advice is installed."
-  (should (advice-member-p #'vmpc--forward 'vm-forward-message)))
+  "Test that forward advice is installed when the mode is on."
+  (vm-pcrisis-test-with-mode
+    (should (advice-member-p #'vmpc--forward 'vm-forward-message))))
 
 (ert-deftest vm-pcrisis-test-advice-resend-exists ()
-  "Test that resend advice is installed."
-  (should (advice-member-p #'vmpc--resend 'vm-resend-message)))
+  "Test that resend advice is installed when the mode is on."
+  (vm-pcrisis-test-with-mode
+    (should (advice-member-p #'vmpc--resend 'vm-resend-message))))
 
 ;;; Rule dispatch per composition state (issue #451)
 ;;
@@ -908,9 +923,12 @@ look."
          ;; A signature file that happens to exist would be read into the
          ;; composition, which has nothing to do with this.
          (vm-signature-file nil)
-         (mail-signature nil))
+         (mail-signature nil)
+         (was vmpc-mode))
     (unwind-protect
         (progn
+          ;; Since #561 the advice comes with the mode, not with the file.
+          (vmpc-mode 1)
           (with-temp-file file (insert ""))
           (vm-visit-folder file)
           (should (null vm-message-list))
@@ -919,6 +937,7 @@ look."
           (vm-mail-from-folder)
           (should (eq major-mode 'mail-mode))
           (should (string-match-p "^To:" (buffer-string))))
+      (vmpc-mode (if was 1 -1))
       (delete-directory dir t))))
 
 (ert-deftest vm-pcrisis-test-mail-from-a-folder-with-a-message ()
@@ -946,6 +965,75 @@ Without this, the test above could pass by never validating at all."
           (vm-mail-from-folder)
           (should (eq major-mode 'mail-mode)))
       (delete-directory dir t))))
+
+
+;;; switching Personality Crisis on and off (issue #561)
+
+(ert-deftest vm-pcrisis-test-loading-does-not-advise-anything ()
+  "REGRESSION: loading vm-pcrisis.el leaves VM's commands alone.
+Issue #561: the file installed seven pieces of advice as it loaded, so merely
+having it on the load path changed how every composition command in VM behaved --
+whether or not a single pcrisis rule had been set up, and with no way to turn it
+off.  That is the same complaint #512 made of vm-biff.
+
+This file has already required vm-pcrisis by the time the test runs, which is
+what makes the assertion meaningful: the advice is absent despite that."
+  (require 'vm-pcrisis)
+  (should (featurep 'vm-pcrisis))
+  (should-not vmpc-mode)
+  (dolist (pair vmpc-advised-commands)
+    (should-not (advice-member-p (cdr pair) (car pair)))))
+
+(ert-deftest vm-pcrisis-test-mode-advises-and-unadvises-every-command ()
+  "`vmpc-mode' installs the advice, and turning it off removes all of it.
+Both directions matter: a mode that cannot be switched off would leave #561 half
+fixed."
+  (require 'vm-pcrisis)
+  (let ((was vmpc-mode))
+    (unwind-protect
+        (progn
+          (vmpc-mode 1)
+          (should vmpc-mode)
+          (dolist (pair vmpc-advised-commands)
+            (should (advice-member-p (cdr pair) (car pair))))
+          (vmpc-mode -1)
+          (should-not vmpc-mode)
+          (dolist (pair vmpc-advised-commands)
+            (should-not (advice-member-p (cdr pair) (car pair)))))
+      (vmpc-mode (if was 1 -1)))))
+
+(ert-deftest vm-pcrisis-test-mode-is-idempotent ()
+  "Turning it on twice does not advise twice, nor off twice fail.
+`define-minor-mode' guards the body against a no-op change, but an advice
+installed twice would run the rules twice per composition, so it is worth
+pinning."
+  (require 'vm-pcrisis)
+  (let ((was vmpc-mode))
+    (unwind-protect
+        (progn
+          (vmpc-mode 1)
+          (vmpc-mode 1)
+          (vmpc-mode -1)
+          (dolist (pair vmpc-advised-commands)
+            (should-not (advice-member-p (cdr pair) (car pair))))
+          (vmpc-mode -1))
+      (vmpc-mode (if was 1 -1)))))
+
+(ert-deftest vm-pcrisis-test-advised-commands-all-exist ()
+  "Every command the mode advises is a command, and every advice a function.
+A typo in `vmpc-advised-commands' would otherwise advise a symbol nobody calls,
+and the mode would appear to work while doing nothing."
+  (require 'vm)
+  (require 'vm-pcrisis)
+  (should (= 7 (length vmpc-advised-commands)))
+  (dolist (pair vmpc-advised-commands)
+    (should (fboundp (car pair)))
+    (should (fboundp (cdr pair))))
+  ;; All but `vm-do-reply' are commands; that one is the internal worker the
+  ;; reply commands call, which is why the advice hangs off it.
+  (should-not (commandp 'vm-do-reply))
+  (dolist (pair (assq-delete-all 'vm-do-reply (copy-alist vmpc-advised-commands)))
+    (should (commandp (car pair)))))
 
 (provide 'vm-pcrisis-test)
 

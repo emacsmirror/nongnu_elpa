@@ -1526,7 +1526,6 @@ recursion nor concurrent calls."
     (vmpc-init-vars)
     (setq vmpc-current-buffer nil)))
 
-(advice-add 'vm-do-reply :around #'vmpc--reply)
 (defun vmpc--reply (orig-fun &rest args)
   "Reply to a message with pcrisis voodoo."
   (vmpc-init-vars 'reply)
@@ -1538,7 +1537,6 @@ recursion nor concurrent calls."
   (vmpc-make-vars-local)
   (vmpc-run-actions))
 
-(advice-add 'vm-mail-from-folder :around #'vmpc--mail)
 (defun vmpc--mail (orig-fun &rest args)
   "Start a new message with pcrisis voodoo."
   (vm-follow-summary-cursor)
@@ -1558,7 +1556,6 @@ recursion nor concurrent calls."
   (vmpc-make-vars-local)
   (vmpc-run-actions))
 
-(advice-add 'vm-mail :around #'vmpc--newmail)
 (defun vmpc--newmail (orig-fun &rest args)
   "Start a new message with pcrisis voodoo."
   (vmpc-init-vars 'newmail)
@@ -1570,7 +1567,6 @@ recursion nor concurrent calls."
   (vmpc-make-vars-local)
   (vmpc-run-actions))
 
-(advice-add 'vm-compose-mail :around #'vmpc--compose-newmail)
 (defun vmpc--compose-newmail (orig-fun &rest args)
   "Start a new message with pcrisis voodoo."
   (vmpc-init-vars 'newmail)
@@ -1582,7 +1578,6 @@ recursion nor concurrent calls."
   (vmpc-make-vars-local)
   (vmpc-run-actions))
 
-(advice-add 'vm-forward-message :around #'vmpc--forward)
 (defun vmpc--forward (orig-fun &rest args)
   "Forward a message with pcrisis voodoo."
   ;; this stuff is already done when replying, but not here:
@@ -1598,7 +1593,6 @@ recursion nor concurrent calls."
   (vmpc-make-vars-local)
   (vmpc-run-actions))
 
-(advice-add 'vm-forward-message-plain :around #'vmpc--forward-plain)
 (defun vmpc--forward-plain (orig-fun &rest args)
   "Forward a message in plain text with pcrisis voodoo."
   ;; this stuff is already done when replying, but not here:
@@ -1614,7 +1608,6 @@ recursion nor concurrent calls."
   (vmpc-make-vars-local)
   (vmpc-run-actions))
 
-(advice-add 'vm-resend-message :around #'vmpc--resend)
 (defun vmpc--resend (orig-fun &rest args)
   "Resent a message with pcrisis voodoo."
   ;; this stuff is already done when replying, but not here:
@@ -1660,6 +1653,42 @@ Call `vmpc-no-automorph' to disable it for the current buffer."
     (vmpc-build-true-conditions-list)
     (vmpc-build-actions-to-run-list)
     (vmpc-run-actions)))
+
+;;; Switching it on
+;;
+;; These advices used to be installed as this file loaded, so merely having
+;; vm-pcrisis.el on the load path changed how every composition command in VM
+;; behaved -- with no way to turn it off, and whether or not any pcrisis rule
+;; had been set up.  That is the same complaint #512 made of vm-biff, and this
+;; is the same answer: loading the file is inert, and the mode does the work.
+;; Issue #561.
+
+(defconst vmpc-advised-commands
+  '((vm-do-reply             . vmpc--reply)
+    (vm-mail-from-folder     . vmpc--mail)
+    (vm-mail                 . vmpc--newmail)
+    (vm-compose-mail         . vmpc--compose-newmail)
+    (vm-forward-message      . vmpc--forward)
+    (vm-forward-message-plain . vmpc--forward-plain)
+    (vm-resend-message       . vmpc--resend))
+  "The VM commands Personality Crisis advises, and the advice for each.")
+
+;;;###autoload
+(define-minor-mode vmpc-mode
+  "Personality Crisis: vary the headers and body of a message you send.
+Which headers, and how, is decided by `vmpc-conditions' and `vmpc-actions';
+see the commentary at the top of vm-pcrisis.el.
+
+Turning this on advises VM's composition commands -- replying, forwarding,
+resending and starting a new message -- so that the rules are consulted as each
+composition begins.  Turning it off removes the advice, leaving those commands
+as VM defines them."
+  :global t
+  :group 'vmpc
+  (dolist (pair vmpc-advised-commands)
+    (if vmpc-mode
+        (advice-add (car pair) :around (cdr pair))
+      (advice-remove (car pair) (cdr pair)))))
 
 (provide 'vm-pcrisis)
 ;;; vm-pcrisis.el ends here
