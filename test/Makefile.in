@@ -18,25 +18,34 @@ COVERAGE_RUNNER = coverage-report.el
 # Test targets
 ##############################################################################
 
-.PHONY: test test-coverage test-verbose test-one
+.PHONY: test test-coverage test-verbose test-one compile-lisp
+
+# Byte-recompile any out-of-date lisp before testing.  Emacs `require' loads a
+# `.elc' in preference to its `.el' regardless of mtime, so without this a
+# stale `.elc' silently masks edits to the source and tests run against the old
+# code.  This recompiles only stale/missing files, so it is a fast no-op once
+# everything is up to date.
+compile-lisp:
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
+	    --eval '(byte-recompile-directory "$(top_srcdir)/lisp" 0)'
 
 # Run all tests in batch mode
-test:
+test: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
 
 # Run tests with coverage collection
-test-coverage:
+test-coverage: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(COVERAGE_RUNNER)
 
 # Run tests with verbose output
-test-verbose:
+test-verbose: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
 	    --eval '(setq ert-batch-print-level 5)' \
 	    --eval '(setq ert-batch-print-length 10)' \
 	    -l $(srcdir)/$(TEST_RUNNER)
 
 # Run a specific test, must specify testel=vm-sometest.el
-test-one:
+test-one: compile-lisp
 	@if [ "x${testel}" = "x" ] ; then \
 	   echo "Error: must specify testel=vm-sometest.el" >&2 ; \
 	   exit 1 ; \

@@ -35,6 +35,19 @@ VM 8.?.?
     Removes the label from all messages and from the folder's label list so
     it no longer appears in completions.
   * Handle ImageMagick V7 deprecation of convert command in favor of sub-commands.
+  * New PGP/MIME support package vm-epg, based on the epg (EasyPG) interface
+    to gpg that is bundled with Emacs.  It replaces vm-pgg, which is built on
+    the obsolete pgg package.  Load it with (require 'vm-epg); see "Sending
+    Secure MIME Messages" in the manual, and M-x customize-group RET vm-epg.
+
+    vm-pgg is now deprecated and warns when loaded.  Do NOT load both
+    packages: they define the same MIME display handlers, so whichever is
+    loaded last silently wins and the other's customizations have no effect.
+    Remove any (require 'vm-pgg) from your configuration when switching.
+
+    vm-epg is not a drop-in rename of vm-pgg; its customization variables and
+    commands are named vm-epg-* and its faces vm-epg-*, so vm-pgg settings
+    must be carried over by hand.
 
 
 VM 8.3.2 released 2025-12-29

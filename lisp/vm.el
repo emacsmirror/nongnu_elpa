@@ -1614,6 +1614,14 @@ draft messages."
         (require 'vm-window)
         (require 'vm-menu)
         (require 'vm-rfaddons)
+	;; PGP support is not loaded by default; it is opt-in because it
+	;; installs advices and MIME handlers.  Add (require 'vm-epg) to your
+	;; configuration to enable it.
+	;;
+	;; vm-epg (epg/EasyPG based) supersedes vm-pgg (pgg based, now
+	;; deprecated).  Do not load both: they define the same
+	;; vm-mime-display-internal-* handlers, so the last one loaded wins.
+	;;
 	;; The default loading of vm-pgg is disabled because it is an
 	;; add-on.  If and when it is integrated into VM, without advices
 	;; and other add-on features, then it can be loaded by
