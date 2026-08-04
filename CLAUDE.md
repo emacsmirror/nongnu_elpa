@@ -67,26 +67,27 @@ Gotchas found the hard way:
 One branch and one merge request per issue:
 
 ```sh
-git switch -c issue-NNN-brief-description central/alpha
+git switch -c issue-NNN-brief-description central/develop
 # work, test, commit with "Closes #NNN" (or "Re #NNN" if it does not resolve it)
 git push -o merge_request.create \
          -o merge_request.target_project=emacs-vm/vm \
-         -o merge_request.target=alpha \
+         -o merge_request.target=develop \
          -o merge_request.remove_source_branch \
          -u origin issue-NNN-brief-description
 ```
 
-- **Cut branches from `central/alpha`, never from a local integration branch.**
+- **Cut branches from `central/develop`, never from a local integration branch.**
   A local branch that has other topic branches merged into it silently stacks
   them into the next MR; GitLab then takes the MR title and description from
   the *oldest* commit in the range, so the MR ends up describing — and closing
-  — the wrong issue. Check with `git rev-list --count central/alpha..<branch>`.
+  — the wrong issue. Check with `git rev-list --count central/develop..<branch>`.
 - `origin` is the personal fork, `central` is `emacs-vm/vm` (project id
   59241204). Issues and merge requests live on `central`; branches go to
   `origin` and the MR is cross-project.
-- `alpha` is the integration branch and is not the default branch, so
+- `develop` is the integration branch and is not the default branch, so
   merging an MR there does **not** auto-close the issue. That happens when
-  `alpha` reaches `main`.
+  `develop` reaches `main`. It was called `alpha` until 2026-08-03; the old
+  name suggested a release channel, which it is not.
 - Editing an existing MR (target, title, description) or labelling and closing
   an issue needs the REST API and a token with `api` scope — push options
   cannot do it.
@@ -101,10 +102,10 @@ to the end of the same file. The resolution is always keep-both.
 - `Analyzed` — investigated and commented on, but left open. Use it whenever
   findings are posted without the issue being closed, so a reader can tell an
   answered issue from an untouched one.
-- `Pending` — the fix is merged into `alpha` but has not reached `main`, so
-  the issue is still open only because merging to `alpha` does not close it.
+- `Pending` — the fix is merged into `develop` but has not reached `main`, so
+  the issue is still open only because merging to `develop` does not close it.
   The set is derivable: take the `Closes #NNN` / `Re #NNN` trailers of
-  `git log central/main..central/alpha`. Do not put it on a closed issue —
+  `git log central/main..central/develop`. Do not put it on a closed issue —
   nothing is pending there.
 - `irreproducible` — as above.
 
