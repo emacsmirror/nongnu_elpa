@@ -237,6 +237,169 @@
   "Test that vm-avirtual customization group is defined."
   (should (get 'vm-avirtual 'custom-group)))
 
+;;; Omitting a message detaches it (issue #569)
+
+;; A message omitted from a virtual folder used to stay registered as a mirror
+;; of its real message.  Expunging the real message then expunged the omitted
+;; one from a list it was no longer in, and its stale reverse link took the
+;; following message instead: shared attributes carried the wrong expunged flag
+;; back to the real folder, whose expunge loop ran on into messages nobody had
+;; deleted.  Four messages, one deleted, three lost.
+;;
+;; These drive real folders rather than a stub: what broke was the interaction
+;; between two folders' message lists, which is not visible in either alone.
+
+(defun vm-avirtual-test--write-folder (file n)
+  "Write a folder of N messages to FILE."
+  (with-temp-file file
+    (dotimes (i n)
+      (insert "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+              "From: alice@example.com\n"
+              (format "Subject: subject %d\n" i)
+              (format "Message-ID: <omit-%d@example.com>\n" i)
+              "\n"
+              (format "Body %d.\n\n" i)))))
+
+(defmacro vm-avirtual-test--with-folders (spec &rest body)
+  "Visit a generated real folder and two virtual folders over it, run BODY.
+SPEC is (REAL-VAR VIRT-A-VAR VIRT-B-VAR &optional N), each bound to a buffer.
+Everything the visits created is killed afterwards."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-avirtual" t)))
+          (file (expand-file-name "real-folder" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-summary-show-threads nil)
+          ;; Bound, not set: the folders are defined for the length of the test
+          ;; only, and a leaked definition names a directory that is gone.
+          (vm-virtual-folder-alist nil)
+          ;; Same for what visiting records: these would otherwise carry a
+          ;; deleted temporary directory into the tests that follow.
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (before (buffer-list))
+          ,(car spec) ,(nth 1 spec) ,(nth 2 spec))
+     (require 'vm)
+     (unwind-protect
+         (progn
+           (vm-avirtual-test--write-folder file ,(or (nth 3 spec) 4))
+           (setq vm-virtual-folder-alist
+                 (list (list "omit-a" (list (list file) '(any)))
+                       (list "omit-b" (list (list file) '(any)))))
+           (vm-visit-folder file)
+           (setq ,(car spec) (current-buffer))
+           (vm-visit-virtual-folder "omit-a")
+           (setq ,(nth 1 spec) (current-buffer))
+           (vm-visit-virtual-folder "omit-b")
+           (setq ,(nth 2 spec) (current-buffer))
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-avirtual-test--subjects (buffer)
+  "Return the subjects of BUFFER's message list, in order."
+  (with-current-buffer buffer
+    (mapcar #'vm-su-subject vm-message-list)))
+
+(defun vm-avirtual-test--links-consistent-p (buffer)
+  "Return non-nil if every reverse link in BUFFER is the cons before it."
+  (with-current-buffer buffer
+    (let ((mp vm-message-list) (prev nil) (ok t))
+      (while mp
+        (unless (eq (vm-reverse-link-of (car mp)) prev) (setq ok nil))
+        (setq prev mp mp (cdr mp)))
+      ok)))
+
+(defun vm-avirtual-test--expunge-nth (buffer n)
+  "Mark message N of BUFFER deleted, counting from 0, and expunge."
+  (with-current-buffer buffer
+    (vm-set-deleted-flag (nth n vm-message-list) t)
+    (vm-expunge-folder)))
+
+(ert-deftest vm-avirtual-test-omit-deregisters-the-mirror ()
+  "An omitted message is no longer a mirror of its real message.
+That registration is what let `vm-expunge-folder' reach a message that had left
+its folder."
+  (vm-avirtual-test--with-folders (real virt-a virt-b)
+    (let (omitted real-m)
+      (with-current-buffer virt-a
+        (setq omitted (nth 1 vm-message-list))
+        (setq real-m (vm-real-message-of omitted))
+        (should (memq omitted (vm-virtual-messages-of real-m)))
+        (vm-virtual-omit-message 1 (list omitted)))
+      (should-not (memq omitted (vm-virtual-messages-of real-m)))
+      ;; And it has no reverse link, having no list to be in.
+      (should (null (vm-reverse-link-of omitted)))
+      ;; The other folder's mirror is untouched.
+      (should (= 1 (length (vm-virtual-messages-of real-m))))
+      (should (memq (nth 1 (with-current-buffer virt-b vm-message-list))
+                    (vm-virtual-messages-of real-m))))))
+
+(ert-deftest vm-avirtual-test-omit-then-expunge-keeps-both-folders ()
+  "REGRESSION: expunging after an omit removes only the deleted message.
+Issue #569.  Before the fix both folders came back holding message 1 alone: the
+omitted message's stale link spliced message 3 out of the virtual folder and
+flagged it expunged, and the flag is shared with the real message, so the real
+folder's expunge loop went on to take 3 and 4 as well."
+  (vm-avirtual-test--with-folders (real virt-a virt-b)
+    (with-current-buffer virt-a
+      (vm-virtual-omit-message 1 (list (nth 1 vm-message-list))))
+    (should (equal '("subject 0" "subject 2" "subject 3")
+                   (vm-avirtual-test--subjects virt-a)))
+    (vm-avirtual-test--expunge-nth real 1)
+    (should (equal '("subject 0" "subject 2" "subject 3")
+                   (vm-avirtual-test--subjects real)))
+    (should (equal '("subject 0" "subject 2" "subject 3")
+                   (vm-avirtual-test--subjects virt-a)))
+    ;; The folder that never omitted anything loses just the expunged message.
+    (should (equal '("subject 0" "subject 2" "subject 3")
+                   (vm-avirtual-test--subjects virt-b)))
+    (should (vm-avirtual-test--links-consistent-p real))
+    (should (vm-avirtual-test--links-consistent-p virt-a))
+    (should (vm-avirtual-test--links-consistent-p virt-b))
+    ;; Nothing else was flagged on the way.
+    (with-current-buffer real
+      (should (equal '(nil nil nil)
+                     (mapcar #'vm-deleted-flag vm-message-list))))))
+
+(ert-deftest vm-avirtual-test-omit-then-expunge-a-later-message ()
+  "Omitting one message does not disturb expunging a different one.
+The omitted message sits before the expunged one, so a splice that followed its
+link would land inside the surviving part of the list."
+  (vm-avirtual-test--with-folders (real virt-a virt-b)
+    (ignore virt-b)
+    (with-current-buffer virt-a
+      (vm-virtual-omit-message 1 (list (nth 1 vm-message-list))))
+    (vm-avirtual-test--expunge-nth real 2)   ; subject 2
+    (should (equal '("subject 0" "subject 1" "subject 3")
+                   (vm-avirtual-test--subjects real)))
+    (should (equal '("subject 0" "subject 3")
+                   (vm-avirtual-test--subjects virt-a)))
+    (should (vm-avirtual-test--links-consistent-p real))
+    (should (vm-avirtual-test--links-consistent-p virt-a))))
+
+(ert-deftest vm-avirtual-test-omit-then-expunge-the-omitted-message-elsewhere ()
+  "Omitting in one virtual folder leaves the other folders expungeable.
+The real message keeps exactly the mirrors that are still in a folder, so the
+expunge reaches those and no others."
+  (vm-avirtual-test--with-folders (real virt-a virt-b)
+    (with-current-buffer virt-a
+      (vm-virtual-omit-message 1 (list (nth 1 vm-message-list))))
+    (with-current-buffer virt-b
+      (vm-virtual-omit-message 1 (list (nth 1 vm-message-list))))
+    (vm-avirtual-test--expunge-nth real 1)
+    (dolist (buffer (list real virt-a virt-b))
+      (should (equal '("subject 0" "subject 2" "subject 3")
+                     (vm-avirtual-test--subjects buffer)))
+      (should (vm-avirtual-test--links-consistent-p buffer)))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
