@@ -426,9 +426,16 @@ ignored."
 			       (vm-virtual-messages-of (car mp)))
 		       (vm-virtual-messages-of (car mp)))))
 	    (while vms
-	      (with-current-buffer (vm-buffer-of (car vms))
-		(vm-expunge-message (car vms))
-		(intern (buffer-name) buffers-altered))
+	      ;; Don't trust blindly.  The user could have killed some of
+	      ;; these buffers, and killing a folder buffer does not
+	      ;; deregister its messages, so a mirror can outlive the list it
+	      ;; was in.  Expunging it would signal, leaving this expunge half
+	      ;; done and the next one signalling in the same place (#571).
+	      ;; The trimming below takes the dead mirror off the list.
+	      (when (buffer-name (vm-buffer-of (car vms)))
+		(with-current-buffer (vm-buffer-of (car vms))
+		  (vm-expunge-message (car vms))
+		  (intern (buffer-name) buffers-altered)))
 	      (vm-set-virtual-messages-of (car mp) (cdr vms))
 	      (setq vms (cdr vms)))))
 	;; 3. remove this message from message lists.
