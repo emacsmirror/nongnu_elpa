@@ -7267,6 +7267,47 @@ putting @code{vm-mime-auto-save-all-attachments} in
 
 (This add-on was provided by Robert Fenk.)
 
+@section How much VM says
+
+@cindex verbosity
+@cindex progress messages
+@cindex chattiness
+@vindex vm-verbosity
+VM reports what it is doing in the echo area, and the variable
+@code{vm-verbosity} decides how much of that you see.  Every message VM
+prints has a level of its own, and one is shown when its level is
+@code{vm-verbosity} or lower --- so a larger number means more talk.  The
+scale runs from 0 to 10:
+
+@table @asis
+@item 0
+Only what VM cannot stay silent about.
+@item 1
+Errors, and warnings worth interrupting for.
+@item 5
+Normal level, and the default: what a command did, and the progress of
+anything slow enough to be worth watching.
+@item 6
+The steps within those operations.
+@item 7
+Detail: threading, summary generation, parsing, header work.
+@item 8
+More of the same, and VM's own bookkeeping.
+@item 10
+Debugging information.
+@end table
+
+@noindent
+So @code{(setq vm-verbosity 3)} leaves little more than warnings, and
+@code{(setq vm-verbosity 8)} restores the level VM used before 8.3.3, which
+was chattier than the documented normal one.
+
+@vindex vm-verbal-time
+Warnings use the same scale, so lowering @code{vm-verbosity} quiets warnings
+along with progress; nothing above level 1 is a warning.  A related variable,
+@code{vm-verbal-time}, holds a number of seconds to leave each message on
+screen, and should normally be 0 --- anything else delays VM.
+
 @node History and Administration, Highlights, Customizations, Top
 @chapter History and Administration
 

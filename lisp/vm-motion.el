@@ -207,7 +207,7 @@ this command \"sees\" marked messages as it moves."
   ;; Note that interactively all args are 1, so error signaling
   ;; and retries apply to all interactive moves.
   (interactive "p\np\np")  
-  ;;(vm-inform 8 "running vm next message")
+  (vm-inform 10 "running vm next message")
   (if (vm-interactive-p)
       (vm-follow-summary-cursor))
   (vm-select-folder-buffer-and-validate 

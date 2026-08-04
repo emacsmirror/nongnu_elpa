@@ -964,6 +964,98 @@ first -- which would be another account's password."
                    "s3cret"))
     (should (null (vm-auth-source-password '(nil) 143 "user")))))
 
+
+;;; how much VM says (issue #508)
+
+(defun vm-misc-test--messages-at (verbosity thunk)
+  "Return the messages THUNK emits with `vm-verbosity' set to VERBOSITY."
+  (let ((vm-verbosity verbosity)
+        (vm-verbal-time 0)
+        (said nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (&rest args)
+                 (push (if (car args) (apply #'format args) "") said)
+                 (car said))))
+      (funcall thunk))
+    (nreverse said)))
+
+(ert-deftest vm-misc-test-verbosity-defaults-to-the-documented-normal-level ()
+  "REGRESSION: `vm-verbosity' defaults to the level it calls normal.
+Issue #508: the default was 8 while the variable's own documentation called 5
+the normal level, so VM was three levels chattier than it said.  Saving a dozen
+messages to an IMAP folder reported \"Checking IMAP connection to ...\" a dozen
+times, that message being level 7."
+  (require 'vm-vars)
+  (should (= 5 (default-value 'vm-verbosity)))
+  ;; the documented normal level, so what is documented has to say 5
+  (should (string-match-p "5 - normal level"
+                          (documentation-property 'vm-verbosity
+                                                  'variable-documentation))))
+
+(ert-deftest vm-misc-test-inform-shows-its-level-or-lower ()
+  "`vm-inform' speaks when its level is at or below `vm-verbosity'.
+The direction is worth pinning: a larger `vm-verbosity' means more output, not
+less, and the boundary is inclusive."
+  (require 'vm-misc)
+  (should (equal '("five") (vm-misc-test--messages-at
+                            5 (lambda () (vm-inform 5 "five")))))
+  (should (equal nil (vm-misc-test--messages-at
+                      5 (lambda () (vm-inform 6 "six")))))
+  (should (equal '("six") (vm-misc-test--messages-at
+                           6 (lambda () (vm-inform 6 "six")))))
+  ;; and at the default, the message from #508 is silent while a command result
+  ;; is not
+  (should (equal nil (vm-misc-test--messages-at
+                      (default-value 'vm-verbosity)
+                      (lambda () (vm-inform 7 "Checking IMAP connection")))))
+  (should (equal '("3 messages saved")
+                 (vm-misc-test--messages-at
+                  (default-value 'vm-verbosity)
+                  (lambda () (vm-inform 5 "3 messages saved"))))))
+
+(ert-deftest vm-misc-test-warnings-survive-the-default-verbosity ()
+  "No warning sits above the default verbosity, so none is silenced by it.
+`vm-warn' gates on `vm-verbosity' just as `vm-inform' does, which makes
+lowering the default a way to lose warnings as well as chatter.  Checked
+against the source rather than by calling them, so that a new warning added
+above the default fails here instead of going unseen in the field."
+  (let ((default (default-value 'vm-verbosity))
+        (too-quiet nil))
+    (dolist (file (directory-files
+                   (expand-file-name "../lisp" vm-test-dir) t "\\.el\\'"))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (while (re-search-forward "(vm-warn +\\([0-9]+\\)" nil t)
+          (when (> (string-to-number (match-string 1)) default)
+            (push (format "%s:%d level %s"
+                          (file-name-nondirectory file)
+                          (line-number-at-pos (match-beginning 0))
+                          (match-string 1))
+                  too-quiet)))))
+    (should (equal nil too-quiet))))
+
+(ert-deftest vm-misc-test-command-results-are-all-at-the-normal-level ()
+  "Every \"N messages ...\" report is at level 5, so a command says what it did.
+Two in `vm-save-message' were at 7 and so went silent at the default (#508),
+while the same report from every other command -- deleted, undeleted, flagged,
+marked, archived, pruned -- was at 5.  That was an inconsistency rather than a
+decision, and this keeps it from coming back."
+  (let ((odd nil))
+    (dolist (file (directory-files
+                   (expand-file-name "../lisp" vm-test-dir) t "\\.el\\'"))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (while (re-search-forward "(vm-inform +\\([0-9]+\\) +\"%d message" nil t)
+          (unless (= 5 (string-to-number (match-string 1)))
+            (push (format "%s:%d level %s"
+                          (file-name-nondirectory file)
+                          (line-number-at-pos (match-beginning 0))
+                          (match-string 1))
+                  odd)))))
+    (should (equal nil odd))))
+
 (provide 'vm-misc-test)
 
 ;;; vm-misc-test.el ends here

@@ -3939,13 +3939,22 @@ arrow only if the summary window is not the only existing window."
 		 (const :tag "Always" t) 
 		 (const :tag "Yes, if not only window" yes-if-not-only-window)))
 
-(defcustom vm-verbosity 8
+(defcustom vm-verbosity 5
   "*Level of chattiness in progress messages displayed in the
-minibuffer.  Indicative levels are:
-  1 - extremely quiet
-  5 - normal level
-  7 - detailed level
- 10 - debugging information"
+minibuffer.  A message is shown when its own level is this or lower, so a
+larger number here means more talk.  The scale runs from 0 to 10:
+
+  0 - only what VM cannot stay silent about
+  1 - errors, and warnings worth interrupting for
+  5 - normal level: what a command did, and the progress of anything slow
+      enough to be worth watching
+  6 - the steps within those operations
+  7 - detail: threading, summary generation, parsing, header work
+  8 - more of the same, and VM's own bookkeeping
+ 10 - debugging information
+
+`vm-warn' uses the same scale, so lowering this hides warnings as well as
+progress.  Nothing above 1 is a warning."
   :group 'vm-misc
   :type 'integer)
 
