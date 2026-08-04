@@ -583,16 +583,6 @@ Body of third message.
       ;; Third message points back to second
       (should (eq (car (vm-reverse-link-of m3)) m2)))))
 
-(defun vm-folder-test--reverse-links-describe-the-list ()
-  "Return non-nil if every message's reverse link is the cons before it.
-The first message must have none."
-  (let ((mp vm-message-list) (prev nil) (ok t))
-    (while mp
-      (unless (eq (vm-reverse-link-of (car mp)) prev)
-        (setq ok nil))
-      (setq prev mp mp (cdr mp)))
-    ok))
-
 (ert-deftest vm-folder-test-reverse-links-survive-splicing-and-rebuilding ()
   "Reverse links still describe the list after messages are spliced out.
 The links live outside the messages, in `vm-reverse-link-table' (issue #453).
@@ -601,13 +591,13 @@ splices a cons out, and `vm-reverse-link-messages', which sorting uses to
 rebuild every link."
   (vm-test-with-folder vm-test-multi-mbox
     (should (= 3 (length vm-message-list)))
-    (should (vm-folder-test--reverse-links-describe-the-list))
+    (should (vm-test-reverse-links-consistent-p))
     ;; Expunge the middle message: the third must now point at the first.
     (let ((m1 (vm-test-nth-message 0))
           (m3 (vm-test-nth-message 2)))
       (vm-expunge-message (vm-test-nth-message 1))
       (should (= 2 (length vm-message-list)))
-      (should (vm-folder-test--reverse-links-describe-the-list))
+      (should (vm-test-reverse-links-consistent-p))
       (should (eq (car (vm-reverse-link-of m3)) m1))
       ;; Expunge the first: the survivor heads the list and has no link.
       (vm-expunge-message m1)
@@ -617,10 +607,10 @@ rebuild every link."
     (setq vm-message-list (list (vm-make-message) (vm-make-message)
                                 (vm-make-message)))
     (vm-reverse-link-messages)
-    (should (vm-folder-test--reverse-links-describe-the-list))
+    (should (vm-test-reverse-links-consistent-p))
     (setq vm-message-list (reverse vm-message-list))
     (vm-reverse-link-messages)
-    (should (vm-folder-test--reverse-links-describe-the-list))))
+    (should (vm-test-reverse-links-consistent-p))))
 
 (ert-deftest vm-folder-test-message-buffer ()
   "Test that messages know their buffer."
@@ -1064,6 +1054,52 @@ It is rewritten on every save, so a folder must not collect a header per save."
     (setq vm-imap-messages-to-expunge nil)
     (vm-gobble-imap-to-expunge)
     (should (equal '(("2" . "100")) vm-imap-messages-to-expunge))))
+
+(ert-deftest vm-folder-test-index-file-restores-reverse-links ()
+  "A message list read from the index file is linked like a parsed one.
+The index is the one source of a message list that does not come from
+`vm-build-message-list', which links only messages it creates itself and not
+ones it finds already in `vm-message-list'.  What links these instead is the
+message order the index also carries: `vm-read-index-file' ends by applying it,
+and `vm-startup-apply-message-order' finishes with `vm-reverse-link-messages'.
+So the linking rides on a field written for another purpose.  Expunging reads
+these links to decide which cons to splice, so were the order ever written
+conditionally the folder would start losing the wrong message.  Issue #453."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-index" t)))
+         (folder (expand-file-name "folder" dir))
+         (index (expand-file-name ".folder.inx" dir))
+         (vm-index-file-suffix ".inx")
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (before (buffer-list)))
+    (require 'vm)
+    (unwind-protect
+        (progn
+          (with-temp-file folder
+            (dotimes (i 4)
+              (insert (format "From s%d@example.com Mon Jan  1 00:00:00 2024\n" i)
+                      (format "From: S%d <s%d@example.com>\n" i i)
+                      (format "Subject: subject %d\n" i)
+                      (format "Message-ID: <m-%d@example.com>\n" i)
+                      "\n" (format "Body %d.\n\n" i))))
+          (vm-visit-folder folder)
+          (should (= 4 (length vm-message-list)))
+          (should (vm-test-reverse-links-consistent-p))
+          (vm-write-index-file index)
+          ;; Install a list from the index alone, which is what a visit does
+          ;; when it trusts the index instead of parsing.
+          (setq vm-message-list nil)
+          (should (vm-read-index-file index))
+          (should (= 4 (length vm-message-list)))
+          (should (vm-test-reverse-links-consistent-p)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (with-current-buffer buffer (set-buffer-modified-p nil))
+          (kill-buffer buffer)))
+      (delete-directory dir t))))
 
 (ert-deftest vm-folder-test-index-file-carries-pending-expunges ()
   "The index file carries the pending deletions, and still reads version 1.

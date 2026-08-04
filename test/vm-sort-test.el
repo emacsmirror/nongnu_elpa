@@ -337,6 +337,94 @@ Third message.
   (should (member "byte-count" vm-supported-sort-keys))
   (should (member "physical-order" vm-supported-sort-keys)))
 
+;;; Sorting and reverse links (issue #453)
+
+;; Sorting is the one operation that rebuilds every reverse link rather than
+;; patching one: `vm-sort-messages' installs a new list and calls
+;; `vm-reverse-link-messages' over it, but only when the order actually changed.
+;; It then relocates `vm-message-pointer' through the links it just rebuilt.  A
+;; folder sorted into a list whose links still describe the old order would
+;; expunge the wrong message afterwards.
+
+(defmacro vm-sort-test--with-real-folder (n &rest body)
+  "Visit a generated folder of N messages with descending subjects, run BODY.
+Subjects run down so that sorting by subject really reorders the list."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-sort" t)))
+          (file (expand-file-name "folder" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          ;; Visiting a folder records it in these; bound so the test does not
+          ;; leave the folder it invented in the session's history.
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (before (buffer-list)))
+     (require 'vm)
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (dotimes (i ,n)
+               (insert (format "From s%d@example.com Mon Jan  1 00:00:00 2024\n" i)
+                       (format "From: S%02d <s%d@example.com>\n" (- ,n i) i)
+                       (format "Subject: subject %02d\n" (- ,n i))
+                       "Date: Mon, 01 Jan 2024 00:00:00 +0000\n"
+                       (format "Message-ID: <sort-%d@example.com>\n" i)
+                       "\n" (format "Body %d.\n\n" i))))
+           (vm-visit-folder file)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-sort-test-reverse-links-follow-the-sort ()
+  "Sorting rebuilds the reverse links to match the new order.
+Checked after a sort that reorders, and again after sorting back, since only a
+sort that changes the order rebuilds the links at all."
+  (vm-sort-test--with-real-folder 6
+    (should (= 6 (length vm-message-list)))
+    (should (vm-test-reverse-links-consistent-p))
+    (vm-sort-messages "subject")
+    (should (vm-test-reverse-links-consistent-p))
+    ;; Really reordered: subjects descend in the file, so ascending now.
+    (should (equal (sort (mapcar #'vm-su-subject vm-message-list) #'string<)
+                   (mapcar #'vm-su-subject vm-message-list)))
+    (should (null (vm-reverse-link-of (vm-test-first-message))))
+    (vm-sort-messages "physical-order")
+    (should (vm-test-reverse-links-consistent-p))
+    (should (null (vm-reverse-link-of (vm-test-first-message))))))
+
+(ert-deftest vm-sort-test-reverse-links-survive-a-sort-that-changes-nothing ()
+  "Sorting a folder already in that order leaves the links alone and correct.
+`vm-sort-messages' skips the rebuild when the order did not change, so this is
+the path where the existing links have to be right already."
+  (vm-sort-test--with-real-folder 5
+    (vm-sort-messages "subject")
+    (should (vm-test-reverse-links-consistent-p))
+    (vm-sort-messages "subject")
+    (should (vm-test-reverse-links-consistent-p))))
+
+(ert-deftest vm-sort-test-expunging-after-a-sort-removes-the-right-message ()
+  "A sorted folder expunges the message asked for, not its neighbour.
+This is what a stale reverse link costs in practice: `vm-expunge-message' finds
+the cons to splice through the link, so after a sort that rebuilt them wrongly
+the folder would lose a different message than the one deleted."
+  (vm-sort-test--with-real-folder 6
+    (vm-sort-messages "subject")
+    (let* ((victim (vm-test-nth-message 3))
+           (subject (vm-su-subject victim))
+           (others (delete subject (mapcar #'vm-su-subject vm-message-list))))
+      (vm-set-deleted-flag victim t)
+      (vm-expunge-folder)
+      (should (= 5 (length vm-message-list)))
+      (should (vm-test-reverse-links-consistent-p))
+      (should (equal others (mapcar #'vm-su-subject vm-message-list))))))
+
 (provide 'vm-sort-test)
 
 ;;; vm-sort-test.el ends here

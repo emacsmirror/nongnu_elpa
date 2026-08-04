@@ -396,6 +396,24 @@ CATEGORY and FILENAME specify the fixture to load."
   "Return the Nth message (0-indexed) in current folder."
   (nth n vm-message-list))
 
+(defun vm-test-reverse-links-consistent-p (&optional message-list)
+  "Return non-nil if every reverse link in MESSAGE-LIST is the cons before it.
+Defaults to `vm-message-list'.  The first message must have no link.
+
+This is the invariant `vm-expunge-message' relies on to decide which cons to
+splice out, so a folder whose links have drifted can lose the wrong message
+while deleting the right one's text.  Issue #453 moved the links out of the
+message vectors into `vm-reverse-link-table'; this says what has to stay true
+of them however they are stored."
+  (let ((mp (or message-list vm-message-list))
+        (prev nil)
+        (ok t))
+    (while mp
+      (unless (eq (vm-reverse-link-of (car mp)) prev)
+        (setq ok nil))
+      (setq prev mp mp (cdr mp)))
+    ok))
+
 (defun vm-test-message-body (m)
   "Return the body text of message M as a string."
   (save-excursion
