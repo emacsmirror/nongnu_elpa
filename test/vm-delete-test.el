@@ -365,6 +365,76 @@ hazard in place -- the combination that deleted the whole folder."
                    (mapcar (lambda (m) (and (vm-deleted-flag m) t))
                            vm-message-list)))))
 
+;;; The reverse link guard (issue #570)
+
+;; `vm-expunge-message' takes the cons to splice from the message's reverse
+;; link, so a wrong link removes a different message and flags that one
+;; expunged, silently.  #569 is a reachable path to it.  These pin that the
+;; guard fires and that it fires before anything is modified.
+
+(defconst vm-delete-test--three-messages
+  (mapconcat
+   (lambda (i)
+     (format (concat "From sender@example.com Mon Jan  %d 00:00:00 2024\n"
+                     "From: sender@example.com\n"
+                     "Subject: message %d\n"
+                     "Message-ID: <guard-%d@example.com>\n"
+                     "\n"
+                     "Body %d.\n\n")
+             (1+ i) i i i))
+   '(0 1 2) "")
+  "A folder of three messages, enough to have a head, a middle and a tail.")
+
+(ert-deftest vm-delete-test-expunge-message-refuses-a-stale-reverse-link ()
+  "A message whose reverse link points elsewhere is not expunged.
+The link decides which cons is spliced, so following it here would remove
+message 2 and mark it expunged while message 3 stayed in the folder.  The shape
+is the one #569 produces: a message dropped from the list whose link still
+points at where it used to be."
+  (vm-test-with-folder vm-delete-test--three-messages
+    (let* ((m2 (vm-test-nth-message 1))
+           (m3 (vm-test-nth-message 2))
+           (list-before vm-message-list))
+      (should (eq m2 (car (vm-reverse-link-of m3))))
+      (vm-set-reverse-link-of m3 vm-message-list)
+      (should-error (vm-expunge-message m3))
+      ;; Nothing was spliced and nothing was flagged.
+      (should (eq list-before vm-message-list))
+      (should (= 3 (vm-test-message-count)))
+      (should-not (vm-deleted-flag m2))
+      (should-not (vm-deleted-flag m3)))))
+
+(ert-deftest vm-delete-test-expunge-message-refuses-a-missing-reverse-link ()
+  "A message with no reverse link is expunged only if it is the folder head.
+No link reads as \"first in the list\", so before the guard this expunged
+message 1 in place of message 2."
+  (vm-test-with-folder vm-delete-test--three-messages
+    (let* ((m1 (vm-test-first-message))
+           (m2 (vm-test-nth-message 1)))
+      (vm-set-reverse-link-of m2 nil)
+      (should-error (vm-expunge-message m2))
+      (should (= 3 (vm-test-message-count)))
+      (should (eq m1 (vm-test-first-message)))
+      (should-not (vm-deleted-flag m1))
+      ;; The head itself has no link and still expunges.
+      (vm-set-reverse-link-of m2 vm-message-list)
+      (vm-expunge-message m1)
+      (should (= 2 (vm-test-message-count)))
+      (should (eq m2 (vm-test-first-message))))))
+
+(ert-deftest vm-delete-test-expunge-message-guard-precedes-any-change ()
+  "The guard fires before the message is unregistered as fetched.
+`vm-unregister-fetched-message' ran first, so a refused expunge used to leave
+the folder's fetched-message bookkeeping already changed."
+  (vm-test-with-folder vm-delete-test--three-messages
+    (let ((m3 (vm-test-nth-message 2))
+          (unregistered nil))
+      (vm-set-reverse-link-of m3 vm-message-list)
+      (cl-letf (((symbol-function 'vm-unregister-fetched-message)
+                 (lambda (&rest _) (setq unregistered t))))
+        (should-error (vm-expunge-message m3)))
+      (should-not unregistered))))
+
 (provide 'vm-delete-test)
 
 ;;; vm-delete-test.el ends here

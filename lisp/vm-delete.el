@@ -514,9 +514,24 @@ ignored."
 (defun vm-expunge-message (m)
   "Expunge the message M from the current folder buffer."
   (let (prev curr)
-    (vm-unregister-fetched-message m)
     (setq prev (vm-reverse-link-of m)
 	  curr (or (cdr prev) vm-message-list))
+    ;; CURR is spliced out below on the strength of the reverse link alone, so a
+    ;; stale link removes the message after the one it used to precede and a
+    ;; missing link removes the head of the folder, leaving M in place and
+    ;; flagging the wrong message expunged.  In a folder with virtual mirrors
+    ;; the wrong flag then propagates through the shared attributes and the
+    ;; expunge loop cascades.  Nothing recovers from that, so check before
+    ;; anything is touched (#570).  Not `vm-assert': assertion checking is off
+    ;; by default, which is where this has to hold.
+    (unless (eq m (car curr))
+      (error (concat "Message %s of %s is not where its reverse link says,"
+		     " so expunging it would remove another message."
+		     "  This is a VM bug: kill this folder without saving it,"
+		     " visit it again, and report this at"
+		     " https://gitlab.com/emacs-vm/vm/-/issues")
+	     (vm-number-of m) (buffer-name)))
+    (vm-unregister-fetched-message m)
     (vm-set-numbering-redo-start-point (or prev t))
     (vm-set-summary-redo-start-point (or prev t))
     (when (eq vm-message-pointer curr)
