@@ -106,7 +106,19 @@ to the end of the same file. The resolution is always keep-both.
   the issue is still open only because merging to `develop` does not close it.
   The set is derivable: take the `Closes #NNN` / `Re #NNN` trailers of
   `git log central/main..central/develop`. Do not put it on a closed issue —
-  nothing is pending there.
+  nothing is pending there. Note that a `Re #NNN` trailer means the commit only
+  *mentions* the issue, so it is not on its own grounds for `Pending`; check
+  which trailer it was before labelling.
+- `Decide` — blocked on a maintainer decision rather than on effort: the
+  analysis is on the issue and the next step is a choice. Assign the issue to
+  the maintainer as well, so it shows up as theirs and not merely unowned. Take
+  it off once the decision is made, whichever way it goes.
+
+  Not the same as `Undecided`, which is Launchpad's imported *importance* field
+  and appears only alongside `Launchpad`, next to `Confirmed`, `Incomplete` and
+  `In Progress`. Nor the same as `Kick can`, which records a decision already
+  taken — to defer. An issue can be both: deferred, and now wanting a second
+  look.
 - `irreproducible` — as above.
 
 ### Attributing comments written by Claude
