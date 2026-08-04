@@ -43,6 +43,7 @@
 (require 'hermes-kanban)
 (require 'hermes-mcp)
 (require 'hermes-config)
+(require 'hermes-system)
 (require 'hermes-browser)
 (require 'hermes-onboarding)
 
@@ -152,6 +153,8 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "K" ("Kanban" hermes-list-kanban)
   "X" ("MCP servers" hermes-list-mcp)
   "Z" ("Configuration" hermes-config)
+  "G" ("Gateway status" hermes-system-status)
+  "L" ("Gateway logs" hermes-system-logs)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)

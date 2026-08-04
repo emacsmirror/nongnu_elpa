@@ -58,6 +58,7 @@
             "lisp/hermes-kanban.el"
             "lisp/hermes-mcp.el"
             "lisp/hermes-config.el"
+            "lisp/hermes-system.el"
             "lisp/hermes-exec.el"
             "lisp/hermes-onboarding.el"
             "lisp/hermes-capabilities.el"
