@@ -162,6 +162,62 @@ when VM starts; this checks it where the wrong Emacs actually gets chosen."
       (should (string-match-p (regexp-quote minimum) message))
       (should (string-match-p "26\\.3" message)))))
 
+
+;;; substituting an elisp value into a shell command (issue #495)
+
+(ert-deftest vm-build-test-otherdirs-substitution-is-quoted ()
+  "REGRESSION: the OTHERDIRS assignment in a recipe is shell-quoted.
+Issue #495: `--with-other-dirs=/path' makes configure substitute an elisp list,
+`(\"/path\")', into
+
+    EMACS_COMP = OTHERDIRS=@OTHERDIRS@ ...
+
+and the shell then meets an unquoted parenthesis:
+
+    /bin/sh: 2: Syntax error: \"(\" unexpected
+
+so every recipe using EMACS_COMP dies and the build cannot get past the
+autoloads.  It went unnoticed because with the option absent the value is the
+bare word `nil', which the shell accepts, so the default build works."
+  (let ((template (expand-file-name "lisp/Makefile.in" vm-build-test--root)))
+    (should (file-exists-p template))
+    (with-temp-buffer
+      (insert-file-contents template)
+      (goto-char (point-min))
+      (should (re-search-forward "^EMACS_COMP[ \t]*=[ \t]*OTHERDIRS=\\(.\\)" nil t))
+      ;; the character after the = has to open a quote, not the value itself
+      (should (member (match-string 1) '("'" "\""))))))
+
+(ert-deftest vm-build-test-help-strings-are-not-glued-to-a-macro-name ()
+  "REGRESSION: a conditional in a help string is a token of its own.
+Issue #495: `VM_ARG_SUBST' built its help text as `--with-$2ifelse($3, , , =$3)'.
+With $2 expanding to `other-dirs' that leaves `--with-other-dirsifelse(...)',
+in which m4 reads `dirsifelse' as one word -- so the conditional was never a
+macro call and went into ./configure --help verbatim:
+
+    --with-other-dirsifelse(DIRS, , , =DIRS)
+
+The fix is to close the quoted string first, `[--with-$2]m4_ifval(...)', which
+makes the macro name its own token.  Every option `VM_ARG_SUBST' defines was
+affected, `--with-package-dir' as well."
+  (let ((configure-ac (expand-file-name "configure.ac" vm-build-test--root)))
+    (should (file-exists-p configure-ac))
+    (with-temp-buffer
+      (insert-file-contents configure-ac)
+      ;; Comments are skipped: the explanation of this bug in configure.ac
+      ;; quotes the broken form, and so would match.
+      (goto-char (point-min))
+      (let ((glued nil))
+        (while (not (eobp))
+          (let ((line (buffer-substring-no-properties
+                       (line-beginning-position) (line-end-position))))
+            (unless (string-match-p "\\`[ \t]*\\(#\\|dnl\\)" line)
+              ;; no macro name may follow a $N expansion directly
+              (when (string-match-p "\\$[0-9]\\(ifelse\\|m4_if\\)" line)
+                (push line glued))))
+          (forward-line 1))
+        (should (equal nil glued))))))
+
 (provide 'vm-build-test)
 
 ;;; vm-build-test.el ends here
