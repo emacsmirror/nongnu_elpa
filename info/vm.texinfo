@@ -530,8 +530,14 @@ When spool files are on the local file system, VM uses the program
 @file{movemail}, a program distributed with Emacs to extract mail from
 a spool file.  The variable @code{vm-movemail-program} specifies the
 name of the movemail program.  Its default, @code{nil}, means the one
-Emacs came with, in @code{exec-directory}; if this Emacs has none,
-getting new mail from a local spool file signals an error saying so.
+Emacs came with, in @code{exec-directory}.
+
+If this Emacs has none, getting new mail from a local spool file signals an
+error saying what to do about it.  An Emacs without its own movemail is not
+broken: it is left out when Emacs is built @option{--with-mailutils}, which is
+Emacs's default whenever GNU Mailutils is present at build time.  Set
+@code{vm-movemail-program} to the one you want to use, bearing in mind the
+warning below about what Mailutils' does to a mailbox.
 The variable @code{vm-movemail-program-switches} lets you specify some
 initial command line argument to pass to the movemail program.
 

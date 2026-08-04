@@ -4327,12 +4327,19 @@ implementation than the expected one damages mail -- so this asks instead."
       (let ((own (expand-file-name "movemail" exec-directory)))
 	(if (file-executable-p own)
 	    own
-	  (error (concat "No movemail in %s -- Emacs installs one there unless"
-			 " it was built --with-mailutils, which is its default"
-			 " when GNU Mailutils is present at build time."
-			 " Set vm-movemail-program to the movemail to use;"
-			 " note that Mailutils' rewrites mailboxes (issue #538)")
-		 exec-directory)))))
+	  (error
+	   (concat
+	    "This Emacs has no movemail of its own, so VM will not fetch"
+	    " local mail until you say which movemail to use."
+	    "  Either install Emacs's -- it is left out when Emacs is built"
+	    " --with-mailutils, which is its default if GNU Mailutils is"
+	    " present at build time -- or set vm-movemail-program to one,"
+	    " for instance (setq vm-movemail-program \"/usr/bin/movemail\")."
+	    "  Be aware that GNU Mailutils' movemail rewrites mailboxes"
+	    " rather than copying them, and merges a message whose body is"
+	    " empty with the message after it: see VM issue #538."
+	    "  Looked for Emacs's in %s")
+	   exec-directory)))))
 
 ;;;###autoload
 (defun vm-spool-move-mail (source destination)
