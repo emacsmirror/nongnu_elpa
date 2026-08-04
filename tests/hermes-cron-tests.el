@@ -437,6 +437,35 @@
     (should (equal calls '("GET")))
     (should-not refreshed)))
 
+(ert-deftest hermes-cron-create-trims-required-fields-before-post ()
+  "Create trims required fields before posting them."
+  (let (body)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional _on-success)
+                 (funcall make-promise 'fake-client)))
+              ((symbol-function 'hermes-cron--api)
+               (lambda (_client _method _path &optional payload _query)
+                 (setq body payload)
+                 (hermes--promise-resolved '((id . "j9"))))))
+      (hermes-cron-create " nightly " " 0 0 * * * "
+                          " first\nsecond "))
+    (should (equal body
+                   '((name . "nightly") (schedule . "0 0 * * *")
+                     (prompt . "first\nsecond"))))))
+
+(ert-deftest hermes-cron-create-rejects-blank-fields-before-request ()
+  "Create rejects whitespace-only required fields before any REST request."
+  (let (requested)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (&rest _) (setq requested t))))
+      (should-error (hermes-cron-create "   " "daily" "prompt")
+                    :type 'user-error)
+      (should-error (hermes-cron-create "name" " \t " "prompt")
+                    :type 'user-error)
+      (should-error (hermes-cron-create "name" "daily" " \n ")
+                    :type 'user-error))
+    (should-not requested)))
+
 ;;; Group: failure surfacing and run logs
 
 (ert-deftest hermes-cron-rows-face-failed-runs ()

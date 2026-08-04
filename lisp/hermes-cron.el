@@ -520,12 +520,15 @@ names.  Interactive creation defaults DELIVER to local delivery."
                      (read-string "Deliver: " "local")
                      (hermes-cron--split-skills
                       (read-string "Skills (comma-separated): "))))
-  (when (or (string-empty-p name)
-            (string-empty-p schedule)
-            (string-empty-p prompt))
-    (user-error "Name, schedule and prompt are required"))
-  (let ((origin (current-buffer))
-        (profile (or (hermes-transport--non-blank-string profile) "default")))
+  (let* ((name (string-trim name))
+         (schedule (string-trim schedule))
+         (prompt (string-trim prompt))
+         (profile (or (hermes-transport--non-blank-string profile) "default"))
+         (origin (current-buffer)))
+    (when (or (string-empty-p name)
+              (string-empty-p schedule)
+              (string-empty-p prompt))
+      (user-error "Name, schedule and prompt are required"))
     (hermes-browser--run-on-client
      (lambda (client)
        (hermes--promise-map
