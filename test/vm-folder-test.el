@@ -1327,9 +1327,15 @@ Debian and Ubuntu with the mailutils package installed that is GNU Mailutils'
 movemail, which moves mail by parsing and rewriting it rather than copying it,
 and merges a message whose body is empty with the message after it.  VM wants
 the one that copies its input unaltered, and Emacs's is that one."
-  (let ((vm-movemail-program nil))
-    (should (equal (expand-file-name "movemail" exec-directory)
-                   (vm-movemail-program-name)))
+  (let ((vm-movemail-program nil)
+        (own (expand-file-name "movemail" exec-directory)))
+    ;; An Emacs built --with-mailutils installs no movemail of its own, and that
+    ;; is its default when Mailutils is on PATH at build time -- so this is not a
+    ;; broken installation and the assertion simply does not apply.  What happens
+    ;; instead is covered by vm-folder-test-movemail-missing-is-an-error.
+    (vm-test-skip-unless (file-executable-p own)
+                         "this Emacs has no movemail of its own")
+    (should (equal own (vm-movemail-program-name)))
     ;; not merely something named movemail somewhere on the path
     (should (file-name-absolute-p (vm-movemail-program-name)))))
 
