@@ -4,8 +4,10 @@
 ;;
 ;; Copyright (C) 2026 The VM Developers
 ;;
+;; Author:      The VM Developers
+;; Keywords:    VM helpers, PGP, OpenPGP, mail
+;;
 ;; Based on vm-pgg.el by Robert Widhopf-Fenk and Jens Gustedt.
-
 ;;
 ;; This code is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
@@ -32,6 +34,14 @@
 ;;
 ;;      (require 'vm-epg)
 ;;
+;; Do NOT load vm-pgg and vm-epg together.  Both define the same MIME
+;; display handlers -- `vm-mime-display-internal-multipart/encrypted',
+;; `vm-mime-display-internal-multipart/signed' and
+;; `vm-mime-display-internal-application/pgp-keys' -- so whichever package
+;; is loaded last silently wins, and the other package's customizations
+;; then have no effect.  vm-pgg is deprecated; remove any `(require
+;; 'vm-pgg)' from your configuration when switching to vm-epg.
+;;
 ;; If you set `vm-mime-auto-displayed-content-types' and/or
 ;; `vm-mime-internal-content-types' make sure that they contain
 ;; "application/pgp-keys" or set them before loading vm-epg.
@@ -46,10 +56,29 @@
 ;;
 ;; The status of the current message will also be displayed in the modeline.
 ;;
-;; To create messages according to PGP/MIME you should use:
-;;  * M-x vm-epg-encrypt       for encrypting
-;;  * M-x vm-epg-sign          for signing
-;;  * C-u M-x vm-epg-encrypt   for encrypting + signing
+;; To create messages according to PGP/MIME use one of:
+;;  * C-c # s  M-x vm-epg-sign              sign
+;;  * C-c # e  M-x vm-epg-encrypt           encrypt
+;;  * C-c # E  M-x vm-epg-sign-and-encrypt  sign + encrypt
+;;
+;; A prefix argument to `vm-epg-encrypt' (C-u M-x vm-epg-encrypt) also signs,
+;; and is equivalent to `vm-epg-sign-and-encrypt'.
+;;
+;; PGP/MIME is the recommended format.  For the older inline ("cleartext")
+;; format, where the ASCII armor is placed directly in the message body, use:
+;;  * C-c # C-s  M-x vm-epg-cleartext-sign     sign inline
+;;  * C-c # C-e  M-x vm-epg-cleartext-encrypt  encrypt inline
+;;
+;; Inline PGP cannot cover attachments and interacts badly with MIME
+;; transfer encodings; prefer the PGP/MIME commands above.  Incoming inline
+;; PGP is always handled, regardless of which format you send.
+;;
+;; Public keys can be sent with:
+;;  * C-c # k  M-x vm-epg-attach-public-key  attach as application/pgp-keys
+;;  *          M-x vm-epg-insert-public-key  insert armor at point
+;;
+;; To be asked at send time whether to sign or encrypt, use
+;; `vm-epg-ask-hook' (C-c # a); see its docstring for how to install it.
 ;;
 ;; All these commands are also available in the menu PGP/MIME which is
 ;; activated by the minor mode `vm-epg-compose-mode'.
@@ -57,9 +86,14 @@
 ;;; References:
 ;;
 ;; For PGP/MIME see:
+;; * https://www.rfc-editor.org/rfc/rfc3156  PGP/MIME (obsoletes RFC 2015)
+;; * https://www.rfc-editor.org/rfc/rfc4880  OpenPGP (obsoletes RFC 2440)
+;;
+;; Both RFC 2015 and RFC 2440 are obsolete and are listed only because
+;; older PGP/MIME implementations, and some of the message text generated
+;; here, still refer to them:
 ;; * https://www.rfc-editor.org/rfc/rfc2015
 ;; * https://www.rfc-editor.org/rfc/rfc2440
-;; * https://www.rfc-editor.org/rfc/rfc3156
 ;;
 
 ;;; Code:
@@ -141,68 +175,68 @@
   :group 'vm-epg
   :group 'faces)
 
-(defface vm-epg-bad-signature-modeline
-  '((((type tty) (class color))
-     (:inherit modeline :foreground "red" :bold t))
-    (((type tty))
-     (:inherit modeline :bold t))
-    (((background light))
-     (:inherit modeline :foreground "red" :bold t))
-    (((background dark))
-     (:inherit modeline :foreground "red" :bold t)))
-  "The face used to highlight bad signature messages in the modeline."
-  :group 'vm-epg
-  :group 'faces)
+;; The modeline faces below inherit from `mode-line' so that the state
+;; indicator keeps the modeline's background and box.  (vm-pgg spelled this
+;; `modeline', the XEmacs name; in GNU Emacs the obsolete `modeline' alias
+;; has been removed, so inheriting from it silently yields no attributes.)
 
 (defface vm-epg-good-signature-modeline
   '((((type tty) (class color))
-     (:inherit modeline :foreground "green" :bold t))
+     (:inherit mode-line :foreground "green" :bold t))
     (((type tty))
-     (:inherit modeline :bold t))
+     (:inherit mode-line :bold t))
     (((background light))
-     (:inherit modeline :foreground "green4"))
+     (:inherit mode-line :foreground "green4"))
     (((background dark))
-     (:inherit modeline :foreground "green")))
+     (:inherit mode-line :foreground "green")))
   "The face used to highlight good signature messages in the modeline."
   :group 'vm-epg
   :group 'faces)
 
 (defface vm-epg-unknown-signature-type-modeline
   '((((type tty) (class color))
-     (:inherit modeline :bold t))
+     (:inherit mode-line :bold t))
     (((type tty))
-     (:inherit modeline :bold t)))
+     (:inherit mode-line :bold t)))
   "The face used to highlight unknown signature types in the modeline."
   :group 'vm-epg
   :group 'faces)
 
 (defface vm-epg-error-modeline
   '((((type tty) (class color))
-     (:inherit modeline :foreground "red" :bold t))
+     (:inherit mode-line :foreground "red" :bold t))
     (((type tty))
-     (:inherit modeline :bold t))
+     (:inherit mode-line :bold t))
     (((background light))
-     (:inherit modeline :foreground "red"))
+     (:inherit mode-line :foreground "red"))
     (((background dark))
-     (:inherit modeline :foreground "red")))
-  "The face used to highlight error messages in the modeline."
+     (:inherit mode-line :foreground "red")))
+  "The face used to highlight error and bad signature messages in the modeline."
   :group 'vm-epg
   :group 'faces)
 
 ;;; Customizable variables
 
 (defcustom vm-epg-fetch-missing-keys t
-  "If t, fetch missing keys from a keyserver when verifying signatures."
+  "If non-nil, fetch missing keys from a keyserver when verifying signatures.
+When a signature was made by a key that is not in your keyring, contact the
+keyserver configured for GnuPG to retrieve it and then verify again.  This
+makes displaying a signed message reach out to the network."
   :group 'vm-epg
   :type 'boolean)
 
 (defcustom vm-epg-auto-snarf t
-  "If t, snarfing of keys will happen automatically."
+  "If non-nil, snarf public keys automatically.
+Snarfing means importing the public keys found in a message into your GnuPG
+keyring.  When nil, a button is shown instead and keys are imported only
+when you activate it."
   :group 'vm-epg
   :type 'boolean)
 
 (defcustom vm-epg-auto-decrypt t
-  "If t, decrypting will happen automatically."
+  "If non-nil, decrypt encrypted messages automatically when displaying them.
+When nil, a button is shown instead and decryption happens only when you
+activate it."
   :group 'vm-epg
   :type 'boolean)
 
@@ -214,8 +248,17 @@ If nil, the default EPG signing key is used."
   :type '(repeat string))
 
 (defcustom vm-epg-sign-text-transfer-encoding 'quoted-printable
-  "The encoding used for signed MIME parts of type text.
-See `vm-epg-sign' for details."
+  "The content transfer encoding used for signed MIME parts of type text.
+
+RFC 3156 forbids 8bit encoding in signed messages, because a gateway that
+re-encodes the body would invalidate the signature.  `vm-epg-sign'
+therefore binds `vm-mime-8bit-text-transfer-encoding' to this value while
+it encodes the composition, overriding your normal setting for the duration
+of the signing operation.
+
+Both choices are signature-safe; `quoted-printable' keeps mostly-ASCII text
+readable to humans and to non-MIME tools, while `base64' is more compact for
+text that is largely non-ASCII."
   :group 'vm-epg
   :type '(choice (const quoted-printable) (const base64)))
 
@@ -228,7 +271,12 @@ See `vm-epg-sign' for details."
     (define-key map "\C-c#E" 'vm-epg-sign-and-encrypt)
     (define-key map "\C-c#a" 'vm-epg-ask-hook)
     (define-key map "\C-c#k" 'vm-epg-attach-public-key)
-    map))
+    ;; Inline (cleartext) PGP, on the control-modified variants of the
+    ;; corresponding PGP/MIME bindings.
+    (define-key map "\C-c#\C-s" 'vm-epg-cleartext-sign)
+    (define-key map "\C-c#\C-e" 'vm-epg-cleartext-encrypt)
+    map)
+  "Keymap for `vm-epg-compose-mode'.")
 
 (defvar vm-epg-compose-mode-menu nil
   "The composition menu of vm-epg.")
@@ -243,19 +291,25 @@ See `vm-epg-sign' for details."
     ["Ask For An Action" vm-epg-ask-hook t]
     "----"
     ["Attach Public Key" vm-epg-attach-public-key t]
-    ["Insert Public Key" vm-epg-insert-public-key t]))
+    ["Insert Public Key" vm-epg-insert-public-key t]
+    "----"
+    ["Sign (inline PGP)"    vm-epg-cleartext-sign t]
+    ["Encrypt (inline PGP)" vm-epg-cleartext-encrypt t]))
 
 (defvar vm-epg-compose-mode nil
-  "Non-nil means PGP/MIME composition mode key bindings and menu are available.")
+  "Non-nil when `vm-epg-compose-mode' is active in this buffer.
+Its key bindings and PGP/MIME menu are then available.")
 
 (make-variable-buffer-local 'vm-epg-compose-mode)
 
 (defun vm-epg-compose-mode (&optional arg)
   "Minor mode for composing PGP/MIME messages with EPG.
 
-Switch mode on/off according to ARG.
+Toggle the mode when ARG is nil, enable it when ARG is a positive number
+and disable it otherwise.  Enabling makes the bindings below and the
+PGP/MIME menu available in the composition buffer.
 
-\\<vm-epg-compose-mode-map>"
+\\{vm-epg-compose-mode-map}"
   (interactive)
   (setq vm-epg-compose-mode
         (if (null arg) (not vm-epg-compose-mode)
@@ -265,7 +319,19 @@ Switch mode on/off according to ARG.
   "String to put in mode line when `vm-epg-compose-mode' is active.")
 
 (defcustom vm-epg-ask-function 'vm-epg-prompt-for-action
-  "The function to use in `vm-epg-ask-hook'."
+  "What `vm-epg-ask-hook' should do before sending a message.
+
+The value is either an action symbol or a function:
+
+  nil               do nothing;
+  `sign'            ask whether to sign;
+  `encrypt'         ask whether to encrypt;
+  `sign-and-encrypt' ask whether to sign and encrypt;
+  a function        called with no arguments, returning one of the action
+                    symbols above, or nil for no action.
+
+An action symbol ACTION selects the command `vm-epg-ACTION', so any value
+other than those listed must name an existing `vm-epg-' command."
   :group 'vm-epg
   :type '(choice
           (const
@@ -281,12 +347,12 @@ Switch mode on/off according to ARG.
            :doc "Ask whether to encrypt the message before sending"
            encrypt)
           (const
-           :tag "encrypt and sign"
-           :doc "Ask whether to encrypt and sign the message before sending"
-           encrypt-and-sign)
+           :tag "sign and encrypt"
+           :doc "Ask whether to sign and encrypt the message before sending"
+           sign-and-encrypt)
           (function
            :tag "ask for the action"
-           :doc "Will prompt for an action by calling `vm-epg-prompt-for-action'"
+           :doc "Prompt for an action via `vm-epg-prompt-for-action'"
            vm-epg-prompt-for-action)
           (function
            :tag "your own function"
@@ -303,7 +369,9 @@ Switch mode on/off according to ARG.
                 minor-mode-alist)))
 
 (defun vm-epg-compose-mode-activate ()
-  "Activate `vm-epg-compose-mode'."
+  "Activate `vm-epg-compose-mode'.
+Added to `vm-mail-mode-hook' when this file is loaded, so every VM
+composition buffer gets the PGP/MIME bindings and menu."
   (vm-epg-compose-mode 1))
 
 (add-hook 'vm-mail-mode-hook 'vm-epg-compose-mode-activate t)
@@ -311,7 +379,9 @@ Switch mode on/off according to ARG.
 ;;; Address/key helpers
 
 (defun vm-epg-get-emails (headers)
-  "Return email addresses found in the given HEADERS."
+  "Return the email addresses found in the composition's HEADERS.
+HEADERS is a list of header names including the colon, as in \\='(\"To:\").
+Only meaningful in a composition buffer."
   (let (content addresses)
     (while headers
       (setq content (vm-mail-mode-get-header-contents (car headers)))
@@ -320,20 +390,33 @@ Switch mode on/off according to ARG.
       (setq headers (cdr headers)))
     addresses))
 
-(defvar vm-epg-get-recipients-headers '("To:" "CC:" "BCC:")
-  "The list of headers to get recipients from.")
+(defcustom vm-epg-get-recipients-headers '("To:" "CC:" "BCC:")
+  "The list of headers used to identify the recipients of an outgoing message.
+Every address found in these headers must have a usable encryption key, or
+encryption fails."
+  :group 'vm-epg
+  :type '(repeat string))
 
 (defun vm-epg-get-recipients ()
-  "Return a list of recipient email addresses."
+  "Return the recipient email addresses of the composition.
+Collected from the headers named by `vm-epg-get-recipients-headers'."
   (vm-epg-get-emails vm-epg-get-recipients-headers))
 
 (defun vm-epg-get-author ()
-  "Return the email address of the message author."
+  "Return the email address of the composition's author, or nil.
+This is the first address found in the headers named by
+`vm-epg-get-author-headers'."
   (car (vm-epg-get-emails vm-epg-get-author-headers)))
 
 (defun vm-epg-find-usable-key (keys usage addr)
-  "Find a usable key from KEYS for USAGE (\\='sign or \\='encrypt).
-ADDR is the address the keys are for, used only for error messages."
+  "Return the first key in KEYS usable for USAGE, which is `sign' or `encrypt'.
+A key qualifies when one of its subkeys is capable of USAGE and is neither
+revoked nor expired.  ADDR is the address the keys were looked up for, used
+only in the error message.
+
+Signal an error when no key in KEYS qualifies; never return nil.  Silently
+dropping an unusable key would produce a message that is not encrypted to,
+or not signed for, the address the user named."
   (catch 'found
     (while keys
       (let ((pointer (epg-key-sub-key-list (car keys))))
@@ -349,8 +432,14 @@ ADDR is the address the keys are for, used only for error messages."
      "No usable %s key found for %s" usage addr)))
 
 (defun vm-epg-get-recipient-keys (context)
-  "Return a list of EPG key objects for the current message recipients.
-Uses CONTEXT for key lookup."
+  "Return the list of EPG keys to encrypt the composition to.
+CONTEXT is the `epg-context' the keys are looked up in.  There is one key per
+address returned by `vm-epg-get-recipients'; an address containing \"@\" is
+looked up bracketed, as \"<addr>\", so that it matches a full user ID rather
+than any substring.
+
+Signal an error, via `vm-epg-find-usable-key', if any recipient has no
+usable encryption key."
   (mapcar (lambda (addr)
             (vm-epg-find-usable-key
              (epg-list-keys context
@@ -362,8 +451,11 @@ Uses CONTEXT for key lookup."
           (vm-epg-get-recipients)))
 
 (defun vm-epg-set-signer (context)
-  "Set the signer in CONTEXT to the author.
-Uses CONTEXT and `vm-epg-get-author' to identify the sender."
+  "Set the signing key in CONTEXT to the composition author's secret key.
+The author comes from `vm-epg-get-author'.  When no author address can be
+found, CONTEXT is left alone, so EPG falls back on GnuPG's default signing
+key; when one is found but has no usable secret signing key, signal an
+error rather than silently signing as somebody else."
   (let ((author (vm-epg-get-author)))
     (when author
       (let ((signer
@@ -376,22 +468,32 @@ Uses CONTEXT and `vm-epg-get-author' to identify the sender."
 ;;; Composition helpers
 
 (defun vm-epg-goto-body-start ()
-  "Go to the start of the message body and return point."
+  "Move point past the composition's header separator and return point.
+Signal an error if the buffer has no `mail-header-separator' line, which
+means it is not a composition buffer."
   (goto-char (point-min))
   (search-forward (concat "\n" mail-header-separator "\n"))
   (goto-char (match-end 0))
   (point))
 
 (defun vm-epg-encode-composition-maybe ()
-  "MIME-encode the composition unless it is already encoded."
+  "MIME-encode the composition unless it is already encoded.
+The presence of a MIME-Version header is taken to mean it is.  Also performs
+any pending FCC first when `vm-do-fcc-before-mime-encode' is set, so that the
+filed copy is the unencoded one."
   (unless (vm-mail-mode-get-header-contents "MIME-Version:")
     (if vm-do-fcc-before-mime-encode
         (vm-do-fcc-before-mime-encode))
     (vm-mime-encode-composition)))
 
 (defun vm-epg-normalize-composition-body ()
-  "Show headers, trim trailing whitespace, ensure a final newline and
-move point to the start of the body.  Does not MIME-encode."
+  "Normalize the composition body and leave point at its start.
+Reveal any hidden headers, strip trailing whitespace, and ensure the body
+ends in exactly one newline.  Return point, the start of the body.
+
+Does not MIME-encode; callers that need that must arrange it themselves,
+either before (see `vm-epg-prepare-composition') or after (see
+`vm-epg-cleartext-sign')."
   (vm-mail-mode-show-headers)
   ;; ensure newline at the end
   (goto-char (point-max))
@@ -414,22 +516,46 @@ the body."
 ;;; Modeline state
 
 (defvar vm-epg-state nil
-  "State of the currently viewed message.")
+  "The PGP state of the currently viewed message, as modeline constructs.
+This is a list of strings spliced into `vm-mode-line-format': the prefix
+\"PGP:\" followed by one entry per state reported by `vm-epg-state-set'.
+Nil means no PGP state is shown.  It is kept in sync across the folder,
+presentation and summary buffers.")
 (make-variable-buffer-local 'vm-epg-state)
 
 (defvar vm-epg-state-message nil
-  "The message for `vm-epg-state'.")
+  "The message that `vm-epg-state' describes.
+`vm-epg-state-set' compares this against the current message to detect that
+the user has moved on, and clears the stale state.")
 (make-variable-buffer-local 'vm-epg-state-message)
 
-(defvar vm-epg-mode-line-items nil
-  "An alist mapping states to modeline strings.")
+(defvar vm-epg-mode-line-items
+  (list (cons 'verified
+              (propertize " verified" 'face 'vm-epg-good-signature-modeline))
+        (cons 'unknown
+              (propertize " unknown" 'face
+                          'vm-epg-unknown-signature-type-modeline))
+        (cons 'error
+              (propertize " ERROR" 'face 'vm-epg-error-modeline)))
+  "Alist mapping a state symbol to the modeline string shown for it.
+The string is displayed by `vm-epg-state-set' as part of `vm-epg-state'.
+States absent from this alist -- `signed', `encrypted' and `public-key' --
+are shown unpropertized as \" STATE\".")
 
 (if (not (member 'vm-epg-state vm-mode-line-format))
     (setq vm-mode-line-format (append '("" vm-epg-state) vm-mode-line-format)))
 
 (defun vm-epg-state-set (&rest states)
-  "Set the message state displayed in the modeline according to STATES.
-If STATES is nil, clear it."
+  "Add STATES to the PGP status shown in the modeline for the current message.
+Each of STATES is a symbol such as `signed', `encrypted', `verified',
+`error', `unknown' or `public-key'; it is rendered via
+`vm-epg-mode-line-items'.  States accumulate, so a signed and encrypted
+message can report both.
+
+Calling with no STATES only refreshes: the accumulated state is discarded
+whenever the current message differs from `vm-epg-state-message', so moving
+to another message clears the display.  The result is propagated to the
+folder, presentation and summary buffers."
   (save-excursion
     (vm-select-folder-buffer-if-possible)
     (when (not (equal (car vm-message-pointer) vm-epg-state-message))
@@ -465,11 +591,17 @@ If STATES is nil, clear it."
 
 (defvar vm-epg-cleartext-begin-regexp
   "^-----BEGIN PGP \\(\\(SIGNED \\)?MESSAGE\\|PUBLIC KEY BLOCK\\)-----$"
-  "Regexp used to match PGP armor.")
+  "Regexp matching the start of an inline PGP ASCII armor.
+Group 1 is the armor type -- \"SIGNED MESSAGE\", \"MESSAGE\" or \"PUBLIC KEY
+BLOCK\" -- which selects what `vm-epg-cleartext-automode' does with it, and
+which is also the value to substitute into `vm-epg-cleartext-end-regexp' to
+find the matching end line.")
 
 (defvar vm-epg-cleartext-end-regexp
   "^-----END PGP %s-----$"
-  "Regexp used to match PGP armor.")
+  "Format string producing a regexp matching the end of an inline PGP armor.
+Pass it through `format' with the armor type captured by group 1 of
+`vm-epg-cleartext-begin-regexp'; it is not a usable regexp on its own.")
 
 (defcustom vm-epg-cleartext-search-limit 4096
   "Number of bytes to search into the message for a PGP clear text armor."
@@ -477,7 +609,11 @@ If STATES is nil, clear it."
   :group 'vm-epg)
 
 (defun vm-epg-make-presentation-copy ()
-  "Make a presentation copy for cleartext PGP messages."
+  "Make a presentation copy of the current message for inline PGP work.
+The cleartext commands rewrite the message text in place -- stripping armor,
+inserting plaintext or verification results -- so they must operate on a
+presentation copy, leaving the folder itself unmodified.  Sets
+`vm-presentation-buffer' and makes it the current buffer."
   (let* ((m (car vm-message-pointer))
          (layout (vm-mm-layout m)))
     (vm-make-presentation-copy m)
@@ -503,7 +639,11 @@ If STATES is nil, clear it."
       (vm-energize-headers-and-xfaces))))
 
 (defun vm-epg-cleartext-automode-button (label action)
-  "Replace current PGP armor with a button labeled LABEL that calls ACTION."
+  "Replace the current PGP armor with a button labeled LABEL bound to ACTION.
+ACTION is an interactive function, invoked by RET or a middle click on it.
+The armor to replace is the one just matched by
+`vm-epg-cleartext-begin-regexp'; this uses that match data to find the
+extent of the armor, so call it directly after the search."
   (save-excursion
     (unless (eq major-mode 'vm-presentation-mode)
       (vm-epg-make-presentation-copy))
@@ -527,30 +667,36 @@ If STATES is nil, clear it."
         (overlay-put o 'local-map keymap)))))
 
 (defvar vm-epg-cleartext-decoded nil
-  "State of the cleartext message.")
+  "The message whose inline PGP armor has already been handled, or nil.
+Holds a VM message object, not a state symbol.  `vm-epg-cleartext-automode'
+consults it so that re-displaying the same message does not verify or
+decrypt its armor a second time.")
 (make-variable-buffer-local 'vm-epg-cleartext-decoded)
 
 (defun vm-epg-set-cleartext-decoded ()
-  "Record that the current message has been decoded."
+  "Record the current message in `vm-epg-cleartext-decoded'.
+Marks its inline PGP armor as handled, so that re-displaying the message
+does not verify or decrypt it again."
   (save-excursion
     (vm-select-folder-buffer)
     (setq vm-epg-cleartext-decoded (car vm-message-pointer))))
+
+;; Note: this test is deliberately looser than `vm-mime-plain-message-p',
+;; whose charset and encoded-header restrictions are irrelevant to inline
+;; PGP.  The armor lines are 7-bit ASCII regardless of the part's charset,
+;; encoded *headers* never affect the *body*, and verification runs on the
+;; transfer-decoded body before any charset conversion.  Requiring
+;; `us-ascii' and unencoded headers merely suppressed verification for
+;; perfectly valid messages, such as an `iso-8859-1' body with RFC 2047
+;; headers.
 
 (defun vm-epg-cleartext-candidate-p (m)
   "Return non-nil if message M may carry inline (cleartext) PGP armor.
 True when M has no MIME layout, or its top-level part is `text/plain'.
 
-This is deliberately looser than `vm-mime-plain-message-p': the charset and
-encoded-header restrictions of the latter are irrelevant to inline PGP.  The
-armor lines are 7-bit ASCII regardless of the part's charset, encoded
-*headers* never affect the *body*, and verification runs on the
-transfer-decoded body before any charset conversion.  Requiring `us-ascii'
-and unencoded headers merely suppressed verification for perfectly valid
-messages such as an `iso-8859-1' body with RFC 2047 headers.
-
-Restricted to `text/plain' because the verify/cleanup/display path is wired
-only to that subtype (see the advice on `vm-mime-display-internal-text/plain'
-and `vm-epg-cleartext-cleanup')."
+The `text/plain' restriction is not cosmetic: the verify/cleanup/display
+path is wired only to that subtype, via the advice on
+`vm-mime-display-internal-text/plain' and `vm-epg-cleartext-cleanup'."
   (save-match-data
     (let ((o (vm-mm-layout m))
           (case-fold-search t))
@@ -558,7 +704,14 @@ and `vm-epg-cleartext-cleanup')."
           (vm-mime-types-match "text/plain" (car (vm-mm-layout-type o)))))))
 
 (defun vm-epg-cleartext-automode ()
-  "Check for PGP ASCII armor and trigger automatic verification/decryption."
+  "Check for inline PGP ASCII armor and act on it.
+Search the first `vm-epg-cleartext-search-limit' bytes of the message being
+displayed for an armor recognized by `vm-epg-cleartext-begin-regexp', then
+verify a signature, decrypt a message, or import a public key block as
+appropriate.  Decryption and key import are performed directly only when
+`vm-epg-auto-decrypt' resp. `vm-epg-auto-snarf' is non-nil; otherwise a
+button is inserted to do it on demand.  Do nothing if this message's armor
+has already been handled, per `vm-epg-cleartext-decoded'."
   (save-excursion
     (vm-select-folder-buffer-if-possible)
     (if (equal vm-epg-cleartext-decoded (car vm-message-pointer))
@@ -595,7 +748,10 @@ and `vm-epg-cleartext-cleanup')."
                     (let ((vm-epg-auto-snarf t))
                       (vm-epg-snarf-keys))))))
               (t
-               (error "This should never happen!")))))))
+               ;; Unreachable unless `vm-epg-cleartext-begin-regexp' gains an
+               ;; alternative in group 1 that is not handled above.
+               (error "Unhandled PGP armor type %S"
+                      (match-string 1))))))))
 
 (advice-add 'vm-present-current-message
             :after #'vm-epg--present-cleartext-automode)
@@ -611,7 +767,10 @@ and `vm-epg-cleartext-cleanup')."
 
 (advice-add 'vm-scroll-forward :around #'vm-epg--scroll-cleartext-automode)
 (defun vm-epg--scroll-cleartext-automode (orig-fun &rest args)
-  "Decode or check signature on clear text messages when scrolling."
+  "Decode or check signature on clear text messages when scrolling.
+Around advice for `vm-scroll-forward': apply ORIG-FUN to ARGS, then run
+`vm-epg-cleartext-automode' if the scroll ended the preview of a message,
+which is the point at which its body first becomes available."
   (let ((vm-system-state-was
          (save-excursion
            (vm-select-folder-buffer-if-possible)
@@ -638,10 +797,11 @@ and `vm-epg-cleartext-cleanup')."
 ;; original display function returns.  See `vm-epg-cleartext-set-result'.
 
 (defun vm-epg-cleartext-cleanup (status &optional output face)
-  "Remove the ASCII armor at point and insert EPG OUTPUT in its place.
-STATUS is `verified' or `error'.  OUTPUT is the text to insert (the empty
-string if nil).  FACE is the face to apply to it; when nil a face is chosen
-from STATUS (`vm-epg-good-signature' or `vm-epg-bad-signature')."
+  "Replace the inline PGP armor at point with the outcome of an EPG operation.
+STATUS is `verified' or `error'.  OUTPUT is the human readable text to insert
+in place of the armor, or nil for the empty string.  FACE is the face to
+apply to that text; when nil it is derived from STATUS, giving
+`vm-epg-bad-signature' for `error' and `vm-epg-good-signature' otherwise."
   (let (start end)
     (setq start (and (re-search-forward "^-----BEGIN PGP SIGNED MESSAGE-----$"
                                         nil t)
@@ -674,9 +834,11 @@ from STATUS (`vm-epg-good-signature' or `vm-epg-bad-signature')."
 (defun vm-epg--transfer-cleartext-automode (orig-fun &optional layout
                                                       start end &rest args)
   "Decode or check signature on clear text message parts.
-Runs `vm-epg-cleartext-automode' over the freshly transfer-decoded region
-\[START, END], where the body is decoded but not yet charset-converted -- the
-form the cleartext signature is computed over.
+Around advice for `vm-mime-transfer-decode-region': apply ORIG-FUN to
+LAYOUT, START, END and ARGS, then run `vm-epg-cleartext-automode' over the
+freshly transfer-decoded region \[START, END], where the body is decoded but
+not yet charset-converted -- the form the cleartext signature is computed
+over.
 
 The region is taken from the decode arguments rather than from how far point
 moved: transfer-decoding advances point only for encodings that actually
@@ -716,8 +878,13 @@ will do the cleanup); return nil otherwise, so the caller knows it must run
             :around #'vm-epg--display-cleartext-automode)
 (defun vm-epg--display-cleartext-automode (orig-fun &rest args)
   "Decode or check signature on clear text message parts.
-Faces would be lost if charset conversion happens after our work, so we do
-the cleanup here after verification/decoding."
+Around advice for `vm-mime-display-internal-text/plain': apply ORIG-FUN to
+ARGS, then apply any result a verify/decrypt command left in
+`vm-epg-cleartext-result'.
+
+The cleanup has to happen here, after ORIG-FUN returns, rather than in the
+verify/decrypt command itself: the faces applied to the inserted output
+would be lost to the charset conversion that ORIG-FUN performs afterwards."
   (let ((vm-epg-cleartext-result nil)
         (start (point))
         end)
@@ -738,7 +905,17 @@ the cleanup here after verification/decoding."
 
 ;;;###autoload
 (defun vm-epg-cleartext-encrypt (sign)
-  "Encrypt the composition as cleartext; with a prefix also SIGN it."
+  "Encrypt the composition body in place as inline PGP ASCII armor.
+With a prefix argument, SIGN non-nil, sign it as well.
+
+This replaces the body with the armor rather than building a MIME structure
+around it, so it cannot cover attachments; prefer `vm-epg-encrypt', which
+produces PGP/MIME.  Also used internally by `vm-epg-encrypt' to armor the
+body it then wraps.
+
+Every recipient must have a usable encryption key: with no recipient key
+this signals an error rather than falling back to symmetric (passphrase)
+encryption, which is never what is wanted for mail."
   (interactive "P")
   (save-excursion
     ;; Normalize but do NOT MIME-encode yet: the armor must be inserted into
@@ -773,7 +950,11 @@ the cleanup here after verification/decoding."
 
 ;;;###autoload
 (defun vm-epg-cleartext-sign ()
-  "Sign the message body as cleartext PGP."
+  "Sign the composition body in place as inline PGP ASCII armor.
+This uses the OpenPGP cleartext signature framework, which leaves the text
+readable and appends the signature to the body, rather than building a
+multipart/signed MIME structure around it.  It therefore cannot cover
+attachments; prefer `vm-epg-sign', which produces PGP/MIME."
   (interactive)
   (save-excursion
     ;; Normalize but do NOT MIME-encode yet.  The OpenPGP cleartext signature
@@ -803,7 +984,10 @@ the cleanup here after verification/decoding."
     (vm-epg-encode-composition-maybe)))
 
 (defun vm-epg-format-verify-result (result)
-  "Format EPG verification RESULT (a list of `epg-signature' objects) as a string."
+  "Return a human readable description of EPG verification RESULT.
+RESULT is a list of `epg-signature' objects, as returned by
+`epg-context-result-for' for the `verify' operation; one line is produced
+per signature.  A nil RESULT means EPG reported no signature at all."
   (if (null result)
       "No signature result"
     (mapconcat
@@ -820,13 +1004,16 @@ the cleanup here after verification/decoding."
      result
      "\n")))
 
-(defun vm-epg-fetch-missing-keys-p (context result)
-  "Fetch public keys missing for RESULT into CONTEXT if enabled.
+(defun vm-epg-fetch-missing-keys-maybe (context result)
+  "Fetch into CONTEXT any public keys that RESULT reports as missing.
 RESULT is a list of `epg-signature' objects.  When
 `vm-epg-fetch-missing-keys' is non-nil and one or more signatures were made
 by a key that is not in the local keyring (status `no-pubkey'), attempt to
 receive those keys from a keyserver.  Return non-nil if any keys were
-fetched, so the caller can verify the message again."
+fetched, so the caller can verify the message again.
+
+Note that this contacts the network, so despite returning a boolean it is
+not a cheap predicate."
   (when vm-epg-fetch-missing-keys
     (let ((missing (delq nil
                          (mapcar (lambda (sig)
@@ -841,7 +1028,13 @@ fetched, so the caller can verify the message again."
 
 ;;;###autoload
 (defun vm-epg-cleartext-verify ()
-  "Verify the signature in the current message."
+  "Verify the inline PGP signature in the current message.
+Replace the ASCII armor in a presentation copy of the message with a
+description of the signature, faced according to whether it verified, and
+report the outcome in the modeline.  The folder itself is not modified.
+
+If the signing key is not in your keyring and `vm-epg-fetch-missing-keys'
+is non-nil, try to fetch it from a keyserver first."
   (interactive)
   (message "Verifying PGP cleartext message...")
   (when (vm-interactive-p)
@@ -866,7 +1059,7 @@ fetched, so the caller can verify the message again."
       (setq result (epg-context-result-for context 'verify))
       ;; If a signature was made by a key we do not have, optionally fetch it
       ;; from a keyserver and verify again.
-      (when (vm-epg-fetch-missing-keys-p context result)
+      (when (vm-epg-fetch-missing-keys-maybe context result)
         (condition-case _err
             (epg-verify-string context message-text)
           (error nil))
@@ -889,7 +1082,16 @@ fetched, so the caller can verify the message again."
 
 ;;;###autoload
 (defun vm-epg-cleartext-decrypt ()
-  "Decrypt the contents of the current message."
+  "Decrypt the inline PGP message in the current message.
+Replace the ASCII armor in a presentation copy with the plaintext, leaving
+the folder unmodified, and report the outcome in the modeline.  A decryption
+failure inserts the error text instead, faced with `vm-epg-error'.
+
+If the plaintext is itself an inline signed message, verify it as well with
+`vm-epg-cleartext-verify'.
+
+Refuses to run on a read-only folder even though only the presentation copy
+is written, unlike `vm-epg-cleartext-verify', which does not check."
   (interactive)
   (when (vm-interactive-p)
     (vm-follow-summary-cursor))
@@ -938,14 +1140,19 @@ fetched, so the caller can verify the message again."
 ;;; CRLF utilities
 
 (defun vm-epg-crlf-cleanup (start end)
-  "Convert CRLF to LF in region from START to END."
+  "Convert CRLF line endings to LF between START and END.
+Used on text coming back from EPG, which is in the MIME canonical CRLF form,
+before it is shown in a buffer."
   (save-excursion
     (goto-char start)
     (while (search-forward "\r\n" end t)
       (replace-match "\n" t t))))
 
 (defun vm-epg-make-crlf (start end)
-  "Convert LF to CRLF in region from START to END."
+  "Convert LF line endings to CRLF between START and END.
+Used to put a body into the MIME canonical form that RFC 3156 requires a
+signature to be computed over.  Works backwards from END so that the growing
+text does not invalidate the region."
   (save-excursion
     (goto-char end)
     (while (search-backward "\n" start t)
@@ -955,21 +1162,35 @@ fetched, so the caller can verify the message again."
 ;;; MIME state tracking
 
 (defvar vm-epg-mime-decoded nil
-  "Saves decoded state for later use, i.e. decoding to buttons.")
+  "VM's `vm-mime-decoded' as it was when the current decode started.
+Captured by `vm-epg--clear-state' because the MIME handlers here need to
+know whether VM is decoding the message for the first time or toggling an
+already-decoded message back to buttons; by the time a handler runs,
+`vm-mime-decoded' has already been updated.  Read it with
+`vm-epg-get-mime-decoded', which looks in the folder buffer.")
 (make-variable-buffer-local 'vm-epg-mime-decoded)
 
 (defun vm-epg-get-mime-decoded ()
-  "Return `vm-epg-mime-decoded'."
+  "Return `vm-epg-mime-decoded' from the folder buffer.
+The MIME handlers run in the presentation buffer, where the variable is not
+the one that `vm-epg--clear-state' set."
   (save-excursion
     (vm-select-folder-buffer)
     vm-epg-mime-decoded))
 
 (defvar vm-epg-recursion nil
-  "Detect recursive calls.")
+  "Non-nil while `vm-epg--clear-state' is inside `vm-decode-mime-message'.
+The advice must capture `vm-mime-decoded' only for the outermost decode; a
+nested decode -- one started by a handler defined here, for instance to
+render decrypted content -- would otherwise overwrite it.")
 
 (advice-add 'vm-decode-mime-message :around #'vm-epg--clear-state)
 (defun vm-epg--clear-state (orig-fun &rest args)
-  "Clear the modeline state before decoding."
+  "Clear the modeline state before decoding.
+Around advice for `vm-decode-mime-message': reset `vm-epg-state' for the new
+message and remember `vm-mime-decoded' in `vm-epg-mime-decoded', then apply
+ORIG-FUN to ARGS.  A plain (non-MIME) message is re-presented instead of
+decoded, so that inline PGP armor gets another chance to be handled."
   (vm-select-folder-buffer)
   (when (not vm-epg-recursion)
     (setq vm-epg-mime-decoded vm-mime-decoded))
@@ -984,7 +1205,10 @@ fetched, so the caller can verify the message again."
 ;;; MIME multipart/encrypted handler
 
 (defun vm-epg-mime-decrypt (button)
-  "Decrypt the MIME part associated with BUTTON."
+  "Decrypt the MIME part associated with BUTTON, replacing the button.
+The action of the button inserted by
+`vm-mime-display-internal-multipart/encrypted' when `vm-epg-auto-decrypt'
+is nil."
   (let ((vm-epg-auto-decrypt t)
         (layout (copy-sequence (vm-extent-property button 'vm-mime-layout))))
     (vm-set-extent-property button 'vm-mime-disposable t)
@@ -995,7 +1219,20 @@ fetched, so the caller can verify the message again."
 
 ;;;###autoload
 (defun vm-mime-display-internal-multipart/encrypted (layout)
-  "Display multipart/encrypted LAYOUT."
+  "Display the PGP/MIME multipart/encrypted part LAYOUT, decrypting it.
+Insert the decrypted content at point, parsed and displayed as MIME in its
+own right, and report the outcome in the modeline.  If the plaintext also
+carried a signature, verify that and report it too.  When
+`vm-epg-auto-decrypt' is nil, insert a button that decrypts on demand
+instead.
+
+Always return t, so that VM treats the part as handled.  Returning nil on a
+decrypt failure or an unrecognized structure would make VM fall through and
+re-render the raw ciphertext parts as multipart/mixed.
+
+This is VM's dispatch name for the content type, so it deliberately does not
+carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
+name; see the commentary at the top of this file."
   (vm-epg-state-set 'encrypted)
   (let* ((part-list (vm-mm-layout-parts layout))
          (header (car part-list))
@@ -1053,7 +1290,9 @@ fetched, so the caller can verify the message again."
 			 (progn
                            (vm-epg-state-set 'signed 'verified)
                            (let ((start (point)))
-                             (insert "\n" (vm-epg-format-verify-result verify-result) "\n")
+                             (insert "\n"
+                                     (vm-epg-format-verify-result verify-result)
+                                     "\n")
                              (put-text-property start (point) 'face
 						'vm-epg-good-signature)))
                        (vm-epg-state-set 'signed 'error)))))
@@ -1067,7 +1306,20 @@ fetched, so the caller can verify the message again."
 
 ;;;###autoload
 (defun vm-mime-display-internal-multipart/signed (layout)
-  "Display multipart/signed LAYOUT."
+  "Display the PGP/MIME multipart/signed part LAYOUT, verifying its signature.
+Insert the signed content at point, followed by a description of the
+signature faced according to whether it verified, and report the outcome in
+the modeline.  Per RFC 3156 the signature is checked against the CRLF form
+of the signed part, headers included.  A signature part of any type other
+than application/pgp-signature is reported as an unknown signature type and
+the content is still shown.
+
+If the signing key is not in your keyring and `vm-epg-fetch-missing-keys' is
+non-nil, try to fetch it from a keyserver and verify again.
+
+This is VM's dispatch name for the content type, so it deliberately does not
+carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
+name; see the commentary at the top of this file."
   (vm-epg-state-set 'signed)
   (let* ((part-list (vm-mm-layout-parts layout))
          (message (car part-list))
@@ -1118,7 +1370,7 @@ fetched, so the caller can verify the message again."
                    (error nil))
                  (setq status (epg-context-result-for context 'verify))
                  ;; Fetch a missing signer key from a keyserver, then re-verify.
-                 (when (vm-epg-fetch-missing-keys-p context status)
+                 (when (vm-epg-fetch-missing-keys-maybe context status)
                    (condition-case _err
                        (epg-verify-string context sig-string signed-text)
                      (error nil))
@@ -1144,6 +1396,16 @@ fetched, so the caller can verify the message again."
 
 ;;; application/pgp-keys handler
 
+;; Register the PGP content types with VM's MIME machinery.  This runs at
+;; compile time as well as at load time (`eval-and-compile') so that the
+;; button formats are in place while the rest of this file is byte-compiled;
+;; the effect on the compiling Emacs is harmless and is discarded with it.
+;;
+;; `vm-mime-internal-content-types' is only extended when it is a list: the
+;; value t means "display every type internally", which already covers
+;; application/pgp-keys and must not be turned into a list.  Note that a
+;; user who sets this variable *after* loading vm-epg discards this entry;
+;; see the commentary at the top of this file.
 (eval-and-compile
   (if (listp vm-mime-internal-content-types)
       (add-to-list 'vm-mime-internal-content-types "application/pgp-keys"))
@@ -1152,8 +1414,22 @@ fetched, so the caller can verify the message again."
   (add-to-list 'vm-mime-button-format-alist
                '("multipart/encrypted" . "Decrypt PGP/MIME message")))
 
+(defun vm-epg-format-import-result (result)
+  "Return a message describing the outcome of a key import RESULT.
+RESULT is an `epg-import-result' object, or nil if EPG reported none.
+
+Reports the number of keys actually added to the keyring
+\(`epg-import-result-imported'), not the number considered: importing a key
+you already have considers it but imports nothing, so a `considered' count
+would claim an import that did not happen."
+  (format "Imported %d key(s)."
+          (if result (epg-import-result-imported result) 0)))
+
 (defun vm-epg-mime-snarf-keys (button)
-  "Import the keys from the MIME part associated with BUTTON."
+  "Import the keys from the MIME part associated with BUTTON.
+The action of the button inserted by
+`vm-mime-display-internal-application/pgp-keys' when `vm-epg-auto-snarf' is
+nil."
   (let ((vm-epg-auto-snarf t)
         (layout (copy-sequence (vm-extent-property button 'vm-mime-layout))))
     (vm-set-extent-property button 'vm-mime-disposable t)
@@ -1164,7 +1440,14 @@ fetched, so the caller can verify the message again."
 
 ;;;###autoload
 (defun vm-mime-display-internal-application/pgp-keys (layout)
-  "Import keys from LAYOUT and display the result."
+  "Import the public keys in the application/pgp-keys part LAYOUT.
+Replace the part with a report of how many keys were added to your keyring.
+When `vm-epg-auto-snarf' is nil, insert a button that imports on demand
+instead.
+
+This is VM's dispatch name for the content type, so it deliberately does not
+carry the `vm-epg-' prefix.  Note that vm-pgg defines a function of the same
+name; see the commentary at the top of this file."
   (vm-epg-state-set 'public-key)
   (if vm-epg-auto-snarf
       (let ((start (point)) end)
@@ -1179,10 +1462,7 @@ fetched, so the caller can verify the message again."
               (progn
                 (epg-import-keys-from-string context key-text)
                 (setq import-result (epg-context-result-for context 'import))
-                (insert (format "Imported %d key(s).\n"
-                                (if import-result
-                                    (epg-import-result-imported import-result)
-                                  0))))
+                (insert (vm-epg-format-import-result import-result) "\n"))
             (error
              (insert (format "Key import failed: %s\n"
                              (error-message-string err)))))))
@@ -1196,7 +1476,11 @@ fetched, so the caller can verify the message again."
 
 ;;;###autoload
 (defun vm-epg-snarf-keys ()
-  "Snarf keys from the current message."
+  "Import into your keyring the public keys in the body of the current message.
+This treats the whole message body as key material, so it is meant for
+messages that are an inline PGP public key block.  Keys arriving as an
+application/pgp-keys MIME part are handled by
+`vm-mime-display-internal-application/pgp-keys' instead."
   (interactive)
   (when (vm-interactive-p)
     (vm-follow-summary-cursor))
@@ -1212,11 +1496,8 @@ fetched, so the caller can verify the message again."
       (condition-case err
           (progn
             (epg-import-keys-from-string context key-text)
-            (let ((result (epg-context-result-for context 'import)))
-              (message "Imported %d key(s)."
-                       (if result
-                           (epg-import-result-considered result)
-                         0))))
+            (message "%s" (vm-epg-format-import-result
+                           (epg-context-result-for context 'import))))
         (error
          (error "Snarfing failed: %s" (error-message-string err)))))))
 
@@ -1224,7 +1505,11 @@ fetched, so the caller can verify the message again."
 
 ;;;###autoload
 (defun vm-epg-attach-public-key ()
-  "Attach your public key to a composition."
+  "Attach a public key to the composition as an application/pgp-keys part.
+The key exported is the author's, taken from the headers listed in
+`vm-epg-get-author-headers'.  When that yields no address, or the variable
+is nil, prompt for a user ID -- so any key in your keyring can be sent, not
+only your own."
   (interactive)
   (let* ((author (or (and vm-epg-get-author-headers (vm-epg-get-author))
                      (read-string "User ID: ")))
@@ -1234,13 +1519,13 @@ fetched, so the caller can verify the message again."
          (buffer (get-buffer-create (concat " *" description "*")))
          start)
     (unless keys
-      (error "%s has no public key!" author))
+      (error "%s has no public key" author))
     (with-current-buffer buffer
       (erase-buffer)
       (setq start (point))
       (insert (epg-export-keys-to-string context keys))
       (when (= start (point))
-        (error "%s has no public key!" author)))
+        (error "%s has no public key" author)))
     (save-excursion
       (goto-char (point-max))
       (insert "\n")
@@ -1256,24 +1541,27 @@ fetched, so the caller can verify the message again."
 
 ;;;###autoload
 (defun vm-epg-insert-public-key ()
-  "Insert your public key into the composition at point."
+  "Insert a public key as ASCII armor into the composition at point.
+The key is selected as for `vm-epg-attach-public-key', but is inserted
+inline rather than attached as a MIME part."
   (interactive)
   (let* ((author (or (and vm-epg-get-author-headers (vm-epg-get-author))
                      (read-string "User ID: ")))
          (context (epg-make-context 'OpenPGP))
          (keys (epg-list-keys context author)))
     (unless keys
-      (error "%s has no public key!" author))
+      (error "%s has no public key" author))
     (insert (epg-export-keys-to-string context keys))))
 
 ;;; MIME multipart boundary
 
 (defun vm-epg-make-multipart-boundary (word)
-  "Create a MIME part boundary starting with WORD and return it."
+  "Return a MIME multipart boundary string beginning with WORD.
+WORD, if non-nil, is followed by \"+\" and 15 random base64 characters; a nil
+WORD gives just the 15 random characters."
   (if word (setq word (concat word "+")))
   (let ((boundary (concat word (make-string 15 ?a)))
         (i (length word)))
-    (random)
     (while (< i (length boundary))
       (aset boundary i (aref vm-mime-base64-alphabet
                              (random (length vm-mime-base64-alphabet))))
@@ -1281,25 +1569,61 @@ fetched, so the caller can verify the message again."
     boundary))
 
 (defun vm-epg-save-work (function &rest args)
-  "Call FUNCTION with ARGS, restoring the composition buffer on error."
+  "Apply FUNCTION to ARGS on a scratch copy of the composition buffer.
+The current buffer's text is copied into a work buffer, FUNCTION is applied
+there, and the result is copied back over the composition only once FUNCTION
+has returned normally.
+
+If FUNCTION signals, the error propagates and the composition is left
+exactly as it was.  This matters because a failed sign or encrypt otherwise
+tends to leave a half-rewritten message -- headers already replaced, body
+not yet armored -- that the user cannot easily repair.
+
+Should the failure instead strike while the composition is being
+overwritten, it is the work buffer that holds the only copy of FUNCTION's
+result.  It is then renamed to a unique, visible \"*VM-EPG-RECOVERY*\"
+buffer, and a warning says where to look.  Both matter: the work buffer's
+own name is a fixed one that the next vm-epg command would erase, and its
+leading space would keep it out of the buffer list."
   (let ((composition-buffer (current-buffer))
-        (work-buffer (get-buffer-create " *VM-EPG-WORK*")))
-    (with-current-buffer work-buffer
-      (buffer-disable-undo)
-      (erase-buffer)
-      (insert-buffer-substring composition-buffer)
-      (setq major-mode 'mail-mode)
-      (apply function args))
-    (vm-mail-mode-show-headers)
-    (erase-buffer)
-    (insert-buffer-substring work-buffer)
-    (kill-buffer work-buffer)))
+        (work-buffer (get-buffer-create " *VM-EPG-WORK*"))
+        (overwriting nil))
+    (unwind-protect
+        (progn
+          (with-current-buffer work-buffer
+            (buffer-disable-undo)
+            (erase-buffer)
+            (insert-buffer-substring composition-buffer)
+            (setq major-mode 'mail-mode)
+            (apply function args))
+          (vm-mail-mode-show-headers)
+          ;; Past this point the composition no longer holds a usable copy,
+          ;; so an error or a C-g must not take the work buffer with it.
+          (setq overwriting t)
+          (erase-buffer)
+          (insert-buffer-substring work-buffer)
+          (setq overwriting nil))
+      (if (not overwriting)
+          (kill-buffer work-buffer)
+        ;; The composition was left half-overwritten, so the work buffer holds
+        ;; the only copy of FUNCTION's result.  Move it somewhere the user can
+        ;; actually find it and the next vm-epg command cannot erase it, then
+        ;; say so: the error itself is about to claim the echo area, so a
+        ;; `message' here would not survive.
+        (with-current-buffer work-buffer
+          (rename-buffer "*VM-EPG-RECOVERY*" t))
+        (display-warning
+         'vm-epg
+         (format "Composition may be incomplete; recover it from buffer %s"
+                 (buffer-name work-buffer)))))))
 
 ;;; Digest algorithm name for micalg header
 
 (defun vm-epg-digest-algo-name (algo-id)
-  "Return the lowercase name of digest algorithm with id ALGO-ID.
-Falls back to \"sha256\" for unknown IDs."
+  "Return the lowercase name of the digest algorithm with id ALGO-ID.
+ALGO-ID is looked up in `epg-digest-algorithm-alist'; the name is used for
+the `micalg' parameter of a multipart/signed Content-Type, which RFC 3156
+specifies in lowercase.  Falls back to \"sha256\" for an unknown id."
   (let ((entry (assq algo-id epg-digest-algorithm-alist)))
     (if entry
         (downcase (cdr entry))
@@ -1309,32 +1633,42 @@ Falls back to \"sha256\" for unknown IDs."
 
 ;;;###autoload
 (defun vm-epg-sign ()
-  "Sign the composition with PGP/MIME.
+  "Sign the composition with PGP/MIME, as a multipart/signed message.
 
-If the composition is not yet encoded, it is encoded before signing.
-Signing of already 8bit-encoded messages is discouraged.
+RFC 3156 forbids 8bit content transfer encoding in signed messages, and
+lines beginning with \"From \" must be armored, because a mail gateway that
+re-encodes either one would invalidate the signature.
 
-RFC 2015 and its successor 3156 forbid the use of 8bit encoding for signed
-messages.  Lines starting with \"From \" also cause problems.
+If the composition is not yet MIME-encoded, this encodes it in a
+signature-safe way, using `vm-epg-sign-text-transfer-encoding' in place of
+`vm-mime-8bit-text-transfer-encoding' and forcing
+`vm-mime-composition-armor-from-lines' on; your normal settings for those
+two variables therefore do not matter here.
 
-To avoid issues, ensure `vm-mime-8bit-text-transfer-encoding' is not 8bit
-and `vm-mime-composition-armor-from-lines' is t."
+If the composition has *already* been MIME-encoded -- for instance because
+you encoded it yourself with `vm-mime-encode-composition' -- this cannot
+re-encode it safely, so it checks for the two hazards above and refuses to
+sign rather than produce a signature that breaks in transit."
   (interactive)
 
   (when (vm-mail-mode-get-header-contents "MIME-Version:")
     (goto-char (point-min))
     (when (re-search-forward "Content-Transfer-Encoding:\\s-*8bit" nil t)
       (describe-function 'vm-epg-sign)
-      (error "Signing is broken for 8bit encoding!"))
+      (error "Cannot sign: composition is already encoded as 8bit"))
     (goto-char (point-min))
     (when (re-search-forward "^From\\s-+" nil t)
       (describe-function 'vm-epg-sign)
-      (error "Signing is broken for lines starting with \"From \"!")))
+      (error "Cannot sign: unarmored line starting with \"From \" in body")))
 
   (vm-epg-save-work 'vm-epg-sign-internal))
 
 (defun vm-epg-sign-internal ()
-  "Perform the PGP/MIME signing."
+  "Rewrite the current buffer as a PGP/MIME multipart/signed message.
+Intended to be run by `vm-epg-save-work' on a scratch copy, not called
+directly; `vm-epg-sign' is the command.  The `micalg' parameter of the
+resulting Content-Type is taken from the digest algorithm EPG actually
+used, rather than assumed."
   (let ((vm-mime-8bit-text-transfer-encoding
          vm-epg-sign-text-transfer-encoding)
         (vm-mime-composition-armor-from-lines t))
@@ -1377,7 +1711,7 @@ and `vm-mime-composition-armor-from-lines' is t."
                    (epg-new-signature-digest-algorithm (car sign-result))))))
         ;; assemble signed MIME structure
         (goto-char body-start)
-        (insert "This is an OpenPGP/MIME signed message (RFC 2440 and 3156)\n")
+        (insert "This is an OpenPGP/MIME signed message (RFC 4880 and 3156)\n")
         (insert "--" boundary "\n")
         (goto-char (point-max))
         (insert "\n--" boundary "\n")
@@ -1398,12 +1732,23 @@ and `vm-mime-composition-armor-from-lines' is t."
 
 ;;;###autoload
 (defun vm-epg-encrypt (&optional sign)
-  "Encrypt the composition as PGP/MIME.  With a prefix arg SIGN also sign it."
+  "Encrypt the composition as PGP/MIME, a multipart/encrypted message.
+With a prefix argument, SIGN non-nil, sign it as well, which is what
+`vm-epg-sign-and-encrypt' does.
+
+Every recipient address found in the headers listed in
+`vm-epg-get-recipients-headers' must have a usable encryption key in your
+keyring; otherwise this signals an error and leaves the composition
+untouched.  Note that the message is never encrypted to a passphrase: if no
+recipient key can be found, it refuses rather than falling back to symmetric
+encryption."
   (interactive "P")
   (vm-epg-save-work 'vm-epg-encrypt-internal sign))
 
 (defun vm-epg-encrypt-internal (sign)
-  "Perform PGP/MIME encryption; if SIGN is non-nil also sign."
+  "Rewrite the current buffer as a PGP/MIME message, signing it if SIGN.
+Intended to be run by `vm-epg-save-work' on a scratch copy, not called
+directly; `vm-epg-encrypt' is the command."
   (unless (vm-mail-mode-get-header-contents "MIME-Version:")
     (if vm-do-fcc-before-mime-encode
         (vm-do-fcc-before-mime-encode))
@@ -1422,7 +1767,7 @@ and `vm-mime-composition-armor-from-lines' is t."
     (vm-epg-cleartext-encrypt sign)
     ;; wrap in multipart/encrypted structure
     (goto-char body-start)
-    (insert "This is an OpenPGP/MIME encrypted message (RFC 2440 and 3156)\n")
+    (insert "This is an OpenPGP/MIME encrypted message (RFC 4880 and 3156)\n")
     (insert "--" boundary "\n")
     (insert "Content-Type: application/pgp-encrypted\n\n")
     (insert "Version: 1\n\n")
@@ -1440,26 +1785,35 @@ and `vm-mime-composition-armor-from-lines' is t."
     (insert "multipart/encrypted; boundary=\"" boundary "\";\n"
             "\tprotocol=\"application/pgp-encrypted\"")))
 
+;;;###autoload
 (defun vm-epg-sign-and-encrypt ()
-  "Sign and encrypt the composition as PGP/MIME."
+  "Sign and encrypt the composition as PGP/MIME.
+Equivalent to `vm-epg-encrypt' with a prefix argument."
   (interactive)
   (vm-epg-encrypt t))
 
 ;;; Ask hook
 
 (defvar vm-epg-prompt-last-action nil
-  "The action last taken in `vm-epg-prompt-for-action'.")
+  "The action last chosen in `vm-epg-prompt-for-action'.
+It is offered as the default on the next prompt, selected by RET.")
 
 (defvar vm-epg-prompt-action-alist
-  '((?s sign "Sign")
+  '((?s sign "sign")
     (?e encrypt "encrypt")
     (?E sign-and-encrypt "both")
     (?n nil "nothing")
     (?q quit "quit"))
-  "Alist of (KEY ACTION LABEL) elements for `vm-epg-prompt-for-action'.")
+  "Alist of (KEY ACTION LABEL) elements for `vm-epg-prompt-for-action'.
+KEY is the character that selects the entry, ACTION the symbol returned for
+it, and LABEL the word shown in the prompt.  ACTION nil means take no
+action; the pseudo-action `quit' aborts sending.  Any other ACTION selects
+the command `vm-epg-ACTION'.")
 
 (defun vm-epg-prompt-for-action ()
-  "Prompt for a PGP action and return it."
+  "Prompt for a PGP action and return it.
+The choices come from `vm-epg-prompt-action-alist'; RET repeats the previous
+choice, and `q' aborts sending with an error."
   (interactive)
   (let (prompt event action)
     (setq prompt (mapconcat (lambda (a)
@@ -1483,7 +1837,7 @@ and `vm-mime-composition-armor-from-lines' is t."
             (setq action (nth 1 action))
           (setq event nil))))
     (when (eq action 'quit)
-      (error "Sending aborted!"))
+      (error "Sending aborted"))
     (if action
         (message "Action is %s." action)
       (message "No action selected."))
@@ -1495,10 +1849,14 @@ and `vm-mime-composition-armor-from-lines' is t."
   "Ask whether to sign or encrypt outgoing messages with PGP/MIME.
 
 Add to `vm-mail-send-hook' to be asked each time you send a message.
-See `vm-epg-ask-function' to determine which function is used.
+`vm-epg-ask-function' controls what is asked: by default
+`vm-epg-prompt-for-action' offers a choice of actions, but it can also name
+a single action to confirm, or your own function.
 
-This hook should be last in `vm-mail-send-hook' as signing depends on the
-message not being modified afterwards.  Add it like:
+This hook must be last in `vm-mail-send-hook', and signals an error if it is
+not: signing covers the message as it stands, so a later hook that modified
+the message would invalidate the signature.  Add it with the APPEND argument
+to `add-hook':
 
        (add-hook \\='vm-mail-send-hook #\\='vm-epg-ask-hook t)"
   (interactive)
@@ -1507,17 +1865,49 @@ message not being modified afterwards.  Add it like:
   (when (and (member 'vm-epg-ask-hook vm-mail-send-hook)
              (cdr (member 'vm-epg-ask-hook vm-mail-send-hook)))
     (describe-function 'vm-epg-ask-hook)
-    (error "`vm-epg-ask-hook' must be the last hook in `vm-mail-send-hook'!"))
+    (error "`vm-epg-ask-hook' must be the last hook in `vm-mail-send-hook'"))
 
   (let ((handler vm-epg-ask-function)
         action)
     (when handler
-      (setq action (if (fboundp handler)
+      ;; `functionp', not `fboundp': the value may be a lambda or closure
+      ;; rather than a symbol, and `fboundp' signals on those.  An action
+      ;; symbol such as `sign' names no function, so it takes the other
+      ;; branch and is merely confirmed.
+      (setq action (if (functionp handler)
                        (funcall handler)
                      (if (y-or-n-p (format "%s the composition? " handler))
                          handler)))
       (when action
-        (funcall (intern (format "vm-epg-%s" action)))))))
+        (let ((command (intern (format "vm-epg-%s" action))))
+          ;; Report a bad `vm-epg-ask-function' value against that variable,
+          ;; rather than letting a void-function error surface at send time.
+          (unless (fboundp command)
+            (error "Invalid action `%s' from `vm-epg-ask-function': no %s"
+                   action command))
+          (funcall command))))))
+
+;;; vm-pgg conflict detection
+
+(defun vm-epg-pgg-conflict-warning ()
+  "Return a warning about a vm-pgg/vm-epg conflict, or nil if there is none.
+The two packages define the same `vm-mime-display-internal-*' handlers, so
+whichever is loaded last wins outright and the other's customizations become
+dead settings.  Loading both is always a configuration error."
+  (when (featurep 'vm-pgg)
+    (concat
+     "vm-pgg is also loaded.  Do not load both: they define the same\n"
+     "vm-mime-display-internal-* handlers, so the one loaded last (vm-epg)\n"
+     "now wins and vm-pgg's customizations have no effect.\n"
+     "vm-pgg is deprecated; remove (require 'vm-pgg) from your config.")))
+
+;; Warn in this direction too.  vm-pgg warns when it is loaded after vm-epg,
+;; but the common migration order is the other way round -- an existing
+;; configuration already requires vm-pgg and gains a `(require 'vm-epg)' --
+;; and that case would otherwise pass in silence.
+(let ((warning (vm-epg-pgg-conflict-warning)))
+  (when warning
+    (display-warning 'vm-epg warning)))
 
 (provide 'vm-epg)
 

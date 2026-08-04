@@ -44,6 +44,20 @@
     (aset v 11 parts)                   ; slot 11 = parts
     v))
 
+(defun vm-epg-test--spec-inherits (spec)
+  "Return every face named by an `:inherit' attribute anywhere in SPEC.
+SPEC is a `defface' spec, i.e. a list of (DISPLAY ATTRS) clauses."
+  (let (faces)
+    (dolist (clause spec)
+      (let ((attrs (cadr clause)))
+        (while (consp attrs)
+          (when (eq (car attrs) :inherit)
+            (let ((value (cadr attrs)))
+              (setq faces (append faces
+                                  (if (listp value) value (list value))))))
+          (setq attrs (cddr attrs)))))
+    faces))
+
 ;;; ---------------------------------------------------------------------------
 ;;; CRLF utilities
 ;;; ---------------------------------------------------------------------------
@@ -63,7 +77,7 @@
     (should (equal (buffer-string) "a\r\nb\r\nc\r\n"))))
 
 (ert-deftest vm-epg-test-crlf-roundtrip ()
-  "make-crlf followed by crlf-cleanup is the identity on LF text."
+  "Converting to CRLF and back again is the identity on LF text."
   (with-temp-buffer
     (insert "line1\nline2\nline3\n")
     (vm-epg-make-crlf (point-min) (point-max))
@@ -128,15 +142,28 @@ always returned the fallback."
          (kb (epg-make-key nil)))
     (setf (epg-key-sub-key-list ka) (list sa))
     (setf (epg-key-sub-key-list kb) (list sb))
-    (should (eq (vm-epg-find-usable-key (list ka kb) 'encrypt) kb))
-    (should (eq (vm-epg-find-usable-key (list ka kb) 'sign) ka))))
+    (should (eq (vm-epg-find-usable-key (list ka kb) 'encrypt "a@b") kb))
+    (should (eq (vm-epg-find-usable-key (list ka kb) 'sign "a@b") ka))))
 
 (ert-deftest vm-epg-test-find-usable-key-skips-expired ()
-  "Expired/revoked subkeys are not selected."
+  "Expired/revoked subkeys are not selected, and no usable key is an error.
+Signalling rather than returning nil is deliberate: a silently dropped key
+would yield a message not encrypted to, or not signed for, the named
+address."
   (let* ((s (epg-make-sub-key 'expired '(sign encrypt) nil nil nil "S" nil nil))
          (k (epg-make-key nil)))
     (setf (epg-key-sub-key-list k) (list s))
-    (should (null (vm-epg-find-usable-key (list k) 'sign)))))
+    (should-error (vm-epg-find-usable-key (list k) 'sign "a@b")
+                  :type 'error)))
+
+(ert-deftest vm-epg-test-find-usable-key-error-names-usage-and-address ()
+  "The error identifies which usage and address could not be satisfied."
+  (let* ((err (should-error
+               (vm-epg-find-usable-key nil 'encrypt "nobody@example.com")
+               :type 'error))
+         (text (error-message-string err)))
+    (should (string-match-p "encrypt" text))
+    (should (string-match-p "nobody@example\\.com" text))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; MIME multipart boundary
@@ -179,7 +206,7 @@ and never fetched anything."
         (vm-epg-fetch-missing-keys t))
     (cl-letf (((symbol-function 'epg-receive-keys)
                (lambda (_ctx keys) (setq received keys))))
-      (should (vm-epg-fetch-missing-keys-p
+      (should (vm-epg-fetch-missing-keys-maybe
                'ctx (list (epg-make-signature 'no-pubkey "DEADBEEF"))))
       (should (equal received '("DEADBEEF"))))))
 
@@ -189,7 +216,7 @@ and never fetched anything."
         (vm-epg-fetch-missing-keys nil))
     (cl-letf (((symbol-function 'epg-receive-keys)
                (lambda (_ctx keys) (setq received keys))))
-      (should-not (vm-epg-fetch-missing-keys-p
+      (should-not (vm-epg-fetch-missing-keys-maybe
                    'ctx (list (epg-make-signature 'no-pubkey "X"))))
       (should-not received))))
 
@@ -199,7 +226,7 @@ and never fetched anything."
         (vm-epg-fetch-missing-keys t))
     (cl-letf (((symbol-function 'epg-receive-keys)
                (lambda (_ctx keys) (setq received keys))))
-      (should-not (vm-epg-fetch-missing-keys-p
+      (should-not (vm-epg-fetch-missing-keys-maybe
                    'ctx (list (epg-make-signature 'good "X"))))
       (should-not received))))
 
@@ -265,10 +292,10 @@ be silently ignored and the real code would `aref' a bogus value."
           (cl-letf (((symbol-function 'vm-epg-state-set) #'ignore)
                     ((symbol-function 'vm-epg-get-mime-decoded) (lambda () nil))
                     ((symbol-function 'epg-decrypt-string)
-                     (lambda (&rest _) (error "decrypt failed"))))
+                     (lambda (&rest _) (error "Decrypt failed"))))
             (with-temp-buffer
               (should (eq t (vm-mime-display-internal-multipart/encrypted top)))
-              (should (string-match-p "decrypt failed" (buffer-string))))))
+              (should (string-match-p "Decrypt failed" (buffer-string))))))
       (kill-buffer cipher-buf))))
 
 (ert-deftest vm-epg-test-multipart-encrypted-t-on-unknown-format ()
@@ -539,7 +566,7 @@ survives a decode intact."
 (ert-deftest vm-epg-test-cleartext-sign-verify-roundtrip ()
   "REGRESSION: an inline cleartext-signed non-ASCII message must verify good.
 End-to-end with a real GnuPG: sign a body containing a non-ASCII character
-(forcing quoted-printable), then decode the body as a receiver would and
+\(forcing quoted-printable), then decode the body as a receiver would and
 detached-verify.  With the old code the armor was inserted raw into the
 quoted-printable part, a `='-terminated signature line merged with the next
 line, and verification failed."
@@ -570,6 +597,273 @@ line, and verification failed."
               (let ((result (epg-context-result-for context 'verify)))
                 (should result)
                 (should (eq (epg-signature-status (car result)) 'good))))))))))
+
+;;; ---------------------------------------------------------------------------
+;;; REGRESSION: `vm-epg-ask-function' action symbols must name real commands
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest vm-epg-test-ask-function-choices-name-real-commands ()
+  "REGRESSION: every action offered by `vm-epg-ask-function' is dispatchable.
+`vm-epg-ask-hook' invokes an action symbol ACTION as the command
+`vm-epg-ACTION'.  The customize type previously offered `encrypt-and-sign',
+for which no `vm-epg-encrypt-and-sign' exists, so choosing it failed with a
+void-function error at send time."
+  (let ((type (get 'vm-epg-ask-function 'custom-type))
+        (actions nil))
+    ;; Collect the `const' values from the `choice' type, ignoring nil.
+    (dolist (branch (cdr type))
+      (when (eq (car branch) 'const)
+        (let ((value (car (last branch))))
+          (when (and value (symbolp value))
+            (push value actions)))))
+    (should actions)
+    (dolist (action actions)
+      (should (fboundp (intern (format "vm-epg-%s" action)))))))
+
+(ert-deftest vm-epg-test-prompt-action-alist-names-real-commands ()
+  "Every dispatchable action in `vm-epg-prompt-action-alist' is a command.
+A nil action means take none, and `quit' aborts sending; neither is
+dispatched as a command."
+  (dolist (entry vm-epg-prompt-action-alist)
+    (let ((action (nth 1 entry)))
+      (when (and action (not (eq action 'quit)))
+        (should (fboundp (intern (format "vm-epg-%s" action))))))))
+
+(ert-deftest vm-epg-test-ask-hook-rejects-undispatchable-action ()
+  "An action naming no command is reported against `vm-epg-ask-function'.
+The error must mention the variable, rather than surfacing as a bare
+void-function error from the `intern' dispatch."
+  (let ((vm-mail-send-hook '(vm-epg-ask-hook))
+        (vm-epg-ask-function (lambda () 'no-such-action)))
+    (let ((err (should-error (vm-epg-ask-hook) :type 'error)))
+      (should (string-match-p "vm-epg-ask-function"
+                              (error-message-string err))))))
+
+;;; ---------------------------------------------------------------------------
+;;; REGRESSION: snarfing reports keys imported, not keys considered
+;;; ---------------------------------------------------------------------------
+
+(defun vm-epg-test--make-import-result (considered imported)
+  "Return an `epg-import-result' reporting CONSIDERED and IMPORTED keys.
+Built via the constructor rather than by slot index, so it does not depend on
+the internal layout of the struct."
+  (let ((result (apply #'epg-make-import-result
+                       (make-list (cdr (func-arity #'epg-make-import-result))
+                                  0))))
+    (setf (epg-import-result-considered result) considered)
+    (setf (epg-import-result-imported result) imported)
+    result))
+
+(ert-deftest vm-epg-test-format-import-result-reports-imported ()
+  "REGRESSION: the import report counts keys imported, not keys considered.
+Re-snarfing a key already in the keyring considers it but imports nothing, so
+reporting `epg-import-result-considered' claimed an import that did not
+happen.  Both `vm-epg-snarf-keys' and
+`vm-mime-display-internal-application/pgp-keys' share this formatter; they
+previously duplicated the logic and only one of them was correct."
+  (should (equal (vm-epg-format-import-result
+                  (vm-epg-test--make-import-result 5 2))
+                 "Imported 2 key(s)."))
+  ;; The already-have-it case: considered but not imported.
+  (should (equal (vm-epg-format-import-result
+                  (vm-epg-test--make-import-result 1 0))
+                 "Imported 0 key(s)."))
+  ;; No result at all from EPG.
+  (should (equal (vm-epg-format-import-result nil) "Imported 0 key(s).")))
+
+(ert-deftest vm-epg-test-import-report-used-by-mime-handler ()
+  "The application/pgp-keys handler reports the number of keys imported.
+This path was already correct -- \"When importing, show the number of
+imported, not considered, keys\" fixed it, leaving only the
+`vm-epg-snarf-keys' path reporting the `considered' count -- so this locks
+the behaviour in rather than covering a fix.  It is the counterpart to
+`vm-epg-test-format-import-result-reports-imported', which covers the
+formatter both paths now share.  Driven through the handler with EPG mocked,
+so it checks behaviour and not the text of the source."
+  (let ((layout (vm-epg-test--make-layout "application/pgp-keys"))
+        (vm-epg-auto-snarf t))
+    (cl-letf (((symbol-function 'vm-epg-state-set) #'ignore)
+              ((symbol-function 'vm-mime-insert-mime-body) #'ignore)
+              ((symbol-function 'vm-mime-transfer-decode-region) #'ignore)
+              ((symbol-function 'epg-import-keys-from-string) #'ignore)
+              ((symbol-function 'epg-context-result-for)
+               (lambda (_ctx _op) (vm-epg-test--make-import-result 5 2))))
+      (with-temp-buffer
+        (should (vm-mime-display-internal-application/pgp-keys layout))
+        ;; 2 imported out of 5 considered: the report must say 2.
+        (should (string-match-p "Imported 2 key(s)\\." (buffer-string)))
+        (should-not (string-match-p "Imported 5" (buffer-string)))))))
+
+;;; ---------------------------------------------------------------------------
+;;; Modeline state rendering
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest vm-epg-test-mode-line-items-are-faced ()
+  "REGRESSION: the faced modeline states carry usable faces.
+`vm-epg-mode-line-items' was nil, so the modeline faces were unreachable."
+  (should vm-epg-mode-line-items)
+  (dolist (state '(verified unknown error))
+    (let ((string (cdr (assq state vm-epg-mode-line-items))))
+      (should (stringp string))
+      (should (> (length string) 0))
+      (should (facep (get-text-property 0 'face string))))))
+
+(ert-deftest vm-epg-test-modeline-faces-inherit-a-real-face ()
+  "REGRESSION: modeline faces inherit `mode-line', not the XEmacs `modeline'.
+GNU Emacs removed the obsolete `modeline' alias, so the specs vm-pgg was
+copied from named a face that does not exist and contributed no attributes.
+Checked against the defface spec rather than the resolved attributes, which
+depend on the display and are largely unset in batch mode."
+  (should-not (facep 'modeline))
+  (dolist (face '(vm-epg-good-signature-modeline
+                  vm-epg-unknown-signature-type-modeline
+                  vm-epg-error-modeline))
+    (should (facep face))
+    (let ((spec (get face 'face-defface-spec)))
+      (should spec)
+      (dolist (inherited (vm-epg-test--spec-inherits spec))
+        (should (facep inherited))))))
+
+;;; ---------------------------------------------------------------------------
+;;; vm-epg-save-work: protecting the composition
+;;; ---------------------------------------------------------------------------
+
+(defun vm-epg-test--vm-epg-buffer-names ()
+  "Return the names of all live vm-epg work/recovery buffers."
+  (delq nil (mapcar (lambda (b)
+                      (and (string-match-p "VM-EPG" (buffer-name b))
+                           (buffer-name b)))
+                    (buffer-list))))
+
+(defun vm-epg-test--kill-vm-epg-buffers ()
+  "Kill any leftover vm-epg work/recovery buffers."
+  (dolist (name (vm-epg-test--vm-epg-buffer-names))
+    (kill-buffer name)))
+
+(ert-deftest vm-epg-test-save-work-leaves-composition-alone-on-error ()
+  "A failing FUNCTION leaves the composition untouched and leaks no buffer.
+The whole point of `vm-epg-save-work' is that a failed sign or encrypt does
+not leave a half-rewritten message behind."
+  (vm-epg-test--kill-vm-epg-buffers)
+  (unwind-protect
+      (with-temp-buffer
+        (insert "ORIGINAL COMPOSITION")
+        (should-error (vm-epg-save-work (lambda () (error "Signing failed")))
+                      :type 'error)
+        (should (equal (buffer-string) "ORIGINAL COMPOSITION"))
+        ;; The work buffer held only a copy of the untouched composition, so
+        ;; there is nothing to recover and it must not be left lying around.
+        (should-not (vm-epg-test--vm-epg-buffer-names)))
+    (vm-epg-test--kill-vm-epg-buffers)))
+
+(ert-deftest vm-epg-test-save-work-copies-result-back-on-success ()
+  "On success the work buffer's contents replace the composition and it dies."
+  (vm-epg-test--kill-vm-epg-buffers)
+  (unwind-protect
+      (with-temp-buffer
+        (insert "ORIGINAL")
+        (cl-letf (((symbol-function 'vm-mail-mode-show-headers) #'ignore))
+          (vm-epg-save-work (lambda () (erase-buffer) (insert "SIGNED"))))
+        (should (equal (buffer-string) "SIGNED"))
+        (should-not (vm-epg-test--vm-epg-buffer-names)))
+    (vm-epg-test--kill-vm-epg-buffers)))
+
+(ert-deftest vm-epg-test-save-work-preserves-result-if-overwrite-fails ()
+  "REGRESSION: a failure mid-overwrite must not destroy FUNCTION's result.
+Once the composition has been erased, the work buffer holds the only copy.
+It has to survive, under a name the user can find and that the next vm-epg
+command will not erase -- the work buffer's own name is fixed and starts
+with a space, so it is both reused and hidden from the buffer list."
+  (vm-epg-test--kill-vm-epg-buffers)
+  (unwind-protect
+      (let ((real (symbol-function #'insert-buffer-substring))
+            (calls 0))
+        (with-temp-buffer
+          (insert "ORIGINAL COMPOSITION")
+          (cl-letf (((symbol-function 'vm-mail-mode-show-headers) #'ignore)
+                    ((symbol-function 'insert-buffer-substring)
+                     ;; Call 1 fills the work buffer; call 2 is the copy back
+                     ;; into the composition, i.e. the dangerous window.
+                     (lambda (&rest args)
+                       (setq calls (1+ calls))
+                       (if (= calls 2)
+                           (error "Interrupted while overwriting")
+                         (apply real args)))))
+            (should-error (vm-epg-save-work
+                           (lambda () (erase-buffer) (insert "SIGNED RESULT")))
+                          :type 'error))
+          (should (= calls 2)))
+        ;; The result survived, under a visible name.
+        (let ((names (vm-epg-test--vm-epg-buffer-names)))
+          (should (= (length names) 1))
+          (let ((name (car names)))
+            (should (string-prefix-p "*VM-EPG-RECOVERY*" name))
+            (should-not (string-prefix-p " " name))
+            (should (equal (with-current-buffer name (buffer-string))
+                           "SIGNED RESULT")))))
+    (vm-epg-test--kill-vm-epg-buffers)))
+
+(ert-deftest vm-epg-test-save-work-recovery-survives-a-later-run ()
+  "REGRESSION: a later vm-epg command must not clobber a recovery buffer.
+The work buffer has one fixed name, so before it was renamed aside the next
+`vm-epg-save-work' call erased and then killed the only copy of the result."
+  (vm-epg-test--kill-vm-epg-buffers)
+  (unwind-protect
+      (let ((real (symbol-function #'insert-buffer-substring))
+            (calls 0))
+        ;; First run: fails mid-overwrite, leaving a recovery buffer.
+        (with-temp-buffer
+          (insert "FIRST")
+          (cl-letf (((symbol-function 'vm-mail-mode-show-headers) #'ignore)
+                    ((symbol-function 'insert-buffer-substring)
+                     (lambda (&rest args)
+                       (setq calls (1+ calls))
+                       (if (= calls 2)
+                           (error "Interrupted while overwriting")
+                         (apply real args)))))
+            (should-error (vm-epg-save-work
+                           (lambda () (erase-buffer) (insert "PRECIOUS")))
+                          :type 'error)))
+        ;; Second, unrelated and successful run.
+        (with-temp-buffer
+          (insert "SECOND")
+          (cl-letf (((symbol-function 'vm-mail-mode-show-headers) #'ignore))
+            (vm-epg-save-work (lambda () (erase-buffer) (insert "OTHER")))))
+        ;; The recovery buffer and its contents are still there.
+        (let ((names (vm-epg-test--vm-epg-buffer-names)))
+          (should (= (length names) 1))
+          (should (equal (with-current-buffer (car names) (buffer-string))
+                         "PRECIOUS"))))
+    (vm-epg-test--kill-vm-epg-buffers)))
+
+;;; ---------------------------------------------------------------------------
+;;; vm-pgg / vm-epg conflict detection
+;;; ---------------------------------------------------------------------------
+
+(ert-deftest vm-epg-test-pgg-conflict-warning-when-vm-pgg-loaded ()
+  "REGRESSION: vm-epg warns when vm-pgg is also loaded.
+vm-pgg warns when it is loaded *after* vm-epg, but the migration order --
+an existing configuration that already requires vm-pgg gaining a
+\(require 'vm-epg) -- was silent in both directions even though vm-epg
+then overrides vm-pgg's MIME handlers."
+  ;; `features' is not a special variable, so under lexical binding it cannot
+  ;; be let-bound in a way the C-level `featurep' would see.  Register the
+  ;; feature for real and undo it afterwards.
+  (let ((already (featurep 'vm-pgg)))
+    (unwind-protect
+        (progn
+          (provide 'vm-pgg)
+          (let ((warning (vm-epg-pgg-conflict-warning)))
+            (should (stringp warning))
+            (should (string-match-p "vm-pgg" warning))
+            (should (string-match-p "vm-mime-display-internal" warning))))
+      (unless already
+        (setq features (delq 'vm-pgg features))))))
+
+(ert-deftest vm-epg-test-no-pgg-conflict-warning-when-vm-pgg-absent ()
+  "No conflict warning is produced when vm-pgg is not loaded."
+  (skip-unless (not (featurep 'vm-pgg)))
+  (should-not (vm-epg-pgg-conflict-warning)))
 
 (provide 'vm-epg-test)
 
