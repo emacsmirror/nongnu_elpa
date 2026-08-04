@@ -601,6 +601,56 @@ for every message."
           (kill-buffer buffer)))
       (delete-directory dir t))))
 
+
+;;; asking rather than provoking an error (issue #476)
+
+(ert-deftest vm-thread-root-p-does-not-provoke-an-error-when-unbuilt ()
+  "REGRESSION: `vm-thread-root-p' answers without raising an error.
+Issue #476: with threads not built it used to call through to
+`vm-thread-subtree', which signals `vm-thread-error', and catch that to answer
+nil.  `vm-summary-faces-add' asks this for every summary line, so an ordinary
+folder with threading off raised and recovered an error once per line --
+expensive, and it leaves `debug-on-signal' useless for anyone debugging
+something else while reading mail.
+
+`vm-thread-subtree' is stubbed to signal if it is reached at all, so the test
+fails whichever way the old code went: by returning non-nil, or by getting
+there."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    ;; deliberately not built
+    (should-not (vectorp vm-thread-obarray))
+    (let ((reached nil))
+      (cl-letf (((symbol-function 'vm-thread-subtree)
+                 (lambda (&rest _)
+                   (setq reached t)
+                   (signal 'vm-thread-error '(vm-thread-subtree)))))
+        (should-not (vm-thread-root-p (car vm-message-list))))
+      (should-not reached))))
+
+(ert-deftest vm-thread-root-p-still-recognises-a-root ()
+  "The control: with threads built, a root is still a root and a reply is not.
+Without this, the test above could pass by answering nil for everything."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (should (vectorp vm-thread-obarray))
+    (let* ((root (car vm-message-list))
+           (reply (cadr vm-message-list)))
+      ;; the fixture is a thread, so its first message is a root with children
+      (should (> (vm-thread-count root) 1))
+      (should (vm-thread-root-p root))
+      (should-not (vm-thread-root-p reply)))))
+
+(ert-deftest vm-thread-root-p-tolerates-a-threading-error ()
+  "A genuine threading error still leaves the answer nil rather than failing.
+The documented contract is that no exception escapes, and `vm-summary-faces-add'
+relies on it: a summary line is not worth failing to draw over a threading
+problem.  Only the unbuilt case stopped going through the error path."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (cl-letf (((symbol-function 'vm-thread-root)
+               (lambda (&rest _) (signal 'vm-thread-error '(deliberate)))))
+      (should-not (vm-thread-root-p (car vm-message-list))))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here

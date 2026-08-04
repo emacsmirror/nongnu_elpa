@@ -1433,13 +1433,27 @@ See also: `vm-thread-root'."
 (defun vm-thread-root-p (m)
   "Returns t if message M is known to be a thread root, nil
 otherwise.  No exceptions are thrown for errors."
-  ;; Threads may not be turned on.  So, ignore errors.
   ;; requires: LIST0(m)
-  (condition-case _err
-      (and (eq m (vm-thread-root m))
-	   (> (vm-thread-count m) 1))
-    (vm-thread-error
-     nil)))
+  ;; Threads may not be built.  Ask first, rather than provoke a
+  ;; `vm-thread-error' from `vm-thread-subtree' and catch it, which is what
+  ;; this used to do.  `vm-summary-faces-add' calls this for every summary
+  ;; line, so with threads unbuilt that was an error signalled and recovered
+  ;; on a hot path in normal operation -- which, apart from the cost, leaves
+  ;; `debug-on-signal' unusable for anyone trying to debug something else
+  ;; while reading mail.  That is issue #476.
+  ;;
+  ;; `vm-thread-symbol' returning nil is exactly the condition
+  ;; `vm-thread-subtree' signals on, and it looks in the message's own folder
+  ;; buffer, where `vm-thread-obarray' lives.  Note that `vm-thread-root'
+  ;; already answers this case without signalling, by returning M.
+  (and (vm-thread-symbol m)
+       ;; A genuine threading error is still not worth failing a summary line
+       ;; for, so those are caught as before.
+       (condition-case _err
+	   (and (eq m (vm-thread-root m))
+		(> (vm-thread-count m) 1))
+	 (vm-thread-error
+	  nil))))
 
 ;;;###autoload
 (defun vm-thread-subtree-safe (msg)
