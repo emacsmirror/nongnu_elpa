@@ -4,7 +4,7 @@
 
 ;; Author: Thanos Apollo
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "28.1") (compat "29.1.4.2") (keymap-popup "0.3.1") (eat "0.9.4"))
+;; Package-Requires: ((emacs "28.1") (compat "29.1.4.2") (keymap-popup "0.4.0") (eat "0.9.4"))
 ;; Keywords: ai, codex, tools, terminal
 ;; URL: https://git.thanosapollo.org/emacs-codex-ide
 
@@ -34,10 +34,11 @@
 ;;   M-x codex-ide              Start or toggle Codex for the current project
 ;;   C-u M-x codex-ide          Start another Codex session
 ;;   M-x codex-ide-resume-last  Resume the most recent Codex session
+;;   M-x codex-ide-resume       Pick a saved Codex session id and resume it
 ;;   M-x codex-ide-new-session  Start another Codex session
 ;;   M-x codex-ide-toggle       Cycle project Codex sessions
 ;;   M-x codex-ide-send-prompt  Send a prompt from the minibuffer
-;;   M-x codex-ide-stop         Stop the session for the current project
+;;   M-x codex-ide-stop         Stop the active Codex session for this project
 ;;   M-x codex-ide-list-project-sessions  Switch project Codex sessions
 ;;   M-x codex-ide-list-sessions  Switch to any live Codex session
 ;;   M-x codex-ide-menu         Popup menu of all commands
@@ -46,7 +47,9 @@
 
 (require 'compat)
 (require 'cl-lib)
+(require 'json)
 (require 'project)
+(require 'seq)
 (require 'subr-x)
 (require 'codex-ide-context)
 (require 'codex-ide-debug)
@@ -65,6 +68,17 @@
 (defcustom codex-ide-cli-path "codex"
   "Path to the Codex CLI executable."
   :type 'string
+  :group 'codex-ide)
+
+(defcustom codex-ide-sessions-directory
+  (expand-file-name "~/.codex/sessions")
+  "Directory containing Codex saved-session rollout files."
+  :type 'directory
+  :group 'codex-ide)
+
+(defcustom codex-ide-resume-session-scan-limit 200
+  "Maximum number of newest rollout files scanned for resume candidates."
+  :type 'integer
   :group 'codex-ide)
 
 (defcustom codex-ide-display-buffer-function #'pop-to-buffer
@@ -322,6 +336,119 @@ folding is pure and does not touch the shell."
       (setq args (nconc args codex-ide-cli-extra-args)))
     (cons codex-ide-cli-path args)))
 
+(defun codex-ide--normalize-directory (directory)
+  "Return DIRECTORY as an expanded directory name with trailing slash."
+  (file-name-as-directory (expand-file-name directory)))
+
+(defun codex-ide--json-field (object name)
+  "Return field NAME from JSON OBJECT alist or plist."
+  (cond
+   ((null object) nil)
+   ((hash-table-p object)
+    (or (gethash name object)
+        (gethash (intern name) object)))
+   ((and (listp object) (keywordp (car-safe object)))
+    (plist-get object (intern (concat ":" name))))
+   ((listp object)
+    (or (cdr (assoc name object))
+        (cdr (assq (intern name) object))))))
+
+(defun codex-ide--rollout-session-meta (file)
+  "Return session_meta payload alist from rollout FILE, or nil."
+  (when (and (stringp file) (file-readable-p file))
+    (with-temp-buffer
+      (insert-file-contents file nil 0 8192)
+      (goto-char (point-min))
+      (when-let* ((line (buffer-substring-no-properties
+                         (line-beginning-position)
+                         (line-end-position)))
+                  ((not (string-empty-p (string-trim line))))
+                  (parsed (ignore-errors (json-parse-string
+                                          (string-trim line)
+                                          :object-type 'alist
+                                          :array-type 'list
+                                          :null-object nil
+                                          :false-object nil)))
+                  ((equal (codex-ide--json-field parsed "type")
+                          "session_meta"))
+                  (payload (codex-ide--json-field parsed "payload")))
+        payload))))
+
+(defun codex-ide--saved-session-candidate (file directory)
+  "Return (ID . ANNOTATION) for rollout FILE when it matches DIRECTORY.
+DIRECTORY may be nil to accept any cwd."
+  (when-let* ((payload (codex-ide--rollout-session-meta file))
+              (id (or (codex-ide--json-field payload "session_id")
+                      (codex-ide--json-field payload "id")))
+              ((and (stringp id) (not (string-empty-p (string-trim id))))))
+    (let* ((cwd (codex-ide--json-field payload "cwd"))
+           (want (and directory (codex-ide--normalize-directory directory)))
+           (have (and (stringp cwd)
+                      (codex-ide--normalize-directory cwd))))
+      (when (or (null want)
+                (and have (equal want have)))
+        (cons id
+              (string-join
+               (delq nil
+                     (list (and (stringp cwd) cwd)
+                           (file-name-nondirectory file)))
+               "  "))))))
+
+(defun codex-ide--newest-rollout-files (directory limit)
+  "Return up to LIMIT newest *.jsonl files under DIRECTORY."
+  (when (and (stringp directory) (file-directory-p directory))
+    (let ((files (directory-files-recursively directory "\\.jsonl\\'")))
+      (setq files
+            (sort files
+                  (lambda (a b)
+                    (time-less-p
+                     (file-attribute-modification-time (file-attributes b))
+                     (file-attribute-modification-time (file-attributes a))))))
+      (if (and (integerp limit) (> limit 0) (> (length files) limit))
+          (seq-subseq files 0 limit)
+        files))))
+
+(defun codex-ide--saved-session-candidates (&optional directory)
+  "Return alist of (SESSION-ID . ANNOTATION) for DIRECTORY.
+When DIRECTORY is nil, include sessions from any cwd.  Newest rollout
+files are preferred up to `codex-ide-resume-session-scan-limit'."
+  (let ((seen (make-hash-table :test 'equal))
+        candidates)
+    (dolist (file (codex-ide--newest-rollout-files
+                   codex-ide-sessions-directory
+                   codex-ide-resume-session-scan-limit))
+      (when-let* ((candidate (codex-ide--saved-session-candidate
+                              file directory))
+                  (id (car candidate))
+                  ((not (gethash id seen))))
+        (puthash id t seen)
+        (push candidate candidates)))
+    (nreverse candidates)))
+
+(defun codex-ide--read-saved-session-id (&optional directory)
+  "Read a saved Codex session id for DIRECTORY from the minibuffer."
+  (let* ((root (or directory (codex-ide--get-working-directory)))
+         (candidates (or (codex-ide--saved-session-candidates root)
+                         (codex-ide--saved-session-candidates nil)))
+         (collection
+          (mapcar (lambda (candidate)
+                    (let ((id (car candidate))
+                          (note (cdr candidate)))
+                      (if (and (stringp note) (not (string-empty-p note)))
+                          (format "%s  %s" id note)
+                        id)))
+                  candidates))
+         (choice (progn
+                   (unless collection
+                     (user-error "No saved Codex sessions found under %s"
+                                 codex-ide-sessions-directory))
+                   (completing-read "Resume Codex session: " collection
+                                    nil t nil nil (car collection))))
+         (id (car (split-string choice "  " t))))
+    (unless (and (stringp id) (not (string-empty-p id)))
+      (user-error "Invalid Codex session selection"))
+    id))
+
 (defun codex-ide--session-config-overrides ()
   "Return Codex config overrides for a new session.
 Includes user-provided `codex-ide-config-overrides' and any
@@ -339,6 +466,10 @@ session-local overrides needed by enabled integration helpers."
         (condition-case nil
             (eq (call-process codex-ide-cli-path nil nil nil "--version") 0)
           (error nil))))
+
+(defun codex-ide--invalidate-cli-cache ()
+  "Forget cached CLI availability so the next check redetects."
+  (setq codex-ide--cli-available nil))
 
 (defun codex-ide--ensure-cli ()
   "Return non-nil if the Codex CLI is available, detecting if needed."
@@ -715,9 +846,13 @@ so eat can flush final output, tear down the terminal, and run
         (directory (plist-get session :root))
         (session-id (plist-get session :id)))
     (set-process-query-on-exit-flag process nil)
-    (set-process-sentinel
-     process (codex-ide--make-process-sentinel
-              directory session-id (process-sentinel process)))
+    ;; Recover/setup can re-enter for the same live process; wrap once so
+    ;; exit cleanup and the original eat sentinel each run a single time.
+    (unless (process-get process 'codex-ide--sentinel-installed)
+      (set-process-sentinel
+       process (codex-ide--make-process-sentinel
+                directory session-id (process-sentinel process)))
+      (process-put process 'codex-ide--sentinel-installed t))
     (with-current-buffer buffer
       (setq-local codex-ide--session-root directory)
       (setq-local codex-ide--session-id session-id)
@@ -814,25 +949,29 @@ With PREFIX, start another Codex session for the current project."
 
 ;;;###autoload
 (defun codex-ide-resume ()
-  "Resume a Codex session for the current project.
-In the MVP this resumes the most recent session via `codex resume --last'.
-A session picker is deferred to a later phase."
+  "Resume a saved Codex session chosen from known rollout ids.
+Uses `codex resume <session-id>'.  Prefer `codex-ide-resume-last' for
+the most recent session without a picker."
   (interactive)
-  (codex-ide--start-session t))
+  (let ((session-id (codex-ide--read-saved-session-id)))
+    (codex-ide--start-session nil session-id)))
 
 ;;;###autoload
 (defun codex-ide-stop ()
-  "Stop the Codex session for the current project."
+  "Stop the active Codex session for the current project.
+Other live sessions under the same project root are left running.
+Use `codex-ide-list-project-sessions' or `codex-ide-toggle' to switch
+before stopping a different session."
   (interactive)
   (let* ((working-dir (codex-ide--get-working-directory))
          (session (codex-ide--active-session working-dir)))
     (if-let* ((buffer (plist-get session :buffer)))
         (progn
           (kill-buffer buffer)
-          (codex-ide-log "Stopping Codex in %s..."
+          (codex-ide-log "Stopping active Codex session in %s..."
                          (file-name-nondirectory
                           (directory-file-name working-dir))))
-      (codex-ide-log "No Codex session is running in this directory"))))
+      (codex-ide-log "No active Codex session is running in this directory"))))
 
 ;;;###autoload
 (defun codex-ide-toggle ()

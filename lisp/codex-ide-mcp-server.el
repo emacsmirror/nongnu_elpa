@@ -167,25 +167,60 @@
     '(415 . "Content-Type must be application/json"))))
 
 (defun codex-ide-mcp--content-length (request)
-  "Return Content-Length for parsed REQUEST."
+  "Return non-negative Content-Length for REQUEST, or nil when invalid.
+Missing Content-Length is treated as 0.  Non-numeric and negative values
+are invalid."
   (if-let* ((value (cdr (assoc "content-length"
                                (plist-get request :headers)))))
-      (string-to-number value)
+      (let ((trimmed (string-trim value)))
+        (if (string-match-p "\\`[0-9]+\\'" trimmed)
+            (string-to-number trimmed)
+          nil))
     0))
 
 (defun codex-ide-mcp--split-request (pending)
-  "Return (REQUEST . REST) from PENDING, or nil when incomplete."
-  (when (string-match "\r\n\r\n" pending)
-    (let* ((header-end (match-beginning 0))
-           (body-start (match-end 0))
-           (request (codex-ide-mcp--parse-headers
-                     (substring pending 0 header-end)))
-           (length (codex-ide-mcp--content-length request))
-           (total (+ body-start length)))
-      (when (<= total (length pending))
-        (setf (plist-get request :body)
-              (substring pending body-start total))
-        (cons request (substring pending total))))))
+  "Return parse result for PENDING HTTP bytes.
+Complete requests return (REQUEST . REST).  Incomplete input returns nil.
+Invalid Content-Length returns the symbol `invalid'.  Bodies larger than
+`codex-ide-mcp-max-request-bytes' or pending buffers that already exceed
+that limit return the symbol `too-large'."
+  (let ((max-bytes (if (and (integerp codex-ide-mcp-max-request-bytes)
+                            (> codex-ide-mcp-max-request-bytes 0))
+                       codex-ide-mcp-max-request-bytes
+                     (* 1024 1024))))
+    (cond
+     ((> (length pending) (+ max-bytes 8192))
+      'too-large)
+     ((not (string-match "\r\n\r\n" pending))
+      nil)
+     (t
+      (let* ((header-end (match-beginning 0))
+             (body-start (match-end 0))
+             (request (codex-ide-mcp--parse-headers
+                       (substring pending 0 header-end)))
+             (length (codex-ide-mcp--content-length request)))
+        (cond
+         ((null length) 'invalid)
+         ((> length max-bytes) 'too-large)
+         (t
+          (let ((total (+ body-start length)))
+            (cond
+             ((> total (length pending))
+              (when (> (length pending) (+ max-bytes 8192))
+                'too-large))
+             (t
+              (setf (plist-get request :body)
+                    (substring pending body-start total))
+              (cons request (substring pending total))))))))))))
+
+(defun codex-ide-mcp--reject-client (proc status message)
+  "Send STATUS/MESSAGE to PROC and drop the client connection."
+  (ignore-errors
+    (codex-ide-mcp--send-json
+     proc status
+     (codex-ide-mcp--make-error-response nil -32600 message)))
+  (ignore-errors (delete-process proc))
+  (remhash proc codex-ide-mcp--clients))
 
 (defun codex-ide-mcp--selected-buffer ()
   "Return the current UI buffer used for MCP tool execution."
@@ -227,15 +262,27 @@
   "Process filter for MCP HTTP connection PROC receiving STRING."
   (set-process-coding-system proc 'binary 'binary)
   (let* ((state (codex-ide-mcp--client-state proc))
-         (pending (concat (plist-get state :pending) string)))
-    (while (and (process-live-p proc)
-                (if-let* ((parsed (codex-ide-mcp--split-request pending)))
-                    (let ((request (car parsed)))
-                      (setq pending (cdr parsed))
-                      (codex-ide-mcp--handle-http-request proc request)
-                      t)
-                  nil)))
-    (plist-put state :pending pending)))
+         (pending (concat (plist-get state :pending) string))
+         (done nil))
+    (while (and (not done) (process-live-p proc))
+      (pcase (codex-ide-mcp--split-request pending)
+        ('invalid
+         (codex-ide-mcp--reject-client
+          proc 400 "Invalid Content-Length")
+         (setq done t
+               pending ""))
+        ('too-large
+         (codex-ide-mcp--reject-client
+          proc 400 "Request exceeds codex-ide-mcp-max-request-bytes")
+         (setq done t
+               pending ""))
+        (`(,request . ,rest)
+         (setq pending rest)
+         (codex-ide-mcp--handle-http-request proc request))
+        (_
+         (setq done t))))
+    (when (process-live-p proc)
+      (plist-put state :pending pending))))
 
 (defun codex-ide-mcp--sentinel (proc event)
   "Clean client state for PROC on EVENT."
@@ -281,7 +328,7 @@
     server))
 
 (defun codex-ide-mcp--stop-server ()
-  "Stop the local MCP HTTP server."
+  "Stop the local MCP HTTP server and clear harness job state."
   (when codex-ide-mcp--server
     (ignore-errors (delete-process codex-ide-mcp--server))
     (setq codex-ide-mcp--server nil
@@ -290,6 +337,8 @@
              (ignore-errors (delete-process proc)))
            codex-ide-mcp--clients)
   (clrhash codex-ide-mcp--clients)
+  (when (fboundp 'codex-ide-harness-reset)
+    (codex-ide-harness-reset))
   (codex-ide-debug "Codex MCP tools server stopped"))
 
 ;;; Public server entry

@@ -33,6 +33,15 @@
 (defconst codex-ide-harness-event-limit 500
   "Maximum number of harness events retained in memory.")
 
+(defconst codex-ide-harness-job-limit 32
+  "Maximum number of harness jobs retained in memory.")
+
+(defconst codex-ide-harness-job-output-limit (* 256 1024)
+  "Maximum characters retained per harness job output string.")
+
+(defconst codex-ide-harness-event-field-limit (* 32 1024)
+  "Maximum characters retained for a single harness event string field.")
+
 (defvar codex-ide-harness--event-cursor 0
   "Monotonic cursor for harness events.")
 
@@ -60,6 +69,35 @@
   "Return the current time as an ISO-like string."
   (format-time-string "%Y-%m-%dT%H:%M:%S%z"))
 
+(defun codex-ide-harness--truncate-string (value &optional limit)
+  "Return VALUE truncated to LIMIT characters with an honest marker."
+  (let ((cap (or limit codex-ide-harness-event-field-limit)))
+    (if (and (stringp value)
+             (integerp cap)
+             (> cap 0)
+             (> (length value) cap))
+        (concat (substring value 0 cap)
+                (format "\n...[truncated %d chars]" (- (length value) cap)))
+      value)))
+
+(defun codex-ide-harness--bound-event-data (data)
+  "Return DATA after truncating oversized string fields for retention."
+  (cond
+   ((stringp data)
+    (codex-ide-harness--truncate-string data))
+   ((vectorp data)
+    (vconcat (mapcar #'codex-ide-harness--bound-event-data data)))
+   ((listp data)
+    (if (and data (not (consp (car data))))
+        (mapcar #'codex-ide-harness--bound-event-data data)
+      (mapcar (lambda (cell)
+                (if (consp cell)
+                    (cons (car cell)
+                          (codex-ide-harness--bound-event-data (cdr cell)))
+                  cell))
+              data)))
+   (t data)))
+
 (defun codex-ide-harness--record-event (type data)
   "Record a harness event of TYPE with DATA."
   (setq codex-ide-harness--event-cursor
@@ -67,7 +105,7 @@
   (let ((event (list (cons "cursor" codex-ide-harness--event-cursor)
                      (cons "time" (codex-ide-harness--time-string))
                      (cons "type" type)
-                     (cons "data" data))))
+                     (cons "data" (codex-ide-harness--bound-event-data data)))))
     (push event codex-ide-harness--events)
     (when (> (length codex-ide-harness--events)
              codex-ide-harness-event-limit)
@@ -75,6 +113,19 @@
                       codex-ide-harness--events)
               nil))
     event))
+
+(defun codex-ide-harness-reset ()
+  "Cancel live jobs and clear retained harness jobs/events."
+  (maphash
+   (lambda (_id job)
+     (when-let* ((process (plist-get job :process)))
+       (when (process-live-p process)
+         (ignore-errors (delete-process process)))))
+   codex-ide-harness--jobs)
+  (clrhash codex-ide-harness--jobs)
+  (setq codex-ide-harness--events nil
+        codex-ide-harness--event-cursor 0)
+  nil)
 
 (defun codex-ide-harness--bounded-limit (value default)
   "Return VALUE as a positive limit, or DEFAULT."
@@ -659,15 +710,58 @@ When INDENT is non-nil, indent the inserted region."
 
 ;;; Jobs
 
+(defun codex-ide-harness--job-terminal-p (job)
+  "Return non-nil when JOB already has a terminal status."
+  (member (plist-get job :status) '("done" "failed" "canceled")))
+
+(defun codex-ide-harness--prune-jobs ()
+  "Drop oldest finished jobs when over `codex-ide-harness-job-limit'."
+  (let ((limit (if (and (integerp codex-ide-harness-job-limit)
+                        (> codex-ide-harness-job-limit 0))
+                   codex-ide-harness-job-limit
+                 32)))
+    (when (> (hash-table-count codex-ide-harness--jobs) limit)
+      (let (finished)
+        (maphash
+         (lambda (id job)
+           (when (codex-ide-harness--job-terminal-p job)
+             (push (cons id (or (plist-get job :finished)
+                                (plist-get job :started)
+                                ""))
+                   finished)))
+         codex-ide-harness--jobs)
+        (setq finished
+              (sort finished
+                    (lambda (a b)
+                      (string-lessp (cdr a) (cdr b)))))
+        (while (and finished
+                    (> (hash-table-count codex-ide-harness--jobs) limit))
+          (remhash (car (pop finished)) codex-ide-harness--jobs))))))
+
 (defun codex-ide-harness--put-job (job)
   "Store JOB and return it."
   (puthash (plist-get job :id) job codex-ide-harness--jobs)
+  (codex-ide-harness--prune-jobs)
   job)
 
 (defun codex-ide-harness--update-job (id function)
   "Replace job ID with the result of FUNCTION."
   (when-let* ((job (gethash id codex-ide-harness--jobs)))
     (codex-ide-harness--put-job (funcall function job))))
+
+(defun codex-ide-harness--append-job-output (output chunk)
+  "Append CHUNK to OUTPUT, truncating to the job output limit."
+  (let* ((base (or output ""))
+         (next (concat base chunk))
+         (limit codex-ide-harness-job-output-limit))
+    (if (and (integerp limit)
+             (> limit 0)
+             (> (length next) limit))
+        (let* ((marker (format "\n...[truncated %d chars]"
+                               (- (length next) limit)))
+               (keep (max 0 (- limit (length marker)))))
+          (concat (substring next 0 keep) marker))
+      next)))
 
 (defun codex-ide-harness--job-output (job since)
   "Return JOB output starting at SINCE."
@@ -721,25 +815,34 @@ When OUTPUT is non-nil, include output data."
   (codex-ide-harness--update-job
    id (lambda (job)
         (plist-put job :output
-                   (concat (or (plist-get job :output) "") string)))))
+                   (codex-ide-harness--append-job-output
+                    (plist-get job :output) string)))))
 
 (defun codex-ide-harness--job-sentinel (id process _event)
   "Record final state for PROCESS belonging to job ID."
   (unless (eq (process-status process) 'run)
-    (let ((job (codex-ide-harness--update-job
-                id (lambda (old-job)
-                     (setq old-job
-                           (plist-put old-job :status
-                                      (codex-ide-harness--job-finished-status
-                                       process)))
-                     (setq old-job
-                           (plist-put old-job :exit-code
-                                      (process-exit-status process)))
-                     (plist-put old-job :finished
-                                (codex-ide-harness--time-string))))))
-      (when job
-        (codex-ide-harness--record-event
-         "job-finished" (codex-ide-harness--job-summary job))))))
+    (let ((current (gethash id codex-ide-harness--jobs)))
+      ;; Cancel owns the terminal lifecycle via job-canceled.  Do not
+      ;; rewrite status or emit a second terminal event.
+      (unless (and current
+                   (equal (plist-get current :status) "canceled"))
+        (let ((job (codex-ide-harness--update-job
+                    id (lambda (old-job)
+                         (if (codex-ide-harness--job-terminal-p old-job)
+                             old-job
+                           (setq old-job
+                                 (plist-put old-job :status
+                                            (codex-ide-harness--job-finished-status
+                                             process)))
+                           (setq old-job
+                                 (plist-put old-job :exit-code
+                                            (process-exit-status process)))
+                           (plist-put old-job :finished
+                                      (codex-ide-harness--time-string)))))))
+          (when (and job
+                     (not (equal (plist-get job :status) "canceled")))
+            (codex-ide-harness--record-event
+             "job-finished" (codex-ide-harness--job-summary job))))))))
 
 (defun codex-ide-harness-start-job (args)
   "Start an async process job described by ARGS."
@@ -768,17 +871,20 @@ When OUTPUT is non-nil, include output data."
       (codex-ide-harness--job-summary job))))
 
 (defun codex-ide-harness--cancel-job (job)
-  "Cancel JOB and return its updated summary."
-  (let ((process (plist-get job :process)))
-    (when (process-live-p process)
-      (delete-process process))
-    (setq job (plist-put job :status "canceled"))
-    (setq job (plist-put job :finished
-                         (codex-ide-harness--time-string)))
-    (codex-ide-harness--put-job job)
-    (codex-ide-harness--record-event
-     "job-canceled" (codex-ide-harness--job-summary job))
-    (codex-ide-harness--job-summary job)))
+  "Cancel JOB and return its updated summary.
+Already-terminal jobs are left unchanged and emit no new events."
+  (if (codex-ide-harness--job-terminal-p job)
+      (codex-ide-harness--job-summary job)
+    (let ((process (plist-get job :process)))
+      (setq job (plist-put job :status "canceled"))
+      (setq job (plist-put job :finished
+                           (codex-ide-harness--time-string)))
+      (codex-ide-harness--put-job job)
+      (codex-ide-harness--record-event
+       "job-canceled" (codex-ide-harness--job-summary job))
+      (when (process-live-p process)
+        (ignore-errors (delete-process process)))
+      (codex-ide-harness--job-summary job))))
 
 (defun codex-ide-harness-job-result (args)
   "Start, poll, read, or cancel a harness job described by ARGS."

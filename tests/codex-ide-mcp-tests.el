@@ -838,6 +838,148 @@
     (should (equal (cdr (assoc "id" response)) 7))
     (should (vectorp (cdr (assoc "tools" result))))))
 
+(ert-deftest codex-ide-mcp-content-length-rejects-invalid ()
+  "Invalid Content-Length values fail closed."
+  (should (equal (codex-ide-mcp--content-length
+                  (list :headers '(("content-length" . "12"))))
+                 12))
+  (should (equal (codex-ide-mcp--content-length
+                  (list :headers nil))
+                 0))
+  (should-not (codex-ide-mcp--content-length
+               (list :headers '(("content-length" . "abc")))))
+  (should-not (codex-ide-mcp--content-length
+               (list :headers '(("content-length" . "-1"))))))
+
+(ert-deftest codex-ide-mcp-split-request-invalid-content-length ()
+  "Split returns invalid for non-numeric Content-Length."
+  (let ((pending "POST /mcp HTTP/1.1\r\nContent-Length: abc\r\n\r\n{}"))
+    (should (eq (codex-ide-mcp--split-request pending) 'invalid))))
+
+(ert-deftest codex-ide-mcp-split-request-negative-content-length ()
+  "Split returns invalid for negative Content-Length."
+  (let ((pending "POST /mcp HTTP/1.1\r\nContent-Length: -1\r\n\r\n"))
+    (should (eq (codex-ide-mcp--split-request pending) 'invalid))))
+
+(ert-deftest codex-ide-mcp-split-request-too-large-body ()
+  "Split rejects bodies over the configured max."
+  (let* ((codex-ide-mcp-max-request-bytes 8)
+         (body "{\"x\":12345}")
+         (pending (format "POST /mcp HTTP/1.1\r\nContent-Length: %d\r\n\r\n%s"
+                          (string-bytes body) body)))
+    (should (eq (codex-ide-mcp--split-request pending) 'too-large))))
+
+(ert-deftest codex-ide-harness-job-output-is-capped ()
+  "Retained async job output is truncated deterministically."
+  (let ((codex-ide-harness-job-output-limit 32)
+        (codex-ide-harness--jobs (make-hash-table :test 'equal))
+        (codex-ide-harness--events nil)
+        (codex-ide-harness--event-cursor 0)
+        (codex-ide-harness--next-job-id 0))
+    (let* ((start (codex-ide-harness-start-job
+                   '(:command "printf '%s' 'abcdefghijklmnopqrstuvwxyz0123456789'")))
+           (job-id (cdr (assoc "id" start)))
+           (done (progn
+                   (let ((deadline (+ (float-time) 2)))
+                     (while (and (< (float-time) deadline)
+                                 (equal (plist-get
+                                         (gethash job-id codex-ide-harness--jobs)
+                                         :status)
+                                        "running"))
+                       (accept-process-output nil 0.05)))
+                   (codex-ide-harness--job-summary
+                    (gethash job-id codex-ide-harness--jobs))))
+           (job (gethash job-id codex-ide-harness--jobs))
+           (output (plist-get job :output))
+           (read (codex-ide-harness--job-output job 0)))
+      (should (member (cdr (assoc "status" done)) '("done" "failed")))
+      (should (<= (length output) 32))
+      (should (string-match-p "truncated" output))
+      (should (equal (cdr (assoc "nextOffset" read)) (length output)))
+      (should (equal (cdr (assoc "text" read)) output)))))
+
+(ert-deftest codex-ide-harness-cancel-emits-single-terminal-event ()
+  "Live cancel emits job-canceled and not job-finished."
+  (let ((codex-ide-harness--jobs (make-hash-table :test 'equal))
+        (codex-ide-harness--events nil)
+        (codex-ide-harness--event-cursor 0)
+        (codex-ide-harness--next-job-id 0))
+    (let* ((start (codex-ide-harness-start-job
+                   '(:command "sleep 5")))
+           (job-id (cdr (assoc "id" start)))
+           (cancel (codex-ide-harness--cancel-job
+                    (gethash job-id codex-ide-harness--jobs))))
+      (accept-process-output nil 0.1)
+      (should (equal (cdr (assoc "status" cancel)) "canceled"))
+      (should (equal (plist-get (gethash job-id codex-ide-harness--jobs) :status)
+                     "canceled"))
+      (let ((types (mapcar (lambda (event) (cdr (assoc "type" event)))
+                           codex-ide-harness--events)))
+        (should (member "job-canceled" types))
+        (should-not (member "job-finished" types))))))
+
+(ert-deftest codex-ide-harness-cancel-noop-on-terminal-job ()
+  "Cancel leaves finished jobs unchanged."
+  (let ((codex-ide-harness--jobs (make-hash-table :test 'equal))
+        (codex-ide-harness--events nil)
+        (codex-ide-harness--event-cursor 0)
+        (codex-ide-harness--next-job-id 0))
+    (let* ((start (codex-ide-harness-start-job
+                   '(:command "true")))
+           (job-id (cdr (assoc "id" start)))
+           (done (progn
+                   (let ((deadline (+ (float-time) 2)))
+                     (while (and (< (float-time) deadline)
+                                 (equal (plist-get
+                                         (gethash job-id codex-ide-harness--jobs)
+                                         :status)
+                                        "running"))
+                       (accept-process-output nil 0.05)))
+                   (gethash job-id codex-ide-harness--jobs)))
+           (before-cursor codex-ide-harness--event-cursor)
+           (cancel (codex-ide-harness--cancel-job done)))
+      (should (equal (plist-get done :status) "done"))
+      (should (equal (cdr (assoc "status" cancel)) "done"))
+      (should (equal (plist-get (gethash job-id codex-ide-harness--jobs) :status)
+                     "done"))
+      (should (= before-cursor codex-ide-harness--event-cursor))
+      (should-not (cl-find "job-canceled" codex-ide-harness--events
+                           :key (lambda (event) (cdr (assoc "type" event)))
+                           :test #'equal)))))
+
+(ert-deftest codex-ide-harness-reset-clears-jobs-and-cancels-live ()
+  "Harness reset cancels live processes and clears tables."
+  (let ((codex-ide-harness--jobs (make-hash-table :test 'equal))
+        (codex-ide-harness--events nil)
+        (codex-ide-harness--event-cursor 0)
+        (codex-ide-harness--next-job-id 0))
+    (let* ((start (codex-ide-harness-start-job
+                   '(:command "sleep 5")))
+           (job-id (cdr (assoc "id" start)))
+           (process (plist-get (gethash job-id codex-ide-harness--jobs)
+                               :process)))
+      (should (process-live-p process))
+      (codex-ide-harness-reset)
+      (should (= (hash-table-count codex-ide-harness--jobs) 0))
+      (should-not codex-ide-harness--events)
+      (should (= codex-ide-harness--event-cursor 0))
+      (should-not (process-live-p process)))))
+
+(ert-deftest codex-ide-harness-event-fields-are-capped ()
+  "Retained event payloads truncate oversized string fields."
+  (let ((codex-ide-harness-event-field-limit 40)
+        (codex-ide-harness--events nil)
+        (codex-ide-harness--event-cursor 0)
+        (payload (make-string 200 ?x)))
+    (codex-ide-harness--record-event
+     "execute" (list (cons "output" payload)
+                     (cons "ok" t)))
+    (let* ((event (car codex-ide-harness--events))
+           (data (cdr (assoc "data" event)))
+           (output (cdr (assoc "output" data))))
+      (should (< (length output) 200))
+      (should (string-match-p "truncated" output)))))
+
 (provide 'codex-ide-mcp-tests)
 
 ;;; codex-ide-mcp-tests.el ends here

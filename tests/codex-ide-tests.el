@@ -2272,8 +2272,16 @@ region, where the scrollback-browsing rule alone would strand it."
                      codex-ide-menu--save-config))
     (should (codex-ide-test--command-bound-p codex-ide-config-map command))))
 
+(ert-deftest codex-ide-menu-mcp-commands ()
+  "MCP menu exposes start/stop/status/install commands."
+  (dolist (command '(codex-ide-mcp-start
+                     codex-ide-mcp-stop
+                     codex-ide-mcp-status
+                     codex-ide-mcp-install-codex-config))
+    (should (codex-ide-test--command-bound-p codex-ide-mcp-map command))))
+
 (ert-deftest codex-ide-menu-save-config-saves-current-symbols ()
-  "Save config persists current configuration."
+  "Save config persists the documented configuration set."
   (let (saved)
     (cl-letf (((symbol-function 'customize-save-variable)
                (lambda (symbol _value)
@@ -2282,10 +2290,7 @@ region, where the scrollback-browsing rule alone would strand it."
                (lambda (&rest _args) nil)))
       (codex-ide-menu--save-config))
     (should (equal (reverse saved)
-                   '(codex-ide-cli-path
-                     codex-ide-display-buffer-function
-                     codex-ide-ask-for-approval
-                     codex-ide-no-alt-screen)))))
+                   codex-ide-menu--saved-config-symbols))))
 
 (ert-deftest codex-ide-menu-debug-commands ()
   "Debug menu exposes status, toggle, and log commands."
@@ -2296,8 +2301,9 @@ region, where the scrollback-browsing rule alone would strand it."
     (should (codex-ide-test--command-bound-p codex-ide-debug-map command))))
 
 (ert-deftest codex-ide-menu-submenus-exist ()
-  "Config and debug submenus are defined keymaps."
+  "Config, MCP, and debug submenus are defined keymaps."
   (should (keymapp codex-ide-config-map))
+  (should (keymapp codex-ide-mcp-map))
   (should (keymapp codex-ide-debug-map)))
 
 (ert-deftest codex-ide-menu-no-alt-screen-description-is-dynamic ()
@@ -2311,6 +2317,106 @@ region, where the scrollback-browsing rule alone would strand it."
       (should (string-match-p "ON" (funcall desc-fn))))
     (let ((codex-ide-no-alt-screen nil))
       (should (string-match-p "OFF" (funcall desc-fn))))))
+
+(ert-deftest codex-ide-setup-session-sentinel-idempotent ()
+  "Repeated setup installs one process sentinel cleanup path."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-setup-sentinel-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1))
+         (lambda (sessions)
+           (let* ((session (car sessions))
+                  (process (plist-get session :process))
+                  (cleanup-calls 0)
+                  (original (lambda (&rest _) nil)))
+             (set-process-sentinel process original)
+             (cl-letf (((symbol-function 'codex-ide--cleanup-on-exit)
+                        (lambda (&rest _)
+                          (setq cleanup-calls (1+ cleanup-calls))))
+                       ((symbol-function 'codex-ide-term--configure-buffer)
+                        (lambda () nil)))
+               (codex-ide--setup-session session)
+               (codex-ide--setup-session session)
+               (codex-ide--setup-session session)
+               (should (process-get process 'codex-ide--sentinel-installed))
+               (funcall (process-sentinel process) process "finished\n")
+               (should (= cleanup-calls 1))))))
+      (delete-directory root t))))
+
+(ert-deftest codex-ide-ensure-cli-redetects-after-path-change ()
+  "CLI availability cache is invalidated when the path changes."
+  (let ((codex-ide--cli-available t)
+        (codex-ide-cli-path "true")
+        (detected 0))
+    (cl-letf (((symbol-function 'codex-ide--detect-cli)
+               (lambda ()
+                 (setq detected (1+ detected)
+                       codex-ide--cli-available nil))))
+      (codex-ide-menu--set-cli-path "/no/such/codex-binary")
+      (should-not codex-ide--cli-available)
+      (should-not (codex-ide--ensure-cli))
+      (should (= detected 1))
+      (should (equal codex-ide-cli-path "/no/such/codex-binary")))))
+
+(ert-deftest codex-ide-saved-session-candidates-from-rollout ()
+  "Saved-session scanner reads rollout session_meta ids."
+  (let* ((dir (make-temp-file "codex-ide-sessions-" t))
+         (project (file-name-as-directory
+                   (make-temp-file "codex-ide-project-" t)))
+         (other (file-name-as-directory
+                 (make-temp-file "codex-ide-other-" t)))
+         (file (expand-file-name "rollout.jsonl" dir))
+         (id "019fc273-afc7-7543-85ee-9f7725df777f"))
+    (unwind-protect
+        (let ((codex-ide-sessions-directory dir)
+              (codex-ide-resume-session-scan-limit 50))
+          (with-temp-file file
+            (insert (format
+                     "{\"type\":\"session_meta\",\"payload\":{\"session_id\":%s,\"cwd\":%s}}\n"
+                     (json-encode id)
+                     (json-encode project))))
+          (should (equal (mapcar #'car
+                                 (codex-ide--saved-session-candidates project))
+                         (list id)))
+          (should-not (codex-ide--saved-session-candidates other))
+          (should (equal (mapcar #'car
+                                 (codex-ide--saved-session-candidates nil))
+                         (list id)))
+          (cl-letf (((symbol-function 'completing-read)
+                     (lambda (&rest _)
+                       (format "%s  %s" id project))))
+            (should (equal (codex-ide--read-saved-session-id project) id)))
+          (should (equal (codex-ide--build-command nil id)
+                         (cons "codex" (list "resume" id)))))
+      (delete-directory dir t)
+      (delete-directory project t)
+      (delete-directory other t))))
+
+(ert-deftest codex-ide-stop-active-only-contract ()
+  "Stop kills only the active session buffer for a project root."
+  (let ((root (file-name-as-directory
+               (make-temp-file "codex-ide-stop-" t))))
+    (unwind-protect
+        (codex-ide-test--call-with-sessions
+         `((,root 1) (,root 2))
+         (lambda (sessions)
+           (let* ((first (car sessions))
+                  (second (cadr sessions))
+                  (logs nil))
+             (codex-ide--activate-session first)
+             (cl-letf (((symbol-function 'codex-ide-log)
+                        (lambda (fmt &rest args)
+                          (push (apply #'format fmt args) logs)))
+                       ((symbol-function 'codex-ide--get-working-directory)
+                        (lambda () root)))
+               (codex-ide-stop))
+             (should-not (buffer-live-p (plist-get first :buffer)))
+             (should (buffer-live-p (plist-get second :buffer)))
+             (should (cl-some (lambda (line)
+                                (string-match-p "active Codex session" line))
+                              logs)))))
+      (delete-directory root t))))
 
 (provide 'codex-ide-tests)
 

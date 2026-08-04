@@ -30,26 +30,42 @@
 (require 'keymap-popup)
 (require 'codex-ide)
 (require 'codex-ide-debug)
+(require 'codex-ide-mcp)
 
 ;;; Suffixes
+
+(defconst codex-ide-menu--saved-config-symbols
+  '(codex-ide-cli-path
+    codex-ide-display-buffer-function
+    codex-ide-ask-for-approval
+    codex-ide-no-alt-screen
+    codex-ide-cli-extra-args
+    codex-ide-config-overrides
+    codex-ide-debug
+    codex-ide-mcp-enabled
+    codex-ide-mcp-host
+    codex-ide-mcp-port
+    codex-ide-context-auto-start)
+  "Symbols persisted by `codex-ide-menu--save-config'.")
 
 (defun codex-ide-menu--set-cli-path (path)
   "Set `codex-ide-cli-path' to PATH."
   (interactive
    (list (read-file-name "Codex CLI path: " nil codex-ide-cli-path t)))
   (setq codex-ide-cli-path path)
+  (codex-ide--invalidate-cli-cache)
   (codex-ide-log "CLI path set to %s" path))
 
 (defun codex-ide-menu--set-approval (policy)
   "Set `codex-ide-ask-for-approval' to POLICY."
   (interactive
    (list (intern (completing-read
-                 "Approval policy: "
-                 '("nil" "untrusted" "on-request" "never")
-                 nil t nil nil
-                 (if codex-ide-ask-for-approval
-                     (symbol-name codex-ide-ask-for-approval)
-                   "nil")))))
+                  "Approval policy: "
+                  '("nil" "untrusted" "on-request" "never")
+                  nil t nil nil
+                  (if codex-ide-ask-for-approval
+                      (symbol-name codex-ide-ask-for-approval)
+                    "nil")))))
   (setq codex-ide-ask-for-approval (unless (eq policy 'nil) policy))
   (codex-ide-log "Approval policy set to %s" policy))
 
@@ -68,14 +84,14 @@
                  (if codex-ide-debug "enabled" "disabled")))
 
 (defun codex-ide-menu--save-config ()
-  "Save the current configuration to the custom file."
+  "Save the documented configuration symbols to the custom file.
+Persists `codex-ide-menu--saved-config-symbols' only: CLI path, display
+function, approval, no-alt-screen, extra args, config overrides, debug,
+MCP enable/host/port, and context auto-start."
   (interactive)
   (mapc (lambda (symbol)
           (customize-save-variable symbol (symbol-value symbol)))
-        '(codex-ide-cli-path
-          codex-ide-display-buffer-function
-          codex-ide-ask-for-approval
-          codex-ide-no-alt-screen))
+        codex-ide-menu--saved-config-symbols)
   (codex-ide-log "Configuration saved"))
 
 (defun codex-ide-menu--on-off (value)
@@ -86,6 +102,7 @@
 
 (defvar codex-ide-config-map)
 (defvar codex-ide-debug-map)
+(defvar codex-ide-mcp-map)
 (defvar codex-ide-map)
 
 (keymap-popup-define codex-ide-config-map
@@ -115,6 +132,16 @@
   "l" ("Show debug log" codex-ide-show-debug)
   "c" ("Clear debug log" codex-ide-clear-debug))
 
+(keymap-popup-define codex-ide-mcp-map
+  "codex-ide MCP"
+  :popup-key "?"
+  :description "codex-ide MCP"
+  :group "Server"
+  "s" ("Start MCP server" codex-ide-mcp-start)
+  "q" ("Stop MCP server" codex-ide-mcp-stop)
+  "S" ("MCP status" codex-ide-mcp-status)
+  "i" ("Install Codex MCP config" codex-ide-mcp-install-codex-config))
+
 (keymap-popup-define codex-ide-map
   "codex-ide"
   :popup-key "?"
@@ -122,8 +149,8 @@
   :group "Session"
   "s" ("Start" codex-ide :c-u "C-u: new session")
   "r" ("Resume last" codex-ide-resume-last)
-  "R" ("Resume" codex-ide-resume)
-  "q" ("Stop" codex-ide-stop)
+  "R" ("Resume saved session" codex-ide-resume)
+  "q" ("Stop active session" codex-ide-stop)
   :group "Navigation"
   "b" ("Switch to buffer" codex-ide-switch-to-buffer)
   "C-l" ("Switch project session" codex-ide-list-project-sessions)
@@ -135,6 +162,7 @@
   "n" ("Insert newline" codex-ide-insert-newline)
   :group "Submenus"
   "C" ("Configuration" :keymap codex-ide-config-map)
+  "m" ("MCP" :keymap codex-ide-mcp-map)
   "d" ("Debug" :keymap codex-ide-debug-map))
 
 ;;;###autoload

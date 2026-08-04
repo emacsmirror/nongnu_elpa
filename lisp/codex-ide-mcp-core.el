@@ -49,6 +49,12 @@ Zero means ask the operating system for an ephemeral port."
   :type 'integer
   :group 'codex-ide)
 
+(defcustom codex-ide-mcp-max-request-bytes (* 1024 1024)
+  "Maximum accepted MCP HTTP request body size in bytes.
+Also bounds retained incomplete request pending data per client."
+  :type 'integer
+  :group 'codex-ide)
+
 ;;; Constants
 
 (defconst codex-ide-mcp--server-name "emacs_tools"
