@@ -1357,8 +1357,16 @@ mail."
                          (expand-file-name "no-movemail-here"
                                            temporary-file-directory))))
     (should-not (file-executable-p (expand-file-name "movemail" exec-directory)))
-    (let ((err (should-error (vm-movemail-program-name))))
-      (should (string-match-p "vm-movemail-program" (error-message-string err))))))
+    (let* ((err (should-error (vm-movemail-program-name)))
+           (text (error-message-string err)))
+      ;; The message is the whole remedy for anyone who meets this, so it has to
+      ;; say what to do and not merely what is missing (#566).
+      (should (string-match-p "vm-movemail-program" text))
+      (should (string-match-p "will not fetch" text))     ; what is wrong
+      (should (string-match-p "--with-mailutils" text))   ; why Emacs has none
+      (should (string-match-p "setq vm-movemail-program" text)) ; what to do
+      (should (string-match-p "#538" text))               ; and the caveat
+      (should (string-match-p (regexp-quote exec-directory) text)))))
 
 (ert-deftest vm-folder-test-movemail-copies-the-spool-unaltered ()
   "The movemail VM defaults to copies a spool file byte for byte.
