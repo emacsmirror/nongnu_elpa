@@ -1316,6 +1316,88 @@ its start."
   (vm-folder-test--with-point-at 0
     (should (= 4 (length (vm-folder-test--operable-subjects 0))))))
 
+
+;;; which movemail VM runs (issue #538)
+
+(ert-deftest vm-folder-test-movemail-defaults-to-the-one-emacs-came-with ()
+  "REGRESSION: nil `vm-movemail-program' means Emacs's own movemail.
+Issue #538: the default used to be the string \"movemail\", which `call-process'
+looks up along `exec-path' -- and /usr/bin/movemail comes first there.  On
+Debian and Ubuntu with the mailutils package installed that is GNU Mailutils'
+movemail, which moves mail by parsing and rewriting it rather than copying it,
+and merges a message whose body is empty with the message after it.  VM wants
+the one that copies its input unaltered, and Emacs's is that one."
+  (let ((vm-movemail-program nil))
+    (should (equal (expand-file-name "movemail" exec-directory)
+                   (vm-movemail-program-name)))
+    ;; not merely something named movemail somewhere on the path
+    (should (file-name-absolute-p (vm-movemail-program-name)))))
+
+(ert-deftest vm-folder-test-movemail-setting-is-honoured ()
+  "An explicitly set `vm-movemail-program' is used as given.
+Mailutils' movemail is a reasonable choice for a maildrop it does not mangle,
+and for the protocols it supports; what the default avoids is reaching for it
+by accident."
+  (let ((vm-movemail-program "/somewhere/else/movemail"))
+    (should (equal "/somewhere/else/movemail" (vm-movemail-program-name)))))
+
+(ert-deftest vm-folder-test-movemail-missing-is-an-error ()
+  "With no movemail of its own, VM says so rather than picking one off the path.
+Falling back to `exec-path' would mean choosing a program by its name alone to
+do the one job where a different implementation than the expected one damages
+mail."
+  (let ((vm-movemail-program nil)
+        (exec-directory (file-name-as-directory
+                         (expand-file-name "no-movemail-here"
+                                           temporary-file-directory))))
+    (should-not (file-executable-p (expand-file-name "movemail" exec-directory)))
+    (let ((err (should-error (vm-movemail-program-name))))
+      (should (string-match-p "vm-movemail-program" (error-message-string err))))))
+
+(ert-deftest vm-folder-test-movemail-copies-the-spool-unaltered ()
+  "The movemail VM defaults to copies a spool file byte for byte.
+The property the default is chosen for, checked against the mbox from #538: a
+first message with an empty body, so the blank line ending its headers is the
+only one before the next `From ' line.  Skipped when this Emacs has no movemail
+of its own -- there is then nothing to make the claim about."
+  (let ((movemail (expand-file-name "movemail" exec-directory)))
+    (vm-test-skip-unless (file-executable-p movemail)
+                         "this Emacs has no movemail of its own")
+    (let* ((dir (file-name-as-directory (make-temp-file "vm-538" t)))
+           (spool (expand-file-name "spool" dir))
+           (crash (expand-file-name "crash" dir))
+           (mbox (concat
+                  "From alice@example.com  Mon Jan  1 00:00:00 2024\n"
+                  "To: bob@example.com\n"
+                  "Subject: foo\n"
+                  "From: Alice <alice@example.com>\n"
+                  "\n"
+                  "From alice@example.com  Mon Jan  1 00:00:01 2024\n"
+                  "To: bob@example.com\n"
+                  "Subject: bar\n"
+                  "From: Alice <alice@example.com>\n"
+                  "\n"
+                  "blat\n\n")))
+      (unwind-protect
+          (progn
+            (with-temp-file spool (insert mbox))
+            (let ((vm-movemail-program nil)
+                  (vm-movemail-program-switches nil))
+              (should (eq 0 (call-process (vm-movemail-program-name)
+                                          nil nil nil spool crash))))
+            (with-temp-buffer
+              (insert-file-contents crash)
+              ;; byte for byte, so both messages are still there and separate
+              (should (equal mbox (buffer-string)))
+              (goto-char (point-min))
+              (should (= 2 (how-many "^From alice@example\\.com  ")))
+              ;; and nothing added: these are the marks a rewriting movemail
+              ;; leaves, and what the folder in #538 arrived carrying
+              (should (= 0 (how-many "^>From ")))
+              (should (= 0 (how-many "^X-IMAPbase:")))
+              (should (= 0 (how-many "^X-UID:")))))
+        (delete-directory dir t)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

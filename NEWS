@@ -118,6 +118,20 @@ VM 8.?.?
     that same notation instead of putting the name in the header verbatim.
     Where a sender supplies both an international parameter and a plain
     ASCII one, the international one is used, that being the real name.
+  * `vm-movemail-program' now defaults to nil, meaning the movemail Emacs came
+    with, in `exec-directory'.  It used to default to "movemail", which is
+    looked up along `exec-path', and there /usr/bin/movemail comes first -- on
+    Debian and Ubuntu with the mailutils package installed, that is GNU
+    Mailutils' movemail rather than Emacs's.  Emacs's copies a spool file byte
+    for byte, which is all VM asks of it; Mailutils' moves mail by parsing and
+    rewriting it, which rewrites the "From " separator line, adds X-IMAPbase
+    and X-UID headers, and, on a message whose body is empty, reads the message
+    after it as body text and stores the two as one.  Set the variable
+    explicitly to use a different movemail; if this Emacs has none of its own,
+    getting mail from a local spool file now says so rather than running
+    whatever program on the path happens to be named movemail.  VM uses
+    movemail for local spool files only -- POP and IMAP retrieval are VM's own
+    -- so the extra protocols other implementations support are of no use here.
 
 
 VM 8.3.2 released 2025-12-29

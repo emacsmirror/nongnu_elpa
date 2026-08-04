@@ -529,9 +529,25 @@ file locking protocol.
 When spool files are on the local file system, VM uses the program
 @file{movemail}, a program distributed with Emacs to extract mail from
 a spool file.  The variable @code{vm-movemail-program} specifies the
-name of the movemail program and defaults to @samp{"movemail"}.  The
-variable @code{vm-movemail-program-switches} lets you specify some
+name of the movemail program.  Its default, @code{nil}, means the one
+Emacs came with, in @code{exec-directory}; if this Emacs has none,
+getting new mail from a local spool file signals an error saying so.
+The variable @code{vm-movemail-program-switches} lets you specify some
 initial command line argument to pass to the movemail program.
+
+It has to be Emacs's movemail and not merely the first @file{movemail} on
+@code{exec-path}.  Emacs's copies the spool byte for byte, which is all VM
+asks of it; other implementations move mail by parsing and rewriting it.  GNU
+Mailutils' movemail, which is @file{/usr/bin/movemail} on Debian and Ubuntu
+once the mailutils package is installed, rewrites the @samp{From } separator
+line, adds headers of its own, and given a message whose body is empty reads
+the message after it as body text and writes the two out as one.  Setting
+@code{vm-movemail-program} to it deliberately is fine for a maildrop it does
+not mangle; what the default avoids is picking it up by accident.
+
+VM asks movemail for local spool files only: @acronym{POP} and @acronym{IMAP}
+retrieval are VM's own, so the extra protocols other movemail
+implementations support are of no use here.
 
 @cindex crash box
 @vindex vm-crash-box
