@@ -100,11 +100,23 @@ works in all VM buffers."
 (defsubst vm-end-of (message)
   (aref (aref message 0) 5))
 
+;; Reverse links live here, not in the message.  A back pointer in the message
+;; vector chains the whole folder for the garbage collector: message, softdata,
+;; preceding cons, previous message, and so on.  Emacs marks that recursively,
+;; one stack frame per message, and about 50000 messages overflow the stack and
+;; kill Emacs 28 (issue #453, debbugs #39962).  Outside the message each graph
+;; is shallow: measured on 28.2, 400000 messages cost what no back pointer at
+;; all costs.  Weak keys, so a dropped message takes its link with it.
+(defvar vm-reverse-link-table (make-hash-table :test 'eq :weakness 'key)
+  "Maps each message to the cons of its message list that precedes it.
+See `vm-reverse-link-of'.  One table serves every folder, messages being
+unique objects.")
+
 ;; soft data vector
 (defconst vm-softdata-vector-length 23)
 (defconst vm-softdata-fields
   [:number :padded-number :mark :su-start :su-end :real-message-sym
-	   :reverse-link-sym :message-type :message-id-number :buffer
+	   :unused :message-type :message-id-number :buffer
 	   :thread-indentation :thread-list
 	   :babyl-frob-flag :saved-virtual-attributes
 	   :saved-virtual-mirror-data :virtual-summary
@@ -129,9 +141,11 @@ works in all VM buffers."
 ;; real message
 (defsubst vm-real-message-of (message)
   (symbol-value (aref (aref message 1) 5)))
-;; link to previous message in the message list
+;; link to previous message: the cons of the message list whose car is the
+;; preceding message, so (cdr (vm-reverse-link-of m)) is the cons holding m
+;; itself.  nil for the first message.  See `vm-reverse-link-table'.
 (defsubst vm-reverse-link-of (message)
-  (symbol-value (aref (aref message 1) 6)))
+  (gethash message vm-reverse-link-table))
 ;; message type
 (defsubst vm-message-type-of (message)
   (aref (aref message 1) 7))
@@ -406,9 +420,9 @@ works in all VM buffers."
 (defsubst vm-set-real-message-sym-of (message sym)
   (aset (aref message 1) 5 sym))
 (defsubst vm-set-reverse-link-of (message link)
-  (set (aref (aref message 1) 6) link))
-(defsubst vm-set-reverse-link-sym-of (message sym)
-  (aset (aref message 1) 6 sym))
+  (if link
+      (puthash message link vm-reverse-link-table)
+    (remhash message vm-reverse-link-table)))
 (defsubst vm-set-message-type-of (message type)
   (aset (aref message 1) 7 type))
 (defsubst vm-set-message-id-number-of (message number)
@@ -722,10 +736,7 @@ works in all VM buffers."
     (setq sym (make-symbol "<v>"))
     (set sym nil)
     (vm-set-virtual-messages-sym-of mvec sym)
-    ;; Another uninterned symbol for the reverse link
-    ;; into the message list.
-    (setq sym (make-symbol "<--"))
-    (vm-set-reverse-link-sym-of mvec sym)
+    ;; No reverse link field: it lives in `vm-reverse-link-table'.
     mvec ))
 
 (defun vm-find-and-set-text-of (m)

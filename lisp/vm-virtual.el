@@ -246,7 +246,6 @@ all the real folder buffers involved."
 		 message vm-message-id-number)
 		(vm-increment vm-message-id-number)
 		(vm-set-buffer-of message vbuffer)
-		(vm-set-reverse-link-sym-of message (make-symbol "<--"))
 		(vm-set-reverse-link-of message tail-cons)
 		(if (null tail-cons)
 		    (setq new-message-list (list message)

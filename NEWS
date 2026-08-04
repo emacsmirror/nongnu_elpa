@@ -171,6 +171,12 @@ VM 8.?.?
     whatever program on the path happens to be named movemail.  VM uses
     movemail for local spool files only -- POP and IMAP retrieval are VM's own
     -- so the extra protocols other implementations support are of no use here.
+  * Message reverse links moved out of the message structure into
+    `vm-reverse-link-table'.  A back pointer in the message made garbage
+    collection recurse once per message, crashing Emacs 28 on folders over
+    about 50000 messages.  `vm-reverse-link-of' is unchanged; soft data slot 6
+    is now unused and `vm-set-reverse-link-sym-of' is gone.  Affects add-ons
+    that touch the message structure directly, nothing else.
 
 
 VM 8.3.2 released 2025-12-29
