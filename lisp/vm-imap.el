@@ -594,7 +594,11 @@ from which mail is to be moved and DESTINATION is the VM folder."
 		((member source vm-imap-auto-expunge-warned)
 		 nil)
 		(t
-		 (vm-warn 6 1 
+		 ;; Level 1, as the identical POP warning in vm-pop.el is: this
+		 ;; says mail is being left on the server, and it is shown once
+		 ;; per source, so it is not chatter.  At 6 it was invisible at
+		 ;; any normal verbosity.
+		 (vm-warn 1 1
 			  "Warning: IMAP folder is not set to auto-expunge")
 		 (setq vm-imap-auto-expunge-warned
 		       (cons source vm-imap-auto-expunge-warned))

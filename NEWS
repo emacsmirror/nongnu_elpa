@@ -118,6 +118,19 @@ VM 8.?.?
     that same notation instead of putting the name in the header verbatim.
     Where a sender supplies both an international parameter and a plain
     ASCII one, the international one is used, that being the real name.
+  * `vm-verbosity' now defaults to 5, the level its own documentation calls
+    normal, rather than 8.  VM was three levels chattier than it said it was:
+    saving a dozen messages to an IMAP folder reported "Checking IMAP
+    connection to ..." a dozen times, and threading, summary generation and
+    header parsing each narrated their progress.  Set it to 8 for the old
+    behaviour; the scale, which runs 0 to 10 with 10 the most talkative, is now
+    described in the manual under Customizations as well as in the variable.
+    Warnings use the same scale, so three messages were re-levelled to survive
+    the change: "N messages saved to FOLDER" and its saved-to-buffer twin,
+    which are results rather than progress and were the only "N messages ..."
+    reports in VM not at level 5, and the IMAP "folder is not set to
+    auto-expunge" warning, which sat at 6 while the identical POP warning was
+    at 1.  Reported with patches by John Stoffel.
   * `vm-movemail-program' now defaults to nil, meaning the movemail Emacs came
     with, in `exec-directory'.  It used to default to "movemail", which is
     looked up along `exec-path', and there /usr/bin/movemail comes first -- on

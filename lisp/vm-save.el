@@ -512,12 +512,12 @@ The saved messages are flagged as `filed'."
 			   (vm-present-current-message))
 		  (vm-update-summary-and-mode-line)))
 	      (unless quiet
-		(vm-inform 7 "%d message%s saved to buffer %s"
+		(vm-inform 5 "%d message%s saved to buffer %s"
 			   save-count
 			   (if (/= 1 save-count) "s" "")
 			   (buffer-name))))
 	  (unless quiet
-	    (vm-inform 7 "%d message%s saved to %s"
+	    (vm-inform 5 "%d message%s saved to %s"
 		       save-count (if (/= 1 save-count) "s" "") folder)))))
     (when (or (null vm-last-save-folder)
 	      (not (equal unexpanded-folder auto-folder)))
