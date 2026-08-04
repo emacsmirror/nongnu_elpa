@@ -29,16 +29,24 @@
 # If an additional ACTION is given, it is executed at the top of the
 # ACTION-IF-FOUND part of AC_ARG_WITH.
 # #### WARNING: pay attention to the quoting of ACTION if given !!!!!
+#
+# The closing bracket in [--with-$2]m4_ifval(...) is load-bearing.  Written as
+# --with-$2ifelse(...), which is what this was, $2 expands to "other-dirs" and
+# leaves the text "--with-other-dirsifelse(DIRS, , , =DIRS)": m4 reads
+# "dirsifelse" as one word, so the conditional is never a macro call and lands
+# in the help text verbatim.  Ending the quoted string first makes the macro
+# name a token of its own.  The same goes for the DESC and DEFAULT pair.
 AC_DEFUN([VM_ARG_SUBST],
 [
   AC_SUBST([$1])
   AC_ARG_WITH([$2],
-    AS_HELP_STRING([--with-$2ifelse($3, , , =$3)],[$4ifelse($5, , ,  [[[$5]]])]),
+    AS_HELP_STRING([--with-$2]m4_ifval([$3], [=$3]),
+                   [$4]m4_ifval([$5], [ [[$5]]])),
     [
-      ifelse($6, [], [], $6)
+      m4_ifval([$6], [$6])
       $1="${withval}"
     ],
-    ifelse($5, [], [], [$1="$5"]))
+    m4_ifval([$5], [$1="$5"]))
 ])
 
 # Find a (g)tar program and make sure it is GNU one. A failure is not fatal

@@ -116,7 +116,12 @@ EMACS_FLAVOR = @EMACS_FLAVOR@
 
 FLAGS = @FLAGS@
 
-EMACS_COMP = OTHERDIRS=@OTHERDIRS@ "$(EMACS_PROG)" $(FLAGS)
+# Quoted: @OTHERDIRS@ is an elisp list -- ("/some/dir") -- which vm-build.el
+# reads back out of the environment.  Unquoted, the shell sees the parenthesis
+# and every recipe using this dies with "Syntax error: "(" unexpected".  It
+# went unnoticed because with no --with-other-dirs the value is the bare word
+# "nil", which the shell is happy with.  Issue #495.
+EMACS_COMP = OTHERDIRS='@OTHERDIRS@' "$(EMACS_PROG)" $(FLAGS)
 
 .el.elc:
 	$(EMACS_COMP) -f batch-byte-compile $<
