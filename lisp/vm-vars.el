@@ -5540,15 +5540,37 @@ the current buffer when the function is called.")
 By default, when you press mouse-3 in VM, this menu is popped up.")
 (make-variable-buffer-local 'mode-popup-menu)
 
-(defcustom vm-movemail-program "movemail"
+(defcustom vm-movemail-program nil
   "*Name of program to use to move mail from the system spool
-to another location.  Normally this should be the movemail
-program distributed with Emacs.  If you use another program, it must
-accept as its last two arguments the spool file (or maildrop) from which
-mail is retrieved, and the local file where the retrieved mail
-should be stored."
+to another location.  If you use another program, it must accept as its
+last two arguments the spool file (or maildrop) from which mail is
+retrieved, and the local file where the retrieved mail should be stored.
+
+A nil value, the default, means the movemail distributed with Emacs, in
+`exec-directory'.  If this Emacs has none, getting new mail from a local
+spool file signals an error saying so, rather than making do with another
+movemail found along `exec-path'.
+
+It has to be that one, and not simply the first `movemail' on the path.
+Emacs's copies the spool byte for byte, which is all VM wants of it; other
+implementations move mail by *parsing and rewriting* it, and what comes out
+is not what the mail server put in.  GNU Mailutils' movemail, which is
+`/usr/bin/movemail' on Debian and Ubuntu when the mailutils package is
+installed, rewrites the `From ' separator line, adds `X-IMAPbase' and
+`X-UID' headers of its own, and -- given a message whose body is empty, so
+that the blank line ending its headers is the only one before the next
+`From ' line -- reads the following message as body text and writes the two
+out as one.  That is issue #538: two messages arrive in the folder merged
+into one, the second one's headers showing up as the first one's body with
+its `From ' line quoted to `>From '.  Setting this variable to Mailutils'
+movemail knowingly is fine for a maildrop it does not mangle; the point is
+that it should not be picked up by accident.
+
+VM asks movemail for local spool files only.  POP and IMAP retrieval are
+VM's own, in vm-pop.el and vm-imap.el, so the protocol support that other
+movemail implementations offer is of no use here."
   :group 'vm-helpers
-  :type '(choice (const :tag "None" nil)
+  :type '(choice (const :tag "The movemail Emacs came with" nil)
 		 file))
 
 (defcustom vm-movemail-program-switches nil

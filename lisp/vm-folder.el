@@ -4302,37 +4302,67 @@ Same as \\[vm-recover-folder]."
 	"Type \\[vm-mail-send-and-exit] to send message, \\[kill-buffer] to discard this composition")))
      (t (describe-mode)))))
 
+(defun vm-movemail-program-name ()
+  "Return the movemail program VM should run.
+`vm-movemail-program' when the user has set it, and otherwise the movemail
+Emacs came with, in `exec-directory'.
+
+Resolved here rather than as the default of `vm-movemail-program' because
+`exec-directory' names an Emacs version and a build architecture; baked into
+a defcustom it would be compiled into vm-vars.elc and go stale at the next
+Emacs upgrade.
+
+The reason not to leave it to `exec-path' -- which is what plain \"movemail\"
+would do, and which is how VM used to spell this -- is that `exec-path' finds
+`/usr/bin/movemail' first, and on Debian and Ubuntu that is GNU Mailutils'
+rather than Emacs's.  Emacs's copies the spool byte for byte; Mailutils'
+rewrites it, and on a message with an empty body merges it with the next one.
+See `vm-movemail-program' and issue #538.
+
+If this Emacs has no movemail, signal an error rather than looking along
+`exec-path' for one.  Falling back would mean reaching for a program on the
+strength of its name alone, to do the one job where getting a different
+implementation than the expected one damages mail -- so this asks instead."
+  (or vm-movemail-program
+      (let ((own (expand-file-name "movemail" exec-directory)))
+	(if (file-executable-p own)
+	    own
+	  (error (concat "No movemail in %s; set vm-movemail-program"
+			 " to one that copies its input unaltered")
+		 exec-directory)))))
+
 ;;;###autoload
 (defun vm-spool-move-mail (source destination)
   (let ((handler (and (fboundp 'find-file-name-handler)
 		      (find-file-name-handler source 'vm-spool-move-mail)))
+	(movemail (vm-movemail-program-name))
 	status error-buffer)
     (if handler
 	(funcall handler 'vm-spool-move-mail source destination)
       (setq error-buffer
 	    (get-buffer-create
 	     (format "*output of %s %s %s*"
-		     vm-movemail-program source destination)))
+		     movemail source destination)))
       (with-current-buffer error-buffer
 	(erase-buffer))
       (setq status
 	    (apply 'call-process
 		   (nconc
-		    (list vm-movemail-program nil error-buffer t)
+		    (list movemail nil error-buffer t)
 		    (copy-sequence vm-movemail-program-switches)
 		    (list source destination))))
       (save-current-buffer
 	(set-buffer error-buffer)
 	(if (and (numberp status) (not (= 0 status)))
 	    (insert (format "\n%s exited with code %s\n"
-			    vm-movemail-program status)))
+			    movemail status)))
 	(if (> (buffer-size) 0)
 	    (progn
 	      (vm-display-buffer error-buffer)
 	      (if (and (numberp status) (not (= 0 status)))
 		  (error "Failed getting new mail from %s" source)
 		(vm-warn 1 2 "Warning: unexpected output from %s"
-			 vm-movemail-program)))
+			 movemail)))
 	  ;; nag, nag, nag.
 	  (kill-buffer error-buffer))
 	t ))))
