@@ -21,10 +21,12 @@
 ;;; Commentary:
 
 ;; A `tabulated-list' browser over the dashboard REST `/api/profiles':
-;; every profile with its configured model and provider.  `m' picks a new
-;; model from the shared `model.options' catalog and persists it into that
-;; profile's own config.yaml via `PUT /api/profiles/{name}/model'.  The
-;; Reasoning column is display-only for now: the dashboard exposes no
+;; every profile with its configured model and provider.  Profiles can be
+;; created, renamed, and deleted through the dashboard REST API; the built-in
+;; default profile is protected.  `m' picks a new model from the shared
+;; `model.options' catalog and persists it into that profile's own config.yaml
+;; via `PUT /api/profiles/{name}/model'.  The Reasoning column is display-only
+;; for now: the dashboard exposes no
 ;; per-profile reasoning read or write route yet; wire it up when
 ;; hermes-agent grows `GET/PUT /api/profiles/{name}/reasoning'.
 
@@ -93,6 +95,71 @@ route requires both fields."
            (model . ,(plist-get candidate :model)))
    :client client))
 
+(defun hermes-profiles--api (client method path &optional body)
+  "Return a profile REST METHOD PATH promise through CLIENT with BODY."
+  (hermes-dashboard-transport-api-request-async
+   method (concat "/api/profiles" path) :body body :client client))
+
+(defun hermes-profiles--refresh-after-mutation (origin message)
+  "Refresh live profile ORIGIN after reporting MESSAGE."
+  (message "Hermes: %s" message)
+  (when (hermes-browser--buffer-mode-p origin 'hermes-profiles-mode)
+    (with-current-buffer origin (hermes-profiles--revert))))
+
+(defun hermes-profiles--ensure-non-default (name action)
+  "Refuse ACTION when profile NAME denotes the built-in default profile."
+  (when (string-equal-ignore-case name "default")
+    (user-error "Cannot %s the default profile" action)))
+
+(defun hermes-profiles-create (name)
+  "Create profile NAME through the dashboard API."
+  (interactive (list (read-string "New profile name: ")))
+  (let ((name (string-trim name))
+        (origin (current-buffer)))
+    (when (string-empty-p name) (user-error "Profile name is required"))
+    (hermes-profiles--ensure-non-default name "create")
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-profiles--api client "POST" "" `((name . ,name))))
+     (lambda (_result)
+       (hermes-profiles--refresh-after-mutation origin
+                                                (format "created profile %s" name))))))
+
+(defun hermes-profiles-rename (new-name)
+  "Rename the profile at point to NEW-NAME."
+  (interactive (list (read-string "Rename profile to: ")))
+  (let ((name (tabulated-list-get-id))
+        (new-name (string-trim new-name))
+        (origin (current-buffer)))
+    (unless name (user-error "No profile on this line"))
+    (when (string-empty-p new-name) (user-error "Profile name is required"))
+    (hermes-profiles--ensure-non-default name "rename")
+    (hermes-profiles--ensure-non-default new-name "rename to")
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-profiles--api
+        client "PATCH" (concat "/" (url-hexify-string name))
+        `((new_name . ,new-name))))
+     (lambda (_result)
+       (hermes-profiles--refresh-after-mutation
+        origin (format "renamed profile %s to %s" name new-name))))))
+
+(defun hermes-profiles-delete ()
+  "Delete the profile at point after confirmation."
+  (interactive)
+  (let ((name (tabulated-list-get-id))
+        (origin (current-buffer)))
+    (unless name (user-error "No profile on this line"))
+    (hermes-profiles--ensure-non-default name "delete")
+    (when (yes-or-no-p (format "Delete profile %s? " name))
+      (hermes-browser--run-on-client
+       (lambda (client)
+         (hermes-profiles--api
+          client "DELETE" (concat "/" (url-hexify-string name))))
+       (lambda (_result)
+         (hermes-profiles--refresh-after-mutation
+          origin (format "deleted profile %s" name)))))))
+
 (defun hermes-profiles-set-model ()
   "Set the model of the profile at point, persisted in its configuration."
   (interactive)
@@ -123,14 +190,17 @@ route requires both fields."
   :buffer "*Hermes Profiles*"
   :command hermes-list-profiles
   :doc "Major mode listing Hermes profiles with their configured runtime."
-  :command-doc "Browse Hermes profiles and edit their configured model."
+  :command-doc "Browse Hermes profiles and manage their lifecycle and model."
   :columns [("Profile" 16 t) ("Default" 7 t) ("Model" 28 t)
             ("Provider" 14 t) ("Reasoning" 9 t) ("Description" 40 nil)]
   :fetch (lambda (client)
            (hermes-dashboard-transport-profile-list-async client))
   :rows #'hermes-profiles--rows
   :keys ("m" #'hermes-profiles-set-model
-         "RET" #'hermes-profiles-set-model))
+         "RET" #'hermes-profiles-set-model
+         "c" #'hermes-profiles-create
+         "r" #'hermes-profiles-rename
+         "D" #'hermes-profiles-delete))
 
 (provide 'hermes-profiles)
 ;;; hermes-profiles.el ends here

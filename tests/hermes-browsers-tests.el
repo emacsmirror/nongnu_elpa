@@ -542,6 +542,61 @@
              put '((ok . t) (model . "gpt-5.5") (provider . "openai"))))
           (should (eq refreshed origin)))))))
 
+(ert-deftest hermes-profiles-lifecycle-uses-exact-rest-and-refreshes ()
+  "Profile lifecycle commands use exact REST contracts and refresh on success."
+  (let (requests (refreshes 0))
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (method path &rest args)
+                 (push (list method path (plist-get args :body)) requests)
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'hermes-profiles--revert)
+               (lambda (&rest _) (setq refreshes (1+ refreshes))))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'message) #'ignore))
+      (with-temp-buffer
+        (hermes-profiles-mode)
+        (hermes-profiles-create " worker ")
+        (setq tabulated-list-entries
+              '(("old/name" ["old/name" "" "" "" "—" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (hermes-profiles-rename " new ")
+        (hermes-profiles-delete)))
+    (should (member '("POST" "/api/profiles" ((name . "worker"))) requests))
+    (should (member '("PATCH" "/api/profiles/old%2Fname"
+                      ((new_name . "new")))
+                    requests))
+    (should (member '("DELETE" "/api/profiles/old%2Fname" nil) requests))
+    (should (= refreshes 3))))
+
+(ert-deftest hermes-profiles-lifecycle-refuses-default-profile ()
+  "Profile lifecycle commands refuse to mutate the built-in default profile."
+  (let (requested)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client)
+               (lambda () 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-api-request-async)
+               (lambda (&rest _)
+                 (setq requested t)
+                 (hermes--promise-resolved '((ok . t)))))
+              ((symbol-function 'yes-or-no-p) (lambda (&rest _) t)))
+      (with-temp-buffer
+        (hermes-profiles-mode)
+        (should-error (hermes-profiles-create " Default ") :type 'user-error)
+        (setq tabulated-list-entries
+              '(("default" ["default" "*" "" "" "—" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (should-error (hermes-profiles-rename "renamed") :type 'user-error)
+        (should-error (hermes-profiles-delete) :type 'user-error)
+        (setq tabulated-list-entries
+              '(("worker" ["worker" "" "" "" "—" ""])))
+        (tabulated-list-print)
+        (goto-char (point-min))
+        (should-error (hermes-profiles-rename " DEFAULT ") :type 'user-error)))
+    (should-not requested)))
+
 (ert-deftest hermes-rollback-diff-ignores-stale-result ()
   "An older rollback diff cannot replace the result of a newer request."
   (let ((first (hermes--promise-make))
