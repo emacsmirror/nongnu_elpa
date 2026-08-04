@@ -261,6 +261,65 @@ Fourth message from sender1.
       (should (eq second (car (cdr vm-message-list))))
       (should (eq third (nth 2 vm-message-list))))))
 
+
+;;; the session-beginning invariant behind #240
+
+(ert-deftest vm-integration-test-session-beginning-is-always-bound ()
+  "`vm-session-beginning' is bound before `vm' can be called.
+Issue #240 was a recursive call in `vm', guarded by
+`(unless (boundp \\='vm-session-beginning) ...)\\=' and commented as being there to
+allow advice on the first call.  It could never run: the variable is defvar'd
+unconditionally in vm-vars.el, which vm-autoloads.el requires, so it is bound
+before `vm' is reachable.
+
+This pins that invariant, so the guard cannot look meaningful again to someone
+reading the old code in the history."
+  (require 'vm-vars)
+  (should (boundp 'vm-session-beginning)))
+
+(ert-deftest vm-integration-test-session-initialization-binds-it-too ()
+  "`vm-session-initialization' leaves `vm-session-beginning' bound and nil.
+The second, independent reason the guard in #240 was dead: it stood *after* a
+call to `vm-session-initialization', which requires vm-vars itself and then sets
+the variable.  So even without the defvar reaching it first, the test could not
+have been true by the time it was made."
+  (require 'vm)
+  (let ((vm-init-file nil)
+        (vm-preferences-file nil))
+    (vm-session-initialization)
+    (should (boundp 'vm-session-beginning))
+    (should (null vm-session-beginning))))
+
+(ert-deftest vm-integration-test-vm-does-not-call-itself ()
+  "`vm' visits a folder with one call to itself, not two.
+A guard against reintroducing #240 rather than a reproduction of it: the removed
+call was unreachable, so this passed before the change as well.  What it protects
+is the shape -- if `vm' ever calls itself again, a folder visit will count two."
+  (require 'vm)
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-240" t)))
+         (file (expand-file-name "folder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (calls 0)
+         (counter (lambda (orig &rest args)
+                    (setq calls (1+ calls))
+                    (apply orig args))))
+    (unwind-protect
+        (progn
+          (with-temp-file file
+            (insert "From a@example.com Mon Jan  1 00:00:00 2024\n"
+                    "From: A <a@example.com>\nSubject: one\n\nBody.\n\n"))
+          (advice-add 'vm :around counter)
+          (unwind-protect
+              (vm file)
+            (advice-remove 'vm counter))
+          (should (= 1 calls))
+          (should (= 1 (length vm-message-list))))
+      (delete-directory dir t))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

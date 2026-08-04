@@ -162,13 +162,17 @@ deleted messages.  Use `###' to expunge deleted messages."
 
   (interactive (list nil :read-only current-prefix-arg))
   (vm-session-initialization)
-  ;; recursive call to vm in order to allow defadvice on its first
-  ;; call.  Added in VM 8.0.6
   (when (vm-interactive-p) (setq interactive t))
-  (unless (boundp 'vm-session-beginning)
-    (vm folder :interactive nil :read-only read-only 
-	:access-method access-method
-	:reload reload :just-visit just-visit))
+  ;; There used to be a recursive call to `vm' here, guarded by
+  ;; (unless (boundp 'vm-session-beginning) ...), whose comment said it was
+  ;; "to allow defadvice on its first call".  It could never run, for two
+  ;; independent reasons: `vm-session-beginning' is defvar'd unconditionally in
+  ;; vm-vars.el, which vm-autoloads.el requires, so it is bound before `vm' can
+  ;; be reached at all; and `vm-session-initialization' just above requires
+  ;; vm-vars itself, so the variable is bound by the time the test is made even
+  ;; if it somehow was not before.  The defvar dates from 2007-01-12 and the
+  ;; recursive call from 2008-02-15, so it was unreachable when it was written.
+  ;; Removed for issue #240.
   ;; set inhibit-local-variables non-nil to protect
   ;; against letter bombs.
   ;; set enable-local-variables to nil for newer Emacses
