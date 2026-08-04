@@ -641,6 +641,7 @@ shared client."
           (hermes-dashboard-transport-session-resume
            (plist-get context :client) (plist-get context :stored-id)
            :cols (hermes-chat--dashboard-cols)
+           :profile hermes-chat--profile
            :resolve (lambda (result)
                       (hermes-chat--in-buffer (plist-get context :buffer)
                         (hermes-chat--dashboard-handle-idle-result
@@ -966,6 +967,7 @@ local FIFO submission."
     (hermes-dashboard-transport-session-resume
      client hermes-chat--session-id
      :cols (hermes-chat--dashboard-cols)
+     :profile hermes-chat--profile
      :resolve (hermes-chat--dashboard-session-resolver
                buffer client prompt t resolve reject queued-p)
      :reject reject))
@@ -1070,6 +1072,7 @@ When dashboard session bootstrap fails, call REJECT with the error message."
       (hermes-dashboard-transport-session-resume
        client hermes-chat--session-id
        :cols (hermes-chat--dashboard-cols)
+       :profile hermes-chat--profile
        :resolve (hermes-chat--dashboard-action-resolver
                  buffer client action generation)
        :reject (hermes-chat--dashboard-action-rejecter

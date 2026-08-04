@@ -29,6 +29,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 (require 'tabulated-list)
+(require 'url-util)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
 (require 'hermes-dashboard-rpc)
@@ -48,6 +49,18 @@
 (defvar-local hermes-sessions--detail-count nil
   "Total history message count reported for the current detail buffer.")
 
+(defvar-local hermes-sessions--all-profiles nil
+  "Non-nil when the browser lists sessions from every profile.")
+
+(defvar-local hermes-sessions--archived-filter "exclude"
+  "Archived-session filter used by the REST list endpoint.")
+
+(defvar-local hermes-sessions--search-query nil
+  "Current session search query, or nil for normal listing.")
+
+(defvar-local hermes-sessions--search-profile nil
+  "Profile scope for session search, or nil for the dashboard default.")
+
 (defun hermes-sessions--non-empty-field (session key)
   "Return SESSION's KEY as a non-empty display string, or nil."
   (hermes-transport--non-empty-string
@@ -56,6 +69,15 @@
 (defun hermes-sessions--id (session)
   "Return SESSION's durable id."
   (hermes-transport--display-field session 'id))
+
+(defun hermes-sessions--profile (session)
+  "Return SESSION's owning profile, or nil for the dashboard default."
+  (hermes-sessions--non-empty-field session 'profile))
+
+(defun hermes-sessions--identity (session)
+  "Return SESSION's profile-qualified row identity."
+  (cons (or (hermes-sessions--profile session) "")
+        (hermes-sessions--id session)))
 
 (defun hermes-sessions--live-id (session)
   "Return SESSION's live dashboard id, or nil."
@@ -67,19 +89,19 @@
   (format "%s" (or (hermes-transport--get session 'message_count) 0)))
 
 (defun hermes-sessions--sessions-by-id (sessions)
-  "Return a hash table mapping SESSIONS by durable id."
+  "Return a hash table mapping SESSIONS by profile-qualified identity."
   (let ((table (make-hash-table :test #'equal)))
     (dolist (session sessions table)
       (let ((id (hermes-sessions--id session)))
         (unless (string-empty-p id)
-          (puthash id session table))))))
+          (puthash (hermes-sessions--identity session) session table))))))
 
 (defun hermes-sessions--rows (sessions)
   "Return `tabulated-list' entries for SESSIONS, a list of session alists."
   (mapcar
    (lambda (session)
      (let ((id (hermes-sessions--id session)))
-       (list id
+       (list (hermes-sessions--identity session)
              (vector (hermes-browser--face-cell id 'hermes-browser-identifier)
                      (hermes-browser--face-cell
                       (hermes-transport--display-field session 'title)
@@ -89,18 +111,60 @@
                       'hermes-browser-message-count)
                      (hermes-browser--face-cell
                       (hermes-transport--display-field session 'source)
-                      'hermes-browser-source)))))
+                      'hermes-browser-source)
+                     (hermes-browser--face-cell
+                      (hermes-transport--display-field session 'profile)
+                      'hermes-browser-profile)))))
    sessions))
 
+(defun hermes-sessions--result-sessions (result)
+  "Return session records from list or search RESULT."
+  (or (hermes-transport--get result 'sessions)
+      (mapcar
+       (lambda (hit)
+         (if (hermes-transport--get hit 'id)
+             hit
+           (append `((id . ,(hermes-transport--get hit 'session_id))
+                     (title . ,(hermes-transport--get hit 'snippet))
+                     ,@(and hermes-sessions--search-profile
+                            `((profile . ,hermes-sessions--search-profile))))
+                   hit)))
+       (or (hermes-transport--get result 'results) '()))))
+
 (defun hermes-sessions--result-rows (result)
-  "Return `tabulated-list' entries for a `session.list' RESULT."
-  (hermes-sessions--rows (hermes-transport--get result 'sessions)))
+  "Return `tabulated-list' entries for a session list or search RESULT."
+  (hermes-sessions--rows (hermes-sessions--result-sessions result)))
 
 (defun hermes-sessions--record-result (result)
   "Cache RESULT's sessions by durable id for the row commands."
   (setq hermes-sessions--session-map
         (hermes-sessions--sessions-by-id
-         (hermes-transport--get result 'sessions))))
+         (hermes-sessions--result-sessions result))))
+
+(defun hermes-sessions--rest (client method path &optional body query)
+  "Return a dashboard REST METHOD PATH promise through CLIENT.
+BODY and QUERY extend the request."
+  (hermes-dashboard-transport-api-request-async
+   method path :body body :query query :client client))
+
+(defun hermes-sessions--fetch (client)
+  "Return current session browser result through CLIENT."
+  (cond
+   (hermes-sessions--search-query
+    (hermes-sessions--rest
+     client "GET" "/api/sessions/search" nil
+     (append `((q . ,hermes-sessions--search-query) (limit . 100))
+             (and hermes-sessions--search-profile
+                  `((profile . ,hermes-sessions--search-profile))))))
+   ((or hermes-sessions--all-profiles
+        (not (equal hermes-sessions--archived-filter "exclude")))
+    (hermes-sessions--rest
+     client "GET" "/api/profiles/sessions" nil
+     `((profile . "all") (limit . 100)
+       (archived . ,hermes-sessions--archived-filter))))
+   (t
+    (hermes-dashboard-transport-call-fn
+     #'hermes-dashboard-transport-session-list client))))
 
 ;;;###autoload (autoload 'hermes-list-sessions "hermes-sessions" nil t)
 (hermes-define-list-browser sessions
@@ -111,16 +175,21 @@
   :command-doc "List resumable Hermes dashboard sessions in a browser buffer.
 Reuses a live chat connection when one exists; otherwise connects a transient
 client just for the listing."
-  :columns [("Session" 22 t) ("Title" 40 t) ("Msgs" 6 t) ("Source" 12 t)]
-  :fetch (lambda (client)
-           (hermes-dashboard-transport-call-fn
-            #'hermes-dashboard-transport-session-list client))
+  :columns [("Session" 22 t) ("Title" 36 t) ("Msgs" 6 t) ("Source" 12 t)
+            ("Profile" 14 t)]
+  :fetch #'hermes-sessions--fetch
   :rows #'hermes-sessions--result-rows
   :on-result #'hermes-sessions--record-result
   :keys ("RET" #'hermes-sessions-open
          "v" #'hermes-sessions-view
          "r" #'hermes-sessions-rename
-         "d" #'hermes-sessions-delete))
+         "d" #'hermes-sessions-delete
+         "a" #'hermes-sessions-archive
+         "u" #'hermes-sessions-unarchive
+         "A" #'hermes-sessions-toggle-archived
+         "s" #'hermes-sessions-search
+         "P" #'hermes-sessions-list-all-profiles
+         "w" #'hermes-sessions-export))
 
 (defvar-keymap hermes-session-detail-mode-map
   :doc "Keymap for `hermes-session-detail-mode'."
@@ -128,35 +197,97 @@ client just for the listing."
   "RET" #'hermes-sessions-open
   "g" #'hermes-sessions-view
   "r" #'hermes-sessions-rename
-  "d" #'hermes-sessions-delete)
+  "d" #'hermes-sessions-delete
+  "a" #'hermes-sessions-archive
+  "u" #'hermes-sessions-unarchive
+  "w" #'hermes-sessions-export)
 
 (define-derived-mode hermes-session-detail-mode special-mode "Hermes Session"
   "Major mode showing one Hermes session's history."
   :interactive nil)
 
-(defun hermes-sessions--session-from-entry (id entry)
-  "Return a session alist from row ID and tabulated ENTRY."
-  `((id . ,id)
+(defun hermes-sessions--session-from-entry (identity entry)
+  "Return a session alist from row IDENTITY and tabulated ENTRY."
+  `((id . ,(cdr identity))
     (title . ,(or (and entry (> (length entry) 1) (aref entry 1)) ""))
     (message_count . ,(or (and entry (> (length entry) 2) (aref entry 2)) 0))
-    (source . ,(or (and entry (> (length entry) 3) (aref entry 3)) ""))))
+    (source . ,(or (and entry (> (length entry) 3) (aref entry 3)) ""))
+    (profile . ,(or (car identity)
+                    (and entry (> (length entry) 4) (aref entry 4)) ""))))
 
 (defun hermes-sessions--selected-session ()
   "Return the current browser or detail session, or signal `user-error'."
   (cond
    ((derived-mode-p 'hermes-sessions-mode)
-    (let ((id (tabulated-list-get-id))
+    (let ((identity (tabulated-list-get-id))
           (entry (tabulated-list-get-entry)))
-      (unless id
+      (unless identity
         (user-error "No Hermes session on this line"))
       (or (and hermes-sessions--session-map
-               (gethash id hermes-sessions--session-map))
-          (hermes-sessions--session-from-entry id entry))))
+               (gethash identity hermes-sessions--session-map))
+          (hermes-sessions--session-from-entry identity entry))))
    ((derived-mode-p 'hermes-session-detail-mode)
     (or hermes-sessions--detail-session
         (user-error "No Hermes session in this buffer")))
    (t
     (user-error "Not in a Hermes sessions buffer"))))
+
+(defun hermes-sessions-search (query &optional profile)
+  "Search dashboard sessions for QUERY scoped to optional PROFILE."
+  (interactive (list (read-string "Search sessions: "
+                                  hermes-sessions--search-query)
+                     (read-string "Profile (blank for dashboard default): "
+                                  hermes-sessions--search-profile)))
+  (setq hermes-sessions--search-query
+        (hermes-transport--non-blank-string query)
+        hermes-sessions--search-profile
+        (hermes-transport--non-blank-string profile))
+  (hermes-sessions--revert))
+
+(defun hermes-sessions-list-all-profiles ()
+  "List sessions aggregated across every Hermes profile."
+  (interactive)
+  (setq hermes-sessions--all-profiles t
+        hermes-sessions--search-query nil)
+  (hermes-sessions--revert))
+
+(defun hermes-sessions-toggle-archived ()
+  "Toggle the browser between active and archived sessions."
+  (interactive)
+  (setq hermes-sessions--archived-filter
+        (if (equal hermes-sessions--archived-filter "only") "exclude" "only")
+        hermes-sessions--search-query nil)
+  (hermes-sessions--revert))
+
+(defun hermes-sessions--set-archived (archived)
+  "Set the selected session's ARCHIVED state through dashboard REST."
+  (let* ((session (hermes-sessions--selected-session))
+         (id (hermes-sessions--id session))
+         (profile (hermes-sessions--non-empty-field session 'profile))
+         (origin (current-buffer)))
+    (when (string-empty-p id)
+      (user-error "No Hermes session id to update"))
+    (hermes-browser--run-on-client
+     (lambda (client)
+       (hermes-sessions--rest
+        client "PATCH" (concat "/api/sessions/" (url-hexify-string id))
+        (append `((archived . ,(if archived t :false)))
+                (and profile `((profile . ,profile))))))
+     (lambda (_result)
+       (message "Hermes: %s session %s"
+                (if archived "archived" "unarchived") id)
+       (when (hermes-browser--buffer-mode-p origin 'hermes-sessions-mode)
+         (with-current-buffer origin (hermes-sessions--revert)))))))
+
+(defun hermes-sessions-archive ()
+  "Archive the selected Hermes session."
+  (interactive)
+  (hermes-sessions--set-archived t))
+
+(defun hermes-sessions-unarchive ()
+  "Restore the selected archived Hermes session."
+  (interactive)
+  (hermes-sessions--set-archived nil))
 
 (defun hermes-sessions--display-string (value)
   "Return a readable display string for VALUE."
@@ -193,6 +324,50 @@ client just for the listing."
   (or (hermes-sessions--display-string
        (hermes-transport--get-any message '(text content context output)))
       ""))
+
+(defun hermes-sessions--markdown (session messages)
+  "Return SESSION and MESSAGES as Markdown."
+  (string-join
+   (cons (format "# %s\n\nSession: `%s`"
+                 (or (hermes-sessions--non-empty-field session 'title)
+                     "Hermes session")
+                 (hermes-sessions--id session))
+         (mapcar (lambda (message)
+                   (format "## %s\n\n%s"
+                           (hermes-sessions--message-label message)
+                           (hermes-sessions--message-text message)))
+                 messages))
+   "\n\n"))
+
+(defun hermes-sessions--write-export (session messages file)
+  "Write SESSION MESSAGES as Markdown to FILE."
+  (with-temp-file file
+    (insert (hermes-sessions--markdown session messages) "\n"))
+  (message "Hermes: exported session %s" (hermes-sessions--id session)))
+
+(defun hermes-sessions-export (file)
+  "Export selected session history as Markdown to FILE."
+  (interactive
+   (let* ((session (hermes-sessions--selected-session))
+          (id (hermes-sessions--id session)))
+     (list (read-file-name "Export session to: " nil
+                           (format "hermes-session-%s.md" id)))))
+  (let ((session (hermes-sessions--selected-session)))
+    (if (derived-mode-p 'hermes-session-detail-mode)
+        (hermes-sessions--write-export session hermes-sessions--detail-messages file)
+      (let ((history-id (hermes-sessions--history-id session))
+            (origin (current-buffer))
+            (generation (hermes-browser--next-request-generation)))
+        (hermes-browser--run-on-client
+         (lambda (client)
+           (hermes-sessions--history-promise
+            client history-id (hermes-sessions--id session)
+            (hermes-sessions--profile session)))
+         (lambda (result)
+           (when (hermes-browser--request-current-mode-p
+                  origin generation 'hermes-sessions-mode)
+             (hermes-sessions--write-export
+              session (hermes-transport--get result 'messages) file))))))))
 
 (defun hermes-sessions--tool-name (message)
   "Return MESSAGE's tool name, or nil."
@@ -247,10 +422,12 @@ client just for the listing."
 
 (defun hermes-sessions--detail-buffer-name (session)
   "Return the detail buffer name for SESSION."
-  (let ((id (hermes-sessions--id session)))
+  (let ((id (hermes-sessions--id session))
+        (profile (hermes-sessions--profile session)))
     (if (string-empty-p id)
         "*Hermes Session*"
-      (format "*Hermes Session: %s*" id))))
+      (format "*Hermes Session: %s%s*"
+              (if profile (concat profile "/") "") id))))
 
 (defun hermes-sessions--render-detail-contents (session messages count)
   "Render SESSION's MESSAGES in the current detail buffer.
@@ -304,20 +481,25 @@ DISPLAY pops the buffer when non-nil; a `g' refresh from within it omits that."
       (let ((id (hermes-sessions--id session)))
         (and (not (string-empty-p id)) id))))
 
-(defun hermes-sessions--history-promise (client history-id resume-id)
+(defun hermes-sessions--history-promise (client history-id resume-id profile)
   "Return a promise of HISTORY-ID history on CLIENT.
 The dashboard `session.history' RPC is live-session scoped in older gateways;
 when it reports a missing live session, resume RESUME-ID and resolve with the
-returned messages instead."
-  (hermes--promise-catch
-   (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-history
-				       client history-id)
-   (lambda (message)
-     (if (and (hermes-sessions--session-not-found-message-p message)
-              (not (string-empty-p resume-id)))
-         (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-resume
-					     client resume-id)
-       (hermes--promise-rejected message)))))
+returned messages instead.  PROFILE selects another profile's stored session."
+  (if profile
+      (hermes-sessions--rest
+       client "GET"
+       (concat "/api/sessions/" (url-hexify-string resume-id) "/messages")
+       nil `((profile . ,profile)))
+    (hermes--promise-catch
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-session-history client history-id)
+     (lambda (message)
+       (if (and (hermes-sessions--session-not-found-message-p message)
+                (not (string-empty-p resume-id)))
+           (hermes-dashboard-transport-call-fn
+            #'hermes-dashboard-transport-session-resume client resume-id)
+         (hermes--promise-rejected message))))))
 
 (defun hermes-sessions-view ()
   "Show a native detail/history buffer for the selected Hermes session."
@@ -325,6 +507,7 @@ returned messages instead."
   (let* ((session (hermes-sessions--selected-session))
          (history-id (hermes-sessions--history-id session))
          (resume-id (hermes-sessions--id session))
+         (profile (hermes-sessions--profile session))
          (detail-p (derived-mode-p 'hermes-session-detail-mode))
          (display (not detail-p))
          (origin (current-buffer))
@@ -333,7 +516,7 @@ returned messages instead."
       (user-error "No Hermes session id to view"))
     (hermes-browser--run-on-client
      (lambda (client)
-       (hermes-sessions--history-promise client history-id resume-id))
+       (hermes-sessions--history-promise client history-id resume-id profile))
      (lambda (result)
        (when (hermes-browser--request-current-mode-p
               origin generation
@@ -353,63 +536,71 @@ returned messages instead."
   (interactive)
   (let* ((session (hermes-sessions--selected-session))
          (id (hermes-sessions--id session))
-         (title (hermes-transport--display-field session 'title)))
+         (title (hermes-transport--display-field session 'title))
+         (profile (hermes-sessions--profile session)))
     (when (string-empty-p id)
       (user-error "No Hermes session id to resume"))
-    (hermes-chat-resume-session id title)))
+    (hermes-chat-resume-session id title profile)))
 
 (defun hermes-sessions--title-empty-p (title)
   "Return non-nil when TITLE is blank."
   (string-empty-p (string-trim (or title ""))))
 
-(defun hermes-sessions--set-title-promise (client session-id title)
+(defun hermes-sessions--set-title-promise (client session-id title profile)
   "Return a promise setting SESSION-ID's TITLE on CLIENT.
 On a missing-session error, resume SESSION-ID and retry the title on the live
-id it returns."
-  (hermes--promise-catch
-   (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-title
-				       client :session-id session-id :title title)
-   (lambda (message)
-     (if (hermes-sessions--session-not-found-message-p message)
-         (hermes--promise-then
-          (hermes-dashboard-transport-call-fn #'hermes-dashboard-transport-session-resume
-					      client session-id)
-          (lambda (result)
-            (let ((live-id (hermes-transport--display-field result 'session_id)))
-              (hermes-dashboard-transport-call-fn
-               #'hermes-dashboard-transport-session-title
-               client
-               :session-id (if (string-empty-p live-id) session-id live-id)
-               :title title))))
-       (hermes--promise-rejected message)))))
+id it returns.  PROFILE targets another profile through REST."
+  (if profile
+      (hermes-sessions--rest
+       client "PATCH" (concat "/api/sessions/" (url-hexify-string session-id))
+       `((title . ,title) (profile . ,profile)))
+    (hermes--promise-catch
+     (hermes-dashboard-transport-call-fn
+      #'hermes-dashboard-transport-session-title
+      client :session-id session-id :title title)
+     (lambda (message)
+       (if (hermes-sessions--session-not-found-message-p message)
+           (hermes--promise-then
+            (hermes-dashboard-transport-call-fn
+             #'hermes-dashboard-transport-session-resume client session-id)
+            (lambda (result)
+              (let ((live-id (hermes-transport--display-field result 'session_id)))
+                (hermes-dashboard-transport-call-fn
+                 #'hermes-dashboard-transport-session-title
+                 client
+                 :session-id (if (string-empty-p live-id) session-id live-id)
+                 :title title))))
+         (hermes--promise-rejected message))))))
 
 (defun hermes-sessions--session-with-title (session title)
   "Return SESSION with TITLE shadowing its previous title field."
   (cons (cons 'title title) session))
 
-(defun hermes-sessions--replace-browser-row-title (id title)
-  "Replace browser row ID's title with TITLE in the current buffer."
-  (when-let* ((entry (assoc id tabulated-list-entries)))
+(defun hermes-sessions--replace-browser-row-title (identity title)
+  "Replace browser row IDENTITY's title with TITLE in the current buffer."
+  (when-let* ((entry (assoc identity tabulated-list-entries)))
     (aset (cadr entry) 1
           (hermes-browser--face-cell title 'hermes-browser-title))
     (when hermes-sessions--session-map
-      (let ((session (gethash id hermes-sessions--session-map)))
+      (let ((session (gethash identity hermes-sessions--session-map)))
         (when session
-          (puthash id (hermes-sessions--session-with-title session title)
+          (puthash identity (hermes-sessions--session-with-title session title)
                    hermes-sessions--session-map))))
     (tabulated-list-print t)))
 
-(defun hermes-sessions--detail-buffer-for-id (id)
-  "Return the detail buffer for session ID, or nil."
-  (get-buffer (format "*Hermes Session: %s*" id)))
+(defun hermes-sessions--detail-buffer-for-id (identity)
+  "Return the detail buffer for session IDENTITY, or nil."
+  (get-buffer
+   (hermes-sessions--detail-buffer-name
+    `((id . ,(cdr identity)) (profile . ,(car identity))))))
 
-(defun hermes-sessions--after-rename (_buffer id title)
-  "Update open session buffers after session ID was renamed to TITLE."
+(defun hermes-sessions--after-rename (_buffer identity title)
+  "Update open session buffers after session IDENTITY was renamed to TITLE."
   (when-let* ((browser (get-buffer "*Hermes Sessions*")))
     (with-current-buffer browser
       (when (derived-mode-p 'hermes-sessions-mode)
-        (hermes-sessions--replace-browser-row-title id title))))
-  (when-let* ((detail (hermes-sessions--detail-buffer-for-id id)))
+        (hermes-sessions--replace-browser-row-title identity title))))
+  (when-let* ((detail (hermes-sessions--detail-buffer-for-id identity)))
     (with-current-buffer detail
       (when (derived-mode-p 'hermes-session-detail-mode)
         (setq hermes-sessions--detail-session
@@ -435,26 +626,28 @@ id it returns."
         (user-error "Session title required"))
       (hermes-browser--run-on-client
        (lambda (client)
-         (hermes-sessions--set-title-promise client id (string-trim title)))
+         (hermes-sessions--set-title-promise
+          client id (string-trim title) (hermes-sessions--profile session)))
        (lambda (_result)
          (message "Hermes: renamed session %s" id)
-         (hermes-sessions--after-rename origin id (string-trim title)))))))
+         (hermes-sessions--after-rename
+          origin (hermes-sessions--identity session) (string-trim title)))))))
 
-(defun hermes-sessions--remove-browser-row (id)
-  "Remove browser row ID from the current buffer."
+(defun hermes-sessions--remove-browser-row (identity)
+  "Remove browser row IDENTITY from the current buffer."
   (setq tabulated-list-entries
-        (cl-remove id tabulated-list-entries :key #'car :test #'equal))
+        (cl-remove identity tabulated-list-entries :key #'car :test #'equal))
   (when hermes-sessions--session-map
-    (remhash id hermes-sessions--session-map))
+    (remhash identity hermes-sessions--session-map))
   (tabulated-list-print t))
 
-(defun hermes-sessions--after-delete (_buffer id)
-  "Update open session buffers after session ID was deleted."
+(defun hermes-sessions--after-delete (_buffer identity)
+  "Update open session buffers after session IDENTITY was deleted."
   (when-let* ((browser (get-buffer "*Hermes Sessions*")))
     (with-current-buffer browser
       (when (derived-mode-p 'hermes-sessions-mode)
-        (hermes-sessions--remove-browser-row id))))
-  (when-let* ((detail (hermes-sessions--detail-buffer-for-id id)))
+        (hermes-sessions--remove-browser-row identity))))
+  (when-let* ((detail (hermes-sessions--detail-buffer-for-id identity)))
     (kill-buffer detail)))
 
 (defun hermes-sessions-delete ()
@@ -472,11 +665,14 @@ id it returns."
                  (if (string-empty-p title) "" (format " (%s)" title))))
         (hermes-browser--run-on-client
          (lambda (client)
-           (hermes-dashboard-transport-call-fn
-            #'hermes-dashboard-transport-session-delete client id))
+           (hermes-sessions--rest
+            client "DELETE" (concat "/api/sessions/" (url-hexify-string id))
+            nil (and (hermes-sessions--profile session)
+                     `((profile . ,(hermes-sessions--profile session))))))
          (lambda (_result)
            (message "Hermes: deleted session %s" id)
-           (hermes-sessions--after-delete origin id)))
+           (hermes-sessions--after-delete
+            origin (hermes-sessions--identity session))))
       (message "Hermes: delete cancelled"))))
 
 (provide 'hermes-sessions)

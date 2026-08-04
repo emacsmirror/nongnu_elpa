@@ -1326,6 +1326,7 @@ visible while reading."
       (hermes-dashboard-transport-session-resume
        client hermes-chat--session-id
        :cols (hermes-chat--dashboard-cols)
+       :profile hermes-chat--profile
        :resolve (lambda (result)
                   (hermes-chat--in-buffer buffer
                     (hermes-chat--dashboard-record-session client result)
@@ -1337,18 +1338,20 @@ visible while reading."
                     (format "Could not load Hermes session history: %s" message)
                     'error)))))))
 
-(defun hermes-chat-resume-session (session-id &optional title)
+(defun hermes-chat-resume-session (session-id &optional title profile)
   "Open a Hermes chat buffer that resumes dashboard SESSION-ID.
-TITLE, when given, names the buffer.  Over the dashboard transport the prior
-messages are fetched and rendered; the durable session continues on send."
+TITLE, when given, names the buffer.  PROFILE selects its owning profile.
+Over the dashboard transport the prior messages are fetched and rendered; the
+durable session continues on send."
   (interactive (list (read-string "Resume Hermes session id: ")))
   (when (or (null session-id) (string-empty-p session-id))
     (user-error "No Hermes session id to resume"))
   (let ((buffer (generate-new-buffer
-                 (hermes-chat--buffer-name-for-title nil title))))
+                 (hermes-chat--buffer-name-for-title profile title))))
     (with-current-buffer buffer
       (hermes-chat-mode)
-      (setq hermes-chat--session-id session-id))
+      (setq hermes-chat--session-id session-id
+            hermes-chat--profile profile))
     (pop-to-buffer-same-window buffer)
     (when (hermes-chat--dashboard-default-transport-p)
       (hermes-chat--load-session-history buffer))

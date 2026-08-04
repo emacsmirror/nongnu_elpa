@@ -12,19 +12,22 @@
 (ert-deftest hermes-sessions-rows-from-session-list ()
   "Session rows map the `session.list' result fields to columns."
   (let* ((rows (hermes-sessions--rows
-                '(((id . "s1") (title . "First") (message_count . 3) (source . "tui")))))
+                '(((id . "s1") (title . "First") (message_count . 3)
+                   (source . "tui") (profile . "work")))))
          (entry (cadr (car rows))))
-    (should (equal (caar rows) "s1"))
+    (should (equal (caar rows) '("work" . "s1")))
     (should (equal (aref entry 0) "s1"))
     (should (equal (aref entry 1) "First"))
     (should (equal (aref entry 2) "3"))
-    (should (equal (aref entry 3) "tui"))))
+    (should (equal (aref entry 3) "tui"))
+    (should (equal (aref entry 4) "work"))))
 
 (ert-deftest hermes-sessions-rows-face-every-column ()
   "Session rows give every column its own face."
   (let* ((row (car (hermes-sessions--rows
                     '(((id . "s1") (title . "First")
-                       (message_count . 3) (source . "tui"))))))
+                       (message_count . 3) (source . "tui")
+                       (profile . "work"))))))
          (entry (cadr row)))
     (should (eq (get-text-property 0 'face (aref entry 0))
                 'hermes-browser-identifier))
@@ -33,7 +36,9 @@
     (should (eq (get-text-property 0 'face (aref entry 2))
                 'hermes-browser-message-count))
     (should (eq (get-text-property 0 'face (aref entry 3))
-                'hermes-browser-source))))
+                'hermes-browser-source))
+    (should (eq (get-text-property 0 'face (aref entry 4))
+                'hermes-browser-profile))))
 
 (ert-deftest hermes-sessions-mode-keymap-keeps-ret-and-adds-actions ()
   "The browser keeps RET resume and exposes native history/actions."
@@ -44,7 +49,219 @@
   (should (eq (keymap-lookup hermes-sessions-mode-map "r")
               #'hermes-sessions-rename))
   (should (eq (keymap-lookup hermes-sessions-mode-map "d")
-              #'hermes-sessions-delete)))
+              #'hermes-sessions-delete))
+  (should (eq (keymap-lookup hermes-sessions-mode-map "a")
+              #'hermes-sessions-archive))
+  (should (eq (keymap-lookup hermes-sessions-mode-map "s")
+              #'hermes-sessions-search))
+  (should (eq (keymap-lookup hermes-sessions-mode-map "w")
+              #'hermes-sessions-export)))
+
+(ert-deftest hermes-sessions-fetches-search-and-all-profile-rest-routes ()
+  "Search and aggregate modes use their documented dashboard REST routes."
+  (let (calls)
+    (cl-letf (((symbol-function 'hermes-sessions--rest)
+               (lambda (_client method path &optional _body query)
+                 (push (list method path query) calls)
+                 (hermes--promise-resolved '((sessions . nil))))))
+      (with-temp-buffer
+        (setq hermes-sessions--search-query "needle"
+              hermes-sessions--search-profile "work")
+        (hermes-sessions--fetch 'client)
+        (setq hermes-sessions--search-query nil
+              hermes-sessions--all-profiles t)
+        (hermes-sessions--fetch 'client)))
+    (should (member '("GET" "/api/sessions/search"
+                      ((q . "needle") (limit . 100) (profile . "work"))) calls))
+    (should (member '("GET" "/api/profiles/sessions"
+                      ((profile . "all") (limit . 100)
+                       (archived . "exclude")))
+                    calls))))
+
+(ert-deftest hermes-sessions-search-rejects-with-message ()
+  "Search failure reports the dashboard error without replacing current rows."
+  (let (shown)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (&rest _) (hermes--promise-rejected "search failed")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+      (unwind-protect
+          (progn
+            (hermes-sessions-test--render '(((id . "s1"))))
+            (with-current-buffer "*Hermes Sessions*"
+              (hermes-sessions-search "needle" "work")
+              (should (assoc '("" . "s1") tabulated-list-entries)))
+            (should (equal shown "Hermes: search failed")))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-sessions-search-results-render-and-cache ()
+  "The REST search `results' envelope feeds rows and selected-session cache."
+  (let ((result '((results . (((session_id . "search-1")
+                               (snippet . "Hit")))))))
+    (with-temp-buffer
+      (setq hermes-sessions--search-profile "work")
+      (should (equal (caar (hermes-sessions--result-rows result))
+                     '("work" . "search-1")))
+      (hermes-sessions--record-result result)
+      (should (equal (hermes-transport--get
+                      (gethash '("work" . "search-1")
+                               hermes-sessions--session-map)
+                      'title)
+                     "Hit")))))
+
+(ert-deftest hermes-sessions-duplicate-ids-keep-profile-identity ()
+  "Rows with one durable id remain distinct across profiles."
+  (let ((rows (hermes-sessions--rows
+               '(((id . "same") (profile . "one"))
+                 ((id . "same") (profile . "two"))))))
+    (should (equal (mapcar #'car rows)
+                   '(("one" . "same") ("two" . "same"))))))
+
+(ert-deftest hermes-sessions-archive-patches-selected-profile-session ()
+  "Archive sends the selected session id, profile, and archived flag."
+  (let (request)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional _on-success)
+                 (funcall make-promise 'client)))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (_client method path &optional body _query)
+                 (setq request (list method path body))
+                 (hermes--promise-resolved '((ok . t))))))
+      (hermes-sessions-test--render
+       '(((id . "s1") (title . "First") (profile . "work"))))
+      (unwind-protect
+          (with-current-buffer "*Hermes Sessions*"
+            (goto-char (point-min))
+            (search-forward "s1")
+            (beginning-of-line)
+            (hermes-sessions-archive))
+        (kill-buffer "*Hermes Sessions*")))
+    (should (equal request
+                   '("PATCH" "/api/sessions/s1"
+                     ((archived . t) (profile . "work")))))))
+
+(ert-deftest hermes-sessions-unarchive-sends-json-false ()
+  "Unarchive sends the encoder's exact JSON false sentinel."
+  (let (body)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional _on-success)
+                 (funcall make-promise 'client)))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (_client _method _path &optional sent _query)
+                 (setq body sent)
+                 (hermes--promise-resolved '((ok . t))))))
+      (hermes-sessions-test--render
+       '(((id . "s1") (profile . "work") (archived . t))))
+      (unwind-protect
+          (with-current-buffer "*Hermes Sessions*"
+            (goto-char (point-min))
+            (search-forward "s1")
+            (beginning-of-line)
+            (hermes-sessions-unarchive))
+        (kill-buffer "*Hermes Sessions*")))
+    (should (eq (alist-get 'archived body) :false))))
+
+(ert-deftest hermes-sessions-archive-rejects-with-message ()
+  "Archive failure reports the dashboard error and keeps the selected row."
+  (let (shown)
+    (cl-letf (((symbol-function 'hermes-browser--existing-client) (lambda () nil))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest _) 'fake-client))
+              ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (&rest _) (hermes--promise-rejected "archive failed")))
+              ((symbol-function 'message)
+               (lambda (fmt &rest args) (setq shown (apply #'format fmt args)))))
+      (unwind-protect
+          (progn
+            (hermes-sessions-test--render
+             '(((id . "s1") (profile . "work"))))
+            (with-current-buffer "*Hermes Sessions*"
+              (goto-char (point-min))
+              (search-forward "s1")
+              (beginning-of-line)
+              (hermes-sessions-archive)
+              (should (assoc '("work" . "s1") tabulated-list-entries)))
+            (should (equal shown "Hermes: archive failed")))
+        (when (get-buffer "*Hermes Sessions*")
+          (kill-buffer "*Hermes Sessions*"))))))
+
+(ert-deftest hermes-sessions-open-preserves-profile ()
+  "Opening a row resumes its durable id under its owning profile."
+  (let (resumed)
+    (cl-letf (((symbol-function 'hermes-chat-resume-session)
+               (lambda (&rest args) (setq resumed args))))
+      (hermes-sessions-test--render
+       '(((id . "same") (title . "Other") (profile . "work"))))
+      (unwind-protect
+          (with-current-buffer "*Hermes Sessions*"
+            (goto-char (point-min))
+            (search-forward "same")
+            (beginning-of-line)
+            (hermes-sessions-open))
+        (kill-buffer "*Hermes Sessions*")))
+    (should (equal resumed '("same" "Other" "work")))))
+
+(ert-deftest hermes-sessions-profile-history-and-rename-use-rest ()
+  "Profile-owned view and rename requests target the owning REST database."
+  (let (requests)
+    (cl-letf (((symbol-function 'hermes-sessions--rest)
+               (lambda (_client method path &optional body query)
+                 (push (list method path body query) requests)
+                 (hermes--promise-resolved '((messages . nil))))))
+      (hermes-sessions--history-promise 'client "s1" "s1" "work")
+      (hermes-sessions--set-title-promise 'client "s1" "Renamed" "work"))
+    (should (member '("GET" "/api/sessions/s1/messages" nil
+                      ((profile . "work")))
+                    requests))
+    (should (member '("PATCH" "/api/sessions/s1"
+                      ((title . "Renamed") (profile . "work")) nil)
+                    requests))))
+
+(ert-deftest hermes-sessions-delete-preserves-profile-query ()
+  "Delete targets the selected row's owning profile."
+  (let (query)
+    (cl-letf (((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
+              ((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional _on-success)
+                 (funcall make-promise 'client)))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (_client _method _path &optional _body sent-query)
+                 (setq query sent-query)
+                 (hermes--promise-resolved '((ok . t))))))
+      (hermes-sessions-test--render
+       '(((id . "s1") (profile . "work"))))
+      (unwind-protect
+          (with-current-buffer "*Hermes Sessions*"
+            (goto-char (point-min))
+            (search-forward "s1")
+            (beginning-of-line)
+            (hermes-sessions-delete))
+        (kill-buffer "*Hermes Sessions*")))
+    (should (equal query '((profile . "work"))))))
+
+(ert-deftest hermes-sessions-export-writes-detail-markdown ()
+  "Export writes the already-loaded detail history as Markdown."
+  (let ((file (make-temp-file "hermes-session-" nil ".md")))
+    (unwind-protect
+        (let ((buffer (hermes-sessions--render-detail
+                       '((id . "s1") (title . "First"))
+                       '(((role . "user") (text . "hello"))) 1)))
+          (unwind-protect
+              (with-current-buffer buffer
+                (hermes-sessions-export file)
+                (with-temp-buffer
+                  (insert-file-contents file)
+                  (should (string-match-p "# First" (buffer-string)))
+                  (should (string-match-p "## user" (buffer-string)))
+                  (should (string-match-p "hello" (buffer-string)))))
+            (kill-buffer buffer)))
+      (delete-file file))))
 
 (ert-deftest hermes-sessions-detail-renders-history-messages ()
   "The detail buffer renders user, assistant, and tool history readably."
@@ -248,8 +465,9 @@
       (progn
         (hermes-sessions-test--render '(((id . "s1") (title . "First"))))
         (with-current-buffer "*Hermes Sessions*"
-          (hermes-sessions--replace-browser-row-title "s1" "Renamed")
-          (let ((title (aref (cadr (assoc "s1" tabulated-list-entries)) 1)))
+          (hermes-sessions--replace-browser-row-title '("" . "s1") "Renamed")
+          (let ((title (aref (cadr (assoc '("" . "s1")
+                                          tabulated-list-entries)) 1)))
             (should (equal title "Renamed"))
             (should (eq (get-text-property 0 'face title)
                         'hermes-browser-title)))))
@@ -310,7 +528,8 @@
           (with-current-buffer "*Hermes Session: s1*"
             (hermes-sessions-rename))
           (with-current-buffer "*Hermes Sessions*"
-            (should (equal (aref (cadr (assoc "s1" tabulated-list-entries)) 1)
+            (should (equal (aref (cadr (assoc '("" . "s1")
+                                             tabulated-list-entries)) 1)
                            "Renamed")))
           (with-current-buffer "*Hermes Session: s1*"
             (should (string-match-p "Session: Renamed" (buffer-string)))))
@@ -360,7 +579,8 @@
               (search-forward "s1")
               (beginning-of-line)
               (hermes-sessions-rename)
-              (should (equal (aref (cadr (assoc "s1" tabulated-list-entries)) 1)
+              (should (equal (aref (cadr (assoc '("" . "s1")
+                                               tabulated-list-entries)) 1)
                              "First")))
             (should (equal shown "Hermes: rename failed")))
         (when (get-buffer "*Hermes Sessions*")
@@ -375,11 +595,10 @@
               ((symbol-function 'hermes-dashboard-transport-stop)
                (lambda (client &rest _) (setq stopped client)))
               ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-dashboard-transport-session-delete)
-               (lambda (client session-id &rest args)
-                 (setq deleted (list client session-id))
-                 (funcall (plist-get args :resolve)
-                          '((deleted . "s1"))))))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (client method path &optional _body query)
+                 (setq deleted (list client method path query))
+                 (hermes--promise-resolved '((ok . t))))))
       (unwind-protect
           (progn
             (hermes-sessions-test--render
@@ -393,9 +612,10 @@
               (search-forward "s1")
               (beginning-of-line)
               (hermes-sessions-delete)
-              (should-not (assoc "s1" tabulated-list-entries)))
+              (should-not (assoc '("" . "s1") tabulated-list-entries)))
             (should-not (get-buffer "*Hermes Session: s1*"))
-            (should (equal deleted '(fake-client "s1")))
+            (should (equal deleted
+                           '(fake-client "DELETE" "/api/sessions/s1" nil)))
             (should (eq stopped 'fake-client)))
         (dolist (name '("*Hermes Sessions*" "*Hermes Session: s1*"))
           (when (get-buffer name)
@@ -428,9 +648,9 @@
                (lambda (&rest _) 'fake-client))
               ((symbol-function 'hermes-dashboard-transport-stop) #'ignore)
               ((symbol-function 'yes-or-no-p) (lambda (&rest _) t))
-              ((symbol-function 'hermes-dashboard-transport-session-delete)
-               (lambda (_client _session-id &rest args)
-                 (funcall (plist-get args :reject) "delete failed")))
+              ((symbol-function 'hermes-sessions--rest)
+               (lambda (&rest _)
+                 (hermes--promise-rejected "delete failed")))
               ((symbol-function 'message)
                (lambda (fmt &rest args)
                  (setq shown (apply #'format fmt args)))))
@@ -469,8 +689,8 @@
             (should (eq stopped 'fake-client))
             (with-current-buffer "*Hermes Sessions*"
               (should (derived-mode-p 'hermes-sessions-mode))
-              (should (equal (sort (mapcar #'car tabulated-list-entries) #'string<)
-                             '("s1" "s2")))))
+              (should (equal (mapcar #'car tabulated-list-entries)
+                             '(("" . "s1") ("" . "s2"))))))
         (when (get-buffer "*Hermes Sessions*")
           (kill-buffer "*Hermes Sessions*"))))))
 

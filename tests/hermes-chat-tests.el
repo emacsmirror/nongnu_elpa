@@ -4155,18 +4155,21 @@
        (should-not called)))))
 
 (ert-deftest hermes-chat-resume-session-presets-session-id ()
-  "Resuming a session opens a chat buffer bound to that durable id."
-  (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
+  "Resuming a session keeps its durable id and owning profile."
+  (let (resume-args)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-start)
              (lambda (&rest _) (hermes-test--dashboard-client)))
             ((symbol-function 'hermes-dashboard-transport-session-resume)
-             (lambda (_client _sid &rest _args) nil)))
-    (let ((buffer (hermes-chat-resume-session "sid-42" "My chat")))
-      (unwind-protect
-          (with-current-buffer buffer
-            (should (derived-mode-p 'hermes-chat-mode))
-            (should (equal hermes-chat--session-id "sid-42"))
-            (should (equal (buffer-name) "*Hermes@default: My chat*")))
-        (kill-buffer buffer)))))
+             (lambda (_client _sid &rest args) (setq resume-args args))))
+      (let ((buffer (hermes-chat-resume-session "sid-42" "My chat" "work")))
+        (unwind-protect
+            (with-current-buffer buffer
+              (should (derived-mode-p 'hermes-chat-mode))
+              (should (equal hermes-chat--session-id "sid-42"))
+              (should (equal hermes-chat--profile "work"))
+              (should (equal (plist-get resume-args :profile) "work"))
+              (should (equal (buffer-name) "*Hermes@work: My chat*")))
+          (kill-buffer buffer))))))
 
 (ert-deftest hermes-chat-format-usage ()
   "Usage formatting is compact and omits empty counts."
