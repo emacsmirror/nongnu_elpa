@@ -119,7 +119,7 @@
 		   uninteresting-senders
 		   get-header-content-function
 		   &rest get-header-content-function-args))
-(declare-function bbdb-search-simple "ext:bbdb" (name net))
+(declare-function bbdb-message-search "ext:bbdb-com" (name mail))
 
 ;; vm-save.el function
 (declare-function vm-save-message "vm-save"
@@ -349,6 +349,10 @@ given SELECTOR."
 (defun vm-vs-in-bbdb (m &optional address-class only-first)
   "check if one of the email addresses in the message headers is known
 in BBDB."
+  ;; `bbdb-message-search' lives in bbdb-com.el and BBDB does not autoload
+  ;; it, where the `bbdb-search-simple' this replaced was in bbdb.el.  VM
+  ;; never requires BBDB itself, so ask for the file that has it (#549).
+  (require 'bbdb-com)
   (let (bbdb-user-mail-names)
     (let* ((bbdb-get-only-first-address-p only-first)
            (bbdb-user-mail-names nil)
@@ -367,13 +371,20 @@ in BBDB."
               addresses (cdr addresses))
         (let ((name (car addr))
               (net  (cadr addr)))
-          (setq done (or (bbdb-search-simple nil net)
-                         (bbdb-search-simple name nil)))))
+          ;; One call, where this was two: `bbdb-message-search' tries name and
+          ;; mail together, then mail, then name.  It also matches exactly
+          ;; rather than as a regexp, which is what you want of an address --
+          ;; `foo+bar@example.com' is not the regexp anyone meant.  Issue #549.
+          (setq done (bbdb-message-search name net))))
       done)))
 
 (defun vm-mail-vs-in-bbdb (&optional address-class only-first)
   "check if one of the email addresses in the message headers is known
 in BBDB."
+  ;; `bbdb-message-search' lives in bbdb-com.el and BBDB does not autoload
+  ;; it, where the `bbdb-search-simple' this replaced was in bbdb.el.  VM
+  ;; never requires BBDB itself, so ask for the file that has it (#549).
+  (require 'bbdb-com)
   (let (bbdb-user-mail-names)
     (let* ((bbdb-get-only-first-address-p only-first)
            (bbdb-user-mail-names nil)
@@ -391,8 +402,7 @@ in BBDB."
               addresses (cdr addresses))
         (let ((name (car addr))
               (net  (cadr addr)))
-          (setq done (or (bbdb-search-simple nil net)
-                         (bbdb-search-simple name nil)))))
+          (setq done (bbdb-message-search name net))))
       done)))
 
 ;;;###autoload

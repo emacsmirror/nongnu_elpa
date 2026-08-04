@@ -92,7 +92,7 @@
 (declare-function read-expression "vm-xemacs" (prompt &optional initial-contents))
 (declare-function bbdb-record-firstname "ext:bbdb" (record))
 (declare-function bbdb-record-lastname "ext:bbdb" (record))
-(declare-function bbdb-search-simple "ext:bbdb" (name net))
+(declare-function bbdb-message-search "ext:bbdb-com" (name mail))
 (declare-function bbdb-split "ext:bbdb" (string separators))
 (declare-function bbdb/sc-consult-attr "ext:bbdb-sc" (from))
 
@@ -507,8 +507,14 @@ Optional argument HEADER is the header to get the recipients from."
       name)))
 
 (defun vm-serial-get-bbdb-name (&optional part name)
+  ;; `bbdb-message-search' lives in bbdb-com.el and BBDB does not autoload
+  ;; it, where the `bbdb-search-simple' this replaced was in bbdb.el.  VM
+  ;; never requires BBDB itself, so ask for the file that has it (#549).
+  (require 'bbdb-com)
   (let* ((to (vm-serial-get-to))
-         (rec (bbdb-search-simple nil (cadr to))))
+         ;; `bbdb-message-search' answers with a list where the old
+         ;; `bbdb-search-simple' answered with one record (#549).
+         (rec (car (bbdb-message-search nil (cadr to)))))
     (if rec
         (cond ((equal part 'first) (or (bbdb/sc-consult-attr (cadr to))
                                        (bbdb-record-firstname rec)))
