@@ -481,6 +481,106 @@ message's line."
       ;; The flag the undo machinery reads is still there.
       (should (eq 'expunged (vm-deleted-flag m2))))))
 
+;;; Expunging with a mirror in a killed buffer (issue #571)
+
+;; Killing a virtual folder buffer instead of quitting it does not deregister
+;; its messages, so the real message keeps a mirror whose buffer is gone.  Step
+;; 2 of `vm-expunge-folder' walks those mirrors; without a liveness check it
+;; signals `Selecting deleted buffer', leaves the expunge half done, and
+;; signals again in the same place next time, so the folder can never be
+;; expunged.  Every other walker of `vm-virtual-messages-of' guards for this.
+
+(defmacro vm-delete-test--with-real-and-virtual (spec &rest body)
+  "Visit a generated real folder and a virtual folder over it, run BODY.
+SPEC is (REAL-VAR VIRT-VAR &optional N), each buffer var.  Everything the
+visits created is killed afterwards, and killing one inside BODY is fine."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-expunge" t)))
+          (file (expand-file-name "real-folder" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-summary-show-threads nil)
+          (vm-virtual-folder-alist nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (before (buffer-list))
+          ,(car spec) ,(nth 1 spec))
+     (require 'vm)
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (dotimes (i ,(or (nth 2 spec) 4))
+               (insert "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+                       "From: alice@example.com\n"
+                       (format "Subject: subject %d\n" i)
+                       (format "Message-ID: <exp-%d@example.com>\n" i)
+                       "\n" (format "Body %d.\n\n" i))))
+           (setq vm-virtual-folder-alist
+                 (list (list "expunge-virt" (list (list file) '(any)))))
+           (vm-visit-folder file)
+           (setq ,(car spec) (current-buffer))
+           (vm-visit-virtual-folder "expunge-virt")
+           (setq ,(nth 1 spec) (current-buffer))
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-delete-test--subjects-of (buffer)
+  "Return the subjects of BUFFER's message list, in order."
+  (with-current-buffer buffer
+    (mapcar #'vm-su-subject vm-message-list)))
+
+(ert-deftest vm-delete-test-expunge-past-a-mirror-in-a-killed-buffer ()
+  "REGRESSION: a killed virtual folder does not stop the real folder expunging.
+Issue #571.  The mirror is still registered on the real message and its buffer
+is gone."
+  (vm-delete-test--with-real-and-virtual (real virt)
+    (let (mirrored)
+      (with-current-buffer real
+        (setq mirrored (nth 1 vm-message-list))
+        (should (= 1 (length (vm-virtual-messages-of mirrored)))))
+      (with-current-buffer virt (set-buffer-modified-p nil))
+      (kill-buffer virt)
+      (should-not (buffer-live-p virt))
+      ;; Still registered: that is the state the guard has to survive.
+      (should (= 1 (length (vm-virtual-messages-of mirrored))))
+      (with-current-buffer real
+        (vm-set-deleted-flag mirrored t)
+        (vm-expunge-folder))
+      (should (equal '("subject 0" "subject 2" "subject 3")
+                     (vm-delete-test--subjects-of real)))
+      (with-current-buffer real
+        (should (vm-test-reverse-links-consistent-p)))
+      ;; And the dead mirror is off the list, so a second expunge is clean too.
+      (should (null (vm-virtual-messages-of mirrored)))
+      (with-current-buffer real
+        (vm-set-deleted-flag (nth 1 vm-message-list) t)
+        (vm-expunge-folder))
+      (should (equal '("subject 0" "subject 3")
+                     (vm-delete-test--subjects-of real))))))
+
+(ert-deftest vm-delete-test-expunge-still-reaches-a-live-mirror ()
+  "The liveness check does not skip mirrors that are still in a folder.
+The other side of the branch: with the virtual folder open, expunging in the
+real folder removes the message from both."
+  (vm-delete-test--with-real-and-virtual (real virt)
+    (with-current-buffer real
+      (vm-set-deleted-flag (nth 1 vm-message-list) t)
+      (vm-expunge-folder))
+    (should (equal '("subject 0" "subject 2" "subject 3")
+                   (vm-delete-test--subjects-of real)))
+    (should (equal '("subject 0" "subject 2" "subject 3")
+                   (vm-delete-test--subjects-of virt)))
+    (with-current-buffer virt
+      (should (vm-test-reverse-links-consistent-p)))))
+
 (provide 'vm-delete-test)
 
 ;;; vm-delete-test.el ends here
