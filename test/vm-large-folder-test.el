@@ -12,25 +12,25 @@
 ;; minutes.  Reported in 2013 with no measurement since.
 ;;
 ;; #453: Emacs crashed in the garbage collector, and Pip Cet diagnosed it as
-;; stack overflow in the recursive mark_object walking VM's message list --
-;; which is a chain of vectors linked through *symbols* (`vm-make-message'
-;; interposes an uninterned symbol per message, so that the structure is not
-;; purely self-referential and the Lisp debugger can print it).  Thousands of
-;; messages means thousands of levels of symbol/cons/vector to mark.
+;; stack overflow in the recursive mark_object walking VM's message list, which
+;; each message linked back into, so marking one message marked the one before
+;; it, one stack frame per message.  The link now lives outside the messages, in
+;; `vm-reverse-link-table'.
 ;;
 ;; The fixture is generated here rather than checked in: a folder of this size
 ;; is megabytes, and its shape -- how many messages, whether they thread -- is
 ;; the thing under test, so it belongs in code.
 ;;
-;; Two size knobs keep the suite quick, and either can be raised from the
+;; Three size knobs keep the suite quick, and each can be raised from the
 ;; environment to measure at a reported size:
 ;;
 ;;     cd test && VM_LARGE_FOLDER=25000 make test-one testel=vm-large-folder-test.el
 ;;
 ;; They are separate because the costs are not alike: reading and summarizing
-;; are near enough linear in the number of messages, while building threads goes
-;; up with about the cube of a thread's depth.  See `vm-large-folder-test-size'
-;; and `vm-large-folder-test-chain-size'.
+;; are near enough linear in the number of messages, threading goes up with
+;; about the cube of a thread's depth, and the GC crash does not appear at all
+;; below some tens of thousands of messages.  See `vm-large-folder-test-size',
+;; `vm-large-folder-test-chain-size' and `vm-large-folder-test-gc-size'.
 ;;
 ;; The timings are reported through `message', not asserted: what a machine
 ;; takes is not a property of VM, and a test that fails on a slow day teaches
@@ -56,6 +56,17 @@ thread building costs about the cube of the chain length: 500 messages in one
 chain take under a second, 1000 take seven, 2000 take a minute.  That is the
 finding recorded on #373, and it is also why this number cannot follow the
 other one.")
+
+(defvar vm-large-folder-test-gc-size
+  (string-to-number (or (getenv "VM_LARGE_FOLDER_GC") "50000"))
+  "How many messages the folder used to test garbage collection holds.
+Much larger than `vm-large-folder-test-size', and separately settable, because
+the crash of #453 is a stack overflow and does not happen at small sizes.
+Measured on Emacs 28.2, before the fix: 25000 messages passed, 40000 crashed.
+50000 is a margin over the observed threshold, since how many messages fit
+depends on the stack limit and on how much of the stack the caller has already
+used.  A number below about 40000 does not test anything.  Emacs 30 marks
+without the C stack and never crashed at any size tried.")
 
 (defun vm-large-folder-test--write (file n &optional threaded)
   "Write a folder of N messages to FILE.
@@ -148,28 +159,43 @@ be asked for.  Deliberately a small N -- see
 
 (ert-deftest vm-large-folder-test-gc-walks-the-message-list ()
   "REGRESSION: garbage collection survives a long chain of messages.
-Issue #453.  VM's message list is a chain of vectors linked through uninterned
-symbols, and Emacs used to mark that recursively -- thousands of messages meant
-thousands of stack frames of symbol/cons/vector and, for Pieter van Oostrum, a
-crash (debbugs #39962).
+Issue #453.  A reverse link in each message made mark_object recurse from
+message to softdata to preceding cons to previous message, down the whole
+folder, and the stack overflowed (debbugs #39962).  The link now lives in
+`vm-reverse-link-table'.
 
 A crash here takes the whole batch run with it, which is the point: if this
-returns at all, the marking held."
-  (let ((n vm-large-folder-test-size))
-    ;; Shallow threads: what the collector walks here is the message list, one
-    ;; link per message, so length is what matters and thread depth is beside
-    ;; the point -- and a deep chain would make this test cost minutes.
+returns at all, the marking held.  Needs `vm-large-folder-test-gc-size'
+messages; the sizes the other tests use never overflowed.
+
+`vm-message-list' alone does not provoke it, and that is not luck.  The
+collector follows cdrs iteratively, so reached in order a message's predecessor
+is already marked and the recursion stops after one step.  What overflowed is a
+second reference reaching messages in another order, which a real session has in
+the thread obarray and the summary.  Reversing the list is the cheapest way to
+put the collector there.  Threading the folder crashes identically and is what
+the reporter hit; it costs 25 seconds against 4."
+  (let* ((n vm-large-folder-test-gc-size)
+         out-of-order)
+    ;; Threads of 10 only so the folder looks like a real one; they are not
+    ;; built here.  What the collector walks is the message list, one link per
+    ;; message, so length is what matters and thread shape is beside the point.
     (vm-large-folder-test--with-folder (file n 10)
       (vm-visit-folder file)
       (should (= n (length vm-message-list)))
-      ;; Thread it too, so the symbol obarray is populated and the graph is the
-      ;; one a real session has.
-      (vm-build-threads vm-message-list)
+      (setq out-of-order (reverse vm-message-list))
       (vm-large-folder-test--timed "3 x garbage-collect"
         (dotimes (_ 3) (garbage-collect)))
-      ;; Still intact afterwards.
+      ;; Still intact afterwards.  Asserting on OUT-OF-ORDER also keeps it
+      ;; live across the collections rather than dead before the first one.
+      (should (= n (length out-of-order)))
+      (should (eq (car out-of-order) (car (last vm-message-list))))
       (should (= n (length vm-message-list)))
-      (should (vm-su-subject (car (last vm-message-list)))))))
+      (should (vm-su-subject (car (last vm-message-list))))
+      ;; And the reverse links still describe the list.
+      (should (null (vm-reverse-link-of (car vm-message-list))))
+      (should (eq (car (vm-reverse-link-of (nth 1 vm-message-list)))
+                  (car vm-message-list))))))
 
 (provide 'vm-large-folder-test)
 

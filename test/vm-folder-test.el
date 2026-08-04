@@ -583,6 +583,45 @@ Body of third message.
       ;; Third message points back to second
       (should (eq (car (vm-reverse-link-of m3)) m2)))))
 
+(defun vm-folder-test--reverse-links-describe-the-list ()
+  "Return non-nil if every message's reverse link is the cons before it.
+The first message must have none."
+  (let ((mp vm-message-list) (prev nil) (ok t))
+    (while mp
+      (unless (eq (vm-reverse-link-of (car mp)) prev)
+        (setq ok nil))
+      (setq prev mp mp (cdr mp)))
+    ok))
+
+(ert-deftest vm-folder-test-reverse-links-survive-splicing-and-rebuilding ()
+  "Reverse links still describe the list after messages are spliced out.
+The links live outside the messages, in `vm-reverse-link-table' (issue #453).
+Two operations rearrange the list and so can get them wrong: expunging, which
+splices a cons out, and `vm-reverse-link-messages', which sorting uses to
+rebuild every link."
+  (vm-test-with-folder vm-test-multi-mbox
+    (should (= 3 (length vm-message-list)))
+    (should (vm-folder-test--reverse-links-describe-the-list))
+    ;; Expunge the middle message: the third must now point at the first.
+    (let ((m1 (vm-test-nth-message 0))
+          (m3 (vm-test-nth-message 2)))
+      (vm-expunge-message (vm-test-nth-message 1))
+      (should (= 2 (length vm-message-list)))
+      (should (vm-folder-test--reverse-links-describe-the-list))
+      (should (eq (car (vm-reverse-link-of m3)) m1))
+      ;; Expunge the first: the survivor heads the list and has no link.
+      (vm-expunge-message m1)
+      (should (equal (list m3) vm-message-list))
+      (should (null (vm-reverse-link-of m3))))
+    ;; Rebuilding from scratch over a reordered list, as sorting does.
+    (setq vm-message-list (list (vm-make-message) (vm-make-message)
+                                (vm-make-message)))
+    (vm-reverse-link-messages)
+    (should (vm-folder-test--reverse-links-describe-the-list))
+    (setq vm-message-list (reverse vm-message-list))
+    (vm-reverse-link-messages)
+    (should (vm-folder-test--reverse-links-describe-the-list))))
+
 (ert-deftest vm-folder-test-message-buffer ()
   "Test that messages know their buffer."
   (vm-test-with-folder vm-test-simple-mbox

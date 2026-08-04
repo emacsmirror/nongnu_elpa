@@ -8144,10 +8144,12 @@ data structures.
 message directly mirrors (as a virtual message).  If we follow the
 ``mirrored-message'' links in succession we should eventually reach the
 ``real-message''.
-@inindex reverse-link-sym
+@inindex unused
 @item
-@code{reverse-link-sym} (6).  Reference to the previous message in the
-message list, also represented by an uninterned symbol written as ``<--''.
+@code{unused} (6).  Formerly @code{reverse-link-sym}.  The reverse link now
+lives in @code{vm-reverse-link-table}; see @code{vm-reverse-link-of}.  Stored in
+the message it chained the whole folder for the garbage collector, one stack
+frame per message, which crashed Emacs on large folders.
 @inindex message-type
 @item
 @code{message-type} (7).  A symbol indicating the type of the message
