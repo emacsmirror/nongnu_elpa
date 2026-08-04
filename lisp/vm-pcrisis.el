@@ -52,7 +52,7 @@
 (declare-function bbdb-save-db "ext:bbdb" (&optional postprocess))
 (declare-function bbdb-record-net "ext:bbdb" (record))
 (declare-function bbdb-get-field "ext:bbdb-com" (record field &optional yet-another))
-(declare-function bbdb-search "ext:bbdb" (records &optional name company net notes phone))
+(declare-function bbdb-message-search "ext:bbdb-com" (name mail))
 (declare-function bbdb-create-internal "ext:bbdb" (&rest args))
 ;; bbdb-with-db-buffer is a macro, declare it to suppress warning
 (declare-function bbdb-with-db-buffer "ext:bbdb" t)
@@ -967,6 +967,10 @@ parameter POS means insert the pre-signature at position POS if
 This will automatically create records if they do not exist and add the new
 field `vmpc-profile' to the records which is a sexp not meant to be edited."
   (interactive)
+  ;; `bbdb-message-search' lives in bbdb-com.el and BBDB does not autoload it,
+  ;; where the `bbdb-search' this replaced was in bbdb.el.  VM never requires
+  ;; BBDB itself, so ask for the file that has it (#549).
+  (require 'bbdb-com)
   (if (eq vmpc-auto-profiles-file 'BBDB)
       (error "`vmpc-auto-profiles-file' has been migrated already."))
   (unless vmpc-auto-profiles
@@ -977,12 +981,14 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
              (concat (expand-file-name bbdb-file) "-vmpc-profile-migration-backup"))
   ;; now migrate the profiles 
   (let ((profiles vmpc-auto-profiles)
-        (records (bbdb-with-db-buffer bbdb-records))
         p addr rec)
     (while profiles
       (setq p (car profiles)
             addr (car p)
-            rec (car (bbdb-search records nil nil addr)))
+            ;; This passed BBDB 2.x's positional arguments to `bbdb-search',
+            ;; whose modern form takes keywords and is a macro besides, so it
+            ;; could not have worked either way.  Issue #549.
+            rec (car (bbdb-message-search nil addr)))
       (when (not rec)
         (setq rec (bbdb-create-internal "?" nil addr nil nil nil)))
       (bbdb-record-putprop rec 'vmpc-profile (format "%S" (cdr p)))
@@ -1027,8 +1033,8 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
       ;; now possibly delete it from the BBDB
       (setq vmpc-auto-profiles (delete old-association vmpc-auto-profiles))
       (when (and (eq vmpc-auto-profiles-file 'BBDB) (not actions))
-        (let ((records (bbdb-with-db-buffer bbdb-records)) rec)
-          (setq rec (bbdb-search records nil nil addr))
+        (require 'bbdb-com)             ; see vmpc-migrate-profiles-to-BBDB
+        (let ((rec (bbdb-message-search nil addr)))
           (when rec
             (bbdb-record-putprop (car rec) 'vmpc-profile nil)))))
 
@@ -1037,8 +1043,8 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
       (setq vmpc-auto-profiles (cons profile vmpc-auto-profiles))
       ;; now possibly add it to the BBDB
       (when (eq vmpc-auto-profiles-file 'BBDB)
-        (let ((records (bbdb-with-db-buffer bbdb-records)) rec)
-          (setq rec (car (bbdb-search records nil nil addr)))
+        (require 'bbdb-com)             ; see vmpc-migrate-profiles-to-BBDB
+        (let ((rec (car (bbdb-message-search nil addr))))
           (when (not rec)
             (setq rec (bbdb-create-internal "?" nil addr nil nil nil)))
           (bbdb-record-putprop rec 'vmpc-profile (format "%S" (cdr profile))))))
