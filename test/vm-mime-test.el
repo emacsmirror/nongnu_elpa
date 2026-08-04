@@ -1966,6 +1966,160 @@ Not the line breaks: undoing them is the whole point, and the reader re-wraps."
                                       text))
             (should-not (string-match-p "format=flowed" text))))))))
 
+
+;;; cid: references for an external viewer (issue #506)
+
+(defun vm-mime-test--find-layout (layout type)
+  "Return the first part of LAYOUT whose content type is TYPE, depth first."
+  (catch 'found
+    (let ((walk nil))
+      (setq walk (lambda (l)
+                   (when (vectorp l)
+                     (if (vm-mime-types-match type (car (vm-mm-layout-type l)))
+                         (throw 'found l)
+                       (dolist (part (vm-mm-layout-parts l))
+                         (funcall walk part))))))
+      (funcall walk layout)
+      nil)))
+
+(defun vm-mime-test--cid-folder ()
+  "Visit the cid fixture as a folder and return its one message."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-cid" t)))
+         (file (expand-file-name "folder" dir)))
+    (copy-file (vm-test-fixture-path "folders" "cid-related.mbox") file)
+    (list dir file)))
+
+(ert-deftest vm-mime-test-cid-file-name-is-a-file-name ()
+  "A Content-ID is not a file name; `vm-mime-cid-file-name' makes one.
+Message IDs may hold anything an addr-spec may, `@' and `%' included, and the
+one in the fixture does."
+  (require 'vm-mime)
+  (should (equal "first_example.com" (vm-mime-cid-file-name "first@example.com")))
+  (should (equal "plain" (vm-mime-cid-file-name "plain")))
+  (should (equal "a_b_c" (vm-mime-cid-file-name "a/b\\c")))
+  ;; the characters a file name may keep are kept
+  (should (equal "a.b-c_d" (vm-mime-cid-file-name "a.b-c_d"))))
+
+(ert-deftest vm-mime-test-cid-references-become-local-files ()
+  "REGRESSION: an HTML part sent to an external viewer takes its images along.
+Issue #506: a sender who puts a picture in an HTML message attaches it as
+another part and refers to it as `cid:something' (RFC 2392).  VM wrote the HTML
+part to a lone temporary file, which a browser has no way to resolve those
+references from, so it drew a broken image where the picture should be.
+
+The parts are now written beside the HTML and the references rewritten to name
+them."
+  (require 'vm)
+  (let* ((where (vm-mime-test--cid-folder))
+         (dir (nth 0 where))
+         (file (nth 1 where))
+         (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
+         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-mime-externalize-cid-references t))
+    (unwind-protect
+        (progn
+          (vm-visit-folder file)
+          (should (= 1 (length vm-message-list)))
+          (let* ((layout (vm-mm-layout (car vm-message-list)))
+                 (html (vm-mime-test--find-layout layout "text/html"))
+                 (html-file (expand-file-name "part.html" dir)))
+            (should html)
+            (vm-mime-send-body-to-file html nil html-file t)
+            ;; before: the references are cid: URLs and nothing else is written
+            (with-temp-buffer
+              (insert-file-contents html-file)
+              (should (string-match-p "cid:first@example\\.com" (buffer-string))))
+            (let ((written (vm-mime-externalize-cid-references html html-file)))
+              ;; one file per distinct id, not per reference: the first id is
+              ;; used twice, once in a src= and once in a CSS url()
+              (should (= 2 (length written)))
+              (dolist (f written)
+                (should (file-exists-p f))
+                (should (> (nth 7 (file-attributes f)) 0))
+                ;; beside the HTML, so a bare file name resolves
+                (should (equal (file-name-directory html-file)
+                               (file-name-directory f))))
+              ;; the suffix comes from the part, so the browser knows the type
+              (should (seq-find (lambda (f) (string-suffix-p ".png" f)) written))
+              (should (seq-find (lambda (f) (string-suffix-p ".gif" f)) written))
+              (with-temp-buffer
+                (insert-file-contents html-file)
+                (let ((text (buffer-string)))
+                  ;; no cid: reference survives ...
+                  (should-not (string-match-p "cid:" text))
+                  ;; ... and each is now a bare local file name
+                  (dolist (f written)
+                    (should (string-match-p (regexp-quote (file-name-nondirectory f))
+                                            text)))
+                  ;; including the one inside url(), and both uses of the
+                  ;; repeated id
+                  (should (string-match-p "background:url([^)]*\\.png)" text))
+                  (should (= 2 (cl-count-if
+                                (lambda (l) (string-match-p "\\.png" l))
+                                (split-string text "\n")))))))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-cid-externalizing-can-be-turned-off ()
+  "With the option off, the HTML goes out as it came, cid: references and all.
+The control, and the escape for anyone who would rather not have message images
+written to the temporary directory."
+  (require 'vm)
+  (let* ((where (vm-mime-test--cid-folder))
+         (dir (nth 0 where))
+         (file (nth 1 where))
+         (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
+         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil))
+    (unwind-protect
+        (progn
+          (vm-visit-folder file)
+          (let* ((layout (vm-mm-layout (car vm-message-list)))
+                 (html (vm-mime-test--find-layout layout "text/html"))
+                 (html-file (expand-file-name "part.html" dir))
+                 (before nil))
+            (vm-mime-send-body-to-file html nil html-file t)
+            (with-temp-buffer (insert-file-contents html-file)
+                              (setq before (buffer-string)))
+            (let ((vm-mime-externalize-cid-references nil))
+              (should (equal nil (vm-mime-externalize-cid-references
+                                  html html-file))))
+            (with-temp-buffer
+              (insert-file-contents html-file)
+              ;; untouched, references and all
+              (should (equal before (buffer-string)))
+              (should (string-match-p "cid:" (buffer-string))))
+            ;; and nothing was written beside it
+            (should (equal '("folder" "part.html")
+                           (sort (seq-remove
+                                  (lambda (f) (member f '("." "..")))
+                                  (directory-files dir))
+                                 #'string<)))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-cid-reference-with-no-such-part-is-left-alone ()
+  "A cid: reference naming nothing is left as it is, rather than erased.
+A message can refer to a part that is not there, and turning the reference into
+a name that resolves to nothing would be worse than leaving it visible."
+  (require 'vm)
+  (let* ((where (vm-mime-test--cid-folder))
+         (dir (nth 0 where))
+         (file (nth 1 where))
+         (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
+         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil))
+    (unwind-protect
+        (progn
+          (vm-visit-folder file)
+          (let* ((layout (vm-mm-layout (car vm-message-list)))
+                 (html (vm-mime-test--find-layout layout "text/html"))
+                 (html-file (expand-file-name "part.html" dir)))
+            (with-temp-file html-file
+              (insert "<img src=\"cid:absent@example.com\">\n"))
+            (should (equal nil (vm-mime-externalize-cid-references html html-file)))
+            (with-temp-buffer
+              (insert-file-contents html-file)
+              (should (string-match-p "cid:absent@example\\.com"
+                                      (buffer-string))))))
+      (delete-directory dir t))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

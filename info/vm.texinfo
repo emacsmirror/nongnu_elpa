@@ -2522,6 +2522,23 @@ Example:
 associated with the first type that matches will be used for the
 temporary filename.
 
+@cindex cid
+@cindex images, in HTML mail
+@vindex vm-mime-externalize-cid-references
+A sender who puts a picture inside an HTML message does not put the picture in
+the @acronym{HTML}: the image is attached as a further part of the message, and
+the @acronym{HTML} refers to it as @samp{cid:something}, a reference to that
+part's @samp{Content-ID} (@cite{RFC 2392}).  An external viewer given only the
+one temporary file has no way to reach the rest of the message, and so shows a
+broken image.
+
+VM therefore writes the parts an @acronym{HTML} part refers to beside it, and
+rewrites the references to name those files, so the message appears as it was
+meant to.  This puts the images in the temporary directory along with the
+@acronym{HTML} until VM deletes the message's temporary files.  Setting
+@code{vm-mime-externalize-cid-references} to @code{nil} sends the
+@acronym{HTML} on its own instead.
+
 @node Displaying images, @acronym{MIME} type conversion, External display, @acronym{MIME} Messages
 @subsection Displaying inline images in messages
 

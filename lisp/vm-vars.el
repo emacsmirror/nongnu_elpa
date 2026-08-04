@@ -1549,6 +1549,22 @@ that type are assumed to be included."
   :type '(choice (const nil)
                  (repeat string)))
 
+(defcustom vm-mime-externalize-cid-references t
+  "*Whether to give an external viewer the images an HTML part refers to.
+A sender who puts a picture in an HTML message attaches it as another part and
+refers to it as `cid:something\=' (RFC 2392).  VM shows such a part to an
+external viewer by writing it to a file, and a browser handed that one file has
+no way to reach the rest of the message -- so it draws a broken image where the
+picture should be.
+
+With this set, the parts an HTML file refers to are written beside it and the
+references are rewritten to name them, so the message looks as it was meant to.
+That means the images reach the disk in the temporary directory, along with the
+HTML itself, until VM deletes them with the rest of a message\='s temporary
+files.  Set it to nil to send the HTML alone, as VM used to."
+  :group 'vm-mime
+  :type 'boolean)
+
 (defcustom vm-mime-external-content-types-alist nil
   "*Alist of MIME content types and the external programs used to display them.
 If VM cannot display a type internally or has been instructed not

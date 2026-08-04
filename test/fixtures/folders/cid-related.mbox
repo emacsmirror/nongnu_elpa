@@ -1,0 +1,45 @@
+From sender@example.com  Mon Jan  1 00:00:00 2024
+From: Sender <sender@example.com>
+To: you@example.com
+Subject: pictures in the text
+Date: Mon, 1 Jan 2024 00:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/related; boundary="OUTER"
+
+--OUTER
+Content-Type: multipart/alternative; boundary="INNER"
+
+--INNER
+Content-Type: text/plain; charset="UTF-8"
+
+Two pictures follow.
+
+--INNER
+Content-Type: text/html; charset="UTF-8"
+Content-Transfer-Encoding: quoted-printable
+
+<div>Here is one: <img src=3D"cid:first@example.com" alt=3D"one"> and here=
+ is the other: <img src=3D'cid:second' alt=3D"two">.
+<div style=3D"background:url(cid:first@example.com)">and once more</div>
+</div>
+
+--INNER--
+
+--OUTER
+Content-Type: image/png; name="one.png"
+Content-Disposition: inline; filename="one.png"
+Content-Transfer-Encoding: base64
+Content-ID: <first@example.com>
+
+iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==
+
+--OUTER
+Content-Type: image/gif; name="two.gif"
+Content-Disposition: inline; filename="two.gif"
+Content-Transfer-Encoding: base64
+Content-ID: <second>
+
+R0lGODlhAQABAIAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7
+
+--OUTER--
+
