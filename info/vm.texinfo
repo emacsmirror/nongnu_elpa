@@ -3832,11 +3832,23 @@ to set the ``From:'' header of the outgoing message to be the same as the
 email address at which you received the message.  This matters clearly if
 you have multiple email accounts.
 
-To use Personality Crisis, place the following in your @code{vm-init-file}:
+@findex vmpc-mode
+To use Personality Crisis, switch it on in your @code{vm-init-file}:
 
 @lisp
-(require 'vm-pcrisis)
+(vmpc-mode 1)
 @end lisp
+
+@noindent
+The mode is autoloaded, so no @code{require} is needed.  Turning it on advises
+VM's composition commands --- replying, forwarding, resending and starting a new
+message --- so that your rules are consulted as each composition begins;
+turning it off with @code{(vmpc-mode -1)} removes the advice again.
+
+Before VM 8.3.3 the advice was installed merely by loading the file, so
+@code{(require 'vm-pcrisis)} was how one switched it on, and there was no way to
+switch it off.  That still loads the file but no longer changes how VM behaves,
+so an init file saying only @code{(require 'vm-pcrisis)} needs the line above.
 
 @findex vmpc-my-identities
 As a quick start, you can add a line to define your email identities:
