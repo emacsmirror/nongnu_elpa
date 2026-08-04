@@ -118,6 +118,16 @@ VM 8.?.?
     that same notation instead of putting the name in the header verbatim.
     Where a sender supplies both an international parameter and a plain
     ASCII one, the international one is used, that being the real name.
+  * An HTML part sent to an external viewer now takes its pictures with it.  A
+    sender who puts an image in an HTML message attaches it as another part and
+    refers to it as "cid:something" (RFC 2392); VM wrote the HTML to a lone
+    temporary file, which a browser cannot resolve those references from, so it
+    drew a broken image where the picture should be.  The parts referred to are
+    now written beside the HTML and the references rewritten to name them.  That
+    does mean those images reach the temporary directory, along with the HTML
+    itself, until VM deletes them with the rest of a message's temporary files;
+    set the new `vm-mime-externalize-cid-references' to nil to send the HTML
+    alone, as before.  Reported by Daniel Barrett.
   * `vm-verbosity' now defaults to 5, the level its own documentation calls
     normal, rather than 8.  VM was three levels chattier than it said it was:
     saving a dozen messages to an IMAP folder reported "Checking IMAP

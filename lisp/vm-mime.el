@@ -3049,6 +3049,74 @@ in the text are highlighted and energized."
     (vm-emit-mime-decoding-message "Decoding text/enriched... done")
     t ))
 
+(defun vm-mime-cid-file-name (id)
+  "Return a file name component naming the cid: reference ID.
+A Content-ID may hold anything an addr-spec may, `@' and `%' included, so it is
+not a file name as it stands."
+  (let ((name (copy-sequence id)))
+    (while (string-match "[^A-Za-z0-9._-]" name)
+      (setq name (replace-match "_" t t name)))
+    name))
+
+(defun vm-mime-write-cid-part (part id html-file)
+  "Write PART, the target of cid: reference ID, beside HTML-FILE.
+Returns the file written, or nil.  It goes in the same directory so that the
+rewritten reference can be a bare file name, which is what a browser resolves
+relative to the document it is reading."
+  (let* ((suffix (or (vm-mime-extract-filename-suffix part)
+		     (vm-mime-find-filename-suffix-for-type part)
+		     ""))
+	 (file (expand-file-name
+		(concat (file-name-base html-file) "-"
+			(vm-mime-cid-file-name id) suffix)
+		(file-name-directory html-file))))
+    (and (vm-mime-send-body-to-file part nil file t)
+	 file)))
+
+(defun vm-mime-externalize-cid-references (layout html-file)
+  "Point HTML-FILE's cid: references at local copies of the parts they name.
+HTML-FILE holds the text of LAYOUT, a text/html part written out for an
+external viewer.  A `cid:' URL names another part of the same message
+(RFC 2392), which a browser handed a lone HTML file has no way to reach --
+so it draws a broken image where the sender put a picture.  Issue #506.
+
+Each referenced part is written beside HTML-FILE and the reference is
+replaced by its file name.  Returns the list of files written, for the
+caller to register as garbage.
+
+Does nothing when `vm-mime-externalize-cid-references' is nil."
+  (let ((message (and vm-mime-externalize-cid-references
+		      (vm-mm-layout-message layout)))
+	(written nil))
+    (when message
+      (let ((top (vm-mm-layout (vm-real-message-of message))))
+	(when (vectorp top)
+	  (with-temp-buffer
+	    (let ((coding-system-for-read (vm-binary-coding-system)))
+	      (insert-file-contents html-file))
+	    (let ((found (make-hash-table :test 'equal))
+		  (changed nil))
+	      (goto-char (point-min))
+	      ;; A cid: URL ends where the attribute or the CSS url() does.
+	      (while (re-search-forward "cid:\\([^\"'>) \t\r\n]+\\)" nil t)
+		(let* ((id (match-string 1))
+		       (file (gethash id found)))
+		  (unless file
+		    (let ((part (vm-mime-find-leaf-content-id
+				 top (concat "<" id ">"))))
+		      (when part
+			(setq file (vm-mime-write-cid-part part id html-file))
+			(when file
+			  (puthash id file found)
+			  (push file written)))))
+		  (when file
+		    (replace-match (file-name-nondirectory file) t t)
+		    (setq changed t))))
+	      (when changed
+		(let ((coding-system-for-write (vm-binary-coding-system)))
+		  (write-region (point-min) (point-max) html-file nil 'quiet))))))))
+    (nreverse written)))
+
 (defun vm-mime-display-external-generic (layout)
   "Display mime object with LAYOUT in an external viewer, as
 determined by `vm-mime-external-content-types-alist'."
@@ -3076,7 +3144,14 @@ determined by `vm-mime-external-content-types-alist'."
 	     (setq basename (vm-mime-get-disposition-filename layout))
 	     (setq tempfile (vm-make-tempfile suffix basename))
              (vm-register-message-garbage-files (list tempfile))
-             (vm-mime-send-body-to-file layout nil tempfile t)))
+             (vm-mime-send-body-to-file layout nil tempfile t)
+	     ;; An external viewer given only this file cannot follow a cid:
+	     ;; reference to another part of the message, so give it copies to
+	     ;; look at instead of broken images (issue #506).
+	     (when (vm-mime-types-match "text/html"
+					(car (vm-mm-layout-type layout)))
+	       (vm-register-message-garbage-files
+		(vm-mime-externalize-cid-references layout tempfile)))))
 
       (if (symbolp (car program-list))
 	  ;; use internal function if provided
