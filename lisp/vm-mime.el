@@ -3062,16 +3062,27 @@ not a file name as it stands."
   "Write PART, the target of cid: reference ID, beside HTML-FILE.
 Returns the file written, or nil.  It goes in the same directory so that the
 rewritten reference can be a bare file name, which is what a browser resolves
-relative to the document it is reading."
+relative to the document it is reading.
+
+Written with the same care `vm-make-tempfile' takes over the HTML part itself:
+mode 600, because this is somebody's mail going into a directory other people
+may be able to read, and any existing file removed first, so that a name
+already occupying the path -- a symbolic link, say -- is not written through."
   (let* ((suffix (or (vm-mime-extract-filename-suffix part)
 		     (vm-mime-find-filename-suffix-for-type part)
 		     ""))
 	 (file (expand-file-name
 		(concat (file-name-base html-file) "-"
 			(vm-mime-cid-file-name id) suffix)
-		(file-name-directory html-file))))
-    (and (vm-mime-send-body-to-file part nil file t)
-	 file)))
+		(file-name-directory html-file)))
+	 (modes (default-file-modes)))
+    (unwind-protect
+	(progn
+	  (set-default-file-modes (vm-octal 600))
+	  (vm-error-free-call 'delete-file file)
+	  (and (vm-mime-send-body-to-file part nil file t)
+	       file))
+      (set-default-file-modes modes))))
 
 (defun vm-mime-externalize-cid-references (layout html-file)
   "Point HTML-FILE's cid: references at local copies of the parts they name.

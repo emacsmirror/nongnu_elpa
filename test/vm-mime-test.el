@@ -2120,6 +2120,72 @@ a name that resolves to nothing would be worse than leaving it visible."
                                       (buffer-string))))))
       (delete-directory dir t))))
 
+
+(ert-deftest vm-mime-test-cid-parts-are-written-privately ()
+  "A cid part written for an external viewer is mode 600, like the HTML is.
+Found in review: `vm-make-tempfile' sets `default-file-modes' to 600 before
+writing the HTML part, because a message is going into a directory other people
+may be able to read, but `vm-mime-write-cid-part' called
+`vm-mime-send-body-to-file' directly and so took the ambient umask -- 644 with
+the usual 022.  The image parts of a message are as private as its text."
+  (require 'vm)
+  (let* ((where (vm-mime-test--cid-folder))
+         (dir (nth 0 where))
+         (file (nth 1 where))
+         (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
+         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-mime-externalize-cid-references t))
+    (unwind-protect
+        (progn
+          (vm-visit-folder file)
+          (let* ((layout (vm-mm-layout (car vm-message-list)))
+                 (html (vm-mime-test--find-layout layout "text/html"))
+                 (html-file (expand-file-name "part.html" dir)))
+            (vm-mime-send-body-to-file html nil html-file t)
+            (let ((written (vm-mime-externalize-cid-references html html-file)))
+              (should written)
+              (dolist (f written)
+                ;; only the owner, whatever the umask says
+                (should (= (vm-octal 600)
+                           (logand (file-modes f) (vm-octal 777))))))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-mime-test-cid-part-does-not-write-through-a-link ()
+  "An existing name in the way is removed rather than written through.
+The other half of the review finding: `vm-make-tempfile' unlinks before writing
+so that a symbolic link already occupying the path cannot redirect the write.
+The cid parts go in the same directory and need the same care."
+  (require 'vm)
+  (let* ((where (vm-mime-test--cid-folder))
+         (dir (nth 0 where))
+         (file (nth 1 where))
+         (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
+         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-mime-externalize-cid-references t)
+         (elsewhere (expand-file-name "decoy" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-file elsewhere (insert "untouched\n"))
+          (vm-visit-folder file)
+          (let* ((layout (vm-mm-layout (car vm-message-list)))
+                 (html (vm-mime-test--find-layout layout "text/html"))
+                 (html-file (expand-file-name "part.html" dir)))
+            (vm-mime-send-body-to-file html nil html-file t)
+            ;; put a link where the first cid part is about to be written
+            (make-symbolic-link
+             elsewhere
+             (expand-file-name
+              (concat (file-name-base html-file) "-"
+                      (vm-mime-cid-file-name "first@example.com") ".png")
+              dir)
+             t)
+            (vm-mime-externalize-cid-references html html-file)
+            ;; the link was replaced, and what it pointed at is as it was
+            (with-temp-buffer
+              (insert-file-contents elsewhere)
+              (should (equal "untouched\n" (buffer-string))))))
+      (delete-directory dir t))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

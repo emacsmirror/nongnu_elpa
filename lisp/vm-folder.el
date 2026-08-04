@@ -4327,8 +4327,11 @@ implementation than the expected one damages mail -- so this asks instead."
       (let ((own (expand-file-name "movemail" exec-directory)))
 	(if (file-executable-p own)
 	    own
-	  (error (concat "No movemail in %s; set vm-movemail-program"
-			 " to one that copies its input unaltered")
+	  (error (concat "No movemail in %s -- Emacs installs one there unless"
+			 " it was built --with-mailutils, which is its default"
+			 " when GNU Mailutils is present at build time."
+			 " Set vm-movemail-program to the movemail to use;"
+			 " note that Mailutils' rewrites mailboxes (issue #538)")
 		 exec-directory)))))
 
 ;;;###autoload
