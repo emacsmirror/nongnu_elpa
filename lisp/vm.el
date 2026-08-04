@@ -1661,7 +1661,14 @@ draft messages."
 	     vm-use-menus
 	     (not (featurep 'xemacs))
 	     (vm-menu-initialize-vm-mode-menu-map))
-	(setq vm-session-beginning nil)))
+	(setq vm-session-beginning nil)
+	;; Last, so that a hook function sees VM assembled: the init file read,
+	;; menus and the mouse installed, timers running.  Anything it changes
+	;; therefore wins over VM's own setup, which is the point of being able
+	;; to run code here at all.  `vm-session-beginning' is already nil, so a
+	;; hook function may call VM commands without starting this again.
+	;; Issue #565.
+	(run-hooks 'vm-startup-hook)))
   ;; check for postponed messages
   (vm-update-draft-count))
 

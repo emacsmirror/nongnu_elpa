@@ -5397,6 +5397,23 @@ must be done to the message to make it presentable.  E.g. MIME decoding."
   :group 'vm-hooks
   :type 'hook)
 
+(defcustom vm-startup-hook nil
+  "*List of hook functions to run once, when VM starts up.
+Run at the end of `vm-session-initialization\=', the first time any VM command
+is used in an Emacs session -- so once per Emacs, not once per folder.  See
+`vm-visit-folder-hook\=' for the per-folder equivalent.
+
+By then VM is fully assembled: the init file has been read, menus and the
+mouse are installed and any timers are running.  So a function here can
+override what VM has set up, which is the reason for running it last rather
+than first.  VM commands may be called from it.
+
+If what you want is to configure VM before it starts, set variables in your
+init file or `vm-init-file\=' instead; and to run something when a particular
+library is loaded, `with-eval-after-load\=' is simpler than a hook."
+  :group 'vm-hooks
+  :type 'hook)
+
 (defcustom vm-quit-hook nil
   "*List of hook functions to run when you quit VM.
 This applies to any VM quit command.  The following global variables

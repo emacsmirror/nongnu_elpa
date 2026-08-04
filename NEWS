@@ -118,6 +118,14 @@ VM 8.?.?
     that same notation instead of putting the name in the header verbatim.
     Where a sender supplies both an international parameter and a plain
     ASCII one, the international one is used, that being the real name.
+  * New hook `vm-startup-hook', run once when VM starts up -- at the end of
+    `vm-session-initialization', the first time a VM command is used in an Emacs
+    session.  VM had no such hook, which is the gap that produced the odd
+    recursive call in `vm' removed for issue #240: a request in 2007 for a way to
+    run code on VM's first invocation was answered by making `vm' call itself so
+    that advice would see an extra call, which never worked.  The hook runs after
+    VM is fully set up, so a function on it can override what VM has done and can
+    call VM commands.
   * An HTML part sent to an external viewer now takes its pictures with it.  A
     sender who puts an image in an HTML message attaches it as another part and
     refers to it as "cid:something" (RFC 2392); VM wrote the HTML to a lone

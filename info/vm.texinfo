@@ -6846,6 +6846,21 @@ entry in a folder summary buffer.
 List of hook functions called just after VM adds or deletes
 entries from a folder summary buffer.
 
+@item vm-startup-hook
+@vindex vm-startup-hook
+List of hook functions called once, when VM starts up: at the end of
+@code{vm-session-initialization}, the first time any VM command is used in an
+Emacs session.  Once per Emacs, that is, not once per folder --- for which see
+@code{vm-visit-folder-hook} below.
+
+By the time it runs, VM is fully assembled: the init file has been read, menus
+and the mouse are installed and any timers are running.  A function here can
+therefore override what VM has set up, which is why it runs last rather than
+first, and it may call VM commands.
+
+To configure VM @emph{before} it starts, set variables in your init file or in
+@code{vm-init-file} instead.
+
 @item vm-visit-folder-hook
 @vindex vm-visit-folder-hook
 List of hook functions called just after VM visits a folder.
