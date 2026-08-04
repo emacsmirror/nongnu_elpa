@@ -273,7 +273,7 @@ server has.
 
 They are.  `vm-imap-copy-message' flushes pending flags with
 `vm-imap-save-message-flags' before issuing UID COPY.  This is a
-characterisation test, not a fix: it passes on unmodified alpha and exists so
+characterisation test, not a fix: it passes on unmodified VM and exists so
 the flush cannot be dropped unnoticed.
 
 Covers a system flag and a label, which take different paths -- \\Seen is an
@@ -378,7 +378,7 @@ Issue #335: a trace showed the peer dropping after SELECT \"INBOX\" and VM
 treating that as the folder having been recreated, which triggers a
 destructive resync of the cache.
 
-It does not, on alpha.  VM raises a protocol error and leaves the cached
+It does not, as VM stands.  VM raises a protocol error and leaves the cached
 UIDVALIDITY alone, and critically never reaches the \"Refresh cache?\"
 prompt -- `y-or-n-p' is stubbed here so that reaching it would be visible
 rather than hanging batch ert."
