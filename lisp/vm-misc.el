@@ -432,6 +432,14 @@ vm-mail-buffer variable."
 	      blobarray)
     list ))
 
+(defun vm-obarray-empty-p (blobarray)
+  "Return t if nothing has been interned in BLOBARRAY.
+An obarray used as a set is a vector, so it is never nil and cannot be
+tested for emptiness with `null'."
+  (let ((empty t))
+    (mapatoms (function (lambda (_s) (setq empty nil))) blobarray)
+    empty ))
+
 (defun vm-zip-vectors (v1 v2)
   (if (= (length v1) (length v2))
       (let ((l1 (append v1 nil))
