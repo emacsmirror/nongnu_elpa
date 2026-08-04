@@ -44,6 +44,7 @@
 (require 'hermes-mcp)
 (require 'hermes-config)
 (require 'hermes-system)
+(require 'hermes-command-palette)
 (require 'hermes-browser)
 (require 'hermes-onboarding)
 
@@ -155,9 +156,11 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "Z" ("Configuration" hermes-config)
   "G" ("Gateway status" hermes-system-status)
   "L" ("Gateway logs" hermes-system-logs)
+  "P" ("Command palette" hermes-command-palette)
   "?" ("Help" hermes-dashboard-popup))
 
 (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
+(keymap-set hermes-dashboard-mode-map "C-c C-p" #'hermes-command-palette)
 
 (defun hermes-dashboard--header-line ()
   "Return the dashboard header line."

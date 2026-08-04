@@ -1519,6 +1519,8 @@ durable session continues on send."
 ;; `hermes-sessions' is downstream of this file; its autoloaded browser
 ;; command is the one sanctioned upward reference.
 (declare-function hermes-list-sessions "hermes-sessions" t t)
+;; The package hub binds the optional unified palette into chat buffers.
+(declare-function hermes-command-palette "hermes-command-palette")
 
 (defun hermes-chat--usage-content (result)
   "Return display text for a `session.usage' RESULT."
@@ -1610,6 +1612,7 @@ result into the transient status text shown in the transcript."
   "C-c C-a" #'hermes-chat-respond-to-prompt
   "C-c C-d" #'hermes-chat-cancel-prompt
   "C-c C-o" #'hermes-chat-actions-map-popup
+  "C-c C-p" #'hermes-command-palette
   "C-c C-/" #'hermes-chat-show-commands
   "C-c C-l" #'hermes-chat-view-attachments
   "C-c C-n" #'hermes-chat
