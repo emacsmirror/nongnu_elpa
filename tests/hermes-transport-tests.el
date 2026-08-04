@@ -1552,6 +1552,19 @@ other's session."
       (should (equal (plist-get event :status) "interrupted"))
       (should (equal (plist-get event :content) "Stopped")))))
 
+(ert-deftest hermes-transport-dashboard-normalizes-message-interim ()
+  "An interim assistant boundary preserves text and stream provenance."
+  (let* ((frame '((jsonrpc . "2.0") (method . "event")
+                  (params . ((type . "message.interim")
+                             (session_id . "sid")
+                             (payload . ((text . "candidate")
+                                         (already_streamed . t)))))))
+         (event (car (hermes-dashboard-transport--normalize-event-frame frame))))
+    (should (eq (plist-get event :type) 'interim))
+    (should (equal (plist-get event :event) "message.interim"))
+    (should (equal (plist-get event :content) "candidate"))
+    (should (eq (plist-get event :already-streamed) t))))
+
 (ert-deftest hermes-transport-dashboard-complete-status-done-is-terminal ()
   (let (events)
     (let ((client (make-hermes-dashboard-transport-client

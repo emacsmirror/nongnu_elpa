@@ -487,8 +487,8 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
     (when (eq (plist-get event :type) 'done)
       (hermes-chat--maybe-refresh-session-title))
     (unless (memq (plist-get event :type)
-                  '(delta done error thinking status progress tool commentary
-                          diff unknown))
+                  '(delta interim done error thinking status progress tool
+                          commentary diff unknown))
       (message "Unknown Hermes transport event: %S" event))))
 
 (defun hermes-chat--handle-transport-event (assistant-id event)

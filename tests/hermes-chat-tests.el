@@ -1317,6 +1317,92 @@
                     (plist-get (hermes-test--last-assistant-entry) :content)
                     "second answer"))))))))
 
+(ert-deftest hermes-chat-invalidates-interim-assistant-state ()
+  (hermes-test-with-chat-buffer
+    (setq hermes-chat--dashboard-interim-assistant-id "sealed")
+    (hermes-chat--invalidate-transport-state)
+    (should-not hermes-chat--dashboard-interim-assistant-id)))
+
+(ert-deftest hermes-chat-dashboard-preserves-interim-assistant-message ()
+  "A verification candidate remains visible beside the later final response."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client _text &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((status . "streaming"))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "verify")
+         (hermes-chat-send)
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "candidate")))
+         (hermes-test--emit-dashboard-event
+          client "message.interim"
+          '((text . "candidate") (already_streamed . t)))
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "verified")))
+         (hermes-test--emit-dashboard-event
+          client "message.complete" '((text . "verified") (status . "complete")))
+         (let ((assistants
+                (cl-remove-if-not
+                 (lambda (entry) (eq (plist-get entry :role) 'assistant))
+                 (hermes-chat--entries))))
+           (should (equal (mapcar (lambda (entry) (plist-get entry :content))
+                                  assistants)
+                          '("candidate" "verified")))
+           (should (equal (mapcar (lambda (entry) (plist-get entry :status))
+                                  assistants)
+                          '(done done)))))))))
+
+(ert-deftest hermes-chat-dashboard-settles-previewed-final-on-interim ()
+  "A reused verification candidate settles once rather than duplicating."
+  (let ((client (hermes-test--dashboard-client)))
+    (cl-letf (((symbol-function 'hermes-transport-send)
+               (lambda (&rest _args) (error "CLI fallback should not run")))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (_client _text &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((status . "streaming"))))))
+      (let ((hermes-transport-send-function #'hermes-transport-send))
+        (hermes-test-with-chat-buffer
+         (insert "verify")
+         (hermes-chat-send)
+         (hermes-test--emit-dashboard-event
+          client "message.delta" '((text . "candidate")))
+         (hermes-test--emit-dashboard-event
+          client "message.interim"
+          '((text . "candidate") (already_streamed . t)))
+         (hermes-test--emit-dashboard-event
+          client "message.complete"
+          '((text . "candidate") (status . "complete") (response_previewed . t)))
+         (let ((assistants
+                (cl-remove-if-not
+                 (lambda (entry) (eq (plist-get entry :role) 'assistant))
+                 (hermes-chat--entries))))
+           (should (= (length assistants) 1))
+           (should (equal (plist-get (car assistants) :content) "candidate"))
+           (should (eq (plist-get (car assistants) :status) 'done))))))))
+
 (ert-deftest hermes-chat-dashboard-buffers-new-turn-before-streaming-ack ()
   "A new turn cannot capture events until its busy-submit result is known."
   (let ((client (hermes-test--dashboard-client)) second-resolve)

@@ -62,6 +62,8 @@ without each one repeating the liveness guard."
   "Non-nil when a dashboard session is ready for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-stream-assistant-id nil
   "Assistant entry id receiving live dashboard stream events.")
+(defvar-local hermes-chat--dashboard-interim-assistant-id nil
+  "Most recent assistant entry sealed by a dashboard interim boundary.")
 (defvar-local hermes-chat--dashboard-suppress-stream-p nil
   "Non-nil when live dashboard stream events are suppressed.")
 (defvar-local hermes-chat--dashboard-idle-count 0
@@ -462,6 +464,7 @@ text-property changes in the undo list."
         hermes-chat--process nil
         hermes-chat--dashboard-running-p nil
         hermes-chat--dashboard-stream-assistant-id nil
+        hermes-chat--dashboard-interim-assistant-id nil
         hermes-chat--dashboard-suppress-stream-p nil
         hermes-chat--server-queued-assistant-id nil
         hermes-chat--server-queued-user-id nil

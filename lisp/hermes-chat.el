@@ -103,6 +103,7 @@ which keeps tests and user custom transports working."
 
 (defvar hermes-chat--dashboard-detached-assistant-id)
 (defvar hermes-chat--dashboard-stream-assistant-id)
+(defvar hermes-chat--dashboard-interim-assistant-id)
 (defvar hermes-chat--dashboard-suppress-stream-p)
 (defvar hermes-chat--interrupted-assistant-id)
 (defvar hermes-chat--interrupted-events)
@@ -274,7 +275,10 @@ re-submits any queued turn."
         (list '(clear-tools)
               (cons 'refresh-header status)
               (cons 'clear-prompts event)
-              (cons 'mark-done (plist-get event :content))
+              (cons (if (plist-get event :response-previewed)
+                        'mark-previewed
+                      'mark-done)
+                    (plist-get event :content))
               (and-let* ((warning (plist-get event :warning)))
                 (cons 'warning warning))
               '(drop-thinking)
@@ -363,7 +367,35 @@ and `upsert-entry'.  Other types return (STATE)."
                                  (hermes-chat--turn-entry-effect event)))))
     ('delta
      (cons state (list (cons 'append-delta (or (plist-get event :content) "")))))
+    ('interim
+     (cons state (list (cons 'seal-interim
+                             (or (plist-get event :content) "")))))
     (_ (cons state nil))))
+
+(defun hermes-chat--seal-interim-assistant (assistant-id content)
+  "Seal ASSISTANT-ID with interim CONTENT and rotate the live stream entry."
+  (hermes-chat--mark-assistant assistant-id 'done content t)
+  (let* ((entry (hermes-chat--make-entry 'assistant "" 'streaming))
+         (next-id (plist-get entry :id)))
+    (hermes-chat--insert-entry entry)
+    (setq hermes-chat--dashboard-interim-assistant-id assistant-id
+          hermes-chat--pending-assistant-id next-id
+          hermes-chat--dashboard-stream-assistant-id next-id)))
+
+(defun hermes-chat--mark-previewed-assistant (assistant-id content)
+  "Settle previewed CONTENT on its interim entry, or ASSISTANT-ID as fallback."
+  (let* ((interim-id hermes-chat--dashboard-interim-assistant-id)
+         (interim-node (and interim-id hermes-chat--nodes
+                            (gethash interim-id hermes-chat--nodes)))
+         (interim-content (and interim-node
+                               (plist-get (ewoc-data interim-node) :content))))
+    (if (and interim-content (equal interim-content content))
+        (progn
+          (hermes-chat--remove-entry assistant-id)
+          (hermes-chat--mark-assistant interim-id 'done content t))
+      (hermes-chat--mark-assistant
+       assistant-id 'done
+       (hermes-chat--assistant-done-content assistant-id content) t))))
 
 (defun hermes-chat--apply-turn-effect (assistant-id effect)
   "Apply one boundary EFFECT for ASSISTANT-ID.
@@ -394,6 +426,8 @@ stays side-effect-light."
      (hermes-chat--mark-assistant
       assistant-id 'done
       (hermes-chat--assistant-done-content assistant-id content) t))
+    (`(mark-previewed . ,content)
+     (hermes-chat--mark-previewed-assistant assistant-id content))
     (`(append-error ,content . ,status)
      (hermes-chat--append-assistant-content assistant-id content status))
     (`(mark-status . ,status)
@@ -404,10 +438,13 @@ stays side-effect-light."
     ('(finish) (hermes-chat--dashboard-finish-assistant assistant-id))
     ('(clear-pending)
      (setq hermes-chat--pending-assistant-id nil
+           hermes-chat--dashboard-interim-assistant-id nil
            hermes-chat--process nil))
     (`(append-delta . ,content)
      (unless (hermes-chat--thinking-echo-delta-p assistant-id content)
-       (hermes-chat--append-assistant-content assistant-id content 'streaming)))))
+       (hermes-chat--append-assistant-content assistant-id content 'streaming)))
+    (`(seal-interim . ,content)
+     (hermes-chat--seal-interim-assistant assistant-id content))))
 
 (defun hermes-chat--run-turn-reducer (assistant-id event)
   "Reduce EVENT, persist the new turn state, and apply its effects in order.

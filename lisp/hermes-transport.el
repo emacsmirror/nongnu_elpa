@@ -697,6 +697,16 @@ The plist holds :used, :max, and :percent for the model's context window."
     (when context (setq event (plist-put event :context context)))
     (when status (setq event (plist-put event :status status)))
     (when warning (setq event (plist-put event :warning warning)))
+    (when (hermes-transport--get payload 'response_previewed)
+      (setq event (plist-put event :response-previewed t)))
+    event))
+
+(defun hermes-dashboard-transport--message-interim-event (type params payload)
+  "Return a normalized `message.interim' event for TYPE/PARAMS/PAYLOAD."
+  (let ((event (hermes-dashboard-transport--payload-event
+                type params payload 'interim)))
+    (when (hermes-transport--get payload 'already_streamed)
+      (setq event (plist-put event :already-streamed t)))
     event))
 
 (defun hermes-dashboard-transport--prompt-title (prompt-type)
@@ -896,6 +906,9 @@ an Unknown error."
               type params payload)))
       ("message.delta"
        (list (hermes-dashboard-transport--payload-event type params payload 'delta)))
+      ("message.interim"
+       (list (hermes-dashboard-transport--message-interim-event
+              type params payload)))
       ("message.complete"
        (list (hermes-dashboard-transport--message-complete-event
               type params payload)))
