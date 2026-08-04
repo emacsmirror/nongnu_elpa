@@ -400,6 +400,34 @@ expunge reaches those and no others."
                      (vm-avirtual-test--subjects buffer)))
       (should (vm-avirtual-test--links-consistent-p buffer)))))
 
+(ert-deftest vm-avirtual-test-omit-moves-the-message-pointer-off-it ()
+  "Omitting the selected message selects the one before it.
+`vm-virtual-omit-message' reaches it through the reverse link.  Left where it
+was, the pointer holds a cons that is no longer in the list, and the folder goes
+on presenting a message it does not have."
+  (vm-avirtual-test--with-folders (real virt-a virt-b)
+    (ignore real virt-b)
+    (with-current-buffer virt-a
+      (let ((m (nth 1 vm-message-list)))
+        (setq vm-message-pointer (cdr vm-message-list))
+        (vm-virtual-omit-message 1 (list m))
+        (should-not (memq m vm-message-list))
+        (should (eq (car vm-message-pointer) (vm-test-first-message)))))))
+
+(ert-deftest vm-avirtual-test-omitting-the-first-message-moves-forward ()
+  "Omitting the first message selects the second: there is nothing before it.
+The other side of the same branch, where the reverse link is nil."
+  (vm-avirtual-test--with-folders (real virt-a virt-b)
+    (ignore real virt-b)
+    (with-current-buffer virt-a
+      (let ((m (car vm-message-list))
+            (next (nth 1 vm-message-list)))
+        (setq vm-message-pointer vm-message-list)
+        (vm-virtual-omit-message 1 (list m))
+        (should (eq next (car vm-message-pointer)))
+        (should (eq next (vm-test-first-message)))
+        (should (null (vm-reverse-link-of next)))))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
