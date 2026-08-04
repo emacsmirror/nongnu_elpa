@@ -78,7 +78,7 @@
               ((symbol-function 'read-string)
                (lambda (prompt &optional _initial &rest _)
                  (cond
-                  ((string-prefix-p "Name" prompt) "edited")
+                  ((string-prefix-p "Name" prompt) " edited ")
                   ((string-prefix-p "Schedule" prompt) "*/5 * * * *")
                   ((string-prefix-p "Deliver" prompt) "telegram")
                   ((string-prefix-p "Skills" prompt) "emacs, cron")
@@ -465,6 +465,39 @@
       (should-error (hermes-cron-create "name" "daily" " \n ")
                     :type 'user-error))
     (should-not requested)))
+
+(ert-deftest hermes-cron-read-updates-rejects-blank-name ()
+  "Edit rejects a blank trimmed name before producing an update payload."
+  (cl-letf (((symbol-function 'read-string)
+             (lambda (prompt &rest _)
+               (if (string-prefix-p "Name" prompt) "   " "value")))
+            ((symbol-function 'read-string-from-buffer)
+             (lambda (&rest _) "prompt")))
+    (should-error
+     (hermes-cron--read-updates
+      '((name . "old") (schedule . "daily") (prompt . "old")))
+     :type 'user-error)))
+
+(ert-deftest hermes-cron-edit-blank-name-does-not-update ()
+  "A blank name stops edit before the update request."
+  (let (updated)
+    (cl-letf (((symbol-function 'hermes-browser--run-on-client)
+               (lambda (make-promise &optional _on-success)
+                 (funcall make-promise 'fake-client)))
+              ((symbol-function 'hermes-cron--fetch-job)
+               (lambda (&rest _)
+                 (hermes--promise-resolved
+                  '((name . "old") (schedule . "daily") (prompt . "old")))))
+              ((symbol-function 'hermes-cron--update-job)
+               (lambda (&rest _) (setq updated t)))
+              ((symbol-function 'read-string)
+               (lambda (prompt &rest _)
+                 (if (string-prefix-p "Name" prompt) "   " "value")))
+              ((symbol-function 'read-string-from-buffer)
+               (lambda (&rest _) "prompt")))
+      (hermes-test-with-cron-buffer (list (hermes-test--cron-entry))
+        (hermes-cron-edit)))
+    (should-not updated)))
 
 ;;; Group: failure surfacing and run logs
 

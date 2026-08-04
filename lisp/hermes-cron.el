@@ -462,9 +462,10 @@ RUNS is the detail run list."
          (skills (hermes-cron--split-skills
                   (read-string "Skills (comma-separated): "
                                (hermes-cron--skills-string job)))))
-    (when (or (string-empty-p (string-trim schedule))
+    (when (or (string-empty-p (string-trim name))
+              (string-empty-p (string-trim schedule))
               (string-empty-p (string-trim prompt)))
-      (user-error "Schedule and prompt are required"))
+      (user-error "Name, schedule and prompt are required"))
     `((name . ,(string-trim name))
       (schedule . ,(string-trim schedule))
       (prompt . ,(string-trim prompt))
