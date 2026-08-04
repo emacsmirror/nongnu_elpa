@@ -42,11 +42,27 @@ Note: `make elint-lint` is broken (max-lisp-eval-depth), `make elisp-lint` has m
 cd test && make test            # whole suite (ert, batch)
 cd test && make test-verbose    # with deeper printing
 cd test && make test-one testel=vm-imap-test.el
+cd test && make test-imap       # live IMAP only (needs a server; skips without one)
+cd test && make test-pop        # POP: mock server always, live if configured
+cd test && make test-leaks      # report tests that leave global state behind
 ```
 
 Every bug fix ships a regression test in the matching `test/vm-*-test.el`, in
 the same commit. **Verify the test actually fails without the fix**: stash the
-lisp change, run the test, restore.
+lisp change, run the test, restore. Where a fix removes unreachable code there
+is nothing to fail — say so in the commit rather than implying a verification
+that cannot exist, and pin the invariant that made it unreachable instead.
+
+Live IMAP and POP tests read `test/vm-live-config.el`, which is gitignored
+because it holds account passwords; copy `test/vm-live-config.el.template` and
+fill it in. Every live test skips when nothing is configured, so `make test`
+works without it.
+
+Each test runs with the global value of every VM variable saved and restored,
+and buffers it created killed — see `vm-test-isolate-global-state` in
+`test/vm-test-init.el`. Do not rely on state from an earlier test, and do not
+assume a test that leaks is harmless: `make test-leaks` shows what is being
+leaked, and advice, non-VM hooks and files on disk are *not* restored.
 
 Gotchas found the hard way:
 
@@ -61,6 +77,17 @@ Gotchas found the hard way:
 - Tests that reach into folder machinery need `vm-select-folder-buffer-and-validate`,
   `vm-select-operable-messages` and friends stubbed; see `vm-test-with-folder`
   in `test/vm-test-init.el` and the existing stub macros for the pattern.
+- **`cl-letf` cannot stub a `defsubst` against compiled code.** The accessors are
+  `defsubst`s, so a caller compiled with the definition in scope has it inlined
+  and never looks at the symbol —
+  `vm-set-body-to-be-retrieved-of`, `vm-th-parent-of` and
+  `vm-select-folder-buffer-and-validate` have all cost time this way. Stub
+  something further out, or assert on the effect rather than the call. The same
+  applies to macros, `vm-interactive-p` above being one.
+- **`vm-assert` does nothing by default.** `vm-assertion-checking-off` defaults
+  to t, so an assertion in the code under test is not a check you can rely on in
+  the field. It also binds `debug-on-error`, so a test that wants assertions on
+  needs `inhibit-debugger` for batch.
 
 ## Contributing workflow
 
@@ -91,6 +118,16 @@ git push -o merge_request.create \
 - Editing an existing MR (target, title, description) or labelling and closing
   an issue needs the REST API and a token with `api` scope — push options
   cannot do it.
+- **Wait for `detailed_merge_status` to reach `mergeable` before merging.** For a
+  short while after an MR is created GitLab reports `preparing`, and a merge
+  request made then fails with a response that is not even JSON. Poll the MR
+  until it says `mergeable`, then merge.
+- **Decisions and design questions belong in the issue, not only in a file.**
+  `dev/docs/design/` is the right place for the long form, but those files live
+  on `develop`, which runs a long way ahead of `main` — so they are invisible
+  from a `main` checkout and from GitLab's default file view. Put the questions
+  themselves in the ticket, which is visible whatever branch anyone is on, and
+  reference the file for the detail.
 - An issue investigated but not reproducible gets the `irreproducible` label,
   and is closed too when it is a Launchpad import.
 
