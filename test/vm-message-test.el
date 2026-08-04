@@ -221,6 +221,67 @@
   (should (vectorp vm-mirror-data-fields))
   (should (= (length vm-mirror-data-fields) vm-mirror-data-vector-length)))
 
+;;; Reverse links (issue #453)
+
+;; The links live in `vm-reverse-link-table', not in the message vector, so that
+;; the collector does not recurse once per message down the whole folder.  What
+;; these pin is that moving them out kept the semantics and did not introduce a
+;; leak: `vm-expunge-message' decides which cons to splice from the link, so a
+;; message with the wrong link loses a different message than the one asked for.
+
+(ert-deftest vm-message-test-reverse-link-of-a-fresh-message-is-nil ()
+  "A message not yet in any list has no reverse link, and says so rather than
+signalling.  `vm-make-message' used to leave the link symbol unbound, so this
+raised `void-variable'."
+  (let ((m (vm-make-message)))
+    (should (null (vm-reverse-link-of m)))))
+
+(ert-deftest vm-message-test-reverse-links-are-per-message ()
+  "Messages sharing a soft data vector still have independent reverse links.
+`vm-make-presentation-copy' copies a message and its soft data shallowly.  When
+the link was a symbol held in that vector the copy shared the original's link:
+reading the copy gave the folder's link and setting it overwrote the folder's."
+  (let* ((m (vm-make-message))
+         (copy (copy-sequence m))
+         (link-for-m (list (vm-make-message)))
+         (link-for-copy (list (vm-make-message))))
+    (vm-set-softdata-of copy (copy-sequence (vm-softdata-of m)))
+    ;; Distinct vectors, as the presentation copy has: what used to be shared
+    ;; was not the vector but the link symbol sitting in slot 6 of both.
+    (should-not (eq (vm-softdata-of copy) (vm-softdata-of m)))
+    (vm-set-reverse-link-of m link-for-m)
+    ;; The copy has none of its own, and reading it does not invent one.
+    (should (eq link-for-m (vm-reverse-link-of m)))
+    (should (null (vm-reverse-link-of copy)))
+    ;; Setting the copy's leaves the original's alone, and the reverse.
+    (vm-set-reverse-link-of copy link-for-copy)
+    (should (eq link-for-m (vm-reverse-link-of m)))
+    (should (eq link-for-copy (vm-reverse-link-of copy)))))
+
+(ert-deftest vm-message-test-reverse-link-can-be-cleared ()
+  "Setting a reverse link to nil clears it, as it must for the list head."
+  (let ((m (vm-make-message)))
+    (vm-set-reverse-link-of m (list (vm-make-message)))
+    (should (vm-reverse-link-of m))
+    (vm-set-reverse-link-of m nil)
+    (should (null (vm-reverse-link-of m)))))
+
+(ert-deftest vm-message-test-reverse-link-table-is-weak-on-its-keys ()
+  "The table holds messages weakly, and compares them by identity.
+This asserts how the table is made rather than watching a collection do it,
+because a collection costs what the session's whole heap costs -- tens of
+seconds once the suite has run a while -- and what a change would alter is the
+declaration.  Both halves matter.  Without weak keys the table would hold every
+message of every folder ever visited for the life of the session, each kept
+alive by its own link.  Weak on values instead would be worse than a leak: an
+entry could go while its message was still in a folder, and
+`vm-expunge-message' reads a missing link as \"this is the list head\" and
+splices the head out in its place.  `eq' rather than `equal' because two
+distinct messages can have identical contents, and because `equal' on a
+message would recurse through the folder.  Issue #453."
+  (should (eq 'key (hash-table-weakness vm-reverse-link-table)))
+  (should (eq 'eq (hash-table-test vm-reverse-link-table))))
+
 (provide 'vm-message-test)
 
 ;;; vm-message-test.el ends here

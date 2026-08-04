@@ -538,6 +538,64 @@ virtual folders open."
       (let ((vm-confirm-quit nil))
         (vm-quit-no-change)))))
 
+;;; Reverse links across folders (issue #453)
+
+;; Every folder has its own message list, so a message appearing in a real
+;; folder and in two virtual folders is three message objects with three
+;; different links.  `vm-expunge-folder' expunges all three, each in its own
+;; buffer, and `vm-expunge-message' reads the link of whichever message it was
+;; given to decide which cons to splice.  Getting the wrong list's link would
+;; splice the wrong folder.
+
+(ert-deftest vm-virtual-test-reverse-links-are-per-folder ()
+  "The real folder and each virtual folder over it are linked independently.
+The virtual messages are copies of the real ones, so a link shared between a
+copy and its original would make one folder's list describe another's."
+  (vm-virtual-test--with-folders (real virt-a virt-b 4)
+    (dolist (buffer (list real virt-a virt-b))
+      (with-current-buffer buffer
+        (should (= 4 (length vm-message-list)))
+        (should (vm-test-reverse-links-consistent-p))))
+    ;; Same message, three folders, three distinct links.
+    (let ((links (mapcar (lambda (buffer)
+                           (with-current-buffer buffer
+                             (vm-reverse-link-of (vm-test-nth-message 1))))
+                         (list real virt-a virt-b))))
+      (should (cl-every #'consp links))
+      (should (= 3 (length (delete-dups (copy-sequence links))))))))
+
+(ert-deftest vm-virtual-test-expunging-relinks-every-folder ()
+  "Expunging through a real folder leaves every virtual folder linked too.
+`vm-expunge-folder' walks into each virtual folder's buffer to expunge the
+mirror, so all three lists are spliced in one pass.  Issue #453."
+  (vm-virtual-test--with-folders (real virt-a virt-b 4)
+    (with-current-buffer real
+      (vm-set-deleted-flag (vm-test-nth-message 1) t)
+      (vm-expunge-folder))
+    (dolist (buffer (list real virt-a virt-b))
+      (with-current-buffer buffer
+        (should (= 3 (length vm-message-list)))
+        (should (vm-test-reverse-links-consistent-p))
+        (should (null (vm-reverse-link-of (vm-test-first-message))))))
+    ;; The surviving messages are the right ones, in every folder.
+    (dolist (buffer (list real virt-a virt-b))
+      (with-current-buffer buffer
+        (should (equal '("subject 0" "subject 2" "subject 3")
+                       (mapcar #'vm-su-subject vm-message-list)))))))
+
+(ert-deftest vm-virtual-test-expunging-the-virtual-head-relinks-the-real-folder ()
+  "Expunging the first message of a virtual folder relinks both lists.
+The head is the case that must end with no link at all, and here two lists have
+to arrive there at once."
+  (vm-virtual-test--with-folders (real virt-a virt-b 4)
+    (with-current-buffer virt-a
+      (vm-set-deleted-flag (vm-test-first-message) t)
+      (vm-expunge-folder))
+    (dolist (buffer (list real virt-a virt-b))
+      (with-current-buffer buffer
+        (should (vm-test-reverse-links-consistent-p))
+        (should (null (vm-reverse-link-of (vm-test-first-message))))))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here

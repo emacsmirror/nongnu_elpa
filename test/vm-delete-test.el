@@ -111,6 +111,102 @@ Body 2
       ;; (vm-deleted-flag accesses slot 2 of the attributes vector)
       (should (eq 'expunged (vm-deleted-flag msg))))))
 
+;;; Expunging and reverse links (issue #453)
+
+;; `vm-expunge-message' derives which cons of `vm-message-list' to splice from
+;; the message's reverse link, and `vm-expunge-folder' separately deletes the
+;; message's text from the folder buffer.  If the link is wrong the two
+;; disagree: the wrong message leaves the list while the right one's text is
+;; deleted.  These walk the whole list after each expunge rather than checking
+;; only the count, because a count survives that mix-up unchanged.
+
+(defconst vm-delete-test--five-messages
+  (mapconcat
+   (lambda (i)
+     (format "From sender@example.com Mon Jan  %d 00:00:00 2024
+From: sender@example.com
+Subject: Message %d
+Message-ID: <test%d@example.com>
+
+Body %d
+" (1+ i) i i i))
+   (number-sequence 0 4) "\n")
+  "A five-message From_ folder, subjects \"Message 0\" through \"Message 4\".")
+
+(defun vm-delete-test--subjects ()
+  "Return the subject number of each message in `vm-message-list', in order."
+  (mapcar (lambda (m)
+            (string-to-number
+             (replace-regexp-in-string
+              "[^0-9]" "" (vm-test-message-header m "Subject"))))
+          vm-message-list))
+
+(ert-deftest vm-delete-test-expunge-the-last-message ()
+  "Expunging the tail leaves the rest linked, and the new tail has a link.
+The tail is the case where the cons spliced out has no successor to relink."
+  (vm-test-with-folder vm-delete-test--five-messages
+    (should (equal '(0 1 2 3 4) (vm-delete-test--subjects)))
+    (vm-expunge-message (vm-test-nth-message 4))
+    (should (equal '(0 1 2 3) (vm-delete-test--subjects)))
+    (should (vm-test-reverse-links-consistent-p))
+    (should (eq (car (vm-reverse-link-of (vm-test-nth-message 3)))
+                (vm-test-nth-message 2)))))
+
+(ert-deftest vm-delete-test-expunge-every-message-front-to-back ()
+  "Expunging the head repeatedly empties the folder, in order.
+Each expunge makes the next message the head, which must lose its link."
+  (vm-test-with-folder vm-delete-test--five-messages
+    (dotimes (i 5)
+      (vm-expunge-message (vm-test-first-message))
+      (should (equal (number-sequence (1+ i) 4) (vm-delete-test--subjects)))
+      (should (vm-test-reverse-links-consistent-p))
+      (when vm-message-list
+        (should (null (vm-reverse-link-of (vm-test-first-message))))))
+    (should (null vm-message-list))))
+
+(ert-deftest vm-delete-test-expunge-every-message-back-to-front ()
+  "Expunging the tail repeatedly empties the folder, in order.
+The other direction, because the two take different branches on whether the
+spliced cons has a successor."
+  (vm-test-with-folder vm-delete-test--five-messages
+    (dotimes (i 5)
+      (vm-expunge-message (car (last vm-message-list)))
+      (should (equal (number-sequence 0 (- 3 i)) (vm-delete-test--subjects)))
+      (should (vm-test-reverse-links-consistent-p)))
+    (should (null vm-message-list))))
+
+(ert-deftest vm-delete-test-expunge-from-the-middle-outwards ()
+  "A scattered set of expunges leaves the survivors correctly linked.
+The interesting case is expunging two messages that were adjacent, so the
+survivor must end up linked past both."
+  (vm-test-with-folder vm-delete-test--five-messages
+    (let ((m1 (vm-test-nth-message 1))
+          (m2 (vm-test-nth-message 2)))
+      (vm-expunge-message m1)
+      (should (vm-test-reverse-links-consistent-p))
+      (vm-expunge-message m2)
+      (should (equal '(0 3 4) (vm-delete-test--subjects)))
+      (should (vm-test-reverse-links-consistent-p))
+      ;; Message 3 now follows message 0 directly.
+      (should (eq (car (vm-reverse-link-of (vm-test-nth-message 1)))
+                  (vm-test-first-message))))))
+
+(ert-deftest vm-delete-test-expunge-moves-the-message-pointer-back ()
+  "Expunging the selected message selects its predecessor, not another message.
+`vm-expunge-message' finds it through the reverse link, so a wrong link moves
+the user somewhere else in the folder."
+  (vm-test-with-folder vm-delete-test--five-messages
+    (setq vm-message-pointer (nthcdr 3 vm-message-list))
+    (vm-expunge-message (vm-test-nth-message 3))
+    (should (equal '(0 1 2 4) (vm-delete-test--subjects)))
+    (should (vm-test-reverse-links-consistent-p))
+    ;; Predecessor of the expunged message, which is "Message 2".
+    (should (= 2 (string-to-number
+                  (replace-regexp-in-string
+                   "[^0-9]" ""
+                   (vm-test-message-header (car vm-message-pointer)
+                                           "Subject")))))))
+
 ;;; Tests for duplicate detection logic
 ;; Note: vm-delete-duplicate-messages requires full folder context,
 ;; so we test the underlying logic patterns instead.
