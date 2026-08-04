@@ -23,8 +23,7 @@
     ("Configuration" . hermes-config)
     ("Gateway status" . hermes-system-status)
     ("Gateway logs" . hermes-system-logs)
-    ("Connect provider" . hermes-onboarding-connect-provider)
-    ("Connect OAuth provider" . hermes-onboarding-connect-oauth))
+    ("Connect provider" . hermes-onboarding-connect-provider))
   "Primary Hermes commands exposed by `hermes-command-palette'.")
 
 (defun hermes-command-palette--dispatch (command)
