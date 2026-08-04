@@ -789,6 +789,22 @@ thread are added."
     new-messages))
 
 ;;----------------------------------------------------------------------------
+(defun vm-virtual-deregister-message (m)
+  "Detach the virtual message M, which has left its folder's message list.
+Nothing may reach M through its real message afterwards.  Step 2 of
+`vm-expunge-folder' walks the real message's mirrors and expunges each one from
+its own folder, so a mirror left registered is expunged from a list it is not
+in: its reverse link is stale, and the message that link now precedes is
+spliced out and flagged expunged instead.  Attributes are shared with the real
+message, so that flag comes back to the real folder and its expunge loop
+carries on into messages nobody deleted (#569).
+
+M's reverse link goes too, having nothing to describe."
+  (let ((real-m (vm-real-message-of m)))
+    (vm-set-virtual-messages-of
+     real-m (delq m (vm-virtual-messages-of real-m))))
+  (vm-set-reverse-link-of m nil))
+
 ;;;###autoload
 (defun vm-virtual-omit-message (&optional count message-list)
   "Omits a message from a virtual folder.
@@ -825,7 +841,9 @@ virtual folder of all messages."
                    (vm-set-reverse-link-of (car (cdr curr)) nil)))
           (setcdr prev (cdr curr))
           (and (cdr curr)
-               (vm-set-reverse-link-of (car (cdr curr)) prev))))
+               (vm-set-reverse-link-of (car (cdr curr)) prev)))
+        ;; CURR is out of the list, so its message is out of the folder.
+        (vm-virtual-deregister-message (car curr)))
       (setq mp (cdr mp)))
 
     (vm-update-summary-and-mode-line)
