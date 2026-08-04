@@ -46,7 +46,11 @@
 (ert-deftest hermes-chat-mode-map-sends-and-inserts-newlines ()
   (should (eq (keymap-lookup hermes-chat-mode-map "RET") #'hermes-chat-send))
   (should (eq (keymap-lookup hermes-chat-mode-map "C-j") #'hermes-chat-newline))
-  (should (eq (keymap-lookup hermes-chat-mode-map "S-<return>") #'hermes-chat-newline)))
+  (should (eq (keymap-lookup hermes-chat-mode-map "S-<return>") #'hermes-chat-newline))
+  (should (eq (keymap-lookup hermes-chat-mode-map "M-p")
+              #'hermes-chat-input-history-previous))
+  (should (eq (keymap-lookup hermes-chat-mode-map "M-n")
+              #'hermes-chat-input-history-next)))
 
 (ert-deftest hermes-chat-parses-slash-commands-with-arguments ()
   (should (equal (hermes-chat--parse-slash "/QUEUE next message")
@@ -4696,6 +4700,43 @@
   (should (eq hermes-chat--submit-function #'hermes-chat--submit-content))
   (should (eq hermes-chat--turn-event-function #'hermes-chat--run-turn-reducer))
   (should (memq #'hermes-chat--handoff-stop hermes-chat-cleanup-functions)))
+
+(ert-deftest hermes-chat-input-history-restores-draft ()
+  "Input history navigates newest-first and restores the unsent draft."
+  (hermes-test-with-chat-buffer
+   (should-error (hermes-chat-input-history-previous) :type 'user-error)
+   (hermes-chat--record-input-history "first")
+   (hermes-chat--record-input-history "second")
+   (goto-char (point-max))
+   (insert "draft")
+   (hermes-chat-input-history-previous)
+   (should (equal (hermes-chat-input-string) "second"))
+   (hermes-chat-input-history-previous)
+   (should (equal (hermes-chat-input-string) "first"))
+   (hermes-chat-input-history-previous)
+   (should (equal (hermes-chat-input-string) "first"))
+   (hermes-chat-input-history-next)
+   (should (equal (hermes-chat-input-string) "second"))
+   (hermes-chat-input-history-next)
+   (should (equal (hermes-chat-input-string) "draft"))
+   (should-error (hermes-chat-input-history-next) :type 'user-error)))
+
+(ert-deftest hermes-chat-input-history-records-only-successful-sends-per-buffer ()
+  "Successful sends enter only their owning buffer's input history."
+  (let (first-history)
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function (lambda (&rest _) 'fake-process)))
+       (insert "sent")
+       (hermes-chat-send)
+       (setq first-history hermes-chat--input-history)))
+    (should (equal first-history '("sent")))
+    (hermes-test-with-chat-buffer
+     (let ((hermes-transport-send-function
+            (lambda (&rest _) (error "Send rejected"))))
+       (insert "not sent")
+       (hermes-chat-send)
+       (should-not hermes-chat--input-history)))))
+
 
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

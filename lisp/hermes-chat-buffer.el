@@ -98,6 +98,12 @@ without each one repeating the liveness guard."
   "FIFO queue of message plists waiting for an idle Hermes session.")
 (defvar-local hermes-chat--queued-submit-id nil
   "Queued message id currently awaiting transport acceptance.")
+(defvar-local hermes-chat--input-history nil
+  "Sent chat inputs, newest first.")
+(defvar-local hermes-chat--input-history-index nil
+  "Current index while navigating `hermes-chat--input-history'.")
+(defvar-local hermes-chat--input-history-draft ""
+  "Draft restored after moving forward past the newest history entry.")
 (defvar-local hermes-chat--session-id nil
   "Durable Hermes session key for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-create-model nil
@@ -773,6 +779,44 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
   (unless (string-suffix-p "\n" (hermes-chat-input-string))
     (insert "\n"))
   (insert content))
+
+(defun hermes-chat--record-input-history (content)
+  "Record non-empty CONTENT in the current buffer's sent-input history."
+  (when-let* ((text (hermes-transport--non-empty-string content)))
+    (setq hermes-chat--input-history
+          (cons text (delete text hermes-chat--input-history))
+          hermes-chat--input-history-index nil
+          hermes-chat--input-history-draft "")))
+
+(defun hermes-chat-input-history-previous ()
+  "Replace the writable tail with the previous sent input."
+  (interactive)
+  (unless (hermes-chat--point-in-input-p)
+    (user-error "Point is outside the Hermes input area"))
+  (unless hermes-chat--input-history
+    (user-error "No Hermes input history"))
+  (when (null hermes-chat--input-history-index)
+    (setq hermes-chat--input-history-draft (hermes-chat-input-string)))
+  (setq hermes-chat--input-history-index
+        (min (1- (length hermes-chat--input-history))
+             (1+ (or hermes-chat--input-history-index -1))))
+  (hermes-chat--replace-input-tail
+   (nth hermes-chat--input-history-index hermes-chat--input-history)))
+
+(defun hermes-chat-input-history-next ()
+  "Replace the writable tail with the next sent input or saved draft."
+  (interactive)
+  (unless (hermes-chat--point-in-input-p)
+    (user-error "Point is outside the Hermes input area"))
+  (unless (numberp hermes-chat--input-history-index)
+    (user-error "Already at newest Hermes input"))
+  (setq hermes-chat--input-history-index
+        (and (> hermes-chat--input-history-index 0)
+             (1- hermes-chat--input-history-index)))
+  (hermes-chat--replace-input-tail
+   (if hermes-chat--input-history-index
+       (nth hermes-chat--input-history-index hermes-chat--input-history)
+     hermes-chat--input-history-draft)))
 
 (defun hermes-chat--preserve-control-content (content)
   "Keep busy-control CONTENT recoverable after a dashboard bootstrap error."

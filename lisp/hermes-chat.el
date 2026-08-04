@@ -628,7 +628,8 @@ Used where a synthesized header event must not insert a transcript entry."
        (plist-get context :content) message))))
 
 (defun hermes-chat--submit-busy-dashboard-content (content)
-  "Submit busy CONTENT under the dashboard's configured policy."
+  "Submit busy CONTENT under the dashboard's configured policy.
+Return non-nil when the transport request starts."
   (let* ((buffer (current-buffer))
          (generation hermes-chat--transport-generation)
          (session-id hermes-chat--dashboard-active-session-id)
@@ -639,27 +640,30 @@ Used where a synthesized header event must not insert a transcript entry."
                 :assistant-id assistant-id :events nil)))
     (setq hermes-chat--busy-submit-context context)
     (condition-case err
-        (hermes-dashboard-transport-prompt-submit
-         (hermes-chat--dashboard-control-client) content
-         :session-id session-id
-         :resolve (lambda (result)
-                    (hermes-chat--in-buffer buffer
-                      (when (and (hermes-chat--current-transport-generation-p
-                                  generation)
-                                 (eq context hermes-chat--busy-submit-context)
-                                 (equal session-id
-                                        hermes-chat--dashboard-active-session-id))
-                        (hermes-chat--settle-busy-submit context result))))
-         :reject (lambda (message)
-                   (hermes-chat--in-buffer buffer
-                     (when (and (hermes-chat--current-transport-generation-p
-                                 generation)
-                                (eq context hermes-chat--busy-submit-context)
-                                (equal session-id
-                                       hermes-chat--dashboard-active-session-id))
-                       (hermes-chat--fail-busy-submit context message)))))
+        (progn
+          (hermes-dashboard-transport-prompt-submit
+           (hermes-chat--dashboard-control-client) content
+           :session-id session-id
+           :resolve (lambda (result)
+                      (hermes-chat--in-buffer buffer
+                        (when (and (hermes-chat--current-transport-generation-p
+                                    generation)
+                                   (eq context hermes-chat--busy-submit-context)
+                                   (equal session-id
+                                          hermes-chat--dashboard-active-session-id))
+                          (hermes-chat--settle-busy-submit context result))))
+           :reject (lambda (message)
+                     (hermes-chat--in-buffer buffer
+                       (when (and (hermes-chat--current-transport-generation-p
+                                   generation)
+                                  (eq context hermes-chat--busy-submit-context)
+                                  (equal session-id
+                                         hermes-chat--dashboard-active-session-id))
+                         (hermes-chat--fail-busy-submit context message)))))
+          t)
       (error
-       (hermes-chat--fail-busy-submit context (error-message-string err))))))
+       (hermes-chat--fail-busy-submit context (error-message-string err))
+       nil))))
 
 (defun hermes-chat--trimmed-input ()
   "Return the current input tail trimmed for sending."
@@ -857,7 +861,8 @@ extends the input instead of prepending a blank line to it."
 (defun hermes-chat--submit-content (content &optional display queue-entry)
   "Submit CONTENT as a new user turn, echoing DISPLAY when non-nil.
 DISPLAY lets a slash skill send its full payload while showing a compact line.
-QUEUE-ENTRY identifies a queued message retained until transport acceptance."
+QUEUE-ENTRY identifies a queued message retained until transport acceptance.
+Return non-nil when the transport request starts."
   (when (and (hermes-chat--active-turn-p) (null queue-entry))
     (user-error "%s" (hermes-chat--busy-message)))
   (let* ((user-entry (hermes-chat--make-entry 'user (or display content) 'done))
@@ -868,10 +873,13 @@ QUEUE-ENTRY identifies a queued message retained until transport acceptance."
                          (hermes-chat--submit-callbacks context))))
     (hermes-chat--begin-pending-turn user-entry assistant-entry context)
     (condition-case err
-        (hermes-chat--submit-through-transport
-         content context (car callbacks) (cdr callbacks))
+        (progn
+          (hermes-chat--submit-through-transport
+           content context (car callbacks) (cdr callbacks))
+          t)
       (error
-       (hermes-chat--submit-signal-error context err)))))
+       (hermes-chat--submit-signal-error context err)
+       nil))))
 
 ;; Register the submit pipeline with `hermes-chat-buffer''s queue/drain flow
 ;; and the dashboard's event routing; the registries keep the lower layers
@@ -1367,31 +1375,38 @@ durable session continues on send."
   (unless (hermes-chat--point-in-input-p)
     (user-error "Point is not in the Hermes chat input area"))
   (let ((content (hermes-chat--trimmed-input))
-        (clarify-key (hermes-chat--pending-clarify-key)))
+        (clarify-key (hermes-chat--pending-clarify-key))
+        sent-p)
     (when (string-empty-p content)
       (user-error "No Hermes input to send"))
-    (cond
-       (clarify-key
-        (when (hermes-chat--prompt-response-in-flight-p clarify-key)
-          (user-error "Hermes is accepting the previous prompt response"))
-        (hermes-chat--delete-input-tail)
-        (hermes-chat-respond-to-prompt clarify-key content nil t))
-       ((hermes-chat--parse-slash content)
-        (hermes-chat--handle-slash-content content))
-       ((and (hermes-chat--active-turn-p)
-             (hermes-chat--dashboard-session-attached-p)
-             (null hermes-chat--queued-messages))
-        (when hermes-chat--busy-submit-context
-          (user-error "Hermes is accepting the previous message"))
-        (hermes-chat--delete-input-tail)
-        (hermes-chat--submit-busy-dashboard-content content))
-       ((or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
-        (hermes-chat--delete-input-tail)
-        (hermes-chat--queue-content content)
-        (hermes-chat--drain-queued-message))
-       (t
-        (hermes-chat--delete-input-tail)
-        (hermes-chat--submit-content content)))))
+    (setq sent-p
+          (cond
+           (clarify-key
+            (when (hermes-chat--prompt-response-in-flight-p clarify-key)
+              (user-error "Hermes is accepting the previous prompt response"))
+            (hermes-chat--delete-input-tail)
+            (hermes-chat-respond-to-prompt clarify-key content nil t)
+            t)
+           ((hermes-chat--parse-slash content)
+            (hermes-chat--handle-slash-content content)
+            t)
+           ((and (hermes-chat--active-turn-p)
+                 (hermes-chat--dashboard-session-attached-p)
+                 (null hermes-chat--queued-messages))
+            (when hermes-chat--busy-submit-context
+              (user-error "Hermes is accepting the previous message"))
+            (hermes-chat--delete-input-tail)
+            (hermes-chat--submit-busy-dashboard-content content))
+           ((or (hermes-chat--active-turn-p) hermes-chat--queued-messages)
+            (hermes-chat--delete-input-tail)
+            (hermes-chat--queue-content content)
+            (hermes-chat--drain-queued-message)
+            t)
+           (t
+            (hermes-chat--delete-input-tail)
+            (hermes-chat--submit-content content))))
+    (when sent-p
+      (hermes-chat--record-input-history content))))
 
 ;;; Attachments view
 
@@ -1586,6 +1601,8 @@ result into the transient status text shown in the transcript."
   "C-j" #'hermes-chat-newline
   "S-<return>" #'hermes-chat-newline
   "TAB" #'completion-at-point
+  "M-p" #'hermes-chat-input-history-previous
+  "M-n" #'hermes-chat-input-history-next
   "C-c C-i" #'hermes-chat-interrupt
   "C-c C-k" #'hermes-chat-interrupt-and-send
   "C-c C-q" #'hermes-chat-queue-message
