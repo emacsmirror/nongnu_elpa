@@ -1447,7 +1447,11 @@ other's session."
     (cl-letf (((symbol-function 'hermes-dashboard-transport--generate-token)
                (lambda () "secret-token"))
               ((symbol-function 'hermes-dashboard-transport--pick-port)
-               (lambda () 4567)))
+               (lambda () 4567))
+              ((symbol-function 'executable-find)
+               (lambda (_program) nil))
+              ((symbol-function 'file-executable-p)
+               (lambda (_file) nil)))
       (let ((hermes-dashboard-transport-command "hermes")
             (hermes-dashboard-transport-url "http://127.0.0.1:4567")
             (hermes-dashboard-transport-make-process-function

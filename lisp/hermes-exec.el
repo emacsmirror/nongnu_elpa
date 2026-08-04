@@ -939,7 +939,7 @@ the kill ring; the echoed line redacts the token so the secret does not persist
 in `*Messages*'."
   (interactive)
   (let* ((token (hermes-exec--expected-token))
-         (line "hermes mcp add emacs --command <venv>/bin/python --args server.py --env EMACS_EXEC_HOST=%s EMACS_EXEC_PORT=%d%s")
+         (line "hermes mcp add emacs --command hermes-emacs-mcp --env EMACS_EXEC_HOST=%s EMACS_EXEC_PORT=%d%s")
          (host (hermes-exec--detect-host))
          (command (format line host hermes-exec-port
                           (if token (format " EMACS_EXEC_TOKEN=%s" token) ""))))

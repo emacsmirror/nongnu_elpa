@@ -731,5 +731,19 @@ wins."
           (should (process-get conn 'hermes-exec-connection)))
       (delete-process conn))))
 
+;;; Group 8: bridge registration
+
+(ert-deftest hermes-exec-test-show-bridge-command-uses-packaged-entry-point ()
+  "The bridge command uses the packaged script and keeps environment options parsed."
+  (let ((hermes-exec-port 8237))
+    (cl-letf (((symbol-function 'hermes-exec--detect-host)
+               (lambda () "127.0.0.1"))
+              ((symbol-function 'hermes-exec--expected-token)
+               (lambda () nil)))
+      (should
+       (equal
+        (hermes-exec-show-bridge-command)
+        "hermes mcp add emacs --command hermes-emacs-mcp --env EMACS_EXEC_HOST=127.0.0.1 EMACS_EXEC_PORT=8237")))))
+
 (provide 'hermes-exec-tests)
 ;;; hermes-exec-tests.el ends here

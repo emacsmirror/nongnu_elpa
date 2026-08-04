@@ -39,6 +39,35 @@ Point =hermes-dashboard-transport-url= at your running dashboard:
   hermes dashboard --no-open --tui --host 127.0.0.1 --port 9119
 #+end_src
 
+* Optional Emacs bridges
+
+The dashboard/TUI connection above drives chat and management.  Two separate,
+optional paths let Hermes call into Emacs:
+
+- =hermes-capabilities= is the native dashboard capability-provider path.
+- =hermes-exec= is the HTTP eval endpoint used by the external stdio MCP bridge,
+  [[https://git.thanosapollo.org/hermes-emacs-plugin][hermes-emacs-plugin]].
+
+To use the stdio MCP bridge, install it from Git, enable the endpoint, then copy
+its registration command:
+
+#+begin_src sh
+  pipx install git+https://git.thanosapollo.org/hermes-emacs-plugin
+#+end_src
+
+#+begin_src emacs-lisp
+  (require 'hermes-exec)
+  (setq hermes-exec-enabled t
+        hermes-exec-host "127.0.0.1"
+        hermes-exec-require-approval t)
+  (hermes-exec-start)
+  ;; M-x hermes-exec-show-bridge-command
+#+end_src
+
+The generated command registers the packaged =hermes-emacs-mcp= entry point.
+For a non-loopback private address, also set the same =EMACS_EXEC_TOKEN= for
+Emacs and the bridge.  Do not expose the eval endpoint on a public interface.
+
 Desktop notifications default to completed chat replies, terminal chat errors,
 input requests, background-task results, and Kanban states that need attention.
 Cron failures use the same policy when cron failure monitoring is enabled.
