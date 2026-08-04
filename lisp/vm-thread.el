@@ -1463,7 +1463,10 @@ containing MSG."
   (if (eq major-mode 'vm-mode)
       (vm-thread-subtree msg)
     (with-current-buffer vm-mail-buffer
-      (if (vectorp 'vm-thread-obarray)
+      ;; The value, not the symbol: this asked `(vectorp 'vm-thread-obarray)',
+      ;; which is nil however things stand, so the singleton below was the only
+      ;; answer this branch could give.  Issue #563.
+      (if (vectorp vm-thread-obarray)
 	  (vm-thread-subtree msg)
 	(list msg)))))
 

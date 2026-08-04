@@ -651,6 +651,45 @@ problem.  Only the unbuilt case stopped going through the error path."
                (lambda (&rest _) (signal 'vm-thread-error '(deliberate)))))
       (should-not (vm-thread-root-p (car vm-message-list))))))
 
+
+;;; vm-thread-subtree-safe outside a folder buffer (issue #563)
+
+(ert-deftest vm-thread-subtree-safe-uses-the-whole-subtree-when-built ()
+  "REGRESSION: outside a vm-mode buffer, a built thread yields the whole subtree.
+Issue #563: the check was `(vectorp \\='vm-thread-obarray)\\=' -- the quoted symbol,
+never a vector -- where the other nine sites test the value.  So this branch could
+only ever answer \"threads have not been built\" and return the singleton, whatever
+the state of the folder.
+
+The callers are the `thread-any\\=' and `thread-all\\=' virtual folder selectors.  Taking
+the singleton would mean `thread-any\\=' matching only when the thread root matches, and
+`thread-all\\=' being trivially true whenever it does."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (vm-build-threads nil)
+    (let* ((folder (current-buffer))
+           (root (car vm-message-list))
+           (whole (length (vm-thread-subtree root))))
+      ;; the fixture has to be a real thread or this proves nothing
+      (should (> whole 1))
+      ;; from the folder buffer, the first branch
+      (let ((major-mode 'vm-mode))
+        (should (= whole (length (vm-thread-subtree-safe root)))))
+      ;; and from anywhere else, which is the branch that was dead
+      (let ((major-mode 'vm-virtual-mode)
+            (vm-mail-buffer folder))
+        (should (= whole (length (vm-thread-subtree-safe root))))))))
+
+(ert-deftest vm-thread-subtree-safe-falls-back-when-unbuilt ()
+  "With threads unbuilt it still answers with just the message, as documented.
+The control: the fix must not turn the fallback into a call that signals."
+  (vm-test-with-folder vm-thread-test-threaded-folder
+    (should-not (vectorp vm-thread-obarray))
+    (let ((folder (current-buffer))
+          (msg (car vm-message-list)))
+      (let ((major-mode 'vm-virtual-mode)
+            (vm-mail-buffer folder))
+        (should (equal (list msg) (vm-thread-subtree-safe msg)))))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here
