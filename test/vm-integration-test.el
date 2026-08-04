@@ -320,6 +320,62 @@ is the shape -- if `vm' ever calls itself again, a folder visit will count two."
           (should (= 1 (length vm-message-list))))
       (delete-directory dir t))))
 
+
+;;; vm-startup-hook (issue #565)
+
+(defvar vm-integration-test--startup-ran nil)
+
+(ert-deftest vm-integration-test-startup-hook-runs-once-at-startup ()
+  "`vm-startup-hook' runs when VM starts, and only then.
+Issue #565: VM had no hook for \"VM has just started\", which is the gap that
+produced the recursive call in `vm' removed for #240 -- a 2007 request for a way
+to run code on VM's first invocation, answered by making `vm' call itself so
+advice would see an extra call.
+
+Run through `vm-session-initialization', which is where it belongs: the first
+call does the work and runs the hook, and later calls do neither because
+`vm-session-beginning' is nil by then."
+  (require 'vm)
+  (let ((vm-init-file nil)
+        (vm-preferences-file nil)
+        (calls 0))
+    ;; a session that has not begun yet
+    (let ((vm-session-beginning t)
+          (vm-startup-hook (list (lambda () (setq calls (1+ calls))))))
+      (vm-session-initialization)
+      (should (= 1 calls))
+      ;; and again: the session has begun, so nothing runs a second time
+      (vm-session-initialization)
+      (should (= 1 calls)))))
+
+(ert-deftest vm-integration-test-startup-hook-runs-after-vm-is-set-up ()
+  "The hook runs last, so a function on it sees VM assembled and can override it.
+That is the placement decision on #565: running before VM's own setup would mean
+anything the hook did got overwritten, and `with-eval-after-load' already serves
+whoever wants to act first."
+  (require 'vm)
+  (let ((vm-init-file nil)
+        (vm-preferences-file nil)
+        (session-flag 'unset))
+    (let ((vm-session-beginning t)
+          (vm-startup-hook
+           (list (lambda ()
+                   ;; by now the session is marked as begun, so a hook function
+                   ;; may call VM commands without re-entering initialization
+                   (setq session-flag vm-session-beginning)))))
+      (vm-session-initialization))
+    (should (eq nil session-flag))))
+
+(ert-deftest vm-integration-test-startup-hook-is-a-hook-variable ()
+  "It is a `defcustom' of type hook, like VM's other hooks.
+So `add-hook' works on it and Customize offers it beside the rest."
+  (require 'vm-vars)
+  (should (boundp 'vm-startup-hook))
+  (should (eq 'hook (get 'vm-startup-hook 'custom-type)))
+  ;; Membership is recorded on the group, not on the variable.
+  (should (assq 'vm-startup-hook (get 'vm-hooks 'custom-group)))
+  (should (null (default-value 'vm-startup-hook))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
