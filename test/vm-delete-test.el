@@ -435,6 +435,52 @@ the folder's fetched-message bookkeeping already changed."
         (should-error (vm-expunge-message m3)))
       (should-not unregistered))))
 
+;;; What else expunging a message has to let go of
+
+;; Two things `vm-expunge-message' does besides splicing the list, both of them
+;; leaving a reference to a message that is no longer in the folder if they are
+;; missed, and neither of them noticed by any test until now.
+
+(ert-deftest vm-delete-test-expunge-drops-a-pointer-to-the-expunged-message ()
+  "`vm-last-message-pointer' is cleared when it holds the expunged message.
+It is the cons, not the message, so what it would otherwise hold is a cons
+spliced out of the list: `p' after an expunge would present a message the
+folder no longer has."
+  (vm-test-with-folder vm-delete-test--three-messages
+    (let ((m2 (vm-test-nth-message 1)))
+      (setq vm-last-message-pointer (cdr vm-message-list))
+      (should (eq m2 (car vm-last-message-pointer)))
+      (vm-expunge-message m2)
+      (should (null vm-last-message-pointer)))))
+
+(ert-deftest vm-delete-test-expunge-keeps-a-pointer-to-another-message ()
+  "Expunging one message leaves `vm-last-message-pointer' at another alone.
+The other half of the same branch: it is cleared because it points at the
+message going away, not on every expunge."
+  (vm-test-with-folder vm-delete-test--three-messages
+    (let ((head vm-message-list))
+      (setq vm-last-message-pointer head)
+      (vm-expunge-message (vm-test-nth-message 1))
+      (should (eq head vm-last-message-pointer))
+      (should (eq (vm-test-first-message) (car vm-last-message-pointer))))))
+
+(ert-deftest vm-delete-test-expunge-cancels-a-scheduled-summary-update ()
+  "The summary line position recorded on a message is cleared as it goes.
+`vm-su-start-of' is where the message's line sits in the summary buffer.  An
+expunged message keeps its `expunged' flag so the undo machinery can recognise
+it, but a stale position would have the next summary update write over another
+message's line."
+  (vm-test-with-folder vm-delete-test--three-messages
+    (let ((m2 (vm-test-nth-message 1)))
+      (with-temp-buffer
+        (insert "a summary line\n")
+        (vm-set-su-start-of m2 (point-min-marker)))
+      (should (vm-su-start-of m2))
+      (vm-expunge-message m2)
+      (should (null (vm-su-start-of m2)))
+      ;; The flag the undo machinery reads is still there.
+      (should (eq 'expunged (vm-deleted-flag m2))))))
+
 (provide 'vm-delete-test)
 
 ;;; vm-delete-test.el ends here

@@ -1487,6 +1487,56 @@ of its own -- there is then nothing to make the claim about."
               (should (= 0 (how-many "^X-UID:")))))
         (delete-directory dir t)))))
 
+;;; Renumbering part of a folder (issue #453)
+
+;; `vm-number-messages' takes a start point rather than renumbering the whole
+;; folder, and the first number comes from the message before it, reached
+;; through the reverse link.  That is how every splice renumbers: expunge, sort
+;; and `vm-move-message-forward' all set `vm-numbering-redo-start-point' to a
+;; cons and let this work out the numbers.  Only the whole-folder case had a
+;; test, so an off-by-one here was invisible.
+
+(ert-deftest vm-folder-test-numbering-continues-from-the-previous-message ()
+  "Renumbering from the middle carries on from the number before it.
+The numbers of the messages ahead of the start point are not recomputed and not
+consulted, so a start point that took its first number by counting would give
+this folder two messages numbered 2."
+  (vm-test-with-folder vm-folder-test--four-messages
+    ;; Parsing a folder does not number it, so start from a numbered folder.
+    (vm-number-messages)
+    (should (equal '("1" "2" "3" "4") (mapcar #'vm-number-of vm-message-list)))
+    ;; Make the numbers past the start point wrong, so what comes back has to
+    ;; have been computed rather than left alone.
+    (vm-set-number-of (vm-test-nth-message 2) "99")
+    (vm-set-number-of (vm-test-nth-message 3) "99")
+    (vm-number-messages (nthcdr 2 vm-message-list))
+    (should (equal '("1" "2" "3" "4") (mapcar #'vm-number-of vm-message-list)))
+    (should (equal '("  1" "  2" "  3" "  4")
+                   (mapcar #'vm-padded-number-of vm-message-list)))))
+
+(ert-deftest vm-folder-test-numbering-from-the-first-message-starts-at-one ()
+  "A start point at the head of the folder has no message before it.
+The reverse link is nil there, which is the branch that starts the count at 1
+instead of consulting a predecessor."
+  (vm-test-with-folder vm-folder-test--four-messages
+    (mapc (lambda (m) (vm-set-number-of m "99")) vm-message-list)
+    (vm-number-messages vm-message-list)
+    (should (equal '("1" "2" "3" "4") (mapcar #'vm-number-of vm-message-list)))))
+
+(ert-deftest vm-folder-test-numbering-stops-at-the-end-point ()
+  "Renumbering stops before the end point and leaves the rest as it was.
+`vm-move-message-forward' relies on this: it renumbers only the stretch of the
+folder its move disturbed."
+  (vm-test-with-folder vm-folder-test--four-messages
+    (mapc (lambda (m) (vm-set-number-of m "99")) vm-message-list)
+    ;; Messages 1 and 2, not 3 and 4.
+    (vm-number-messages vm-message-list (nthcdr 2 vm-message-list))
+    (should (equal '("1" "2" "99" "99") (mapcar #'vm-number-of vm-message-list)))
+    ;; And the highest-number line of the mode line is only updated for a
+    ;; renumbering that ran to the end of the folder.
+    (vm-number-messages)
+    (should (equal "4" vm-ml-highest-message-number))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

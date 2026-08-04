@@ -425,6 +425,146 @@ the folder would lose a different message than the one deleted."
       (should (vm-test-reverse-links-consistent-p))
       (should (equal others (mapcar #'vm-su-subject vm-message-list))))))
 
+;;; Moving one message about (issue #453)
+
+;; `vm-move-message-forward' is the third place that rewrites reverse links, and
+;; the only one that both removes and reinserts a cons.  It had no test at all:
+;; dropping either of its four `vm-set-reverse-link-of' calls left the whole
+;; suite passing.  A wrong link here is not visible in the summary, and shows up
+;; later as an expunge removing a different message.
+;;
+;; `vm-move-message-backward' is `vm-move-message-forward' with the count
+;; negated, so it needs no separate coverage of the splice.
+
+(defun vm-sort-test--subjects ()
+  "Return the subjects of `vm-message-list', in order."
+  (mapcar #'vm-su-subject vm-message-list))
+
+(defun vm-sort-test--conses ()
+  "Return every cons of `vm-message-list', so membership can be asserted."
+  (let ((mp vm-message-list) (all nil))
+    (while mp
+      (push mp all)
+      (setq mp (cdr mp)))
+    all))
+
+(ert-deftest vm-sort-test-moving-a-message-forward-relinks-the-list ()
+  "Moving a message one place forward leaves the links and numbers right.
+Moving the head is the case where the message being moved has no link and the
+one it displaces must be given none."
+  (vm-sort-test--with-real-folder 4
+    (let ((folder (current-buffer)))
+      (setq vm-message-pointer vm-message-list)
+      (vm-move-message-forward 1)
+      (with-current-buffer folder
+        (should (equal '("subject 03" "subject 04" "subject 02" "subject 01")
+                       (vm-sort-test--subjects)))
+        (should (vm-test-reverse-links-consistent-p))
+        ;; Renumbering starts from the reverse link of the redo start point.
+        (should (equal '("1" "2" "3" "4")
+                       (mapcar #'vm-number-of vm-message-list)))
+        ;; The message moved is still the selected one.
+        (should (equal "subject 04" (vm-su-subject (car vm-message-pointer))))))))
+
+(ert-deftest vm-sort-test-moving-a-message-several-places-relinks-the-list ()
+  "A move of more than one place lands the message in the middle, both ways.
+Two moves, so the second starts from a list this function itself built."
+  (vm-sort-test--with-real-folder 5
+    (let ((folder (current-buffer)))
+      (setq vm-message-pointer vm-message-list)
+      (vm-move-message-forward 3)
+      (with-current-buffer folder
+        (should (equal '("subject 04" "subject 03" "subject 02"
+                         "subject 05" "subject 01")
+                       (vm-sort-test--subjects)))
+        (should (vm-test-reverse-links-consistent-p))
+        (vm-move-message-backward 2))
+      (with-current-buffer folder
+        (should (equal '("subject 04" "subject 05" "subject 03"
+                         "subject 02" "subject 01")
+                       (vm-sort-test--subjects)))
+        (should (vm-test-reverse-links-consistent-p))
+        (should (equal '("1" "2" "3" "4" "5")
+                       (mapcar #'vm-number-of vm-message-list)))))))
+
+(ert-deftest vm-sort-test-moving-a-message-to-the-end-relinks-the-list ()
+  "Moving the last message backward, and the one before it forward.
+The tail is the case where the moved message has nothing after it, so the
+reinsertion has to give the new last message a nil cdr and the displaced one a
+link to it."
+  (vm-sort-test--with-real-folder 4
+    (let ((folder (current-buffer)))
+      (setq vm-message-pointer (last vm-message-list))
+      (vm-move-message-backward 1)
+      (with-current-buffer folder
+        (should (equal '("subject 04" "subject 03" "subject 01" "subject 02")
+                       (vm-sort-test--subjects)))
+        (should (vm-test-reverse-links-consistent-p))
+        (setq vm-message-pointer (nthcdr 2 vm-message-list))
+        (vm-move-message-forward 1))
+      (with-current-buffer folder
+        (should (equal '("subject 04" "subject 03" "subject 02" "subject 01")
+                       (vm-sort-test--subjects)))
+        (should (vm-test-reverse-links-consistent-p))))))
+
+(ert-deftest vm-sort-test-moving-past-the-end-of-the-folder-signals ()
+  "There is nowhere past the ends to move to, and the list is left alone.
+`vm-move-message-pointer' signals, and it does so while looking for the
+destination, before anything is spliced."
+  (vm-sort-test--with-real-folder 3
+    (let ((folder (current-buffer))
+          (vm-circular-folders nil)
+          (before nil))
+      (setq before (vm-sort-test--subjects))
+      (setq vm-message-pointer vm-message-list)
+      (should-error (vm-move-message-backward 1) :type 'beginning-of-folder)
+      (with-current-buffer folder
+        (setq vm-message-pointer (last vm-message-list))
+        (should-error (vm-move-message-forward 1) :type 'end-of-folder))
+      (with-current-buffer folder
+        (should (equal before (vm-sort-test--subjects)))
+        (should (vm-test-reverse-links-consistent-p))))))
+
+(ert-deftest vm-sort-test-expunging-after-a-move-removes-that-message ()
+  "REGRESSION: the links a move leaves behind are the ones expunge follows.
+`vm-expunge-message' picks the cons to splice from the reverse link, so a link
+left wrong by the move removes a message nobody deleted.  This is the failure a
+links check on its own only implies."
+  (vm-sort-test--with-real-folder 4
+    (let ((folder (current-buffer)))
+      (setq vm-message-pointer vm-message-list)
+      (vm-move-message-forward 2)
+      (with-current-buffer folder
+        (should (equal '("subject 03" "subject 02" "subject 04" "subject 01")
+                       (vm-sort-test--subjects)))
+        (vm-set-deleted-flag (nth 2 vm-message-list) t)   ; subject 04 again
+        (vm-expunge-folder))
+      (with-current-buffer folder
+        (should (equal '("subject 03" "subject 02" "subject 01")
+                       (vm-sort-test--subjects)))
+        (should (vm-test-reverse-links-consistent-p))))))
+
+(ert-deftest vm-sort-test-sorting-keeps-the-selected-message-selected ()
+  "Sorting moves the pointers to where their messages ended up.
+`vm-sort-messages' rebuilds the list, so the old conses are gone; it finds each
+pointer's new cons through the message's rebuilt reverse link.  Missed, the
+folder jumps to its first message on every sort, and `vm-last-message-pointer'
+comes to mean a different message than the one the user was last at."
+  (vm-sort-test--with-real-folder 5
+    (let ((selected (vm-test-nth-message 3))
+          (previous (vm-test-nth-message 1)))
+      (setq vm-message-pointer (nthcdr 3 vm-message-list))
+      (setq vm-last-message-pointer (nthcdr 1 vm-message-list))
+      ;; Subjects descend in the file, so this really reorders.
+      (vm-sort-messages "subject")
+      (should (equal (sort (vm-sort-test--subjects) #'string<)
+                     (vm-sort-test--subjects)))
+      (should (eq selected (car vm-message-pointer)))
+      (should (eq previous (car vm-last-message-pointer)))
+      ;; And the conses really are the ones in the list now.
+      (should (memq vm-message-pointer (vm-sort-test--conses)))
+      (should (memq vm-last-message-pointer (vm-sort-test--conses))))))
+
 (provide 'vm-sort-test)
 
 ;;; vm-sort-test.el ends here
