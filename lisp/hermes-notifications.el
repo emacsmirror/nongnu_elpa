@@ -29,10 +29,7 @@
 (require 'cl-lib)
 (require 'subr-x)
 
-(defvar notifications-on-action-map nil)
-(defvar notifications-on-action-object nil)
-
-(declare-function dbus-unregister-object "dbusbind.c")
+(declare-function dbus-unregister-object "dbus.el")
 
 (defcustom hermes-notifications-events
   '(chat-reply chat-error prompt background kanban-attention cron-failure)
@@ -75,14 +72,17 @@ WIDTH defaults to 160 columns."
 
 (defun hermes-notifications--remove-action-callback (callback)
   "Remove CALLBACK from pending desktop notification actions."
-  (setq notifications-on-action-map
-        (cl-delete callback notifications-on-action-map
-                   :key #'cadr :test #'eq))
-  (when (and (null notifications-on-action-map)
-             notifications-on-action-object
-             (fboundp 'dbus-unregister-object))
-    (dbus-unregister-object notifications-on-action-object)
-    (setq notifications-on-action-object nil)))
+  (with-suppressed-warnings
+      ((free-vars notifications-on-action-map
+                  notifications-on-action-object))
+    (setq notifications-on-action-map
+          (cl-delete callback notifications-on-action-map
+                     :key #'cadr :test #'eq))
+    (when (and (null notifications-on-action-map)
+               notifications-on-action-object
+               (fboundp 'dbus-unregister-object))
+      (dbus-unregister-object notifications-on-action-object)
+      (setq notifications-on-action-object nil))))
 
 (defun hermes-notifications--fallback (title body)
   "Show notification TITLE and BODY in the echo area and return nil."

@@ -1463,7 +1463,7 @@ messages are fetched and rendered; the durable session continues on send."
 
 ;; `hermes-sessions' is downstream of this file; its autoloaded browser
 ;; command is the one sanctioned upward reference.
-(declare-function hermes-list-sessions "hermes-sessions")
+(declare-function hermes-list-sessions "hermes-sessions" t t)
 
 (defun hermes-chat--usage-content (result)
   "Return display text for a `session.usage' RESULT."

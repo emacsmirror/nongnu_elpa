@@ -509,13 +509,13 @@ checked to exclude session-id-bearing slots."
 
 (ert-deftest hermes-capabilities-project-entry-shape ()
   "A non-nil project yields an absolute root and a name basename."
-  (cl-letf* ((fake-project (vector 'project "/home/user/proj/"))
-             ((symbol-function 'project-root)
-              (lambda (_p) "/home/user/proj/")))
-    (let ((res (hermes-capabilities--project-entry fake-project)))
-      (should (equal (alist-get 'root res)
-                     (expand-file-name "/home/user/proj/")))
-      (should (equal (alist-get 'name res) "proj")))))
+  (let ((root (expand-file-name "proj/" temporary-file-directory)))
+    (cl-letf* ((fake-project (vector 'project root))
+               ((symbol-function 'project-root)
+                (lambda (_p) root)))
+      (let ((res (hermes-capabilities--project-entry fake-project)))
+        (should (equal (alist-get 'root res) root))
+        (should (equal (alist-get 'name res) "proj"))))))
 
 (ert-deftest hermes-capabilities-buffer-read-full ()
   "`buffer.read' returns the full content of a small buffer."

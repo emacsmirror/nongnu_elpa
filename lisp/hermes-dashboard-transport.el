@@ -39,7 +39,7 @@
 (declare-function websocket-open "ext:websocket")
 (declare-function websocket-send-text "ext:websocket")
 (declare-function websocket-send "ext:websocket")
-(declare-function make-websocket-frame "ext:websocket")
+(declare-function make-websocket-frame "ext:websocket" t t)
 (declare-function websocket-frame-text "ext:websocket")
 (declare-function websocket-close "ext:websocket")
 

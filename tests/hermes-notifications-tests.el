@@ -10,6 +10,13 @@
 (require 'cl-lib)
 (require 'hermes-notifications)
 
+(defvar notifications-on-action-map)
+(defvar notifications-on-action-object)
+
+(ert-deftest hermes-notifications-load-keeps-notifications-optional ()
+  "Loading the Hermes boundary does not load `notifications'."
+  (should-not (featurep 'notifications)))
+
 (ert-deftest hermes-notifications-default-events-are-high-signal ()
   "Default notifications cover unattended work without routine Kanban success."
   (should (equal hermes-notifications-events
@@ -102,7 +109,9 @@
 (ert-deftest hermes-notifications-fall-back-to-echo-area ()
   "Unavailable desktop notifications degrade to one concise echo message."
   (let (text)
-    (cl-letf (((symbol-function 'require) (lambda (&rest _) nil))
+    (cl-letf (((symbol-function 'require)
+               (lambda (feature &rest _)
+                 (not (eq feature 'notifications))))
               ((symbol-function 'message)
                (lambda (format-string &rest args)
                  (setq text (apply #'format format-string args)))))

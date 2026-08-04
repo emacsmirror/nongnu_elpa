@@ -48,11 +48,27 @@ test:
 	@$(ENV_MAKE) do-test
 
 do-test:
-	@for f in $(TESTS); do \
-	  echo "Testing $$f..."; \
-	  $(BATCH) -l ert $(ERT_OPTS) -l $$f \
-	    --eval '(ert-run-tests-batch-and-exit (quote $(SELECTOR)))' || exit 1; \
-	done
+	@test_root=$$(mktemp -d) || exit 1; \
+	  trap 'rm -rf "$$test_root"' 0 1 2 15; \
+	  mkdir -p "$$test_root/home" "$$test_root/cache" \
+	    "$$test_root/config" "$$test_root/data" "$$test_root/state" \
+	    "$$test_root/tmp" || exit 1; \
+	  run_isolated () { \
+	    env -i HOME="$$test_root/home" \
+	      XDG_CACHE_HOME="$$test_root/cache" \
+	      XDG_CONFIG_HOME="$$test_root/config" \
+	      XDG_DATA_HOME="$$test_root/data" \
+	      XDG_STATE_HOME="$$test_root/state" \
+	      TMPDIR="$$test_root/tmp" \
+	      LANG=C.UTF-8 PATH="$$PATH" TERM=dumb "$$@"; \
+	  }; \
+	  run_isolated $(BATCH) --eval \
+	    '(when (or (getenv "HERMES_DASHBOARD_SESSION_TOKEN") (getenv "EMACS_EXEC_TOKEN")) (error "Test environment contains Hermes credentials"))' || exit 1; \
+	  for f in $(TESTS); do \
+	    echo "Testing $$f..."; \
+	    run_isolated $(BATCH) -l ert $(ERT_OPTS) -l $$f \
+	      --eval '(ert-run-tests-batch-and-exit (quote $(SELECTOR)))' || exit 1; \
+	  done
 
 lint:
 	@$(ENV_MAKE) do-lint
