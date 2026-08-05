@@ -118,7 +118,16 @@
     (process-put client 'vm-imap-relay relay)
     (process-put client 'vm-imap-relay-upstream upstream)
     (set-process-filter client #'vm-imap-relay--client-filter)
-    (set-process-coding-system client 'binary 'binary)))
+    (set-process-coding-system client 'binary 'binary)
+    ;; An accepted connection gets a buffer named after its process, and this
+    ;; relay never reads it: everything the client sends goes to
+    ;; `vm-imap-relay--client-filter'.  Left alone it outlives the test, one per
+    ;; connection.  Detached before it is killed, so killing it does not ask
+    ;; about the live process.
+    (let ((buffer (process-buffer client)))
+      (set-process-buffer client nil)
+      (when (buffer-live-p buffer)
+        (kill-buffer buffer)))))
 
 (cl-defun vm-imap-relay-start (&key host port drop-on drop-after reject bad)
   "Start a relay in front of the IMAP server at HOST and PORT.
