@@ -47,6 +47,8 @@
 		  (&optional read-only))
 (declare-function vm-get-folder-buffer "vm"
 		  (folder))
+(declare-function vm-quit "vm-folder"
+		  (&optional no-expunge no-change))
 
 
 (defvar inhibit-local-variables) ;; FIXME: Unknown var.  XEmacs?
@@ -1200,6 +1202,77 @@ folders currently being viewed."
 	  (error "Invalid selector"))
       (list selector real-arg))))
 
+
+(defun vm-virtual-buffers-live ()
+  "Return the live virtual folder buffers of the current real folder.
+`vm-virtual-buffers' cannot be trusted on its own: a virtual folder buffer
+that was killed rather than quit is still registered there.  The dead ones are
+dropped from the list as a side effect, as everything else walking it does."
+  (setq vm-virtual-buffers (vm-delete 'buffer-name vm-virtual-buffers t)))
+
+(defun vm-virtual-buffers-modified ()
+  "Return the live virtual folder buffers of this folder that have changes."
+  (vm-delete 'buffer-modified-p
+	     (copy-sequence (vm-virtual-buffers-live)) t))
+
+;;;###autoload
+(defun vm-virtual-kill-buffer-query ()
+  "Ask before killing a real folder whose virtual folders hold changes.
+On `kill-buffer-query-functions' in a real folder buffer: killing it kills the
+virtual folders mirroring it, which `vm-virtual-kill-buffers' does, and any
+changes they have go with them.  Returning nil stops the kill.
+
+A virtual folder is marked modified by a change to any of its messages, and is
+unmarked when every real folder behind it has been saved, so this asks exactly
+when there is something to lose.  Issue #573."
+  (let ((modified (and (eq major-mode 'vm-mode)
+		       (vm-virtual-buffers-modified))))
+    (or (null modified)
+	;; A batch Emacs has nobody to ask, and `kill-buffer' there must not
+	;; block on a prompt no one can answer.
+	noninteractive
+	(y-or-n-p
+	 (format "%s: killing this folder kills %s, with unsaved changes; kill anyway? "
+		 (buffer-name)
+		 (mapconcat #'buffer-name modified ", "))))))
+
+;;;###autoload
+(defun vm-virtual-kill-buffers ()
+  "Kill the virtual folders of the real folder buffer being killed.
+On `kill-buffer-hook' in a real folder buffer.  Every message in a virtual
+folder keeps its text in the real folder's buffer, so once that buffer is gone
+the virtual folder can do almost nothing with what it lists: it cannot expunge
+\(issue #573), and an expunge that was allowed to finish would take the message
+out of the virtual folder while its text stayed in a file nobody has open.
+Killing the virtual folders too leaves VM in a state it can reason about.
+
+`vm-virtual-kill-buffer-query' has already asked about any changes, and it is
+on `kill-buffer-query-functions' so that the answer can still stop the kill;
+here the buffer is going whatever happens.
+
+Each virtual folder is quit rather than killed, so that its messages are
+deregistered from every real folder it mirrors and not only from this one, and
+its summary and presentation buffers go with it.  A virtual folder that fails
+to quit is reported and the rest still go: this runs while a buffer is being
+killed, which cannot be called off."
+  (when (eq major-mode 'vm-mode)
+    (let ((buffers (copy-sequence (vm-virtual-buffers-live))))
+      (when buffers
+	(vm-inform 5 "%s: quitting virtual folder%s %s"
+		   (buffer-name) (if (cdr buffers) "s" "")
+		   (mapconcat #'buffer-name buffers ", "))
+	(vm-virtual-kill-buffer-list buffers)))))
+
+(defun vm-virtual-kill-buffer-list (buffers)
+  "Quit each virtual folder buffer in BUFFERS, reporting any that will not."
+  (dolist (buffer buffers)
+    (condition-case error-data
+	(with-current-buffer buffer
+	  (let ((vm-confirm-quit nil))
+	    (vm-quit t t)))
+      (error (vm-warn 0 2 "Unable to quit virtual folder %s: %s"
+		      (buffer-name buffer)
+		      (prin1-to-string error-data))))))
 
 ;;;###autoload
 (defun vm-virtual-quit (&optional no-expunge no-change)

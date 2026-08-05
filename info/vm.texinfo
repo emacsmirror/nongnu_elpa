@@ -5639,6 +5639,15 @@ its underlying real folders will also be quit, unless they were previously
 visited in the Emacs session.  We call such virtual folders
 @dfn{defined virtual folders}.
 
+@cindex killing a folder buffer
+A virtual message keeps its text in the buffer of the real folder it came
+from, so a virtual folder cannot outlive that buffer: killing a real folder
+buffer therefore quits the virtual folders over it as well.  If any of them
+has unsaved changes, VM names it and asks before going ahead, and answering no
+leaves everything as it was.  Quitting the real folder with @kbd{q}
+(@code{vm-quit}) instead does not take the virtual folders with it; it takes
+that folder's messages out of them and leaves them open.
+
 @menu
 * Search Folders::	Virtual folders created interactively
 * Defined Folders::	Virtual folders defined in advance
