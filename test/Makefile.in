@@ -21,7 +21,7 @@ LEAK_REPORT = leak-report.el
 # Test targets
 ##############################################################################
 
-.PHONY: test test-coverage test-verbose test-one test-imap test-pop test-leaks \
+.PHONY: test test-assert test-coverage test-verbose test-one test-imap test-pop test-leaks \
 	compile-lisp
 
 # Byte-compile the lisp first, so the tests exercise the compiled code
@@ -37,6 +37,19 @@ compile-lisp:
 # Run all tests in batch mode
 test: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(TEST_RUNNER)
+
+# Run the suite with VM's own assertions checked.  `vm-assertion-checking-off'
+# defaults to t, so a `vm-assert' does nothing in the field and nothing in a
+# normal test run either: this target is the only thing that evaluates them.
+# `vm-assert' binds debug-on-error, which stops a batch run, hence
+# inhibit-debugger.  Keep this passing: an assertion that fires is either a
+# broken invariant or a test setting up a state no real caller is in.
+test-assert: compile-lisp
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp \
+	    --eval '(setq inhibit-debugger t)' \
+	    -l $(srcdir)/$(TEST_INIT) \
+	    --eval '(setq vm-assertion-checking-off nil)' \
+	    -l $(srcdir)/$(TEST_RUNNER)
 
 # Run only the live IMAP tests, for when that is all you are working on.
 # They are not exclusive to this target: given a gitignored vm-live-config.el
