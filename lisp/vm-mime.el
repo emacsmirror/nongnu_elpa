@@ -3431,6 +3431,75 @@ emacs-w3m."
    :layout layout 
    :disposable t))
 
+(defun vm-mime-pgp-encrypted-layout-p (layout)
+  "Return non-nil if LAYOUT is an RFC 3156 PGP/MIME encrypted entity.
+That is a `multipart/encrypted\' of exactly two parts: a version stamp of type
+application/pgp-encrypted, and the ciphertext as application/octet-stream."
+  (let ((parts (vm-mm-layout-parts layout)))
+    (and (= (length parts) 2)
+	 (vm-mime-types-match "application/pgp-encrypted"
+			      (car (vm-mm-layout-type (car parts))))
+	 (vm-mime-types-match "application/octet-stream"
+			      (car (vm-mm-layout-type (nth 1 parts)))))))
+
+(defun vm-mime-decrypt-pgp-string (layout)
+  "Return the plaintext of the PGP ciphertext part LAYOUT.
+Decrypts with EPG, the interface to GnuPG that Emacs comes with, so the
+passphrase is handled by whatever `epg-pinentry-mode\' says and by the agent,
+not by VM.  Signals if the ciphertext cannot be decrypted."
+  (require 'epg)
+  (let ((context (epg-make-context 'OpenPGP))
+	(ciphertext
+	 (with-current-buffer (vm-buffer-of (vm-mm-layout-message layout))
+	   (save-restriction
+	     (widen)
+	     (buffer-substring-no-properties (vm-mm-layout-body-start layout)
+					     (vm-mm-layout-body-end layout))))))
+    (epg-decrypt-string context ciphertext)))
+
+(defun vm-mime-display-internal-multipart/encrypted (layout)
+  "Display the PGP/MIME encrypted LAYOUT by decrypting it.
+RFC 3156 is what Thunderbird, Gnus and Mutt send for OpenPGP mail: the message
+the sender wrote is a MIME entity of its own, encrypted, and carried as the
+second part of a `multipart/encrypted\'.  Decrypting it and displaying what is
+inside shows the message as though it had been sent in the clear, which is what
+the reader wants to see (issue #490).
+
+Anything else claiming to be `multipart/encrypted\', and every message when
+`vm-mime-decrypt-pgp-parts\' is nil, is displayed part by part as it arrived.
+So is a message that cannot be decrypted, after saying why: the parts are all
+there is, and offering them is better than an empty display."
+  (if (not (and vm-mime-decrypt-pgp-parts
+		(vm-mime-pgp-encrypted-layout-p layout)))
+      (vm-mime-display-internal-multipart/mixed layout)
+    (let ((plaintext
+	   (condition-case error-data
+	       (vm-mime-decrypt-pgp-string (nth 1 (vm-mm-layout-parts layout)))
+	     (error
+	      (vm-warn 0 2 "Cannot decrypt this message: %s"
+		       (error-message-string error-data))
+	      nil))))
+      (if (null plaintext)
+	  (vm-mime-display-internal-multipart/mixed layout)
+	;; The layout of the decrypted entity points into this buffer, so it
+	;; has to outlive the display: VM kills it with the message.
+	(let ((work-buffer (vm-make-work-buffer " *vm-decrypted*"))
+	      (entity nil))
+	  (vm-register-message-garbage 'kill-buffer work-buffer)
+	  (with-current-buffer work-buffer
+	    (insert plaintext)
+	    ;; RFC 3156 has the entity canonicalised with CRLF line endings
+	    ;; before encryption, and this is a buffer for Emacs now.
+	    (goto-char (point-min))
+	    (while (search-forward "\r\n" nil t)
+	      (replace-match "\n" t t))
+	    (setq entity (vm-mime-parse-entity-safe
+			  nil :passing-message-only t)))
+	  (if entity
+	      (vm-decode-mime-layout entity)
+	    ;; It decrypted but it is not MIME: show it as the text it is.
+	    (insert-buffer-substring work-buffer)))))))
+
 (fset 'vm-mime-display-internal-multipart/parallel
       'vm-mime-display-internal-multipart/mixed)
 

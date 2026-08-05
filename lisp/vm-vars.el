@@ -1533,6 +1533,22 @@ There is no need to list them here."
                  (const :tag "Never use Emacs' internal display capabilities" nil) 
                  (repeat (string :tag "MIME Type"))))
 
+(defcustom vm-mime-decrypt-pgp-parts t
+  "*Whether to decrypt PGP/MIME messages when displaying them.
+An RFC 3156 message, which is what Thunderbird, Gnus and Mutt send for OpenPGP
+mail, carries the message its sender wrote as an encrypted MIME entity inside a
+`multipart/encrypted\' part.  With this set, VM decrypts that entity and
+displays what is inside, so the message reads as though it had been sent in the
+clear.  With it nil the parts are shown as they arrived, which is a version
+stamp and a lump of ciphertext.
+
+Decryption uses EPG, the interface to GnuPG that Emacs comes with, so a
+passphrase is asked for by the agent and by whatever `epg-pinentry-mode\'
+says.  A message that cannot be decrypted is displayed part by part, with a
+warning saying why."
+  :group 'vm-mime
+  :type 'boolean)
+
 (defcustom vm-mime-internal-content-type-exceptions nil
   "*List of MIME content types that should not be displayed internally.
 This is an exception list for the types specified in

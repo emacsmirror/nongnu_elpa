@@ -177,6 +177,16 @@ VM 8.?.?
     about 50000 messages.  `vm-reverse-link-of' is unchanged; soft data slot 6
     is now unused and `vm-set-reverse-link-sym-of' is gone.  Affects add-ons
     that touch the message structure directly, nothing else.
+  * PGP/MIME messages are now decrypted for display.  An encrypted message
+    from Thunderbird, Gnus or Mutt arrives as a `multipart/encrypted' entity
+    whose real content is inside the ciphertext, and VM showed the envelope:
+    a version stamp and a lump of encrypted data, each with a save button.
+    VM now decrypts it with EPG, the interface to GnuPG that Emacs comes with,
+    and displays what the sender wrote.  Set `vm-mime-decrypt-pgp-parts' to
+    nil for the old behaviour.  A message that cannot be decrypted is still
+    shown part by part, with a warning saying why.  This needs no add-on:
+    vm-pgg did the same thing through the obsolete pgg library and its own
+    passphrase prompt, and is deprecated.
 
 
 VM 8.3.2 released 2025-12-29
