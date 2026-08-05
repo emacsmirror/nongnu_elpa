@@ -192,6 +192,15 @@ VM 8.?.?
 VM 8.3.2 released 2025-12-29
 
   CHANGES
+  * PGP signatures on incoming mail are now checked.  A signed message from
+    Thunderbird, Gnus or Mutt is a `multipart/signed' entity with a detached
+    signature beside it, and VM showed that signature as an attachment and
+    said nothing about it, having only ever verified S/MIME.  With
+    `vm-mime-verify-signatures' set, VM displays the signed text and a line
+    saying what EPG makes of the signature: who signed it, whether the
+    signature is good, and how much the key is trusted.  Senders disagree
+    about whether the line ending that ends the entity is part of what was
+    signed, so both readings are tried before a signature is called bad.
   * Address problem with 8.3.1 change where some user configurations for emacs 30
     need vm to evaluate autoloads.el.
 

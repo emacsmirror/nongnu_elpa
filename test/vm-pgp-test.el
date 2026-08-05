@@ -143,6 +143,69 @@ ciphertext so that it cannot be decrypted."
               ciphertext
               "\n------OUTER--\n\n"))))
 
+(defun vm-pgp-test--write-signed-message (file &optional tamper)
+  "Write an RFC 3156 PGP-signed message to FILE, as a folder.
+TAMPER alters the signed text after signing, which is what a message that was
+changed on its way looks like."
+  (require 'epg)
+  (let* ((signed (concat "Content-Type: text/plain; charset=UTF-8\n"
+                         "\n"
+                         "Signed hello!\n"))
+         (context (vm-pgp-test--context))
+         ;; RFC 3156 signs the entity as transmitted, with CRLF endings.
+         (canonical (replace-regexp-in-string "\n" "\r\n" signed t t))
+         (signature (progn (epg-context-set-armor context t)
+                           (epg-sign-string context canonical t))))
+    (when tamper
+      (setq signed (replace-regexp-in-string "Signed hello!" "Tampered!"
+                                             signed t t)))
+    (with-temp-file file
+      (insert "From signer@example.com Mon Jan  1 00:00:00 2024\n"
+              "From: Signer <vmtest@example.com>\n"
+              "To: VM User <vmtest@example.com>\n"
+              "Subject: signed mail\n"
+              "Message-ID: <pgpsigned-1@example.com>\n"
+              "MIME-Version: 1.0\n"
+              "Content-Type: multipart/signed; boundary=\"----SIG\";\n"
+              " micalg=pgp-sha256; protocol=\"application/pgp-signature\"\n"
+              "\n"
+              "------SIG\n"
+              signed
+              "------SIG\n"
+              "Content-Type: application/pgp-signature; name=\"signature.asc\"\n"
+              "Content-Description: OpenPGP digital signature\n\n"
+              signature
+              "\n------SIG--\n\n"))))
+
+(defmacro vm-pgp-test--with-signed-message (spec &rest body)
+  "Write a signed PGP/MIME folder, visit it, decode it, then run BODY.
+SPEC is (BUFFER-VAR &optional TAMPER), TAMPER going to
+`vm-pgp-test--write-signed-message\'."
+  (declare (indent 1) (debug t))
+  `(let ((vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-current-warning vm-current-warning)
+         (before (buffer-list))
+         ,(car spec))
+     (require 'vm)
+     (unwind-protect
+         (let ((file (expand-file-name "signed" home)))
+           (vm-pgp-test--write-signed-message file ,(nth 1 spec))
+           (vm-visit-folder file)
+           (vm-decode-mime-message)
+           (setq ,(car spec) (or vm-presentation-buffer (current-buffer)))
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer)))))))
+
 (defmacro vm-pgp-test--with-message (spec &rest body)
   "Write a PGP/MIME folder, visit it, decode the message, then run BODY.
 SPEC is (BUFFER-VAR &optional BODY-TYPE CORRUPT).  BUFFER-VAR is bound to the
@@ -238,6 +301,56 @@ one carries its second part as text/plain, so it is not ours to decrypt."
       (vm-pgp-test--with-message (presentation "text/plain")
         (should-not (vm-pgp-test--shows presentation "Hello world!"))
         (should (vm-pgp-test--shows presentation "BEGIN PGP MESSAGE"))))))
+
+;;; Signed messages
+
+;; RFC 3156 sends a signed message as the entity itself and a detached
+;; signature beside it.  VM verified only S/MIME signatures; a PGP one was
+;; displayed as an attachment and never checked, unless the deprecated vm-pgg
+;; was loaded.
+
+(ert-deftest vm-pgp-test-signed-message-is-verified ()
+  "A PGP-signed message shows its text and says the signature is good.
+It has to be the word from EPG and not merely the presence of a report: with a
+weaker assertion than this, the first version of the verification reported
+\"Bad signature\" for a message the test had just signed, and passed.
+
+The report names the key rather than saying only that the signature was good,
+because whose key it was is what the reader needs."
+  (vm-pgp-test--with-keyring
+    (let ((vm-mime-verify-signatures t))
+      (vm-pgp-test--with-signed-message (presentation)
+        (should (vm-pgp-test--shows presentation "Signed hello!"))
+        (should (vm-pgp-test--shows presentation "PGP signature: Good signature"))
+        (should (vm-pgp-test--shows presentation "vmtest@example.com"))
+        ;; The signature part itself is not left on display as an attachment.
+        (should-not (vm-pgp-test--shows presentation "signature.asc"))
+        ;; And the message appears once.  A handler that does not say it is
+        ;; done leaves the generic path to display the whole thing again.
+        (should (= 1 (with-current-buffer presentation
+                       (how-many "Signed hello!" (point-min) (point-max)))))))))
+
+(ert-deftest vm-pgp-test-tampered-message-says-so ()
+  "A signed message whose text was altered is displayed, and the report says so.
+The text is shown either way: hiding it would tell the reader less than showing
+it with a warning does."
+  (vm-pgp-test--with-keyring
+    (let ((vm-mime-verify-signatures t))
+      (vm-pgp-test--with-signed-message (presentation t)
+        (should (vm-pgp-test--shows presentation "Tampered!"))
+        (should (vm-pgp-test--shows presentation "PGP signature: Bad signature"))
+        (should (= 1 (with-current-buffer presentation
+                       (how-many "Tampered!" (point-min) (point-max)))))))))
+
+(ert-deftest vm-pgp-test-verification-can-be-switched-off ()
+  "With `vm-mime-verify-signatures\' nil the parts are shown as they arrived.
+That is the default, and it leaves the signature as an attachment, which is what
+VM did with PGP signatures before it could check them."
+  (vm-pgp-test--with-keyring
+    (let ((vm-mime-verify-signatures nil))
+      (vm-pgp-test--with-signed-message (presentation)
+        (should (vm-pgp-test--shows presentation "Signed hello!"))
+        (should-not (vm-pgp-test--shows presentation "PGP signature:"))))))
 
 (provide 'vm-pgp-test)
 
