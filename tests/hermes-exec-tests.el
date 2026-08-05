@@ -487,11 +487,13 @@ instead of writing to the socket, and the approval queue is reset and cleaned."
     (let ((hermes-exec-forbidden-functions '(kill-emacs)))
       (should (eq 'deny (hermes-exec--approval-decision "(kill-emacs)"))))))
 
-(ert-deftest hermes-exec-test-trust-untrust-set-policy ()
-  "The trust commands flip the policy between risk-based and always-ask."
+(ert-deftest hermes-exec-test-trust-yolo-untrust-set-policy ()
+  "The policy commands select risk-based, never-ask, and always-ask modes."
   (let ((hermes-exec-require-approval t))
     (hermes-exec-trust)
     (should (eq hermes-exec-require-approval #'hermes-exec-confirm-by-risk))
+    (hermes-exec-yolo)
+    (should-not hermes-exec-require-approval)
     (hermes-exec-untrust)
     (should (eq hermes-exec-require-approval t))))
 

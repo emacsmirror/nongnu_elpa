@@ -63,8 +63,8 @@ Modeled on `org-confirm-babel-evaluate'.  The value is one of:
 
 The prompt is shown in a dedicated buffer answered with a key and no longer
 blocks Emacs while it waits.  `hermes-exec-confirm-by-risk' is a ready-made
-predicate; `hermes-exec-trust' and `hermes-exec-untrust' switch between it and
-the always-ask default."
+predicate; `hermes-exec-trust', `hermes-exec-yolo', and `hermes-exec-untrust'
+switch between risk-based, never-ask, and always-ask policies."
   :type '(choice (const :tag "Always ask" t)
                  (const :tag "Never ask (run unsupervised)" nil)
                  (function :tag "Predicate of the code")))
@@ -355,6 +355,13 @@ Set `hermes-exec-require-approval' to `hermes-exec-confirm-by-risk'."
   (interactive)
   (setq hermes-exec-require-approval #'hermes-exec-confirm-by-risk)
   (message "Hermes eval: trust mode (ordinary forms run, sensitive ones prompt)"))
+
+;;;###autoload
+(defun hermes-exec-yolo ()
+  "Trust the agent to evaluate every authorized request without prompting."
+  (interactive)
+  (setq hermes-exec-require-approval nil)
+  (message "Hermes eval: yolo mode (requests run without approval)"))
 
 ;;;###autoload
 (defun hermes-exec-untrust ()
