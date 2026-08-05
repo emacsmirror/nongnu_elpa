@@ -690,6 +690,114 @@ The control: the fix must not turn the fallback into a call that signals."
             (vm-mail-buffer folder))
         (should (equal (list msg) (vm-thread-subtree-safe msg)))))))
 
+;;; Rearranging threads by hand (issue #574)
+
+;; `vm-promote-subthread', `vm-demote-subthread' and `vm-attach-to-thread' let
+;; the user override what the References headers say.  None of them had a test.
+;; `vm-attach-to-thread' refuses an attach that would make a cycle, and used to
+;; refuse it after taking the message out of its thread, leaving the folder
+;; threaded differently and nothing to put it back.
+
+(defconst vm-thread-test--fork-folder
+  (mapconcat
+   (lambda (spec)
+     (let ((i (car spec)) (parent (cdr spec)))
+       (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+               "From: alice@example.com\n"
+               (format "Subject: subject %d\n" i)
+               (format "Message-ID: <fork-%d@example.com>\n" i)
+               (if parent
+                   (format "References: <fork-%d@example.com>\n" parent)
+                 "")
+               "\n" (format "Body %d.\n\n" i))))
+   '((0 . nil) (1 . 0) (2 . 1) (3 . 0) (4 . nil))
+   "")
+  "Messages shaped 0 < 1 < 2 and 0 < 3, with 4 outside any thread.
+The fork matters: the damage a refused attach did showed on the second child of
+the root, not on the first.")
+
+(defmacro vm-thread-test--with-fork (&rest body)
+  "Run BODY in the fork folder with threads built and message 0 current."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder vm-thread-test--fork-folder
+     (setq major-mode 'vm-mode)
+     (setq vm-mail-buffer nil)
+     (let ((vm-summary-show-threads t))
+       (cl-letf (((symbol-function 'vm-follow-summary-cursor) #'ignore)
+                 ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+                 ((symbol-function 'vm-thread-mark-for-summary-update) #'ignore)
+                 ((symbol-function 'vm-inform) #'ignore))
+         (vm-build-threads-if-unbuilt)
+         ,@body))))
+
+(defun vm-thread-test--indentations ()
+  "Return the thread indentation of each message in `vm-message-list'."
+  (mapcar #'vm-thread-indentation vm-message-list))
+
+(ert-deftest vm-thread-test-attach-to-thread-makes-a-child ()
+  "Attaching puts the current message under the one visited last.
+Message 4 is in no thread; under message 2 it is three deep."
+  (vm-thread-test--with-fork
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))
+    (setq vm-last-message-pointer (nthcdr 2 vm-message-list))
+    (setq vm-message-pointer (nthcdr 4 vm-message-list))
+    (vm-attach-to-thread)
+    (should (equal '(0 1 2 1 3) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-attach-to-thread-refuses-a-cycle-and-changes-nothing ()
+  "REGRESSION: a refused attach leaves the threading as it was.
+Issue #574.  Attaching the root under its own descendant is a cycle.  The check
+used to run after `vm-unthread-message', so the refusal cost the root its
+children: message 3 was left at indentation 0."
+  (vm-thread-test--with-fork
+    (setq vm-last-message-pointer (nthcdr 2 vm-message-list))
+    (setq vm-message-pointer vm-message-list)
+    (should-error (vm-attach-to-thread) :type 'error)
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-attach-to-thread-needs-a-message-visited-first ()
+  "With no last message there is nothing to attach to, and nothing is changed."
+  (vm-thread-test--with-fork
+    (setq vm-last-message-pointer nil)
+    (setq vm-message-pointer (nthcdr 4 vm-message-list))
+    (should-error (vm-attach-to-thread) :type 'error)
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-demote-and-promote-move-the-whole-subtree ()
+  "Demoting indents the message and everything under it, promoting undoes it.
+Message 1 carries message 2 with it, and the messages outside the subtree do not
+move."
+  (vm-thread-test--with-fork
+    (setq vm-message-pointer (nthcdr 1 vm-message-list))
+    (vm-demote-subthread 2)
+    (should (equal '(0 3 4 1 0) (vm-thread-test--indentations)))
+    (vm-promote-subthread 1)
+    (should (equal '(0 2 3 1 0) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-demote-zero-resets-the-offset ()
+  "A count of zero to demote puts the subtree back to its natural indentation."
+  (vm-thread-test--with-fork
+    (setq vm-message-pointer (nthcdr 1 vm-message-list))
+    (vm-demote-subthread 3)
+    (should (equal '(0 4 5 1 0) (vm-thread-test--indentations)))
+    (vm-demote-subthread 0)
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))))
+
+(ert-deftest vm-thread-test-promote-zero-goes-all-the-way-to-the-left ()
+  "A count of zero to promote takes the message to indentation 0.
+Its subtree moves by the same amount rather than to 0 as well, so a message
+below it can end up left of where its parent now is.
+
+The indentations are read once first, and that is not decoration: this case
+takes its step from `vm-thread-indentation-of', the cached slot, and does
+nothing at all while that is still empty.  Drawing a threaded summary is what
+fills it in a real session."
+  (vm-thread-test--with-fork
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))
+    (setq vm-message-pointer (nthcdr 2 vm-message-list))
+    (vm-promote-subthread 0)
+    (should (equal '(0 1 0 1 0) (vm-thread-test--indentations)))))
+
 (provide 'vm-thread-test)
 
 ;;; vm-thread-test.el ends here
