@@ -1,10 +1,20 @@
 {
   description = "Codex IDE integration for Emacs";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    keymap-popup = {
+      url = "git+https://git.thanosapollo.org/emacs-keymap-popup";
+      flake = false;
+    };
+  };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      keymap-popup,
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -56,11 +66,15 @@
               && !(lib.elem name ignoredSourceNames || lib.hasSuffix ".elc" name);
           };
 
-          keymapPopupVersion = "0.4.0";
-          keymapPopupSrc = pkgs.fetchzip {
-            url = "https://elpa.gnu.org/packages/keymap-popup-${keymapPopupVersion}.tar";
-            hash = "sha256-htIwPC2XgFvcBrw7lCHvdMpQ7krlujZ8mrSuwxuswO8=";
-          };
+          keymapPopupVersion =
+            let
+              versionLine =
+                lib.findFirst (line: lib.hasPrefix ";; Version: " line)
+                  (throw "keymap-popup.el has no Version header")
+                  (lib.splitString "\n" (builtins.readFile "${keymap-popup}/keymap-popup.el"));
+            in
+            lib.removePrefix ";; Version: " versionLine;
+          keymapPopupSrc = keymap-popup;
 
           keymapPopup = emacsPackages.trivialBuild {
             pname = "keymap-popup";
