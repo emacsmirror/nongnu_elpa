@@ -243,6 +243,18 @@ the terminating dot is sent."
       (vm-pop-mock--handle mock process line))
     (process-put process 'vm-pop-mock-pending pending)))
 
+(defun vm-pop-mock--connection-buffer-away (client)
+  "Detach and kill the buffer Emacs gave CLIENT.
+An accepted connection gets a buffer named after its process, and this server
+never reads it: what the client sends goes to `vm-pop-mock--filter' and what is
+pending sits in a process property.  Left alone the buffer outlives the test,
+one per connection.  Detached before it is killed, so killing it does not ask
+about the live process."
+  (let ((buffer (process-buffer client)))
+    (set-process-buffer client nil)
+    (when (buffer-live-p buffer)
+      (kill-buffer buffer))))
+
 (defun vm-pop-mock--on-connect (server client _message)
   "Greet CLIENT, which SERVER has just accepted."
   (let ((mock (process-get server 'vm-pop-mock)))
@@ -251,6 +263,7 @@ the terminating dot is sent."
     (setf (vm-pop-mock-authenticated mock) nil)
     (set-process-coding-system client 'binary 'binary)
     (set-process-filter client #'vm-pop-mock--filter)
+    (vm-pop-mock--connection-buffer-away client)
     (when (vm-pop-mock-slow-greeting mock)
       (sleep-for (vm-pop-mock-slow-greeting mock)))
     (vm-pop-mock--send client (format "+OK vm-pop-mock ready %s\r\n"
