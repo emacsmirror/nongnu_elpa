@@ -551,6 +551,121 @@ verbatim reported the one label as unused and missing at once."
       (should (member '(intern "stale" vm-label-obarray)
                       vm-undo-record-list)))))
 
+;;; Undo across an expunge
+
+;; An undo record holds the message it would change, so expunging a message
+;; leaves records that would set flags on something no longer in the folder.
+;; `vm-clear-expunge-invalidated-undos' drops them, recognising an expunged
+;; message by its deleted flag being `expunged' rather than t.  It had no test
+;; beyond one that it survives a record with no message in it.
+
+(defconst vm-undo-test--two-messages
+  "From alice@example.com Mon Jan  1 00:00:00 2024
+From: alice@example.com
+Subject: subject 0
+Message-ID: <undo-0@example.com>
+
+Body 0.
+
+From alice@example.com Mon Jan  1 00:00:01 2024
+From: alice@example.com
+Subject: subject 1
+Message-ID: <undo-1@example.com>
+
+Body 1.
+"
+  "Two messages, enough to have one expunged and one not.")
+
+(defun vm-undo-test--record-messages ()
+  "Return the message of each undo record, nil for a boundary."
+  (mapcar (lambda (r) (and r (nth 1 r))) vm-undo-record-list))
+
+(ert-deftest vm-undo-test-clear-expunge-drops-the-expunged-records ()
+  "Records naming an expunged message go; the others and the boundaries stay.
+The expunged record is the first here, which is the branch that has to move the
+head of the list rather than splice."
+  (vm-test-with-folder vm-undo-test--two-messages
+    (let ((live (vm-test-first-message))
+          (gone (vm-test-nth-message 1)))
+      (vm-set-deleted-flag-of gone 'expunged)
+      (setq vm-undo-record-list
+            (list (list 'vm-set-deleted-flag gone nil)
+                  nil
+                  (list 'vm-set-replied-flag live nil)))
+      (vm-clear-expunge-invalidated-undos)
+      (should (equal (list nil live) (vm-undo-test--record-messages))))))
+
+(ert-deftest vm-undo-test-clear-expunge-drops-a-record-from-the-middle ()
+  "The same when the record to drop is not the first: the list is spliced.
+Two records for the expunged message, one either side of a live one, so both
+branches run in one list."
+  (vm-test-with-folder vm-undo-test--two-messages
+    (let ((live (vm-test-first-message))
+          (gone (vm-test-nth-message 1)))
+      (vm-set-deleted-flag-of gone 'expunged)
+      (setq vm-undo-record-list
+            (list (list 'vm-set-replied-flag live nil)
+                  (list 'vm-set-deleted-flag gone nil)
+                  nil
+                  (list 'vm-set-new-flag gone nil)
+                  (list 'vm-set-flagged-flag live nil)))
+      (vm-clear-expunge-invalidated-undos)
+      (should (equal (list live nil live) (vm-undo-test--record-messages))))))
+
+(ert-deftest vm-undo-test-clear-expunge-keeps-records-for-deleted-messages ()
+  "A message merely flagged deleted keeps its undo records.
+`expunged' is a distinct value of the same flag, and undeleting is exactly what
+undo is for, so a deleted message's records must survive."
+  (vm-test-with-folder vm-undo-test--two-messages
+    (let ((m (vm-test-first-message)))
+      (vm-set-deleted-flag-of m t)
+      (setq vm-undo-record-list (list (list 'vm-set-deleted-flag m nil)))
+      (vm-clear-expunge-invalidated-undos)
+      (should (equal (list m) (vm-undo-test--record-messages))))))
+
+(ert-deftest vm-undo-test-undo-after-an-expunge-changes-the-right-message ()
+  "An expunge drops the undo record it invalidated and leaves the rest usable.
+The whole sequence in a visited folder: flag one message replied, delete
+another, expunge, undo.  The undo has to reach the replied flag on the message
+that is still there, and the expunged message's own record has to be gone so
+that nothing tries to undelete it."
+  (vm-test-with-real-folder (4)
+    (let ((replied (nth 2 vm-message-list))
+          (doomed (nth 1 vm-message-list)))
+      (vm-undo-boundary)
+      (vm-set-replied-flag replied t)
+      (vm-undo-boundary)
+      (vm-set-deleted-flag doomed t)
+      (should (= 4 (length vm-message-list)))
+      (vm-expunge-folder)
+      ;; The message is gone and so is the record that would have undeleted it.
+      (should (= 3 (length vm-message-list)))
+      (should-not (memq doomed vm-message-list))
+      (should-not (memq doomed (vm-undo-test--record-messages)))
+      (should (vm-replied-flag replied))
+      ;; And the undo lands on the surviving message.
+      (vm-undo)
+      (should-not (vm-replied-flag replied))
+      (should (= 3 (length vm-message-list)))
+      (should (equal '("subject 0" "subject 2" "subject 3")
+                     (mapcar #'vm-su-subject vm-message-list))))))
+
+(ert-deftest vm-undo-test-nothing-left-to-undo-after-an-expunge ()
+  "With only the expunged message's record recorded, there is nothing to undo.
+`vm-undo' signals rather than reporting, which is worth pinning because it is
+the visible consequence of the record having been dropped: an undo that reached
+the record would undelete a message the folder no longer has."
+  (vm-test-with-real-folder (3)
+    (let ((doomed (nth 1 vm-message-list))
+          (before nil))
+      (vm-undo-boundary)
+      (vm-set-deleted-flag doomed t)
+      (vm-expunge-folder)
+      (setq before (mapcar #'vm-su-subject vm-message-list))
+      (should-error (vm-undo) :type 'error)
+      (should (equal before (mapcar #'vm-su-subject vm-message-list)))
+      (should (equal '(nil nil) (mapcar #'vm-deleted-flag vm-message-list))))))
+
 (provide 'vm-undo-test)
 
 ;;; vm-undo-test.el ends here
