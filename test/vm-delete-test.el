@@ -796,6 +796,107 @@ command, which is the whole reason for having both."
     (should (= 0 (vm-delete-duplicate-messages-by-body)))
     (should (equal '(t nil nil) (vm-delete-test--deleted-flags)))))
 
+;;; The delete, undelete and flag commands
+
+;; `vm-delete-message' had coverage only through `vm-kill-subject' and the
+;; duplicate commands calling it; `vm-delete-message-backward',
+;; `vm-undelete-message' and `vm-toggle-flag-message' had none.  All four take a
+;; count and apply to a range, and `vm-select-operable-messages' is what turns
+;; the count into that range, so a folder VM has visited is the honest place to
+;; run them.
+
+(defun vm-delete-test--flags (accessor)
+  "Return ACCESSOR of each message in `vm-message-list' as t or nil."
+  (mapcar (lambda (m) (and (funcall accessor m) t)) vm-message-list))
+
+(defmacro vm-delete-test--with-five (&rest body)
+  "Run BODY in a visited folder of five messages, message 1 current."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-real-folder (5)
+     (let ((vm-move-after-deleting nil)
+           (vm-move-after-undeleting nil))
+       (setq vm-message-pointer vm-message-list)
+       ,@body)))
+
+(ert-deftest vm-delete-test-delete-message-takes-a-count-forward ()
+  "A count deletes that many messages from the current one on."
+  (vm-delete-test--with-five
+    (vm-delete-message 3)
+    (should (equal '(t t t nil nil) (vm-delete-test--flags #'vm-deleted-flag)))))
+
+(ert-deftest vm-delete-test-delete-message-backward-takes-the-count-back ()
+  "`vm-delete-message-backward' is the same command with the count negated.
+From the fourth message, three back is the second, third and fourth."
+  (vm-delete-test--with-five
+    (setq vm-message-pointer (nthcdr 3 vm-message-list))
+    (vm-delete-message-backward 3)
+    (should (equal '(nil t t t nil) (vm-delete-test--flags #'vm-deleted-flag)))))
+
+(ert-deftest vm-delete-test-delete-message-stops-at-the-end-of-the-folder ()
+  "A count past the end of the folder deletes what there is.
+`vm-select-operable-messages' bounds the range; the command does not signal."
+  (vm-delete-test--with-five
+    (setq vm-message-pointer (nthcdr 3 vm-message-list))
+    (vm-delete-message 99)
+    (should (equal '(nil nil nil t t)
+                   (vm-delete-test--flags #'vm-deleted-flag)))))
+
+(ert-deftest vm-delete-test-undelete-message-takes-a-count ()
+  "Undeleting undoes the flag on a range, leaving the rest deleted."
+  (vm-delete-test--with-five
+    (vm-delete-message 4)
+    (should (equal '(t t t t nil) (vm-delete-test--flags #'vm-deleted-flag)))
+    (setq vm-message-pointer vm-message-list)
+    (vm-undelete-message 2)
+    (should (equal '(nil nil t t nil)
+                   (vm-delete-test--flags #'vm-deleted-flag)))))
+
+(ert-deftest vm-delete-test-undelete-message-leaves-undeleted-ones-alone ()
+  "Undeleting messages that are not deleted changes nothing and does not fail."
+  (vm-delete-test--with-five
+    (vm-undelete-message 3)
+    (should (equal '(nil nil nil nil nil)
+                   (vm-delete-test--flags #'vm-deleted-flag)))))
+
+(ert-deftest vm-delete-test-delete-then-move-after-deleting ()
+  "With `vm-move-after-deleting' set, the folder moves past what it deleted.
+The default is nil, so this is the other configuration rather than the usual
+one."
+  (vm-test-with-real-folder (5)
+    (let ((vm-move-after-deleting t)
+          (vm-circular-folders nil))
+      (setq vm-message-pointer vm-message-list)
+      (vm-delete-message 2)
+      (should (equal '(t t nil nil nil)
+                     (vm-delete-test--flags #'vm-deleted-flag)))
+      ;; Past the two it deleted, on the third message.
+      (should (equal "subject 2" (vm-su-subject (car vm-message-pointer)))))))
+
+(ert-deftest vm-delete-test-toggle-flag-message-flags-and-unflags ()
+  "The flag command sets the flag when it is unset, and unsets it when set."
+  (vm-delete-test--with-five
+    (vm-toggle-flag-message 1)
+    (should (equal '(t nil nil nil nil) (vm-delete-test--flags #'vm-flagged-flag)))
+    (vm-toggle-flag-message 1)
+    (should (equal '(nil nil nil nil nil)
+                   (vm-delete-test--flags #'vm-flagged-flag)))))
+
+(ert-deftest vm-delete-test-toggle-flag-message-follows-the-first-message ()
+  "Over a range, every message is set to the opposite of the first one's flag.
+Not each message toggled in turn: the command decides once, from the message it
+starts at, so a range that is already mixed comes out uniform."
+  (vm-delete-test--with-five
+    (vm-set-flagged-flag (nth 1 vm-message-list) t)
+    (should (equal '(nil t nil nil nil)
+                   (vm-delete-test--flags #'vm-flagged-flag)))
+    ;; The first of the three is unflagged, so all three end up flagged.
+    (vm-toggle-flag-message 3)
+    (should (equal '(t t t nil nil) (vm-delete-test--flags #'vm-flagged-flag)))
+    ;; And now the first of the three is flagged, so all three come off.
+    (vm-toggle-flag-message 3)
+    (should (equal '(nil nil nil nil nil)
+                   (vm-delete-test--flags #'vm-flagged-flag)))))
+
 (provide 'vm-delete-test)
 
 ;;; vm-delete-test.el ends here
