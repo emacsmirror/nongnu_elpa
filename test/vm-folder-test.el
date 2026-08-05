@@ -803,6 +803,8 @@ into it."
          (vm-confirm-quit nil)
          (vm-frame-per-folder nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (before (buffer-list)))
      (unwind-protect
          (progn
@@ -932,6 +934,8 @@ BODY can look at WARNINGS, the list of warning strings."
          (vm-confirm-quit nil)
          (vm-frame-per-folder nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (before (buffer-list))
          (warnings nil))
      (require 'vm)
@@ -1074,6 +1078,8 @@ conditionally the folder would start losing the wrong message.  Issue #453."
          (vm-confirm-quit nil)
          (vm-frame-per-folder nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (before (buffer-list)))
     (require 'vm)
     (unwind-protect
@@ -1117,6 +1123,8 @@ round-trips the list, and a version 1 file is still read, with the list empty."
          (vm-confirm-quit nil)
          (vm-frame-per-folder nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (before (buffer-list)))
     (require 'vm)
     (unwind-protect
@@ -1180,6 +1188,8 @@ memory.  It is now offered as the default, so RET is enough."
          (vm-confirm-quit nil)
          (vm-frame-per-folder nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (before (buffer-list)))
     (require 'vm)
     (unwind-protect
@@ -1251,6 +1261,8 @@ here, so it cannot also mean \"not supplied\".  BODY runs with the folder visite
           (vm-confirm-quit nil)
           (vm-frame-per-folder nil)
           (vm-mutable-frame-configuration nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
           (before (buffer-list)))
      (require 'vm)
      (unwind-protect

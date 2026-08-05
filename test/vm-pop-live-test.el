@@ -34,7 +34,13 @@ state rather than a throwaway mailbox."
   `(let* ((imap-server (vm-imap-live-server "plain"))
 	  (,(nth 1 spec) (vm-pop-live-server "pop"))
 	  (,(nth 2 spec) (car (plist-get ,(nth 1 spec) :accounts)))
-	  (,(car spec) (vm-pop-live-fixture-id)))
+	  (,(car spec) (vm-pop-live-fixture-id))
+	  ;; A session remembers its password and keeps its buffer for reuse.
+	  ;; Bound, so neither outlives the test that opened it.
+	  (vm-pop-passwords vm-pop-passwords)
+	  (vm-kept-pop-buffers vm-kept-pop-buffers)
+	  (vm-folder-history vm-folder-history)
+	  (vm-last-visit-folder vm-last-visit-folder))
      (unwind-protect
 	 (progn
 	   (vm-pop-live-seed-inbox imap-server ,(nth 2 spec)

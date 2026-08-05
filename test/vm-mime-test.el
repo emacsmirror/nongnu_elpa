@@ -2015,6 +2015,8 @@ them."
          (file (nth 1 where))
          (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
          (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (vm-mime-externalize-cid-references t))
     (unwind-protect
         (progn
@@ -2068,7 +2070,9 @@ written to the temporary directory."
          (dir (nth 0 where))
          (file (nth 1 where))
          (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
-         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil))
+         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder))
     (unwind-protect
         (progn
           (vm-visit-folder file)
@@ -2104,7 +2108,9 @@ a name that resolves to nothing would be worse than leaving it visible."
          (dir (nth 0 where))
          (file (nth 1 where))
          (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
-         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil))
+         (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder))
     (unwind-protect
         (progn
           (vm-visit-folder file)
@@ -2134,6 +2140,8 @@ the usual 022.  The image parts of a message are as private as its text."
          (file (nth 1 where))
          (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
          (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (vm-mime-externalize-cid-references t))
     (unwind-protect
         (progn
@@ -2161,6 +2169,8 @@ The cid parts go in the same directory and need the same care."
          (file (nth 1 where))
          (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
          (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (vm-mime-externalize-cid-references t)
          (elsewhere (expand-file-name "decoy" dir)))
     (unwind-protect

@@ -303,6 +303,8 @@ is the shape -- if `vm' ever calls itself again, a folder visit will count two."
          (vm-confirm-quit nil)
          (vm-frame-per-folder nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (calls 0)
          (counter (lambda (orig &rest args)
                     (setq calls (1+ calls))

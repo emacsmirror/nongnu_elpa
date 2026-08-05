@@ -381,6 +381,8 @@ the next to trip over."
           (vm-frame-per-folder nil)
           (vm-frame-per-composition nil)
           (vm-mutable-frame-configuration nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
           (before (buffer-list)))
      (require 'vm)
      (unwind-protect

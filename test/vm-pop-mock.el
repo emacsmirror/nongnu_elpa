@@ -301,7 +301,12 @@ AUTH defaults to \"pass\"; \"apop\" is the other one worth testing."
   "Run BODY with a mock POP server bound to MOCK-VAR, then stop it.
 SPEC is (MOCK-VAR &rest ARGS), where ARGS go to `vm-pop-mock-start'."
   (declare (indent 1) (debug t))
-  `(let ((,(car spec) (vm-pop-mock-start ,@(cdr spec))))
+  `(let ((,(car spec) (vm-pop-mock-start ,@(cdr spec)))
+         ;; A session remembers its password and keeps its buffer for reuse.
+         ;; Bound, so the mock's credentials and buffer do not outlive the test
+         ;; that invented them.
+         (vm-pop-passwords vm-pop-passwords)
+         (vm-kept-pop-buffers vm-kept-pop-buffers))
      (unwind-protect (progn ,@body)
        (vm-pop-mock-stop ,(car spec)))))
 
