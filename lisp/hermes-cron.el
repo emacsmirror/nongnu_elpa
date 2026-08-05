@@ -35,6 +35,8 @@
 (require 'hermes-promise)
 (require 'hermes-browser)
 
+(declare-function read-string-from-buffer "string-edit")
+
 ;;; Customization
 
 (defcustom hermes-cron-notify-on-failure nil
@@ -453,7 +455,7 @@ RUNS is the detail run list."
   "Read and return update fields for JOB."
   (let* ((name (read-string "Name: " (hermes-transport--display-field job 'name)))
          (schedule (read-string "Schedule: " (hermes-cron--schedule-expr job)))
-         (prompt (read-string "Prompt: " (hermes-cron--prompt job)))
+         (prompt (read-string-from-buffer "Prompt: " (hermes-cron--prompt job)))
          (deliver (read-string "Deliver: " (or (hermes-transport--non-blank-string
                                                 (hermes-transport--display-field job 'deliver))
                                                "local")))
@@ -511,7 +513,7 @@ RUNS is the detail run list."
   "Create a cron job NAME running PROMPT on SCHEDULE for PROFILE."
   (interactive (list (read-string "Cron job name: ")
                      (read-string "Schedule (cron expression): ")
-                     (read-string "Prompt: ")
+                     (read-string-from-buffer "Prompt: " "")
                      (read-string "Profile: " "default")))
   (when (or (string-empty-p name)
             (string-empty-p schedule)
