@@ -256,7 +256,12 @@ the one #38 is about."
             (vm-last-visit-folder vm-last-visit-folder)
             (vm-last-visit-imap-folder vm-last-visit-imap-folder)
             (vm-imap-passwords vm-imap-passwords)
-            (vm-kept-imap-buffers vm-kept-imap-buffers))
+            (vm-kept-imap-buffers vm-kept-imap-buffers)
+            ;; No session trace buffer: VM keeps one per session for debugging, and
+            ;; the harness kills every new buffer the moment the test ends, so the
+            ;; trace is unreachable anyway.  A session that errors sets this back
+            ;; buffer-locally, so a failure still has its trace while it matters.
+            (vm-imap-keep-trace-buffer nil))
        (unwind-protect
            (progn
              (vm-imap-live-login ,conn server account)
@@ -340,7 +345,12 @@ session -- which is the situation #335 describes."
             (vm-last-visit-folder vm-last-visit-folder)
             (vm-last-visit-imap-folder vm-last-visit-imap-folder)
             (vm-imap-passwords vm-imap-passwords)
-            (vm-kept-imap-buffers vm-kept-imap-buffers))
+            (vm-kept-imap-buffers vm-kept-imap-buffers)
+            ;; No session trace buffer: VM keeps one per session for debugging, and
+            ;; the harness kills every new buffer the moment the test ends, so the
+            ;; trace is unreachable anyway.  A session that errors sets this back
+            ;; buffer-locally, so a failure still has its trace while it matters.
+            (vm-imap-keep-trace-buffer nil))
        (unwind-protect
            (progn
              (vm-imap-live-login conn server account)

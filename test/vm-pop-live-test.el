@@ -39,6 +39,11 @@ state rather than a throwaway mailbox."
 	  ;; Bound, so neither outlives the test that opened it.
 	  (vm-pop-passwords vm-pop-passwords)
 	  (vm-kept-pop-buffers vm-kept-pop-buffers)
+	  ;; No session trace buffer: VM keeps one per session for debugging, and
+	  ;; the harness kills every new buffer the moment the test ends, so the
+	  ;; trace is unreachable anyway.  A session that errors sets this back
+	  ;; buffer-locally, so a failure still has its trace while it matters.
+	  (vm-pop-keep-trace-buffer nil)
 	  (vm-folder-history vm-folder-history)
 	  (vm-last-visit-folder vm-last-visit-folder))
      (unwind-protect

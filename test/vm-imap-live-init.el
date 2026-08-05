@@ -306,7 +306,12 @@ signals, so a failed test does not leave state behind for the next one."
             (vm-last-visit-folder vm-last-visit-folder)
             (vm-last-visit-imap-folder vm-last-visit-imap-folder)
             (vm-imap-passwords vm-imap-passwords)
-            (vm-kept-imap-buffers vm-kept-imap-buffers))
+            (vm-kept-imap-buffers vm-kept-imap-buffers)
+            ;; No session trace buffer: VM keeps one per session for debugging, and
+            ;; the harness kills every new buffer the moment the test ends, so the
+            ;; trace is unreachable anyway.  A session that errors sets this back
+            ;; buffer-locally, so a failure still has its trace while it matters.
+            (vm-imap-keep-trace-buffer nil))
        (unwind-protect
            (progn
              (vm-imap-live-login ,conn-var server
@@ -357,6 +362,11 @@ default and would let a wedged session hang forever."
             (vm-last-visit-imap-folder vm-last-visit-imap-folder)
             (vm-imap-passwords vm-imap-passwords)
             (vm-kept-imap-buffers vm-kept-imap-buffers)
+            ;; No session trace buffer: VM keeps one per session for debugging, and
+            ;; the harness kills every new buffer the moment the test ends, so the
+            ;; trace is unreachable anyway.  A session that errors sets this back
+            ;; buffer-locally, so a failure still has its trace while it matters.
+            (vm-imap-keep-trace-buffer nil)
             (vm-imap-account-alist
              (list (list (vm-imap-live-spec server account ,mailbox) ,nick)))
             (gnutls-trustfiles
