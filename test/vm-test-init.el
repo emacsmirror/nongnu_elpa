@@ -377,6 +377,60 @@ Body text
      (setq vm-message-pointer vm-message-list)
      ,@body))
 
+(defun vm-test-write-simple-folder (file n &optional threaded)
+  "Write a folder of N messages to FILE, subjects \"subject 0\" upwards.
+THREADED non-nil has each message reference the one before it."
+  (with-temp-file file
+    (dotimes (i n)
+      (insert "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+              "From: alice@example.com\n"
+              (format "Subject: subject %d\n" i)
+              (format "Message-ID: <plain-%d@example.com>\n" i)
+              (if (and threaded (> i 0))
+                  (format "References: <plain-%d@example.com>\n" (1- i))
+                "")
+              "\n"
+              (format "Body %d.\n\n" i)))))
+
+(defmacro vm-test-with-real-folder (spec &rest body)
+  "Visit a generated folder with `vm-visit-folder' and run BODY in its buffer.
+SPEC is (N &optional THREADED), the arguments of
+`vm-test-write-simple-folder'.  Everything the visit created is killed
+afterwards, and killing one of those buffers inside BODY is allowed.
+
+The difference from `vm-test-with-folder' is that this is a folder VM visited:
+it has a summary, a mode line, an undo list and a folder file on disk, so
+commands that expect all that work without being stubbed.  It costs about a
+millisecond, so prefer `vm-test-with-folder' where the lighter one does.
+
+Variables a visit records are bound rather than set, so the folder invented
+here does not turn up in a later test's history."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-real" t)))
+          (file (expand-file-name "folder" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-summary-show-threads nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (vm-user-interaction-buffer vm-user-interaction-buffer)
+          (before (buffer-list)))
+     (require 'vm)
+     (unwind-protect
+         (progn
+           (vm-test-write-simple-folder file ,(car spec) ,(nth 1 spec))
+           (vm-visit-folder file)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
 (defmacro vm-test-with-folder-fixture (category filename &rest body)
   "Execute BODY with a VM folder loaded from fixture file.
 CATEGORY and FILENAME specify the fixture to load."
