@@ -2305,6 +2305,16 @@ a passphrase is asked for by the agent and by whatever
 @code{epg-pinentry-mode} says; VM neither asks for it nor holds it.  A message
 that cannot be decrypted is displayed part by part, with a warning saying why.
 
+@vindex vm-mime-verify-signatures
+A signed message arrives the other way about: the entity as its sender wrote it,
+with a detached signature beside it.  With @code{vm-mime-verify-signatures} set,
+VM displays the message and then a line saying what @acronym{EPG} makes of the
+signature --- who signed it, whether the signature is good, and how far the key
+is trusted.  The message itself is displayed either way, including when the
+signature is bad: what it says is worth knowing alongside the warning, not
+instead of it.  This setting covers S/MIME signatures too, which VM has always
+checked.
+
 @cindex @acronym{HTML}
 @vindex vm-mime-text/html-handler
 The @acronym{HTML} content in text/html @acronym{MIME} parts can be

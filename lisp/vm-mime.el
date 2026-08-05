@@ -31,6 +31,11 @@
 (eval-when-compile (require 'cl-lib))
 
 ;; vm-xemacs.el is a fake file to fool the Emacs 23 compiler
+(declare-function epg-verify-string "epg" (context signature &optional signed-text))
+(declare-function epg-context-result-for "epg" (context name))
+(declare-function epg-verify-result-to-string "epg" (verify-result))
+(declare-function epg-signature-status "epg" (signature))
+
 (declare-function get-itimer "vm-xemacs" (name))
 (declare-function start-itimer "vm-xemacs"
 		  (name function value &optional restart is-idle with-args
@@ -3430,6 +3435,99 @@ emacs-w3m."
 	  (vm-decode-mime-layout layout t)))))
    :layout layout 
    :disposable t))
+
+(defun vm-mime-pgp-signed-layout-p (layout)
+  "Return non-nil if LAYOUT is an RFC 3156 PGP-signed entity.
+That is a `multipart/signed\' of exactly two parts, the signed entity and a
+detached signature of type application/pgp-signature."
+  (let ((parts (vm-mm-layout-parts layout)))
+    (and (= (length parts) 2)
+	 (nth 1 parts)
+	 (vm-mime-types-match "application/pgp-signature"
+			      (car (vm-mm-layout-type (nth 1 parts)))))))
+
+(defun vm-mime-pgp-signed-text (layout)
+  "Return the bytes of LAYOUT as they were transmitted, with CRLF endings.
+A detached PGP signature is over the entity exactly as it went out, headers
+included and lines ended with CRLF, which is what RFC 3156 asks of a sender.
+Emacs holds the message with LF endings, so they are put back."
+  (with-current-buffer (vm-buffer-of (vm-mm-layout-message layout))
+    (save-restriction
+      (widen)
+      (let ((text (buffer-substring-no-properties
+		   (vm-mm-layout-header-start layout)
+		   (vm-mm-layout-body-end layout))))
+	;; Normalise first, so a message that already has CRLF is not doubled.
+	(setq text (replace-regexp-in-string "\r\n" "\n" text t t))
+	(replace-regexp-in-string "\n" "\r\n" text t t)))))
+
+(defun vm-mime-pgp-signature-good-p (result)
+  "Return non-nil if EPG\'s verification RESULT has a good signature in it."
+  (and result
+       (let ((good nil))
+	 (dolist (signature result)
+	   (when (eq (epg-signature-status signature) 'good)
+	     (setq good t)))
+	 good)))
+
+(defun vm-mime-pgp-verify-report (signed signature)
+  "Return a line of text saying what SIGNATURE says about SIGNED.
+Verification is EPG\'s; what it has to say about each signature is what is
+reported, since \"good signature\" alone tells the reader less than they need
+about whose key it was and whether it is trusted."
+  (require 'epg)
+  (condition-case error-data
+      (let* ((detached
+	      (with-current-buffer (vm-buffer-of (vm-mm-layout-message signature))
+		(save-restriction
+		  (widen)
+		  (buffer-substring-no-properties
+		   (vm-mm-layout-body-start signature)
+		   (vm-mm-layout-body-end signature)))))
+	     (text (vm-mime-pgp-signed-text signed))
+	     (result nil))
+	;; Senders disagree about whether the CRLF that ends the last line of
+	;; the entity is part of what was signed or part of the boundary that
+	;; follows it, so try it both ways rather than call one of them wrong.
+	(dolist (candidate (list text (concat text "\r\n")))
+	  (unless (vm-mime-pgp-signature-good-p result)
+	    (let ((context (epg-make-context 'OpenPGP)))
+	      (ignore-errors
+		(epg-verify-string context detached candidate)
+		(setq result (or (epg-context-result-for context 'verify)
+				 result))))))
+	(if result
+	    (concat "PGP signature: "
+		    (replace-regexp-in-string
+		     "\n+\\'" "" (epg-verify-result-to-string result)))
+	  "PGP signature: nothing to say about it"))
+    (error (concat "PGP signature could not be checked: "
+		   (error-message-string error-data)))))
+
+(defun vm-mime-display-internal-multipart/signed (layout)
+  "Display the PGP-signed LAYOUT and say what its signature says.
+RFC 3156 sends a signed message as the entity itself and a detached signature
+beside it.  VM displays the entity, as it would if there were no signature, and
+then a line reporting what EPG makes of the signature.
+
+`vm-mime-verify-signatures\' nil, and anything that is not an RFC 3156 PGP
+signature, leaves the parts to be displayed as they arrived, which shows the
+signature as an attachment.  S/MIME signatures are verified elsewhere, in
+`vm-decode-mime-layout\'."
+  (if (not (and vm-mime-verify-signatures
+		(vm-mime-pgp-signed-layout-p layout)))
+      (vm-mime-display-internal-multipart/mixed layout)
+    (let* ((parts (vm-mm-layout-parts layout))
+	   (signed (car parts))
+	   (signature (nth 1 parts))
+	   (report (vm-mime-pgp-verify-report signed signature)))
+      (vm-decode-mime-layout signed)
+      (unless (bolp) (insert "\n"))
+      (insert report "\n")
+      ;; Saying so matters: a handler that returns nil leaves
+      ;; `vm-decode-mime-layout\' to try the next way of displaying this type,
+      ;; and the message appears twice.
+      t)))
 
 (defun vm-mime-pgp-encrypted-layout-p (layout)
   "Return non-nil if LAYOUT is an RFC 3156 PGP/MIME encrypted entity.
