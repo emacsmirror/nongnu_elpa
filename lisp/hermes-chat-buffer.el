@@ -347,10 +347,11 @@ the thinking disclosure; diffs become View Diff links."
   "Insert assistant or system CONTENT.
 While STREAMING, insert CONTENT as plain text so a long reply is not
 re-fontified on every delta.  Once the entry settles, render CONTENT as
-markdown with diff blocks replaced by View Diff links."
+markdown with diff blocks replaced by View Diff links and embedded images
+lifted into inline images."
   (if streaming
       (insert content "\n")
-    (hermes-chat--insert-diffed content #'hermes-chat--insert-markdown)
+    (hermes-chat--insert-content-with-images content #'hermes-chat--insert-markdown)
     (insert "\n")))
 
 (defun hermes-chat--print-entry (entry)

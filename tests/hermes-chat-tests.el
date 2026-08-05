@@ -4800,5 +4800,51 @@
        (should (equal (hermes-chat-input-string)
                       "See @lisp/hermes.el"))))))
 
+
+(ert-deftest hermes-chat-extract-embedded-images-lifts-data-url ()
+  "Embedded data:image URLs leave cleaned prose and an image list."
+  (let* ((png (concat "data:image/png;base64," (make-string 80 ?A)))
+         (result (hermes-chat--extract-embedded-images
+                  (format "see this %s please" png))))
+    (should (equal (car result) "see this  please"))
+    (should (equal (cdr result) (list png)))))
+
+(ert-deftest hermes-chat-extract-embedded-images-ignores-short-payload ()
+  "Short base64 payloads are left in prose."
+  (let* ((short "data:image/png;base64,AAAA")
+         (text (format "keep %s text" short))
+         (result (hermes-chat--extract-embedded-images text)))
+    (should (equal (car result) text))
+    (should-not (cdr result))))
+
+(ert-deftest hermes-chat-insert-content-with-images-fail-soft ()
+  "Bad image data still inserts cleaned text without signaling."
+  (with-temp-buffer
+    (cl-letf (((symbol-function 'display-images-p) (lambda () t))
+              ((symbol-function 'create-image)
+               (lambda (&rest _) (error "bad image"))))
+      (hermes-chat--insert-content-with-images
+       (concat "hello "
+               "data:image/png;base64," (make-string 80 ?B)
+               " world")
+       #'insert))
+    (should (string-match-p "hello" (buffer-string)))
+    (should (string-match-p "image unavailable\\|\\[image\\]" (buffer-string)))
+    (should-not (string-match-p "data:image" (buffer-string)))))
+
+(ert-deftest hermes-chat-create-image-from-url-decodes-base64-payload ()
+  "Data URLs are decoded and passed to create-image as raw data."
+  (let* ((payload (base64-encode-string "PNGDATA" t))
+         (url (concat "data:image/png;base64," payload))
+         args)
+    (cl-letf (((symbol-function 'create-image)
+               (lambda (data &optional type data-p &rest props)
+                 (setq args (list data type data-p props))
+                 '(image dummy))))
+      (should (equal (hermes-chat--create-image-from-url url) '(image dummy)))
+      (should (equal (nth 0 args) "PNGDATA"))
+      (should-not (nth 1 args))
+      (should (eq (nth 2 args) t)))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

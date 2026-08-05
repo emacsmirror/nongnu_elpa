@@ -600,5 +600,70 @@ markdown stays visible and easy to copy."
         (format "%s --provider %s" model provider)
       model)))
 
+(defconst hermes-chat--data-image-prefix "data:image/"
+  "Prefix used by gateway-embedded image data URLs.")
+
+(defconst hermes-chat--min-embedded-image-base64 64
+  "Minimum base64 payload length accepted as an embedded image.")
+
+(defun hermes-chat--data-image-url-at (text start)
+  "Return (END . URL) for a data:image URL in TEXT at START, or nil."
+  (when (and (stringp text)
+             (<= 0 start)
+             (< start (length text))
+             (string-prefix-p hermes-chat--data-image-prefix
+                              (substring text start)))
+    (let* ((mime-start (+ start (length hermes-chat--data-image-prefix)))
+           (cursor mime-start)
+           (len (length text)))
+      (while (and (< cursor len)
+                  (string-match-p "[[:alnum:]._+-]" (substring text cursor (1+ cursor))))
+        (setq cursor (1+ cursor)))
+      (when (and (> cursor mime-start)
+                 (string-prefix-p ";base64," (substring text cursor)))
+        (setq cursor (+ cursor (length ";base64,")))
+        (let ((base64-start cursor))
+          (while (and (< cursor len)
+                      (string-match-p "[[:alnum:]+/=]"
+                                      (substring text cursor (1+ cursor))))
+            (setq cursor (1+ cursor)))
+          (when (>= (- cursor base64-start) hermes-chat--min-embedded-image-base64)
+            (cons cursor (substring text start cursor))))))))
+
+(defun hermes-chat--extract-embedded-images (text)
+  "Return (CLEANED . IMAGES) lifting data:image URLs out of TEXT.
+Matches Hermes desktop `extractEmbeddedImages': keep prose, collect image
+data URLs for separate insertion.  Non-string TEXT is returned unchanged."
+  (if (or (not (stringp text))
+          (not (string-match-p (regexp-quote hermes-chat--data-image-prefix) text)))
+      (cons text nil)
+    (let ((images nil)
+          (pieces nil)
+          (append-at 0)
+          (search-at 0)
+          (len (length text)))
+      (while (< search-at len)
+        (let ((data-start (string-match (regexp-quote hermes-chat--data-image-prefix)
+                                        text search-at)))
+          (if (not data-start)
+              (setq search-at len)
+            (if-let* ((found (hermes-chat--data-image-url-at text data-start)))
+                (progn
+                  (push (substring text append-at data-start) pieces)
+                  (push (cdr found) images)
+                  (setq append-at (car found)
+                        search-at (car found)))
+              (setq search-at (+ data-start
+                                 (length hermes-chat--data-image-prefix)))))))
+      (if (null images)
+          (cons text nil)
+        (push (substring text append-at) pieces)
+        (cons (string-trim
+               (replace-regexp-in-string
+                "\n\\{3,\\}" "\n\n"
+                (replace-regexp-in-string "[ \t]+\n" "\n"
+                                          (string-join (nreverse pieces) ""))))
+              (nreverse images))))))
+
 (provide 'hermes-chat-format)
 ;;; hermes-chat-format.el ends here

@@ -186,5 +186,36 @@ BLOCKS, when given, is a precomputed `hermes-chat--diff-blocks' result."
       (setq pos (nth 1 block)))
     (funcall insert-text (substring content pos))))
 
+(defun hermes-chat--insert-image-url (url)
+  "Insert image URL as an inline image when possible.
+Fail soft with a shadow placeholder when image creation fails."
+  (condition-case nil
+      (let ((image (and (display-images-p)
+                        (hermes-chat--create-image-from-url url))))
+        (if image
+            (progn
+              (insert-image image "[image]")
+              (insert "\n"))
+          (insert (propertize "[image]\n" 'face 'shadow))))
+    (error
+     (insert (propertize "[image unavailable]\n" 'face 'shadow)))))
+
+(defun hermes-chat--create-image-from-url (url)
+  "Return an image descriptor for data:image URL, or nil."
+  (when (and (stringp url)
+             (string-prefix-p "data:image/" url))
+    (when-let* ((marker (string-match ";base64," url))
+                (payload (substring url (+ marker (length ";base64,"))))
+                (data (ignore-errors (base64-decode-string payload)))
+                ((and (stringp data) (> (length data) 0))))
+      (create-image data nil t :max-width 640))))
+
+(defun hermes-chat--insert-content-with-images (content insert-text &optional blocks)
+  "Insert CONTENT via INSERT-TEXT after lifting embedded image data URLs.
+BLOCKS is optional precomputed diff-block metadata for the cleaned text."
+  (pcase-let ((`(,text . ,images) (hermes-chat--extract-embedded-images content)))
+    (hermes-chat--insert-diffed (or text "") insert-text blocks)
+    (mapc #'hermes-chat--insert-image-url images)))
+
 (provide 'hermes-chat-render)
 ;;; hermes-chat-render.el ends here
