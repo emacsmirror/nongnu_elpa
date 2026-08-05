@@ -486,8 +486,13 @@ ignored."
 
     ;; 5. Update display
 
-    (if (null buffers-altered)
-	(vm-inform 5 "%s: No messages are flagged for deletion." (buffer-name))
+    ;; BUFFERS-ALTERED is an obarray, so it is a vector and never nil: this
+    ;; used to test it with `null' and so always reported the messages as
+    ;; expunged, and re-sorted a folder nothing had been expunged from (#572).
+    (if (vm-obarray-empty-p buffers-altered)
+	(unless quiet
+	  (vm-inform 5 "%s: No messages are flagged for deletion."
+		     (buffer-name)))
       (mapatoms
        (lambda (buffer)
 	 (with-current-buffer (symbol-name buffer)

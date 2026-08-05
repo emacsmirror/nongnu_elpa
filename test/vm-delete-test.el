@@ -580,6 +580,91 @@ real folder removes the message from both."
                    (vm-delete-test--subjects-of virt)))
     (with-current-buffer virt
       (should (vm-test-reverse-links-consistent-p)))))
+;;; What an expunge that expunged nothing reports (issue #572)
+
+;; `vm-expunge-folder' has a message for the case where no message is flagged,
+;; guarded by (null buffers-altered).  That is an obarray, hence a vector, hence
+;; never nil, so the message could not appear and VM said the deleted messages
+;; had been expunged instead.  The same dead branch re-sorted a folder that
+;; nothing had been expunged from.
+
+(defun vm-delete-test--said (thunk)
+  "Return the messages emitted while THUNK runs."
+  (let ((said nil))
+    (cl-letf (((symbol-function 'message)
+               (lambda (&rest args)
+                 (push (if (car args) (apply #'format args) "") said)
+                 (car said))))
+      (funcall thunk))
+    (nreverse said)))
+
+(defun vm-delete-test--said-p (said text)
+  "Return non-nil if any of SAID ends in TEXT.
+The messages are prefixed with the folder buffer's name, which for these is a
+temporary buffer."
+  (let ((found nil))
+    (dolist (s said)
+      (when (string-suffix-p text s) (setq found t)))
+    found))
+
+(defmacro vm-delete-test--expungeable (&rest body)
+  "Run BODY in a three-message folder that `vm-expunge-folder' will accept.
+Enough of a folder buffer to pass validation, with the display work stubbed
+out: what is under test is what the command reports, not what it draws."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-folder vm-delete-test--three-messages
+     (setq major-mode 'vm-mode)
+     (setq vm-mail-buffer nil)
+     (setq vm-message-pointer vm-message-list)
+     (cl-letf (((symbol-function 'vm-display) (lambda (&rest _) nil))
+               ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+               ((symbol-function 'vm-present-current-message) #'ignore)
+               ((symbol-function 'vm-garbage-collect-message) #'ignore))
+       ,@body)))
+
+(ert-deftest vm-delete-test-expunge-with-nothing-deleted-says-so ()
+  "REGRESSION: an expunge with nothing flagged does not claim to have expunged.
+Issue #572."
+  (vm-delete-test--expungeable
+    (let ((said (vm-delete-test--said (lambda () (vm-expunge-folder)))))
+      (should (vm-delete-test--said-p said "No messages are flagged for deletion."))
+      (should-not (vm-delete-test--said-p said "Deleted messages expunged."))
+      (should (= 3 (vm-test-message-count))))))
+
+(ert-deftest vm-delete-test-expunge-with-something-deleted-says-that ()
+  "An expunge that did expunge still reports that, and removes the message.
+The other side of the branch, so the fix is not simply reporting the new
+message every time."
+  (vm-delete-test--expungeable
+    (vm-set-deleted-flag (vm-test-nth-message 1) t)
+    (let ((said (vm-delete-test--said (lambda () (vm-expunge-folder)))))
+      (should (vm-delete-test--said-p said "Deleted messages expunged."))
+      (should-not (vm-delete-test--said-p said "No messages are flagged for deletion."))
+      (should (= 2 (vm-test-message-count))))))
+
+(ert-deftest vm-delete-test-quiet-expunge-with-nothing-deleted-is-quiet ()
+  "`:quiet t' silences the new message too.
+It has to: vm-avirtual.el's spam auto-delete expunges quietly, and mostly finds
+nothing to expunge."
+  (vm-delete-test--expungeable
+    (should (null (vm-delete-test--said
+                   (lambda () (vm-expunge-folder :quiet t)))))))
+
+(ert-deftest vm-delete-test-expunge-with-nothing-deleted-does-not-sort ()
+  "Nothing expunged means nothing to renumber, so no sort either.
+The dead branch put the sort on the path that runs when no message was flagged,
+so every expunge of a sorted folder re-sorted it for nothing."
+  (vm-delete-test--expungeable
+    (let ((sorted nil)
+          (vm-ml-sort-keys "date"))
+      (cl-letf (((symbol-function 'vm-sort-messages)
+                 (lambda (&rest _) (setq sorted t))))
+        (vm-expunge-folder :quiet t)
+        (should-not sorted)
+        ;; And it does sort when something was expunged.
+        (vm-set-deleted-flag (vm-test-nth-message 1) t)
+        (vm-expunge-folder :quiet t)
+        (should sorted)))))
 
 (provide 'vm-delete-test)
 

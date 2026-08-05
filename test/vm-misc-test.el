@@ -470,6 +470,24 @@
       (member "bar" result)
       (should (member "baz" result)))))
 
+;;; vm-obarray-empty-p tests
+
+(ert-deftest vm-misc-test-obarray-empty-p ()
+  "`vm-obarray-empty-p' answers what `null' cannot ask.
+An obarray used as a set is a vector, so it is true whether anything has been
+interned in it or not.  Testing one with `null' is what #572 was."
+  (let ((ob (make-vector 7 0)))
+    (should (vm-obarray-empty-p ob))
+    ;; The thing that made the bug: it is not nil when empty.
+    (should ob)
+    (intern "foo" ob)
+    (should-not (vm-obarray-empty-p ob))
+    ;; Interning the same name again does not make it emptier or fuller.
+    (intern "foo" ob)
+    (should-not (vm-obarray-empty-p ob))
+    (unintern "foo" ob)
+    (should (vm-obarray-empty-p ob))))
+
 ;;; vm-time-difference tests
 
 (ert-deftest vm-misc-test-time-difference-basic ()
