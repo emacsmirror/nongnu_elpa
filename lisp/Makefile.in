@@ -16,6 +16,7 @@ SOURCES += vm-crypto.el
 SOURCES += vm-delete.el
 SOURCES += vm-digest.el
 SOURCES += vm-edit.el
+SOURCES += vm-epg.el
 SOURCES += vm-folder.el
 SOURCES += vm-grepmail.el
 SOURCES += vm-imap.el
