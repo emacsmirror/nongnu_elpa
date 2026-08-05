@@ -1,5 +1,11 @@
 #+title: Elfeed Changelog
 
+* Development
+
+- =elfeed-search-tag=, =elfeed-search-untag=, =elfeed-search-tag-unread=,
+  =elfeed-search-untag-unread=, =elfeed-search-toggle=: Shorter command names.
+  Improve doc strings.
+
 * Version 4.1.1 (2026-08-01)
 
 - Bugfix: Use =insert-file-contents= to load database instead of

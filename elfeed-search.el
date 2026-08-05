@@ -192,15 +192,17 @@ When live editing the filter, it is bound to :live.")
 (defvar elfeed-search--filter-overflowing nil
   "When non-nil, the current live filter overflows the window.")
 
-(defun elfeed-search-tag-all-unread ()
-  "Add the `unread' tag to all selected entries."
+(defun elfeed-search-tag-unread ()
+  "Add the `unread' tag to all selected entries.
+With \\[universal-argument] pressed before, modify all entries of the list."
   (interactive nil elfeed-search-mode)
-  (elfeed-search-tag-all 'unread))
+  (elfeed-search-tag 'unread))
 
-(defun elfeed-search-untag-all-unread ()
-  "Remove the `unread' tag from all selected entries."
+(defun elfeed-search-untag-unread ()
+  "Remove the `unread' tag from all selected entries.
+With \\[universal-argument] pressed before, modify all entries of the list."
   (interactive nil elfeed-search-mode)
-  (elfeed-search-untag-all 'unread))
+  (elfeed-search-untag 'unread))
 
 (defun elfeed-search-last-entry ()
   "Place point on last entry."
@@ -234,16 +236,16 @@ When live editing the filter, it is bound to :live.")
   "b" #'elfeed-search-browse-url
   "B" #'elfeed-search-browse-url-secondary
   "y" #'elfeed-search-yank
-  "u" #'elfeed-search-tag-all-unread
-  "r" #'elfeed-search-untag-all-unread
+  "u" #'elfeed-search-tag-unread
+  "r" #'elfeed-search-untag-unread
   "n" #'next-line
   "p" #'previous-line
   "m" #'elfeed-search-mark
   "M" #'elfeed-search-unmark
   "t" #'elfeed-search-set-entry-title
   "T" #'elfeed-search-set-feed-title
-  "+" #'elfeed-search-tag-all
-  "-" #'elfeed-search-untag-all
+  "+" #'elfeed-search-tag
+  "-" #'elfeed-search-untag
   "<" #'elfeed-search-first-entry
   ">" #'elfeed-search-last-entry
   "<remap> <backward-paragraph>" #'elfeed-search-previous-separator
@@ -259,10 +261,10 @@ When live editing the filter, it is bound to :live.")
     ["Browse secondary" elfeed-search-browse-url-secondary]
     ["Copy URL" elfeed-search-yank]
     "--"
-    ["Add tag" elfeed-search-tag-all]
-    ["Remove tag" elfeed-search-untag-all]
-    ["Tag as unread" elfeed-search-tag-all-unread]
-    ["Tag as read" elfeed-search-untag-all-unread]
+    ["Add tag" elfeed-search-tag]
+    ["Remove tag" elfeed-search-untag]
+    ["Tag as unread" elfeed-search-tag-unread]
+    ["Tag as read" elfeed-search-untag-unread]
     "--"
     ["Live filter" elfeed-search-live-filter]
     ("Filter"
@@ -1173,15 +1175,17 @@ the browser defined by `browse-url-secondary-browser-function'."
     (unless all
       (elfeed-search--after-action 'tag))))
 
-(defun elfeed-search-tag-all (&rest tags)
-  "Apply TAGS to all selected entries."
+(defun elfeed-search-tag (&rest tags)
+  "Apply TAGS to all selected entries.
+With \\[universal-argument] pressed before, modify all entries of the list."
   (interactive (elfeed-search--prompt-tags "Tag: ") elfeed-search-mode)
   (elfeed-search--tag
    (lambda (entries)
      (apply #'elfeed-tag entries tags))))
 
-(defun elfeed-search-untag-all (&rest tags)
-  "Remove TAGS from all selected entries."
+(defun elfeed-search-untag (&rest tags)
+  "Remove TAGS from all selected entries.
+With \\[universal-argument] pressed before, modify all entries of the list."
   (interactive (elfeed-search--prompt-tags
                 "Untag: "
                 (if current-prefix-arg
@@ -1192,8 +1196,9 @@ the browser defined by `browse-url-secondary-browser-function'."
    (lambda (entries)
      (apply #'elfeed-untag entries tags))))
 
-(defun elfeed-search-toggle-all (&rest tags)
-  "Toggle TAGS on all selected entries."
+(defun elfeed-search-toggle (&rest tags)
+  "Toggle TAGS on all selected entries.
+With \\[universal-argument] pressed before, modify all entries of the list."
   (interactive (elfeed-search--prompt-tags "Toggle: ") elfeed-search-mode)
   (elfeed-search--tag
    (lambda (entries)
@@ -1491,6 +1496,16 @@ state of the db for when `desktop-auto-save-timeout' is enabled."
   #'revert-buffer "4.0.0")
 (define-obsolete-function-alias 'elfeed-search-update-line
   #'elfeed-search--update-line "4.0.0")
+(define-obsolete-function-alias 'elfeed-search-tag-all
+  #'elfeed-search-tag "4.1.1")
+(define-obsolete-function-alias 'elfeed-search-untag-all
+  #'elfeed-search-untag "4.1.1")
+(define-obsolete-function-alias 'elfeed-search-toggle-all
+  #'elfeed-search-toggle "4.1.1")
+(define-obsolete-function-alias 'elfeed-search-tag-all-unread
+  #'elfeed-search-tag-unread "4.1.1")
+(define-obsolete-function-alias 'elfeed-search-untag-all-unread
+  #'elfeed-search-untag-unread "4.1.1")
 
 (provide 'elfeed-search)
 ;;; elfeed-search.el ends here
