@@ -4738,5 +4738,67 @@
        (should-not hermes-chat--input-history)))))
 
 
+
+(ert-deftest hermes-chat-queue-panel-renders-and-reorders-fifo ()
+  "The side panel renders queue entries and can change their send order."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--queue-content "first")
+   (hermes-chat--queue-content "second")
+   (hermes-chat--queue-content "third")
+   (let ((owner (current-buffer))
+         (third-id (plist-get (nth 2 hermes-chat--queued-messages) :id)))
+     (with-temp-buffer
+       (hermes-chat-queue-panel-mode)
+       (setq hermes-chat-queue-panel--owner owner)
+       (hermes-chat-queue-panel-refresh)
+       (should (string-match-p "1. first" (buffer-string)))
+       (should (string-match-p "2. second" (buffer-string)))
+       (should (string-match-p "3. third" (buffer-string)))
+       (hermes-chat--queue-panel-move-entry owner third-id -1)
+       (should (equal (with-current-buffer owner
+                        (hermes-test--queued-contents))
+                      '("first" "third" "second")))
+       (hermes-chat-queue-panel-refresh)
+       (search-forward "third")
+       (cl-letf (((symbol-function 'read-string-from-buffer)
+                  (lambda (&rest _) "third edited")))
+         (hermes-chat-queue-panel-edit))
+       (goto-char (point-min))
+       (search-forward "second")
+       (hermes-chat-queue-panel-remove)
+       (should (equal (with-current-buffer owner
+                        (hermes-test--queued-contents))
+                      '("first" "third edited")))))))
+
+(ert-deftest hermes-chat-queue-panel-blocks-swap-with-inflight-head ()
+  "Reorder refuses to displace the currently submitted queue head."
+  (hermes-test-with-chat-buffer
+   (hermes-chat--queue-content "first")
+   (hermes-chat--queue-content "second")
+   (let* ((head-id (plist-get (car hermes-chat--queued-messages) :id))
+          (second-id (plist-get (nth 1 hermes-chat--queued-messages) :id)))
+     (setq hermes-chat--queued-submit-id head-id)
+     (should-error (hermes-chat--queue-panel-move-entry
+                    (current-buffer) second-id -1)
+                   :type 'user-error)
+     (should (equal (hermes-test--queued-contents) '("first" "second")))
+     (should (equal hermes-chat--queued-submit-id head-id)))))
+
+(ert-deftest hermes-chat-file-ref-capf-inserts-project-relative-path ()
+  "An @ prefix completes project files while retaining the reference marker."
+  (hermes-test-with-chat-buffer
+   (goto-char (point-max))
+   (insert "See @lisp/her")
+   (cl-letf (((symbol-function 'project-current) (lambda (&rest _) 'project))
+             ((symbol-function 'project-root) (lambda (_) "/tmp/project/"))
+             ((symbol-function 'project-files)
+              (lambda (_) '("/tmp/project/lisp/hermes.el"))))
+     (pcase-let ((`(,begin ,end ,candidates . ,_) (hermes-chat--file-ref-capf)))
+       (should (member "lisp/hermes.el" candidates))
+       (delete-region begin end)
+       (insert "lisp/hermes.el")
+       (should (equal (hermes-chat-input-string)
+                      "See @lisp/hermes.el"))))))
+
 (provide 'hermes-chat-tests)
 ;;; hermes-chat-tests.el ends here

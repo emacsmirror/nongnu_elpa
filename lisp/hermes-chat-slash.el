@@ -30,6 +30,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'project)
 (require 'subr-x)
 (require 'hermes-transport)
 (require 'hermes-dashboard-transport)
@@ -206,6 +207,30 @@ Only matches while typing the /command word in the writable input tail."
           (lambda (cand)
             (when-let* ((desc (cdr (assoc cand candidates))))
               (concat "  " desc))))))
+
+(defun hermes-chat--file-ref-completion-bounds ()
+  "Return completion bounds after an @ file-ref prefix in the input tail."
+  (when (and (hermes-chat--point-in-input-p)
+             (hermes-chat--input-position))
+    (let ((end (point))
+          (input (hermes-chat--input-position)))
+      (save-excursion
+        (skip-chars-backward "^ \t\n" input)
+        (when (and (< (point) end) (eq (char-after) ?@))
+          (cons (1+ (point)) end))))))
+
+(defun hermes-chat--project-file-candidates ()
+  "Return project-relative file names for composer @ completion."
+  (when-let* ((project (project-current nil))
+              (root (project-root project)))
+    (mapcar (lambda (file) (file-relative-name file root))
+            (project-files project))))
+
+(defun hermes-chat--file-ref-capf ()
+  "Completion-at-point for project file references after @ in the input tail."
+  (when-let* ((bounds (hermes-chat--file-ref-completion-bounds))
+              (candidates (hermes-chat--project-file-candidates)))
+    (list (car bounds) (cdr bounds) candidates :exclusive 'no)))
 
 (defun hermes-chat-show-commands ()
   "Fetch and display the dashboard slash command catalog."

@@ -30,7 +30,9 @@
 ;;; Code:
 
 (require 'button)
+(require 'cl-lib)
 (require 'ewoc)
+(require 'seq)
 (require 'subr-x)
 (require 'hermes-chat-format)
 (require 'hermes-chat-render)
@@ -104,6 +106,10 @@ without each one repeating the liveness guard."
   "Current index while navigating `hermes-chat--input-history'.")
 (defvar-local hermes-chat--input-history-draft ""
   "Draft restored after moving forward past the newest history entry.")
+(defvar-local hermes-chat--queue-panel-buffer nil
+  "Side-panel buffer displaying this chat buffer's queued messages.")
+(defvar-local hermes-chat-queue-panel--owner nil
+  "Chat buffer whose FIFO is displayed by this queue panel.")
 (defvar-local hermes-chat--session-id nil
   "Durable Hermes session key for the current chat buffer.")
 (defvar-local hermes-chat--dashboard-create-model nil
@@ -949,6 +955,7 @@ DISPLAY is the compact user-turn text to show instead of CONTENT."
   (when (hermes-chat--queue-submit-current-p entry-id)
     (setq hermes-chat--queued-messages (cdr hermes-chat--queued-messages)
           hermes-chat--queued-submit-id nil)
+    (hermes-chat--queue-panel-refresh-if-live)
     (hermes-chat--drain-queued-message)))
 
 (defun hermes-chat--turn-entry-ids (assistant-id)
@@ -1020,12 +1027,186 @@ DISPLAY is the compact user-turn text shown when the queued message is sent."
   (setq hermes-chat--queued-messages
         (append hermes-chat--queued-messages
                 (list (hermes-chat--make-queue-entry content display))))
+  (hermes-chat--queue-panel-refresh-if-live)
   (hermes-chat--insert-local-status
    (or note (format "Queued next message: %s"
                     (hermes-chat--preview (or display content))))
    'queued)
   (hermes-chat--set-header-state
    :status 'queued :activity "Queued next message"))
+
+(defun hermes-chat--queue-panel-refresh-if-live ()
+  "Refresh this chat's live queue side panel, when present."
+  (when (buffer-live-p hermes-chat--queue-panel-buffer)
+    (with-current-buffer hermes-chat--queue-panel-buffer
+      (hermes-chat-queue-panel-refresh))))
+
+(defun hermes-chat--queue-panel-owner ()
+  "Return this panel's live chat owner or signal a user error."
+  (unless (and (buffer-live-p hermes-chat-queue-panel--owner)
+               (eq (buffer-local-value 'major-mode
+                                       hermes-chat-queue-panel--owner)
+                   'hermes-chat-mode)
+               (buffer-local-value 'hermes-chat--input-marker
+                                   hermes-chat-queue-panel--owner))
+    (user-error "The owning Hermes chat is no longer live"))
+  hermes-chat-queue-panel--owner)
+
+(defun hermes-chat--queue-panel-entry-id ()
+  "Return the queue entry id at point in a queue panel."
+  (or (get-text-property (point) 'hermes-chat-queue-id)
+      (get-text-property (line-beginning-position) 'hermes-chat-queue-id)
+      (user-error "No queued message on this line")))
+
+(defun hermes-chat-queue-panel-refresh (&rest _)
+  "Render the owning chat's FIFO entries in the current side panel."
+  (interactive)
+  (let* ((owner (hermes-chat--queue-panel-owner))
+         (entries (buffer-local-value 'hermes-chat--queued-messages owner))
+         (inhibit-read-only t))
+    (erase-buffer)
+    (insert (propertize "Hermes queued messages" 'face 'bold) "\n\n")
+    (if entries
+        (cl-loop for entry in entries
+                 for index from 1
+                 do (let ((start (point)))
+                      (insert (format "%d. %s\n" index
+                                      (hermes-chat--preview
+                                       (plist-get entry :content))))
+                      (add-text-properties
+                       start (point)
+                       (list 'hermes-chat-queue-id (plist-get entry :id)))))
+      (insert "No queued messages\n"))
+    (goto-char (point-min))
+    (forward-line 2)))
+
+(defun hermes-chat--queue-edit-entry (owner id)
+  "Edit queue entry ID owned by chat buffer OWNER."
+  (with-current-buffer owner
+    (when (equal id hermes-chat--queued-submit-id)
+      (user-error "That queued message is currently being submitted"))
+    (let* ((entry (seq-find (lambda (candidate)
+                              (equal (plist-get candidate :id) id))
+                            hermes-chat--queued-messages))
+           (content (and entry
+                         (string-trim
+                          (read-string-from-buffer
+                           "Queued message: " (plist-get entry :content))))))
+      (when (equal id hermes-chat--queued-submit-id)
+        (user-error "That queued message is currently being submitted"))
+      (unless (seq-find (lambda (candidate)
+                          (equal (plist-get candidate :id) id))
+                        hermes-chat--queued-messages)
+        (user-error "Queued message is no longer present"))
+      (unless entry (user-error "Queued message is no longer present"))
+      (when (string-empty-p content)
+        (user-error "Queued message cannot be empty"))
+      (setq hermes-chat--queued-messages
+            (mapcar (lambda (candidate)
+                      (if (equal (plist-get candidate :id) id)
+                          (hermes-chat--entry-with
+                           candidate :content content :display nil)
+                        candidate))
+                    hermes-chat--queued-messages))
+      (hermes-chat--insert-local-status "Queued message updated" 'done))))
+
+(defun hermes-chat--queue-remove-entry (owner id)
+  "Remove queue entry ID owned by chat buffer OWNER."
+  (with-current-buffer owner
+    (when (equal id hermes-chat--queued-submit-id)
+      (user-error "That queued message is currently being submitted"))
+    (unless (seq-find (lambda (entry) (equal (plist-get entry :id) id))
+                      hermes-chat--queued-messages)
+      (user-error "Queued message is no longer present"))
+    (setq hermes-chat--queued-messages
+          (seq-remove (lambda (entry) (equal (plist-get entry :id) id))
+                      hermes-chat--queued-messages))
+    (hermes-chat--insert-local-status "Queued message removed" 'done)))
+
+(defun hermes-chat-queue-panel-edit ()
+  "Edit the queued message at point."
+  (interactive)
+  (hermes-chat--queue-edit-entry
+   (hermes-chat--queue-panel-owner) (hermes-chat--queue-panel-entry-id))
+  (hermes-chat-queue-panel-refresh))
+
+(defun hermes-chat--queue-panel-move-entry (owner id delta)
+  "Move OWNER's queue entry ID by DELTA positions."
+  (with-current-buffer owner
+    (when (equal id hermes-chat--queued-submit-id)
+      (user-error "That queued message is currently being submitted"))
+    (let* ((index (cl-position id hermes-chat--queued-messages
+                               :key (lambda (entry) (plist-get entry :id))
+                               :test #'equal))
+           (other (and index (+ index delta)))
+           (neighbor (and other (nth other hermes-chat--queued-messages)))
+           (neighbor-id (and neighbor (plist-get neighbor :id))))
+      (unless (and other (>= other 0) (< other (length hermes-chat--queued-messages)))
+        (user-error "Queued message cannot move farther"))
+      (when (equal neighbor-id hermes-chat--queued-submit-id)
+        (user-error "Cannot swap with a message that is currently being submitted"))
+      (let ((entry (nth index hermes-chat--queued-messages)))
+        (setq hermes-chat--queued-messages
+              (cl-loop for candidate in hermes-chat--queued-messages
+                       for position from 0
+                       collect (cond ((= position index) neighbor)
+                                     ((= position other) entry)
+                                     (t candidate))))))))
+
+(defun hermes-chat-queue-panel-move-up ()
+  "Move the queued message at point one position earlier."
+  (interactive)
+  (hermes-chat--queue-panel-move-entry
+   (hermes-chat--queue-panel-owner) (hermes-chat--queue-panel-entry-id) -1)
+  (hermes-chat-queue-panel-refresh))
+
+(defun hermes-chat-queue-panel-move-down ()
+  "Move the queued message at point one position later."
+  (interactive)
+  (hermes-chat--queue-panel-move-entry
+   (hermes-chat--queue-panel-owner) (hermes-chat--queue-panel-entry-id) 1)
+  (hermes-chat-queue-panel-refresh))
+
+(defun hermes-chat-queue-panel-remove ()
+  "Remove the queued message at point."
+  (interactive)
+  (let ((owner (hermes-chat--queue-panel-owner))
+        (id (hermes-chat--queue-panel-entry-id)))
+    (hermes-chat--queue-remove-entry owner id))
+  (hermes-chat-queue-panel-refresh))
+
+(defvar-keymap hermes-chat-queue-panel-mode-map
+  :doc "Keymap for the Hermes chat queue side panel."
+  :parent special-mode-map
+  "g" #'hermes-chat-queue-panel-refresh
+  "e" #'hermes-chat-queue-panel-edit
+  "u" #'hermes-chat-queue-panel-move-up
+  "d" #'hermes-chat-queue-panel-move-down
+  "D" #'hermes-chat-queue-panel-remove
+  "q" #'quit-window)
+
+(define-derived-mode hermes-chat-queue-panel-mode special-mode "Hermes Queue"
+  "Major mode for editing one chat buffer's queued messages."
+  :interactive nil)
+
+(defun hermes-chat-queue-panel ()
+  "Display an editable FIFO queue side panel for the current chat buffer."
+  (interactive)
+  (unless (derived-mode-p 'hermes-chat-mode)
+    (user-error "Not in a Hermes chat buffer"))
+  (let* ((owner (current-buffer))
+         (buffer (get-buffer-create
+                  (format "*Hermes Queue: %s*" (buffer-name owner)))))
+    (setq hermes-chat--queue-panel-buffer buffer)
+    (with-current-buffer buffer
+      (hermes-chat-queue-panel-mode)
+      (setq hermes-chat-queue-panel--owner owner)
+      (hermes-chat-queue-panel-refresh))
+    (display-buffer buffer
+                    '((display-buffer-in-side-window)
+                      (side . right)
+                      (window-width . 0.28)))
+    buffer))
 
 ;;; Active-tool registry and event activity
 

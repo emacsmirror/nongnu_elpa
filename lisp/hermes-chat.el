@@ -1595,7 +1595,8 @@ result into the transient status text shown in the transcript."
   "t" ("Session status" hermes-chat-show-status)
   :group "Commands"
   "c" ("Show commands" hermes-chat-show-commands)
-  "r" ("Refresh commands" hermes-chat-refresh-commands))
+  "r" ("Refresh commands" hermes-chat-refresh-commands)
+  "P" ("Queue side panel" hermes-chat-queue-panel))
 
 (defvar-keymap hermes-chat-mode-map
   :doc "Keymap for `hermes-chat-mode'."
@@ -1638,6 +1639,7 @@ depth so a globalized linter re-enabled after the mode body is overridden."
   (setq-local display-line-numbers nil)
   (add-hook 'kill-buffer-hook #'hermes-chat--cleanup-buffer nil t)
   (add-hook 'completion-at-point-functions #'hermes-chat--slash-capf nil t)
+  (add-hook 'completion-at-point-functions #'hermes-chat--file-ref-capf t t)
   (add-hook 'after-change-major-mode-hook #'hermes-chat--disable-linters 90 t)
   (hermes-chat--setup-buffer))
 
