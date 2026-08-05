@@ -61,6 +61,10 @@
 (defvar jabber-pre-disconnect-hook)       ; jabber-core.el
 
 ;; MUC owns bookmark integration, so reverse room operations stay lazy.
+(declare-function jabber-muc-join "jabber-muc"
+                  (jc group nickname &optional popup))
+(declare-function jabber-muc-leave "jabber-muc" (jc group))
+(declare-function jabber-muc-get-buffer "jabber-muc" (group &optional jc))
 (autoload 'jabber-muc-join "jabber-muc")
 (autoload 'jabber-muc-leave "jabber-muc")
 (autoload 'jabber-muc-get-buffer "jabber-muc")

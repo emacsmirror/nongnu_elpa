@@ -33,10 +33,12 @@
 (require 'jabber-presence)
 (require 'jabber-reactions)
 
-(autoload 'jabber-omemo--prefetch-sessions "jabber-omemo")
-(autoload 'jabber-omemo--prefetch-muc-sessions "jabber-omemo")
-(autoload 'jabber-omemo--muc-participant-jids "jabber-omemo")
-(autoload 'jabber-omemo-fingerprints "jabber-omemo-trust")
+(declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
+(declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo"
+                  (jc group))
+(declare-function jabber-omemo--muc-participant-jids "jabber-omemo"
+                  (group participants))
+(declare-function jabber-omemo-fingerprints "jabber-omemo-trust" ())
 
 (defvar jabber-chat-encryption-menu-map)
 (defvar jabber-chat-operations-menu-map)

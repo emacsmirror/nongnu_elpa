@@ -70,9 +70,9 @@ are not filtered against it."
 (defvar jabber-group)
 (defvar jabber-point-insert)
 
-;; Chat and MUC load reactions; reverse lookup calls stay lazy.
-(autoload 'jabber-chat--unwrap-carbon "jabber-chat")
-(autoload 'jabber-muc-find-buffer "jabber-muc")
+;; Chat and MUC are loaded before their reaction-specific paths run.
+(declare-function jabber-chat--unwrap-carbon "jabber-chat" (jc xml-data))
+(declare-function jabber-muc-find-buffer "jabber-muc" (group &optional jc))
 
 ;;; Pure helpers
 
@@ -330,8 +330,7 @@ Return :stale when persistent storage confirms MESSAGE is stale."
 (defun jabber-reactions--unwrap-stanza (jc xml-data)
   "Return (MESSAGE . BUFFER) for reaction-bearing XML-DATA on JC."
   (if (or (string= (or (jabber-xml-get-attribute xml-data 'type) "") "groupchat")
-          (not (fboundp 'jabber-chat--unwrap-carbon))
-          (autoloadp (symbol-function 'jabber-chat--unwrap-carbon)))
+          (not (fboundp 'jabber-chat--unwrap-carbon)))
       (cons xml-data nil)
     (jabber-chat--unwrap-carbon jc xml-data)))
 

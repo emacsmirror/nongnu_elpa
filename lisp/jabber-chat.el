@@ -431,24 +431,45 @@ Do not overwrite a newer reply selection."
             jabber-message-thread--root-reply-jid
             (plist-get state :root-reply-jid)))))
 
-;; Provider features call into chat, so reverse calls stay lazy rather than
-;; introducing feature-level require cycles.
-
-(autoload 'jabber-omemo--send-chat "jabber-omemo")
-(autoload 'jabber-openpgp--send-chat "jabber-openpgp")
-(autoload 'jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy")
-(autoload 'jabber-muc-private-create-buffer "jabber-muc")
-(autoload 'jabber-muc-private-find-buffer "jabber-muc")
-(autoload 'jabber-muc-print-prompt "jabber-muc")
-(autoload 'jabber-muc-system-prompt "jabber-muc")
-(autoload 'jabber-omemo-aesgcm-decrypt "jabber-omemo")
+;; Optional providers load at their action boundary.  MUC paths run only after
+;; MUC has established their buffer data.  The remaining reverse calls load
+;; through autoloads because their providers require chat.
+(declare-function jabber-omemo--send-chat
+                  "jabber-omemo"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
+(declare-function jabber-openpgp--send-chat
+                  "jabber-openpgp"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
+(declare-function jabber-openpgp-legacy--send-chat
+                  "jabber-openpgp-legacy" (jc body &optional extra-elements))
+(declare-function jabber-omemo-aesgcm-decrypt
+                  "jabber-omemo" (key iv ciphertext))
+(declare-function jabber-muc-private-create-buffer
+                  "jabber-muc" (jc group nickname))
+(declare-function jabber-muc-private-find-buffer
+                  "jabber-muc" (group nickname))
+(declare-function jabber-muc-print-prompt
+                  "jabber-muc" (msg &optional local dont-print-nick-p))
+(declare-function jabber-muc-system-prompt
+                  "jabber-muc" (&rest _ignore))
 (defvar jabber-backlog-days)
 (defvar jabber-backlog-number)
+(declare-function jabber-message-correct--replace-id
+                  "jabber-message-correct" (xml-data))
+(declare-function jabber-message-correct--apply
+                  "jabber-message-correct"
+                  (replace-id new-body new-from muc-p buffers
+                              &optional new-occupant-id account peer
+                              legacy-authorized-p))
 (autoload 'jabber-message-correct--replace-id "jabber-message-correct")
 (autoload 'jabber-message-correct--apply "jabber-message-correct")
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
+(declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
 (autoload 'jabber-mam-chat-opened "jabber-mam")
+(declare-function jabber-chatstates--clear-typing "jabber-chatstates" ())
 (autoload 'jabber-chatstates--clear-typing "jabber-chatstates")
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 
@@ -1232,6 +1253,7 @@ EXTRA-ELEMENTS, when non-nil, is a list of XML sexp elements to
 splice into the stanza after the body (e.g. OOB, hints)."
   (pcase jabber-chat-encryption
     ('omemo
+     (require 'jabber-omemo)
      (jabber-omemo--send-chat
       jc body extra-elements success-callback failure-callback))
     ('openpgp (require 'jabber-openpgp)
@@ -2076,6 +2098,7 @@ ALLOWED-TYPES restricts the decoded image types; nil permits any."
   (let ((parsed (jabber-chat--parse-aesgcm-url url)))
     (if (null parsed)
         (apply callback (list :error 'url) cbargs)
+      (require 'jabber-omemo)
       (url-queue-retrieve
        (plist-get parsed :https-url)
        (lambda (status key iv types cb args)
@@ -2263,6 +2286,7 @@ For aesgcm:// URLs, fetches via HTTPS and decrypts with AES-256-GCM."
 
 (defun jabber-chat--download-aesgcm (url dest key iv)
   "Fetch URL, decrypt with KEY and IV, write to DEST."
+  (require 'jabber-omemo)
   (url-queue-retrieve
    url
    (lambda (status dest-file key iv)

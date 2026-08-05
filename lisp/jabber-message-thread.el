@@ -30,6 +30,7 @@
 (require 'ewoc)
 (require 'seq)
 (require 'jabber-buffer-registry)
+(require 'jabber-chatbuffer)
 (require 'jabber-db)
 (require 'jabber-input)
 (require 'jabber-message-thread-protocol)
@@ -62,14 +63,23 @@ original parent chat buffer paths.  Thread metadata remains stored."
   "Maximum display width of an automatic thread preview.")
 
 ;; Chat loads thread support; these reverse calls therefore remain lazy.
-(autoload 'jabber-chat-mode "jabber-chatbuffer")
-(autoload 'jabber-chat-mode-setup "jabber-chatbuffer")
+(declare-function jabber-chat-pp "jabber-chat" (data))
+(declare-function jabber-chat-send
+                  "jabber-chat"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
+(declare-function jabber-muc-send
+                  "jabber-muc"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
+(declare-function jabber-chat--insert-backlog-chunked
+                  "jabber-chat" (buffer entries callback &optional generation))
+(declare-function jabber-chat-display-buffer-images "jabber-chat" ())
 (autoload 'jabber-chat-pp "jabber-chat")
 (autoload 'jabber-chat-send "jabber-chat")
 (autoload 'jabber-muc-send "jabber-muc")
 (autoload 'jabber-chat--insert-backlog-chunked "jabber-chat")
 (autoload 'jabber-chat-display-buffer-images "jabber-chat")
-(autoload 'jabber-chat-buffer-refresh "jabber-chatbuffer")
 
 (defvar-local jabber-message-thread-id nil
   "Opaque XEP-0201 thread identifier for the current buffer.")

@@ -46,10 +46,12 @@
 (require 'jabber-message-thread-protocol)
 (require 'jabber-muc-state)
 
-;; MUC loads OMEMO optionally; reverse participant operations stay lazy.
-(autoload 'jabber-muc-modify-participant "jabber-muc")
-(autoload 'jabber-muc-participant-plist "jabber-muc")
-(autoload 'jabber-muc-create-buffer "jabber-muc")
+;; Groupchat paths run only after MUC has established room state.
+(declare-function jabber-muc-modify-participant
+                  "jabber-muc" (group nickname new-plist))
+(declare-function jabber-muc-participant-plist
+                  "jabber-muc" (group nickname))
+(declare-function jabber-muc-create-buffer "jabber-muc" (jc group))
 (defvar jabber-muc--room-jids)
 
 (defcustom jabber-omemo-enable t

@@ -34,13 +34,13 @@
 (defvar jabber-log-lines-to-keep 1000
   "Maximum number of lines in chat buffer.")
 
-;; Global reference declarations
-
+;; Truncation and chat-buffer support form a reload cycle, so this reverse
+;; call remains lazy.
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chat--msg-nodes)        ; jabber-chatbuffer.el
+(declare-function jabber-chat-ewoc-unregister-node
+                  "jabber-chatbuffer" (node))
 (autoload 'jabber-chat-ewoc-unregister-node "jabber-chatbuffer")
-
-;;
 
 (defun jabber-truncate-top (buffer &optional ewoc)
   "Clean old history from a chat BUFFER.

@@ -22,6 +22,73 @@
                 (lambda (file expected)
                   (string-suffix-p expected file))))
 
+(defun jabber-test-reload--clean-emacs-eval (form)
+  "Evaluate FORM in a clean child Emacs and require success."
+  (with-temp-buffer
+    (let ((status
+           (call-process
+            (expand-file-name invocation-name invocation-directory)
+            nil (current-buffer) nil
+            "-Q" "--batch"
+            "-L" (expand-file-name "lisp" jabber-test-reload--root)
+            "--eval" "(setq load-prefer-newer t)"
+            "--eval" (prin1-to-string form))))
+      (unless (zerop status)
+        (ert-fail (buffer-string))))))
+
+(defun jabber-test-reload--generated-autoloads ()
+  "Return symbols exported by the generated Jabber autoload file."
+  (delq nil
+        (mapcar
+         (lambda (form)
+           (and (eq (car-safe form) 'autoload)
+                (jabber-reload--quoted-symbol (cadr form))))
+         (jabber-reload--read-forms
+          (expand-file-name "lisp/jabber-autoloads.el"
+                            jabber-test-reload--root)))))
+
+(ert-deftest jabber-test-reload-clean-source-boundaries ()
+  "Load source directly while preserving optional and cyclic boundaries."
+  (jabber-test-reload--clean-emacs-eval
+   '(progn
+      (require 'jabber-console)
+      (when (featurep 'jabber-chatbuffer)
+        (error "Console source eagerly loaded chat-buffer support"))
+      (jabber-chat-ewoc-unregister-node nil)
+      (unless (featurep 'jabber-chatbuffer)
+        (error "Console truncation boundary did not load chat-buffer support"))
+      (require 'jabber-roster-menu)
+      (when (featurep 'jabber-omemo-trust)
+        (error "Roster source eagerly loaded OMEMO trust support"))
+      (require 'jabber-chat-commands)
+      (when (or (featurep 'jabber-autoloads)
+                (featurep 'jabber-omemo)
+                (featurep 'jabber-omemo-trust)
+                (featurep 'jabber-openpgp)
+                (featurep 'jabber-openpgp-legacy))
+        (error "Source load activated generated or optional features"))))
+  (jabber-test-reload--clean-emacs-eval
+   '(progn
+      (require 'jabber-bookmarks)
+      (when (featurep 'jabber-muc)
+        (error "Bookmark source eagerly loaded MUC"))
+      (unless (stringp (jabber-muc-get-buffer "room@example.org"))
+        (error "Bookmark-to-MUC boundary returned no buffer name"))
+      (unless (featurep 'jabber-muc)
+        (error "Bookmark-to-MUC boundary did not load MUC")))))
+
+(ert-deftest jabber-test-reload-generated-autoload-contract ()
+  "Export public package entries without private runtime helpers."
+  (let ((autoloads (jabber-test-reload--generated-autoloads)))
+    (dolist (function '(jabber-muc-get-buffer
+                        jabber-message-thread-browse
+                        jabber-omemo-show-fingerprints
+                        jabber-roster-popup))
+      (should (memq function autoloads)))
+    (dolist (function '(jabber-chat--insert-backlog-chunked
+                        jabber-omemo--send-chat))
+      (should-not (memq function autoloads)))))
+
 (ert-deftest jabber-test-reload-orders-real-source-graph ()
   "Order the current source tree by its declared dependencies."
   (let* ((source-files

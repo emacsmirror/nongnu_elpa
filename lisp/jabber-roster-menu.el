@@ -33,7 +33,7 @@
 (require 'jabber-roster)
 (require 'jabber-version)
 
-(autoload 'jabber-omemo-show-fingerprints "jabber-omemo-trust" nil t)
+(declare-function jabber-omemo-show-fingerprints "jabber-omemo-trust" (jc))
 
 (defvar jabber-current-show)             ; jabber.el
 (defvar jabber-activity-jids)            ; jabber-activity.el
@@ -111,6 +111,12 @@ Only contacts and rooms belonging to this connection are shown.")
   "Show roster discovery menu."
   (interactive)
   (keymap-popup jabber-roster-discovery-map))
+
+(defun jabber-roster--show-omemo-fingerprints ()
+  "Show OMEMO fingerprints after loading trust support."
+  (interactive)
+  (require 'jabber-omemo-trust)
+  (call-interactively #'jabber-omemo-show-fingerprints))
 
 (defvar jabber-roster--selected-jid nil
   "JID selected by `completing-read', used by action submenu.")
@@ -202,7 +208,7 @@ Only contacts and rooms belonging to this connection are shown.")
        jabber-roster-accounts
        :if (lambda () (cdr jabber-connections)))
   :group "OMEMO"
-  "f" ("Fingerprints" jabber-omemo-show-fingerprints
+  "f" ("Fingerprints" jabber-roster--show-omemo-fingerprints
        :if (lambda () jabber-connections)))
 
 ;;;###autoload

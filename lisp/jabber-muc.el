@@ -44,6 +44,7 @@
 (require 'jabber-chat)
 (require 'jabber-db)
 (require 'jabber-presence)
+(require 'jabber-reactions)
 (require 'jabber-version)
 (require 'jabber-xdata-form)
 
@@ -446,28 +447,51 @@ The format is that of `mode-line-format' and `header-line-format'."
   :type 'sexp
   :group 'jabber-chat)
 
-;; Provider features call into MUC, so reverse calls stay lazy rather than
-;; introducing feature-level require cycles.
-
-(autoload 'jabber-omemo--send-muc "jabber-omemo")
-(autoload 'jabber-omemo--prefetch-sessions "jabber-omemo")
-(autoload 'jabber-omemo--prefetch-muc-sessions "jabber-omemo")
-(autoload 'jabber-openpgp--send-muc "jabber-openpgp")
-(autoload 'jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy")
+;; Optional providers load at their action boundary.  MAM and the correction
+;; parser require MUC, so their unguarded reverse calls remain lazy.
+(declare-function jabber-omemo--send-muc
+                  "jabber-omemo"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
+(declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
+(declare-function jabber-omemo--prefetch-muc-sessions
+                  "jabber-omemo" (jc group))
+(declare-function jabber-openpgp--send-muc
+                  "jabber-openpgp"
+                  (jc body &optional extra-elements success-callback
+                      failure-callback))
+(declare-function jabber-openpgp-legacy--send-muc
+                  "jabber-openpgp-legacy" (jc body &optional extra-elements))
+(declare-function jabber-mam-muc-joined "jabber-mam" (jc group))
+(declare-function jabber-mam--cancel-muc-query "jabber-mam" (group))
 (autoload 'jabber-mam-muc-joined "jabber-mam")
 (autoload 'jabber-mam--cancel-muc-query "jabber-mam")
+(declare-function jabber-message-correct--replace-id
+                  "jabber-message-correct" (xml-data))
+(declare-function jabber-message-correct--apply
+                  "jabber-message-correct"
+                  (replace-id new-body new-from muc-p buffers
+                              &optional new-occupant-id account peer
+                              legacy-authorized-p))
+(declare-function jabber-message-correct--muc-current-target-p
+                  "jabber-message-correct" (jc peer replace-id))
+(declare-function jabber-message-correct--muc-presence-enter
+                  "jabber-message-correct" (jc occupant))
+(declare-function jabber-message-correct--muc-presence-leave
+                  "jabber-message-correct" (jc occupant))
+(declare-function jabber-message-correct--record-muc-original
+                  "jabber-message-correct" (jc peer msg-id))
+(declare-function jabber-message-correct--muc-room-leave
+                  "jabber-message-correct" (jc group))
 (autoload 'jabber-message-correct--replace-id "jabber-message-correct")
 (autoload 'jabber-message-correct--apply "jabber-message-correct")
-(autoload 'jabber-message-correct--muc-current-target-p "jabber-message-correct")
-(autoload 'jabber-message-correct--muc-presence-enter "jabber-message-correct")
-(autoload 'jabber-message-correct--muc-presence-leave "jabber-message-correct")
-(autoload 'jabber-message-correct--record-muc-original "jabber-message-correct")
-(autoload 'jabber-message-correct--muc-room-leave "jabber-message-correct")
-(autoload 'jabber-reactions--reaction-only-p "jabber-reactions")
-(autoload 'jabber-vcard-get "jabber-vcard")
-(autoload 'jabber-chatstates--delete-typing-node "jabber-chatstates")
-(autoload 'jabber-chatstates--muc-reinsert-typing "jabber-chatstates")
-(autoload 'jabber-chatstates--muc-remove-nick "jabber-chatstates")
+(declare-function jabber-vcard-get "jabber-vcard" (jc jid))
+(declare-function jabber-chatstates--delete-typing-node
+                  "jabber-chatstates" ())
+(declare-function jabber-chatstates--muc-reinsert-typing
+                  "jabber-chatstates" ())
+(declare-function jabber-chatstates--muc-remove-nick
+                  "jabber-chatstates" (nickname))
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-alert-muc-function)      ; jabber-alert.el
 (defvar jabber-body-printers)           ; jabber-chat.el
@@ -481,10 +505,6 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-chat-printers)           ; jabber-chat.el
 (defvar jabber-chat-time-format)        ; jabber-chat.el
 
-(defun jabber-muc--loaded-function-p (function)
-  "Return non-nil when FUNCTION has a loaded implementation."
-  (and (fboundp function)
-       (not (autoloadp (symbol-function function)))))
 (defvar jabber-post-disconnect-hook)   ; jabber-core.el
 (defvar jabber-send-function)           ; jabber-console.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
@@ -684,8 +704,7 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
   "Remove GROUP from internal bookkeeping.
 If JC is given, only remove that connection's entry."
   (when (and jc
-             (jabber-muc--loaded-function-p
-              'jabber-message-correct--muc-room-leave))
+             (fboundp 'jabber-message-correct--muc-room-leave))
     (jabber-message-correct--muc-room-leave jc group))
   (jabber-muc-leave-remove group jc)
   (jabber-mam--cancel-muc-query group)
@@ -997,6 +1016,7 @@ JC is the Jabber connection."
   (interactive
    (jabber-muc-argument-list
     (list (jabber-muc-read-nickname jabber-group "Nickname: "))))
+  (require 'jabber-vcard)
   (let ((muc-name (format "%s/%s" group nickname)))
     (jabber-vcard-get jc muc-name)))
 
@@ -2082,18 +2102,15 @@ come from the stanza."
                          (concat " <"
                                  (jabber-jid-user jid)
                                  ">")))))
-    (when (jabber-muc--loaded-function-p
-           'jabber-message-correct--muc-presence-leave)
+    (when (fboundp 'jabber-message-correct--muc-presence-leave)
       (jabber-message-correct--muc-presence-leave
        jc (concat group "/" nickname)))
     (jabber-muc-remove-participant group nickname)
     (when-let* ((buffer (jabber-muc-find-buffer group jc)))
       (with-current-buffer buffer
         (jabber-chat-buffer-with-scrolltobottom
-          (when (and (jabber-muc--loaded-function-p
-                      'jabber-chatstates--muc-remove-nick)
-                     (jabber-muc--loaded-function-p
-                      'jabber-chatstates--delete-typing-node))
+          (when (and (fboundp 'jabber-chatstates--muc-remove-nick)
+                     (fboundp 'jabber-chatstates--delete-typing-node))
             (jabber-chatstates--muc-remove-nick nickname)
             (jabber-chatstates--delete-typing-node))
           (jabber-maybe-print-rare-time
@@ -2112,8 +2129,7 @@ come from the stanza."
                    (t
                     (concat name " has left the chatroom")))
                   :time (current-time))))
-          (when (jabber-muc--loaded-function-p
-                 'jabber-chatstates--muc-reinsert-typing)
+          (when (fboundp 'jabber-chatstates--muc-reinsert-typing)
             (jabber-chatstates--muc-reinsert-typing)))))))
 
 (defun jabber-muc--room-created-message ()
@@ -2212,8 +2228,7 @@ Silently ignore; the user may lack permissions."
   "On JC, handle a participant entering or updating presence in GROUP.
 NICKNAME is the user.  SYMBOL is their JID symbol.  STATUS-CODES,
 X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
-  (when (jabber-muc--loaded-function-p
-         'jabber-message-correct--muc-presence-enter)
+  (when (fboundp 'jabber-message-correct--muc-presence-enter)
     (jabber-message-correct--muc-presence-enter
      jc (concat group "/" nickname)))
   ;; Self-presence: check nickname too since some servers (e.g.
@@ -2242,8 +2257,7 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
                   (buf (jabber-muc-find-buffer group jc)))
         (with-current-buffer buf
           (when (and (eq jabber-chat-encryption 'omemo)
-                     (jabber-muc--loaded-function-p
-                      'jabber-omemo--prefetch-sessions))
+                     (fboundp 'jabber-omemo--prefetch-sessions))
             (jabber-omemo--prefetch-sessions jc bare)))))
     (when-let* ((buffer (jabber-muc-find-buffer group jc)))
       (let ((report (jabber-muc-report-delta nickname old-plist new-plist
@@ -2261,8 +2275,7 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
         (with-current-buffer buffer
           (jabber-muc--enter-extra-notices nickname status-codes)
           (when (and (eq jabber-chat-encryption 'omemo)
-                     (jabber-muc--loaded-function-p
-                      'jabber-omemo--prefetch-muc-sessions))
+                     (fboundp 'jabber-omemo--prefetch-muc-sessions))
             (jabber-omemo--prefetch-muc-sessions jc group))
           (when (or (member jabber-muc-status-nonanonymous status-codes)
                     (gethash group jabber-muc--nonanonymous-rooms))

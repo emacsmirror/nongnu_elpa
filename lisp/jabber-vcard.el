@@ -81,7 +81,8 @@
 
 ;; Global reference declarations
 
-(autoload 'jabber-vcard-avatars-update-current "jabber-vcard-avatars")
+(declare-function jabber-vcard-avatars-update-current
+                  "jabber-vcard-avatars" (jc new-hash))
 (defvar jabber-vcard-fields)            ; jabber-vcard.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 

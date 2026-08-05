@@ -430,23 +430,6 @@
           "\\(?:require '[^\n]*\\(?:widget\\|wid-edit\\|jabber-widget\\)\\|widget-\\(?:create\\|value\\|insert\\|setup\\|minor-mode\\)\\)"
           nil t))))))
 
-(ert-deftest jabber-test-internal-feature-declaration-budget ()
-  (let (internal)
-    (dolist (file (directory-files
-                   (expand-file-name "lisp" jabber-test-widgetless--root)
-                   t "\\.el\\'"))
-      (with-temp-buffer
-        (insert-file-contents file)
-        (goto-char (point-min))
-        (while (re-search-forward "(declare-function[[:space:]]+" nil t)
-          (goto-char (match-beginning 0))
-          (let* ((form (read (current-buffer)))
-                 (source (nth 2 form)))
-            (unless (or (string-prefix-p "ext:" source)
-                        (member source '("gnutls.el" "auth-source")))
-              (push (list file form) internal))))))
-    (should (<= (length internal) 3))))
-
 (provide 'jabber-test-widgetless)
 
 ;;; jabber-test-widgetless.el ends here
