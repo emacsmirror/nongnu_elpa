@@ -268,7 +268,12 @@ The buffer has IMAP-related variables initialized.
 `vm-test-mock-process' is set to a valid mock process."
   (declare (indent 1) (debug t))
   `(vm-test-with-mock-process ,responses
-     (let ((imap-buffer (generate-new-buffer " *mock-imap*")))
+     (let ((imap-buffer (generate-new-buffer " *mock-imap*"))
+           ;; The IMAP functions assert that they are in a process buffer, and
+           ;; every real caller says so with `vm-buffer-type:enter'.  Without
+           ;; this the tests exercise them in a state no session is ever in,
+           ;; and pass only because `vm-assertion-checking-off' defaults to t.
+           (vm-buffer-types '(process)))
        (unwind-protect
            (with-current-buffer imap-buffer
              ;; Create mock process connected to this buffer

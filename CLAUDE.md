@@ -45,7 +45,13 @@ cd test && make test-one testel=vm-imap-test.el
 cd test && make test-imap       # live IMAP only (needs a server; skips without one)
 cd test && make test-pop        # POP: mock server always, live if configured
 cd test && make test-leaks      # report tests that leave global state behind
+cd test && make test-assert     # whole suite with VM's own assertions checked
 ```
+
+`test/vm-fuzz-test.el` drives a folder through random operation sequences and
+checks its invariants after each one. It runs a small search as part of the
+suite; `VM_FUZZ_SEEDS` and `VM_FUZZ_OPS` make it search harder, and a failure
+reports the sequence that caused it.
 
 Every bug fix ships a regression test in the matching `test/vm-*-test.el`, in
 the same commit. **Verify the test actually fails without the fix**: stash the
@@ -87,7 +93,10 @@ Gotchas found the hard way:
 - **`vm-assert` does nothing by default.** `vm-assertion-checking-off` defaults
   to t, so an assertion in the code under test is not a check you can rely on in
   the field. It also binds `debug-on-error`, so a test that wants assertions on
-  needs `inhibit-debugger` for batch.
+  needs `inhibit-debugger` for batch. `make test-assert` runs the whole suite
+  with them on and is expected to pass: an assertion that fires there is either
+  a broken invariant or a test setting up a state no real caller is in, which is
+  what four IMAP tests were doing until they were given a `process` buffer type.
 
 ## Contributing workflow
 
