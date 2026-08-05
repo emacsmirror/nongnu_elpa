@@ -201,13 +201,22 @@ Fail soft with a shadow placeholder when image creation fails."
      (insert (propertize "[image unavailable]\n" 'face 'shadow)))))
 
 (defun hermes-chat--create-image-from-url (url)
-  "Return an image descriptor for data:image URL, or nil."
+  "Return an image descriptor for data:image URL, or nil.
+Reject oversized payloads before and after base64 decode using
+`hermes-chat--max-embedded-image-base64' and
+`hermes-chat--max-embedded-image-decoded-bytes'.  Never fetches remote URLs."
   (when (and (stringp url)
-             (string-prefix-p "data:image/" url))
+             (string-prefix-p hermes-chat--data-image-prefix url))
     (when-let* ((marker (string-match ";base64," url))
-                (payload (substring url (+ marker (length ";base64,"))))
+                (payload-start (+ marker (length ";base64,")))
+                ((<= (- (length url) payload-start)
+                     hermes-chat--max-embedded-image-base64))
+                (payload (substring url payload-start))
                 (data (ignore-errors (base64-decode-string payload)))
-                ((and (stringp data) (> (length data) 0))))
+                ((and (stringp data)
+                      (> (length data) 0)
+                      (<= (length data)
+                          hermes-chat--max-embedded-image-decoded-bytes))))
       (create-image data nil t :max-width 640))))
 
 (defun hermes-chat--insert-content-with-images (content insert-text &optional blocks)

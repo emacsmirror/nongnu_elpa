@@ -606,6 +606,16 @@ markdown stays visible and easy to copy."
 (defconst hermes-chat--min-embedded-image-base64 64
   "Minimum base64 payload length accepted as an embedded image.")
 
+(defconst hermes-chat--max-embedded-image-decoded-bytes (* 2 1024 1024)
+  "Hard cap on decoded embedded data:image bytes before `create-image'.
+Conservative bound for chat thumbnails: rejects multi-megabyte dumps without
+fetching remote images or redesigning rendering.")
+
+(defconst hermes-chat--max-embedded-image-base64
+  (+ (/ (* hermes-chat--max-embedded-image-decoded-bytes 4) 3) 4)
+  "Hard cap on base64 payload length before decoding an embedded image.
+Derived from `hermes-chat--max-embedded-image-decoded-bytes' (4/3 expand + pad).")
+
 (defun hermes-chat--data-image-url-at (text start)
   "Return (END . URL) for a data:image URL in TEXT at START, or nil."
   (when (and (stringp text)
