@@ -1537,6 +1537,115 @@ folder its move disturbed."
     (vm-number-messages)
     (should (equal "4" vm-ml-highest-message-number))))
 
+;;; Saving and expunging together
+
+;; `vm-save-and-expunge-folder' expunges quietly and then saves, so it is the
+;; command where the message list and the file on disk have to agree.  A wrong
+;; reverse link makes them disagree, one message leaving the list while another
+;; message's text is deleted, and this is where that would be written out.  It
+;; had no test.
+
+(defun vm-folder-test--bodies-on-disk (path)
+  "Return the numbers of the message bodies present in the folder file PATH.
+The generated folders have bodies \"Body N.\", one per message."
+  (with-temp-buffer
+    (insert-file-contents path)
+    (let ((found nil))
+      (dotimes (i 10)
+        (goto-char (point-min))
+        (when (search-forward (format "Body %d." i) nil t)
+          (push i found)))
+      (nreverse found))))
+
+(defun vm-folder-test--separators-on-disk (path)
+  "Return how many message separator lines the folder file PATH has."
+  (with-temp-buffer
+    (insert-file-contents path)
+    (how-many "^From alice@example\\.com" (point-min) (point-max))))
+
+(ert-deftest vm-folder-test-save-and-expunge-writes-what-is-left ()
+  "The folder on disk ends up with exactly the messages the list has.
+Both halves matter: the expunged message's text is gone from the file, and the
+other three are still there and still whole."
+  (vm-test-with-real-folder (4)
+    (let ((path buffer-file-name))
+      (vm-set-deleted-flag (nth 1 vm-message-list) t)
+      (vm-save-and-expunge-folder)
+      (should (equal '("subject 0" "subject 2" "subject 3")
+                     (mapcar #'vm-su-subject vm-message-list)))
+      (should (vm-test-reverse-links-consistent-p))
+      ;; Saved, so nothing is left waiting in the buffer.
+      (should-not (buffer-modified-p))
+      (should (equal '(0 2 3) (vm-folder-test--bodies-on-disk path)))
+      (should (= 3 (vm-folder-test--separators-on-disk path))))))
+
+(ert-deftest vm-folder-test-save-and-expunge-leaves-a-read-only-folder-alone ()
+  "A read-only folder is not expunged, as the docstring promises.
+The command still saves, so what this pins is that the deleted message is
+neither removed from the list nor written out of the file."
+  (vm-test-with-real-folder (3)
+    (let ((path buffer-file-name))
+      (vm-set-deleted-flag (nth 1 vm-message-list) t)
+      (setq vm-folder-read-only t)
+      (vm-save-and-expunge-folder)
+      (should (= 3 (length vm-message-list)))
+      (should (vm-deleted-flag (nth 1 vm-message-list)))
+      (should (equal '(0 1 2) (vm-folder-test--bodies-on-disk path))))))
+
+(ert-deftest vm-folder-test-save-and-expunge-with-nothing-deleted-changes-nothing ()
+  "With nothing flagged, the folder and the file come out as they were."
+  (vm-test-with-real-folder (3)
+    (let ((path buffer-file-name))
+      (vm-save-and-expunge-folder)
+      (should (= 3 (length vm-message-list)))
+      (should (equal '(0 1 2) (vm-folder-test--bodies-on-disk path)))
+      (should (= 3 (vm-folder-test--separators-on-disk path))))))
+
+;;; Marking messages read and unread
+
+;; Both commands take a count and go through `vm-select-operable-messages', and
+;; neither had a test.  A freshly parsed message is new, and read means neither
+;; new nor unread.
+
+(defun vm-folder-test--read-states ()
+  "Return `new', `unread' or `read' for each message in `vm-message-list'."
+  (mapcar (lambda (m)
+            (cond ((vm-new-flag m) 'new)
+                  ((vm-unread-flag m) 'unread)
+                  (t 'read)))
+          vm-message-list))
+
+(ert-deftest vm-folder-test-mark-message-read-over-a-range ()
+  "Marking read clears both the new and the unread flag, over a count."
+  (vm-test-with-real-folder (4)
+    (let ((vm-move-after-reading nil))
+      (should (equal '(new new new new) (vm-folder-test--read-states)))
+      (setq vm-message-pointer vm-message-list)
+      (vm-mark-message-read 2)
+      (should (equal '(read read new new) (vm-folder-test--read-states))))))
+
+(ert-deftest vm-folder-test-mark-message-unread-over-a-range ()
+  "Marking unread sets the unread flag on messages that were read.
+It does not make them new again: new is for messages that have just arrived."
+  (vm-test-with-real-folder (4)
+    (let ((vm-move-after-reading nil))
+      (setq vm-message-pointer vm-message-list)
+      (vm-mark-message-read 4)
+      (should (equal '(read read read read) (vm-folder-test--read-states)))
+      (setq vm-message-pointer (nthcdr 1 vm-message-list))
+      (vm-mark-message-unread 2)
+      (should (equal '(read unread unread read)
+                     (vm-folder-test--read-states))))))
+
+(ert-deftest vm-folder-test-mark-message-read-leaves-read-messages-alone ()
+  "Marking a message read again changes nothing, and does not fail."
+  (vm-test-with-real-folder (3)
+    (let ((vm-move-after-reading nil))
+      (setq vm-message-pointer vm-message-list)
+      (vm-mark-message-read 3)
+      (vm-mark-message-read 3)
+      (should (equal '(read read read) (vm-folder-test--read-states))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
