@@ -190,6 +190,15 @@ VM 8.?.?
     vm-epg is not a drop-in rename of vm-pgg; its customization variables and
     commands are named vm-epg-* and its faces vm-epg-*, so vm-pgg settings
     must be carried over by hand.
+  * Killing a folder buffer now takes the virtual folders over it with it, and
+    says so first if any of them has unsaved changes, so that the kill can be
+    called off.  A virtual message keeps its text in the real folder's buffer,
+    so a virtual folder left behind could do almost nothing with what it
+    listed: it could not expunge, and an expunge that had been allowed to
+    finish would have dropped the message from the virtual folder while its
+    text stayed in a file nobody had open.  `vm-quit' is unchanged and remains
+    the orderly way to leave a folder: it keeps the virtual folders and takes
+    this folder's messages out of them.
 
 
 VM 8.3.2 released 2025-12-29

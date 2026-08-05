@@ -596,6 +596,105 @@ to arrive there at once."
         (should (vm-test-reverse-links-consistent-p))
         (should (null (vm-reverse-link-of (vm-test-first-message))))))))
 
+;;; Killing a real folder takes its virtual folders with it (issue #573)
+
+;; A virtual message keeps its text in the real folder's buffer, so a virtual
+;; folder whose real folder has been killed cannot do much of anything with what
+;; it lists.  It cannot expunge, and an expunge allowed to finish would drop the
+;; message from the virtual folder while its text stayed in a file nobody has
+;; open.  So the virtual folders are quit when the real folder buffer is killed,
+;; after asking if any of them has changes to lose.
+;;
+;; The prompt is skipped when `noninteractive', there being nobody to answer it,
+;; so a test that wants to reach it has to bind that to nil.
+
+(defvar vm-virtual-test--prompt nil
+  "Prompt of the last question `vm-virtual-test--answering' saw.
+Bound by that macro, so it is read inside its body and leaks nothing.")
+
+(defmacro vm-virtual-test--answering (answer &rest body)
+  "Run BODY with `y-or-n-p' answering ANSWER, recording the prompt.
+The prompt of the last question asked is in `vm-virtual-test--prompt' within
+BODY, nil if none was asked.  `noninteractive' is bound to nil because the
+query skips itself in batch, there being nobody to answer."
+  (declare (indent 1) (debug t))
+  `(let ((noninteractive nil)
+         (vm-virtual-test--prompt nil))
+     (cl-letf (((symbol-function 'y-or-n-p)
+                (lambda (prompt) (setq vm-virtual-test--prompt prompt) ,answer)))
+       ,@body)))
+
+(ert-deftest vm-virtual-test-killing-the-real-folder-kills-the-virtual-ones ()
+  "Killing a real folder buffer quits the virtual folders over it.
+Issue #573.  With nothing to lose there is no question about it."
+  (vm-virtual-test--with-folders (real virt-a virt-b 3)
+    (vm-virtual-test--answering t
+      (dolist (buffer (list real virt-a virt-b))
+        (with-current-buffer buffer (set-buffer-modified-p nil)))
+      (kill-buffer real)
+      (should-not vm-virtual-test--prompt))
+    (should-not (buffer-live-p real))
+    (should-not (buffer-live-p virt-a))
+    (should-not (buffer-live-p virt-b))))
+
+(ert-deftest vm-virtual-test-killing-the-real-folder-asks-about-changes ()
+  "A virtual folder with changes is named in a question before it is killed.
+Issue #573.  Deleting a message in the virtual folder marks it modified, and
+those changes go when it does."
+  (vm-virtual-test--with-folders (real virt-a virt-b 3)
+    (with-current-buffer virt-a
+      (vm-set-deleted-flag (vm-test-first-message) t))
+    (should (buffer-modified-p virt-a))
+    ;; the name has to be taken before the kill, which is what takes it away
+    (let ((name (buffer-name virt-a)))
+      (vm-virtual-test--answering t
+        (kill-buffer real)
+        (should vm-virtual-test--prompt)
+        (should (string-match-p (regexp-quote name) vm-virtual-test--prompt))
+        (should (string-match-p "unsaved changes" vm-virtual-test--prompt))))
+    (should-not (buffer-live-p real))
+    (should-not (buffer-live-p virt-a))))
+
+(ert-deftest vm-virtual-test-refusing-keeps-the-real-and-virtual-folders ()
+  "Answering no to that question leaves every folder alone.
+Issue #573.  The question is on `kill-buffer-query-functions' rather than
+`kill-buffer-hook' precisely so that the answer can still stop the kill."
+  (vm-virtual-test--with-folders (real virt-a virt-b 3)
+    (with-current-buffer virt-a
+      (vm-set-deleted-flag (vm-test-first-message) t))
+    (vm-virtual-test--answering nil
+      (kill-buffer real)
+      (should vm-virtual-test--prompt))
+    (should (buffer-live-p real))
+    (should (buffer-live-p virt-a))
+    (should (buffer-live-p virt-b))))
+
+(ert-deftest vm-virtual-test-killing-the-real-folder-deregisters-mirrors ()
+  "The virtual folders are quit, not merely killed, so their mirrors go too.
+Issue #573.  A killed virtual folder leaves its messages registered on the real
+messages, which is what #571 had to guard against; quitting deregisters them.
+Asserted on a second real folder, this one's own messages being gone with it."
+  (vm-virtual-test--with-folders (real virt-a virt-b 3)
+    (let ((message (with-current-buffer real (vm-test-first-message))))
+      (should (= 2 (length (vm-virtual-messages-of message))))
+      (vm-virtual-test--answering t (kill-buffer real))
+      (should (null (vm-virtual-messages-of message))))))
+
+(ert-deftest vm-virtual-test-killing-a-virtual-folder-asks-nothing ()
+  "Killing a virtual folder itself is unaffected: no question, nothing else dies.
+The query and the kill are both on the real folder's hooks, and a virtual folder
+carries no other folder's messages."
+  (vm-virtual-test--with-folders (real virt-a virt-b 3)
+    (with-current-buffer virt-a
+      (vm-set-deleted-flag (vm-test-first-message) t))
+    (vm-virtual-test--answering t
+      (with-current-buffer virt-a (set-buffer-modified-p nil))
+      (kill-buffer virt-a)
+      (should-not vm-virtual-test--prompt))
+    (should-not (buffer-live-p virt-a))
+    (should (buffer-live-p real))
+    (should (buffer-live-p virt-b))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here

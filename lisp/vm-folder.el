@@ -5262,6 +5262,11 @@ folder-access-data should be preserved."
     (vm-menu-install-menus))
   (add-hook 'kill-buffer-hook 'vm-garbage-collect-folder)
   (add-hook 'kill-buffer-hook 'vm-garbage-collect-message)
+  ;; Killing a real folder takes its virtual folders with it, since they cannot
+  ;; work without its buffer (issue #573).  Buffer-local, unlike the two above:
+  ;; these have no business running as every other buffer in Emacs is killed.
+  (add-hook 'kill-buffer-query-functions 'vm-virtual-kill-buffer-query nil t)
+  (add-hook 'kill-buffer-hook 'vm-virtual-kill-buffers nil t)
   ;; avoid the XEmacs file dialog box.
   (defvar use-dialog-box)
   (make-local-variable 'use-dialog-box)
