@@ -177,6 +177,73 @@ changed on its way looks like."
               signature
               "\n------SIG--\n\n"))))
 
+(defun vm-pgp-test--write-inline-message (file kind &optional tamper)
+  "Write a message whose body is PGP armour to FILE, as a folder.
+KIND is `encrypted\' or `signed\'.  TAMPER alters a signed body after signing."
+  (require 'epg)
+  (let* ((text "Inline hello!\n")
+         (context (vm-pgp-test--context))
+         (body
+          (progn
+            (epg-context-set-armor context t)
+            (cond
+             ((eq kind 'encrypted)
+              (epg-encrypt-string context text
+                                  (epg-list-keys context "vmtest@example.com")))
+             (t
+              (let ((clear (epg-sign-string context text 'clear)))
+                (if tamper
+                    (replace-regexp-in-string "Inline hello!" "Tampered!"
+                                              clear t t)
+                  clear)))))))
+    (with-temp-file file
+      (insert "From signer@example.com Mon Jan  1 00:00:00 2024\n"
+              "From: Signer <vmtest@example.com>\n"
+              "To: VM User <vmtest@example.com>\n"
+              "Subject: inline pgp\n"
+              "Message-ID: <pgpinline-1@example.com>\n"
+              "MIME-Version: 1.0\n"
+              "Content-Type: text/plain; charset=UTF-8\n"
+              "\n"
+              body
+              "\n"))))
+
+(defmacro vm-pgp-test--with-inline-message (spec &rest body)
+  "Write an inline PGP folder, visit it, decode it, then run BODY.
+SPEC is (BUFFER-VAR KIND &optional TAMPER), as `vm-pgp-test--write-inline-message\'
+takes them."
+  (declare (indent 1) (debug t))
+  `(let ((vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-frame-per-folder nil)
+         (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-current-warning vm-current-warning)
+         (before (buffer-list))
+         ,(car spec))
+     (require 'vm)
+     (unwind-protect
+         (let ((file (expand-file-name "inline" home)))
+           (vm-pgp-test--write-inline-message file ',(nth 1 spec) ,(nth 2 spec))
+           (cl-letf* ((make (symbol-function 'epg-make-context))
+                      ((symbol-function 'epg-make-context)
+                       (lambda (&rest args)
+                         (let ((context (apply make args)))
+                           (epg-context-set-passphrase-callback
+                            context (lambda (&rest _) ""))
+                           context))))
+             (vm-visit-folder file)
+             (vm-decode-mime-message)
+             (setq ,(car spec) (or vm-presentation-buffer (current-buffer)))
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer)))))))
+
 (defmacro vm-pgp-test--with-signed-message (spec &rest body)
   "Write a signed PGP/MIME folder, visit it, decode it, then run BODY.
 SPEC is (BUFFER-VAR &optional TAMPER), TAMPER going to
@@ -295,12 +362,17 @@ gpg-agent still holds it and decrypts happily."
 (ert-deftest vm-pgp-test-other-encrypted-shapes-are-left-alone ()
   "A `multipart/encrypted\' that is not RFC 3156 is displayed part by part.
 The two parts have to be a version stamp and an application/octet-stream; this
-one carries its second part as text/plain, so it is not ours to decrypt."
+one carries its second part as text/plain, so the multipart handler declines it
+and the envelope is shown, version stamp and all.
+
+What then happens to the armour in that text part is the inline path\'s
+business, and it decrypts it, which is why this does not assert that the
+plaintext is absent: the reader gets the message either way, and the shape check
+is what is under test here."
   (vm-pgp-test--with-keyring
     (let ((vm-mime-decrypt-pgp-parts t))
       (vm-pgp-test--with-message (presentation "text/plain")
-        (should-not (vm-pgp-test--shows presentation "Hello world!"))
-        (should (vm-pgp-test--shows presentation "BEGIN PGP MESSAGE"))))))
+        (should (vm-pgp-test--shows presentation "application/pgp-encrypted"))))))
 
 ;;; Signed messages
 
@@ -351,6 +423,48 @@ VM did with PGP signatures before it could check them."
       (vm-pgp-test--with-signed-message (presentation)
         (should (vm-pgp-test--shows presentation "Signed hello!"))
         (should-not (vm-pgp-test--shows presentation "PGP signature:"))))))
+
+;;; Inline PGP, armour in the body
+
+;; Before RFC 3156, and still from some clients, PGP mail is armour in the body
+;; of an ordinary text part.  VM displayed the armour.
+
+(ert-deftest vm-pgp-test-inline-encrypted-message-is-decrypted ()
+  "An encrypted block in the body is replaced by its plaintext."
+  (vm-pgp-test--with-keyring
+    (let ((vm-mime-decrypt-pgp-parts t))
+      (vm-pgp-test--with-inline-message (presentation encrypted)
+        (should (vm-pgp-test--shows presentation "Inline hello!"))
+        (should-not (vm-pgp-test--shows presentation "BEGIN PGP MESSAGE"))))))
+
+(ert-deftest vm-pgp-test-inline-clearsigned-message-is-verified ()
+  "A clearsigned body shows the text it signs and what the signature says."
+  (vm-pgp-test--with-keyring
+    (let ((vm-mime-verify-signatures t))
+      (vm-pgp-test--with-inline-message (presentation signed)
+        (should (vm-pgp-test--shows presentation "Inline hello!"))
+        (should (vm-pgp-test--shows presentation "PGP signature: Good signature"))
+        (should-not (vm-pgp-test--shows presentation "BEGIN PGP SIGNED MESSAGE"))
+        (should-not (vm-pgp-test--shows presentation "BEGIN PGP SIGNATURE"))))))
+
+(ert-deftest vm-pgp-test-inline-tampered-message-says-so ()
+  "A clearsigned body altered after signing is reported as bad, and still shown."
+  (vm-pgp-test--with-keyring
+    (let ((vm-mime-verify-signatures t))
+      (vm-pgp-test--with-inline-message (presentation signed t)
+        (should (vm-pgp-test--shows presentation "Tampered!"))
+        (should (vm-pgp-test--shows presentation "PGP signature: Bad signature"))))))
+
+(ert-deftest vm-pgp-test-inline-armour-is-left-alone-when-switched-off ()
+  "With both settings nil the armour is displayed as the text it is.
+That is what VM did before it could read any of this, and it is what someone
+who wants to see the armour asks for by turning the settings off."
+  (vm-pgp-test--with-keyring
+    (let ((vm-mime-decrypt-pgp-parts nil)
+          (vm-mime-verify-signatures nil))
+      (vm-pgp-test--with-inline-message (presentation encrypted)
+        (should (vm-pgp-test--shows presentation "BEGIN PGP MESSAGE"))
+        (should-not (vm-pgp-test--shows presentation "Inline hello!"))))))
 
 (provide 'vm-pgp-test)
 

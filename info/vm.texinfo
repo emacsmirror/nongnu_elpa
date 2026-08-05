@@ -2315,6 +2315,13 @@ signature is bad: what it says is worth knowing alongside the warning, not
 instead of it.  This setting covers S/MIME signatures too, which VM has always
 checked.
 
+@cindex inline PGP
+Both settings also cover @dfn{inline PGP}, which is armour in the body of an
+ordinary text part rather than a @acronym{MIME} entity of its own: an encrypted
+block is replaced by its plaintext, and a clearsigned one by the text it signs
+and the same report.  Mail carrying no @acronym{MIME} headers at all is left
+alone, armour and all.
+
 @cindex @acronym{HTML}
 @vindex vm-mime-text/html-handler
 The @acronym{HTML} content in text/html @acronym{MIME} parts can be
