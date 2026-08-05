@@ -10,6 +10,7 @@
 (require 'ert)
 (require 'jabber-compose)
 (require 'jabber-register)
+(require 'jabber-search)
 (require 'jabber-vcard)
 (require 'jabber-xdata)
 (require 'jabber-xdata-form)
@@ -140,6 +141,80 @@
     (should
      (equal (jabber-register--submission 'search)
             '((first nil "Romeo"))))))
+
+(defun jabber-test-widgetless--submission-lifecycle (type outcome)
+  "Assert TYPE form lifecycle for asynchronous OUTCOME."
+  (let ((form-buffer (generate-new-buffer " *jabber async form test*"))
+        (jabber-register-search-result-function #'ignore)
+        disconnected
+        sent)
+    (unwind-protect
+        (cl-letf (((symbol-function 'fsm-get-state-data)
+                   (lambda (_connection)
+                     (and (eq type 'register) '(:registerp t))))
+                  ((symbol-function 'jabber-process-data) #'ignore)
+                  ((symbol-function 'jabber-report-success) #'ignore)
+                  ((symbol-function 'jabber-disconnect-one)
+                   (lambda (_connection)
+                     (setq disconnected t)))
+                  ((symbol-function 'sit-for) #'ignore)
+                  ((symbol-function 'jabber-send-iq)
+                   (lambda (&rest arguments)
+                     (push arguments sent)))
+                  ((symbol-function 'quit-window)
+                   (lambda (&optional _kill _window)
+                     (kill-buffer (current-buffer)))))
+          (with-current-buffer form-buffer
+            (jabber-xdata-form-mode)
+            (setq-local jabber-buffer-connection 'connection
+                        jabber-register--submit-to "forms.example.org"
+                        jabber-register--legacy-p t
+                        jabber-register--registered-p t
+                        jabber-xdata-form--form
+                        '(:fields ((:var "first" :label "First name"
+                                    :values ("Romeo"))))
+                        jabber-xdata-form--actions
+                        (jabber-register--actions type))
+            (jabber-xdata-form-submit))
+          (should (buffer-live-p form-buffer))
+          (let* ((request (car sent))
+                 (callback (nth (if (eq outcome 'success) 4 6) request))
+                 (closure-data (nth (if (eq outcome 'success) 5 7) request)))
+            (funcall callback
+                     'connection
+                     (if (eq outcome 'success)
+                         '(iq ((type . "result")))
+                       '(iq ((type . "error"))))
+                     closure-data))
+          (if (eq outcome 'success)
+              (progn
+                (should-not (buffer-live-p form-buffer))
+                (when (eq type 'register)
+                  (should disconnected)))
+            (should (buffer-live-p form-buffer))
+            (should-not disconnected)
+            (with-current-buffer form-buffer
+              (should
+               (equal (plist-get
+                       (car (plist-get jabber-xdata-form--form :fields))
+                       :values)
+                      '("Romeo")))
+              (jabber-xdata-form-submit))
+            (should (= 2 (length sent)))))
+      (when (buffer-live-p form-buffer)
+        (kill-buffer form-buffer)))))
+
+(ert-deftest jabber-test-register-form-closes-after-async-success ()
+  (jabber-test-widgetless--submission-lifecycle 'register 'success))
+
+(ert-deftest jabber-test-register-form-survives-iq-failure-for-retry ()
+  (jabber-test-widgetless--submission-lifecycle 'register 'failure))
+
+(ert-deftest jabber-test-search-form-closes-after-async-success ()
+  (jabber-test-widgetless--submission-lifecycle 'search 'success))
+
+(ert-deftest jabber-test-search-form-survives-iq-failure-for-retry ()
+  (jabber-test-widgetless--submission-lifecycle 'search 'failure))
 
 (ert-deftest jabber-test-xdata-result-renderer-is-widgetless ()
   (with-temp-buffer

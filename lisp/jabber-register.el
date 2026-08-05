@@ -143,7 +143,8 @@ JC is the Jabber connection."
                :command (if (eq type 'register)
                             #'jabber-submit-register
                           #'jabber-submit-search)
-               :submits-form t)
+               :submits-form t
+               :stay-open t)
          (list :key "q" :label "Cancel" :command #'jabber-register--close-form))
    (when (eq type 'register)
      (list (list :key "d" :label "Cancel registration"
@@ -197,20 +198,48 @@ obtained from `xml-parse-region'."
                   (and legacy-p
                        (jabber-xml-get-children query 'registered))))))
 
+(defun jabber-register--submission-callback (jc xml-data closure-data)
+  "Run the callback in CLOSURE-DATA for JC and XML-DATA.
+Close its form buffer after a successful submission callback."
+  (funcall (plist-get closure-data :callback)
+           jc xml-data (plist-get closure-data :callback-data))
+  (when-let* (((plist-get closure-data :close-form))
+              (buffer (plist-get closure-data :buffer))
+              ((buffer-live-p buffer)))
+    (with-current-buffer buffer
+      (set-buffer-modified-p nil))
+    (kill-buffer buffer)))
+
+(defun jabber-register--submission-callback-data (callback callback-data
+                                                           close-form)
+  "Return form callback data for CALLBACK with CALLBACK-DATA.
+CLOSE-FORM non-nil closes the current form after CALLBACK returns."
+  (list :callback callback
+        :callback-data callback-data
+        :buffer (current-buffer)
+        :close-form close-form))
+
 (defun jabber-submit-register (&rest _ignore)
   "Submit registration input.  See `jabber-process-register-or-search'."
   (interactive)
-  (let* ((registerp (plist-get (fsm-get-state-data jabber-buffer-connection) :registerp))
-	 (handler (if registerp
-		      #'jabber-process-register-secondtime
-		    #'jabber-report-success))
-	 (text (concat "Registration with " jabber-register--submit-to)))
+  (let* ((registerp
+          (plist-get (fsm-get-state-data jabber-buffer-connection) :registerp))
+         (handler (if registerp
+                      #'jabber-process-register-secondtime
+                    #'jabber-report-success))
+         (text (concat "Registration with " jabber-register--submit-to))
+         (error-handler (if registerp #'jabber-report-success handler))
+         (error-text (if registerp "Account registration" text)))
     (jabber-send-iq jabber-buffer-connection jabber-register--submit-to
-		    "set"
-		    `(query ((xmlns . ,jabber-register-xmlns))
-		            ,@(jabber-register--submission 'register))
-		    handler (if registerp 'success text)
-		    handler (if registerp 'failure text)))
+                    "set"
+                    `(query ((xmlns . ,jabber-register-xmlns))
+                            ,@(jabber-register--submission 'register))
+                    #'jabber-register--submission-callback
+                    (jabber-register--submission-callback-data
+                     handler (if registerp 'success text) t)
+                    #'jabber-register--submission-callback
+                    (jabber-register--submission-callback-data
+                     error-handler error-text nil)))
 
   (message "Registration sent"))
 
@@ -239,8 +268,13 @@ obtained from `xml-parse-region'."
                     "set"
                     `(query ((xmlns . ,jabber-search-xmlns))
                             ,@(jabber-register--submission 'search))
-                    #'jabber-process-data jabber-register-search-result-function
-                    #'jabber-report-success text)
+                    #'jabber-register--submission-callback
+                    (jabber-register--submission-callback-data
+                     #'jabber-process-data
+                     jabber-register-search-result-function t)
+                    #'jabber-register--submission-callback
+                    (jabber-register--submission-callback-data
+                     #'jabber-report-success text nil))
     (message "Search sent")))
 
 (defun jabber-remove-register (&rest _ignore)
