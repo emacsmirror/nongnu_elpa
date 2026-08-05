@@ -428,6 +428,82 @@ The other side of the same branch, where the reverse link is nil."
         (should (eq next (vm-test-first-message)))
         (should (null (vm-reverse-link-of next)))))))
 
+;;; Automatic deletion by selector
+
+;; `vm-virtual-auto-delete-message' is what goes on `vm-arrived-messages-hook'
+;; to flag spam as it arrives, and with `vm-virtual-auto-delete-message-expunge'
+;; set it expunges immediately.  It had no test, and it is the only caller of
+;; `vm-expunge-folder' with `:quiet t' and `:just-these-messages'.
+
+(defmacro vm-avirtual-test--with-spam-selector (&rest body)
+  "Run BODY in a visited folder of five messages with a spam selector defined.
+The selector matches \"subject 1\" and so exactly one message of the five."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-real-folder (5)
+     (let ((vm-virtual-folder-alist
+            '(("spam" (("does-not-matter") (subject "subject 1")))))
+           (vm-virtual-auto-delete-message-selector "spam")
+           (vm-virtual-auto-delete-message-folder nil)
+           (vm-virtual-auto-delete-message-expunge nil))
+       (setq vm-message-pointer vm-message-list)
+       ,@body)))
+
+(defun vm-avirtual-test--deleted-flags ()
+  "Return the deleted flag of each message as t or nil, in order."
+  (mapcar (lambda (m) (and (vm-deleted-flag m) t)) vm-message-list))
+
+(ert-deftest vm-avirtual-test-auto-delete-flags-what-the-selector-matches ()
+  "The matching message is flagged and labelled, and the others are untouched.
+The label is the selector's name, which is how the summary shows why a message
+was flagged."
+  (vm-avirtual-test--with-spam-selector
+    (vm-virtual-auto-delete-message 5)
+    (should (equal '(nil t nil nil nil) (vm-avirtual-test--deleted-flags)))
+    (should (equal '("spam") (vm-labels-of (nth 1 vm-message-list))))
+    (should (null (vm-labels-of (car vm-message-list))))
+    ;; Flagged, not expunged: the folder still has all five.
+    (should (= 5 (length vm-message-list)))))
+
+(ert-deftest vm-avirtual-test-auto-delete-expunges-when-told-to ()
+  "With the expunge option set the matching message leaves the folder at once.
+This is the one caller of `vm-expunge-folder' with `:just-these-messages', so
+only the matched message goes, and the folder is left consistent."
+  (vm-avirtual-test--with-spam-selector
+    (let ((vm-virtual-auto-delete-message-expunge t))
+      (vm-virtual-auto-delete-message 5)
+      (should (equal '("subject 0" "subject 2" "subject 3" "subject 4")
+                     (mapcar #'vm-su-subject vm-message-list)))
+      (should (vm-test-reverse-links-consistent-p))
+      (should (equal '(nil nil nil nil) (vm-avirtual-test--deleted-flags))))))
+
+(ert-deftest vm-avirtual-test-auto-delete-leaves-non-matching-folders-alone ()
+  "A selector that matches nothing flags nothing and does not fail."
+  (vm-test-with-real-folder (5)
+    (let ((vm-virtual-folder-alist
+           '(("spam" (("does-not-matter") (subject "nothing matches this")))))
+          (vm-virtual-auto-delete-message-selector "spam")
+          (vm-virtual-auto-delete-message-folder nil)
+          (vm-virtual-auto-delete-message-expunge t))
+      (setq vm-message-pointer vm-message-list)
+      (vm-virtual-auto-delete-message 5)
+      (should (= 5 (length vm-message-list)))
+      (should (equal '(nil nil nil nil nil) (vm-avirtual-test--deleted-flags))))))
+
+(ert-deftest vm-avirtual-test-auto-delete-messages-starts-at-the-current-one ()
+  "`vm-virtual-auto-delete-messages' covers the current message to the last.
+That is what makes it right for `vm-arrived-messages-hook', where the pointer
+sits at the first of the messages that just arrived: a match earlier in the
+folder is not flagged."
+  (vm-avirtual-test--with-spam-selector
+    ;; Point past the matching message.
+    (setq vm-message-pointer (nthcdr 2 vm-message-list))
+    (vm-virtual-auto-delete-messages)
+    (should (equal '(nil nil nil nil nil) (vm-avirtual-test--deleted-flags)))
+    ;; From before it, the same command does flag it.
+    (setq vm-message-pointer vm-message-list)
+    (vm-virtual-auto-delete-messages)
+    (should (equal '(nil t nil nil nil) (vm-avirtual-test--deleted-flags)))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here
