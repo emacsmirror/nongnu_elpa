@@ -13,9 +13,8 @@ An Emacs front-end for Hermes Agent, driven over the dashboard/TUI gateway.
 
 * Installation
 
-Hermes Agent with dashboard/TUI gateway support is required.  Hermes Agent
-0.18.2 is the currently tested release.  See the [[https://hermes-agent.nousresearch.com/docs/getting-started/quickstart][Hermes Agent quickstart]] for
-installation and initial setup.
+Hermes Agent with dashboard/TUI gateway support is required.
+  - See the [[https://hermes-agent.nousresearch.com/docs/getting-started/quickstart][Hermes Agent quickstart]] for installation and initial setup.
 
 ** use-package
 
