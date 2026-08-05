@@ -3983,8 +3983,13 @@ them with connectives like @code{and}, @code{or} and @code{not}, and add
 other functions that are defined in Emacs or VM or new functions of your
 own.
 
-The @i{actions} are typically executed in the mail composition buffer for
-the message you are composing.
+The @i{actions} are executed by Personality Crisis itself, as a composition
+begins.  It runs the action list twice: once before the composition buffer
+exists, which is when @code{vmpc-pre-function} and the conditions get their
+look at the message being replied to, and once in the composition, which is
+where the actions below do their work.  Actions are not commands: calling one
+by hand where there is no composition tells you so rather than quietly doing
+nothing.
 
 @table @code
 @findex vmpc-substitute-header
@@ -4020,7 +4025,23 @@ itself can be deleted.
 
 The action @code{(vmpc-signature "signature-file")} inserts the signature
 from @code{signature-file}.  If there is already a signature in the outgoing
-message, then it replaces with the new signature.
+message, then it replaces with the new signature.  If the argument is the empty
+string, as in @code{(vmpc-signature "")}, the signature is deleted and none is
+inserted.
+
+@vindex vmpc-expect-default-signature
+@vindex mail-signature
+Personality Crisis can only replace or delete a signature whose extent it
+knows.  A signature it inserted itself, it knows; one that Emacs put there
+because @code{mail-signature} is set, it does not, unless you tell it to expect
+one:
+
+@lisp
+(setq vmpc-expect-default-signature t)
+@end lisp
+
+@noindent Without that, a rule saying @code{(vmpc-signature "")} has nothing to
+delete and leaves the signature where it is.
 
 @findex vmpc-pre-signature
 @item vmpc-pre-signature
