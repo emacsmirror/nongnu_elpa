@@ -207,40 +207,6 @@ the user somewhere else in the folder."
                    (vm-test-message-header (car vm-message-pointer)
                                            "Subject")))))))
 
-;;; Tests for duplicate detection logic
-;; Note: vm-delete-duplicate-messages requires full folder context,
-;; so we test the underlying logic patterns instead.
-
-(ert-deftest vm-delete-test-message-id-hash-logic ()
-  "Test the hash table logic used for duplicate detection."
-  (let ((table (make-vector 103 0))
-        (ids '("<unique1@example.com>"
-               "<duplicate@example.com>"
-               "<duplicate@example.com>"  ; duplicate!
-               "<unique2@example.com>")))
-    ;; Simulate duplicate detection logic
-    (let ((duplicates 0))
-      (dolist (mid ids)
-        (if (intern-soft mid table)
-            (setq duplicates (1+ duplicates))
-          (intern mid table)))
-      ;; Should find exactly 1 duplicate
-      (should (= duplicates 1)))))
-
-(ert-deftest vm-delete-test-message-id-uniqueness ()
-  "Test that hash table correctly identifies unique Message-IDs."
-  (let ((table (make-vector 61 0))
-        (ids '("<msg1@example.com>"
-               "<msg2@example.com>"
-               "<msg3@example.com>")))
-    (let ((duplicates 0))
-      (dolist (mid ids)
-        (if (intern-soft mid table)
-            (setq duplicates (1+ duplicates))
-          (intern mid table)))
-      ;; No duplicates
-      (should (= duplicates 0)))))
-
 ;;; Tests for flagged status
 
 (ert-deftest vm-delete-test-flagged-flag ()
@@ -262,31 +228,6 @@ Body
       ;; Unset flagged
       (vm-set-flagged-flag msg nil)
       (should-not (vm-flagged-flag msg)))))
-
-;;; Tests for skipping logic used in duplicate detection
-
-(ert-deftest vm-delete-test-skip-already-deleted-logic ()
-  "Test that duplicate logic skips already-deleted messages."
-  ;; This tests the pattern: skip if message is already deleted
-  (let ((deleted-flags '(t nil nil t))  ; Messages 0,3 are deleted
-        (ids '("<dup@example.com>"
-               "<dup@example.com>"      ; Would be dup, but msg0 deleted
-               "<unique@example.com>"
-               "<unique@example.com>")))  ; Would be dup, but msg3 deleted
-    (let ((table (make-vector 61 0))
-          (idx 0)
-          (new-deletes 0))
-      (while (< idx (length ids))
-        (unless (nth idx deleted-flags)  ; Skip deleted messages
-          (let ((mid (nth idx ids)))
-            (if (intern-soft mid table)
-                (setq new-deletes (1+ new-deletes))
-              (intern mid table))))
-        (setq idx (1+ idx)))
-      ;; Only one new delete: second occurrence of <dup@example.com>
-      ;; (the one at idx 1, since idx 0 is deleted)
-      (should (= new-deletes 0)))))
-
 
 ;;; k must not delete the whole folder (issue #496)
 
@@ -759,6 +700,101 @@ Killing the same subtree twice deletes nothing the second time, and says so."
         (vm-kill-thread-subtree 0)
         (should (member "No messages deleted." said))
         (should (equal '(0 1 2 3) (vm-delete-test--deleted-indices)))))))
+
+;;; Deleting duplicates
+
+;; `vm-delete-duplicate-messages' and its by-body variant flag messages for
+;; deletion, so what they do not delete matters as much as what they do.  Their
+;; coverage was three tests that re-implement the hash logic in the test file
+;; and never call VM, so nothing exercised either command.
+
+(defconst vm-delete-test--duplicates
+  (concat
+   "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+   "From: alice@example.com\nSubject: first copy\n"
+   "Message-ID: <dup-a@example.com>\n\nShared body.\n\n"
+   "From alice@example.com Mon Jan  1 00:00:01 2024\n"
+   "From: alice@example.com\nSubject: second copy\n"
+   "Message-ID: <dup-a@example.com>\n\nShared body.\n\n"
+   "From alice@example.com Mon Jan  1 00:00:02 2024\n"
+   "From: alice@example.com\nSubject: on its own\n"
+   "Message-ID: <dup-b@example.com>\n\nA different body.\n\n")
+  "Two messages with one message id between them, and a third with its own.")
+
+(defmacro vm-delete-test--dedupable (content &rest body)
+  "Run BODY in a folder of CONTENT that the duplicate commands will accept."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-folder ,content
+     (setq major-mode 'vm-mode)
+     (setq vm-mail-buffer nil)
+     (cl-letf (((symbol-function 'vm-display) (lambda (&rest _) nil))
+               ((symbol-function 'vm-update-summary-and-mode-line) #'ignore))
+       ,@body)))
+
+(defun vm-delete-test--deleted-flags ()
+  "Return the deleted flag of each message as t or nil, in order."
+  (mapcar (lambda (m) (and (vm-deleted-flag m) t)) vm-message-list))
+
+(ert-deftest vm-delete-test-duplicates-by-id-keep-the-first-copy ()
+  "The second message with a message id is flagged, the first is not.
+Which copy survives is the point: the command walks the folder in order and
+keeps the one it meets first."
+  (vm-delete-test--dedupable vm-delete-test--duplicates
+    (should (= 1 (vm-delete-duplicate-messages)))
+    (should (equal '(nil t nil) (vm-delete-test--deleted-flags)))))
+
+(ert-deftest vm-delete-test-duplicates-by-id-spare-the-last-copy ()
+  "A copy already flagged does not claim the id, so the other copy survives.
+This is the promise in the docstring: VM never deletes the last copy of a
+message.  Deleted messages are skipped, so the id belongs to the first copy
+that is still there."
+  (vm-delete-test--dedupable vm-delete-test--duplicates
+    (vm-set-deleted-flag-of (vm-test-first-message) t)
+    (should (= 0 (vm-delete-duplicate-messages)))
+    (should (equal '(t nil nil) (vm-delete-test--deleted-flags)))))
+
+(ert-deftest vm-delete-test-duplicates-by-id-ignore-messages-with-no-id ()
+  "Messages with no message id are never duplicates of each other.
+There is nothing to compare, and flagging them would be flagging on the
+strength of nothing."
+  (vm-delete-test--dedupable
+      (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+              "From: alice@example.com\nSubject: no id here\n\nBody.\n\n"
+              "From alice@example.com Mon Jan  1 00:00:01 2024\n"
+              "From: alice@example.com\nSubject: none here either\n\nBody.\n\n")
+    (should (= 0 (vm-delete-duplicate-messages)))
+    (should (equal '(nil nil) (vm-delete-test--deleted-flags)))))
+
+(ert-deftest vm-delete-test-duplicates-by-body-compare-the-body ()
+  "The by-body command flags the second message with the same body.
+The two copies here have the same body and the third does not, and the ids are
+not consulted at all."
+  (vm-delete-test--dedupable vm-delete-test--duplicates
+    (should (= 1 (vm-delete-duplicate-messages-by-body)))
+    (should (equal '(nil t nil) (vm-delete-test--deleted-flags)))))
+
+(ert-deftest vm-delete-test-duplicates-by-body-ignore-differing-bodies ()
+  "Messages sharing a message id but not a body are left alone by the by-body
+command, which is the whole reason for having both."
+  (vm-delete-test--dedupable
+      (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+              "From: alice@example.com\nSubject: one\n"
+              "Message-ID: <same@example.com>\n\nOne body.\n\n"
+              "From alice@example.com Mon Jan  1 00:00:01 2024\n"
+              "From: alice@example.com\nSubject: two\n"
+              "Message-ID: <same@example.com>\n\nAnother body entirely.\n\n")
+    (should (= 0 (vm-delete-duplicate-messages-by-body)))
+    (should (equal '(nil nil) (vm-delete-test--deleted-flags)))
+    ;; ...and the by-id command does flag one of them.
+    (should (= 1 (vm-delete-duplicate-messages)))
+    (should (equal '(nil t) (vm-delete-test--deleted-flags)))))
+
+(ert-deftest vm-delete-test-duplicates-by-body-spare-the-last-copy ()
+  "A copy already flagged is not hashed, so the other copy survives."
+  (vm-delete-test--dedupable vm-delete-test--duplicates
+    (vm-set-deleted-flag-of (vm-test-first-message) t)
+    (should (= 0 (vm-delete-duplicate-messages-by-body)))
+    (should (equal '(t nil nil) (vm-delete-test--deleted-flags)))))
 
 (provide 'vm-delete-test)
 
