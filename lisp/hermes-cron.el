@@ -509,12 +509,17 @@ RUNS is the detail run list."
        (message "Hermes: triggered %s" id)
        (hermes-cron--refresh-origin origin)))))
 
-(defun hermes-cron-create (name schedule prompt &optional profile)
-  "Create a cron job NAME running PROMPT on SCHEDULE for PROFILE."
+(defun hermes-cron-create (name schedule prompt &optional profile deliver skills)
+  "Create cron job NAME running PROMPT on SCHEDULE for PROFILE.
+When non-nil, DELIVER names the delivery target and SKILLS is a list of skill
+names.  Interactive creation defaults DELIVER to local delivery."
   (interactive (list (read-string "Cron job name: ")
                      (read-string "Schedule (cron expression): ")
                      (read-string-from-buffer "Prompt: " "")
-                     (read-string "Profile: " "default")))
+                     (read-string "Profile: " "default")
+                     (read-string "Deliver: " "local")
+                     (hermes-cron--split-skills
+                      (read-string "Skills (comma-separated): "))))
   (when (or (string-empty-p name)
             (string-empty-p schedule)
             (string-empty-p prompt))
@@ -525,8 +530,10 @@ RUNS is the detail run list."
      (lambda (client)
        (hermes--promise-map
         (hermes-cron--api client "POST" "/jobs"
-                          `((name . ,name) (schedule . ,schedule)
-                            (prompt . ,prompt))
+                          (append `((name . ,name) (schedule . ,schedule)
+                                    (prompt . ,prompt))
+                                  (and deliver `((deliver . ,deliver)))
+                                  (and skills `((skills . ,(vconcat skills)))))
                           (hermes-cron--query profile))
         #'hermes-cron--checked-result))
      (lambda (_result)

@@ -361,14 +361,18 @@
 
 (ert-deftest hermes-cron-create-reads-multiline-prompt ()
   "Interactive creation keeps prompt newlines and scalar minibuffer readers."
-  (let (body scalar-prompts)
+  (let (body deliver-initial encoded-data scalar-prompts)
     (cl-letf (((symbol-function 'read-string)
-               (lambda (prompt &optional _initial &rest _)
+               (lambda (prompt &optional initial &rest _)
                  (push prompt scalar-prompts)
                  (cond
                   ((string-prefix-p "Cron job name" prompt) "nightly")
                   ((string-prefix-p "Schedule" prompt) "0 0 * * *")
-                  ((string-prefix-p "Profile" prompt) "default"))))
+                  ((string-prefix-p "Profile" prompt) "default")
+                  ((string-prefix-p "Deliver" prompt)
+                   (setq deliver-initial initial)
+                   "telegram")
+                  ((string-prefix-p "Skills" prompt) "emacs, cron"))))
               ((symbol-function 'read-string-from-buffer)
                (lambda (prompt initial)
                  (should (equal prompt "Prompt: "))
@@ -380,13 +384,30 @@
               ((symbol-function 'hermes-cron--api)
                (lambda (_client _method _path &optional payload _query)
                  (setq body payload)
-                 (hermes--promise-resolved '((id . "j9"))))))
+                 (let ((hermes-dashboard-transport-http-request-async-function
+                        (lambda (_url &rest args)
+                          (setq encoded-data (plist-get args :data))
+                          (hermes--promise-resolved
+                           '(:status 200 :body ((id . "j9")))))))
+                   (hermes-dashboard-transport--http-json-async
+                    "http://example.invalid/api/cron/jobs"
+                    :method "POST" :body payload)))))
       (call-interactively #'hermes-cron-create))
-    (should (equal (hermes-transport--get body 'prompt)
-                   "first line\nsecond line"))
+    (should (equal body
+                   '((name . "nightly") (schedule . "0 0 * * *")
+                     (prompt . "first line\nsecond line") (deliver . "telegram")
+                     (skills . ["emacs" "cron"]))))
+    (should (equal encoded-data
+                   (concat "{\"name\":\"nightly\",\"schedule\":\"0 0 * * *\","
+                           "\"prompt\":\"first line\\nsecond line\","
+                           "\"deliver\":\"telegram\","
+                           "\"skills\":[\"emacs\",\"cron\"]}")))
+    (should (equal deliver-initial "local"))
     (should (member "Cron job name: " scalar-prompts))
     (should (member "Schedule (cron expression): " scalar-prompts))
     (should (member "Profile: " scalar-prompts))
+    (should (member "Deliver: " scalar-prompts))
+    (should (member "Skills (comma-separated): " scalar-prompts))
     (should-not (cl-some (lambda (prompt) (string-prefix-p "Prompt" prompt))
                          scalar-prompts))))
 
