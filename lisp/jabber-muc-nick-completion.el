@@ -85,12 +85,14 @@ Note that \":\" or alike not needed (it appended in other string)"
 (defun jabber-muc-looks-like-personal-p (message &optional group)
   "Return non-nil if jabber MESSAGE is addresed to me.
 Optional argument GROUP to look."
-  (if message (string-match (concat
-			     "^"
-			     (regexp-quote (jabber-my-nick group))
-			     (regexp-opt jabber-muc-looks-personaling-symbols))
-			    message)
-    nil))
+  (when (stringp message)
+    (let ((nickname (jabber-my-nick group)))
+      (when (stringp nickname)
+        (string-match (concat
+		       "^"
+		       (regexp-quote nickname)
+		       (regexp-opt jabber-muc-looks-personaling-symbols))
+		      message)))))
 
 (defun jabber-muc-nicknames ()
   "List of conference participants, excluding self, or nil if we not in conference."

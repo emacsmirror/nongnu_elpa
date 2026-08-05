@@ -17,6 +17,8 @@
 (defvar jabber-jid-obarray (make-vector 127 0))
 
 (require 'jabber-chatbuffer)
+(require 'jabber-core)
+(require 'jabber-alert)
 (require 'jabber-muc)
 (require 'jabber-muc-nick-completion)
 
@@ -1089,6 +1091,47 @@ entry with JC=nil."
       (should-not (gethash "a@example.org"
                            jabber-muc--rooms-before-disconnect)))))
 
+(ert-deftest jabber-test-muc-disconnect-cancels-pending-secret-rejoin ()
+  "Public disconnect cancels a pending reconnect and clears its room secret."
+  (let* ((jc (make-symbol "jabber-test-pending-reconnect"))
+         (jabber-connections (list jc))
+         (jabber-auto-reconnect t)
+         (jabber-lifecycle-session-reset-functions
+          '(jabber-muc--session-reset))
+         (jabber-muc--rooms (make-hash-table :test #'equal))
+         (jabber-muc--room-jids (make-hash-table :test #'equal))
+         (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
+         (jabber-muc--session-passwords (make-hash-table :test #'equal))
+         (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
+         (jabber-muc-participants nil)
+         (room "room@conference.example.com")
+         (account "a@example.org")
+         enqueued)
+    (put jc :name 'jabber-connection)
+    (put jc :state nil)
+    (put jc :state-data '(:username "a" :server "example.org"
+                          :ever-session-established t))
+    (put jc :deferred nil)
+    (put jc :timeout (run-with-timer 60 nil #'ignore))
+    (puthash account (list (list room "nick" "secret"))
+             jabber-muc--rooms-before-disconnect)
+    (jabber-muc--remember-password jc room "secret")
+    (unwind-protect
+        (cl-letf (((symbol-function 'jabber-muc--autojoin-enqueue-pending)
+                   (lambda (&rest args) (setq enqueued args))))
+          (jabber-disconnect-one jc)
+          (should (plist-get (fsm-get-state-data jc)
+                             :disconnection-expected))
+          (should-not (memq jc jabber-connections))
+          (should-not (get jc :timeout))
+          (should-not (gethash (list jc room)
+                               jabber-muc--session-passwords))
+          (should-not (gethash account jabber-muc--rooms-before-disconnect))
+          (jabber-muc--rejoin-snapshot jc)
+          (should-not enqueued))
+      (when (timerp (get jc :timeout))
+        (cancel-timer (get jc :timeout))))))
+
 (ert-deftest jabber-test-muc-legacy-close-preserves-reconnect-snapshot ()
   "The legacy one-argument close call preserves rooms for reconnect."
   (let ((jabber-muc--rooms (make-hash-table :test #'equal))
@@ -1322,6 +1365,26 @@ entry with JC=nil."
   "A plus sign in a nickname does not alter mention matching."
   (cl-letf (((symbol-function 'jabber-my-nick) (lambda (&optional _) "bob+m")))
     (should (jabber-muc-looks-like-personal-p "bob+m: hello"))))
+
+(ert-deftest jabber-test-muc-personal-rejects-non-string-inputs ()
+  "Personal mention detection ignores missing rooms and non-string messages."
+  (jabber-test-muc-with-rooms nil
+    (let ((jabber-muc-default-nicknames nil))
+      (should-not
+       (jabber-muc-looks-like-personal-p
+        "hello" "unknown@conference.example.com"))
+      (should-not (jabber-muc-looks-like-personal-p 'not-a-message)))))
+
+(ert-deftest jabber-test-muc-unknown-room-personal-alert-is-ignored ()
+  "An inbound alert from an unknown room does not signal or run its action."
+  (jabber-test-muc-with-rooms nil
+    (let ((jabber-muc-default-nicknames nil)
+          called)
+      (cl-letf (((symbol-function 'jabber-muc-beep)
+                 (lambda (&rest _ignore) (setq called t))))
+        (jabber-muc-beep-personal
+         "sender" "unknown@conference.example.com" nil "hello" t))
+      (should-not called))))
 
 (ert-deftest jabber-test-muc-buffer-registry-is-account-scoped ()
   "Two accounts may hold distinct buffers for the same room."

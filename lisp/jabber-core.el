@@ -359,6 +359,9 @@ override the defaults from `jabber-account-list'."
 		(:timeout
 		 (list :connecting state-data))
 		(:do-disconnect
+		 (setq state-data
+		       (plist-put state-data :disconnection-expected t))
+		 (jabber-lifecycle-dispatch-session-reset fsm)
 		 (setq jabber-connections
 		       (delq fsm jabber-connections))
 		 (list nil state-data nil))))
