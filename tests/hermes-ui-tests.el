@@ -374,24 +374,31 @@
         (should-not hermes-dashboard--needs-onboarding)))))
 
 (ert-deftest hermes-dashboard-provider-connect-invalidates-auth-check ()
-  "Saving credentials invalidates a credential check already in flight."
-  (let ((promise (hermes--promise-make)))
+  "Saving credentials forces a newest-owned credential check."
+  (let ((first (hermes--promise-make))
+        (second (hermes--promise-make))
+        (requests 0))
     (cl-letf (((symbol-function 'hermes-browser--existing-client)
-               (lambda () 'fake-client))
+               (lambda () nil))
               ((symbol-function 'hermes-browser--run-on-client)
                (lambda (make-promise &optional on-success)
                  (hermes--promise-then (funcall make-promise 'fake-client)
                                        on-success)))
               ((symbol-function 'hermes-dashboard-transport-call-fn)
-               (lambda (&rest _) promise))
+               (lambda (&rest _)
+                 (setq requests (1+ requests))
+                 (if (= requests 1) first second)))
               ((symbol-function 'hermes-dashboard-refresh) #'ignore))
       (let ((buffer (get-buffer-create hermes-dashboard-buffer-name)))
         (unwind-protect
             (with-current-buffer buffer
               (hermes-dashboard-mode)
-              (hermes-dashboard--check-auth)
-              (hermes-dashboard--provider-connected)
-              (hermes--promise-resolve promise '((ok . :false)))
+              (setq hermes-dashboard--needs-onboarding t)
+              (hermes-dashboard--check-auth t)
+              (hermes-dashboard--provider-auth-changed)
+              (hermes--promise-resolve second '((ok . t)))
+              (hermes--promise-resolve first '((ok . :false)))
+              (should (= requests 2))
               (should-not hermes-dashboard--needs-onboarding))
           (when (buffer-live-p buffer) (kill-buffer buffer)))))))
 
