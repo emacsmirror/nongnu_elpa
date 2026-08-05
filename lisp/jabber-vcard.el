@@ -65,11 +65,13 @@
 
 ;;; Code:
 
+(require 'cl-lib)
+(require 'subr-x)
 (require 'jabber-core)
-(require 'jabber-widget)
 (require 'jabber-iq)
 (require 'jabber-avatar)
 (require 'jabber-image)
+(require 'keymap-popup)
 
 (defconst jabber-vcard-xmlns "vcard-temp"
   "XEP-0054 vCard namespace.")
@@ -79,8 +81,7 @@
 
 ;; Global reference declarations
 
-(declare-function jabber-vcard-avatars-update-current
-                  "jabber-vcard-avatars.el" (jc new-hash))
+(autoload 'jabber-vcard-avatars-update-current "jabber-vcard-avatars")
 (defvar jabber-vcard-fields)            ; jabber-vcard.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 
@@ -420,145 +421,175 @@ obtained from `xml-parse-region'."
 	      (insert "\n"))
 	  (error (insert "Couldn't display photo\n")))))))
 
+(defvar-local jabber-vcard--edit-data nil
+  "Plain vCard alist edited in the current buffer.")
+
+(defun jabber-vcard--set (key value)
+  "Set KEY to VALUE in the current plain vCard data."
+  (setq-local jabber-vcard--edit-data
+              (cons (cons key value)
+                    (assq-delete-all key jabber-vcard--edit-data))))
+
+(defun jabber-vcard--render-editor ()
+  "Render current plain vCard edit state."
+  (let ((inhibit-read-only t))
+    (erase-buffer)
+    (insert (propertize "Edit vCard\n\n" 'face 'jabber-title))
+    (dolist (entry (reverse jabber-vcard--edit-data))
+      (insert (format "%s: %s\n" (car entry) (cdr entry))))
+    (insert "\nPress m for edit commands; C-c C-c to publish.\n")
+    (goto-char (point-min))))
+
+(defun jabber-vcard-edit-simple ()
+  "Edit one simple vCard field."
+  (interactive)
+  (let* ((candidates (mapcar (lambda (entry)
+                               (cons (cdr entry) (car entry)))
+                             jabber-vcard-fields))
+         (field-name (completing-read "Field: " candidates nil t))
+         (field (cdr (assoc field-name candidates)))
+         (value (read-string (format "%s: " field-name)
+                             (cdr (assq field jabber-vcard--edit-data)))))
+    (jabber-vcard--set field value)
+    (jabber-vcard--render-editor)))
+
+(defun jabber-vcard-edit-name ()
+  "Edit one structured-name component."
+  (interactive)
+  (let* ((component (intern (completing-read
+                             "Name component: "
+                             '("PREFIX" "GIVEN" "MIDDLE" "FAMILY" "SUFFIX")
+                             nil t)))
+         (name (copy-tree (cdr (assq 'N jabber-vcard--edit-data))))
+         (value (read-string (format "%s: " component)
+                             (cdr (assq component name)))))
+    (jabber-vcard--set 'N (cons (cons component value)
+                                (assq-delete-all component name)))
+    (jabber-vcard--render-editor)))
+
+(defun jabber-vcard--read-types (prompt choices)
+  "Read zero or more vCard types with PROMPT from CHOICES."
+  (mapcar #'intern
+          (completing-read-multiple prompt choices nil t)))
+
+(defun jabber-vcard--add-value (key prompt types)
+  "Add repeatable KEY value read with PROMPT and TYPES."
+  (let ((value (read-string prompt))
+        (selected (jabber-vcard--read-types "Types: " types)))
+    (jabber-vcard--set key
+                       (append (cdr (assq key jabber-vcard--edit-data))
+                               (list (cons selected value))))
+    (jabber-vcard--render-editor)))
+
+(defun jabber-vcard-add-phone ()
+  "Add a phone number."
+  (interactive)
+  (jabber-vcard--add-value
+   'TEL "Number: "
+   '("HOME" "WORK" "VOICE" "FAX" "PAGER" "MSG" "CELL" "VIDEO"
+     "BBS" "MODEM" "ISDN" "PCS" "PREF")))
+
+(defun jabber-vcard-add-email ()
+  "Add an email address."
+  (interactive)
+  (jabber-vcard--add-value
+   'EMAIL "Email: " '("HOME" "WORK" "INTERNET" "X400" "PREF")))
+
+(defun jabber-vcard--delete-value (key)
+  "Delete one repeatable value under KEY."
+  (let* ((values (cdr (assq key jabber-vcard--edit-data)))
+         (candidates (cl-loop for value in values for index from 1
+                              collect (cons (format "%d: %s" index value)
+                                            index)))
+         (selected (cdr (assoc (completing-read "Delete: " candidates nil t)
+                               candidates))))
+    (jabber-vcard--set
+     key (cl-loop for value in values for index from 1
+                  unless (= index selected) collect value))
+    (jabber-vcard--render-editor)))
+
+(defun jabber-vcard-delete-phone ()
+  "Delete a phone number."
+  (interactive)
+  (jabber-vcard--delete-value 'TEL))
+
+(defun jabber-vcard-delete-email ()
+  "Delete an email address."
+  (interactive)
+  (jabber-vcard--delete-value 'EMAIL))
+
+(defun jabber-vcard-add-address ()
+  "Add a postal address."
+  (interactive)
+  (let ((types (jabber-vcard--read-types
+                "Types: " '("HOME" "WORK" "POSTAL" "PARCEL" "DOM" "INTL" "PREF")))
+        fields)
+    (dolist (field jabber-vcard-address-fields)
+      (when-let* ((value (read-string (format "%s: " (cdr field))))
+                  ((not (string-empty-p value))))
+        (push (cons (car field) value) fields)))
+    (jabber-vcard--set
+     'ADR (append (cdr (assq 'ADR jabber-vcard--edit-data))
+                  (list (cons types (nreverse fields)))))
+    (jabber-vcard--render-editor)))
+
+(defun jabber-vcard-delete-address ()
+  "Delete a postal address."
+  (interactive)
+  (jabber-vcard--delete-value 'ADR))
+
+(defun jabber-vcard-edit-avatar ()
+  "Keep, remove, or replace the vCard avatar."
+  (interactive)
+  (pcase (completing-read "Avatar: " '("Keep existing" "Remove" "Choose file") nil t)
+    ("Remove" (jabber-vcard--set 'PHOTO nil))
+    ("Choose file" (jabber-vcard--set 'PHOTO (read-file-name "Avatar file: " nil nil t))))
+  (jabber-vcard--render-editor))
+
+(keymap-popup-define jabber-vcard-edit-mode-map
+  "Edit vCard fields."
+  :parent special-mode-map
+  :group "Basic"
+  "s" ("Simple field" jabber-vcard-edit-simple)
+  "n" ("Structured name" jabber-vcard-edit-name)
+  :group "Repeatable"
+  "t" ("Add phone" jabber-vcard-add-phone)
+  "T" ("Delete phone" jabber-vcard-delete-phone)
+  "e" ("Add email" jabber-vcard-add-email)
+  "E" ("Delete email" jabber-vcard-delete-email)
+  "a" ("Add address" jabber-vcard-add-address)
+  "A" ("Delete address" jabber-vcard-delete-address)
+  :group "Avatar"
+  "p" ("Edit avatar" jabber-vcard-edit-avatar)
+  :group "Actions"
+  "C-c C-c" ("Publish" jabber-vcard-submit)
+  "m" ("Menu" jabber-vcard-edit-menu))
+
+(define-derived-mode jabber-vcard-edit-mode special-mode "Jabber-vCard"
+  "Major mode for editing a vCard as explicit plain data.")
+
+(defun jabber-vcard-edit-menu ()
+  "Show grouped vCard edit commands."
+  (interactive)
+  (keymap-popup jabber-vcard-edit-mode-map))
+
 (defun jabber-vcard-do-edit (jc xml-data _closure-data)
-  "Open a widget buffer to edit our own vCard.
-JC is the Jabber connection.  XML-DATA is the IQ result holding
-the current vCard contents."
-  (let ((parsed (jabber-vcard-parse (jabber-iq-query xml-data)))
-	start-position)
-    (with-current-buffer (get-buffer-create "Edit vcard")
-      (jabber-widget-init-buffer nil)
-
-      (setq jabber-buffer-connection jc)
-
-      (setq start-position (point))
-
-      (dolist (simple-field jabber-vcard-fields)
-	(widget-insert (cdr simple-field))
-	(indent-to 15)
-	(let ((default-value (cdr (assq (car simple-field) parsed))))
-	  (push (cons (car simple-field)
-		      (widget-create 'editable-field (or default-value "")))
-		jabber-widget-alist)))
-
-      (widget-insert "\n")
-      (push (cons 'N
-		  (widget-create
-		   '(set :tag "Decomposited name"
-			 (cons :tag "Prefix" :format "%t: %v" (const :format "" PREFIX) (string :format "%v"))
-			 (cons :tag "Given name" :format "%t: %v" (const :format "" GIVEN) (string :format "%v"))
-			 (cons :tag "Middle name" :format "%t: %v" (const :format "" MIDDLE) (string :format "%v"))
-			 (cons :tag "Family name" :format "%t: %v" (const :format "" FAMILY) (string :format "%v"))
-			 (cons :tag "Suffix" :format "%t: %v" (const :format "" SUFFIX) (string :format "%v")))
-		   :value (cdr (assq 'N parsed))))
-	    jabber-widget-alist)
-
-      (widget-insert "\n")
-      (push (cons 'ADR
-		  (widget-create
-		   '(repeat :tag "Postal addresses"
-			    (cons
-			     :tag "Address"
-			     (set :tag "Type"
-				  (const :tag "Home" HOME)
-				  (const :tag "Work" WORK)
-				  (const :tag "Postal" POSTAL)
-				  (const :tag "Parcel" PARCEL)
-				  (const :tag "Domestic" DOM)
-				  (const :tag "International" INTL)
-				  (const :tag "Preferred" PREF))
-			     (set
-			      :tag "Address"
-			      (cons :tag "Post box" :format "%t: %v"
-				    (const :format "" POBOX) (string :format "%v"))
-			      (cons :tag "Ext. address" :format "%t: %v"
-				    (const :format "" EXTADD) (string :format "%v"))
-			      (cons :tag "Street" :format "%t: %v"
-				    (const :format "" STREET) (string :format "%v"))
-			      (cons :tag "Locality" :format "%t: %v"
-				    (const :format "" LOCALITY) (string :format "%v"))
-			      (cons :tag "Region" :format "%t: %v"
-				    (const :format "" REGION) (string :format "%v"))
-			      (cons :tag "Post code" :format "%t: %v"
-				    (const :format "" PCODE) (string :format "%v"))
-			      (cons :tag "Country" :format "%t: %v"
-				    (const :format "" CTRY) (string :format "%v")))))
-		   :value (cdr (assq 'ADR parsed))))
-	    jabber-widget-alist)
-
-      (widget-insert "\n")
-      (push (cons 'TEL
-		  (widget-create
-		   '(repeat :tag "Phone numbers"
-			    (cons :tag "Number"
-				  (set :tag "Type"
-				       (const :tag "Home" HOME)
-				       (const :tag "Work" WORK)
-				       (const :tag "Voice" VOICE)
-				       (const :tag "Fax" FAX)
-				       (const :tag "Pager" PAGER)
-				       (const :tag "Message" MSG)
-				       (const :tag "Cell phone" CELL)
-				       (const :tag "Video" VIDEO)
-				       (const :tag "BBS" BBS)
-				       (const :tag "Modem" MODEM)
-				       (const :tag "ISDN" ISDN)
-				       (const :tag "PCS" PCS))
-				  (string :tag "Number")))
-		   :value (cdr (assq 'TEL parsed))))
-	    jabber-widget-alist)
-
-      (widget-insert "\n")
-      (push (cons 'EMAIL
-		  (widget-create
-		   '(repeat :tag "E-mail addresses"
-			    (cons :tag "Address"
-				  (set :tag "Type"
-				       (const :tag "Home" HOME)
-				       (const :tag "Work" WORK)
-				       (const :tag "Internet" INTERNET)
-				       (const :tag "X400" X400)
-				       (const :tag "Preferred" PREF))
-				  (string :tag "Address")))
-		   :value (cdr (assq 'EMAIL parsed))))
-	    jabber-widget-alist)
-
-      (widget-insert "\n")
-      (widget-insert "Photo/avatar:\n")
-      (let* ((photo (assq 'PHOTO parsed))
-	     (avatar (when photo
-		       (jabber-avatar-from-base64-string (nth 2 photo)
-							 (nth 1 photo)))))
-	(push (cons
-	       'PHOTO
-	       (widget-create
-		`(radio-button-choice (const :tag "None" nil)
-				      ,@(when photo
-					  (list
-					   `(const :tag
-						   ,(concat
-						     "Existing: "
-						     (propertize " "
-								 'display (jabber-avatar-image avatar)))
-						   ,(cdr photo))))
-				      (file :must-match t :tag "From file"))
-		:value (cdr photo)))
-	      jabber-widget-alist))
-
-      (widget-insert "\n")
-      (widget-create 'push-button :notify #'jabber-vcard-submit "Submit")
-
-      (widget-setup)
-      (widget-minor-mode 1)
-      (switch-to-buffer (current-buffer))
-      (goto-char start-position))))
+  "Open a plain-data editor for our own vCard.
+JC is the Jabber connection.  XML-DATA holds current vCard contents."
+  (let ((buffer (generate-new-buffer "*Edit Jabber vCard*"))
+        (parsed (jabber-vcard-parse (jabber-iq-query xml-data))))
+    (with-current-buffer buffer
+      (jabber-vcard-edit-mode)
+      (setq-local jabber-buffer-connection jc
+                  jabber-vcard--edit-data parsed)
+      (jabber-vcard--render-editor))
+    (pop-to-buffer buffer)
+    (jabber-vcard-edit-menu)))
 
 (defun jabber-vcard-submit (&rest _ignore)
-  "Publish the vCard edited in the current widget buffer."
-  (let ((to-publish (jabber-vcard-reassemble
-		     (mapcar (lambda (entry)
-			       (cons (car entry) (widget-value (cdr entry))))
-			     jabber-widget-alist))))
+  "Publish the vCard edited in the current plain-data buffer."
+  (interactive)
+  (let ((to-publish (jabber-vcard-reassemble jabber-vcard--edit-data)))
     (jabber-send-iq jabber-buffer-connection nil
 		    "set"
 		    to-publish

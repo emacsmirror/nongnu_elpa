@@ -1,7 +1,6 @@
 ;;; caps-hash.el --- Test disco hash against examples in XEP-0115  -*- lexical-binding: t; -*-
 
 (require 'jabber-disco)
-(require 'jabber-widget)
 
 (let ((query
        (with-temp-buffer

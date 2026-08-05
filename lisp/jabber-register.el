@@ -27,19 +27,33 @@
 
 ;;; Code:
 
+(require 'cl-lib)
+(require 'seq)
+(require 'subr-x)
 (require 'jabber-core)
 (require 'jabber-iq)
 (require 'jabber-lifecycle)
-(require 'jabber-widget)
 (require 'jabber-xdata)
+(require 'jabber-xdata-form)
 
 ;; Global reference declarations
 
-(declare-function jabber-submit-search "jabber-search.el" (&rest _ignore))
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
 (defvar jabber-search-xmlns)           ; jabber-search.el
+
+(defvar-local jabber-register--submit-to nil
+  "JID receiving the current registration or search form.")
+
+(defvar-local jabber-register--legacy-p nil
+  "Non-nil when the current form uses legacy XEP-0077 or XEP-0055 fields.")
+
+(defvar-local jabber-register--registered-p nil
+  "Non-nil when the current legacy XEP-0077 form edits an existing account.")
+
+(defvar jabber-register-search-result-function nil
+  "Callback used to render a submitted XEP-0055 search result.")
 
 ;; Namespace constants
 
@@ -67,6 +81,74 @@ JC is the Jabber connection."
 (add-hook 'jabber-lifecycle-registration-functions
           #'jabber-register--start-account-registration)
 
+(defconst jabber-register--legacy-fields
+  '((username . "Username") (nick . "Nickname") (password . "Password")
+    (name . "Full name") (first . "First name") (last . "Last name")
+    (email . "E-mail") (address . "Address") (city . "City")
+    (state . "State") (zip . "Zip") (phone . "Telephone")
+    (url . "Web page") (date . "Birth date"))
+  "Legacy XEP-0077 form fields and labels.")
+
+(defun jabber-register--legacy-form (query default-username)
+  "Return plain-data form for legacy QUERY using DEFAULT-USERNAME."
+  (list
+   :title "Legacy registration or search form"
+   :instructions
+   (when-let* ((node (car (jabber-xml-get-children query 'instructions)))
+               (text (car (jabber-xml-node-children node))))
+     (list text))
+   :fields
+   (cl-loop for node in (jabber-xml-node-children query)
+            for name = (jabber-xml-node-name node)
+            for label = (cdr (assq name jabber-register--legacy-fields))
+            when label
+            collect
+            (list :var (symbol-name name)
+                  :type (if (eq name 'password) "text-private" "text-single")
+                  :label label
+                  :values
+                  (list (or (car (jabber-xml-node-children node))
+                            (and (eq name 'username) default-username)
+                            ""))))))
+
+(defun jabber-register--submission (type)
+  "Return current form encoded for its original protocol and request TYPE."
+  (if jabber-register--legacy-p
+      (let ((fields (plist-get (jabber-xdata-form-form) :fields)))
+        (when (and (eq type 'register)
+                   (not jabber-register--registered-p))
+          (when-let* ((missing
+                       (seq-find
+                        (lambda (field)
+                          (string-empty-p
+                           (or (car (plist-get field :values)) "")))
+                        fields)))
+            (user-error "%s is required"
+                        (or (plist-get missing :label)
+                            (plist-get missing :var)))))
+        (cl-loop for field in fields
+                 for value = (or (car (plist-get field :values)) "")
+                 unless (and (eq type 'search) (string-empty-p value))
+                 collect (list (intern (plist-get field :var)) nil value)))
+    (list (jabber-xdata-form-submit-form))))
+
+(defun jabber-register--close-form ()
+  "Close the current registration or search form without submitting."
+  (interactive))
+
+(defun jabber-register--actions (type)
+  "Return form actions for registration or search TYPE."
+  (append
+   (list (list :key "RET" :label "Submit"
+               :command (if (eq type 'register)
+                            #'jabber-submit-register
+                          #'jabber-submit-search)
+               :submits-form t)
+         (list :key "q" :label "Cancel" :command #'jabber-register--close-form))
+   (when (eq type 'register)
+     (list (list :key "d" :label "Cancel registration"
+                 :command #'jabber-remove-register)))))
+
 (defun jabber-process-register-or-search (jc xml-data)
   "Display results from jabber:iq:{register,search} query as a form.
 
@@ -74,9 +156,8 @@ JC is the Jabber connection.
 XML-DATA is the parsed tree data from the stream (stanzas)
 obtained from `xml-parse-region'."
 
-  (let ((query (jabber-iq-query xml-data))
-	(have-xdata nil)
-	(type (cond
+  (let* ((query (jabber-iq-query xml-data))
+	 (type (cond
 	       ((string= (jabber-iq-xmlns xml-data) jabber-register-xmlns)
 		'register)
 	       ((string= (jabber-iq-xmlns xml-data) jabber-search-xmlns)
@@ -87,67 +168,47 @@ obtained from `xml-parse-region'."
 	 (plist-get (fsm-get-state-data jc) :registerp))
 	(username
 	 (plist-get (fsm-get-state-data jc) :username))
-	(server
-	 (plist-get (fsm-get-state-data jc) :server)))
-
-    (cond
-     ((eq type 'register)
-      ;; If there is no `from' attribute, we are registering with the server
-      (jabber-widget-init-buffer (or (jabber-xml-get-attribute xml-data 'from)
-				     server)))
-
-     ((eq type 'search)
-      ;; no such thing here
-      (jabber-widget-init-buffer (jabber-xml-get-attribute xml-data 'from))))
-
-    (setq jabber-buffer-connection jc)
-
-    (widget-insert (if (eq type 'register) "Register with " "Search ") jabber-widget-submit-to "\n\n")
-
-    (dolist (x (jabber-xml-get-children query 'x))
-      (when (string= (jabber-xml-get-attribute x 'xmlns) jabber-xdata-xmlns)
-	(setq have-xdata t)
-	;; If the registration form obeys XEP-0068, we know
-	;; for sure how to put a default username in it.
-	(jabber-widget-render-xdata-form x
-					 (if (and register-account
-						  (string= (jabber-xdata-form-type x) jabber-register-xmlns))
-					     (list (cons "username" username))
-					   nil))))
-    (if (not have-xdata)
-	(jabber-widget-render-register-form query
-					    (when register-account
-					      username)))
-
-    (widget-create 'push-button :notify (if (eq type 'register)
-					    #'jabber-submit-register
-					  #'jabber-submit-search) "Submit")
-    (when (eq type 'register)
-      (widget-insert "\t")
-      (widget-create 'push-button :notify #'jabber-remove-register "Cancel registration"))
-    (widget-insert "\n")
-    (widget-setup)
-    (widget-minor-mode 1)))
+	 (server (plist-get (fsm-get-state-data jc) :server))
+         (submit-to (or (jabber-xml-get-attribute xml-data 'from) server))
+         (xdata (seq-find
+                 (lambda (x)
+                   (string= (jabber-xml-get-attribute x 'xmlns)
+                            jabber-xdata-xmlns))
+                 (jabber-xml-get-children query 'x)))
+         (legacy-p (null xdata))
+         (form (if xdata
+                   (let ((parsed (jabber-xdata-parse xdata)))
+                     (if (and register-account
+                              (string= (jabber-xdata-form-type xdata)
+                                       jabber-register-xmlns)
+                              (jabber-xdata-field parsed "username"))
+                         (jabber-xdata-set-values parsed "username"
+                                                  (list username))
+                       parsed))
+                 (jabber-register--legacy-form
+                  query (and register-account username))))
+         (buffer (jabber-xdata-form-open form
+                                          (jabber-register--actions type))))
+    (with-current-buffer buffer
+      (setq-local jabber-buffer-connection jc
+                  jabber-register--submit-to submit-to
+                  jabber-register--legacy-p legacy-p
+                  jabber-register--registered-p
+                  (and legacy-p
+                       (jabber-xml-get-children query 'registered))))))
 
 (defun jabber-submit-register (&rest _ignore)
   "Submit registration input.  See `jabber-process-register-or-search'."
+  (interactive)
   (let* ((registerp (plist-get (fsm-get-state-data jabber-buffer-connection) :registerp))
 	 (handler (if registerp
 		      #'jabber-process-register-secondtime
 		    #'jabber-report-success))
-	 (text (concat "Registration with " jabber-widget-submit-to)))
-    (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
+	 (text (concat "Registration with " jabber-register--submit-to)))
+    (jabber-send-iq jabber-buffer-connection jabber-register--submit-to
 		    "set"
-
-		    (cond
-		     ((eq jabber-widget-form-type 'register)
-		      `(query ((xmlns . ,jabber-register-xmlns))
-			      ,@(jabber-widget-parse-register-form)))
-		     ((eq jabber-widget-form-type 'xdata)
-		      `(query ((xmlns . ,jabber-register-xmlns))
-			      ,(jabber-widget-parse-xdata-form)))
-		     (t
-		      (error "Unknown form type: %s" jabber-widget-form-type)))
+		    `(query ((xmlns . ,jabber-register-xmlns))
+		            ,@(jabber-register--submission 'register))
 		    handler (if registerp 'success text)
 		    handler (if registerp 'failure text)))
 
@@ -168,11 +229,26 @@ obtained from `xml-parse-region'."
   (sit-for 3)
   (jabber-disconnect-one jc))
 
+(defun jabber-submit-search (&rest _ignore)
+  "Submit the current XEP-0055 search form."
+  (interactive)
+  (unless jabber-register-search-result-function
+    (user-error "Jabber search support is not loaded"))
+  (let ((text (concat "Search at " jabber-register--submit-to)))
+    (jabber-send-iq jabber-buffer-connection jabber-register--submit-to
+                    "set"
+                    `(query ((xmlns . ,jabber-search-xmlns))
+                            ,@(jabber-register--submission 'search))
+                    #'jabber-process-data jabber-register-search-result-function
+                    #'jabber-report-success text)
+    (message "Search sent")))
+
 (defun jabber-remove-register (&rest _ignore)
   "Cancel registration.  See `jabber-process-register-or-search'."
+  (interactive)
 
-  (if (or jabber-silent-mode (yes-or-no-p (concat "Are you sure that you want to cancel your registration to " jabber-widget-submit-to "? ")))
-      (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
+  (if (or jabber-silent-mode (yes-or-no-p (concat "Are you sure that you want to cancel your registration to " jabber-register--submit-to "? ")))
+      (jabber-send-iq jabber-buffer-connection jabber-register--submit-to
 		      "set"
 		      `(query ((xmlns . ,jabber-register-xmlns))
 			      (remove))

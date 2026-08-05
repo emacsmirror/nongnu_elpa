@@ -180,7 +180,7 @@ One disabled account with a non-standard port:
 (require 'jabber-db)
 (require 'jabber-disco)
 (require 'jabber-iq)
-(require 'jabber-widget)
+(require 'jabber-xdata)
 (require 'jabber-register)
 (require 'jabber-search)
 (require 'jabber-blocking)
@@ -210,6 +210,8 @@ One disabled account with a non-standard port:
 (require 'jabber-muc-menu)
 (require 'jabber-roster-menu)
 (require 'jabber-chat-commands)
+
+(jabber-disco-advertise-feature jabber-xdata-xmlns)
 (require 'jabber-uri)
 (require 'jabber-truncate)
 (when (featurep 'dbusbind)

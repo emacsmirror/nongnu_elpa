@@ -179,6 +179,27 @@
            (field (car (jabber-xml-get-children submit 'field))))
       (should (= (length (jabber-xml-get-children field 'value)) 2)))))
 
+(ert-deftest jabber-test-xdata-result-multiple-jid-columns-own-properties ()
+  "Each JID cell owns its property when a result has multiple JID columns."
+  (with-temp-buffer
+    (jabber-xdata-render-result
+     '(x ((type . "result"))
+         (reported nil
+                   (field ((var . "a") (label . "A")
+                           (type . "jid-single")))
+                   (field ((var . "b") (label . "B")
+                           (type . "jid-single"))))
+         (item nil
+               (field ((var . "a")) (value nil "a@example.org"))
+               (field ((var . "b")) (value nil "b@example.org")))))
+    (goto-char (point-min))
+    (search-forward "a@example.org")
+    (should (equal (get-text-property (1- (point)) 'jabber-jid)
+                   "a@example.org"))
+    (search-forward "b@example.org")
+    (should (equal (get-text-property (1- (point)) 'jabber-jid)
+                   "b@example.org"))))
+
 (ert-deftest jabber-test-xdata-form-renders-complete-staged-form ()
   "The submission buffer shows instructions, fixed text, and every field."
   (let* ((form (jabber-xdata-parse jabber-test-xdata--form))

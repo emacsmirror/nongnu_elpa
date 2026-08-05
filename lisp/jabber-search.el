@@ -28,6 +28,7 @@
 ;;; Code:
 
 (require 'jabber-register)
+(require 'jabber-xdata)
 
 ;; Global reference declarations
 
@@ -58,29 +59,6 @@ JC is the Jabber connection."
 ;; two functions would be serious code duplication. See
 ;; `jabber-register.el'.
 
-;; jabber-submit-search is called when the "submit" button of the
-;; search form is activated.
-(defun jabber-submit-search (&rest _ignore)
-  "Submit search.  See `jabber-process-register-or-search'."
-
-  (let ((text (concat "Search at " jabber-widget-submit-to)))
-    (jabber-send-iq jabber-buffer-connection jabber-widget-submit-to
-		    "set"
-
-		    (cond
-		     ((eq jabber-widget-form-type 'register)
-		      `(query ((xmlns . ,jabber-search-xmlns))
-			      ,@(jabber-widget-parse-register-form)))
-		     ((eq jabber-widget-form-type 'xdata)
-		      `(query ((xmlns . ,jabber-search-xmlns))
-			      ,(jabber-widget-parse-xdata-form)))
-		     (t
-		      (error "Unknown form type: %s" jabber-widget-form-type)))
-		    #'jabber-process-data #'jabber-process-search-result
-		    #'jabber-report-success text))
-
-  (message "Search sent"))
-
 (defun jabber-process-search-result (_jc xml-data)
   "Receive and display search results.
 
@@ -101,7 +79,7 @@ obtained from `xml-parse-region'."
 	(setq xdata x)))
 
     (if have-xdata
-	(jabber-widget-render-xdata-search-results xdata)
+	(jabber-xdata-render-result xdata)
 
       (insert (propertize "Search results" 'face 'jabber-title) "\n")
 
@@ -133,6 +111,8 @@ obtained from `xml-parse-region'."
 	      (put-text-property start-of-line (point)
 				 'jabber-jid jid))
 	  (insert "\n"))))))
+
+(setq jabber-register-search-result-function #'jabber-process-search-result)
 
 (provide 'jabber-search)
 

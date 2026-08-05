@@ -431,38 +431,25 @@ Do not overwrite a newer reply selection."
             jabber-message-thread--root-reply-jid
             (plist-get state :root-reply-jid)))))
 
-;; Global reference declarations
+;; Provider features call into chat, so reverse calls stay lazy rather than
+;; introducing feature-level require cycles.
 
-(declare-function jabber-compose "jabber-compose.el" (jc &optional recipient))
-(declare-function jabber-omemo--send-chat "jabber-omemo"
-                  (jc body &optional extra-elements success-callback
-                      failure-callback))
-(declare-function jabber-openpgp--send-chat "jabber-openpgp"
-                  (jc body &optional extra-elements success-callback
-                      failure-callback))
-(declare-function jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy" (jc body &optional extra-elements))
-(declare-function jabber-muc-private-create-buffer "jabber-muc.el"
-                  (jc group nickname))
-(declare-function jabber-muc-private-find-buffer "jabber-muc.el"
-                  (group nickname))
-(declare-function jabber-muc-print-prompt "jabber-muc.el"
-                  (msg &optional local dont-print-nick-p))
-(declare-function jabber-muc-private-print-prompt "jabber-muc.el" (msg))
-(declare-function jabber-muc-system-prompt "jabber-muc.el" (&rest _ignore))
-(declare-function jabber-omemo-aesgcm-decrypt "jabber-omemo"
-                  (key iv ciphertext-with-tag))
+(autoload 'jabber-omemo--send-chat "jabber-omemo")
+(autoload 'jabber-openpgp--send-chat "jabber-openpgp")
+(autoload 'jabber-openpgp-legacy--send-chat "jabber-openpgp-legacy")
+(autoload 'jabber-muc-private-create-buffer "jabber-muc")
+(autoload 'jabber-muc-private-find-buffer "jabber-muc")
+(autoload 'jabber-muc-print-prompt "jabber-muc")
+(autoload 'jabber-muc-system-prompt "jabber-muc")
+(autoload 'jabber-omemo-aesgcm-decrypt "jabber-omemo")
 (defvar jabber-backlog-days)
 (defvar jabber-backlog-number)
-(declare-function jabber-message-correct--replace-id "jabber-message-correct"
-                  (xml-data))
-(declare-function jabber-message-correct--apply "jabber-message-correct"
-                  (replace-id new-body new-from muc-p buffer
-                              &optional new-occupant-id account peer
-                              legacy-authorized-p))
+(autoload 'jabber-message-correct--replace-id "jabber-message-correct")
+(autoload 'jabber-message-correct--apply "jabber-message-correct")
 (defvar jabber-group)                   ; jabber-muc.el
 (defvar jabber-muc-printers)            ; jabber-muc.el
-(declare-function jabber-mam-chat-opened "jabber-mam" (jc peer))
-(declare-function jabber-chatstates--clear-typing "jabber-chatstates" ())
+(autoload 'jabber-mam-chat-opened "jabber-mam")
+(autoload 'jabber-chatstates--clear-typing "jabber-chatstates")
 (defvar jabber-oob-xmlns)              ; jabber-xml.el
 
 ;;
@@ -2729,6 +2716,8 @@ With a prefix argument OTHER-WINDOW, open buffer in other window."
     (if (and jid-at-point account)
 	(jabber-chat-with account jid-at-point other-window)
       (error "No contact at point"))))
+
+(setq jabber-alert-chat-send-function #'jabber-chat-send)
 
 (provide 'jabber-chat)
 ;;; jabber-chat.el ends here

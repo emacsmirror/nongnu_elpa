@@ -38,7 +38,7 @@
 
 (defvar jabber-chat-ewoc)               ; jabber-chatbuffer.el
 (defvar jabber-chat--msg-nodes)        ; jabber-chatbuffer.el
-(declare-function jabber-chat-ewoc-unregister-node "jabber-chatbuffer" (node))
+(autoload 'jabber-chat-ewoc-unregister-node "jabber-chatbuffer")
 
 ;;
 

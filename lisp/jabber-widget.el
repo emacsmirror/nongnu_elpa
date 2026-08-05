@@ -1,359 +1,135 @@
-;;; jabber-widget.el --- display various kinds of forms  -*- lexical-binding: t; -*-
+;;; jabber-widget.el --- compatibility for legacy form entry points  -*- lexical-binding: t; -*-
 
-;; Copyright (C) 2003, 2004, 2007 - Magnus Henoch - mange@freemail.hu
-;; Copyright (C) 2002, 2003, 2004 - tom berger - object@intelectronica.net
+;; Copyright (C) 2003, 2004, 2007  Magnus Henoch
+;; Copyright (C) 2002, 2003, 2004  Tom Berger
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Maintainer: Thanos Apollo <public@thanosapollo.org>
 
-;; This file is a part of jabber.el.
-
-;; This program is free software; you can redistribute it and/or modify
+;; This file is free software; you can redistribute it and/or modify
 ;; it under the terms of the GNU General Public License as published by
-;; the Free Software Foundation; either version 2 of the License, or
-;; (at your option) any later version.
-
-;; This program is distributed in the hope that it will be useful,
-;; but WITHOUT ANY WARRANTY; without even the implied warranty of
-;; MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-;; GNU General Public License for more details.
-
-;; You should have received a copy of the GNU General Public License
-;; along with this program; if not, write to the Free Software
-;; Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+;; the Free Software Foundation; either version 2, or (at your option)
+;; any later version.
 
 ;;; Commentary:
-;;
+
+;; Compatibility adapters for callers of the former widget-based form API.
+;; Editors use the text-first XData model and do not load widget.el.
 
 ;;; Code:
 
-(require 'widget)
-(require 'wid-edit)
+(require 'cl-lib)
+(require 'jabber-register)
 (require 'jabber-util)
-(require 'jabber-disco)
 (require 'jabber-xdata)
+(require 'jabber-xdata-form)
 
-(defvar jabber-widget-alist nil
-  "Alist of widgets currently used.")
+(defvar-local jabber-widget-alist nil
+  "Legacy form state represented as plain XData fields.")
 
-(defvar jabber-widget-form-type nil
-  "Type of form.  One of:
-`x-data', jabber:x:data
-`register', as used in jabber:iq:register and jabber:iq:search.")
+(defvar-local jabber-widget-form-type nil
+  "Legacy form type, either `register' or `xdata'.")
 
-(defvar jabber-widget-submit-to nil
-  "JID of the entity to which form data is to be sent.")
-
-;; Global reference declarations
-
-(defvar jabber-xdata-xmlns)            ; jabber-xml.el
-
-;;
-
-(jabber-disco-advertise-feature jabber-xdata-xmlns)
+(defvar-local jabber-widget-submit-to nil
+  "JID receiving the current compatibility form.")
 
 (define-widget 'jabber-widget-jid 'string
-  "JID widget."
-  :value-to-internal (lambda (_widget value)
-		       (let ((displayname (jabber-jid-rostername value)))
-			 (if displayname
-			     (format "%s <%s>" displayname value)
-			   value)))
-  :value-to-external (lambda (_widget value)
-		       (if (string-match "<\\([^>]+\\)>[ \t]*$" value)
-			   (match-string 1 value)
-			 value))
+  "JID widget retained for legacy callers of this adapter."
+  :value-to-internal
+  (lambda (_widget value)
+    (if-let* ((displayname (jabber-jid-rostername value)))
+        (format "%s <%s>" displayname value)
+      value))
+  :value-to-external
+  (lambda (_widget value)
+    (if (string-match "<\\([^>]+\\)>[ \t]*$" value)
+        (match-string 1 value)
+      value))
   :complete #'jabber-widget-jid-complete)
 
 (defun jabber-widget-jid-complete (widget)
-  "Perform completion on JID preceding point in WIDGET."
-  ;; mostly stolen from widget-color-complete
-  (let* ((prefix (buffer-substring-no-properties (widget-field-start widget)
-						 (point)))
-	 (list (append (mapcar #'symbol-name jabber-roster-list)
-		       (delq nil
-			     (mapcar #'(lambda (item)
-					 (when (jabber-jid-rostername item)
-					   (format "%s <%s>" (jabber-jid-rostername item)
-						   (symbol-name item))))
-				     jabber-roster-list))))
-	 (completion (try-completion prefix list)))
-    (cond ((eq completion t)
-	   (message "Exact match."))
-	  ((null completion)
-	   (error "Can't find completion for \"%s\"" prefix))
-	  ((not (string-equal prefix completion))
-	   (insert-and-inherit (substring completion (length prefix))))
-	  (t
-	   (message "Making completion list...")
-	   (with-output-to-temp-buffer "*Completions*"
-	     (display-completion-list (all-completions prefix list nil)))
-	   (message "Making completion list...done")))))
+  "Complete the JID preceding point in legacy WIDGET."
+  (require 'wid-edit)
+  (let* ((prefix (buffer-substring-no-properties
+                  (funcall (symbol-function 'widget-field-start) widget)
+                  (point)))
+         (candidates
+          (append (mapcar #'symbol-name jabber-roster-list)
+                  (cl-loop for item in jabber-roster-list
+                           for name = (jabber-jid-rostername item)
+                           when name
+                           collect (format "%s <%s>" name item))))
+         (completion (try-completion prefix candidates)))
+    (cond
+     ((eq completion t) (message "Exact match"))
+     ((null completion) (user-error "No completion for %s" prefix))
+     ((not (equal prefix completion))
+      (insert-and-inherit (substring completion (length prefix))))
+     (t
+      (with-output-to-temp-buffer "*Completions*"
+        (display-completion-list (all-completions prefix candidates)))))))
 
 (defun jabber-widget-init-buffer (submit-to)
-  "Set up buffer-local widget state with SUBMIT-TO as the form target JID."
-  (setq-local jabber-widget-alist nil)
-  (setq-local jabber-widget-submit-to submit-to)
+  "Initialize compatibility form state targeting SUBMIT-TO."
+  (setq-local jabber-widget-alist nil
+              jabber-widget-submit-to submit-to)
   (setq buffer-read-only nil)
-  ;; XXX: This is because data from other queries would otherwise be
-  ;; appended to this buffer, which would fail since widget buffers
-  ;; are read-only... or something like that.  Maybe there's a
-  ;; better way.
   (rename-uniquely))
 
+(defun jabber-widget--show-form (form type)
+  "Render plain XData FORM for legacy compatibility TYPE."
+  (let ((submit-to jabber-widget-submit-to))
+    (jabber-xdata-form-mode)
+    (setq-local jabber-widget-submit-to submit-to
+                jabber-widget-form-type type
+                jabber-widget-alist (plist-get form :fields)
+                jabber-xdata-form--form form
+                jabber-xdata-form--original-form form)
+    (jabber-xdata-form--render)))
+
 (defun jabber-widget-render-register-form (query &optional default-username)
-  "Display widgets from QUERY <query/> element in IQ register or search namespace.
-DEFAULT-USERNAME is the default value for the username field."
-  (setq-local jabber-widget-alist nil)
-  (setq-local jabber-widget-form-type 'register)
-
-  (if (jabber-xml-get-children query 'instructions)
-      (widget-insert "Instructions: " (car (jabber-xml-node-children (car (jabber-xml-get-children query 'instructions)))) "\n"))
-  (if (jabber-xml-get-children query 'registered)
-      (widget-insert "You are already registered.  You can change your details here.\n"))
-  (widget-insert "\n")
-
-  (let ((possible-fields
-	 ;; taken from XEP-0077
-	 '((username . "Username")
-	   (nick . "Nickname")
-	   (password . "Password")
-	   (name . "Full name")
-	   (first . "First name")
-	   (last . "Last name")
-	   (email . "E-mail")
-	   (address . "Address")
-	   (city . "City")
-	   (state . "State")
-	   (zip . "Zip")
-	   (phone . "Telephone")
-	   (url . "Web page")
-	   (date . "Birth date"))))
-    (dolist (field (jabber-xml-node-children query))
-      (let ((entry (assq (jabber-xml-node-name field) possible-fields)))
-	(when entry
-	  (widget-insert (cdr entry) "\t")
-	  ;; Special case: when registering a new account, the default
-	  ;; username is the one specified in jabber-username.  Things
-	  ;; will break if the user changes that name, though...
-	  (let ((default-value (or (when (eq (jabber-xml-node-name field) 'username)
-				     default-username)
-				   "")))
-	    (setq jabber-widget-alist
-		  (cons
-		   (cons (car entry)
-			 (widget-create 'editable-field
-					:secret  (if (eq (car entry) 'password)
-						     ?* nil)
-					(or (car (jabber-xml-node-children
-						  field)) default-value)))
-		   jabber-widget-alist)))
-	  (widget-insert "\n"))))))
+  "Render legacy registration QUERY with optional DEFAULT-USERNAME."
+  (jabber-widget--show-form
+   (jabber-register--legacy-form query default-username) 'register))
 
 (defun jabber-widget-parse-register-form ()
-  "Return children of a <query/> tag containing information entered.
-Return children of a <query/> tag containing information entered in the
-widgets of the current buffer."
-  (mapcar
-   (lambda (widget-cons)
-     (list (car widget-cons)
-	   nil
-	   (widget-value (cdr widget-cons))))
-   jabber-widget-alist))
+  "Return legacy registration elements from the current plain-data form."
+  (cl-loop for field in (plist-get (jabber-xdata-form-form) :fields)
+           collect (list (intern (plist-get field :var)) nil
+                         (or (car (plist-get field :values)) ""))))
 
 (defun jabber-widget-render-xdata-form (x &optional defaults)
-  "Display widgets from the <x/> element X in jabber:x:data namespace.
-DEFAULTS is an alist associating variable names with default values.
-DEFAULTS takes precedence over values specified in the form."
-  (setq-local jabber-widget-alist nil)
-  (setq-local jabber-widget-form-type 'xdata)
-
-  (let ((title (car (jabber-xml-node-children (car (jabber-xml-get-children x 'title))))))
-    (if (stringp title)
-	(widget-insert (propertize title 'face 'jabber-title) "\n\n")))
-  (let ((instructions (car (jabber-xml-node-children (car (jabber-xml-get-children x 'instructions))))))
-    (if (stringp instructions)
-	(widget-insert "Instructions: " instructions "\n\n")))
-
-  (dolist (field (jabber-xml-get-children x 'field))
-    (let* ((var (jabber-xml-get-attribute field 'var))
-	   (label (jabber-xml-get-attribute field 'label))
-	   (type (jabber-xml-get-attribute field 'type))
-	   (values (jabber-xml-get-children field 'value))
-	   (options (jabber-xml-get-children field 'option))
-	   (desc (car (jabber-xml-get-children field 'desc)))
-	   (default-value (assoc var defaults)))
-      ;; "required" not implemented yet
-
-      (cond
-       ((string= type "fixed")
-	(widget-insert (car (jabber-xml-node-children (car values)))))
-
-       ((string= type "text-multi")
-	(if (or label var)
-	    (widget-insert (or label var) ":\n"))
-	(push (cons (cons var type)
-		    (widget-create 'text (or (cdr default-value)
-					     (mapconcat #'(lambda (val)
-							    (car (jabber-xml-node-children val)))
-							values "\n")
-					     "")))
-	      jabber-widget-alist))
-
-       ((string= type "list-single")
-	(if (or label var)
-	    (widget-insert (or label var) ":\n"))
-	(push (cons (cons var type)
-		    (apply #'widget-create
-			   'radio-button-choice
-			   :value (or (cdr default-value)
-				      (car (xml-node-children (car values))))
-			   (mapcar (lambda (option)
-				     `(item :tag ,(jabber-xml-get-attribute option 'label)
-					    :value ,(car (jabber-xml-node-children (car (jabber-xml-get-children option 'value))))))
-				   options)))
-	      jabber-widget-alist))
-
-       ((string= type "boolean")
-	(push (cons (cons var type)
-		    (widget-create 'checkbox
-				   :tag (or label var)
-				   :value (if default-value
-					      (cdr default-value)
-					    (not (null
-						  (member (car (xml-node-children (car values))) '("1" "true")))))))
-	      jabber-widget-alist)
-	(if (or label var)
-	    (widget-insert " " (or label var) "\n")))
-
-       (t	; in particular including text-single and text-private
-	(if (or label var)
-	    (widget-insert (or label var) ": "))
-	(setq jabber-widget-alist
-	      (cons
-	       (cons (cons var type)
-		     (widget-create 'editable-field
-				    :secret (if (string= type "text-private") ?* nil)
-				    (or (cdr default-value)
-					(car (jabber-xml-node-children (car values)))
-					"")))
-	       jabber-widget-alist))))
-      (when (and desc (car (jabber-xml-node-children desc)))
-	(widget-insert "\n" (car (jabber-xml-node-children desc))))
-      (widget-insert "\n"))))
+  "Render XData form X, applying optional DEFAULTS alist."
+  (let ((form (jabber-xdata-parse x)))
+    (dolist (default defaults)
+      (when (jabber-xdata-field form (car default))
+        (setq form (jabber-xdata-set-values form (car default)
+                                            (list (cdr default))))))
+    (jabber-widget--show-form form 'xdata)))
 
 (defun jabber-widget-parse-xdata-form ()
-  "Return an <x/> tag containing information entered in the widgets.
-Return an <x/> tag containing information entered in the widgets of the current
-buffer."
-  `(x ((xmlns . ,jabber-xdata-xmlns)
-       (type . "submit"))
-      ,@(mapcar
-	 (lambda (widget-cons)
-	   (let ((values (jabber-widget-xdata-value-convert (widget-value (cdr widget-cons)) (cdar widget-cons))))
-	     ;; empty fields are not included
-	     (when values
-	       `(field ((var . ,(caar widget-cons)))
-		       ,@(mapcar
-			  (lambda (value)
-			    (list 'value nil value))
-			  values)))))
-	 jabber-widget-alist)))
+  "Return the current plain-data form encoded as XData submission."
+  (jabber-xdata-form-submit-form))
 
 (defun jabber-widget-xdata-value-convert (value type)
-  "Convert VALUE of TYPE from widget-library form to XEP-0004 form.
-Return a list of strings, each of which to be included as cdata in a
-<value/> tag."
+  "Convert legacy widget VALUE of XData TYPE to a list of strings."
   (cond
-   ((string= type "boolean")
-    (if value (list "1") (list "0")))
-   ((string= type "text-multi")
-    (split-string value "[\n\r]"))
-   (t					; in particular including text-single, text-private and list-single
-    (if (zerop (length value))
-	nil
-      (list value)))))
+   ((string= type "boolean") (list (if value "1" "0")))
+   ((string= type "text-multi") (split-string value "[\n\r]"))
+   ((string-empty-p value) nil)
+   (t (list value))))
 
 (defun jabber-widget-render-xdata-search-results (xdata)
-  "Render search results from XDATA <x/> element in x:data form."
-  (let ((title (car (jabber-xml-get-children xdata 'title))))
-    (when title
-      (insert (propertize (car (jabber-xml-node-children title)) 'face 'jabber-title) "\n")))
-  (if (jabber-xml-get-children xdata 'reported)
-      (jabber-widget-render-xdata-search-results-multi xdata)
-    (jabber-widget-render-xdata-search-results-single xdata)))
+  "Render search-result XDATA with the text-first renderer."
+  (jabber-xdata-render-result xdata))
 
 (defun jabber-widget-render-xdata-search-results-multi (xdata)
-  "Render multi-record search results from XDATA."
-  (let (fields
-	(jid-fields 0))
-    (let ((reported (car (jabber-xml-get-children xdata 'reported)))
-	  (column 0))
-      (dolist (field (jabber-xml-get-children reported 'field))
-	(let (width)
-	  ;; Clever algorithm for estimating width based on field type goes here.
-	  (setq width 20)
-
-	  (setq fields
-		(append
-		 fields
-		 (list (cons (jabber-xml-get-attribute field 'var)
-			     (list 'label (jabber-xml-get-attribute field 'label)
-				   'type (jabber-xml-get-attribute field 'type)
-				   'column column)))))
-	  (setq column (+ column width))
-	  (if (string= (jabber-xml-get-attribute field 'type) "jid-single")
-	      (setq jid-fields (1+ jid-fields))))))
-
-    (dolist (field-cons fields)
-      (indent-to (plist-get (cdr field-cons) 'column) 1)
-      (insert (propertize (plist-get (cdr field-cons) 'label) 'face 'bold)))
-    (insert "\n\n")
-
-    ;; Now, the items
-    (dolist (item (jabber-xml-get-children xdata 'item))
-
-      (let ((start-of-line (point))
-	    jid)
-
-	;; The following code assumes that the order of the <field/>s in each
-	;; <item/> is the same as in the <reported/> tag.
-	(dolist (field (jabber-xml-get-children item 'field))
-	  (let ((field-plist (cdr (assoc (jabber-xml-get-attribute field 'var) fields)))
-		(value (car (jabber-xml-node-children (car (jabber-xml-get-children field 'value))))))
-
-	    (indent-to (plist-get field-plist 'column) 1)
-
-	    ;; Absent values are sometimes "", sometimes nil.  insert
-	    ;; doesn't like nil.
-	    (when value
-	      ;; If there is only one JID field, let the whole row
-	      ;; have the jabber-jid property.  If there are many JID
-	      ;; fields, the string belonging to each field has that
-	      ;; property.
-	      (if (string= (plist-get field-plist 'type) "jid-single")
-		  (if (not (eq jid-fields 1))
-		      (insert (propertize value 'jabber-jid value))
-		    (setq jid value)
-		    (insert value))
-		(insert value)))))
-
-	(if jid
-	    (put-text-property start-of-line (point)
-			       'jabber-jid jid))
-	(insert "\n")))))
+  "Render multi-record search-result XDATA."
+  (jabber-xdata-render-result xdata))
 
 (defun jabber-widget-render-xdata-search-results-single (xdata)
-  "Render single-record search results from XDATA."
-  (dolist (field (jabber-xml-get-children xdata 'field))
-    (let ((label (jabber-xml-get-attribute field 'label))
-	  (values (mapcar #'(lambda (val)
-			      (car (jabber-xml-node-children val)))
-			  (jabber-xml-get-children field 'value))))
-      ;; XXX: consider type
-      (insert (propertize (concat label ": ") 'face 'bold))
-      (indent-to 30)
-      (insert (apply #'concat values) "\n"))))
+  "Render single-record search-result XDATA."
+  (jabber-xdata-render-result xdata))
 
 (provide 'jabber-widget)
 

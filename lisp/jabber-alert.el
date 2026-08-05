@@ -240,12 +240,14 @@ files."
   "A function to call to play alert sound files."
   :type 'function)
 
+(defvar jabber-alert-chat-send-function nil
+  "Function used by automatic answers to send a one-to-one message.")
+
+(defvar jabber-alert-muc-personal-p-function nil
+  "Function deciding whether a MUC message addresses the local nick.")
+
 ;; Global reference declarations
 
-(declare-function jabber-chat-get-buffer "jabber-chat.el" (chat-with &optional jc))
-(declare-function jabber-chat-send "jabber-chat.el"
-                  (jc body &optional extra-elements success-callback
-                      failure-callback))
 (defvar jabber-xml-data)                ; jabber.el
 (defvar jabber-buffer-connection)       ; jabber-chatbuffer.el
 
@@ -493,10 +495,9 @@ NAME: the name of the sender."
   (let ((sn (symbol-name name)))
     (let ((func (intern (format "%s-personal" sn))))
       `(progn
-	 (declare-function jabber-muc-looks-like-personal-p "jabber-muc-nick-completion.el"
-                           (message &optional group))
 	 (defun ,func (nick group buffer text title)
-           (if (jabber-muc-looks-like-personal-p text group)
+           (if (and jabber-alert-muc-personal-p-function
+                    (funcall jabber-alert-muc-personal-p-function text group))
                (,name nick group buffer text title)))
 	 (cl-pushnew (quote ,func) (get 'jabber-alert-muc-hooks 'custom-options))))))
 
@@ -523,8 +524,9 @@ BUFFER is the chat buffer; PROPOSED-ALERT gates the action."
            (cl-dolist (entry jabber-autoanswer-alist)
              (when (string-match (car entry) text)
                (cl-return (cdr entry))))))
-      (if message
-          (jabber-chat-send jabber-buffer-connection message)))))
+      (when (and message jabber-alert-chat-send-function)
+        (funcall jabber-alert-chat-send-function
+                 jabber-buffer-connection message)))))
 (cl-pushnew 'jabber-autoanswer-answer (get 'jabber-alert-message-hooks 'custom-options))
 
 (defun jabber-autoanswer-answer-muc (nick group buffer text proposed-alert)
@@ -535,8 +537,9 @@ BUFFER is the MUC buffer; PROPOSED-ALERT gates the action."
            (cl-dolist (entry jabber-autoanswer-alist)
              (when (string-match (car entry) text)
                (cl-return (cdr entry))))))
-      (if message
-          (jabber-chat-send jabber-buffer-connection message)))))
+      (when (and message jabber-alert-chat-send-function)
+        (funcall jabber-alert-chat-send-function
+                 jabber-buffer-connection message)))))
 (cl-pushnew 'jabber-autoanswer-answer-muc (get 'jabber-alert-muc-hooks 'custom-options))
 
 (provide 'jabber-alert)

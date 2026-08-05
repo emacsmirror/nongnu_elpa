@@ -60,9 +60,10 @@
 
 (defvar jabber-pre-disconnect-hook)       ; jabber-core.el
 
-(declare-function jabber-muc-join "jabber-muc" (jc group nickname &optional popup))
-(declare-function jabber-muc-leave "jabber-muc" (jc group))
-(declare-function jabber-muc-get-buffer "jabber-muc" (group &optional jc))
+;; MUC owns bookmark integration, so reverse room operations stay lazy.
+(autoload 'jabber-muc-join "jabber-muc")
+(autoload 'jabber-muc-leave "jabber-muc")
+(autoload 'jabber-muc-get-buffer "jabber-muc")
 
 ;; Disco feature: request PubSub notifications for bookmarks
 (jabber-disco-advertise-feature (concat jabber-bookmarks2-xmlns "+notify"))

@@ -1,5 +1,33 @@
 #+TITLE: Changelog
 
+* Unreleased
+
+** Added
+- XEP-0201 message threads with persistent sessions, local titles, child
+  threads, and account-scoped routing
+- XEP-0004 forms for MUC configuration and ad-hoc commands
+- Unauthenticated SOCKS5 account =:proxy= support; destination names are
+  resolved by the proxy, and authentication and other proxy protocols are not
+  supported
+
+** Changed
+- Chat-state notifications follow their owning message-thread session
+- Thread buffer labels and headers show root-message previews
+- Test loading no longer depends on generated autoloads and prefers newer
+  source files over stale byte-code
+- Compose, registration, search, and vCard editing use text-first buffers and
+  grouped command menus instead of widget.el
+- Added contribution instructions
+
+** Fixes
+- Live MUC reactions use the correct account-scoped room buffer
+- Replayed empty OMEMO messages stay hidden
+- Delivery-receipt status follows the latest message
+- Autoaway applies the configured away and extended-away priorities
+- MUC mentions treat nicknames literally
+- Direct invitations and transient reconnects preserve per-account room
+  passwords in memory; explicit leave clears that session state
+
 * [0.12.5]
 #+date: 2026-07-28
 

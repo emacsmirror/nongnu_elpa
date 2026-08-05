@@ -162,7 +162,8 @@ Return nil on error."
     (jabber-send-presence
      (if xa "xa" "away")
      (if (or (string= jabber-current-status jabber-default-status) (string= jabber-current-status jabber-autoaway-status)) (if xa jabber-autoaway-xa-status jabber-autoaway-status) jabber-current-status)
-     (or (if xa jabber-autoaway-priority jabber-autoaway-xa-priority) jabber-current-priority)))
+     (or (if xa jabber-autoaway-xa-priority jabber-autoaway-priority)
+         jabber-current-priority)))
 
   (setq jabber-autoaway-last-idle-time (jabber-autoaway-get-idle-time))
   ;; Run unidle timer every 10 seconds (if xa specified, timer already running)

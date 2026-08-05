@@ -751,6 +751,290 @@ entry with JC=nil."
         (let ((text (buffer-string)))
           (should (string-match-p "Join our discussion" text)))))))
 
+(ert-deftest jabber-test-muc-direct-invite-password-reaches-join ()
+  "Accepting a direct invite retains its password for the join."
+  (let ((jabber-muc--rooms (make-hash-table :test #'equal))
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (jabber-buffer-connection 'jc)
+        joined)
+    (with-temp-buffer
+      (setq-local jabber-buffer-connection 'jc)
+      (cl-letf (((symbol-function 'jabber-muc-read-my-nickname)
+                 (lambda (&rest _) "nick"))
+                ((symbol-function 'jabber-muc-join)
+                 (lambda (jc group nick &optional _popup)
+                   (setq joined (list jc group nick
+                                      (jabber-muc--session-password jc group))))))
+        (jabber-muc-print-invite
+         (list :xml-data
+               '(message ((from . "alice@example.com/home"))
+                 (x ((xmlns . "jabber:x:conference")
+                     (jid . "room@conference.example.com")
+                     (password . "secret")))))
+         nil :insert)
+        (button-activate (next-button (point-min))))
+      (should (equal '(jc "room@conference.example.com" "nick" "secret")
+                     joined)))))
+
+(ert-deftest jabber-test-muc-direct-invite-without-password-reaches-join ()
+  "Accepting a passwordless direct invite joins without storing a secret."
+  (let ((jabber-muc--rooms (make-hash-table :test #'equal))
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        joined)
+    (with-temp-buffer
+      (setq-local jabber-buffer-connection 'jc)
+      (cl-letf (((symbol-function 'jabber-muc-read-my-nickname)
+                 (lambda (&rest _) "nick"))
+                ((symbol-function 'jabber-get-conference-data) #'ignore)
+                ((symbol-function 'jabber-muc-join)
+                 (lambda (jc group nick &optional _popup)
+                   (setq joined (list jc group nick
+                                      (jabber-muc--session-password jc group))))))
+        (jabber-muc-print-invite
+         (list :xml-data
+               '(message ((from . "alice@example.com/home"))
+                 (x ((xmlns . "jabber:x:conference")
+                     (jid . "room@conference.example.com")))))
+         nil :insert)
+        (button-activate (next-button (point-min))))
+      (should (equal '(jc "room@conference.example.com" "nick" nil)
+                     joined))
+      (should-not (gethash '(jc "room@conference.example.com")
+                           jabber-muc--session-passwords)))))
+
+(ert-deftest jabber-test-muc-direct-invite-includes-known-password ()
+  "Outgoing direct invitations include a known session password."
+  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+        sent)
+    (puthash '(jc "room@conference.example.com") "secret"
+             jabber-muc--session-passwords)
+    (cl-letf (((symbol-function 'jabber-send-iq) #'ignore)
+              ((symbol-function 'jabber-send-sexp)
+               (lambda (_jc stanza) (setq sent stanza))))
+      (jabber-muc-invite 'jc "bob@example.com" "room@conference.example.com" ""))
+    (let ((x (car (jabber-xml-get-children sent 'x))))
+      (should (equal "secret" (jabber-xml-get-attribute x 'password))))))
+
+(ert-deftest jabber-test-muc-direct-invite-omits-unknown-password ()
+  "Outgoing direct invitations omit the password attribute when unknown."
+  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+        sent)
+    (cl-letf (((symbol-function 'jabber-send-iq) #'ignore)
+              ((symbol-function 'jabber-get-conference-data) #'ignore)
+              ((symbol-function 'jabber-send-sexp)
+               (lambda (_jc stanza) (setq sent stanza))))
+      (jabber-muc-invite 'jc "bob@example.com" "room@conference.example.com" ""))
+    (let ((x (car (jabber-xml-get-children sent 'x))))
+      (should x)
+      (should-not (jabber-xml-get-attribute x 'password)))))
+
+(ert-deftest jabber-test-muc-disable-disco-uses-bookmarked-password ()
+  "The no-disco join path falls back to a bookmarked password."
+  (let ((jabber-muc-disable-disco-check t)
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        conference-args
+        args)
+    (cl-letf (((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
+              ((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
+              ((symbol-function 'jabber-get-conference-data)
+               (lambda (&rest values)
+                 (setq conference-args values)
+                 "secret"))
+              ((symbol-function 'read-passwd)
+               (lambda (&rest _) (ert-fail "password prompt called")))
+              ((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (&rest values) (setq args values))))
+      (jabber-muc-join 'jc "room@conference.example.com" "nick"))
+    (should-not (gethash '(jc "room@conference.example.com")
+                         jabber-muc--session-passwords))
+    (should (equal '(jc "room@conference.example.com" nil :password)
+                   conference-args))
+    (should (equal '(jc "room@conference.example.com" "nick" "secret" nil)
+                   args))))
+
+(ert-deftest jabber-test-muc-prompted-password-survives-self-ping-rejoin ()
+  "A prompted room password is retained for forced self-ping rejoin."
+  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (jabber-pending-groupchats (make-hash-table :test #'eq))
+        (jabber-jid-obarray (make-vector 127 0))
+        sent)
+    (cl-letf (((symbol-function 'jabber-muc--validate-disco-result)
+               (lambda (_result)
+                 '(:status ok :features ("muc_passwordprotected"))))
+              ((symbol-function 'read-passwd) (lambda (&rest _) "secret"))
+              ((symbol-function 'jabber-presence-children) (lambda (_jc) nil))
+              ((symbol-function 'jabber-send-sexp)
+               (lambda (_jc stanza) (push stanza sent)))
+              ((symbol-function 'jabber-muc-remove-groupchat) #'ignore)
+              ((symbol-function 'jabber-iq-error) (lambda (_xml) '(error nil)))
+              ((symbol-function 'jabber-error-condition)
+               (lambda (_error) 'not-acceptable)))
+      (jabber-muc--disco-callback
+       'jc '("room@example.org" "nick" nil) '(iq nil))
+      (should (equal "secret"
+                     (gethash '(jc "room@example.org")
+                              jabber-muc--session-passwords)))
+      (jabber-muc--self-ping-failed
+       'jc '(iq nil) '("room@example.org" . "nick")))
+    (should (= 2 (length sent)))
+    (dolist (presence sent)
+      (should (equal "secret"
+                     (jabber-xml-path presence '(x password "")))))))
+
+(ert-deftest jabber-test-muc-disable-disco-empty-password-stays-nil ()
+  "An empty no-disco password prompt keeps the passwordless join shape."
+  (let ((jabber-muc-disable-disco-check t)
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        sent-password)
+    (cl-letf (((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
+              ((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
+              ((symbol-function 'jabber-get-conference-data) #'ignore)
+              ((symbol-function 'read-passwd) (lambda (&rest _) ""))
+              ((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (_jc _group _nick password _popup &optional _configure)
+                 (setq sent-password password))))
+      (jabber-muc-join 'jc "room@example.org" "nick" t)
+      (should-not sent-password))))
+
+(ert-deftest jabber-test-muc-session-password-cleared-on-leave ()
+  "Leaving a room clears its in-memory password."
+  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
+        (jabber-bookmarks-auto-add nil)
+        dequeued)
+    (puthash '(jc "room@conference.example.com") "secret"
+             jabber-muc--session-passwords)
+    (puthash "account@example.com"
+             '(("room@conference.example.com" "nick" "secret")
+               ("other@conference.example.com" "nick" nil))
+             jabber-muc--rooms-before-disconnect)
+    (cl-letf (((symbol-function 'jabber-muc-nickname) (lambda (&rest _) "nick"))
+              ((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "account@example.com"))
+              ((symbol-function 'jabber-send-sexp) #'ignore)
+              ((symbol-function 'jabber-muc--autojoin-dequeue)
+               (lambda (jc group) (setq dequeued (list jc group)))))
+      (jabber-muc-leave 'jc "room@conference.example.com"))
+    (should (equal dequeued '(jc "room@conference.example.com")))
+    (should-not (gethash '(jc "room@conference.example.com")
+                         jabber-muc--session-passwords))
+    (should (equal (gethash "account@example.com"
+                            jabber-muc--rooms-before-disconnect)
+                   '(("other@conference.example.com" "nick" nil))))))
+
+(ert-deftest jabber-test-muc-disco-preserves-invited-password ()
+  "Disco joins use a direct invitation password even without a feature flag."
+  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+        sent-password)
+    (jabber-muc--remember-password 'jc "room@example.org" "secret")
+    (cl-letf (((symbol-function 'jabber-muc--validate-disco-result)
+               (lambda (_result) '(:status ok :features nil)))
+              ((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (_jc _group _nick password _popup &optional _configure)
+                 (setq sent-password password))))
+      (jabber-muc--disco-callback
+       'jc '("room@example.org" "romeo" nil) nil)
+      (should (equal sent-password "secret")))))
+
+(ert-deftest jabber-test-muc-session-password-is-account-scoped ()
+  "Passwords for the same room do not cross account boundaries."
+  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (first (list :first))
+        (second (list :second)))
+    (cl-letf (((symbol-function 'jabber-get-conference-data) #'ignore))
+      (jabber-muc--remember-password first "room@example.org" "secret")
+      (should (equal (jabber-muc--session-password first "room@example.org")
+                     "secret"))
+      (should-not (jabber-muc--session-password second "room@example.org")))))
+
+(ert-deftest jabber-test-muc-rejoin-snapshots-are-account-scoped ()
+  "Rejoining one account leaves another account's snapshot untouched."
+  (let ((jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        enqueued)
+    (puthash "first@example.com" '(("one@muc.example" "one" "secret"))
+             jabber-muc--rooms-before-disconnect)
+    (puthash "second@example.com" '(("two@muc.example" "two" nil))
+             jabber-muc--rooms-before-disconnect)
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (jc) (if (eq jc 'first)
+                                "first@example.com"
+                              "second@example.com")))
+              ((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
+              ((symbol-function 'jabber-muc--autojoin-queued-p)
+               (lambda (&rest _) nil))
+              ((symbol-function 'jabber-muc--autojoin-enqueue-pending)
+               (lambda (jc room nick) (setq enqueued (list jc room nick)))))
+      (jabber-muc--rejoin-snapshot 'first))
+    (should (equal enqueued '(first "one@muc.example" "one")))
+    (should (equal (jabber-muc--session-password 'first "one@muc.example")
+                   "secret"))
+    (should-not (gethash "first@example.com"
+                         jabber-muc--rooms-before-disconnect))
+    (should (gethash "second@example.com"
+                     jabber-muc--rooms-before-disconnect))))
+
+(ert-deftest jabber-test-muc-session-reset-snapshots-transient-password ()
+  "Unexpected reconnectable disconnect snapshots then clears room secrets."
+  (let ((jabber-auto-reconnect t)
+        (jabber-muc--rooms (make-hash-table :test #'equal))
+        (jabber-muc--room-jids (make-hash-table :test #'equal))
+        (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
+        (jabber-muc-participants nil))
+    (puthash "room@example.org" '((jc . "nick")) jabber-muc--rooms)
+    (jabber-muc--remember-password 'jc "room@example.org" "secret")
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "a@example.org"))
+              ((symbol-function 'fsm-get-state-data)
+               (lambda (_jc) '(:ever-session-established t))))
+      (jabber-muc--session-reset 'jc)
+      (should-not (gethash '(jc "room@example.org")
+                           jabber-muc--session-passwords))
+      (should (equal (gethash "a@example.org"
+                              jabber-muc--rooms-before-disconnect)
+                     '(("room@example.org" "nick" "secret")))))))
+
+(ert-deftest jabber-test-muc-session-reset-discards-terminal-password ()
+  "Expected terminal disconnects discard secrets and reconnect snapshots."
+  (let ((jabber-auto-reconnect t)
+        (jabber-muc--rooms (make-hash-table :test #'equal))
+        (jabber-muc--room-jids (make-hash-table :test #'equal))
+        (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
+        (jabber-muc-participants nil))
+    (puthash "room@example.org" '((jc . "nick")) jabber-muc--rooms)
+    (jabber-muc--remember-password 'jc "room@example.org" "secret")
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "a@example.org"))
+              ((symbol-function 'fsm-get-state-data)
+               (lambda (_jc) '(:disconnection-expected t
+                               :ever-session-established t))))
+      (jabber-muc--session-reset 'jc)
+      (should-not (gethash '(jc "room@example.org")
+                           jabber-muc--session-passwords))
+      (should-not (gethash "a@example.org"
+                           jabber-muc--rooms-before-disconnect)))))
+
+(ert-deftest jabber-test-muc-legacy-close-preserves-reconnect-snapshot ()
+  "The legacy one-argument close call preserves rooms for reconnect."
+  (let ((jabber-muc--rooms (make-hash-table :test #'equal))
+        (jabber-muc--room-jids (make-hash-table :test #'equal))
+        (jabber-muc--nonanonymous-rooms (make-hash-table :test #'equal))
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))
+        (jabber-muc-participants nil))
+    (puthash "room@example.org" '((jc . "nick")) jabber-muc--rooms)
+    (jabber-muc--remember-password 'jc "room@example.org" "secret")
+    (cl-letf (((symbol-function 'jabber-connection-bare-jid)
+               (lambda (_jc) "a@example.org")))
+      (jabber-muc-connection-closed "a@example.org"))
+    (should (equal (gethash "a@example.org"
+                            jabber-muc--rooms-before-disconnect)
+                   '(("room@example.org" "nick" "secret"))))))
+
 ;;; Group 17: disco-prioritized autojoin queue
 
 (ert-deftest jabber-muc-test-autojoin-insert-sorted ()
@@ -954,6 +1238,19 @@ entry with JC=nil."
                  "This room is publicly logged"
                  "This room is now non-anonymous")
                (nreverse notices))))))
+
+(ert-deftest jabber-test-muc-personal-nick-is-literal ()
+  "Regexp characters in a nickname are matched literally."
+  (cl-letf (((symbol-function 'jabber-my-nick) (lambda (&optional _) "bob.m")))
+    (should (jabber-muc-looks-like-personal-p "bob.m, hello"))
+    (should (jabber-muc-looks-like-personal-p "bob.m: hello"))
+    (should (jabber-muc-looks-like-personal-p "bob.m> hello"))
+    (should-not (jabber-muc-looks-like-personal-p "bobXm: hello"))))
+
+(ert-deftest jabber-test-muc-personal-plus-nick-matches ()
+  "A plus sign in a nickname does not alter mention matching."
+  (cl-letf (((symbol-function 'jabber-my-nick) (lambda (&optional _) "bob+m")))
+    (should (jabber-muc-looks-like-personal-p "bob+m: hello"))))
 
 (ert-deftest jabber-test-muc-buffer-registry-is-account-scoped ()
   "Two accounts may hold distinct buffers for the same room."

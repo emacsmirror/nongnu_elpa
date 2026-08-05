@@ -33,7 +33,7 @@
 (require 'jabber-roster)
 (require 'jabber-version)
 
-(declare-function jabber-omemo-show-fingerprints "jabber-omemo-trust.el" (jc))
+(autoload 'jabber-omemo-show-fingerprints "jabber-omemo-trust" nil t)
 
 (defvar jabber-current-show)             ; jabber.el
 (defvar jabber-activity-jids)            ; jabber-activity.el

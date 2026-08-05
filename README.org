@@ -18,6 +18,8 @@ See the [[https://xmpp.org/software/jabber-el/][xmpp.org page]] for the full lis
 * Requirements
 
 + Emacs 29.1 or later, compiled with dynamic module support
++ [[https://elpa.gnu.org/packages/fsm.html][fsm]] 0.2.0 or later
++ [[https://elpa.gnu.org/packages/keymap-popup.html][keymap-popup]] 0.2 or later
 
 ** OMEMO encryption (optional)
 

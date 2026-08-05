@@ -36,6 +36,8 @@
 (require 'jabber-chatbuffer)
 (require 'jabber-muc-state)
 
+(defvar jabber-alert-muc-personal-p-function)
+
 ;;; User customizations here:
 (defcustom jabber-muc-completion-delimiter ": "
   "String to add to end of completion line."
@@ -85,7 +87,7 @@ Note that \":\" or alike not needed (it appended in other string)"
 Optional argument GROUP to look."
   (if message (string-match (concat
 			     "^"
-			     (jabber-my-nick group)
+			     (regexp-quote (jabber-my-nick group))
 			     (regexp-opt jabber-muc-looks-personaling-symbols))
 			    message)
     nil))
@@ -187,6 +189,8 @@ TEXT is the message body used to detect personal-mention bonus."
                   (complete-with-action action table str pred))))))))
 
 (add-hook 'jabber-muc-hooks #'jabber-muc-track-message-time)
+
+(setq jabber-alert-muc-personal-p-function #'jabber-muc-looks-like-personal-p)
 
 (provide 'jabber-muc-nick-completion)
 

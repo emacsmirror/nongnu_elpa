@@ -180,6 +180,62 @@ Return nil when X has no XEP-0068 FORM_TYPE field."
 (define-obsolete-function-alias 'jabber-widget-xdata-formtype
   #'jabber-xdata-form-type "0.11.0")
 
+(defun jabber-xdata--result-value (field)
+  "Return FIELD result values joined for display."
+  (string-join (jabber-xdata--values field) ", "))
+
+(defun jabber-xdata--render-result-row (item columns)
+  "Insert one XEP-0004 result ITEM using COLUMNS metadata."
+  (let ((start (point))
+        (jid-columns (cl-count "jid-single" columns
+                               :key (lambda (column)
+                                      (plist-get column :type))
+                               :test #'string=))
+        row-jid)
+    (dolist (column columns)
+      (let* ((var (plist-get column :var))
+             (field (seq-find
+                     (lambda (candidate)
+                       (equal var (jabber-xml-get-attribute candidate 'var)))
+                     (jabber-xml-get-children item 'field)))
+             (value (and field (jabber-xdata--result-value field))))
+        (when (and value (string= (plist-get column :type) "jid-single"))
+          (if (= jid-columns 1)
+              (setq row-jid value)
+            (setq value (propertize value 'jabber-jid value))))
+        (insert (format "%-20s" (or value "")))))
+    (when row-jid
+      (put-text-property start (point) 'jabber-jid row-jid))
+    (insert "\n")))
+
+(defun jabber-xdata-render-result (xdata)
+  "Render XEP-0004 result XDATA at point without widget.el."
+  (when-let* ((title (jabber-xdata--child-text xdata 'title)))
+    (insert (propertize title 'face 'jabber-title) "\n"))
+  (if-let* ((reported (car (jabber-xml-get-children xdata 'reported))))
+      (let ((columns
+             (mapcar
+              (lambda (field)
+                (list :var (jabber-xml-get-attribute field 'var)
+                      :label (or (jabber-xml-get-attribute field 'label)
+                                 (jabber-xml-get-attribute field 'var))
+                      :type (jabber-xdata--field-type field)))
+              (jabber-xml-get-children reported 'field))))
+        (dolist (column columns)
+          (insert (propertize
+                   (format "%-20s" (plist-get column :label)) 'face 'bold)))
+        (insert "\n\n")
+        (dolist (item (jabber-xml-get-children xdata 'item))
+          (jabber-xdata--render-result-row item columns)))
+    (dolist (field (jabber-xml-get-children xdata 'field))
+      (insert (propertize
+               (concat (or (jabber-xml-get-attribute field 'label)
+                           (jabber-xml-get-attribute field 'var)
+                           "Field")
+                       ": ")
+               'face 'bold)
+              (jabber-xdata--result-value field) "\n"))))
+
 (provide 'jabber-xdata)
 
 ;;; jabber-xdata.el ends here

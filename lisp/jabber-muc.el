@@ -89,9 +89,35 @@ Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
 (defvar jabber-muc-nickname-history ()
   "Keeps track of previously referred-to nicknames.")
 
-(defvar jabber-muc--rooms-before-disconnect nil
-  "Alist of (ROOM . NICK) saved before disconnect.
-Used to rejoin non-bookmarked rooms on reconnect.")
+(defvar jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal)
+  "Map account bare JIDs to (ROOM NICK PASSWORD) reconnect snapshots.")
+
+(defvar jabber-muc--session-passwords (make-hash-table :test #'equal)
+  "In-memory room passwords keyed by (JC GROUP).")
+
+(defun jabber-muc--session-password (jc group)
+  "Return in-memory or bookmarked password for GROUP on JC."
+  (or (gethash (list jc group) jabber-muc--session-passwords)
+      (jabber-get-conference-data jc group nil :password)))
+
+(defun jabber-muc--remember-password (jc group password)
+  "Remember PASSWORD for GROUP on JC when non-nil."
+  (when password
+    (puthash (list jc group) password jabber-muc--session-passwords)))
+
+(defun jabber-muc--forget-password (jc group)
+  "Forget in-memory password for GROUP on JC."
+  (remhash (list jc group) jabber-muc--session-passwords))
+
+(defun jabber-muc--clear-passwords (jc)
+  "Forget all in-memory room passwords belonging to JC."
+  (let (keys)
+    (maphash (lambda (key _password)
+               (when (eq (car key) jc)
+                 (push key keys)))
+             jabber-muc--session-passwords)
+    (dolist (key keys)
+      (remhash key jabber-muc--session-passwords))))
 
 (defvar jabber-muc--autojoin-queue nil
   "Alist of (JC . ((COUNT GROUP . NICK) ...)) for prioritized MUC autojoin.
@@ -407,42 +433,28 @@ The format is that of `mode-line-format' and `header-line-format'."
   :type 'sexp
   :group 'jabber-chat)
 
-;; Global reference declarations
+;; Provider features call into MUC, so reverse calls stay lazy rather than
+;; introducing feature-level require cycles.
 
-(declare-function jabber-omemo--send-muc "jabber-omemo.el"
-                  (jc body &optional extra-elements success-callback
-                      failure-callback))
-(declare-function jabber-omemo--prefetch-sessions "jabber-omemo" (jc jid))
-(declare-function jabber-omemo--prefetch-muc-sessions "jabber-omemo" (jc group))
-(declare-function jabber-openpgp--send-muc "jabber-openpgp.el"
-                  (jc body &optional extra-elements success-callback
-                      failure-callback))
-(declare-function jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy.el" (jc body &optional extra-elements))
-(declare-function jabber-mam-muc-joined "jabber-mam.el" (jc group))
-(declare-function jabber-mam--cancel-muc-query "jabber-mam.el" (room))
-(declare-function jabber-message-correct--replace-id "jabber-message-correct"
-                  (xml-data))
-(declare-function jabber-message-correct--apply "jabber-message-correct"
-                  (replace-id new-body new-from muc-p buffer
-                              &optional new-occupant-id account peer
-                              legacy-authorized-p))
-(declare-function jabber-message-correct--muc-current-target-p
-                  "jabber-message-correct" (jc from stanza-id))
-(declare-function jabber-message-correct--muc-presence-enter
-                  "jabber-message-correct" (jc from))
-(declare-function jabber-message-correct--muc-presence-leave
-                  "jabber-message-correct" (jc from))
-(declare-function jabber-message-correct--record-muc-original
-                  "jabber-message-correct" (jc from stanza-id))
-(declare-function jabber-message-correct--muc-room-leave
-                  "jabber-message-correct" (jc group))
-(declare-function jabber-reactions--reaction-only-p "jabber-reactions"
-                  (xml-data))
-(declare-function jabber-vcard-get "jabber-vcard.el" (jc jid))
-(declare-function jabber-chatstates--delete-typing-node "jabber-chatstates" ())
-(declare-function jabber-chatstates--muc-reinsert-typing "jabber-chatstates" ())
-(declare-function jabber-chatstates--muc-remove-nick "jabber-chatstates"
-                  (nick))
+(autoload 'jabber-omemo--send-muc "jabber-omemo")
+(autoload 'jabber-omemo--prefetch-sessions "jabber-omemo")
+(autoload 'jabber-omemo--prefetch-muc-sessions "jabber-omemo")
+(autoload 'jabber-openpgp--send-muc "jabber-openpgp")
+(autoload 'jabber-openpgp-legacy--send-muc "jabber-openpgp-legacy")
+(autoload 'jabber-mam-muc-joined "jabber-mam")
+(autoload 'jabber-mam--cancel-muc-query "jabber-mam")
+(autoload 'jabber-message-correct--replace-id "jabber-message-correct")
+(autoload 'jabber-message-correct--apply "jabber-message-correct")
+(autoload 'jabber-message-correct--muc-current-target-p "jabber-message-correct")
+(autoload 'jabber-message-correct--muc-presence-enter "jabber-message-correct")
+(autoload 'jabber-message-correct--muc-presence-leave "jabber-message-correct")
+(autoload 'jabber-message-correct--record-muc-original "jabber-message-correct")
+(autoload 'jabber-message-correct--muc-room-leave "jabber-message-correct")
+(autoload 'jabber-reactions--reaction-only-p "jabber-reactions")
+(autoload 'jabber-vcard-get "jabber-vcard")
+(autoload 'jabber-chatstates--delete-typing-node "jabber-chatstates")
+(autoload 'jabber-chatstates--muc-reinsert-typing "jabber-chatstates")
+(autoload 'jabber-chatstates--muc-remove-nick "jabber-chatstates")
 (defvar jabber-silent-mode)             ; jabber.el
 (defvar jabber-alert-muc-function)      ; jabber-alert.el
 (defvar jabber-body-printers)           ; jabber-chat.el
@@ -455,6 +467,11 @@ The format is that of `mode-line-format' and `header-line-format'."
 (defvar jabber-chat--backlog-generation) ; jabber-chatbuffer.el
 (defvar jabber-chat-printers)           ; jabber-chat.el
 (defvar jabber-chat-time-format)        ; jabber-chat.el
+
+(defun jabber-muc--loaded-function-p (function)
+  "Return non-nil when FUNCTION has a loaded implementation."
+  (and (fboundp function)
+       (not (autoloadp (symbol-function function)))))
 (defvar jabber-post-disconnect-hook)   ; jabber-core.el
 (defvar jabber-send-function)           ; jabber-console.el
 (defvar jabber-xdata-xmlns)            ; jabber-xml.el
@@ -653,7 +670,9 @@ splice into the stanza after the body (e.g. XEP-0308 replace)."
 (defun jabber-muc-remove-groupchat (group &optional jc)
   "Remove GROUP from internal bookkeeping.
 If JC is given, only remove that connection's entry."
-  (when (and jc (fboundp 'jabber-message-correct--muc-room-leave))
+  (when (and jc
+             (jabber-muc--loaded-function-p
+              'jabber-message-correct--muc-room-leave))
     (jabber-message-correct--muc-room-leave jc group))
   (jabber-muc-leave-remove group jc)
   (jabber-mam--cancel-muc-query group)
@@ -665,12 +684,14 @@ If JC is given, only remove that connection's entry."
     (remhash group jabber-muc--room-jids)
     (remhash group jabber-muc--nonanonymous-rooms)))
 
-(defun jabber-muc-connection-closed (bare-jid)
+(cl-defun jabber-muc-connection-closed
+    (bare-jid &optional (preserve-for-reconnect-p t))
   "Remove MUC data for BARE-JID, saving room list for reconnect.
 Forget all information about rooms that had been entered with
 this JID.  The room list is saved to `jabber-muc--rooms-before-disconnect'
-so non-bookmarked rooms can be rejoined on reconnect.  When
-multiple accounts share a room, only the disconnecting account's
+when PRESERVE-FOR-RECONNECT-P is non-nil so non-bookmarked rooms can be
+rejoined.  It defaults to non-nil for compatibility with old one-argument
+callers.  When multiple accounts share a room, only the disconnecting account's
 entry is removed."
   (let (snapshot)
     (dolist (room (jabber-muc-active-rooms))
@@ -681,10 +702,14 @@ entry is removed."
                                          (jabber-connection-bare-jid (car e))))
                              :test #'string=)))
         (when match
-          (push (cons room (cdr match)) snapshot)
+          (push (list room (cdr match)
+                      (gethash (list (car match) room)
+                               jabber-muc--session-passwords))
+                snapshot)
           ;; Clear autojoin queue for this connection.
           (jabber-muc--autojoin-clear (car match))
           (jabber-muc-leave-remove room (car match))
+          (jabber-muc--forget-password (car match) room)
           ;; Only clear participants when no account remains in the room.
           (unless (jabber-muc-joined-p room)
             (let ((whichparticipants (assoc room jabber-muc-participants)))
@@ -692,11 +717,20 @@ entry is removed."
                     (delq whichparticipants jabber-muc-participants)))
             (remhash room jabber-muc--room-jids)
             (remhash room jabber-muc--nonanonymous-rooms)))))
-    (setq jabber-muc--rooms-before-disconnect snapshot)))
+    (if (and preserve-for-reconnect-p snapshot)
+        (puthash bare-jid snapshot jabber-muc--rooms-before-disconnect)
+      (remhash bare-jid jabber-muc--rooms-before-disconnect))))
 
 (defun jabber-muc--session-reset (jc)
   "Clear room state belonging to the lost logical session on JC."
-  (jabber-muc-connection-closed (jabber-connection-bare-jid jc)))
+  (let* ((state-data (fsm-get-state-data jc))
+         (preserve-for-reconnect-p
+          (and jabber-auto-reconnect
+               (not (plist-get state-data :disconnection-expected))
+               (plist-get state-data :ever-session-established))))
+    (jabber-muc-connection-closed
+     (jabber-connection-bare-jid jc) preserve-for-reconnect-p)
+    (jabber-muc--clear-passwords jc)))
 
 (add-hook 'jabber-lifecycle-session-reset-functions
           #'jabber-muc--session-reset)
@@ -726,7 +760,7 @@ Error conditions per XEP-0410:
        (message "MUC self-ping failed for %s (%s), rejoining"
                 room (or condition "unknown"))
        (jabber-muc-remove-groupchat room jc)
-       (let ((password (jabber-get-conference-data jc room nil :password)))
+       (let ((password (jabber-muc--session-password jc room)))
          (jabber-muc--send-join-presence jc room nick password nil))))))
 
 (defun jabber-muc--self-ping-one (jc group)
@@ -1171,7 +1205,12 @@ JC is the Jabber connection."
     (jabber-muc--self-ping-one jc group))
    ;; Skip disco check if configured.
    (jabber-muc-disable-disco-check
-    (jabber-muc--send-join-presence jc group nickname nil popup))
+    (let ((password (jabber-muc--session-password jc group)))
+      (when (and popup (not password))
+        (setq password (read-passwd (format "Password for %s: " group)))
+        (when (string-empty-p password)
+          (setq password nil)))
+      (jabber-muc--send-join-presence jc group nickname password popup)))
    (t
     (jabber-disco-get-info jc group nil #'jabber-muc--disco-callback
 			   (list group nickname popup)))))
@@ -1236,12 +1275,12 @@ RESULT is the disco#info result."
          (message "%s is not a conference service" (jabber-jid-displayname group))))
       (unless (eq status 'not-conference)
         (let* ((features (plist-get v :features))
-               (password
-                (when (member "muc_passwordprotected" features)
-                  (or
-                   (jabber-get-conference-data jc group nil :password)
-                   (read-passwd (format "Password for %s: "
-                                        (jabber-jid-displayname group)))))))
+               (password (jabber-muc--session-password jc group)))
+          (when (and (member "muc_passwordprotected" features)
+                     (not password))
+            (setq password
+                  (read-passwd (format "Password for %s: "
+                                       (jabber-jid-displayname group)))))
           (when (member "muc_nonanonymous" features)
             (puthash group t jabber-muc--nonanonymous-rooms))
           (jabber-muc--send-join-presence jc group nickname password popup))))))
@@ -1257,6 +1296,7 @@ switch to the MUC buffer.  When AUTO-CONFIGURE is non-nil, set
 opens on room creation.
 
 JC is the Jabber connection."
+  (jabber-muc--remember-password jc group password)
   ;; Remember that this is a groupchat _before_ sending the stanza.
   ;; The response might come quicker than you think.
   (puthash (jabber-jid-symbol group) nickname jabber-pending-groupchats)
@@ -1329,6 +1369,15 @@ JC is the Jabber connection."
     (jabber-send-sexp jc
 		      `(presence ((to . ,(format "%s/%s" group nick))
 				  (type . "unavailable")))))
+  (jabber-muc--autojoin-dequeue jc group)
+  (let* ((bare-jid (jabber-connection-bare-jid jc))
+         (snapshot (cl-delete
+                    group (gethash bare-jid jabber-muc--rooms-before-disconnect)
+                    :key #'car :test #'string=)))
+    (if snapshot
+        (puthash bare-jid snapshot jabber-muc--rooms-before-disconnect)
+      (remhash bare-jid jabber-muc--rooms-before-disconnect)))
+  (jabber-muc--forget-password jc group)
   (when jabber-bookmarks-auto-add
     (jabber-bookmarks--retract-one jc group)))
 
@@ -1484,6 +1533,8 @@ JC is the Jabber connection."
    `(message ((to . ,jid))
 	     (x ((xmlns . ,jabber-muc-xmlns-direct-invite)
 		 (jid . ,group)
+		 ,@(when-let* ((password (jabber-muc--session-password jc group)))
+		     `((password . ,password)))
 		 ,@(unless (zerop (length reason))
 		     `((reason . ,reason))))))))
 
@@ -1504,20 +1555,21 @@ Return (GROUP INVITER REASON) or nil."
 
 (defun jabber-muc--parse-direct-invite (xml-data)
   "Parse XEP-0249 direct invite from XML-DATA.
-Return (GROUP INVITER REASON) or nil."
+Return (GROUP INVITER REASON PASSWORD) or nil."
   (cl-dolist (x (jabber-xml-get-children xml-data 'x))
     (when (string= (jabber-xml-get-attribute x 'xmlns)
                    jabber-muc-xmlns-direct-invite)
       (let ((group (jabber-xml-get-attribute x 'jid))
             (inviter (jabber-xml-get-attribute xml-data 'from))
-            (reason (jabber-xml-get-attribute x 'reason)))
+            (reason (jabber-xml-get-attribute x 'reason))
+            (password (jabber-xml-get-attribute x 'password)))
         (when (and group (not (jabber-muc-joined-p group)))
-          (cl-return (list group inviter reason)))))))
+          (cl-return (list group inviter reason password)))))))
 
-(defun jabber-muc--insert-invite (group inviter reason &optional mediated-p)
+(defun jabber-muc--insert-invite (group inviter reason &optional mediated-p password)
   "Insert MUC invitation UI for GROUP from INVITER with REASON.
-When MEDIATED-P is non-nil, include a Decline button."
-  ;; XXX: password
+When MEDIATED-P is non-nil, include a Decline button.
+PASSWORD is the optional direct-invite room password."
   (insert "You have been invited to MUC room "
           (jabber-jid-displayname group))
   (when inviter
@@ -1527,6 +1579,8 @@ When MEDIATED-P is non-nil, include a Decline button."
     (insert "  Reason: " reason))
   (insert "\n\n")
   (let ((action (lambda (&rest _ignore) (interactive)
+                  (jabber-muc--remember-password
+                   jabber-buffer-connection group password)
                   (jabber-muc-join jabber-buffer-connection group
                                    (jabber-muc-read-my-nickname
                                     jabber-buffer-connection group)))))
@@ -1558,7 +1612,7 @@ Requires :xml-data key in MSG for raw stanza access."
         (when-let* ((parsed (jabber-muc--parse-direct-invite xml-data)))
           (when (eql mode :insert)
             (jabber-muc--insert-invite (nth 0 parsed) (nth 1 parsed)
-                                       (nth 2 parsed)))
+                                       (nth 2 parsed) nil (nth 3 parsed)))
           t))))
 
 (defun jabber-muc--autojoin-insert (jc count group nick)
@@ -1639,7 +1693,7 @@ never responds.  Does nothing if the queue is empty."
     (let* ((head (pop rooms))
            (group (cadr head))
            (nick (cddr head))
-           (password (jabber-get-conference-data jc group nil :password)))
+           (password (jabber-muc--session-password jc group)))
       (setcdr entry rooms)
       (unless rooms
         (setq jabber-muc--autojoin-queue
@@ -1670,13 +1724,15 @@ never responds.  Does nothing if the queue is empty."
   "On JC, rejoin pre-disconnect rooms not already joined.
 Called after bookmark autojoin to recover non-bookmarked rooms.
 Rooms are added to the pending disco list for batched querying."
-  (dolist (room-nick jabber-muc--rooms-before-disconnect)
-    (let ((room (car room-nick))
-          (nick (cdr room-nick)))
-      (unless (or (jabber-muc-joined-p room jc)
-                  (jabber-muc--autojoin-queued-p jc room))
-        (jabber-muc--autojoin-enqueue-pending jc room nick))))
-  (setq jabber-muc--rooms-before-disconnect nil))
+  (let ((bare-jid (jabber-connection-bare-jid jc)))
+    (dolist (room-nick-password
+             (gethash bare-jid jabber-muc--rooms-before-disconnect))
+      (pcase-let ((`(,room ,nick ,password) room-nick-password))
+        (jabber-muc--remember-password jc room password)
+        (unless (or (jabber-muc-joined-p room jc)
+                    (jabber-muc--autojoin-queued-p jc room))
+          (jabber-muc--autojoin-enqueue-pending jc room nick))))
+    (remhash bare-jid jabber-muc--rooms-before-disconnect)))
 
 (defun jabber-muc--autojoin-enqueue-pending (jc group nick)
   "Add (GROUP . NICK) to the pending disco list for JC."
@@ -2007,15 +2063,18 @@ come from the stanza."
                          (concat " <"
                                  (jabber-jid-user jid)
                                  ">")))))
-    (when (fboundp 'jabber-message-correct--muc-presence-leave)
+    (when (jabber-muc--loaded-function-p
+           'jabber-message-correct--muc-presence-leave)
       (jabber-message-correct--muc-presence-leave
        jc (concat group "/" nickname)))
     (jabber-muc-remove-participant group nickname)
     (when-let* ((buffer (jabber-muc-find-buffer group jc)))
       (with-current-buffer buffer
         (jabber-chat-buffer-with-scrolltobottom
-          (when (and (fboundp 'jabber-chatstates--muc-remove-nick)
-                     (fboundp 'jabber-chatstates--delete-typing-node))
+          (when (and (jabber-muc--loaded-function-p
+                      'jabber-chatstates--muc-remove-nick)
+                     (jabber-muc--loaded-function-p
+                      'jabber-chatstates--delete-typing-node))
             (jabber-chatstates--muc-remove-nick nickname)
             (jabber-chatstates--delete-typing-node))
           (jabber-maybe-print-rare-time
@@ -2034,7 +2093,8 @@ come from the stanza."
                    (t
                     (concat name " has left the chatroom")))
                   :time (current-time))))
-          (when (fboundp 'jabber-chatstates--muc-reinsert-typing)
+          (when (jabber-muc--loaded-function-p
+                 'jabber-chatstates--muc-reinsert-typing)
             (jabber-chatstates--muc-reinsert-typing)))))))
 
 (defun jabber-muc--room-created-message ()
@@ -2133,7 +2193,8 @@ Silently ignore; the user may lack permissions."
   "On JC, handle a participant entering or updating presence in GROUP.
 NICKNAME is the user.  SYMBOL is their JID symbol.  STATUS-CODES,
 X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
-  (when (fboundp 'jabber-message-correct--muc-presence-enter)
+  (when (jabber-muc--loaded-function-p
+         'jabber-message-correct--muc-presence-enter)
     (jabber-message-correct--muc-presence-enter
      jc (concat group "/" nickname)))
   ;; Self-presence: check nickname too since some servers (e.g.
@@ -2162,7 +2223,8 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
                   (buf (jabber-muc-find-buffer group jc)))
         (with-current-buffer buf
           (when (and (eq jabber-chat-encryption 'omemo)
-                     (fboundp 'jabber-omemo--prefetch-sessions))
+                     (jabber-muc--loaded-function-p
+                      'jabber-omemo--prefetch-sessions))
             (jabber-omemo--prefetch-sessions jc bare)))))
     (when-let* ((buffer (jabber-muc-find-buffer group jc)))
       (let ((report (jabber-muc-report-delta nickname old-plist new-plist
@@ -2180,7 +2242,8 @@ X-MUC, ACTOR, REASON and OUR-NICKNAME come from the stanza."
         (with-current-buffer buffer
           (jabber-muc--enter-extra-notices nickname status-codes)
           (when (and (eq jabber-chat-encryption 'omemo)
-                     (fboundp 'jabber-omemo--prefetch-muc-sessions))
+                     (jabber-muc--loaded-function-p
+                      'jabber-omemo--prefetch-muc-sessions))
             (jabber-omemo--prefetch-muc-sessions jc group))
           (when (or (member jabber-muc-status-nonanonymous status-codes)
                     (gethash group jabber-muc--nonanonymous-rooms))

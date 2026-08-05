@@ -14,19 +14,20 @@ Create a patch series:
 git format-patch --cover-letter origin/master
 #+end_src
 
-Send it to =emacs-jabber@thanosapollo.org=:
+Send it to =patches@thanosapollo.org=:
 
 #+begin_src sh
-git send-email --to=emacs-jabber@thanosapollo.org 000*.patch
+git send-email --to=patches@thanosapollo.org 000*.patch
 #+end_src
 
-Use =[PATCH] Short description= as the subject. For a revised series, use
-=[PATCH v2]= and summarize changes since the previous version.
+Use =[PATCH emacs-jabber] Short description= as the subject. For a revised
+series, use =[PATCH v2 emacs-jabber]= and summarize changes since the previous
+version.
 
 * Bugs
 
-Send bug reports to =emacs-jabber@thanosapollo.org= with
-=[BUG] Short description= as the subject. Include the emacs-jabber version,
+Send bug reports to =bugs@thanosapollo.org= with
+=[BUG emacs-jabber] Short description= as the subject. Include the emacs-jabber version,
 Emacs version, reproduction steps, and relevant backtrace.
 
 * Discussion

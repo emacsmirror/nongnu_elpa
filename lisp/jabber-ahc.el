@@ -29,7 +29,7 @@
 
 (require 'keymap-popup)
 (require 'jabber-disco)
-(require 'jabber-widget)
+(require 'jabber-xdata)
 (require 'jabber-xdata-form)
 
 (defconst jabber-ahc-xmlns "http://jabber.org/protocol/commands"
@@ -402,7 +402,7 @@ JC is the Jabber connection."
     (cond
      ((and xdata
            (string= (jabber-xml-get-attribute xdata 'type) "result"))
-      (jabber-widget-render-xdata-search-results xdata))
+      (jabber-xdata-render-result xdata))
      ((string= status "executing")
       (jabber-ahc--open-form
        xdata actions

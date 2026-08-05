@@ -103,7 +103,7 @@ Enables O(1) lookup for in-place updates (receipts, corrections).")
 Incremented before each new insert sequence so stale timers from a
 previous sequence detect the mismatch and stop.")
 
-(declare-function jabber-muc-nick-completion-at-point "jabber-muc-nick-completion.el" ())
+(autoload 'jabber-muc-nick-completion-at-point "jabber-muc-nick-completion")
 
 (defvar jabber-chatting-with)              ; jabber-chat.el
 (defvar jabber-chat-header-line-format)   ; jabber-chat.el
@@ -324,11 +324,9 @@ EWOC-PP is the pretty-printer function for the message EWOC."
         (setq jabber-chat-encryption 'plaintext))))
   (jabber-chat-encryption--update-header))
 
-(declare-function jabber-chat-insert-backlog-entry "jabber-chat"
-                  (msg-plist))
-(declare-function jabber-chat--insert-backlog-chunked "jabber-chat"
-                  (buffer entries callback &optional generation))
-(declare-function jabber-chat-display-buffer-images "jabber-chat" ())
+;; Chat owns rendering while depending on this lower-level buffer module.
+(autoload 'jabber-chat--insert-backlog-chunked "jabber-chat")
+(autoload 'jabber-chat-display-buffer-images "jabber-chat")
 
 (defun jabber-chat-buffer-switch ()
   "Switch to a specified jabber chat buffer."

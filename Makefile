@@ -24,7 +24,9 @@ TEST_RESULTS := .test-results
 
 TESTS ?= tests/jabber-test-activity.el \
          tests/jabber-test-ahc.el \
+         tests/jabber-test-autoaway.el \
          tests/jabber-test-avatar.el \
+         tests/jabber-test-blocking.el \
          tests/jabber-test-bookmarks.el \
          tests/jabber-test-carbons.el \
          tests/jabber-test-chat.el \
@@ -66,6 +68,7 @@ TESTS ?= tests/jabber-test-activity.el \
          tests/jabber-test-styling.el \
          tests/jabber-test-time.el \
          tests/jabber-test-util.el \
+         tests/jabber-test-widgetless.el \
          tests/jabber-test-xdata.el \
          tests/jabber-test-xml.el
 
@@ -173,7 +176,7 @@ do-test: autoload do-module
 # real database; tests that need storage let-bind it to a temp file.
 $(TEST_RESULTS)/%.stamp: tests/%.el
 	@output=$$($(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests \
-	  --eval="(setq jabber-db-path nil)" \
+	  --eval="(setq jabber-db-path nil load-prefer-newer t)" \
 	  -l ert -l $< -f ert-run-tests-batch-and-exit 2>&1); \
 	rc=$$?; \
 	n=$$(echo "$$output" | grep -o 'Ran [0-9]*' | grep -o '[0-9]*'); \
@@ -203,7 +206,7 @@ release-check: dev
 # `do-test' runs (one Emacs per file) cannot see.
 do-test-oneshot: autoload do-module
 	$(EMACS_CMD) $(EMACS_OPTS) -L admin -L lisp -L tests -l ert \
-	  --eval="(setq jabber-db-path nil)" \
+	  --eval="(setq jabber-db-path nil load-prefer-newer t)" \
 	  --eval="(require 'jabber)" \
 	  $(addprefix -l ,$(TESTS)) \
 	  --eval="(let ((bad 0)) \

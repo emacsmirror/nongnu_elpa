@@ -99,7 +99,8 @@
 	    ;; TODO: show warning when not in sync
 	    (message "out of sync! %s vs %s"
 		     seq jabber-rtt-last-seq))))
-	 ;; TODO: handle event="init"
+	 ;; event="init" only negotiates activation.  This client does not
+	 ;; implement activation negotiation; doap.xml advertises partial support.
 	 )))))
 
 (defun jabber-rtt--reset ()
