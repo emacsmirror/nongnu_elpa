@@ -3008,6 +3008,10 @@ in the text are highlighted and energized."
       (when need-conversion
 	(setq charset (vm-mime-charset-convert-region charset start end)))
       (vm-mime-charset-decode-region charset start end)
+      ;; Inline PGP: armour in the body rather than a part of its own.  Done
+      ;; before the line structure is touched, since a signature is over the
+      ;; text as it arrived.
+      (vm-mime-pgp-inline-region start end)
       ;; Before anything looks at the line structure: the sender's line breaks
       ;; are not all real.  What is left is one long line per paragraph, which
       ;; the filling below then wraps to this window -- which is the point of
@@ -3435,6 +3439,89 @@ emacs-w3m."
 	  (vm-decode-mime-layout layout t)))))
    :layout layout 
    :disposable t))
+
+(defun vm-mime-pgp-clearsigned-text (armour)
+  "Return the readable text of the clearsigned ARMOUR, or nil if there is none.
+A clearsigned message is the text itself between the armour headers and the
+signature that follows it, with any line that began with a dash escaped as
+\"- \" (RFC 4880).  Reading the text out rather than taking it from the
+verification means a signature that does not check out still leaves the message
+on display."
+  (let ((case-fold-search nil))
+    (when (string-match "\\`-----BEGIN PGP SIGNED MESSAGE-----\n" armour)
+      (let* ((after-headers
+	      ;; Armour headers, Hash: among them, then a blank line.
+	      (or (string-match "\n\n" armour) 0))
+	     (signature (string-match "\n-----BEGIN PGP SIGNATURE-----" armour))
+	     (text (and signature
+			(substring armour (+ after-headers 2) (1+ signature)))))
+	(when text
+	  (replace-regexp-in-string "^- " "" text))))))
+
+(defun vm-mime-pgp-inline-region (start end)
+  "Decrypt or check PGP armour lying between START and END, replacing it.
+Inline PGP is armour in the body of an ordinary text part rather than a MIME
+entity of its own: what mail clients sent before RFC 3156, and what some still
+send.  An encrypted block is replaced by its plaintext, a clearsigned one by
+the text it signs and a line saying what EPG makes of the signature.
+
+Returns non-nil if anything was replaced.  Governed by the same two variables
+as the MIME forms, `vm-mime-decrypt-pgp-parts\' and
+`vm-mime-verify-signatures\'."
+  (require 'epg)
+  (save-excursion
+    (goto-char start)
+    (cond
+     ((and vm-mime-decrypt-pgp-parts
+	   (re-search-forward "^-----BEGIN PGP MESSAGE-----$" end t))
+      (let ((armour-start (match-beginning 0))
+	    (armour-end (and (re-search-forward "^-----END PGP MESSAGE-----$"
+					       end t)
+			     (match-end 0))))
+	(when armour-end
+	  (let ((plaintext
+		 (condition-case error-data
+		     (epg-decrypt-string
+		      (epg-make-context 'OpenPGP)
+		      (buffer-substring-no-properties armour-start armour-end))
+		   (error
+		    (vm-warn 0 2 "Cannot decrypt this message: %s"
+			     (error-message-string error-data))
+		    nil))))
+	    (when plaintext
+	      (delete-region armour-start armour-end)
+	      (goto-char armour-start)
+	      (insert plaintext)
+	      t)))))
+     ((and vm-mime-verify-signatures
+	   (re-search-forward "^-----BEGIN PGP SIGNED MESSAGE-----$" end t))
+      (let ((armour-start (match-beginning 0))
+	    (armour-end (and (re-search-forward "^-----END PGP SIGNATURE-----$"
+					       end t)
+			     (match-end 0))))
+	(when armour-end
+	  (let* ((armour (buffer-substring-no-properties armour-start armour-end))
+		 (context (epg-make-context 'OpenPGP))
+		 (text (vm-mime-pgp-clearsigned-text armour))
+		 (result (progn
+			   (ignore-errors (epg-verify-string context armour))
+			   (epg-context-result-for context 'verify))))
+	    ;; The text comes from the armour rather than from EPG, so that a
+	    ;; signature that does not check out still leaves the reader with
+	    ;; the message.  Losing the text would say less than showing it
+	    ;; alongside the warning does.
+	    (when text
+	      (delete-region armour-start armour-end)
+	      (goto-char armour-start)
+	      (insert text)
+	      (unless (bolp) (insert "\n"))
+	      (insert "PGP signature: "
+		      (if result
+			  (replace-regexp-in-string
+			   "\n+\\'" "" (epg-verify-result-to-string result))
+			"nothing to say about it")
+		      "\n")
+	      t))))))))
 
 (defun vm-mime-pgp-signed-layout-p (layout)
   "Return non-nil if LAYOUT is an RFC 3156 PGP-signed entity.

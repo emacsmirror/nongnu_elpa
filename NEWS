@@ -201,6 +201,14 @@ VM 8.3.2 released 2025-12-29
     signature is good, and how much the key is trusted.  Senders disagree
     about whether the line ending that ends the entity is part of what was
     signed, so both readings are tried before a signature is called bad.
+  * Inline PGP is handled as well.  Mail from before RFC 3156, and from some
+    clients still, carries its armour in the body of an ordinary text part
+    rather than in a MIME entity of its own.  VM showed the armour; it now
+    shows the plaintext of an encrypted block, and the text of a clearsigned
+    one with the same signature report as the MIME form gets.  A clearsigned
+    message whose signature does not check out still shows its text, since
+    that says more alongside the warning than a bare warning does.  The same
+    two variables govern it.  Mail with no MIME headers at all is not covered.
   * Address problem with 8.3.1 change where some user configurations for emacs 30
     need vm to evaluate autoloads.el.
 
