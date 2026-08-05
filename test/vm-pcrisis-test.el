@@ -920,6 +920,8 @@ look."
          (vm-frame-per-folder nil)
          (vm-frame-per-composition nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          ;; A signature file that happens to exist would be read into the
          ;; composition, which has nothing to do with this.
          (vm-signature-file nil)
@@ -952,6 +954,8 @@ Without this, the test above could pass by never validating at all."
          (vm-frame-per-folder nil)
          (vm-frame-per-composition nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (vm-signature-file nil)
          (mail-signature nil))
     (unwind-protect

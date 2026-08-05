@@ -249,7 +249,14 @@ the one #38 is about."
     `(let* ((server (vm-imap-live-server ,server-name))
             (account (car (plist-get server :accounts)))
             (,conn (vm-imap-live--open server))
-            (,src nil) (,dst nil))
+            (,src nil) (,dst nil)
+            ;; A visit records where it went; bound so the throwaway mailbox
+            ;; this test invents does not turn up in a later test's history.
+            (vm-folder-history vm-folder-history)
+            (vm-last-visit-folder vm-last-visit-folder)
+            (vm-last-visit-imap-folder vm-last-visit-imap-folder)
+            (vm-imap-passwords vm-imap-passwords)
+            (vm-kept-imap-buffers vm-kept-imap-buffers))
        (unwind-protect
            (progn
              (vm-imap-live-login ,conn server account)
@@ -326,7 +333,14 @@ session -- which is the situation #335 describes."
     `(let* ((server (vm-imap-live-server ,server-name))
             (account (car (plist-get server :accounts)))
             (conn (vm-imap-live--open server))
-            (,mailbox nil))
+            (,mailbox nil)
+            ;; A visit records where it went; bound so the throwaway mailbox
+            ;; this test invents does not turn up in a later test's history.
+            (vm-folder-history vm-folder-history)
+            (vm-last-visit-folder vm-last-visit-folder)
+            (vm-last-visit-imap-folder vm-last-visit-imap-folder)
+            (vm-imap-passwords vm-imap-passwords)
+            (vm-kept-imap-buffers vm-kept-imap-buffers))
        (unwind-protect
            (progn
              (vm-imap-live-login conn server account)

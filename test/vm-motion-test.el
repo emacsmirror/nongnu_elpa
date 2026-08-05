@@ -504,6 +504,8 @@ another summary line, nothing else."
          (vm-confirm-quit nil)
          (vm-frame-per-folder nil)
          (vm-mutable-frame-configuration nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
          (vm-mail-buffer nil)
          (before (buffer-list)))
     (require 'vm)

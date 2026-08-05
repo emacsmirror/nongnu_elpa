@@ -299,7 +299,14 @@ signals, so a failed test does not leave state behind for the next one."
         (messages (nth 3 spec)))
     `(let* ((server (vm-imap-live-server ,server-name))
             (,conn-var (vm-imap-live--open server))
-            (,mailbox-var nil))
+            (,mailbox-var nil)
+            ;; A visit records where it went; bound so the throwaway mailbox
+            ;; this test invents does not turn up in a later test's history.
+            (vm-folder-history vm-folder-history)
+            (vm-last-visit-folder vm-last-visit-folder)
+            (vm-last-visit-imap-folder vm-last-visit-imap-folder)
+            (vm-imap-passwords vm-imap-passwords)
+            (vm-kept-imap-buffers vm-kept-imap-buffers))
        (unwind-protect
            (progn
              (vm-imap-live-login ,conn-var server
@@ -343,6 +350,13 @@ default and would let a wedged session hang forever."
     `(let* ((server (vm-imap-live-server ,server-name))
             (account (car (plist-get server :accounts)))
             (vm-imap-server-timeout vm-imap-live-timeout)
+            ;; A visit records where it went; bound so the mailbox this test
+            ;; invents does not turn up in a later test's history.
+            (vm-folder-history vm-folder-history)
+            (vm-last-visit-folder vm-last-visit-folder)
+            (vm-last-visit-imap-folder vm-last-visit-imap-folder)
+            (vm-imap-passwords vm-imap-passwords)
+            (vm-kept-imap-buffers vm-kept-imap-buffers)
             (vm-imap-account-alist
              (list (list (vm-imap-live-spec server account ,mailbox) ,nick)))
             (gnutls-trustfiles
