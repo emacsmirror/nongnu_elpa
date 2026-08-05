@@ -143,6 +143,20 @@ git push -o merge_request.create \
 Test files are conflict-prone, since independent branches all append new tests
 to the end of the same file. The resolution is always keep-both.
 
+### Naming an issue or merge request in a reply
+
+Give the full URL, as plain text, every time an issue or merge request is
+mentioned:
+
+```
+https://gitlab.com/emacs-vm/vm/-/work_items/453
+https://gitlab.com/emacs-vm/vm/-/merge_requests/184
+```
+
+`#453` on its own is not clickable, and neither is a Markdown link, whose
+target the terminal does not show — so both leave the reader to go and look the
+number up. Issues take the `work_items` path, merge requests `merge_requests`.
+
 ### Issue labels
 
 - `Analyzed` — investigated and commented on, but left open. Use it whenever
