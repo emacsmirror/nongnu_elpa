@@ -623,7 +623,12 @@ the contents of all headers matching the regexp HDRFIELD, separated by
 CLUMP-SEP."
   ;; This code is based heavily on vm-get-header-contents and vm-match-header.
   ;; Thanks Kyle :)
-  (if (eq vmpc-current-state 'automorph)
+  ;; Reading the current buffer's headers is a property of the buffer, not of
+  ;; what Personality Crisis is in the middle of.  Gated on `automorph' alone
+  ;; this returned nil in a composition, against its own documentation, and
+  ;; `vmpc-replace-or-add-in-header' then silently did nothing (#578).
+  (if (or (eq vmpc-current-state 'automorph)
+	  (eq vmpc-current-buffer 'composition))
       (save-excursion
 	(let ((contents nil) (header-name-regexp "\\([^ \t\n:]+\\):")
 	      (case-fold-search t) (temp-contents) (end-of-headers) (regexp))
@@ -816,19 +821,20 @@ I use this function to modify recipients in the TO-header.
 e.g.
  (vmpc-replace-or-add-in-header \"To\" \"[Rr]obert Fenk[^,]*\"
                                      \"Robert Fenk\" \", \"))"
-  (if (eq vmpc-current-buffer 'composition)
-      (let ((hdr (vmpc-get-current-header-contents hdrfield))
-            (old-point (point)))
-        (if hdr
-            (progn
-              (vmpc-delete-header hdrfield)
-              (if (string-match regexp hdr)
-                  (setq hdr (vm-replace-in-string hdr regexp hdrcont))
-                (setq hdr (if sep (concat hdr sep hdrcont)
-                            (concat hdr hdrcont))))
-              (vmpc-insert-header hdrfield hdr)
-              (goto-char old-point))
-          ))))
+  (when (vmpc-composition-buffer-p 'vmpc-replace-or-add-in-header)
+    (let ((hdr (vmpc-get-current-header-contents hdrfield))
+	  (old-point (point)))
+      (vmpc-delete-header hdrfield)
+      (setq hdr
+	    (cond ((or (null hdr) (equal hdr ""))
+		   ;; Nothing there to replace or to separate from.
+		   hdrcont)
+		  ((string-match regexp hdr)
+		   (vm-replace-in-string hdr regexp hdrcont))
+		  (sep (concat hdr sep hdrcont))
+		  (t (concat hdr hdrcont))))
+      (vmpc-insert-header hdrfield hdr)
+      (goto-char old-point))))
 
 (defun vmpc-insert-signature (sig &optional pos)
   "Insert SIG at the end of `vmpc-sig-exerlay'.

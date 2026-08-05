@@ -1178,6 +1178,46 @@ evaluated in it, so complaining there would break every configuration."
       (should-not (vmpc-signature ""))
       (should-not (vmpc-add-header "FCC" "/tmp/sent"))
       (should-not (vmpc-delete-header "FCC")))))
+;;; Replacing part of a header (issue #578)
+
+;; `vmpc-replace-or-add-in-header' read the composition's headers through
+;; `vmpc-get-current-header-contents', which was gated to the automorph state
+;; and so returned nil in an ordinary composition.  The action then found no
+;; header, and did nothing at all, quietly.
+
+(ert-deftest vm-pcrisis-test-replace-in-header-replaces-the-match ()
+  "REGRESSION: the action replaces what its regexp matches in the header.
+Issue #578.  Two actions in the rule: the first puts a recipient there, the
+second rewrites the name, which is what the docstring's own example does."
+  (vm-pcrisis-test--with-rules
+      '((vmpc-substitute-header "To" "Bob Smith <bob@example.com>")
+        (vmpc-replace-or-add-in-header "To" "[Bb]ob Smith[^,]*"
+                                       "Robert Fenk <bob@example.com>"))
+    (vm-pcrisis-test--with-composition (buffer)
+      (should (vm-pcrisis-test--holds "To: Robert Fenk <bob@example.com>"))
+      (should-not (vm-pcrisis-test--holds "Bob Smith")))))
+
+(ert-deftest vm-pcrisis-test-replace-in-header-appends-with-a-separator ()
+  "With no match and a separator, the content is appended after it.
+The header is already occupied here, so the separator is what keeps the two
+recipients apart."
+  (vm-pcrisis-test--with-rules
+      '((vmpc-substitute-header "To" "alice@example.com")
+        (vmpc-replace-or-add-in-header "To" "nobody@example.com"
+                                       "bob@example.com" ", "))
+    (vm-pcrisis-test--with-composition (buffer)
+      (should (vm-pcrisis-test--holds "To: alice@example.com, bob@example.com")))))
+
+(ert-deftest vm-pcrisis-test-replace-in-header-adds-without-a-separator ()
+  "An empty header gets the content and no separator in front of it.
+A fresh composition's To is empty, and a leading \", \" there would be a
+syntactically broken recipient list."
+  (vm-pcrisis-test--with-rules
+      '((vmpc-replace-or-add-in-header "To" "nobody@example.com"
+                                       "bob@example.com" ", "))
+    (vm-pcrisis-test--with-composition (buffer)
+      (should (vm-pcrisis-test--holds "To: bob@example.com"))
+      (should-not (vm-pcrisis-test--holds "To: , ")))))
 
 (provide 'vm-pcrisis-test)
 
