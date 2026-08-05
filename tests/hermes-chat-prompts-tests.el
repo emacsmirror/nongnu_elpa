@@ -264,10 +264,21 @@ stays available."
         (should (gethash "req-clarify" hermes-chat--pending-prompts))
         (should (string-match-p "Which branch should I use\\?"
                                 (buffer-string)))
+        (hermes-chat--insert-local-status "Later activity")
         (hermes-chat-respond-to-prompt "req-clarify" "feature")
         (should (eq respond-client client))
         (should (equal respond-request "req-clarify"))
         (should (equal respond-answer "feature"))
+        (let* ((contents (mapcar (lambda (entry) (plist-get entry :content))
+                                 (hermes-chat--entries)))
+               (prompt-index (seq-position
+                              contents "Which branch should I use?"))
+               (response-index (seq-position
+                                contents "Clarify response sent"))
+               (later-index (seq-position contents "Later activity")))
+          (should prompt-index)
+          (should (= response-index (1+ prompt-index)))
+          (should (< response-index later-index)))
         (should-not (gethash "req-clarify" hermes-chat--pending-prompts))))))
 
 (ert-deftest hermes-chat-send-answers-pending-clarify-from-input ()

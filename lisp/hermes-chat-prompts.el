@@ -272,6 +272,21 @@ A nil SESSION-ID matches every prompt in the current buffer."
     ("terminal" "Terminal read")
     (_ "Prompt")))
 
+(defun hermes-chat--prompt-entry-node (prompt)
+  "Return the transcript node that rendered PROMPT, or nil."
+  (when-let* ((assistant-id (plist-get prompt :assistant-id))
+              (event-id (hermes-chat--transport-entry-id prompt)))
+    (gethash (format "%s:%s" assistant-id event-id) hermes-chat--nodes)))
+
+(defun hermes-chat--insert-prompt-status (prompt content status)
+  "Insert CONTENT with STATUS immediately after PROMPT's transcript entry."
+  (let* ((prompt-node (hermes-chat--prompt-entry-node prompt))
+         (next-node (and prompt-node
+                         (ewoc-next hermes-chat--ewoc prompt-node))))
+    (hermes-chat--insert-entry
+     (hermes-chat--make-entry 'status content status)
+     next-node)))
+
 (defun hermes-chat--first-pending-prompt ()
   "Return the first pending prompt in deterministic key order."
   (and-let* ((key (car (hermes-chat--pending-prompt-keys))))
@@ -456,7 +471,8 @@ Return the next pending prompt."
     (let ((message (format "%s %s"
                            (hermes-chat--prompt-display-name prompt)
                            (if canceled "canceled" "response sent"))))
-      (hermes-chat--insert-local-status message (if canceled 'error 'done))
+      (hermes-chat--insert-prompt-status
+       prompt message (if canceled 'error 'done))
       (unless (hermes-chat--show-pending-prompt-state next-prompt)
         (hermes-chat--set-header-state
          :status (if (hermes-chat--active-turn-p) 'running 'ready)
