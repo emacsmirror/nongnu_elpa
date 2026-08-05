@@ -1,6 +1,7 @@
 #+TITLE: Changelog
 
-* Unreleased
+* [0.13.0]
+#+date: 2026-08-05
 
 ** Added
 - XEP-0201 message threads with persistent sessions, local titles, child

@@ -590,6 +590,12 @@
 
     <release>
       <Version>
+        <revision>0.13.0</revision>
+        <created>2026-08-05</created>
+      </Version>
+    </release>
+    <release>
+      <Version>
         <revision>0.12.5</revision>
         <created>2026-07-28</created>
       </Version>
