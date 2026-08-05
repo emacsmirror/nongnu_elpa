@@ -51,6 +51,34 @@
 
 (require 'vm-macro)
 (require 'vm-vars)
+(require 'vm-menu)
+
+;;; Menus
+
+;; Installing the menus is the one thing a folder visit does that no fixture can
+;; put back.  `vm-menu-install-visited-folders-menu' splices the visited folders
+;; into `vm-menu-folder-menu' with `setcdr' and rebuilds
+;; `vm-menu-fsfemacs-folder-menu' from the result, so after a test the shared
+;; menu holds the name of whatever folder the test invented in /tmp, and 89 tests
+;; reported it (issue #559).  Nothing accumulates -- the next visit replaces the
+;; spliced tail -- but the state is left behind all the same.
+;;
+;; So the suite runs with the menus switched off, and
+;; `vm-menu-test-visiting-a-folder-fills-in-the-folder-menu' covers the
+;; installation deliberately, once, putting the menus back itself.
+;;
+;; The menu map is initialized first: it is what defines the
+;; `vm-menu-fsfemacs-*-menu' variables, a visit skips it with `vm-use-menus'
+;; nil, and building a presentation buffer then reads one of them unbound.
+;; Doing it here means it is done once for every test rather than by whichever
+;; test visits a folder first.
+(vm-menu-initialize-vm-mode-menu-map)
+
+(defvar vm-test-vm-use-menus (default-value 'vm-use-menus)
+  "The value `vm-use-menus' has outside the test suite.
+Bind `vm-use-menus' to this in a test that means to exercise the menus.")
+
+(setq vm-use-menus nil)
 
 ;;; Fixture helpers
 
