@@ -25,14 +25,24 @@
 (defun jabber-test-reload--clean-emacs-eval (form)
   "Evaluate FORM in a clean child Emacs and require success."
   (with-temp-buffer
-    (let ((status
-           (call-process
-            (expand-file-name invocation-name invocation-directory)
-            nil (current-buffer) nil
-            "-Q" "--batch"
-            "-L" (expand-file-name "lisp" jabber-test-reload--root)
-            "--eval" "(setq load-prefer-newer t)"
-            "--eval" (prin1-to-string form))))
+    (let* ((dependency-paths
+            (mapcar
+             (lambda (library)
+               (file-name-directory
+                (or (locate-library library)
+                    (error "Cannot locate dependency: %s" library))))
+             '("fsm" "keymap-popup")))
+           (arguments
+            (append
+             '("-Q" "--batch")
+             (mapcan (lambda (path) (list "-L" path)) dependency-paths)
+             (list "-L" (expand-file-name "lisp" jabber-test-reload--root)
+                   "--eval" "(setq load-prefer-newer t)"
+                   "--eval" (prin1-to-string form))))
+           (status
+            (apply #'call-process
+                   (expand-file-name invocation-name invocation-directory)
+                   nil (current-buffer) nil arguments)))
       (unless (zerop status)
         (ert-fail (buffer-string))))))
 
@@ -79,6 +89,10 @@
 
 (ert-deftest jabber-test-reload-generated-autoload-contract ()
   "Export public package entries without private runtime helpers."
+  (skip-unless
+   (file-readable-p
+    (expand-file-name "lisp/jabber-autoloads.el"
+                      jabber-test-reload--root)))
   (let ((autoloads (jabber-test-reload--generated-autoloads)))
     (dolist (function '(jabber-muc-get-buffer
                         jabber-message-thread-browse
