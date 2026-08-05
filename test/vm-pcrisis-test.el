@@ -1035,6 +1035,150 @@ and the mode would appear to work while doing nothing."
   (dolist (pair (assq-delete-all 'vm-do-reply (copy-alist vmpc-advised-commands)))
     (should (commandp (car pair)))))
 
+;;; Actions and the buffer they need (issues #540 and #576)
+
+;; Personality Crisis runs an action list twice, once before the composition
+;; buffer exists and once in it.  That is why an action needing a composition
+;; returns quietly on the first pass, and why `vmpc-add-header' raising in that
+;; case made it unusable (#576).  Called by hand, though, quiet is exactly what
+;; #540's reporter could not tell from having worked.
+
+(defmacro vm-pcrisis-test--with-composition (spec &rest body)
+  "Visit a folder, compose a mail under pcrisis, run BODY in the composition.
+SPEC is (BUFFER-VAR &optional SIGNATURE), SIGNATURE being what `mail-signature'
+holds while the composition is built."
+  (declare (indent 1) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-pcrisis" t)))
+          (file (expand-file-name "folder" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (vm-user-interaction-buffer vm-user-interaction-buffer)
+          (mail-signature ,(or (nth 1 spec) nil))
+          ;; VM counts compositions for the mode line, and these leave none
+          ;; behind, so the count should not follow them out.  The idle timer
+          ;; VM starts with the first composition is left alone: binding that
+          ;; variable would strand a live timer with nothing pointing at it.
+          (vm-composition-buffer-count vm-composition-buffer-count)
+          (vm-ml-composition-buffer-count vm-ml-composition-buffer-count)
+          (vm-compositions-exist vm-compositions-exist)
+          (before (buffer-list))
+          ,(car spec))
+     (require 'vm)
+     (require 'vm-pcrisis)
+     (unwind-protect
+         (progn
+           (vm-test-write-simple-folder file 2)
+           (vm-visit-folder file)
+           (save-window-excursion
+             (vm-mail)
+             (setq ,(car spec) (current-buffer)))
+           (with-current-buffer ,(car spec) ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer
+               ;; A composition asks whether to keep itself as a draft as it is
+               ;; killed, and in batch that prompt reads end of file.
+               (setq kill-buffer-hook nil)
+               (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defmacro vm-pcrisis-test--with-rules (actions &rest body)
+  "Run BODY with ACTIONS as the whole of `vmpc-actions', in a rule, mode on."
+  (declare (indent 1) (debug t))
+  `(let ((vmpc-conditions '(("always" t)))
+         (vmpc-actions (list (cons "the rule" ,actions)))
+         (vmpc-default-rules '(("always" "the rule")))
+         (vmpc-expect-default-signature vmpc-expect-default-signature))
+     (unwind-protect
+         (progn (vmpc-mode 1) ,@body)
+       (vmpc-mode -1))))
+
+(defun vm-pcrisis-test--holds (text)
+  "Return non-nil if the current buffer holds TEXT."
+  (save-excursion
+    (goto-char (point-min))
+    (and (search-forward text nil t) t)))
+
+(ert-deftest vm-pcrisis-test-signature-action-deletes-the-default-signature ()
+  "REGRESSION: (vmpc-signature \"\") deletes a signature Emacs inserted.
+Issue #540.  In a new composition the body is the signature and nothing else,
+so the newline before the \"-- \" line is the one ending the header separator
+and lies outside the body.  The search for a signature was bounded by the start
+of the body and so could never see it, and the action found nothing to delete."
+  (let ((vmpc-expect-default-signature t))
+    (vm-pcrisis-test--with-rules '((vmpc-signature ""))
+      (vm-pcrisis-test--with-composition (buffer "-- \nmy signature\n")
+        (should-not (vm-pcrisis-test--holds "my signature"))
+        ;; What is left is a composition, with its separator line intact.
+        (should (vm-pcrisis-test--holds mail-header-separator))))))
+
+(ert-deftest vm-pcrisis-test-signature-action-needs-to-be-told-to-expect-one ()
+  "Without `vmpc-expect-default-signature' the signature is left alone.
+Personality Crisis acts only on a signature whose extent it knows, and this is
+how it comes to know one it did not insert.  The other side of the branch, so
+the fix is not simply deleting whatever is at the end of the buffer."
+  (let ((vmpc-expect-default-signature nil))
+    (vm-pcrisis-test--with-rules '((vmpc-signature ""))
+      (vm-pcrisis-test--with-composition (buffer "-- \nmy signature\n")
+        (should (vm-pcrisis-test--holds "my signature"))))))
+
+(ert-deftest vm-pcrisis-test-add-header-action-adds-the-header ()
+  "REGRESSION: `vmpc-add-header' works as an action.
+Issue #576.  It raised whenever it was not in a composition, and Personality
+Crisis evaluates the action list once before the composition exists, so naming
+it in a rule broke composing altogether.  It also read the headers of the
+message being replied to rather than the composition's own, and got nil."
+  (vm-pcrisis-test--with-rules '((vmpc-add-header "FCC" "/tmp/sent"))
+    (vm-pcrisis-test--with-composition (buffer)
+      (should (vm-pcrisis-test--holds "FCC: /tmp/sent")))))
+
+(ert-deftest vm-pcrisis-test-add-header-action-does-not-add-it-twice ()
+  "The same header and content twice adds one, which is what it is for.
+Named for FCC, which may appear more than once but should not repeat itself."
+  (vm-pcrisis-test--with-rules '((vmpc-add-header "FCC" "/tmp/sent")
+                                 (vmpc-add-header "FCC" "/tmp/sent"))
+    (vm-pcrisis-test--with-composition (buffer)
+      (should (= 1 (how-many "FCC: /tmp/sent" (point-min) (point-max)))))))
+
+(ert-deftest vm-pcrisis-test-actions-complain-when-called-by-hand ()
+  "An action called where there is no composition says so.
+Issue #540's reporter tried `M-: (vmpc-signature \"\")' and saw nothing happen,
+which is indistinguishable from an action that ran and did nothing."
+  (require 'vm-pcrisis)
+  (with-temp-buffer
+    (let ((vmpc-current-buffer nil)
+          (vmpc-running-actions nil)
+          (text-quoting-style 'grave))
+      (dolist (call '((vmpc-signature "")
+                      (vmpc-pre-signature "")
+                      (vmpc-add-header "FCC" "/tmp/sent")
+                      (vmpc-insert-header "FCC" "/tmp/sent")
+                      (vmpc-substitute-header "FCC" "/tmp/sent")
+                      (vmpc-delete-header "FCC")))
+        (let ((err (should-error (eval call) :type 'error)))
+          ;; The message names the action, so it is clear which rule to look at.
+          (should (string-match-p (symbol-name (car call))
+                                  (error-message-string err))))))))
+
+(ert-deftest vm-pcrisis-test-actions-are-quiet-during-the-first-pass ()
+  "While Personality Crisis runs an action list, an action out of place is quiet.
+That pass happens before the composition buffer exists, and every action list is
+evaluated in it, so complaining there would break every configuration."
+  (require 'vm-pcrisis)
+  (with-temp-buffer
+    (let ((vmpc-current-buffer 'none)
+          (vmpc-running-actions t))
+      (should-not (vmpc-signature ""))
+      (should-not (vmpc-add-header "FCC" "/tmp/sent"))
+      (should-not (vmpc-delete-header "FCC")))))
+
 (provide 'vm-pcrisis-test)
 
 ;;; vm-pcrisis-test.el ends here

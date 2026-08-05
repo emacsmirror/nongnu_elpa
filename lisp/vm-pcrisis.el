@@ -271,9 +271,16 @@ i.e. when within the composition buffer.")
 (defvar vmpc-intangible-sig 'nil
   "Whether to forbid the cursor from entering the signature.")
 
-(defvar vmpc-expect-default-signature 'nil
-  "Set this to `t' if you have a signature-inserting function.
-It will ensure that pcrisis correctly handles the signature .")
+(defcustom vmpc-expect-default-signature nil
+  "Whether a signature is inserted by something other than Personality Crisis.
+Emacs inserts one when `mail-signature' is set, taking it from that variable or
+from the file `mail-signature-file' names, and VM does that as it builds a
+composition.  Personality Crisis can only act on a signature whose extent it
+knows, so `vmpc-signature' neither replaces nor deletes that one unless this is
+set; with it set, the signature already in a composition is found and comes
+under the same control as one Personality Crisis inserted itself."
+  :group 'vmpc
+  :type 'boolean)
 
 
 ;; -------------------------------------------------------------------
@@ -481,6 +488,16 @@ Or overlays, in the case of GNU Emacs.  Thus, exerlays."
 	      (sig-start nil))
 	  (goto-char p-max)
 	  (setq sig-start (re-search-backward "\n-- \n" body-start t))
+	  ;; In a new composition the body is the signature and nothing else,
+	  ;; so the newline before "-- " is the one ending the header separator
+	  ;; line and lies outside the body: the search above cannot reach it,
+	  ;; and the signature went unfound (#540).  Attach from the start of
+	  ;; the body instead, which also leaves that newline in place when the
+	  ;; signature is deleted.
+	  (unless sig-start
+	    (goto-char body-start)
+	    (if (looking-at "-- \n")
+		(setq sig-start body-start)))
 	  (if sig-start
 	      (vmpc-move-exerlay vmpc-sig-exerlay sig-start p-max))))))
   
@@ -510,10 +527,32 @@ called directly, only from within the `vmpc-actions' list."
 
 (put 'vmpc-pre-function 'lisp-indent-hook 'defun)
 
+(defvar vmpc-running-actions nil
+  "Non-nil while `vmpc-run-actions' is evaluating an action list.
+Personality Crisis evaluates the list twice, once before the composition
+buffer exists and again inside it, so an action that needs a composition has
+nothing to do on the first pass.  See `vmpc-composition-buffer-p'.")
+
+(defun vmpc-composition-buffer-p (action)
+  "Return non-nil if ACTION can act on the current buffer, and signal if never.
+Actions that work on the composition are meant to be named in `vmpc-actions'
+and run by Personality Crisis.  On its first pass the composition does not
+exist yet, and an action then has simply nothing to do.  Called by hand
+somewhere else it can never have anything to do, and saying nothing is
+indistinguishable from having worked: #540 was a report of exactly that."
+  (cond ((eq vmpc-current-buffer 'composition) t)
+	(vmpc-running-actions nil)
+	(t (error (concat "%s works on a message composition, and there is"
+			  " none here.  Name it in `vmpc-actions' and in a"
+			  " rule so that Personality Crisis runs it as a"
+			  " composition begins, with the mode switched on by"
+			  " (vmpc-mode 1)")
+		  action))))
+
 (defun vmpc-delete-header (hdrfield &optional entire)
   "Delete the contents of a HDRFIELD in the current mail message.
 If ENTIRE is specified and non-nil, deletes the header field as well."
-  (if (eq vmpc-current-buffer 'composition)
+  (if (vmpc-composition-buffer-p 'vmpc-delete-header)
       (save-excursion
 	(let ((start) (end))
 	  (mail-position-on-field hdrfield)
@@ -532,7 +571,7 @@ If ENTIRE is specified and non-nil, deletes the header field as well."
 Both arguments are strings.  The field can either be present or not,
 but if present, HDRCONT will be appended to the current header
 contents."
-  (if (eq vmpc-current-buffer 'composition)
+  (if (vmpc-composition-buffer-p 'vmpc-insert-header)
       (save-excursion
 	(mail-position-on-field hdrfield)
 	(insert content))))
@@ -542,7 +581,7 @@ contents."
 Both arguments are strings.  The field can either be present or not.
 If the header field is present and already contains something, the
 contents will be replaced, otherwise a new header is created."
-  (if (eq vmpc-current-buffer 'composition)
+  (if (vmpc-composition-buffer-p 'vmpc-substitute-header)
       (save-excursion
 	(vmpc-delete-header hdrfield)
 	(vmpc-insert-header hdrfield content))))
@@ -555,19 +594,26 @@ done, otherwise  a new field with the same name and the new CONTENT will be
 added to the message.
 
 This is suitable for FCC, which can be specified multiple times."
-  (unless (eq vmpc-current-buffer 'composition)
-    (error "attempting to insert a header into a non-composition buffer."))
-  (let ((prev-contents (vmpc-get-header-contents hdrfield "\n")))
-    (setq prev-contents (vmpc-split prev-contents "\n"))
-    ;; don't add this new header if it's already there
-    (unless (member content prev-contents)
-      (save-excursion
-	(or (mail-position-on-field hdrfield t)	; Put new field after existing one
-	    (mail-position-on-field "to"))
-	(unless (eq (aref hdrfield (1- (length hdrfield))) ?:)
-	  (setq hdrfield (concat hdrfield ":")))
-	(insert "\n" hdrfield " ")
-	(insert content)))))
+  (when (vmpc-composition-buffer-p 'vmpc-add-header)
+    ;; The headers to compare against are the composition's own, and read
+    ;; from the buffer rather than through `vmpc-get-header-contents', which
+    ;; answers for the message being replied to, or
+    ;; `vmpc-get-current-header-contents', which answers only while
+    ;; automorphing.  Both return nil in a composition, and `vmpc-split' then
+    ;; choked on it (#576).
+    (let ((prev-contents (save-excursion
+			   (save-restriction
+			     (widen)
+			     (mail-fetch-field hdrfield nil nil t)))))
+      ;; don't add this new header if it's already there
+      (unless (member content prev-contents)
+	(save-excursion
+	  (or (mail-position-on-field hdrfield t) ; after an existing one
+	      (mail-position-on-field "to"))
+	  (unless (eq (aref hdrfield (1- (length hdrfield))) ?:)
+	    (setq hdrfield (concat hdrfield ":")))
+	  (insert "\n" hdrfield " ")
+	  (insert content))))))
 
 (defun vmpc-get-current-header-contents (hdrfield &optional clump-sep)
   "Return the contents of HDRFIELD in the current mail message.
@@ -829,8 +875,9 @@ the signature at POS if `vmpc-sig-exerlay' is detached."
 If the string SIG is the name of a readable file, its contents are
 inserted as the signature; otherwise SIG is inserted literally.  If
 SIG is the empty string (\"\"), the current signature is deleted if
-present, and that's all."
-  (if (eq vmpc-current-buffer 'composition)
+present, and that's all.  A signature Personality Crisis did not insert itself
+is only known to it when `vmpc-expect-default-signature' is set."
+  (if (vmpc-composition-buffer-p 'vmpc-signature)
       (let ((pos (vmpc-exerlay-start vmpc-sig-exerlay)))
 	(save-excursion
 	  (vmpc-delete-signature)
@@ -885,7 +932,7 @@ parameter POS means insert the pre-signature at position POS if
 
 (defun vmpc-pre-signature (pre-sig)
   "Insert PRE-SIG at the end of `vmpc-pre-sig-exerlay' removing last pre-sig."
-  (if (eq vmpc-current-buffer 'composition)
+  (if (vmpc-composition-buffer-p 'vmpc-pre-signature)
       (let ((pos (vmpc-exerlay-start vmpc-pre-sig-exerlay)))
 	(save-excursion
 	  (vmpc-delete-pre-signature)
@@ -1465,7 +1512,9 @@ buffer to which to write diagnostic output."
   (if (and (not vmpc-actions-to-run) (not actions) (vm-interactive-p))
       (setq vmpc-actions-to-run (vmpc-read-actions "Actions: ")))
 
-  (let ((actions (or actions vmpc-actions-to-run)) form)
+  (let ((actions (or actions vmpc-actions-to-run))
+	(vmpc-running-actions t)
+	form)
     (while actions
       (setq form (or (assoc (car actions) vmpc-actions)
                      (error "Action %S does not exist!" (car actions)))
