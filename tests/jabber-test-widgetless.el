@@ -53,6 +53,19 @@
       (when (buffer-live-p compose-buffer)
         (kill-buffer compose-buffer)))))
 
+(ert-deftest jabber-test-compose-empty-acceptance-preserves-all-recipients ()
+  "Empty recipient input accepts every prefilled recipient."
+  (cl-letf (((symbol-function 'jabber-concat-rosters) #'ignore)
+            ((symbol-function 'completing-read-multiple)
+             (lambda (_prompt _collection &rest arguments)
+               (let ((default (nth 4 arguments)))
+                 (should (stringp default))
+                 (split-string default "[ \t]*,[ \t]*" t)))))
+    (should
+     (equal (jabber-compose--read-recipients
+             '("romeo@example.org" "juliet@example.org"))
+            '("romeo@example.org" "juliet@example.org")))))
+
 (ert-deftest jabber-test-register-legacy-new-account-requires-requested-fields ()
   (let* ((query '(query nil
                         (instructions nil "Fill this in")

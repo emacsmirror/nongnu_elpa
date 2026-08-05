@@ -46,7 +46,7 @@
   (completing-read-multiple
    "Recipients: "
    (mapcar #'symbol-name (jabber-concat-rosters))
-   nil nil nil nil initial))
+   nil nil nil nil (jabber-completion-multiple-default initial)))
 
 (defun jabber-compose-edit-recipients ()
   "Edit recipients for the current composed message."

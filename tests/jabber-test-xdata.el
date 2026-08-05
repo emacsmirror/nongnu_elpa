@@ -136,6 +136,41 @@
             :values)
             '("moderator" "visitor")))))
 
+(ert-deftest jabber-test-xdata-form-multi-defaults-submit-all-values ()
+  "Empty multi-value edits retain and submit every server default."
+  (let ((form (jabber-xdata-parse jabber-test-xdata--form)))
+    (cl-letf (((symbol-function 'jabber-concat-rosters) #'ignore)
+              ((symbol-function 'completing-read-multiple)
+               (lambda (_prompt _collection &rest arguments)
+                 (let ((default (nth 4 arguments)))
+                   (should (stringp default))
+                   (split-string default "[ \t]*,[ \t]*" t)))))
+      (setq form
+            (jabber-xdata-set-values
+             form "roles"
+             (jabber-xdata-form--read-list-multi
+              (jabber-xdata-field form "roles"))))
+      (setq form
+            (jabber-xdata-set-values
+             form "owners"
+             (jabber-xdata-form--read-jid-multi
+              (jabber-xdata-field form "owners")))))
+    (let* ((submission (jabber-xdata-submit form))
+           (fields (jabber-xml-get-children submission 'field)))
+      (dolist (expected '(("roles" "moderator" "visitor")
+                          ("owners" "one@example.org" "two@example.org")))
+        (let ((field
+               (seq-find
+                (lambda (candidate)
+                  (equal (car expected)
+                         (jabber-xml-get-attribute candidate 'var)))
+                fields)))
+          (should
+           (equal (mapcar (lambda (value)
+                            (car (jabber-xml-node-children value)))
+                          (jabber-xml-get-children field 'value))
+                  (cdr expected))))))))
+
 (ert-deftest jabber-test-xdata-form-text-multi-uses-edit-buffer ()
   "The form editor reads text-multi values from a multiline buffer."
   (let ((jabber-xdata-form--form

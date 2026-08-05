@@ -128,7 +128,8 @@
                   (plist-get field :values)))
          (selected (completing-read-multiple
                     (jabber-xdata-form--prompt field)
-                    candidates nil t nil nil defaults)))
+                    candidates nil t nil nil
+                    (jabber-completion-multiple-default defaults))))
     (if (seq-some (lambda (value)
                     (eq (cdr (assoc value candidates)) :clear))
                   selected)
@@ -142,7 +143,8 @@
   (completing-read-multiple
    (jabber-xdata-form--prompt field)
    (mapcar #'symbol-name (jabber-concat-rosters))
-   nil nil nil nil (plist-get field :values)))
+   nil nil nil nil
+   (jabber-completion-multiple-default (plist-get field :values))))
 
 (defun jabber-xdata-form--read-jid-single (field)
   "Read one JID for FIELD."

@@ -60,6 +60,10 @@ INITIAL-CONTENTS, HISTORY and DEFAULT-VALUE are passed straight through."
   ;; Preserve input method when entering a minibuffer.
   (read-string prompt initial-contents history default-value t))
 
+(defun jabber-completion-multiple-default (values)
+  "Return VALUES encoded as a default for `completing-read-multiple'."
+  (and values (string-join values ",")))
+
 (defvar jabber-connections)
 (defun jabber-roster-contact-p (jc jid)
   "Return non-nil when JID's bare JID is on connection JC's roster."
