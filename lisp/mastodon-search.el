@@ -189,7 +189,7 @@ ACCOUNT-ID means limit search to that account, for \"statuses\" type only.
 OFFSET is a number as string, means to skip that many results. It
 is used for pagination."
   ;; TODO: handle no results
-  (interactive "sSearch mastodon for: ")
+  (interactive "sSearch fediverse for: ")
   (let* ((url (mastodon-http--api-v2 "search"))
          (following (when (or following (equal current-prefix-arg '(4)))
                       "true"))
@@ -275,7 +275,7 @@ BUFFER, PARAMS, and UPDATE-FUN are for `mastodon-tl--buffer-spec'."
 
 (defun mastodon-search-query-accounts-followed (query)
   "Run an accounts search QUERY, limited to your followers."
-  (interactive "sSearch mastodon for: ")
+  (interactive "sSearch fediverse for: ")
   (mastodon-search-query query "accounts" :following))
 
 (defun mastodon-search--insert-users-propertized (json &optional note)
