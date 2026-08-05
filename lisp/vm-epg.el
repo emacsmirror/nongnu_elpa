@@ -844,15 +844,24 @@ The region is taken from the decode arguments rather than from how far point
 moved: transfer-decoding advances point only for encodings that actually
 transform the text (base64, quoted-printable, uuencode).  A 7bit or 8bit part
 is left untouched, so a point-motion test would wrongly skip exactly the
-plain PGP-signed messages this is meant to handle."
-  (apply orig-fun layout start end args)
-  (when (and (vm-mime-text-type-layout-p layout)
-             start end (< start end))
-    (save-excursion
-      (save-restriction
-        (narrow-to-region start end)
-        (vm-epg-cleartext-automode)
-        (widen)))))
+plain PGP-signed messages this is meant to handle.
+
+END is followed with a marker, because decoding replaces the region by
+something shorter: base64 and quoted-printable both shrink it, so the END that
+came in describes the text before the decode and not the region to scan.
+Where the region is the whole buffer -- `vm-mime-send-body-to-file' decodes
+from point-min to point-max of a work buffer -- narrowing to the old END is
+outside the buffer and signals `args-out-of-range'.
+`vm-mime-base64-decode-region' takes a marker for the same reason."
+  (let ((end (if (markerp end) end (copy-marker end))))
+    (apply orig-fun layout start end args)
+    (when (and (vm-mime-text-type-layout-p layout)
+               start end (< start end))
+      (save-excursion
+        (save-restriction
+          (narrow-to-region start end)
+          (vm-epg-cleartext-automode)
+          (widen))))))
 
 (defvar vm-epg-cleartext-result 'none
   "Result of a cleartext verify/decrypt run under the display advice.

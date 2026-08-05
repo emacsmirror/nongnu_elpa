@@ -404,6 +404,31 @@ advice now scans the decode region [START, END] instead."
         (vm-mime-transfer-decode-region layout (point-min) (point-max))
         (should automode-called)))))
 
+(ert-deftest vm-epg-test-transfer-advice-survives-a-shrinking-decode ()
+  "REGRESSION: decoding a whole buffer must not put the scan region past its end.
+The advice scanned [START, END] as they arrived, but quoted-printable and
+base64 decoding replace the region by something shorter.  Where the region is
+the whole buffer -- `vm-mime-send-body-to-file' decodes from point-min to
+point-max of a work buffer -- the old END is outside the buffer afterwards and
+`narrow-to-region' signalled `args-out-of-range'.
+
+`vm-mime-send-body-to-file' swallows the error and warns, so with vm-epg loaded
+writing a quoted-printable text part to a file wrote nothing at all, and an
+HTML part sent to an external viewer arrived empty."
+  (let ((layout (vm-epg-test--make-layout "text/plain"))
+        (automode-region nil))
+    (aset layout 2 "quoted-printable")
+    (cl-letf (((symbol-function 'vm-epg-cleartext-automode)
+               (lambda () (setq automode-region (cons (point-min) (point-max))))))
+      (with-temp-buffer
+        ;; "=41" decodes to "A", so the region loses two characters of three.
+        (insert "=41=42=43\n")
+        (let ((size (buffer-size)))
+          (vm-mime-transfer-decode-region layout (point-min) (point-max))
+          (should (= (buffer-size) (- size 6)))
+          ;; the region scanned is the decoded text, not the bytes it came from
+          (should (equal automode-region (cons (point-min) (point-max)))))))))
+
 ;;; ---------------------------------------------------------------------------
 ;;; REGRESSION: cleartext (sign-only) signatures must validate
 ;;; ---------------------------------------------------------------------------
