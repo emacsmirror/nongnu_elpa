@@ -947,6 +947,77 @@ entry with JC=nil."
                      "secret"))
       (should-not (jabber-muc--session-password second "room@example.org")))))
 
+(ert-deftest jabber-test-muc-rejected-session-password-prompts-for-replacement ()
+  "A rejected session password prompts without changing other cached secrets."
+  (let ((jabber-muc-disable-disco-check nil)
+        (jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (room "room@example.org")
+        (bookmark-reads 0)
+        prompt
+        sent)
+    (puthash (list 'jc room) "rejected" jabber-muc--session-passwords)
+    (puthash '(jc "other@example.org") "other-room"
+             jabber-muc--session-passwords)
+    (puthash '(other-jc "room@example.org") "other-account"
+             jabber-muc--session-passwords)
+    (cl-letf (((symbol-function 'jabber-muc-remove-groupchat) #'ignore)
+              ((symbol-function 'jabber-muc-get-buffer)
+               (lambda (&rest _) " *missing-muc-test*"))
+              ((symbol-function 'run-with-timer) #'ignore)
+              ((symbol-function 'message) #'ignore)
+              ((symbol-function 'jabber-muc-joined-p) (lambda (&rest _) nil))
+              ((symbol-function 'jabber-muc--autojoin-dequeue) #'ignore)
+              ((symbol-function 'jabber-muc--validate-disco-result)
+               (lambda (_result) '(:status no-disco :features nil)))
+              ((symbol-function 'jabber-disco-get-info)
+               (lambda (jc _group _node callback closure)
+                 (funcall callback jc closure nil)))
+              ((symbol-function 'jabber-get-conference-data)
+               (lambda (&rest _)
+                 (setq bookmark-reads (1+ bookmark-reads))
+                 "bookmarked"))
+              ((symbol-function 'read-passwd)
+               (lambda (&rest _)
+                 (setq prompt t)
+                 "replacement"))
+              ((symbol-function 'jabber-muc--send-join-presence)
+               (lambda (&rest args) (setq sent args))))
+      (jabber-muc--process-self-leave
+       'jc room "error" nil
+       `(error ((code . "401"))
+               (not-authorized ((xmlns . ,jabber-stanzas-xmlns))))
+       nil nil)
+      (should-not (gethash (list 'jc room) jabber-muc--session-passwords
+                           'missing))
+      (should (equal "other-room"
+                     (gethash '(jc "other@example.org")
+                              jabber-muc--session-passwords)))
+      (should (equal "other-account"
+                     (gethash '(other-jc "room@example.org")
+                              jabber-muc--session-passwords)))
+      (jabber-muc-join 'jc room "nick" t))
+    (should prompt)
+    (should (zerop bookmark-reads))
+    (should (equal '(jc "room@example.org" "nick" "replacement" t) sent))))
+
+(ert-deftest jabber-test-muc-unrelated-error-preserves-session-password ()
+  "A non-authorization MUC error preserves the cached session password."
+  (let ((jabber-muc--session-passwords (make-hash-table :test #'equal))
+        (room "room@example.org"))
+    (puthash (list 'jc room) "valid" jabber-muc--session-passwords)
+    (cl-letf (((symbol-function 'jabber-muc-remove-groupchat) #'ignore)
+              ((symbol-function 'jabber-muc-get-buffer)
+               (lambda (&rest _) " *missing-muc-test*"))
+              ((symbol-function 'run-with-timer) #'ignore)
+              ((symbol-function 'message) #'ignore))
+      (jabber-muc--process-self-leave
+       'jc room "error" nil
+       `(error ((code . "503"))
+               (service-unavailable ((xmlns . ,jabber-stanzas-xmlns))))
+       nil nil))
+    (should (equal "valid"
+                   (gethash (list 'jc room) jabber-muc--session-passwords)))))
+
 (ert-deftest jabber-test-muc-rejoin-snapshots-are-account-scoped ()
   "Rejoining one account leaves another account's snapshot untouched."
   (let ((jabber-muc--rooms-before-disconnect (make-hash-table :test #'equal))

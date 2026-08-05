@@ -93,12 +93,16 @@ Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
   "Map account bare JIDs to (ROOM NICK PASSWORD) reconnect snapshots.")
 
 (defvar jabber-muc--session-passwords (make-hash-table :test #'equal)
-  "In-memory room passwords keyed by (JC GROUP).")
+  "In-memory room passwords keyed by (JC GROUP).
+A nil value marks a password rejected for the current session.")
 
 (defun jabber-muc--session-password (jc group)
   "Return in-memory or bookmarked password for GROUP on JC."
-  (or (gethash (list jc group) jabber-muc--session-passwords)
-      (jabber-get-conference-data jc group nil :password)))
+  (let ((password (gethash (list jc group) jabber-muc--session-passwords
+                           jabber-muc--session-passwords)))
+    (if (eq password jabber-muc--session-passwords)
+        (jabber-get-conference-data jc group nil :password)
+      password)))
 
 (defun jabber-muc--remember-password (jc group password)
   "Remember PASSWORD for GROUP on JC when non-nil."
@@ -108,6 +112,15 @@ Set by `jabber-muc-create' and consumed by `jabber-muc--enter-extra-notices'.")
 (defun jabber-muc--forget-password (jc group)
   "Forget in-memory password for GROUP on JC."
   (remhash (list jc group) jabber-muc--session-passwords))
+
+(defun jabber-muc--reject-password (jc group)
+  "Mark the in-memory password for GROUP on JC as rejected."
+  (puthash (list jc group) nil jabber-muc--session-passwords))
+
+(defun jabber-muc--password-rejected-p (jc group)
+  "Return non-nil when GROUP's password was rejected on JC."
+  (null (gethash (list jc group) jabber-muc--session-passwords
+                 jabber-muc--session-passwords)))
 
 (defun jabber-muc--clear-passwords (jc)
   "Forget all in-memory room passwords belonging to JC."
@@ -1275,9 +1288,11 @@ RESULT is the disco#info result."
          (message "%s is not a conference service" (jabber-jid-displayname group))))
       (unless (eq status 'not-conference)
         (let* ((features (plist-get v :features))
-               (password (jabber-muc--session-password jc group)))
-          (when (and (member "muc_passwordprotected" features)
-                     (not password))
+               (password (jabber-muc--session-password jc group))
+               (rejected-p (jabber-muc--password-rejected-p jc group)))
+          (when (and (not password)
+                     (or (member "muc_passwordprotected" features)
+                         (and popup rejected-p)))
             (setq password
                   (read-passwd (format "Password for %s: "
                                        (jabber-jid-displayname group)))))
@@ -2029,6 +2044,10 @@ STATUS-CODES, ERROR-NODE, ACTOR and REASON come from the stanza."
                             (jabber-muc--format-actor-reason actor reason)))
                    (t
                     "You have left the chatroom"))))
+    (when (and (string= type "error")
+               error-node
+               (eq (jabber-error-condition error-node) 'not-authorized))
+      (jabber-muc--reject-password jc group))
     (when leavingp
       (jabber-muc-remove-groupchat group jc))
     ;; If there is no buffer for this groupchat, don't bother
