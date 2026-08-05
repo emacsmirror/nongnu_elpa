@@ -1283,9 +1283,13 @@ been already removed from its symbol node."
 	(m (car vm-message-pointer))
 	(m-sym (vm-thread-symbol (car vm-message-pointer))))
     ;; (vm-thread-mark-for-summary-update (list m))
-    (vm-unthread-message m :message-changing t)
+    ;; Check before touching anything.  Unthreading M does not change the new
+    ;; parent's ancestors, so the answer is the same either way, and raising
+    ;; after the unthreading left the message out of its old thread with
+    ;; nothing to put it back (#574).
     (unless (vm-th-safe-parent-p m-sym p-sym)
       (error "Attaching to thread will create a cycle"))
+    (vm-unthread-message m :message-changing t)
     (vm-th-set-parent-of m-sym p-sym)
     (vm-th-add-child p-sym m-sym))
     (vm-inform 5 "Message attached to thread")
