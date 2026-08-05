@@ -240,7 +240,8 @@ Mime-Version, Content-Type, Content-Transfer-Encoding."
   "Similar to `vm-unforwarded-header-regexp'.
 A regular expression matching all headers that should be discard when
 when continuing a postponed message."
-  :type 'regexp
+  :type '(choice (const :tag "Discard nothing" nil)
+		 (regexp))
   :group 'vm-postpone)
 
 ;;;###autoload

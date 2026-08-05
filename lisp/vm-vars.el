@@ -2610,7 +2610,8 @@ string or a glyph object.
 
 Under FSF Emacs, `vm-page-continuation-glyph' must be a string."
   :group 'vm-presentation
-  :type 'boolean)
+  :type '(choice (string)
+		 (sexp :tag "Glyph object (XEmacs only)")))
 
 (defconst vm-default-window-configuration
   ;; startup = folder on bottom, summary on top
@@ -4051,7 +4052,8 @@ also removed from message summary lines if
 
 Matches are done case-insensitively."
   :group 'vm-summary
-  :type 'regexp)
+  :type '(choice (const :tag "No subject tags" nil)
+		 (regexp)))
 
 (defcustom vm-subject-tag-prefix-exceptions nil
   "*Non-nil value should be a regular expression that matches the
@@ -4062,7 +4064,8 @@ killing messages by subject.
 
 Matches are done case-insensitively."
   :group 'vm-summary
-  :type 'regexp)
+  :type '(choice (const :tag "No exceptions" nil)
+		 (regexp)))
 
 (defcustom vm-summary-strip-subject-tags nil
   "*Set this to a non-nil value to ask VM to strip \"subject tags\" added
