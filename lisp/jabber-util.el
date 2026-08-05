@@ -30,6 +30,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'crm)
 (require 'jabber-muc-state)
 (require 'jabber-presence-display)
 (require 'jabber-state)
@@ -60,9 +61,17 @@ INITIAL-CONTENTS, HISTORY and DEFAULT-VALUE are passed straight through."
   ;; Preserve input method when entering a minibuffer.
   (read-string prompt initial-contents history default-value t))
 
-(defun jabber-completion-multiple-default (values)
-  "Return VALUES encoded as a default for `completing-read-multiple'."
-  (and values (string-join values ",")))
+(defun jabber-completing-read-multiple
+    (prompt collection defaults &optional require-match)
+  "Read multiple values with PROMPT, preserving accepted DEFAULTS.
+COLLECTION and REQUIRE-MATCH are passed to `completing-read-multiple'."
+  (let* ((default (and defaults (string-join defaults ",")))
+         (values (completing-read-multiple
+                  prompt collection nil require-match nil nil default)))
+    (if (and default
+             (equal values (split-string default crm-separator t)))
+        defaults
+      values)))
 
 (defvar jabber-connections)
 (defun jabber-roster-contact-p (jc jid)

@@ -43,10 +43,8 @@
 
 (defun jabber-compose--read-recipients (&optional initial)
   "Read message recipients, using INITIAL as default values."
-  (completing-read-multiple
-   "Recipients: "
-   (mapcar #'symbol-name (jabber-concat-rosters))
-   nil nil nil nil (jabber-completion-multiple-default initial)))
+  (jabber-completing-read-multiple
+   "Recipients: " (mapcar #'symbol-name (jabber-concat-rosters)) initial))
 
 (defun jabber-compose-edit-recipients ()
   "Edit recipients for the current composed message."

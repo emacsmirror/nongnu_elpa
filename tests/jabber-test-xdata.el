@@ -7,6 +7,7 @@
 ;;; Code:
 
 (require 'ert)
+(require 'crm)
 (require 'jabber-xdata)
 (require 'jabber-xdata-form)
 
@@ -170,6 +171,29 @@
                             (car (jabber-xml-node-children value)))
                           (jabber-xml-get-children field 'value))
                   (cdr expected))))))))
+
+(ert-deftest jabber-test-xdata-form-list-multi-preserves-comma-default ()
+  "Accepting a list-multi default preserves commas in its value."
+  (let ((field '(:type "list-multi"
+                 :values ("alpha,beta")
+                 :options ((:label "alpha,beta" :value "alpha,beta")))))
+    (cl-letf (((symbol-function 'completing-read-multiple)
+               (lambda (_prompt _collection &rest arguments)
+                 (split-string (nth 4 arguments) crm-separator t))))
+      (should (equal (jabber-xdata-form--read-list-multi field)
+                     '("alpha,beta"))))))
+
+(ert-deftest jabber-test-xdata-form-jid-multi-honors-custom-separator ()
+  "Accepting JID defaults preserves values with a custom CRM separator."
+  (let ((crm-separator "[ \t]*;[ \t]*")
+        (field '(:type "jid-multi"
+                 :values ("one@example.org" "two@example.org"))))
+    (cl-letf (((symbol-function 'jabber-concat-rosters) #'ignore)
+              ((symbol-function 'completing-read-multiple)
+               (lambda (_prompt _collection &rest arguments)
+                 (split-string (nth 4 arguments) crm-separator t))))
+      (should (equal (jabber-xdata-form--read-jid-multi field)
+                     '("one@example.org" "two@example.org"))))))
 
 (ert-deftest jabber-test-xdata-form-text-multi-uses-edit-buffer ()
   "The form editor reads text-multi values from a multiline buffer."
