@@ -665,6 +665,100 @@ so every expunge of a sorted folder re-sorted it for nothing."
         (vm-set-deleted-flag (vm-test-nth-message 1) t)
         (vm-expunge-folder :quiet t)
         (should sorted)))))
+;;; Killing a thread subtree
+
+;; `vm-kill-thread-subtree' had no behavioural test, only a check that the
+;; symbol was bound.  It is the sibling of `vm-kill-subject', which is what
+;; #496 was: a kill command that deleted the whole folder.  What it must delete
+;; is the message at point and its descendants, and nothing else.
+
+(defconst vm-delete-test--thread-folder
+  (mapconcat
+   (lambda (spec)
+     (let ((i (car spec)) (parent (cdr spec)))
+       (concat (format "From alice@example.com Mon Jan  1 00:00:00 2024\n")
+               "From: alice@example.com\n"
+               (format "Subject: subject %d\n" i)
+               (format "Message-ID: <kt-%d@example.com>\n" i)
+               (if parent (format "References: <kt-%d@example.com>\n" parent) "")
+               "\n" (format "Body %d.\n\n" i))))
+   '((0 . nil) (1 . 0) (2 . 1) (3 . 0) (4 . nil))
+   "")
+  "Five messages in the shape 0 < 1 < 2, 0 < 3, and 4 on its own.")
+
+(defun vm-delete-test--deleted-indices ()
+  "Return the positions in `vm-message-list' of the messages flagged deleted."
+  (let ((i -1) (out nil))
+    (dolist (m vm-message-list)
+      (setq i (1+ i))
+      (when (vm-deleted-flag m) (push i out)))
+    (nreverse out)))
+
+(defmacro vm-delete-test--killable (n &rest body)
+  "Run BODY in the thread folder with message N current and threads built.
+Only the display work is stubbed: what the command selects for deletion is the
+point of these, so the thread database is real."
+  (declare (indent 1) (debug t))
+  `(vm-test-with-folder vm-delete-test--thread-folder
+     (setq major-mode 'vm-mode)
+     (setq vm-mail-buffer nil)
+     (setq vm-message-pointer (nthcdr ,n vm-message-list))
+     (let ((vm-move-after-killing nil)
+           (vm-summary-show-threads t)
+           ;; `vm-inform' records where it spoke when it thinks a command is
+           ;; running, and the buffer these run in is gone afterwards.
+           (vm-user-interaction-buffer vm-user-interaction-buffer))
+       (cl-letf (((symbol-function 'vm-display) (lambda (&rest _) nil))
+                 ((symbol-function 'vm-follow-summary-cursor) #'ignore)
+                 ((symbol-function 'vm-update-summary-and-mode-line) #'ignore))
+         ,@body))))
+
+(ert-deftest vm-delete-test-kill-thread-subtree-takes-the-descendants ()
+  "Killing at a message in the middle takes it and what descends from it.
+Message 1 has message 2 below it; message 3 is its sibling and message 0 its
+parent, and neither goes."
+  (vm-delete-test--killable 1
+    (vm-kill-thread-subtree 0)
+    (should (equal '(1 2) (vm-delete-test--deleted-indices)))))
+
+(ert-deftest vm-delete-test-kill-thread-subtree-at-the-root-takes-the-thread ()
+  "Killing at the root of a thread takes the whole thread and nothing outside.
+Message 4 is in the folder and in no thread with the others."
+  (vm-delete-test--killable 0
+    (vm-kill-thread-subtree 0)
+    (should (equal '(0 1 2 3) (vm-delete-test--deleted-indices)))))
+
+(ert-deftest vm-delete-test-kill-thread-subtree-at-a-leaf-takes-one ()
+  "A message with nothing below it is the whole subtree."
+  (vm-delete-test--killable 2
+    (vm-kill-thread-subtree 0)
+    (should (equal '(2) (vm-delete-test--deleted-indices)))))
+
+(ert-deftest vm-delete-test-kill-thread-subtree-outside-a-thread-takes-one ()
+  "A message that is in no thread takes only itself, not the folder.
+The #496 shape: a kill command with nothing to match on deleting everything."
+  (vm-delete-test--killable 4
+    (vm-kill-thread-subtree 0)
+    (should (equal '(4) (vm-delete-test--deleted-indices)))))
+
+(ert-deftest vm-delete-test-kill-thread-subtree-counts-what-it-deleted ()
+  "The count is of messages it deleted, not of the size of the subtree.
+Killing the same subtree twice deletes nothing the second time, and says so."
+  (vm-delete-test--killable 0
+    (let ((said nil))
+      (cl-letf (((symbol-function 'called-interactively-p) (lambda (&rest _) t))
+                ((symbol-function 'message)
+                 (lambda (&rest args)
+                   (push (if (car args) (apply #'format args) "") said)
+                   (car said))))
+        (vm-kill-thread-subtree 0)
+        (should (member "4 messages deleted" said))
+        (should (equal '(0 1 2 3) (vm-delete-test--deleted-indices)))
+        ;; Nothing left to delete in that subtree.
+        (setq said nil)
+        (vm-kill-thread-subtree 0)
+        (should (member "No messages deleted." said))
+        (should (equal '(0 1 2 3) (vm-delete-test--deleted-indices)))))))
 
 (provide 'vm-delete-test)
 
