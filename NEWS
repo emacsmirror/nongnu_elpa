@@ -177,16 +177,6 @@ VM 8.?.?
     about 50000 messages.  `vm-reverse-link-of' is unchanged; soft data slot 6
     is now unused and `vm-set-reverse-link-sym-of' is gone.  Affects add-ons
     that touch the message structure directly, nothing else.
-  * PGP/MIME messages are now decrypted for display.  An encrypted message
-    from Thunderbird, Gnus or Mutt arrives as a `multipart/encrypted' entity
-    whose real content is inside the ciphertext, and VM showed the envelope:
-    a version stamp and a lump of encrypted data, each with a save button.
-    VM now decrypts it with EPG, the interface to GnuPG that Emacs comes with,
-    and displays what the sender wrote.  Set `vm-mime-decrypt-pgp-parts' to
-    nil for the old behaviour.  A message that cannot be decrypted is still
-    shown part by part, with a warning saying why.  This needs no add-on:
-    vm-pgg did the same thing through the obsolete pgg library and its own
-    passphrase prompt, and is deprecated.
   * New PGP/MIME support package vm-epg, based on the epg (EasyPG) interface
     to gpg that is bundled with Emacs.  It replaces vm-pgg, which is built on
     the obsolete pgg package.  Load it with (require 'vm-epg); see "Sending
@@ -205,23 +195,6 @@ VM 8.?.?
 VM 8.3.2 released 2025-12-29
 
   CHANGES
-  * PGP signatures on incoming mail are now checked.  A signed message from
-    Thunderbird, Gnus or Mutt is a `multipart/signed' entity with a detached
-    signature beside it, and VM showed that signature as an attachment and
-    said nothing about it, having only ever verified S/MIME.  With
-    `vm-mime-verify-signatures' set, VM displays the signed text and a line
-    saying what EPG makes of the signature: who signed it, whether the
-    signature is good, and how much the key is trusted.  Senders disagree
-    about whether the line ending that ends the entity is part of what was
-    signed, so both readings are tried before a signature is called bad.
-  * Inline PGP is handled as well.  Mail from before RFC 3156, and from some
-    clients still, carries its armour in the body of an ordinary text part
-    rather than in a MIME entity of its own.  VM showed the armour; it now
-    shows the plaintext of an encrypted block, and the text of a clearsigned
-    one with the same signature report as the MIME form gets.  A clearsigned
-    message whose signature does not check out still shows its text, since
-    that says more alongside the warning than a bare warning does.  The same
-    two variables govern it.  Mail with no MIME headers at all is not covered.
   * Address problem with 8.3.1 change where some user configurations for emacs 30
     need vm to evaluate autoloads.el.
 

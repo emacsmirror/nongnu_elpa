@@ -2288,40 +2288,6 @@ The variable @code{vm-mime-internal-content-type-exceptions} serves as
 the exception list for @code{vm-mime-internal-content-types}.  Its value 
 should be a list of types that should not be displayed internally.
 
-@cindex OpenPGP
-@cindex PGP/MIME
-@cindex encrypted mail
-@vindex vm-mime-decrypt-pgp-parts
-Mail encrypted with OpenPGP arrives as a @code{multipart/encrypted} entity, the
-form RFC 3156 describes and what Thunderbird, Gnus and Mutt send: the message
-its sender wrote is a @acronym{MIME} entity of its own, encrypted, and carried
-inside.  VM decrypts it and displays what is inside, so such a message reads
-like any other.  Set @code{vm-mime-decrypt-pgp-parts} to nil to be shown the
-parts as they arrived instead, which is a version stamp and a lump of
-ciphertext.
-
-Decryption uses @acronym{EPG}, the interface to GnuPG that Emacs comes with, so
-a passphrase is asked for by the agent and by whatever
-@code{epg-pinentry-mode} says; VM neither asks for it nor holds it.  A message
-that cannot be decrypted is displayed part by part, with a warning saying why.
-
-@vindex vm-mime-verify-signatures
-A signed message arrives the other way about: the entity as its sender wrote it,
-with a detached signature beside it.  With @code{vm-mime-verify-signatures} set,
-VM displays the message and then a line saying what @acronym{EPG} makes of the
-signature --- who signed it, whether the signature is good, and how far the key
-is trusted.  The message itself is displayed either way, including when the
-signature is bad: what it says is worth knowing alongside the warning, not
-instead of it.  This setting covers S/MIME signatures too, which VM has always
-checked.
-
-@cindex inline PGP
-Both settings also cover @dfn{inline PGP}, which is armour in the body of an
-ordinary text part rather than a @acronym{MIME} entity of its own: an encrypted
-block is replaced by its plaintext, and a clearsigned one by the text it signs
-and the same report.  Mail carrying no @acronym{MIME} headers at all is left
-alone, armour and all.
-
 @cindex @acronym{HTML}
 @vindex vm-mime-text/html-handler
 The @acronym{HTML} content in text/html @acronym{MIME} parts can be
