@@ -1,0 +1,32 @@
+# SPDX-FileCopyrightText: 2026 Lin Jian <me@linj.tech>
+# SPDX-License-Identifier: GPL-3.0-or-later
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cronjob: "21 8 * * *"
+      timezone: "Asia/Shanghai"
+    commit-message:
+      prefix: "chore"
+    groups:
+      actions:
+        patterns:
+          - "*"
+    cooldown:
+      default-days: 7
+  - package-ecosystem: "nix" # zizmor: ignore[dependabot-cooldown] because dependabot does not support security update for nix
+    directory: "/"
+    schedule:
+      interval: "cron"
+      # first Saturday of each month
+      # https://github.com/dependabot/dependabot-core/issues/12246#issuecomment-2954329700
+      cronjob: "21 8 * * SAT#1"
+      timezone: "Asia/Shanghai"
+    commit-message:
+      prefix: "chore"
+    groups:
+      flake-inputs:
+        patterns:
+          - "*"

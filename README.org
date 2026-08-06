@@ -1,0 +1,65 @@
+# SPDX-FileCopyrightText: 2026 Lin Jian <me@linj.tech>
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+#+title: project-store - Project backend for Nix store
+
+#+begin_comment
+After changing this file,
+make sure it renders well in all these places:
+
+- Emacs ~describe-package~ command
+- its ELPA homepage
+- the homepage of its source code hosting platform.
+
+When improving rendering for one makes another worse,
+prioritize the rendering quality of items appearing earlier in the above list.
+#+end_comment
+
+This package is a =project.el= backend for Nix store.
+Each store path,
+if it is a directory,
+is a project root.
+See ~project-root~ for store path definition.
+
+At the time of writing,
+this package also supports Guix store.
+
+This package eases operations on store files
+with the help of project interfaces described in Info node =Projects=.
+For example,
+while visiting a file under a store path,
+use ~project-find-file~ to quickly visit another file under the same store path.
+
+* Usage
+
+Add ~project-store-try~ to ~project-find-functions~.
+To ensure good performance,
+put it before ~project-try-vc~.
+
+It is recommended to also add ~project-store-p~ to ~project-list-exclude~.
+
+See customization group =project-store= for user options.
+
+To disable this package,
+remove ~project-store-try~ from ~project-find-functions~
+or call ~unload-feature~.
+
+* Performance
+
+Packages can call project interfaces quite frequently.
+For example,
+at the time of writing,
+=breadcrumb.el= calls ~project-current~ and ~project-name~ a lot.
+
+This package aims for good performance.
+It includes benchmarks for performance-sensitive functions.
+Use those benchmarks when hacking this package.
+
+* License
+
+This package is [[https://reuse.software][REUSE]]-compliant.
+To get the license and copyright of each file,
+run =reuse lint --json= or =reuse spdx=.
+
+As a best-effort summary,
+this package is licensed under GPL-3.0-or-later.
