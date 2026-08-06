@@ -829,6 +829,22 @@ apply to that text; when nil it is derived from STATUS, giving
                                  'vm-epg-bad-signature
                                'vm-epg-good-signature))))))
 
+(defun vm-epg-cleartext-display-buffer-p ()
+  "Return non-nil if the current buffer is a message on display.
+That is a folder buffer, a virtual folder buffer, or a presentation copy: the
+three places VM transfer-decodes a part in order to show it.  Anywhere else --
+the work buffer `vm-mime-send-body-to-file' decodes in, a composition a message
+is being yanked into -- there is nothing on display to annotate.
+
+Without this the cleartext automode ran for those decodes as well and did
+nothing only by accident: in a work buffer `vm-message-pointer' is nil, and
+`vm-epg-cleartext-decoded' is buffer-local and so nil there too, which makes
+the already-handled test compare nil with nil and take the do-nothing branch.
+Nothing visible came of it, which is why this is a guard rather than a fix, but
+the guard is what was meant, and what stops a change to either variable turning
+a file save into a signature report.  Issue #581."
+  (memq major-mode '(vm-mode vm-virtual-mode vm-presentation-mode)))
+
 (advice-add 'vm-mime-transfer-decode-region
             :around #'vm-epg--transfer-cleartext-automode)
 (defun vm-epg--transfer-cleartext-automode (orig-fun &optional layout
@@ -852,10 +868,18 @@ came in describes the text before the decode and not the region to scan.
 Where the region is the whole buffer -- `vm-mime-send-body-to-file' decodes
 from point-min to point-max of a work buffer -- narrowing to the old END is
 outside the buffer and signals `args-out-of-range'.
-`vm-mime-base64-decode-region' takes a marker for the same reason."
+`vm-mime-base64-decode-region' takes a marker for the same reason.
+
+Only a decode for display is followed up.  VM transfer-decodes for other
+reasons too -- `vm-mime-send-body-to-file' writing a part to a file or handing
+one to an external viewer, `vm-mime-send-body-to-folder', yanking a message
+into a composition, vm-vcard, vm-w3m -- and those decode in a work buffer or a
+composition, where nothing is on display to annotate and the automode has no
+message to work from.  See `vm-epg-cleartext-display-buffer-p'."
   (let ((end (if (markerp end) end (copy-marker end))))
     (apply orig-fun layout start end args)
-    (when (and (vm-mime-text-type-layout-p layout)
+    (when (and (vm-epg-cleartext-display-buffer-p)
+               (vm-mime-text-type-layout-p layout)
                start end (< start end))
       (save-excursion
         (save-restriction

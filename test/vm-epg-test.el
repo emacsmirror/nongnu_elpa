@@ -399,6 +399,9 @@ advice now scans the decode region [START, END] instead."
     (cl-letf (((symbol-function 'vm-epg-cleartext-automode)
                (lambda () (setq automode-called t))))
       (with-temp-buffer
+        ;; A decode for display, which is the only kind the advice follows
+        ;; since #581.
+        (setq major-mode 'vm-presentation-mode)
         (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
         ;; Call through the real (advised) function; point does not move.
         (vm-mime-transfer-decode-region layout (point-min) (point-max))
@@ -421,6 +424,8 @@ HTML part sent to an external viewer arrived empty."
     (cl-letf (((symbol-function 'vm-epg-cleartext-automode)
                (lambda () (setq automode-region (cons (point-min) (point-max))))))
       (with-temp-buffer
+        ;; as above: for display, so the advice follows it
+        (setq major-mode 'vm-presentation-mode)
         ;; "=41" decodes to "A", so the region loses two characters of three.
         (insert "=41=42=43\n")
         (let ((size (buffer-size)))
@@ -428,6 +433,54 @@ HTML part sent to an external viewer arrived empty."
           (should (= (buffer-size) (- size 6)))
           ;; the region scanned is the decoded text, not the bytes it came from
           (should (equal automode-region (cons (point-min) (point-max)))))))))
+
+(ert-deftest vm-epg-test-transfer-advice-only-follows-a-display ()
+  "REGRESSION: a decode that is not for display does not run the automode.
+Issue #581.  VM transfer-decodes for several reasons: `vm-mime-send-body-to-file'
+writing a part to a file or handing one to an external viewer,
+`vm-mime-send-body-to-folder', yanking a message into a composition, vm-vcard,
+vm-w3m.  Those decode in a work buffer or a composition, where nothing is on
+display and the automode has no message to work from, yet the advice ran there
+too.
+
+It did nothing, but only by accident: `vm-message-pointer' is nil in a work
+buffer and `vm-epg-cleartext-decoded' is buffer-local and so nil there as well,
+so the already-handled test compared nil with nil and took the do-nothing
+branch.  This pins the intent instead of the accident."
+  (let ((layout (vm-epg-test--make-layout "text/plain"))
+        (calls 0))
+    (aset layout 2 "8bit")
+    (cl-letf (((symbol-function 'vm-epg-cleartext-automode)
+               (lambda () (setq calls (1+ calls)))))
+      ;; a work buffer, as `vm-mime-send-body-to-file' decodes in
+      (with-temp-buffer
+        (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
+        (vm-mime-transfer-decode-region layout (point-min) (point-max))
+        (should (= 0 calls)))
+      ;; a composition, as yanking a message decodes in
+      (with-temp-buffer
+        (mail-mode)
+        (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
+        (vm-mime-transfer-decode-region layout (point-min) (point-max))
+        (should (= 0 calls)))
+      ;; and the display path still does
+      (with-temp-buffer
+        (setq major-mode 'vm-presentation-mode)
+        (insert "-----BEGIN PGP SIGNED MESSAGE-----\nbody\n")
+        (vm-mime-transfer-decode-region layout (point-min) (point-max))
+        (should (= 1 calls))))))
+
+(ert-deftest vm-epg-test-cleartext-display-buffer-p ()
+  "The three modes a message is displayed in, and nothing else.
+Issue #581."
+  (dolist (mode '(vm-mode vm-virtual-mode vm-presentation-mode))
+    (with-temp-buffer
+      (setq major-mode mode)
+      (should (vm-epg-cleartext-display-buffer-p))))
+  (dolist (mode '(fundamental-mode mail-mode vm-summary-mode text-mode))
+    (with-temp-buffer
+      (setq major-mode mode)
+      (should-not (vm-epg-cleartext-display-buffer-p)))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; REGRESSION: cleartext (sign-only) signatures must validate
