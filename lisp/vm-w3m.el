@@ -38,7 +38,7 @@
 
 (declare-function w3m-region 
 		  "ext:w3m" (start end &optional url charset))
-(declare-function w3m-safe-toggle-inline-images 
+(declare-function w3m-toggle-inline-images
 		  "ext:w3m" (&optional force no-cache))
 
 
@@ -140,10 +140,17 @@ by the minor-mode-keymap for emacs-w3m text, as determined by
       (vm-mime-transfer-decode-region part (point-min) (point-max)))
     type))
 
-(or (assq 'vm-presentation-mode w3m-cid-retrieve-function-alist)
+;; Tell emacs-w3m how to fetch a `cid:' part of the message being presented.
+;; Deferred until w3m is loaded: this file used to do it as it loaded, and
+;; `w3m-cid-retrieve-function-alist' is only declared here, so without
+;; emacs-w3m installed requiring vm-w3m raised `void-variable' rather than
+;; simply doing nothing.  Anything that loads every VM module -- the manual's
+;; generated reference among them -- lost this file for that reason.
+(with-eval-after-load 'w3m
+  (unless (assq 'vm-presentation-mode w3m-cid-retrieve-function-alist)
     (setq w3m-cid-retrieve-function-alist
 	  (cons '(vm-presentation-mode . vm-w3m-cid-retrieve)
-		w3m-cid-retrieve-function-alist)))
+		w3m-cid-retrieve-function-alist))))
 
 (defun vm-w3m-local-map-property ()
   (let* ((minor-mode (and vm-use-presentation-minor-modes
@@ -192,9 +199,22 @@ If the prefix arg is given, all images are considered to be safe."
 		       (current-buffer))
 		      ((eq major-mode 'vm-mode)
 		       vm-presentation-buffer))))
-    (if (buffer-live-p buffer)
-	(with-current-buffer buffer
-	  (w3m-safe-toggle-inline-images arg)))))
+    (when (buffer-live-p buffer)
+      (with-current-buffer buffer
+	(when arg (vm-w3m-mark-images-safe))
+	(w3m-toggle-inline-images)))))
+
+(defun vm-w3m-mark-images-safe ()
+  "Let emacs-w3m display the images in this buffer whatever their URLs.
+emacs-w3m records the `w3m-safe-url-regexp\=' in force when it rendered the
+text as a text property over it, and `w3m-toggle-inline-images\=' refuses to
+show anything whose URL does not match what it finds there.  So removing that
+property is what \"consider all images safe\" means; there is no argument for
+it, and the `w3m-safe-toggle-inline-images\=' that once took one is gone."
+  (let ((inhibit-read-only t)
+	(modified (buffer-modified-p)))
+    (remove-text-properties (point-min) (point-max) '(w3m-safe-url-regexp nil))
+    (set-buffer-modified-p modified)))
 
 (provide 'vm-w3m)
 ;;; vm-w3m.el ends here

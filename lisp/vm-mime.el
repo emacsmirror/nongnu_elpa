@@ -1955,7 +1955,11 @@ that recipient is outside of East Asia."
 (defun vm-mime-text/html-handler ()
   (if (eq vm-mime-text/html-handler 'auto-select)
       (setq vm-mime-text/html-handler
-            (cond ((locate-library "w3m")
+            (cond ((and (locate-library "w3m") (executable-find "w3m"))
+                   ;; emacs-w3m drives the w3m program; the library alone
+                   ;; cannot render anything, and choosing it then means
+                   ;; every HTML part fails or waits for a process that is
+                   ;; not there.
                    'emacs-w3m)
                   ((locate-library "w3")
                    'emacs-w3)
