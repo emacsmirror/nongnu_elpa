@@ -2216,6 +2216,82 @@ The cid parts go in the same directory and need the same care."
       (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
 
+;;; Reading one alternative with buttons for the rest (#16)
+
+(defun vm-mime-test--present (message method exceptions)
+  "Visit a folder holding MESSAGE and return its presentation text.
+METHOD is `vm-mime-alternative-show-method' and EXCEPTIONS
+`vm-auto-displayed-mime-content-type-exceptions'."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-alt" t)))
+         (file (expand-file-name "folder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-mime-alternative-show-method method)
+         (vm-auto-displayed-mime-content-type-exceptions exceptions)
+         (vm-mime-text/html-handler 'lynx)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-user-interaction-buffer vm-user-interaction-buffer)
+         (vm-summary-tokenized-compiled-format-alist
+          vm-summary-tokenized-compiled-format-alist)
+         (vm-summary-untokenized-compiled-format-alist
+          vm-summary-untokenized-compiled-format-alist)
+         (vm-mime-compiled-format-alist vm-mime-compiled-format-alist)
+         (before (buffer-list)))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert message)
+            (write-region (point-min) (point-max) file nil 'quiet))
+          (vm-visit-folder file)
+          (vm-present-current-message)
+          (vm-show-current-message)
+          (with-current-buffer (or vm-presentation-buffer (current-buffer))
+            (buffer-substring-no-properties (point-min) (point-max))))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(defconst vm-mime-test--alternatives
+  (concat "From alice@example.com  Thu Jan  1 00:00:00 2026\n"
+          "From: alice@example.com\nSubject: alternatives\n"
+          "MIME-Version: 1.0\n"
+          "Content-Type: multipart/alternative; boundary=b\n\n"
+          "--b\nContent-Type: text/plain\n\nplain version\n"
+          "--b\nContent-Type: text/html\n\n<p>html version</p>\n--b--\n"))
+
+(ert-deftest vm-mime-test-an-excluded-alternative-becomes-a-button ()
+  "`all' plus an exception reads one alternative and buttons the others.
+This is the recipe the manual gives for issue #16, which asked to see one
+type and still reach the others without decoding the message by hand.  The
+other show methods choose one alternative and drop the rest, so they cannot
+do it."
+  (skip-unless (executable-find "lynx"))
+  (let ((text (vm-mime-test--present vm-mime-test--alternatives
+                                     'all '("text/html"))))
+    (should (string-match-p "plain version" text))
+    (should-not (string-match-p "html version" text))
+    ;; the button says what it is and offers to display it
+    (should (string-match-p "HTML" text))
+    (should (string-match-p "\\[display\\]" text))))
+
+(ert-deftest vm-mime-test-alternative-show-methods-differ ()
+  "The controls behave as the manual says: `all' shows every alternative,
+and `best-internal' shows one."
+  (skip-unless (executable-find "lynx"))
+  (let ((all (vm-mime-test--present vm-mime-test--alternatives 'all nil))
+        (best (vm-mime-test--present vm-mime-test--alternatives
+                                     'best-internal nil)))
+    (should (string-match-p "plain version" all))
+    (should (string-match-p "html version" all))
+    ;; best-internal picks the most faithful it can display -- the HTML
+    (should (string-match-p "html version" best))
+    (should-not (string-match-p "plain version" best))))
+
 ;;; Completing an HTML fragment for an external viewer (#387)
 
 (defun vm-mime-test--html-layout (charset)
