@@ -2950,6 +2950,70 @@ recorded in the undo stack."
       (vm-set-stuff-flag-of m t))
     ))
 
+(defun vm-imap-flag-list-string (flags)
+  "Return FLAGS as an IMAP parenthesised flag list."
+  (concat "(" (mapconcat #'identity flags " ") ")"))
+
+(defun vm-imap-store-flags-1 (process sign by-uid id flags)
+  "Send one STORE of FLAGS to PROCESS, and wait for its OK.
+SIGN is \"+\" or \"-\", ID the message number, or its UID when BY-UID says so.
+The UID form is \"UID STORE\", the prefix going before the command and not
+after it.  Signals `vm-imap-normal-error\' if the server refuses the command."
+  (let ((command (format "%sSTORE %s %sFLAGS.SILENT %s"
+			 (if by-uid "UID " "") id sign
+			 (vm-imap-flag-list-string flags)))
+	(need-ok t) response)
+    (vm-imap-send-command process command)
+    (while need-ok
+      (setq response (vm-imap-read-response-and-verify
+		      process (format "STORE %sFLAGS.SILENT" sign)))
+      (cond ((vm-imap-response-matches response 'VM 'OK)
+	     (setq need-ok nil))))))
+
+(defun vm-imap-store-flags (process sign by-uid id flags)
+  "Store FLAGS on the server, one command if it will take them, singly if not.
+SIGN is \"+\" or \"-\"; ID and BY-UID name the message as for
+`vm-imap-store-flags-1\'.  Returns the flags the server accepted.
+
+A server need not accept every keyword, and Exchange refuses the whole STORE
+when it meets one it does not know, so a single unknown keyword used to stop
+`\\Deleted' and everything else in the same command from being stored (issue
+#391).  When the bundled command is refused, each flag is offered on its own:
+what the server takes is stored, what it refuses is remembered in
+`vm-imap-refused-flags\' and not offered again this session.
+
+A refusal of every flag is re-signalled, which is what leaves the message
+pending for a later retry (issue #270).  This is called in the process buffer."
+  (let ((wanted (seq-remove (lambda (f) (member f vm-imap-refused-flags)) flags))
+	(accepted nil)
+	(refused nil))
+    (when wanted
+      (condition-case _err
+	  (progn (vm-imap-store-flags-1 process sign by-uid id wanted)
+		 (setq accepted wanted))
+	(vm-imap-normal-error
+	 ;; The server refused the lot.  Find out which of them it will take.
+	 (dolist (flag wanted)
+	   (condition-case _err2
+	       (progn (vm-imap-store-flags-1 process sign by-uid id (list flag))
+		      (setq accepted (cons flag accepted)))
+	     (vm-imap-normal-error
+	      (setq refused (cons flag refused))
+	      (setq vm-imap-refused-flags
+		    (cons flag vm-imap-refused-flags)))))
+	 (when refused
+	   (vm-warn 1 2 "IMAP server refuses the flag%s %s; not sending %s again"
+		    (if (cdr refused) "s" "")
+		    (mapconcat #'identity (nreverse (copy-sequence refused)) ", ")
+		    (if (cdr refused) "them" "it")))
+	 (unless accepted
+	   ;; Nothing landed, so this is the refusal the caller has to hear
+	   ;; about: the message stays pending and its flags stay local.
+	   (vm-imap-normal-error
+	    "server refuses to store %s"
+	    (vm-imap-flag-list-string wanted))))))
+    accepted))
+
 (defun vm-imap-save-message-flags (process m &optional by-uid)
   "Saves the message flags of a message on the IMAP server,
 adding or deleting flags on the server as necessary.  Monotonic
@@ -2986,7 +3050,7 @@ server should be issued by UID, not message sequence number."
 	 (cached-flags (and (boundp uid-key2) (symbol-value uid-key2)))
 					; leave uid as the dummy header
 	 (labels (vm-decoded-labels-of m))
-	 copied-flags need-ok flags+ flags- response)
+	 copied-flags flags+ flags-)
     (when message-num
       ;; Reversible flags are treated the same as labels
       (if (not (vm-unread-flag m))
@@ -3031,38 +3095,18 @@ server should be issued by UID, not message sequence number."
 	    (vm-buffer-type:enter 'process)
 	    ;;----------------------------------
 	    (when flags+
-	      (vm-imap-send-command 
-	       process
-	       (format "%sSTORE %s +FLAGS.SILENT %s" 
-		       (if by-uid "UID " "")
-		       (if by-uid uid message-num)
-		       (mapc 'intern flags+)))
-	      (setq need-ok t)
-	      (while need-ok
-		(setq response 
-		      (vm-imap-read-response-and-verify 
-		       process "STORE +FLAGS.SILENT"))
-		(cond ((vm-imap-response-matches response 'VM 'OK)
-		       (setq need-ok nil))))
-	      (nconc cached-flags flags+))
+	      ;; Only what the server took goes in the cache, or the next sync
+	      ;; would think a refused flag was already on the server.
+	      (nconc cached-flags
+		     (vm-imap-store-flags process "+" by-uid
+					  (if by-uid uid message-num)
+					  flags+)))
 
 	    (when flags-
-	      (vm-imap-send-command 
-	       process
-	       (format "%sSTORE %s -FLAGS.SILENT %s"
-		       (if by-uid "UID " "")
-		       (if by-uid uid message-num)
-		       (mapc 'intern flags-)))
-	      (setq need-ok t)
-	      (while need-ok
-		(setq response 
-		      (vm-imap-read-response-and-verify 
-		       process "STORE -FLAGS.SILENT"))
-		(cond ((vm-imap-response-matches response 'VM 'OK)
-		       (setq need-ok nil))))
-	      (while flags-
-		(delete (car flags-) cached-flags)
-		(setq flags- (cdr flags-))))
+	      (dolist (flag (vm-imap-store-flags process "-" by-uid
+						 (if by-uid uid message-num)
+						 flags-))
+		(delete flag cached-flags)))
 
 	    (vm-set-attribute-modflag-of m nil)
 	    )

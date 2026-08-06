@@ -312,6 +312,9 @@ signals, so a failed test does not leave state behind for the next one."
             ;; the next test.
             (vm-imap-max-message-size vm-imap-max-message-size)
             (vm-buffer-types vm-buffer-types)
+            ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+            ;; refused flag warns on purpose.
+            (vm-current-warning vm-current-warning)
             ;; No session trace buffer: VM keeps one per session for debugging, and
             ;; the harness kills every new buffer the moment the test ends, so the
             ;; trace is unreachable anyway.  A session that errors sets this back
@@ -372,6 +375,9 @@ default and would let a wedged session hang forever."
             ;; the next test.
             (vm-imap-max-message-size vm-imap-max-message-size)
             (vm-buffer-types vm-buffer-types)
+            ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+            ;; refused flag warns on purpose.
+            (vm-current-warning vm-current-warning)
             ;; No session trace buffer: VM keeps one per session for debugging, and
             ;; the harness kills every new buffer the moment the test ends, so the
             ;; trace is unreachable anyway.  A session that errors sets this back

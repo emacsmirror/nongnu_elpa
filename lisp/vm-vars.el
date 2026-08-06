@@ -7203,6 +7203,15 @@ UIDVALIDITY for each message to be expunged.")
   :type '(choice (integer :tag "Number of session buffers kept"
 		 (const :tag "No session buffers kept" nil))))
 (defvar vm-imap-session-done nil)
+
+(defvar vm-imap-refused-flags nil
+  "Flags this IMAP server has refused to store, in the session's process buffer.
+A server need not accept every keyword: Exchange refuses any it does not know,
+and refuses the whole STORE with them, so one unknown keyword used to stop
+`\\Deleted' and the rest from being stored at all (issue #391).  A flag that
+comes back refused on its own is remembered here and not sent again for the rest
+of the session.")
+(make-variable-buffer-local 'vm-imap-refused-flags)
 (defvar vm-reply-list nil
   "Buffer local variable in Composition buffers that holds the set of
   messages to which this composition is a reply.")

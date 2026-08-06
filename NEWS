@@ -190,6 +190,14 @@ VM 8.?.?
     vm-epg is not a drop-in rename of vm-pgg; its customization variables and
     commands are named vm-epg-* and its faces vm-epg-*, so vm-pgg settings
     must be carried over by hand.
+  * A flag an IMAP server will not accept no longer stops the others being
+    stored.  VM sent every pending flag for a message in one STORE command, so a
+    server that refuses one of them refuses the command: mail marked deleted and
+    labelled on an Exchange server, which rejects keywords it does not know, had
+    neither the label nor the deletion stored, and the next synchronisation
+    brought the server's older view back.  When a server refuses the command VM
+    now offers the flags one at a time, stores what it will take, says which one
+    it would not, and does not offer that one again for the rest of the session.
   * Killing a folder buffer now takes the virtual folders over it with it, and
     says so first if any of them has unsaved changes, so that the kill can be
     called off.  A virtual message keeps its text in the real folder's buffer,
