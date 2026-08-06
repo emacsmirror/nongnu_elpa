@@ -413,6 +413,34 @@ the suite runs."
              (push (format "%s -> %s" s target) broken))))))
     (should (equal nil (sort broken #'string<)))))
 
+(ert-deftest vm-integration-test-every-binding-has-a-command ()
+  "Every key VM binds runs a command that exists.
+A keymap entry naming a deleted or misspelled command is a `void-function' the
+first time somebody presses the key, and nothing in a byte-compile or a lint run
+sees it: the `define-key' call is well-formed whatever symbol it is given.
+
+The optional bindings are installed first, so they are covered too."
+  (require 'vm)
+  (vm-v8-key-bindings)
+  (let (broken)
+    (cl-labels ((walk (map path name)
+                  (map-keymap
+                   (lambda (event def)
+                     (let ((keys (append path (list event))))
+                       (cond ((keymapp def) (walk def keys name))
+                             ((and (symbolp def) def (not (fboundp def)))
+                              (push (format "%s %s -> %s" name
+                                            (key-description (vconcat keys)) def)
+                                    broken)))))
+                   map)))
+      (dolist (m '(vm-mode-map vm-summary-mode-map vm-mail-mode-map
+                   vm-mime-reader-map vm-folders-summary-mode-map
+                   vm-mode-virtual-map vm-mode-mark-map vm-mode-window-map
+                   vm-mode-pipe-map))
+        (when (and (boundp m) (keymapp (symbol-value m)))
+          (walk (symbol-value m) nil (symbol-name m)))))
+    (should (equal nil (sort (delete-dups broken) #'string<)))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

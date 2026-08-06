@@ -2206,9 +2206,10 @@ format, which should be normally discernible.
 @findex vm-previous-button
 @kindex [
 @kindex ]
-The commands @kbd{[} and @kbd{]} (@code{vm-previous-button}) and
-@code{vm-next-button}, respectively) can be
-used to move to attachment buttons within the message presentation.
+The commands @kbd{[} (@code{vm-move-to-previous-button}) and @kbd{]}
+(@code{vm-move-to-next-button}) move to the attachment buttons within the
+message presentation.  @code{vm-previous-button} and @code{vm-next-button} are
+the same two commands under their other names.
 
 
 @cindex attachments
@@ -3381,7 +3382,7 @@ space characters.
 
 @kindex C-c C-p
 To preview what a @acronym{MIME} message will look like to a recipient,
-use @kbd{C-c C-p} (@code{vm-mime-preview-composition}).  VM
+use @kbd{C-c C-p} (@code{vm-preview-composition}).  VM
 will encode a copy of the message and present it to you in a
 temporary mail folder.  You can scroll through the message
 using normal VM mail reading commands.  Typing @kbd{q} in this
@@ -5385,9 +5386,11 @@ relationships more clearly.
 
 @kindex <
 @findex vm-promote-subthread
-The command @kbd{<} (@code{vm-promote-subthread}) temporarily
+The command @code{vm-promote-subthread} temporarily
 decreases the indentation of the current message and its subthread by
-one step.  You can give the command a numeric prefix argument N asking
+one step.  Its @kbd{<} binding is one of the optional ones, installed by
+@code{(vm-current-key-bindings)}, described under @ref{Paging}; without that,
+run it with @kbd{M-x}.  You can give the command a numeric prefix argument N asking
 it to decreasing indentation by N steps.  Giving 0 as the prefix
 argument has a special meaning.  It says that the current message
 should not be indented at all, effectively making it appear as the
@@ -5395,8 +5398,8 @@ root message of a thread.
 
 @kindex >
 @findex vm-demote-subthread
-The command @kbd{>} (@code{M-x vm-demote-subthread}) does the
-opposite.  It increases the indentation of the current message and its
+The command @code{vm-demote-subthread}, @kbd{>} with those same optional
+bindings installed, does the opposite.  It increases the indentation of the current message and its
 subthread.  You can specify the level of increased indentation as the
 prefix argument.  Giving 0 as the prefix argument has the special
 meaning of asking VM to return the message to its standard indentation
