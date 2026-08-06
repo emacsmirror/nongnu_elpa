@@ -205,6 +205,14 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * Leaving Emacs with a composition unfinished now offers to keep it as a
+    draft, the same offer VM makes when you kill one.  Killing a composition
+    has always asked, through `vm-save-killed-message', but Emacs does not
+    kill buffers one at a time as it exits, so on the way out the question was
+    never put and the drafts went with it.  The same two settings govern both:
+    `vm-save-killed-message' whether to ask, save without asking, or neither,
+    and `vm-save-killed-messages-folder' where.  An untouched composition is
+    not asked about.
   * VM works with BBDB again.  Its BBDB integration was written against BBDB
     2.x and had not been touched since: nine of the names it used no longer
     exist in BBDB 3, so the `in-bbdb' virtual folder selector, Personality

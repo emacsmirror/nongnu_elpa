@@ -1626,6 +1626,12 @@ draft messages."
         (require 'vm-menu)
         (require 'vm-rfaddons)
         (add-hook 'kill-emacs-hook 'vm-garbage-collect-global)
+        ;; Offers unfinished compositions to the postponed folder as Emacs
+        ;; is left, rather than leaving them to be written to files one at a
+        ;; time.  Registered here rather than as vm-postpone.el loads:
+        ;; loading a file should not change how Emacs behaves (#160).
+        (add-hook 'kill-emacs-query-functions
+                  'vm-postpone-unfinished-compositions)
 	(vm-load-init-file)
 	(when vm-enable-addons
 	  (vm-rfaddons-infect-vm 0 vm-enable-addons))

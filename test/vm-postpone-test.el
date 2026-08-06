@@ -461,6 +461,142 @@ inserted is the raw one and the headers must be kept to match."
     (should (string-match "^MIME-Version: 1\\.0$" composition))
     (should (string-match "boundary=\"SEP\"" composition))))
 
+
+;;; Leaving Emacs with a composition unfinished (#160)
+
+(defmacro vm-postpone-test-with-composition (&rest body)
+  "Start a composition from a folder and run BODY with it as `composition'.
+Everything is torn down afterwards, and the postponed folder is a file in a
+temporary directory, bound as `drafts'."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-postpone-exit" t)))
+          (file (expand-file-name "folder" dir))
+          (drafts (expand-file-name "drafts" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-frame-per-folder nil)
+          (vm-frame-per-composition nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-folder-directory dir)
+          (vm-postponed-folder "drafts")
+          ;; Killing a composition asks whether to keep it as a draft, which
+          ;; the teardown below would trip over.  Each test binds this to
+          ;; whatever it is about.
+          (vm-save-killed-message nil)
+          (vm-save-killed-messages-folder "drafts")
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (vm-composition-buffer-count vm-composition-buffer-count)
+          (vm-ml-composition-buffer-count vm-ml-composition-buffer-count)
+          (vm-compositions-exist vm-compositions-exist)
+          (vm-current-warning vm-current-warning)
+          (vm-summary-tokenized-compiled-format-alist
+           vm-summary-tokenized-compiled-format-alist)
+          (before (buffer-list))
+          composition)
+     (require 'vm)
+     (require 'vm-postpone)
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (insert "From a@example.com  Thu Jan  1 00:00:00 2026\n"
+                     "From: a@example.com\nSubject: s\n\nbody\n"))
+           (vm-visit-folder file)
+           (vm-mail-from-folder)
+           (setq composition (current-buffer))
+           (goto-char (point-max))
+           (insert "a few words\n")
+           (set-buffer-modified-p t)
+           ,@body)
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(ert-deftest vm-postpone-test-a-composition-is-recognised ()
+  "A composition VM started is one; another package\='s is not.
+Mail mode alone is not the test -- postponing somebody else\='s composition
+into a VM folder is not VM\='s business."
+  (vm-postpone-test-with-composition
+    (should (vm-composition-buffer-p composition))
+    (should (vm-composition-worth-keeping-p composition))
+    (should (memq composition (vm-unfinished-compositions))))
+  (with-temp-buffer
+    (mail-mode)
+    (insert "To: you@example.com\n" mail-header-separator "\ntext\n")
+    (set-buffer-modified-p t)
+    (should-not (vm-composition-buffer-p))))
+
+(ert-deftest vm-postpone-test-an-empty-composition-is-not-worth-keeping ()
+  "A composition begun and abandoned untouched raises no question."
+  (vm-postpone-test-with-composition
+    (goto-char (point-min))
+    (re-search-forward (concat "^" (regexp-quote mail-header-separator) "$"))
+    (delete-region (point) (point-max))
+    (should-not (vm-composition-worth-keeping-p composition))
+    (should-not (memq composition (vm-unfinished-compositions)))))
+
+(ert-deftest vm-postpone-test-exit-postpones-without-asking ()
+  "With `vm-save-killed-message\=' `always\=', leaving Emacs writes the draft."
+  (vm-postpone-test-with-composition
+    (let ((vm-save-killed-message 'always))
+      (should (vm-postpone-unfinished-compositions))
+      (should-not (buffer-live-p composition))
+      (should (file-exists-p drafts))
+      (with-temp-buffer
+        (insert-file-contents drafts)
+        (should (string-match-p "a few words" (buffer-string)))))))
+
+(ert-deftest vm-postpone-test-exit-asks-and-takes-no-for-an-answer ()
+  "With `ask\=', declining leaves the composition alone."
+  (vm-postpone-test-with-composition
+    (let ((vm-save-killed-message 'ask)
+          (asked nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (prompt) (setq asked prompt) nil)))
+        (should (vm-postpone-unfinished-compositions)))
+      (should (string-match-p "as draft" asked))
+      (should-not (file-exists-p drafts)))))
+
+(ert-deftest vm-postpone-test-exit-asks-and-takes-yes ()
+  (vm-postpone-test-with-composition
+    (let ((vm-save-killed-message 'ask))
+      (cl-letf (((symbol-function 'y-or-n-p) (lambda (_prompt) t)))
+        (should (vm-postpone-unfinished-compositions)))
+      (should-not (buffer-live-p composition))
+      (should (file-exists-p drafts)))))
+
+(ert-deftest vm-postpone-test-exit-can-be-left-to-emacs ()
+  "With `vm-save-killed-message\=' nil nothing happens, as before."
+  (vm-postpone-test-with-composition
+    (let ((vm-save-killed-message nil))
+      (cl-letf (((symbol-function 'y-or-n-p)
+                 (lambda (_prompt) (error "asked when it should not have"))))
+        (should (vm-postpone-unfinished-compositions)))
+      (should (buffer-live-p composition))
+      (should-not (file-exists-p drafts)))))
+
+(ert-deftest vm-postpone-test-a-failure-does-not-block-the-exit ()
+  "Emacs still leaves when a draft cannot be written.
+Losing a draft is a reason to say so, not to stand in the doorway."
+  (vm-postpone-test-with-composition
+    (let ((vm-save-killed-message 'always)
+          (vm-current-warning nil))
+      (cl-letf (((symbol-function 'kill-buffer)
+                 (lambda (&rest _) (error "disk on fire"))))
+        (should (vm-postpone-unfinished-compositions)))
+      (should (buffer-live-p composition)))))
+
+(ert-deftest vm-postpone-test-the-exit-hook-is-registered ()
+  "Starting VM puts the offer on `kill-emacs-query-functions\='.
+Not done as vm-postpone.el loads: loading a file should not change how Emacs
+behaves."
+  (should (memq 'vm-postpone-unfinished-compositions
+                kill-emacs-query-functions)))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here
