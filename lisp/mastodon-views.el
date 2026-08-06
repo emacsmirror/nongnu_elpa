@@ -1153,8 +1153,7 @@ If RETURN-ID, return only the collection's ID."
   (let* ((cands (cl-loop for x in colls
                          collect (cons (alist-get 'name x)
                                        (alist-get 'id x))))
-         (choice
-          (completing-read "Collection: " cands nil :match)))
+         (choice (completing-read "Collection: " cands nil :match)))
     (if return-id
         (alist-get choice cands nil nil #'string=)
       ;; return coll data:
@@ -1164,25 +1163,37 @@ If RETURN-ID, return only the collection's ID."
                   (alist-get 'name x)))
        colls))))
 
-(defun mastodon-views-view-collection ()
-  "Prompt for a collection and view it.
+(defun mastodon-views-view-profile-collection ()
+  "Prompt for a user profile collection and view it.
 Must be called from a user's profile."
   (interactive)
-  (let* ((profile (mastodon-profile--profile-json))
-         (id (mastodon-views-read-account-collection profile)))
+  (if (not mastodon-profile--account)
+      (user-error "Not in a profile view")
+    (let* ((profile (mastodon-profile--profile-json))
+           (id (mastodon-views-read-account-collection profile)))
+      (mastodon-tl--init-sync
+       (format "%s-collection" (alist-get 'username profile))
+       (format "collections/%s" id)
+       'mastodon-views--insert-collection))))
+
+(defun mastodon-views-view-own-collection ()
+  "Prompt for a collection of yours and view it."
+  (interactive)
+  (let* ((colls (mastodon-views-get-account-collections
+                 (alist-get 'id mastodon-profile-credential-account)))
+         (coll (mastodon-views-read-collection colls)))
     (mastodon-tl--init-sync
-     (format "%s-collection" (alist-get 'username profile))
-     (format "collections/%s" id)
+     (format "%s-collection"
+             (alist-get 'username mastodon-profile-credential-account))
+     (format "collections/%s" (alist-get 'id coll))
      'mastodon-views--insert-collection)))
 
 (defun mastodon-views-collections-user-in ()
-  "Select from a list of collections you are in.
-Load the chosen collection."
+  "Prompt for a collection you are in and view it."
   (interactive)
   (let* ((colls (mastodon-views-current-account-collections))
          (coll (mastodon-views-read-collection colls)))
     (mastodon-tl--init-sync
-     ;; FIXME: we don't have any data here to name the buffer
      (format "collection-%s" (alist-get 'name coll))
      (format "collections/%s" (alist-get 'id coll))
      'mastodon-views--insert-collection)))
