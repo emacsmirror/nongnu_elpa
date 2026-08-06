@@ -908,7 +908,7 @@ match. (Rob F)"
                       vm-mime-attachment-save-directory
                       default-directory)
                   nil nil
-                  vm-attach-files-in-directory-regexps-history)))
+                  'vm-attach-files-in-directory-regexps-history)))
        (list (file-name-directory file)
              (file-name-nondirectory file)))))
 

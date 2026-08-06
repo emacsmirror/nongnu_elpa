@@ -326,22 +326,25 @@ default the local keymap of the current buffer is used."
 
 (defun vm-keyboard-read-file-name (prompt &optional dir default
 					  must-match initial history)
-  "Like `read-file-name', except HISTORY's value is unaltered."
-  (let ((oldvalue (symbol-value history))
-	;; evade the XEmacs dialog box, yeccch.
-	(use-dialog-box nil))
-    (unwind-protect
-	(condition-case nil
-	    (read-file-name prompt dir default must-match initial history)
-	  ((wrong-number-of-arguments void-function)
-	   (if history
-	       (let ((file-name-history (symbol-value history))
-		     file)
-		 (setq file
-		       (read-file-name prompt dir default must-match initial))
-		 file )
-	     (read-file-name prompt dir default must-match initial))))
-      (and history (set history oldvalue)))))
+  "Like `read-file-name', reading and extending the history in HISTORY.
+HISTORY names a variable whose value is a list of file names.  It is
+offered in the minibuffer in place of `file-name-history', which is left
+alone, and the answer is pushed onto it.
+
+`read-file-name' has no HISTORY argument in GNU Emacs -- its sixth
+argument is a completion PREDICATE -- so the list is supplied by binding
+`file-name-history' around the call."
+  (let ((use-dialog-box nil))		; evade the XEmacs dialog box, yeccch
+    (if (null history)
+	(read-file-name prompt dir default must-match initial)
+      (unless (and (symbolp history) (boundp history))
+	(error "HISTORY should name a variable holding a list of file names, not %S"
+	       history))
+      (let* ((old (symbol-value history))
+	     (file (let ((file-name-history old))
+		     (read-file-name prompt dir default must-match initial))))
+	(set history (cons file (remove file old)))
+	file))))
 
 (defun vm-read-file-name (prompt &optional dir default
 				 must-match initial history)
