@@ -262,6 +262,9 @@ the one #38 is about."
             ;; the next test.
             (vm-imap-max-message-size vm-imap-max-message-size)
             (vm-buffer-types vm-buffer-types)
+            ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+            ;; refused flag warns on purpose.
+            (vm-current-warning vm-current-warning)
             ;; No session trace buffer: VM keeps one per session for debugging, and
             ;; the harness kills every new buffer the moment the test ends, so the
             ;; trace is unreachable anyway.  A session that errors sets this back
@@ -356,6 +359,9 @@ session -- which is the situation #335 describes."
             ;; the next test.
             (vm-imap-max-message-size vm-imap-max-message-size)
             (vm-buffer-types vm-buffer-types)
+            ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+            ;; refused flag warns on purpose.
+            (vm-current-warning vm-current-warning)
             ;; No session trace buffer: VM keeps one per session for debugging, and
             ;; the harness kills every new buffer the moment the test ends, so the
             ;; trace is unreachable anyway.  A session that errors sets this back
@@ -484,6 +490,39 @@ reached the server."
       ;; The label survives, and is still pending, so a later sync can retry.
       (should (member "vmtest-refused" (vm-labels-of m)))
       (should (vm-attribute-modflag-of m)))))
+
+(ert-deftest vm-imap-live-test-one-refused-flag-does-not-block-the-others ()
+  "REGRESSION: a keyword the server will not take does not hold back the rest.
+Issue #391.  VM sent every pending flag in one STORE, so a server that refuses
+one of them refuses the command, and nothing was stored: the reporter marked mail
+deleted and labelled it, Exchange would not take the label, and the deletion
+never reached the server either.  The refusal is now met by offering the flags
+one at a time, so what the server will take is stored and what it will not is
+remembered and not offered again.
+
+The relay refuses any command mentioning the label, which is how an Exchange
+server behaves towards a keyword it does not know."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((label "vmtestrefusedkeyword") (checked nil))
+    (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+      (let ((m (car vm-message-list)))
+        (vm-add-message-labels label 1)
+        (vm-set-deleted-flag m t)
+        (should (vm-attribute-modflag-of m))
+        ;; From here the server takes any flag but that one.
+        (setf (vm-imap-relay-reject relay) label)
+        (vm-imap-save-attributes)
+        ;; The label is still ours ...
+        (should (member label (vm-labels-of m)))
+        ;; ... and the deletion reached the server, read back on the direct
+        ;; connection, which the relay is not refusing anything on.
+        (let ((flags (vm-imap-live-flags-of conn mailbox 1)))
+          (should (seq-find (lambda (f) (equal (downcase f) "\\deleted")) flags))
+          (should-not (seq-find (lambda (f) (equal (downcase f) (downcase label)))
+                                flags)))
+        (setq checked t)))
+    (should checked)))
 
 (ert-deftest vm-imap-live-test-accepted-store-reaches-the-server ()
   "The other half: an accepted STORE does sync and stops being pending.
