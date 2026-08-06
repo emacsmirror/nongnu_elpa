@@ -195,6 +195,32 @@ WHERE stanza_id = 'stanza-abc'"))
       (should (equal "friend@example.com"
                      (plist-get (car candidates) :from))))))
 
+(ert-deftest jabber-test-message-correct-db-outgoing-muc-candidate-keeps-nick ()
+  "An outgoing MUC candidate uses its full room JID as sender."
+  (jabber-test-message-correct-with-db
+    (jabber-db-store-message
+     "me@example.com" "room@conference.example.com" "out" "groupchat"
+     "Hello" (floor (float-time)) "my-nick" "muc-message-1")
+    (let ((candidates
+           (jabber-db-message-correction-candidates
+            "me@example.com" "room@conference.example.com" "muc-message-1")))
+      (should (= 1 (length candidates)))
+      (should (equal "room@conference.example.com/my-nick"
+                     (plist-get (car candidates) :from))))))
+
+(ert-deftest jabber-test-message-correct-db-outgoing-chat-candidate-keeps-account ()
+  "An outgoing direct-chat candidate uses its account JID as sender."
+  (jabber-test-message-correct-with-db
+    (jabber-db-store-message
+     "me@example.com" "friend@example.com" "out" "chat"
+     "Hello" (floor (float-time)) nil "chat-message-1")
+    (let ((candidates
+           (jabber-db-message-correction-candidates
+            "me@example.com" "friend@example.com" "chat-message-1")))
+      (should (= 1 (length candidates)))
+      (should (equal "me@example.com"
+                     (plist-get (car candidates) :from))))))
+
 (ert-deftest jabber-test-message-correct-db-update-targets-one-row ()
   "Correction updates the selected primary row only."
   (jabber-test-message-correct-with-db

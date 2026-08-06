@@ -1170,10 +1170,11 @@ GROUP BY stanza_id HAVING COUNT(*) = 1)"
     (mapcar
      (lambda (row)
        (seq-let (row-id direction row-peer resource row-account occupant-id
-                        timestamp)
+                        timestamp type)
            row
          (list :row-id row-id
-               :from (if (string= direction "in")
+               :from (if (or (string= direction "in")
+                             (string= type "groupchat"))
                          (if resource
                              (concat row-peer "/" resource)
                            row-peer)
@@ -1182,7 +1183,7 @@ GROUP BY stanza_id HAVING COUNT(*) = 1)"
                :timestamp timestamp)))
      (sqlite-select
       db
-      "SELECT id, direction, peer, resource, account, occupant_id, timestamp \
+      "SELECT id, direction, peer, resource, account, occupant_id, timestamp, type \
 FROM message WHERE account = ? AND peer = ? AND stanza_id = ?"
       (list account peer stanza-id)))))
 
