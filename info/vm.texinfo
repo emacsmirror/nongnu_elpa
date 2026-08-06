@@ -674,7 +674,7 @@ visit a
 folder @file{~/mail/beekeeping}, when VM attempts to retrieve new mail for
 that folder it will look for mail in @file{~/mail/beekeeping.spool}
 and @file{~/mail/beekeeping-} in addition to scanning @code{vm-spool-files}
-for matches.  The value of @code{vm-spool-files-suffixes} will not be used
+for matches.  The value of @code{vm-spool-file-suffixes} will not be used
 unless @code{vm-crash-box-suffix} is also defined, since a crash box is
 required for all mail retrieval from spool files.
 
@@ -682,7 +682,7 @@ The value of @code{vm-crash-box-suffix} should be a string suffix used to
 create possible crash box file names for folders.  When VM uses
 @code{vm-spool-file-suffixes} to create a spool file name, it will append
 the value of @code{vm-crash-box-suffix} to the folder's file name to
-create a crash box name.  If the value of @code{vm-spool-files-suffixes}
+create a crash box name.  If the value of @code{vm-spool-file-suffixes}
 is @code{nil}, then the value of @code{vm-crash-box-suffix} is not used
 by VM.
 
@@ -2788,42 +2788,6 @@ The first matching list element will be used.  Be sure to include the
 @code{-c} option so that nonconvertible characters are ignored instead
 of causing error messages.
 
-@vindex vm-mime-charset-font-alist
-The variable @code{vm-mime-charset-font-alist} tells VM what font to use 
-to display a character set that cannot be displayed using
-the default face.  The value of this variable should be an
-assoc list of character sets and fonts that can be used to display
-them.  The format of the list is:
- 
-( (@var{CHARSET} . @var{FONT}) ...) 
- 
-@var{CHARSET} is a string naming a @acronym{MIME} registered character set such 
-as @samp{"iso-8859-5"}.
- 
-@var{FONT} is a string naming a font that can be used to display
-@var{CHARSET}.
- 
-An example setup might be: 
- 
-@example
-(setq vm-mime-charset-font-alist
-  '(
-    ("iso-8859-5" . "-*-*-medium-r-normal-*-16-160-72-72-c-80-iso8859-5")
-   )
-)
-@end example
-
-@noindent This variable is only useful for character sets whose
-characters can all be encoded in single 8-bit bytes.  Also multiple
-fonts can only be displayed if you're running under a window system
-e.g. X Windows.  So this variable will have no effect if you're
-running Emacs on a tty.
-
-Note that on any Emacs VM supports the value of
-@code{vm-mime-charset-font-alist} has no effect: Emacs finds a font for each
-character itself, and VM has no say in it.  The variable is kept for the older
-Emacsen it was written for.
-
 @cindex 8-bit headers
 @cindex RFC 6532
 @vindex vm-mime-8bit-header-charsets
@@ -3049,7 +3013,7 @@ this tells VM: ignore @code{mail-yank-hooks}, don't set the mark, don't
 prepend the 
 value of @code{vm-included-text-prefix} to every yanked line, and don't yank
 any headers other than those specified in
-@code{vm-visible-headers} and @code{vm-invisible-headers}.  
+@code{vm-visible-headers} and @code{vm-invisible-header-regexp}.  
 
 @item @code{M-x vm-yank-message-other-folder}
 This allows one to yank a message from a different folder than the
@@ -3319,7 +3283,7 @@ When you visit a folder in VM, you can attach a message from the
 folder by running @code{vm-attach-message-to-composition}.  When
 viewing a message that has @acronym{MIME} attachments, you can attach any of
 those attachments to your message composition by using the @kbd{$ a}
-(@code{vm-reader-map-attach-to-composition}) function.
+(@code{vm-mime-reader-map-attach-to-composition}) function.
 (@xref{Operating on @acronym{MIME} attachments}.)  This operation is also
 available on the pop-up menu for attachments.
 
@@ -3404,9 +3368,9 @@ headers should be encoded in this way.  By default, @samp{Subject},
 quoted-printable encoding (@kbd{Q}).  You can ask VM to use the base64
 encoding by setting the variable @code{vm-mime-encode-headers-type}.
 
-@vindex vm-mime-encode-words.regexp
+@vindex vm-mime-encode-words-regexp
 @vindex vm-mime-encode-headers-words-regexp
-The variables @code{vm-mime-encode-words.regexp} and
+The variables @code{vm-mime-encode-words-regexp} and
 @code{vm-mime-encode-headers-words-regexp} control what is 
 meant by a ``word'' for VM for the purpose of encoding.  By default, the
 words are those containing any 8 bit character and delimited by white
@@ -3441,7 +3405,7 @@ your composition.
 @node Sending Secure @acronym{MIME}, Replying, Sending @acronym{MIME} Messages, Sending Messages
 @section Sending Secure @acronym{MIME} Messages
 
-@vindex vm-get-recipient-certificate-method
+@vindex vm-smime-get-recipient-certificate-method
 VM supports sending @acronym{S/MIME} messages utilizing the @samp{smime.el}
 package included in Emacs. Sending signed, secure, or signed secure
 messages is essentially no different from sending any other message, except
@@ -3629,10 +3593,6 @@ Replies to the all recipients of the current message.
 @item F (@code{vm-followup-include-text})
 Replies to the all recipients of the current message and provides
 included text.
-@findex vm-mail-to-sender
-@item vm-mail-to-sender
-Writes a message to the sender of the current message.  (This is similar to
-@code{vm-reply} but meant for writing a message about a new subject.)
 @end table
 
 These commands all accept a numeric prefix argument @var{n}, which if
@@ -4113,8 +4073,8 @@ given regular expression pattern.
 This condition checks if the @acronym{POP}/@acronym{IMAP} account of the
 folder contains the given regular expression pattern.
 
-@findex vmpc-check-virtual-selector
-@item vmpc-check-virtual-selector
+@findex vmpc-virtual-check-selector
+@item vmpc-virtual-check-selector
 (This function is provided by the @code{vm-avirtual} package.)  This
 condition checks if the message matches a given virtual selector.
 
@@ -4381,7 +4341,7 @@ Unmark all messages matching a virtual selector.
 @item M X (@code{vm-mark-messages-by-virtual-folder})
 Mark all messages matching the selectors of a virtual folder.
 @xref{Virtual Folders}.
-@findex vm-unmark-unmark-messages-by-virtual-folder
+@findex vm-unmark-messages-by-virtual-folder
 @kindex M x
 @item M x (@code{vm-unmark-messages-by-virtual-folder})
 Unmark all messages matching the selectors of a virtual folder.
@@ -4396,19 +4356,19 @@ Mark all messages in the thread tree rooted at current message.
 Unmark all messages in the thread tree rooted at current message.
 @findex vm-mark-messages-same-subject
 @kindex M S
-@item M S (@code{vm-mark-same-subject})
+@item M S (@code{vm-mark-messages-same-subject})
 Mark messages with the same subject as the current message.
 @findex vm-unmark-messages-same-subject
 @kindex M s
-@item M s (@code{vm-unmark-same-subject})
+@item M s (@code{vm-unmark-messages-same-subject})
 Unmark messages with the same subject as the current message.
 @findex vm-mark-messages-same-author
 @kindex M A
-@item M A (@code{vm-mark-same-author})
+@item M A (@code{vm-mark-messages-same-author})
 Mark messages with the same author as the current message.
 @findex vm-unmark-messages-same-author
 @kindex M a
-@item M a (@code{vm-unmark-same-author})
+@item M a (@code{vm-unmark-messages-same-author})
 Unmark messages with the same author as the current message.
 @end table
 
@@ -5169,12 +5129,6 @@ summary window before executing commands that operate on the current
 message.  Note that this occurs @emph{only} when executing a command
 from the summary buffer window.
 
-@vindex vm-gargle-uucp
-A non-@code{nil} value of @code{vm-gargle-uucp} means to use a crufty
-regular expression that does surprisingly well at beautifying UUCP
-addresses that are substituted for @samp{%f} and @samp{%t} as part
-of summary and attribution formats.
-
 @menu
 * Summary Format::     Customizing the summary format
 * Threaded Summaries:: How threading affects summaries
@@ -5384,11 +5338,11 @@ Summary lines are pre-computed and cached in the folder buffer.  If you
 change the @code{vm-summary-format}, you need to force the cache to be
 updated.  You can do this by the command@code{vm-fix-my-summary}.
 
-@vindex vm-restore-saved-summary-format
+@vindex vm-restore-saved-summary-formats
 Every folder can have its own summary format.  The format is written
 into the folder and saved on the disk.  When you visit the folder
 again, you can reuse the saved summary format.  Set the variable
-@code{vm-restore-saved-summary-format} to t to achieve this effect.
+@code{vm-restore-saved-summary-formats} to t to achieve this effect.
 
 @node Threaded Summaries, Thread Folding, Summary Format, Summaries
 @section Threaded Summaries
@@ -5741,9 +5695,9 @@ purpose.  The variants @code{vm-create-search-folder-other-frame} and
 @code{vm-create-search-folder-other-window} provide similar functionality.
 
 @findex vm-create-virtual-folder-of-threads
-@findex vm-create-search-folder-of-threads
+@findex vm-create-virtual-folder-of-threads
 @kindex V T
-The command @code{vm-create-search-folder-of-threads} (bound to @kbd{V T})
+The command @code{vm-create-virtual-folder-of-threads} (bound to @kbd{V T})
 lets you create a virtual folder in the same way, but consisting of entire
 message threads.  If a message thread contains any message matching the
 given selector then it is included in the virtual folder.  For instance, if
@@ -5811,7 +5765,7 @@ first create a search folder of messages with subject @samp{greeting},
 browse through them to find the message that had the hotel offer, and then
 quit the search folder.  VM will return you to the copy of the same message
 in the original folder.  (You can go back to the previously viewed message
-in the original folder by doing @code{vm-goto-mesasge-last-seen}.  To
+in the original folder by doing @code{vm-goto-message-last-seen}.  To
 inhibit changing the current message in the original message entirely, quit
 the search folder using @code{vm-quit-no-change}.)
 
@@ -6668,7 +6622,7 @@ button.  Clicking on the Recover button runs @code{vm-recover-folder},
 so you can recover your folder from an existing auto-save file.
 @item mime
 The Decode @acronym{MIME} button.  Clicking on this button runs the command
-@code{vm-toolbar-mime-command}.  This command is normally just an
+@code{vm-toolbar-helper-command}.  This command is normally just an
 alias for the @code{vm-decode-mime-message} command.
 @item next
 The Next button.  Clicking on this button runs the command
@@ -7475,7 +7429,7 @@ them from the mail folders.
 The function @code{vm-mime-auto-save-all-attachments}, included in
 @code{vm-rfaddons}, provides enhanced functionality for saving
 attachments.  It saves the attachments in a sub-directory of
-@code{vm-mime-save-attachment-save-directory}, whose name is obtained
+@code{vm-mime-attachment-save-directory}, whose name is obtained
 by concatenating the ``from'', ``subject'' and ``date'' headers of the
 message.  This can be customized via the variable
 @code{vm-mime-auto-save-all-attachments-subdir}. 
@@ -8853,14 +8807,14 @@ RFC 6532. Internationalized Email Headers (Proposed). February 2012.
 @node Summary Internals, Threading Internals, Message Internals, Internals
 @section Summary Internals
 
-@inindex vm-summary-line-format
+@inindex vm-summary-format
 @inindex summary line, tokenized
 @inindex tokenized summary line
 Generating a summary is quite a time-consuming operation.  VM uses a
 variety of tricks to speed up the generation of summaries.  
 
 The format of the summary lines is specified in the variable
-@code{vm-summary-line-format}.  The information that needs to go into
+@code{vm-summary-format}.  The information that needs to go into
 the summary lines is divided into two classes:
 
 @itemize
