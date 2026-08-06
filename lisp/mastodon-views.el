@@ -1088,23 +1088,30 @@ IND is the optional indentation level to print at."
 
 (defun mastodon-views-get-collection (id)
   "Return collection with ID."
-  (let ((endpoint (mastodon-http--api
-                   (format "collections/%s" id))))
-    (mastodon-http--get-json endpoint)))
+  (let ((url (mastodon-http--api
+              (format "collections/%s" id))))
+    (mastodon-http--get-json url)))
 
 (defun mastodon-views-get-account-collections (id)
   "Return collections for account with ID."
-  (let ((endpoint (mastodon-http--api
-                   (format "accounts/%s/collections" id))))
-    (mastodon-http--get-json endpoint)))
+  (let ((url (mastodon-http--api
+              (format "accounts/%s/collections" id))))
+    (mastodon-http--get-json url)))
 
 (defun mastodon-views-current-account-collections ()
   "Return collections featuring `mastodon-active-user'."
   (let* ((id (alist-get 'id mastodon-profile-credential-account))
-         (endpoint (mastodon-http--api
-                    (format "accounts/%s/in_collections" id))))
+         (url (mastodon-http--api
+               (format "accounts/%s/in_collections" id))))
     (alist-get 'collections
-               (mastodon-http--get-json endpoint))))
+               (mastodon-http--get-json url))))
+
+(defun mastodon-views-account-to-collection (account-id coll-id)
+  "Add ACCOUNT-ID to collection with ID."
+  (let* ((url (mastodon-http--api
+               (format "collections/%s/items" coll-id)))
+         (params `(("account_id" . ,account-id))))
+    (mastodon-http--post url params)))
 
 (defun mastodon-views--insert-collection (json)
   "Insert the collection from JSON."
