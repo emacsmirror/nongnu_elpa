@@ -118,8 +118,13 @@ Returns everything after the first name, not just the last word."
     (should value)))
 
 (ert-deftest vm-serial-test-get-token-nonexistent ()
-  "Test vm-serial-get-token returns nil for nonexistent token."
-  (should (null (vm-serial-get-token "nonexistent-token-xyz-12345"))))
+  "Test vm-serial-get-token returns nil for nonexistent token.
+It warns as well, which `display-warning' logs in `*Warnings*', a buffer that
+then outlives the test (issue #559).  Logging is suppressed here rather than the
+buffer killed afterwards: the warning is not what this test is about, and
+nothing else in the run wants it."
+  (let ((warning-suppress-log-types '((emacs))))
+    (should (null (vm-serial-get-token "nonexistent-token-xyz-12345")))))
 
 ;;; vm-serial-set-token tests
 

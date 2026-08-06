@@ -307,6 +307,11 @@ signals, so a failed test does not leave state behind for the next one."
             (vm-last-visit-imap-folder vm-last-visit-imap-folder)
             (vm-imap-passwords vm-imap-passwords)
             (vm-kept-imap-buffers vm-kept-imap-buffers)
+            ;; A session negotiates a size limit and pushes buffer types; an
+            ;; error path can leave the stack unbalanced, and neither belongs to
+            ;; the next test.
+            (vm-imap-max-message-size vm-imap-max-message-size)
+            (vm-buffer-types vm-buffer-types)
             ;; No session trace buffer: VM keeps one per session for debugging, and
             ;; the harness kills every new buffer the moment the test ends, so the
             ;; trace is unreachable anyway.  A session that errors sets this back
@@ -362,6 +367,11 @@ default and would let a wedged session hang forever."
             (vm-last-visit-imap-folder vm-last-visit-imap-folder)
             (vm-imap-passwords vm-imap-passwords)
             (vm-kept-imap-buffers vm-kept-imap-buffers)
+            ;; A session negotiates a size limit and pushes buffer types; an
+            ;; error path can leave the stack unbalanced, and neither belongs to
+            ;; the next test.
+            (vm-imap-max-message-size vm-imap-max-message-size)
+            (vm-buffer-types vm-buffer-types)
             ;; No session trace buffer: VM keeps one per session for debugging, and
             ;; the harness kills every new buffer the moment the test ends, so the
             ;; trace is unreachable anyway.  A session that errors sets this back

@@ -347,10 +347,15 @@ non-boundary records had message structs."
 (defmacro vm-undo-test-with-labels (obarray-labels message-labels &rest body)
   "Run BODY in a three-message folder with labels set up.
 OBARRAY-LABELS is the folder's label list; MESSAGE-LABELS is a list of
-label lists, one per message."
+label lists, one per message.
+
+`vm-current-warning' and `vm-user-interaction-buffer' are bound: declining an
+expunge warns, and asking the question records the buffer it was asked in."
   (declare (indent 2))
-  `(vm-test-with-folder
-       "From sender@example.com Mon Jan  1 00:00:00 2024
+  `(let ((vm-current-warning vm-current-warning)
+         (vm-user-interaction-buffer vm-user-interaction-buffer))
+     (vm-test-with-folder
+         "From sender@example.com Mon Jan  1 00:00:00 2024
 From: sender@example.com
 Subject: Test 1
 
@@ -383,7 +388,7 @@ Body 3
                ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
                ((symbol-function 'vm-mark-folder-modified-p) #'ignore)
                ((symbol-function 'vm-inform) #'ignore))
-       ,@body)))
+         ,@body))))
 
 (ert-deftest vm-undo-test-unused-labels-finds-them ()
   "Test that `vm-unused-labels' reports labels no message carries."

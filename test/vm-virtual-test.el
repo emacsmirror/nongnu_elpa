@@ -473,7 +473,11 @@ copies, itself among them.
 
 Two virtual folders over one real folder, each with its own format, is the case
 that cannot be faked by any amount of cache invalidation."
-  (vm-virtual-test--with-folders (real virt-a virt-b)
+  ;; Each format these folders use is compiled into the shared memo, keyed by
+  ;; the format string, so the entries must not outlive the test.
+  (let ((vm-summary-tokenized-compiled-format-alist
+         vm-summary-tokenized-compiled-format-alist))
+   (vm-virtual-test--with-folders (real virt-a virt-b)
     (with-current-buffer real
       (setq-local vm-summary-format "REAL %s\n")
       (vm-fix-my-summary))
@@ -492,13 +496,15 @@ that cannot be faked by any amount of cache invalidation."
       ;; And no folder is showing another's lines.
       (should-not (string-match-p "AAA\\|BBB" sr))
       (should-not (string-match-p "REAL\\|BBB" sa))
-      (should-not (string-match-p "REAL\\|AAA" sb)))))
+      (should-not (string-match-p "REAL\\|AAA" sb))))))
 
 (ert-deftest vm-virtual-test-summary-stored-on-the-virtual-message ()
   "A virtual message's summary line is kept on the virtual message.
 The representation behind the test above: the line belongs in the virtual
 message's own soft data, not in the cached data it shares with the real one."
-  (vm-virtual-test--with-folders (real virt-a virt-b)
+  (let ((vm-summary-tokenized-compiled-format-alist
+         vm-summary-tokenized-compiled-format-alist))
+   (vm-virtual-test--with-folders (real virt-a virt-b)
     (ignore virt-b)
     (with-current-buffer virt-a
       (setq-local vm-summary-format "AAA %s\n")
@@ -512,7 +518,7 @@ message's own soft data, not in the cached data it shares with the real one."
         (should (eq (vm-cached-data-of vm) (vm-cached-data-of rm)))
         (should-not (eq (vm-softdata-of vm) (vm-softdata-of rm)))
         ;; The summary is on the virtual message.
-        (should (vm-virtual-summary-of vm))))))
+        (should (vm-virtual-summary-of vm)))))))
 
 (ert-deftest vm-virtual-test-summary-survives-folder-operations ()
   "Virtual folder summaries survive the operations that broke this in 2012.

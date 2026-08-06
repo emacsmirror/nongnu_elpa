@@ -761,9 +761,13 @@ depend on the display and are largely unset in batch mode."
                     (buffer-list))))
 
 (defun vm-epg-test--kill-vm-epg-buffers ()
-  "Kill any leftover vm-epg work/recovery buffers."
+  "Kill any leftover vm-epg work/recovery buffers, and the warnings they made.
+The recovery path calls `display-warning', which creates `*Warnings*' if it is
+not already there, and that outlives the test (issue #559)."
   (dolist (name (vm-epg-test--vm-epg-buffer-names))
-    (kill-buffer name)))
+    (kill-buffer name))
+  (when (get-buffer "*Warnings*")
+    (kill-buffer "*Warnings*")))
 
 (ert-deftest vm-epg-test-save-work-leaves-composition-alone-on-error ()
   "A failing FUNCTION leaves the composition untouched and leaks no buffer.

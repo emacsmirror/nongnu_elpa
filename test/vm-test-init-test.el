@@ -33,10 +33,16 @@ leaves behind becomes the starting state of every later test.  That makes a
 test's result depend on what ran before it -- passing under `make test-one'
 and failing in `make test' for a reason that is in neither test."
   (let ((vm-test-isolate-global-state t))
-    (setq-default vm-test-init-test--scribble 'before)
-    (vm-test-init-test--run
-     (lambda () (setq-default vm-test-init-test--scribble 'during)))
-    (should (eq 'before (default-value 'vm-test-init-test--scribble)))))
+    (unwind-protect
+        (progn
+          (setq-default vm-test-init-test--scribble 'before)
+          (vm-test-init-test--run
+           (lambda () (setq-default vm-test-init-test--scribble 'during)))
+          (should (eq 'before (default-value 'vm-test-init-test--scribble))))
+      ;; A test about leaving state behind had better not leave any: the mark
+      ;; has to be a global for the isolation to have something to restore, so
+      ;; it is put back by hand, as the control below already does.
+      (setq-default vm-test-init-test--scribble nil))))
 
 (ert-deftest vm-test-init-test-isolation-can-be-turned-off ()
   "Without isolation the change does outlive the test.
