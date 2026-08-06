@@ -1,50 +1,53 @@
-# emacs-codex
+# emacs-codex-ide
 
-Project-specific guidance for the Emacs Codex integration.
+Codex CLI in Emacs via eat. Emacs 28.1+. Sources `lisp/`, tests `tests/`.
+Deps: `compat`, `keymap-popup`, `eat`.
 
-## Local context
+## Public safety
 
-- Keep machine-specific paths in untracked `AGENTS.local.md`; start from
-  `AGENTS.local.example.md`.
-- When local reference checkouts are needed, read `AGENTS.local.md` first.
-  If it is missing, use repo search and normal discovery.
-- Useful references are the Codex source checkout for CLI behavior, Emacs core
-  for process/window/buffer conventions, and `keymap-popup` for menu behavior.
+Public doc. No local paths, hosts, private topology, secrets, personal config.
+Repo-relative paths only. Durable architecture + contributor rules only.
 
 ## Architecture
 
-- Preserve the terminal-first design: eat session wrapper first, `/ide`
-  context IPC second, local MCP tools third.
-- Terminal buffers are the primary user surface.  Live sessions are grouped by
-  project root and may have multiple buffers per root.
-- Do not replace terminal behavior with MCP or subprocess shortcuts unless the
-  task asks for that design change.
+Terminal-first. Order fixed: eat session wrapper, `/ide` context IPC, local
+MCP tools. Terminal buffers primary surface. No MCP/subprocess shortcut that
+replaces terminal unless task asks that design change.
 
-## Development
-
-- Keep edits scoped to the requested behavior and preserve existing WIP.
-- For normal validation run `make dev`.
-- While iterating, prefer targeted ERT plus `git diff --check`.
-- For serious handoff when Nix is available, run `make pre-handoff-check`.
+- Sessions group by project root; multi buffer per root OK.
+- Context IPC: Unix socket, length-prefixed JSON; Codex TUI frame format wins.
+- MCP: transient `-c mcp_servers.emacs_tools.url` only. Never write
+  `~/.codex/config.toml` except `codex-ide-mcp-install-codex-config`.
+- Diff preview writes no files; caller owns path.
+- `codex-ide-stop` kills active project session only; same-root siblings stay.
+- Owner holds process/server/socket/timer/client. Cleanup local, idempotent,
+  quiet. Capture buffer + session/root/id before async. Mutate only if buffer,
+  mode, identity still current. Stale callback no-op.
 
 ## Elisp
 
-- All Emacs Lisp files use `; -*- lexical-binding: t; -*-`.
-- Public APIs use `codex-ide-`; internals use `codex-ide--`.
-- Keep interactive commands thin: gather context, call helpers, apply effects.
-- Keep pure computation separate from buffers, processes, windows, hooks, and
-  user-visible state.
-- Prefer explicit data flow through arguments and return values over hidden
-  globals.
-- Use plists or alists for transient session data unless a stronger record
-  contract is needed.
-- Comments should explain why.  Section headers are plain, for example
-  `;;; Process lifecycle`.
+Lexical binding. Public `codex-ide-`; internal `codex-ide--`. Thin interactive
+commands. Pure helpers off buffers/processes/windows/hooks/UI state. Explicit
+args/returns over hidden globals. Plist/alist for transient session data unless
+stronger record needed. Comments explain why. Plain `;;; Section` headers.
 
-## Tests
+## Verification
 
-- Tests use ERT, lexical binding, and package code from the project load path.
-- Use temp buffers and temp directories; never modify user config or real user
-  data.
-- Keep tests focused on one contract, especially around terminal buffers,
-  process ownership, session recovery, and context/MCP boundaries.
+```sh
+make dev                 # compile, checkdoc, ERT
+make test                # ERT
+make pre-commit          # whitespace + compile + lint + native-comp + ERT
+make pre-handoff-check   # status, diff check, nix develop + flake check
+git diff --check
+```
+
+Iterate: targeted ERT + `git diff --check`. ERT on package load path; temp
+buffers/dirs only. Cover terminal, process ownership, session recovery,
+context/MCP boundaries, reject/disconnect/kill/replace/stale callback. Never
+touch user config or real user data.
+
+## Contributions
+
+Patches: `patches@thanosapollo.org`, subject `[PATCH emacs-codex-ide] …`.
+
+Bugs/features: `bugs@thanosapollo.org`, subject `[BUG emacs-codex-ide] …`.
