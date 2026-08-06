@@ -4773,9 +4773,17 @@ expanded to display the mime object."
 If optional argument FUNCTION is given, run it instead.
 					          USR, 2011-03-07"
   (interactive)
-  (if (and (memq major-mode '(vm-mode vm-virtual-mode))
-	   (vm-body-to-be-retrieved-of (car vm-message-pointer)))
-      (error "Message must be loaded to view attachments" ))
+  ;; The presentation buffer counts too.  A message whose body is still on the
+  ;; server has a layout parsed from its headers alone, so its parts have no
+  ;; text: acting on one wrote an empty file and said nothing about why (issue
+  ;; #386).  The folder buffer refused already; this refuses wherever the button
+  ;; is, and says what to do about it.
+  (when (and (memq major-mode '(vm-mode vm-virtual-mode vm-presentation-mode))
+	     (vm-body-to-be-retrieved-of
+	      (vm-real-message-of (car vm-message-pointer))))
+    (error (concat "This message's body is not loaded, so its attachments have"
+		   " no contents here.  Type o (vm-load-message) on the message"
+		   " first, or set vm-external-fetch-message-for-presentation")))
 
   ;; save excursion to keep point from moving.  its motion would
   ;; drag window point along, to a place arbitrarily far from

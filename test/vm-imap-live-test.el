@@ -570,6 +570,99 @@ label: the transcript must hold one STORE of it, not three."
       (setq checked t))
     (should checked)))
 
+(defconst vm-imap-live-test--message-with-attachment
+  (concat "From: alice@example.com\r\nTo: vmtest@example.com\r\n"
+          "Subject: external with attachment\r\n"
+          "Date: Mon, 01 Jan 2024 00:00:00 +0000\r\n"
+          "Message-ID: <ext-attachment@example.com>\r\n"
+          "MIME-Version: 1.0\r\n"
+          "Content-Type: multipart/mixed; boundary=\"SEP\"\r\n\r\n"
+          "--SEP\r\nContent-Type: text/plain\r\n\r\nSee attachment.\r\n\r\n"
+          "--SEP\r\nContent-Type: application/pdf; name=\"t.pdf\"\r\n"
+          "Content-Disposition: attachment; filename=\"t.pdf\"\r\n"
+          "Content-Transfer-Encoding: base64\r\n\r\n"
+          (let ((s "")) (dotimes (_ 40)
+                          (setq s (concat s "QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVowMTIzNDU2Nzg5\r\n")))
+               s)
+          "\r\n--SEP--\r\n")
+  "A message with an attachment, over any sensible `vm-imap-max-message-size'.")
+
+(ert-deftest vm-imap-live-test-external-attachment-is-not-silently-empty ()
+  "REGRESSION: a part of a message whose body is not here refuses, not empties.
+Issue #386.  With `vm-external-fetch-message-for-presentation' nil, a message
+over `vm-imap-max-message-size' is presented from its headers alone, and the
+layout parsed from them has parts with no text.  Acting on one of those parts
+wrote a file of zero length and said nothing: the reporter got an empty PDF and
+Adobe Reader complaining about it.
+
+Measured before the fix, on this server: the presentation buffer holds 249
+characters of headers, both parts report body 250..250, and the written file is 0
+bytes.  Now the button refuses and says what to do; after loading the message it
+writes the attachment."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let* ((server (vm-imap-live-server "plain"))
+         (account (car (plist-get server :accounts)))
+         (conn (vm-imap-live--open server))
+         (mailbox nil)
+         (out (expand-file-name "vm-386-test.pdf" temporary-file-directory))
+         (vm-imap-server-timeout vm-imap-live-timeout)
+         (vm-enable-external-messages '(imap))
+         (vm-imap-max-message-size 500)
+         (vm-external-fetch-message-for-presentation nil)
+         (vm-imap-passwords vm-imap-passwords)
+         (vm-kept-imap-buffers vm-kept-imap-buffers)
+         (vm-imap-keep-trace-buffer nil)
+         (vm-current-warning vm-current-warning)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-last-visit-imap-folder vm-last-visit-imap-folder)
+         (vm-buffer-types vm-buffer-types)
+         ;; Presenting a message with an attachment compiles the summary and
+         ;; button formats into their memos, which are global.
+         (vm-summary-untokenized-compiled-format-alist
+          vm-summary-untokenized-compiled-format-alist)
+         (vm-mime-compiled-format-alist vm-mime-compiled-format-alist))
+    (unwind-protect
+        (progn
+          (vm-imap-live-login conn server account)
+          (vm-imap-live-namespace conn)
+          (setq mailbox (vm-imap-live-mailbox-name conn))
+          (vm-imap-live-cmd-ok conn "CREATE \"%s\"" mailbox)
+          (vm-imap-live-append conn mailbox
+                               vm-imap-live-test--message-with-attachment)
+          (vm-visit-imap-folder (vm-imap-live-spec server account mailbox))
+          (should (= 1 (length vm-message-list)))
+          (let ((folder (current-buffer)))
+            (should (vm-body-to-be-retrieved-of (car vm-message-list)))
+            (vm-show-current-message)
+            (set-buffer folder)
+            ;; The button refuses rather than writing nothing.
+            (with-current-buffer vm-presentation-buffer
+              (let ((err (should-error (vm-mime-run-display-function-at-point
+                                        'vm-mime-send-body-to-file)
+                                       :type 'error)))
+                (should (string-match-p "not loaded" (error-message-string err)))))
+            ;; Load it, as the message says, and the attachment comes out whole.
+            (set-buffer folder)
+            (vm-load-message)
+            (set-buffer folder)
+            (let* ((m (car vm-message-list))
+                   (parts (vm-mm-layout-parts (vm-mm-layout m)))
+                   (pdf (car (last parts))))
+              (should (= 2 (length parts)))
+              (should (equal "application/pdf" (car (vm-mm-layout-type pdf))))
+              (when (file-exists-p out) (delete-file out))
+              (vm-mime-send-body-to-file pdf nil out t)
+              (should (file-exists-p out))
+              (should (> (nth 7 (file-attributes out)) 0)))))
+      (when (file-exists-p out) (delete-file out))
+      (ignore-errors
+        (when (memq major-mode '(vm-mode vm-virtual-mode))
+          (let ((vm-confirm-quit nil)) (vm-quit-no-change))))
+      (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox))
+      (vm-imap-live-close conn))))
+
 (ert-deftest vm-imap-live-test-accepted-store-reaches-the-server ()
   "The other half: an accepted STORE does sync and stops being pending.
 Guards the fix above from being a blanket refusal to ever apply server
