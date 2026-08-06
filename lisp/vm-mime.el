@@ -1629,28 +1629,32 @@ source of the message."
 				      (- (vm-end-of real-m)
 					 (vm-start-of real-m))))
 
-	;; fetch the real message now
-	;; why is this being done here, rather than in
-	;; vm-present-current-message or vm-show-current-message?
-	;; it was inserted by Rob F in rev. 506.1.1
-	;;                              USR, 2012-04-09
-	;; Let us turn it off and see waht happens.
-	;;                              USR, 2012-11-21
+	;; An external body is fetched into the folder buffer before this copy is
+	;; made -- `vm-preview-current-message' does it, under
+	;; `vm-external-fetch-message-for-presentation'.  Fetching it again here,
+	;; into the presentation buffer, is what the questions in this comment
+	;; were about:
+	;;
+	;;   why is this being done here, rather than in
+	;;   vm-present-current-message or vm-show-current-message?
+	;;   it was inserted by Rob F in rev. 506.1.1     USR, 2012-04-09
+	;;   Let us turn it off and see waht happens.     USR, 2012-11-21
+	;;
+	;; Turned off now, with what happens measured (issue #585).  It fetched
+	;; whatever that option said, since the option is only consulted in
+	;; `vm-preview-current-message'; it fetched into this buffer rather than
+	;; the folder, so `vm-body-to-be-retrieved-of' stayed set and the next
+	;; presentation fetched the same body over again; and the layout it
+	;; parsed here outlived the filling of the buffer it described, leaving
+	;; parts whose markers had all collapsed to the end -- which is the empty
+	;; attachment of #386.
+	;;
+	;; The `X-VM-Storage:' case is a different mechanism, on the copy rather
+	;; than the folder, and stays.
 	(goto-char (point-min))
-	(cond ((and (vm-message-access-method-of mm)
-		    (vm-body-to-be-retrieved-of mm))
-	       ;; Remember that this does process I/O and
-	       ;; accept-process-output, allowing concurrent threads
-	       ;; to run!!!  USR, 2010-07-11
-	       (condition-case err
-		   (vm-fetch-message 
-		    (list (vm-message-access-method-of mm)) mm)
-		 (error
-		  (vm-warn 0 0 "Cannot fetch message; %s" 
-			   (error-message-string err)))))
-	      ((re-search-forward vm-external-storage-header-regexp
-	                          (vm-text-of mm) t)
-	       (vm-fetch-message (read (current-buffer)) mm)))
+	(when (re-search-forward vm-external-storage-header-regexp
+				 (vm-text-of mm) t)
+	  (vm-fetch-message (read (current-buffer)) mm))
 
 	;; Attempt to show a message about the missing body.
 	;; But it is not working right.  Needs more work.  USR, 2012-04-09

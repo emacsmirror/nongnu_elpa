@@ -190,6 +190,13 @@ VM 8.?.?
     vm-epg is not a drop-in rename of vm-pgg; its customization variables and
     commands are named vm-epg-* and its faces vm-epg-*, so vm-pgg settings
     must be carried over by hand.
+  * `vm-external-fetch-message-for-presentation' now decides whether presenting
+    an external message fetches its body, which is what its name says.  Making a
+    presentation copy fetched the body regardless, into the presentation buffer
+    rather than the folder, so the message counted as unfetched and the next
+    presentation fetched it again; with the setting off you now get a message
+    with no body and no attachment buttons, and `o' (`vm-load-message') when you
+    want it.
   * Acting on an attachment of a message whose body is still on the server now
     says so instead of producing an empty file.  With
     `vm-external-fetch-message-for-presentation' nil, a message over
