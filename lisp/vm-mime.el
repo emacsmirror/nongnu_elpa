@@ -3087,6 +3087,49 @@ already occupying the path -- a symbolic link, say -- is not written through."
 	       file))
       (set-default-file-modes modes))))
 
+(defun vm-mime-html-fragment-p ()
+  "Whether the HTML in the current buffer is a fragment rather than a document.
+A document says so with a doctype or an `<html>' tag, or at least says what
+character set it is in; a fragment says neither, and leaves a browser to
+guess both.
+
+Note that `>' is a symbol constituent in the standard syntax table, so
+\"<html\\\\_>\" does not match `<html>'."
+  (let ((case-fold-search t))
+    (goto-char (point-min))
+    (not (or (re-search-forward "<html[ \t\r\n>]\\|<!doctype[ \t]" nil t)
+	     (progn (goto-char (point-min))
+		    (re-search-forward "<meta\\s-[^>]*charset" nil t))))))
+
+(defun vm-mime-complete-html-file (layout html-file)
+  "Make HTML-FILE a whole document if the text/html in it is a fragment.
+HTML-FILE holds the text of LAYOUT, written out for an external viewer.  A
+fragment carries no charset of its own -- that was in the part's header, and
+the file has no header -- so the viewer guesses.  Issue #387.
+
+The text is wrapped, not re-encoded: the bytes VM wrote are the bytes the
+part had.  Returns t when the file was changed.
+
+Does nothing when `vm-mime-complete-html-for-external-viewer' is nil."
+  (when vm-mime-complete-html-for-external-viewer
+    (let ((charset (or (vm-mime-get-parameter layout "charset") "us-ascii"))
+	  (coding-system-for-read (vm-binary-coding-system))
+	  (coding-system-for-write (vm-binary-coding-system)))
+      (with-temp-buffer
+	(insert-file-contents html-file)
+	(when (vm-mime-html-fragment-p)
+	  (goto-char (point-min))
+	  (insert (format (concat "<html>\n<head>\n"
+				  "<meta http-equiv=\"Content-Type\""
+				  " content=\"text/html; charset=%s\">\n"
+				  "</head>\n<body>\n")
+			  charset))
+	  (goto-char (point-max))
+	  (unless (bolp) (insert "\n"))
+	  (insert "</body>\n</html>\n")
+	  (write-region (point-min) (point-max) html-file nil 'quiet)
+	  t)))))
+
 (defun vm-mime-externalize-cid-references (layout html-file)
   "Point HTML-FILE's cid: references at local copies of the parts they name.
 HTML-FILE holds the text of LAYOUT, a text/html part written out for an
@@ -3161,9 +3204,12 @@ determined by `vm-mime-external-content-types-alist'."
              (vm-mime-send-body-to-file layout nil tempfile t)
 	     ;; An external viewer given only this file cannot follow a cid:
 	     ;; reference to another part of the message, so give it copies to
-	     ;; look at instead of broken images (issue #506).
+	     ;; look at instead of broken images (issue #506).  Nor does the
+	     ;; file say what character set it is in, if the part was a
+	     ;; fragment rather than a document (issue #387).
 	     (when (vm-mime-types-match "text/html"
 					(car (vm-mm-layout-type layout)))
+	       (vm-mime-complete-html-file layout tempfile)
 	       (vm-register-message-garbage-files
 		(vm-mime-externalize-cid-references layout tempfile)))))
 
