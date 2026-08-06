@@ -1198,5 +1198,31 @@ Must be called from a user's profile."
      (format "collections/%s" (alist-get 'id coll))
      'mastodon-views--insert-collection)))
 
+(defun mastodon-views-add-account-to-collection ()
+  "Must be called from a user's profile.
+Will error 422 if account already added.
+Will error 403 if permission to add is lacking."
+  ;; FIXME: ideally we could tirage and handle these errors
+  ;; usually masto APIs don't error when trying to add something already
+  ;; in something... sigh
+  ;; FIXME: i was unable to add my own account using the API, but was able
+  ;; to do so in the web UI...
+  (interactive)
+  (let* ((profile (mastodon-profile--profile-json))
+         (colls (mastodon-views-get-account-collections
+                 (alist-get 'id mastodon-profile-credential-account)))
+         (coll (mastodon-views-read-collection colls))
+         (resp (mastodon-views-account-to-collection (alist-get 'id profile)
+                                       (alist-get 'id coll))))
+    (mastodon-http--triage
+     resp
+     (lambda (resp)
+       (message "Account %s added to collection %s!"
+                (alist-get 'acct profile)
+                (alist-get 'name coll))))))
+
+;; TODO: add account to coll from coll view
+;; would need to be a search interface...
+
 (provide 'mastodon-views)
 ;;; mastodon-views.el ends here
