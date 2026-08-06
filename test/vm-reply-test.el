@@ -532,6 +532,27 @@ its own map."
     (should (proper-list-p mail-mode-map))
     (should (commandp (lookup-key vm-mail-mode-map "\C-c\C-q")))))
 
+(ert-deftest vm-reply-test-x-mailer-names-the-editor ()
+  "The X-Mailer of a real composition says which editor built it.
+Issue #520 was reported against the header, not against the helper that makes
+part of it, so this looks at the header: \"VM 8.3.x under 31.0.50\" was what
+the reporter saw, and the editor\='s name was the missing part.  It also has to
+stay short -- `emacs-version\=' the function follows the version with a build
+number, a platform and a date, none of which belongs in a header."
+  (vm-reply-test--in-folder (vm-reply-test--one-message)
+    (vm-mail-from-folder)
+    (goto-char (point-min))
+    (should (re-search-forward "^X-Mailer: .*$" nil t))
+    (let ((header (match-string 0)))
+      (should (string-match-p "\\`X-Mailer: VM " header))
+      (should (string-match-p " under GNU Emacs [0-9]" header))
+      ;; the platform, in parentheses, is the last of it
+      (should (string-match-p (concat " (" (regexp-quote system-configuration) ")\\'")
+                              header))
+      ;; and none of the rest of what `emacs-version' returns
+      (should-not (string-match-p "build\\|of [0-9][0-9][0-9][0-9]\\|appkit\\|GTK"
+                                  header)))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
