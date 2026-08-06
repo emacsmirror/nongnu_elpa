@@ -2853,6 +2853,30 @@ instead of the symbol @code{favorite}, @code{favorite-internal} is
 used then the first @var{TYPE} that matches an alternative that can be
 displayed internally will be chosen.
 
+@vindex vm-auto-displayed-mime-content-type-exceptions
+@cindex @acronym{MIME} alternative, as a button
+To read one alternative and keep the others within reach, ask for @code{all}
+and then say which types are not to be displayed:
+
+@example
+(setq vm-mime-alternative-show-method 'all)
+(setq vm-auto-displayed-mime-content-type-exceptions '("text/html"))
+@end example
+
+@noindent Every alternative is then part of the message, and the ones excluded
+from automatic display arrive as buttons instead:
+
+@example
+plain version
+
+----------------------------------------------------------------------
+HTML (us-ascii): <no suggested filename>, HTML                [display]
+@end example
+
+@noindent Press the button, or type @kbd{RET} on it, to see that alternative.
+The other settings above choose one alternative and discard the rest, which is
+why they cannot do this.
+
 @findex vm-nuke-alternative-text/html
 Messages with multiple alternatives use up extra file space and slow
 down the operation of vm.  If you would like keep the text/plain
