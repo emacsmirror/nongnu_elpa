@@ -4872,6 +4872,19 @@ start and end of the message will be bracketed by (point-min) and
   :group 'vm-hooks
   :type 'hook)
 
+(defcustom vm-save-message-hook nil
+  "*List of hook functions called every time a message is saved to a folder.
+When the hooks are called, the current buffer will be the folder containing
+the message and the start and end of the message will be bracketed by
+ (point-min) and (point-max).  The hooks are called with one argument, a
+string naming the folder the message was saved to: a file name, or the
+maildrop specification of an IMAP mailbox.
+
+`vm-save-message' has run this hook since long before it was declared
+anywhere, which is why it is documented in the manual and was not a variable."
+  :group 'vm-hooks
+  :type 'hook)
+
 (defcustom vm-showing-message-hook nil
   "*List of hook functions called every time a message is showed.
 When the hooks are run, the current buffer will be the folder containing the
