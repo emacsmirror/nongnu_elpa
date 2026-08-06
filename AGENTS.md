@@ -53,13 +53,6 @@ make dev            # Autoloads, compile, module, lint, isolated + one-shot test
 make release-check  # Local gates + Debian dh_elpa build and installed tests
 ```
 
-Run `make dev` before submission. Tests use temporary DBs only; never open a
-user's live Jabber DB (batch sets `jabber-db-path` nil). Run
-`make release-check` before any release tag; do not tag or push a release
-without it.
-
-## Contributions
-
-Patches: <patches@thanosapollo.org> subject `[PATCH emacs-jabber] …`
-
-Bugs/features: <bugs@thanosapollo.org> subject `[BUG emacs-jabber] …`
+Run `make dev`. Tests use temporary DBs only; never open a user's live Jabber
+DB (batch sets `jabber-db-path` nil). Run `make release-check` before any
+release tag; do not tag or push a release without it.
