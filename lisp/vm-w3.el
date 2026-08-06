@@ -67,7 +67,7 @@
 ;;;###autoload
 (defun vm-mime-display-internal-emacs-w3-text/html (start end layout)
   (setq vm-w3-text/html-message (vm-mm-layout-message layout))
-  (let nil;((vm-w3-text/html-message (vm-mm-layout-message layout)))
+  (let ((fill-column (vm-mime-html-columns)))
     (w3-region start (1- end)))
   ;; remove read-only text properties
   (let ((inhibit-read-only t))

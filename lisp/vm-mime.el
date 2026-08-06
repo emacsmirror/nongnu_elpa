@@ -2699,6 +2699,15 @@ possible.  Returns a boolean flag indicating success."
       (vm-inform 5 "No data for cid %S" url))
     part))
 
+(defun vm-mime-html-columns ()
+  "The width an HTML converter should render to.
+See `vm-html-fill-column', which the reply code binds so that quoted text
+does not come out as wide as the window the message was read in."
+  (cond ((eq vm-html-fill-column 'window-width)
+	 (max 20 (1- (window-width (get-buffer-window (current-buffer))))))
+	((null vm-html-fill-column) vm-html-no-break-column)
+	(t vm-html-fill-column)))
+
 (defun vm-mime-display-internal-w3m-text/html (start end layout)
   (let* ((charset (or (vm-mime-get-parameter layout "charset") "us-ascii"))
 	 (coding-system (coding-system-from-name charset)))
@@ -2709,15 +2718,16 @@ possible.  Returns a boolean flag indicating success."
 	      default-process-coding-system)))
       (shell-command-on-region
        start (1- end)
-       (format "%s -dump -T text/html -I %s -O %s" 
-	       vm-w3m-program charset charset)
+       (format "%s -dump -cols %d -T text/html -I %s -O %s"
+	       vm-w3m-program (vm-mime-html-columns) charset charset)
        nil t))))
   
 (defun vm-mime-display-internal-lynx-text/html (start end _layout)
   (shell-command-on-region 
    start (1- end)
    ;; (concat vm-lynx-program " -force_html /dev/stdin" )
-   (concat vm-lynx-program " -force_html -dump -pseudo_inlines -stdin")
+   (format "%s -force_html -dump -pseudo_inlines -stdin -width=%d"
+	   vm-lynx-program (vm-mime-html-columns))
    nil t))
 
 (defun vm-mime-display-internal-text/html (layout)

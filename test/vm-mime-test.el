@@ -2216,6 +2216,86 @@ The cid parts go in the same directory and need the same care."
       (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
 
+;;; The width HTML is converted at (#369)
+
+(ert-deftest vm-mime-test-html-columns-answers-each-setting ()
+  "`vm-mime-html-columns' reads `vm-html-fill-column'."
+  (should (equal (let ((vm-html-fill-column 80)) (vm-mime-html-columns)) 80))
+  (should (equal (let ((vm-html-fill-column nil)) (vm-mime-html-columns))
+                 vm-html-no-break-column))
+  (let ((window (let ((vm-html-fill-column 'window-width))
+                  (vm-mime-html-columns))))
+    (should (>= window 20))
+    (should (< window (window-width)))))
+
+(ert-deftest vm-mime-test-html-converters-are-told-the-width ()
+  "Each external converter is passed the width, not left to choose one.
+lynx wrapped at 72 columns and w3m at its own default, whatever the text
+was wanted for."
+  (let (command)
+    (cl-letf (((symbol-function 'shell-command-on-region)
+               (lambda (_start _end cmd &rest _) (setq command cmd))))
+      (with-temp-buffer
+        (insert "<p>text</p>\n")
+        (let ((vm-html-fill-column 80))
+          (vm-mime-display-internal-lynx-text/html (point-min) (point-max) nil)
+          (should (string-match-p "-width=80\\'" command))
+          (vm-mime-display-internal-w3m-text/html
+           (point-min) (point-max) (make-vector 20 nil))
+          (should (string-match-p "-cols 80" command)))
+        (let ((vm-html-fill-column nil))
+          (vm-mime-display-internal-lynx-text/html (point-min) (point-max) nil)
+          (should (string-match-p (format "-width=%d\\'" vm-html-no-break-column)
+                                  command)))))))
+
+(ert-deftest vm-mime-test-html-is-not-broken-by-default ()
+  "A converted HTML paragraph comes out as one line unless a width is set.
+Run against lynx itself, since the point of the setting is what the
+converter does with it.  Skipped where lynx is not installed."
+  (skip-unless (executable-find "lynx"))
+  (let ((vm-mime-text/html-handler 'lynx)
+        (paragraph (mapconcat (lambda (i) (format "word%d" i))
+                              (number-sequence 1 60) " ")))
+    (cl-flet ((render (column)
+                (let ((vm-html-fill-column column))
+                  (with-temp-buffer
+                    (insert "<html><body><p>" paragraph "</p></body></html>\n")
+                    (vm-mime-display-internal-lynx-text/html
+                     (point-min) (point-max) nil)
+                    (split-string (string-trim (buffer-string)) "\n")))))
+      (let ((unbroken (render nil))
+            (narrow (render 80)))
+        ;; one line, and all of the text on it
+        (should (equal (length unbroken) 1))
+        (should (string-match-p "word60" (car unbroken)))
+        (should (> (length (car unbroken)) 200))
+        ;; and a width is honoured
+        (should (> (length narrow) 1))
+        (dolist (line narrow)
+          (should (<= (length line) 80)))))))
+
+(ert-deftest vm-mime-test-yanking-does-not-use-the-window-width ()
+  "Quoting a message hands the converter `vm-html-in-reply-column'.
+Before this, an HTML part quoted in a reply was converted at whatever
+width the converter liked -- for emacs-w3m the width of the window the
+message was read in, so the same message quoted differently in two frames."
+  (let ((seen 'unset))
+    (vm-test-with-folder
+     "From a@b.com  Thu Jan  1 00:00:00 2026\nFrom: a@b.com\nSubject: s\n\nbody\n"
+     (let ((message (car vm-message-pointer)))
+       (with-temp-buffer
+         (let ((vm-html-in-reply-column 80))
+           (cl-letf (((symbol-function 'vm-decode-mime-layout)
+                      (lambda (&rest _) (setq seen vm-html-fill-column)))
+                     ((symbol-function 'vm-decode-mime-message-headers)
+                      (lambda (&rest _) nil)))
+             (vm-yank-message-mime message (make-vector 3 nil)))))))
+    (should (equal seen 80))
+    ;; and the default is to ask for no breaks at all
+    (should (equal (default-value 'vm-html-in-reply-column) nil))
+    ;; while display still follows the window
+    (should (equal (default-value 'vm-html-fill-column) 'window-width))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here
