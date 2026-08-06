@@ -420,7 +420,7 @@ PREVIOUS means move to previous item."
       ;; do nothing, all the action is in the while condition
       )
     (if (null next-range)
-        (user-error "Nothing else here")
+        (message "Nothing else here")
       (goto-char (car next-range))
       (message "%s" (mastodon-tl--property 'help-echo :no-move)))))
 
