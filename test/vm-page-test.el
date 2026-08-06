@@ -105,6 +105,130 @@
   "Test vm-url-help function exists."
   (should (fboundp 'vm-url-help)))
 
+
+;;; Exposing headers while reading a later page (#513)
+
+(defmacro vm-page-test-with-paged-message (&rest body)
+  "Show a three-page message read, and run BODY in the buffer showing it.
+`vm-honor-page-delimiters\=' is on, and the message carries a header that
+`vm-visible-headers\=' hides, so exposing them is observable."
+  (declare (indent 0) (debug t))
+  `(let* ((dir (file-name-as-directory (make-temp-file "vm-page-test" t)))
+          (file (expand-file-name "folder" dir))
+          (vm-init-file nil)
+          (vm-preferences-file nil)
+          (vm-confirm-quit nil)
+          (vm-honor-page-delimiters t)
+          (vm-frame-per-folder nil)
+          (vm-mutable-frame-configuration nil)
+          (vm-folder-history vm-folder-history)
+          (vm-last-visit-folder vm-last-visit-folder)
+          (vm-user-interaction-buffer vm-user-interaction-buffer)
+          (vm-current-warning vm-current-warning)
+          (vm-summary-tokenized-compiled-format-alist
+           vm-summary-tokenized-compiled-format-alist)
+          (before (buffer-list)))
+     (unwind-protect
+         (progn
+           (with-temp-file file
+             (insert "From alice@example.com  Mon Jan  1 00:00:00 2026\n"
+                     "From: alice@example.com\nTo: b@example.com\n"
+                     "Subject: pages\nX-Hidden-Thing: secret\n\n"
+                     "page one text\n\f\npage two text\n\f\npage three text\n"))
+           (vm-visit-folder file)
+           (let ((m (car vm-message-pointer)))
+             (vm-set-new-flag m nil)
+             (vm-set-unread-flag m nil))
+           (vm-preview-current-message)
+           (vm-show-current-message)
+           (with-current-buffer (or vm-presentation-buffer (current-buffer))
+             ,@body))
+       (dolist (buffer (buffer-list))
+         (unless (memq buffer before)
+           (when (buffer-live-p buffer)
+             (with-current-buffer buffer (set-buffer-modified-p nil))
+             (kill-buffer buffer))))
+       (delete-directory dir t))))
+
+(defun vm-page-test--goto-last-page ()
+  "Show the last page of the message, as paging through it would."
+  (vm-widen-page)
+  (goto-char (point-max))
+  (forward-page -1)
+  (vm-narrow-to-page))
+
+(ert-deftest vm-page-test-exposing-headers-keeps-the-page ()
+  "REGRESSION: `t\=' on a later page left you looking at the first one.
+`vm-narrow-to-page\=' narrows to the page point is in, and
+`vm-expose-hidden-headers\=' sent point to the top of the message first, so
+whoever pressed `t\=' on page three was thrown back to page one -- which the
+reporter took for the command having failed.  Issue #513."
+  (vm-page-test-with-paged-message
+    (vm-page-test--goto-last-page)
+    (let ((page-start (point-min))
+          (page-end (point-max)))
+      (should (string-match-p "page three" (buffer-substring page-start page-end)))
+      (vm-expose-hidden-headers)
+      (should (equal page-start (point-min)))
+      (should (equal page-end (point-max))))))
+
+(ert-deftest vm-page-test-exposing-headers-still-exposes-them ()
+  "The headers are exposed, even though the page did not move."
+  (vm-page-test-with-paged-message
+    (vm-page-test--goto-last-page)
+    (should-not vm-headers-exposed)
+    (vm-expose-hidden-headers)
+    (should vm-headers-exposed)
+    (save-restriction
+      (widen)
+      (should (string-match-p "X-Hidden-Thing" (buffer-string))))))
+
+(ert-deftest vm-page-test-exposing-headers-still-toggles ()
+  "Pressing it twice puts the headers back.
+The state used to be read off the narrowing -- exposed meant the visible
+region began at the message rather than at its visible headers -- which a
+page narrowing makes meaningless, so it is kept in `vm-headers-exposed\='."
+  (vm-page-test-with-paged-message
+    (vm-page-test--goto-last-page)
+    (let ((page-start (point-min)))
+      (vm-expose-hidden-headers)
+      (should vm-headers-exposed)
+      (vm-expose-hidden-headers)
+      (should-not vm-headers-exposed)
+      ;; and still on the same page after both
+      (should (equal page-start (point-min))))))
+
+(ert-deftest vm-page-test-exposing-headers-on-the-first-page ()
+  "On page one the region grows upward to show the headers, as it always did.
+Nothing is skipped past: the text that was being read is still there."
+  (vm-page-test-with-paged-message
+    (let ((page-end (point-max)))
+      (should-not (string-match-p "X-Hidden-Thing"
+                                  (buffer-substring (point-min) (point-max))))
+      (vm-expose-hidden-headers)
+      (should vm-headers-exposed)
+      (let ((visible (buffer-substring (point-min) (point-max))))
+        (should (string-match-p "X-Hidden-Thing" visible))
+        (should (string-match-p "page one text" visible)))
+      (should (equal page-end (point-max))))))
+
+(ert-deftest vm-page-test-exposing-headers-without-page-delimiters ()
+  "With `vm-honor-page-delimiters\=' nil the old rule still decides.
+Nothing narrows to a page there, so the visible region says whether the
+headers are exposed, and that is what the command reads."
+  (vm-page-test-with-paged-message
+    (let ((vm-honor-page-delimiters nil))
+      (vm-widen-page)
+      (vm-expose-hidden-headers)
+      (should (string-match-p "X-Hidden-Thing"
+                              (buffer-substring (point-min) (point-max))))
+      (vm-expose-hidden-headers)
+      (should-not (string-match-p "X-Hidden-Thing"
+                                  (buffer-substring (point-min) (point-max))))
+      ;; and the whole message is visible, not a page of it
+      (should (string-match-p "page three text"
+                              (buffer-substring (point-min) (point-max)))))))
+
 (provide 'vm-page-test)
 
 ;;; vm-page-test.el ends here

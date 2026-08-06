@@ -1724,6 +1724,82 @@ A folder is mail from strangers, so VM visits one with
             (kill-buffer buffer))))
       (delete-directory dir t))))
 
+(ert-deftest vm-folder-test-a-hard-linked-folder-says-so ()
+  "Visiting a folder with another name warns that saving will break it.
+`file-precious-flag' writes a temporary file and renames it into place, so
+the folder\='s name gets a new inode and the other name keeps the old mail.
+Symbolic links are preserved (#532); hard links cannot be, so VM says so
+rather than let the other name quietly stop following the folder."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-hardlink" t)))
+         (file (expand-file-name "folder" dir))
+         (other (expand-file-name "other-name" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-user-interaction-buffer vm-user-interaction-buffer)
+         (vm-current-warning nil)
+         (warned nil)
+         (before (buffer-list)))
+    (unwind-protect
+        (progn
+          (vm-test-write-simple-folder file 1)
+          (add-name-to-file file other)
+          (should (= 2 (file-attribute-link-number (file-attributes file))))
+          (cl-letf (((symbol-function 'vm-warn)
+                     (lambda (_level _secs &rest args)
+                       (push (apply #'format args) warned))))
+            (vm-visit-folder file))
+          (should (seq-find (lambda (w) (string-match-p "has 2 names" w)) warned)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-an-ordinary-folder-says-nothing ()
+  "One name, one warning fewer."
+  (let ((vm-current-warning nil)
+        (warned nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _secs &rest args) (push (apply #'format args) warned))))
+      (vm-test-with-real-folder (1)
+        (should-not (seq-find (lambda (w) (string-match-p "names" w)) warned))))))
+
+(ert-deftest vm-folder-test-hard-link-warning-is-about-precious-saving ()
+  "With `file-precious-flag' nil the other name follows the folder, so
+nothing is said."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-hardlink" t)))
+         (file (expand-file-name "folder" dir))
+         (other (expand-file-name "other-name" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-folder-file-precious-flag nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-user-interaction-buffer vm-user-interaction-buffer)
+         (vm-current-warning nil)
+         (warned nil)
+         (before (buffer-list)))
+    (unwind-protect
+        (progn
+          (vm-test-write-simple-folder file 1)
+          (add-name-to-file file other)
+          (cl-letf (((symbol-function 'vm-warn)
+                     (lambda (_level _secs &rest args)
+                       (push (apply #'format args) warned))))
+            (vm-visit-folder file))
+          (should-not (seq-find (lambda (w) (string-match-p "names" w)) warned)))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
