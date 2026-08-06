@@ -48,14 +48,14 @@
 (declare-function timezone-absolute-from-gregorian "ext:timezone"
 		  (month day year))
 (declare-function bbdb-buffer "ext:bbdb" ())
-(declare-function bbdb-record-putprop "ext:bbdb" (record property value))
-(declare-function bbdb-save-db "ext:bbdb" (&optional postprocess))
-(declare-function bbdb-record-net "ext:bbdb" (record))
-(declare-function bbdb-get-field "ext:bbdb-com" (record field &optional yet-another))
+(declare-function bbdb-record-set-xfield "ext:bbdb" (record label value))
+(declare-function bbdb-record-xfield "ext:bbdb" (record label))
+(declare-function bbdb-change-record "ext:bbdb" (record &rest ignored))
+(declare-function bbdb-save "ext:bbdb" (&optional prompt noisy))
+(declare-function bbdb-record-mail "ext:bbdb" (record))
+(declare-function bbdb-records "ext:bbdb" ())
 (declare-function bbdb-message-search "ext:bbdb-com" (name mail))
-(declare-function bbdb-create-internal "ext:bbdb" (&rest args))
-;; bbdb-with-db-buffer is a macro, declare it to suppress warning
-(declare-function bbdb-with-db-buffer "ext:bbdb" t)
+(declare-function bbdb-create-internal "ext:bbdb" (&rest spec))
 (declare-function vm-imap-account-name-for-spec "vm-imap" (maildrop-spec))
 (declare-function vm-pop-find-name-for-spec "vm-pop" (maildrop-spec))
 
@@ -959,13 +959,13 @@ parameter POS means insert the pre-signature at position POS if
   (interactive)
   (setq vmpc-auto-profiles nil)
   (if (eq vmpc-auto-profiles-file 'BBDB)
-      (let ((records (bbdb-with-db-buffer bbdb-records))
+      (let ((records (bbdb-records))
             profile rec nets)
         (while records
           (setq rec (car records)
-                profile (bbdb-get-field rec 'vmpc-profile))
+                profile (bbdb-record-xfield rec 'vmpc-profile))
           (when (and profile (> (length profile) 0))
-            (setq nets (bbdb-record-net rec))
+            (setq nets (bbdb-record-mail rec))
             (while nets
               (setq vmpc-auto-profiles (cons (cons (car nets) (read profile))
                                              vmpc-auto-profiles)
@@ -1029,7 +1029,7 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
   (unless vmpc-auto-profiles
     (vmpc-load-auto-profiles))
   ;; create a BBDB backup
-  (bbdb-save-db)
+  (bbdb-save)
   (copy-file (expand-file-name bbdb-file)
              (concat (expand-file-name bbdb-file) "-vmpc-profile-migration-backup"))
   ;; now migrate the profiles 
@@ -1043,8 +1043,16 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
             ;; could not have worked either way.  Issue #549.
             rec (car (bbdb-message-search nil addr)))
       (when (not rec)
-        (setq rec (bbdb-create-internal "?" nil addr nil nil nil)))
-      (bbdb-record-putprop rec 'vmpc-profile (format "%S" (cdr p)))
+        ;; Keywords, and not the positional arguments this used: BBDB 3
+        ;; reordered them, so `addr' was landing in the record's `aka' field
+        ;; rather than its mail, and the profile was attached to a record
+        ;; that could never be found again.
+        (setq rec (bbdb-create-internal :name "?" :mail addr)))
+      (bbdb-record-set-xfield rec 'vmpc-profile (format "%S" (cdr p)))
+      ;; Registers the change with BBDB, which 2.x's `bbdb-record-putprop'
+      ;; did itself.  Without it the field is set in a record BBDB does not
+      ;; know has changed, and the next save writes the old value.
+      (bbdb-change-record rec)
       (setq profiles (cdr profiles))))
   ;; move old profiles file out of the way
   (rename-file vmpc-auto-profiles-file
@@ -1089,7 +1097,8 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
         (require 'bbdb-com)             ; see vmpc-migrate-profiles-to-BBDB
         (let ((rec (bbdb-message-search nil addr)))
           (when rec
-            (bbdb-record-putprop (car rec) 'vmpc-profile nil)))))
+            (bbdb-record-set-xfield (car rec) 'vmpc-profile nil)
+            (bbdb-change-record (car rec))))))
 
     ;; add new profile
     (when actions 
@@ -1099,8 +1108,9 @@ field `vmpc-profile' to the records which is a sexp not meant to be edited."
         (require 'bbdb-com)             ; see vmpc-migrate-profiles-to-BBDB
         (let ((rec (car (bbdb-message-search nil addr))))
           (when (not rec)
-            (setq rec (bbdb-create-internal "?" nil addr nil nil nil)))
-          (bbdb-record-putprop rec 'vmpc-profile (format "%S" (cdr profile))))))
+            (setq rec (bbdb-create-internal :name "?" :mail addr)))
+          (bbdb-record-set-xfield rec 'vmpc-profile (format "%S" (cdr profile)))
+          (bbdb-change-record rec))))
 
     ;; expunge old stuff from the list:
     (when vmpc-auto-profiles-expunge-days
