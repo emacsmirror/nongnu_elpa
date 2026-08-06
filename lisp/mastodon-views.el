@@ -41,6 +41,7 @@
 (defvar mastodon-mode-map)
 (defvar mastodon-tl--horiz-bar)
 (defvar mastodon-tl--timeline-posts-count)
+(defvar mastodon-profile-credential-account)
 
 (autoload 'mastodon-mode "mastodon")
 (autoload 'mastodon-tl--init "mastodon-tl")
@@ -1097,11 +1098,13 @@ IND is the optional indentation level to print at."
                    (format "accounts/%s/collections" id))))
     (mastodon-http--get-json endpoint)))
 
-(defun mastodon-views-collections-featuring-account (id)
-  "Return collections featuring account with ID."
-  (let ((endpoint (mastodon-http--api
-                   (format "accounts/%s/in_collections" id))))
-    (mastodon-http--get-json endpoint)))
+(defun mastodon-views-current-account-collections ()
+  "Return collections featuring `mastodon-active-user'."
+  (let* ((id (alist-get 'id mastodon-profile-credential-account))
+         (endpoint (mastodon-http--api
+                    (format "accounts/%s/in_collections" id))))
+    (alist-get 'collections
+               (mastodon-http--get-json endpoint))))
 
 (defun mastodon-views--insert-collection (json)
   "Insert the collection from JSON."
@@ -1126,20 +1129,33 @@ IND is the optional indentation level to print at."
       ;; FIXME: confirm if first acct is owner?
       (mastodon-views--insert-users-propertized-note (cdr .accounts)))))
 
-(defun mastodon-views-read-account-collection (json)
-  "Read a collection by name and return its ID.
-JSON is the profile data to get collections for."
+(defun mastodon-views-read-account-collection (json &optional return-id)
+  "Read a collection by name and return its data.
+JSON is the profile data to get collections for.
+If RETURN-ID, return only the collection's ID."
   (let* ((id (alist-get 'id json))
          (colls (alist-get 'collections
                            (mastodon-views-get-account-collections id))))
     (if (not colls)
-        (user-error "No collections by this user found.")
-      (let* ((cands (cl-loop for x in colls
-                             collect (cons (alist-get 'name x)
-                                           (alist-get 'id x))))
-             (choice
-              (completing-read "Collection: " cands nil :match)))
-        (alist-get choice cands nil nil #'string=)))))
+        (user-error "No collections by this user found")
+      (mastodon-views-read-collection colls return-id))))
+
+(defun mastodon-views-read-collection (colls &optional return-id)
+  "Read a collection in COLLS and return its data.
+If RETURN-ID, return only the collection's ID."
+  (let* ((cands (cl-loop for x in colls
+                         collect (cons (alist-get 'name x)
+                                       (alist-get 'id x))))
+         (choice
+          (completing-read "Collection: " cands nil :match)))
+    (if return-id
+        (alist-get choice cands nil nil #'string=)
+      ;; return coll data:
+      (cl-find-if
+       (lambda (x)
+         (string= choice
+                  (alist-get 'name x)))
+       colls))))
 
 (defun mastodon-views-view-collection ()
   "Prompt for a collection and view it.
@@ -1150,6 +1166,18 @@ Must be called from a user's profile."
     (mastodon-tl--init-sync
      (format "%s-collection" (alist-get 'username profile))
      (format "collections/%s" id)
+     'mastodon-views--insert-collection)))
+
+(defun mastodon-views-collections-user-in ()
+  "Select from a list of collections you are in.
+Load the chosen collection."
+  (interactive)
+  (let* ((colls (mastodon-views-current-account-collections))
+         (coll (mastodon-views-read-collection colls)))
+    (mastodon-tl--init-sync
+     ;; FIXME: we don't have any data here to name the buffer
+     (format "collection-%s" (alist-get 'name coll))
+     (format "collections/%s" (alist-get 'id coll))
      'mastodon-views--insert-collection)))
 
 (provide 'mastodon-views)
