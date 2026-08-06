@@ -199,7 +199,7 @@ folder for redisplay."
 (defun vm-reset-buffer-modified-p (value buffer)
   "Sets the `buffer-modified-p' flag of BUFFER to VALUE.  This
 is not meant for changing the flag for folders.  Use
-`vm-mark-folder-modified-p' or `vm-unset-folder-modified-p' instead."
+`vm-mark-folder-modified-p' or `vm-unmark-folder-modified-p' instead."
   (with-current-buffer buffer
     (set-buffer-modified-p value)))
 

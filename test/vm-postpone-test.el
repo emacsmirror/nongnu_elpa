@@ -258,12 +258,16 @@
   (should (eq (symbol-function 'vm-decode-postponed-mime-message)
               'vm-mime-convert-to-attachment-buttons)))
 
-(ert-deftest vm-postpone-test-obsolete-fake-attachment ()
-  "Test vm-pine-fake-attachment-overlays is aliased."
-  (should (fboundp 'vm-pine-fake-attachment-overlays))
-  (should (symbolp (symbol-function 'vm-pine-fake-attachment-overlays)))
-  (should (eq (symbol-function 'vm-pine-fake-attachment-overlays)
-              'vm-mime-re-fake-attachment-overlays)))
+(ert-deftest vm-postpone-test-obsolete-fake-attachment-is-gone ()
+  "REGRESSION: `vm-pine-fake-attachment-overlays' is not an alias to nothing.
+It was aliased to `vm-mime-re-fake-attachment-overlays', which was deleted as
+unused in 2011, so calling it signalled `void-function' and `make-obsolete'
+named a replacement that did not exist either.  The alias is gone.
+
+This test replaces one that asserted the alias was there and pointed at that
+name, which is how it survived: nothing checked that the target was defined."
+  (should-not (fboundp 'vm-pine-fake-attachment-overlays))
+  (should-not (fboundp 'vm-mime-re-fake-attachment-overlays)))
 
 (ert-deftest vm-postpone-test-obsolete-decode-button ()
   "Test vm-decode-postponed-mime-button is aliased."

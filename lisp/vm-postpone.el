@@ -32,7 +32,7 @@
 ;;
 ;;  A Pine-like postpone message function and folder.  There are two new
 ;;  functions. `vm-postpone-message' bound to [C-c C-d] in
-;;  the `vm-mail-mode' and the function `vm-continue-postponed-message'
+;;  the composition buffer and the function `vm-continue-postponed-message'
 ;;  is bound to [C] in a folder buffer.
 ;;
 ;;  Typical usage: If you are writing a mail message, and you wish to
@@ -138,7 +138,7 @@ this function returns the \"To:\" or \"Newsgroups:\" header field with a
 \"To:\" as prefx.
 
 For example the outgoing message box will now list to whom you sent the
-messages.  Use `vm-fix-summary' to update the summary of a folder! With
+messages.  Use `vm-fix-my-summary' to update the summary of a folder! With
 loaded BBDB it uses `vm-summary-function-B' to obtain the full name of the
 sender.  The only difference to VM's default behavior is the honoring of
 messages sent to news groups.)
@@ -526,10 +526,11 @@ creation). If DRAFT is non-nil, then do not delete the draft message."
 (make-obsolete 'vm-decode-postponed-mime-message
 	       'vm-mime-convert-to-attachment-buttons "8.2.0")
 
-(defalias 'vm-pine-fake-attachment-overlays
-  'vm-mime-re-fake-attachment-overlays)
-(make-obsolete 'vm-pine-fake-attachment-overlays
-	       'vm-mime-re-fake-attachment-overlays "8.2.0")
+;; `vm-pine-fake-attachment-overlays' was aliased here to
+;; `vm-mime-re-fake-attachment-overlays', which was deleted as unused in 2011
+;; (see the note in vm-mime.el).  The alias has been a void function ever
+;; since, and `make-obsolete' was telling anyone who called it to use a name
+;; that does not exist either, so both are gone.
 
 (defalias 'vm-decode-postponed-mime-button
   'vm-mime-replace-by-attachment-button)
@@ -890,7 +891,7 @@ If set to nil it will never save them nor it will ask."
 
 ;;;###autoload
 (defun vm-mail-return-receipt-to ()
-  "Insert the \"Return-Receipt-To\" header into a `vm-mail-mode' buffer.
+  "Insert the \"Return-Receipt-To\" header into a VM composition buffer.
 See the variable `vm-mail-return-receipt-to'."
   (interactive)
   (expand-abbrev)
@@ -924,7 +925,7 @@ See the variable `vm-mail-return-receipt-to'."
 
 ;;;###autoload
 (defun vm-mail-priority ()
-  "Insert priority headers into a `vm-mail-mode' buffer.
+  "Insert priority headers into a VM composition buffer.
 See the variable `vm-mail-priority'."
   (interactive)
   (expand-abbrev)
@@ -968,7 +969,7 @@ outgoing message."
 
 ;;;###autoload
 (defun vm-mail-fcc (&optional arg)
-  "Insert the FCC-header into a `vm-mail-mode' buffer.
+  "Insert the FCC-header into a VM composition buffer.
 Like `mail-fcc', but honors VM variables and offers a default folder
 according to `vm-mail-folder-alist'.
 Called with prefix ARG it just removes the FCC-header."
@@ -1100,7 +1101,7 @@ The string enclosed in \"\\\\(\\\\)\" is used as folder name."
 
 ;;;###autoload
 (defun vm-mail-to-fcc (&optional arg return-only)
-  "Insert a FCC-header into a `vm-mail-mode' buffer.
+  "Insert a FCC-header into a VM composition buffer.
 Like `mail-fcc', but honors VM variables and inserts the first email
 address (or the like matched by `vm-mail-to-regexp') found in the headers
 listed in `vm-mail-to-headers'.

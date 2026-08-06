@@ -646,8 +646,8 @@ This command should NOT be used to save message to mail folders; use
 ;;;###autoload
 (defun vm-pipe-message-to-command (command &optional prefixarg discard-output)
   "Runs a shell command with contents from the current message as input.
-By default, the entire message is used.  Message separators are
-included if `vm-message-includes-separators' is non-Nil.
+By default the headers and the text are used, without the folder's message
+separators.  The prefix argument selects a part instead:
 
 With one \\[universal-argument] the text portion of the message is used.
 With two \\[universal-argument]'s the header portion of the message is used.

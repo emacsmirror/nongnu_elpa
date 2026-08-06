@@ -320,7 +320,7 @@ let me know!
 
 mailto:Robert Fenk"))
   "*Alist of default mail templates.
-Set this by calling `vm-serial-set-mail'!
+Set this by calling `vm-serial-set-mails'!
 
 Format:
    ((SYMBOLIC-NAME CONDITION MAIL-FORM)

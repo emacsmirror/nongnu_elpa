@@ -5069,7 +5069,7 @@ simply has an associated filename.  Any mime types that match
 are also included.
 
 The attachments are saved to the specified DIRECTORY.  The
-variables `vm-all-attachments-directory' or
+variables `vm-mime-all-attachments-directory' or
 `vm-mime-attachment-save-directory' can be used to set the
 default location.  When directory does not exist it will be
 created."
@@ -5197,7 +5197,7 @@ The attachments are saved in file names input from the
 minibuffer.  (This is the main difference from
 `vm-save-all-attachments'.) 
 
-The variables `vm-all-attachments-directory' or
+The variables `vm-mime-all-attachments-directory' or
 `vm-mime-attachment-save-directory' can be used to set the
 default location.  When directory does not exist it will be
 confirmed before creating a new directory."
@@ -8482,7 +8482,7 @@ This is a destructive operation and cannot be undone!"
     (vm-discard-cached-data count)
     (vm-present-current-message)))
 (defalias 'vm-mime-nuke-alternative-text/html
-  'vm-nuke-alterantive-text/html)
+  'vm-nuke-alternative-text/html)
 (make-obsolete 'vm-mime-nuke-alternative-text/html
 	       'vm-nuke-alternative-text/html "8.2.0")
 
