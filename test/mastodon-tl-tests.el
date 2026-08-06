@@ -549,18 +549,19 @@ Strict-Transport-Security: max-age=31536000
     (with-mock
       (mock (date-to-time timestamp) => '(22782 21551))
       ;; (mock (current-time) => '(22782 22000)) ; not sure why this breaks it
-      (mock (format-time-string mastodon-toot-timestamp-format '(22782 21551)) => "2999-99-99 00:11:22")
-
+      (mock (format-time-string mastodon-toot-timestamp-format
+                                (date-to-time timestamp))
+            => "2999-99-99 00:11:22")
       (let* ((formatted-string (mastodon-tl--byline mastodon-tl-test-base-toot))
              (timestamp-start (string-match "2999-99-99" formatted-string))
              (properties (text-properties-at timestamp-start formatted-string)))
         (should (equal '(22782 21551) (plist-get properties 'timestamp)))
-        (should (string-equal ;;"7 minutes ago"
-                 ;; "7 mins ago" ;; not sure why its diff now
-
-                 ;; FIXME: this value has become really relative so we will have to
+        (should (string-equal
+                 ;; FIXME: this value has become really relative so we have to
                  ;; keep changing it!
-                 "7 years, 4 months ago"
+                 ;; "7 years, 4 months ago"
+                 (mastodon-tl--relative-time-description (date-to-time timestamp)
+                                              (current-time))
                  (plist-get properties 'display)))))))
 
 (ert-deftest mastodon-tl--byline-no-displayname ()
