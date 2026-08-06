@@ -2902,13 +2902,18 @@ See the VM manual section \"Virtual Selectors\" for the complete list
 of recognized SELECTORs.
 "
   :group 'vm-virtual
+  ;; A definition is a name followed by one or more clauses, and a clause is a
+  ;; folder list followed by one or more selectors.  The type used to allow one
+  ;; clause of one selector, so Customize rejected the two-clause example in
+  ;; this variable's own documentation.
   :type '(choice
 	  (const :tag "none" nil)
-	  (repeat 
-	   (group 
-	    (string :tag "Virtual Folder Name")
-	    (group (repeat :tag "Folder List" string)
-		   (sexp :tag "Selectors"))))))
+	  (repeat
+	   (cons :tag "Virtual folder"
+		 (string :tag "Virtual Folder Name")
+		 (repeat :tag "Clauses"
+			 (cons (repeat :tag "Folder List" (string :tag "Folder"))
+			       (repeat :tag "Selectors" (sexp :tag "Selector"))))))))
 
 (defcustom vm-virtual-default-directory nil
   "*Default-directory to be used for virtual folders other than search

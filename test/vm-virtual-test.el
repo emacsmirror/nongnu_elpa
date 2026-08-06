@@ -704,6 +704,29 @@ carries no other folder's messages."
     (should (buffer-live-p real))
     (should (buffer-live-p virt-b))))
 
+(ert-deftest vm-virtual-test-folder-alist-type-accepts-a-real-definition ()
+  "REGRESSION: the `:type' accepts the shape the documentation shows.
+Issue #582.  A definition is a name followed by one or more clauses, and a
+clause is a folder list followed by one or more selectors.  The type described
+one clause of one selector, so Customize rejected the two-clause example in this
+variable's own docstring and in the manual.  The default matched, which is why
+the check for #575 did not see it."
+  (require 'wid-edit)
+  (let ((type (widget-convert (get 'vm-virtual-folder-alist 'custom-type))))
+    (should (widget-apply type :match nil))
+    ;; the example from the docstring and the manual
+    (should (widget-apply
+             type :match
+             '(("virtual-folder-name"
+                (("/path/to/folder" "/path/to/folder2")
+                 (header "foo") (header "bar"))
+                (("/path/to/folder3" "/path/to/folder4")
+                 (and (header "baz") (header "woof")))))))
+    ;; one clause, one selector: what these tests build
+    (should (widget-apply type :match '(("test-virt" (("/tmp/f") (any))))))
+    ;; two virtual folders
+    (should (widget-apply type :match '(("a" (("/f") (any))) ("b" (("/g") (any))))))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
