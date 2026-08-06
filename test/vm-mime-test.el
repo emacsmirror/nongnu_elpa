@@ -2216,6 +2216,133 @@ The cid parts go in the same directory and need the same care."
       (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
 
+;;; Completing an HTML fragment for an external viewer (#387)
+
+(defun vm-mime-test--html-layout (charset)
+  "A text/html layout, with CHARSET declared if non-nil."
+  (with-temp-buffer
+    (insert "Content-Type: text/html"
+            (if charset (format "; charset=%s" charset) "") "\n\n<p>x</p>\n")
+    (vm-mime-parse-entity nil :default-type '("text/plain")
+                          :default-encoding "7bit")))
+
+(defun vm-mime-test--html-file (contents)
+  "Write CONTENTS to a temporary .html file, as VM writes a part out."
+  (let ((file (make-temp-file "vm-mime-test-" nil ".html"))
+        (coding-system-for-write 'binary))
+    (write-region contents nil file nil 'quiet)
+    file))
+
+(defun vm-mime-test--file-bytes (file)
+  (with-temp-buffer
+    (let ((coding-system-for-read 'binary))
+      (insert-file-contents file))
+    (buffer-string)))
+
+(defmacro vm-mime-test--with-html-file (contents var &rest body)
+  "Bind VAR to a temporary HTML file holding CONTENTS, and delete it after."
+  (declare (indent 2))
+  `(let ((,var (vm-mime-test--html-file ,contents)))
+     (unwind-protect (progn ,@body)
+       (delete-file ,var))))
+
+(ert-deftest vm-mime-test-html-fragment-detection ()
+  "What counts as a whole document.
+`>' is a symbol constituent in the standard syntax table, so a regexp
+ending \\_> after \"<html\" does not match `<html>' -- which is how the
+first version of this reported every document as a fragment."
+  (dolist (case '(("<html><body>x</body></html>" . nil)
+                  ("<HTML>\n<body>x</body>\n</HTML>" . nil)
+                  ("<!DOCTYPE html>\n<div>x</div>" . nil)
+                  ("<html lang=\"en\">x</html>" . nil)
+                  ("<meta charset=\"utf-8\">\n<div>x</div>" . nil)
+                  ("<span>x</span>" . t)
+                  ("<div><p>x</p></div>" . t)
+                  ("plain words" . t)))
+    (with-temp-buffer
+      (insert (car case))
+      (should (equal (and (vm-mime-html-fragment-p) t) (cdr case))))))
+
+(ert-deftest vm-mime-test-completes-an-html-fragment ()
+  "A fragment is wrapped in a document declaring the part's charset."
+  (let ((layout (vm-mime-test--html-layout "iso-8859-1")))
+    (vm-mime-test--with-html-file "<span>caf\351</span>\n" file
+      (should (vm-mime-complete-html-file layout file))
+      (let ((text (vm-mime-test--file-bytes file)))
+        (should (string-match-p "\\`<html>" text))
+        (should (string-match-p "charset=iso-8859-1" text))
+        (should (string-match-p "</html>\n\\'" text))
+        ;; the text is wrapped, not re-encoded
+        (should (string-match-p "<span>caf\351</span>" text))))))
+
+(ert-deftest vm-mime-test-leaves-a-whole-html-document-alone ()
+  "A part that is already a document is written out as it is."
+  (let ((layout (vm-mime-test--html-layout "utf-8"))
+        (document "<html><body><p>whole</p></body></html>\n"))
+    (vm-mime-test--with-html-file document file
+      (should-not (vm-mime-complete-html-file layout file))
+      (should (equal (vm-mime-test--file-bytes file) document)))))
+
+(ert-deftest vm-mime-test-leaves-a-fragment-with-a-charset-alone ()
+  "A fragment that says what character set it is in needs no help.
+Wrapping it would put a second declaration before its own."
+  (let ((layout (vm-mime-test--html-layout "utf-8"))
+        (fragment "<meta charset=\"utf-8\">\n<div>said so</div>\n"))
+    (vm-mime-test--with-html-file fragment file
+      (should-not (vm-mime-complete-html-file layout file))
+      (should (equal (vm-mime-test--file-bytes file) fragment)))))
+
+(ert-deftest vm-mime-test-completing-html-can-be-turned-off ()
+  (let ((layout (vm-mime-test--html-layout "utf-8"))
+        (fragment "<span>fragment</span>\n")
+        (vm-mime-complete-html-for-external-viewer nil))
+    (vm-mime-test--with-html-file fragment file
+      (should-not (vm-mime-complete-html-file layout file))
+      (should (equal (vm-mime-test--file-bytes file) fragment)))))
+
+(defvar vm-mime-test--viewed-file nil)
+
+(defun vm-mime-test--fake-viewer (file)
+  "Stand in for an external viewer, recording the file it was given."
+  (setq vm-mime-test--viewed-file file)
+  nil)
+
+(ert-deftest vm-mime-test-an-external-viewer-gets-a-whole-document ()
+  "The file handed to an external viewer says what character set it is in.
+A message whose text/html is a fragment -- and plenty is: it opens with a
+`<span>' and has no `<html>' -- gave the viewer a file with nothing in it
+about the charset that was in the part's header, so a browser guessed.
+Issue #387, driven through `vm-mime-display-external-generic' and an elisp
+\"viewer\", which `vm-mime-external-content-types-alist' allows."
+  (let ((vm-mime-test--viewed-file nil)
+        ;; writing a temporary file for the viewer moves the counter and
+        ;; registers the file for cleanup, both of them global
+        (vm-tempfile-counter vm-tempfile-counter)
+        (vm-global-garbage-alist nil))
+    (unwind-protect
+        (vm-test-with-folder
+         (concat "From a@b.com  Thu Jan  1 00:00:00 2026\n"
+                 "From: a@b.com\nSubject: fragment\n"
+                 "MIME-Version: 1.0\n"
+                 "Content-Type: text/html; charset=iso-8859-1\n"
+                 "\n<span style=\"font-family: Tahoma\">Hi caf\351</span>\n")
+         (let ((layout (vm-mm-layout (car vm-message-pointer)))
+               (vm-mime-external-content-types-alist
+                '(("text/html" vm-mime-test--fake-viewer)))
+               (vm-mime-external-content-type-exceptions nil))
+           (setq vm-mail-buffer (current-buffer))
+           (should (vectorp layout))
+           (vm-mime-display-external-generic layout)
+           (should vm-mime-test--viewed-file)
+           (let ((text (vm-mime-test--file-bytes vm-mime-test--viewed-file)))
+             (should (string-match-p "charset=iso-8859-1" text))
+             (should (string-match-p "<html>" text))
+             ;; the sender's byte, not a re-encoded one
+             (should (string-match-p "caf\351" text)))))
+      (when (and vm-mime-test--viewed-file
+                 (file-exists-p vm-mime-test--viewed-file))
+        (delete-file vm-mime-test--viewed-file)))))
+
 ;;; The width HTML is converted at (#369)
 
 (ert-deftest vm-mime-test-html-columns-answers-each-setting ()

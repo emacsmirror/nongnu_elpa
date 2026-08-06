@@ -1580,6 +1580,24 @@ that type are assumed to be included."
   :type '(choice (const nil)
                  (repeat string)))
 
+(defcustom vm-mime-complete-html-for-external-viewer t
+  "*Whether to complete an HTML part before an external viewer sees it.
+Plenty of mail carries text/html that is a fragment rather than a document:
+it opens with a `<span>\=' or a `<div>\=' and has no `<html>\=' and no `<head>\='.
+Nothing in such a file says what character set its bytes are in -- the
+message said so in the part\='s Content-Type header, which the file does not
+have -- so a browser handed it guesses, and gets an accented letter or a
+curly quote wrong.
+
+With this set, VM wraps a fragment in a document that declares the part\='s
+charset before handing it over.  A part with an `<html>\=' tag of its own, or
+one that declares a charset itself, is written out untouched.  The text is
+never re-encoded; only the wrapper is added.
+
+Issue #387."
+  :group 'vm-mime
+  :type 'boolean)
+
 (defcustom vm-mime-externalize-cid-references t
   "*Whether to give an external viewer the images an HTML part refers to.
 A sender who puts a picture in an HTML message attaches it as another part and

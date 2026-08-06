@@ -205,6 +205,16 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * An HTML part shown in an external viewer now says what character set it
+    is in.  Plenty of mail carries text/html that is a fragment rather than a
+    document -- it opens with a `<span>' and has no `<html>' and no `<head>' --
+    and the file VM writes for the viewer therefore said nothing about the
+    charset, which had been in the part's header.  A browser then guessed, and
+    got accented letters and curly quotes wrong.  Such a fragment is now
+    wrapped in a document declaring the part's charset; a part that is already
+    a document, or that declares a charset itself, is written out untouched,
+    and the text is never re-encoded.  Set
+    `vm-mime-complete-html-for-external-viewer' to nil for the old behaviour.
   * HTML quoted in a reply is no longer broken into lines, and no longer
     depends on the width of the window the message was read in.  An HTML part
     has no line breaks of its own, so whatever converts it to text decides
