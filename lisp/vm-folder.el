@@ -5182,6 +5182,30 @@ current changes of the folder before making it read-only."
 (defvar scroll-in-place)
 
 ;; this does the real major mode scutwork.
+(defun vm-folder-hard-link-count (&optional file)
+  "How many names the folder's file has, or nil if that cannot be told.
+FILE defaults to the visited file."
+  (let* ((name (or file buffer-file-name))
+	 (attributes (and (stringp name) (file-attributes name))))
+    (and attributes (file-attribute-link-number attributes))))
+
+(defun vm-warn-about-hard-links ()
+  "Say so when the folder's file has another name, and saving will break it.
+`file-precious-flag' writes a temporary file and renames it into place, which
+gives the folder's name a new inode; every other name for the old one keeps
+the mail as it was and quietly stops following this folder.  Symbolic links
+are handled -- see `file-preserve-symlinks-on-save' above -- but a hard link
+cannot be, so the choice is `vm-folder-file-precious-flag' nil or knowing.
+Issue #532."
+  (let ((links (vm-folder-hard-link-count)))
+    (when (and links (> links 1) file-precious-flag)
+      (vm-warn 0 3 (concat "%s has %d names; saving will leave the other%s "
+			   "with the mail as it is now.  Set "
+			   "vm-folder-file-precious-flag to nil for this "
+			   "folder to keep them together")
+	       (file-name-nondirectory buffer-file-name)
+	       links (if (> links 2) "s" "")))))
+
 (defun vm-mode-internal (&optional access-method reload)
   "Turn on vm-mode in the current buffer.
 ACCESS-METHOD is either `pop' or `imap' for server folders.
@@ -5281,6 +5305,11 @@ folder-access-data should be preserved."
   (when (boundp 'file-preserve-symlinks-on-save) ; Emacs 28.1
     (make-local-variable 'file-preserve-symlinks-on-save)
     (setq file-preserve-symlinks-on-save t))
+  ;; A *hard* link cannot be saved that way, and cannot be saved any other way
+  ;; either while the write is atomic: a rename gives this name a new inode and
+  ;; leaves every other name on the old one.  So say so on the way in, rather
+  ;; than let the other name quietly stop following the folder (issue #532).
+  (vm-warn-about-hard-links)
   ;; scroll in place messes with scroll-up and this loses
   (make-local-variable 'scroll-in-place)
   (setq scroll-in-place nil)

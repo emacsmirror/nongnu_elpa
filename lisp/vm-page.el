@@ -951,6 +951,17 @@ is done if necessary.  (USR, 2010-01-14)"
   ;;     (vm-toggle-thread 1))
   )
 
+(defvar vm-headers-exposed nil
+  "Whether `vm-expose-hidden-headers' has exposed the headers here.
+Buffer-local to the buffer the message is shown in, and reset with it, so
+the next message starts with its headers hidden as usual.
+
+The narrowing used to carry this: exposed meant the visible region started
+at the message rather than at its visible headers.  With
+`vm-honor-page-delimiters' the visible region is a page, whose start says
+nothing about the headers, so the state is kept here instead.  Issue #513.")
+(make-variable-buffer-local 'vm-headers-exposed)
+
 ;;;###autoload
 (defun vm-expose-hidden-headers ()
   "Toggle exposing and hiding message headers that are normally not visible."
@@ -965,7 +976,15 @@ is done if necessary.  (USR, 2010-01-14)"
 				   vm-presentation-buffer))
     (and vm-presentation-buffer
 	 (set-buffer vm-presentation-buffer))
-    (let* ((exposed (= (point-min) (vm-start-of (car vm-message-pointer)))))
+    (let* ((exposed (if vm-honor-page-delimiters
+			;; The narrowing cannot say: it is a page, and its
+			;; start has nothing to do with the headers.  #513
+			vm-headers-exposed
+		      (= (point-min) (vm-start-of (car vm-message-pointer)))))
+	   ;; Where the reader was.  Toggling the headers changes what is
+	   ;; narrowed, not the text, so this position stays good.
+	   (reading (point)))
+      (setq vm-headers-exposed (not exposed))
       (vm-widen-page)
       (goto-char (point-max))
       (widen)
@@ -980,9 +999,25 @@ is done if necessary.  (USR, 2010-01-14)"
 	     (= (window-start w) (vm-vheaders-of (car vm-message-pointer)))
 	     (not exposed)
 	     (set-window-start w (vm-start-of (car vm-message-pointer)))))
-      (if vm-honor-page-delimiters
-	  (vm-narrow-to-page))))
+      (when vm-honor-page-delimiters
+	;; Back to the page that was being read, rather than the first one.
+	;; `vm-narrow-to-page' narrows to the page point is in, and point was
+	;; sent to the top of the message just above -- so pressing `t' on
+	;; page three left you looking at page one, which the reporter of
+	;; issue #513 took for the command having failed.  The headers are
+	;; exposed either way; they may be off screen, which is the price of
+	;; not being moved.
+	(vm-restore-reading-position reading)
+	(vm-narrow-to-page))))
   )
+
+(defun vm-restore-reading-position (position)
+  "Put point back at POSITION, and the window with it.
+Does nothing if POSITION is outside what is visible now."
+  (when (and position (<= (point-min) position) (<= position (point-max)))
+    (goto-char position)
+    (let ((w (vm-get-visible-buffer-window (current-buffer))))
+      (when w (set-window-point w position)))))
 
 (defun vm-widen-page ()
   (if (or (> (point-min) (vm-text-of (car vm-message-pointer)))
