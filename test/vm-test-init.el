@@ -111,6 +111,13 @@ Bind `vm-use-menus' to this in a test that means to exercise the menus.")
 ;; reported as leaving it behind.
 (get-buffer-create " *split*")
 
+;; And mail-extr.el's two, kept for the same reason.  Anything that pulls an
+;; address apart with `mail-extract-address-components' makes them --
+;; vm-smime.el does, reading the recipients of a composition -- so without
+;; these the first test to do so is reported as leaking them.
+(get-buffer-create " *canonical address*")
+(get-buffer-create " *extract address components*")
+
 ;;; The toolbar
 
 ;; Like the menus: installing it defines tool-bar keys in `vm-mode-map', a

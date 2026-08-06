@@ -191,8 +191,8 @@ normal flow"
 ;;;###autoload
 (defun vm-smime-sign-message ()
   "Toggle the current composition for S/MIME signing. This only
-sets a flag and will not do the signing immediately. Actual
-singing is done upon sending the message. If the message is
+sets a flag and will not do the signing immediately.  The signing
+itself is done upon sending the message. If the message is
 already set for signing this function will clear the flag so
 that no signing is done"
   (interactive)
@@ -214,7 +214,7 @@ that no signing is done"
 only sets a flag and will not do the encryption immediately.
 Actual encryption is done upon sending the message. If the
 message is already set for encryption this function will clear
-the flag so that no signing is done"
+the flag so that no encryption is done"
   (interactive)
   (if (eq major-mode 'mail-mode)
       (if vm-smime-encrypt-message
@@ -224,7 +224,7 @@ the flag so that no signing is done"
 		       (vm-replace-in-string
 			(vm-replace-in-string
 			 mode-name
-			 "SIGNED\\+" "SINGED ")
+			 "SIGNED\\+" "SIGNED ")
 			"ENCRYPTED " "")))
 	(set (make-local-variable 'vm-smime-encrypt-message) t)
 	(if (not vm-smime-sign-message)
