@@ -9,53 +9,77 @@
 
 (require 'el-mock)
 
+(defmacro mastodon-media-with-mock-image-foo (&rest body)
+  `(progn
+     (if noninteractive
+         (mock (create-image *
+                             (when (version< emacs-version "27.1") 'imagemagick)
+                             t) ;; props arg fails non-interactively
+               => '(image foo))
+       (mock (create-image *
+                           (when (version< emacs-version "27.1") 'imagemagick)
+                           t :height 123)
+             => '(image foo)))
+     ,@body))
+
+(defmacro mastodon-media-mock-url-retrieve-process (&rest body)
+  `(progn
+     (if noninteractive
+         (mock (url-retrieve
+                "http://example.org/image.png"
+                #'mastodon-media--process-image-response
+                '("http://example.org/image.png" :my-marker
+                  nil ;; props arg fails non-interactively
+                  5))
+               => :called-as-expected)
+       (mock (url-retrieve
+              "http://example.org/image.png"
+              #'mastodon-media--process-image-response
+              '("http://example.org/image.png" :my-marker
+                (:max-height 321)
+                5))
+             => :called-as-expected))
+     ,@body))
+
 (ert-deftest mastodon-media--get-avatar-rendering ()
   "Should return text with all expected properties."
   (with-mock
     ;; (mock (image-type-available-p 'imagemagick) => t)
-    (if noninteractive
-        (mock (create-image *
-                            (when (version< emacs-version "27.1") 'imagemagick)
-                            t)
-              => :mock-image)
-      (mock (create-image *
-                          (when (version< emacs-version "27.1") 'imagemagick)
-                          t
-                          :height 123)
-            => :mock-image))
-    (let* ((mastodon-media--avatar-height 123)
-           (result (mastodon-media--get-avatar-rendering "http://example.org/img.png"))
-           (result-no-properties (substring-no-properties result))
-           (properties (text-properties-at 0 result)))
-      (should (string= "  " result-no-properties))
-      (should (string= "http://example.org/img.png" (plist-get properties 'media-url)))
-      (should (eq 'needs-loading (plist-get properties 'media-state)))
-      (should (eq 'avatar (plist-get properties 'media-type)))
-      (should (eq :mock-image (plist-get properties 'display))))))
+    (mastodon-media-with-mock-image-foo
+     (let* ((mastodon-media--avatar-height 123)
+            (result (mastodon-media--get-avatar-rendering "http://example.org/img.png"))
+            (result-no-properties (substring-no-properties result))
+            (properties (text-properties-at 0 result)))
+       (should (string= "  " result-no-properties))
+       (should (string= "http://example.org/img.png" (plist-get properties 'media-url)))
+       (should (eq 'needs-loading (plist-get properties 'media-state)))
+       (should (eq 'avatar (plist-get properties 'media-type)))
+       (should (equal '(image foo)
+                      (plist-get properties 'display)))))))
 
 (ert-deftest mastodon-media--get-media-link-rendering ()
   "Should return text with all expected properties."
   (with-mock
-   (mock (create-image * nil t) => :mock-image)
-   (let* ((mastodon-media--preview-max-height 123)
-          (result
-           (mastodon-media--get-media-link-rendering "http://example.org/img.png"
-                                                     "http://example.org/remote/img.png"
-                                                     "image"))
-          (result-no-properties (substring-no-properties result))
-          (properties (text-properties-at 0 result)))
-     (should (string= "[img] " result-no-properties))
-     (should (string= "http://example.org/img.png" (plist-get properties 'media-url)))
-     (should (eq 'needs-loading (plist-get properties 'media-state)))
-     (should (eq 'media-link (plist-get properties 'media-type)))
-     (should (eq :mock-image (plist-get properties 'display)))
-     (should (eq 'highlight (plist-get properties 'mouse-face)))
-     (should (eq 'image (plist-get properties 'mastodon-tab-stop)))
-     (should (string= "http://example.org/remote/img.png" (plist-get properties 'image-url)))
-     (should (eq mastodon-tl--shr-image-map-replacement (plist-get properties 'keymap)))
-     (should (string= "image" (plist-get properties 'mastodon-media-type)))
-     (should (string= "RET: load full image or play video, i for image options, S: toggle sensitive media"
-                      (plist-get properties 'help-echo))))))
+    (mock (create-image * nil t) => :mock-image)
+    (let* ((mastodon-media--preview-max-height 123)
+           (result
+            (mastodon-media--get-media-link-rendering "http://example.org/img.png"
+                                        "http://example.org/remote/img.png"
+                                        "image"))
+           (result-no-properties (substring-no-properties result))
+           (properties (text-properties-at 0 result)))
+      (should (string= "[img] " result-no-properties))
+      (should (string= "http://example.org/img.png" (plist-get properties 'media-url)))
+      (should (eq 'needs-loading (plist-get properties 'media-state)))
+      (should (eq 'media-link (plist-get properties 'media-type)))
+      (should (eq :mock-image (plist-get properties 'display)))
+      (should (eq 'highlight (plist-get properties 'mouse-face)))
+      (should (eq 'image (plist-get properties 'mastodon-tab-stop)))
+      (should (string= "http://example.org/remote/img.png" (plist-get properties 'image-url)))
+      (should (eq mastodon-tl--shr-image-map-replacement (plist-get properties 'keymap)))
+      (should (string= "image" (plist-get properties 'mastodon-media-type)))
+      (should (string= "RET: load full image or play video, i for image options, S: toggle sensitive media"
+                       (plist-get properties 'help-echo))))))
 
 (ert-deftest mastodon-media:get-media-link-rendering-gif ()
   "Should return text with all expected properties."
@@ -87,24 +111,24 @@
         (mastodon-media--avatar-height 123))
     (with-mock
       ;; (mock (image-type-available-p 'imagemagick) => t)
-      (mock (create-image
-             *
-             (when (version< emacs-version "27.1") 'imagemagick)
-             t :height 123)
-            => '(image foo))
-      (mock (copy-marker 7) => :my-marker )
-      (mock (url-retrieve
-             url
-             #'mastodon-media--process-image-response
-             `(,url :my-marker (:height 123) 1))
-            => :called-as-expected)
-
-      (with-temp-buffer
-        (insert (concat "Start:"
-                        (mastodon-media--get-avatar-rendering "http://example.org/img.png")
-                        ":rest"))
-
-        (should (eq :called-as-expected (mastodon-media--load-image-from-url url 'avatar 7 1)))))))
+      (mastodon-media-with-mock-image-foo
+       (mock (copy-marker 7) => :my-marker)
+       (if noninteractive
+           (mock (url-retrieve
+                  url
+                  #'mastodon-media--process-image-response
+                  `(,url :my-marker nil 1))
+                 => :called-as-expected)
+         (mock (url-retrieve
+                url
+                #'mastodon-media--process-image-response
+                `(,url :my-marker (:height 123) 1))
+               => :called-as-expected))
+       (with-temp-buffer
+         (insert (concat "Start:"
+                         (mastodon-media--get-avatar-rendering "http://example.org/img.png")
+                         ":rest"))
+         (should (eq :called-as-expected (mastodon-media--load-image-from-url url 'avatar 7 1))))))))
 
 (ert-deftest mastodon-media--load-image-from-url-avatar-without-imagemagic ()
   "Should make the right call to url-retrieve."
@@ -119,7 +143,6 @@
              #'mastodon-media--process-image-response
              `(,url :my-marker () 1))
             => :called-as-expected)
-
       (with-temp-buffer
         (insert (concat "Start:"
                         (mastodon-media--get-avatar-rendering "http://example.org/img.png")
@@ -133,21 +156,15 @@
     (with-mock
       ;; (mock (image-type-available-p 'imagemagick) => t)
       (mock (create-image * nil t) => '(image foo))
-      (mock (copy-marker 7) => :my-marker )
-      (mock (url-retrieve
-             "http://example.org/image.png"
-             #'mastodon-media--process-image-response
-             '("http://example.org/image.png" :my-marker
-               (:max-height 321) ;; FIXME: fails non-interactively: is nil
-               5))
-            => :called-as-expected)
-      (with-temp-buffer
-        (insert (concat "Start:"
-                        (mastodon-media--get-media-link-rendering url)
-                        ":rest"))
-        (let ((mastodon-media--preview-max-height 321))
-          (should (eq :called-as-expected
-                      (mastodon-media--load-image-from-url url 'media-link 7 5))))))))
+      (mock (copy-marker 7) => :my-marker)
+      (mastodon-media-mock-url-retrieve-process
+       (with-temp-buffer
+         (insert (concat "Start:"
+                         (mastodon-media--get-media-link-rendering url)
+                         ":rest"))
+         (let ((mastodon-media--preview-max-height 321))
+           (should (eq :called-as-expected
+                       (mastodon-media--load-image-from-url url 'media-link 7 5)))))))))
 
 (ert-deftest mastodon-media--load-image-from-url-media-link-without-imagemagic ()
   "Should make the right call to url-retrieve."
@@ -155,22 +172,18 @@
     (with-mock
       ;; (mock (image-type-available-p 'imagemagick) => nil)
       ;; (mock (image-transforms-p) => nil)
-      (mock (create-image * nil t :height 20) => '(image foo))
-      (mock (copy-marker 7) => :my-marker )
-      (mock (url-retrieve
-             "http://example.org/image.png"
-             #'mastodon-media--process-image-response
-             '("http://example.org/image.png" :my-marker
-               (:max-height 321) ;; FIXME: fails non-interactively: is nil
-               5))
-            => :called-as-expected)
-
-      (with-temp-buffer
-        (insert (concat "Start:"
-                        (mastodon-media--get-avatar-rendering url)
-                        ":rest"))
-        (let ((mastodon-media--preview-max-height 321))
-          (should (eq :called-as-expected (mastodon-media--load-image-from-url url 'media-link 7 5))))))))
+      (if noninteractive
+          (mock (create-image * nil t) ;; props arg fails non-interactively
+                => '(image foo))
+        (mock (create-image * nil t :height 20) => '(image foo)))
+      (mock (copy-marker 7) => :my-marker)
+      (mastodon-media-mock-url-retrieve-process
+       (with-temp-buffer
+         (insert (concat "Start:"
+                         (mastodon-media--get-avatar-rendering url)
+                         ":rest"))
+         (let ((mastodon-media--preview-max-height 321))
+           (should (eq :called-as-expected (mastodon-media--load-image-from-url url 'media-link 7 5)))))))))
 
 (ert-deftest mastodon-media--load-image-from-url-url-fetching-fails ()
   "Should cope with failures in url-retrieve."
@@ -178,22 +191,16 @@
         (mastodon-media--avatar-height 123))
     (with-mock
       ;; (mock (image-type-available-p 'imagemagick) => t)
-      (mock (create-image
-             *
-             (when (version< emacs-version "27.1") 'imagemagick)
-             t
-             :height 123) ;; FIXME: fails non-interactively, is nil
-            => '(image foo))
-      (stub url-retrieve => (error "url-retrieve failed"))
+      (mastodon-media-with-mock-image-foo
+       (stub url-retrieve => (error "url-retrieve failed"))
+       (with-temp-buffer
+         (insert (concat "Start:"
+                         (mastodon-media--get-avatar-rendering "http://example.org/img.png")
+                         ":rest"))
 
-      (with-temp-buffer
-        (insert (concat "Start:"
-                        (mastodon-media--get-avatar-rendering "http://example.org/img.png")
-                        ":rest"))
-
-        (should (eq :loading-failed (mastodon-media--load-image-from-url url 'avatar 7 1)))
-        ;; the media state was updated so we won't load this again: 
-        (should (eq 'loading-failed (get-text-property 7 'media-state)))))))
+         (should (eq :loading-failed (mastodon-media--load-image-from-url url 'avatar 7 1)))
+         ;; the media state was updated so we won't load this again:
+         (should (eq 'loading-failed (get-text-property 7 'media-state))))))))
 
 (ert-deftest mastodon-media--process-image-response ()
   "Should process the HTTP response and adjust the source buffer."
@@ -221,7 +228,8 @@
           (mock (create-image
                  "fake\nimage\ndata"
                  (when (version< emacs-version "27.1") 'imagemagick)
-                 t ':image :option) => :fake-image)
+                 t ':image :option)
+                => :fake-image)
 
           (mastodon-media--process-image-response
            () "http://example.org/image.png" used-marker '(:image :option) 1)
