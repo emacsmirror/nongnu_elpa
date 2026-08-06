@@ -441,6 +441,37 @@ The optional bindings are installed first, so they are covered too."
           (walk (symbol-value m) nil (symbol-name m)))))
     (should (equal nil (sort (delete-dups broken) #'string<)))))
 
+(ert-deftest vm-integration-test-no-accidental-duplicate-definitions ()
+  "No function is defined in two files, bar the ones that mean to be.
+Issue #584.  `vm-vs-and\', `vm-vs-or\' and `vm-vs-not\' were defined in both
+vm-virtual.el and vm-avirtual.el, so which one you got depended on load order,
+and the copy with the diagnostics lost.  Nothing warns about this: each
+`defun\' is fine on its own.
+
+The exception is the three `vm-mime-display-internal-*\' handlers that vm-epg.el
+and vm-pgg.el both define.  That pair is deliberate -- they are alternative
+implementations, only one is meant to be loaded, and both files and the manual
+say so."
+  (let ((seen (make-hash-table :test 'equal))
+        (expected '("vm-mime-display-internal-application/pgp-keys"
+                    "vm-mime-display-internal-multipart/encrypted"
+                    "vm-mime-display-internal-multipart/signed"))
+        duplicates)
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (member (file-name-nondirectory file)
+                      '("vm-autoloads.el" "vm-cus-load.el" "vm-version-conf.el"))
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (while (re-search-forward
+                  "^(def\\(un\\|subst\\|macro\\) \\([^ ()\n]+\\)" nil t)
+            (let* ((name (match-string 2))
+                   (where (gethash name seen)))
+              (when (and where (not (equal where file)))
+                (push name duplicates))
+              (puthash name file seen))))))
+    (should (equal expected (sort (delete-dups duplicates) #'string<)))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here

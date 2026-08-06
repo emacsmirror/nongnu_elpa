@@ -778,45 +778,66 @@ Prefix arg means the new virtual folder should be visited read only."
   (vm-display nil nil '(vm-virtual-help) '(vm-virtual-help))
   (vm-inform 0 "VV = visit, VX = apply selectors, VC = create, VM = toggle virtual mirror"))
 
+(defun vm-vs-diagnose (combinator result selector arglist)
+  "Print what COMBINATOR made of SELECTOR with ARGLIST, if asked to.
+Does nothing unless `vm-virtual-check-diagnostics\' is set.  The line is
+indented by `vm-virtual-check-level\', so nesting shows as nesting."
+  (when vm-virtual-check-diagnostics
+    (princ (format "%s%s: %s (%S%s)\n"
+		   (make-string vm-virtual-check-level ? )
+		   combinator (if result t nil) selector
+		   (if arglist (format " %S" arglist) "")))))
+
 (defun vm-vs-or (m &rest selectors)
   "Virtual selector combinator for checking the disjunction of the
 given SELECTORS."
-  (let ((result nil) selector arglist function)
+  (let ((case-fold-search vm-virtual-check-case-fold-search)
+	(vm-virtual-check-level (+ 2 vm-virtual-check-level))
+	(result nil) selector arglist function)
     (while selectors
       (setq selector (car (car selectors))
 	    function (cdr (assq selector vm-virtual-selector-function-alist)))
       (if (null function)
 	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
 	(setq arglist (cdr (car selectors))
-	      result (apply function m arglist)))
+	      result (apply function m arglist))
+	(vm-vs-diagnose "or" result selector arglist))
       (setq selectors (if result nil (cdr selectors))))
     result ))
 
 (defun vm-vs-and (m &rest selectors)
   "Virtual selector combinator for checking the conjunction of the
 given SELECTORS."
-  (let ((result t) selector arglist function)
+  (let ((case-fold-search vm-virtual-check-case-fold-search)
+	(vm-virtual-check-level (+ 2 vm-virtual-check-level))
+	(result t) selector arglist function)
     (while selectors
       (setq selector (car (car selectors))
 	    function (cdr (assq selector vm-virtual-selector-function-alist)))
       (if (null function)
 	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
 	(setq arglist (cdr (car selectors))
-	      result (apply function m arglist)))
+	      result (apply function m arglist))
+	(vm-vs-diagnose "and" result selector arglist))
       (setq selectors (if (null result) nil (cdr selectors))))
     result ))
 
 (defun vm-vs-not (m selector)
   "Virtual selector combinator for checking the negation of the
-given SELECTOR."
-  (let ((selector (car selector))
+given SELECTOR.
+An invalid selector matches nothing, so this returns nil for one rather than
+negating a result it never got."
+  (let ((case-fold-search vm-virtual-check-case-fold-search)
+	(vm-virtual-check-level (+ 2 vm-virtual-check-level))
+	(selector (car selector))
 	(selectorlist (cdr selector))
 	function
 	(result nil))
     (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
     (if (null function)
 	(vm-warn 0 2 "Invalid virtual selector: %s" selector)
-      (setq result (not (apply function m selectorlist))))
+      (setq result (not (apply function m selectorlist)))
+      (vm-vs-diagnose "not" result selector selectorlist))
     result))
 
 (defun vm-vs-sexp (m expression)

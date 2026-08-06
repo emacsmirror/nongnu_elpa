@@ -235,77 +235,12 @@
 ;;-----------------------------------------------------------------------------
 ;; we redefine the basic selectors for some extra features ...
 
-(defcustom vm-virtual-check-case-fold-search t
-  "Whether to use case-fold-search or not when applying virtual selectors.
-I was really missing this!"
-  :type 'boolean
-  :group 'vm-avirtual)
-
-(defcustom vm-virtual-check-diagnostics nil
-  "When set to nil we will display messages on matching selectors."
-  :type 'boolean
-  :group 'vm-avirtual)
-
-(defvar vm-virtual-check-level 0)
-
-(defun vm-vs-or (m &rest selectors)
-  "Virtual selector combinator for checking the disjunction of the
-given SELECTORS."
-  (let ((case-fold-search vm-virtual-check-case-fold-search)
-        (vm-virtual-check-level (+ 2 vm-virtual-check-level))
-        (result nil) selector arglist function)
-    (while selectors
-      (setq selector (car (car selectors))
-	    function (cdr (assq selector vm-virtual-selector-function-alist)))
-      (if (null function)
-	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
-	(setq arglist (cdr (car selectors))
-	      result (apply function m arglist))
-	(if vm-virtual-check-diagnostics
-	    (princ (format "%sor: %s (%S%s)\n" 
-			   (make-string vm-virtual-check-level ? )
-			   (if result t nil) selector
-			   (if arglist (format " %S" arglist) "")))))
-      (setq selectors (if result nil (cdr selectors))))
-    result))
-
-(defun vm-vs-and (m &rest selectors)
-  "Virtual selector combinator for checking the conjunction of the
-given SELECTORS."
-  (let ((vm-virtual-check-level (+ 2 vm-virtual-check-level))
-        (result t) selector arglist function)
-    (while selectors
-      (setq selector (car (car selectors))
-	    function (cdr (assq selector vm-virtual-selector-function-alist)))
-      (if (null function)
-	  (vm-warn 0 2 "Invalid virtual selector: %s" selector)
-	(setq arglist (cdr (car selectors))
-	      result (apply function m arglist))
-	(if vm-virtual-check-diagnostics
-	    (princ (format "%sand: %s (%S%s)\n" 
-			   (make-string vm-virtual-check-level ? )
-			   (if result t nil) selector
-			   (if arglist (format " %S" arglist) "")))))
-      (setq selectors (if (null result) nil (cdr selectors))))
-    result))
-
-(defun vm-vs-not (m selector)
-  "Virtual selector combinator for checking the negation of the
-given SELECTOR."
-  (let ((vm-virtual-check-level (+ 2 vm-virtual-check-level))
-        (selector (car selector))
-	(selectorlist (cdr selector))
-        result function)
-    (setq function (cdr (assq selector vm-virtual-selector-function-alist)))
-    (if (null function)
-	(vm-warn 0 2 "Invalid virtual selector: %s" selector)
-      (setq result (apply function m selectorlist))
-      (if vm-virtual-check-diagnostics
-	  (princ (format "%snot: %s for (%S%s)\n"
-			 (make-string vm-virtual-check-level ? )
-			 (if result t nil) selector
-			 (if selectorlist (format " %S" selectorlist) "")))))
-    (not result)))
+;; `vm-vs-or\', `vm-vs-and\' and `vm-vs-not\' used to be redefined here, to add
+;; the case folding and the diagnostics this file's checker prints.  Both are in
+;; the definitions in vm-virtual.el now.  Redefining them here only worked when
+;; this file happened to load after that one, and it does not: vm-summary.el
+;; pulls this in through vm-summary-faces.el, and vm.el requires vm-virtual
+;; afterwards, so the copies here never won and the diagnostics never printed.
 
 ;;-----------------------------------------------------------------------------
 ;;;###autoload

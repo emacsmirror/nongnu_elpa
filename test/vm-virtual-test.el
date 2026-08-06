@@ -727,6 +727,47 @@ the check for #575 did not see it."
     ;; two virtual folders
     (should (widget-apply type :match '(("a" (("/f") (any))) ("b" (("/g") (any))))))))
 
+(ert-deftest vm-virtual-test-combinators-print-diagnostics ()
+  "REGRESSION: `vm-virtual-check-diagnostics\' reaches the combinators.
+Issue #584.  `vm-vs-and\', `vm-vs-or\' and `vm-vs-not\' were defined twice, plainly
+in vm-virtual.el and with the diagnostics in vm-avirtual.el, and the plain pair
+won: vm-summary.el pulls vm-avirtual in through vm-summary-faces.el and vm.el
+requires vm-virtual afterwards.  So `vm-virtual-check-selector-interactive\' with
+a prefix argument printed a line for each leaf selector and nothing for the
+combinators, which is where its indentation and its order of evaluation would
+have been worth reading."
+  (require 'vm-avirtual)
+  (let* ((vm-virtual-check-diagnostics t)
+         (vm-virtual-check-level 0)
+         (vm-virtual-selector-function-alist
+          (append (list (cons 'yes (lambda (_m) t))
+                        (cons 'no (lambda (_m) nil)))
+                  vm-virtual-selector-function-alist)))
+    (should (equal "  and: t (yes)\n"
+                   (with-output-to-string (vm-vs-and nil '(yes)))))
+    (should (equal "  or: nil (no)\n"
+                   (with-output-to-string (vm-vs-or nil '(no)))))
+    (should (equal "  not: t (no)\n"
+                   (with-output-to-string (vm-vs-not nil '(no)))))
+    ;; nesting shows as nesting
+    (should (equal "    or: t (yes)\n  and: t (or ((yes)))\n"
+                   (with-output-to-string (vm-vs-and nil '(or (yes))))))))
+
+(ert-deftest vm-virtual-test-combinators-honour-case-folding ()
+  "The combinators bind `case-fold-search\' from the option that names them.
+Issue #584.  `vm-virtual-check-case-fold-search\' was read only by the copies in
+vm-avirtual.el, which lost, so the option did nothing for a folder's selectors."
+  (require 'vm-avirtual)
+  (let* ((seen 'unset)
+         (vm-virtual-selector-function-alist
+          (list (cons 'peek (lambda (_m) (setq seen case-fold-search) t)))))
+    (let ((vm-virtual-check-case-fold-search t) (case-fold-search nil))
+      (vm-vs-and nil '(peek))
+      (should (eq t seen)))
+    (let ((vm-virtual-check-case-fold-search nil) (case-fold-search t))
+      (vm-vs-and nil '(peek))
+      (should (eq nil seen)))))
+
 (provide 'vm-virtual-test)
 
 ;;; vm-virtual-test.el ends here
