@@ -43,6 +43,29 @@
 ;; Add VM lisp directory to load path
 (add-to-list 'load-path vm-test-lisp-dir)
 
+;;; VM's optional companions
+
+(defvar vm-test-optional-dir
+  (expand-file-name "opt/elpa" vm-test-dir)
+  "Where `make optional-packages' installs BBDB, emacs-w3m and vcard.
+Absent unless that has been run; the tests that need one skip without it.")
+
+(defun vm-test-optional-load-path ()
+  "Put each installed optional package on `load-path'."
+  (when (file-directory-p vm-test-optional-dir)
+    (dolist (dir (directory-files vm-test-optional-dir t "\\`[^.]"))
+      (when (file-directory-p dir)
+        (add-to-list 'load-path dir)))))
+
+(vm-test-optional-load-path)
+
+;; Loaded here rather than by the tests that use them: each is loaded once per
+;; Emacs and keeps buffers and variables, so whichever test required one first
+;; was reported as leaking them.  `bbdb-initialize' is *not* called -- that is
+;; what hooks BBDB into VM, and it would change every other test's world.
+(dolist (feature '(bbdb bbdb-com vcard))
+  (require feature nil t))
+
 ;; ...and the test directory itself, so a test file can `require' a helper
 ;; module that lives beside it, such as vm-imap-live-init.
 (add-to-list 'load-path vm-test-dir)
@@ -97,6 +120,23 @@ Bind `vm-use-menus' to this in a test that means to exercise the menus.")
 (let ((vm-init-file nil)
       (vm-preferences-file nil))
   (vm-session-initialization))
+
+;; No timers.  `vm-start-itimers-if-needed' runs when a folder is visited and
+;; starts two repeating timers from these intervals: one to flush cached data
+;; every 90 seconds, one to *check the maildrops for new mail* every 300.  A
+;; suite that visits folders therefore leaves both running, where they fire
+;; between later tests -- and the mail check would talk to whatever server
+;; test/vm-live-config.el names.  Neither is something a test should be
+;; sitting behind, and the leak report cannot see a timer.
+;;
+;; `vm-start-itimers-if-needed' does nothing at all when none of the three
+;; intervals is a number, so this is the switch rather than cancelling them
+;; afterwards.  A test that wants the timers binds these back.
+;; `vm-auto-get-new-mail' is left alone: its default is t, which is not a
+;; number, so it starts no timer -- and nil would stop a folder visit fetching
+;; mail at all, which the live IMAP tests are about.
+(setq vm-flush-interval nil
+      vm-mail-check-interval nil)
 
 ;; The placeholders `vm-set-window-configuration' names for a summary,
 ;; composition or edit buffer that is not there.  It only ever looks them up;
