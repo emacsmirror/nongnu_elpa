@@ -138,6 +138,13 @@ Bind `vm-use-menus' to this in a test that means to exercise the menus.")
 (setq vm-flush-interval nil
       vm-mail-check-interval nil)
 
+;; No signature.  Starting a composition inserts one, and `mail-signature'
+;; defaults to t, which means the developer's own ~/.signature -- so the tests
+;; either read a file that is none of their business or, where there is none,
+;; warn about it.  `vm-warn' sleeps for the two seconds it names, and eleven
+;; tests start a composition, so that alone was 22 seconds of the suite.
+(setq mail-signature nil)
+
 ;; The placeholders `vm-set-window-configuration' names for a summary,
 ;; composition or edit buffer that is not there.  It only ever looks them up;
 ;; what creates them is `set-tapestry', restoring a configuration that names
