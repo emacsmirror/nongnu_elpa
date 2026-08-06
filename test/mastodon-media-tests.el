@@ -13,12 +13,16 @@
   "Should return text with all expected properties."
   (with-mock
     ;; (mock (image-type-available-p 'imagemagick) => t)
-    (mock (create-image *
-                        (when (version< emacs-version "27.1") 'imagemagick)
-                        t
-                        :height 123) ;; FIXME: fails non-interactively, is nil
-          => :mock-image)
-
+    (if noninteractive
+        (mock (create-image *
+                            (when (version< emacs-version "27.1") 'imagemagick)
+                            t)
+              => :mock-image)
+      (mock (create-image *
+                          (when (version< emacs-version "27.1") 'imagemagick)
+                          t
+                          :height 123)
+            => :mock-image))
     (let* ((mastodon-media--avatar-height 123)
            (result (mastodon-media--get-avatar-rendering "http://example.org/img.png"))
            (result-no-properties (substring-no-properties result))
