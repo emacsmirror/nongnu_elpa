@@ -622,17 +622,6 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
       (and crlf (vm-mime-lf-to-crlf-region start end))
       (condition-case data
 	  (base64-encode-region start end B-encoding)
-	(wrong-number-of-arguments
-	 ;; call with two args and then strip out the
-	 ;; newlines if we're doing B encoding.
-	 (condition-case data
-	     (base64-encode-region start end)
-	   (error (vm-mime-error "%S" data)))
-	 (if B-encoding
-	     (save-excursion
-	       (goto-char start)
-	       (while (search-forward "\n" end t)
-		 (delete-char -1)))))
 	(error (vm-mime-error "%S" data)))
       (and (> (- end start) 200)
 	   (vm-inform 7 "Encoding base64... done"))

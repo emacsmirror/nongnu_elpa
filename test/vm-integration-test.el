@@ -505,6 +505,43 @@ renamed face as broken, which is what it did the first time I ran this."
                       unresolved)))))))
     (should (equal nil (sort (delete-dups unresolved) #'string<)))))
 
+(ert-deftest vm-integration-test-no-arity-probes ()
+  "Nothing tells Emacs versions apart by calling a function and seeing if it fits.
+Five places used to hand a function more arguments than an old Emacs took and
+catch `wrong-number-of-arguments\\=' to fall back: `get-buffer-window\\=',
+`insert-file-contents\\=' (falling back to running sed),
+`base64-encode-region\\=', `next-window\\=' and `read-file-name\\='.  All were
+dead at Emacs 28.1, the minimum this branch supports, and one of them --
+`read-file-name\\=', whose sixth argument changed meaning rather than
+disappearing -- hid a real defect for years, since the handler made the wrong
+call look like a version difference.  See #476, #587 and #588.
+
+Emacs signals `wrong-number-of-arguments\\=' for a genuine caller mistake, so
+this also keeps such a mistake from being quietly absorbed."
+  (let (probes)
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (with-temp-buffer
+        (insert-file-contents file)
+        (goto-char (point-min))
+        (while (re-search-forward "^[ \t]*(*wrong-number-of-arguments\\_>" nil t)
+          (push (format "%s:%d" (file-name-nondirectory file)
+                        (line-number-at-pos))
+                probes))))
+    (should (equal nil (nreverse probes)))))
+
+(ert-deftest vm-integration-test-the-probed-arities-are-still-there ()
+  "The arities those probes fell back from are the ones Emacs offers.
+This is what made the handlers dead code, so it is what has to stay true."
+  (dolist (probe '((insert-file-contents . 5)   ; file nil 0 4096
+                   (base64-encode-region . 3)   ; start end no-line-break
+                   (next-window . 3)            ; window minibuf all-frames
+                   (get-buffer-window . 2)      ; buffer all-frames
+                   (read-file-name . 6)))       ; ... initial predicate
+    (let ((arity (func-arity (car probe))))
+      (should (<= (car arity) (cdr probe)))
+      (should (or (eq (cdr arity) 'many)
+                  (>= (cdr arity) (cdr probe)))))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
