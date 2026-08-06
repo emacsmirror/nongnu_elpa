@@ -3894,8 +3894,13 @@ otherwise.
 		  ;;----------------------------------
 		  (condition-case error-data
 		      (progn
-			(setq message-size 
-			      (vm-imap-get-uid-message-size process uid))
+			;; The size is only for the progress meter, and the
+			;; arrival FETCH already recorded it, so asking the
+			;; server again costs a command per message fetched
+			;; (issue #185).  Ask only if it is not cached.
+			(setq message-size
+			      (or (vm-fetch-imap-message-size m)
+				  (vm-imap-get-uid-message-size process uid)))
 			(setq statblob (vm-imap-start-status-timer))
 			(vm-set-imap-status-mailbox statblob folder)
 			(vm-set-imap-status-maxmsg statblob 1)

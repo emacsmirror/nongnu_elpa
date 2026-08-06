@@ -663,6 +663,38 @@ writes the attachment."
       (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" mailbox))
       (vm-imap-live-close conn))))
 
+(ert-deftest vm-imap-live-test-loading-a-body-does-not-ask-the-size-again ()
+  "Loading message bodies costs one command each, not two.
+Issue #185.  `vm-fetch-imap-message' asked the server for RFC822.SIZE before
+every body it fetched, for a progress meter, when the FETCH that brought the
+message in had already recorded the size: loading three messages took eight
+commands where four will do.  It now asks only when the size is not cached.
+
+The whole of #185 is not done here -- the bodies are still fetched one message
+per command, where a UID set would do -- but the doubling is."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((vm-enable-external-messages '(imap))
+        (vm-imap-max-message-size 100)
+        (vm-external-fetch-message-for-presentation nil)
+        (checked nil))
+    (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+      (dotimes (_ 2) (vm-imap-live-append conn mailbox vm-imap-live-test--message))
+      (vm-get-new-mail)
+      (should (= 3 (length vm-message-list)))
+      (dolist (m vm-message-list)
+        (should (vm-body-to-be-retrieved-of m))
+        ;; the premise: the size is there to be used
+        (should (vm-fetch-imap-message-size m)))
+      (setf (vm-imap-relay-log relay) nil)
+      (vm-goto-message 2)
+      (vm-load-message 2)
+      (let ((sent (vm-imap-relay-transcript relay 'client)))
+        (should (string-match-p "FETCH[^\n]*BODY" sent))
+        (should-not (string-match-p "FETCH[^\n]*RFC822.SIZE" sent)))
+      (setq checked t))
+    (should checked)))
+
 (ert-deftest vm-imap-live-test-accepted-store-reaches-the-server ()
   "The other half: an accepted STORE does sync and stops being pending.
 Guards the fix above from being a blanket refusal to ever apply server
