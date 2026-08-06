@@ -169,10 +169,15 @@ number up. Issues take the `work_items` path, merge requests `merge_requests`.
   nothing is pending there. Note that a `Re #NNN` trailer means the commit only
   *mentions* the issue, so it is not on its own grounds for `Pending`; check
   which trailer it was before labelling.
-- `Decide` — blocked on a maintainer decision rather than on effort: the
-  analysis is on the issue and the next step is a choice. Assign the issue to
-  the maintainer as well, so it shows up as theirs and not merely unowned. Take
-  it off once the decision is made, whichever way it goes.
+- `Decision Needed` — waiting on a maintainer decision rather than on effort:
+  the analysis is on the issue and the next step is a choice. Assign the issue
+  to the maintainer as well, so it shows up as theirs and not merely unowned.
+  Take it off once the decision is made, whichever way it goes. It was called
+  `Decide` until 2026-08-06.
+
+  Put it on an issue whose *next step* is a choice. An aside offering further
+  work on an issue that is otherwise finished is not one: nothing is blocked
+  there, and labelling those would make the label mean "mentions a choice".
 
   Not the same as `Undecided`, which is Launchpad's imported *importance* field
   and appears only alongside `Launchpad`, next to `Confirmed`, `Incomplete` and
