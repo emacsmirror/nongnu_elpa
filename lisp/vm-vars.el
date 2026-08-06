@@ -2932,6 +2932,27 @@ This only affects the virtual folders created using
 	  (string :tag "Directory path name")
 	  ))
 
+(defcustom vm-virtual-check-case-fold-search t
+  "*Whether virtual selectors match without regard to case.
+Applies to the selectors run by the combinators `vm-vs-and\', `vm-vs-or\' and
+`vm-vs-not\', and by their mail-mode counterparts in vm-avirtual.el."
+  :type 'boolean
+  :group 'vm-avirtual)
+
+(defcustom vm-virtual-check-diagnostics nil
+  "*Non-nil means print what each virtual selector decided, and why.
+The combinators print a line per selector as they evaluate it, indented by
+depth; `vm-virtual-check-selector-interactive\' turns this on for one call when
+given a prefix argument.
+
+Lives here rather than in vm-avirtual.el, which defines the rest of that
+feature, because the combinators that read it are in vm-virtual.el."
+  :type 'boolean
+  :group 'vm-avirtual)
+
+(defvar vm-virtual-check-level 0
+  "How deep the virtual selector combinators are, for indenting diagnostics.")
+
 (defcustom vm-virtual-mirror t
   "*Non-nil value causes the attributes of messages in virtual folders
 to mirror the changes in the attributes of the underlying real messages.
