@@ -114,11 +114,6 @@
 (declare-function vm-get-folder-buffer "vm" (folder))
 ;; The following function is erroneously called for fsfemacs as well
 (declare-function key-or-menu-binding "vm-xemacs" (key &optional menu-flag))
-(declare-function bbdb-get-addresses "ext:bbdb-com"
-		  (only-first-address
-		   uninteresting-senders
-		   get-header-content-function
-		   &rest get-header-content-function-args))
 (declare-function bbdb-message-search "ext:bbdb-com" (name mail))
 
 ;; vm-save.el function
@@ -145,9 +140,13 @@
   (require 'time-date)
   (vm-load-features-silent-when-compiling '(bbdb bbdb-autoloads bbdb-com)))
 
-(defvar bbdb-get-addresses-headers)	; dummy declaration
-(defvar bbdb-user-mail-names)
-(defvar bbdb-get-only-first-address-p)
+(defconst vm-bbdb-address-headers
+  '((authors "From:" "Resent-From:" "Reply-To:" "Sender:")
+    (recipients "Resent-To:" "Resent-CC:" "To:" "CC:" "BCC:"))
+  "The headers each address class of the `in-bbdb\=' selector reads.
+BBDB 2.x had this as `bbdb-get-addresses-headers\=' and did the reading;
+BBDB 3 has no equivalent -- its own version works from the message the MUA
+is showing, which is not what a selector needs.  Issue #567.")
 
 ;;----------------------------------------------------------------------------
 (defvar vm-mail-virtual-selector-function-alist
@@ -281,6 +280,43 @@
     (vm-select-folder-buffer)
     (eq m (car vm-message-pointer))))
 
+(defun vm-bbdb-class-headers (address-class)
+  "The headers the `in-bbdb\=' selector reads for ADDRESS-CLASS.
+Every header of every class when ADDRESS-CLASS is nil."
+  (if (null address-class)
+      (apply #'append (mapcar #'cdr vm-bbdb-address-headers))
+    (or (cdr (assq address-class vm-bbdb-address-headers))
+        (error "No such address class: %s.  There is %s"
+               address-class
+               (mapconcat #'symbol-name
+                          (mapcar #'car vm-bbdb-address-headers) " and ")))))
+
+(defun vm-bbdb-known-address-p (contents only-first)
+  "Whether BBDB has a record for an address in CONTENTS, a header\='s text.
+With ONLY-FIRST, only the first address in it is looked up, which is what
+`bbdb-get-only-first-address-p\=' asked for in BBDB 2.x."
+  (let ((addresses (vm-parse-addresses contents))
+        (found nil))
+    (when (and only-first addresses)
+      (setq addresses (list (car addresses))))
+    (while (and addresses (not found))
+      (let ((components (mail-extract-address-components (car addresses))))
+        ;; One call, where this was two: `bbdb-message-search' tries name and
+        ;; mail together, then mail, then name.  It also matches exactly
+        ;; rather than as a regexp, which is what you want of an address --
+        ;; `foo+bar@example.com' is not the regexp anyone meant.  Issue #549.
+        (setq found (bbdb-message-search (car components) (cadr components))
+              addresses (cdr addresses))))
+    found))
+
+(defun vm-bbdb-search-headers (contents-list only-first)
+  "Whether BBDB knows an address in any of CONTENTS-LIST."
+  (let ((found nil))
+    (while (and contents-list (not found))
+      (setq found (vm-bbdb-known-address-p (car contents-list) only-first)
+            contents-list (cdr contents-list)))
+    found))
+
 (defun vm-vs-in-bbdb (m &optional address-class only-first)
   "check if one of the email addresses in the message headers is known
 in BBDB."
@@ -288,57 +324,25 @@ in BBDB."
   ;; it, where the `bbdb-search-simple' this replaced was in bbdb.el.  VM
   ;; never requires BBDB itself, so ask for the file that has it (#549).
   (require 'bbdb-com)
-  (let (bbdb-user-mail-names)
-    (let* ((bbdb-get-only-first-address-p only-first)
-           (bbdb-user-mail-names nil)
-           (bbdb-get-addresses-headers
-            (if address-class
-                (or (list (assoc address-class bbdb-get-addresses-headers))
-                    (error "no such address class"))
-              bbdb-get-addresses-headers))
-           (addresses (bbdb-get-addresses nil nil
-                                          'bbdb/vm-get-header-content
-                                          (vm-real-message-of m)))
-           (done nil)
-           addr)
-      (while (and (not done) addresses)
-        (setq addr (caddar addresses)
-              addresses (cdr addresses))
-        (let ((name (car addr))
-              (net  (cadr addr)))
-          ;; One call, where this was two: `bbdb-message-search' tries name and
-          ;; mail together, then mail, then name.  It also matches exactly
-          ;; rather than as a regexp, which is what you want of an address --
-          ;; `foo+bar@example.com' is not the regexp anyone meant.  Issue #549.
-          (setq done (bbdb-message-search name net))))
-      done)))
+  ;; The addresses are gathered here rather than by BBDB.  2.x's
+  ;; `bbdb-get-addresses' took a function to read a header with, which is how
+  ;; a selector could ask about a message other than the one on screen; BBDB 3
+  ;; dropped it, and its replacement reads the message the MUA is displaying.
+  ;; Issue #567.
+  (let ((message (vm-real-message-of m)))
+    (vm-bbdb-search-headers
+     (delq nil (mapcar (lambda (header) (vm-get-header-contents message header))
+                       (vm-bbdb-class-headers address-class)))
+     only-first)))
 
 (defun vm-mail-vs-in-bbdb (&optional address-class only-first)
   "check if one of the email addresses in the message headers is known
 in BBDB."
-  ;; `bbdb-message-search' lives in bbdb-com.el and BBDB does not autoload
-  ;; it, where the `bbdb-search-simple' this replaced was in bbdb.el.  VM
-  ;; never requires BBDB itself, so ask for the file that has it (#549).
   (require 'bbdb-com)
-  (let (bbdb-user-mail-names)
-    (let* ((bbdb-get-only-first-address-p only-first)
-           (bbdb-user-mail-names nil)
-           (bbdb-get-addresses-headers
-            (if address-class
-                (or (list (assoc address-class bbdb-get-addresses-headers))
-                    (error "no such address class"))
-              bbdb-get-addresses-headers))
-           (addresses (bbdb-get-addresses nil nil
-                                          'vm-mail-mode-get-header-contents))
-           (done nil)
-           addr)
-      (while (and (not done) addresses)
-        (setq addr (caddar addresses)
-              addresses (cdr addresses))
-        (let ((name (car addr))
-              (net  (cadr addr)))
-          (setq done (bbdb-message-search name net))))
-      done)))
+  (vm-bbdb-search-headers
+   (delq nil (mapcar #'vm-mail-mode-get-header-contents
+                     (vm-bbdb-class-headers address-class)))
+   only-first))
 
 ;;;###autoload
 (defun vm-add-spam-word (word)

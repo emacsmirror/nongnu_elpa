@@ -110,35 +110,20 @@ manual appendix silently loses its options.  That is what this catches."
   (require 'vcard)
   (should (equal nil (vm-optional-test--unresolved "vcard-"))))
 
-(ert-deftest vm-optional-test-bbdb-names-that-do-not-resolve ()
-  "VM's BBDB integration is written against BBDB 2.x, and this is the list.
-Not an assertion that VM is right -- it is not, and #567 is the porting work.
-It pins the size of that job, so that a name leaving or arriving on either
-side shows up as a change here rather than as a void-function for whoever has
-BBDB installed.
-
-The three variables are 2.x's; the six functions were renamed:
-
-    bbdb-record-net          -> bbdb-record-mail
-    bbdb-record-raw-notes    -> bbdb-record-xfields
-    bbdb-record-putprop      -> bbdb-record-set-xfield
-    bbdb-get-field           -> bbdb-record-field
-    bbdb-save-db             -> bbdb-save
-    bbdb-get-addresses       -> gone; bbdb-message-search is the way in"
+(ert-deftest vm-optional-test-bbdb-names-resolve ()
+  "Every BBDB function and variable VM names exists in BBDB.
+It did not until #567: VM was written against BBDB 2.x and nine of the names
+it used were gone -- `bbdb-record-net\=', `bbdb-record-raw-notes\=',
+`bbdb-record-putprop\=', `bbdb-get-field\=', `bbdb-save-db\=',
+`bbdb-get-addresses\=' and three 2.x variables.  Two more were present but
+had changed meaning: `bbdb-split\=' swapped its arguments, and
+`bbdb-create-internal\=' reordered its positional ones so that an address
+landed in the record\='s `aka\=' field."
   (skip-unless (vm-optional-test--installed-p 'bbdb))
   (require 'vm-avirtual)
   (require 'vm-pcrisis)
   (require 'vm-rfaddons)
-  (should (equal '(bbdb-get-addresses
-                   bbdb-get-addresses-headers
-                   bbdb-get-field
-                   bbdb-get-only-first-address-p
-                   bbdb-record-net
-                   bbdb-record-putprop
-                   bbdb-record-raw-notes
-                   bbdb-save-db
-                   bbdb-user-mail-names)
-                 (vm-optional-test--unresolved "bbdb-"))))
+  (should (equal nil (vm-optional-test--unresolved "bbdb-"))))
 
 ;;; What works: the in-bbdb selector
 
@@ -156,18 +141,106 @@ The three variables are 2.x's; the six functions were renamed:
            (kill-buffer buffer)))
        (delete-directory dir t))))
 
-(ert-deftest vm-optional-test-in-bbdb-selector-searches-the-database ()
-  "The `in-bbdb' virtual folder selector reaches BBDB and answers.
-It goes through `bbdb-message-search', which is the one 2.x call that modern
-BBDB kept -- so this is the part of the integration that still works, and the
-test says which part that is."
+(defun vm-optional-test--message-from (from &optional to)
+  "A folder holding one message with the given From and To."
+  (concat "From " (or from "a@example.com") "  Thu Jan  1 00:00:00 2026\n"
+          "From: " (or from "a@example.com") "\n"
+          "To: " (or to "someone@example.com") "\n"
+          "Subject: test\n\nbody\n"))
+
+(ert-deftest vm-optional-test-in-bbdb-selector-answers-for-a-message ()
+  "The `in-bbdb' selector says whether BBDB knows the message's correspondent.
+The whole path: VM reads the headers, parses the addresses and asks BBDB.  It
+used to hand the job to `bbdb-get-addresses', which BBDB 3 does not have."
   (skip-unless (vm-optional-test--installed-p 'bbdb))
   (require 'vm-avirtual)
-  (should (fboundp 'bbdb-message-search))
   (vm-optional-test-with-bbdb
-    (bbdb-create-internal "Alice Example" nil nil nil '("alice@example.com") nil)
-    (should (bbdb-message-search "Alice Example" "alice@example.com"))
-    (should-not (bbdb-message-search "Nobody" "nobody@example.com"))))
+    (bbdb-create-internal :name "Alice Example" :mail "alice@example.com")
+    (vm-test-with-folder (vm-optional-test--message-from "Alice <alice@example.com>")
+      (should (vm-vs-in-bbdb (car vm-message-pointer))))
+    (vm-test-with-folder (vm-optional-test--message-from "bob@example.com")
+      (should-not (vm-vs-in-bbdb (car vm-message-pointer))))))
+
+(ert-deftest vm-optional-test-in-bbdb-selector-takes-an-address-class ()
+  "`(in-bbdb recipients)' looks at the recipient headers and not the sender."
+  (skip-unless (vm-optional-test--installed-p 'bbdb))
+  (require 'vm-avirtual)
+  (vm-optional-test-with-bbdb
+    (bbdb-create-internal :name "Alice Example" :mail "alice@example.com")
+    (vm-test-with-folder (vm-optional-test--message-from
+                          "bob@example.com" "Alice <alice@example.com>")
+      (should (vm-vs-in-bbdb (car vm-message-pointer) 'recipients))
+      (should-not (vm-vs-in-bbdb (car vm-message-pointer) 'authors)))
+    ;; and the other way round
+    (vm-test-with-folder (vm-optional-test--message-from
+                          "Alice <alice@example.com>" "bob@example.com")
+      (should (vm-vs-in-bbdb (car vm-message-pointer) 'authors))
+      (should-not (vm-vs-in-bbdb (car vm-message-pointer) 'recipients)))))
+
+(ert-deftest vm-optional-test-in-bbdb-selector-names-the-classes-it-has ()
+  "An address class that does not exist says which ones do."
+  (skip-unless (vm-optional-test--installed-p 'bbdb))
+  (require 'vm-avirtual)
+  (let ((text-quoting-style 'grave))
+    (vm-test-with-folder (vm-optional-test--message-from "a@example.com")
+      (should (string-match-p
+               "authors and recipients"
+               (cadr (should-error
+                      (vm-vs-in-bbdb (car vm-message-pointer) 'senders))))))))
+
+(ert-deftest vm-optional-test-in-bbdb-selector-in-a-composition ()
+  "The same selector, for the message being written."
+  (skip-unless (vm-optional-test--installed-p 'bbdb))
+  (require 'vm-avirtual)
+  (vm-optional-test-with-bbdb
+    (bbdb-create-internal :name "Alice Example" :mail "alice@example.com")
+    (with-temp-buffer
+      (mail-mode)
+      (insert "To: Alice <alice@example.com>\nSubject: hello\n"
+              mail-header-separator "\nbody\n")
+      (should (vm-mail-vs-in-bbdb))
+      (should (vm-mail-vs-in-bbdb 'recipients))
+      (should-not (vm-mail-vs-in-bbdb 'authors)))))
+
+;;; Personality Crisis profiles kept in BBDB
+
+(ert-deftest vm-optional-test-pcrisis-profiles-round-trip-through-bbdb ()
+  "A profile stored on a BBDB record is read back.
+`vmpc-auto-profiles-file' set to BBDB keeps each address's profile in the
+record's `vmpc-profile' field.  Writing it used `bbdb-record-putprop' and
+reading it `bbdb-get-field', neither of which BBDB 3 has."
+  (skip-unless (vm-optional-test--installed-p 'bbdb))
+  (require 'vm-pcrisis)
+  (vm-optional-test-with-bbdb
+    (let ((vmpc-auto-profiles-file 'BBDB)
+          (vmpc-auto-profiles nil)
+          (vmpc-auto-profiles-expunge-days nil))
+      (vmpc-save-profile-for-address "alice@example.com" '("work"))
+      ;; forget what is in memory and read it back from the database
+      (setq vmpc-auto-profiles nil)
+      (vmpc-load-auto-profiles)
+      (should (equal '("work") (cadr (assoc "alice@example.com"
+                                            vmpc-auto-profiles)))))))
+
+;;; The virtual folders BBDB records ask for
+
+(ert-deftest vm-optional-test-rfaddons-builds-virtual-folders-from-bbdb ()
+  "A record with a `vm-virtual' field gets a virtual folder of its addresses.
+The field was read with `bbdb-record-raw-notes' and the addresses with
+`bbdb-record-net', both gone; and the mail-alias variant split its aliases
+with `bbdb-split', whose arguments BBDB 3 takes the other way round."
+  (skip-unless (vm-optional-test--installed-p 'bbdb))
+  (require 'vm-rfaddons)
+  (vm-optional-test-with-bbdb
+    (let ((vm-virtual-folder-alist nil)
+          (vm-primary-inbox "~/INBOX"))
+      (bbdb-create-internal :name "Alice Example" :mail "alice@example.com"
+                            :xfields '((vm-virtual . "friends")))
+      (bbdb/vm-set-virtual-folder-alist)
+      (let ((folder (assoc "friends" vm-virtual-folder-alist)))
+        (should folder)
+        (should (string-match-p "alice@example" (format "%S" folder)))
+        (should (string-match-p "author-or-recipient" (format "%S" folder)))))))
 
 (provide 'vm-optional-test)
 

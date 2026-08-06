@@ -205,6 +205,15 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * VM works with BBDB again.  Its BBDB integration was written against BBDB
+    2.x and had not been touched since: nine of the names it used no longer
+    exist in BBDB 3, so the `in-bbdb' virtual folder selector, Personality
+    Crisis profiles stored in BBDB, and the virtual folders built from BBDB
+    records all failed with `void-function' or `void-variable' for anyone who
+    had BBDB installed.  Two more had silently changed meaning -- `bbdb-split'
+    takes its arguments the other way round, and `bbdb-create-internal'
+    reordered its positional ones, so a new record's address was going into
+    its `aka' field.  BBDB 2.x is no longer supported; BBDB 3.2 or later is.
   * An HTML part shown in an external viewer now says what character set it
     is in.  Plenty of mail carries text/html that is a fragment rather than a
     document -- it opens with a `<span>' and has no `<html>' and no `<head>' --
