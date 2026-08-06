@@ -1658,6 +1658,72 @@ It does not make them new again: new is for messages that have just arrived."
       (vm-mark-message-read 3)
       (should (equal '(read read read) (vm-folder-test--read-states))))))
 
+;;; Per-folder settings, as the manual describes them (#244)
+
+(defun vm-folder-test--summary-head (n)
+  "The first N characters of the current folder's summary."
+  (with-current-buffer vm-summary-buffer
+    (buffer-substring-no-properties (point-min) (min (point-max) (+ (point-min) n)))))
+
+(ert-deftest vm-folder-test-mode-hook-can-set-a-folder-local-format ()
+  "A summary format made local in `vm-mode-hook' is the one used.
+The manual tells people to set per-folder options there, so the hook has to
+run in the folder's buffer and before the summary is built."
+  (let ((vm-summary-tokenized-compiled-format-alist
+         vm-summary-tokenized-compiled-format-alist)
+        (vm-summary-untokenized-compiled-format-alist
+         vm-summary-untokenized-compiled-format-alist)
+        (vm-mode-hook
+         (list (lambda ()
+                 (set (make-local-variable 'vm-summary-format)
+                      "MODEHOOK %n %s\n")))))
+    (vm-test-with-real-folder (2)
+      (should (string-prefix-p "->MODEHOOK" (vm-folder-test--summary-head 12))))))
+
+(ert-deftest vm-folder-test-visit-folder-hook-is-after-the-summary ()
+  "`vm-visit-folder-hook' runs too late to choose the summary format.
+Which is why the manual names `vm-mode-hook' and not this one: the summary
+lines exist by now, each cached with its message."
+  (let ((vm-summary-tokenized-compiled-format-alist
+         vm-summary-tokenized-compiled-format-alist)
+        (vm-summary-untokenized-compiled-format-alist
+         vm-summary-untokenized-compiled-format-alist)
+        (vm-visit-folder-hook
+         (list (lambda ()
+                 (set (make-local-variable 'vm-summary-format)
+                      "VISITHOOK %n %s\n")))))
+    (vm-test-with-real-folder (2)
+      (should (equal vm-summary-format "VISITHOOK %n %s\n"))
+      (should-not (string-match-p "VISITHOOK" (vm-folder-test--summary-head 40))))))
+
+(ert-deftest vm-folder-test-a-folder-cannot-set-variables ()
+  "A `Local Variables:' list in a folder file is ignored.
+A folder is mail from strangers, so VM visits one with
+`enable-local-variables' nil.  The manual says so, and this is why."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-local" t)))
+         (file (expand-file-name "folder" dir))
+         (vm-init-file nil)
+         (vm-preferences-file nil)
+         (vm-confirm-quit nil)
+         (vm-folder-history vm-folder-history)
+         (vm-last-visit-folder vm-last-visit-folder)
+         (vm-user-interaction-buffer vm-user-interaction-buffer)
+         (before (buffer-list)))
+    (unwind-protect
+        (progn
+          (vm-test-write-simple-folder file 1)
+          (with-temp-buffer
+            (insert "\nLocal Variables:\nvm-summary-format: \"OWNED %n\\n\"\nEnd:\n")
+            (append-to-file (point-min) (point-max) file))
+          (vm-visit-folder file)
+          (should-not (equal vm-summary-format "OWNED %n\n")))
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
