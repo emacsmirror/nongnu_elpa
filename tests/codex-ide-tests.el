@@ -36,12 +36,6 @@
         (codex-ide-cli-extra-args nil))
     (funcall body)))
 
-(defun codex-ide-test--make-process (name)
-  "Return a live test process named NAME."
-  (unless (executable-find "sleep")
-    (ert-skip "sleep executable not found"))
-  (start-process name nil "sleep" "60"))
-
 (defun codex-ide-test--make-buffer-process (buffer name)
   "Return a live test process named NAME attached to BUFFER."
   (unless (executable-find "sleep")
@@ -837,17 +831,6 @@ region, where the scrollback-browsing rule alone would strand it."
       (when (buffer-live-p main)
         (kill-buffer main)))))
 
-(ert-deftest codex-ide-display-buffer-updates-last-accessed-buffer ()
-  "Display helper records the displayed Codex buffer."
-  (let ((buffer (get-buffer-create " *codex-ide-last-accessed-test*"))
-        (codex-ide--last-accessed-buffer nil))
-    (unwind-protect
-        (save-window-excursion
-          (codex-ide--display-buffer buffer)
-          (should (eq codex-ide--last-accessed-buffer buffer)))
-      (when (buffer-live-p buffer)
-        (kill-buffer buffer)))))
-
 (ert-deftest codex-ide-get-working-directory-default ()
   "Without a project, working directory falls back to `default-directory'."
   (let ((default-directory "/tmp/"))
@@ -1151,9 +1134,7 @@ region, where the scrollback-browsing rule alone would strand it."
   "A display failure kills the prepared buffer before registration."
   (codex-ide-test--call-with-project
    (lambda (root)
-     (let ((previous (get-buffer-create " *codex-ide-previous*"))
-           buffer process-started)
-       (setq codex-ide--last-accessed-buffer previous)
+     (let (buffer process-started)
        (cl-letf (((symbol-function 'codex-ide-term--prepare-buffer)
                   (lambda (name _directory)
                     (setq buffer (get-buffer-create name))))
@@ -1164,9 +1145,7 @@ region, where the scrollback-browsing rule alone would strand it."
          (let ((default-directory root))
            (should-error (codex-ide--create-session 1) :type 'error))
          (should-not process-started)
-         (should-not (buffer-live-p buffer))
-         (should (eq codex-ide--last-accessed-buffer previous)))
-       (kill-buffer previous)))))
+         (should-not (buffer-live-p buffer)))))))
 
 (ert-deftest codex-ide-create-session-cleans-up-process-failure ()
   "A process failure kills the displayed but incomplete buffer."
@@ -2088,7 +2067,8 @@ region, where the scrollback-browsing rule alone would strand it."
             (buffer (get-buffer-create (codex-ide--get-buffer-name root)))
             (process nil)
             (enabled 0)
-            (created 0))
+            (created 0)
+            (recoveries 0))
        (unwind-protect
            (progn
              (setq process
@@ -2100,6 +2080,9 @@ region, where the scrollback-browsing rule alone would strand it."
                         (lambda (arg)
                           (when (> (prefix-numeric-value arg) 0)
                             (setq enabled (1+ enabled)))))
+                       ((symbol-function 'codex-ide--recover-live-sessions)
+                        (lambda ()
+                          (setq recoveries (1+ recoveries))))
                        ((symbol-function 'codex-ide--create-session)
                         (lambda (emacs-session-id &rest _args)
                           (setq created (1+ created))
@@ -2119,7 +2102,8 @@ region, where the scrollback-browsing rule alone would strand it."
                  (codex-ide--start-session)
                  (codex-ide--start-session)))
              (should (= enabled 1))
-             (should (= created 1)))
+             (should (= created 1))
+             (should (= recoveries 2)))
          (when (and process (process-live-p process))
            (delete-process process))
          (when (buffer-live-p buffer)

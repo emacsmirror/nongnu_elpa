@@ -135,9 +135,6 @@ Escape hatch for flags not yet modeled by a defcustom."
 (defvar codex-ide--active-session-ids (make-hash-table :test 'equal)
   "Hash table mapping project roots to active Codex session ids.")
 
-(defvar codex-ide--last-accessed-buffer nil
-  "The most recently displayed Codex buffer.")
-
 (defvar codex-ide--cleanup-in-progress nil
   "Reentrancy guard for `codex-ide--cleanup-on-exit'.")
 
@@ -685,9 +682,7 @@ session."
 
 (defun codex-ide--display-buffer (buffer)
   "Display BUFFER according to Codex window customization.
-Returns the displayed window when one is available.  Updates
-`codex-ide--last-accessed-buffer'."
-  (setq codex-ide--last-accessed-buffer buffer)
+Return the displayed window when one is available."
   (when-let* ((session (codex-ide--buffer-session buffer)))
     (codex-ide--activate-session session))
   (when-let* ((window (or (get-buffer-window buffer t)
@@ -704,7 +699,6 @@ Returns the displayed window when one is available.  Updates
 
 (defun codex-ide--hide-displayed-buffer (buffer)
   "Hide every live window showing BUFFER."
-  (setq codex-ide--last-accessed-buffer buffer)
   (dolist (window (get-buffer-window-list buffer nil t))
     (codex-ide--hide-window window)))
 
@@ -801,11 +795,10 @@ Reentrancy-guarded: sentinels and `kill-buffer-hook' can both fire."
                          (get-buffer
                           (codex-ide--get-buffer-name directory session-id)))))
         (codex-ide--remove-session directory session-id)
-        (when buffer
-          (when (buffer-live-p buffer)
-            (let ((kill-buffer-hook nil)
-                  (kill-buffer-query-functions nil))
-              (kill-buffer buffer))))
+        (when (buffer-live-p buffer)
+          (let ((kill-buffer-hook nil)
+                (kill-buffer-query-functions nil))
+            (kill-buffer buffer)))
         (codex-ide-debug "Cleaned up Codex session %s for %s"
                          session-id
                          (file-name-nondirectory (directory-file-name directory)))))))
@@ -875,7 +868,6 @@ Returns a session record."
          (program (car cmd))
          (args (cdr cmd))
          (env (codex-ide--make-env))
-         (previous-accessed-buffer codex-ide--last-accessed-buffer)
          (buffer (codex-ide-term--prepare-buffer buffer-name working-dir)))
     (codex-ide-debug "Starting Codex: %s %s"
                      program (string-join args " "))
@@ -891,7 +883,6 @@ Returns a session record."
             (codex-ide--make-session working-dir emacs-session-id
                                      (process-buffer process) process)))
       (error
-       (setq codex-ide--last-accessed-buffer previous-accessed-buffer)
        (when (buffer-live-p buffer)
          (kill-buffer buffer))
        (signal (car err) (cdr err))))))
@@ -904,27 +895,29 @@ CODEX-SESSION-ID is given, resume that specific saved session.  If a live
 session exists, toggle its window unless NEW-SESSION is non-nil."
   (unless (codex-ide--ensure-cli)
     (user-error "Codex CLI not available.  Install it and ensure it is in PATH"))
-  (codex-ide--recover-live-sessions)
-  (let* ((working-dir (codex-ide--get-working-directory))
-         (existing-session (and (not new-session)
-                                (codex-ide--active-session working-dir))))
-    (codex-ide--record-source-buffer working-dir)
-    (if existing-session
-        (codex-ide--toggle-existing-window (plist-get existing-session :buffer))
-      (codex-ide--maybe-ensure-context-server)
-      (let* ((emacs-session-id (codex-ide--next-session-id working-dir))
-             (session (codex-ide--create-session emacs-session-id
-                                                 resume-last
-                                                 codex-session-id))
-             (buffer (plist-get session :buffer))
-             (process (plist-get session :process)))
-        (unless (and buffer process)
-          (error "Failed to create Codex session"))
-        (codex-ide--remember-session session)
-        (codex-ide--setup-session session)
-        (codex-ide-log "Codex started in %s"
-                       (file-name-nondirectory
-                        (directory-file-name working-dir)))))))
+  (let ((working-dir (codex-ide--get-working-directory)))
+    (when new-session
+      (codex-ide--recover-live-sessions))
+    (let ((existing-session (and (not new-session)
+                                 (codex-ide--active-session working-dir))))
+      (codex-ide--record-source-buffer working-dir)
+      (if existing-session
+          (codex-ide--toggle-existing-window
+           (plist-get existing-session :buffer))
+        (codex-ide--maybe-ensure-context-server)
+        (let* ((emacs-session-id (codex-ide--next-session-id working-dir))
+               (session (codex-ide--create-session emacs-session-id
+                                                   resume-last
+                                                   codex-session-id))
+               (buffer (plist-get session :buffer))
+               (process (plist-get session :process)))
+          (unless (and buffer process)
+            (error "Failed to create Codex session"))
+          (codex-ide--remember-session session)
+          (codex-ide--setup-session session)
+          (codex-ide-log "Codex started in %s"
+                         (file-name-nondirectory
+                          (directory-file-name working-dir))))))))
 
 ;;; Commands
 

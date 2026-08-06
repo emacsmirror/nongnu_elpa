@@ -275,13 +275,6 @@ tree output."
              parser node whole-file include-ancestors include-children
              max-depth max-children)))))))
 
-;;; Tool implementation
-
-(defun codex-ide-mcp--tool-tree-sitter-info (args)
-  "Return structured tree-sitter information for ARGS."
-  (codex-ide-mcp--json-text-result
-   (codex-ide-mcp--tree-sitter-info args)))
-
 (provide 'codex-ide-mcp-treesit)
 
 ;;; codex-ide-mcp-treesit.el ends here

@@ -90,9 +90,7 @@
   (list (cons "tools"
               (vconcat
                (mapcar #'codex-ide-mcp--tool->mcp
-                       (cl-remove-if-not
-                        #'codex-ide-mcp--tool-enabled-p
-                        codex-ide-mcp--tools))))))
+                       codex-ide-mcp--tools)))))
 
 (defun codex-ide-mcp--handle-tools-call (params)
   "Call an Emacs MCP tool described by PARAMS."
@@ -103,8 +101,6 @@
       (user-error "Unknown MCP tool: %s" name))
     (condition-case err
         (progn
-          (unless (codex-ide-mcp--tool-enabled-p tool)
-            (user-error "Tool %s is disabled" name))
           (codex-ide-mcp--validate-required-args tool args)
           (funcall (plist-get tool :function) args))
       (error

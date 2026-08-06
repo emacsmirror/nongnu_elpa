@@ -468,7 +468,8 @@
           (kill-buffer source)
           (save-window-excursion
             (switch-to-buffer scratch)
-            (should-not (codex-ide-context--resolve-source-buffer root))))
+            (should-not (codex-ide-context--resolve-source-buffer root))
+            (should-not (gethash root codex-ide-context--source-buffers))))
       (when (buffer-live-p source)
         (kill-buffer source))
       (when (buffer-live-p scratch)

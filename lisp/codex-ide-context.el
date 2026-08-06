@@ -315,7 +315,10 @@ recorded buffer, or nil when BUFFER is not a project file buffer."
   "Return the tracked live source buffer for WORKSPACE-ROOT, or nil."
   (let* ((root (codex-ide-context--normalize-root workspace-root))
          (buffer (and root (gethash root codex-ide-context--source-buffers))))
-    (and (codex-ide-context--source-buffer-p buffer root) buffer)))
+    (when root
+      (if (codex-ide-context--source-buffer-p buffer root)
+          buffer
+        (remhash root codex-ide-context--source-buffers)))))
 
 (defun codex-ide-context--resolve-source-buffer (workspace-root)
   "Return the best source buffer for WORKSPACE-ROOT.

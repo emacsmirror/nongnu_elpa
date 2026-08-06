@@ -61,10 +61,6 @@
   (and (stringp value)
        (not (string-empty-p (string-trim value)))))
 
-(defun codex-ide-harness--json-bool (value)
-  "Return a JSON boolean representation for VALUE."
-  (codex-ide-mcp--json-false value))
-
 (defun codex-ide-harness--time-string ()
   "Return the current time as an ISO-like string."
   (format-time-string "%Y-%m-%dT%H:%M:%S%z"))
@@ -126,12 +122,6 @@
   (setq codex-ide-harness--events nil
         codex-ide-harness--event-cursor 0)
   nil)
-
-(defun codex-ide-harness--bounded-limit (value default)
-  "Return VALUE as a positive limit, or DEFAULT."
-  (if (and (integerp value) (> value 0))
-      value
-    default))
 
 (defun codex-ide-harness--events-since (since limit)
   "Return recent events after SINCE, bounded by LIMIT."
@@ -203,9 +193,9 @@ When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
                   (cons "directory" default-directory)
                   (when root (cons "projectRoot" root))
                   (cons "majorMode" (symbol-name major-mode))
-                  (cons "modified" (codex-ide-harness--json-bool
+                  (cons "modified" (codex-ide-mcp--json-false
                                     (buffer-modified-p)))
-                  (cons "readOnly" (codex-ide-harness--json-bool
+                  (cons "readOnly" (codex-ide-mcp--json-false
                                     buffer-read-only))
                   (cons "point" (codex-ide-mcp--line-column)))))))
 
@@ -219,10 +209,10 @@ When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
          (content (if truncated
                       (substring text 0 codex-ide-mcp-selection-content-limit)
                     text)))
-    (list (cons "active" (codex-ide-harness--json-bool active))
+    (list (cons "active" (codex-ide-mcp--json-false active))
           (cons "range" (codex-ide-mcp--range beg end))
           (cons "text" content)
-          (cons "truncated" (codex-ide-harness--json-bool truncated)))))
+          (cons "truncated" (codex-ide-mcp--json-false truncated)))))
 
 (defun codex-ide-harness--project-summary (&optional buffer)
   "Return project metadata for BUFFER."
@@ -249,7 +239,7 @@ When LIVE-ONLY is non-nil, path lookup requires an existing live buffer."
               (list (cons "buffer" (buffer-name buffer))
                     (when buffer-file-name
                       (cons "path" (expand-file-name buffer-file-name)))
-                    (cons "selected" (codex-ide-harness--json-bool
+                    (cons "selected" (codex-ide-mcp--json-false
                                       (eq window (selected-window))))
                     (cons "point" (codex-ide-mcp--line-column))
                     (cons "start" (codex-ide-mcp--line-column
@@ -521,7 +511,7 @@ The `action' field is `references' or `apropos'."
   "Return JSON-ready execution result from CAPTURE and OUTPUT-BUFFER."
   (let ((error-data (plist-get capture :error)))
     (delq nil
-          (list (cons "ok" (codex-ide-harness--json-bool
+          (list (cons "ok" (codex-ide-mcp--json-false
                             (not error-data)))
                 (cons "value" (and (not error-data)
                                    (prin1-to-string
@@ -606,7 +596,7 @@ used when no explicit position is present."
         (cons "buffer" (codex-ide-harness--buffer-summary))
         (cons "range" (codex-ide-mcp--point-range beg end))
         (cons "point" (codex-ide-mcp--line-column))
-        (cons "modified" (codex-ide-harness--json-bool
+        (cons "modified" (codex-ide-mcp--json-false
                           (buffer-modified-p)))))
 
 (defun codex-ide-harness--indent-change (beg end indent)
@@ -702,9 +692,8 @@ When INDENT is non-nil, indent the inserted region."
               (cons "diagnostics" (codex-ide-harness-diagnostics))
               (cons "messages"
                     (codex-ide-harness--message-tail
-                     (codex-ide-harness--bounded-limit
-                      (codex-ide-mcp--object-get args "messages")
-                      40)))
+                    (codex-ide-mcp--bounded-integer
+                     (codex-ide-mcp--object-get args "messages") 40 1)))
               (cons "jobs" (codex-ide-harness--job-summaries))
               (cons "eventsCursor" codex-ide-harness--event-cursor))))))
 
@@ -930,8 +919,8 @@ Already-terminal jobs are left unchanged and emit no new events."
   (codex-ide-mcp--json-text-result
    (codex-ide-harness--events-since
     (codex-ide-mcp--object-get args "since")
-    (codex-ide-harness--bounded-limit
-     (codex-ide-mcp--object-get args "limit") 100))))
+    (codex-ide-mcp--bounded-integer
+     (codex-ide-mcp--object-get args "limit") 100 1))))
 
 ;;; Tool registry
 
@@ -1079,10 +1068,6 @@ Already-terminal jobs are left unchanged and emit no new events."
   (cl-find name codex-ide-mcp--tools
            :key (lambda (tool) (plist-get tool :name))
            :test #'equal))
-
-(defun codex-ide-mcp--tool-enabled-p (_tool)
-  "Return non-nil for every harness tool."
-  t)
 
 (provide 'codex-ide-mcp-tools)
 
