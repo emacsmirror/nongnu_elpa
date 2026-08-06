@@ -524,6 +524,52 @@ server behaves towards a keyword it does not know."
         (setq checked t)))
     (should checked)))
 
+(ert-deftest vm-imap-live-test-a-refused-flag-is-offered-only-once ()
+  "REGRESSION: a keyword the server refuses is not offered for the next message.
+Issue #389.  John Stoffel's trace shows ten identical refusals, one message after
+another --
+
+    VM STORE 460 +FLAGS.SILENT (filed)
+    VM BAD Command Argument Error. 11
+    VM STORE 477 +FLAGS.SILENT (filed)
+    VM BAD Command Argument Error. 11
+    ...
+    Process IMAP connection broken by remote peer
+
+-- and the server hung up on him for it, which is how a refused keyword turned
+into \"cannot get new mail\".  VM now remembers a refused flag for the session, so
+the server is asked once however many messages carry it.
+
+Three messages, all labelled, and the relay refusing anything that mentions the
+label: the transcript must hold one STORE of it, not three."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((label "vmtestonceonly") (checked nil))
+    (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+      ;; two more messages, so a per-message repeat would show
+      (vm-imap-live-append conn mailbox vm-imap-live-test--message)
+      (vm-imap-live-append conn mailbox vm-imap-live-test--message)
+      (vm-get-new-mail)
+      (should (= 3 (length vm-message-list)))
+      (dolist (n '(1 2 3))
+        (vm-goto-message n)
+        (vm-add-message-labels label 1))
+      (setf (vm-imap-relay-reject relay) label)
+      (vm-imap-save-attributes)
+      (let* ((sent (vm-imap-relay-transcript relay 'client))
+             (count 0)
+             (start 0))
+        (while (string-match (concat "STORE[^\n]*" (regexp-quote label)) sent start)
+          (setq count (1+ count) start (match-end 0)))
+        (should (= 1 count))
+        ;; And nothing at all about \Recent, which a client may never set or
+        ;; clear: VM used to send "-FLAGS.SILENT (\recent)" for every message it
+        ;; synced, which is one more BAD from a server like the one in this
+        ;; report and ignored by the rest.
+        (should-not (string-match-p "STORE[^\n]*[Rr]ecent" sent)))
+      (setq checked t))
+    (should checked)))
+
 (ert-deftest vm-imap-live-test-accepted-store-reaches-the-server ()
   "The other half: an accepted STORE does sync and stops being pending.
 Guards the fix above from being a blanket refusal to ever apply server
