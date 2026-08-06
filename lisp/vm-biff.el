@@ -38,7 +38,7 @@
 ;;
 ;; Try: M-x customize-group vm-biff RET
 ;;
-;; You should set `vm-auto-get-newmail', since otherwise this package
+;; You should set `vm-auto-get-new-mail', since otherwise this package
 ;; does not make any sense!  If getting mail is slow, use fetchmail to
 ;; retrieve it to a local file and uses that file as VM spool file!
 ;;
@@ -529,7 +529,7 @@ AddToFunc SelectWindow
 (define-minor-mode vm-biff-mode
   "A xlbiff like tool for VM: pop up a summary frame when mail arrives.
 
-You should also set `vm-auto-get-newmail', since otherwise nothing goes
+You should also set `vm-auto-get-new-mail', since otherwise nothing goes
 looking for new mail and this has nothing to pop up about."
   :global t
   :group 'vm-biff
