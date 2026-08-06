@@ -205,6 +205,15 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * File name prompts offer the history VM keeps for them.  `read-file-name'
+    takes a completion predicate as its sixth argument in GNU Emacs, where
+    XEmacs took a history list, so `vm-folder-history' and the attachment
+    histories were handed over as filters: `M-p' at "Save in folder:" offered
+    whatever file was last read anywhere in Emacs, and the answer went
+    nowhere.  The functions `vm-folder-history' and
+    `vm-grepmail-folders-history', which existed only so that being called as
+    a predicate would return t instead of signalling, are gone.  The variables
+    of those names stay.
   * VM no longer asks an IMAP server to clear \Recent, which RFC 3501 says a
     client may never set or clear.  It arrives in the flags a FETCH reports, and
     VM was sending "-FLAGS.SILENT (\recent)" for every message it synchronised:

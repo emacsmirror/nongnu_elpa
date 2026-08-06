@@ -5096,7 +5096,7 @@ created."
               vm-mime-attachment-save-directory
               default-directory)
           nil nil
-          vm-mime-save-all-attachments-history)))
+          'vm-mime-save-all-attachments-history)))
 
   (vm-check-for-killed-summary)
   (if (vm-interactive-p) (vm-follow-summary-cursor))
@@ -5133,7 +5133,7 @@ created."
 						dir)
 			    dir)
 			  nil nil
-			  vm-mime-save-all-attachments-history)))
+			  'vm-mime-save-all-attachments-history)))
 		   ;; A directory is not a file name -- and it is what
 		   ;; answering the prompt with RET used to give, since
 		   ;; the directory was offered as the default.  Saving
@@ -5244,7 +5244,7 @@ confirmed before creating a new directory."
 			       vm-mime-all-attachments-directory))
 			  (or file-name "")))
 		    nil nil			      ; mustmatch initial
-		    vm-mime-save-all-attachments-history ; predicate
+		    'vm-mime-save-all-attachments-history
 		    )))
 	 (setq directory (file-name-directory file))
          (when (file-exists-p file)

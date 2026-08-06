@@ -84,10 +84,6 @@
 
 (defvar vm-grepmail-folder-buffer nil)
 
-(if (not (featurep 'xemacs))
-    ;; For sixth arg of read-file-name in Emacs 21. cf vm-folder-history.
-    (defun vm-grepmail-folders-history (&rest _ignored) t))
-
 ;;;###autoload
 (defun vm-grepmail (arguments folders)
   "A not so excellent interface to grepmail.
