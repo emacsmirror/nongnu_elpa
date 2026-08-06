@@ -191,13 +191,11 @@ you have archived mail in that format.
 @cindex maildir
 @cindex newsgroups
 @cindex @acronym{RSS} feeds
-@cindex @acronym{S/MIME}
 There are also a few things that VM cannot (yet) do.  It does not have the
 ability to deal with maildir folders.  It cannot be used to read newsgroups
-and @acronym{RSS} feeds.  It does not have its own mail filtering tools.  It
-does not have support for the Secure @acronym{MIME} (@acronym{S/MIME})
-protocol.  However, active development of VM is continuing.  It may acquire
-some of these features before long.
+and @acronym{RSS} feeds.  It does not have its own mail filtering tools.
+However, active development of VM is continuing.  It may acquire some of
+these features before long.
 
 VM has been found most useful by professional users who must deal with
 large quantities of email in the course of their work, and deal with
@@ -2940,11 +2938,11 @@ VM supports reading @acronym{S/MIME} messages if your Emacs version includes
 @samp{smime.el}
 package.
 Typically, a secure message part (identified
-by @acronym{MIME} type ``application/pkcs7-smime'') will be presented as a
+by @acronym{MIME} type ``application/pkcs7-mime'') will be presented as a
 button which, when pushed, will decrypt that part of the message.
 It is also
 possible to auto-decrypt whenever you read the message by adding
-@code{"application/x-pkcs7-smime"} and @code{"application/pkcs7-smime"} to
+@code{"application/x-pkcs7-mime"} and @code{"application/pkcs7-mime"} to
 the
 variable @code{vm-auto-displayed-mime-content-types} But beware that, at
 present, the @samp{smime.el} library always asks for a private key passcode,
