@@ -6,7 +6,7 @@ Deps: `compat`, `keymap-popup`, `eat`.
 ## Public safety
 
 Public doc. No local paths, hosts, private topology, secrets, personal config.
-Repo-relative paths only. Durable architecture + contributor rules only.
+Repo-relative paths only. Durable architecture only.
 
 ## Architecture
 
@@ -45,9 +45,3 @@ Iterate: targeted ERT + `git diff --check`. ERT on package load path; temp
 buffers/dirs only. Cover terminal, process ownership, session recovery,
 context/MCP boundaries, reject/disconnect/kill/replace/stale callback. Never
 touch user config or real user data.
-
-## Contributions
-
-Patches: `patches@thanosapollo.org`, subject `[PATCH emacs-codex-ide] …`.
-
-Bugs/features: `bugs@thanosapollo.org`, subject `[BUG emacs-codex-ide] …`.
