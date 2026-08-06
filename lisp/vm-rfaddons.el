@@ -561,7 +561,7 @@ The number reflects the number of references. (Rob F)"
 
 (defun vm-mail-subject-cleanup ()
   "Do some subject line clean up.
-- Replace subject prefixes according to `vm-replace-subject-prefixes'.
+- Replace subject prefixes according to `vm-mail-subject-prefix-replacements'.
 - Add a number after replies is `vm-mail-subject-number-reply' is t.
 
 You might add this function to `vm-mail-mode-hook' in order to clean up the
@@ -1549,7 +1549,7 @@ and add an \"%0UA\" to your `vm-summary-format'. (Rob F)"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
 (defun vm-mail-mode-install-open-line ()
-  "Install the open-line hooks for `vm-mail-mode'.
+  "Install the open-line hooks for VM composition buffers.
 Add this to `vm-mail-mode-hook'. (Rob F)"
   ;; these are not local even when using add-hook, so we make them local
   (add-hook 'before-change-functions 'vm-mail-mode-open-line nil t)
@@ -1623,7 +1623,7 @@ of empty lines which have been quoted. (Rob F)"
 
 ;;;###autoload
 (defun vm-mail-mode-elide-reply-region (b e)
-  "Replace marked region or current line with `vm-mail-elide-reply-region'.
+  "Replace marked region or current line with `vm-mail-mode-elide-reply-region'.
 B and E are the beginning and end of the marked region or the current line.
 (Rob F)"
   (interactive (if (mark)

@@ -636,7 +636,7 @@ specified by `vm-included-text-headers' and
 
 (defun vm-mail-send-and-exit (&rest _ignored)
   "Send message and maybe delete the composition buffer.
-The value of `vm-keep-sent-mesages' determines whether the composition buffer
+The value of `vm-keep-sent-messages' determines whether the composition buffer
 is deleted.  If the composition is a reply to a message in a currently visited
 folder, that message is marked as having been replied to."  
   (interactive "P")

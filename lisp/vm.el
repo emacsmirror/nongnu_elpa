@@ -1257,7 +1257,7 @@ recipient list."
 (defun vm-mail-from-folder (&optional subject)
   "Compose a new mail message using the current folder as its
 parent folder and current message as its parent message.  If the
-variable `vm-mail-using-sender-address' is `t', then the sender of the
+variable `vm-mail-use-sender-address' is `t', then the sender of the
 current message is selected as the recipient of the new composition."
   ;; FIXME We also need variants of this for other-frame and
   ;; other-window.                                USR, 2012-01-19

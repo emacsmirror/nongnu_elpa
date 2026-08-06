@@ -470,7 +470,7 @@ retrieve new mail for that folder it will look for mail in
 ~/mail/beekeeping.spool and ~/mail/beekeeping- in addition to
 scanning `vm-spool-files' for matches.
 
-The value of `vm-spool-files-suffixes' will not be used unless
+The value of `vm-spool-file-suffixes' will not be used unless
 `vm-crash-box-suffix' is also defined, since a crash box is
 required for all mail retrieval from spool files."
   :group 'vm-folders
@@ -3007,7 +3007,7 @@ message as the recipient for the new message composition."
   :type 'boolean)
 
 (defcustom vm-mail-mode-hidden-headers '("References" "In-Reply-To" "X-Mailer")
-  "*A list of headers to hide in `vm-mail-mode'."
+  "*A list of headers to hide in a VM composition buffer."
   :group 'vm-compose
   :type '(choice (const :tag "Disabled" nil)
                  (set :tag "Header list"
@@ -3045,7 +3045,7 @@ A nil value means don't insert a Message-ID header."
   :type 'boolean)
 
 (defcustom vm-mail-mode-hidden-headers '("References" "X-Mailer")
-  "*A list of headers to hide in `vm-mail-mode'."
+  "*A list of headers to hide in a VM composition buffer."
   :group 'vm-compose
   :type '(repeat :tag "Header" string))
 
@@ -3342,7 +3342,7 @@ accessed with the `local-file' access method.  Objects referenced
 with other methods are not fetched.
 
 In particular, the MIME attachments that are saved to
-disk (using, for example, `vm-mime-save-all-attchments') are
+disk (using, for example, `vm-save-all-attachments') are
 represented in messages with `message/external-body' references.
 Setting the variable to a non-nil value causes these references
 to be sent in forwarded messages.  Setting it to nil causes the
@@ -4298,7 +4298,7 @@ of frame that the following PARAMLIST applies to.
 ``folder'' specifies parameters for frames created by `vm' and the
    ``vm-visit-'' commands.
 ``folders-summary'' specifies parameters for frames created by the
-   ``vm-folder-summarize'' command.
+   ``vm-folders-summarize'' command.
 ``primary-folder'' specifies parameters for the frame created by running
    `vm' without any arguments.
 ``summary'' specifies parameters for frames that display a summary buffer
@@ -5415,9 +5415,9 @@ must be done to the message to make it presentable.  E.g. MIME decoding."
 
 (defcustom vm-startup-hook nil
   "*List of hook functions to run once, when VM starts up.
-Run at the end of `vm-session-initialization\=', the first time any VM command
+Run at the end of `vm-session-initialization', the first time any VM command
 is used in an Emacs session -- so once per Emacs, not once per folder.  See
-`vm-visit-folder-hook\=' for the per-folder equivalent.
+`vm-visit-folder-hook' for the per-folder equivalent.
 
 By then VM is fully assembled: the init file has been read, menus and the
 mouse are installed and any timers are running.  So a function here can
@@ -5425,7 +5425,7 @@ override what VM has set up, which is the reason for running it last rather
 than first.  VM commands may be called from it.
 
 If what you want is to configure VM before it starts, set variables in your
-init file or `vm-init-file\=' instead; and to run something when a particular
+init file or `vm-init-file' instead; and to run something when a particular
 library is loaded, `with-eval-after-load\=' is simpler than a hook."
   :group 'vm-hooks
   :type 'hook)
@@ -7599,7 +7599,7 @@ cause trouble (abbrev-mode)."
 
 ;; Duplicate defintion. See above. TX
 ;; (defcustom vm-mail-mode-hidden-headers '("References" "In-Reply-To" "X-Mailer")
-;;   "*A list of headers to hide in `vm-mail-mode'."
+;;   "*A list of headers to hide in a VM composition buffer."
 ;;   :group 'vm
 ;;   :type '(choice (const :tag "Disabled" nil)
 ;;                  (set :tag "Header list"

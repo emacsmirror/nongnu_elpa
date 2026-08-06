@@ -87,8 +87,8 @@ the message being composed (reply, forward, new mail, etc.)."
 (defcustom vmpc-actions ()
   "*List of actions.
 Actions are associated with conditions from `vmpc-conditions' by one of
-`vmpc-rules', `vmpc-reply-rules', `', `vmpc-forward-rules',
-`vmpc-resend-rules',  `vmpc-mail-rules', `vmpc-newmail-rules' or
+`vmpc-default-rules', `vmpc-reply-rules', `vmpc-forward-rules',
+`vmpc-resend-rules', `vmpc-mail-rules', `vmpc-newmail-rules' or
 `vmpc-automorph-rules'. 
 
 These are also the actions from which you can choose when using the newmail

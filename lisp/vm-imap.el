@@ -1724,7 +1724,7 @@ See also `vm-imap-get-message-data-list' for a newer version of this function."
 Returns (msg-num: int . uid: string . size: string . flags: string list)
 Throws vm-imap-protocol-error for failure.
 
-See also `vm-imap-get-message-list' for a bulk version of this function."
+See also `vm-imap-get-message-data-list' for a bulk version of this function."
 
   (let ((imap-buffer (current-buffer))
 	response tok need-ok msg-num list)

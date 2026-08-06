@@ -392,6 +392,27 @@ So `add-hook' works on it and Customize offers it beside the rest."
   (should (assq 'vm-startup-hook (get 'vm-hooks 'custom-group)))
   (should (null (default-value 'vm-startup-hook))))
 
+(ert-deftest vm-integration-test-every-alias-has-a-target ()
+  "Every VM function alias resolves to a function that exists.
+An alias to a deleted function is a `void-function' waiting for whoever still
+calls the old name, and nothing in a byte-compile or a lint run notices: the
+alias itself is well-formed.  Two were found this way,
+`vm-mime-nuke-alternative-text/html' pointing at a misspelling of its target and
+`vm-pine-fake-attachment-overlays' at a function deleted in 2011.
+
+Only what is loaded at this point is checked, which is most of VM by the time
+the suite runs."
+  (require 'vm)
+  (let (broken)
+    (mapatoms
+     (lambda (s)
+       (when (and (string-prefix-p "vm" (symbol-name s))
+                  (fboundp s))
+         (let ((target (symbol-function s)))
+           (when (and (symbolp target) target (not (fboundp target)))
+             (push (format "%s -> %s" s target) broken))))))
+    (should (equal nil (sort broken #'string<)))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
