@@ -1096,7 +1096,8 @@ IND is the optional indentation level to print at."
   "Return collections for account with ID."
   (let ((url (mastodon-http--api
               (format "accounts/%s/collections" id))))
-    (mastodon-http--get-json url)))
+    (alist-get 'collections
+               (mastodon-http--get-json url))))
 
 (defun mastodon-views-current-account-collections ()
   "Return collections featuring `mastodon-active-user'."
@@ -1141,8 +1142,7 @@ IND is the optional indentation level to print at."
 JSON is the profile data to get collections for.
 If RETURN-ID, return only the collection's ID."
   (let* ((id (alist-get 'id json))
-         (colls (alist-get 'collections
-                           (mastodon-views-get-account-collections id))))
+         (colls (mastodon-views-get-account-collections id)))
     (if (not colls)
         (user-error "No collections by this user found")
       (mastodon-views-read-collection colls return-id))))
