@@ -421,7 +421,6 @@
                      '((profiles . (((name . "default"))))))))
     (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
                (lambda () "http://other.example")))
-      (should (hermes-dashboard-transport--profile-cache-stale-p))
       (should-not (hermes-dashboard-transport-cached-profile-list)))))
 
 (ert-deftest hermes-transport-dashboard-profile-list-async-warms-cache ()
@@ -501,7 +500,6 @@
       (should (equal (hermes-dashboard-transport-cached-model-options) payload)))
     (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
                (lambda () "http://other.example")))
-      (should (hermes-dashboard-transport--model-options-cache-stale-p))
       (should-not (hermes-dashboard-transport-cached-model-options)))))
 
 (ert-deftest hermes-transport-invalidate-model-options-clears-cache ()

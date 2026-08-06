@@ -4175,14 +4175,6 @@
               (should (equal (buffer-name) "*Hermes@work: My chat*")))
           (kill-buffer buffer))))))
 
-(ert-deftest hermes-chat-format-usage ()
-  "Usage formatting is compact and omits empty counts."
-  (should (equal (hermes-chat--format-usage '(:input 1200 :output 340))
-                 "1200↑ 340↓ tok"))
-  (should (equal (hermes-chat--format-usage '(:input 5 :output 0)) "5↑ 0↓ tok"))
-  (should-not (hermes-chat--format-usage '(:input 0 :output 0)))
-  (should-not (hermes-chat--format-usage nil)))
-
 (ert-deftest hermes-chat-drops-thinking-that-echoes-reply ()
   "A reasoning block identical to the final reply is dropped on completion."
   (let (callback)
@@ -4263,7 +4255,7 @@
   "The header renders profile, status, and model from chat state."
   (hermes-test-with-chat-buffer
    (setq hermes-chat--profile "coder")
-   (hermes-chat--update-header-for-event
+   (hermes-chat--run-turn-reducer nil
     '(:type status :event "session.info" :status "ready"
             :model "claude-opus-4-8" :agent-name "planner"))
    (let ((header (hermes-test--header-line-string)))
@@ -4288,7 +4280,7 @@
 (ert-deftest hermes-chat-header-separates-runtime-flags-from-model ()
   "Reasoning effort, fast tier, and yolo render as separate segments."
   (hermes-test-with-chat-buffer
-   (hermes-chat--update-header-for-event
+   (hermes-chat--run-turn-reducer nil
     '(:type status :event "session.info" :status "ready"
             :model "gpt-5.5" :reasoning-effort "high" :fast t :yolo t))
    (should (equal (substring-no-properties (hermes-chat--header-model-segment))
@@ -4297,7 +4289,7 @@
                           (hermes-chat--header-runtime-segments))
                   '("high" "fast" "YOLO")))
    ;; A later session.info clearing fast/yolo updates the captured flags.
-   (hermes-chat--update-header-for-event
+   (hermes-chat--run-turn-reducer nil
     '(:type status :event "session.info" :status "ready"
             :model "gpt-5.5" :fast nil :yolo nil))
    (should (equal (mapcar #'substring-no-properties
@@ -4391,7 +4383,7 @@
 (ert-deftest hermes-chat-header-shows-context-window ()
   "The header surfaces context-window usage from `session.info'."
   (hermes-test-with-chat-buffer
-   (hermes-chat--update-header-for-event
+   (hermes-chat--run-turn-reducer nil
     '(:type status :event "session.info" :status "ready"
             :model "gpt-5.5" :agent-name "planner"
             :context (:used 45000 :max 200000 :percent 22)))
@@ -4402,7 +4394,7 @@
 (ert-deftest hermes-chat-done-event-records-usage ()
   "A done event records usage in header state; the compact header omits the gauge."
   (hermes-test-with-chat-buffer
-   (hermes-chat--update-header-for-event
+   (hermes-chat--run-turn-reducer nil
     '(:type done :usage (:input 1200 :output 340)))
    (should (equal (plist-get hermes-chat--status-state :usage) '(:input 1200 :output 340)))
    (should-not (string-match-p "1200↑ 340↓ tok" (hermes-chat--header-line)))))

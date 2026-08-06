@@ -215,10 +215,6 @@ Return TOKEN on success, or nil when TOKEN is not registered on CLIENT."
                        (hermes-dashboard-transport-client-subscribers client))))
     (list (plist-get record :fn))))
 
-(defun hermes-dashboard-transport--session-subscriber-fn (client session-id)
-  "Return one subscriber function bound to SESSION-ID on CLIENT, or nil."
-  (car (hermes-dashboard-transport--session-subscriber-fns client session-id)))
-
 (defun hermes-dashboard-transport--deliver (fn event)
   "Call subscriber FN with EVENT, demoting any error so delivery continues.
 A throwing subscriber must not starve the other buffers sharing the socket or

@@ -899,13 +899,6 @@ Also accepts the single-entry cache shape used before endpoint isolation."
     (cons (cons base-url payload)
           (cl-remove base-url entries :key #'car :test #'equal))))
 
-(defun hermes-dashboard-transport--profile-cache-stale-p (&optional client)
-  "Return non-nil when no cached profile list exists for CLIENT's endpoint."
-  (and hermes-dashboard-transport--profile-cache
-       (not (hermes-dashboard-transport--endpoint-cache-get
-             hermes-dashboard-transport--profile-cache
-             (hermes-dashboard-transport--cache-base-url client)))))
-
 (defun hermes-dashboard-transport--store-profile-cache (payload &optional base-url)
   "Cache PAYLOAD for BASE-URL and return it.
 BASE-URL defaults to the currently configured dashboard endpoint."
@@ -928,13 +921,6 @@ The provider/model catalog is dashboard-global -- disk config plus the curated
 model list -- so it is shared across sessions for the same endpoint.  A saved
 API key invalidates it;
 see `hermes-dashboard-transport-invalidate-model-options'.")
-
-(defun hermes-dashboard-transport--model-options-cache-stale-p (&optional client)
-  "Return non-nil when no model options exist for CLIENT's endpoint."
-  (and hermes-dashboard-transport--model-options-cache
-       (not (hermes-dashboard-transport--endpoint-cache-get
-             hermes-dashboard-transport--model-options-cache
-             (hermes-dashboard-transport--cache-base-url client)))))
 
 (defun hermes-dashboard-transport--store-model-options (payload &optional base-url)
   "Cache PAYLOAD for BASE-URL and return it.

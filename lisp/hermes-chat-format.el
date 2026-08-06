@@ -237,15 +237,6 @@ CONTEXT is a plist of :used, :max, and :percent."
             (hermes-chat--abbrev-tokens max)
             (or (plist-get context :percent) 0))))
 
-(defun hermes-chat--format-usage (usage)
-  "Return a compact token-usage string for USAGE, or nil.
-USAGE is a plist of :input and :output token counts."
-  (and usage
-       (let ((in (or (plist-get usage :input) 0))
-             (out (or (plist-get usage :output) 0)))
-         (and (or (> in 0) (> out 0))
-              (format "%d↑ %d↓ tok" in out)))))
-
 (defun hermes-chat--format-duration (duration)
   "Return DURATION as a compact seconds string, or nil."
   (cond

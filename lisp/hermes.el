@@ -230,11 +230,6 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   (and-let* ((name (hermes-dashboard--status-name status)))
     (assoc name hermes-dashboard--status-table)))
 
-(defun hermes-dashboard--status-symbol (status)
-  "Return the known normalized status symbol for STATUS."
-  (and-let* ((entry (hermes-dashboard--status-entry status)))
-    (intern (car entry))))
-
 (defun hermes-dashboard--status-label (status)
   "Return human display label for STATUS."
   (if-let* ((entry (hermes-dashboard--status-entry status)))

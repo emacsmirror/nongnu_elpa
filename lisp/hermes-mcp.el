@@ -100,11 +100,6 @@
         transport)
       (hermes-mcp--field server 'type)))
 
-(defun hermes-mcp--tools (server)
-  "Return SERVER's configured tools list, or nil."
-  (let ((tools (hermes-transport--get server 'tools)))
-    (and (listp tools) tools)))
-
 (defun hermes-mcp--explicit-tool-count (object)
   "Return OBJECT's explicit tool-count display string, or empty."
   (let ((count (hermes-transport--get-any

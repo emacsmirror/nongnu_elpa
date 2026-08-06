@@ -301,10 +301,6 @@ request's :id so the backend can correlate the reply."
         (hermes-capabilities--result-frame id (cdr outcome))
       (hermes-capabilities--error-frame id (cdr outcome)))))
 
-(defun hermes-capabilities--encode-response (frame)
-  "Encode JSON-RPC response FRAME alist as a JSON string."
-  (json-serialize frame))
-
 
 ;;;; Provider identity
 

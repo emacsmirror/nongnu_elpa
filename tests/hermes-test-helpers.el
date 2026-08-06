@@ -127,11 +127,6 @@ The buffer is captured by object so teardown still kills it after a rename."
   (should (hermes-test--face-includes-p
            (hermes-test--face-at-end-of needle) face)))
 
-(defun hermes-test--should-not-have-face (needle face)
-  "Assert that NEEDLE does not have FACE on its final character."
-  (should-not (hermes-test--face-includes-p
-               (hermes-test--face-at-end-of needle) face)))
-
 (defun hermes-test--push-button-labeled (label)
   "Activate the text button ending at LABEL in the current buffer."
   (goto-char (point-min))

@@ -685,7 +685,7 @@
      client (list :type 'delta :session-id "sid-a"))
     (hermes-dashboard-transport--dispatch-event client (list :type 'status))
     (should-not events)
-    (should-not (hermes-dashboard-transport--session-subscriber-fn
+    (should-not (hermes-dashboard-transport--session-subscriber-fns
                  client "sid-a"))))
 
 (ert-deftest hermes-dashboard-transport-subscribe-session-rebinds-index ()
@@ -696,8 +696,8 @@
                  client (lambda (e) (push e events)))))
     (hermes-dashboard-transport-subscribe-session client token "old")
     (hermes-dashboard-transport-subscribe-session client token "new")
-    (should-not (hermes-dashboard-transport--session-subscriber-fn client "old"))
-    (should (hermes-dashboard-transport--session-subscriber-fn client "new"))
+    (should-not (hermes-dashboard-transport--session-subscriber-fns client "old"))
+    (should (hermes-dashboard-transport--session-subscriber-fns client "new"))
     (hermes-dashboard-transport--dispatch-event
      client (list :type 'delta :session-id "new"))
     (should (equal (length events) 1))))

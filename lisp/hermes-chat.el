@@ -461,16 +461,6 @@ of its own."
     (dolist (effect effects)
       (hermes-chat--apply-turn-effect assistant-id effect))))
 
-(defun hermes-chat--update-header-for-event (event)
-  "Update only header and tool state from transport EVENT, leaving the transcript.
-Used where a synthesized header event must not insert a transcript entry."
-  (hermes-chat--run-turn-reducer nil event))
-
-(defun hermes-chat--render-turn-event (assistant-id event)
-  "Render transport EVENT for ASSISTANT-ID: header, tools, and transcript entry."
-  (hermes-chat--run-turn-reducer assistant-id event))
-
-
 ;; These files are sibling areas of one logical chat module.  They are
 ;; required here, after the reducer/effect helpers above, so the require
 ;; order documents the module seam: everything below this point may call

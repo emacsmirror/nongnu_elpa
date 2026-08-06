@@ -181,17 +181,6 @@ touched."
                                 (alist-get 'data (alist-get 'error frame)))
                      "ghost")))))
 
-(ert-deftest hermes-capabilities-encode-response-is-json ()
-  "The response writer encodes a frame alist to a JSON string."
-  (hermes-capabilities-test--with-clean-registry
-    (hermes-capabilities--register "buffer.current" (lambda (_) "ok"))
-    (let* ((request (list :id "enc-1" :method "buffer.current" :params nil))
-           (json (hermes-capabilities--encode-response
-                  (hermes-capabilities--response-for request))))
-      (should (stringp json))
-      (should (string-match-p "\"jsonrpc\":\"2.0\"" json))
-      (should (string-match-p "\"id\":\"enc-1\"" json)))))
-
 (ert-deftest hermes-capabilities-plist-to-alist ()
   "Keyword plists convert to alists with bare symbol keys."
   (should (equal (hermes-capabilities--plist-to-alist
@@ -682,7 +671,7 @@ checked to exclude session-id-bearing slots."
     (let* ((request (list :id "req-env" :method "buffer.read"
                           :params `((buffer . " cap-read-env"))))
            (frame (hermes-capabilities--response-for request))
-           (json (hermes-capabilities--encode-response frame))
+           (json (json-serialize frame))
            (parsed (json-parse-string json
                                       :object-type 'alist
                                       :array-type 'list))
