@@ -312,6 +312,19 @@ replacing the folder with that file.  A nil value causes
 folders to be saved by writing directly to the folder without
 the use of a temporary file.
 
+@cindex symbolic links
+@cindex hard links
+@vindex file-preserve-symlinks-on-save
+Writing a temporary file and renaming it into place replaces the folder's own
+name, which matters if the name you visited is a link.  For a @emph{symbolic}
+link VM sets Emacs's @code{file-preserve-symlinks-on-save} as well, so the
+folder is saved through the link and the mailbox it names is the file that
+changes.  A @emph{hard} link cannot be preserved that way: replacing a file
+atomically and keeping another name pointing at the same contents are not both
+possible, so a folder you reach through a hard link needs
+@code{vm-folder-file-precious-flag} set to @code{nil}, at the cost of the
+protection above.
+
 @vindex vm-delete-empty-folders
 If the folder is empty at the time you save it and the variable
 @code{vm-delete-empty-folders} is non-@code{nil}, VM will remove
@@ -998,6 +1011,18 @@ Two additional formats are @code{mmdf} used by @acronym{MMDF} systems and
 @code{babyl} used by the Emacs Rmail mode.  These formats are recognized
 automatically when read from the file system.
 
+@cindex importing mail
+@cindex converting folders
+@cindex MH
+@findex unrmail
+That is what makes mail from another reader easy to bring over.  An Rmail
+folder can be visited as it stands, or converted first with Emacs's
+@code{M-x unrmail}.  An @acronym{MH} folder becomes a folder VM can read by
+running @acronym{MH}'s own @code{packf} or @code{packmbox} over it, which
+writes the messages out in one of the formats above.  Once such a folder is
+open, @code{vm-change-folder-type} writes it out in whichever format you have
+settled on.
+
 
 @node @acronym{POP} and @acronym{IMAP} Folders, Thunderbird Folders, Local Folders, Starting Up
 @section @acronym{POP} and @acronym{IMAP} Folders
@@ -1587,6 +1612,15 @@ another mail client and your ``Mail'' indicator won't reflect the
 situation.  If you need to be particular about new mail in such a
 situation, then you should set the variable
 @code{vm-mail-check-always}. 
+
+@cindex checking for mail, cost of
+For a @acronym{POP} or @acronym{IMAP} folder a check is a conversation with the
+server, and VM holds Emacs while it happens.  On a working connection you will
+not notice it; on a slow or absent one Emacs stops until the connection times
+out, every @var{n} seconds, whether or not you are reading mail at the time.
+Setting @code{vm-mail-check-interval} and @code{vm-auto-get-new-mail} to
+@code{nil} avoids that, at the price of no longer being told about new mail
+until you ask for it with @kbd{g}.
 
 @node Crash Recovery,, Getting New Mail, Starting Up
 @section Crash Recovery
@@ -2320,6 +2354,21 @@ best display possible in your environment.  If you do not like the
 results, you may set the variable to a different value or
 @code{nil}.
 
+@cindex format=flowed
+@cindex RFC 3676
+@vindex vm-mime-unflow-flowed-text
+@vindex vm-fill-paragraphs-containing-long-lines
+A sender who does not know how wide your window is can wrap the text and mark
+each break it invented by leaving a space at the end of the line, which is what
+RFC 3676 calls @dfn{format=flowed}.  VM joins those lines back up before
+displaying such a part, so that
+@code{vm-fill-paragraphs-containing-long-lines} wraps the paragraph to the
+width you have rather than to the width the sender had.  Breaks the author
+meant are left alone, as are a change of quote depth and the @samp{-- }
+signature separator, and @samp{delsp=yes} is honoured.  Set
+@code{vm-mime-unflow-flowed-text} to @code{nil} to see such a message with the
+sender's own line breaks.
+
 @node @acronym{HTML} display, External display, Internal display, @acronym{MIME} Messages
 @subsection @acronym{HTML} display
 
@@ -2779,6 +2828,18 @@ any XEmacs version compiled with MULE support, the value of
 @code{vm-mime-charset-font-alist} has no effect.  This is
 because all characters are displayed using fonts discovered by
 MULE and VM has no control over them.
+
+@cindex 8-bit headers
+@cindex RFC 6532
+@vindex vm-mime-8bit-header-charsets
+A header is supposed to be @acronym{ASCII}, with anything else written as the
+encoded words of RFC 2047, but mail carrying raw 8-bit bytes in its headers has
+always existed and RFC 6532 now makes @acronym{UTF-8} legal there.  Such text
+says nothing about its own character set, so VM guesses:
+@code{vm-mime-8bit-header-charsets} lists the coding systems to try, in order,
+and defaults to @acronym{UTF-8} and then ISO-8859-1.  This affects the summary
+and the displayed message only; the folder on disk keeps the bytes exactly as
+they arrived.  Set the variable to @code{nil} to be shown the bytes.
 
 @node multipart/alternative, multipart/related, Character sets, @acronym{MIME} Messages
 @subsection @acronym{MIME} multipart/alternative
@@ -3319,6 +3380,16 @@ which moves them outside the scope of this variable.  For
 example, messages with line lengths of 1000 characters or more
 are considered binary, as are messages that contain carriage
 returns (ASCII code 13) or NUL's (ASCII code 0).
+
+@cindex format=flowed
+@vindex vm-send-using-flowed-text
+@vindex fill-column
+Setting @code{vm-send-using-flowed-text} has VM mark its own line breaks as
+soft, in the way RFC 3676 describes, so that a recipient's mail reader can
+re-wrap your text to the width it has rather than to your
+@code{fill-column}.  It is off by default.  Only lines that reach about the
+fill column are marked, so a deliberately short line -- an address block, a
+list, a signature -- arrives with the break you gave it.
 
 @node @acronym{MIME} headers, @acronym{MIME} preview, @acronym{MIME} characters, Sending @acronym{MIME} Messages
 @unnumberedsec @acronym{MIME} headers
@@ -7474,6 +7545,36 @@ Warnings use the same scale, so lowering @code{vm-verbosity} quiets warnings
 along with progress; nothing above level 1 is a warning.  A related variable,
 @code{vm-verbal-time}, holds a number of seconds to leave each message on
 screen, and should normally be 0 --- anything else delays VM.
+
+@section Being told about new mail
+
+@cindex biff
+@cindex new mail notification
+@findex vm-biff-mode
+@vindex vm-arrived-messages-hook
+@vindex vm-auto-get-new-mail
+vm-biff pops up a summary frame when mail arrives, in the manner of
+@command{xbiff}, so you can see what has come in without leaving what you are
+doing.  Switch it on with @code{(vm-biff-mode 1)}, which is autoloaded, and off
+again with @code{(vm-biff-mode -1)}.  Something has to go looking for the mail
+for it to have anything to show, so set @code{vm-auto-get-new-mail} as well.
+
+Loading the file no longer switches it on: it works by putting a function on
+@code{vm-arrived-messages-hook}, and merely having a file loaded should not
+change how Emacs behaves.
+
+@section What a composition buffer is called
+
+@cindex composition buffer names
+@vindex vm-drop-buffer-name-chars
+A composition is named after its recipient and subject, so a reply to
+Ren@'e Descartes opens a buffer called @samp{reply to Ren@'e Descartes}.  The
+name also names the auto-save file, so characters a file name cannot hold are
+replaced by
+@samp{_}: @code{vm-drop-buffer-name-chars} says which, and defaults to
+@samp{[[:cntrl:]/]}, or on MS-Windows to the wider set that platform needs.
+Set it to @samp{[^ a-zA-Z0-9.,_"'+-]} for the behaviour before 8.3.3, which
+replaced every accented letter as well.
 
 @node History and Administration, Highlights, Customizations, Top
 @chapter History and Administration
