@@ -190,6 +190,14 @@ VM 8.?.?
     vm-epg is not a drop-in rename of vm-pgg; its customization variables and
     commands are named vm-epg-* and its faces vm-epg-*, so vm-pgg settings
     must be carried over by hand.
+  * Acting on an attachment of a message whose body is still on the server now
+    says so instead of producing an empty file.  With
+    `vm-external-fetch-message-for-presentation' nil, a message over
+    `vm-imap-max-message-size' is shown from its headers alone, and the parts of
+    a layout parsed from headers have no text: saving or displaying one wrote
+    zero bytes and reported nothing.  The folder buffer refused already; the
+    presentation buffer, where the buttons are, did not.  Type `o'
+    (`vm-load-message') on the message and the attachment comes out whole.
   * VM no longer asks an IMAP server to clear \Recent, which RFC 3501 says a
     client may never set or clear.  It arrives in the flags a FETCH reports, and
     VM was sending "-FLAGS.SILENT (\recent)" for every message it synchronised:
