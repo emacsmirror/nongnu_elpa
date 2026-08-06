@@ -1982,6 +1982,16 @@ Not the line breaks: undoing them is the whole point, and the reader re-wraps."
       (funcall walk layout)
       nil)))
 
+(defun vm-mime-test--kill-new-buffers (before)
+  "Kill every live buffer that is not in BEFORE, unmodified.
+The cid tests visit a folder, which leaves the folder buffer, its summary and
+its presentation copy behind (issue #559)."
+  (dolist (buffer (buffer-list))
+    (unless (memq buffer before)
+      (when (buffer-live-p buffer)
+        (with-current-buffer buffer (set-buffer-modified-p nil))
+        (kill-buffer buffer)))))
+
 (defun vm-mime-test--cid-folder ()
   "Visit the cid fixture as a folder and return its one message."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-cid" t)))
@@ -2017,6 +2027,7 @@ them."
          (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
          (vm-folder-history vm-folder-history)
          (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list))
          (vm-mime-externalize-cid-references t))
     (unwind-protect
         (progn
@@ -2059,6 +2070,7 @@ them."
                   (should (= 2 (cl-count-if
                                 (lambda (l) (string-match-p "\\.png" l))
                                 (split-string text "\n")))))))))
+      (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
 
 (ert-deftest vm-mime-test-cid-externalizing-can-be-turned-off ()
@@ -2072,7 +2084,8 @@ written to the temporary directory."
          (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
          (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
          (vm-folder-history vm-folder-history)
-         (vm-last-visit-folder vm-last-visit-folder))
+         (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list)))
     (unwind-protect
         (progn
           (vm-visit-folder file)
@@ -2097,6 +2110,7 @@ written to the temporary directory."
                                   (lambda (f) (member f '("." "..")))
                                   (directory-files dir))
                                  #'string<)))))
+      (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
 
 (ert-deftest vm-mime-test-cid-reference-with-no-such-part-is-left-alone ()
@@ -2110,7 +2124,8 @@ a name that resolves to nothing would be worse than leaving it visible."
          (vm-init-file nil) (vm-preferences-file nil) (vm-confirm-quit nil)
          (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
          (vm-folder-history vm-folder-history)
-         (vm-last-visit-folder vm-last-visit-folder))
+         (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list)))
     (unwind-protect
         (progn
           (vm-visit-folder file)
@@ -2124,6 +2139,7 @@ a name that resolves to nothing would be worse than leaving it visible."
               (insert-file-contents html-file)
               (should (string-match-p "cid:absent@example\\.com"
                                       (buffer-string))))))
+      (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
 
 
@@ -2142,6 +2158,7 @@ the usual 022.  The image parts of a message are as private as its text."
          (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
          (vm-folder-history vm-folder-history)
          (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list))
          (vm-mime-externalize-cid-references t))
     (unwind-protect
         (progn
@@ -2156,6 +2173,7 @@ the usual 022.  The image parts of a message are as private as its text."
                 ;; only the owner, whatever the umask says
                 (should (= (vm-octal 600)
                            (logand (file-modes f) (vm-octal 777))))))))
+      (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
 
 (ert-deftest vm-mime-test-cid-part-does-not-write-through-a-link ()
@@ -2171,6 +2189,7 @@ The cid parts go in the same directory and need the same care."
          (vm-frame-per-folder nil) (vm-mutable-frame-configuration nil)
          (vm-folder-history vm-folder-history)
          (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list))
          (vm-mime-externalize-cid-references t)
          (elsewhere (expand-file-name "decoy" dir)))
     (unwind-protect
@@ -2194,6 +2213,7 @@ The cid parts go in the same directory and need the same care."
             (with-temp-buffer
               (insert-file-contents elsewhere)
               (should (equal "untouched\n" (buffer-string))))))
+      (vm-mime-test--kill-new-buffers before)
       (delete-directory dir t))))
 
 (provide 'vm-mime-test)

@@ -76,6 +76,9 @@
            (buffers (length (buffer-list))))
       (let ((inhibit-message t))
         (condition-case nil (ert-run-test test) (error nil)))
+      ;; The composition timer is cancelled the way the isolation does it, or a
+      ;; stray timer fires during later tests and their leaks become nonsense.
+      (vm-test-cancel-composition-timer)
       (let ((changed (leak-report--changed
                       variables before (leak-report--snapshot variables)))
             (new-buffers (- (length (buffer-list)) buffers)))

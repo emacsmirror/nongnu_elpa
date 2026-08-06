@@ -1284,7 +1284,7 @@ here, so it cannot also mean \"not supplied\".  BODY runs with the folder visite
            (when (buffer-live-p buffer)
              (with-current-buffer buffer
                (set-buffer-modified-p nil)
-               (setq kill-buffer-hook nil))
+               (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t))
              (kill-buffer buffer))))
        (delete-directory dir t))))
 

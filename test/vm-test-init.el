@@ -80,6 +80,63 @@ Bind `vm-use-menus' to this in a test that means to exercise the menus.")
 
 (setq vm-use-menus nil)
 
+;;; Session initialization
+
+;; Starting VM for the first time in an Emacs session does a pile of things
+;; once: reads the init file, installs the addons, builds the window
+;; configurations and the two obarrays VM uses as sets, adds to
+;; `post-command-hook' and `kill-emacs-hook', and sets `vm-session-beginning'
+;; nil.  Whichever test got there first paid for all of it and was reported as
+;; leaking ten variables (issue #559), and two of those hooks are not VM's, so
+;; the isolation could not put them back at all.
+;;
+;; Done here instead, so it belongs to no test.  The init file and the
+;; preferences file are bound away: the suite must not read the developer's own.
+;; No timer starts here -- `vm' starts those, not this.
+(require 'vm)
+(let ((vm-init-file nil)
+      (vm-preferences-file nil))
+  (vm-session-initialization))
+
+;; The placeholders `vm-set-window-configuration' names for a summary,
+;; composition or edit buffer that is not there.  It only ever looks them up;
+;; what creates them is `set-tapestry', restoring a configuration that names
+;; one.  So the first test to restore a window configuration made them and was
+;; reported as leaking them.  Made here, so they belong to no test.
+(get-buffer-create " *vm-nonexistent*")
+(get-buffer-create " *vm-nonexistent-summary*")
+
+;; And the scratch buffer `vmpc-split' works in, for the same reason: it is
+;; created on first use and kept, so whichever test split a string first was
+;; reported as leaving it behind.
+(get-buffer-create " *split*")
+
+;;; The toolbar
+
+;; Like the menus: installing it defines tool-bar keys in `vm-mode-map', a
+;; shared keymap, and records that in `vm-fsfemacs-toolbar-installed-p', so the
+;; first test to visit a folder was reported as leaving both behind.  Off for the
+;; suite, and `vm-toolbar-test-installing-defines-the-buttons' covers the
+;; installation deliberately, with the keymap bound to a copy.
+(defvar vm-test-vm-use-toolbar (default-value 'vm-use-toolbar)
+  "The value `vm-use-toolbar' has outside the test suite.
+Bind `vm-use-toolbar' to this in a test that means to exercise the toolbar.")
+
+(setq vm-use-toolbar nil)
+
+;; The summary sets the arrow strings from `vm-summary-arrow' globally as its
+;; mode is set up, which is a first-visit-pays-for-everybody initialization like
+;; the menu map, so it happens here.
+(with-temp-buffer
+  (vm-summary-mode-internal))
+
+;; The compiled summary format is memoised in
+;; `vm-summary-tokenized-compiled-format-alist', keyed by the format string, so
+;; the first test to generate a summary filled in the entry for the default
+;; format.  Compiled here for the same reason.  A test using a format of its own
+;; still has to bind the variable.
+(vm-summary-compile-format vm-summary-format t)
+
 ;;; Fixture helpers
 
 (defun vm-test-fixture-path (category filename)
@@ -408,7 +465,13 @@ Body text
        (vm-test-init-message-data msg))
      ;; Set message pointer to first message
      (setq vm-message-pointer vm-message-list)
-     ,@body))
+     (unwind-protect
+         (progn ,@body)
+       ;; `with-temp-buffer' takes the folder buffer away, but not a
+       ;; presentation copy made from it, which is a buffer of its own and
+       ;; outlives the test (issue #559).
+       (when (buffer-live-p vm-presentation-buffer)
+         (kill-buffer vm-presentation-buffer)))))
 
 (defun vm-test-write-simple-folder (file n &optional threaded)
   "Write a folder of N messages to FILE, subjects \"subject 0\" upwards.
@@ -629,8 +692,21 @@ keeps them for reuse and the variable holding them has just been wound back."
           (set-buffer-modified-p nil)
           ;; `vm-postpone' offers to save a composition as a draft from
           ;; `kill-buffer-hook', which is another question.
-          (setq kill-buffer-hook nil))
+          (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t))
         (ignore-errors (kill-buffer buffer))))))
+
+(defun vm-test-cancel-composition-timer ()
+  "Cancel the idle timer VM starts to rename composition buffers.
+`vm-mail-internal' starts it with the first composition and nothing stops it,
+so a test that composed left it running.  Restoring the variable is not enough
+and is worse: the timer would still be scheduled with nothing naming it, VM
+would start a second one for the next composition, and both would fire in the
+middle of later tests -- which is where a stray `*Warnings*' buffer was coming
+from.  No test leaves a composition behind, so the timer has nothing to rename."
+  (when (and (boundp 'vm-update-composition-buffer-name-timer)
+             vm-update-composition-buffer-name-timer)
+    (cancel-timer vm-update-composition-buffer-name-timer)
+    (setq vm-update-composition-buffer-name-timer nil)))
 
 (defun vm-test-run-test-isolated (run-test test)
   "Run TEST through RUN-TEST, then undo its effect on global state."
@@ -640,6 +716,7 @@ keeps them for reuse and the variable holding them has just been wound back."
           (buffers (buffer-list)))
       (unwind-protect
           (funcall run-test test)
+        (vm-test-cancel-composition-timer)
         (vm-test-restore-global-state state)
         (vm-test-kill-new-buffers buffers)))))
 

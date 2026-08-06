@@ -44,6 +44,9 @@ state rather than a throwaway mailbox."
 	  ;; trace is unreachable anyway.  A session that errors sets this back
 	  ;; buffer-locally, so a failure still has its trace while it matters.
 	  (vm-pop-keep-trace-buffer nil)
+	  ;; `vm-warn' remembers its last warning so as not to repeat it, and
+	  ;; these tests produce warnings on purpose.
+	  (vm-current-warning vm-current-warning)
 	  (vm-folder-history vm-folder-history)
 	  (vm-last-visit-folder vm-last-visit-folder))
      (unwind-protect

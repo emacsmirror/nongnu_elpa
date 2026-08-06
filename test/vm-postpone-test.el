@@ -396,7 +396,7 @@
   "Continue the test draft and return the resulting composition as a string.
 DECODED is the value to give `vm-mime-decoded' in the folder buffer.
 There is no presentation buffer, so the body copied is the raw one."
-  (let (result)
+  (let (result (before (buffer-list)))
     (vm-test-with-folder vm-postpone-test-draft
       (setq vm-message-pointer vm-message-list)
       (setq vm-mime-decoded decoded)
@@ -411,6 +411,17 @@ There is no presentation buffer, so the body copied is the raw one."
                 ((symbol-function 'vm-show-current-message) #'ignore))
         (vm-continue-postponed-message t)
         (setq result (buffer-string))))
+    ;; Continuing the draft makes a composition buffer, which outlives the
+    ;; temp folder buffer `vm-test-with-folder' takes away (issue #559).  Its
+    ;; kill hook would ask whether to save it as a draft, and a question in
+    ;; batch reads stdin.
+    (dolist (buffer (buffer-list))
+      (unless (memq buffer before)
+        (when (buffer-live-p buffer)
+          (with-current-buffer buffer
+            (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t)
+            (set-buffer-modified-p nil))
+          (kill-buffer buffer))))
     result))
 
 (ert-deftest vm-postpone-test-continue-keeps-content-transfer-encoding ()

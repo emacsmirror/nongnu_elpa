@@ -305,6 +305,7 @@ is the shape -- if `vm' ever calls itself again, a folder visit will count two."
          (vm-mutable-frame-configuration nil)
          (vm-folder-history vm-folder-history)
          (vm-last-visit-folder vm-last-visit-folder)
+         (before (buffer-list))
          (calls 0)
          (counter (lambda (orig &rest args)
                     (setq calls (1+ calls))
@@ -320,6 +321,12 @@ is the shape -- if `vm' ever calls itself again, a folder visit will count two."
             (advice-remove 'vm counter))
           (should (= 1 calls))
           (should (= 1 (length vm-message-list))))
+      ;; the visit leaves the folder, its summary and its presentation copy
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
       (delete-directory dir t))))
 
 
@@ -340,6 +347,9 @@ call does the work and runs the hook, and later calls do neither because
   (require 'vm)
   (let ((vm-init-file nil)
         (vm-preferences-file nil)
+        ;; as above: a second initialization rebuilds these
+        (vm-buffers-needing-display-update vm-buffers-needing-display-update)
+        (vm-buffers-needing-undo-boundaries vm-buffers-needing-undo-boundaries)
         (calls 0))
     ;; a session that has not begun yet
     (let ((vm-session-beginning t)
@@ -358,6 +368,10 @@ whoever wants to act first."
   (require 'vm)
   (let ((vm-init-file nil)
         (vm-preferences-file nil)
+        ;; A second initialization rebuilds the two obarrays VM uses as sets,
+        ;; which the rest of the suite is holding; bound, so they go back.
+        (vm-buffers-needing-display-update vm-buffers-needing-display-update)
+        (vm-buffers-needing-undo-boundaries vm-buffers-needing-undo-boundaries)
         (session-flag 'unset))
     (let ((vm-session-beginning t)
           (vm-startup-hook

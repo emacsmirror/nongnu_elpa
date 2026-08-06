@@ -383,6 +383,17 @@ the next to trip over."
           (vm-mutable-frame-configuration nil)
           (vm-folder-history vm-folder-history)
           (vm-last-visit-folder vm-last-visit-folder)
+          ;; VM counts compositions for the mode line; with none left behind the
+          ;; count should not follow the test out, and `vm-ml-composition-buffer-count'
+          ;; does not go back to "" on its own -- `vm-update-ml-composition-buffer-count'
+          ;; writes "0 compositions", which the mode line only shows while
+          ;; `vm-compositions-exist'.
+          (vm-composition-buffer-count vm-composition-buffer-count)
+          (vm-ml-composition-buffer-count vm-ml-composition-buffer-count)
+          (vm-compositions-exist vm-compositions-exist)
+          ;; `vm-warn' remembers its last warning so as not to repeat it, and a
+          ;; composition here warns about the signature file it cannot read.
+          (vm-current-warning vm-current-warning)
           (before (buffer-list)))
      (require 'vm)
      (unwind-protect
@@ -397,8 +408,10 @@ the next to trip over."
                (set-buffer-modified-p nil)
                ;; vm-postpone asks whether to save a composition as a draft
                ;; when its buffer is killed, and a question in batch reads
-               ;; stdin and fails.  Nothing here is about drafts.
-               (setq kill-buffer-hook nil))
+               ;; stdin and fails.  Nothing here is about drafts.  Only that hook goes:
+               ;; VM's own `vm-forget-composition-buffer' is on the same hook,
+               ;; and without it the composition counters never come back down.
+               (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t))
              (kill-buffer buffer))))
        (delete-directory dir t))))
 

@@ -516,20 +516,23 @@
 
 ;; Use defvar for dynamic binding in action tests
 (defvar vm-pcrisis-test--action-result nil
-  "Dynamic variable to capture action test results.")
+  "Dynamic variable to capture action test results.
+Bound by the tests that use it rather than set: action bodies are `eval'ed, so
+a lexical variable would be invisible to them, but a dynamic binding of this one
+is not.")
 
 (ert-deftest vm-pcrisis-test-run-actions-simple ()
   "Test vmpc-run-actions executes actions."
-  (setq vm-pcrisis-test--action-result nil)
-  (let ((vmpc-actions '(("test-action" (setq vm-pcrisis-test--action-result 'executed))))
+  (let ((vm-pcrisis-test--action-result nil)
+        (vmpc-actions '(("test-action" (setq vm-pcrisis-test--action-result 'executed))))
         (vmpc-actions-to-run '("test-action")))
     (vmpc-run-actions)
     (should (eq vm-pcrisis-test--action-result 'executed))))
 
 (ert-deftest vm-pcrisis-test-run-actions-multiple ()
   "Test vmpc-run-actions executes multiple actions in order."
-  (setq vm-pcrisis-test--action-result nil)
-  (let ((vmpc-actions '(("action1" (push 1 vm-pcrisis-test--action-result))
+  (let ((vm-pcrisis-test--action-result nil)
+        (vmpc-actions '(("action1" (push 1 vm-pcrisis-test--action-result))
                         ("action2" (push 2 vm-pcrisis-test--action-result))))
         (vmpc-actions-to-run '("action1" "action2")))
     (vmpc-run-actions)
@@ -865,8 +868,9 @@ is what #451 looked like from the outside."
 
 (defvar vm-pcrisis-test--fired nil
   "Set by the action in `vm-pcrisis-test-rule-dispatch-runs-action-per-state'.
-A global rather than a `let' binding because action bodies are `eval'ed, so
-they cannot see a lexical variable.")
+A defvar rather than a lexical variable because action bodies are `eval'ed and
+would not see one; the test binds this dynamically, which they do see, so
+nothing is left set afterwards.")
 
 (ert-deftest vm-pcrisis-test-rule-dispatch-runs-action-per-state ()
   "REGRESSION: a true condition mapped to an action runs it, in every state.
@@ -880,8 +884,8 @@ rather than through the interactive commands, which need a terminal."
            (vmpc-conditions '(("always" t)))
            (vmpc-actions '(("mark" (setq vm-pcrisis-test--fired t))))
            (vmpc-actions-to-run nil)
-           (vmpc-true-conditions nil))
-      (setq vm-pcrisis-test--fired nil)
+           (vmpc-true-conditions nil)
+           (vm-pcrisis-test--fired nil))
       (unwind-protect
           (progn
             (set rules-var '(("always" "mark")))
@@ -926,6 +930,12 @@ look."
          ;; composition, which has nothing to do with this.
          (vm-signature-file nil)
          (mail-signature nil)
+         ;; VM counts compositions for the mode line, and the count should not
+         ;; follow a test that leaves none behind.
+         (vm-composition-buffer-count vm-composition-buffer-count)
+         (vm-ml-composition-buffer-count vm-ml-composition-buffer-count)
+         (vm-compositions-exist vm-compositions-exist)
+         (before (buffer-list))
          (was vmpc-mode))
     (unwind-protect
         (progn
@@ -940,6 +950,15 @@ look."
           (should (eq major-mode 'mail-mode))
           (should (string-match-p "^To:" (buffer-string))))
       (vmpc-mode (if was 1 -1))
+      ;; the visit and the composition leave the folder, its summary, its
+      ;; presentation copy and the composition itself
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t)
+              (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
       (delete-directory dir t))))
 
 (ert-deftest vm-pcrisis-test-mail-from-a-folder-with-a-message ()
@@ -957,7 +976,13 @@ Without this, the test above could pass by never validating at all."
          (vm-folder-history vm-folder-history)
          (vm-last-visit-folder vm-last-visit-folder)
          (vm-signature-file nil)
-         (mail-signature nil))
+         (mail-signature nil)
+         ;; VM counts compositions for the mode line, and the count should not
+         ;; follow a test that leaves none behind.
+         (vm-composition-buffer-count vm-composition-buffer-count)
+         (vm-ml-composition-buffer-count vm-ml-composition-buffer-count)
+         (vm-compositions-exist vm-compositions-exist)
+         (before (buffer-list)))
     (unwind-protect
         (progn
           (with-temp-file file
@@ -968,6 +993,15 @@ Without this, the test above could pass by never validating at all."
           (should (= 1 (length vm-message-list)))
           (vm-mail-from-folder)
           (should (eq major-mode 'mail-mode)))
+      ;; the visit and the composition leave the folder, its summary, its
+      ;; presentation copy and the composition itself
+      (dolist (buffer (buffer-list))
+        (unless (memq buffer before)
+          (when (buffer-live-p buffer)
+            (with-current-buffer buffer
+              (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t)
+              (set-buffer-modified-p nil))
+            (kill-buffer buffer))))
       (delete-directory dir t))))
 
 
@@ -1064,9 +1098,10 @@ holds while the composition is built."
           (vm-user-interaction-buffer vm-user-interaction-buffer)
           (mail-signature ,(or (nth 1 spec) nil))
           ;; VM counts compositions for the mode line, and these leave none
-          ;; behind, so the count should not follow them out.  The idle timer
-          ;; VM starts with the first composition is left alone: binding that
-          ;; variable would strand a live timer with nothing pointing at it.
+          ;; behind, so the count should not follow them out.  The idle timer VM
+          ;; starts with the first composition is cancelled by the harness, in
+          ;; `vm-test-cancel-composition-timer': binding the variable would
+          ;; strand a live timer with nothing pointing at it.
           (vm-composition-buffer-count vm-composition-buffer-count)
           (vm-ml-composition-buffer-count vm-ml-composition-buffer-count)
           (vm-compositions-exist vm-compositions-exist)
@@ -1088,7 +1123,7 @@ holds while the composition is built."
              (with-current-buffer buffer
                ;; A composition asks whether to keep itself as a draft as it is
                ;; killed, and in batch that prompt reads end of file.
-               (setq kill-buffer-hook nil)
+               (remove-hook 'kill-buffer-hook 'vm-save-killed-message-hook t)
                (set-buffer-modified-p nil))
              (kill-buffer buffer))))
        (delete-directory dir t))))
