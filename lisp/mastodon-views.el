@@ -1208,18 +1208,21 @@ Will error 403 if permission to add is lacking."
   ;; FIXME: i was unable to add my own account using the API, but was able
   ;; to do so in the web UI...
   (interactive)
-  (let* ((profile (mastodon-profile--profile-json))
-         (colls (mastodon-views-get-account-collections
-                 (alist-get 'id mastodon-profile-credential-account)))
-         (coll (mastodon-views-read-collection colls))
-         (resp (mastodon-views-account-to-collection (alist-get 'id profile)
-                                       (alist-get 'id coll))))
-    (mastodon-http--triage
-     resp
-     (lambda (resp)
-       (message "Account %s added to collection %s!"
-                (alist-get 'acct profile)
-                (alist-get 'name coll))))))
+  (let* ((profile (mastodon-profile--profile-json)))
+    (if (member (map-nested-elt profile '(feature_approval current_user))
+                '("denied" "missing"))
+        (user-error "You don't have permission to add this user to a collection")
+      (let* ((colls (mastodon-views-get-account-collections
+                     (alist-get 'id mastodon-profile-credential-account)))
+             (coll (mastodon-views-read-collection colls))
+             (resp (mastodon-views-account-to-collection (alist-get 'id profile)
+                                           (alist-get 'id coll))))
+        (mastodon-http--triage
+         resp
+         (lambda (resp)
+           (message "Account %s added to collection %s!"
+                    (alist-get 'acct profile)
+                    (alist-get 'name coll))))))))
 
 ;; TODO: add account to coll from coll view
 ;; would need to be a search interface...
