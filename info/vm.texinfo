@@ -90,6 +90,7 @@ This manual corresponds to VM version @value{VERSION}.
 * Menus::               How to configure VM's menus.
 * Faces::               How to configure VM's use of faces.
 * Using the Mouse::     Understanding the VM mouse interface.
+* Customizing VM::      Where settings go, and per-folder settings
 * Hooks::               How you can make VM run your code at certain times.
 * Configuration::       Hints on how to configure VM to read and send mail
 
@@ -6818,7 +6819,7 @@ textual buttons that trigger the display of @acronym{MIME} objects.
 
 @xref{Summary Faces}, for the faces support in the Summary buffer.
 
-@node Using the Mouse, Hooks, Faces, Top
+@node Using the Mouse, Customizing VM, Faces, Top
 @chapter Using the Mouse
 
 VM uses the following layout for the mouse buttons in the folder
@@ -6879,7 +6880,96 @@ and @code{konqueror}, all of which have functions of the form
 facilities defined in the @samp{browse-url} library to send URL's to
 external browsers.
 
-@node Hooks, Configuration, Using the Mouse, Top
+@node Customizing VM, Hooks, Using the Mouse, Top
+@chapter Customizing VM
+
+@cindex customization
+@cindex customize
+VM has some five hundred user options.  This chapter is about where to put a
+setting and how to make one apply to a single folder; @ref{Reference} lists
+every option there is, with its default, and the chapters above explain the
+ones that need explaining.
+
+@menu
+* Where Settings Go::   Which file a setting belongs in
+* Folder Settings::     Settings that apply to one folder
+@end menu
+
+@node Where Settings Go, Folder Settings, Customizing VM, Customizing VM
+@section Where settings go
+
+@vindex vm-init-file
+@vindex vm-preferences-file
+VM reads two files of its own, the first time it is run in an Emacs session:
+@file{~/.vm} and then @file{~/.vm.preferences}.  @xref{Starting Up}, for what
+each is for.  Both hold Lisp, so a setting in either is an ordinary
+@code{setq}:
+
+@example
+(setq vm-primary-inbox "~/Mail/inbox"
+      vm-mime-alternative-show-method 'best-internal)
+@end example
+
+Three things belong in your Emacs init file instead of in VM's:
+
+@itemize
+@item
+@vindex vm-init-file
+The names of VM's own files, since VM has to know them before it can read
+them: @code{vm-init-file} and @code{vm-preferences-file}.
+@item
+Anything Emacs itself needs before VM starts -- a @code{load-path} entry, a
+key binding in a global map, @code{mail-user-agent}.
+@item
+@findex vm-biff-mode
+Modes you want on from the start, if they are switched on by a function
+rather than by a variable: @code{(vm-biff-mode 1)}, for instance.
+@end itemize
+
+@cindex Customize
+Settings made with Customize are written to your @code{custom-file}, which is
+your init file unless you have said otherwise.  Emacs loads that at startup
+and VM reads its own files later, so a setting in @file{~/.vm} wins over the
+same setting in Customize.  Keep a given variable in one place or the other,
+not both.
+
+@findex vm-load-init-file
+@kbd{M-x vm-load-init-file} reads both files again, so you can try a change
+without restarting Emacs.  With a prefix argument it reads @file{~/.vm} and
+skips @file{~/.vm.preferences}, which is the quick way to find out whether a
+preference is what broke something.
+
+@node Folder Settings,, Where Settings Go, Customizing VM
+@section Settings that apply to one folder
+
+@cindex folder-local variables
+@vindex vm-mode-hook
+A folder is a buffer, so a setting can be local to it.  Make it local from
+@code{vm-mode-hook}, which runs in the folder's buffer:
+
+@example
+(add-hook 'vm-mode-hook
+          (lambda ()
+            (when (string-match "/spam\\'" (buffer-file-name))
+              (set (make-local-variable 'vm-summary-format)
+                   "%n %*%a %-30.30F %-3.3m %2d %I\"%s\"\n"))))
+@end example
+
+@vindex vm-visit-folder-hook
+The hook matters, not just the setting.  VM builds the summary after
+@code{vm-mode-hook} has run and before @code{vm-visit-folder-hook}, so a
+summary format set in the latter has no effect on the summary you are looking
+at -- the lines have already been made, and each one is cached with its
+message.  Anything that decides how the folder is displayed goes in
+@code{vm-mode-hook}.  @xref{Hooks}, for the other hooks and their order.
+
+@cindex local variables list
+A @samp{Local Variables:} list at the end of a folder file does @emph{not}
+work, and is not meant to: a folder is mail from strangers, and VM visits one
+with @code{enable-local-variables} bound to nil rather than let a message
+set variables in your Emacs.  Use the hook.
+
+@node Hooks, Configuration, Customizing VM, Top
 @chapter Hooks
 
 VM has many hook variables that allow you to run functions when
@@ -7169,9 +7259,9 @@ instead of no action.
 @end table
 
 @node Configuration, Preface to Add-ons, Hooks, Top
-@section Configuration of VM
+@chapter Configuration of VM
 
-@unnumberedsubsec Hints on email environment configuration
+@unnumberedsec Hints on email environment configuration
 
 When VM was first written, the majority of users received their email and
 replied to them on Unix systems.  These systems either ran permanent services
@@ -7194,7 +7284,7 @@ You may need to consult additional documentation of other protocols and
 programs in order to fully understand how to configure your email
 environment.
 
-@unnumberedsubsubsec Configuration for email reception
+@unnumberedsubsec Configuration for email reception
 
 If you receive email on a remote server, that email will be made available
 via a mail reception protocol.  The two commonly used protocols are:
@@ -7234,7 +7324,7 @@ Folders}.  Even though the method of server folders is provided for both
 @acronym{IMAP} servers.
 @end itemize
 
-@unnumberedsubsubsec Configuration for secure email reception
+@unnumberedsubsec Configuration for secure email reception
 
 To ensure privacy on the open Internet while you download email from mail
 servers, some servers provide an additional secure communication layer.
@@ -7280,7 +7370,7 @@ If your Emacs version has a built-in implementation of @acronym{TLS} and you
 wish to use it, you should set the variable @code{vm-stunnel-program} to
 @code{nil}.
 
-@unnumberedsubsubsec Configuration for email sending
+@unnumberedsubsec Configuration for email sending
 
 Configuration for sending email can be more complicated, partly because you
 are dependent on Emacs for the mail sending libraries.  VM does not have its
