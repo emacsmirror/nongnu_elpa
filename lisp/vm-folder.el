@@ -738,13 +738,9 @@ the value of vm-default-From_folder-type will be returned."
 		  (setq temp-buffer (vm-make-work-buffer))
 		  (set-buffer temp-buffer)
 		  (if (file-readable-p file)
-		      (condition-case nil
-			  (let ((coding-system-for-read
-				    (vm-binary-coding-system)))
-			    (insert-file-contents file nil 0 4096))
-			(wrong-number-of-arguments
-			 (call-process "sed" file temp-buffer nil
-				       "-n" "1,/^$/p")))))))
+		      (let ((coding-system-for-read
+				(vm-binary-coding-system)))
+			(insert-file-contents file nil 0 4096))))))
 	  (save-excursion
 	    (save-restriction
 	      (or start (setq start 1))

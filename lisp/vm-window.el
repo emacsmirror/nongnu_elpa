@@ -423,11 +423,7 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 	    ((and (eq action 'replace) (eq obj-1 (window-buffer w)))
 	     (set-window-buffer w obj-2)))
       (setq done (eq start
-		     (setq w
-			  (condition-case nil
-			      (next-window w 'nomini all-frames)
-			    (wrong-number-of-arguments
-			     (next-window w 'nomini))))))
+		     (setq w (next-window w 'nomini all-frames))))
       (if (null start)
 	  (setq start w)))
     (if (and delete-me (not (eq delete-me (next-window delete-me 'nomini))))
