@@ -129,7 +129,7 @@ Rights:
 
 @cindex Rmail
 @cindex Gnus
-@cindex Gnu Emacs
+@cindex GNU Emacs
 @cindex XEmacs
 @cindex Emacs
 VM, short for ``View Mail,'' is a mail reader that runs within the
@@ -138,11 +138,10 @@ in a familiar environment.  You might have even used other Emacs-based
 mail readers such as Rmail and Gnus.  If you are new to Emacs, you can
 start using VM via the menubar and toolbar until you become familiar
 with it.  Then you can move on to keyboard shortcuts and advanced
-features.  You should be aware that there are two major strands of
-Emacs versions, called ``Gnu Emacs'' and ``XEmacs.''  VM works in both
-of them.  XEmacs might be a bit easier for new users due to its
-advanced support for menus and other interactive features.  Please be
-sure to try both of them before deciding on your choice.
+features.  VM runs in GNU Emacs, and needs version 28.1 or later.  It still carries code
+for XEmacs, from the years when that was the other Emacs people used, but no
+release has been tested there for a long time and none of the test suite runs
+there.
 
 Emacs provides a powerful text-based user interface for VM users, with
 facilities for quick navigation, incremental searching , sophisticated
@@ -1491,7 +1490,7 @@ well as Thunderbird.
 The variable @code{vm-sync-thunderbird-status} is a buffer-local
 variable.  You may set its default value in your @code{.vm} file.  To
 change it in a running Emacs session, you must use @code{setq-default}.
-@xref{Locals,, Local Variables, emacs, Gnu Emacs manual}.
+@xref{Locals,, Local Variables, emacs, GNU Emacs manual}.
 
 
 @node External Messages, Getting New Mail, Thunderbird Folders, Starting Up
@@ -2032,15 +2031,15 @@ course bind the keys to operations of your own choosing instead.
 @vindex vm-fill-paragraphs-containing-long-lines
 @vindex vm-word-wrap-paragraphs
 Sometimes you will receive messages that contain lines that are
-too long to fit on your screen without wrapping.  Setting
-@code{vm-word-wrap-paragraphs} to t will cause VM to use the 
-@file{longlines.el} library by Grossjohann, Schroeder and Yidong to
-carry out word wrapping.  You must have this library installed
-somewhere on your @code{load-path}.  Another way to deal with the
-problem is to use the @code{visual-line-mode} in Emacs 23.  You can
-activate it automatically for viewing messages by adding the function
-@code{turn-on-visual-line-mode} to the
-@code{vm-presentation-mode-hook}. 
+too long to fit on your screen without wrapping.  The simplest answer is
+Emacs's own @code{visual-line-mode}, which wraps the display and leaves the
+text alone; add @code{turn-on-visual-line-mode} to
+@code{vm-presentation-mode-hook} to have it on for every message you read.
+
+Setting @code{vm-word-wrap-paragraphs} to t instead makes VM use the
+@file{longlines.el} library, which Emacs dropped in version 24 --- so this
+needs a copy of that library on your @code{load-path}, and is worth using only
+if you already have one. 
 
 If you are unable to use either of these solutions, then you can use
 Emacs's paragraph filling facility.  If you set
@@ -2746,8 +2745,7 @@ Sometimes a charset that VM cannot display can be converted to a
 one that VM can display.  An example would be a message encoded
 using UTF-8 but in fact only contains Japanese characters.  In
 that case the message text could probably be converted to
-iso-2022-jp which VM running on a MULE-enabled Emacs could
-display.
+iso-2022-jp, which VM can display.
 
 VM offers a way to do such conversions.  The variable
 @code{vm-mime-charset-converter-alist} is an associative list of @acronym{MIME}
@@ -2821,13 +2819,10 @@ fonts can only be displayed if you're running under a window system
 e.g. X Windows.  So this variable will have no effect if you're
 running Emacs on a tty.
 
-Note that under FSF Emacs 19 any fonts you use must be the
-same height as your default font.  XEmacs and Emacs 21 do not
-have this limitation.  Under Emacs 20 and beyond, and under
-any XEmacs version compiled with MULE support, the value of
-@code{vm-mime-charset-font-alist} has no effect.  This is
-because all characters are displayed using fonts discovered by
-MULE and VM has no control over them.
+Note that on any Emacs VM supports the value of
+@code{vm-mime-charset-font-alist} has no effect: Emacs finds a font for each
+character itself, and VM has no say in it.  The variable is kept for the older
+Emacsen it was written for.
 
 @cindex 8-bit headers
 @cindex RFC 6532
@@ -5003,7 +4998,7 @@ forwarding messages to members.  For example, the @samp{viewmail-info}
 mailing list adds the subject tag ``[VM]'' at the beginning of each subject
 line.  Bug report handling systems often add tags indicating reference
 numbers, e.g., a tag of the form ``bug#nnnn'' added by the
-Gnu Emacs bug reports system.  To remove such subject tags, set the variable
+GNU Emacs bug reports system.  To remove such subject tags, set the variable
 @code{vm-subject-tag-prefix} to a regular expression that matches all
 subject tags you want removed.  For example, the setting
 
@@ -6836,11 +6831,10 @@ your own faces using Emacs primitives for doing so.
 In the folder or presentation buffer, the header contents of headers
 matched by the @code{vm-highlighted-header-regexp} variable are
 displayed using the face named by @code{vm-highlighted-header-face}.
-This variable is ignored under XEmacs if
-@code{vm-use-lucid-highlighting} is non-@code{nil}.  The XEmacs
-@code{highlight-headers} package is used instead.  See the
-documentation for the function @code{highlight-headers} to find out
-how to customize header highlighting using this package.
+(Under XEmacs this variable is ignored when
+@code{vm-use-lucid-highlighting} is non-@code{nil}, XEmacs's own
+@code{highlight-headers} package doing the work instead.  That package does not
+exist in GNU Emacs, where the setting has no meaning.)
 
 @cindex @acronym{URL}
 @vindex vm-highlight-url-face
@@ -7296,8 +7290,8 @@ Secure channels are provided using a protocol called @acronym{SSL} (Secure
 Sockets Layer).  A later version of the protocol is called @acronym{TLS}
 (Transport Layer Security), which is backward compatible with @acronym{SSL}.
 
-Gnu Emacs version 24 has a built-in implementation of @acronym{TLS} (which
-also includes @acronym{SSL}).  Prior versions of Gnu Emacs do not have it.
+GNU Emacs version 24 has a built-in implementation of @acronym{TLS} (which
+also includes @acronym{SSL}).  Prior versions of GNU Emacs do not have it.
 Other versions of Emacs may or may not have any implementation of
 @acronym{SSL} or @acronym{TLS}.
 
@@ -7353,7 +7347,7 @@ of @code{smtpmail.el} library, have made the life difficult to many users.
 
 @vindex smtpmail-stream-type
 @vindex smtpmail-smtp-service
-The @code{smtpmail.el} library included with Gnu Emacs version 24 has
+The @code{smtpmail.el} library included with GNU Emacs version 24 has
 @acronym{SSL}/@acronym{TLS} functionality.  Follow these guidelines for
 configuring the uptodate @code{smtpmail} library depending on the type of
 the @acronym{SMTP} server.
@@ -7380,31 +7374,18 @@ program first communicates insecurely, the server informs it that it
 requires the @acronym{STARTTLS} protocol, and the mail program must then
 initiate a negotiation to establish a secure channel.
 
-In Gnu Emacs 24, due to the integration of the @acronym{TLS} protocol, Emacs
-is able to use an external @acronym{GnuTLS} library, which can execute a
-@acronym{STARTTLS} protocol.  However, you must obtain and install the
-binary executables of the @acronym{GnuTLS} library on your system in order
-to obtain this functionality.  Having done this, you should set the variable
-@code{smtpmail-stream-type} to @code{starttls} to request Emacs to use
-the @code{STARTTLS} protocol.  Emacs 24 tries both an external
-@acronym{GnuTLS} library and its own internal @code{starttls.el} library, to
-achieve the @code{STARTTLS} negotiation.
+Emacs does @acronym{STARTTLS} itself, through @acronym{GnuTLS}, which most
+builds have compiled in; @code{(gnutls-available-p)} says whether yours does.
+Set @code{smtpmail-stream-type} to @code{starttls} to require it.
 
 If you set @code{smtpmail-stream-type} to @code{nil} (which is also the
 default value), then Emacs tries a plain text communication initially and
 upgrades it to @acronym{TLS} if the server requires @acronym{STARTTLS}.
 @end itemize
 
-Prior to Gnu Emacs 24, Emacs did not have built-in support for @acronym{SSL}
-or @acronym{TLS} protocols.  However, a contributed Emacs package called
-@code{starttls.el} was available to make use of an external @acronym{GnuTLS}
-library which was not integrated with Emacs.  The @code{smtpmail.el} library
-did not have the @code{smtpmail-stream-type} setting.  The default behaviour
-depended on the @code{smtpmail-smtp-service}, with the possible values of
-25, 465 or 587, as explained above.  It did the job adequately for many
-users.  But it did not work properly on the Windows platform, because
-Windows did not respect the signal requests needed for @acronym{STARTTLS}
-negotiation.
+(Emacs gained all of this in version 24, through an external
+@code{starttls.el} before that.  VM needs Emacs 28.1, so there is no longer a
+configuration to describe for those.)
 
 @node Preface to Add-ons, Customizations, Configuration, Top
 @unnumbered What are Add-ons?
@@ -9230,16 +9211,11 @@ well as the buffer in which the command execution was initiated.
 The default menu bar of VM contains VM-specific menus, replacing the
 standard Emacs menus.  This is achieved by setting the buffer-specific
 menu bar to one in which the Emacs menus are @code{undefined} (at
-least in Gnu Emacs).  
+least in GNU Emacs).  
 
 VM computes its standard menu bar and stores it internally:
 
-@itemize
-@item 
-In Gnu Emacs, this is stored in the keymap @code{vm-mode-menu-map}. 
-@item
-In XEmacs ...
-@end itemize
+This is stored in the keymap @code{vm-mode-menu-map}.
 
 @noindent
 The menu bar also has a menu, or a menu item, to switch back to the
@@ -9250,13 +9226,7 @@ The computed menu bar is then installed depending on the setting of
 If the user selects the action to revert to the standard Emacs menu
 bar, the installation is easily reverted.  
 
-@itemize
-@item
-In Gnu Emacs, the installation involves inserting a key binding for
-@code{menu-bar}. 
-@item
-In XEmacs, ...
-@end itemize
+The installation involves inserting a key binding for @code{menu-bar}.
 
 @inindex vm-menu-toggle-menubar
 @noindent When the user picks a menu item to revert to the
@@ -9419,7 +9389,7 @@ Set to true if the button should be removed when it is replaced by the
 @inindex vm-mime-button-face
 @item @code{face}.
 Set to the value of @code{vm-mime-button-face}.
-@item @code{local-map} (FSF Emacs) or @code{keymap} (XEmacs).
+@item @code{local-map} (GNU Emacs) or @code{keymap} (XEmacs).
 Set to a keymap that includes @code{vm-mime-reader-map}, binding the
 @kbd{$} keys.
 @end itemize
@@ -9499,10 +9469,10 @@ Standard stickiness of text properties in GNU Emacs.
 
 @inindex vm-mime-fake-attachment-overlays
 When a composed message is sent, the attachment buttons are replaced
-by actual attachment objects.  In FSF Emacs, the attachment buttons
+by actual attachment objects.  In GNU Emacs, the attachment buttons
 are first converted into ``fake'' overlays before @acronym{MIME} encoding, in a
 function called @code{vm-mime-fake-attachment-overlays}.  This allows
-the next stage to treat both FSF Emacs and XEmacs using the same
+the next stage to treat both GNU Emacs and XEmacs using the same
 logic.
 
 The function @code{vm-mime-encode-composition} then encodes the composition
@@ -9619,9 +9589,10 @@ selectors that can be used with the @kbd{V C} command.
 
 @inindex extents
 @inindex overlays
-XEmacs and GNU Emacs differ in how they represent non-textual
-properties in buffers.  The web page on ``XEmacs vs GNU Emacs''
-describes the situation as follows:
+XEmacs and GNU Emacs differ in how they represent non-textual properties in
+buffers, which is why VM's code has two ways of doing several things.  The
+XEmacs page ``XEmacs vs GNU Emacs'' described the difference this way, in the
+days of GNU Emacs 19:
 
 @quotation
 XEmacs uses "extents" to represent all non-textual aspects of buffers;
@@ -9638,13 +9609,11 @@ or "text properties", whereas in GNU Emacs 19 text properties always
 have this behavior and overlays never do. 
 @end quotation
 
-While extents and overlays look similar on the surface, they differ
-fundamentally in that extents are attached to text and, so, can be
-killed and yanked, whereas overlays are not attached to text.  XEmacs
-has implemented GNU-like text properties on top of extents.  So, text
-properties may work more uniformly in both the Emacsen, but VM was
-developed in the early days of the forking and does not use these
-common features.
+None of that has changed since, except that it is now GNU Emacs rather than GNU
+Emacs 19.  Extents are attached to text and so can be killed and yanked;
+overlays are not attached to text.  XEmacs implemented GNU-style text
+properties on top of extents, so text properties would work much the same in
+both, but VM was written in the early days of the fork and does not use them.
 
 The file @code{vm-misc.el} contains definitions whereby both extents
 and overlays can be treated as a single type of ``VM extents''.
@@ -9722,8 +9691,8 @@ However, it executes server command in the process buffers of POP or IMAP
 folders. 
 @end table
 
-@noindent These timer tasks are scheduled using the @code{itimer} package in
-XEmacs and the @code{timer} package in Gnu Emacs.
+@noindent These timer tasks are scheduled with Emacs's @code{timer} package,
+or with @code{itimer} where VM is running under XEmacs.
 
 @inindex vm-global-block-new-mail
 The basic synchronization mechanism is a global variable
