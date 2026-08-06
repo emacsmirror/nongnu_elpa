@@ -359,12 +359,11 @@
     (goto-char (point-min))
     (should (search-forward "Notice-Requested-Upon-Delivery-To:" nil t))))
 
-;;; user-home-directory test (GNU Emacs only)
+;;; user-home-directory
 
 (ert-deftest vm-postpone-test-user-home-directory ()
   "Test user-home-directory returns HOME."
-  (when (not (featurep 'xemacs))
-    (should (equal (user-home-directory) (getenv "HOME")))))
+  (should (equal (user-home-directory) (getenv "HOME"))))
 
 ;;; vm-continue-postponed-message MIME handling
 

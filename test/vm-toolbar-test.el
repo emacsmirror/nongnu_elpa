@@ -12,6 +12,10 @@
 ;; puts back (issue #559).  See the comment in vm-test-init.el.
 ;;
 ;; So this is the cover the installation has.  It binds what it touches.
+;;
+;; The GNU Emacs path only: the suite runs under `emacs -batch', so an XEmacs
+;; guard here would be a branch nothing ever takes.  vm-toolbar.el still has its
+;; XEmacs half, and it is untested either way.
 
 ;;; Code:
 
@@ -22,7 +26,7 @@
   "Installing the toolbar defines tool-bar keys and says it has.
 `vm-mode-internal' does this for each folder, once per session, guarded by
 `vm-fsfemacs-toolbar-installed-p'."
-  (skip-unless (and (not (featurep 'xemacs)) (vm-toolbar-support-possible-p)))
+  (skip-unless (vm-toolbar-support-possible-p))
   (let ((vm-use-toolbar vm-test-vm-use-toolbar)
         (vm-mode-map (copy-keymap vm-mode-map))
         (vm-fsfemacs-toolbar-installed-p nil))
@@ -38,7 +42,7 @@
 (ert-deftest vm-toolbar-test-installing-twice-is-a-no-op ()
   "The flag is what stops a second install, so it is worth pinning.
 Without it every folder visit would define the keys again."
-  (skip-unless (and (not (featurep 'xemacs)) (vm-toolbar-support-possible-p)))
+  (skip-unless (vm-toolbar-support-possible-p))
   (let ((vm-use-toolbar vm-test-vm-use-toolbar)
         (vm-mode-map (copy-keymap vm-mode-map))
         (vm-fsfemacs-toolbar-installed-p t)
