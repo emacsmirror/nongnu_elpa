@@ -123,16 +123,27 @@ TEST
     EMACS_FLAVOR=`"${EMACS_PROG}" --no-site-file --batch -l conftest.el | ${GREP} .`
     AC_MSG_RESULT([${EMACS_FLAVOR}])
     # EMACS VERSION ###############################################
+    # Keep VM_MIN_EMACS_VERSION in sync with vm-min-emacs-version in lisp/vm.el,
+    # which is the check that matters: VM signals an error as it loads in
+    # anything older, so accepting it here only moves the failure to run time.
+    # The comparison is left to Emacs rather than the shell, there being no
+    # portable way to compare 28.10 with 28.9 in test(1).
+    VM_MIN_EMACS_VERSION=28.1
     AC_MSG_CHECKING([checking emacs-version of ${EMACS_PROG}])
     cat > conftest.el <<TEST
-(princ (format "%d" emacs-major-version))
+(princ (format "%s" emacs-version))
 TEST
     EMACS_VERSION=`"${EMACS_PROG}" --no-site-file --batch -l conftest.el | ${GREP} .`
-    if test ${EMACS_VERSION} -lt 21; then
-      AC_MSG_ERROR([Emacs version ${EMACS_VERSION} is too old, 21 is minimum!])
+    cat > conftest.el <<TEST
+(princ (if (and (fboundp 'version<)
+                (not (version< emacs-version "${VM_MIN_EMACS_VERSION}")))
+           "ok" "old"))
+TEST
+    EMACS_VERSION_OK=`"${EMACS_PROG}" --no-site-file --batch -l conftest.el | ${GREP} .`
+    if test "x${EMACS_VERSION_OK}" != xok; then
+      AC_MSG_ERROR([Emacs version ${EMACS_VERSION} is too old, ${VM_MIN_EMACS_VERSION} is minimum!])
     fi
     # EMACS DEPENDENT SETTINGS ####################################
-    # We may add a version check here ...
     AC_MSG_RESULT([${EMACS_VERSION}])
 
     # Copied from gnus aclocal.m4
