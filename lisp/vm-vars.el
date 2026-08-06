@@ -1229,6 +1229,37 @@ wrapping."
 		 (const :tag "Window width" window-width)
 		 (integer :tag "Fill column")))
 
+(defcustom vm-html-in-reply-column nil
+  "Column at which HTML quoted in a reply is broken into lines, or nil.
+An HTML part carries no line breaks of its own: whatever converts it to
+text decides where its lines end, and asked for nothing in particular each
+converter uses a width of its own -- emacs-w3m the width of the window the
+message happened to be displayed in, lynx 72 columns.  So a reply quoted
+lines of one length today and another tomorrow.
+
+nil, the default, asks the converter not to break the text at all, leaving
+one line per paragraph and the wrapping to whoever reads the reply.  A
+number asks for lines of that width; 80 is conventional.
+
+This governs quoted text only.  Displaying a message still fills to the
+window, which is what a window is for."
+  :group 'vm-reply
+  :type '(choice (const :tag "Do not break lines" nil)
+                 (integer :tag "Break at column")))
+
+(defvar vm-html-fill-column 'window-width
+  "Column at which the text/html handlers break lines.
+`window-width' means the width of the window the text is being displayed
+in.  A number is that column, and nil asks for no breaking at all.
+
+Bound by the reply code to `vm-html-in-reply-column', so that quoting a
+message does not depend on how wide a window it was read in.")
+
+(defconst vm-html-no-break-column 100000
+  "Width passed to an HTML converter to ask it not to break lines.
+None of them takes an instruction to leave the text alone, so they are
+given a width nothing will reach.")
+
 (defcustom vm-paragraph-fill-column (default-value 'fill-column)
   "*Column beyond which automatic line-wrapping should happen when
 re-filling lines longer than the value of

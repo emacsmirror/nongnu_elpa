@@ -205,6 +205,14 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * HTML quoted in a reply is no longer broken into lines, and no longer
+    depends on the width of the window the message was read in.  An HTML part
+    has no line breaks of its own, so whatever converts it to text decides
+    where its lines end: emacs-w3m used the window's width, lynx 72 columns.
+    Quoted text now comes out one line per paragraph, leaving the wrapping to
+    whoever reads the reply.  Set the new `vm-html-in-reply-column' to a
+    number for lines of that width instead.  Displaying a message is
+    unaffected and still fills to the window.
   * The manual has an appendix listing every command and user option, built
     from the docstrings in the code when the manual is built.  Nothing in it
     is written twice, so it cannot drift from what VM does -- the audits that

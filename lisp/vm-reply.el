@@ -517,8 +517,12 @@ specified by `vm-included-text-headers' and
 					; doesn't work well with fill-prefixes
 	(vm-fill-paragraphs-containing-long-lines
 	 vm-fill-paragraphs-containing-long-lines-in-reply)
-	(vm-paragraph-fill-column 
+	(vm-paragraph-fill-column
 	 vm-fill-long-lines-in-reply-column)
+	;; An HTML part is converted to text here, and the converter would
+	;; otherwise pick a width of its own -- the window's, in the case of
+	;; emacs-w3m (#369).
+	(vm-html-fill-column vm-html-in-reply-column)
 	;; (vm-use-presentation-minor-modes nil) ; do we need this?
 	)
     (if (eq layout 'none)

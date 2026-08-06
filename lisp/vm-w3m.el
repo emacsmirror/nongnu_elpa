@@ -124,6 +124,10 @@ by the minor-mode-keymap for emacs-w3m text, as determined by
 
 (defvar w3m-display-inline-images)
 (defvar w3m-safe-url-regexp)
+;; Declared so that binding it below is dynamic and so reaches w3m: this file
+;; is compiled with lexical binding and without w3m installed, and an
+;; undeclared variable would be bound lexically and never seen.
+(defvar w3m-fill-column)
 
 (defun vm-w3m-cid-retrieve (url &rest _args)
   "Insert a content of URL."
@@ -163,7 +167,10 @@ by the minor-mode-keymap for emacs-w3m text, as determined by
 (defun vm-mime-display-internal-emacs-w3m-text/html (start end _layout)
   "Use emacs-w3m to inline HTML mails in the VM presentation buffer."
   (let ((w3m-display-inline-images vm-w3m-display-inline-images)
-        (w3m-safe-url-regexp vm-w3m-safe-url-regexp))
+        (w3m-safe-url-regexp vm-w3m-safe-url-regexp)
+        ;; w3m-fill-column defaults to -1, which means the width of the
+        ;; window -- right for display, wrong for text being quoted.
+        (w3m-fill-column (vm-mime-html-columns)))
     (w3m-region start (1- end))
     (add-text-properties
      start end
