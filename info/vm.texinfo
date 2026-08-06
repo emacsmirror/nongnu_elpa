@@ -1,5 +1,5 @@
 \input texinfo
-@documentencoding ISO-8859-1
+@documentencoding UTF-8
 @setfilename vm.info
 @settitle VM User's Manual
 @dircategory Emacs
@@ -108,6 +108,10 @@ About VM:
 For developers:
 
 * Internals::           Information on VM internals for developers
+
+Reference:
+
+* Reference::           Every command and user option, from the code
 
 Indices:
 
@@ -7549,10 +7553,10 @@ by Savannah, at the @acronym{URL}
 According to the project page, ``this site exists to continue VM development
 after version 7.19 as a community project.''
 
-@cindex Ulrich M�ller
+@cindex Ulrich Müller
 @cindex Uday S Reddy
 VM wwas  maintained by a ``VM Development Team,'' consisting of
-Robert Widhopf-Fenk, Ulrich M�ller and Uday S Reddy.  Other potential members
+Robert Widhopf-Fenk, Ulrich Müller and Uday S Reddy.  Other potential members
 are warmly welcomed.  Robert Fenk has been inactive since November, 2008
 but he continues to be an official member of the team.  The new
 releases made by the team are numbered @code{8.1.0} and up.
@@ -7779,7 +7783,7 @@ before the problem occurrence and @code{vm-pop-submit-bug-report}
 the server interactions during the interval are captured and
 automatically included in the bug-report.
 
-@node Internals, Concept Index, Bugs, Top
+@node Internals, Reference, Bugs, Top
 @chapter VM Internals
 
 This section gives a sketchy overview of the VM internals for the
@@ -9659,7 +9663,9 @@ from running.  All invocations of @code{get-new-mail} and
 @code{check-for-new-mail} functions set this variable during their activity.
 
 
-@node Concept Index, Key Index, Internals, Top
+@include vm-reference.texinfo
+
+@node Concept Index, Key Index, Reference, Top
 @unnumbered Concept Index
 @printindex cp
 

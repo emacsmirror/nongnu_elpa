@@ -35,6 +35,8 @@ _pkg.el
 commit.msg
 
 /info/version.texinfo
+/info/vm-reference.texinfo
+/info/vm-reference.texinfo.tmp
 /info/vm
 
 /lisp/vm-autoloads.el

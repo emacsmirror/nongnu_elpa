@@ -205,6 +205,14 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * The manual has an appendix listing every command and user option, built
+    from the docstrings in the code when the manual is built.  Nothing in it
+    is written twice, so it cannot drift from what VM does -- the audits that
+    produced the previous release's manual fixes found about 35 names in the
+    manual that no longer existed.  It covers 467 commands and 500 options,
+    against the 240-odd commands and 286 options the chapters mention.  The
+    chapters are unchanged: they explain what to do, and the appendix says
+    what each thing is.
   * File name prompts offer the history VM keeps for them.  `read-file-name'
     takes a completion predicate as its sixth argument in GNU Emacs, where
     XEmacs took a history list, so `vm-folder-history' and the attachment
