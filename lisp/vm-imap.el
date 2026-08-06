@@ -2992,8 +2992,10 @@ pending for a later retry (issue #270).  This is called in the process buffer."
 	  (progn (vm-imap-store-flags-1 process sign by-uid id wanted)
 		 (setq accepted wanted))
 	(vm-imap-normal-error
-	 ;; The server refused the lot.  Find out which of them it will take.
-	 (dolist (flag wanted)
+	 ;; The server refused the lot.  Find out which of them it will take --
+	 ;; unless there was only one, which has just been refused on its own
+	 ;; already: asking again would double the errors this is here to reduce.
+	 (dolist (flag (if (cdr wanted) wanted nil))
 	   (condition-case _err2
 	       (progn (vm-imap-store-flags-1 process sign by-uid id (list flag))
 		      (setq accepted (cons flag accepted)))
@@ -3001,11 +3003,17 @@ pending for a later retry (issue #270).  This is called in the process buffer."
 	      (setq refused (cons flag refused))
 	      (setq vm-imap-refused-flags
 		    (cons flag vm-imap-refused-flags)))))
-	 (when refused
+	 (when (and refused (cdr wanted))
 	   (vm-warn 1 2 "IMAP server refuses the flag%s %s; not sending %s again"
 		    (if (cdr refused) "s" "")
 		    (mapconcat #'identity (nreverse (copy-sequence refused)) ", ")
 		    (if (cdr refused) "them" "it")))
+	 (unless (cdr wanted)
+	   ;; The single flag that was refused, remembered without a second ask.
+	   (setq refused wanted)
+	   (setq vm-imap-refused-flags (append wanted vm-imap-refused-flags))
+	   (vm-warn 1 2 "IMAP server refuses the flag %s; not sending it again"
+		    (car wanted)))
 	 (unless accepted
 	   ;; Nothing landed, so this is the refusal the caller has to hear
 	   ;; about: the message stays pending and its flags stay local.
@@ -3088,6 +3096,13 @@ server should be issued by UID, not message sequence number."
       (setq flags+ (append (cdr labels) flags+))
       ;; Flags to be deleted from the server
       (setq flags- (append (cdr copied-flags) flags-))
+      ;; Not \Recent, ever: RFC 3501 says a client cannot set or clear it, so
+      ;; asking is a protocol error every time.  It arrives in the cached flags
+      ;; from FETCH, and VM was sending "-FLAGS.SILENT (\recent)" for every
+      ;; message it synced -- ignored by servers that are polite about it and
+      ;; another BAD from the ones that are not (issue #389).
+      (setq flags+ (delete "\\recent" (delete "\\Recent" flags+)))
+      (setq flags- (delete "\\recent" (delete "\\Recent" flags-)))
 
       (unwind-protect
 	  (with-current-buffer (process-buffer process)

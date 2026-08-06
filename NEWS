@@ -190,6 +190,11 @@ VM 8.?.?
     vm-epg is not a drop-in rename of vm-pgg; its customization variables and
     commands are named vm-epg-* and its faces vm-epg-*, so vm-pgg settings
     must be carried over by hand.
+  * VM no longer asks an IMAP server to clear \Recent, which RFC 3501 says a
+    client may never set or clear.  It arrives in the flags a FETCH reports, and
+    VM was sending "-FLAGS.SILENT (\recent)" for every message it synchronised:
+    ignored by servers that are polite about it, and a protocol error from the
+    ones that are not.
   * A flag an IMAP server will not accept no longer stops the others being
     stored.  VM sent every pending flag for a message in one STORE command, so a
     server that refuses one of them refuses the command: mail marked deleted and
