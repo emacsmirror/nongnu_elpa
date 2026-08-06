@@ -63,6 +63,21 @@ test-imap: compile-lisp
 test-pop: compile-lisp
 	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/$(POP_RUNNER)
 
+# Fetch the packages VM integrates with but does not require -- BBDB,
+# emacs-w3m, vcard -- into test/opt/elpa, where vm-test-init.el finds them and
+# the tests that need one stop skipping.  Needs the network; nothing else in
+# the tests does.  Not committed: test/opt is ignored.
+.PHONY: optional-packages
+optional-packages:
+	$(EMACS_PROG) -batch -Q -l $(srcdir)/install-optional-packages.el \
+		-f vm-optional-install-batch $(srcdir)/opt
+
+# Run only the tests of those integrations.  They skip, one by one, for each
+# package that is not installed.
+test-optional: compile-lisp
+	$(EMACS_PROG) -batch -Q -L $(top_srcdir)/lisp -l $(srcdir)/vm-test-init.el \
+		-l $(srcdir)/vm-optional-test.el -f ert-run-tests-batch-and-exit
+
 # Report which tests leave VM's global variables or stray buffers behind.
 # vm-test-init.el puts both back after every test, so this is not a way the
 # suite fails -- it is how to see what a fixture is not cleaning up, and what

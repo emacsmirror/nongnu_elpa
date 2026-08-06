@@ -36,6 +36,7 @@ commit.msg
 
 /info/version.texinfo
 /info/vm-reference.texinfo
+/test/opt/
 /info/vm-reference.texinfo.tmp
 /info/vm
 
