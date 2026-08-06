@@ -67,9 +67,20 @@
   "Test vm-postpone group is defined."
   (should (get 'vm-postpone 'custom-group)))
 
-(ert-deftest vm-postpone-test-alias-exists ()
-  "Test vm-pine alias points to vm-postpone."
-  (should (eq (indirect-variable 'vm-pine) 'vm-postpone)))
+(ert-deftest vm-postpone-test-no-variable-alias-for-the-old-group-name ()
+  "REGRESSION: the old group name is not aliased as though it were a variable.
+This group was `vm-pine' before 8.4.0, and the file carried
+\(defvaralias \='vm-pine \='vm-postpone\) with a comment calling it a group
+alias.  Neither name is a variable, so what that did was make `vm-pine' a
+variable alias pointing at nothing, and Customize has no group-alias mechanism
+for it to have meant.  Both lines are gone.
+
+This test replaces one that asserted the alias resolved to `vm-postpone', which
+it did -- to an unbound variable of that name, not to the group."
+  (should-not (boundp 'vm-pine))
+  (should-not (eq (ignore-errors (indirect-variable 'vm-pine)) 'vm-postpone))
+  ;; the group itself is still there, under its current name
+  (should (get 'vm-postpone 'custom-group)))
 
 ;;; Defcustom tests
 

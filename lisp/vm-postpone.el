@@ -125,9 +125,11 @@
   "Postponed message handling and draft support in VM."
   :group  'vm-ext)
 
-;; Backward compatibility alias for the old group name
-(defvaralias 'vm-pine 'vm-postpone)
-(make-obsolete-variable 'vm-pine 'vm-postpone "8.4.0")
+;; This group was called `vm-pine' before 8.4.0.  There is nothing to write
+;; here for that: Customize has no group-alias mechanism, and the two lines that
+;; used to stand here -- a `defvaralias' from `vm-pine' to `vm-postpone' and an
+;; obsolescence notice on it -- aliased one non-variable to another and made
+;; `vm-pine' a variable alias pointing at nothing.
 
 ;;-----------------------------------------------------------------------------
 ;;;###autoload

@@ -269,8 +269,13 @@ need to add quotes or leave them undecoded.             RWF"
           (concat "\"" (match-string 1 da) "\" " (match-string 2 da))
         da))))
 
-(make-obsolete 'vmrf-fix-quoted-address 'vm-quoted-address "8.2.0")
-          
+;; `vmrf-fix-quoted-address' was renamed to `vm-fix-quoted-address' above, in
+;; 8.2.0, and not kept as an alias.  The `make-obsolete' that stood here named
+;; `vm-quoted-address' as the replacement, which has never existed, and marked a
+;; function that no longer exists as obsolete -- so it could never fire and only
+;; misnamed the survivor.  Anyone who wants the old name back wants a
+;; `defalias' to `vm-fix-quoted-address', not this.
+
 (defun vm-parse-structured-header (string &optional sepchar keep-quotes)
   (if (null string)
       ()

@@ -472,6 +472,39 @@ say so."
               (puthash name file seen))))))
     (should (equal expected (sort (delete-dups duplicates) #'string<)))))
 
+(ert-deftest vm-integration-test-obsolete-names-point-somewhere ()
+  "Every `make-obsolete\' replacement is a name that exists.
+An obsolescence notice is a promise about where to go instead, and a wrong name
+in one is invisible: the notice only speaks when somebody uses the old name, and
+if the old name is gone too it never speaks at all.  vm-misc.el offered
+`vm-quoted-address\' for `vmrf-fix-quoted-address\', and neither existed; the
+survivor is `vm-fix-quoted-address\'.
+
+A replacement may be a function, a variable, a face or a customization group,
+so all four count -- checking only `fboundp\' and `boundp\' reports every
+renamed face as broken, which is what it did the first time I ran this."
+  (require 'vm)
+  (require 'vm-summary-faces)
+  (dolist (feature '(vm-postpone vm-misc vm-vars vm-summary vm-mime vm-reply))
+    (require feature nil t))
+  (let (unresolved)
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (member (file-name-nondirectory file)
+                      '("vm-autoloads.el" "vm-cus-load.el" "vm-version-conf.el"))
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (while (re-search-forward
+                  "(make-obsolete\\(?:-variable\\)? '\\([^ \n)]+\\)[ \n]+'\\([^ \n)]+\\)"
+                  nil t)
+            (let ((old (intern (match-string 1))) (new (intern (match-string 2))))
+              (unless (or (fboundp new) (boundp new) (facep new)
+                          (get new 'variable-documentation) (get new 'custom-type))
+                (push (format "%s -> %s (%s)" old new
+                              (file-name-nondirectory file))
+                      unresolved)))))))
+    (should (equal nil (sort (delete-dups unresolved) #'string<)))))
+
 (provide 'vm-integration-test)
 
 ;;; vm-integration-test.el ends here
