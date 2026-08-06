@@ -695,6 +695,59 @@ per command, where a UID set would do -- but the doubling is."
       (setq checked t))
     (should checked)))
 
+(ert-deftest vm-imap-live-test-presentation-honours-the-fetch-option ()
+  "REGRESSION: presenting does not fetch a body the option said to leave alone.
+Issue #585.  `vm-make-presentation-copy' fetched an external body whatever
+`vm-external-fetch-message-for-presentation' said, since the option is consulted
+in `vm-preview-current-message' and not there.  It fetched into the presentation
+buffer rather than the folder, so the flag stayed set and the next presentation
+fetched the same body again, and the layout it parsed outlived the filling of the
+buffer it described -- parts whose markers had all collapsed to the end, which is
+the empty attachment of #386.
+
+Off: no fetch, and a layout with no parts, which is the truth about a message
+whose body is elsewhere.  On: the body is fetched into the folder, the parts have
+their text, and the attachment writes whole."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((out (expand-file-name "vm-585-test.pdf" temporary-file-directory)))
+    (dolist (fetch-for-presentation '(nil t))
+      (let ((vm-enable-external-messages '(imap))
+            (vm-imap-max-message-size 500)
+            (vm-external-fetch-message-for-presentation fetch-for-presentation)
+            (fetches 0))
+        (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+          (vm-imap-live-append conn mailbox
+                               vm-imap-live-test--message-with-attachment)
+          (vm-get-new-mail)
+          (let ((m (car (last vm-message-list)))
+                (folder (current-buffer)))
+            (should (vm-body-to-be-retrieved-of m))
+            (setf (vm-imap-relay-log relay) nil)
+            ;; `vm-number-of' is a string, as the summary needs it
+            (vm-goto-message (string-to-number (vm-number-of m)))
+            (set-buffer folder)
+            (let ((sent (vm-imap-relay-transcript relay 'client))
+                  (start 0))
+              (while (string-match "FETCH[^\n]*BODY.PEEK\\[\\]" sent start)
+                (setq fetches (1+ fetches) start (match-end 0))))
+            (if (null fetch-for-presentation)
+                (progn
+                  ;; nothing fetched, and nothing pretended
+                  (should (= 0 fetches))
+                  (should (vm-body-to-be-retrieved-of m))
+                  (should (null (vm-mm-layout-parts (vm-mm-layout m)))))
+              ;; fetched once, into the folder, and usable
+              (should (= 1 fetches))
+              (should-not (vm-body-to-be-retrieved-of m))
+              (let* ((parts (vm-mm-layout-parts (vm-mm-layout m)))
+                     (pdf (car (last parts))))
+                (should (= 2 (length parts)))
+                (when (file-exists-p out) (delete-file out))
+                (vm-mime-send-body-to-file pdf nil out t)
+                (should (> (nth 7 (file-attributes out)) 0))))))))
+    (when (file-exists-p out) (delete-file out))))
+
 (ert-deftest vm-imap-live-test-accepted-store-reaches-the-server ()
   "The other half: an accepted STORE does sync and stops being pending.
 Guards the fix above from being a blanket refusal to ever apply server
