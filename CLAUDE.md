@@ -179,6 +179,13 @@ number up. Issues take the `work_items` path, merge requests `merge_requests`.
   work on an issue that is otherwise finished is not one: nothing is blocked
   there, and labelling those would make the label mean "mentions a choice".
 
+  Label it **and post a comment stating the choice as a checklist**, one
+  `- [ ]` per option, with a recommendation. The analysis that led to the
+  choice is usually long and the options end up buried in it — on #532 they
+  were at the bottom of the description, where the maintainer could not find
+  them. A checklist in its own comment is what he acts on, and ticking a box
+  is the answer.
+
   Not the same as `Undecided`, which is Launchpad's imported *importance* field
   and appears only alongside `Launchpad`, next to `Confirmed`, `Incomplete` and
   `In Progress`. Nor the same as `Kick can`, which records a decision already
