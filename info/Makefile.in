@@ -33,10 +33,16 @@ EMACS_FLAVOR = @EMACS_FLAVOR@
 FLAGS = @FLAGS@
 
 INFO_FILE = vm.info
-INFO_ALL_FILES = vm.info vm.info-1 vm.info-2
-INFO_INSTALLED = $(infodestdir)/vm.info
+# The manual is split into as many files as makeinfo decides it needs, and the
+# reference appendix took it from three to five.  install and uninstall glob
+# for what is there in the shell: naming the parts here meant a vm.info-4 was
+# built and never installed, and $(wildcard) is GNU make only.
+INFO_SPLIT_GLOB = vm.info vm.info-[0-9]
 INFO_INSTALLED = $(INFO_FILE:%=$(infodestdir)/%)
-INFO_ALL_INSTALLED = $(INFO_ALL_FILES:%=$(infodestdir)/%)
+
+# The reference appendix, generated from the docstrings in lisp/ so that the
+# manual does not carry a second copy of them.
+REFERENCE_FILE = vm-reference.texinfo
 
 ##############################################################################
 
@@ -51,7 +57,22 @@ version.texinfo:
 	fi
 	mv -f $@.tmp $@
 
-$(INFO_FILE): version.texinfo
+# Regenerated on every build -- there is no portable way to depend on every
+# docstring in lisp/ -- but only replaced when it has changed, so makeinfo
+# reruns when a docstring did and not otherwise.
+$(REFERENCE_FILE): FORCE @srcdir@/gen-reference.el
+	$(EMACS_PROG) -batch -q -no-site-file -L @top_srcdir@/lisp \
+		-l @srcdir@/gen-reference.el -f vm-reference-batch $@.tmp
+	if cmp -s $@.tmp $@; then \
+		$(RM) -f $@.tmp; \
+	else \
+		mv -f $@.tmp $@; \
+	fi
+
+.PHONY: FORCE
+FORCE:
+
+$(INFO_FILE): version.texinfo $(REFERENCE_FILE)
 
 .PHONY: info
 info: ${INFO_FILE}
@@ -68,18 +89,23 @@ uninstall: uninstall-pkg
 
 install-pkg: info
 	@$(MKDIR) -p -m 0755 "$(infodestdir)";
-	$(INSTALL) ${INFO_ALL_FILES} $(infodestdir)
+	for f in $(INFO_SPLIT_GLOB); do \
+		test -f "$$f" && $(INSTALL) "$$f" $(infodestdir) || true; \
+	done
 	$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
 	@echo VM INFO files successfully installed
 
 uninstall-pkg:
 	$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
-	$(RM) -f $(INFO_ALL_INSTALLED)
+	for f in $(INFO_SPLIT_GLOB); do \
+		$(RM) -f "$(infodestdir)/$$f"; \
+	done
 	$(RMDIR) $(infodestdir)/ 2> /dev/null || true
 
 ##############################################################################
 clean:
-	-$(RM) -f version.texinfo *.info *.info-[0-9]
+	-$(RM) -f version.texinfo $(REFERENCE_FILE) $(REFERENCE_FILE).tmp \
+		*.info *.info-[0-9]
 
 distclean: clean
 	-$(RM) -f Makefile
