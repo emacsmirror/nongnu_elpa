@@ -1144,6 +1144,11 @@ on the user's profile, or in search results."
               (format "collections/%s/items/%s/revoke" coll-id item-id))))
     (mastodon-http--post url)))
 
+(defun mastodon-views-del-collection (id)
+  "Send request to DELETE collection with ID to server."
+  (let ((url (mastodon-http--api (format "collections/%s" id))))
+    (mastodon-http--delete url)))
+
 (defun mastodon-views--insert-collection (json)
   "Insert the collection from JSON."
   (if (not json)
@@ -1323,6 +1328,25 @@ Must be called from a collection view."
 
 ;; TODO: add account to coll from coll view
 ;; would need to be a search interface...
+
+(defun mastodon-views-delete-collection ()
+  "Delete the collection currently being viewed.
+Must be called from a collection view buffer."
+  (interactive)
+  (if (not (mastodon-tl--buffer-type-eq 'collection))
+      (user-error "Not in a collection view"))
+  (let* ((data (mastodon-tl--buffer-property 'collection))
+         (id (map-nested-elt data '(collection id)))
+         (name (map-nested-elt data '(collection name))))
+    (when (y-or-n-p (format "Delete collection %s?" name))
+      (let ((resp (mastodon-views-del-collection id)))
+        (mastodon-http--triage
+         resp
+         (lambda (_)
+           (message "Collection %s deleted!" name)
+           (kill-current-buffer)))))))
+
+;; TODO: PATCH collection
 
 (provide 'mastodon-views)
 ;;; mastodon-views.el ends here
