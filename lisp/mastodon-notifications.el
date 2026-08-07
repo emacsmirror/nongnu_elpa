@@ -459,15 +459,20 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP NOTE."
 (defun mastodon-notifications-collection-note-body (coll)
   "Format a added to collection notif body, for COLL, json data.
 We format the collection name as link and add description."
-  (let-alist coll
-    (concat
-     (propertize
-      (mastodon-notifications--propertize-link
-       (format "%s/collections/%s" mastodon-instance-url .id)
-       .name)
-      'display .name)
-     " "
-     .description)))
+  (if (not coll)
+      ;; if we are added to a collection, then removed/revoked, we don't
+      ;; have the coll data here anymore:
+      ;; the web UI hides such a notif entirely...
+      "[no collection]"
+    (let-alist coll
+      (concat
+       (propertize
+        (mastodon-notifications--propertize-link
+         (format "%s/collections/%s" mastodon-instance-url .id)
+         .name)
+        'display .name)
+       " "
+       .description))))
 
 (defun mastodon-notifications--insert-note
     (toot body action-byline
