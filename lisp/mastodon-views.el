@@ -1211,9 +1211,12 @@ Must be called from a user's profile."
      'mastodon-views--insert-collection)))
 
 (defun mastodon-views-add-to-collection ()
-  "Must be called from a user's profile.
+  "Add account being viewed to a collection.
+Must be called from a user's profile.
+A Mastodon collection can contain max of 25 accounts, other servers
+may handle up to 150.
 Will error 422 if account already added.
-Will error 403 if permission to add is lacking."
+Will error 403 if permission to add is lacking. "
   ;; FIXME: ideally we could tirage and handle these errors
   ;; usually masto APIs don't error when trying to add something already
   ;; in something... sigh
