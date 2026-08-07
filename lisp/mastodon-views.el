@@ -1210,7 +1210,7 @@ Must be called from a user's profile."
      (format "collections/%s" (alist-get 'id coll))
      'mastodon-views--insert-collection)))
 
-(defun mastodon-views-add-account-to-collection ()
+(defun mastodon-views-add-to-collection ()
   "Must be called from a user's profile.
 Will error 422 if account already added.
 Will error 403 if permission to add is lacking."
