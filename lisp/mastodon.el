@@ -363,6 +363,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "SPC")    #'mastodon-tl-scroll-up-command)
     (define-key map (kbd "!")      #'mastodon-tl-fold-post-toggle)
     (define-key map (kbd "z")      #'bury-buffer)
+    (define-key map (kbd "`")      #'mastodon-views-view-own-collection)
     map)
   "Keymap for `mastodon-mode'.")
 
