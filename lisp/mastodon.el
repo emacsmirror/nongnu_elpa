@@ -104,6 +104,20 @@
   nil :interactive)
 (autoload 'mastodon-views-view-list-timeline "mastodon-views"
   nil :interactive)
+(autoload 'mastodon-views-view-own-collection "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-add-to-collection "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-view-profile-collection "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-collections-user-in "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-create-collection "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-revoke-collection-inclusion "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-update-collection "mastodon-views"
+  nil :interactive)
 
 (autoload 'special-mode "simple")
 (autoload 'mastodon-tl--thread-do "mastodon-tl")
