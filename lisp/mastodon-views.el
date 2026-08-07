@@ -42,6 +42,7 @@
 (defvar mastodon-tl--horiz-bar)
 (defvar mastodon-tl--timeline-posts-count)
 (defvar mastodon-profile-credential-account)
+(defvar mastodon-profile--account)
 
 (autoload 'mastodon-mode "mastodon")
 (autoload 'mastodon-tl--init "mastodon-tl")
@@ -72,6 +73,8 @@
 (autoload 'mastodon-profile--insert-fields "mastodon-profile")
 (autoload 'mastodon-search-propertize-user-handle "mastodon-search")
 (autoload 'mastodon-tl--render-base-tag "mastodon-tl")
+(autoload 'mastodon-tl--buffer-property "mastodon-tl")
+(autoload 'mastodon-profile--item-json "mastodon-profile")
 
 
 ;;; KEYMAPS
