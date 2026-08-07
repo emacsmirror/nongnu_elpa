@@ -1246,6 +1246,7 @@ If RETURN-ID, return only the collection's ID."
   (with-current-buffer (format "*mastodon-%s*" buf)
     (use-local-map mastodon-views-collection-map)))
 
+;;;###autoload
 (defun mastodon-views-view-profile-collection ()
   "Prompt for a user profile collection and view it.
 Must be called from a user's profile."
@@ -1263,6 +1264,7 @@ Must be called from a user's profile."
     (let ((buf (format "collection-%s" .name)))
       (mastodon-views-view-collection* buf .id))))
 
+;;;###autoload
 (defun mastodon-views-view-own-collection (&optional coll)
   "Prompt for a collection of yours and view it.
 Optionally, view COLL, collection JSON data."
@@ -1274,6 +1276,7 @@ Optionally, view COLL, collection JSON data."
          (buf (format "collection-%s" (alist-get 'name coll))))
     (mastodon-views-view-collection* buf (alist-get 'id coll))))
 
+;;;###autoload
 (defun mastodon-views-collections-user-in ()
   "Prompt for a collection you are in and view it."
   (interactive)
@@ -1284,6 +1287,7 @@ Optionally, view COLL, collection JSON data."
      (format "collections/%s" (alist-get 'id coll))
      'mastodon-views--insert-collection)))
 
+;;;###autoload
 (defun mastodon-views-add-to-collection ()
   "Add account being viewed to a collection.
 Must be called from a user's profile.
@@ -1351,6 +1355,7 @@ Must be called from a collection view."
                         (alist-get 'acct account-data)
                         (map-nested-elt data '(collection name)))))))))))
 
+;;;###autoload
 (defun mastodon-views-create-collection ()
   "Create a new collection."
   (interactive)
@@ -1393,8 +1398,7 @@ Must be called from a collection view buffer."
              (message "Collection %s deleted!" name)
              (kill-current-buffer))))))))
 
-;; TODO: PATCH collection
-
+;;;###autoload
 (defun mastodon-views-revoke-collection-inclusion ()
   "Revoke your inclusion in a collection.
 Must be called from a collection buffer.
@@ -1433,6 +1437,7 @@ You must be in the collection."
           (t
            (mastodon-views-update-collection (alist-get 'collection coll))))))
 
+;;;###autoload
 (defun mastodon-views-update-collection (&optional coll)
   "Prompt for a collection and edit it.
 Optionally edit COLL, json data."
