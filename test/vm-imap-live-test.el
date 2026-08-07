@@ -1074,12 +1074,18 @@ folder of external messages cost a round trip apiece.  Issue #185."
                 ;; the first was fetched to be shown; the rest are pending
                 (should (= 3 (length (seq-filter #'vm-body-to-be-retrieved-of
                                                  vm-message-list))))
-                (advice-add 'vm-imap-send-command :before
-                            (lambda (&rest args) (push (cadr args) commands)))
-                (unwind-protect
-                    (vm-load-message 4)
-                  (advice-remove 'vm-imap-send-command
-                                 (lambda (&rest _) nil)))
+                ;; `cl-letf', not `advice-add': `advice-remove' compares
+                ;; functions with `equal', so removing a *different* lambda
+                ;; from the one added removes nothing and the advice outlives
+                ;; the test.  Nothing restores advice between tests either --
+                ;; `vm-test-isolate-global-state' restores variables and kills
+                ;; buffers, and that is all.
+                (let ((real (symbol-function 'vm-imap-send-command)))
+                  (cl-letf (((symbol-function 'vm-imap-send-command)
+                             (lambda (process command &rest args)
+                               (push command commands)
+                               (apply real process command args))))
+                    (vm-load-message 4)))
                 ;; one FETCH for the three of them
                 (let ((fetches (seq-filter (lambda (c)
                                              (string-match-p "FETCH" c))
@@ -1098,6 +1104,93 @@ folder of external messages cost a round trip apiece.  Issue #185."
             ;; Leave no folder, summary or presentation buffer behind.
             (let ((vm-confirm-quit nil))
               (ignore-errors (vm-quit-no-change)))))))))
+
+(ert-deftest vm-imap-live-test-bunched-fetch-keeps-bodies-out-of-headers ()
+  "REGRESSION: bodies fetched in one command each land after their own headers.
+Issue #500 again, on the path issue #185 added.  The single-message test above
+covers `vm-retrieve-real-message-body\=', where `vm-fetch-imap-message\=' does the
+insertion inside a `save-excursion\=' and point is controlled throughout.
+
+`vm-fetch-imap-messages\=' has neither of those protections.  It inserts into the
+folder buffer from the process buffer as each response arrives, re-narrowing to
+a different message every time, and leaves point after the text it inserted --
+which is why `vm-settle-message-body\=' has to put point back before its
+`\\n\\n\=' search.  Several messages in one buffer, markers on all of them, and
+the narrowing moving between them is the shape README.headers-only described:
+body appearing in the midst of headers.
+
+So this checks the whole folder, not the region a message's own markers claim.
+Every message must keep its sentinel header, no header block may contain body
+text, and there must be exactly one copy of each message's headers -- a
+duplicate would mean the second copy of the headers that the fetch inserts was
+not removed.
+
+Three messages because visiting previews the first, which loads its body; two
+are left external, which is what makes the fetch a bunched one."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-vm-account ("plain" "bunched-500")
+    (vm-imap-live-with-mailbox (conn mailbox "plain")
+      (dolist (n '(1 2 3))
+        (vm-imap-live-append conn mailbox (vm-imap-live-test--bulky n)))
+      (let ((vm-imap-server-timeout vm-imap-live-timeout)
+            (vm-enable-external-messages '(imap))
+            (vm-imap-max-message-size vm-imap-live-test--size-limit)
+            (vm-imap-ok-to-ask nil)
+            (account (car (plist-get server :accounts)))
+            (bunched 0))
+        (unwind-protect
+            (progn
+              (vm-visit-imap-folder (vm-imap-live-spec server account mailbox))
+              (should (= 3 (length vm-message-list)))
+              ;; Two still external, so the load below is a bunched one and
+              ;; this test is not passing on the single-message path.
+              (should (= 2 (length (seq-filter #'vm-body-to-be-retrieved-of
+                                               vm-message-list))))
+              (let ((vm-assertion-checking-off nil)
+                    (inhibit-debugger t)
+                    (real (symbol-function 'vm-fetch-imap-messages)))
+                (cl-letf (((symbol-function 'vm-fetch-imap-messages)
+                           (lambda (mlist)
+                             (setq bunched (length mlist))
+                             (funcall real mlist))))
+                  ;; From message 1, which is already loaded.  Selecting a
+                  ;; message previews it, and previewing an external message
+                  ;; loads its body one at a time -- so moving to message 2
+                  ;; first would leave only one to fetch and no bunch.
+                  (vm-load-message 3)))
+              (should (= 2 bunched))
+              (should (null (seq-filter #'vm-body-to-be-retrieved-of
+                                        vm-message-list)))
+              (dolist (m vm-message-list)
+                (let ((headers (vm-imap-live-test--headers-of m))
+                      (body (vm-imap-live-test--body-of m)))
+                  (should (string-match-p "X-VMTest-Last-Header: sentinel"
+                                          headers))
+                  ;; the body is whole and starts at the start ...
+                  (should (string-prefix-p "VMTESTBODY line 001" body))
+                  (should (string-match-p "VMTESTBODY line 060" body))
+                  ;; ... and none of it is up among the headers, which is #500
+                  (should-not (string-match-p "VMTESTBODY" headers))))
+              ;; Each message's headers appear once in the folder as a whole:
+              ;; three messages, three sentinels, three subjects.
+              (save-restriction
+                (widen)
+                (let ((folder (buffer-substring-no-properties
+                               (point-min) (point-max))))
+                  (should (= 3 (cl-count-if
+                                (lambda (l)
+                                  (string-prefix-p "X-VMTest-Last-Header:" l))
+                                (split-string folder "\n"))))
+                  (dolist (n '(1 2 3))
+                    (should (= 1 (cl-count-if
+                                  (lambda (l)
+                                    (string= l (format
+                                                "Subject: headers only fetch %d"
+                                                n)))
+                                  (split-string folder "\n"))))))))
+          (let ((vm-confirm-quit nil))
+            (ignore-errors (vm-quit-no-change))))))))
 
 (provide 'vm-imap-live-test)
 
