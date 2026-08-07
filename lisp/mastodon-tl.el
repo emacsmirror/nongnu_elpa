@@ -187,7 +187,8 @@ nil."
                                            '(t :inherit success :weight bold
                                                :height 1.8))))
     (quoted_update         . ("✍" . "[edited]"))
-    (added_to_collection   . ("⯒"  . "[coll]")))
+    (added_to_collection   . ("⊆"  . "[coll]"))
+    (collection_update     . ("⊆"  . "[coll]")))
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
