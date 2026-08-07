@@ -53,6 +53,7 @@ SOURCES += vm-toolbar.el
 SOURCES += vm-undo.el
 SOURCES += vm-user.el
 SOURCES += vm-vars.el
+SOURCES += vm-icalendar.el
 SOURCES += vm-vcard.el
 SOURCES += vm-virtual.el
 SOURCES += vm-window.el
