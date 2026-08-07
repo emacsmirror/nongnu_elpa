@@ -2094,6 +2094,7 @@ worthwhile to attempt to decode it.
 * multipart/alternative::       @acronym{MIME} content in alternative formats
 * multipart/related::           Attachments embedded in message display
 * Inferring @acronym{MIME} types::        Inferring types from attachment file names
+* Calendar invitations::        Meeting invitations in readable form
 * Reading Secure @acronym{MIME}:: Reading PKCS7 Secure @acronym{MIME} (@acronym{S/MIME}) messages
 @end menu
 
@@ -2908,7 +2909,7 @@ You can ask VM to always treat @samp{multipart/related} content in a way
 similar to @samp{multipart/mixed} by setting the variable
 @code{vm-mime-multipart/related-show-method} to @code{'mixed}.
 
-@node Inferring @acronym{MIME} types, Reading Secure @acronym{MIME}, multipart/related, @acronym{MIME} Messages
+@node Inferring @acronym{MIME} types, Calendar invitations, multipart/related, @acronym{MIME} Messages
 @subsection Inferring @acronym{MIME} types
 
 Some mailers incorrectly use the generic
@@ -2931,7 +2932,53 @@ If the variable
 attempt to use file names for attachments of type @samp{text/plain} as
 well. 
 
-@node Reading Secure @acronym{MIME}, , Inferring @acronym{MIME} types, @acronym{MIME} Messages
+@node Calendar invitations, Reading Secure @acronym{MIME}, Inferring @acronym{MIME} types, @acronym{MIME} Messages
+@subsection Calendar invitations
+
+@cindex calendar
+@cindex invitation
+@cindex iCalendar
+@cindex text/calendar
+A meeting invitation arrives as a @samp{text/calendar} part holding an
+iCalendar object (RFC 5545), which is a form to be read by a program.  VM
+shows what it says instead:
+
+@example
+Invitation
+  Quarterly review
+  When: Monday 10 August 2026 at 14:00 until Monday 10 August 2026 at 15:00
+  Where: Room 3, second floor
+  Organizer: Alice Example <alice@@example.com>
+  Attendees:
+  Bob <bob@@example.com> -- accepted
+  Carol <carol@@example.com> -- not answered
+@end example
+
+@noindent The first line says what kind of message it is -- an invitation, a
+cancellation, a reply to an invitation -- since @samp{REQUEST} and
+@samp{CANCEL} are not words a reader should have to know.  A time is shown as
+the sender wrote it, with @samp{UTC} where the sender said UTC; a zone named
+by @samp{TZID} is not converted, on the grounds that 14:00 as written beats
+14:00 in the wrong zone.
+
+@vindex vm-icalendar-show-description
+@vindex vm-icalendar-description-lines
+The description that follows an invitation is often several screens of
+dial-in numbers and boilerplate, so only the first
+@code{vm-icalendar-description-lines} lines of it are shown, ten by default,
+and @code{vm-icalendar-show-description} set to nil leaves it out
+altogether.  The part itself is still there, and saving it gives you the
+object as it arrived.
+
+@findex vm-icalendar-import
+@kbd{M-x vm-icalendar-import} adds the event to your diary, by handing the
+part to Emacs's own @file{icalendar.el}.  With a file name it writes there
+instead of to @code{diary-file}.
+
+Answering an invitation -- accepting or declining, which means sending a
+reply the organizer's software understands -- is not something VM does.
+
+@node Reading Secure @acronym{MIME}, , Calendar invitations, @acronym{MIME} Messages
 @subsection Reading Secure @acronym{MIME} Messages
 
 VM supports reading @acronym{S/MIME} messages if your Emacs version includes

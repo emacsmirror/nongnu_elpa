@@ -205,6 +205,15 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * A meeting invitation is shown as what it says.  A `text/calendar' part
+    holds an iCalendar object (RFC 5545) -- BEGIN:VCALENDAR, DTSTART;TZID=...,
+    folded at 75 columns -- and VM showed it as it stands.  It now says what
+    kind of message it is, what the event is, when, where, who organized it
+    and who has answered, with the object still there as a part.
+    `vm-icalendar-show-description' and `vm-icalendar-description-lines'
+    govern how much of the description comes with it, and
+    `M-x vm-icalendar-import' adds the event to your diary through Emacs's own
+    icalendar.el.  Answering an invitation is not implemented.
   * The `vm-ns-attach-file' command is gone, with the `[ns-drag-file]' binding
     that called it.  Dropping a file on a composition still attaches it:
     modern Emacs dispatches a drop through `dnd-protocol-alist' on every
