@@ -1576,10 +1576,12 @@ result into the transient status text shown in the transcript."
   :group "Session"
   "n" ("New chat" hermes-chat)
   "m" ("Switch model" hermes-chat-switch-model)
-  "K" ("Connect provider" hermes-chat-connect-provider)
   "R" ("Rename session" hermes-chat-rename)
   "H" ("Hand off session" hermes-chat-handoff)
+  :group "Connection"
+  "K" ("Connect provider" hermes-chat-connect-provider)
   "x" ("Reconnect socket" hermes-dashboard-reconnect)
+  :group "Browse"
   "b" ("Switch chat buffer" hermes-switch-to-chat)
   "S" ("Sessions" hermes-list-sessions)
   "u" ("Token usage" hermes-chat-show-usage)
