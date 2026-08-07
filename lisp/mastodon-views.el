@@ -1361,5 +1361,31 @@ Must be called from a collection view buffer."
 
 ;; TODO: PATCH collection
 
+(defun mastodon-views-revoke-collection-inclusion ()
+  "Revoke your inclusion in a collection.
+Must be called from a collection buffer.
+You must be in the collection."
+  (interactive)
+  (if (not (mastodon-tl--buffer-type-eq 'collection))
+      (user-error "Not in a collection view")
+    (let* ((data (mastodon-tl--buffer-property 'collection))
+           (self-item (cl-find-if
+                       (lambda (x)
+                         (string=
+                          (alist-get 'id mastodon-profile-credential-account)
+                          (alist-get 'account_id x)))
+                       (map-nested-elt data '(collection items)))))
+      (if (not self-item)
+          (user-error "Looks like you're not in this collection")
+        (when (y-or-n-p "Remove yourself from this collection?")
+          (let ((resp (mastodon-views-post-revoke-inclusion
+                       (map-nested-elt data '(collection id))
+                       (alist-get 'id self-item))))
+            (mastodon-http--triage
+             resp
+             (lambda (_)
+               (message "Removed you from collection %s!"
+                        (map-nested-elt data '(collection name)))))))))))
+
 (provide 'mastodon-views)
 ;;; mastodon-views.el ends here
