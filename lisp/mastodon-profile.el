@@ -809,6 +809,19 @@ TOOTS FOLLOWERS and FOLLOWING are each integers."
            (cl-loop for x in str-list
                     collect (+ 2 (length x)))))))))
 
+(defun mastodon-profile--insert-featured-tags (tags)
+  "Insert featured TAGS.
+Insert function for `mastodon-profile--pretty-table'."
+  (let ((names (mastodon-tl--map-alist 'name tags)))
+    (mastodon-profile--pretty-table (lambda ()
+                      (insert
+                       ;; TODO: propertize tag as link:
+                       (mapconcat (lambda (x)
+                                    (concat "#" x))
+                                  names " | ")))
+                    ;; 3+ for padding + #:
+                    (+ 3 (apply #'max (mapcar #'length names))))))
+
 (defun mastodon-profile--make-profile-buffer-for
     (account endpoint-type update-function
              &optional no-reblogs headers no-replies only-media tag max-id
@@ -854,7 +867,8 @@ SKIP-PINNED means don't display pinned toots."
                            (cdr response))))
            (fields (mastodon-profile--fields-get account))
            (pinned (mastodon-profile--get-statuses-pinned account))
-           (relationships (mastodon-profile--relationships-get .id)))
+           (relationships (mastodon-profile--relationships-get .id))
+           (featured-tags (mastodon-profile--get-featured-tags .id)))
       (with-mastodon-buffer buffer #'mastodon-mode nil
         (mastodon-profile-mode)
         (setq mastodon-profile--account account)
@@ -900,6 +914,7 @@ SKIP-PINNED means don't display pinned toots."
                            .followers_count .following_count)
           ;; insert relationship (follows)
           (mastodon-profile--insert-relationships relationships)
+          (mastodon-profile--insert-featured-tags featured-tags)
           (mastodon-media--inline-images (point-min) (point))
           ;; widget items description
           (mastodon-widget--create
