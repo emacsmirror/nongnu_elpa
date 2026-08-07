@@ -1249,18 +1249,19 @@ CANDIDATES is a (NAME . MODEL-LABEL) alist; the annotation shows the model."
            (buffer-list)))
 
 (defun hermes-chat--profile-list-payload ()
-  "Return dashboard profile metadata, preferring the warmed cache.
+  "Return cached dashboard profiles and revalidate them asynchronously.
 `hermes' warms a per-URL profile cache on launch (see
-`hermes-dashboard-transport-profile-list-async').  A cache miss starts a
-best-effort asynchronous warmup through an existing client and returns nil, so
-the current invocation remains nonblocking."
-  (or (hermes-dashboard-transport-cached-profile-list)
-      (when-let* ((client (hermes-chat--existing-dashboard-client)))
-        (ignore-errors
-          (hermes--promise-catch
-           (hermes-dashboard-transport-profile-list-async client)
-           #'ignore))
-        nil)))
+`hermes-dashboard-transport-profile-list-async').  When an existing client is
+available, dispatch a best-effort refresh before returning the current cache, so
+`hermes-chat--read-profile' can open completion immediately and the next call
+sees fresh candidates.  A cold cache still returns nil without blocking."
+  (let ((cached (hermes-dashboard-transport-cached-profile-list)))
+    (when-let* ((client (hermes-chat--existing-dashboard-client)))
+      (ignore-errors
+        (hermes--promise-catch
+         (hermes-dashboard-transport-profile-list-async client)
+         #'ignore)))
+    cached))
 
 (defun hermes-chat--read-raw-profile (&optional notice)
   "Read a raw Hermes profile name with the default-profile prompt.

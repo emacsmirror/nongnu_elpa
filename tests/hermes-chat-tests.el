@@ -4522,23 +4522,27 @@
       (should-not spawned)
       (should (string-match-p "blank for default" prompt)))))
 
-(ert-deftest hermes-chat-profile-list-payload-prefers-warm-cache ()
-  "A warmed profile cache feeds completion without touching a chat client."
+(ert-deftest hermes-chat-profile-list-payload-serves-cache-and-revalidates ()
+  "A warm profile cache is returned while an existing client refreshes it async."
   (let ((hermes-dashboard-transport--profile-cache nil)
-        touched)
+        (client (hermes-test--dashboard-client))
+        refreshed)
     (cl-letf (((symbol-function 'hermes-dashboard-transport--api-base-url)
                (lambda () "http://dash.example"))
               ((symbol-function 'hermes-chat--existing-dashboard-client)
-               (lambda () (setq touched 'client) nil))
+               (lambda () client))
+              ((symbol-function 'hermes-dashboard-transport-profile-list-async)
+               (lambda (value)
+                 (setq refreshed value)
+                 (hermes--promise-resolved nil)))
               ((symbol-function 'hermes-dashboard-transport-profile-list)
-               (lambda (&rest _) (setq touched 'fetch) nil)))
-      (hermes-dashboard-transport--store-profile-cache
-       '((profiles . (((name . "default") (is_default . t))
-                      ((name . "elisp-dev"))))))
-      (should (equal (hermes-chat--profile-candidates
-                      (hermes-chat--profile-list-payload))
-                     '(("default" . nil) ("elisp-dev" . nil))))
-      (should-not touched))))
+               (lambda (&rest _) (error "synchronous profile fetch"))))
+      (let ((cached
+             '((profiles . (((name . "default") (is_default . t))
+                            ((name . "elisp-dev")))))))
+        (hermes-dashboard-transport--store-profile-cache cached)
+        (should (equal (hermes-chat--profile-list-payload) cached))
+        (should (eq refreshed client))))))
 
 (ert-deftest hermes-chat-profile-list-cache-miss-warms-asynchronously ()
   "A cold profile picker starts a warmup but never calls synchronous HTTP."
