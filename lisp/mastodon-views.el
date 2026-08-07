@@ -1144,6 +1144,7 @@ on the user's profile, or in search results."
 (defun mastodon-views-patch-collection (id
                           &optional name desc tag lang sensitive discoverable)
   "Send a PATCH request for a collection.
+ID is for the collection.
 NAME is the collection name.
 DESC is description.
 TAG is a hashtag, including #.
