@@ -1122,6 +1122,28 @@ Makes a DELETE request."
                       coll-id item-id))))
     (mastodon-http--delete url)))
 
+(defun mastodon-views-post-new-collection (name &optional desc tag sensitive discoverable)
+  ;; TODO: language account_ids
+  "POST a new collection with NAME to the server.
+Optionally specify DESC, a description, and TAG, a hashtag.
+SENSITIVE means mark the collection as sensitive.
+DISCOVERABLE means mark the collection as discoverable.
+If the latter is not given, the collection will not be visible to others
+on the user's profile, or in search results."
+  (let ((url (mastodon-http--api "collections"))
+        (params `(("name" . ,name)
+                  ,@(when desc `(("description" . ,desc)))
+                  ,@(when tag `(("tag_name" . ,tag)))
+                  ("discoverable" . ,(if discoverable "true" "false"))
+                  ("sensitive"    . ,(if sensitive "true" "false")))))
+    (mastodon-http--post url params)))
+
+(defun mastodon-views-post-revoke-inclusion (coll-id item-id)
+  "POST request to revoke own inclusion in a collection."
+  (let ((url (mastodon-http--api
+              (format "collections/%s/items/%s/revoke" coll-id item-id))))
+    (mastodon-http--post url)))
+
 (defun mastodon-views--insert-collection (json)
   "Insert the collection from JSON."
   (if (not json)
@@ -1299,27 +1321,8 @@ Must be called from a collection view."
          (mastodon-views-view-own-collection (alist-get 'collection json))
          (message "Collection %s created!" name))))))
 
-(defun mastodon-views-post-new-collection (name &optional desc tag sensitive discoverable)
-  ;; TODO: language account_ids
-  "POST a new collection with NAME to the server.
-Optionally specify DESC, a description, and TAG, a hashtag.
-SENSITIVE means mark the collection as sensitive.
-DISCOVERABLE means mark the collection as discoverable.
-If the latter is not given, the collection will not be visible to others
-on the user's profile, or in search results."
-  (let ((url (mastodon-http--api "collections"))
-        (params `(("name" . ,name)
-                  ,@(when desc `(("description" . ,desc)))
-                  ,@(when tag `(("tag_name" . ,tag)))
-                  ("discoverable" . ,(if discoverable "true" "false"))
-                  ("sensitive"    . ,(if sensitive "true" "false")))))
-    (mastodon-http--post url params)))
-
 ;; TODO: add account to coll from coll view
 ;; would need to be a search interface...
-
-;; TODO: revoke inclusion
-;; POST /api/v1/collections/:collection_id/items/:id/revokex
 
 (provide 'mastodon-views)
 ;;; mastodon-views.el ends here
