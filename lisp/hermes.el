@@ -146,14 +146,15 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "a" ("Respond to prompt" hermes-dashboard-respond)
   "m" ("Switch model" hermes-dashboard-switch-model)
   "d" ("Disconnect" hermes-dashboard-disconnect)
-  :group "View"
-  "g" ("Refresh" hermes-dashboard-refresh)
+  :group "Browse"
   "I" ("Inventory" hermes-list-inventory)
   "R" ("Rollbacks" hermes-list-rollbacks)
   "A" ("Subagents" hermes-list-subagents)
   "C" ("Cron jobs" hermes-list-crons)
   "K" ("Kanban" hermes-list-kanban)
   "X" ("MCP servers" hermes-list-mcp)
+  :group "System"
+  "g" ("Refresh" hermes-dashboard-refresh)
   "Z" ("Configuration" hermes-config)
   "G" ("Gateway status" hermes-system-status)
   "L" ("Gateway logs" hermes-system-logs)
