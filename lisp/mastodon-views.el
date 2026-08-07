@@ -1296,7 +1296,8 @@ Must be called from a collection view."
      (lambda (resp)
        (let ((json (with-current-buffer resp
                      (mastodon-http--process-json))))
-         (mastodon-views-view-own-collection (alist-get 'collection json)))))))
+         (mastodon-views-view-own-collection (alist-get 'collection json))
+         (message "Collection %s created!" name))))))
 
 (defun mastodon-views-post-new-collection (name &optional desc tag sensitive discoverable)
   ;; TODO: language account_ids
