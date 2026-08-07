@@ -2583,7 +2583,7 @@ call this function after it is set or use something else."
           ((mastodon-tl--endpoint-str-= "followed_tags")
            'followed-hashtags)
           ;; collections:
-          ((string-suffix-p "collection*" buffer-name)
+          ((mastodon-tl--endpoint-str-= "collection" :prefix)
            'collection))))
 
 (defun mastodon-tl--buffer-type-eq (type)
