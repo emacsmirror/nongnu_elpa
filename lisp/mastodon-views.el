@@ -1218,6 +1218,14 @@ Must be called from a user's profile."
        (format "collections/%s" id)
        'mastodon-views--insert-collection))))
 
+(defun mastodon-views-view-collection (coll)
+  "View collection COLL, json data."
+  (let-alist coll
+    (mastodon-tl--init-sync
+     (format "collection-%s" .name)
+     (format "collections/%s" .id)
+     'mastodon-views--insert-collection)))
+
 (defun mastodon-views-view-own-collection (&optional coll)
   "Prompt for a collection of yours and view it.
 Optionally, view COLL, collection JSON data."

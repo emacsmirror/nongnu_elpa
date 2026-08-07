@@ -545,6 +545,10 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
                (let* ((accounts (assoc 'accounts response))
                       (account (seq-first (cdr accounts))))
                  (mastodon-profile--make-author-buffer account)))
+              ((not (seq-empty-p (alist-get 'collections response)))
+               (let* ((colls (assoc 'collections response))
+                      (coll (seq-first (cdr colls))))
+                 (mastodon-views-view-collection coll)))
               (t
                (message "Lookup failed. Using external browser")
                (browse-url query)))))))
@@ -587,7 +591,9 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/notes/[[:alnum:]]+$" query) ; misskey post
           (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
           ;; bsky via fed.brid.gy (unsure if this needs narrowing down?):
-          (string-prefix-p "https://fed.brid.gy/r/" url)))))
+          (string-prefix-p "https://fed.brid.gy/r/" url)
+          (string-match "^/collections/[[:digit:]_]+$" query) ;; collection
+          ))))
 
 (defun mastodon-live-buffers ()
   "Return a list of open mastodon buffers.
