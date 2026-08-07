@@ -1114,11 +1114,22 @@ IND is the optional indentation level to print at."
          (params `(("account_id" . ,account-id))))
     (mastodon-http--post url params)))
 
+(defun mastodon-views-account-from-collection (coll-id item-id)
+  "Remove account ITEM-ID from coll COLL-ID.
+Makes a DELETE request."
+  (let ((url (mastodon-http--api
+              (format "collections/%s/items/%s"
+                      coll-id item-id))))
+    (mastodon-http--delete url)))
+
 (defun mastodon-views--insert-collection (json)
   "Insert the collection from JSON."
   (if (not json)
       (mastodon-views-no-data-str "collection")
     (let-alist json
+      ;; add coll data to buffer-spec:
+      (plist-put mastodon-tl--buffer-spec
+                 'collection json)
       (mastodon-search--insert-heading
        (concat "collection ".collection.name))
       ;; (setq test-coll .collection)
@@ -1176,12 +1187,13 @@ Must be called from a user's profile."
        (format "collections/%s" id)
        'mastodon-views--insert-collection))))
 
-(defun mastodon-views-view-own-collection ()
+(defun mastodon-views-view-own-collection (&optional coll)
   "Prompt for a collection of yours and view it."
   (interactive)
-  (let* ((colls (mastodon-views-get-account-collections
-                 (alist-get 'id mastodon-profile-credential-account)))
-         (coll (mastodon-views-read-collection colls)))
+  (let* ((colls (unless coll
+                  (mastodon-views-get-account-collections
+                   (alist-get 'id mastodon-profile-credential-account))))
+         (coll (or coll (mastodon-views-read-collection colls))))
     (mastodon-tl--init-sync
      (format "%s-collection"
              (alist-get 'username mastodon-profile-credential-account))
@@ -1223,6 +1235,44 @@ Will error 403 if permission to add is lacking."
            (message "Account %s added to collection %s!"
                     (alist-get 'acct profile)
                     (alist-get 'name coll))))))))
+
+(defun mastodon-views-remove-from-collection ()
+  "Remove item at point from collection.
+Must be called from a collection view."
+  (interactive)
+  (if (not (mastodon-tl--buffer-type-eq 'collection))
+      (user-error "Not in a collection view"))
+  (let* ((coll-id (car
+                   (last
+                    (split-string
+                     (mastodon-tl--buffer-property 'endpoint)
+                     "/"))))
+         (account-id (alist-get 'id (mastodon-profile--item-json))))
+    (if (not (eq 'user (mastodon-tl--property 'item-type :no-move)))
+        (user-error "No item at point?")
+      (let* ((data (plist-get mastodon-tl--buffer-spec 'collection))
+             (account-data (cl-find-if
+                            (lambda (x)
+                              (string= account-id (alist-get 'id x)))
+                            (alist-get 'accounts data)))
+             (item-id
+              (alist-get 'id
+                         (cl-find-if
+                          (lambda (x)
+                            (string= account-id
+                                     (alist-get 'account_id x)))
+                          (map-nested-elt data '(collection items))))))
+        (when (y-or-n-p
+               (format "Remove item %s from collection?"
+                       (alist-get 'acct account-data)))
+          (let ((resp (mastodon-views-account-from-collection coll-id item-id)))
+            (mastodon-http--triage
+             resp
+             (lambda (resp)
+               (mastodon-views-view-own-collection (alist-get 'collection data))
+               (message "Account %s removed from collection %s!"
+                        (alist-get 'acct account-data)
+                        (map-nested-elt data '(collection name)))))))))))
 
 ;; TODO: add account to coll from coll view
 ;; would need to be a search interface...
