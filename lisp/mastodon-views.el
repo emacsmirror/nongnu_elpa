@@ -1141,6 +1141,23 @@ on the user's profile, or in search results."
                   ("sensitive"    . ,(if sensitive "true" "false")))))
     (mastodon-http--post url params)))
 
+(defun mastodon-views-patch-collection (id
+                          &optional name desc tag lang sensitive discoverable)
+  "Send a PATCH request for a collection.
+NAME is the collection name.
+DESC is description.
+TAG is a hashtag, including #.
+LANG is language, two letter code.
+SENSITIVE and DISCOVERABLE are JSON booleans."
+  (let ((url (mastodon-http--api (format "collections/%s" id)))
+        (params `(,@(when name `(("name" . ,name)))
+                  ,@(when desc `(("description" . ,desc)))
+                  ,@(when tag  `(("tag_name" . ,tag)))
+                  ,@(when lang `(("language" . ,lang)))
+                  ,@(when sensitive `(("sensitive" . ,sensitive)))
+                  ,@(when discoverable `(("discoverable" . ,discoverable))))))
+    (mastodon-http--patch url params :json)))
+
 (defun mastodon-views-post-revoke-inclusion (coll-id item-id)
   "POST request to revoke own inclusion in a collection.
 COLL-ID is of the collection, ITEM-ID is the item to revoke."
@@ -1402,6 +1419,66 @@ You must be in the collection."
              (lambda (_)
                (message "Removed you from collection %s!"
                         (map-nested-elt data '(collection name)))))))))))
+
+(defun mastodon-views-update-current-collection ()
+  "Edit the collection being viewed if permitted."
+  (interactive)
+  (let ((coll (mastodon-tl--buffer-property 'collection)))
+    (cond ((not coll)
+           (user-error "Not in a collection view"))
+          ((not (string= (alist-get 'id mastodon-profile-credential-account)
+                         (map-nested-elt coll '(collection account_id))))
+           (user-error "Not a collection you own"))
+          (t
+           (mastodon-views-update-collection (alist-get 'collection coll))))))
+
+(defun mastodon-views-update-collection (&optional coll)
+  "Prompt for a collection and edit it.
+Optionally edit COLL, json data."
+  (interactive)
+  (let* ((colls (unless coll
+                  (mastodon-views-get-account-collections
+                   (alist-get 'id mastodon-profile-credential-account))))
+         (coll (or coll (mastodon-views-read-collection colls))))
+    (let-alist coll
+      (let* ((name (read-string "Collection name: "
+                                .name))
+             (desc (read-string "Collection description: "
+                                .description))
+             (tag-raw (read-string "Tag [optional]: "
+                                   .tag.name))
+             ;; ensure tag is prefixed #:
+             (tag (if (not (string-prefix-p "#" tag-raw))
+                      (format "#%s" tag-raw)
+                    tag-raw))
+             (lang (alist-get
+                    (completing-read
+                     "Language for this toot [max 100 chars]: "
+                     mastodon-iso-639-1
+                     nil :match .language)
+                    mastodon-iso-639-1 nil nil #'string=))
+             (sensitive (completing-read
+                         "Sensitive: "
+                         '("true" "false")
+                         nil :match nil nil (if (eq t .sensitive)
+                                                "true"
+                                              "false")))
+             (disco (completing-read
+                     "Discoverable [inc. on your profile]: "
+                     '("true" "false")
+                     nil :match
+                     nil nil (if (eq t .discoverable)
+                                 "true"
+                               "false")))
+             (resp (mastodon-views-patch-collection .id name desc tag lang sensitive disco)))
+        (mastodon-http--triage
+         resp
+         (lambda (resp)
+           (let ((json (with-current-buffer resp
+                         (mastodon-http--process-json))))
+             (mastodon-views-view-own-collection (alist-get 'collection json))
+             (message "Collection %s updated!"
+                      (map-nested-elt json '(collection name))))))))))
 
 (provide 'mastodon-views)
 ;;; mastodon-views.el ends here
