@@ -1108,7 +1108,7 @@ IND is the optional indentation level to print at."
                (mastodon-http--get-json url))))
 
 (defun mastodon-views-account-to-collection (account-id coll-id)
-  "Add ACCOUNT-ID to collection with ID."
+  "Add ACCOUNT-ID to collection with COLL-ID."
   (let* ((url (mastodon-http--api
                (format "collections/%s/items" coll-id)))
          (params `(("account_id" . ,account-id))))
@@ -1139,7 +1139,8 @@ on the user's profile, or in search results."
     (mastodon-http--post url params)))
 
 (defun mastodon-views-post-revoke-inclusion (coll-id item-id)
-  "POST request to revoke own inclusion in a collection."
+  "POST request to revoke own inclusion in a collection.
+COLL-ID is of the collection, ITEM-ID is the item to revoke."
   (let ((url (mastodon-http--api
               (format "collections/%s/items/%s/revoke" coll-id item-id))))
     (mastodon-http--post url)))
@@ -1215,7 +1216,8 @@ Must be called from a user's profile."
        'mastodon-views--insert-collection))))
 
 (defun mastodon-views-view-own-collection (&optional coll)
-  "Prompt for a collection of yours and view it."
+  "Prompt for a collection of yours and view it.
+Optionally, view COLL, collection JSON data."
   (interactive)
   (let* ((colls (unless coll
                   (mastodon-views-get-account-collections
@@ -1243,7 +1245,7 @@ Must be called from a user's profile.
 A Mastodon collection can contain max of 25 accounts, other servers
 may handle up to 150.
 Will error 422 if account already added.
-Will error 403 if permission to add is lacking. "
+Will error 403 if permission to add is lacking."
   ;; FIXME: ideally we could tirage and handle these errors
   ;; usually masto APIs don't error when trying to add something already
   ;; in something... sigh
@@ -1261,7 +1263,7 @@ Will error 403 if permission to add is lacking. "
                                            (alist-get 'id coll))))
         (mastodon-http--triage
          resp
-         (lambda (resp)
+         (lambda (_)
            (message "Account %s added to collection %s!"
                     (alist-get 'acct profile)
                     (alist-get 'name coll))))))))
@@ -1298,7 +1300,7 @@ Must be called from a collection view."
           (let ((resp (mastodon-views-account-from-collection coll-id item-id)))
             (mastodon-http--triage
              resp
-             (lambda (resp)
+             (lambda (_)
                (mastodon-views-view-own-collection (alist-get 'collection data))
                (message "Account %s removed from collection %s!"
                         (alist-get 'acct account-data)
