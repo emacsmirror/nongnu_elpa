@@ -205,6 +205,12 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * The `vm-ns-attach-file' command is gone, with the `[ns-drag-file]' binding
+    that called it.  Dropping a file on a composition still attaches it:
+    modern Emacs dispatches a drop through `dnd-protocol-alist' on every
+    window system, NextStep included, and VM has installed its handlers there
+    for years -- see `vm-dnd-protocol-alist'.  The binding's own comment said
+    to remove it once that existed.
   * Loading several message bodies from an IMAP folder is one command.  Each
     body was asked for with its own `UID FETCH', so reading a folder of
     external messages -- one where `vm-enable-external-messages' and
