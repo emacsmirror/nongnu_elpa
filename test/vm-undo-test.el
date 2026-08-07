@@ -671,6 +671,66 @@ the record would undelete a message the folder no longer has."
       (should (equal before (mapcar #'vm-su-subject vm-message-list)))
       (should (equal '(nil nil) (mapcar #'vm-deleted-flag vm-message-list))))))
 
+;;; Setting attributes by name
+
+;; The name-to-flag mapping was inlined in `vm-set-message-attributes' until
+;; `vm-virtual-filter-alist' needed it per-message too, so it is now
+;; `vm-set-message-attribute'.  These pin the mapping across that move: the
+;; command still takes a space separated list over a run of messages, and the
+;; extracted function is what does the work.
+
+(ert-deftest vm-undo-test-set-message-attributes-takes-a-list ()
+  "The command sets every named attribute on every message it covers."
+  (vm-test-with-real-folder (3)
+    (setq vm-message-pointer vm-message-list)
+    (vm-set-message-attributes "read flagged replied" 2)
+    (dolist (m (list (nth 0 vm-message-list) (nth 1 vm-message-list)))
+      (should (null (vm-new-flag m)))
+      (should (null (vm-unread-flag m)))
+      (should (vm-flagged-flag m))
+      (should (vm-replied-flag m)))
+    ;; the third is past the count
+    (should (vm-new-flag (nth 2 vm-message-list)))
+    (should (null (vm-flagged-flag (nth 2 vm-message-list))))))
+
+(ert-deftest vm-undo-test-set-message-attribute-negations ()
+  "The un- names clear the flag their positive counterpart sets."
+  (vm-test-with-real-folder (1)
+    (let ((m (car vm-message-list)))
+      (dolist (name '("deleted" "replied" "forwarded" "redistributed"
+                      "filed" "written" "flagged"))
+        (vm-set-message-attribute m name))
+      (should (vm-deleted-flag m))
+      (should (vm-filed-flag m))
+      (dolist (name '("undeleted" "unreplied" "unforwarded" "unredistributed"
+                      "unfiled" "unwritten" "unflagged"))
+        (vm-set-message-attribute m name))
+      ;; the flag setters queue the message globally; the callers of
+      ;; `vm-set-message-attribute' flush that queue, so do the same here
+      (vm-update-summary-and-mode-line)
+      (should (null (vm-deleted-flag m)))
+      (should (null (vm-replied-flag m)))
+      (should (null (vm-forwarded-flag m)))
+      (should (null (vm-redistributed-flag m)))
+      (should (null (vm-filed-flag m)))
+      (should (null (vm-written-flag m)))
+      (should (null (vm-flagged-flag m))))))
+
+(ert-deftest vm-undo-test-set-message-attribute-unknown-name-warns ()
+  "An unrecognised name warns and leaves the message alone.
+It does not signal: `vm-set-message-attributes' reads a space separated list
+from the user, and one typo should not abandon the rest of it."
+  (vm-test-with-real-folder (1)
+    (let ((m (car vm-message-list))
+          (warned nil))
+      (cl-letf (((symbol-function 'vm-warn)
+                 (lambda (&rest args) (setq warned args))))
+        (vm-set-message-attribute m "no-such-attribute"))
+      (vm-update-summary-and-mode-line)
+      (should warned)
+      (should (vm-new-flag m))
+      (should (null (vm-deleted-flag m))))))
+
 (provide 'vm-undo-test)
 
 ;;; vm-undo-test.el ends here

@@ -6367,6 +6367,66 @@ suggests this folder as the default location for saving.  The command
 the corresponding @var{FOLDER}s, as suggested by
 @code{vm-virtual-auto-folder-alist}.
 
+@unnumberedsubsec Automatic filtering
+@anchor{vm-virtual-filter-alist}
+
+@vindex vm-virtual-filter-alist
+Automatic deletion applies one action list to one selector.  The variable
+@code{vm-virtual-filter-alist} is a table of them, so that different kinds of
+incoming mail can be treated differently.  Its value is an association-list of
+the form
+
+@example
+((@var{VIRTUAL-FOLDER-NAME} . @var{ACTIONS})
+ ... )
+@end example
+
+@noindent where @var{VIRTUAL-FOLDER-NAME} names a virtual folder in
+@code{vm-virtual-folder-alist}, whose selector says which messages the rule
+applies to, and @var{ACTIONS} is a property list saying what to do with them:
+
+@table @code
+@item :label @var{STRING}
+Attach the labels named in @var{STRING}, a space separated list, as
+@code{vm-add-message-labels} takes them.
+@item :attributes @var{STRING}
+Set the attributes named in @var{STRING}, a space separated list, as
+@code{vm-set-message-attributes} takes them.
+@item :save @var{FOLDER}
+Save a copy of the message in @var{FOLDER}, which is a string or an
+expression evaluating to one.
+@item :skip-inbox t
+Keep the message out of the folder.  It is flagged deleted and expunged
+once every rule has run.
+@end table
+
+Every rule whose selector matches is applied, in the order they appear, so one
+message can be labelled by one rule and saved by another.  A rule naming a
+virtual folder that does not exist is an error rather than a rule that matches
+nothing.
+
+@findex vm-virtual-filter-new-messages
+@vindex vm-arrived-messages-hook
+Add @code{vm-virtual-filter-new-messages} to @code{vm-arrived-messages-hook}
+to have the rules applied to incoming mail:
+
+@example
+(setq vm-virtual-folder-alist
+      '(("from-arik" (("inbox") (author "arik")))
+        ("spam"      (("inbox") (spam-word)))))
+(setq vm-virtual-filter-alist
+      '(("from-arik" :label "arik" :attributes "read")
+        ("spam"      :save "spam-folder" :skip-inbox t)))
+(add-hook 'vm-arrived-messages-hook #'vm-virtual-filter-new-messages)
+@end example
+
+@findex vm-virtual-filter-messages
+Messages are written into the folder before any arrival hook runs, so
+@code{:skip-inbox} removes a message again rather than preventing its arrival.
+The command @code{M-x vm-virtual-filter-messages} applies the same table to
+the current message, or to a @var{COUNT} of them with a prefix argument, which
+is a convenient way to test a table before hooking it up.
+
 @node @acronym{IMAP} Server Folders, Frames and Windows, Virtual Folders, Top
 @chapter @acronym{IMAP} Server Folders
 

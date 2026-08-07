@@ -888,6 +888,157 @@ See the function `vm-virtual-auto-delete-message' for details.
   (vm-virtual-auto-delete-message (length vm-message-pointer)))
 
 ;;----------------------------------------------------------------------------
+;; Filtering by a table of selectors, rather than the single selector of
+;; `vm-virtual-auto-delete-message-selector'.
+
+;;;###autoload
+(defcustom vm-virtual-filter-alist nil
+  "*Rules deciding what happens to a message when it arrives.
+Non-nil value should be an alist of the form
+
+        ((VIRTUAL-FOLDER-NAME . ACTIONS)
+          ...)
+
+where VIRTUAL-FOLDER-NAME names a virtual folder in
+`vm-virtual-folder-alist', whose selector says which messages the rule
+applies to, and ACTIONS is a property list of what to do with them:
+
+  :label STRING       attach the labels named in STRING, which is a
+                      space separated list, as `vm-add-message-labels'
+                      takes them
+  :attributes STRING  set the attributes named in STRING, a space
+                      separated list of `vm-supported-attribute-names',
+                      as `vm-set-message-attributes' takes them
+  :save FOLDER        save a copy in FOLDER.  FOLDER is a string or an
+                      expression evaluating to one
+  :skip-inbox t       keep the message out of the folder: it is flagged
+                      deleted and expunged once every rule has run
+
+Every rule that matches is applied, in the order they appear here, so a
+message can be labelled by one rule and saved by another.
+
+To have the rules run on incoming mail:
+
+ (add-hook \\='vm-arrived-messages-hook #\\='vm-virtual-filter-new-messages)
+
+The message is written into the folder before any of this happens, so
+`:skip-inbox' removes it again rather than preventing its arrival.
+
+An example, taking two rules from `vm-virtual-folder-alist':
+
+ (setq vm-virtual-folder-alist
+       \\='((\"from-arik\" ((\"inbox\") (author \"arik\")))
+         (\"spam\"      ((\"inbox\") (spam-word)))))
+ (setq vm-virtual-filter-alist
+       \\='((\"from-arik\" :label \"arik\" :attributes \"read\")
+         (\"spam\"      :save \"spam-folder\" :skip-inbox t)))"
+  :group 'vm-avirtual
+  :type '(repeat
+          (cons :tag "Rule"
+                (string :tag "Virtual folder name")
+                (plist :options ((:label string)
+                                 (:attributes string)
+                                 (:save sexp)
+                                 (:skip-inbox boolean))))))
+
+(defun vm-virtual-filter-selector (vfolder)
+  "Return the selector of virtual folder VFOLDER, which must be defined.
+Unlike `vm-virtual-get-selector' this signals rather than returning nil,
+because a rule of `vm-virtual-filter-alist' naming a folder that does
+not exist would otherwise match nothing and say nothing."
+  (or (vm-virtual-get-selector vfolder)
+      (error (concat "No virtual folder %S for a rule of "
+                     "vm-virtual-filter-alist; define it in "
+                     "vm-virtual-folder-alist, which has %s")
+             vfolder
+             (if vm-virtual-folder-alist
+                 (mapconcat (lambda (f) (format "%S" (car f)))
+                            vm-virtual-folder-alist ", ")
+               "no folders in it"))))
+
+(defun vm-virtual-filter-save (m folder)
+  "Save message M in FOLDER, which is a string or an expression giving one."
+  (let ((vm-message-pointer (list m))
+        (vm-arrived-messages-hook nil)
+        (vm-arrived-message-hook nil))
+    (vm-save-message (if (stringp folder) folder (eval folder t)))))
+
+(defun vm-virtual-filter-act (m actions)
+  "Carry out ACTIONS on message M.  Return t if M is to skip the inbox."
+  (when (plist-get actions :label)
+    (vm-add-or-delete-message-labels (plist-get actions :label) (list m) 'all))
+  (when (plist-get actions :attributes)
+    (dolist (name (vm-parse (plist-get actions :attributes)
+                            "[ \t]*\\([^ \t]+\\)"))
+      (vm-set-message-attribute m name)))
+  (when (plist-get actions :save)
+    (vm-virtual-filter-save m (plist-get actions :save)))
+  (when (plist-get actions :skip-inbox)
+    (vm-set-deleted-flag m t)
+    (vm-mark-for-summary-update m t)
+    t))
+
+(defun vm-virtual-filter-message (m)
+  "Apply every rule of `vm-virtual-filter-alist' that matches message M.
+Return nil if no rule matched, `skip' if M is to skip the inbox, and t
+if a rule matched but M stays."
+  (let ((result nil))
+    (dolist (rule vm-virtual-filter-alist result)
+      (when (vm-virtual-check-selector
+             (vm-virtual-filter-selector (car rule)) m)
+        (setq result (if (vm-virtual-filter-act m (cdr rule))
+                         'skip
+                       (or result t)))))))
+
+;;;###autoload
+(defun vm-virtual-filter-messages (&optional count)
+  "Apply `vm-virtual-filter-alist' to the next COUNT messages.
+Messages matched by a rule with `:skip-inbox' are expunged once every
+rule has run.  Returns the number of messages some rule matched."
+  (interactive "p")
+  (when (vm-interactive-p)
+    (vm-follow-summary-cursor))
+  (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+  (vm-error-if-folder-read-only)
+  (let ((mlist (vm-select-operable-messages
+                (or count 1) (vm-interactive-p) "Filter"))
+        (matched 0)
+        (skipped nil))
+    (dolist (m mlist)
+      (let ((result (vm-virtual-filter-message m)))
+        (when result
+          (vm-increment matched))
+        (when (eq result 'skip)
+          (setq skipped (cons m skipped)))))
+    (when skipped
+      ;; back into folder order, and keep the list: its length is reported
+      (setq skipped (nreverse skipped))
+      (vm-expunge-folder :quiet t :just-these-messages skipped))
+    (vm-update-summary-and-mode-line)
+    (when (> matched 0)
+      (vm-inform 5 "%d message%s filtered%s" matched
+                 (if (= matched 1) "" "s")
+                 (if skipped
+                     (format ", %d expunged" (length skipped))
+                   "")))
+    matched))
+
+;;;###autoload
+(defun vm-virtual-filter-new-messages ()
+  "Apply `vm-virtual-filter-alist' to the messages that have just arrived.
+Add this to `vm-arrived-messages-hook':
+
+ (add-hook \\='vm-arrived-messages-hook #\\='vm-virtual-filter-new-messages)
+
+Like `vm-virtual-auto-delete-messages', this runs from the current
+message to the last, which on arrival is exactly the new mail."
+  (interactive)
+  (when (vm-interactive-p)
+    (vm-follow-summary-cursor))
+  (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+  (vm-virtual-filter-messages (length vm-message-pointer)))
+
+;;----------------------------------------------------------------------------
 ;;;###autoload
 (defcustom vm-virtual-auto-folder-alist nil
   "*Non-nil value should be an alist that VM will use to choose a default
