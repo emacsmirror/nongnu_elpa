@@ -1,5 +1,13 @@
 #+TITLE: Changelog
 
+* [0.13.1]
+#+date: 2026-08-07
+
+** Fixes
+- Correct outgoing MUC message-correction target lookup
+- Keep global Jabber menu bindings available during package loading
+- Preserve chat message bodies after live source reloads
+
 * [0.13.0]
 #+date: 2026-08-05
 
