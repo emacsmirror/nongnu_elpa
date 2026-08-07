@@ -1347,17 +1347,17 @@ Must be called from a collection view."
 Must be called from a collection view buffer."
   (interactive)
   (if (not (mastodon-tl--buffer-type-eq 'collection))
-      (user-error "Not in a collection view"))
-  (let* ((data (mastodon-tl--buffer-property 'collection))
-         (id (map-nested-elt data '(collection id)))
-         (name (map-nested-elt data '(collection name))))
-    (when (y-or-n-p (format "Delete collection %s?" name))
-      (let ((resp (mastodon-views-del-collection id)))
-        (mastodon-http--triage
-         resp
-         (lambda (_)
-           (message "Collection %s deleted!" name)
-           (kill-current-buffer)))))))
+      (user-error "Not in a collection view")
+    (let* ((data (mastodon-tl--buffer-property 'collection))
+           (id (map-nested-elt data '(collection id)))
+           (name (map-nested-elt data '(collection name))))
+      (when (y-or-n-p (format "Delete collection %s?" name))
+        (let ((resp (mastodon-views-del-collection id)))
+          (mastodon-http--triage
+           resp
+           (lambda (_)
+             (message "Collection %s deleted!" name)
+             (kill-current-buffer))))))))
 
 ;; TODO: PATCH collection
 
