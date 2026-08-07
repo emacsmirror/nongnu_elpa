@@ -302,21 +302,26 @@ If NOTE is non-nil, include user's profile note. This is also
 
 (defun mastodon-search--propertize-user (acct &optional note)
   "Propertize display string for ACCT, optionally including profile NOTE."
-  (let* ((user (mastodon-search--get-user-info acct))
-         (id (alist-get 'id acct)))
+  (let-alist acct
     (propertize
      (concat
-      (propertize (car user)
+      (propertize (mastodon-tl--display-or-uname acct)
                   'face 'mastodon-display-name-face
                   'byline t
                   'item-type 'user
-                  'item-id id) ; for prev/next nav
+                  'item-id .id) ; for prev/next nav
       " : \n : "
-      (mastodon-search-propertize-user-handle (cadr user))
+      (mastodon-search-propertize-user-handle .acct)
       " : \n"
+      (propertize
+       (concat
+        "Followers: " (number-to-string .followers_count)
+        " | Statuses: " (number-to-string .statuses_count)
+        " | Last active: " .last_status_at
+        "\n")
+       'face 'font-lock-comment-face)
       (when note
-        (mastodon-tl--render-text (cadddr user) acct))
-      "\n")
+        (mastodon-tl--render-text .note acct)))
      'item-json acct))) ; for compat w other processing functions
 
 (defun mastodon-search--print-tags (tags)
