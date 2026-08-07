@@ -55,6 +55,23 @@ inherited bindings from parent mode keymaps."
           (push (format "%s" cmd) missing))))
     (should (null missing))))
 
+(ert-deftest jabber-test-menu-global-bindings ()
+  "Expose every global Jabber command through its prefix map."
+  (dolist (binding '(("C-c" . jabber-connect-all)
+                     ("C-d" . jabber-disconnect)
+                     ("C-r" . jabber-roster-popup)
+                     ("C-j" . jabber-chat-with)
+                     ("C-l" . jabber-activity-switch-to)
+                     ("C-a" . jabber-send-away-presence)
+                     ("C-o" . jabber-send-default-presence)
+                     ("C-x" . jabber-send-xa-presence)
+                     ("C-p" . jabber-send-presence)
+                     ("C-b" . jabber-chat-buffer-switch)
+                     ("C-m" . jabber-muc-join)))
+    (should (eq (keymap-lookup jabber-global-keymap (car binding))
+                (cdr binding))))
+  (should-not (keymap-lookup jabber-global-keymap "C-g")))
+
 (ert-deftest jabber-test-menu-thread-commands ()
   "Expose thread roots in the menu and keep normal thread sending on RET."
   (should

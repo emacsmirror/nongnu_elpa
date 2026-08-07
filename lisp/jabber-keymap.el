@@ -61,9 +61,9 @@
   "C-g" ("Quit" keyboard-quit))
 
 ;; keymap-popup 0.3 cannot add entries before a map has popup metadata.
-(keymap-popup-remove-entry jabber-global-keymap "C-g")
 (jabber-keymap--add-bindings jabber-global-keymap
                             jabber-keymap--global-bindings)
+(keymap-popup-remove-entry jabber-global-keymap "C-g")
 (define-key ctl-x-map "\C-j" jabber-global-keymap)
 
 (provide 'jabber-keymap)
