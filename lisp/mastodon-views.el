@@ -1205,6 +1205,29 @@ If RETURN-ID, return only the collection's ID."
                   (alist-get 'name x)))
        colls))))
 
+(defun mastodon-views-reload-collection ()
+  "Reload current collection view."
+  (interactive)
+  (let* ((coll (mastodon-tl--buffer-property 'collection)))
+    (if (not coll)
+        (user-error "Not in a collection view")
+      (mastodon-views-view-collection (alist-get 'collection coll)))))
+
+(defvar mastodon-views-collection-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map mastodon-views-map)
+    (define-key map (kbd "g") #'mastodon-views-reload-collection)
+    map)
+  "Keymap for viewing collections.")
+
+(defun mastodon-views-view-collection* (buf id)
+  "View collection with ID, set map in BUF."
+  (mastodon-tl--init-sync
+   buf (format "collections/%s" id)
+   'mastodon-views--insert-collection)
+  (with-current-buffer (format "*mastodon-%s*" buf)
+    (use-local-map mastodon-views-collection-map)))
+
 (defun mastodon-views-view-profile-collection ()
   "Prompt for a user profile collection and view it.
 Must be called from a user's profile."
@@ -1212,19 +1235,15 @@ Must be called from a user's profile."
   (if (not mastodon-profile--account)
       (user-error "Not in a profile view")
     (let* ((profile (mastodon-profile--profile-json))
-           (id (mastodon-views-read-account-collection profile :id)))
-      (mastodon-tl--init-sync
-       (format "%s-collection" (alist-get 'username profile))
-       (format "collections/%s" id)
-       'mastodon-views--insert-collection))))
+           (coll (mastodon-views-read-account-collection profile))
+           (buf (format "collection-%s" (alist-get 'name coll))))
+      (mastodon-views-view-collection* buf (alist-get 'id coll)))))
 
 (defun mastodon-views-view-collection (coll)
   "View collection COLL, json data."
   (let-alist coll
-    (mastodon-tl--init-sync
-     (format "collection-%s" .name)
-     (format "collections/%s" .id)
-     'mastodon-views--insert-collection)))
+    (let ((buf (format "collection-%s" .name)))
+      (mastodon-views-view-collection* buf .id))))
 
 (defun mastodon-views-view-own-collection (&optional coll)
   "Prompt for a collection of yours and view it.
@@ -1233,12 +1252,9 @@ Optionally, view COLL, collection JSON data."
   (let* ((colls (unless coll
                   (mastodon-views-get-account-collections
                    (alist-get 'id mastodon-profile-credential-account))))
-         (coll (or coll (mastodon-views-read-collection colls))))
-    (mastodon-tl--init-sync
-     (format "%s-collection"
-             (alist-get 'username mastodon-profile-credential-account))
-     (format "collections/%s" (alist-get 'id coll))
-     'mastodon-views--insert-collection)))
+         (coll (or coll (mastodon-views-read-collection colls)))
+         (buf (format "collection-%s" (alist-get 'name coll))))
+    (mastodon-views-view-collection* buf (alist-get 'id coll))))
 
 (defun mastodon-views-collections-user-in ()
   "Prompt for a collection you are in and view it."
