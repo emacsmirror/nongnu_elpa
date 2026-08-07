@@ -157,6 +157,17 @@ https://gitlab.com/emacs-vm/vm/-/merge_requests/184
 target the terminal does not show — so both leave the reader to go and look the
 number up. Issues take the `work_items` path, merge requests `merge_requests`.
 
+Give the title too, and when several are mentioned at once make them a list of
+URL and title rather than a run of bare numbers:
+
+```
+- https://gitlab.com/emacs-vm/vm/-/work_items/38 — Saving to IMAP folders loses attributes
+- https://gitlab.com/emacs-vm/vm/-/work_items/270 — IMAP server reliability in storing labels (flags)
+```
+
+A bare number says nothing about what the issue is, so a list of them cannot be
+read without opening every one.
+
 ### Issue labels
 
 - `Analyzed` — investigated and commented on, but left open. Use it whenever
