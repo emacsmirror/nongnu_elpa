@@ -1170,7 +1170,7 @@ Must be called from a user's profile."
   (if (not mastodon-profile--account)
       (user-error "Not in a profile view")
     (let* ((profile (mastodon-profile--profile-json))
-           (id (mastodon-views-read-account-collection profile)))
+           (id (mastodon-views-read-account-collection profile :id)))
       (mastodon-tl--init-sync
        (format "%s-collection" (alist-get 'username profile))
        (format "collections/%s" id)
