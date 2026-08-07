@@ -555,6 +555,16 @@ HEADERS-ONLY is non-nil, then only the headers are retrieved."
     (vm-imap-send-command 
      process (format "UID FETCH %s:%s %s" uid uid fetchcmd))))
 
+(defun vm-imap-fetch-uid-messages (process uids use-body-peek)
+  "Fetch the messages with UIDS via PROCESS, all in one command.
+UIDS is a list of UID strings.  The UID is asked for alongside the body
+because a server may answer for them in any order, and the responses have to
+be told apart.  Issue #185."
+  (let ((fetchcmd (if use-body-peek "(UID BODY.PEEK[])" "(UID RFC822.PEEK)")))
+    (vm-imap-send-command
+     process (format "UID FETCH %s %s"
+		     (mapconcat #'identity uids ",") fetchcmd))))
+
 ;; Our goal is to drag the mail from the IMAP maildrop to the crash box.
 ;; just as if we were using movemail on a spool file.
 ;; We remember which messages we have retrieved so that we can
@@ -1893,11 +1903,17 @@ messages.  `vm-imap-get-uid-list' is an older version of this function."
   "Read a mail message from PROCESS and store it in TARGET, which
 is either a file or a buffer.  Report status using STATBLOB.  The
 boolean BODYPEEK indicates whether the bodypeek function is
-available for the IMAP server."
+available for the IMAP server.
+
+TARGET may also be a function, for reading one of several messages asked
+for in a single FETCH: it is called with the UID the response carries, once
+that is known and before anything is inserted, and returns the buffer to
+insert into -- having made room for it, since it alone knows where this
+message goes.  Issue #185."
   (vm-assert (not (null vm-imap-read-point)))
   (vm-imap-log-token 'retrieve)
   (let ((***start vm-imap-read-point)	; avoid dynamic binding of 'start'
-	end fetch-response list p)
+	end fetch-response list p uid)
     (goto-char ***start)
     (vm-set-imap-status-got statblob 0)
     (let* ((func
@@ -1937,6 +1953,8 @@ available for the IMAP server."
 	     (setq p (nth 2 list) 
 		   ***start (nth 1 p)))
 	    ((vm-imap-response-matches list 'UID 'atom 'BODY '(vector) 'string)
+	     (let ((tok (nth 1 list)))
+	       (setq uid (buffer-substring (nth 1 tok) (nth 2 tok))))
 	     (setq p (nth 4 list)
 		   ***start (nth 1 p)))
 	    (t
@@ -1950,6 +1968,8 @@ available for the IMAP server."
 	    ***start (nth 1 p))))
     (goto-char (nth 2 p))
     (setq end (point-marker))
+    (when (functionp target)
+      (setq target (funcall target uid)))
     (vm-set-imap-status-need statblob nil)
     (vm-imap-cleanup-region ***start end)
     (vm-munge-message-separators vm-folder-type ***start end)
@@ -3939,6 +3959,106 @@ otherwise.
       ;;-------------------
       )))
 	 
+
+(defun vm-fetch-imap-messages (mlist)
+  "Fetch the bodies of the messages in MLIST in a single IMAP command.
+They must all be in the same folder.  Each body is put in its own place in
+the folder as its response arrives, so the server may answer for them in any
+order; the UID in each response says which message it is.
+
+The one command is the point: fetching four bodies was four `UID FETCH\='
+commands and four round trips.  Issue #185.
+
+Returns the messages whose bodies arrived.  A message the server does not
+answer for keeps its `body-to-be-retrieved\=' flag, so it is asked for again
+rather than being quietly left empty."
+  (let* ((folder-buffer (vm-buffer-of (vm-real-message-of (car mlist))))
+	 (fetched nil))
+    (with-current-buffer folder-buffer
+      (let* ((imapdrop (vm-folder-imap-maildrop-spec))
+	     (folder (or (vm-imap-folder-for-spec imapdrop)
+			 (vm-safe-imapdrop-string imapdrop)))
+	     (process (and (eq vm-imap-connection-mode 'online)
+			   (vm-re-establish-folder-imap-session
+			    imapdrop "fetch")))
+	     (use-body-peek (vm-folder-imap-body-peek))
+	     (server-uid-validity (vm-folder-imap-uid-validity))
+	     (by-uid (make-hash-table :test 'equal))
+	     (modified (buffer-modified-p))
+	     (statblob nil)
+	     (uids nil))
+	(when (null process)
+	  (if (eq vm-imap-connection-mode 'offline)
+	      (error "Working in offline mode")
+	    (setq vm-imap-connection-mode 'autoconnect)
+	    (error (concat "Could not connect to IMAP server; "
+			   "Type g to reconnect"))))
+	(dolist (m mlist)
+	  (unless (equal (vm-imap-uid-validity-of m) server-uid-validity)
+	    (error "Message has an invalid UID"))
+	  (puthash (vm-imap-uid-of m) m by-uid)
+	  (push (vm-imap-uid-of m) uids))
+	(setq uids (nreverse uids))
+	(unwind-protect
+	    (with-current-buffer (process-buffer process)
+	      ;;----------------------------------
+	      (vm-buffer-type:enter 'process)
+	      (vm-imap-session-type:assert-active)
+	      ;;----------------------------------
+	      (condition-case error-data
+		  (let ((waiting (length uids))
+			(current nil))
+		    (setq statblob (vm-imap-start-status-timer))
+		    (vm-set-imap-status-mailbox statblob folder)
+		    (vm-set-imap-status-maxmsg statblob (length uids))
+		    (vm-imap-fetch-uid-messages process uids use-body-peek)
+		    (while (> waiting 0)
+		      (vm-set-imap-status-currmsg
+		       statblob (1+ (- (length uids) waiting)))
+		      ;; The target is chosen when the response says which
+		      ;; message it is for, and the folder is made ready for
+		      ;; it then -- see `vm-make-room-for-message-body\='.
+		      (vm-imap-retrieve-to-target
+		       process
+		       (lambda (uid)
+			 (setq current (gethash uid by-uid))
+			 (unless current
+			   (vm-imap-protocol-error
+			    "FETCH response for a UID that was not asked for"))
+			 (with-current-buffer folder-buffer
+			   (let ((inhibit-read-only t)
+				 (buffer-undo-list t))
+			     (widen)
+			     (narrow-to-region
+			      (marker-position (vm-headers-of current))
+			      (marker-position (vm-text-end-of current)))
+			     (vm-make-room-for-message-body current)))
+			 folder-buffer)
+		       statblob use-body-peek)
+		      (with-current-buffer folder-buffer
+			(let ((inhibit-read-only t)
+			      (buffer-undo-list t))
+			  (save-restriction
+			    (vm-settle-message-body current modified))
+			  (widen)))
+		      (push current fetched)
+		      (setq waiting (1- waiting)))
+		    (vm-imap-read-ok-response process))
+		(vm-imap-normal-error
+		 (vm-warn 0 2 "IMAP messages unavailable: %s" (cadr error-data)))
+		(vm-imap-protocol-error
+		 (vm-warn 0 2 "IMAP messages unavailable: %s" (cadr error-data)))
+		(quit
+		 (error "Quit received during retrieval from %s" folder))))
+	  ;; unwind-protections
+	  (when statblob
+	    (vm-imap-stop-status-timer statblob))
+	  ;;-----------------------------
+	  (vm-buffer-type:exit)
+	  (vm-imap-dump-uid-seq-num-data)
+	  ;;-----------------------------
+	  )))
+    (nreverse fetched)))
 
 (defun vm-fetch-imap-message-size (m)
   "Given an IMAP message M, return its message size by looking up the

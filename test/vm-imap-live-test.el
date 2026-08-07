@@ -1042,6 +1042,63 @@ again, online, and save: the two deletions should go out."
             (should (= 1 (vm-imap-live-test--exists conn mailbox))))
         (when (file-exists-p cache) (delete-file cache))))))
 
+
+;;; Fetching several bodies in one command (#185)
+
+(defun vm-imap-live-test--numbered-message (n)
+  "A message whose body says which one it is, and is big enough to be external."
+  (format (concat "From: a@example.com\nTo: b@example.com\n"
+                  "Subject: number %d\n\nbody-of-%d %s\n")
+          n n (make-string 400 ?x)))
+
+(ert-deftest vm-imap-live-test-several-bodies-are-fetched-together ()
+  "Loading four message bodies is one IMAP command, not four.
+`vm-load-message\=' asked for each body with its own `UID FETCH\=', so reading a
+folder of external messages cost a round trip apiece.  Issue #185."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((commands nil))
+    (vm-imap-live-with-vm-account ("plain" "bunched")
+      (vm-imap-live-with-mailbox (conn mailbox "plain")
+        (dolist (n '(1 2 3 4))
+          (vm-imap-live-append conn mailbox
+                               (vm-imap-live-test--numbered-message n)))
+        (let ((vm-imap-server-timeout vm-imap-live-timeout)
+              (vm-enable-external-messages '(imap))
+              (vm-imap-max-message-size 100)
+              (account (car (plist-get server :accounts))))
+          (unwind-protect
+              (progn
+                (vm-visit-imap-folder (vm-imap-live-spec server account mailbox))
+                (should (= 4 (length vm-message-list)))
+                ;; the first was fetched to be shown; the rest are pending
+                (should (= 3 (length (seq-filter #'vm-body-to-be-retrieved-of
+                                                 vm-message-list))))
+                (advice-add 'vm-imap-send-command :before
+                            (lambda (&rest args) (push (cadr args) commands)))
+                (unwind-protect
+                    (vm-load-message 4)
+                  (advice-remove 'vm-imap-send-command
+                                 (lambda (&rest _) nil)))
+                ;; one FETCH for the three of them
+                (let ((fetches (seq-filter (lambda (c)
+                                             (string-match-p "FETCH" c))
+                                           commands)))
+                  (should (= 1 (length fetches)))
+                  (should (string-match-p "UID FETCH 2,3,4" (car fetches))))
+                (should (null (seq-filter #'vm-body-to-be-retrieved-of
+                                          vm-message-list)))
+                ;; and each body went to its own message
+                (dolist (m vm-message-list)
+                  (let ((body (buffer-substring (vm-text-of m) (vm-text-end-of m)))
+                        (number (progn (string-match "number \\([0-9]+\\)"
+                                                     (vm-su-subject m))
+                                       (match-string 1 (vm-su-subject m)))))
+                    (should (string-match-p (format "body-of-%s " number) body)))))
+            ;; Leave no folder, summary or presentation buffer behind.
+            (let ((vm-confirm-quit nil))
+              (ignore-errors (vm-quit-no-change)))))))))
+
 (provide 'vm-imap-live-test)
 
 ;;; vm-imap-live-test.el ends here
