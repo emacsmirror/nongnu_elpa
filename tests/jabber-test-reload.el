@@ -103,6 +103,13 @@
                         jabber-omemo--send-chat))
       (should-not (memq function autoloads)))))
 
+(ert-deftest jabber-test-reload-orders-styling-after-chat ()
+  "Load styling only after the chat printer chain is initialized."
+  (let ((files (plist-get (jabber-reload--plan jabber-test-reload--root)
+                          :files)))
+    (should (< (jabber-test-reload--position "jabber-chat.el" files)
+               (jabber-test-reload--position "jabber-styling.el" files)))))
+
 (ert-deftest jabber-test-reload-orders-real-source-graph ()
   "Order the current source tree by its declared dependencies."
   (let* ((source-files

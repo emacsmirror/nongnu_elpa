@@ -39,6 +39,7 @@
 
 ;;; Code:
 
+(require 'jabber-chat)
 (require 'jabber-disco)
 
 (require 'jit-lock)
