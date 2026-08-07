@@ -1274,8 +1274,48 @@ Must be called from a collection view."
                         (alist-get 'acct account-data)
                         (map-nested-elt data '(collection name)))))))))))
 
+(defun mastodon-views-create-collection ()
+  "Create a new collection."
+  (interactive)
+  ;; TODO: check collection_limit, default max is 10
+  (let* ((name (read-string "Collection name: "))
+         (desc (read-string "Description [optional]: "))
+         (tag (read-string "Tag [optional]: "))
+         ;; ensure tag is prefixed #:
+         (tag-sane (if (not (string-prefix-p "#" tag))
+                       (format "#%s" tag)
+                     tag))
+         ;; TODO: user specifies sensitive/discoverable args, but default
+         ;; to "true":
+         (resp (mastodon-views-post-new-collection name desc tag-sane :sensitive :disco)))
+    (mastodon-http--triage
+     resp
+     (lambda (resp)
+       (let ((json (with-current-buffer resp
+                     (mastodon-http--process-json))))
+         (mastodon-views-view-own-collection (alist-get 'collection json)))))))
+
+(defun mastodon-views-post-new-collection (name &optional desc tag sensitive discoverable)
+  ;; TODO: language account_ids
+  "POST a new collection with NAME to the server.
+Optionally specify DESC, a description, and TAG, a hashtag.
+SENSITIVE means mark the collection as sensitive.
+DISCOVERABLE means mark the collection as discoverable.
+If the latter is not given, the collection will not be visible to others
+on the user's profile, or in search results."
+  (let ((url (mastodon-http--api "collections"))
+        (params `(("name" . ,name)
+                  ,@(when desc `(("description" . ,desc)))
+                  ,@(when tag `(("tag_name" . ,tag)))
+                  ("discoverable" . ,(if discoverable "true" "false"))
+                  ("sensitive"    . ,(if sensitive "true" "false")))))
+    (mastodon-http--post url params)))
+
 ;; TODO: add account to coll from coll view
 ;; would need to be a search interface...
+
+;; TODO: revoke inclusion
+;; POST /api/v1/collections/:collection_id/items/:id/revokex
 
 (provide 'mastodon-views)
 ;;; mastodon-views.el ends here
