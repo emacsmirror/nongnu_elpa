@@ -73,6 +73,27 @@ a correct description or commit.
 
 * push and test install once available in nongnu ELPA
 
+* tell the distribution packagers
+
+Most distributions still ship 8.2.0b from 2011, because their automatic
+new-version checks point at Launchpad, which VM left.  See issue #478 for what
+each packager watches and how to correct it; until that is corrected they only
+learn of a release by being told.
+
+- Fedora: @goeran packages it and already builds from git.  Tell him the tag
+  exists.
+- Debian: reply on the open bug https://bugs.debian.org/1134674.  Debian is
+  what Ubuntu, Devuan, Kali, Parrot, PureOS, Raspbian, Trisquel, Pardus and
+  Deepin all rebuild, so it is the only one of these worth a conversation.
+- Gentoo (gnu-emacs@gentoo.org), pkgsrc (pkgsrc-users@NetBSD.org), openSUSE
+  (devel project =editors=, package =emacs-vm=): a version-bump bug each.
+- Nix needs nothing.  It follows NonGNU ELPA.
+
+Then check https://repology.org/project/emacs:vm/versions a couple of weeks
+later.  It shows every distribution's version on one page, so it is both the
+check that the release landed and the check that the watch-file corrections
+took effect.
+
 * update version to a snapshot of the next patch
 e.g. 8.3.0 -> 8.3.1snapshot
 
