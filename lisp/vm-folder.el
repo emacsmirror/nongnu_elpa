@@ -5622,6 +5622,17 @@ thread are loaded."
     (unwind-protect
 	(save-excursion
 	  (vm-inform 8 "Retrieving message body...")
+	  ;; More than one body to fetch from the same IMAP folder is one
+	  ;; command, not one each (issue #185).
+	  (let ((bunch (vm-messages-to-fetch-together mlist)))
+	    (when bunch
+	      (setq n (length bunch))
+	      (vm-inform 8 "Retrieving %s message bodies..." n)
+	      (set-buffer (vm-buffer-of (car bunch)))
+	      (setq count (+ count (length (vm-fetch-imap-messages bunch))))
+	      (setq mlist (seq-remove
+			   (lambda (m) (memq (vm-real-message-of m) bunch))
+			   mlist))))
 	  (while mlist
 	    (setq m (car mlist))
 	    (setq mm (vm-real-message-of m))
@@ -5692,6 +5703,18 @@ thread are retrieved."
 	(setq mlist (vm-select-operable-messages
 		     count (vm-interactive-p) "Retrieve")))
       (save-excursion
+	;; More than one to fetch from the same IMAP folder is one command,
+	;; not one each (issue #185).
+	(let ((bunch (vm-messages-to-fetch-together mlist)))
+	  (when bunch
+	    (setq n (length bunch))
+	    (vm-inform 8 "Retrieving %s message bodies..." n)
+	    (set-buffer (vm-buffer-of (vm-real-message-of (car bunch))))
+	    (dolist (mm (vm-fetch-imap-messages bunch))
+	      (vm-register-fetched-message mm))
+	    (setq mlist (seq-remove
+			 (lambda (m) (memq (vm-real-message-of m) bunch))
+			 mlist))))
 	(while mlist
 	  (setq m (car mlist))
 	  (setq mm (vm-real-message-of m))
@@ -5733,14 +5756,8 @@ Gives an error if unable to retrieve message."
 	     ;; (buffer-read-only nil)    ; seems redundant
 	     (buffer-undo-list t)	; why this?  USR, 2010-06-11
 	     (modified (buffer-modified-p))
-	     (fetch-result nil)
-	     (testing 0))
-	 (goto-char (vm-text-of mm))
-	 ;; Check to see that we are at the right place
-	 (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
-	 (vm-increment testing)
-
-	 (delete-region (point) (point-max))
+	     (fetch-result nil))
+	 (vm-make-room-for-message-body mm)
 	 ;; Remember that this does I/O and accept-process-output,
 	 ;; allowing concurrent threads to run!!!  USR, 2010-07-11
 	 (condition-case err
@@ -5754,35 +5771,73 @@ Gives an error if unable to retrieve message."
 	      (vm-warn 0 0 "Unable to load message; %s" 
 		       (error-message-string err)))))
 	 (when fetch-result
-	   (vm-assert (eq (point) (marker-position (vm-text-of mm))))
-	   (vm-increment testing)
-	   ;; delete the new headers
-	   (delete-region 
-	    (vm-text-of mm)
-	    (or (re-search-forward "\n\n" (point-max) t) (point-max)))
-	   (vm-assert (eq (point) (marker-position (vm-text-of mm))))
-	   (vm-increment testing)
-	   ;; fix markers now
-	   (set-marker (vm-text-end-of mm) (point-max))
-	   (vm-assert (eq (point) (marker-position (vm-text-of mm))))
-	   (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
-	   (vm-increment testing)
-	   ;; now care for the layout of the message
-	   (vm-set-mime-layout-of mm (vm-mime-parse-entity-safe mm))
-	   ;; update the message data
-	   (vm-set-body-to-be-retrieved-flag mm nil)
-	   (vm-set-body-to-be-discarded-flag mm nil)
-	   (vm-set-line-count-of mm nil)
-	   (vm-set-byte-count-of mm nil)
-	   ;; update the virtual messages
-	   (vm-update-virtual-messages mm :message-changing nil)
-	   (vm-restore-buffer-modified-p modified (vm-buffer-of mm))
-
-	   (vm-assert (eq (point) (marker-position (vm-text-of mm))))
-	   (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
-	   (vm-increment testing)
+	   (vm-settle-message-body mm modified)
 	   (when register
 	     (vm-register-fetched-message mm))))))))
+
+(declare-function vm-fetch-imap-messages "vm-imap" (mlist))
+
+(defun vm-messages-to-fetch-together (mlist)
+  "The messages of MLIST whose bodies can be fetched in one IMAP command.
+That is: those still to be retrieved, from the same IMAP folder, when there
+is more than one of them.  Anything else is nil, and the caller falls back
+to fetching one at a time -- which is what a single message, a POP folder or
+a mixed list gets.  Issue #185."
+  (let* ((wanted (seq-filter
+		  (lambda (m)
+		    (let ((mm (vm-real-message-of m)))
+		      (and (vm-body-to-be-retrieved-of mm)
+			   (eq (vm-message-access-method-of mm) 'imap))))
+		  mlist))
+	 (reals (delete-dups (mapcar #'vm-real-message-of wanted)))
+	 (buffers (delete-dups (mapcar #'vm-buffer-of reals))))
+    (and (cdr reals)			; more than one
+	 (null (cdr buffers))		; all in the same folder
+	 reals)))
+
+(defun vm-make-room-for-message-body (mm)
+  "Make room in the folder for the body of MM, about to be retrieved.
+The folder buffer must already be narrowed to MM.  Point is left where the
+body goes, which is where the retrieval inserts it.
+
+Split out of `vm-retrieve-real-message-body' so that a retrieval of several
+bodies in one command can do this for each of them as its response arrives
+-- only it knows where each message goes.  Issue #185."
+  (goto-char (vm-text-of mm))
+  ;; Check to see that we are at the right place
+  (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
+  (delete-region (point) (point-max)))
+
+(defun vm-settle-message-body (mm modified)
+  "Put the folder and MM in order after its body has been inserted.
+MODIFIED is what `buffer-modified-p' said before the retrieval.  The other
+half of `vm-make-room-for-message-body'.
+
+Point is put back at the start of the body first.  The one-message path got
+that for nothing -- `vm-fetch-imap-message' works inside a `save-excursion'
+-- but a fetch of several bodies inserts into the folder from the process
+buffer, and leaves point after the text it inserted.  The `\n\n' search
+below starts from point, so without this it found nothing and the delete
+took the whole message out again."
+  (goto-char (vm-text-of mm))
+  ;; delete the new headers
+  (delete-region
+   (vm-text-of mm)
+   (or (re-search-forward "\n\n" (point-max) t) (point-max)))
+  (vm-assert (eq (point) (marker-position (vm-text-of mm))))
+  ;; fix markers now
+  (set-marker (vm-text-end-of mm) (point-max))
+  (vm-assert (save-excursion (forward-line -1) (looking-at "\n")))
+  ;; now care for the layout of the message
+  (vm-set-mime-layout-of mm (vm-mime-parse-entity-safe mm))
+  ;; update the message data
+  (vm-set-body-to-be-retrieved-flag mm nil)
+  (vm-set-body-to-be-discarded-flag mm nil)
+  (vm-set-line-count-of mm nil)
+  (vm-set-byte-count-of mm nil)
+  ;; update the virtual messages
+  (vm-update-virtual-messages mm :message-changing nil)
+  (vm-restore-buffer-modified-p modified (vm-buffer-of mm)))
 
 ;;;###autoload
 (defun vm-refresh-message ()

@@ -205,6 +205,31 @@ VM 8.?.?
     zero bytes and reported nothing.  The folder buffer refused already; the
     presentation buffer, where the buttons are, did not.  Type `o'
     (`vm-load-message') on the message and the attachment comes out whole.
+  * Loading several message bodies from an IMAP folder is one command.  Each
+    body was asked for with its own `UID FETCH', so reading a folder of
+    external messages -- one where `vm-enable-external-messages' and
+    `vm-imap-max-message-size' leave the bodies on the server -- cost a round
+    trip apiece.  `vm-load-message' over four messages now sends
+    `UID FETCH 2,3,4 (UID BODY.PEEK[])' and sorts the answers out by UID, so
+    the server may reply in any order.  One message still goes the simple
+    way.
+  * A folder whose file has another name says so when it is visited:
+
+        folder has 2 names; saving will leave the other with the mail as it
+        is now.  Set vm-folder-file-precious-flag to nil for this folder to
+        keep them together
+
+    VM saves a folder by writing a temporary file and renaming it into place,
+    which is what makes the save atomic -- and what gives the folder's name a
+    new inode, leaving every other name on the old one.  Symbolic links are
+    followed instead (see the entry above about them); a hard link cannot be,
+    so this says so rather than letting the other name quietly stop following
+    the folder.
+  * `t' (`vm-expose-hidden-headers') keeps your place in a message that has
+    page delimiters.  It exposed the headers and then threw you back to the
+    first page, since it moved point to the top of the message before
+    narrowing to "the page point is in".  The headers may now be off the top
+    of the window, which is the price of not being moved.
   * Leaving Emacs with a composition unfinished now offers to keep it as a
     draft, the same offer VM makes when you kill one.  Killing a composition
     has always asked, through `vm-save-killed-message', but Emacs does not

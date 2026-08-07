@@ -1800,6 +1800,58 @@ nothing is said."
             (kill-buffer buffer))))
       (delete-directory dir t))))
 
+
+;;; Which bodies can be fetched in one command (#185)
+
+(defun vm-folder-test--message (subject)
+  "One message for a folder, with SUBJECT."
+  ;; The blank line at the end matters: an mbox message ends with one, and
+  ;; without it the next `From ' line is read as body text (issue #538).
+  (format (concat "From a@example.com  Thu Jan  1 00:00:00 2026\n"
+                  "From: a@example.com\nSubject: %s\n\nbody\n\n")
+          subject))
+
+(defun vm-folder-test--make-external (m)
+  "Make M look like an IMAP message whose body is still on the server."
+  (vm-set-message-access-method-of m 'imap)
+  (vm-set-body-to-be-retrieved-flag m t)
+  m)
+
+(ert-deftest vm-folder-test-two-messages-are-fetched-together ()
+  "Several bodies from one IMAP folder go in one command."
+  (vm-test-with-folder (concat (vm-folder-test--message "one")
+                               (vm-folder-test--message "two")
+                               (vm-folder-test--message "three"))
+    (let* ((messages (mapcar #'vm-folder-test--make-external vm-message-list))
+           (bunch (vm-messages-to-fetch-together messages)))
+      (should (= (length messages) (length bunch)))
+      (dolist (m messages)
+        (should (memq m bunch))))))
+
+(ert-deftest vm-folder-test-one-message-is-not-a-bunch ()
+  "One message is left to the simple path, which is the common case."
+  (vm-test-with-folder (vm-folder-test--message "only")
+    (let ((messages (mapcar #'vm-folder-test--make-external vm-message-list)))
+      (should-not (vm-messages-to-fetch-together messages)))))
+
+(ert-deftest vm-folder-test-bodies-already-here-are-not-fetched ()
+  "A message whose body is already loaded is not asked for again."
+  (vm-test-with-folder (concat (vm-folder-test--message "one")
+                               (vm-folder-test--message "two"))
+    (let ((messages (mapcar #'vm-folder-test--make-external vm-message-list)))
+      (vm-set-body-to-be-retrieved-flag (car messages) nil)
+      ;; one left, and one is not a bunch
+      (should-not (vm-messages-to-fetch-together messages)))))
+
+(ert-deftest vm-folder-test-only-imap-messages-are-bunched ()
+  "POP and local messages keep the one-at-a-time path.
+The command is an IMAP one; nothing else has a UID to put in it."
+  (vm-test-with-folder (concat (vm-folder-test--message "one")
+                               (vm-folder-test--message "two"))
+    (let ((messages (mapcar #'vm-folder-test--make-external vm-message-list)))
+      (vm-set-message-access-method-of (car messages) 'pop)
+      (should-not (vm-messages-to-fetch-together messages)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
