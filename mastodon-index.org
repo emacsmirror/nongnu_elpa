@@ -121,8 +121,8 @@
 |            | mastodon-profile-open-statuses-no-reblogs        | Open a profile buffer showing statuses without reblogs.                        |
 |            | mastodon-profile-open-statuses-no-replies        | Open a profile buffer showing statuses without replies.                        |
 |            | mastodon-profile-open-statuses-only-media        | Open a profile buffer showing only statuses with media.                        |
-| C-c #      | mastodon-profile-open-statuses-tagged            | Prompt for a hashtag and display a profile with only statuses containing it.   |
-|            | mastodon-profile-own-featured-tags               |                                                                                |
+| C-c #      | mastodon-profile-open-statuses-tagged            | Prompt for a TAG and display a profile with statuses containing it.            |
+|            | mastodon-profile-own-featured-tags               | Display your own featured tags.                                                |
 |            | mastodon-profile-remove-from-followers-at-point  | Prompt for a user in the item at point and remove from followers.              |
 |            | mastodon-profile-remove-from-followers-list      | Select a user from your followers and remove from followers.                   |
 |            | mastodon-profile-remove-user-from-followers      | Remove a user from your followers.                                             |
@@ -264,11 +264,15 @@
 | A          | mastodon-views-add-account-to-list               | Prompt for a list and for an account, add account to list.                     |
 |            | mastodon-views-add-account-to-list-at-point      | Prompt for account and add to list at point.                                   |
 | a          | mastodon-views-add-filter-kw                     | Add a keyword to filter at point.                                              |
+|            | mastodon-views-add-to-collection                 | Add account being viewed to a collection.                                      |
 |            | mastodon-views-add-toot-account-at-point-to-list | Prompt for a list, and add the account of the toot at point to it.             |
 | c          | mastodon-views-cancel-scheduled-toot             | Cancel the scheduled toot at point.                                            |
+|            | mastodon-views-collections-user-in               | Prompt for a collection you are in and view it.                                |
 |            | mastodon-views-copy-scheduled-toot-text          | Copy the text of the scheduled toot at point.                                  |
+|            | mastodon-views-create-collection                 | Create a new collection.                                                       |
 | c          | mastodon-views-create-filter                     | Create a filter for a word.                                                    |
 | C          | mastodon-views-create-list                       | Create a new list.                                                             |
+|            | mastodon-views-delete-collection                 | Delete the collection currently being viewed.                                  |
 | k          | mastodon-views-delete-filter                     | Delete filter at point.                                                        |
 | D          | mastodon-views-delete-list                       | Prompt for a list and delete it.                                               |
 |            | mastodon-views-delete-list-at-point              | Delete list at point.                                                          |
@@ -276,10 +280,15 @@
 |            | mastodon-views-edit-list-at-point                | Edit list at point.                                                            |
 | RET        | mastodon-views-edit-scheduled-as-new             | Edit scheduled status as new toot.                                             |
 |            | mastodon-views-instance-desc-misskey             | Show instance description for a misskey/firefish server.                       |
+|            | mastodon-views-reload-collection                 | Reload current collection view.                                                |
 | R          | mastodon-views-remove-account-from-list          | Prompt for a list, select an account and remove from list.                     |
 |            | mastodon-views-remove-account-from-list-at-point | Prompt for account and remove from list at point.                              |
 | r          | mastodon-views-remove-filter-kw                  | Remove keyword from filter at point.                                           |
+|            | mastodon-views-remove-from-collection            | Remove item at point from collection.                                          |
 | r          | mastodon-views-reschedule-toot                   | Reschedule the scheduled toot at point.                                        |
+|            | mastodon-views-revoke-collection-inclusion       | Revoke your inclusion in a collection.                                         |
+|            | mastodon-views-update-collection                 | Prompt for a collection and edit it.                                           |
+|            | mastodon-views-update-current-collection         | Edit the collection being viewed if permitted.                                 |
 | u          | mastodon-views-update-filter                     | Update filter at point.                                                        |
 | U          | mastodon-views-update-filter-kw                  | Update filter keyword.                                                         |
 | I, g       | mastodon-views-view-filters                      | View the user's filters in a new buffer.                                       |
@@ -289,8 +298,10 @@
 |            | mastodon-views-view-instance-description-brief   | View brief details of the instance the current post's author is on.            |
 |            | mastodon-views-view-list-timeline                | Prompt for a list and view its timeline.                                       |
 | g, X       | mastodon-views-view-lists                        | Show the user's lists in a new buffer.                                         |
+|            | mastodon-views-view-own-collection               | Prompt for a collection of yours and view it.                                  |
 |            | mastodon-views-view-own-instance                 | View details of your own instance.                                             |
 |            | mastodon-views-view-own-instance-brief           | View brief details of your own instance.                                       |
+|            | mastodon-views-view-profile-collection           | Prompt for a user profile collection and view it.                              |
 | g, S       | mastodon-views-view-scheduled-toots              | Show the user's scheduled toots in a new buffer.                               |
 |            | mastodon-views-view-timeline-list-at-point       | View timeline of list at point.                                                |
 
