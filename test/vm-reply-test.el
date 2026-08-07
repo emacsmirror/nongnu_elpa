@@ -553,6 +553,32 @@ number, a platform and a date, none of which belongs in a header."
       (should-not (string-match-p "build\\|of [0-9][0-9][0-9][0-9]\\|appkit\\|GTK"
                                   header)))))
 
+
+;;; Drag and drop into a composition (#531)
+
+(ert-deftest vm-reply-test-composition-takes-drops-the-portable-way ()
+  "A composition installs VM\='s handlers in `dnd-protocol-alist\='.
+This is how a dropped file becomes an attachment, and it is what replaced
+the `[ns-drag-file]\=' binding VM carried for Mac and NextStep -- whose own
+comment said to remove it once this existed.  Removed in #531, after the
+maintainer confirmed on a Mac that dropping a file on a composition attaches
+it."
+  (vm-reply-test--in-folder (vm-reply-test--one-message)
+    (vm-mail-from-folder)
+    (should (local-variable-p 'dnd-protocol-alist))
+    (dolist (entry vm-dnd-protocol-alist)
+      (should (member entry dnd-protocol-alist)))
+    (should (assoc "^file:" vm-dnd-protocol-alist))))
+
+(ert-deftest vm-reply-test-no-nextstep-drag-binding ()
+  "REGRESSION: the Mac/NextStep drag binding is gone, and so is its command.
+Modern Emacs dispatches a drop through `dnd-protocol-alist\=' on every window
+system, NS included, so `[ns-drag-file]\=' was a second path that no longer
+ran -- and `vm-ns-attach-file\=' read `ns-input-file\=', which nothing sets any
+more."
+  (should-not (lookup-key vm-mail-mode-map [ns-drag-file]))
+  (should-not (fboundp 'vm-ns-attach-file)))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
