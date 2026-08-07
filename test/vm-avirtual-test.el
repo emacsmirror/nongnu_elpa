@@ -504,6 +504,152 @@ folder is not flagged."
     (vm-virtual-auto-delete-messages)
     (should (equal '(nil t nil nil nil) (vm-avirtual-test--deleted-flags)))))
 
+;;; Filtering by a table of selectors: vm-virtual-filter-alist
+
+;; `vm-virtual-auto-delete-message' drives one hard-wired selector through one
+;; hard-wired action list.  `vm-virtual-filter-alist' is the table of them
+;; asked for in issue #542.
+
+(defmacro vm-avirtual-test--with-filter-folder (&rest body)
+  "Run BODY in a visited folder of five messages with two selectors defined.
+\"one\" matches \"subject 1\" and \"three\" matches \"subject 3\", so each
+picks out exactly one message of the five."
+  (declare (indent 0) (debug t))
+  `(vm-test-with-real-folder (5)
+     (let ((vm-virtual-folder-alist
+            '(("one"   (("does-not-matter") (subject "subject 1")))
+              ("three" (("does-not-matter") (subject "subject 3")))))
+           (vm-virtual-filter-alist nil))
+       (setq vm-message-pointer vm-message-list)
+       ,@body)))
+
+(ert-deftest vm-avirtual-test-filter-labels-and-attributes ()
+  "A rule labels and sets attributes on what its selector matches, only.
+The names are the same ones `vm-add-message-labels' and
+`vm-set-message-attributes' take, space separated."
+  (vm-avirtual-test--with-filter-folder
+    (let ((vm-virtual-filter-alist
+           '(("one" :label "mine urgent" :attributes "read flagged"))))
+      (should (= 1 (vm-virtual-filter-messages 5)))
+      (let ((m (nth 1 vm-message-list)))
+        (should (equal '("mine" "urgent") (sort (vm-labels-of m) #'string<)))
+        (should (null (vm-new-flag m)))
+        (should (null (vm-unread-flag m)))
+        (should (vm-flagged-flag m)))
+      ;; the other four are untouched
+      (should (null (vm-labels-of (car vm-message-list))))
+      (should (vm-new-flag (car vm-message-list))))))
+
+(ert-deftest vm-avirtual-test-filter-every-matching-rule-runs ()
+  "Two rules matching the same message both apply, in the order listed."
+  (vm-avirtual-test--with-filter-folder
+    (let ((vm-virtual-filter-alist
+           '(("one" :label "first")
+             ("one" :label "second" :attributes "read"))))
+      (should (= 1 (vm-virtual-filter-messages 5)))
+      (let ((m (nth 1 vm-message-list)))
+        (should (equal '("first" "second") (sort (vm-labels-of m) #'string<)))
+        (should (null (vm-new-flag m)))))))
+
+(ert-deftest vm-avirtual-test-filter-skip-inbox-expunges ()
+  "`:skip-inbox' takes the message back out of the folder.
+The message is assimilated before any of this runs, so skipping the inbox is
+a delete and an expunge after the fact, and the folder must be left
+consistent by it."
+  (vm-avirtual-test--with-filter-folder
+    (let ((vm-virtual-filter-alist '(("three" :skip-inbox t))))
+      (should (= 1 (vm-virtual-filter-messages 5)))
+      (should (equal '("subject 0" "subject 1" "subject 2" "subject 4")
+                     (mapcar #'vm-su-subject vm-message-list)))
+      (should (vm-test-reverse-links-consistent-p)))))
+
+(ert-deftest vm-avirtual-test-filter-expunges-once-for-all-rules ()
+  "Two rules skipping two different messages remove both, and only those."
+  (vm-avirtual-test--with-filter-folder
+    (let ((vm-virtual-filter-alist '(("one"   :skip-inbox t)
+                                     ("three" :skip-inbox t))))
+      (should (= 2 (vm-virtual-filter-messages 5)))
+      (should (equal '("subject 0" "subject 2" "subject 4")
+                     (mapcar #'vm-su-subject vm-message-list)))
+      (should (vm-test-reverse-links-consistent-p)))))
+
+(ert-deftest vm-avirtual-test-filter-reports-what-it-did ()
+  "The report counts every skipped message, not just the last one.
+`vm-expunge-folder' is handed the list with `nreverse', which leaves the
+variable pointing at its last cell, so the count has to be taken from the
+reversed list."
+  (vm-avirtual-test--with-filter-folder
+    (let ((vm-virtual-filter-alist '(("one"   :skip-inbox t)
+                                     ("three" :skip-inbox t)))
+          (said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level &rest args) (setq said (apply #'format args)))))
+        (vm-virtual-filter-messages 5))
+      (should (equal "2 messages filtered, 2 expunged" said)))))
+
+(ert-deftest vm-avirtual-test-filter-saves-to-a-folder ()
+  "`:save' writes a copy of the message into the named folder."
+  (vm-avirtual-test--with-filter-folder
+    (let* ((saved (expand-file-name "saved" dir))
+           (vm-virtual-filter-alist (list (list "one" :save saved)))
+           (vm-confirm-new-folders nil))
+      (should (= 1 (vm-virtual-filter-messages 5)))
+      (should (file-exists-p saved))
+      (with-temp-buffer
+        (insert-file-contents saved)
+        (should (string-match-p "subject 1" (buffer-string)))
+        (should-not (string-match-p "subject 0" (buffer-string)))))))
+
+(ert-deftest vm-avirtual-test-filter-save-takes-an-expression ()
+  "`:save' evaluates a non-string, so the folder can be computed."
+  (vm-avirtual-test--with-filter-folder
+    (let* ((saved (expand-file-name "computed" dir))
+           (vm-virtual-filter-alist
+            (list (list "one" :save (list 'expand-file-name "computed" dir))))
+           (vm-confirm-new-folders nil))
+      (vm-virtual-filter-messages 5)
+      (should (file-exists-p saved)))))
+
+(ert-deftest vm-avirtual-test-filter-unmatched-message-is-untouched ()
+  "A table whose selectors match nothing changes nothing and reports none."
+  (vm-avirtual-test--with-filter-folder
+    (let ((vm-virtual-folder-alist
+           '(("nobody" (("does-not-matter") (subject "no such subject")))))
+          (vm-virtual-filter-alist '(("nobody" :label "x" :skip-inbox t))))
+      (should (= 0 (vm-virtual-filter-messages 5)))
+      (should (= 5 (length vm-message-list)))
+      (should (equal '(nil nil nil nil nil) (vm-avirtual-test--deleted-flags))))))
+
+(ert-deftest vm-avirtual-test-filter-unknown-folder-errors ()
+  "A rule naming a virtual folder that does not exist is an error.
+`vm-virtual-get-selector' returns nil for an unknown name, so without this
+the rule would quietly match nothing and the user would be left looking for
+the typo."
+  (vm-avirtual-test--with-filter-folder
+    (let ((vm-virtual-filter-alist '(("noe" :label "x")))
+          (text-quoting-style 'grave))
+      (let ((err (should-error (vm-virtual-filter-messages 5) :type 'error)))
+        (should (string-match-p "No virtual folder \"noe\"" (cadr err)))
+        ;; solution-directed: says where to define it and what is defined
+        (should (string-match-p "vm-virtual-folder-alist" (cadr err)))
+        (should (string-match-p "\"one\", \"three\"" (cadr err)))))))
+
+(ert-deftest vm-avirtual-test-filter-new-messages-starts-at-the-current-one ()
+  "`vm-virtual-filter-new-messages' covers the current message to the last.
+That is what makes it right for `vm-arrived-messages-hook', where the pointer
+sits at the first of the messages that just arrived: a match before it is left
+alone."
+  (vm-avirtual-test--with-filter-folder
+    (let ((vm-virtual-filter-alist '(("one" :label "x"))))
+      ;; Point past the matching message.
+      (setq vm-message-pointer (nthcdr 2 vm-message-list))
+      (vm-virtual-filter-new-messages)
+      (should (null (vm-labels-of (nth 1 vm-message-list))))
+      ;; From before it, the same command does label it.
+      (setq vm-message-pointer vm-message-list)
+      (vm-virtual-filter-new-messages)
+      (should (equal '("x") (vm-labels-of (nth 1 vm-message-list)))))))
+
 (provide 'vm-avirtual-test)
 
 ;;; vm-avirtual-test.el ends here

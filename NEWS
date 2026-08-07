@@ -319,6 +319,16 @@ VM 8.?.?
     text stayed in a file nobody had open.  `vm-quit' is unchanged and remains
     the orderly way to leave a folder: it keeps the virtual folders and takes
     this folder's messages out of them.
+  * Incoming mail can be filtered by a table of rules, `vm-virtual-filter-alist'.
+    Each rule names a virtual folder, whose selector says which messages it
+    applies to, and lists what to do with them: `:label', `:attributes',
+    `:save' to another folder, and `:skip-inbox' to keep them out of this one.
+    Every matching rule runs, so a message can be labelled by one and saved by
+    another.  Add `vm-virtual-filter-new-messages' to `vm-arrived-messages-hook'
+    to have the table applied as mail arrives, or run `vm-virtual-filter-messages'
+    by hand to try a table out.  This generalises
+    `vm-virtual-auto-delete-message-selector', which is one selector and one
+    fixed action list, and which is unchanged.
 
 
 VM 8.3.2 released 2025-12-29
