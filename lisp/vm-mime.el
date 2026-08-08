@@ -5087,7 +5087,7 @@ ACTION will get called with four arguments: MSG LAYOUT TYPE FILENAME."
 messages.  For the purpose of this function, an \"attachment\" is
 a mime part part which has \"attachment\" as its disposition or
 simply has an associated filename.  Any mime types that match
-`vm-mime-deleteable-types' but not `vm-mime-deleteable-type-exceptions'
+`vm-mime-deletable-types' but not `vm-mime-deletable-type-exceptions'
 are also included."
   (interactive "p")
   (vm-check-for-killed-summary)
@@ -5102,8 +5102,8 @@ are also included."
        (vm-inform 7 "Deleting `%s%s" type (if file (format " (%s)" file) ""))
        (vm-mime-discard-layout-contents layout)
        (setq successes (+ 1 successes)))
-     :included vm-mime-deleteable-types
-     :excluded vm-mime-deleteable-type-exceptions)
+     :included vm-mime-deletable-types
+     :excluded vm-mime-deletable-type-exceptions)
     (when (vm-interactive-p)
       (vm-discard-cached-data count)
       (let ((vm-preview-lines nil))

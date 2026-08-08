@@ -4102,7 +4102,7 @@ Delete all attachments from the next COUNT messages or marked
 messages.  For the purpose of this function, an "attachment" is
 a mime part part which has "attachment" as its disposition or
 simply has an associated filename.  Any mime types that match
-@code{vm-mime-deleteable-types} but not @code{vm-mime-deleteable-type-exceptions}
+@code{vm-mime-deletable-types} but not @code{vm-mime-deletable-type-exceptions}
 are also included.
 @end deffn
 
@@ -5128,6 +5128,20 @@ Content-Type header.
 Default value: @code{("us-ascii" "ansi_x3.4-1968" "iso-8859-1")}
 @end defopt
 
+@defopt vm-mime-deletable-type-exceptions
+@vindex vm-mime-deletable-type-exceptions
+List of MIME types which should not be deleted.
+
+Default value: @code{("text")}
+@end defopt
+
+@defopt vm-mime-deletable-types
+@vindex vm-mime-deletable-types
+List of MIME types which should be deleted.
+
+Default value: @code{("application" "x-unknown" "application/x-gzip")}
+@end defopt
+
 @defopt vm-mime-delete-after-saving
 @vindex vm-mime-delete-after-saving
 Non-nil value causes VM to delete MIME body contents from a folder
@@ -5143,20 +5157,6 @@ when you switch to a different message or quit the current message’s
 folder.
 
 Default value: @code{t}
-@end defopt
-
-@defopt vm-mime-deleteable-type-exceptions
-@vindex vm-mime-deleteable-type-exceptions
-List of MIME types which should not be deleted.
-
-Default value: @code{("text")}
-@end defopt
-
-@defopt vm-mime-deleteable-types
-@vindex vm-mime-deleteable-types
-List of MIME types which should be deleted.
-
-Default value: @code{("application" "x-unknown" "application/x-gzip")}
 @end defopt
 
 @defopt vm-mime-deleted-object-label
@@ -6513,16 +6513,6 @@ in an Emacs session.
 Default value: @code{"~/.vm"}
 @end defopt
 
-@defopt vm-mime-deletable-type-exceptions
-@vindex vm-mime-deletable-type-exceptions
-List of MIME types which should not be deleted.
-@end defopt
-
-@defopt vm-mime-deletable-types
-@vindex vm-mime-deletable-types
-List of MIME types which should be deleted.
-@end defopt
-
 @defopt vm-mime-savable-type-exceptions
 @vindex vm-mime-savable-type-exceptions
 List of MIME types which should not be saved.
@@ -7422,8 +7412,8 @@ See @code{vm-ps-print-message-left-header} for a list of variables it can use.
 Default value: @code{(list "/pagenumberstring load" 'dd-mon-yyyy)}
 @end defopt
 
-@defopt vm-ps-print-message-separater
-@vindex vm-ps-print-message-separater
+@defopt vm-ps-print-message-separator
+@vindex vm-ps-print-message-separator
 The separator between messages when printing multiple messages.
 
 Default value: @code{"\n"}
@@ -7472,13 +7462,13 @@ See: @code{vm-ps-print-message-function}
 for customization of the output.
 @end deffn
 
-@deffn Command vm-ps-print-marked &optional filename seperate nup color
+@deffn Command vm-ps-print-marked &optional filename separate nup color
 @findex vm-ps-print-marked
 Postscript print all marked emails in mail Summary. If no messages marked,
 print just the current message.
 Optionally write postscript output to FILENAME (default is to spool
 to printer). 
-Optionally force SEPERATE printing of each message by setting to @code{t}. 
+Optionally force SEPARATE printing of each message by setting to @code{t}. 
 Optionally also print NUP pages per sheet.
 Optionally also print in COLOR by setting to non-nil.
 
@@ -7502,7 +7492,7 @@ If FILENAME is specified then write PS into that file.
 When printing a single message it acts like @code{vm-ps-print-each-message}.
 When printing multiple messages it will insert a summary line according
 to the variable @code{vm-ps-print-message-summary-format} and a separator
-according to the variable @code{vm-ps-print-message-separater} between
+according to the variable @code{vm-ps-print-message-separator} between
 messages.  You might force the printing of one job per message, by
 giving a t EACH argument.
 
@@ -7510,7 +7500,7 @@ See: @code{vm-ps-print-message-function}
 @example
      ‘vm-ps-print-message-font-size’
      ‘vm-ps-print-message-summary-format’
-     ‘vm-ps-print-message-separater’
+     ‘vm-ps-print-message-separator’
      ‘vm-ps-print-message-left-header’
      ‘vm-ps-print-message-right-header’
 @end example

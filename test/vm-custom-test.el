@@ -53,6 +53,49 @@ type says something false about what the code accepts."
     (should (equal nil (nreverse mismatches)))
     (should (= 0 (car result)))))
 
+;;; Options renamed out of a misspelling keep their old name working
+
+;; Three user options were spelled wrong in their own names.  Renaming one
+;; silently would break every configuration that sets it, so each old name is
+;; an obsolete alias -- setting it still sets the option, and the byte
+;; compiler says which name to use instead.  Issue #589.
+
+(defconst vm-custom-test--renamed-options
+  '((vm-mime-deleteable-types           . vm-mime-deletable-types)
+    (vm-mime-deleteable-type-exceptions . vm-mime-deletable-type-exceptions)
+    (vm-ps-print-message-separater      . vm-ps-print-message-separator)
+    ;; Older still: this one was aliased to the misspelling, and has to
+    ;; follow the rename rather than being left pointing at nothing.
+    (vm-mime-delete-all-attachments-types . vm-mime-deletable-types))
+  "Old option name to the name it now stands for.")
+
+(ert-deftest vm-custom-test-renamed-options-are-aliases ()
+  "Each old name resolves to the option it was renamed to."
+  (require 'vm-vars)
+  (require 'vm-ps-print)
+  (require 'vm-rfaddons)
+  (dolist (pair vm-custom-test--renamed-options)
+    (should (boundp (car pair)))
+    (should (eq (cdr pair) (indirect-variable (car pair))))))
+
+(ert-deftest vm-custom-test-renamed-options-are-marked-obsolete ()
+  "Setting an old name warns, so a configuration using one is told to change.
+An alias that is not marked obsolete keeps working and says nothing, which
+leaves the misspelling in people's init files for good."
+  (require 'vm-vars)
+  (require 'vm-ps-print)
+  (require 'vm-rfaddons)
+  (dolist (pair vm-custom-test--renamed-options)
+    (should (get (car pair) 'byte-obsolete-variable))))
+
+(ert-deftest vm-custom-test-setting-an-old-name-sets-the-option ()
+  "The point of the alias: an init file setting the old name still works."
+  (require 'vm-vars)
+  (let ((vm-mime-deletable-types nil))
+    (with-no-warnings
+      (setq vm-mime-deleteable-types '("application/x-test")))
+    (should (equal '("application/x-test") vm-mime-deletable-types))))
+
 (provide 'vm-custom-test)
 
 ;;; vm-custom-test.el ends here

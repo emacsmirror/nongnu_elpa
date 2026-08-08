@@ -2107,9 +2107,7 @@ deleting a MIME object with `vm-delete-mime-object'."
   :group 'vm-mime
   :type '(repeat (string :tag "MIME type" nil)))
 
-(defvaralias 'vm-mime-deletable-types
-  'vm-mime-deleteable-types)
-(defcustom vm-mime-deleteable-types
+(defcustom vm-mime-deletable-types
   (append
    '("application" "x-unknown" "application/x-gzip")
    ;; These are eliminated because they depend on evaluation order.
@@ -2121,12 +2119,16 @@ deleting a MIME object with `vm-delete-mime-object'."
     :group 'vm-mime
     :type '(repeat (string :tag "MIME type" nil)))
 
-(defvaralias 'vm-mime-deletable-type-exceptions
-  'vm-mime-deleteable-type-exceptions)
-(defcustom vm-mime-deleteable-type-exceptions '("text")
+(define-obsolete-variable-alias 'vm-mime-deleteable-types
+  'vm-mime-deletable-types "8.3.3")
+
+(defcustom vm-mime-deletable-type-exceptions '("text")
   "List of MIME types which should not be deleted."
   :group 'vm-mime
   :type '(repeat (string :tag "MIME type" nil)))
+
+(define-obsolete-variable-alias 'vm-mime-deleteable-type-exceptions
+  'vm-mime-deletable-type-exceptions "8.3.3")
 
 (defvar vm-mime-auto-save-all-attachments-avoid-recursion nil
   "For internal use.")

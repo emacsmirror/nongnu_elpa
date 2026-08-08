@@ -876,23 +876,23 @@ this may take some time, since the file needs to be visited."
 			'vm-mime-saveable-type-exceptions "8.1.1")
 
 ;; (define-obsolete-variable-alias 'vm-mime-delete-all-attachments-types
-;;   'vm-mime-deleteable-types
+;;   'vm-mime-deletable-types
 ;;   "8.3.0"
 ;;   "*List of MIME types which should be deleted.")
 (defvaralias 'vm-mime-delete-all-attachments-types
-  'vm-mime-deleteable-types)
+  'vm-mime-deletable-types)
 (make-obsolete-variable 'vm-mime-delete-all-attachments-types
-			'vm-mime-deleteable-types "8.1.1")
+			'vm-mime-deletable-types "8.1.1")
 
 ;; (define-obsolete-variable-alias 
 ;;   'vm-mime-delete-all-attachments-types-exceptions
-;;   'vm-mime-deleteable-type-exceptions
+;;   'vm-mime-deletable-type-exceptions
 ;;   "8.3.0"
 ;;   "*List of MIME types which should not be deleted.")
 (defvaralias 'vm-mime-delete-all-attachments-types-exceptions
-  'vm-mime-deleteable-type-exceptions)
+  'vm-mime-deletable-type-exceptions)
 (make-obsolete-variable 'vm-mime-delete-all-attachments-types-exceptions
-			'vm-mime-deleteable-type-exceptions "8.1.1")
+			'vm-mime-deletable-type-exceptions "8.1.1")
 
 ;;;###autoload
 (defun vm-attach-files-in-directory (directory &optional regexp)

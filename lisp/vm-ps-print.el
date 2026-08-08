@@ -77,10 +77,13 @@ The function should accept one optional argument which is a filename."
   :group 'vm-print
   :type 'function)
 
-(defcustom vm-ps-print-message-separater  "\n"
+(defcustom vm-ps-print-message-separator  "\n"
   "The separator between messages when printing multiple messages."
   :group 'vm-print
   :type 'string)
+
+(define-obsolete-variable-alias 'vm-ps-print-message-separater
+  'vm-ps-print-message-separator "8.3.3")
 
 (defcustom vm-ps-print-message-font-size  10
   "The font size for the PS-output of the message text."
@@ -249,14 +252,14 @@ If FILENAME is specified then write PS into that file.
 When printing a single message it acts like `vm-ps-print-each-message'.
 When printing multiple messages it will insert a summary line according
 to the variable `vm-ps-print-message-summary-format' and a separator
-according to the variable `vm-ps-print-message-separater' between
+according to the variable `vm-ps-print-message-separator' between
 messages.  You might force the printing of one job per message, by
 giving a t EACH argument.
 
 See: `vm-ps-print-message-function'
      `vm-ps-print-message-font-size'
      `vm-ps-print-message-summary-format'
-     `vm-ps-print-message-separater'
+     `vm-ps-print-message-separator'
      `vm-ps-print-message-left-header'
      `vm-ps-print-message-right-header'
 for customization of the output."
@@ -308,7 +311,7 @@ for customization of the output."
 						 mcount m))
 		 (set-buffer tmpbuf)
 		 (erase-buffer))
-	(if (> (length mlist) 1) (insert vm-ps-print-message-separater)))
+	(if (> (length mlist) 1) (insert vm-ps-print-message-separator)))
       (setq mlist (cdr mlist)))
 
     (if (not each)
@@ -410,12 +413,12 @@ t) instead of `vm-print-message'."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; From: "Jeffrey J. Kosowsky" <jeff.kosowsky_ATsign_verizon_DOTsymbol_net>
 ;;;###autoload
-(defun vm-ps-print-marked (&optional filename seperate nup color)
+(defun vm-ps-print-marked (&optional filename separate nup color)
   "Postscript print all marked emails in mail Summary. If no messages marked,
 print just the current message.
 Optionally write postscript output to FILENAME (default is to spool
 to printer). 
-Optionally force SEPERATE printing of each message by setting to `t'. 
+Optionally force SEPARATE printing of each message by setting to `t'. 
 Optionally also print NUP pages per sheet.
 Optionally also print in COLOR by setting to non-nil.
 
@@ -438,7 +441,7 @@ filename and formats 1 page per sheet. (JJK)"
         )
     (and (vm-marked-messages)
          (setq last-command 'vm-next-command-uses-marks))
-    (vm-ps-print-message nil filename seperate)))
+    (vm-ps-print-message nil filename separate)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
