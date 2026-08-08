@@ -82,9 +82,6 @@ The function should accept one optional argument which is a filename."
   :group 'vm-print
   :type 'string)
 
-(define-obsolete-variable-alias 'vm-ps-print-message-separater
-  'vm-ps-print-message-separator "8.3.3")
-
 (defcustom vm-ps-print-message-font-size  10
   "The font size for the PS-output of the message text."
   :group 'vm-print
