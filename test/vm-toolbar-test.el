@@ -80,6 +80,38 @@ beyond the wiring above."
       (should (memq (and (vm-toolbar-can-decode-mime-p) t) '(nil t)))
       (should (memq (and (vm-toolbar-mail-waiting-p) t) '(nil t))))))
 
+;;; The button commands are defined where the manual can find them
+
+;; Each toolbar button runs a named command that the user may replace, and
+;; each button's own help says to do it with `fset'.  Those names were made
+;; with `fset' too, which writes the function cell and nothing else -- so
+;; `load-history' never learned them, `symbol-file' returned nil, and the
+;; reference appendix, which files a command by the file defining it, left all
+;; twelve out of the manual entirely.  `defalias' records the file.  Issue #595.
+;;
+;; The `(or (fboundp ...) (defalias ...))' guard those definitions sit behind
+;; is what makes a button replaceable, and is not tested here: it only shows
+;; itself while vm-toolbar.el is being loaded, and reloading it mid-suite to
+;; watch would cost more than it proves.
+
+(defconst vm-toolbar-test--button-commands
+  '(vm-toolbar-next-command vm-toolbar-previous-command
+    vm-toolbar-file-command vm-toolbar-getmail-command
+    vm-toolbar-print-command vm-toolbar-visit-command
+    vm-toolbar-reply-command vm-toolbar-forward-command
+    vm-toolbar-followup-command vm-toolbar-compose-command
+    vm-toolbar-decode-mime-command vm-toolbar-quit-command)
+  "The commands the toolbar buttons run, one per button.")
+
+(ert-deftest vm-toolbar-test-button-commands-know-their-file ()
+  "Each button command records the file that defined it.
+Without that the reference appendix cannot place it, and the command is in no
+part of the manual."
+  (require 'vm-toolbar)
+  (dolist (command vm-toolbar-test--button-commands)
+    (should (commandp command))
+    (should (symbol-file command))))
+
 (provide 'vm-toolbar-test)
 
 ;;; vm-toolbar-test.el ends here
