@@ -48,6 +48,14 @@ INFO_INSTALLED = $(INFO_FILE:%=$(infodestdir)/%)
 # honest.
 REFERENCE_FILE = vm-reference.texinfo
 
+# The same entries again, as one macro per symbol, which the chapters invoke
+# where they used to carry a description of their own.  Generated and
+# committed for the same reason as the appendix.
+MACROS_FILE = vm-docstrings.texinfo
+
+# Both are generated from the docstrings and both are committed.
+GENERATED_TEXINFO = $(REFERENCE_FILE) $(MACROS_FILE)
+
 ##############################################################################
 
 all: info
@@ -73,6 +81,15 @@ $(REFERENCE_FILE): FORCE @srcdir@/gen-reference.el
 		mv -f $@.tmp $@; \
 	fi
 
+$(MACROS_FILE): FORCE @srcdir@/gen-reference.el
+	$(EMACS_PROG) -batch -q -no-site-file -L @top_srcdir@/lisp \
+		-l @srcdir@/gen-reference.el -f vm-reference-macros-batch $@.tmp
+	if cmp -s $@.tmp $@; then \
+		$(RM) -f $@.tmp; \
+	else \
+		mv -f $@.tmp $@; \
+	fi
+
 .PHONY: FORCE
 FORCE:
 
@@ -81,19 +98,25 @@ FORCE:
 # it, so this only has to notice that the working tree now differs.  Run it
 # before a release, and after changing a docstring.
 .PHONY: check-reference
-check-reference: $(REFERENCE_FILE)
+check-reference: $(GENERATED_TEXINFO)
 	@if [ ! -d "$(GIT_DIR)" ]; then \
 		echo "check-reference: not a git checkout, nothing to compare"; \
-	elif $(GIT) -C "@top_srcdir@" diff --quiet -- info/$(REFERENCE_FILE); then \
-		echo "check-reference: $(REFERENCE_FILE) is up to date"; \
+		exit 0; \
+	fi; \
+	stale=""; \
+	for f in $(GENERATED_TEXINFO); do \
+		$(GIT) -C "@top_srcdir@" diff --quiet -- info/$$f || stale="$$stale $$f"; \
+	done; \
+	if [ -z "$$stale" ]; then \
+		echo "check-reference: $(GENERATED_TEXINFO) are up to date"; \
 	else \
-		echo "check-reference: $(REFERENCE_FILE) is out of date." >&2; \
-		echo "  A docstring changed.  Commit the regenerated file:" >&2; \
-		echo "      git add info/$(REFERENCE_FILE)" >&2; \
+		echo "check-reference: out of date:$$stale" >&2; \
+		echo "  A docstring changed.  Commit the regenerated files:" >&2; \
+		for f in $$stale; do echo "      git add info/$$f" >&2; done; \
 		exit 1; \
 	fi
 
-$(INFO_FILE): version.texinfo $(REFERENCE_FILE)
+$(INFO_FILE): version.texinfo $(GENERATED_TEXINFO)
 
 .PHONY: info
 info: ${INFO_FILE}

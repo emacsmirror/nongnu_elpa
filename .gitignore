@@ -40,6 +40,7 @@ commit.msg
 # and makeinfo writes no manual at all when it is missing, so a build without
 # `make' -- an ELPA tarball, a plain checkout -- would have no manual.  #589.
 /info/vm-reference.texinfo.tmp
+/info/vm-docstrings.texinfo.tmp
 /info/vm
 
 /lisp/vm-autoloads.el
