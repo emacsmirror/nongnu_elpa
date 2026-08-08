@@ -1598,6 +1598,10 @@ other's session."
                                         (reasoning_effort . "high")
                                         (fast . t)
                                         (yolo . :false)
+                                        (goal . ((status . "active")
+                                                 (running . t)
+                                                 (turns_used . 3)
+                                                 (max_turns . 20)))
                                         (usage . ((context_used . 45000)
                                                   (context_max . 200000)
                                                   (context_percent . 22)))))))))))
@@ -1613,9 +1617,25 @@ other's session."
       (should (eq (plist-get event :fast) t))
       (should (plist-member event :yolo))
       (should-not (plist-get event :yolo))
+      (should (equal (plist-get event :goal)
+                     '(:status "active" :running t
+                               :turns-used 3 :max-turns 20)))
       (should (equal (plist-get event :context) '(:used 45000 :max 200000 :percent 22)))
       (should (equal (plist-get event :content)
                      "Session ready: gpt-5.5 via openai-codex")))))
+
+(ert-deftest hermes-transport-dashboard-normalizes-goal-change ()
+  "Structured goal changes stay out of generic transcript status handling."
+  (let ((event (car (hermes-test--dashboard-events
+                     '("goal.changed" .
+                       ((goal . ((status . "active")
+                                 (running . t)
+                                 (turns_used . 4)
+                                 (max_turns . 20)))))))))
+    (should (eq (plist-get event :type) 'goal))
+    (should (equal (plist-get event :goal)
+                   '(:status "active" :running t
+                             :turns-used 4 :max-turns 20)))))
 
 (ert-deftest hermes-transport-dashboard-session-info-preserves-idle-state ()
   "A false running field remains distinguishable from an absent field."

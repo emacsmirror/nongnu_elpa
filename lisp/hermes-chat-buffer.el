@@ -862,6 +862,9 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
 (defvar-local hermes-chat--context nil
   "Context-window usage plist (:used :max :percent) for the header.")
 
+(defvar-local hermes-chat--goal nil
+  "Compact structured goal state for the chat header.")
+
 (defvar-local hermes-chat--runtime-flags nil
   "Runtime flag plist (:reasoning-effort :fast :yolo) from `session.info'.
 Shown as annotations after the model in the chat header.")
@@ -912,6 +915,7 @@ METADATA is stored as the entry's `:metadata' plist."
         hermes-chat--model nil
         hermes-chat--agent-name nil
         hermes-chat--context nil
+        hermes-chat--goal nil
         hermes-chat--runtime-flags nil)
   (force-mode-line-update)
   (hermes-chat--notify-state-change))
@@ -1337,6 +1341,17 @@ self-explanatory."
   (and-let* ((model (hermes-transport--non-empty-string hermes-chat--model)))
     (propertize model 'face 'hermes-chat-header-model)))
 
+(defun hermes-chat--header-goal-segment ()
+  "Return the compact running-goal segment, or nil."
+  (when (eq (plist-get hermes-chat--goal :running) t)
+    (let ((turns (plist-get hermes-chat--goal :turns-used))
+          (limit (plist-get hermes-chat--goal :max-turns)))
+      (propertize
+       (if (and (numberp turns) (numberp limit))
+           (format "Goal %d/%d" turns limit)
+         "Goal")
+       'face (hermes-chat--header-status-face 'running)))))
+
 (defun hermes-chat--header-runtime-segments ()
   "Return propertized runtime-flag segments for the chat header."
   (delq nil
@@ -1362,6 +1377,7 @@ self-explanatory."
          (list (propertize (hermes-chat--header-profile-name)
                            'face 'hermes-chat-header-profile)
                (hermes-chat--header-status-segment)
+               (hermes-chat--header-goal-segment)
                (hermes-chat--header-model-segment))
          (hermes-chat--header-runtime-segments)
          (list (hermes-chat--header-context-segment)))))
@@ -1373,7 +1389,6 @@ self-explanatory."
                                          separator)
                        " "))
          (width (max 1 (window-total-width))))
-    ;; Double % so the context percentage is not read as a mode-line %-spec.
     (string-replace "%" "%%" (truncate-string-to-width text width nil nil "…"))))
 
 

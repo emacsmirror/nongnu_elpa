@@ -611,8 +611,11 @@
    (let ((before (length (ewoc-collect hermes-chat--ewoc #'identity))))
      (hermes-chat--handle-transport-event
       "a1" '(:type status :event "session.info" :status "ready"
-             :model "gpt-5.5" :agent-name "openai-codex"))
+             :model "gpt-5.5" :agent-name "openai-codex"
+             :goal (:status "active" :running t
+                            :turns-used 1 :max-turns 20)))
      (should (string-match-p "gpt-5.5" (hermes-test--header-line-string)))
+     (should (string-match-p "Goal 1/20" (hermes-test--header-line-string)))
      (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
 
 (ert-deftest hermes-chat-goal-status-preserves-turn-header ()
@@ -2485,6 +2488,7 @@
                hermes-chat--model "stale-model"
                hermes-chat--agent-name "stale-agent"
                hermes-chat--context '(:used 45000 :max 200000 :percent 22)
+               hermes-chat--goal '(:running t :turns-used 2 :max-turns 20)
                hermes-chat--runtime-flags '(:reasoning-effort "high" :fast t :yolo t))
          (insert "/clear")
          (hermes-chat-send)
@@ -2494,8 +2498,9 @@
          (should-not hermes-chat--model)
          (should-not hermes-chat--agent-name)
          (should-not hermes-chat--context)
+         (should-not hermes-chat--goal)
          (should-not hermes-chat--runtime-flags)
-         (should-not (string-match-p "ctx\\|stale-model\\|high\\|fast\\|YOLO"
+         (should-not (string-match-p "Goal\\|ctx\\|stale-model\\|high\\|fast\\|YOLO"
                                      (hermes-test--header-line-string)))
          (should (equal (mapcar (lambda (e) (plist-get e :role))
                                 (hermes-chat--entries))
@@ -4461,7 +4466,19 @@
             :model "gpt-5.5" :agent-name "planner"
             :context (:used 45000 :max 200000 :percent 22)))
    (should (string-match-p "45k/200k" (hermes-chat--header-line)))
-   (should-not (string-match-p "ctx\|%" (hermes-chat--header-line)))))
+   (should-not (string-match-p "ctx\\|%" (hermes-chat--header-line)))))
+
+(ert-deftest hermes-chat-header-shows-only-running-goal ()
+  "The compact goal counter is visible only while goal work is running."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--goal
+         '(:status "active" :running t :turns-used 3 :max-turns 20))
+   (should (string-match-p "Goal 3/20" (hermes-chat--header-line)))
+   (setq hermes-chat--goal
+         '(:status "paused" :running nil :turns-used 3 :max-turns 20))
+   (should-not (string-match-p "Goal" (hermes-chat--header-line)))
+   (setq hermes-chat--goal nil)
+   (should-not (string-match-p "Goal" (hermes-chat--header-line)))))
 
 (ert-deftest hermes-chat-done-event-records-usage ()
   "A done event records usage in header state; the compact header omits the gauge."

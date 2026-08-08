@@ -87,6 +87,7 @@ Inside a project, its root basename becomes the canonical session label."
 (defvar hermes-chat--model)
 (defvar hermes-chat--agent-name)
 (defvar hermes-chat--context)
+(defvar hermes-chat--goal)
 (defvar hermes-chat--runtime-flags)
 (defvar hermes-chat--profile)
 (defvar hermes-chat--active-tools)
@@ -340,12 +341,20 @@ and `upsert-entry'.  Other types return (STATE)."
     ('status
      (if (equal (hermes-chat--status-name (plist-get event :status)) "goal")
          (cons state (delq nil (list (hermes-chat--turn-entry-effect event))))
-       (let ((status (hermes-chat--turn-status-state state event now)))
-         (cons (hermes-chat--turn-state-put state :status-state status)
+       (let* ((next-state
+               (if (plist-member event :goal)
+                   (hermes-chat--turn-state-put state :goal
+                                                (plist-get event :goal))
+                 state))
+              (status (hermes-chat--turn-status-state next-state event now)))
+         (cons (hermes-chat--turn-state-put next-state :status-state status)
                (append
                 (delq nil (list (cons 'refresh-header status)
                                 (hermes-chat--turn-entry-effect event)))
                 (hermes-chat--turn-session-info-effects event))))))
+    ('goal
+     (cons (hermes-chat--turn-state-put state :goal (plist-get event :goal))
+           '((refresh-header))))
     ((or 'commentary 'thinking 'diff)
      (let ((status (hermes-chat--turn-status-state state event now)))
        (cons (hermes-chat--turn-state-put state :status-state status)
@@ -462,10 +471,14 @@ of its own."
   (hermes-chat--capture-session-identity event)
   (pcase-let ((`(,new-state . ,effects)
                (hermes-chat--turn-reduce
-                (hermes-chat--turn-state :status-state hermes-chat--status-state)
+                (hermes-chat--turn-state
+                 :status-state hermes-chat--status-state
+                 :goal hermes-chat--goal)
                 event (current-time))))
     (setq hermes-chat--status-state
-          (hermes-chat--turn-state-get new-state :status-state))
+          (hermes-chat--turn-state-get new-state :status-state)
+          hermes-chat--goal
+          (hermes-chat--turn-state-get new-state :goal))
     (dolist (effect effects)
       (hermes-chat--apply-turn-effect assistant-id effect))))
 

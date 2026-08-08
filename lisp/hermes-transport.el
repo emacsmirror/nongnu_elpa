@@ -798,6 +798,15 @@ The plist holds :used, :max, and :percent for the model's context window."
                  warning))
      " — ")))
 
+(defun hermes-dashboard-transport--goal-plist (payload)
+  "Return compact normalized goal data from PAYLOAD, or nil."
+  (when-let* ((goal (hermes-transport--get payload 'goal)))
+    (list :status (hermes-transport--scalar-string
+                   (hermes-transport--get goal 'status))
+          :running (eq (hermes-transport--get goal 'running) t)
+          :turns-used (hermes-transport--get goal 'turns_used)
+          :max-turns (hermes-transport--get goal 'max_turns))))
+
 (defun hermes-dashboard-transport--session-info-event (type params payload)
   "Return a normalized `session.info' status event for TYPE/PARAMS/PAYLOAD.
 Surface the session's model, profile (agent) name, and runtime flags --
@@ -828,6 +837,9 @@ chat header can show them."
     (when (hermes-transport--field-present-p payload 'yolo)
       (setq event (plist-put event :yolo
                              (eq (hermes-transport--get payload 'yolo) t))))
+    (when (hermes-transport--field-present-p payload 'goal)
+      (setq event (plist-put event :goal
+                             (hermes-dashboard-transport--goal-plist payload))))
     (when context (setq event (plist-put event :context context)))
     event))
 
@@ -904,6 +916,12 @@ an Unknown error."
       ("session.info"
        (list (hermes-dashboard-transport--session-info-event
               type params payload)))
+      ("goal.changed"
+       (list (plist-put
+              (plist-put (hermes-dashboard-transport--event-base
+                          type params payload)
+                         :type 'goal)
+              :goal (hermes-dashboard-transport--goal-plist payload))))
       ("message.delta"
        (list (hermes-dashboard-transport--payload-event type params payload 'delta)))
       ("message.interim"

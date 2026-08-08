@@ -74,6 +74,19 @@
               state '(:type status :event "session.info" :status "ready") now)))
       (should (equal (mapcar #'car (cdr r)) '(refresh-header))))))
 
+(ert-deftest hermes-chat-turn-reduce-goal-updates-header-state-only ()
+  "Structured goal state is reduced without creating transcript content."
+  (let* ((goal '(:status "active" :running t :turns-used 2 :max-turns 20))
+         (state '(:status-state (:status ready) :goal nil))
+         (result (hermes-chat--turn-reduce
+                  state (list :type 'goal :goal goal) '(7 7))))
+    (should (equal (plist-get (car result) :goal) goal))
+    (should (equal (cdr result) '((refresh-header))))
+    (let ((cleared (hermes-chat--turn-reduce
+                    (car result) '(:type goal :goal nil) '(8 8))))
+      (should-not (plist-get (car cleared) :goal))
+      (should (equal (cdr cleared) '((refresh-header)))))))
+
 (ert-deftest hermes-chat-turn-reduce-terminal-events ()
   "done/error reduce to the ordered turn-lifecycle effects; unknown adds a message."
   (let ((now '(5 5))
