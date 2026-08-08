@@ -4931,7 +4931,7 @@ If optional argument FUNCTION is given, run it instead.
 ;;;###autoload
 (defun vm-mime-reader-map-attach-to-composition ()
   "Attach the MIME object at point to a message being composed.  The
-buffer for message composition is queried from the minibufer."
+buffer for message composition is queried from the minibuffer."
   (interactive)
   (vm-mime-run-display-function-at-point
    'vm-mime-attach-body-to-composition))
@@ -7348,7 +7348,7 @@ message content when it's passed to the MTA (that is, the mail transfer
 agent; under Unix, normally sendmail.)
 
 Attachment tags added to the buffer with `vm-attach-file' are expanded
-and the approriate content-type and boundary markup information is added."
+and the appropriate content-type and boundary markup information is added."
 
   (interactive)
 

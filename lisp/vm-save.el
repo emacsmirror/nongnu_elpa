@@ -530,7 +530,7 @@ The saved messages are flagged as `filed'."
 (defun vm-save-message-sans-headers (file &optional count quiet)
   "Save the current message to a file, without its header section.
 If the file already exists, the message body will be appended to it.
-Prefix arg COUNT means save the next COUNT message bodiess.  A
+Prefix arg COUNT means save the next COUNT message bodies.  A
 negative COUNT means save the previous COUNT bodies.
 
 When invoked on marked messages (via `vm-next-command-uses-marks'),

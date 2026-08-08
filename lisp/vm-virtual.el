@@ -637,7 +637,7 @@ Prefix arg means the new virtual folder should be visited read only."
 
 ;;;###autoload
 (defun vm-create-text-virtual-folder (&optional string read-only subject)
-  "Create a virtual folder (search folder) of all messsages with the
+  "Create a virtual folder (search folder) of all messages with the
 given string in its text.
 
 Prefix arg means the new virtual folder should be visited read only."
@@ -652,7 +652,7 @@ Prefix arg means the new virtual folder should be visited read only."
 
 ;;;###autoload
 (defun vm-create-date-virtual-folder (&optional arg read-only subject)
-  "Create a virtual folder (search folder) of all messsages with date
+  "Create a virtual folder (search folder) of all messages with date
 in given range.
 
 Prefix arg means the new virtual folder should be visited read only."

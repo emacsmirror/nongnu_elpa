@@ -19,6 +19,7 @@
 
 (require 'cl-lib)
 (require 'help-fns)
+(require 'pp)
 
 (defvar vm-reference-area-titles
   '(("vm"              . "VM itself")
@@ -322,21 +323,50 @@ defining file would put all of them in one section."
               "Not documented.\n"))
     (insert "@end deffn\n\n")))
 
+(defun vm-reference-escape-controls (string)
+  "Escape the control characters of STRING that makeinfo cannot take.
+A NUL and a DEL live in `vm-mime-encode-words-regexp', and makeinfo loses
+the rest of the line when it meets one.  Newline and tab are left alone:
+inside an @example they are what breaks a long default over lines, and
+`print-escape-control-characters' escapes the newlines along with the rest,
+which is what left one default 1642 characters wide."
+  (replace-regexp-in-string "[^\n\t[:print:]]"
+                            (lambda (c) (format "\\\\%o" (aref c 0)))
+                            string t t))
+
+(defun vm-reference-print-value (value one-line)
+  "Print VALUE for the manual, on one line if ONE-LINE, else broken up.
+`prin1-to-string' puts a whole alist on one line, and some of VM's defaults
+are long enough to leave the reader scrolling sideways -- `vm-serial-cookies'
+runs to nearly three thousand characters.  `pp' breaks those at their
+structure, and a string keeps the newlines it was written with."
+  (if one-line
+      (let ((print-escape-control-characters t)
+            (print-escape-newlines t))
+        (prin1-to-string value))
+    ;; Print first and let `pp-buffer' lay the text out, rather than
+    ;; `pp-to-string', which binds `print-escape-newlines' itself and so
+    ;; puts a multi-line string back on one line.
+    (vm-reference-escape-controls
+     (string-trim-right
+      (with-temp-buffer
+        (let ((print-escape-newlines nil)
+              (print-escape-control-characters nil))
+          (prin1 value (current-buffer)))
+        (pp-buffer)
+        (buffer-string))))))
+
 (defun vm-reference-insert-default (symbol)
   "Insert the default value of SYMBOL, unless it has none worth printing."
   (let* ((standard (car (get symbol 'standard-value)))
          (value (and standard (ignore-errors (eval standard t))))
-         ;; Several defaults are regexps holding control characters -- a NUL
-         ;; and a DEL in `vm-mime-encode-words-regexp' -- and makeinfo loses
-         ;; the rest of the line when it meets one.
-         (printed (and value
-                       (let ((print-escape-control-characters t)
-                             (print-escape-newlines t))
-                         (vm-reference-escape (prin1-to-string value))))))
-    (when printed
-      (if (> (length printed) 60)
-          (insert "\nDefault value:\n@example\n" printed "\n@end example\n")
-        (insert "\nDefault value: @code{" printed "}\n")))))
+         (short (and value (vm-reference-print-value value t))))
+    (when short
+      (if (<= (length short) 60)
+          (insert "\nDefault value: @code{" (vm-reference-escape short) "}\n")
+        (insert "\nDefault value:\n@example\n"
+                (vm-reference-escape (vm-reference-print-value value nil))
+                "\n@end example\n")))))
 
 (defun vm-reference-insert-option (symbol)
   (let ((doc (documentation-property symbol 'variable-documentation t)))

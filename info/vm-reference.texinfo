@@ -354,7 +354,7 @@ I prefer to use lynx for this job:
 
 #!/bin/tcsh
 
-tmpfile=/tmp/$USER-stripttags.html
+tmpfile=/tmp/$USER-striptags.html
 cat > $tmpfile
 lynx -force_html -dump $tmpfile
 rm $tmpfile
@@ -419,7 +419,43 @@ Regexp replacement pairs for cleaning of replies.
 
 Default value:
 @example
-(("^\\( > [|@{@}>:;][^\n]*\n\\)+" . "[...]\n") ("^\\([^|@{@}>:;]+.*\\)\n > [|@{@}>:;]*$" . "\\1") ("^ > [|@{@}>:;]*\n\\([^|@{@}>:;]\\)" . "\\1") ("^ > [|@{@}>:;]*\\s-*\n\\( > [|@{@}>:;]*\\s-*\n\\)+" . " > \n") ("\n\n\n+" . "\n\n") ("^ > --[^\n]*\n\\( > [^\n]*\n\\)+" . "\n") ("^ > ________[^\n]*\n\\( > [^\n]*\n\\)+" . "\n"))
+(("^\\( > [|@{@}>:;][^
+]*
+\\)+"
+  . "[...]
+")
+ ("^\\([^|@{@}>:;]+.*\\)
+ > [|@{@}>:;]*$"
+  . "\\1")
+ ("^ > [|@{@}>:;]*
+\\([^|@{@}>:;]\\)"
+  . "\\1")
+ ("^ > [|@{@}>:;]*\\s-*
+\\( > [|@{@}>:;]*\\s-*
+\\)+"
+  . " > 
+")
+ ("
+
+
++"
+  . "
+
+")
+ ("^ > --[^
+]*
+\\( > [^
+]*
+\\)+"
+  . "
+")
+ ("^ > ________[^
+]*
+\\( > [^
+]*
+\\)+"
+  . "
+"))
 @end example
 @end defopt
 
@@ -454,11 +490,13 @@ The number reflects the number of references.
 @defopt vm-mail-subject-prefix-replacements
 @vindex vm-mail-subject-prefix-replacements
 List of subject prefixes which should be replaced.
-Matching will be done case insentivily.
+Matching will be done case insensitively.
 
 Default value:
 @example
-(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ \11]*\\)+" . "Re: ") ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ \11]*\\)+" . "Fo: "))
+(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ 	]*\\)+"
+  . "Re: ")
+ ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ 	]*\\)+" . "Fo: "))
 @end example
 @end defopt
 
@@ -548,7 +586,7 @@ deletion; you will have to expunge the messages with
 
 When invoked on marked messages (via @code{vm-next-command-uses-marks}),
 only duplicate messages among the marked messages are deleted;
-unmarked messages are not considerd for deletion.
+unmarked messages are not considered for deletion.
 @end deffn
 
 @deffn Command vm-delete-duplicate-messages-by-body
@@ -564,7 +602,7 @@ really get rid of them, as usual.
 
 When invoked on marked messages (via @code{vm-next-command-uses-marks}),
 only duplicate messages among the marked messages are deleted,
-unmarked messages are not hashed or considerd for deletion.
+unmarked messages are not hashed or considered for deletion.
 @end deffn
 
 @deffn Command vm-delete-message count &optional mlist
@@ -617,7 +655,7 @@ the variables @code{vm-subject-ignored-prefix} and @code{vm-subject-ignored-suff
 The optional prefix argument ARG specifies the direction to move
 if @code{vm-move-after-killing} is non-nil.  The default direction is
 forward.  A positive prefix argument means move forward, a
-negative arugment means move backward, a zero argument means
+negative argument means move backward, a zero argument means
 don’t move at all.
 @end deffn
 
@@ -628,7 +666,7 @@ Delete all messages in the thread tree rooted at the current message.
 The optional prefix argument ARG specifies the direction to move
 if vm-move-after-killing is non-nil.  The default direction is
 forward.  A positive prefix argument means move forward, a
-negative arugment means move backward, a zero argument means
+negative argument means move backward, a zero argument means
 don’t move at all.
 @end deffn
 
@@ -857,7 +895,8 @@ of the digestified messages.
 
 Default value:
 @example
-("Resent-" "From:" "Sender:" "To:" "Newsgroups:" "Cc:" "Subject:" "Date:" "Message-ID:" "Keywords:" "MIME-Version:" "Content-")
+("Resent-" "From:" "Sender:" "To:" "Newsgroups:" "Cc:" "Subject:"
+ "Date:" "Message-ID:" "Keywords:" "MIME-Version:" "Content-")
 @end example
 @end defopt
 
@@ -906,7 +945,8 @@ the digestified messages.
 
 Default value:
 @example
-("Resent-" "Date:" "From:" "Sender:" "To:" "Newsgroups:" "Cc:" "Subject:" "Message-ID:" "Keywords:")
+("Resent-" "Date:" "From:" "Sender:" "To:" "Newsgroups:" "Cc:"
+ "Subject:" "Message-ID:" "Keywords:")
 @end example
 @end defopt
 
@@ -953,7 +993,8 @@ of the digestified messages.
 
 Default value:
 @example
-("Resent-" "From:" "Sender:" "To:" "Newsgroups:" "Cc:" "Subject:" "Date:" "Message-ID:" "Keywords:")
+("Resent-" "From:" "Sender:" "To:" "Newsgroups:" "Cc:" "Subject:"
+ "Date:" "Message-ID:" "Keywords:")
 @end example
 @end defopt
 
@@ -1887,7 +1928,7 @@ Same as M-x vm-recover-folder.
 @deffn Command vm-refresh-message
 @findex vm-refresh-message
 Reload the message body from its permanent location.  Currently
-this facilty is only available for IMAP folders.
+this facility is only available for IMAP folders.
 @end deffn
 
 @deffn Command vm-reorder-message-headers arg1 &rest rest
@@ -2458,7 +2499,9 @@ header line in email messages,
 
 Default value:
 @example
-(("X-Spam-Score:" "[-+]?[0-9]*\\.?[0-9]+" string-to-number) ("X-Spam-Status:" "[-+]?[0-9]*\\.?[0-9]+" string-to-number) ("X-Spam-Level:" "\\*+" length))
+(("X-Spam-Score:" "[-+]?[0-9]*\\.?[0-9]+" string-to-number)
+ ("X-Spam-Status:" "[-+]?[0-9]*\\.?[0-9]+" string-to-number)
+ ("X-Spam-Level:" "\\*+" length))
 @end example
 @end defopt
 
@@ -2544,7 +2587,7 @@ SPOOLNAME can also be a POP maildrop.
 
     PORT is the TCP port number to connect to.  This should
     normally be 110, unless you’re using POP over SSL in which
-    case the stanard port is 995.
+    case the standard port is 995.
 
     USER is the user name sent to the server.
 
@@ -2801,7 +2844,9 @@ the message.
 
 Default value:
 @example
-("MIME-Version:" "Content-" "From:" "Sender:" "Reply-To:" "To:" "Newsgroups:" "Cc:" "Subject:" "Newsgroups:" "In-Reply-To:" "References:" "Keywords:" "X-")
+("MIME-Version:" "Content-" "From:" "Sender:" "Reply-To:" "To:"
+ "Newsgroups:" "Cc:" "Subject:" "Newsgroups:" "In-Reply-To:"
+ "References:" "Keywords:" "X-")
 @end example
 @end defopt
 
@@ -3778,7 +3823,7 @@ A nil value for @code{vm-imap-max-message-size} means no size limit.
 @defopt vm-imap-message-bunch-size
 @vindex vm-imap-message-bunch-size
 Number of messages to be bunched together in IMAP server
-operations.  This permits faster interation with the IMAP servers.  To
+operations.  This permits faster interaction with the IMAP servers.  To
 disable bunching, set it to 1.
 
 Default value: @code{10}
@@ -4260,7 +4305,7 @@ message content when it’s passed to the MTA (that is, the mail transfer
 agent; under Unix, normally sendmail.)
 
 Attachment tags added to the buffer with @code{vm-attach-file} are expanded
-and the approriate content-type and boundary markup information is added.
+and the appropriate content-type and boundary markup information is added.
 @end deffn
 
 @deffn Command vm-mime-encode-headers
@@ -4283,7 +4328,7 @@ List mime part structure of the current message.
 @deffn Command vm-mime-reader-map-attach-to-composition
 @findex vm-mime-reader-map-attach-to-composition
 Attach the MIME object at point to a message being composed.  The
-buffer for message composition is queried from the minibufer.
+buffer for message composition is queried from the minibuffer.
 @end deffn
 
 @deffn Command vm-mime-reader-map-convert-then-display
@@ -4406,7 +4451,7 @@ Default value: @code{t}
 Non-nil value means VM should display messages using MIME.
 MIME (Multipurpose Internet Mail Extensions) is a set of
 extensions to the standard Internet message format that allows
-reliable tranmission and reception of arbitrary data including
+reliable transmission and reception of arbitrary data including
 images, audio and video as well as ordinary text.
 
 A non-nil value for this variable means that VM will recognize
@@ -4589,7 +4634,7 @@ Default value: @code{best-internal}
 @defopt vm-mime-alternative-yank-method
 @vindex vm-mime-alternative-yank-method
 Value tells how to choose which alternative to yank, i.e.,
-include, in replies, when it yanks a mesage with
+include, in replies, when it yanks a message with
 "multipart/alternative" content.  (It is similar to
 @code{vm-mime-alternative-show-method} used for displaying messages.)
 Possible values are @code{best}, @code{best-internal}, @code{all}, or a
@@ -4637,7 +4682,7 @@ the accompanying type.
 When a MIME object is displayed using an external viewer VM must
 first write the object to a temporary file.  The external viewer
 opens and displays that file.  Some viewers will not open a file
-unless the filename ends with some extention that it recognizes
+unless the filename ends with some extension that it recognizes
 such as ’.html’ or ’.jpg’.  You can use this variable to map MIME
 types to extensions that your external viewers will recognize.  VM
 will search the list for a matching type.  The suffix associated
@@ -4645,7 +4690,14 @@ with the first type that matches will be used.
 
 Default value:
 @example
-(("image/jpeg" . ".jpg") ("image/gif" . ".gif") ("image/png" . ".png") ("image/tiff" . ".tif") ("text/html" . ".html") ("audio/basic" . ".au") ("video/mpeg" . ".mpg") ("video/quicktime" . ".mov") ("application/zip" . ".zip") ("application/postscript" . ".ps") ("application/pdf" . ".pdf") ("application/msword" . ".doc") ("application/vnd.ms-excel" . ".xls") ("application/vnd.ms-powerpoint" . ".ppt") ("application/mac-binhex40" . ".hqx"))
+(("image/jpeg" . ".jpg") ("image/gif" . ".gif") ("image/png" . ".png")
+ ("image/tiff" . ".tif") ("text/html" . ".html")
+ ("audio/basic" . ".au") ("video/mpeg" . ".mpg")
+ ("video/quicktime" . ".mov") ("application/zip" . ".zip")
+ ("application/postscript" . ".ps") ("application/pdf" . ".pdf")
+ ("application/msword" . ".doc") ("application/vnd.ms-excel" . ".xls")
+ ("application/vnd.ms-powerpoint" . ".ppt")
+ ("application/mac-binhex40" . ".hqx"))
 @end example
 @end defopt
 
@@ -4671,7 +4723,54 @@ value of @code{vm-infer-mime-types} is non-nil.
 
 Default value:
 @example
-(("\\.jpe?g$" . "image/jpeg") ("\\.gif$" . "image/gif") ("\\.png$" . "image/png") ("\\.tiff?$" . "image/tiff") ("\\.svg$" . "image/svg+xml") ("\\.pcx$" . "image/x-pcx") ("\\.txt$" . "text/plain") ("\\.html?$" . "text/html") ("\\.css$" . "text/css") ("\\.csv$" . "text/csv") ("\\.xml$" . "text/xml") ("\\.vcf$" . "text/x-vcard") ("\\.vcard$" . "text/x-vcard") ("\\.au$" . "audio/basic") ("\\.mp4$" . "audio/mp4") ("\\.m4[abpr]$" . "audio/mp4") ("\\.wma$" . "audio/x-ms-wma") ("\\.wax$" . "audio/x-ms-wax") ("\\.ram?$" . "audio/vnd.ra-realaudio") ("\\.ogg$" . "audio/vorbis") ("\\.oga$" . "audio/vorbis") ("\\.wav$" . "audio/vnd.wave") ("\\.mpe?g$" . "video/mpeg") ("\\.m4v$" . "video/mp4") ("\\.mov$" . "video/quicktime") ("\\.ogc$" . "video/ogg") ("\\.wmv$" . "video/x-ms-wmv") ("\\.webm$" . "video/webm") ("\\.zip$" . "application/zip") ("\\.gz$" . "application/x-gzip") ("\\.tar$" . "application/x-tar") ("\\.rar$" . "application/x-rar-compressed") ("\\.e?ps$" . "application/postscript") ("\\.pdf$" . "application/pdf") ("\\.dvi$" . "application/x-dvi") ("\\.tex$" . "application/x-latex") ("\\.ttf$" . "application/x-font-ttf") ("\\.swf$" . "application/x-shockwave-flash") ("\\.tex$" . "application/x-latex") ("\\.js$" . "application/javascript") ("\\.dtd$" . "application/xml-dtd") ("\\.pdf$" . "application/pdf") ("\\.rtf$" . "application/rtf") ("\\.doc$" . "application/msword") ("\\.xls$" . "application/vnd.ms-excel") ("\\.ppt$" . "application/vnd.ms-powerpoint") ("\\.mdb$" . "application/vnd.ms-access") ("\\.odt$" . "application/vnd.oasis.opendocument.text") ("\\.odp$" . "application/vnd.oasis.opendocument.presentation") ("\\.ods$" . "application/vnd.oasis.opendocument.spreadsheet") ("\\.odg$" . "application/vnd.oasis.opendocument.graphics") ("\\.odf$" . "application/vnd.oasis.opendocument.formulae") ("\\.odb$" . "application/vnd.oasis.opendocument.databases") ("\\.docx$" . "application/vnd.openxmlformats-officedocument.wordprocessingml.document") ("\\.docm$" . "application/vnd.openxmlformats-officedocument.wordprocessingml.document") ("\\.pptx$" . "application/vnd.openxmlformats-officedocument.presentationml.presentation") ("\\.pptm$ " . "application/vnd.openxmlformats-officedocument.presentationml.presentation") ("\\.xlsx$" . "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") ("\\.xlsm$" . "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet") ("\\.hqx$" . "application/mac-binhex40"))
+(("\\.jpe?g$" . "image/jpeg") ("\\.gif$" . "image/gif")
+ ("\\.png$" . "image/png") ("\\.tiff?$" . "image/tiff")
+ ("\\.svg$" . "image/svg+xml") ("\\.pcx$" . "image/x-pcx")
+ ("\\.txt$" . "text/plain") ("\\.html?$" . "text/html")
+ ("\\.css$" . "text/css") ("\\.csv$" . "text/csv")
+ ("\\.xml$" . "text/xml") ("\\.vcf$" . "text/x-vcard")
+ ("\\.vcard$" . "text/x-vcard") ("\\.au$" . "audio/basic")
+ ("\\.mp4$" . "audio/mp4") ("\\.m4[abpr]$" . "audio/mp4")
+ ("\\.wma$" . "audio/x-ms-wma") ("\\.wax$" . "audio/x-ms-wax")
+ ("\\.ram?$" . "audio/vnd.ra-realaudio") ("\\.ogg$" . "audio/vorbis")
+ ("\\.oga$" . "audio/vorbis") ("\\.wav$" . "audio/vnd.wave")
+ ("\\.mpe?g$" . "video/mpeg") ("\\.m4v$" . "video/mp4")
+ ("\\.mov$" . "video/quicktime") ("\\.ogc$" . "video/ogg")
+ ("\\.wmv$" . "video/x-ms-wmv") ("\\.webm$" . "video/webm")
+ ("\\.zip$" . "application/zip") ("\\.gz$" . "application/x-gzip")
+ ("\\.tar$" . "application/x-tar")
+ ("\\.rar$" . "application/x-rar-compressed")
+ ("\\.e?ps$" . "application/postscript")
+ ("\\.pdf$" . "application/pdf") ("\\.dvi$" . "application/x-dvi")
+ ("\\.tex$" . "application/x-latex")
+ ("\\.ttf$" . "application/x-font-ttf")
+ ("\\.swf$" . "application/x-shockwave-flash")
+ ("\\.tex$" . "application/x-latex")
+ ("\\.js$" . "application/javascript")
+ ("\\.dtd$" . "application/xml-dtd") ("\\.pdf$" . "application/pdf")
+ ("\\.rtf$" . "application/rtf") ("\\.doc$" . "application/msword")
+ ("\\.xls$" . "application/vnd.ms-excel")
+ ("\\.ppt$" . "application/vnd.ms-powerpoint")
+ ("\\.mdb$" . "application/vnd.ms-access")
+ ("\\.odt$" . "application/vnd.oasis.opendocument.text")
+ ("\\.odp$" . "application/vnd.oasis.opendocument.presentation")
+ ("\\.ods$" . "application/vnd.oasis.opendocument.spreadsheet")
+ ("\\.odg$" . "application/vnd.oasis.opendocument.graphics")
+ ("\\.odf$" . "application/vnd.oasis.opendocument.formulae")
+ ("\\.odb$" . "application/vnd.oasis.opendocument.databases")
+ ("\\.docx$"
+  . "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+ ("\\.docm$"
+  . "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+ ("\\.pptx$"
+  . "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+ ("\\.pptm$ "
+  . "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+ ("\\.xlsx$"
+  . "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+ ("\\.xlsm$"
+  . "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+ ("\\.hqx$" . "application/mac-binhex40"))
 @end example
 @end defopt
 
@@ -4797,7 +4896,7 @@ Recognized specifiers are:
        "display text" for text objects and so on.
    c - the character set of the object.  Usually only specified
        for text objects.  Displays as "us-ascii" if the MIME object
-       does not specifiy a character set.
+       does not specify a character set.
    d - the content description of the object taken from the
        Content-Description header, if present.  If the header
        isn’t present, a generic description is provided.
@@ -4820,7 +4919,7 @@ Recognized specifiers are:
    x - the content type of the external body of a message/external-body
        object.
    ( - starts a group, terminated by %).  Useful for specifying
-       the field width and precision for the concatentation of
+       the field width and precision for the concatenation of
        group of format specifiers.  Example: "%.25(%d, %t, %f%)"
        specifies a maximum display width of 25 characters for the
        concatenation of the content description, content type and
@@ -4842,7 +4941,17 @@ the left instead of the right.
 
 Default value:
 @example
-(("text" . "%-60.60(%t (%c): %f, %d%) %10.10([%a]%)") ("multipart/alternative" . "%-50.50(%d%) %20.20([%a]%)") ("multipart/digest" . "%-50.50(%d, %n message%s%) %20.20([%a]%)") ("multipart" . "%-50.50(%d, %n part%s%) %20.20([%a]%)") ("message/partial" . "%-50.50(%d, part %N (of %T)%) %20.20([%a]%)") ("message/external-body" . "%-55.55(%d%) [%a (%x)]") ("message" . "%-50.50(%d%) %20.20([%a]%)") ("audio" . "%-55.55(%t: %f, %d%) %10.10([%a]%)") ("video" . "%-55.55(%t: %f, %d%) %10.10([%a]%)") ("image" . "%-55.55(%t: %f, %d%) %10.10([%a]%)") ("application" . "%-55.55(%t: %f, %d%) %10.10([%a]%)"))
+(("text" . "%-60.60(%t (%c): %f, %d%) %10.10([%a]%)")
+ ("multipart/alternative" . "%-50.50(%d%) %20.20([%a]%)")
+ ("multipart/digest" . "%-50.50(%d, %n message%s%) %20.20([%a]%)")
+ ("multipart" . "%-50.50(%d, %n part%s%) %20.20([%a]%)")
+ ("message/partial" . "%-50.50(%d, part %N (of %T)%) %20.20([%a]%)")
+ ("message/external-body" . "%-55.55(%d%) [%a (%x)]")
+ ("message" . "%-50.50(%d%) %20.20([%a]%)")
+ ("audio" . "%-55.55(%t: %f, %d%) %10.10([%a]%)")
+ ("video" . "%-55.55(%t: %f, %d%) %10.10([%a]%)")
+ ("image" . "%-55.55(%t: %f, %d%) %10.10([%a]%)")
+ ("application" . "%-55.55(%t: %f, %d%) %10.10([%a]%)"))
 @end example
 @end defopt
 
@@ -4853,7 +4962,43 @@ information is derived from @code{vm-mime-mule-charset-to-coding-alist} (which s
 
 Default value:
 @example
-(("us-ascii") ("unknown") ("windows-1256") ("windows-1256") ("iso-8859-6") ("windows-1258") ("windows-1258") ("viscii") ("viscii") ("iso-8859-11") ("cp874") ("cp874") ("iso-2022-kr") ("iso-2022-kr") ("euc-kr") ("euc-kr") ("euc-kr") ("euc-kr") ("euc-jis-2004") ("euc-jis-2004") ("iso-2022-jp-2004") ("iso-2022-jp-2004") ("euc-jp") ("euc-jp") ("euc-jp") ("euc-jp") ("shift_jis") ("shift_jis") ("shift_jis") ("iso-2022-jp-2") ("iso-2022-jp") ("iso-2022-jp") ("cp862") ("cp862") ("windows-1255") ("windows-1255") ("iso-8859-8") ("iso-8859-8") ("iso-8859-8") ("iso-8859-8") ("cp869") ("cp869") ("cp851") ("cp851") ("cp737") ("windows-1253") ("windows-1253") ("iso-8859-7") ("iso-8859-7") ("iso-8859-16") ("iso-8859-16") ("iso-8859-16") ("adobe-standard-encoding") ("hp-roman8") ("hp-roman8") ("next") ("macintosh") ("macintosh") ("cp437") ("cp437") ("cp865") ("cp865") ("cp863") ("cp863") ("cp861") ("cp861") ("cp860") ("cp860") ("cp858") ("cp857") ("cp857") ("cp852") ("cp852") ("cp850") ("cp850") ("cp775") ("cp775") ("windows-1257") ("windows-1257") ("windows-1254") ("windows-1254") ("windows-1252") ("windows-1252") ("windows-1250") ("windows-1250") ("iso-8859-15") ("iso-8859-15") ("iso-8859-15") ("iso-8859-15") ("iso-8859-14") ("iso-8859-14") ("iso-8859-14") ("iso-8859-13") ("iso-8859-13") ("iso-8859-13") ("iso-8859-10") ("iso-8859-10") ("iso-8859-10") ("iso-8859-9") ("iso-8859-9") ("iso-8859-9") ("iso-8859-4") ("iso-8859-4") ("iso-8859-4") ("iso-8859-3") ("iso-8859-3") ("iso-8859-3") ("iso-8859-2") ("iso-8859-2") ("iso-8859-2") ("cp855") ("cp855") ("windows-1251") ("windows-1251") ("koi8-t") ("cp866") ("koi8-u") ("koi8-r") ("koi8-r") ("koi8-r") ("koi8-r") ("iso-8859-5") ("iso-8859-5") ("gb18030") ("gb18030") ("gbk") ("gbk") ("gbk") ("gbk") ("euc-tw") ("euc-tw") ("big5-hkscs") ("big5-hkscs") ("big5-hkscs") ("big5") ("big5") ("big5") ("big5") ("hz-gb-2312") ("hz-gb-2312") ("hz-gb-2312") ("gb2312") ("gb2312") ("gb2312") ("gb2312") ("gb2312") ("gb2312") ("iso-2022-cn-ext") ("iso-2022-cn") ("iso-2022-cn") ("utf-7") ("us-ascii") ("us-ascii") ("us-ascii") ("x-ctext") ("x-ctext") ("x-ctext") ("x-ctext") ("x-ctext") ("x-ctext") ("utf-16") ("utf-16") ("utf-16") ("utf-16") ("utf-16") ("utf-16be") ("utf-16le") ("utf-8") ("utf-8") ("utf-8") ("iso-8859-1") ("iso-8859-1") ("iso-8859-1"))
+(("us-ascii") ("unknown") ("windows-1256") ("windows-1256")
+ ("iso-8859-6") ("windows-1258") ("windows-1258") ("viscii")
+ ("viscii") ("iso-8859-11") ("cp874") ("cp874") ("iso-2022-kr")
+ ("iso-2022-kr") ("euc-kr") ("euc-kr") ("euc-kr") ("euc-kr")
+ ("euc-jis-2004") ("euc-jis-2004") ("iso-2022-jp-2004")
+ ("iso-2022-jp-2004") ("euc-jp") ("euc-jp") ("euc-jp") ("euc-jp")
+ ("shift_jis") ("shift_jis") ("shift_jis") ("iso-2022-jp-2")
+ ("iso-2022-jp") ("iso-2022-jp") ("cp862") ("cp862") ("windows-1255")
+ ("windows-1255") ("iso-8859-8") ("iso-8859-8") ("iso-8859-8")
+ ("iso-8859-8") ("cp869") ("cp869") ("cp851") ("cp851") ("cp737")
+ ("windows-1253") ("windows-1253") ("iso-8859-7") ("iso-8859-7")
+ ("iso-8859-16") ("iso-8859-16") ("iso-8859-16")
+ ("adobe-standard-encoding") ("hp-roman8") ("hp-roman8") ("next")
+ ("macintosh") ("macintosh") ("cp437") ("cp437") ("cp865") ("cp865")
+ ("cp863") ("cp863") ("cp861") ("cp861") ("cp860") ("cp860") ("cp858")
+ ("cp857") ("cp857") ("cp852") ("cp852") ("cp850") ("cp850") ("cp775")
+ ("cp775") ("windows-1257") ("windows-1257") ("windows-1254")
+ ("windows-1254") ("windows-1252") ("windows-1252") ("windows-1250")
+ ("windows-1250") ("iso-8859-15") ("iso-8859-15") ("iso-8859-15")
+ ("iso-8859-15") ("iso-8859-14") ("iso-8859-14") ("iso-8859-14")
+ ("iso-8859-13") ("iso-8859-13") ("iso-8859-13") ("iso-8859-10")
+ ("iso-8859-10") ("iso-8859-10") ("iso-8859-9") ("iso-8859-9")
+ ("iso-8859-9") ("iso-8859-4") ("iso-8859-4") ("iso-8859-4")
+ ("iso-8859-3") ("iso-8859-3") ("iso-8859-3") ("iso-8859-2")
+ ("iso-8859-2") ("iso-8859-2") ("cp855") ("cp855") ("windows-1251")
+ ("windows-1251") ("koi8-t") ("cp866") ("koi8-u") ("koi8-r")
+ ("koi8-r") ("koi8-r") ("koi8-r") ("iso-8859-5") ("iso-8859-5")
+ ("gb18030") ("gb18030") ("gbk") ("gbk") ("gbk") ("gbk") ("euc-tw")
+ ("euc-tw") ("big5-hkscs") ("big5-hkscs") ("big5-hkscs") ("big5")
+ ("big5") ("big5") ("big5") ("hz-gb-2312") ("hz-gb-2312")
+ ("hz-gb-2312") ("gb2312") ("gb2312") ("gb2312") ("gb2312") ("gb2312")
+ ("gb2312") ("iso-2022-cn-ext") ("iso-2022-cn") ("iso-2022-cn")
+ ("utf-7") ("us-ascii") ("us-ascii") ("us-ascii") ("x-ctext")
+ ("x-ctext") ("x-ctext") ("x-ctext") ("x-ctext") ("x-ctext")
+ ("utf-16") ("utf-16") ("utf-16") ("utf-16") ("utf-16") ("utf-16be")
+ ("utf-16le") ("utf-8") ("utf-8") ("utf-8") ("iso-8859-1")
+ ("iso-8859-1") ("iso-8859-1"))
 @end example
 @end defopt
 
@@ -5067,7 +5212,12 @@ A regexp matching a set of consecutive words which must be encoded.
 
 Default value:
 @example
-"[ ,\11\n\15]\\(\\([^ ,\11\n\15]*[^\0-\177]+[^ ,\11\n\15]*\\)+\\(\\s-+\\([^ ,\11\n\15]*[^\0-\177]+[^ ,\11\n\15]*\\)+\\)*\\)"
+"[ ,	
+\\15]\\(\\([^ ,	
+\\15]*[^\\0-\\177]+[^ ,	
+\\15]*\\)+\\(\\s-+\\([^ ,	
+\\15]*[^\\0-\\177]+[^ ,	
+\\15]*\\)+\\)*\\)"
 @end example
 @end defopt
 
@@ -5328,7 +5478,9 @@ one after another.
 
 Default value:
 @example
-"\n----------------------------------------------------------------------\n"
+"
+----------------------------------------------------------------------
+"
 @end example
 @end defopt
 
@@ -5493,7 +5645,7 @@ Receiving the format is controlled separately, by
 Non-nil value means VM should support sending messages using MIME.
 MIME (Multipurpose Internet Mail Extensions) is a set of
 extensions to the standard Internet message format that allows
-reliable tranmission and reception of arbitrary data including
+reliable transmission and reception of arbitrary data including
 images, audio and video as well as traditional text.
 
 A non-nil value for this variable means that VM will
@@ -6052,7 +6204,7 @@ Scan the current VM folder for new messages and popup a summary frame.
 
 @deffn Command vm-biff-select-message
 @findex vm-biff-select-message
-Put focus on the folder frame and select the appropiate message.
+Put focus on the folder frame and select the appropriate message.
 @end deffn
 
 @deffn Command vm-biff-select-message-mouse event
@@ -6076,14 +6228,14 @@ Number of seconds after the popup window is automatically removed.
 
 @defopt vm-biff-body-peek
 @vindex vm-biff-body-peek
-Maximum number of chractes to peek into the body of a message.
+Maximum number of characters to peek into the body of a message.
 
 Default value: @code{50}
 @end defopt
 
 @defopt vm-biff-focus-popup
 @vindex vm-biff-focus-popup
-t if popup window should get the focus after an update.
+Non-nil means the pop-up window takes the focus when it appears.
 @end defopt
 
 @defopt vm-biff-folder-list
@@ -6094,7 +6246,7 @@ Testing is done by string-matching it against the current buffer-file-name.
 
 Another form is an alist of elements (FODERNAME SELECTOR),
 where SELECTOR is a virtual folder selector matching the
-messges which should be displayed.  See @code{vm-biff-selector}
+messages which should be displayed.  See @code{vm-biff-selector}
 for an example and @code{vm-virtual-folder-alist} on how virtual
 folder selectors work.
 @end defopt
@@ -6140,7 +6292,7 @@ List of hook functions to be run when selection a message.
 
 @defopt vm-biff-selector
 @vindex vm-biff-selector
-virtual folder selector matching messages to display in the pop-up.
+Virtual folder selector matching the messages the pop-up shows.
 
 Default value: @code{(and (new) (not (deleted)) (not (outgoing)))}
 @end defopt
@@ -6712,7 +6864,7 @@ The special action "none" will result in an empty action list.
 @deffn Command vmpc-run-action &optional action-regexp
 @findex vmpc-run-action
 Run all actions with names matching the ACTION-REGEXP.
-If called interactivly it promts for the regexp.  You may also use
+If called interactively it prompts for the regexp.  You may also use
 completion.
 @end deffn
 
@@ -6878,7 +7030,8 @@ List of headers to check for email addresses.
 
 Default value:
 @example
-((composition ("To" "CC" "BCC")) (default ("From" "Sender" "Reply-To" "From" "Resent-From")))
+((composition ("To" "CC" "BCC"))
+ (default ("From" "Sender" "Reply-To" "From" "Resent-From")))
 @end example
 @end defopt
 
@@ -7057,7 +7210,8 @@ outgoing message.
 
 Default value:
 @example
-(or (vm-mail-select-folder vm-mail-folder-alist) (vm-mail-to-fcc nil t) mail-archive-file-name)
+(or (vm-mail-select-folder vm-mail-folder-alist)
+    (vm-mail-to-fcc nil t) mail-archive-file-name)
 @end example
 @end defopt
 
@@ -7125,7 +7279,9 @@ Mime-Version, Content-Type, Content-Transfer-Encoding.
 
 Default value:
 @example
-("From:" "Organization:" "Reply-To:" "To:" "Newsgroups:" "CC:" "BCC:" "FCC:" "In-Reply-To:" "References:" "Subject:" "X-Priority:" "Priority:")
+("From:" "Organization:" "Reply-To:" "To:" "Newsgroups:" "CC:" "BCC:"
+ "FCC:" "In-Reply-To:" "References:" "Subject:" "X-Priority:"
+ "Priority:")
 @end example
 @end defopt
 
@@ -7188,7 +7344,12 @@ See @code{vm-ps-print-message-left-header} for a list of variables it can use.
 
 Default value:
 @example
-(list (format "(Folder `%s')" folder-name) (format "(%s)" (vm-ps-print-tokenized-summary msg (vm-summary-sprintf vm-ps-print-each-message-summary-format msg t))))
+(list (format "(Folder `%s')" folder-name)
+      (format "(%s)"
+	      (vm-ps-print-tokenized-summary msg
+					     (vm-summary-sprintf
+					      vm-ps-print-each-message-summary-format
+					      msg t))))
 @end example
 @end defopt
 
@@ -7246,7 +7407,8 @@ The following variables are available when evaluating the value:
 
 Default value:
 @example
-(list (format "(Folder `%s')" folder-name) (format "(%d message%s printed)" mcount (if (= mcount 1) "" "s")))
+(list (format "(Folder `%s')" folder-name)
+      (format "(%d message%s printed)" mcount (if (= mcount 1) "" "s")))
 @end example
 @end defopt
 
@@ -7274,7 +7436,10 @@ See @code{vm-summary-format} for a description of the conversion specifiers.
 
 Default value:
 @example
-"******************************************************************************\n%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\"%s\"\n******************************************************************************\n"
+"******************************************************************************
+%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\"%s\"
+******************************************************************************
+"
 @end example
 @end defopt
 
@@ -7605,7 +7770,7 @@ Default value: @code{70}
 
 @defopt vm-presentation-minor-modes
 @vindex vm-presentation-minor-modes
-An assocation list mapping message presentation methods,
+An association list mapping message presentation methods,
 such as emacs-w3m, to the corresponding minor modes to be used in
 the presentation buffer.
 
@@ -7661,7 +7826,8 @@ matching @code{vm-visible-headers} are displayed last.
 
 Default value:
 @example
-("Resent-" "From:" "Sender:" "To:" "Newsgroups:" "Apparently-To:" "Cc:" "Subject:" "Date:")
+("Resent-" "From:" "Sender:" "To:" "Newsgroups:" "Apparently-To:"
+ "Cc:" "Subject:" "Date:")
 @end example
 @end defopt
 
@@ -7991,7 +8157,8 @@ cause trouble (abbrev-mode).
 
 Default value:
 @example
-(auto-fill-mode font-lock-mode ispell-minor-mode flyspell-mode abbrev-mode adaptive-fill-mode)
+(auto-fill-mode font-lock-mode ispell-minor-mode flyspell-mode
+		abbrev-mode adaptive-fill-mode)
 @end example
 @end defopt
 
@@ -8004,7 +8171,8 @@ as in other buffers.
 
 Default value:
 @example
-(("^file:///" . vm-dnd-attach-file) ("^file://" . dnd-open-file) ("^file:" . vm-dnd-attach-file))
+(("^file:///" . vm-dnd-attach-file) ("^file://" . dnd-open-file)
+ ("^file:" . vm-dnd-attach-file))
 @end example
 @end defopt
 
@@ -8106,7 +8274,7 @@ This variable currently has an effect only if @code{vm-include-text-basic}
 is true.  It has no effect for the default text quotation mechanism
 based on MIME decoding.
 
-The defaut value is nil.
+The default value is nil.
 @end defopt
 
 @defopt vm-included-text-attribution-format
@@ -8247,7 +8415,9 @@ in a composition buffer.
 
 Default value:
 @example
-("From:" "Organization:" "Subject:" "Date:" "Priority:" "X-Priority:" "Importance:" "Message-ID:" "MIME-Version:" "Content-Type:" "To:" "Newsgroups:" "CC:" "BCC:" "Reply-To:")
+("From:" "Organization:" "Subject:" "Date:" "Priority:" "X-Priority:"
+ "Importance:" "Message-ID:" "MIME-Version:" "Content-Type:" "To:"
+ "Newsgroups:" "CC:" "BCC:" "Reply-To:")
 @end example
 @end defopt
 
@@ -8466,7 +8636,7 @@ thread are saved.
 @findex vm-save-message-sans-headers
 Save the current message to a file, without its header section.
 If the file already exists, the message body will be appended to it.
-Prefix arg COUNT means save the next COUNT message bodiess.  A
+Prefix arg COUNT means save the next COUNT message bodies.  A
 negative COUNT means save the previous COUNT bodies.
 
 When invoked on marked messages (via @code{vm-next-command-uses-marks}),
@@ -8558,7 +8728,7 @@ Grepmail is a fast perl-script for finding mails which got lost in the
 folder jungle.  End your input or folders and directories with an empty sting
 or the default folder.
 
-ARGUMENTS the command line aruments to grepmail.
+ARGUMENTS the command line arguments to grepmail.
 FOLDERS should be a list of files/directories to search in.
 @end deffn
 
@@ -8695,7 +8865,94 @@ To-header otherwise it is evaluated.
 
 Default value:
 @example
-(("honey" "girlfriend" "$dear $babe,\n\n$point$reply\n\n$inlove $your\n$forward") ("german-reply" (and vm-reply-list (string-match "\\.\\(de\\|at\\|ch\\)>?$" (vm-mail-mode-get-header-contents "To:"))) "$reply\n$point\n$ciao$i") ("german-default" "\\.\\(de\\|at\\|ch\\)>?$" "$hallo $you,\n\n$point$reply\n\n$ciao$i\n\n$forward\n$sig") ("german-serious" "\\.\\(de\\|at\\|ch\\)>?$" "$sg $sir,\n\n$point$reply\n\n$mfg\n$me\n\n$forward\n$sig") ("english-reply" vm-reply-list "$reply\n$point\n$bye$i") ("english-default" t "$hi $you,\n\n$point$reply\n\n$bye$i\n\n$forward\n$sig\n") ("doc" nil "\n                            A LECTURE ON VM-SERIAL\n\nThe `vm-serial-mails-alist' contains a list of templates and associated\nconditions and names for these templates.\n\nWhen doing a `vm-serial-yank-mail' it will check for the first condition\nwhich matches and inserts this template.  Tokens in the template are\nexpanded by the function called `vm-serial-expand-tokens'.\n\nThere are default tokens for various things.  Tokens start with the\nstring specified in `vm-serial-cookie' which is \"$(eval vm-serial-cookie)\" followed by a\nstring matching the regexp \\([a-zA-Z][a-zA-Z0-9_-]*\\) which may be\nenclosed by @{@} or a lisp expressions.  The first type is a named token\nand has to be listed in the variable `vm-serial-token-alist'.  It will be\nexpanded and if evaluating to a non nil object then it is inserted.  In\norder to get just the `vm-serial-cookie' \"$(eval vm-serial-cookie)\" simply write it twice.\n\nYou may also embed any kind of lisp expression.  If they return a string, it\nwill be inserted.\n\nDo [M-x vm-serial-expand-tokens] in order to see how things change ...\n\nExample of a embedded lisp expression:\n\n the current date is $$(format-time-string \"%D %r\").\n\n $$(center-line) Center this line\n\n $$$no expansion\n  \nThe following tokens are currently defined:\n\nToken   Documentation  (the example follows in the next line)\n$(mapconcat\n  (function (lambda (tk)\n      (concat (car tk) \"\\t\" (caddr tk) \"\n\11$\" (car tk))))\n  vm-serial-token-alist  \"\n\")\n\n\nIf you thing there are other tokens which should be added to this list, please\nlet me know!\n\nmailto:Robert Fenk"))
+(("honey" "girlfriend" "$dear $babe,
+
+$point$reply
+
+$inlove $your
+$forward")
+ ("german-reply"
+  (and vm-reply-list
+       (string-match "\\.\\(de\\|at\\|ch\\)>?$"
+		     (vm-mail-mode-get-header-contents "To:")))
+  "$reply
+$point
+$ciao$i")
+ ("german-default" "\\.\\(de\\|at\\|ch\\)>?$" "$hallo $you,
+
+$point$reply
+
+$ciao$i
+
+$forward
+$sig")
+ ("german-serious" "\\.\\(de\\|at\\|ch\\)>?$" "$sg $sir,
+
+$point$reply
+
+$mfg
+$me
+
+$forward
+$sig")
+ ("english-reply" vm-reply-list "$reply
+$point
+$bye$i")
+ ("english-default" t "$hi $you,
+
+$point$reply
+
+$bye$i
+
+$forward
+$sig
+")
+ ("doc" nil "
+                            A LECTURE ON VM-SERIAL
+
+The `vm-serial-mails-alist' contains a list of templates and associated
+conditions and names for these templates.
+
+When doing a `vm-serial-yank-mail' it will check for the first condition
+which matches and inserts this template.  Tokens in the template are
+expanded by the function called `vm-serial-expand-tokens'.
+
+There are default tokens for various things.  Tokens start with the
+string specified in `vm-serial-cookie' which is \"$(eval vm-serial-cookie)\" followed by a
+string matching the regexp \\([a-zA-Z][a-zA-Z0-9_-]*\\) which may be
+enclosed by @{@} or a lisp expressions.  The first type is a named token
+and has to be listed in the variable `vm-serial-token-alist'.  It will be
+expanded and if evaluating to a non nil object then it is inserted.  In
+order to get just the `vm-serial-cookie' \"$(eval vm-serial-cookie)\" simply write it twice.
+
+You may also embed any kind of lisp expression.  If they return a string, it
+will be inserted.
+
+Do [M-x vm-serial-expand-tokens] in order to see how things change ...
+
+Example of a embedded lisp expression:
+
+ the current date is $$(format-time-string \"%D %r\").
+
+ $$(center-line) Center this line
+
+ $$$no expansion
+  
+The following tokens are currently defined:
+
+Token   Documentation  (the example follows in the next line)
+$(mapconcat
+  (function (lambda (tk)
+      (concat (car tk) \"\\t\" (caddr tk) \"
+	$\" (car tk))))
+  vm-serial-token-alist  \"
+\")
+
+
+If you thing there are other tokens which should be added to this list, please
+let me know!
+
+mailto:Robert Fenk"))
 @end example
 @end defopt
 
@@ -8720,7 +8977,71 @@ randomly select one of them during expansion.
 
 Default value:
 @example
-(("to" (vm-serial-get-to) "to header of the mail") ("sir" (vm-serial-get-name 'last) "the last name of the recipient") ("you" (vm-serial-get-name 'first) "the first name of the recipient") ("mr" (vm-serial-get-name) "the full name of the recipient") ("bbdbsir" (vm-serial-get-bbdb-name 'last) "the last name of the recipient as returned by the BBDB") ("bbdbyou" (vm-serial-get-bbdb-name 'first) "the first name of the recipient as returned by the BBDB") ("bbdbmr" (vm-serial-get-bbdb-name) "the full name of the recipient as returned by the BBDB") ("me" (user-full-name) "your full name") ("i" (vm-serial-get-name 'first (user-full-name)) "your first name") ("I" (vm-serial-get-name 'last (user-full-name)) "your last name") ("point" (and (setq vm-serial-point (point)) nil) "the position of point after expanding tokens") ("reply" (if (and vm-reply-list vm-serial-body-contents) (insert vm-serial-body-contents)) "set to the message body when replying") ("forward" (if (and vm-forward-list vm-serial-body-contents) (insert vm-serial-body-contents)) "set to the message body when forwarding") ("body" (if vm-serial-body-contents (insert vm-serial-body-contents)) "set to the message body before yanking a mail template") ("sig" (cond ((not vm-serial-mail-signature) nil) ((stringp vm-serial-mail-signature) vm-serial-mail-signature) ((eq t vm-serial-mail-signature) (insert-file mail-signature-file)) ((functionp vm-serial-mail-signature) (funcall vm-serial-mail-signature)) (t (eval vm-serial-mail-signature))) "the signature obtained from `vm-serial-mail-signature'") ("fifosig" (concat "-- \n" (shell-command-to-string (concat "cat " mail-signature-file))) "a signature read from a FIFO") ("hi" ("Hi" "Hello" "Dear") "a randomly selected hi-style salutation") ("dear" ("Lovely" "Hello" "Dear" "Sweetheart") "a randomly selected dear-style salutation") ("bye" ("" "Bye " "Cheers " "CU ") "a randomly selected bye-style greeting") ("br" ("Best regards" "Sincerly" "Yours") "a randomly selected best-regards-style greeting") ("babe" ("honey" "sugar pie" "darling" "babe") "a randomly selected honey-style salutation") ("inlove" ("In love" "Dreaming of you" "1 billion kisses") "a randomly selected inlove-style greeting") ("your" ("honey" "sugar pie" "darling" "babe" (vm-serial-get-name 'first (user-full-name))) "a randomly selected your-style greeting") ("hallo" ("Hi" "Griass di" "Servus" "Hallo") "ein Hallo-Gruß") ("mausl" ("Mausl" "Liebling" "Schatzi" "Hallo") "die Freundin") ("ciao" ("" "Ciao " "Tschüß " "Servus " "Mach's gut " "Bis denn " "Bis die Tage mal ") "Verabschiedung") ("sg" ("Sehr geehrte Frau/Herr") "förmliche Anrede") ("mfg" ("Mit freundlichen Grüßen") "förmliche Verabschiedung") ("salut" ("Salut" "Bonjour") "Une salutation au hasard") ("merci" ("Merci" "Au revoir" "A+" "Amicalement") "Un au revoir au hasard"))
+(("to" (vm-serial-get-to) "to header of the mail")
+ ("sir" (vm-serial-get-name 'last) "the last name of the recipient")
+ ("you" (vm-serial-get-name 'first) "the first name of the recipient")
+ ("mr" (vm-serial-get-name) "the full name of the recipient")
+ ("bbdbsir" (vm-serial-get-bbdb-name 'last)
+  "the last name of the recipient as returned by the BBDB")
+ ("bbdbyou" (vm-serial-get-bbdb-name 'first)
+  "the first name of the recipient as returned by the BBDB")
+ ("bbdbmr" (vm-serial-get-bbdb-name)
+  "the full name of the recipient as returned by the BBDB")
+ ("me" (user-full-name) "your full name")
+ ("i" (vm-serial-get-name 'first (user-full-name)) "your first name")
+ ("I" (vm-serial-get-name 'last (user-full-name)) "your last name")
+ ("point" (and (setq vm-serial-point (point)) nil)
+  "the position of point after expanding tokens")
+ ("reply"
+  (if (and vm-reply-list vm-serial-body-contents)
+      (insert vm-serial-body-contents))
+  "set to the message body when replying")
+ ("forward"
+  (if (and vm-forward-list vm-serial-body-contents)
+      (insert vm-serial-body-contents))
+  "set to the message body when forwarding")
+ ("body" (if vm-serial-body-contents (insert vm-serial-body-contents))
+  "set to the message body before yanking a mail template")
+ ("sig"
+  (cond ((not vm-serial-mail-signature) nil)
+	((stringp vm-serial-mail-signature) vm-serial-mail-signature)
+	((eq t vm-serial-mail-signature)
+	 (insert-file mail-signature-file))
+	((functionp vm-serial-mail-signature)
+	 (funcall vm-serial-mail-signature))
+	(t (eval vm-serial-mail-signature)))
+  "the signature obtained from `vm-serial-mail-signature'")
+ ("fifosig" (concat "-- 
+"
+		    (shell-command-to-string
+		     (concat "cat " mail-signature-file)))
+  "a signature read from a FIFO")
+ ("hi" ("Hi" "Hello" "Dear") "a randomly selected hi-style salutation")
+ ("dear" ("Lovely" "Hello" "Dear" "Sweetheart")
+  "a randomly selected dear-style salutation")
+ ("bye" ("" "Bye " "Cheers " "CU ")
+  "a randomly selected bye-style greeting")
+ ("br" ("Best regards" "Sincerly" "Yours")
+  "a randomly selected best-regards-style greeting")
+ ("babe" ("honey" "sugar pie" "darling" "babe")
+  "a randomly selected honey-style salutation")
+ ("inlove" ("In love" "Dreaming of you" "1 billion kisses")
+  "a randomly selected inlove-style greeting")
+ ("your"
+  ("honey" "sugar pie" "darling" "babe"
+   (vm-serial-get-name 'first (user-full-name)))
+  "a randomly selected your-style greeting")
+ ("hallo" ("Hi" "Griass di" "Servus" "Hallo") "ein Hallo-Gruß")
+ ("mausl" ("Mausl" "Liebling" "Schatzi" "Hallo") "die Freundin")
+ ("ciao"
+  ("" "Ciao " "Tschüß " "Servus " "Mach's gut " "Bis denn "
+   "Bis die Tage mal ")
+  "Verabschiedung")
+ ("sg" ("Sehr geehrte Frau/Herr") "förmliche Anrede")
+ ("mfg" ("Mit freundlichen Grüßen") "förmliche Verabschiedung")
+ ("salut" ("Salut" "Bonjour") "Une salutation au hasard")
+ ("merci" ("Merci" "Au revoir" "A+" "Amicalement")
+  "Un au revoir au hasard"))
 @end example
 @end defopt
 
@@ -8836,7 +9157,17 @@ decide the face.
 
 Default value:
 @example
-(((deleted) vm-summary-deleted) ((new) vm-summary-new) ((marked) vm-summary-marked) ((or (header "Priority: urgent") (header "Importance: high") (header "X-Priority: 1") (flagged) (label "!") (label "\\flagged") (header "X-VM-postponed-data:")) vm-summary-high-priority) ((unread) vm-summary-unread) ((replied) vm-summary-replied) ((or (filed) (written)) vm-summary-saved) ((or (forwarded) (redistributed)) vm-summary-forwarded) ((edited) vm-summary-edited) ((outgoing) vm-summary-outgoing) ((any) vm-summary-default))
+(((deleted) vm-summary-deleted) ((new) vm-summary-new)
+ ((marked) vm-summary-marked)
+ ((or (header "Priority: urgent") (header "Importance: high")
+      (header "X-Priority: 1") (flagged) (label "!")
+      (label "\\flagged") (header "X-VM-postponed-data:"))
+  vm-summary-high-priority)
+ ((unread) vm-summary-unread) ((replied) vm-summary-replied)
+ ((or (filed) (written)) vm-summary-saved)
+ ((or (forwarded) (redistributed)) vm-summary-forwarded)
+ ((edited) vm-summary-edited) ((outgoing) vm-summary-outgoing)
+ ((any) vm-summary-default))
 @end example
 @end defopt
 
@@ -9017,7 +9348,7 @@ Recognized specifiers are:
    t - the total number of messages in the folder
    u - the number of old but still unread messages in the folder
    ( - starts a group, terminated by %).  Useful for specifying
-       the field width and precision for the concatentation of
+       the field width and precision for the concatenation of
        group of format specifiers.  Example: "%.35(%d, %t, %f%)"
        specifies a maximum display width of 35 characters for the
        concatenation of the content description, content type and
@@ -9353,7 +9684,7 @@ Recognized specifiers are:
    z - timezone of date when the message was sent
    * - ‘*’ if the message is marked, ‘ ’ otherwise
    ( - starts a group, terminated by %).  Useful for specifying
-       the field width and precision for the concatentation of
+       the field width and precision for the concatenation of
        group of format specifiers.  Example: "%.35(%I%s%)"
        specifies a maximum display width of 35 characters for the
        concatenation of the thread indentation and the subject.
@@ -9629,7 +9960,8 @@ window system.
 
 Default value:
 @example
-(folder motion send mark label sort virtual undo dispose emacs nil help)
+(folder motion send mark label sort virtual undo dispose emacs nil
+	help)
 @end example
 @end defopt
 
@@ -9651,7 +9983,8 @@ See also @code{vm-toolbar-orientation} to control where the toolbar is placed.
 
 Default value:
 @example
-(getmail next previous delete/undelete autofile file reply followup forward compose print visit quit help)
+(getmail next previous delete/undelete autofile file reply followup
+	 forward compose print visit quit help)
 @end example
 @end defopt
 
@@ -9881,7 +10214,7 @@ VM also defines a number of browser functions of the form
 The @code{xxx} can be netscape, mmosaic, mosaic, opera, mozilla,
 konqueror, firefox, window-system or clipboard.  If it is
 window-system then the URL is passed to the window system’s
-"copy" mechanism so that it can be pasted somwhere else.  If it
+"copy" mechanism so that it can be pasted somewhere else.  If it
 is clipboard, the URL is sent to the X clipboard.
 
 
@@ -9963,8 +10296,9 @@ to be moved and appended to the folder buffer.  You can disable
 this automatic fetching of mail by setting @code{vm-auto-get-new-mail}
 to nil.
 
-All the messages can be read by repeatedly pressing SPC.  Use @code{n}ext and
-@code{p}revious to move about in the folder.  Messages are marked for
+All the messages can be read by repeatedly pressing SPC.  Use @code{n} for the
+next message and @code{p} for the previous one to move about in the folder.
+Messages are marked for
 deletion with @code{d}, and saved to another folder with @code{s}.  Quitting VM
 with @code{q} saves the buffered folder to disk, but does not expunge
 deleted messages.  Use @code{###} to expunge deleted messages.
@@ -10235,7 +10569,7 @@ changes, messages additions or deletions will be allowed in the
 visited folder.
 
 The optional third arg JUST-VISIT (not available interactively)
-says that the folder should be visited with as little intial
+says that the folder should be visited with as little initial
 processing as possible.  No summary generation, no moving of the
 message-pointer, no retrieval of new mail.
 @end deffn
@@ -10667,7 +11001,7 @@ Prefix arg means the new virtual folder should be visited read only.
 
 @deffn Command vm-create-date-virtual-folder &optional arg read-only subject
 @findex vm-create-date-virtual-folder
-Create a virtual folder (search folder) of all messsages with date
+Create a virtual folder (search folder) of all messages with date
 in given range.
 
 Prefix arg means the new virtual folder should be visited read only.
@@ -10739,7 +11073,7 @@ Prefix arg means the new virtual folder should be visited read only.
 
 @deffn Command vm-create-text-virtual-folder &optional string read-only subject
 @findex vm-create-text-virtual-folder
-Create a virtual folder (search folder) of all messsages with the
+Create a virtual folder (search folder) of all messages with the
 given string in its text.
 
 Prefix arg means the new virtual folder should be visited read only.

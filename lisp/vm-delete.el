@@ -198,7 +198,7 @@ the variables `vm-subject-ignored-prefix' and `vm-subject-ignored-suffix'.
 The optional prefix argument ARG specifies the direction to move
 if `vm-move-after-killing' is non-nil.  The default direction is
 forward.  A positive prefix argument means move forward, a
-negative arugment means move backward, a zero argument means
+negative argument means move backward, a zero argument means
 don't move at all."
   (interactive "p")
   (vm-follow-summary-cursor)
@@ -237,7 +237,7 @@ don't move at all."
 The optional prefix argument ARG specifies the direction to move
 if vm-move-after-killing is non-nil.  The default direction is
 forward.  A positive prefix argument means move forward, a
-negative arugment means move backward, a zero argument means
+negative argument means move backward, a zero argument means
 don't move at all."
   (interactive "p")
   (vm-follow-summary-cursor)
@@ -279,7 +279,7 @@ deletion; you will have to expunge the messages with
 
 When invoked on marked messages (via `vm-next-command-uses-marks'),
 only duplicate messages among the marked messages are deleted;
-unmarked messages are not considerd for deletion."
+unmarked messages are not considered for deletion."
   (interactive)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-error-if-folder-read-only)
@@ -340,7 +340,7 @@ really get rid of them, as usual.
 
 When invoked on marked messages (via `vm-next-command-uses-marks'),
 only duplicate messages among the marked messages are deleted,
-unmarked messages are not hashed or considerd for deletion."
+unmarked messages are not hashed or considered for deletion."
   (interactive)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-error-if-folder-read-only)

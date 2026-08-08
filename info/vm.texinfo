@@ -3859,7 +3859,7 @@ forwarded messages.  You can inhibit this by setting the variable
 @code{vm-mime-forward-saved-attachments} to @code{nil}.  Messages are then
 forwarded with external references to saved attachments.  If the recipients
 have access to the file system where attachments are saved, they will still
-be able to view them.  (This may be appropriate if the attachemnts are saved
+be able to view them.  (This may be appropriate if the attachments are saved
 in some shared file space, or if you wish to suppress the attachments in the
 forwarded messages.)
 
@@ -7478,7 +7478,7 @@ Other versions of Emacs may or may not have any implementation of
 If the Emacs version does not have SSL/TLS support, you can use an external
 @code{stunnel} program to establish a secure ``tunnel''.  You can download
 the @code{stunnel} program from the @code{stunnel.org} web site, and install
-it somewhere on the @code{exec-path}.  VM is preconigured to use the
+it somewhere on the @code{exec-path}.  VM is preconfigured to use the
 @code{stunnel} program for talking to the mail servers that require SSL,
 i.e., the value of the variable @code{vm-stunnel-program} is set to
 @code{stunnel}.  VM automatically generates a configuration file that the
@@ -7529,7 +7529,7 @@ of @code{smtpmail.el} library, have made the life difficult to many users.
 @vindex smtpmail-smtp-service
 The @code{smtpmail.el} library included with GNU Emacs version 24 has
 @acronym{SSL}/@acronym{TLS} functionality.  Follow these guidelines for
-configuring the uptodate @code{smtpmail} library depending on the type of
+configuring the up-to-date @code{smtpmail} library depending on the type of
 the @acronym{SMTP} server.
 
 @itemize

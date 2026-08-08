@@ -108,13 +108,13 @@
   :type 'integer)
 
 (defcustom vm-biff-body-peek 50
-  "*Maximum number of chractes to peek into the body of a message."
+  "*Maximum number of characters to peek into the body of a message."
   :group 'vm-biff
   :type 'integer)
 
 
 (defcustom vm-biff-focus-popup nil
-  "*t if popup window should get the focus after an update."
+  "*Non-nil means the pop-up window takes the focus when it appears."
   :group 'vm-biff
   :type 'boolean)
 
@@ -133,7 +133,7 @@
 (defcustom vm-biff-selector '(and (new)
                                   (not (deleted))
                                   (not (outgoing)))
-  "*virtual folder selector matching messages to display in the pop-up."
+  "*Virtual folder selector matching the messages the pop-up shows."
   :group 'vm-biff
   :type 'sexp)
 
@@ -161,7 +161,7 @@ Testing is done by string-matching it against the current buffer-file-name.
 
 Another form is an alist of elements (FODERNAME SELECTOR),
 where SELECTOR is a virtual folder selector matching the
-messges which should be displayed.  See `vm-biff-selector'
+messages which should be displayed.  See `vm-biff-selector'
 for an example and `vm-virtual-folder-alist' on how virtual
 folder selectors work."
   :group 'vm-biff
@@ -277,7 +277,7 @@ folder selectors work."
 
 ;;;###autoload
 (defun vm-biff-select-message ()
-  "Put focus on the folder frame and select the appropiate message."
+  "Put focus on the folder frame and select the appropriate message."
   (interactive)
   (let* ((vm-biff-message-pointer
           (or (get-text-property (point) 'vm-message-pointer)

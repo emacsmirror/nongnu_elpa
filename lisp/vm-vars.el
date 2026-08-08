@@ -340,7 +340,7 @@ SPOOLNAME can also be a POP maildrop.
 
     PORT is the TCP port number to connect to.  This should
     normally be 110, unless you're using POP over SSL in which
-    case the stanard port is 995.
+    case the standard port is 995.
 
     USER is the user name sent to the server.
 
@@ -844,7 +844,7 @@ additional overhead in checking that the session is active."
 
 (defcustom vm-imap-message-bunch-size 10
   "*Number of messages to be bunched together in IMAP server
-operations.  This permits faster interation with the IMAP servers.  To
+operations.  This permits faster interaction with the IMAP servers.  To
 disable bunching, set it to 1."
   :group 'vm-imap
   :type 'integer)
@@ -1285,7 +1285,7 @@ Customize `vm-presentation-minor-modes' to set the appropriate minor modes."
 		 (const :tag "Use minor modes" t)))
 
 (defcustom vm-presentation-minor-modes '((emacs-w3m w3m-minor-mode))
-  "*An assocation list mapping message presentation methods,
+  "*An association list mapping message presentation methods,
 such as emacs-w3m, to the corresponding minor modes to be used in
 the presentation buffer."
   :group 'vm-presentation
@@ -1325,7 +1325,7 @@ encrypting this S/MIME encoded composition. Valid valus are as follows:
   "*Non-nil value means VM should display messages using MIME.
 MIME (Multipurpose Internet Mail Extensions) is a set of
 extensions to the standard Internet message format that allows
-reliable tranmission and reception of arbitrary data including
+reliable transmission and reception of arbitrary data including
 images, audio and video as well as ordinary text.
 
 A non-nil value for this variable means that VM will recognize
@@ -1426,7 +1426,7 @@ boundaries and refuse to parse such MIME messages."
   "*Non-nil value means VM should support sending messages using MIME.
 MIME (Multipurpose Internet Mail Extensions) is a set of
 extensions to the standard Internet message format that allows
-reliable tranmission and reception of arbitrary data including
+reliable transmission and reception of arbitrary data including
 images, audio and video as well as traditional text.
 
 A non-nil value for this variable means that VM will
@@ -1839,7 +1839,7 @@ chosen."
 
 (defcustom vm-mime-alternative-yank-method nil
   "*Value tells how to choose which alternative to yank, i.e.,
-include, in replies, when it yanks a mesage with
+include, in replies, when it yanks a message with
 \"multipart/alternative\" content.  (It is similar to
 `vm-mime-alternative-show-method' used for displaying messages.)
 Possible values are `best', `best-internal', `all', or a
@@ -2257,7 +2257,7 @@ Recognized specifiers are:
        \"display text\" for text objects and so on.
    c - the character set of the object.  Usually only specified
        for text objects.  Displays as \"us-ascii\" if the MIME object
-       does not specifiy a character set.
+       does not specify a character set.
    d - the content description of the object taken from the
        Content-Description header, if present.  If the header
        isn't present, a generic description is provided.
@@ -2280,7 +2280,7 @@ Recognized specifiers are:
    x - the content type of the external body of a message/external-body
        object.
    ( - starts a group, terminated by %).  Useful for specifying
-       the field width and precision for the concatentation of
+       the field width and precision for the concatenation of
        group of format specifiers.  Example: \"%.25(%d, %t, %f%)\"
        specifies a maximum display width of 25 characters for the
        concatenation of the content description, content type and
@@ -2500,7 +2500,7 @@ the accompanying type.
 When a MIME object is displayed using an external viewer VM must
 first write the object to a temporary file.  The external viewer
 opens and displays that file.  Some viewers will not open a file
-unless the filename ends with some extention that it recognizes
+unless the filename ends with some extension that it recognizes
 such as '.html' or '.jpg'.  You can use this variable to map MIME
 types to extensions that your external viewers will recognize.  VM
 will search the list for a matching type.  The suffix associated
@@ -3230,7 +3230,7 @@ This variable currently has an effect only if `vm-include-text-basic'
 is true.  It has no effect for the default text quotation mechanism
 based on MIME decoding.
 
-The defaut value is nil." 
+The default value is nil." 
   :group 'vm-reply
   :type '(choice (const nil)
                  (repeat string)))
@@ -3834,7 +3834,7 @@ Recognized specifiers are:
    z - timezone of date when the message was sent
    * - `*' if the message is marked, ` ' otherwise
    ( - starts a group, terminated by %).  Useful for specifying
-       the field width and precision for the concatentation of
+       the field width and precision for the concatenation of
        group of format specifiers.  Example: \"%.35(%I%s%)\"
        specifies a maximum display width of 35 characters for the
        concatenation of the thread indentation and the subject.
@@ -4186,7 +4186,7 @@ Recognized specifiers are:
    t - the total number of messages in the folder
    u - the number of old but still unread messages in the folder
    ( - starts a group, terminated by %).  Useful for specifying
-       the field width and precision for the concatentation of
+       the field width and precision for the concatenation of
        group of format specifiers.  Example: \"%.35(%d, %t, %f%)\"
        specifies a maximum display width of 35 characters for the
        concatenation of the content description, content type and
@@ -4655,7 +4655,7 @@ VM also defines a number of browser functions of the form
 The `xxx' can be netscape, mmosaic, mosaic, opera, mozilla,
 konqueror, firefox, window-system or clipboard.  If it is
 window-system then the URL is passed to the window system's
-\"copy\" mechanism so that it can be pasted somwhere else.  If it
+\"copy\" mechanism so that it can be pasted somewhere else.  If it
 is clipboard, the URL is sent to the X clipboard.
 
 

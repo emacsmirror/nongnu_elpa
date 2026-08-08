@@ -552,7 +552,7 @@ See `vm-rmail-up\'."
   '(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Re: ")
     ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Fo: "))
   "*List of subject prefixes which should be replaced.
-Matching will be done case insentivily."
+Matching will be done case insensitively."
   :group 'vm-rfaddons
   :type '(repeat (cons (regexp :tag "Regexp")
                        (string :tag "Replacement"))))
@@ -1360,7 +1360,7 @@ I prefer to use lynx for this job:
 
 #!/bin/tcsh
 
-tmpfile=/tmp/$USER-stripttags.html
+tmpfile=/tmp/$USER-striptags.html
 cat > $tmpfile
 lynx -force_html -dump $tmpfile
 rm $tmpfile
