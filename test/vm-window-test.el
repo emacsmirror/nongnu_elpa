@@ -346,6 +346,61 @@ Creates initial frame and sets up all frame function mocks."
     (should (fboundp 'vm-next-frame))
     (should (fboundp 'vm-frame-selected-window))))
 
+;;; The frame wrappers are functions, defined here (issue #595)
+
+;; `vm-delete-frame', `vm-raise-frame' and `vm-select-frame' used to be made
+;; with `(fset 'X (symbol-function (cond ...)))', choosing between the Emacs
+;; and XEmacs spellings at load time.  Two consequences, both fixed by writing
+;; them as ordinary functions that dispatch when called:
+;;
+;; `fset' writes the function cell and nothing else, so `symbol-file' returned
+;; nil and the reference appendix, which files a command by the file defining
+;; it, left them out of the manual entirely.
+;;
+;; And copying the function object copied `delete-frame''s interactive spec
+;; with it, so `vm-delete-frame' was a command -- offered by `M-x', asking to
+;; be used -- when it is an internal wrapper that VM never meant to expose.
+
+(defconst vm-window-test--frame-wrappers
+  '((vm-selected-frame        . (0 . 0))
+    (vm-delete-frame          . (0 . 2))
+    (vm-raise-frame           . (0 . 1))
+    (vm-select-frame          . (1 . 2))
+    (vm-frame-visible-p       . (1 . 1))
+    (vm-frame-iconified-p     . (0 . 1))
+    (vm-window-frame          . (1 . 1))
+    (vm-next-frame            . (0 . 2))
+    (vm-frame-selected-window . (0 . 1)))
+  "Wrapper, and the arity it takes from the Emacs function it stands for.")
+
+(ert-deftest vm-window-test-frame-wrappers-are-plain-functions ()
+  "Each wrapper is a function with a known file, and is not a command."
+  (require 'vm-window)
+  (dolist (entry vm-window-test--frame-wrappers)
+    (let ((wrapper (car entry)))
+      (should (fboundp wrapper))
+      (should (symbol-file wrapper))
+      (should-not (commandp wrapper))
+      (should (equal (cdr entry) (func-arity wrapper))))))
+
+(ert-deftest vm-window-test-frame-wrappers-reach-emacs ()
+  "Each wrapper calls through to what Emacs provides.
+Batch Emacs has one visible frame, so all of these can be asked for real.
+`vm-delete-frame' is the exception -- deleting the only frame is not
+something to do mid-suite -- and its dispatch is the same `cond' as the
+rest, checked by arity above."
+  (require 'vm-window)
+  (let ((frame (selected-frame)))
+    (should (eq frame (vm-selected-frame)))
+    (should (eq frame (vm-window-frame (selected-window))))
+    (should (eq frame (vm-select-frame frame)))
+    (should (eq frame (vm-next-frame frame)))
+    (should (eq (selected-window) (vm-frame-selected-window frame)))
+    (should (eq t (vm-frame-visible-p frame)))
+    (should-not (vm-frame-iconified-p frame))
+    (should-not (vm-raise-frame frame))
+    (should-not (vm-raise-frame))))
+
 (provide 'vm-window-test)
 
 ;;; vm-window-test.el ends here

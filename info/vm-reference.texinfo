@@ -4113,6 +4113,167 @@ The MIME object is replaced by a text/plain object that briefly
 describes what was deleted.
 @end deffn
 
+@deffn Command vm-fetch-mode &optional read-only
+@findex vm-fetch-mode
+Major mode for reading mail.
+
+This is VM.
+
+Use M-x vm-submit-bug-report to submit a bug report.
+
+Commands:
+@example
+Key             Binding
+-------------------------------------------------------------------------------
+0 .. 9          digit-argument
+
+C-d             vm-delete-message-backward
+TAB             vm-goto-message-last-seen
+RET             vm-goto-message
+C-t             vm-toggle-threads-display
+C-_             vm-undo
+SPC             vm-scroll-forward
+!               vm-optional-key
+%               vm-optional-key
+*               vm-optional-key
+-               negative-argument
+.               vm-mark-message-read
+=               vm-optional-key
+?               vm-help
+@@               vm-send-digest
+A               vm-auto-archive-messages
+B               vm-resend-message
+C               vm-collapse-all-threads
+D               vm-decode-mime-message
+E               vm-expand-all-threads
+F               vm-followup-include-text
+G               vm-sort-messages
+H               vm-folders-summarize
+K               vm-kill-thread-subtree
+L               vm-optional-key
+N               vm-next-message-no-skip
+O               vm-unload-message
+P               vm-previous-message-no-skip
+R               vm-reply-include-text
+S               vm-save-folder
+T               vm-toggle-thread
+U               vm-mark-message-unread
+Z               vm-forward-message-plain
+[               vm-move-to-previous-button
+]               vm-move-to-next-button
+^               vm-goto-parent-message
+a .. b          vm-optional-key
+c               vm-continue-composing-message
+d               vm-delete-message
+e               vm-optional-key
+f               vm-followup
+g               vm-get-new-mail
+h               vm-summarize
+i               vm-optional-key
+j               vm-discard-cached-data
+k               vm-kill-subject
+m               vm-mail-from-folder
+n               vm-next-message
+o               vm-load-message
+p               vm-previous-message
+q               vm-quit
+r               vm-reply
+s               vm-save-message
+t               vm-expose-hidden-headers
+u               vm-undelete-message
+v               vm-visit-folder
+w               vm-optional-key
+x               vm-quit-no-change
+z               vm-forward-message
+DEL             vm-scroll-backward
+C-/             vm-undo
+<backspace>     vm-scroll-backward
+<delete>        vm-scroll-backward
+
+C-c C-d         vm-delete-all-attachments
+C-c C-e         vm-edit-message
+C-c C-s         vm-save-all-attachments
+C-c b           vm-message-history-browse
+C-c n           vm-message-history-forward
+C-c p           vm-message-history-backward
+
+C-x C-q         vm-toggle-read-only
+C-x C-s         vm-save-folder
+C-x C-w         vm-write-file
+C-x u           vm-undo
+
+C-M-n           vm-move-message-forward
+C-M-p           vm-move-message-backward
+M-C             vm-show-copying-restrictions
+M-W             vm-show-no-warranty
+M-g             vm-optional-key
+M-l             vm-optional-key
+M-n             vm-next-unread-message
+M-p             vm-previous-unread-message
+M-r             vm-resend-bounced-message
+M-s             vm-isearch-forward
+
+M ?             vm-mark-help
+M A             vm-mark-messages-same-author
+M C             vm-mark-messages-by-selector
+M M             vm-mark-message
+M N             vm-next-command-uses-marks
+M R             vm-mark-summary-region
+M S             vm-mark-messages-same-subject
+M T             vm-mark-thread-subtree
+M U             vm-unmark-message
+M V             vm-toggle-all-marks
+M X             vm-mark-messages-by-virtual-folder
+M a             vm-unmark-messages-same-author
+M c             vm-unmark-messages-by-selector
+M m             vm-mark-all-messages
+M n             vm-next-command-uses-marks
+M r             vm-unmark-summary-region
+M s             vm-unmark-messages-same-subject
+M t             vm-unmark-thread-subtree
+M u             vm-clear-all-marks
+M x             vm-unmark-messages-by-virtual-folder
+
+V !             vm-create-flagged-virtual-folder
+V ?             vm-virtual-help
+V A             vm-create-virtual-folder-same-author
+V C             vm-create-virtual-folder
+V M             vm-toggle-virtual-mirror
+V R             vm-create-virtual-folder-same-recipient
+V S             vm-create-virtual-folder-same-subject
+V T             vm-create-virtual-folder-of-threads
+V V             vm-visit-virtual-folder
+V X             vm-apply-virtual-folder
+V a             vm-create-author-virtual-folder
+V d             vm-create-date-virtual-folder
+V l             vm-create-label-virtual-folder
+V n             vm-create-new-virtual-folder
+V r             vm-create-author-or-recipient-virtual-folder
+V s             vm-create-subject-virtual-folder
+V t             vm-create-text-virtual-folder
+V u             vm-create-unseen-virtual-folder
+
+W ?             vm-window-help
+W D             vm-delete-window-configuration
+W S             vm-save-window-configuration
+W W             vm-apply-window-configuration
+
+l a             vm-add-message-labels
+l d             vm-delete-message-labels
+l e             vm-add-existing-message-labels
+
+| d             vm-pipe-message-to-command-discard-output
+| n             vm-pipe-messages-to-command-discard-output
+| s             vm-pipe-messages-to-command
+| |             vm-pipe-message-to-command
+
+# # #           vm-expunge-folder
+@end example
+
+
+Customize VM by setting variables and store them in the @code{vm-init-file}.
+@end deffn
+
 @deffn Command vm-list-mime-part-structure &optional verbose
 @findex vm-list-mime-part-structure
 List mime part structure of the current message.
@@ -4325,6 +4486,15 @@ should be encoded together.
 List mime part structure of the current message.
 @end deffn
 
+@deffn Command vm-mime-preview-composition
+@findex vm-mime-preview-composition
+Show how the current composition buffer might be displayed
+in a MIME-aware mail reader.  VM copies and encodes the current
+mail composition buffer and displays it as a mail folder.
+Type @code{q} to quit this temp folder and return to composing your
+message.
+@end deffn
+
 @deffn Command vm-mime-reader-map-attach-to-composition
 @findex vm-mime-reader-map-attach-to-composition
 Attach the MIME object at point to a message being composed.  The
@@ -4396,6 +4566,167 @@ If optional argument FUNCTION is given, run it instead.
 Removes the text/html part of all multipart/alternative message parts.
 
 This is a destructive operation and cannot be undone!
+@end deffn
+
+@deffn Command vm-presentation-mode &optional read-only
+@findex vm-presentation-mode
+Major mode for reading mail.
+
+This is VM.
+
+Use M-x vm-submit-bug-report to submit a bug report.
+
+Commands:
+@example
+Key             Binding
+-------------------------------------------------------------------------------
+0 .. 9          digit-argument
+
+C-d             vm-delete-message-backward
+TAB             vm-goto-message-last-seen
+RET             vm-goto-message
+C-t             vm-toggle-threads-display
+C-_             vm-undo
+SPC             vm-scroll-forward
+!               vm-optional-key
+%               vm-optional-key
+*               vm-optional-key
+-               negative-argument
+.               vm-mark-message-read
+=               vm-optional-key
+?               vm-help
+@@               vm-send-digest
+A               vm-auto-archive-messages
+B               vm-resend-message
+C               vm-collapse-all-threads
+D               vm-decode-mime-message
+E               vm-expand-all-threads
+F               vm-followup-include-text
+G               vm-sort-messages
+H               vm-folders-summarize
+K               vm-kill-thread-subtree
+L               vm-optional-key
+N               vm-next-message-no-skip
+O               vm-unload-message
+P               vm-previous-message-no-skip
+R               vm-reply-include-text
+S               vm-save-folder
+T               vm-toggle-thread
+U               vm-mark-message-unread
+Z               vm-forward-message-plain
+[               vm-move-to-previous-button
+]               vm-move-to-next-button
+^               vm-goto-parent-message
+a .. b          vm-optional-key
+c               vm-continue-composing-message
+d               vm-delete-message
+e               vm-optional-key
+f               vm-followup
+g               vm-get-new-mail
+h               vm-summarize
+i               vm-optional-key
+j               vm-discard-cached-data
+k               vm-kill-subject
+m               vm-mail-from-folder
+n               vm-next-message
+o               vm-load-message
+p               vm-previous-message
+q               vm-quit
+r               vm-reply
+s               vm-save-message
+t               vm-expose-hidden-headers
+u               vm-undelete-message
+v               vm-visit-folder
+w               vm-optional-key
+x               vm-quit-no-change
+z               vm-forward-message
+DEL             vm-scroll-backward
+C-/             vm-undo
+<backspace>     vm-scroll-backward
+<delete>        vm-scroll-backward
+
+C-c C-d         vm-delete-all-attachments
+C-c C-e         vm-edit-message
+C-c C-s         vm-save-all-attachments
+C-c b           vm-message-history-browse
+C-c n           vm-message-history-forward
+C-c p           vm-message-history-backward
+
+C-x C-q         vm-toggle-read-only
+C-x C-s         vm-save-folder
+C-x C-w         vm-write-file
+C-x u           vm-undo
+
+C-M-n           vm-move-message-forward
+C-M-p           vm-move-message-backward
+M-C             vm-show-copying-restrictions
+M-W             vm-show-no-warranty
+M-g             vm-optional-key
+M-l             vm-optional-key
+M-n             vm-next-unread-message
+M-p             vm-previous-unread-message
+M-r             vm-resend-bounced-message
+M-s             vm-isearch-forward
+
+M ?             vm-mark-help
+M A             vm-mark-messages-same-author
+M C             vm-mark-messages-by-selector
+M M             vm-mark-message
+M N             vm-next-command-uses-marks
+M R             vm-mark-summary-region
+M S             vm-mark-messages-same-subject
+M T             vm-mark-thread-subtree
+M U             vm-unmark-message
+M V             vm-toggle-all-marks
+M X             vm-mark-messages-by-virtual-folder
+M a             vm-unmark-messages-same-author
+M c             vm-unmark-messages-by-selector
+M m             vm-mark-all-messages
+M n             vm-next-command-uses-marks
+M r             vm-unmark-summary-region
+M s             vm-unmark-messages-same-subject
+M t             vm-unmark-thread-subtree
+M u             vm-clear-all-marks
+M x             vm-unmark-messages-by-virtual-folder
+
+V !             vm-create-flagged-virtual-folder
+V ?             vm-virtual-help
+V A             vm-create-virtual-folder-same-author
+V C             vm-create-virtual-folder
+V M             vm-toggle-virtual-mirror
+V R             vm-create-virtual-folder-same-recipient
+V S             vm-create-virtual-folder-same-subject
+V T             vm-create-virtual-folder-of-threads
+V V             vm-visit-virtual-folder
+V X             vm-apply-virtual-folder
+V a             vm-create-author-virtual-folder
+V d             vm-create-date-virtual-folder
+V l             vm-create-label-virtual-folder
+V n             vm-create-new-virtual-folder
+V r             vm-create-author-or-recipient-virtual-folder
+V s             vm-create-subject-virtual-folder
+V t             vm-create-text-virtual-folder
+V u             vm-create-unseen-virtual-folder
+
+W ?             vm-window-help
+W D             vm-delete-window-configuration
+W S             vm-save-window-configuration
+W W             vm-apply-window-configuration
+
+l a             vm-add-message-labels
+l d             vm-delete-message-labels
+l e             vm-add-existing-message-labels
+
+| d             vm-pipe-message-to-command-discard-output
+| n             vm-pipe-messages-to-command-discard-output
+| s             vm-pipe-messages-to-command
+| |             vm-pipe-message-to-command
+
+# # #           vm-expunge-folder
+@end example
+
+
+Customize VM by setting variables and store them in the @code{vm-init-file}.
 @end deffn
 
 @deffn Command vm-save-all-attachments &optional count directory
@@ -9861,9 +10192,102 @@ signals: no folder, no message, and a folder buffer that has been killed
 all give nil.
 @end deffn
 
+@deffn Command vm-toolbar-compose-command &optional to subject
+@findex vm-toolbar-compose-command
+Send a mail message from within VM, or from without.
+Optional argument TO is a string that should contain a comma separated
+recipient list.
+@end deffn
+
+@deffn Command vm-toolbar-decode-mime-command &optional state
+@findex vm-toolbar-decode-mime-command
+Decode the MIME objects in the current message.
+
+The first time this command is run on a message, decoding is done.
+The second time, buttons for all the objects are displayed instead.
+The third time, the raw, undecoded data is displayed.
+
+The optional argument STATE can specify which decode state to display:
+@code{decoded}, @code{button}, or @code{undecoded}.
+
+If decoding, the decoded objects might be displayed immediately, or
+buttons might be displayed that you need to activate to view the
+object.  See the documentation for the variables
+
+@example
+    vm-mime-auto-displayed-content-types
+    vm-mime-auto-displayed-content-type-exceptions
+    vm-mime-internal-content-types
+    vm-mime-internal-content-type-exceptions
+    vm-mime-external-content-types-alist
+
+@end example
+to see how to control whether you see buttons or objects.
+
+If the variable vm-mime-display-function is set, then its value
+is called as a function with no arguments, and none of the
+actions mentioned in the preceding paragraphs are taken.  At the
+time of the call, the current buffer will be the presentation
+buffer for the folder and a copy of the current message will be
+in the buffer.  The function is expected to make the message
+@code{MIME presentable} to the user in whatever manner it sees fit.
+@end deffn
+
 @deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
 @findex vm-toolbar-delete/undelete-message
 
+@end deffn
+
+@deffn Command vm-toolbar-file-command folder &optional count mlist quiet
+@findex vm-toolbar-file-command
+Save the current message to another FOLDER, queried via the
+mini-buffer.  The FOLDER may be a local file system folder or an
+IMAP folder.  You can specify a preference by setting the
+variable @code{vm-imap-save-to-server}.
+
+Prefix arg COUNT means save this message and the next COUNT-1
+messages.  A negative COUNT means save this message and the
+previous COUNT-1 messages.
+
+When invoked on marked messages (via @code{vm-next-command-uses-marks}),       
+all marked messages in the current folder are saved; other messages are
+ignored.  If applied to collapsed threads in summary and thread operations are
+enabled via @code{vm-enable-thread-operations} then all messages in the
+thread are saved.
+@end deffn
+
+@deffn Command vm-toolbar-followup-command count
+@findex vm-toolbar-followup-command
+Reply to all recipients of the current message.
+See the documentation for the function vm-reply for details.
+@end deffn
+
+@deffn Command vm-toolbar-forward-command &optional plain mlist
+@findex vm-toolbar-forward-command
+Forward the current message to one or more recipients.
+You will be placed in a Mail mode buffer as you would with a
+reply, but you must fill in the "To:" header and perhaps the
+"Subject:" header manually.
+
+See @code{vm-forward-message-plain} for forwarding messages in plain text.
+@end deffn
+
+@deffn Command vm-toolbar-getmail-command &optional arg
+@findex vm-toolbar-getmail-command
+Move any new mail that has arrived in any of the spool files for the
+current folder into the folder.  New mail is appended to the disk
+and buffer copies of the folder.
+
+Prefix arg means to gather mail from a user specified folder, instead of
+the usual spool files.  The file name will be read from the minibuffer.
+Unlike when getting mail from a spool file, the source file is left
+undisturbed after its messages have been copied.
+
+When applied to a virtual folder, this command runs itself on
+each of the underlying real folders associated with this virtual
+folder.  A prefix argument has no effect when this command is
+applied to virtual folder; mail is always gathered from the spool
+files.
 @end deffn
 
 @deffn Command vm-toolbar-helper-command
@@ -9872,6 +10296,90 @@ Run whatever command @code{vm-toolbar-helper-command} currently holds.
 The toolbar’s helper button changes with the context: what it does is
 decided by reassigning this variable before the button is drawn, rather
 than by having a button per command.
+@end deffn
+
+@deffn Command vm-toolbar-next-command &optional count retry signal-errors
+@findex vm-toolbar-next-command
+Go forward one message and preview it.
+With prefix arg (optional first argument) COUNT, go forward COUNT
+messages.  A negative COUNT means go backward.  If the absolute
+value of COUNT is greater than 1, then the values of the variables
+vm-skip-deleted-messages and vm-skip-read-messages are ignored.
+
+When invoked on marked messages (via @code{vm-next-command-uses-marks})
+this command "sees" marked messages as it moves.
+@end deffn
+
+@deffn Command vm-toolbar-previous-command &optional count retry signal-errors
+@findex vm-toolbar-previous-command
+Go back one message and preview it.
+With prefix arg COUNT, go backward COUNT messages.  A negative COUNT
+means go forward.  If the absolute value of COUNT > 1 the values of the
+variables vm-skip-deleted-messages and vm-skip-read-messages are
+ignored.
+@end deffn
+
+@deffn Command vm-toolbar-print-command &optional count
+@findex vm-toolbar-print-command
+Print the current message
+Prefix arg N means print the current message and the next N - 1 messages.
+Prefix arg -N means print the current message and the previous N - 1 messages.
+
+The variable @code{vm-print-command} controls what command is run to
+print the message, and @code{vm-print-command-switches} is a list of switches
+to pass to the command.
+
+When invoked on marked messages (via @code{vm-next-command-uses-marks}),
+each marked message is printed, one message per vm-print-command
+invocation.  If applied to collapsed threads in summary and thread
+operations are enabled via @code{vm-enable-thread-operations} then all messages
+in the thread are printed.
+
+Output, if any, is displayed.  The message is not altered.
+@end deffn
+
+@deffn Command vm-toolbar-quit-command &optional no-expunge no-change
+@findex vm-toolbar-quit-command
+Quit visiting the current folder, saving changes.  If the folder is
+being visited read-only then changes are not saved.  This behavior
+can be customized using @code{vm-preserve-read-only-folders-on-disk}.
+
+If the customization variable @code{vm-expunge-before-quit} is set to
+  non-nil value then deleted messages are expunged.
+
+Giving a prefix argument overrides the variable and no expunge is
+done.
+
+When called internally, the optional argument NO-EXPUNGE says
+that the deleted messages should not be expunged (irrespective of
+the value of @code{vm-expunge-before-quit}.  NO-CHANGE says that
+changes should be discarded.
+@end deffn
+
+@deffn Command vm-toolbar-reply-command count
+@findex vm-toolbar-reply-command
+Reply to all recipients of the current message and include text from
+the message.  See the documentation for the function vm-reply for details.
+@end deffn
+
+@deffn Command vm-toolbar-visit-command arg1 &rest rest
+@findex vm-toolbar-visit-command
+Visit a mail file.
+VM will parse and present its messages to you in the usual way.
+
+First arg FOLDER specifies the mail file to visit.  When this
+command is called interactively the file name is read from the
+minibuffer.
+
+Prefix arg or optional second arg READ-ONLY non-nil indicates
+that the folder should be considered read only.  No attribute
+changes, messages additions or deletions will be allowed in the
+visited folder.
+
+The optional third arg JUST-VISIT (not available interactively)
+says that the folder should be visited with as little initial
+processing as possible.  No summary generation, no moving of the
+message-pointer, no retrieval of new mail.
 @end deffn
 
 @appendixsubsec User options
@@ -10310,6 +10818,167 @@ Generate a summary of the folders in your folder directories.
 Set @code{vm-folders-summary-directories} to specify the folder directories.
 Press RETURN or click mouse button 2 on an entry in the folders
 summary buffer to select a folder.
+@end deffn
+
+@deffn Command vm-folders-summary-mode &optional read-only
+@findex vm-folders-summary-mode
+Major mode for reading mail.
+
+This is VM.
+
+Use M-x vm-submit-bug-report to submit a bug report.
+
+Commands:
+@example
+Key             Binding
+-------------------------------------------------------------------------------
+0 .. 9          digit-argument
+
+C-d             vm-delete-message-backward
+TAB             vm-goto-message-last-seen
+RET             vm-goto-message
+C-t             vm-toggle-threads-display
+C-_             vm-undo
+SPC             vm-scroll-forward
+!               vm-optional-key
+%               vm-optional-key
+*               vm-optional-key
+-               negative-argument
+.               vm-mark-message-read
+=               vm-optional-key
+?               vm-help
+@@               vm-send-digest
+A               vm-auto-archive-messages
+B               vm-resend-message
+C               vm-collapse-all-threads
+D               vm-decode-mime-message
+E               vm-expand-all-threads
+F               vm-followup-include-text
+G               vm-sort-messages
+H               vm-folders-summarize
+K               vm-kill-thread-subtree
+L               vm-optional-key
+N               vm-next-message-no-skip
+O               vm-unload-message
+P               vm-previous-message-no-skip
+R               vm-reply-include-text
+S               vm-save-folder
+T               vm-toggle-thread
+U               vm-mark-message-unread
+Z               vm-forward-message-plain
+[               vm-move-to-previous-button
+]               vm-move-to-next-button
+^               vm-goto-parent-message
+a .. b          vm-optional-key
+c               vm-continue-composing-message
+d               vm-delete-message
+e               vm-optional-key
+f               vm-followup
+g               vm-get-new-mail
+h               vm-summarize
+i               vm-optional-key
+j               vm-discard-cached-data
+k               vm-kill-subject
+m               vm-mail-from-folder
+n               vm-next-message
+o               vm-load-message
+p               vm-previous-message
+q               vm-quit
+r               vm-reply
+s               vm-save-message
+t               vm-expose-hidden-headers
+u               vm-undelete-message
+v               vm-visit-folder
+w               vm-optional-key
+x               vm-quit-no-change
+z               vm-forward-message
+DEL             vm-scroll-backward
+C-/             vm-undo
+<backspace>     vm-scroll-backward
+<delete>        vm-scroll-backward
+
+C-c C-d         vm-delete-all-attachments
+C-c C-e         vm-edit-message
+C-c C-s         vm-save-all-attachments
+C-c b           vm-message-history-browse
+C-c n           vm-message-history-forward
+C-c p           vm-message-history-backward
+
+C-x C-q         vm-toggle-read-only
+C-x C-s         vm-save-folder
+C-x C-w         vm-write-file
+C-x u           vm-undo
+
+C-M-n           vm-move-message-forward
+C-M-p           vm-move-message-backward
+M-C             vm-show-copying-restrictions
+M-W             vm-show-no-warranty
+M-g             vm-optional-key
+M-l             vm-optional-key
+M-n             vm-next-unread-message
+M-p             vm-previous-unread-message
+M-r             vm-resend-bounced-message
+M-s             vm-isearch-forward
+
+M ?             vm-mark-help
+M A             vm-mark-messages-same-author
+M C             vm-mark-messages-by-selector
+M M             vm-mark-message
+M N             vm-next-command-uses-marks
+M R             vm-mark-summary-region
+M S             vm-mark-messages-same-subject
+M T             vm-mark-thread-subtree
+M U             vm-unmark-message
+M V             vm-toggle-all-marks
+M X             vm-mark-messages-by-virtual-folder
+M a             vm-unmark-messages-same-author
+M c             vm-unmark-messages-by-selector
+M m             vm-mark-all-messages
+M n             vm-next-command-uses-marks
+M r             vm-unmark-summary-region
+M s             vm-unmark-messages-same-subject
+M t             vm-unmark-thread-subtree
+M u             vm-clear-all-marks
+M x             vm-unmark-messages-by-virtual-folder
+
+V !             vm-create-flagged-virtual-folder
+V ?             vm-virtual-help
+V A             vm-create-virtual-folder-same-author
+V C             vm-create-virtual-folder
+V M             vm-toggle-virtual-mirror
+V R             vm-create-virtual-folder-same-recipient
+V S             vm-create-virtual-folder-same-subject
+V T             vm-create-virtual-folder-of-threads
+V V             vm-visit-virtual-folder
+V X             vm-apply-virtual-folder
+V a             vm-create-author-virtual-folder
+V d             vm-create-date-virtual-folder
+V l             vm-create-label-virtual-folder
+V n             vm-create-new-virtual-folder
+V r             vm-create-author-or-recipient-virtual-folder
+V s             vm-create-subject-virtual-folder
+V t             vm-create-text-virtual-folder
+V u             vm-create-unseen-virtual-folder
+
+W ?             vm-window-help
+W D             vm-delete-window-configuration
+W S             vm-save-window-configuration
+W W             vm-apply-window-configuration
+
+l a             vm-add-message-labels
+l d             vm-delete-message-labels
+l e             vm-add-existing-message-labels
+
+| d             vm-pipe-message-to-command-discard-output
+| n             vm-pipe-messages-to-command-discard-output
+| s             vm-pipe-messages-to-command
+| |             vm-pipe-message-to-command
+
+# # #           vm-expunge-folder
+@end example
+
+
+Customize VM by setting variables and store them in the @code{vm-init-file}.
 @end deffn
 
 @deffn Command vm-mail &optional to subject

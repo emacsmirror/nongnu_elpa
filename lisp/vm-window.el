@@ -28,17 +28,20 @@
 (eval-when-compile (require 'cl-lib))
 
 (declare-function frame-highest-window "vm-xemacs" (frame))
-
-(declare-function vm-selected-frame "vm-window.el" ())
-(declare-function vm-window-frame "vm-window.el" (window))
-(declare-function vm-delete-frame "vm-window.el" (&optional frame force))
-(declare-function vm-raise-frame "vm-window.el" (&optional frame))
-(declare-function vm-frame-visible-p "vm-window.el" (frame))
-(declare-function vm-frame-iconified-p "vm-window.el" (frame))
-(declare-function vm-window-frame "vm-window.el" (window))
-(declare-function vm-next-frame "vm-window.el" (&optional frame miniframe))
-(declare-function vm-select-frame "vm-window.el" (frame &optional norecord))
-(declare-function vm-frame-selected-window "vm-window.el" (&optional frame))
+;; XEmacs called a frame a screen, and Epoch a window.  Named here so that
+;; the wrappers at the end of this file can call them rather than reach them
+;; through `symbol-function'.  The wrappers themselves are ordinary
+;; functions, so they need no declaration of their own.
+(declare-function selected-screen "vm-xemacs" ())
+(declare-function delete-screen "vm-xemacs" (&optional screen))
+(declare-function raise-screen "vm-xemacs" (&optional screen))
+(declare-function select-screen "vm-xemacs" (screen))
+(declare-function screen-visible-p "vm-xemacs" (screen))
+(declare-function frame-iconified-p "vm-xemacs" (&optional frame))
+(declare-function window-screen "vm-xemacs" (window))
+(declare-function next-screen "vm-xemacs" (&optional screen miniscreen))
+(declare-function screen-selected-window "vm-xemacs" (&optional screen))
+(declare-function epoch::selected-window "vm-xemacs" (&optional screen))
 
 ;;;###autoload
 (defun vm-display (buffer display commands configs
@@ -640,17 +643,21 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 		 ;; (unfocus-frame)
 		 ))))))
 
-(fset 'vm-selected-frame
-      (symbol-function
-       (cond ((fboundp 'selected-frame) 'selected-frame)
-	     ;; ((fboundp 'selected-screen) 'selected-screen) ; Xemacs 19?
-	     (t 'ignore))))
+(defun vm-selected-frame ()
+  "Return the selected frame.
+XEmacs called a frame a screen.  Where neither exists there are no frames,
+and this returns nil."
+  (cond ((fboundp 'selected-frame) (selected-frame))
+	((fboundp 'selected-screen) (selected-screen))))
 
-(fset 'vm-delete-frame
-      (symbol-function
-       (cond ((fboundp 'delete-frame) 'delete-frame)
-	     ;; ((fboundp 'delete-screen) 'delete-screen)  ; XEmacs 19?
-	     (t 'ignore))))
+(defun vm-delete-frame (&optional frame force)
+  "Delete FRAME, which defaults to the selected frame.
+FORCE deletes it even when it is the last frame on its terminal.
+
+XEmacs calls a frame a screen, and its `delete-screen' takes no FORCE.
+Where neither exists there are no frames, and this does nothing."
+  (cond ((fboundp 'delete-frame) (delete-frame frame force))
+	((fboundp 'delete-screen) (delete-screen frame))))
 
 ;; xxx because vm-iconify-frame is a command
 (defun vm-iconify-frame-xxx (&optional frame)
@@ -668,21 +675,25 @@ Run the hooks in vm-iconify-frame-hook before doing so."
       (select-frame frame)
       (iconify-or-deiconify-frame))))
 
-(fset 'vm-raise-frame
-      (symbol-function
-       (cond ((fboundp 'raise-frame) 'raise-frame)
-	     ;; ((fboundp 'raise-screen) 'raise-screen)   ; XEmacs 19?
-	     (t 'ignore))))
+(defun vm-raise-frame (&optional frame)
+  "Raise FRAME, which defaults to the selected frame.
+XEmacs calls a frame a screen.  Where neither `raise-frame' nor
+`raise-screen' exists there are no frames, and this does nothing."
+  (cond ((fboundp 'raise-frame) (raise-frame frame))
+	((fboundp 'raise-screen) (raise-screen frame))))
 
-(fset 'vm-frame-visible-p
-      (symbol-function
-       (cond ((fboundp 'frame-visible-p) 'frame-visible-p)
-	     ;; ((fboundp 'screen-visible-p) 'screen-visible-p) ; XEmacs 19?
-	     (t 'ignore))))
+(defun vm-frame-visible-p (frame)
+  "Whether FRAME is visible.  `icon' if it is iconified, as `frame-visible-p'
+has it, and nil where there are no frames at all."
+  (cond ((fboundp 'frame-visible-p) (frame-visible-p frame))
+	((fboundp 'screen-visible-p) (screen-visible-p frame))))
 
-(if (fboundp 'frame-iconified-p)
-    (fset 'vm-frame-iconified-p 'frame-iconified-p)
-  (defun vm-frame-iconified-p (&optional frame)
+(defun vm-frame-iconified-p (&optional frame)
+  "Whether FRAME is iconified.
+XEmacs asks `frame-iconified-p'; Emacs says the same thing by having
+`frame-visible-p' answer `icon'."
+  (if (fboundp 'frame-iconified-p)
+      (frame-iconified-p frame)
     (eq (vm-frame-visible-p frame) 'icon)))
 
 ;; frame-totally-visible-p is broken under XEmacs 19.14 and is
@@ -703,28 +714,38 @@ Run the hooks in vm-iconify-frame-hook before doing so."
   (or frame (setq frame (selected-frame)))
   (not (memq (frame-visible-p frame) '(nil hidden))))
 
-(fset 'vm-window-frame
-      (symbol-function
-       (cond ((fboundp 'window-frame) 'window-frame)
-	     ((fboundp 'window-screen) 'window-screen)
-	     (t 'ignore))))
+(defun vm-window-frame (window)
+  "Return the frame WINDOW is on.
+XEmacs called a frame a screen.  Where neither exists there are no frames,
+and this returns nil."
+  (cond ((fboundp 'window-frame) (window-frame window))
+	((fboundp 'window-screen) (window-screen window))))
 
-(cond ((fboundp 'next-frame)
-       (fset 'vm-next-frame (symbol-function 'next-frame))
-       (fset 'vm-select-frame (symbol-function 'select-frame))
-       (fset 'vm-frame-selected-window
-	     (symbol-function 'frame-selected-window)))
-      ((fboundp 'next-screen)
-       (fset 'vm-next-frame (symbol-function 'next-screen))
-       (fset 'vm-select-frame (symbol-function 'select-screen))
-       (fset 'vm-frame-selected-window
-	     (if (fboundp 'epoch::selected-window)
-		 (symbol-function 'epoch::selected-window)
-	       (symbol-function 'screen-selected-window))))
-      (t
-       ;; it is useful for this to be a no-op, but don't bind the
-       ;; others.
-       (fset 'vm-select-frame 'ignore)))
+(defun vm-select-frame (frame &optional norecord)
+  "Select FRAME, as `select-frame' does.
+NORECORD leaves the frame's position in the recent-selection order alone;
+XEmacs calls a frame a screen and its `select-screen' has no such argument.
+
+Where neither exists this is deliberately a no-op rather than an error: VM
+calls it on paths that must work in an Emacs with no frames at all."
+  (cond ((fboundp 'select-frame) (select-frame frame norecord))
+	((fboundp 'select-screen) (select-screen frame))))
+
+(defun vm-next-frame (&optional frame miniframe)
+  "The frame after FRAME in the cyclic order, as `next-frame' has it.
+MINIFRAME says how minibuffer-only frames are treated; VM never passes it,
+and XEmacs took a different argument there, so it is only handed on to
+`next-frame'."
+  (cond ((fboundp 'next-frame) (next-frame frame miniframe))
+	((fboundp 'next-screen) (next-screen frame))))
+
+(defun vm-frame-selected-window (&optional frame)
+  "The window selected in FRAME, which defaults to the selected frame.
+Epoch is asked before XEmacs, which is the order the load-time version of
+this used, and the only place either still differs from Emacs."
+  (cond ((fboundp 'frame-selected-window) (frame-selected-window frame))
+	((fboundp 'epoch::selected-window) (epoch::selected-window frame))
+	((fboundp 'screen-selected-window) (screen-selected-window frame))))
 
 (provide 'vm-window)
 ;;; vm-window.el ends here

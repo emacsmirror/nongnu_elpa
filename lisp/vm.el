@@ -1276,7 +1276,7 @@ current message is selected as the recipient of the new composition."
     (run-hooks 'vm-mail-hook)
     (run-hooks 'vm-mail-mode-hook)))
 
-(fset 'vm-folders-summary-mode 'vm-mode)
+(defalias 'vm-folders-summary-mode 'vm-mode)
 (put 'vm-folders-summary-mode 'mode-class 'special)
 
 ;;;###autoload

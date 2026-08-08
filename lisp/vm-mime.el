@@ -1732,9 +1732,9 @@ The STORAGE specification is given in the same format as for
   (insert-file-contents filename nil nil nil t)
   t)
 
-(fset 'vm-fetch-mode 'vm-mode)
+(defalias 'vm-fetch-mode 'vm-mode)
 (put 'vm-fetch-mode 'mode-class 'special)
-(fset 'vm-presentation-mode 'vm-mode)
+(defalias 'vm-presentation-mode 'vm-mode)
 (put 'vm-presentation-mode 'mode-class 'special)
 
 (defvar buffer-file-coding-system)
@@ -8187,7 +8187,7 @@ Returns marker pointing to the start of the encoded MIME part."
       (nreverse buffers))))
 
 ;; moved to vm-reply.el, not MIME-specific.
-(fset 'vm-mime-preview-composition 'vm-preview-composition)
+(defalias 'vm-mime-preview-composition 'vm-preview-composition)
 
 (defun vm-mime-composite-type-p (type)
   "Check if TYPE is a MIME type that might have subparts."
