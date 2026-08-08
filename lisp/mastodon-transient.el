@@ -31,6 +31,7 @@
 (defvar mastodon-toot-visibility-settings-list)
 (defvar mastodon-iso-639-regional)
 (defvar mastodon-toot-poll)
+(defvar mastodon-profiles-quote-policy-types)
 
 (autoload 'mastodon-toot-visibility-settings-list "mastodon-toot")
 (autoload 'mastodon-http--get-json "mastodon-http")
