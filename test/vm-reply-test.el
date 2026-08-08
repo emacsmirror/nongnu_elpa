@@ -710,6 +710,49 @@ without further change."
                                         "\n"))))))
       (delete-directory dir t))))
 
+(ert-deftest vm-reply-test-fcc-headers-come-back-after-sending ()
+  "The Fcc headers are put back once the message has gone.
+They have to be absent while it is sent, or `mail-send' files a second copy
+through `mail-do-fcc'.  Afterwards the buffer VM leaves behind should still
+say where the copy went -- and sending it again after an edit should file it
+again rather than quietly not."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir)))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\n"
+                  "Fcc: " folder "\n"
+                  "Subject: filed\n"
+                  mail-header-separator "\nbody\n")
+          (let ((vm-default-folder-type 'From_))
+            (vm-do-fcc-in-composition)
+            (should-not (string-match-p "^Fcc:" (buffer-string)))
+            (vm-restore-fcc-headers))
+          ;; back, in the header section, exactly as written
+          (should (string-match-p (concat "^Fcc: " (regexp-quote folder) "$")
+                                  (buffer-string)))
+          (goto-char (point-min))
+          (should (< (save-excursion (re-search-forward "^Fcc:"))
+                     (save-excursion
+                       (re-search-forward
+                        (concat "^" (regexp-quote mail-header-separator) "$")))))
+          ;; and sending again files again
+          (let ((vm-default-folder-type 'From_))
+            (vm-do-fcc-in-composition))
+          (should (= 2 (cl-count-if
+                        (lambda (l) (string-prefix-p "From VM " l))
+                        (split-string (vm-reply-test--folder-text folder)
+                                      "\n")))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-restore-does-nothing-without-an-fcc ()
+  "A composition that had no Fcc header is left alone."
+  (with-temp-buffer
+    (insert "To: someone@example.com\n" mail-header-separator "\nbody\n")
+    (let ((before (buffer-string)))
+      (vm-restore-fcc-headers)
+      (should (equal before (buffer-string))))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
