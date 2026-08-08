@@ -853,6 +853,19 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
 (defvar-local hermes-chat--active-tools nil
   "Hash table of active tool summaries shown in the chat header.")
 
+(defvar-local hermes-chat--model nil
+  "Model id reported by the live dashboard session, for the header.")
+
+(defvar-local hermes-chat--agent-name nil
+  "Agent/profile name reported by the live dashboard session, for the header.")
+
+(defvar-local hermes-chat--context nil
+  "Context-window usage plist (:used :max :percent) for the header.")
+
+(defvar-local hermes-chat--runtime-flags nil
+  "Runtime flag plist (:reasoning-effort :fast :yolo) from `session.info'.
+Shown as annotations after the model in the chat header.")
+
 (defvar hermes-chat--entry-counter 0
   "Counter used to generate local chat entry IDs.")
 
@@ -892,10 +905,14 @@ METADATA is stored as the entry's `:metadata' plist."
   (hermes-chat--notify-state-change))
 
 (defun hermes-chat--reset-header-state ()
-  "Reset live header state for the current chat buffer."
+  "Reset live header and session identity state for the current chat buffer."
   (setq hermes-chat--active-tools (make-hash-table :test 'equal)
         hermes-chat--status-state
-        (list :status 'ready :activity "Ready" :updated (current-time)))
+        (list :status 'ready :activity "Ready" :updated (current-time))
+        hermes-chat--model nil
+        hermes-chat--agent-name nil
+        hermes-chat--context nil
+        hermes-chat--runtime-flags nil)
   (force-mode-line-update)
   (hermes-chat--notify-state-change))
 
@@ -1276,19 +1293,6 @@ This feeds the dashboard's per-session tool list via
 
 (defvar-local hermes-chat--profile nil
   "Profile name for this chat's dashboard session, or nil for the default.")
-
-(defvar-local hermes-chat--model nil
-  "Model id reported by the live dashboard session, for the header.")
-
-(defvar-local hermes-chat--agent-name nil
-  "Agent/profile name reported by the live dashboard session, for the header.")
-
-(defvar-local hermes-chat--context nil
-  "Context-window usage plist (:used :max :percent) for the header.")
-
-(defvar-local hermes-chat--runtime-flags nil
-  "Runtime flag plist (:reasoning-effort :fast :yolo) from `session.info'.
-Shown as annotations after the model in the chat header.")
 
 (defun hermes-chat--header-profile-name ()
   "Return the selected profile name shown in the chat header."

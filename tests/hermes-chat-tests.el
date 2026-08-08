@@ -2471,12 +2471,22 @@
          (insert "remember this")
          (hermes-chat-send)
          (should hermes-chat--dashboard-active-session-id)
-         (setq stopped 0)
+         (setq stopped 0
+               hermes-chat--model "stale-model"
+               hermes-chat--agent-name "stale-agent"
+               hermes-chat--context '(:used 45000 :max 200000 :percent 22)
+               hermes-chat--runtime-flags '(:reasoning-effort "high" :fast t :yolo t))
          (insert "/clear")
          (hermes-chat-send)
          (should (= stopped 1))
          (should-not hermes-chat--dashboard-active-session-id)
          (should-not hermes-chat--session-id)
+         (should-not hermes-chat--model)
+         (should-not hermes-chat--agent-name)
+         (should-not hermes-chat--context)
+         (should-not hermes-chat--runtime-flags)
+         (should-not (string-match-p "ctx\\|stale-model\\|high\\|fast\\|YOLO"
+                                     (hermes-test--header-line-string)))
          (should (equal (mapcar (lambda (e) (plist-get e :role))
                                 (hermes-chat--entries))
                         '(status))))))))
