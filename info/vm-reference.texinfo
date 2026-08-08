@@ -259,7 +259,8 @@ or do the binding and advising on your own. (Rob F)
 
 @deffn Command vm-rmail-down
 @findex vm-rmail-down
-Not documented.
+Go to the next message, or down one line, as @code{vm-rmail-mode} says.
+See @code{vm-rmail-up}.
 @end deffn
 
 @deffn Command vm-rmail-toggle &optional arg
@@ -269,7 +270,10 @@ Not documented.
 
 @deffn Command vm-rmail-up
 @findex vm-rmail-up
-Not documented.
+Go to the previous message, or up one line, as @code{vm-rmail-mode} says.
+In Rmail cursor mode the arrow keys move between messages, as Rmail’s do;
+otherwise they move point, as they do everywhere else in Emacs.  Toggled
+with @code{vm-rmail-toggle}.
 @end deffn
 
 @deffn Command vm-save-everything
@@ -1734,7 +1738,11 @@ Interactively TYPE will be read from the minibuffer.
 
 @deffn Command vm-emit-totals-blurb
 @findex vm-emit-totals-blurb
-Not documented.
+Say how many messages the folder holds, and how many are in each state.
+New, unread and deleted are counted separately, and a folder with nothing
+in it says so.  This is the line the mode line summarises, printed on
+demand.  The totals are recomputed only when the folder has changed since
+they were last worked out.
 @end deffn
 
 @deffn Command vm-folder-cache-file &optional buffer
@@ -1995,7 +2003,16 @@ thread are affected.
 
 @deffn Command vm-write-file
 @findex vm-write-file
-Not documented.
+Write this folder to a file of another name, as @code{write-file} does.
+
+Three things @code{write-file} does not do.  The file is created with
+@code{vm-default-folder-permission-bits}, so a folder does not become
+world-readable through being written somewhere new.  The message totals
+are stored against the new name for the folders summary, so it does not
+have to open the folder to know them.  And the summary and presentation
+buffers are renamed to follow the folder.
+
+Refuses on a virtual folder, which has no file of its own.
 @end deffn
 
 @appendixsubsec User options
@@ -4214,7 +4231,11 @@ should use @code{vm-attach-file} to attach the file.
 
 @deffn Command vm-mime-change-content-disposition
 @findex vm-mime-change-content-disposition
-Not documented.
+Change the disposition of the attachment at point in this composition.
+Reads @code{inline}, @code{attachment} or @code{unspecified}.  The disposition tells the
+recipient’s mail reader whether the part is meant to be shown as part of
+the message or offered as a file to save; @code{unspecified} sends no
+Content-Disposition header and leaves the choice to them.
 @end deffn
 
 @deffn Command vm-mime-convert-to-attachment-buttons
@@ -5533,7 +5554,7 @@ Mark all messages in the current folder.
 
 @deffn Command vm-mark-help
 @findex vm-mark-help
-Not documented.
+Show the mark commands and their keys in the echo area.
 @end deffn
 
 @deffn Command vm-mark-matching-messages selector &optional arg
@@ -5672,12 +5693,16 @@ Customize VM options.
 
 @deffn Command vm-menu-create-author-virtual-folder
 @findex vm-menu-create-author-virtual-folder
-Not documented.
+Visit a virtual folder of every message by this one’s author.
+The menu’s way to @code{vm-create-virtual-folder}, with the selector and the
+author filled in from the current message rather than prompted for.
 @end deffn
 
 @deffn Command vm-menu-create-subject-virtual-folder
 @findex vm-menu-create-subject-virtual-folder
-Not documented.
+Visit a virtual folder of every message with this one’s subject.
+The menu’s way to @code{vm-create-virtual-folder}, with the selector and the
+subject filled in from the current message rather than prompted for.
 @end deffn
 
 @deffn Command vm-menu-hm-create-dir parent-dir
@@ -5702,7 +5727,9 @@ Rename a folder.
 
 @deffn Command vm-menu-mail-to
 @findex vm-menu-mail-to
-Not documented.
+Compose a message to the author of this one.
+The menu’s way to @code{vm-mail}, with the From: header of the current message
+as the recipient.  Not a reply: no subject, no references, no citation.
 @end deffn
 
 @deffn Command vm-menu-popup-attachment-menu event
@@ -5753,7 +5780,10 @@ menu bar.                                             USR, 2011-02-27
 
 @deffn Command vm-menu-yank-original
 @findex vm-menu-yank-original
-Not documented.
+Yank every message being replied to into this composition.
+The menu’s way to @code{vm-yank-message}.  Where that command yanks one message,
+this yanks all of @code{vm-reply-list} one after another, which is what a reply
+to several messages at once is replying to.
 @end deffn
 
 @deffn Command vm-view-manual
@@ -5816,12 +5846,18 @@ Default value: @code{32}
 
 @deffn Command vm-minibuffer-complete-word-and-exit
 @findex vm-minibuffer-complete-word-and-exit
-Not documented.
+Complete the word before point and leave the minibuffer at once.
+@code{vm-minibuffer-complete-word} and then @code{exit-minibuffer}, for a prompt
+where one word is the whole answer.
 @end deffn
 
 @deffn Command vm-minibuffer-completion-help
 @findex vm-minibuffer-completion-help
-Not documented.
+Show the completions of the word around point.
+Unlike ordinary minibuffer completion, which works on the whole of the
+input, this completes one word of it -- so a prompt that takes a space
+separated list, as the label and attribute prompts do, can complete each
+item in turn.
 @end deffn
 
 @node Reference for Mouse, Reference for Moving about, Reference for Minibuf, Reference
@@ -8884,7 +8920,10 @@ Like vm-summarize, but run in a newly created frame.
 
 @deffn Command vm-summary-trace-message
 @findex vm-summary-trace-message
-Not documented.
+Trace this message while summary lines are being built.
+A debugging aid: @code{vm-summary-debug} enters the debugger for a message on
+this list, and only when @code{vm-debug} is set, so tracing a message costs
+nothing until then.  Prints the list of messages being traced.
 @end deffn
 
 @deffn Command vm-toggle-thread
@@ -9492,12 +9531,17 @@ Default value: @code{t}
 
 @deffn Command vm-toolbar-autofile-message
 @findex vm-toolbar-autofile-message
-Not documented.
+Save this message to the folder @code{vm-auto-folder-alist} chooses for it.
+The toolbar’s autofile button.  Signals if no entry in that list matches
+the message, rather than prompting for a folder.
 @end deffn
 
 @deffn Command vm-toolbar-can-autofile-p
 @findex vm-toolbar-can-autofile-p
-Not documented.
+Return the folder the current message would be auto-filed to, or nil.
+What decides whether the toolbar’s autofile button is enabled.  Never
+signals: no folder, no message, and a folder buffer that has been killed
+all give nil.
 @end deffn
 
 @deffn Command vm-toolbar-delete/undelete-message &optional prefixarg
@@ -9507,7 +9551,10 @@ Not documented.
 
 @deffn Command vm-toolbar-helper-command
 @findex vm-toolbar-helper-command
-Not documented.
+Run whatever command @code{vm-toolbar-helper-command} currently holds.
+The toolbar’s helper button changes with the context: what it does is
+decided by reassigning this variable before the button is drawn, rather
+than by having a button per command.
 @end deffn
 
 @appendixsubsec User options
@@ -9658,12 +9705,16 @@ specifier) will be visible.
 
 @deffn Command vm-trace-message-id
 @findex vm-trace-message-id
-Not documented.
+Trace this message by Message-ID while threads are being built.
+A debugging aid, with @code{vm-trace-message-subject}: the threading code walks
+these lists to decide when to stop and report.  Prints the list.
 @end deffn
 
 @deffn Command vm-trace-message-subject
 @findex vm-trace-message-subject
-Not documented.
+Trace this message by subject while threads are being built.
+The subject is the sortable one, so it matches the way threading groups
+messages by subject.  See @code{vm-trace-message-id}.
 @end deffn
 
 @node Reference for Undo, Reference for Url, Reference for Threading, Reference
@@ -10336,7 +10387,14 @@ Check if there are selectors missing for either vm-mode or mail-mode.
 
 @deffn Command vm-sort-insert-auto-folder-names
 @findex vm-sort-insert-auto-folder-names
-Not documented.
+Head each run of messages in the summary with the folder it would be filed to.
+Called interactively it sorts the folder by auto-folder first, so that the
+messages destined for one folder are together, and then writes that
+folder’s name above each run.  The names are display only: they are removed
+and rewritten each time, and no message is changed.
+
+Which folder a message would go to is @code{vm-virtual-auto-select-folder}’s
+answer, from @code{vm-virtual-auto-folder-alist}.
 @end deffn
 
 @deffn Command vm-spam-words-rebuild
@@ -10776,7 +10834,7 @@ elsewhere.
 
 @deffn Command vm-virtual-help
 @findex vm-virtual-help
-Not documented.
+Show the virtual folder commands and their keys in the echo area.
 @end deffn
 
 @appendixsubsec User options
@@ -10939,7 +10997,7 @@ window configurations.
 
 @deffn Command vm-window-help
 @findex vm-window-help
-Not documented.
+Show the window configuration commands and their keys in the echo area.
 @end deffn
 
 @appendixsubsec User options

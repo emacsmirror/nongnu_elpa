@@ -143,6 +143,9 @@
 	     (vm-minibuffer-completion-message "[No match]")))))))
 
 (defun vm-minibuffer-complete-word-and-exit ()
+  "Complete the word before point and leave the minibuffer at once.
+`vm-minibuffer-complete-word\' and then `exit-minibuffer\', for a prompt
+where one word is the whole answer."
   (interactive)
   (vm-minibuffer-complete-word t)
   (exit-minibuffer))
@@ -257,6 +260,11 @@ default the local keymap of the current buffer is used."
 	(insert "\n")))))
 
 (defun vm-minibuffer-completion-help ()
+  "Show the completions of the word around point.
+Unlike ordinary minibuffer completion, which works on the whole of the
+input, this completes one word of it -- so a prompt that takes a space
+separated list, as the label and attribute prompts do, can complete each
+item in turn."
   (interactive)
   (let ((opoint (point))
 	c-list beg end word word-prefix-regexp)

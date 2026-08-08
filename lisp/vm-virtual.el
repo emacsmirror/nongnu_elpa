@@ -785,6 +785,7 @@ elsewhere."
 
 ;;;###autoload
 (defun vm-virtual-help ()
+  "Show the virtual folder commands and their keys in the echo area."
 (interactive)
   (vm-display nil nil '(vm-virtual-help) '(vm-virtual-help))
   (vm-inform 0 "VV = visit, VX = apply selectors, VC = create, VM = toggle virtual mirror"))

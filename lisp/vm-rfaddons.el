@@ -496,6 +496,10 @@ Use `vm-rmail-toggle' to switch between normal and this mode. (Rob F)"
   (message (if vm-rmail-mode "Rmail cursor mode" "VM cursor mode")))
   
 (defun vm-rmail-up ()
+  "Go to the previous message, or up one line, as `vm-rmail-mode\' says.
+In Rmail cursor mode the arrow keys move between messages, as Rmail\'s do;
+otherwise they move point, as they do everywhere else in Emacs.  Toggled
+with `vm-rmail-toggle\'."
   (interactive)
   (cond ((and vm-rmail-mode (member major-mode vm-rmail-mode-list))
          (vm-next-message -1)
@@ -505,6 +509,8 @@ Use `vm-rmail-toggle' to switch between normal and this mode. (Rob F)"
          (forward-line -1))))
 
 (defun vm-rmail-down ()
+  "Go to the next message, or down one line, as `vm-rmail-mode\' says.
+See `vm-rmail-up\'."
   (interactive)
   (cond ((and vm-rmail-mode (member major-mode vm-rmail-mode-list))
          (vm-next-message 1)

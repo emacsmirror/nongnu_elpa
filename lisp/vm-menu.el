@@ -776,6 +776,10 @@ set to the command name so that window configuration will be done."
     (error nil)))
 
 (defun vm-menu-yank-original ()
+  "Yank every message being replied to into this composition.
+The menu\'s way to `vm-yank-message\'.  Where that command yanks one message,
+this yanks all of `vm-reply-list\' one after another, which is what a reply
+to several messages at once is replying to."
   (interactive)
   (save-excursion
     (let ((mlist vm-reply-list))
@@ -797,6 +801,9 @@ set to the command name so that window configuration will be done."
 	nil ))))
 
 (defun vm-menu-create-subject-virtual-folder ()
+  "Visit a virtual folder of every message with this one\'s subject.
+The menu\'s way to `vm-create-virtual-folder\', with the selector and the
+subject filled in from the current message rather than prompted for."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq this-command 'vm-create-virtual-folder)
@@ -805,6 +812,9 @@ set to the command name so that window configuration will be done."
 	 				(car vm-message-pointer)))))
 
 (defun vm-menu-create-author-virtual-folder ()
+  "Visit a virtual folder of every message by this one\'s author.
+The menu\'s way to `vm-create-virtual-folder\', with the selector and the
+author filled in from the current message rather than prompted for."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq this-command 'vm-create-virtual-folder)
@@ -812,6 +822,9 @@ set to the command name so that window configuration will be done."
 				     (vm-su-from (car vm-message-pointer)))))
 
 (defun vm-menu-mail-to ()
+  "Compose a message to the author of this one.
+The menu\'s way to `vm-mail\', with the From: header of the current message
+as the recipient.  Not a reply: no subject, no references, no citation."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (setq this-command 'vm-mail)

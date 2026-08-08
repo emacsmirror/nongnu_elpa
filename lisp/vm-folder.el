@@ -1825,6 +1825,11 @@ Supports version 4 format of attribute storage, for backward compatibility."
 			    vm-deleted-count)))))
 
 (defun vm-emit-totals-blurb ()
+  "Say how many messages the folder holds, and how many are in each state.
+New, unread and deleted are counted separately, and a folder with nothing
+in it says so.  This is the line the mode line summarises, printed on
+demand.  The totals are recomputed only when the folder has changed since
+they were last worked out."
   (interactive)
   (save-excursion
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
@@ -3960,8 +3965,16 @@ This function is only used in background tasks.  USR 2012-12-22."
 
 ;;;###autoload
 (defun vm-write-file ()
-  ;; This function hasn't been documented.  Not clear what it does.
-  ;; 						  USR, 2011-04-27
+  "Write this folder to a file of another name, as `write-file\' does.
+
+Three things `write-file\' does not do.  The file is created with
+`vm-default-folder-permission-bits\', so a folder does not become
+world-readable through being written somewhere new.  The message totals
+are stored against the new name for the folders summary, so it does not
+have to open the folder to know them.  And the summary and presentation
+buffers are renamed to follow the folder.
+
+Refuses on a virtual folder, which has no file of its own."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (vm-error-if-virtual-folder)

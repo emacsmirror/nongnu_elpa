@@ -6823,6 +6823,11 @@ touched."
 
 ;;;###autoload
 (defun vm-mime-change-content-disposition ()
+  "Change the disposition of the attachment at point in this composition.
+Reads `inline\', `attachment\' or `unspecified\'.  The disposition tells the
+recipient\'s mail reader whether the part is meant to be shown as part of
+the message or offered as a file to save; `unspecified\' sends no
+Content-Disposition header and leaves the choice to them."
   (interactive)
   (vm-mime-set-attachment-disposition-at-point
    (intern

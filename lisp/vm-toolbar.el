@@ -247,6 +247,10 @@ will run 'vm-decode-mime-message'."])
 
 ;;;###autoload
 (defun vm-toolbar-helper-command ()
+  "Run whatever command `vm-toolbar-helper-command\' currently holds.
+The toolbar\'s helper button changes with the context: what it does is
+decided by reassigning this variable before the button is drawn, rather
+than by having a button per command."
   (interactive)
   (setq this-command vm-toolbar-helper-command)
   (call-interactively vm-toolbar-helper-command))
@@ -285,6 +289,10 @@ s-expression like this one in your .vm file:
 
 ;;;###autoload
 (defun vm-toolbar-can-autofile-p ()
+  "Return the folder the current message would be auto-filed to, or nil.
+What decides whether the toolbar\'s autofile button is enabled.  Never
+signals: no folder, no message, and a folder buffer that has been killed
+all give nil."
   (interactive)
   (condition-case nil
       (save-excursion
@@ -296,6 +304,9 @@ s-expression like this one in your .vm file:
 
 ;;;###autoload
 (defun vm-toolbar-autofile-message ()
+  "Save this message to the folder `vm-auto-folder-alist\' chooses for it.
+The toolbar\'s autofile button.  Signals if no entry in that list matches
+the message, rather than prompting for a folder."
   (interactive)
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))

@@ -45,6 +45,10 @@
 
 
 (defun vm-summary-trace-message ()
+  "Trace this message while summary lines are being built.
+A debugging aid: `vm-summary-debug\' enters the debugger for a message on
+this list, and only when `vm-debug\' is set, so tracing a message costs
+nothing until then.  Prints the list of messages being traced."
   (interactive)
   (add-to-list 'vm-summary-traced-messages
 	       (vm-number-of (vm-current-message)))

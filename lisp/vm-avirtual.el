@@ -1187,6 +1187,14 @@ This is not yet the whole story!                    USR, 2013-01-18"
 
 ;;;###autoload
 (defun vm-sort-insert-auto-folder-names ()
+  "Head each run of messages in the summary with the folder it would be filed to.
+Called interactively it sorts the folder by auto-folder first, so that the
+messages destined for one folder are together, and then writes that
+folder\'s name above each run.  The names are display only: they are removed
+and rewritten each time, and no message is changed.
+
+Which folder a message would go to is `vm-virtual-auto-select-folder\''s
+answer, from `vm-virtual-auto-folder-alist\'."
   (interactive)
   (if (vm-interactive-p)
       (vm-sort-messages "auto-folder"))

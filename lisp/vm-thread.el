@@ -122,11 +122,17 @@
   )
 
 (defun vm-trace-message-id ()
+  "Trace this message by Message-ID while threads are being built.
+A debugging aid, with `vm-trace-message-subject\': the threading code walks
+these lists to decide when to stop and report.  Prints the list."
   (interactive)
   (add-to-list 'vm-traced-message-ids (vm-su-message-id (vm-current-message)))
   (message "%s" vm-traced-message-ids))
 
 (defun vm-trace-message-subject ()
+  "Trace this message by subject while threads are being built.
+The subject is the sortable one, so it matches the way threading groups
+messages by subject.  See `vm-trace-message-id\'."
   (interactive)
   (add-to-list 'vm-traced-message-subjects 
 	       (vm-so-sortable-subject (vm-current-message)))
