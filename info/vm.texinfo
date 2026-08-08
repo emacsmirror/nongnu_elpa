@@ -999,12 +999,65 @@ the command @code{vm-change-folder-type}.
 @cindex Content-Length
 @vindex vm-trust-From_-with-Content-Length
 @cindex From_-with-Content-Length
-Solaris, System V and AIX operating systems use another variant of the
-mbox format where the content-length is specified in the ``From '' line.
-VM refers to this format as @code{From_-with-Content-Length}.  Since the
-content lengths may be unreliable, you must also set the variable
-@code{vm-trust-From_-with-Content-Length} to a non-Nil value in order to
-convince VM that you really want to use this format.
+Solaris, System V and AIX operating systems use another variant of the mbox
+format, in which each message carries a @code{Content-Length} header giving
+the length of its body, and that count rather than the next ``From '' line
+says where the message ends.  VM refers to this format as
+@code{From_-with-Content-Length}.  Since the counts may be unreliable --
+nothing stops a message carrying a @code{Content-Length} header that means
+something else -- you must also set the variable
+@code{vm-trust-From_-with-Content-Length} to a non-@code{nil} value in order
+to convince VM that you really want to use this format.
+
+@cindex mbox variants
+@cindex mboxo
+@cindex mboxrd
+@cindex mboxcl
+@cindex mboxcl2
+@cindex quoting From_ lines
+@subheading The four mbox variants
+
+Mail folders written as mbox come in four variants, named by convention
+rather than by any standard.  They differ in two things: what marks the end
+of a message, and whether the message is modified to make that work.  There
+is no file name extension, magic number or header that tells them apart, so
+the names below are a way of talking about folders rather than something a
+program can detect.
+
+@table @asis
+@item mboxo
+The end of a message is the next line beginning ``From ''.  A body line that
+begins that way is therefore changed on writing: ``From '' becomes ``>From
+''.  The change is not reversible, because a line that already read ``>From
+'' is left alone, and a reader cannot tell the two apart.  VM's
+@code{From_} and @code{BellFrom_} are this variant.
+
+@item mboxrd
+As mboxo, but ``>From '' becomes ``>>From '' as well, so the change can be
+undone exactly.  VM does not write this variant.
+
+@item mboxcl
+The end of a message is found from its @code{Content-Length} header, and
+body lines are @emph{still} quoted as in mboxo.  VM's
+@code{From_-with-Content-Length} is this variant.
+
+@item mboxcl2
+As mboxcl, but with no quoting at all: the byte count alone says where the
+message ends, so the body is stored exactly as it arrived.  VM does not
+write this variant yet.
+@end table
+
+@noindent
+The reason to care is that the first three change the message.  A folder
+kept for its own sake -- an archive, or anything you may want to verify
+later -- is better in a format that does not, which is why mboxcl2 is the
+one recognized for archiving.
+
+The reason not to care is interoperability, and it cuts the other way.  A
+program that does not honour @code{Content-Length} -- which is most of them
+-- will read an mboxcl2 folder as mboxo, and split it wrongly at the first
+body line beginning ``From '', silently.  Content-Length formats are right
+for folders you keep and wrong for folders you hand to other tools.
 
 @cindex MMDF
 @cindex Babyl

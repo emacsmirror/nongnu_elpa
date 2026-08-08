@@ -884,6 +884,13 @@ as replied to, forwarded, etc, if appropriate."
 	    (sendmail-coding-system (vm-binary-coding-system))
 	    (vm-dont-ask-coding-system-question t)
 	    (select-safe-coding-system-function nil))
+	;; File the copy before handing the message over.  `mail-send' would
+	;; otherwise do it through `mail-do-fcc', which writes one format
+	;; whatever the folder is -- see `vm-do-fcc'.  Doing it here takes
+	;; the Fcc headers out, so `mail-send' finds nothing left to file.
+	;; If `vm-do-fcc-before-mime-encode' was set, this finds nothing
+	;; either, the copy having been made further up.
+	(vm-do-fcc-in-composition)
 	(save-excursion
 	  (mail-send))))
     ;; be careful, something could have killed the composition
@@ -899,22 +906,120 @@ as replied to, forwarded, etc, if appropriate."
       (vm-keep-mail-buffer (current-buffer)))
     (vm-display nil nil '(vm-mail-send) '(vm-mail-send))))
 
+;;; Filing a copy of what we send
+
+;; `mail-do-fcc' in sendmail.el writes one format whatever the folder is: a
+;; `From ' line of its own devising, `\nFrom ' quoted to `>From ' always --
+;; its own comment says "this isn't really quoting" -- and never a
+;; `Content-Length'.  So an Fcc into a `From_-with-Content-Length' folder
+;; appends a message the byte counts do not describe, and the folder stops
+;; reading back the way it was written, silently.  VM does it itself.
+;;                                                              Issue #597.
+
+(defun vm-fcc-folders (header-end)
+  "Return the folders named by the Fcc headers before HEADER-END.
+The headers are deleted as they are read, which is also what keeps
+`mail-send' from filing the message a second time: `mail-do-fcc' looks for
+Fcc headers and finds none left."
+  (let ((folders nil)
+	(case-fold-search t))
+    (save-excursion
+      (goto-char (point-min))
+      (while (re-search-forward "^Fcc:[ \t]*" header-end t)
+	(push (buffer-substring-no-properties
+	       (point)
+	       (progn (end-of-line) (skip-chars-backward " \t") (point)))
+	      folders)
+	(delete-region (match-beginning 0) (progn (forward-line 1) (point)))))
+    (nreverse folders)))
+
+(defun vm-fcc-message-text (type)
+  "The message in the current buffer, ready to append to a folder of TYPE.
+That means: quoted the way TYPE wants it quoted and not otherwise, wrapped
+in TYPE's separators, and carrying a `Content-Length' where TYPE asks for
+one.  A composition has been through none of that yet.
+
+The count is of characters rather than bytes because that is what VM's
+reader does with it -- `vm-find-trailing-message-separator' moves over the
+body with `forward-char' -- so counting bytes here would not round-trip."
+  (let ((mailbuf (current-buffer)))
+    (with-temp-buffer
+      (insert-buffer-substring mailbuf)
+      (vm-munge-message-separators type (point-min) (point-max))
+      (goto-char (point-min))
+      (let ((body (if (re-search-forward "\n\n" nil t) (point) (point-max))))
+	(concat (vm-leading-message-separator type)
+		(if (eq type 'From_-with-Content-Length)
+		    (format "%s %d\n" vm-content-length-header
+			    (- (point-max) body))
+		  "")
+		(buffer-substring-no-properties (point-min) (point-max))
+		(vm-trailing-message-separator type))))))
+
+(defun vm-fcc-write (folder)
+  "Append the message in the current buffer to FOLDER, in FOLDER's own format.
+A folder VM is visiting is appended to in its buffer, so that the copy shows
+up without a revert; any other folder is appended to on disk."
+  (let* ((type (or (vm-get-folder-type folder)
+		   vm-default-folder-type
+		   'From_))
+	 (folder-buffer (vm-get-file-buffer folder))
+	 (attributes (file-attributes folder))
+	 (text (vm-fcc-message-text type)))
+    (when (eq type 'unknown)
+      (error "Not filing in %s: VM does not recognize its folder type" folder))
+    (if folder-buffer
+	(with-current-buffer folder-buffer
+	  (vm-error-if-folder-read-only)
+	  (let ((buffer-read-only nil))
+	    (save-restriction
+	      (widen)
+	      (goto-char (point-max))
+	      (insert text)
+	      (when (eq major-mode 'vm-mode)
+		(vm-increment vm-messages-not-on-disk)
+		(vm-clear-modification-flag-undos)
+		(vm-check-for-killed-summary)
+		(vm-assimilate-new-messages)
+		(vm-update-summary-and-mode-line)))))
+      (when (or (null attributes) (zerop (file-attribute-size attributes)))
+	(vm-write-string folder (vm-folder-header type)))
+      (vm-write-string folder text))))
+
+(defun vm-do-fcc (header-end)
+  "File a copy of this composition in each folder its Fcc headers name.
+HEADER-END is a marker at the end of the header section.  Each folder is
+written in its own format; see `vm-fcc-write'."
+  ;; Expanded only so that `~' works, as it did when `write-region' was
+  ;; handed the name.  Deliberately not resolved against
+  ;; `vm-folder-directory': an Fcc header has never meant that, and making
+  ;; it mean that would move where existing configurations file their mail.
+  (dolist (folder (vm-fcc-folders header-end))
+    (vm-fcc-write (expand-file-name folder))))
+
+(defun vm-do-fcc-in-composition ()
+  "Carry out this composition's Fcc headers, if it still has any.
+The header separator is what stands where a message has a blank line, so it
+is taken out for the copy and put back afterwards."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward
+	   (concat "^\\(" (regexp-quote mail-header-separator) "\\)$")
+	   nil t)
+      (delete-region (match-beginning 0) (match-end 0))
+      (let ((header-end (point-marker)))
+	(unwind-protect
+	    (vm-do-fcc header-end)
+	  (goto-char header-end)
+	  (insert mail-header-separator)
+	  (set-marker header-end nil))))))
+
 (defun vm-do-fcc-before-mime-encode ()
   "The name says it all.
 Sometimes you may want to save a message unencoded, specifically not to waste
 storage for attachments which are stored on disk anyway."
   (interactive)
-  (save-excursion
-    (goto-char (point-min))
-    (re-search-forward
-     (concat "^\\(" (regexp-quote mail-header-separator) "\\)$")
-     (point-max))
-    (delete-region (match-beginning 0) (match-end 0))
-    (let ((header-end (point-marker)))
-      (unwind-protect
-	  (mail-do-fcc header-end)
-	(goto-char header-end)
-	(insert mail-header-separator)))))
+  (vm-do-fcc-in-composition))
 
 ;;;###autoload
 (defun vm-mail-mode-get-header-contents (header-name-regexp)
