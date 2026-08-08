@@ -91,7 +91,7 @@ Grepmail is a fast perl-script for finding mails which got lost in the
 folder jungle.  End your input or folders and directories with an empty sting
 or the default folder.
 
-ARGUMENTS the command line aruments to grepmail.
+ARGUMENTS the command line arguments to grepmail.
 FOLDERS should be a list of files/directories to search in."
   (interactive (list
                 (split-string

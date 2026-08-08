@@ -1499,7 +1499,7 @@ actions will be run."
 ;;;###autoload
 (defun vmpc-run-action (&optional action-regexp)
   "Run all actions with names matching the ACTION-REGEXP.
-If called interactivly it promts for the regexp.  You may also use
+If called interactively it prompts for the regexp.  You may also use
 completion."
   (interactive)
   (let ((action-names (mapcar (lambda (a)

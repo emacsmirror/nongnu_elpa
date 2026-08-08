@@ -387,6 +387,7 @@ from the minibuffer."
   (vm-set-window-configuration tag))
 
 (defun vm-window-help ()
+  "Show the window configuration commands and their keys in the echo area."
   (interactive)
   (vm-inform 0 "WS = save configuration, WD = delete configuration, WW = apply configuration"))
 

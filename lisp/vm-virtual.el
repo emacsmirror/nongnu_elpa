@@ -637,7 +637,7 @@ Prefix arg means the new virtual folder should be visited read only."
 
 ;;;###autoload
 (defun vm-create-text-virtual-folder (&optional string read-only subject)
-  "Create a virtual folder (search folder) of all messsages with the
+  "Create a virtual folder (search folder) of all messages with the
 given string in its text.
 
 Prefix arg means the new virtual folder should be visited read only."
@@ -652,7 +652,7 @@ Prefix arg means the new virtual folder should be visited read only."
 
 ;;;###autoload
 (defun vm-create-date-virtual-folder (&optional arg read-only subject)
-  "Create a virtual folder (search folder) of all messsages with date
+  "Create a virtual folder (search folder) of all messages with date
 in given range.
 
 Prefix arg means the new virtual folder should be visited read only."
@@ -725,6 +725,17 @@ Prefix arg means the new virtual folder should be visited read only."
 
 
 (defun vm-toggle-virtual-mirror ()
+  "Toggle whether this virtual folder mirrors the attributes of the real ones.
+
+Mirrored, which is the default, a virtual message and the real message it
+stands for are the same message: deleting or labelling it here does so in
+the real folder, and in every other virtual folder showing it.  Unmirrored,
+this folder keeps its own attributes, so it can be marked up without
+touching the real folders, and the undo history is kept separately too.
+
+Toggling back restores the attributes each message had on the other side, so
+nothing is lost by looking.  Only meaningful in a virtual folder; signals
+elsewhere."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (if (not (eq major-mode 'vm-virtual-mode))
@@ -774,6 +785,7 @@ Prefix arg means the new virtual folder should be visited read only."
 
 ;;;###autoload
 (defun vm-virtual-help ()
+  "Show the virtual folder commands and their keys in the echo area."
 (interactive)
   (vm-display nil nil '(vm-virtual-help) '(vm-virtual-help))
   (vm-inform 0 "VV = visit, VX = apply selectors, VC = create, VM = toggle virtual mirror"))

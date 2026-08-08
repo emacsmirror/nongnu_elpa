@@ -475,6 +475,7 @@ not work."
 
 ;;;###autoload
 (defun vm-mark-help ()
+  "Show the mark commands and their keys in the echo area."
   (interactive)
   (vm-display nil nil '(vm-mark-help) '(vm-mark-help))
   (vm-inform 

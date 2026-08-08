@@ -323,12 +323,12 @@ PGP/MIME menu available in the composition buffer.
 
 The value is either an action symbol or a function:
 
-  nil               do nothing;
-  `sign'            ask whether to sign;
-  `encrypt'         ask whether to encrypt;
+  nil                do nothing;
+  `sign'             ask whether to sign;
+  `encrypt'          ask whether to encrypt;
   `sign-and-encrypt' ask whether to sign and encrypt;
-  a function        called with no arguments, returning one of the action
-                    symbols above, or nil for no action.
+  a function         called with no arguments, returning one of the action
+                     symbols above, or nil for no action.
 
 An action symbol ACTION selects the command `vm-epg-ACTION', so any value
 other than those listed must name an existing `vm-epg-' command."

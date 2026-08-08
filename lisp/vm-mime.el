@@ -4931,7 +4931,7 @@ If optional argument FUNCTION is given, run it instead.
 ;;;###autoload
 (defun vm-mime-reader-map-attach-to-composition ()
   "Attach the MIME object at point to a message being composed.  The
-buffer for message composition is queried from the minibufer."
+buffer for message composition is queried from the minibuffer."
   (interactive)
   (vm-mime-run-display-function-at-point
    'vm-mime-attach-body-to-composition))
@@ -5087,7 +5087,7 @@ ACTION will get called with four arguments: MSG LAYOUT TYPE FILENAME."
 messages.  For the purpose of this function, an \"attachment\" is
 a mime part part which has \"attachment\" as its disposition or
 simply has an associated filename.  Any mime types that match
-`vm-mime-deleteable-types' but not `vm-mime-deleteable-type-exceptions'
+`vm-mime-deletable-types' but not `vm-mime-deletable-type-exceptions'
 are also included."
   (interactive "p")
   (vm-check-for-killed-summary)
@@ -5102,8 +5102,8 @@ are also included."
        (vm-inform 7 "Deleting `%s%s" type (if file (format " (%s)" file) ""))
        (vm-mime-discard-layout-contents layout)
        (setq successes (+ 1 successes)))
-     :included vm-mime-deleteable-types
-     :excluded vm-mime-deleteable-type-exceptions)
+     :included vm-mime-deletable-types
+     :excluded vm-mime-deletable-type-exceptions)
     (when (vm-interactive-p)
       (vm-discard-cached-data count)
       (let ((vm-preview-lines nil))
@@ -6823,6 +6823,11 @@ touched."
 
 ;;;###autoload
 (defun vm-mime-change-content-disposition ()
+  "Change the disposition of the attachment at point in this composition.
+Reads `inline\', `attachment\' or `unspecified\'.  The disposition tells the
+recipient\'s mail reader whether the part is meant to be shown as part of
+the message or offered as a file to save; `unspecified\' sends no
+Content-Disposition header and leaves the choice to them."
   (interactive)
   (vm-mime-set-attachment-disposition-at-point
    (intern
@@ -7343,7 +7348,7 @@ message content when it's passed to the MTA (that is, the mail transfer
 agent; under Unix, normally sendmail.)
 
 Attachment tags added to the buffer with `vm-attach-file' are expanded
-and the approriate content-type and boundary markup information is added."
+and the appropriate content-type and boundary markup information is added."
 
   (interactive)
 

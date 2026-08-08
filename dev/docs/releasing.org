@@ -21,6 +21,12 @@ package at https://elpa.nongnu.org/nongnu/vm.html
 - make -j 32  # needs generated files
 - make -j 32 lint
 
+* check the committed reference appendix is current
+- make -C info check-reference
+It is generated from the docstrings but committed, because vm.texinfo
+@includes it and makeinfo writes no manual at all without it -- and an ELPA
+build never runs make.  See dev-guide.org.
+
 * use package-lint to check vm.el packages
 requires package-lint
   make package-lint

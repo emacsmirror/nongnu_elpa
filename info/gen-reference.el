@@ -19,6 +19,7 @@
 
 (require 'cl-lib)
 (require 'help-fns)
+(require 'pp)
 
 (defvar vm-reference-area-titles
   '(("vm"              . "VM itself")
@@ -149,9 +150,13 @@ and a paragraph put in @example comes out unwrapped and out of place."
        (vm-reference-indented-p (cadr lines))))
 
 (defun vm-reference-example-blocks (string)
-  "Wrap runs of indented lines in STRING in @example.
-Texinfo reflows ordinary text, which would run the lines of an example
-together."
+  "Wrap runs of indented lines in STRING in @example, marking up the rest.
+Two reasons the two jobs are one function.  Texinfo reflows ordinary text,
+which would run the lines of an example together.  And @code{x} inside an
+@example prints x with no quotes at all, where outside one it prints ‘x’ --
+so marking up an example's quotes takes two characters off every line that
+has one, and a docstring whose columns line up around ‘...' stops lining
+up.  Inside an example the line is left exactly as the docstring wrote it."
   (let ((lines (split-string string "\n"))
         (out nil) (in-example nil))
     (while lines
@@ -163,21 +168,55 @@ together."
                     (not (string-match-p "\\`[ \t]*\\'" line)))
                (setq in-example nil)
                (push "@end example" out)))
-        (push line out)
+        (push (if in-example line (vm-reference-mark-up-quotes line)) out)
         (setq lines (cdr lines))))
     (when in-example (push "@end example" out))
     (mapconcat #'identity (nreverse out) "\n")))
 
+(defun vm-reference-prose (string)
+  "Convert a run of docstring prose, holding no keymap, to texinfo."
+  (vm-reference-example-blocks
+   (vm-reference-escape (vm-reference-resolve-keys string))))
+
+(defun vm-reference-untabify (string)
+  "Replace the tabs in STRING with spaces to the next eight-column stop.
+`substitute-command-keys' separates a key from its binding with tabs, so
+the table lines up only in a reader whose tab stops are eight columns
+apart.  Spaces line it up in any of them."
+  (with-temp-buffer
+    (insert string)
+    (untabify (point-min) (point-max))
+    (buffer-string)))
+
+(defun vm-reference-keymap-block (form)
+  "Convert FORM, a `\\{MAP}' from a docstring, to an @example of its bindings.
+`substitute-command-keys' lays a keymap out in columns and starts those
+lines at the left margin, so the run-of-indented-lines rule does not see
+them and texinfo reflowed the whole table into one paragraph."
+  (concat "@example\n"
+          (vm-reference-escape
+           (vm-reference-untabify
+            (string-trim (vm-reference-resolve-keys form))))
+          "\n@end example\n"))
+
 (defun vm-reference-docstring (string)
   "Convert docstring STRING to texinfo."
-  (let ((text (or string "")))
-    ;; The old convention marked a user option with a leading asterisk.
-    (setq text (replace-regexp-in-string "\\`\\*" "" text))
-    (setq text (vm-reference-resolve-keys text))
-    (setq text (vm-reference-escape text))
-    (setq text (vm-reference-mark-up-quotes text))
-    (setq text (vm-reference-example-blocks text))
-    (string-trim text)))
+  ;; The old convention marked a user option with a leading asterisk.
+  (let ((text (replace-regexp-in-string "\\`\\*" "" (or string "")))
+        (out nil)
+        (start 0))
+    (while (string-match "\\\\{[^}\n]+}" text start)
+      ;; Read the match out before converting anything: the conversions
+      ;; search strings of their own and leave the match data theirs, so
+      ;; a later `match-end' would not be this match's and `start' would
+      ;; not advance.
+      (let ((from (match-beginning 0))
+            (to (match-end 0)))
+        (push (vm-reference-prose (substring text start from)) out)
+        (push (vm-reference-keymap-block (substring text from to)) out)
+        (setq start to)))
+    (push (vm-reference-prose (substring text start)) out)
+    (string-trim (mapconcat #'identity (nreverse out) ""))))
 
 ;;; Collecting
 
@@ -284,21 +323,50 @@ defining file would put all of them in one section."
               "Not documented.\n"))
     (insert "@end deffn\n\n")))
 
+(defun vm-reference-escape-controls (string)
+  "Escape the control characters of STRING that makeinfo cannot take.
+A NUL and a DEL live in `vm-mime-encode-words-regexp', and makeinfo loses
+the rest of the line when it meets one.  Newline and tab are left alone:
+inside an @example they are what breaks a long default over lines, and
+`print-escape-control-characters' escapes the newlines along with the rest,
+which is what left one default 1642 characters wide."
+  (replace-regexp-in-string "[^\n\t[:print:]]"
+                            (lambda (c) (format "\\\\%o" (aref c 0)))
+                            string t t))
+
+(defun vm-reference-print-value (value one-line)
+  "Print VALUE for the manual, on one line if ONE-LINE, else broken up.
+`prin1-to-string' puts a whole alist on one line, and some of VM's defaults
+are long enough to leave the reader scrolling sideways -- `vm-serial-cookies'
+runs to nearly three thousand characters.  `pp' breaks those at their
+structure, and a string keeps the newlines it was written with."
+  (if one-line
+      (let ((print-escape-control-characters t)
+            (print-escape-newlines t))
+        (prin1-to-string value))
+    ;; Print first and let `pp-buffer' lay the text out, rather than
+    ;; `pp-to-string', which binds `print-escape-newlines' itself and so
+    ;; puts a multi-line string back on one line.
+    (vm-reference-escape-controls
+     (string-trim-right
+      (with-temp-buffer
+        (let ((print-escape-newlines nil)
+              (print-escape-control-characters nil))
+          (prin1 value (current-buffer)))
+        (pp-buffer)
+        (buffer-string))))))
+
 (defun vm-reference-insert-default (symbol)
   "Insert the default value of SYMBOL, unless it has none worth printing."
   (let* ((standard (car (get symbol 'standard-value)))
          (value (and standard (ignore-errors (eval standard t))))
-         ;; Several defaults are regexps holding control characters -- a NUL
-         ;; and a DEL in `vm-mime-encode-words-regexp' -- and makeinfo loses
-         ;; the rest of the line when it meets one.
-         (printed (and value
-                       (let ((print-escape-control-characters t)
-                             (print-escape-newlines t))
-                         (vm-reference-escape (prin1-to-string value))))))
-    (when printed
-      (if (> (length printed) 60)
-          (insert "\nDefault value:\n@example\n" printed "\n@end example\n")
-        (insert "\nDefault value: @code{" printed "}\n")))))
+         (short (and value (vm-reference-print-value value t))))
+    (when short
+      (if (<= (length short) 60)
+          (insert "\nDefault value: @code{" (vm-reference-escape short) "}\n")
+        (insert "\nDefault value:\n@example\n"
+                (vm-reference-escape (vm-reference-print-value value nil))
+                "\n@end example\n")))))
 
 (defun vm-reference-insert-option (symbol)
   (let ((doc (documentation-property symbol 'variable-documentation t)))

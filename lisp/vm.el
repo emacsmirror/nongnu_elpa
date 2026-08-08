@@ -126,8 +126,9 @@ to be moved and appended to the folder buffer.  You can disable
 this automatic fetching of mail by setting `vm-auto-get-new-mail'
 to nil.
 
-All the messages can be read by repeatedly pressing SPC.  Use `n'ext and
-`p'revious to move about in the folder.  Messages are marked for
+All the messages can be read by repeatedly pressing SPC.  Use `n' for the
+next message and `p' for the previous one to move about in the folder.
+Messages are marked for
 deletion with `d', and saved to another folder with `s'.  Quitting VM
 with `q' saves the buffered folder to disk, but does not expunge
 deleted messages.  Use `###' to expunge deleted messages."
@@ -153,7 +154,7 @@ deleted messages.  Use `###' to expunge deleted messages."
   ;; some variables need to be preserved, e.g., vm-folder-access-data.
 
   ;; JUST-VISIT, if non-nil, says that the folder should be visited
-  ;; with as little intial processing as possible.  No summary
+  ;; with as little initial processing as possible.  No summary
   ;; generation, no moving of the message-pointer, no retrieval of new
   ;; mail.
 
@@ -576,7 +577,7 @@ changes, messages additions or deletions will be allowed in the
 visited folder.
 
 The optional third arg JUST-VISIT (not available interactively)
-says that the folder should be visited with as little intial
+says that the folder should be visited with as little initial
 processing as possible.  No summary generation, no moving of the
 message-pointer, no retrieval of new mail."
   (interactive
