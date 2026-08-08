@@ -1048,16 +1048,44 @@ write this variant yet.
 @end table
 
 @noindent
+VM reads and writes the first and the third of these.  It has no name of its
+own for mboxrd and does not write mboxcl2 yet.
+
+@cindex archiving mail
 The reason to care is that the first three change the message.  A folder
 kept for its own sake -- an archive, or anything you may want to verify
-later -- is better in a format that does not, which is why mboxcl2 is the
-one recognized for archiving.
+later -- is better in a format that does not, and mboxcl2 is the only one of
+the four that does not.  All four are described in the Library of Congress's
+registry of formats for digital preservation, which exists to record how
+well a format suits keeping things: mboxcl2 is @code{fdd000387}, mboxcl
+@code{fdd000386}, mboxrd @code{fdd000385} and mboxo @code{fdd000384}.  Those
+are descriptions rather than standards -- they say what each format is, not
+what anyone is obliged to write.
 
 The reason not to care is interoperability, and it cuts the other way.  A
 program that does not honour @code{Content-Length} -- which is most of them
 -- will read an mboxcl2 folder as mboxo, and split it wrongly at the first
 body line beginning ``From '', silently.  Content-Length formats are right
 for folders you keep and wrong for folders you hand to other tools.
+
+@cindex reading a folder
+Which of the two VM reads a folder as is not something it can tell from the
+file, since nothing in an mbox says which variant it is -- there is no
+extension, media type or magic number for any of them, and the Library of
+Congress descriptions say as much.  VM looks at the first message: if it has
+a @code{Content-Length} header and @code{vm-trust-From_-with-Content-Length}
+is set, the folder is read by its counts, and otherwise by its @samp{From }
+lines.  A folder read the wrong way is not damaged, but it is a different
+folder: a body line beginning @samp{From } starts a new message under one
+reading and does not under the other.
+
+@noindent
+On the formats themselves, see the Library of Congress descriptions at
+@url{https://www.loc.gov/preservation/digital/formats/fdd/fdd000387.shtml}
+for mboxcl2 and @code{fdd000383} for the mbox family it belongs to, and RFC
+4155 for the mbox format as such.  The four names were settled on by Daniel J.@:
+Bernstein, Rahul Dhesi and others in 1996; they are a convention for talking
+about folders rather than anything a program can detect.
 
 @cindex MMDF
 @cindex Babyl
