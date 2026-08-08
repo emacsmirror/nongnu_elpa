@@ -41,7 +41,11 @@ INFO_SPLIT_GLOB = vm.info vm.info-[0-9]
 INFO_INSTALLED = $(INFO_FILE:%=$(infodestdir)/%)
 
 # The reference appendix, generated from the docstrings in lisp/ so that the
-# manual does not carry a second copy of them.
+# manual does not carry a second copy of them.  Generated, but committed:
+# vm.texinfo @includes it, and makeinfo writes no manual at all when it is
+# missing -- so a build without `make', an ELPA tarball or a plain checkout,
+# would have no manual.  `check-reference' is what keeps the committed copy
+# honest.
 REFERENCE_FILE = vm-reference.texinfo
 
 ##############################################################################
@@ -71,6 +75,23 @@ $(REFERENCE_FILE): FORCE @srcdir@/gen-reference.el
 
 .PHONY: FORCE
 FORCE:
+
+# The committed copy has to be what the docstrings currently say, or a reader
+# of the manual is told something the code stopped doing.  `make' regenerates
+# it, so this only has to notice that the working tree now differs.  Run it
+# before a release, and after changing a docstring.
+.PHONY: check-reference
+check-reference: $(REFERENCE_FILE)
+	@if [ ! -d "$(GIT_DIR)" ]; then \
+		echo "check-reference: not a git checkout, nothing to compare"; \
+	elif $(GIT) -C "@top_srcdir@" diff --quiet -- info/$(REFERENCE_FILE); then \
+		echo "check-reference: $(REFERENCE_FILE) is up to date"; \
+	else \
+		echo "check-reference: $(REFERENCE_FILE) is out of date." >&2; \
+		echo "  A docstring changed.  Commit the regenerated file:" >&2; \
+		echo "      git add info/$(REFERENCE_FILE)" >&2; \
+		exit 1; \
+	fi
 
 $(INFO_FILE): version.texinfo $(REFERENCE_FILE)
 

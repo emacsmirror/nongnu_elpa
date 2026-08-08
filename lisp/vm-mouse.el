@@ -221,6 +221,14 @@ Mouse'."
 	     (vm-inform 5 "Sending URL to %s... done" browser))))))
 
 (defun vm-mouse-send-url-to-netscape (url &optional new-netscape new-window)
+  "Show URL in Netscape, running `vm-netscape-program' to do it.
+NEW-NETSCAPE starts a new browser rather than asking a running one;
+NEW-WINDOW asks the running one for a new window.  Asking is tried first
+and starting a new browser is the fallback, since `-remote' fails when
+there is nothing to talk to.
+
+One of the handlers `vm-url-browser' can be set to.  Netscape has not
+existed for a long time; `browse-url' is the setting to want."
   ;; Change commas to %2C to avoid confusing Netscape -remote.
   (while (string-match "," url)
     (setq url (replace-match "%2C" nil t url)))

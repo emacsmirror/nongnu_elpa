@@ -725,6 +725,17 @@ Prefix arg means the new virtual folder should be visited read only."
 
 
 (defun vm-toggle-virtual-mirror ()
+  "Toggle whether this virtual folder mirrors the attributes of the real ones.
+
+Mirrored, which is the default, a virtual message and the real message it
+stands for are the same message: deleting or labelling it here does so in
+the real folder, and in every other virtual folder showing it.  Unmirrored,
+this folder keeps its own attributes, so it can be marked up without
+touching the real folders, and the undo history is kept separately too.
+
+Toggling back restores the attributes each message had on the other side, so
+nothing is lost by looking.  Only meaningful in a virtual folder; signals
+elsewhere."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (if (not (eq major-mode 'vm-virtual-mode))

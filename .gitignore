@@ -35,8 +35,10 @@ _pkg.el
 commit.msg
 
 /info/version.texinfo
-/info/vm-reference.texinfo
 /test/opt/
+# vm-reference.texinfo is generated but committed: vm.texinfo @includes it,
+# and makeinfo writes no manual at all when it is missing, so a build without
+# `make' -- an ELPA tarball, a plain checkout -- would have no manual.  #589.
 /info/vm-reference.texinfo.tmp
 /info/vm
 

@@ -6452,7 +6452,17 @@ Its parent keymap is mail-mode-map.")
 
 ;; internal vars
 (defvar vm-skip-collapsed-sub-threads t)
-(defvar vm-folder-type nil)
+(defvar vm-folder-type nil
+  "The format of the folder in this buffer, as `vm-get-folder-type' read it.
+
+One of the symbols `From_', `BellFrom_', `From_-with-Content-Length',
+`mmdf', `babyl', `baremessage' for a single message with no separator,
+`unknown' for a folder VM could not identify, or nil before a folder has
+been parsed.  It decides where every message begins and ends, so the
+message separator functions dispatch on it.
+
+Buffer-local.  Set by parsing the folder, not by the user: to choose the
+format VM *writes*, see `vm-default-folder-type'.")
 (make-variable-buffer-local 'vm-folder-type)
 (defvar vm-folder-access-method nil
   "Indicates how a VM folder is accessed: `pop' for POP folders, `imap'

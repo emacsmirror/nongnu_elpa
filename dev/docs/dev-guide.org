@@ -20,6 +20,24 @@ gets Lisp nesting exceeds `max-lisp-eval-depth': 1601
 make elisp-lint
 *** lots of errors, many false positives.
 
+* the manual
+** the reference appendix is generated and committed
+
+=info/vm-reference.texinfo= is built from the docstrings by
+=info/gen-reference.el=, and unlike VM's other generated files it *is*
+committed.  =info/vm.texinfo= has =@include vm-reference.texinfo=, and makeinfo
+writes no manual at all when the file is missing -- not a manual without its
+appendix, nothing.  So a build that never runs =make= gets no manual, and the
+NonGNU ELPA tarball is exactly such a build: it ships what git has.  Issue #589.
+
+=make= regenerates it, replacing it only when it changed.  After changing a
+docstring:
+
+: make -C info check-reference
+
+fails if the committed copy no longer matches the code, and says to =git add=
+the regenerated file.  Run it before a release.
+
 * testing
 ** running the suite
 cd test && make test

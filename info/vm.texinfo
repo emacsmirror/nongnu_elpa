@@ -439,7 +439,7 @@ inbox}, specified by the variable @code{vm-primary-inbox}.  If the
 variable @code{vm-auto-get-new-mail} is set 
 non-@code{nil}, VM will gather any new mail that has arrived
 and integrate it into your primary inbox.  The default setting for your
-primary inbox is the local file @file{~/Mail/inbox}, but a variety of
+primary inbox is the local file @file{~/INBOX}, but a variety of
 other options are available.
 
 VM can work with mail folders saved on the local file system.
@@ -3645,7 +3645,7 @@ replying, by providing @dfn{included text} as a feature of some of the
 commands.  @dfn{Included text} is a copy of the message being replied to
 with some prefix to each line so that the included text
 can be distinguished from the text of the reply.  By default, the
-prefix string is @samp{> }.  This can be customized via the variable
+prefix string is @samp{ > }.  This can be customized via the variable
 @code{vm-included-text-prefix}.
 
 The reply commands are:
