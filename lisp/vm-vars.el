@@ -909,7 +909,7 @@ VM maintains this variable, you should not set it.")
         ((or (string-match "-solaris" system-configuration)
              (string-match "usg-unix-v" system-configuration)
              (string-match "-ibm-aix" system-configuration))
-         'From_-with-Content-Length)
+         'mboxcl2)
         ((string-match "-sco" system-configuration)
          'mmdf)
         (t 'From_))
@@ -919,10 +919,15 @@ empty folder, the folder will become this default type.
 Allowed types are:
 
    From_
-   From_-with-Content-Length
+   mboxcl2
    BellFrom_
    mmdf
    babyl
+
+`mboxcl2' was called `From_-with-Content-Length' until 2026 and is still
+accepted under that name.  It is the one mbox variant that stores a message
+exactly as it arrived, and so the one to choose for a folder kept as a
+record.
 
 Value must be a symbol, not a string. i.e. write
 
@@ -930,11 +935,11 @@ Value must be a symbol, not a string. i.e. write
 
 in your .emacs or .vm file.
 
-If you set this variable's value to From_-with-Content-Length you
+If you set this variable's value to mboxcl2 you
 must set `vm-trust-From_-with-Content-Length' non-nil."
   :group 'vm-folders
   :type '(choice (const From_)
-                 (const From_-with-Content-Length)
+                 (const mboxcl2)
                  (const BellFrom_)
                  (const mmdf)
                  (const babyl)))
@@ -1008,7 +1013,7 @@ consulted."
   :type 'boolean)
 
 (defcustom vm-trust-From_-with-Content-Length
-  (eq vm-default-folder-type 'From_-with-Content-Length)
+  (eq vm-default-folder-type 'mboxcl2)
   "*Non-nil value means that if the first message in a folder contains
 a Content-Length header and begins with \"From \" VM can safely
 assume that all messages in the folder have Content-Length headers
@@ -1017,7 +1022,7 @@ will then use these headers to determine message boundaries
 instead of the usual way of searching for two newlines followed by a
 line that begins with \"From \".
 
-If you set `vm-default-folder-type' to From_-with-Content-Length you
+If you set `vm-default-folder-type' to mboxcl2 you
 must set this variable non-nil."
   :group 'vm-folders
   :type 'boolean)
@@ -6452,7 +6457,7 @@ Its parent keymap is mail-mode-map.")
 (defvar vm-folder-type nil
   "The format of the folder in this buffer, as `vm-get-folder-type' read it.
 
-One of the symbols `From_', `BellFrom_', `From_-with-Content-Length',
+One of the symbols `From_', `BellFrom_', `mboxcl2',
 `mmdf', `babyl', `baremessage' for a single message with no separator,
 `unknown' for a folder VM could not identify, or nil before a folder has
 been parsed.  It decides where every message begins and ends, so the
@@ -6667,7 +6672,10 @@ folder needs to be updated.")
   "\\(X-VM-\\|X-Mozilla-\\|Status:\\|Content-Length:\\)")
 (defvar vm-matched-header-vector (make-vector 6 nil))
 (defconst vm-supported-folder-types
-  '("From_" "BellFrom_" "From_-with-Content-Length" "mmdf" "babyl"))
+  '("From_" "BellFrom_" "mboxcl2" "mmdf" "babyl")
+  "The folder types VM can read and write, as strings, for completion.
+`mboxcl2' was called `From_-with-Content-Length' until 2026; the old name is
+still accepted where a type is given, and is not offered here.")
 (defconst vm-supported-window-configurations
   '(
     ("default")

@@ -1357,7 +1357,7 @@ field in the summary.				 	USR, 2012-10-13"
   ;; message being displayed, which during summary generation it has not.
   (let ((m (vm-real-message-of message)))
     (if (not (memq (vm-message-type-of m)
-		   '(BellFrom_ From_ From_-with-Content-Length)))
+		   '(BellFrom_ From_ mboxcl2)))
 	nil
       (with-current-buffer (vm-buffer-of m)
 	(save-excursion
@@ -1599,7 +1599,7 @@ The result is a mime-encoded string, but this is not certain.
   ;; only, and its location markers point nowhere until then.
   (let ((m (vm-real-message-of message)))
     (if (not (memq (vm-message-type-of m)
-		   '(From_ BellFrom_ From_-with-Content-Length)))
+		   '(From_ BellFrom_ mboxcl2)))
 	nil
       (with-current-buffer (vm-buffer-of m)
 	(save-excursion

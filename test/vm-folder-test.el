@@ -92,8 +92,8 @@
     (should (equal (vm-trailing-message-separator) "\n"))))
 
 (ert-deftest vm-folder-test-trailing-separator-from-content-length ()
-  "Test From_-with-Content-Length trailing separator."
-  (let ((vm-folder-type 'From_-with-Content-Length))
+  "Test mboxcl2 trailing separator."
+  (let ((vm-folder-type 'mboxcl2))
     (should (equal (vm-trailing-message-separator) ""))))
 
 (ert-deftest vm-folder-test-trailing-separator-bellFrom ()
@@ -2028,7 +2028,7 @@ on the next write, so this is checked rather than assumed."
     (should (vm-test-reverse-links-consistent-p))))
 
 (ert-deftest vm-folder-test-content-length-folder-is-untouched ()
-  "A From_-with-Content-Length folder parses by its own rule, as before.
+  "An mboxcl2 folder parses by its own rule, as before.
 `vm-find-trailing-message-separator\=' takes a different branch for it, and the
 header-block search is not on that path: its message boundaries come from the
 byte count, which is the whole point of the format.  Built by hand rather than
@@ -2052,7 +2052,7 @@ to nil while setting the buffer up."
     (goto-char (point-min))
     (vm-build-message-list)
     (dolist (m vm-message-list) (vm-test-init-message-data m))
-    (should (eq 'From_-with-Content-Length vm-folder-type))
+    (should (eq 'mboxcl2 vm-folder-type))
     (should (equal '("subject 1" "subject 2") (vm-folder-test--subjects)))))
 
 
@@ -2061,7 +2061,7 @@ to nil while setting the buffer up."
 ;; The two formats VM reads differ in one respect that matters: where a
 ;; message ends.  In a From_ folder it is the next line beginning `From ',
 ;; so a body containing such a line has to have been quoted when written.  In
-;; a From_-with-Content-Length folder the byte count says where the message
+;; an mboxcl2 folder the byte count says where the message
 ;; ends, so a body may contain that line untouched and reading is unaffected.
 ;;
 ;; That is the property, and it had no test.  See the Folder types section of
@@ -2115,7 +2115,7 @@ to nil while setting the buffer up."
 (ert-deftest vm-folder-test-counted-folder-is-read-by-its-counts ()
   "The count ends the message, so a `From ' line in a body is body text."
   (vm-folder-test--with-counted-folder t
-    (should (eq 'From_-with-Content-Length vm-folder-type))
+    (should (eq 'mboxcl2 vm-folder-type))
     (should (equal '("subject 1" "subject 2")
                    (mapcar #'vm-su-subject vm-message-list)))
     (let ((body (vm-folder-test--body-text (car vm-message-list))))
@@ -2174,7 +2174,7 @@ stores a message as it arrived.  VM used to do both."
   (with-temp-buffer
     (insert "From: a@b\nSubject: s\n\nbody\n"
             "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
-    (vm-munge-message-separators 'From_-with-Content-Length
+    (vm-munge-message-separators 'mboxcl2
                                  (point-min) (point-max))
     (should (string-match-p "\nFrom nobody@example.com" (buffer-string)))
     (should-not (string-match-p ">From " (buffer-string)))))
@@ -2203,6 +2203,56 @@ its own four control characters rather than a `From ' line."
     (insert "From: a@b\nSubject: s\n\nbody\n\nmore\n")
     (vm-munge-message-separators 'mmdf (point-min) (point-max))
     (should (string-match-p ">" (buffer-string)))))
+
+
+;;; The folder type is called mboxcl2 now (issue #466)
+
+;; It was `From_-with-Content-Length', after the mechanism rather than the
+;; format.  The old name has to keep working: it is what a user's
+;; `vm-default-folder-type' says, and -- the one that could go wrong
+;; quietly -- it is what an index file written before the rename holds, since
+;; `vm-write-index-file-contents' stores the folder type.
+
+(ert-deftest vm-folder-test-old-type-name-is-accepted ()
+  "`vm-canonical-folder-type' maps the old name to the new and nothing else."
+  (should (eq 'mboxcl2 (vm-canonical-folder-type 'From_-with-Content-Length)))
+  (should (eq 'mboxcl2 (vm-canonical-folder-type 'mboxcl2)))
+  (dolist (type '(From_ BellFrom_ mmdf babyl unknown nil))
+    (should (eq type (vm-canonical-folder-type type)))))
+
+(ert-deftest vm-folder-test-detection-returns-the-new-name ()
+  "A folder read by its counts is reported as `mboxcl2'."
+  (vm-folder-test--with-counted-folder t
+    (should (eq 'mboxcl2 vm-folder-type))))
+
+(ert-deftest vm-folder-test-old-name-in-an-index-file-still-parses ()
+  "REGRESSION: an index file naming the old type still reads its folder.
+The folder type is stored in the index file, so leaving the old name
+unhandled would have meant every test of the type failing for a folder VM
+had already indexed -- and a folder read as the wrong type is misparsed, not
+refused."
+  (should (eq 'mboxcl2
+              (vm-canonical-folder-type
+               (car (read-from-string
+                     (prin1-to-string 'From_-with-Content-Length))))))
+  ;; and a folder whose type arrives that way is read by its counts
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (setq-local vm-trust-From_-with-Content-Length t)
+    (insert vm-folder-test--counted-folder)
+    (setq vm-folder-type (vm-canonical-folder-type 'From_-with-Content-Length))
+    (goto-char (point-min))
+    (let ((vm-current-warning vm-current-warning))
+      ;; `vm-build-message-list' would re-detect; this is the index path,
+      ;; where the type comes from the file and is used as it stands.
+      (should (eq 'mboxcl2 vm-folder-type))
+      (goto-char (point-min))
+      (should (progn (vm-find-leading-message-separator)
+                     (vm-skip-past-leading-message-separator)
+                     (vm-find-trailing-message-separator)
+                     ;; the count took us past the bare From_ line in the body
+                     (> (point) (+ (point-min)
+                                   (length vm-folder-test--counted-body-1))))))))
 
 (provide 'vm-folder-test)
 

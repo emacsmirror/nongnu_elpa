@@ -693,6 +693,21 @@ by vm-match-header."
 by vm-match-header."
   (aref vm-matched-header-vector 5))
 
+(defconst vm-folder-type-aliases
+  '((From_-with-Content-Length . mboxcl2))
+  "Older names for folder types, and what they are called now.
+`mboxcl2' was `From_-with-Content-Length' until 2026.  The old name is still
+accepted, and has to be: it is what a user's `vm-default-folder-type' says,
+and it is what an index file written before the rename holds -- the folder
+type is stored there, so a folder whose index VM has already written would
+be misparsed if the name were simply dropped.")
+
+(defun vm-canonical-folder-type (type)
+  "Return the current name of folder type TYPE.
+An unknown or already-current name is returned unchanged, so this is safe to
+apply to anything that might be a folder type."
+  (or (cdr (assq type vm-folder-type-aliases)) type))
+
 (defun vm-get-folder-type (&optional file start end ignore-visited)
   "Return a symbol indicating the folder type of the current buffer.
 This function works by examining the beginning of a folder.
@@ -711,11 +726,11 @@ Returns
   babyl     for BABYL folders
   From_     for BSD UNIX From_ folders
   BellFrom_ for old SysV From_ folders
-  From_-with-Content-Length
+  mboxcl2
             for new SysV folders that use the Content-Length header
 
 If vm-trust-From_-with-Content-Length is non-nil,
-From_-with-Content-Length is returned if the first message in the
+mboxcl2 is returned if the first message in the
 folder has a Content-Length header and the folder otherwise looks
 like a From_ folder.
 
@@ -758,7 +773,7 @@ the value of vm-default-From_folder-type will be returned."
 		       (cond ((match-beginning 1)
 			      vm-default-From_-folder-type)
 			     ((match-beginning 0)
-			      'From_-with-Content-Length)
+			      'mboxcl2)
 			     (t vm-default-From_-folder-type))))
 		    ((looking-at "\001\001\001\001\n") 'mmdf)
 		    ((looking-at "BABYL OPTIONS:") 'babyl)
@@ -836,7 +851,7 @@ message."
   (let (length)
     ;; get the length now before the content-length headers are
     ;; removed.
-    (if (eq new-type 'From_-with-Content-Length)
+    (if (eq new-type 'mboxcl2)
 	(let (start)
 	  (save-excursion
 	    (save-excursion
@@ -847,8 +862,8 @@ message."
 	    (setq length (- (point) start)))))
     ;; chop out content-length header if new format doesn't need
     ;; it or if the new format computed his own copy.
-    (if (or (eq old-type 'From_-with-Content-Length)
-	    (eq new-type 'From_-with-Content-Length))
+    (if (or (eq old-type 'mboxcl2)
+	    (eq new-type 'mboxcl2))
 	(save-excursion
 	  (while (and (let ((case-fold-search t))
 			(re-search-forward vm-content-length-search-regexp
@@ -859,7 +874,7 @@ message."
 	    (delete-region (vm-matched-header-start)
 			   (vm-matched-header-end)))))
     ;; insert the content-length header if needed
-    (if (eq new-type 'From_-with-Content-Length)
+    (if (eq new-type 'mboxcl2)
 	(save-excursion
 	  (insert vm-content-length-header " " (int-to-string length) "\n")))))
 
@@ -869,7 +884,7 @@ This function is used to eliminate message separators for a particular
 folder type that happen to occur in a message.  \">\" is prepended to such
 separators.
 
-`From_-with-Content-Length' is not one of them, and that is the whole
+`mboxcl2' is not one of them, and that is the whole
 difference between the two Content-Length mbox variants.  A folder that
 finds the end of a message by counting its bytes has no need to disfigure a
 body line that begins \"From \", and doing both is mboxcl where doing only
@@ -918,7 +933,7 @@ Optional third arg FOR-OTHER-FOLDER non-nil means that this separator will
 be used a `foreign' folder.  This means that the `deleted'
 attributes should not be copied for BABYL folders."
   (let ((type (or folder-type vm-folder-type)))
-    (cond ((memq type '(From_ From_-with-Content-Length BellFrom_))
+    (cond ((memq type '(From_ mboxcl2 BellFrom_))
 	   (concat "From VM " (current-time-string) "\n"))
 	  ((eq type 'mmdf)
 	   "\001\001\001\001\n")
@@ -937,7 +952,7 @@ Optional first arg FOLDER-TYPE means return a separator for that
 folder type instead."
   (let ((type (or folder-type vm-folder-type)))
     (cond ((eq type 'From_) "\n")
-	  ((eq type 'From_-with-Content-Length) "")
+	  ((eq type 'mboxcl2) "")
 	  ((eq type 'BellFrom_) "")
 	  ((eq type 'mmdf) "\001\001\001\001\n")
 	  ((eq type 'babyl) "\037"))))
@@ -976,10 +991,10 @@ From_ type mail folders.")
   "^From .*[0-9]$"
   "Regular expression that matches the leading message separator in
 BellFrom_ type mail folders.")
-(defvar vm-leading-message-separator-regexp-From_-with-Content-Length
+(defvar vm-leading-message-separator-regexp-mboxcl2
   "\\(^\\|\n+\\)From "
   "Regular expression that matches the leading message separator in
-From_-with-Content-Length type mail folders.")
+mboxcl2 type mail folders.")
 (defvar vm-leading-message-separator-regexp-mmdf
   "^\001\001\001\001"
   "Regular expression that matches the leading message separator in
@@ -1009,10 +1024,10 @@ Returns non-nil if the separator is found, nil otherwise."
 	    (goto-char (match-beginning 0))
 	    t )
 	nil )))
-   ((eq vm-folder-type 'From_-with-Content-Length)
+   ((eq vm-folder-type 'mboxcl2)
     (let ((case-fold-search nil))
       (if (re-search-forward 
-	   vm-leading-message-separator-regexp-From_-with-Content-Length
+	   vm-leading-message-separator-regexp-mboxcl2
 	   nil 'no-error)
 	  (progn (goto-char (match-end 1)) t)
 	nil )))
@@ -1082,7 +1097,7 @@ behaviour they always had."
       nil))
    ((eq vm-folder-type 'BellFrom_)
     (vm-find-leading-message-separator))
-   ((eq vm-folder-type 'From_-with-Content-Length)
+   ((eq vm-folder-type 'mboxcl2)
     (let ((reg1 "^From ")
 	  content-length
 	  (start-point (point))
@@ -1121,7 +1136,7 @@ behaviour they always had."
 (defun vm-skip-past-leading-message-separator ()
   "Move point past a leading message separator at point."
   (cond
-   ((memq vm-folder-type '(From_ BellFrom_ From_-with-Content-Length))
+   ((memq vm-folder-type '(From_ BellFrom_ mboxcl2))
     (let ((reg1 "^>From ")
 	  (case-fold-search nil))
       (forward-line 1)
@@ -1146,7 +1161,7 @@ behaviour they always had."
    ((eq vm-folder-type 'From_)
     (if (not (eobp))
 	(forward-char 1)))
-   ((eq vm-folder-type 'From_-with-Content-Length))
+   ((eq vm-folder-type 'mboxcl2))
    ((eq vm-folder-type 'BellFrom_))
    ((eq vm-folder-type 'mmdf)
     (forward-char 5))
@@ -1203,7 +1218,7 @@ vm-folder-type is initialized here."
 	;; too many busted mail-do-fcc's installed out there to
 	;; do more than whine.
 	(if (and (memq vm-folder-type '(From_ BellFrom_
-					From_-with-Content-Length))
+					mboxcl2))
 		 (= (following-char) ?\n))
 	    (vm-warn 0 2 "Warning: newline found at beginning of folder, %s"
 		     (or buffer-file-name (buffer-name))))
@@ -3096,8 +3111,10 @@ good, with nothing said -- issue #556."
 		    (error "Unsupported index file version: %s" obj))
 		(setq index-version obj)
 
-		;; folder type
-		(setq folder-type (read work-buffer))
+		;; folder type.  Through `vm-canonical-folder-type' because an
+		;; index file written before mboxcl2 was renamed holds the old
+		;; name, and every test of the type is against the new one.
+		(setq folder-type (vm-canonical-folder-type (read work-buffer)))
 
 		;; validity check
 		(setq validity-check (read work-buffer))
@@ -4630,7 +4647,7 @@ implementation than the expected one damages mail -- so this asks instead."
 	    (save-excursion
 	      (setq work-buffer (vm-make-work-buffer))
 	      (set-buffer work-buffer)
-	      (cond ((memq type '(From_ BellFrom_ From_-with-Content-Length))
+	      (cond ((memq type '(From_ BellFrom_ mboxcl2))
 		     (setq regexp "^From "))
 		    ((eq type 'mmdf)
 		     (setq regexp "^\001\001\001\001"))
@@ -4648,7 +4665,7 @@ implementation than the expected one damages mail -- so this asks instead."
 				vm-grep-program file data)
 		       (setq vm-grep-program nil)))
 	      (setq count (string-to-number (buffer-string)))
-	      (cond ((memq type '(From_ BellFrom_ From_-with-Content-Length))
+	      (cond ((memq type '(From_ BellFrom_ mboxcl2))
 		     t )
 		    ((eq type 'mmdf)
 		     (setq count (/ count 2)))
@@ -5432,10 +5449,11 @@ contents."
 ;;;###autoload
 (defun vm-change-folder-type (type)
   "Change folder type to TYPE.
+The old name `From_-with-Content-Length' is accepted for `mboxcl2'.
 TYPE may be one of the following symbol values:
 
     From_
-    From_-with-Content-Length
+    mboxcl2
     BellFrom_
     mmdf
     babyl
@@ -5450,10 +5468,11 @@ Interactively TYPE will be read from the minibuffer."
        (vm-error-if-virtual-folder)
        (setq types (vm-delqual (symbol-name vm-folder-type)
 			       (copy-sequence types)))
-       (list (intern (vm-read-string "Change folder to type: " types))))))
+       (list (vm-canonical-folder-type
+	      (intern (vm-read-string "Change folder to type: " types)))))))
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-error-if-virtual-folder)
-  (if (not (memq type '(From_ BellFrom_ From_-with-Content-Length mmdf babyl)))
+  (if (not (memq type '(From_ BellFrom_ mboxcl2 mmdf babyl)))
       (error "Unknown folder type: %s" type))
   (if (or (null vm-folder-type)
 	  (eq vm-folder-type 'unknown))

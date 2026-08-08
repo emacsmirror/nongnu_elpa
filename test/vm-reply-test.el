@@ -583,7 +583,7 @@ more."
 
 ;; `mail-do-fcc' wrote one format whatever the folder was: `\nFrom ' quoted
 ;; to `>From ' always, and never a `Content-Length'.  So an Fcc into a
-;; `From_-with-Content-Length' folder appended a message the byte counts did
+;; mboxcl2 folder appended a message the byte counts did
 ;; not describe, and the folder stopped reading back the way it was written.
 
 (defmacro vm-reply-test--with-composition (fcc &rest body)
@@ -637,10 +637,9 @@ stopped describing the folder from that message on and it no longer read
 back the way it was written.  The test is that it does read back: the folder
 still parses as two messages, with the second one's body intact.
 
-Quoting is not the point here -- `From_-with-Content-Length' is mboxcl, which
-quotes as well as counting -- and the copy is quoted for it.  When #466 adds
-the variant that does not quote, this same code follows the folder type
-without further change."
+Quoting is not the point here; that the count is written is.  The folder type
+no longer quotes at all (#466), and this same code followed it there without
+further change."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
          (folder (expand-file-name "archive" dir)))
     (unwind-protect
@@ -658,8 +657,7 @@ without further change."
                     "a body line\n"
                     "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
             (let ((vm-trust-From_-with-Content-Length t))
-              (should (eq 'From_-with-Content-Length
-                          (vm-get-folder-type folder)))
+              (should (eq 'mboxcl2 (vm-get-folder-type folder)))
               (vm-do-fcc-in-composition)))
           ;; A count was written at all -- this is what was missing.
           (should (= 2 (cl-count-if
@@ -674,7 +672,7 @@ without further change."
             (goto-char (point-min))
             (vm-build-message-list)
             (dolist (m vm-message-list) (vm-test-init-message-data m))
-            (should (eq 'From_-with-Content-Length vm-folder-type))
+            (should (eq 'mboxcl2 vm-folder-type))
             (should (= 2 (length vm-message-list)))
             (should (string-match-p
                      "a body line"

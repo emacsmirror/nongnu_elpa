@@ -319,11 +319,17 @@ VM 8.?.?
     text stayed in a file nobody had open.  `vm-quit' is unchanged and remains
     the orderly way to leave a folder: it keeps the virtual folders and takes
     this folder's messages out of them.
-  * A `From_-with-Content-Length' folder is no longer quoted.  VM wrote both
+  * The folder type `From_-with-Content-Length' is now called `mboxcl2', the
+    name the format is known by.  The old name still works everywhere a
+    folder type is given -- in `vm-default-folder-type', in
+    `vm-change-folder-type', and in an index file written before the change
+    -- so nothing needs altering.  The option
+    `vm-trust-From_-with-Content-Length' keeps its name.
+  * An mboxcl2 folder is no longer quoted.  VM wrote both
     a `Content-Length' header and a `>From ' quoting of body lines, which is
     the mbox variant called mboxcl; writing only the count is mboxcl2, the
-    one variant that stores a message exactly as it arrived, and is what VM
-    writes now.  A folder that finds the end of a message by counting its
+    one variant that stores a message exactly as it arrived, and is what the
+    type now means.  A folder that finds the end of a message by counting its
     bytes has no use for the quoting.
     Reading is unchanged, and so are existing folders: VM has never unquoted
     a body, so a folder written before this reads exactly as it did.  Only

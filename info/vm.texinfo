@@ -1001,12 +1001,12 @@ the command @code{vm-change-folder-type}.
 @cindex AIX
 @cindex Content-Length
 @vindex vm-trust-From_-with-Content-Length
-@cindex From_-with-Content-Length
+@cindex mboxcl2
 Solaris, System V and AIX operating systems use another variant of the mbox
 format, in which each message carries a @code{Content-Length} header giving
 the length of its body, and that count rather than the next ``From '' line
 says where the message ends.  VM refers to this format as
-@code{From_-with-Content-Length}.  Since the counts may be unreliable --
+@code{mboxcl2}.  Since the counts may be unreliable --
 nothing stops a message carrying a @code{Content-Length} header that means
 something else -- you must also set the variable
 @code{vm-trust-From_-with-Content-Length} to a non-@code{nil} value in order
@@ -1047,8 +1047,8 @@ gain.
 
 @item mboxcl2
 As mboxcl, but with no quoting at all: the count alone says where the
-message ends, so the body is stored exactly as it arrived.  VM's
-@code{From_-with-Content-Length} is this variant.
+message ends, so the body is stored exactly as it arrived.  This is VM's
+@code{mboxcl2} folder type.
 @end table
 
 @noindent
@@ -1056,11 +1056,18 @@ VM reads and writes the first and the last of these.  It has no name of its
 own for mboxrd, and does not write mboxcl.
 
 @vindex vm-default-folder-type
-VM wrote mboxcl until 2026: @code{From_-with-Content-Length} folders were
-given a @code{Content-Length} header @emph{and} had their bodies quoted.
-Reading is unaffected either way, since VM has never unquoted a body, so a
-folder written before that change reads exactly as it did; what changed is
-that new messages are no longer altered on the way in.
+VM wrote mboxcl until 2026: these folders were given a
+@code{Content-Length} header @emph{and} had their bodies quoted.  Reading is
+unaffected either way, since VM has never unquoted a body, so a folder
+written before that change reads exactly as it did; what changed is that new
+messages are no longer altered on the way in.
+
+@cindex From_-with-Content-Length
+The folder type was called @code{From_-with-Content-Length} until then,
+after the mechanism rather than the format.  The old name is still accepted
+wherever a folder type is given -- in @code{vm-default-folder-type}, by
+@code{vm-change-folder-type}, and in an index file written before the
+change -- so nothing has to be altered.
 
 @cindex archiving mail
 The reason to care is that the first three change the message.  A folder
@@ -8073,8 +8080,8 @@ messages in the buffer.
 @item
 @inindex vm-folder-type
 @code{vm-folder-type}.  The type of the current folder indicating how
-the messages are stored: one of 'babyl, 'From_, 'BellFrom_,
-'From_-with-Content-Length and 'mmdf.
+the messages are stored: one of 'babyl, 'From_, 'BellFrom_, 'mboxcl2 and
+'mmdf.
 @item
 @inindex vm-folder-access-method
 @code{vm-folder-access-method}.  The method for accessing the server
@@ -8433,7 +8440,7 @@ frame per message, which crashed Emacs on large folders.
 @item
 @code{message-type} (7).  A symbol indicating the type of the message
 according to its folder type, one of @code{BellFrom_}, @code{From_} and
-@code{From_-with-Content-Length}.
+@code{mboxcl2}.
 @inindex message-id-number
 @item
 @code{message-id-number} (8).  A number that uniquely identifies the message 

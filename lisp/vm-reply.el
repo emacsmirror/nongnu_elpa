@@ -919,7 +919,7 @@ as replied to, forwarded, etc, if appropriate."
 ;; `mail-do-fcc' in sendmail.el writes one format whatever the folder is: a
 ;; `From ' line of its own devising, `\nFrom ' quoted to `>From ' always --
 ;; its own comment says "this isn't really quoting" -- and never a
-;; `Content-Length'.  So an Fcc into a `From_-with-Content-Length' folder
+;; `Content-Length'.  So an Fcc into a `mboxcl2' folder
 ;; appends a message the byte counts do not describe, and the folder stops
 ;; reading back the way it was written, silently.  VM does it itself.
 ;;                                                              Issue #597.
@@ -996,7 +996,7 @@ one.  A composition has been through none of that yet."
       (goto-char (point-min))
       (let ((body (if (re-search-forward "\n\n" nil t) (point) (point-max))))
 	(concat (vm-leading-message-separator type)
-		(if (eq type 'From_-with-Content-Length)
+		(if (eq type 'mboxcl2)
 		    (format "%s %d\n" vm-content-length-header
 			    (vm-fcc-body-octets body (point-max)))
 		  "")

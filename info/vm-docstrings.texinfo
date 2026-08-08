@@ -2080,11 +2080,12 @@ Default value: @code{vm-summary-highlight}
 @deffn Command vm-change-folder-type type
 @findex vm-change-folder-type
 Change folder type to TYPE.
+The old name @code{From_-with-Content-Length} is accepted for @code{mboxcl2}.
 TYPE may be one of the following symbol values:
 
 @example
     From_
-    From_-with-Content-Length
+    mboxcl2
     BellFrom_
     mmdf
     babyl
@@ -2606,19 +2607,24 @@ Allowed types are:
 
 @example
    From_
-   From_-with-Content-Length
+   mboxcl2
    BellFrom_
    mmdf
    babyl
 
 @end example
+@code{mboxcl2} was called @code{From_-with-Content-Length} until 2026 and is still
+accepted under that name.  It is the one mbox variant that stores a message
+exactly as it arrived, and so the one to choose for a folder kept as a
+record.
+
 Value must be a symbol, not a string. i.e. write
 
   (setq vm-default-folder-type 'From_)
 
 in your .emacs or .vm file.
 
-If you set this variable’s value to From_-with-Content-Length you
+If you set this variable’s value to mboxcl2 you
 must set @code{vm-trust-From_-with-Content-Length} non-nil.
 
 Default value: @code{From_}
@@ -3220,7 +3226,7 @@ will then use these headers to determine message boundaries
 instead of the usual way of searching for two newlines followed by a
 line that begins with "From ".
 
-If you set @code{vm-default-folder-type} to From_-with-Content-Length you
+If you set @code{vm-default-folder-type} to mboxcl2 you
 must set this variable non-nil.
 @end defopt
 
