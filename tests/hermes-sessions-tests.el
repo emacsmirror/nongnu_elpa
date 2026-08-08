@@ -22,6 +22,28 @@
     (should (equal (aref entry 3) "tui"))
     (should (equal (aref entry 4) "work"))))
 
+(ert-deftest hermes-sessions-rows-format-canonical-title-with-date ()
+  "Canonical Emacs titles retain useful date and time context in session rows."
+  (let* ((rows (hermes-sessions--rows
+                '(((id . "s1")
+                   (title . "emacs-hermes--20260807T183045.123456Z--emacs")))))
+         (entry (cadr (car rows))))
+    (should (equal (aref entry 1) "emacs-hermes · 2026-08-07 18:30"))))
+
+(ert-deftest hermes-session-title-policy-is-strict-and-bounded ()
+  "Canonical titles parse strictly, preserve identity, and fit backend limits."
+  (let* ((time (encode-time 45 30 18 7 8 2026 t))
+         (title (hermes-session-title-canonicalize "emacs-hermes" nil time))
+         (renamed (hermes-session-title-canonicalize "frontend" title time))
+         (long (hermes-session-title-canonicalize (make-string 120 ?x) nil time)))
+    (should (equal title "emacs-hermes--20260807T183045.000000Z--emacs"))
+    (should (equal renamed "frontend--20260807T183045.000000Z--emacs"))
+    (should (= (length long) 100))
+    (should (equal (hermes-session-title-chat-display title) "emacs-hermes"))
+    (should (equal (hermes-session-title-chat-display
+                    "emacs-hermes--20260807T183045.000000Z--other")
+                   "emacs-hermes--20260807T183045.000000Z--other"))))
+
 (ert-deftest hermes-sessions-rows-face-every-column ()
   "Session rows give every column its own face."
   (let* ((row (car (hermes-sessions--rows

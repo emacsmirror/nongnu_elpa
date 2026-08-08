@@ -58,7 +58,8 @@ which keeps tests and user custom transports working."
   :group 'hermes)
 
 (defcustom hermes-chat-dashboard-session-title "Hermes Chat"
-  "Title sent when creating a dashboard transport chat session."
+  "Fallback label for a dashboard chat created outside an Emacs project.
+Inside a project, its root basename becomes the canonical session label."
   :type 'string
   :group 'hermes)
 

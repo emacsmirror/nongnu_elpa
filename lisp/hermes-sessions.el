@@ -36,6 +36,7 @@
 (require 'hermes-promise)
 (require 'hermes-browser)
 (require 'hermes-chat)
+(require 'hermes-session-title)
 
 (defvar-local hermes-sessions--session-map nil
   "Hash table mapping session ids to session alists in a browser buffer.")
@@ -104,7 +105,8 @@
        (list (hermes-sessions--identity session)
              (vector (hermes-browser--face-cell id 'hermes-browser-identifier)
                      (hermes-browser--face-cell
-                      (hermes-transport--display-field session 'title)
+                      (hermes-session-title-browser-display
+                       (hermes-transport--display-field session 'title))
                       'hermes-browser-title)
                      (hermes-browser--face-cell
                       (hermes-sessions--message-count session)

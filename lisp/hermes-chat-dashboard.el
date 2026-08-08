@@ -39,6 +39,7 @@
 (require 'hermes-chat-buffer)
 (require 'hermes-chat-prompts)
 (require 'hermes-notifications)
+(require 'hermes-session-title)
 
 
 (defvar hermes-chat-dashboard-session-title)
@@ -160,7 +161,9 @@ stops its poll) instead of being called by name from this file.")
 (defun hermes-chat--dashboard-snapshot ()
   "Return display-safe dashboard state for the current chat buffer."
   (list :buffer (current-buffer)
-        :title (or hermes-chat--title (buffer-name))
+        :title (or (and hermes-chat--title
+                        (hermes-session-title-chat-display hermes-chat--title))
+                   (buffer-name))
         :session-id hermes-chat--session-id
         :connection (hermes-chat--dashboard-connection-label)
         :status (or (plist-get hermes-chat--status-state :status) 'ready)
@@ -975,7 +978,7 @@ local FIFO submission."
     (hermes-dashboard-transport-session-create
      client
      :cols (hermes-chat--dashboard-cols)
-     :title hermes-chat-dashboard-session-title
+     :title (hermes-chat--dashboard-create-title)
      :profile hermes-chat--profile
      :resolve (hermes-chat--dashboard-session-resolver
                buffer client prompt nil resolve reject queued-p)
@@ -1050,6 +1053,13 @@ so pending create-time runtime overrides are applied before ACTION."
              client (lambda () (funcall action client)) generation)
           (funcall action client))))))
 
+(defun hermes-chat--dashboard-create-title ()
+  "Return the canonical title for a fresh dashboard session."
+  (or hermes-chat--title
+      (hermes-session-title-canonicalize
+       (hermes-session-title-project-label
+        hermes-chat-dashboard-session-title))))
+
 (defun hermes-chat--dashboard-action-rejecter
     (buffer client generation reject)
   "Return BUFFER callback for REJECT scoped to CLIENT and GENERATION."
@@ -1081,7 +1091,7 @@ When dashboard session bootstrap fails, call REJECT with the error message."
       (hermes-dashboard-transport-session-create
        client
        :cols (hermes-chat--dashboard-cols)
-       :title hermes-chat-dashboard-session-title
+       :title (hermes-chat--dashboard-create-title)
        :resolve (hermes-chat--dashboard-action-resolver
                  buffer client action generation t)
        :reject (hermes-chat--dashboard-action-rejecter
@@ -1144,7 +1154,8 @@ PROFILE nil means the default profile.  A nil or empty TITLE yields a name with
 just the profile, so buffers stay distinct before a session title arrives."
   (let ((profile (or profile "default")))
     (if (and title (not (string-empty-p title)))
-        (format "*Hermes@%s: %s*" profile title)
+        (format "*Hermes@%s: %s*"
+                profile (hermes-session-title-chat-display title))
       (format "*Hermes@%s*" profile))))
 
 (defun hermes-chat--push-session-title (title)
@@ -1224,13 +1235,19 @@ Renames the buffer and, when a live dashboard session is attached, updates the
 server title via `session.title'.  A manual rename is kept against the automatic
 session-title refresh."
   (interactive
-   (list (read-string "Hermes chat title: " (or hermes-chat--title ""))))
+   (list (read-string
+          "Hermes chat title: "
+          (or (and hermes-chat--title
+                   (hermes-session-title-chat-display hermes-chat--title))
+              ""))))
   (let ((title (string-trim title)))
     (when (string-empty-p title)
       (user-error "Title must not be empty"))
-    (setq hermes-chat--title-manual-p t)
-    (hermes-chat--apply-session-title title)
-    (hermes-chat--push-session-title title)))
+    (let ((canonical-title
+           (hermes-session-title-canonicalize title hermes-chat--title)))
+      (setq hermes-chat--title-manual-p t)
+      (hermes-chat--apply-session-title canonical-title)
+      (hermes-chat--push-session-title canonical-title))))
 
 (defun hermes-chat-background (&optional prompt)
   "Run PROMPT as a Hermes background task, delivering its result to this chat.

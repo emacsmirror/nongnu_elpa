@@ -428,12 +428,15 @@
          (should-not (string-match-p "terminal: make test" header)))))))
 
 (ert-deftest hermes-chat-rename-updates-buffer-and-title ()
-  "Renaming sets the title and the profile-qualified buffer name, trimming space."
-  (hermes-test-with-chat-buffer
-   (hermes-chat-rename "  My Project  ")
-   (should (equal hermes-chat--title "My Project"))
-   (should hermes-chat--title-manual-p)
-   (should (equal (buffer-name) "*Hermes@default: My Project*"))))
+  "Renaming stores a canonical title while showing only its project label."
+  (cl-letf (((symbol-function 'current-time)
+             (lambda () (encode-time 45 30 18 7 8 2026 t))))
+    (hermes-test-with-chat-buffer
+     (hermes-chat-rename "  My Project  ")
+     (should (equal hermes-chat--title
+                    "My Project--20260807T183045.000000Z--emacs"))
+     (should hermes-chat--title-manual-p)
+     (should (equal (buffer-name) "*Hermes@default: My Project*")))))
 
 (ert-deftest hermes-chat-rename-rejects-empty-title ()
   (hermes-test-with-chat-buffer
@@ -441,16 +444,28 @@
 
 (ert-deftest hermes-chat-rename-pushes-server-title-when-attached ()
   "An attached session pushes `session.title' with the live session id."
+  (cl-letf (((symbol-function 'current-time)
+             (lambda () (encode-time 45 30 18 7 8 2026 t))))
+    (hermes-test-with-chat-buffer
+     (setq hermes-chat--dashboard-active-session-id "sid-1")
+     (let (sent)
+       (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+                  (lambda () t))
+                 ((symbol-function 'hermes-dashboard-transport-session-title)
+                  (lambda (_client &rest args) (setq sent args))))
+         (hermes-chat-rename "Renamed"))
+       (should (equal (plist-get sent :session-id) "sid-1"))
+       (should (equal (plist-get sent :title)
+                      "Renamed--20260807T183045.000000Z--emacs"))))))
+
+(ert-deftest hermes-chat-rename-preserves-canonical-session-timestamp ()
+  "Renaming an identified session changes its label, not its timestamp."
   (hermes-test-with-chat-buffer
-   (setq hermes-chat--dashboard-active-session-id "sid-1")
-   (let (sent)
-     (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
-                (lambda () t))
-               ((symbol-function 'hermes-dashboard-transport-session-title)
-                (lambda (_client &rest args) (setq sent args))))
-       (hermes-chat-rename "Renamed"))
-     (should (equal (plist-get sent :session-id) "sid-1"))
-     (should (equal (plist-get sent :title) "Renamed")))))
+   (setq hermes-chat--title "Old--20260102T030405.123456Z--emacs")
+   (hermes-chat-rename "New")
+   (should (equal hermes-chat--title
+                  "New--20260102T030405.123456Z--emacs"))
+   (should (equal (buffer-name) "*Hermes@default: New*"))))
 
 (ert-deftest hermes-chat-buffer-name-for-title-formats ()
   "Buffer names carry the profile, plus the title once present."
@@ -460,8 +475,38 @@
                  "*Hermes@coder: Fix bug*"))
   (should (equal (hermes-chat--buffer-name-for-title nil "Fix bug")
                  "*Hermes@default: Fix bug*"))
+  (should (equal
+           (hermes-chat--buffer-name-for-title
+            nil "emacs-hermes--20260807T183045.123456Z--emacs")
+           "*Hermes@default: emacs-hermes*"))
   (should (equal (hermes-chat--buffer-name-for-title nil "")
                  "*Hermes@default*")))
+
+(ert-deftest hermes-chat-create-uses-project-canonical-title ()
+  "Fresh dashboard sessions use a canonical title from the current project."
+  (let ((client (hermes-test--dashboard-client)) created-title)
+    (cl-letf (((symbol-function 'current-time)
+               (lambda () (encode-time 45 30 18 7 8 2026 t)))
+              ((symbol-function 'project-current) (lambda (&rest _) 'project))
+              ((symbol-function 'project-root)
+               (lambda (_project) "/tmp/emacs-hermes/"))
+              ((symbol-function 'hermes-dashboard-transport-start)
+               (lambda (&rest args)
+                 (setf (hermes-dashboard-transport-client-callback client)
+                       (plist-get args :callback))
+                 client))
+              ((symbol-function 'hermes-dashboard-transport-session-create)
+               (lambda (_client &rest args)
+                 (setq created-title (plist-get args :title))
+                 (funcall (plist-get args :resolve)
+                          '((session_id . "sid-active")))))
+              ((symbol-function 'hermes-dashboard-transport-prompt-submit)
+               (lambda (&rest _args) nil)))
+      (hermes-test-with-chat-buffer
+       (insert "hello")
+       (hermes-chat-send)
+       (should (equal created-title
+                      "emacs-hermes--20260807T183045.000000Z--emacs"))))))
 
 (ert-deftest hermes-chat-prompts-profile-and-names-buffer ()
   "M-x hermes-chat reads a profile and names the buffer after it."
@@ -525,7 +570,9 @@
 (ert-deftest hermes-chat-manual-title-survives-refresh ()
   "A manually set title is not overwritten by the automatic refresh."
   (let ((fetches 0))
-    (cl-letf (((symbol-function 'hermes-chat--dashboard-session-attached-p)
+    (cl-letf (((symbol-function 'current-time)
+               (lambda () (encode-time 45 30 18 7 8 2026 t)))
+              ((symbol-function 'hermes-chat--dashboard-session-attached-p)
                (lambda () t))
               ((symbol-function 'hermes-dashboard-transport-session-title)
                (lambda (&rest _a) nil))
@@ -537,12 +584,13 @@
        (should hermes-chat--title-manual-p)
        (hermes-chat--maybe-refresh-session-title)
        (should (= fetches 0))
-       (should (equal hermes-chat--title "Pinned"))))))
+       (should (equal hermes-chat--title
+                      "Pinned--20260807T183045.000000Z--emacs"))))))
 
 (ert-deftest hermes-chat-snapshot-prefers-title ()
   "The dashboard snapshot uses the chat title over the buffer name."
   (hermes-test-with-chat-buffer
-   (setq hermes-chat--title "Pinned")
+   (setq hermes-chat--title "Pinned--20260807T183045.123456Z--emacs")
    (should (equal (plist-get (hermes-chat--dashboard-snapshot) :title)
                   "Pinned"))))
 
