@@ -1353,9 +1353,7 @@ self-explanatory."
 (defun hermes-chat--header-context-segment ()
   "Return the propertized context-window segment, or nil."
   (when-let* ((context (hermes-chat--format-context hermes-chat--context)))
-    (concat (propertize "ctx " 'face 'shadow)
-            (propertize (string-remove-prefix "ctx " context)
-                        'face 'hermes-chat-header-context))))
+    (propertize context 'face 'hermes-chat-header-context)))
 
 (defun hermes-chat--header-parts ()
   "Return ordered semantic segments for the Hermes chat header."

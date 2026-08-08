@@ -615,6 +615,16 @@
      (should (string-match-p "gpt-5.5" (hermes-test--header-line-string)))
      (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
 
+(ert-deftest hermes-chat-goal-status-preserves-turn-header ()
+  "Goal notices enter the transcript without replacing settled turn status."
+  (hermes-test-with-chat-buffer
+   (setq hermes-chat--status-state '(:status ready :activity "Ready"))
+   (hermes-chat--run-turn-reducer
+    "a1" '(:type status :event "status.update" :status "goal"
+                 :content "Continuing toward goal (1/20)"))
+   (should (string-match-p "✓ Ready" (hermes-test--header-line-string)))
+   (should (string-match-p "Continuing toward goal" (buffer-string)))))
+
 (ert-deftest hermes-chat-message-start-status-adds-no-entry ()
   "Low-value `message.start' status updates do not enter the transcript."
   (hermes-test-with-chat-buffer
@@ -4381,7 +4391,7 @@
    (cl-letf (((symbol-function 'window-total-width) (lambda (&rest _) 200)))
      (should (equal (substring-no-properties (hermes-chat--header-line))
                     (concat " scout  |  ✓ Ready  |  grok-4.5  |  medium"
-                            "  |  fast  |  YOLO  |  ctx 25k/500k · 5%% "))))))
+                            "  |  fast  |  YOLO  |  25k/500k "))))))
 
 (ert-deftest hermes-chat-header-segments-carry-semantic-faces ()
   "Profile, model, runtime flags, and context values use distinct faces."
@@ -4437,9 +4447,9 @@
                             '(:type tool :name "mystery" :status "running")))))
 
 (ert-deftest hermes-chat-format-context ()
-  "Context usage renders abbreviated tokens and a percentage."
+  "Context usage renders only abbreviated used and limit tokens."
   (should (equal (hermes-chat--format-context '(:used 45000 :max 200000 :percent 22))
-                 "ctx 45k/200k · 22%"))
+                  "45k/200k"))
   (should-not (hermes-chat--format-context '(:used 0 :max 0 :percent 0)))
   (should-not (hermes-chat--format-context nil)))
 
@@ -4450,9 +4460,8 @@
     '(:type status :event "session.info" :status "ready"
             :model "gpt-5.5" :agent-name "planner"
             :context (:used 45000 :max 200000 :percent 22)))
-   ;; The header doubles % so the redisplay engine renders a literal "22%"
-   ;; instead of eating "%)" as a mode-line spec.
-   (should (string-match-p "ctx 45k/200k · 22%%" (hermes-chat--header-line)))))
+   (should (string-match-p "45k/200k" (hermes-chat--header-line)))
+   (should-not (string-match-p "ctx\|%" (hermes-chat--header-line)))))
 
 (ert-deftest hermes-chat-done-event-records-usage ()
   "A done event records usage in header state; the compact header omits the gauge."

@@ -337,13 +337,20 @@ ordered list the boundary replays: a header change leads with `refresh-header',
 `done'/`error' append the turn lifecycle, and tool/transcript events emit deltas
 and `upsert-entry'.  Other types return (STATE)."
   (pcase (plist-get event :type)
-    ((or 'status 'commentary 'thinking 'diff)
+    ('status
+     (if (equal (hermes-chat--status-name (plist-get event :status)) "goal")
+         (cons state (delq nil (list (hermes-chat--turn-entry-effect event))))
+       (let ((status (hermes-chat--turn-status-state state event now)))
+         (cons (hermes-chat--turn-state-put state :status-state status)
+               (append
+                (delq nil (list (cons 'refresh-header status)
+                                (hermes-chat--turn-entry-effect event)))
+                (hermes-chat--turn-session-info-effects event))))))
+    ((or 'commentary 'thinking 'diff)
      (let ((status (hermes-chat--turn-status-state state event now)))
        (cons (hermes-chat--turn-state-put state :status-state status)
-             (append
-              (delq nil (list (cons 'refresh-header status)
-                              (hermes-chat--turn-entry-effect event)))
-              (hermes-chat--turn-session-info-effects event)))))
+             (delq nil (list (cons 'refresh-header status)
+                             (hermes-chat--turn-entry-effect event))))))
     ('unknown
      (let ((status (hermes-chat--turn-status-state state event now)))
        (cons (hermes-chat--turn-state-put state :status-state status)
