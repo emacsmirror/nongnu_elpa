@@ -23,6 +23,20 @@
       (should (equal (plist-get event :content)
                      "Self-improvement review: profile updated")))))
 
+(ert-deftest hermes-dashboard-rpc-session-requests-identify-emacs-source ()
+  "Session create and resume requests identify the Emacs client surface."
+  (let (requests)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-request)
+               (lambda (_client method params &rest _)
+                 (push (cons method params) requests))))
+      (hermes-dashboard-transport-session-create 'client)
+      (hermes-dashboard-transport-session-resume 'client "stored"))
+    (should
+     (equal (nreverse requests)
+            '(("session.create" (source . "emacs"))
+              ("session.resume" (session_id . "stored")
+               (source . "emacs")))))))
+
 (ert-deftest hermes-transport-dashboard-approval-respond-payload ()
   (let ((client (hermes-test--dashboard-client))
         (hermes-dashboard-transport-request-timeout nil)
