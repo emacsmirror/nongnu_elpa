@@ -621,9 +621,7 @@ these is about."
                   "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
           (let ((vm-default-folder-type 'From_))
             (vm-do-fcc-in-composition))
-          ;; the Fcc header is gone, so `mail-send' will not file it again
-          (should-not (string-match-p "^Fcc:" (buffer-string)))
-          ;; and the separator was put back
+          ;; the separator was taken out to make the copy, and put back
           (should (string-match-p (regexp-quote mail-header-separator)
                                   (buffer-string))))
       (let ((text (vm-reply-test--folder-text (expand-file-name "archive" dir))))
@@ -684,8 +682,8 @@ without further change."
                                        (vm-text-end-of (nth 1 vm-message-list)))))))
       (delete-directory dir t))))
 
-(ert-deftest vm-reply-test-fcc-header-is-consumed ()
-  "Every Fcc header is acted on and removed, so nothing files twice."
+(ert-deftest vm-reply-test-fcc-files-one-copy-per-header ()
+  "Every Fcc header gets a copy, and each folder gets exactly one."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
          (one (expand-file-name "one" dir))
          (two (expand-file-name "two" dir)))
@@ -697,10 +695,6 @@ without further change."
                     "Fcc: " two "\n"
                     mail-header-separator "\nbody\n")
             (let ((vm-default-folder-type 'From_))
-              (vm-do-fcc-in-composition))
-            (should-not (string-match-p "^Fcc:" (buffer-string)))
-            ;; a second pass has nothing to do
-            (let ((vm-default-folder-type 'From_))
               (vm-do-fcc-in-composition)))
           (dolist (file (list one two))
             (should (file-exists-p file))
@@ -710,12 +704,13 @@ without further change."
                                         "\n"))))))
       (delete-directory dir t))))
 
-(ert-deftest vm-reply-test-fcc-headers-come-back-after-sending ()
-  "The Fcc headers are put back once the message has gone.
-They have to be absent while it is sent, or `mail-send' files a second copy
-through `mail-do-fcc'.  Afterwards the buffer VM leaves behind should still
-say where the copy went -- and sending it again after an edit should file it
-again rather than quietly not."
+(ert-deftest vm-reply-test-fcc-header-stays-in-the-composition ()
+  "The composition keeps its Fcc headers; only the copies lose them.
+The buffer VM leaves you with should still say where the copy went, and
+editing it and sending again should file it again.  What must not carry an
+Fcc header is the message that goes out -- it names a folder on this
+machine -- and the copy that is filed, which does not need to say where it
+was filed."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
          (folder (expand-file-name "archive" dir)))
     (unwind-protect
@@ -725,10 +720,8 @@ again rather than quietly not."
                   "Subject: filed\n"
                   mail-header-separator "\nbody\n")
           (let ((vm-default-folder-type 'From_))
-            (vm-do-fcc-in-composition)
-            (should-not (string-match-p "^Fcc:" (buffer-string)))
-            (vm-restore-fcc-headers))
-          ;; back, in the header section, exactly as written
+            (vm-do-fcc-in-composition))
+          ;; still there, and still a header
           (should (string-match-p (concat "^Fcc: " (regexp-quote folder) "$")
                                   (buffer-string)))
           (goto-char (point-min))
@@ -736,6 +729,9 @@ again rather than quietly not."
                      (save-excursion
                        (re-search-forward
                         (concat "^" (regexp-quote mail-header-separator) "$")))))
+          ;; but the filed copy does not carry it
+          (should-not (string-match-p
+                       "^Fcc:" (vm-reply-test--folder-text folder)))
           ;; and sending again files again
           (let ((vm-default-folder-type 'From_))
             (vm-do-fcc-in-composition))
@@ -745,13 +741,22 @@ again rather than quietly not."
                                       "\n")))))
       (delete-directory dir t))))
 
-(ert-deftest vm-reply-test-fcc-restore-does-nothing-without-an-fcc ()
-  "A composition that had no Fcc header is left alone."
+(ert-deftest vm-reply-test-fcc-strip-headers-takes-them-out ()
+  "`vm-fcc-strip-headers' removes every Fcc header and reports the folders.
+This is what stands in for `mail-do-fcc' while the message is sent: the one
+part of its job still worth doing is keeping the Fcc header out of what goes
+to the recipient, and nothing else in sendmail.el or smtpmail.el does that."
   (with-temp-buffer
-    (insert "To: someone@example.com\n" mail-header-separator "\nbody\n")
-    (let ((before (buffer-string)))
-      (vm-restore-fcc-headers)
-      (should (equal before (buffer-string))))))
+    (insert "To: someone@example.com\n"
+            "Fcc: /one\n"
+            "Subject: filed\n"
+            "Fcc: /two\n"
+            "\nbody\n")
+    (goto-char (point-min))
+    (let ((header-end (save-excursion (re-search-forward "^$") (point-marker))))
+      (should (equal '("/one" "/two") (vm-fcc-strip-headers header-end))))
+    (should-not (string-match-p "^Fcc:" (buffer-string)))
+    (should (string-match-p "^Subject: filed$" (buffer-string)))))
 
 (provide 'vm-reply-test)
 

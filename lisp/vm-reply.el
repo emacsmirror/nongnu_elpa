@@ -884,21 +884,22 @@ as replied to, forwarded, etc, if appropriate."
 	    (sendmail-coding-system (vm-binary-coding-system))
 	    (vm-dont-ask-coding-system-question t)
 	    (select-safe-coding-system-function nil))
-	;; File the copy before handing the message over.  `mail-send' would
-	;; otherwise do it through `mail-do-fcc', which writes one format
-	;; whatever the folder is -- see `vm-do-fcc'.  Doing it here takes
-	;; the Fcc headers out, so `mail-send' finds nothing left to file.
-	;; If `vm-do-fcc-before-mime-encode' was set, this finds nothing
-	;; either, the copy having been made further up.
-	(vm-do-fcc-in-composition)
+	;; File the copy ourselves, unless it went already because
+	;; `vm-do-fcc-before-mime-encode' is set.
+	(unless vm-fcc-filed
+	  (vm-do-fcc-in-composition))
+	;; `mail-send' would file it again, through `mail-do-fcc', which
+	;; writes one format whatever the folder is -- see `vm-do-fcc'.  For
+	;; the length of the send it does the one part of its job still worth
+	;; doing: taking the Fcc headers out of the copy that goes out, which
+	;; is the only thing that does that, and which is why it cannot simply
+	;; be turned off.  The composition itself is left alone.
 	(save-excursion
-	  (mail-send))))
+	  (cl-letf (((symbol-function 'mail-do-fcc) #'vm-fcc-strip-headers))
+	    (mail-send)))))
     ;; be careful, something could have killed the composition
     ;; buffer inside mail-send.
     (when (eq (current-buffer) composition-buffer)
-      ;; The message has gone, so the Fcc headers can come back.  They had
-      ;; to be absent while it went; see `vm-restore-fcc-headers'.
-      (vm-restore-fcc-headers)
       (cond ((eq vm-system-state 'replying)
 	     (vm-mail-mark-replied))
 	    ((eq vm-system-state 'forwarding)
@@ -919,23 +920,19 @@ as replied to, forwarded, etc, if appropriate."
 ;; reading back the way it was written, silently.  VM does it itself.
 ;;                                                              Issue #597.
 
-(defvar vm-fcc-removed-headers nil
-  "The Fcc header lines taken out of this composition to file its copies.
-Buffer-local.  They have to be out of the way while the message is sent, or
-`mail-send' would file a second copy through `mail-do-fcc'; they are put
-back afterwards by `vm-restore-fcc-headers', so that the buffer you are left
-with still says where the copy went, and so that editing and sending it
-again files it again.")
-(make-variable-buffer-local 'vm-fcc-removed-headers)
+(defvar vm-fcc-filed nil
+  "Whether the Fcc copies of this composition have been filed already.
+Buffer-local.  `vm-do-fcc-before-mime-encode' files them before the message
+is encoded, and `vm-mail-send' files them otherwise; this is what stops both
+happening.")
+(make-variable-buffer-local 'vm-fcc-filed)
 
-(defun vm-fcc-folders (header-end)
-  "Return the folders named by the Fcc headers before HEADER-END.
-The headers are deleted as they are read, which is also what keeps
-`mail-send' from filing the message a second time: `mail-do-fcc' looks for
-Fcc headers and finds none left.  What was deleted is kept in
-`vm-fcc-removed-headers' to be put back once the message has gone."
+(defun vm-fcc-strip-headers (header-end)
+  "Delete the Fcc headers before HEADER-END, returning the folders they named.
+Used on the copy of the message that goes out, where an Fcc header has no
+business being -- it names a folder on this machine -- and on the copy that
+is filed, which does not need to say where it was filed."
   (let ((folders nil)
-	(lines nil)
 	(case-fold-search t))
     (save-excursion
       (goto-char (point-min))
@@ -944,32 +941,24 @@ Fcc headers and finds none left.  What was deleted is kept in
 	       (point)
 	       (progn (end-of-line) (skip-chars-backward " \t") (point)))
 	      folders)
-	(let ((start (match-beginning 0))
-	      (end (progn (forward-line 1) (point))))
-	  (push (buffer-substring-no-properties start end) lines)
-	  (delete-region start end))))
-    (setq vm-fcc-removed-headers
-	  (append vm-fcc-removed-headers (nreverse lines)))
+	(delete-region (match-beginning 0) (progn (forward-line 1) (point)))))
     (nreverse folders)))
 
-(defun vm-restore-fcc-headers ()
-  "Put back the Fcc headers `vm-do-fcc' took out to file the copies.
-Called once the message has been sent.  The buffer VM leaves behind then
-still shows where the copy went, and sending it again after an edit files it
-again rather than quietly not."
-  (when vm-fcc-removed-headers
+(defun vm-fcc-folders (header-end)
+  "Return the folders named by the Fcc headers before HEADER-END.
+The composition is not touched: the headers stay where they are, so the
+buffer VM leaves you with still says where the copy went, and editing it and
+sending again files it again."
+  (let ((folders nil)
+	(case-fold-search t))
     (save-excursion
       (goto-char (point-min))
-      ;; At the end of the headers: before the separator if the composition
-      ;; still has one, otherwise before the blank line that ends them.
-      (cond ((re-search-forward
-	      (concat "^" (regexp-quote mail-header-separator) "$") nil t)
-	     (goto-char (match-beginning 0)))
-	    ((re-search-forward "^$" nil t)
-	     (goto-char (match-beginning 0)))
-	    (t (goto-char (point-max))))
-      (insert (apply #'concat vm-fcc-removed-headers)))
-    (setq vm-fcc-removed-headers nil)))
+      (while (re-search-forward "^Fcc:[ \t]*" header-end t)
+	(push (buffer-substring-no-properties
+	       (point)
+	       (progn (end-of-line) (skip-chars-backward " \t") (point)))
+	      folders)))
+    (nreverse folders)))
 
 (defun vm-fcc-message-text (type)
   "The message in the current buffer, ready to append to a folder of TYPE.
@@ -983,6 +972,9 @@ body with `forward-char' -- so counting bytes here would not round-trip."
   (let ((mailbuf (current-buffer)))
     (with-temp-buffer
       (insert-buffer-substring mailbuf)
+      ;; The copy does not need to say where it was filed, and the
+      ;; composition keeps its own headers -- this is a copy.
+      (vm-fcc-strip-headers (point-max))
       (vm-munge-message-separators type (point-min) (point-max))
       (goto-char (point-min))
       (let ((body (if (re-search-forward "\n\n" nil t) (point) (point-max))))
@@ -1033,7 +1025,8 @@ written in its own format; see `vm-fcc-write'."
   ;; `vm-folder-directory': an Fcc header has never meant that, and making
   ;; it mean that would move where existing configurations file their mail.
   (dolist (folder (vm-fcc-folders header-end))
-    (vm-fcc-write (expand-file-name folder))))
+    (vm-fcc-write (expand-file-name folder)))
+  (setq vm-fcc-filed t))
 
 (defun vm-do-fcc-in-composition ()
   "Carry out this composition's Fcc headers, if it still has any.
