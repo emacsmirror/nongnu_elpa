@@ -319,15 +319,19 @@ VM 8.?.?
     text stayed in a file nobody had open.  `vm-quit' is unchanged and remains
     the orderly way to leave a folder: it keeps the virtual folders and takes
     this folder's messages out of them.
-  * Three user options whose names were misspelled have been renamed, and the
-    old names still work:
+  * Three user options whose names were misspelled have been renamed.  **The
+    misspellings are gone, not aliased**, so if your configuration sets one it
+    now has no effect at all -- silently, since nothing is left to warn about.
+    Check for these three names and correct them:
       - vm-mime-deleteable-types            -> vm-mime-deletable-types
       - vm-mime-deleteable-type-exceptions  -> vm-mime-deletable-type-exceptions
       - vm-ps-print-message-separater       -> vm-ps-print-message-separator
-    Each old name is an obsolete alias, so an init file that sets one still
-    sets the option and the byte compiler says which name to use instead.
-    `vm-mime-deletable-types' already existed as an alias pointing at the
-    misspelled name; that direction is now reversed.
+    `vm-mime-deletable-types' and `vm-mime-deletable-type-exceptions' already
+    existed as aliases pointing at the misspelled names, so a configuration
+    using either of those two correct spellings is unaffected.
+    `vm-mime-delete-all-attachments-types' and its -exceptions counterpart are
+    a rename rather than a typo and remain obsolete aliases, now of the
+    corrected names.
   * Incoming mail can be filtered by a table of rules, `vm-virtual-filter-alist'.
     Each rule names a virtual folder, whose selector says which messages it
     applies to, and lists what to do with them: `:label', `:attributes',

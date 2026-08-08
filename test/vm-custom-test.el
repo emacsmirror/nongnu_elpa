@@ -53,48 +53,52 @@ type says something false about what the code accepts."
     (should (equal nil (nreverse mismatches)))
     (should (= 0 (car result)))))
 
-;;; Options renamed out of a misspelling keep their old name working
+;;; The misspelled option names are gone, not aliased
 
-;; Three user options were spelled wrong in their own names.  Renaming one
-;; silently would break every configuration that sets it, so each old name is
-;; an obsolete alias -- setting it still sets the option, and the byte
-;; compiler says which name to use instead.  Issue #589.
+;; Three user options were spelled wrong in their own names.  They were
+;; renamed, and the misspellings were *not* kept as aliases: a name nobody
+;; meant to type is not worth carrying.  Issue #589.
+;;
+;; The cost of that decision is silent: an init file still setting a
+;; misspelling gets no error, the option simply keeps its default.  These tests
+;; pin what was decided, so a later well-meaning re-addition has to argue with
+;; them rather than slip in.
 
-(defconst vm-custom-test--renamed-options
+(defconst vm-custom-test--corrected-names
   '((vm-mime-deleteable-types           . vm-mime-deletable-types)
     (vm-mime-deleteable-type-exceptions . vm-mime-deletable-type-exceptions)
-    (vm-ps-print-message-separater      . vm-ps-print-message-separator)
-    ;; Older still: this one was aliased to the misspelling, and has to
-    ;; follow the rename rather than being left pointing at nothing.
-    (vm-mime-delete-all-attachments-types . vm-mime-deletable-types))
-  "Old option name to the name it now stands for.")
+    (vm-ps-print-message-separater      . vm-ps-print-message-separator))
+  "Misspelling that was dropped, and the option it used to name.")
 
-(ert-deftest vm-custom-test-renamed-options-are-aliases ()
-  "Each old name resolves to the option it was renamed to."
+(ert-deftest vm-custom-test-corrected-names-exist ()
+  "Each corrected spelling is a real user option."
+  (require 'vm-vars)
+  (require 'vm-ps-print)
+  (dolist (pair vm-custom-test--corrected-names)
+    (should (boundp (cdr pair)))
+    (should (get (cdr pair) 'standard-value))))
+
+(ert-deftest vm-custom-test-misspellings-are-gone ()
+  "No misspelling is left bound, as an alias or otherwise."
   (require 'vm-vars)
   (require 'vm-ps-print)
   (require 'vm-rfaddons)
-  (dolist (pair vm-custom-test--renamed-options)
+  (dolist (pair vm-custom-test--corrected-names)
+    (should-not (boundp (car pair)))))
+
+(ert-deftest vm-custom-test-older-rename-still-aliased ()
+  "`vm-mime-delete-all-attachments-types' is a rename, not a typo, and stays.
+It has been an obsolete alias since 8.1.1, and pointed at the misspelling; it
+follows the corrected name rather than being dropped with it."
+  (require 'vm-vars)
+  (require 'vm-rfaddons)
+  (dolist (pair '((vm-mime-delete-all-attachments-types
+                   . vm-mime-deletable-types)
+                  (vm-mime-delete-all-attachments-types-exceptions
+                   . vm-mime-deletable-type-exceptions)))
     (should (boundp (car pair)))
-    (should (eq (cdr pair) (indirect-variable (car pair))))))
-
-(ert-deftest vm-custom-test-renamed-options-are-marked-obsolete ()
-  "Setting an old name warns, so a configuration using one is told to change.
-An alias that is not marked obsolete keeps working and says nothing, which
-leaves the misspelling in people's init files for good."
-  (require 'vm-vars)
-  (require 'vm-ps-print)
-  (require 'vm-rfaddons)
-  (dolist (pair vm-custom-test--renamed-options)
+    (should (eq (cdr pair) (indirect-variable (car pair))))
     (should (get (car pair) 'byte-obsolete-variable))))
-
-(ert-deftest vm-custom-test-setting-an-old-name-sets-the-option ()
-  "The point of the alias: an init file setting the old name still works."
-  (require 'vm-vars)
-  (let ((vm-mime-deletable-types nil))
-    (with-no-warnings
-      (setq vm-mime-deleteable-types '("application/x-test")))
-    (should (equal '("application/x-test") vm-mime-deletable-types))))
 
 (provide 'vm-custom-test)
 
