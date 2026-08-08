@@ -579,6 +579,362 @@ more."
   (should-not (lookup-key vm-mail-mode-map [ns-drag-file]))
   (should-not (fboundp 'vm-ns-attach-file)))
 
+;;; VM files its own Fcc copies (issue #597)
+
+;; `mail-do-fcc' wrote one format whatever the folder was: `\nFrom ' quoted
+;; to `>From ' always, and never a `Content-Length'.  So an Fcc into a
+;; `From_-with-Content-Length' folder appended a message the byte counts did
+;; not describe, and the folder stopped reading back the way it was written.
+
+(defmacro vm-reply-test--with-composition (fcc &rest body)
+  "Run BODY in a composition buffer with an Fcc header naming FCC.
+The body holds a line beginning `From ', which is the line every one of
+these is about."
+  (declare (indent 1) (debug t))
+  `(let ((dir (file-name-as-directory (make-temp-file "vm-fcc" t))))
+     (unwind-protect
+         (with-temp-buffer
+           (insert "To: someone@example.com\n"
+                   "Subject: filed\n"
+                   "Fcc: " ,fcc "\n"
+                   mail-header-separator "\n"
+                   "a body line\n"
+                   "From nobody@example.com Mon Jan  1 00:00:00 2024\n"
+                   "the last line\n")
+           ,@body)
+       (delete-directory dir t))))
+
+(defun vm-reply-test--folder-text (file)
+  (with-temp-buffer
+    (insert-file-contents file)
+    (buffer-string)))
+
+(ert-deftest vm-reply-test-fcc-quotes-for-a-From_-folder ()
+  "Into a From_ folder the copy is quoted, because the boundary is a line."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir)))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\nSubject: filed\n"
+                  "Fcc: " folder "\n" mail-header-separator "\n"
+                  "a body line\n"
+                  "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
+          (let ((vm-default-folder-type 'From_))
+            (vm-do-fcc-in-composition))
+          ;; the separator was taken out to make the copy, and put back
+          (should (string-match-p (regexp-quote mail-header-separator)
+                                  (buffer-string))))
+      (let ((text (vm-reply-test--folder-text (expand-file-name "archive" dir))))
+        (should (string-match-p "^From VM " text))
+        (should (string-match-p "^>From nobody@example.com" text))
+        (should-not (string-match-p "^Content-Length:" text)))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-counts-for-a-Content-Length-folder ()
+  "REGRESSION: a copy filed in a Content-Length folder carries a count.
+`mail-do-fcc' never wrote one, whatever the folder was, so the byte counts
+stopped describing the folder from that message on and it no longer read
+back the way it was written.  The test is that it does read back: the folder
+still parses as two messages, with the second one's body intact.
+
+Quoting is not the point here -- `From_-with-Content-Length' is mboxcl, which
+quotes as well as counting -- and the copy is quoted for it.  When #466 adds
+the variant that does not quote, this same code follows the folder type
+without further change."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir)))
+    (unwind-protect
+        (progn
+          ;; An existing folder of that type, so the type is read, not guessed.
+          (with-temp-buffer
+            (insert "From VM Mon Jan  1 00:00:00 2024\n"
+                    "Content-Length: 6\n"
+                    "From: someone@example.com\n\n"
+                    "first\n\n")
+            (write-region (point-min) (point-max) folder))
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: filed\n"
+                    "Fcc: " folder "\n" mail-header-separator "\n"
+                    "a body line\n"
+                    "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
+            (let ((vm-trust-From_-with-Content-Length t))
+              (should (eq 'From_-with-Content-Length
+                          (vm-get-folder-type folder)))
+              (vm-do-fcc-in-composition)))
+          ;; A count was written at all -- this is what was missing.
+          (should (= 2 (cl-count-if
+                        (lambda (l) (string-prefix-p "Content-Length:" l))
+                        (split-string (vm-reply-test--folder-text folder)
+                                      "\n"))))
+          ;; And it is the right count: the folder reads back as two.
+          (with-temp-buffer
+            (vm-test-init-folder-variables)
+            (setq-local vm-trust-From_-with-Content-Length t)
+            (insert-file-contents folder)
+            (goto-char (point-min))
+            (vm-build-message-list)
+            (dolist (m vm-message-list) (vm-test-init-message-data m))
+            (should (eq 'From_-with-Content-Length vm-folder-type))
+            (should (= 2 (length vm-message-list)))
+            (should (string-match-p
+                     "a body line"
+                     (buffer-substring (vm-text-of (nth 1 vm-message-list))
+                                       (vm-text-end-of (nth 1 vm-message-list)))))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-files-one-copy-per-header ()
+  "Every Fcc header gets a copy, and each folder gets exactly one."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (one (expand-file-name "one" dir))
+         (two (expand-file-name "two" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: filed\n"
+                    "Fcc: " one "\n"
+                    "Fcc: " two "\n"
+                    mail-header-separator "\nbody\n")
+            (let ((vm-default-folder-type 'From_))
+              (vm-do-fcc-in-composition)))
+          (dolist (file (list one two))
+            (should (file-exists-p file))
+            (should (= 1 (cl-count-if
+                          (lambda (l) (string-prefix-p "From VM " l))
+                          (split-string (vm-reply-test--folder-text file)
+                                        "\n"))))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-header-stays-in-the-composition ()
+  "The composition keeps its Fcc headers; only the copies lose them.
+The buffer VM leaves you with should still say where the copy went, and
+editing it and sending again should file it again.  What must not carry an
+Fcc header is the message that goes out -- it names a folder on this
+machine -- and the copy that is filed, which does not need to say where it
+was filed."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir)))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\n"
+                  "Fcc: " folder "\n"
+                  "Subject: filed\n"
+                  mail-header-separator "\nbody\n")
+          (let ((vm-default-folder-type 'From_))
+            (vm-do-fcc-in-composition))
+          ;; still there, and still a header
+          (should (string-match-p (concat "^Fcc: " (regexp-quote folder) "$")
+                                  (buffer-string)))
+          (goto-char (point-min))
+          (should (< (save-excursion (re-search-forward "^Fcc:"))
+                     (save-excursion
+                       (re-search-forward
+                        (concat "^" (regexp-quote mail-header-separator) "$")))))
+          ;; but the filed copy does not carry it
+          (should-not (string-match-p
+                       "^Fcc:" (vm-reply-test--folder-text folder)))
+          ;; and sending again files again
+          (let ((vm-default-folder-type 'From_))
+            (vm-do-fcc-in-composition))
+          (should (= 2 (cl-count-if
+                        (lambda (l) (string-prefix-p "From VM " l))
+                        (split-string (vm-reply-test--folder-text folder)
+                                      "\n")))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-strip-headers-takes-them-out ()
+  "`vm-fcc-strip-headers' removes every Fcc header and reports the folders.
+This is what stands in for `mail-do-fcc' while the message is sent: the one
+part of its job still worth doing is keeping the Fcc header out of what goes
+to the recipient, and nothing else in sendmail.el or smtpmail.el does that."
+  (with-temp-buffer
+    (insert "To: someone@example.com\n"
+            "Fcc: /one\n"
+            "Subject: filed\n"
+            "Fcc: /two\n"
+            "\nbody\n")
+    (goto-char (point-min))
+    (let ((header-end (save-excursion (re-search-forward "^$") (point-marker))))
+      (should (equal '("/one" "/two") (vm-fcc-strip-headers header-end))))
+    (should-not (string-match-p "^Fcc:" (buffer-string)))
+    (should (string-match-p "^Subject: filed$" (buffer-string)))))
+
+(ert-deftest vm-reply-test-fcc-into-a-visited-folder ()
+  "A folder VM is visiting is appended to in its buffer, not behind its back.
+Writing the file under a live folder buffer would leave the two disagreeing
+until someone reverted.  The branch has its own bookkeeping -- the message
+count and the undo records -- so it is worth exercising rather than assuming."
+  (vm-test-with-real-folder (2)
+    (let ((folder buffer-file-name)
+          (before (length vm-message-list))
+          (folder-buffer (current-buffer)))
+      (with-temp-buffer
+        (insert "To: someone@example.com\nSubject: filed\n"
+                "Fcc: " folder "\n" mail-header-separator "\nbody\n")
+        (vm-do-fcc-in-composition))
+      (with-current-buffer folder-buffer
+        ;; it went into the buffer, and VM counted it
+        (should (= (1+ before) (length vm-message-list)))
+        (should (string-match-p "^Subject: filed$"
+                                (save-restriction (widen) (buffer-string))))
+        ;; and the file on disk was not written behind the buffer's back,
+        ;; which would leave the two disagreeing until someone reverted
+        (should (= 2 (with-temp-buffer
+                       (insert-file-contents folder)
+                       (cl-count-if (lambda (l) (string-prefix-p "From " l))
+                                    (split-string (buffer-string) "\n")))))))))
+
+(ert-deftest vm-reply-test-fcc-refuses-a-folder-it-cannot-read ()
+  "A folder whose type VM does not recognize is not written to.
+Appending to it in some other format is how a folder gets two formats in it."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "junk" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert "this is not a mail folder at all\n")
+            (write-region (point-min) (point-max) folder))
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: filed\n"
+                    "Fcc: " folder "\n" mail-header-separator "\nbody\n")
+            (let ((text-quoting-style 'grave))
+              (should-error (vm-do-fcc-in-composition) :type 'error)))
+          ;; and it was left as it was
+          (should (equal "this is not a mail folder at all\n"
+                         (vm-reply-test--folder-text folder))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-is-filed-once-through-the-send ()
+  "Sending files exactly one copy, and the sent message has no Fcc header.
+This is the wiring rather than the parts: `vm-mail-send' files the copy
+itself and then binds `mail-do-fcc' to something that only strips the
+header, because the real one would file a second copy.  `mail-send' is
+stubbed here with something that does what the send functions do -- copy the
+message and call `mail-do-fcc' on the copy."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir))
+         (sent nil))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\nSubject: filed\n"
+                  "Fcc: " folder "\n" mail-header-separator "\nbody\n")
+          (let ((vm-default-folder-type 'From_)
+                (composition (current-buffer)))
+            (cl-letf (((symbol-function 'mail-send)
+                       (lambda ()
+                         ;; what sendmail-send-it and smtpmail-send-it do
+                         (with-temp-buffer
+                           (insert-buffer-substring composition)
+                           (goto-char (point-min))
+                           (re-search-forward
+                            (concat "^" (regexp-quote mail-header-separator)
+                                    "$"))
+                           (replace-match "")
+                           (mail-do-fcc (point-marker))
+                           (setq sent (buffer-string))))))
+              (vm-do-fcc-in-composition)
+              (cl-letf (((symbol-function 'mail-do-fcc)
+                         #'vm-fcc-strip-headers))
+                (mail-send))))
+          ;; one copy filed, not two
+          (should (= 1 (cl-count-if
+                        (lambda (l) (string-prefix-p "From VM " l))
+                        (split-string (vm-reply-test--folder-text folder)
+                                      "\n"))))
+          ;; the message that went out does not name the folder
+          (should sent)
+          (should-not (string-match-p "^Fcc:" sent))
+          (should (string-match-p "^Subject: filed$" sent))
+          ;; the composition still does
+          (should (string-match-p "^Fcc:" (buffer-string))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-counts-octets-not-characters ()
+  "REGRESSION: the count is of octets, so a non-ASCII body still reads back.
+A `Content-Length' counts octets, and so does the reader -- `vm-visit-folder'
+makes a folder buffer unibyte, so its `forward-char' moves over bytes.  The
+copy is built in a multibyte buffer, though, so counting characters there
+was short by however much of the body was not ASCII, and every message after
+it in the folder was misplaced."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir))
+         (body "grüße von René: 日本語\n"))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert "From VM Mon Jan  1 00:00:00 2024\n"
+                    "Content-Length: 6\n"
+                    "From: someone@example.com\n\nfirst\n\n")
+            (write-region (point-min) (point-max) folder))
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: filed\n"
+                    "Fcc: " folder "\n" mail-header-separator "\n" body)
+            (let ((vm-trust-From_-with-Content-Length t)
+                  (coding-system-for-write 'utf-8-unix))
+              (vm-do-fcc-in-composition)))
+          ;; the count is the octet length, which is more than the characters
+          (let ((text (vm-reply-test--folder-text folder)))
+            (should (string-match "\nContent-Length: \\([0-9]+\\)\nTo: "
+                                  text))
+            (should (= (string-bytes body)
+                       (string-to-number (match-string 1 text))))
+            (should (< (length body) (string-bytes body))))
+          ;; and the folder reads back as two messages with the body intact
+          (with-temp-buffer
+            (vm-test-init-folder-variables)
+            (setq-local vm-trust-From_-with-Content-Length t)
+            (let ((coding-system-for-read 'utf-8-unix))
+              (insert-file-contents folder))
+            (goto-char (point-min))
+            (vm-build-message-list)
+            (dolist (m vm-message-list) (vm-test-init-message-data m))
+            (should (= 2 (length vm-message-list)))
+            (should (string-match-p
+                     "grüße von René"
+                     (buffer-substring (vm-text-of (nth 1 vm-message-list))
+                                       (vm-text-end-of (nth 1 vm-message-list)))))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-second-send-files-again ()
+  "REGRESSION: sending a kept composition again files another copy.
+VM keeps the composition buffer after a send, so this is the ordinary way to
+correct a message and send it once more.  `vm-fcc-filed' is what stops the
+copy being filed twice *within* one send; left set from the last one it
+meant the next send filed nowhere and said nothing.  Goes through
+`vm-mail-send' rather than around it, because the clearing lives there --
+calling `vm-do-fcc-in-composition' directly would pass either way."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir)))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\nSubject: filed\n"
+                  "Fcc: " folder "\n" mail-header-separator "\nbody\n")
+          (let ((vm-default-folder-type 'From_)
+                (vm-confirm-mail-send nil)
+                (vm-mail-check-recipient-format nil)
+                (vm-send-using-mime nil)
+                (vm-mail-reorder-message-headers nil)
+                (vm-mail-send-hook nil)
+                (vm-system-state nil))
+            (cl-letf (((symbol-function 'mail-send) #'ignore)
+                      ((symbol-function 'vm-rename-current-mail-buffer)
+                       #'ignore)
+                      ((symbol-function 'vm-keep-mail-buffer) #'ignore)
+                      ((symbol-function 'vm-display) #'ignore))
+              (vm-mail-send)
+              (should vm-fcc-filed)
+              ;; edit it and send it again
+              (goto-char (point-max))
+              (insert "a correction\n")
+              (vm-mail-send)))
+          (should (= 2 (cl-count-if
+                        (lambda (l) (string-prefix-p "From VM " l))
+                        (split-string (vm-reply-test--folder-text folder)
+                                      "\n"))))
+          ;; and the second copy is the edited one
+          (should (string-match-p "a correction"
+                                  (vm-reply-test--folder-text folder))))
+      (delete-directory dir t))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

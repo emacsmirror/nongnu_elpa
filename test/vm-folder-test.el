@@ -2055,6 +2055,112 @@ to nil while setting the buffer up."
     (should (eq 'From_-with-Content-Length vm-folder-type))
     (should (equal '("subject 1" "subject 2") (vm-folder-test--subjects)))))
 
+
+;;; Reading a Content-Length folder is a different thing from reading mbox
+
+;; The two formats VM reads differ in one respect that matters: where a
+;; message ends.  In a From_ folder it is the next line beginning `From ',
+;; so a body containing such a line has to have been quoted when written.  In
+;; a From_-with-Content-Length folder the byte count says where the message
+;; ends, so a body may contain that line untouched and reading is unaffected.
+;;
+;; That is the property, and it had no test.  See the Folder types section of
+;; the manual, and issue #466.
+
+(defconst vm-folder-test--counted-body-1
+  ;; A blank line and then a line beginning `From ': in a From_ folder that
+  ;; is a message boundary, and here it is body text.  That difference is
+  ;; the whole of what the two formats are.
+  "a body line\n\nFrom nobody@example.com Mon Jan  1 00:00:00 2024\n"
+  "The first message's body, which a From_ reader would split in two.")
+
+(defconst vm-folder-test--counted-body-2 "second\n"
+  "The second message's body.")
+
+(defconst vm-folder-test--counted-folder
+  ;; The counts are computed rather than written down, so the fixture cannot
+  ;; drift from what it claims.  They count the body only, from after the
+  ;; blank line that ends the headers.
+  (concat "From VM Mon Jan  1 00:00:00 2024\n"
+          (format "Content-Length: %d\n" (length vm-folder-test--counted-body-1))
+          "From: one@example.com\nSubject: subject 1\n\n"
+          vm-folder-test--counted-body-1
+          "\n"
+          "From VM Mon Jan  1 00:00:01 2024\n"
+          (format "Content-Length: %d\n" (length vm-folder-test--counted-body-2))
+          "From: two@example.com\nSubject: subject 2\n\n"
+          vm-folder-test--counted-body-2
+          "\n")
+  "A two-message folder whose first body holds a `From ' line after a blank one.")
+
+(defmacro vm-folder-test--with-counted-folder (trust &rest body)
+  "Parse `vm-folder-test--counted-folder' with TRUST, then run BODY."
+  (declare (indent 1) (debug t))
+  ;; `vm-warn' records what it last said in `vm-current-warning', a global
+  ;; the harness does not restore, and reading these bytes as From_ warns
+  ;; about the messages running together (issue #562).
+  `(let ((vm-current-warning vm-current-warning))
+     (with-temp-buffer
+       (vm-test-init-folder-variables)
+       (setq-local vm-trust-From_-with-Content-Length ,trust)
+       (insert vm-folder-test--counted-folder)
+       (goto-char (point-min))
+       (vm-build-message-list)
+       (dolist (m vm-message-list) (vm-test-init-message-data m))
+       ,@body)))
+
+(defun vm-folder-test--body-text (m)
+  (buffer-substring-no-properties (vm-text-of m) (vm-text-end-of m)))
+
+(ert-deftest vm-folder-test-counted-folder-is-read-by-its-counts ()
+  "The count ends the message, so a `From ' line in a body is body text."
+  (vm-folder-test--with-counted-folder t
+    (should (eq 'From_-with-Content-Length vm-folder-type))
+    (should (equal '("subject 1" "subject 2")
+                   (mapcar #'vm-su-subject vm-message-list)))
+    (let ((body (vm-folder-test--body-text (car vm-message-list))))
+      (should (string-match-p "^From nobody@example.com" body))
+      (should-not (string-match-p "^>From " body)))))
+
+(ert-deftest vm-folder-test-same-bytes-without-trust-are-mbox ()
+  "The same bytes read as From_ split at that line instead, giving three.
+Which is why `vm-trust-From_-with-Content-Length' exists: nothing in the
+file says which of the two formats it is, so VM has to be told.  Neither
+reading damages the folder; they are simply different folders."
+  (vm-folder-test--with-counted-folder nil
+    (should (eq 'From_ vm-folder-type))
+    (should (= 3 (length vm-message-list)))))
+
+(ert-deftest vm-folder-test-counted-folder-bodies-are-exact ()
+  "Each body is what its count claimed, plus the newline that follows it.
+`vm-find-trailing-message-separator' skips newlines after the counted body
+-- its comment says some systems add one the count does not include -- so
+the region VM reports runs to the blank line between the messages.  Pinned
+as it is: a reader that stopped absorbing that would change where every
+message in every such folder ends."
+  (vm-folder-test--with-counted-folder t
+    (should (equal (concat vm-folder-test--counted-body-1 "\n")
+                   (vm-folder-test--body-text (nth 0 vm-message-list))))
+    (should (equal (concat vm-folder-test--counted-body-2 "\n")
+                   (vm-folder-test--body-text (nth 1 vm-message-list))))))
+
+(ert-deftest vm-folder-test-a-count-past-the-end-does-not-eat-the-folder ()
+  "A count larger than what is there stops at the next separator.
+`vm-find-trailing-message-separator' falls back to searching for the next
+`From ' line when the count does not land on one, so one wrong count costs
+one message rather than the rest of the folder."
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (setq-local vm-trust-From_-with-Content-Length t)
+    (insert (replace-regexp-in-string "Content-Length: 62"
+                                      "Content-Length: 9999"
+                                      vm-folder-test--counted-folder))
+    (goto-char (point-min))
+    (vm-build-message-list)
+    (dolist (m vm-message-list) (vm-test-init-message-data m))
+    (should (<= 1 (length vm-message-list)))
+    (should (equal "subject 1" (vm-su-subject (car vm-message-list))))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
