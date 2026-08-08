@@ -2096,14 +2096,18 @@ to nil while setting the buffer up."
 (defmacro vm-folder-test--with-counted-folder (trust &rest body)
   "Parse `vm-folder-test--counted-folder' with TRUST, then run BODY."
   (declare (indent 1) (debug t))
-  `(with-temp-buffer
-     (vm-test-init-folder-variables)
-     (setq-local vm-trust-From_-with-Content-Length ,trust)
-     (insert vm-folder-test--counted-folder)
-     (goto-char (point-min))
-     (vm-build-message-list)
-     (dolist (m vm-message-list) (vm-test-init-message-data m))
-     ,@body))
+  ;; `vm-warn' records what it last said in `vm-current-warning', a global
+  ;; the harness does not restore, and reading these bytes as From_ warns
+  ;; about the messages running together (issue #562).
+  `(let ((vm-current-warning vm-current-warning))
+     (with-temp-buffer
+       (vm-test-init-folder-variables)
+       (setq-local vm-trust-From_-with-Content-Length ,trust)
+       (insert vm-folder-test--counted-folder)
+       (goto-char (point-min))
+       (vm-build-message-list)
+       (dolist (m vm-message-list) (vm-test-init-message-data m))
+       ,@body)))
 
 (defun vm-folder-test--body-text (m)
   (buffer-substring-no-properties (vm-text-of m) (vm-text-end-of m)))

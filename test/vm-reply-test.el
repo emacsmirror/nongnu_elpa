@@ -848,6 +848,52 @@ message and call `mail-do-fcc' on the copy."
           (should (string-match-p "^Fcc:" (buffer-string))))
       (delete-directory dir t))))
 
+(ert-deftest vm-reply-test-fcc-counts-octets-not-characters ()
+  "REGRESSION: the count is of octets, so a non-ASCII body still reads back.
+A `Content-Length' counts octets, and so does the reader -- `vm-visit-folder'
+makes a folder buffer unibyte, so its `forward-char' moves over bytes.  The
+copy is built in a multibyte buffer, though, so counting characters there
+was short by however much of the body was not ASCII, and every message after
+it in the folder was misplaced."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir))
+         (body "grüße von René: 日本語\n"))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert "From VM Mon Jan  1 00:00:00 2024\n"
+                    "Content-Length: 6\n"
+                    "From: someone@example.com\n\nfirst\n\n")
+            (write-region (point-min) (point-max) folder))
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: filed\n"
+                    "Fcc: " folder "\n" mail-header-separator "\n" body)
+            (let ((vm-trust-From_-with-Content-Length t)
+                  (coding-system-for-write 'utf-8-unix))
+              (vm-do-fcc-in-composition)))
+          ;; the count is the octet length, which is more than the characters
+          (let ((text (vm-reply-test--folder-text folder)))
+            (should (string-match "\nContent-Length: \\([0-9]+\\)\nTo: "
+                                  text))
+            (should (= (string-bytes body)
+                       (string-to-number (match-string 1 text))))
+            (should (< (length body) (string-bytes body))))
+          ;; and the folder reads back as two messages with the body intact
+          (with-temp-buffer
+            (vm-test-init-folder-variables)
+            (setq-local vm-trust-From_-with-Content-Length t)
+            (let ((coding-system-for-read 'utf-8-unix))
+              (insert-file-contents folder))
+            (goto-char (point-min))
+            (vm-build-message-list)
+            (dolist (m vm-message-list) (vm-test-init-message-data m))
+            (should (= 2 (length vm-message-list)))
+            (should (string-match-p
+                     "grüße von René"
+                     (buffer-substring (vm-text-of (nth 1 vm-message-list))
+                                       (vm-text-end-of (nth 1 vm-message-list)))))))
+      (delete-directory dir t))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

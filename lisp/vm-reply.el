@@ -960,15 +960,25 @@ sending again files it again."
 	      folders)))
     (nreverse folders)))
 
+(defun vm-fcc-body-octets (start end)
+  "The number of octets the text between START and END will occupy on disk.
+A `Content-Length' counts octets, and so does the reader: `vm-visit-folder'
+makes a folder buffer unibyte, so the `forward-char' in
+`vm-find-trailing-message-separator' moves over bytes.  A composition buffer
+is multibyte, though, and so is the temporary one this is counted in, so a
+character count would be short by however much of the body is not ASCII.
+
+Counted through the coding system the copy will be written with, which
+`vm-mail-send' binds around the whole of sending for this reason."
+  (length (encode-coding-string (buffer-substring-no-properties start end)
+                                (or coding-system-for-write
+                                    (vm-line-ending-coding-system)))))
+
 (defun vm-fcc-message-text (type)
   "The message in the current buffer, ready to append to a folder of TYPE.
 That means: quoted the way TYPE wants it quoted and not otherwise, wrapped
 in TYPE's separators, and carrying a `Content-Length' where TYPE asks for
-one.  A composition has been through none of that yet.
-
-The count is of characters rather than bytes because that is what VM's
-reader does with it -- `vm-find-trailing-message-separator' moves over the
-body with `forward-char' -- so counting bytes here would not round-trip."
+one.  A composition has been through none of that yet."
   (let ((mailbuf (current-buffer)))
     (with-temp-buffer
       (insert-buffer-substring mailbuf)
@@ -981,7 +991,7 @@ body with `forward-char' -- so counting bytes here would not round-trip."
 	(concat (vm-leading-message-separator type)
 		(if (eq type 'From_-with-Content-Length)
 		    (format "%s %d\n" vm-content-length-header
-			    (- (point-max) body))
+			    (vm-fcc-body-octets body (point-max)))
 		  "")
 		(buffer-substring-no-properties (point-min) (point-max))
 		(vm-trailing-message-separator type))))))
