@@ -481,7 +481,10 @@ of its own."
           hermes-chat--goal
           (hermes-chat--turn-state-get new-state :goal))
     (dolist (effect effects)
-      (hermes-chat--apply-turn-effect assistant-id effect))))
+      (hermes-chat--apply-turn-effect assistant-id effect))
+    (when (and (eq (plist-get event :type) 'status)
+               (equal (plist-get event :status) "goal"))
+      (hermes-chat--dashboard-refresh-goal))))
 
 ;; These files are sibling areas of one logical chat module.  They are
 ;; required here, after the reducer/effect helpers above, so the require

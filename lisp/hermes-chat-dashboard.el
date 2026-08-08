@@ -557,6 +557,21 @@ The shared CLIENT contributes no session identity on a shared socket."
        result '(stored_session_id resumed session_key))
       active-id))
 
+(defun hermes-chat--dashboard-goal-status-projection (output)
+  "Return compact goal projection parsed from vanilla Hermes OUTPUT.
+Return nil for unknown output and leave the current goal state unchanged."
+  (cond
+   ((and (stringp output) (string-prefix-p "No active goal." output))
+    '(:goal nil))
+   ((and (stringp output)
+         (string-match "\\([0-9]+\\)/\\([0-9]+\\) turns" output))
+    (let ((running (string-prefix-p "⊙ Goal (active," output)))
+      (list :goal
+            (list :status (if running "active" "inactive")
+                  :running running
+                  :turns-used (string-to-number (match-string 1 output))
+                  :max-turns (string-to-number (match-string 2 output))))))))
+
 (defun hermes-chat--dashboard-record-session (client result)
   "Record live and durable session identifiers from RPC RESULT in this buffer.
 CLIENT is the shared transport client; it is used only to bind the
@@ -575,7 +590,8 @@ shared client."
       (when (and (hermes-dashboard-transport-client-p client)
                  hermes-chat--dashboard-token)
         (hermes-dashboard-transport-subscribe-session
-         client hermes-chat--dashboard-token active-id)))))
+         client hermes-chat--dashboard-token active-id))
+      (hermes-chat--dashboard-refresh-goal))))
 
 (defun hermes-chat--dashboard-result-live-turn-p (result)
   "Return non-nil when RESULT reports the resumed session is still busy."
@@ -589,6 +605,31 @@ shared client."
        (= generation hermes-chat--lifecycle-generation)
        (or (null session-id)
            (equal session-id hermes-chat--dashboard-active-session-id))))
+
+(defun hermes-chat--dashboard-refresh-goal ()
+  "Refresh compact goal state through vanilla Hermes `/goal status'."
+  (when (and (hermes-chat--dashboard-client-live-p
+              hermes-chat--dashboard-client)
+             hermes-chat--dashboard-active-session-id)
+    (let ((buffer (current-buffer))
+          (client hermes-chat--dashboard-client)
+          (generation hermes-chat--lifecycle-generation)
+          (session-id hermes-chat--dashboard-active-session-id))
+      (hermes-dashboard-transport-command-dispatch
+       client "goal" "status"
+       :session-id session-id
+       :resolve
+       (lambda (result)
+         (hermes-chat--in-buffer buffer
+           (when (hermes-chat--dashboard-context-current-p
+                  client generation session-id)
+             (when-let* ((output (hermes-chat--dashboard-result-string
+                                  result '(output)))
+                         (projection
+                          (hermes-chat--dashboard-goal-status-projection output)))
+               (setq hermes-chat--goal (plist-get projection :goal))
+               (force-mode-line-update)))))
+       :reject #'ignore))))
 
 (defun hermes-chat--dashboard-idle-context (on-idle)
   "Return an idle-reconciliation context calling ON-IDLE when settled."

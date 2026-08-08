@@ -122,6 +122,10 @@
                 (string-trim-left (substring rest space)))
         (cons (downcase rest) "")))))
 
+(defun hermes-chat--refresh-goal-after-command (name)
+  "Refresh goal state when slash command NAME may have changed it."
+  (when (string-equal name "goal")
+    (hermes-chat--dashboard-refresh-goal)))
 
 (defun hermes-chat--dashboard-dispatch-command (name arg &optional preserve-content)
   "Dispatch dashboard command NAME with ARG and render its result.
@@ -136,7 +140,8 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
         :session-id hermes-chat--dashboard-active-session-id
         :resolve (lambda (result)
                    (hermes-chat--in-buffer buffer
-                     (hermes-chat--handle-command-result result arg)))
+                     (hermes-chat--handle-command-result result arg)
+                     (hermes-chat--refresh-goal-after-command name)))
         :reject (lambda (message)
                   (hermes-chat--in-buffer buffer
                     (hermes-chat--command-error message))))))))
@@ -153,7 +158,8 @@ PRESERVE-CONTENT is restored if session bootstrap fails before dispatch."
         :session-id hermes-chat--dashboard-active-session-id
         :resolve (lambda (result)
                    (hermes-chat--in-buffer buffer
-                     (hermes-chat--handle-command-result result arg)))
+                     (hermes-chat--handle-command-result result arg)
+                     (hermes-chat--refresh-goal-after-command name)))
         :reject (lambda (_message)
                   (hermes-chat--in-buffer buffer
                     (hermes-chat--dashboard-dispatch-command

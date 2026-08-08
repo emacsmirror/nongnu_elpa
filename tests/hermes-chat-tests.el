@@ -621,14 +621,18 @@
      (should (= before (length (ewoc-collect hermes-chat--ewoc #'identity)))))))
 
 (ert-deftest hermes-chat-goal-status-preserves-turn-header ()
-  "Goal notices enter the transcript without replacing settled turn status."
-  (hermes-test-with-chat-buffer
-   (setq hermes-chat--status-state '(:status ready :activity "Ready"))
-   (hermes-chat--run-turn-reducer
-    "a1" '(:type status :event "status.update" :status "goal"
-                 :content "Continuing toward goal (1/20)"))
-   (should (string-match-p "✓ Ready" (hermes-test--header-line-string)))
-   (should (string-match-p "Continuing toward goal" (buffer-string)))))
+  "Goal notices preserve turn status and refresh vanilla goal state."
+  (let ((refreshes 0))
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal)
+               (lambda () (setq refreshes (1+ refreshes)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--status-state '(:status ready :activity "Ready"))
+       (hermes-chat--run-turn-reducer
+        "a1" '(:type status :event "status.update" :status "goal"
+                     :content "Continuing toward goal (1/20)"))
+       (should (string-match-p "✓ Ready" (hermes-test--header-line-string)))
+       (should (string-match-p "Continuing toward goal" (buffer-string)))
+       (should (= refreshes 1))))))
 
 (ert-deftest hermes-chat-message-start-status-adds-no-entry ()
   "Low-value `message.start' status updates do not enter the transcript."
@@ -2173,6 +2177,12 @@
                  (funcall (plist-get args :resolve)
                           '((session_id . "sid-active")
                             (stored_session_id . "sid-stored")))))
+              ((symbol-function 'hermes-dashboard-transport-command-dispatch)
+               (lambda (_client name arg &rest args)
+                 (should (equal (cons name arg) '("goal" . "status")))
+                 (funcall (plist-get args :resolve)
+                          '((type . "exec")
+                            (output . "No active goal.")))))
               ((symbol-function 'hermes-dashboard-transport-prompt-submit)
                (lambda (_client text &rest args)
                  (push text submits)
@@ -3118,7 +3128,9 @@
        (insert "/short now")
        (hermes-chat-send)
        (should (equal (nreverse dispatches)
-                      '(("short" . "now") ("demo" . "now"))))
+                      '(("goal" . "status")
+                        ("short" . "now")
+                        ("demo" . "now"))))
        (should (string-match-p "alias target ran" (buffer-string)))))))
 
 (ert-deftest hermes-chat-command-output-renders-warning ()
@@ -3138,6 +3150,28 @@
       (output . "")
       (notice . "fallback notice")))
    (should (string-match-p "fallback notice" (buffer-string)))))
+
+(ert-deftest hermes-chat-goal-command-refreshes-vanilla-state ()
+  "A successful `/goal' command refreshes state through vanilla status output."
+  (let ((client (hermes-test--dashboard-client)) status-queries)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-slash-exec)
+               (lambda (_client _command &rest args)
+                 (funcall (plist-get args :resolve)
+                          '((type . "exec") (output . "Goal paused")))))
+              ((symbol-function 'hermes-dashboard-transport-command-dispatch)
+               (lambda (_client name arg &rest args)
+                 (push (cons name arg) status-queries)
+                 (funcall (plist-get args :resolve)
+                          '((type . "exec")
+                            (output . "⏸ Goal (paused, 2/20 turns): Ship it"))))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-active"
+             hermes-chat--dashboard-session-ready-p t)
+       (insert "/goal pause")
+       (hermes-chat-send)
+       (should (equal status-queries '(("goal" . "status"))))
+       (should-not (plist-get hermes-chat--goal :running))))))
 
 (ert-deftest hermes-chat-command-dispatch-output-renders ()
   (let ((client (hermes-test--dashboard-client)) slash-command dispatch-name dispatch-arg)

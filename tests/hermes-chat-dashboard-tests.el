@@ -14,6 +14,71 @@
 
 ;;; Shared-socket runtime isolation
 
+(ert-deftest hermes-chat-dashboard-parses-vanilla-goal-status ()
+  "Vanilla `/goal status' output becomes compact header state."
+  (should
+   (equal (hermes-chat--dashboard-goal-status-projection
+           "⊙ Goal (active, 3/20 turns): Ship it")
+          '(:goal (:status "active" :running t :turns-used 3 :max-turns 20))))
+  (should
+   (equal (hermes-chat--dashboard-goal-status-projection
+           "⏳ Goal (parked 8s — timer, 3/20 turns): Ship it")
+          '(:goal (:status "inactive" :running nil :turns-used 3 :max-turns 20))))
+  (should
+   (equal (hermes-chat--dashboard-goal-status-projection
+           "No active goal. Set one with /goal <text>.")
+          '(:goal nil)))
+  (should-not
+   (hermes-chat--dashboard-goal-status-projection "Unrecognized response")))
+
+(ert-deftest hermes-chat-dashboard-refreshes-goal-from-vanilla-hermes ()
+  "Goal refresh queries the owning vanilla session and updates its header state."
+  (let ((client (hermes-test--dashboard-client)) dispatch)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-command-dispatch)
+               (lambda (_client name arg &rest args)
+                 (setq dispatch (list name arg args)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-live")
+       (hermes-chat--dashboard-refresh-goal)
+       (should (equal (car dispatch) "goal"))
+       (should (equal (cadr dispatch) "status"))
+       (should (equal (plist-get (caddr dispatch) :session-id) "sid-live"))
+       (funcall (plist-get (caddr dispatch) :resolve)
+                '((type . "exec")
+                  (output . "⊙ Goal (active, 4/20 turns): Ship it")))
+       (should (equal hermes-chat--goal
+                      '(:status "active" :running t
+                        :turns-used 4 :max-turns 20)))))))
+
+(ert-deftest hermes-chat-dashboard-ignores-stale-goal-refresh ()
+  "A goal status response cannot update a successor session."
+  (let ((client (hermes-test--dashboard-client)) resolve)
+    (cl-letf (((symbol-function 'hermes-dashboard-transport-command-dispatch)
+               (lambda (_client _name _arg &rest args)
+                 (setq resolve (plist-get args :resolve)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client
+             hermes-chat--dashboard-active-session-id "sid-old"
+             hermes-chat--goal '(:running nil))
+       (hermes-chat--dashboard-refresh-goal)
+       (setq hermes-chat--dashboard-active-session-id "sid-new")
+       (funcall resolve
+                '((type . "exec")
+                  (output . "⊙ Goal (active, 4/20 turns): Ship it")))
+       (should (equal hermes-chat--goal '(:running nil)))))))
+
+(ert-deftest hermes-chat-dashboard-record-session-refreshes-vanilla-goal ()
+  "Attaching a session requests vanilla Hermes goal state once."
+  (let ((client (hermes-test--dashboard-client)) (refreshes 0))
+    (cl-letf (((symbol-function 'hermes-chat--dashboard-refresh-goal)
+               (lambda () (setq refreshes (1+ refreshes)))))
+      (hermes-test-with-chat-buffer
+       (setq hermes-chat--dashboard-client client)
+       (hermes-chat--dashboard-record-session
+        client '((session_id . "sid-live")))
+       (should (= refreshes 1))))))
+
 (ert-deftest hermes-chat-dashboard-record-session-does-not-mutate-shared-client ()
   "Recording a session result updates buffer-local vars only, never the client."
   :tags '(shared-socket-isolation)
