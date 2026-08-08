@@ -28,16 +28,18 @@
 (eval-when-compile (require 'cl-lib))
 
 (declare-function frame-highest-window "vm-xemacs" (frame))
+;; XEmacs called a frame a screen.  Named here so that the dispatching
+;; wrappers below can call them rather than name them as symbols.
+(declare-function delete-screen "vm-xemacs" (&optional screen))
+(declare-function raise-screen "vm-xemacs" (&optional screen))
+(declare-function select-screen "vm-xemacs" (screen))
 
 (declare-function vm-selected-frame "vm-window.el" ())
 (declare-function vm-window-frame "vm-window.el" (window))
-(declare-function vm-delete-frame "vm-window.el" (&optional frame force))
-(declare-function vm-raise-frame "vm-window.el" (&optional frame))
 (declare-function vm-frame-visible-p "vm-window.el" (frame))
 (declare-function vm-frame-iconified-p "vm-window.el" (frame))
 (declare-function vm-window-frame "vm-window.el" (window))
 (declare-function vm-next-frame "vm-window.el" (&optional frame miniframe))
-(declare-function vm-select-frame "vm-window.el" (frame &optional norecord))
 (declare-function vm-frame-selected-window "vm-window.el" (&optional frame))
 
 ;;;###autoload
@@ -646,11 +648,14 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 	     ;; ((fboundp 'selected-screen) 'selected-screen) ; Xemacs 19?
 	     (t 'ignore))))
 
-(fset 'vm-delete-frame
-      (symbol-function
-       (cond ((fboundp 'delete-frame) 'delete-frame)
-	     ;; ((fboundp 'delete-screen) 'delete-screen)  ; XEmacs 19?
-	     (t 'ignore))))
+(defun vm-delete-frame (&optional frame force)
+  "Delete FRAME, which defaults to the selected frame.
+FORCE deletes it even when it is the last frame on its terminal.
+
+XEmacs calls a frame a screen, and its `delete-screen' takes no FORCE.
+Where neither exists there are no frames, and this does nothing."
+  (cond ((fboundp 'delete-frame) (delete-frame frame force))
+	((fboundp 'delete-screen) (delete-screen frame))))
 
 ;; xxx because vm-iconify-frame is a command
 (defun vm-iconify-frame-xxx (&optional frame)
@@ -668,11 +673,12 @@ Run the hooks in vm-iconify-frame-hook before doing so."
       (select-frame frame)
       (iconify-or-deiconify-frame))))
 
-(fset 'vm-raise-frame
-      (symbol-function
-       (cond ((fboundp 'raise-frame) 'raise-frame)
-	     ;; ((fboundp 'raise-screen) 'raise-screen)   ; XEmacs 19?
-	     (t 'ignore))))
+(defun vm-raise-frame (&optional frame)
+  "Raise FRAME, which defaults to the selected frame.
+XEmacs calls a frame a screen.  Where neither `raise-frame' nor
+`raise-screen' exists there are no frames, and this does nothing."
+  (cond ((fboundp 'raise-frame) (raise-frame frame))
+	((fboundp 'raise-screen) (raise-screen frame))))
 
 (fset 'vm-frame-visible-p
       (symbol-function
@@ -709,22 +715,26 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 	     ((fboundp 'window-screen) 'window-screen)
 	     (t 'ignore))))
 
+(defun vm-select-frame (frame &optional norecord)
+  "Select FRAME, as `select-frame' does.
+NORECORD leaves the frame's position in the recent-selection order alone;
+XEmacs calls a frame a screen and its `select-screen' has no such argument.
+
+Where neither exists this is deliberately a no-op rather than an error: VM
+calls it on paths that must work in an Emacs with no frames at all."
+  (cond ((fboundp 'select-frame) (select-frame frame norecord))
+	((fboundp 'select-screen) (select-screen frame))))
+
 (cond ((fboundp 'next-frame)
        (fset 'vm-next-frame (symbol-function 'next-frame))
-       (fset 'vm-select-frame (symbol-function 'select-frame))
        (fset 'vm-frame-selected-window
 	     (symbol-function 'frame-selected-window)))
       ((fboundp 'next-screen)
        (fset 'vm-next-frame (symbol-function 'next-screen))
-       (fset 'vm-select-frame (symbol-function 'select-screen))
        (fset 'vm-frame-selected-window
 	     (if (fboundp 'epoch::selected-window)
 		 (symbol-function 'epoch::selected-window)
-	       (symbol-function 'screen-selected-window))))
-      (t
-       ;; it is useful for this to be a no-op, but don't bind the
-       ;; others.
-       (fset 'vm-select-frame 'ignore)))
+	       (symbol-function 'screen-selected-window)))))
 
 (provide 'vm-window)
 ;;; vm-window.el ends here
