@@ -894,6 +894,47 @@ it in the folder was misplaced."
                                        (vm-text-end-of (nth 1 vm-message-list)))))))
       (delete-directory dir t))))
 
+(ert-deftest vm-reply-test-fcc-second-send-files-again ()
+  "REGRESSION: sending a kept composition again files another copy.
+VM keeps the composition buffer after a send, so this is the ordinary way to
+correct a message and send it once more.  `vm-fcc-filed' is what stops the
+copy being filed twice *within* one send; left set from the last one it
+meant the next send filed nowhere and said nothing.  Goes through
+`vm-mail-send' rather than around it, because the clearing lives there --
+calling `vm-do-fcc-in-composition' directly would pass either way."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir)))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\nSubject: filed\n"
+                  "Fcc: " folder "\n" mail-header-separator "\nbody\n")
+          (let ((vm-default-folder-type 'From_)
+                (vm-confirm-mail-send nil)
+                (vm-mail-check-recipient-format nil)
+                (vm-send-using-mime nil)
+                (vm-mail-reorder-message-headers nil)
+                (vm-mail-send-hook nil)
+                (vm-system-state nil))
+            (cl-letf (((symbol-function 'mail-send) #'ignore)
+                      ((symbol-function 'vm-rename-current-mail-buffer)
+                       #'ignore)
+                      ((symbol-function 'vm-keep-mail-buffer) #'ignore)
+                      ((symbol-function 'vm-display) #'ignore))
+              (vm-mail-send)
+              (should vm-fcc-filed)
+              ;; edit it and send it again
+              (goto-char (point-max))
+              (insert "a correction\n")
+              (vm-mail-send)))
+          (should (= 2 (cl-count-if
+                        (lambda (l) (string-prefix-p "From VM " l))
+                        (split-string (vm-reply-test--folder-text folder)
+                                      "\n"))))
+          ;; and the second copy is the edited one
+          (should (string-match-p "a correction"
+                                  (vm-reply-test--folder-text folder))))
+      (delete-directory dir t))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

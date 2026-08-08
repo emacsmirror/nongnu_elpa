@@ -828,6 +828,10 @@ as replied to, forwarded, etc, if appropriate."
 	       (not (y-or-n-p "Send the message? ")))
       (error "Message not sent.")))
   (vm-mail-mode-show-headers)
+  ;; This send has not filed its copies yet.  The buffer is kept after a
+  ;; send, so a flag left over from the last one would mean this message is
+  ;; filed nowhere.
+  (setq vm-fcc-filed nil)
   (save-excursion (run-hooks 'vm-mail-send-hook))
   (vm-mail-mode-insert-date-maybe)
   (vm-mail-mode-insert-message-id-maybe)
@@ -921,10 +925,13 @@ as replied to, forwarded, etc, if appropriate."
 ;;                                                              Issue #597.
 
 (defvar vm-fcc-filed nil
-  "Whether the Fcc copies of this composition have been filed already.
-Buffer-local.  `vm-do-fcc-before-mime-encode' files them before the message
-is encoded, and `vm-mail-send' files them otherwise; this is what stops both
-happening.")
+  "Whether the Fcc copies have been filed during the send now under way.
+Buffer-local, and cleared by `vm-mail-send' before each send.  It exists
+only to stop the copy being filed twice within one send:
+`vm-do-fcc-before-mime-encode' files it before the message is encoded, and
+`vm-mail-send' files it otherwise.  It must not outlive the send -- VM keeps
+the composition buffer, and a flag left set would mean a message edited and
+sent again was filed nowhere.")
 (make-variable-buffer-local 'vm-fcc-filed)
 
 (defun vm-fcc-strip-headers (header-end)
