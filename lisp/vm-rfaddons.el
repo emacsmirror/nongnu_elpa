@@ -116,13 +116,13 @@
 ;; I overwrite the standard function by a slightly different version.
 (defcustom vm-mail-mode-fake-date-p t
   "Non-nil means `vm-mail-mode-insert-date-maybe' keeps an existing date header.
-Otherwise, overwrite existing date headers (Rob F)"
+Otherwise, overwrite existing date headers"
   :group 'vm-rfaddons
   :type '(boolean))
 
 (defmacro vm-rfaddons-check-option (option option-list &rest body)
   "Evaluate body if option is in OPTION-LIST or OPTION-LIST is
-nil. (Rob F)"
+nil."
   (list 'if (list 'member option option-list)
         (cons 'progn
               (cons (list 'setq option-list (list 'delq option option-list))
@@ -131,7 +131,7 @@ nil. (Rob F)"
                           body)))))
 
 (defun vm-rfaddons--fake-date (orig-fun &rest args)
-  "Do not change an existing date if `vm-mail-mode-fake-date-p' is t. (Rob F)"
+  "Do not change an existing date if `vm-mail-mode-fake-date-p' is t."
   (if (not (and vm-mail-mode-fake-date-p
                 (vm-mail-mode-get-header-contents "Date:")))
       (apply orig-fun args)))
@@ -187,7 +187,7 @@ This will enable all `general' and `vm-mail-mode' options plus the
 `shrunken-headers' option, but it will exclude the `fake-date' option of the
 `vm-mail-mode' options.
 
-or do the binding and advising on your own. (Rob F)"
+or do the binding and advising on your own."
   (interactive "")
 
   (if (eq option-list 'all)
@@ -331,7 +331,7 @@ or do the binding and advising on your own. (Rob F)"
     (sit-for 3)))
 
 (defun rf-vm-su-labels (m)
-  "This version does some sanity checking. (Rob F)"
+  "This version does some sanity checking."
   (let ((labels (vm-decoded-label-string-of m)))
     (if (and labels (stringp labels))
         labels
@@ -361,7 +361,7 @@ e.g. HTML message.
 ;;;###autoload
 (defun vm-followup-include-presentation (count)
   "Include presentation instead of text.
-This does not work when replying to multiple messages. (Rob F)"
+This does not work when replying to multiple messages."
   (interactive "p")
   (vm-reply-include-presentation count t))
 (make-obsolete 'vm-followup-include-presentation
@@ -371,7 +371,7 @@ This does not work when replying to multiple messages. (Rob F)"
 (defun vm-reply-include-presentation (count &optional to-all)
   "Include presentation instead of text.
 This does only work with my modified VM, i.e. a hacked
-`vm-yank-message'. (Rob F)"
+`vm-yank-message'."
   (interactive "p")
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
@@ -404,7 +404,7 @@ This does only work with my modified VM, i.e. a hacked
 ;; (defun vm-fill-paragraphs-by-longlines (width start end)
 ;;   "Uses longlines.el for filling.
 ;; To use it, advice `vm-fill-paragraphs-containing-long-lines' and call this
-;; function instead. (Rob F)"
+;; function instead."
 ;;   (if (eq width 'window-width)
 ;;       (setq width (- (window-width (get-buffer-window (current-buffer))) 1)))
 ;;   ;; prepare for longlines.el in XEmacs
@@ -446,12 +446,12 @@ This does only work with my modified VM, i.e. a hacked
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defcustom vm-spamassassin-strip-report "spamassassin -d"
-  "*Shell command used to strip spamassassin-reports from a message. (Rob F)"
+  "*Shell command used to strip spamassassin-reports from a message."
   :type 'string
   :group 'vm-rfaddons)
 
 (defun vm-strip-spamassassin-report ()
-  "Strips spamassassin-reports from a message. (Rob F)"
+  "Strips spamassassin-reports from a message."
   (interactive)
   (save-window-excursion
     (let ((vm-frame-per-edit nil))
@@ -471,12 +471,12 @@ This does only work with my modified VM, i.e. a hacked
   "*Non-nil means up/down move to the next/previous message instead.
 Otherwise normal cursor movement is done.  Specifically only modes
 listed in `vm-rmail-mode-list' are affected.
-Use `vm-rmail-toggle' to switch between normal and this mode. (Rob F)"
+Use `vm-rmail-toggle' to switch between normal and this mode."
   :type 'boolean
   :group 'vm-rfaddons)
 
 (defcustom vm-rmail-mode-list '(vm-summary-mode)
-  "*Mode to activate `vm-rmail-mode' in. (Rob F)"
+  "*Mode to activate `vm-rmail-mode' in."
   :type '(set (const vm-mode)
               (const vm-presentation-mode)
               (const vm-virtual-mode)
@@ -552,14 +552,14 @@ See `vm-rmail-up\'."
   '(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Re: ")
     ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ \t]*\\)+" . "Fo: "))
   "*List of subject prefixes which should be replaced.
-Matching will be done case insentivily. (Rob F)"
+Matching will be done case insentivily."
   :group 'vm-rfaddons
   :type '(repeat (cons (regexp :tag "Regexp")
                        (string :tag "Replacement"))))
 
 (defcustom vm-mail-subject-number-reply nil
   "*Non-nil means, add a number [N] after the reply prefix.
-The number reflects the number of references. (Rob F)"
+The number reflects the number of references."
   :group 'vm-rfaddons
   :type '(choice
           (const :tag "on" t)
@@ -571,7 +571,7 @@ The number reflects the number of references. (Rob F)"
 - Add a number after replies is `vm-mail-subject-number-reply' is t.
 
 You might add this function to `vm-mail-mode-hook' in order to clean up the
-Subject header. (Rob F)"
+Subject header."
   (interactive)
   (save-excursion
     ;; cleanup
@@ -613,7 +613,7 @@ Subject header. (Rob F)"
 (defun vm-mime-set-8bit-composition-charset (charset &optional buffer-local)
   "*Set `vm-mime-8bit-composition-charset' to CHARSET.
 With the optional BUFFER-LOCAL prefix arg, this only affects the current
-buffer. (Rob F)"
+buffer."
   (interactive (list (completing-read 
 		      ;; prompt
 		      "Composition charset: "
@@ -638,7 +638,7 @@ corresponding BBDB-VM-VIRTUAL element of the `vm-virtual-folder-alist'.
                     (author-or-recipient BBDB-RECORD-NET-REGEXP)))
 
 The element gets added to the `element-name' sublist of the
-`vm-virtual-folder-alist'. (Rob F)"
+`vm-virtual-folder-alist'."
   (interactive)
   (let (notes-field  email-regexp folder selector)
     (dolist (record (bbdb-records))
@@ -669,7 +669,7 @@ The element gets added to the `element-name' sublist of the
     ))
 
 (defun vm-virtual-find-selector (selector-spec type)
-  "Return the first selector of TYPE in SELECTOR-SPEC. (Rob F)"
+  "Return the first selector of TYPE in SELECTOR-SPEC."
   (let ((s (assoc type selector-spec)))
     (unless s
       (while (and (not s) selector-spec)
@@ -679,7 +679,7 @@ The element gets added to the `element-name' sublist of the
     s))
 
 (defcustom bbdb/vm-virtual-folder-alist-by-mail-alias-alist nil
-  "*A list of (ALIAS . FOLDER-NAME) pairs, which map an alias to a folder. (Rob F)"
+  "*A list of (ALIAS . FOLDER-NAME) pairs, which map an alias to a folder."
   :group 'vm-rfaddons
   :type '(repeat (cons :tag "Mapping Definition"
                        (regexp :tag "Alias")
@@ -696,7 +696,7 @@ add/modify the corresponding VM-VIRTUAL element of the
                     (author-or-recipient BBDB-RECORD-NET-REGEXP)))
 
 The element gets added to the `element-name' sublist of the
-`vm-virtual-folder-alist'. (Rob F)"
+`vm-virtual-folder-alist'."
   (interactive)
   (let (notes-field email-regexp mail-aliases folder selector)
     (dolist (record (bbdb-records))
@@ -745,21 +745,21 @@ The element gets added to the `element-name' sublist of the
 (defcustom vm-handle-return-receipt-mode 'edit
   "Tells `vm-handle-return-receipt' how to handle return receipts.
 One can choose between `ask', `auto', `edit', or an expression which should
-return t if the return receipts should be sent. (Rob F)"
+return t if the return receipts should be sent."
   :group 'vm-rfaddons
   :type '(choice (const :tag "Edit" edit)
                  (const :tag "Ask" ask)
                  (const :tag "Auto" auto)))
 
 (defcustom vm-handle-return-receipt-peek 500
-  "*Number of characters from the original message body to be returned. (Rob F)"
+  "*Number of characters from the original message body to be returned."
   :group 'vm-rfaddons
   :type '(integer))
 
 (defun vm-handle-return-receipt ()
   "Generate a reply to the current message if it requests a return receipt
 and has not been replied so far.
-See the variable `vm-handle-return-receipt-mode' for customization. (Rob F)"
+See the variable `vm-handle-return-receipt-mode' for customization."
   (interactive)
   (save-excursion
     (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
@@ -833,14 +833,14 @@ See the variable `vm-handle-return-receipt-mode' for customization. (Rob F)"
 (defvaralias 'vm-mime-attach-files-in-directory-regexps-history
   'vm-attach-files-in-directory-regexps-history)
 (defvar vm-attach-files-in-directory-regexps-history nil
-  "Regexp history for matching files. (Rob F)")
+  "Regexp history for matching files.")
 
 (defvaralias 'vm-mime-attach-files-in-directory-default-type
   'vm-attach-files-in-directory-default-type)
 (defcustom vm-attach-files-in-directory-default-type nil
   "*The default MIME-type for attached files.
 If set to nil you will be asked for the type if it cannot be guessed.
-For guessing mime-types we use `vm-mime-attachment-auto-type-alist'. (Rob F)"
+For guessing mime-types we use `vm-mime-attachment-auto-type-alist'."
   :group 'vm-rfaddons
   :type '(choice (const :tag "Ask" nil)
                  (string "application/octet-stream")))
@@ -851,7 +851,7 @@ For guessing mime-types we use `vm-mime-attachment-auto-type-alist'. (Rob F)"
   "*The default charset used for attached files of type `text'.
 If set to nil you will be asked for the charset.
 If set to `guess' it will be determined by `vm-determine-proper-charset', but
-this may take some time, since the file needs to be visited. (Rob F)"
+this may take some time, since the file needs to be visited."
   :group 'vm-rfaddons
   :type '(choice (const :tag "Ask" nil)
                  (const :tag "Guess" guess)))
@@ -878,7 +878,7 @@ this may take some time, since the file needs to be visited. (Rob F)"
 ;; (define-obsolete-variable-alias 'vm-mime-delete-all-attachments-types
 ;;   'vm-mime-deleteable-types
 ;;   "8.3.0"
-;;   "*List of MIME types which should be deleted. (Rob F)")
+;;   "*List of MIME types which should be deleted.")
 (defvaralias 'vm-mime-delete-all-attachments-types
   'vm-mime-deleteable-types)
 (make-obsolete-variable 'vm-mime-delete-all-attachments-types
@@ -888,7 +888,7 @@ this may take some time, since the file needs to be visited. (Rob F)"
 ;;   'vm-mime-delete-all-attachments-types-exceptions
 ;;   'vm-mime-deleteable-type-exceptions
 ;;   "8.3.0"
-;;   "*List of MIME types which should not be deleted. (Rob F)")
+;;   "*List of MIME types which should not be deleted.")
 (defvaralias 'vm-mime-delete-all-attachments-types-exceptions
   'vm-mime-deleteable-type-exceptions)
 (make-obsolete-variable 'vm-mime-delete-all-attachments-types-exceptions
@@ -901,7 +901,7 @@ The optional argument MATCH might specify a regexp matching all files
 which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
-match. (Rob F)"
+match."
   (interactive
    ;; FIXME: Temporarily override substitute-in-file-name. but why?
    (cl-letf (((symbol-function 'substitute-in-file-name) #'identity))
@@ -974,7 +974,7 @@ match. (Rob F)"
   "*Subdirectory where to save the attachments of a message.
 This variable might be set to a string, a function or anything which evaluates
 to a string.  If set to nil we use a concatenation of the from, subject and
-date header as subdir for the attachments. (Rob F)"
+date header as subdir for the attachments."
   :group 'vm-rfaddons
   :type '(choice (directory :tag "Directory")
                  (string :tag "No Subdir" "")
@@ -983,8 +983,7 @@ date header as subdir for the attachments. (Rob F)"
 
 (defun vm-mime-auto-save-all-attachments-subdir (msg)
   "Return a subdir for the attachments of MSG.
-This will be done according to `vm-mime-auto-save-all-attachments-subdir'.
-(Rob F)"
+This will be done according to `vm-mime-auto-save-all-attachments-subdir'."
   (setq msg (vm-real-message-of msg))
   (when (not (string-match 
 	      (regexp-quote (vm-reencode-mime-encoded-words-in-string
@@ -1033,7 +1032,7 @@ This will be done according to `vm-mime-auto-save-all-attachments-subdir'.
          (eval vm-mime-auto-save-all-attachments-subdir))))
 
 (defun vm-mime-auto-save-all-attachments-path (msg)
-  "Create a path for storing the attachments of MSG. (Rob F)"
+  "Create a path for storing the attachments of MSG."
   (let ((subdir (vm-mime-auto-save-all-attachments-subdir
                  (vm-real-message-of msg))))
     (if (not vm-mime-attachment-save-directory)
@@ -1052,8 +1051,7 @@ Root directory for saving is `vm-mime-attachment-save-directory'.
 You might add this to `vm-select-new-message-hook' in order to automatically
 save attachments.
 
-    (add-hook \\='vm-select-new-message-hook #\\='vm-mime-auto-save-all-attachments)
- (Rob F)"
+    (add-hook \\='vm-select-new-message-hook #\\='vm-mime-auto-save-all-attachments)"
   (interactive "P")
 
   (if vm-mime-auto-save-all-attachments-avoid-recursion
@@ -1076,7 +1074,7 @@ save attachments.
 You may want to use this function in order to get rid of the external files
 when deleting a message.
 
-See the advice in `vm-rfaddons-infect-vm'. (Rob F)"
+See the advice in `vm-rfaddons-infect-vm'."
   (interactive "")
   (vm-check-for-killed-folder)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
@@ -1166,7 +1164,7 @@ still in its encoded form is removed by matching."
 (defun vm-mail-check-recipients ()
   "Check if the recipients are specified correctly.
 Actually it checks only if there are any missing commas or the like in the
-headers. (Rob F)"
+headers."
   (interactive)
   (let ((header-list '("To:" "CC:" "BCC:"
                        "Resent-To:" "Resent-CC:" "Resent-BCC:"))
@@ -1198,13 +1196,13 @@ headers. (Rob F)"
 
 
 (defcustom vm-mail-prompt-if-subject-empty t
-  "*Prompt for a subject when empty. (Rob F)"
+  "*Prompt for a subject when empty."
   :group 'vm-rfaddons
   :type '(boolean))
 
 ;;;###autoload
 (defun vm-mail-check-for-empty-subject ()
-  "Check if the subject line is empty and issue an error if so. (Rob F)"
+  "Check if the subject line is empty and issue an error if so."
   (interactive)
   (let (subject)
     (setq subject (vm-mail-mode-get-header-contents "Subject:"))
@@ -1222,7 +1220,7 @@ headers. (Rob F)"
     (((class color) (background dark))
      (:background "DimGrey"))
     (t (:dim t)))
-  "Used for marking shrunken headers. (Rob F)"
+  "Used for marking shrunken headers."
   :group 'vm-rfaddons)
 
 (defconst vm-shrunken-headers-keymap
@@ -1232,17 +1230,17 @@ headers. (Rob F)"
         (define-key map [(button2)]  'vm-shrunken-headers-toggle-this-mouse)
       (define-key map [(mouse-2)]  'vm-shrunken-headers-toggle-this-mouse))
     map)
-  "Keymap used for shrunken-headers glyphs. (Rob F)")
+  "Keymap used for shrunken-headers glyphs.")
 
 ;;;###autoload
 (defun vm-shrunken-headers-toggle ()
-  "Toggle display of shrunken headers. (Rob F)"
+  "Toggle display of shrunken headers."
   (interactive)
   (vm-shrunken-headers 'toggle))
 
 ;;;###autoload
 (defun vm-shrunken-headers-toggle-this-mouse (&optional event)
-  "Toggle display of shrunken headers. (Rob F)"
+  "Toggle display of shrunken headers."
   (interactive "e")
   (mouse-set-point event)
   (end-of-line)
@@ -1256,7 +1254,7 @@ headers. (Rob F)"
 
 ;;;###autoload
 (defun vm-shrunken-headers-toggle-this ()
-  "Toggle display of shrunken headers. (Rob F)"
+  "Toggle display of shrunken headers."
   (interactive)
   
   (save-excursion
@@ -1294,7 +1292,7 @@ but it is sufficient for me!
 If the optional argument TOGGLE, then hiding is toggled.
 
 The face used for the visible hidden regions is `vm-shrunken-headers-face' and
-the keymap used within that region is `vm-shrunken-headers-keymap'. (Rob F)"
+the keymap used within that region is `vm-shrunken-headers-keymap'."
   (interactive "P")
   
   (save-excursion 
@@ -1366,14 +1364,13 @@ tmpfile=/tmp/$USER-stripttags.html
 cat > $tmpfile
 lynx -force_html -dump $tmpfile
 rm $tmpfile
-
-(Rob F)"
+"
   :group 'vm-rfaddons
   :type '(string))
 
 (defcustom vm-assimilate-html-mixed t
   "*Non-nil values cause messages to be assimilated as text/mixed.
-Otherwise they will be assimilated into a text/alternative message. (Rob F)"
+Otherwise they will be assimilated into a text/alternative message."
   :group 'vm-rfaddons
   :type '(boolean))
 
@@ -1383,7 +1380,7 @@ Otherwise they will be assimilated into a text/alternative message. (Rob F)"
 When called with a prefix argument then it will replace the message
 with the PLAIN text version otherwise it will create a text/mixed or
 text/alternative message depending on the value of the variable
-`vm-assimilate-html-mixed'. (Rob F)"
+`vm-assimilate-html-mixed'."
   (interactive "P")
 
   (let ((vm-frame-per-edit nil)
@@ -1478,14 +1475,14 @@ text/alternative message depending on the value of the variable
                  "\\(" vm-included-text-prefix "[^\n]*\n\\)+")
          "\n")
    )
-  "*Regexp replacement pairs for cleaning of replies. (Rob F)"
+  "*Regexp replacement pairs for cleaning of replies."
   :group 'vm-rfaddons
   :type '(repeat (cons :tag "Kill Definition"
                        (regexp :tag "Regexp")
                        (string :tag "Replacement"))))
    
 (defun vm-mail-mode-citation-clean-up ()
-  "Remove doubly-cited text and extra lines in a mail message. (Rob F)"
+  "Remove doubly-cited text and extra lines in a mail message."
   (interactive)
   (save-excursion
     (mail-text)
@@ -1503,7 +1500,7 @@ text/alternative message depending on the value of the variable
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defcustom vm-summary-attachment-label "$"
-  "*Label added to messages containing an attachments. (Rob F)"
+  "*Label added to messages containing an attachments."
   :group 'vm-rfaddons
   :type '(choice (string) (const :tag "No Label" nil)))
 
@@ -1517,7 +1514,7 @@ default.  In order to get this working, add a \"%1UA\" to your
 As a sideeffect a label can be added to new messages.  Setting 
 `vm-summary-attachment-label' to a string (the label) enables this.
 If you just want the label, then set `vm-summary-attachment-indicator' to nil
-and add an \"%0UA\" to your `vm-summary-format'. (Rob F)" 
+and add an \"%0UA\" to your `vm-summary-format'." 
   (let ((attachments 0))
     (setq msg (vm-real-message-of msg))
     (vm-mime-action-on-all-attachments
@@ -1540,7 +1537,7 @@ and add an \"%0UA\" to your `vm-summary-format'. (Rob F)"
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
 (defun vm-delete-quit ()
-  "Delete mails and quit.  Expunge only if it's not the primary inbox. (Rob F)"
+  "Delete mails and quit.  Expunge only if it's not the primary inbox."
   (interactive)
   (save-excursion
     (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
@@ -1556,23 +1553,23 @@ and add an \"%0UA\" to your `vm-summary-format'. (Rob F)"
 ;;;###autoload
 (defun vm-mail-mode-install-open-line ()
   "Install the open-line hooks for VM composition buffers.
-Add this to `vm-mail-mode-hook'. (Rob F)"
+Add this to `vm-mail-mode-hook'."
   ;; these are not local even when using add-hook, so we make them local
   (add-hook 'before-change-functions 'vm-mail-mode-open-line nil t)
   (add-hook 'after-change-functions 'vm-mail-mode-open-line nil t))
 
 (defvar vm-mail-mode-open-line nil
-  "Flag used by `vm-mail-mode-open-line'. (Rob F)")
+  "Flag used by `vm-mail-mode-open-line'.")
 
 (defcustom vm-mail-mode-open-line-regexp "[ \t]*>"
-  "Regexp matching prefix of quoted text at line start. (Rob F)"
+  "Regexp matching prefix of quoted text at line start."
   :type 'regexp)
 
 (defun vm-mail-mode-open-line (start end &optional length)
   "Opens a line when inserting into the region of a reply.
 
 Insert newlines before and after an insert where necessary and does a cleanup
-of empty lines which have been quoted. (Rob F)" 
+of empty lines which have been quoted." 
   (if (= start end)
       (save-excursion
         (beginning-of-line)
@@ -1623,15 +1620,14 @@ of empty lines which have been quoted. (Rob F)"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defcustom vm-mail-mode-elide-reply-region "[...]\n"
-  "*String which is used as replacement for elided text. (Rob F)"
+  "*String which is used as replacement for elided text."
   :group 'vm-rfaddons
   :type '(string))
 
 ;;;###autoload
 (defun vm-mail-mode-elide-reply-region (b e)
   "Replace marked region or current line with `vm-mail-mode-elide-reply-region'.
-B and E are the beginning and end of the marked region or the current line.
-(Rob F)"
+B and E are the beginning and end of the marked region or the current line."
   (interactive (if (mark)
                    (if (< (mark) (point))
                        (list (mark) (point))
@@ -1645,7 +1641,7 @@ B and E are the beginning and end of the marked region or the current line.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
 (defun vm-save-everything ()
-  "Save all VM folder buffers, BBDB and newsrc if GNUS is started. (Rob F)"
+  "Save all VM folder buffers, BBDB and newsrc if GNUS is started."
   (interactive)
   (save-excursion
     (let ((folders (vm-folder-buffers)))
@@ -1662,7 +1658,7 @@ B and E are the beginning and end of the marked region or the current line.
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
 (defun vm-get-all-new-mail ()
-  "Get mail for all opened VM folders. (Rob F)"
+  "Get mail for all opened VM folders."
   (interactive)
   (save-excursion
     (let ((buffers (buffer-list)))
@@ -1676,8 +1672,7 @@ B and E are the beginning and end of the marked region or the current line.
 ;;;###autoload
 (defun vm-save-message-preview (file)
   "Save preview of a message in FILE.
-It saves the decoded message and not the raw message like `vm-save-message'
-(Rob F)"
+It saves the decoded message and not the raw message like `vm-save-message'"
   (interactive
    ;; protect value of last-command
    (let ((last-command last-command)
@@ -1716,7 +1711,7 @@ It saves the decoded message and not the raw message like `vm-save-message'
 ;; Organization: Road Runner
 ;; From: Dave Bakhash
 (defun vm-mime-take-action-on-attachment (action)
-  "Do something with the MIME attachment at point. (Rob F)"
+  "Do something with the MIME attachment at point."
   (interactive
    (list (vm-read-string "action: "
                          '("save-to-file"
@@ -1747,7 +1742,7 @@ It saves the decoded message and not the raw message like `vm-save-message'
 ;;;###autoload
 (defun vm-assimilate-outlook-message ()
   "Assimilate a message which has been forwarded by MS Outlook.
-You will need vm-postpone.el in order to get this work. (Rob F)"
+You will need vm-postpone.el in order to get this work."
   (interactive)
   (vm-continue-postponed-message t)
   (let ((pm (point-max)))
@@ -1805,7 +1800,7 @@ With just a non-nil prefix ARG, uncomment each line in region.
 Numeric prefix arg ARG means use ARG comment characters.
 If ARG is negative, delete that many comment characters instead.
 Comments are terminated on each line, even for syntax in which newline does
-not end the comment.  Blank lines do not get comments. (Rob F)"
+not end the comment.  Blank lines do not get comments."
   ;; if someone wants it to only put a comment-start at the beginning and
   ;; comment-end at the end then typing it, C-x C-x, closing it, C-x C-x
   ;; is easy enough.  No option is made here for other than commenting
@@ -1877,7 +1872,7 @@ not end the comment.  Blank lines do not get comments. (Rob F)"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-isearch-presentation ()
-  "Switches to the Presentation buffer and starts isearch. (Rob F)"
+  "Switches to the Presentation buffer and starts isearch."
   (interactive)
   (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
   (let ((target (or vm-presentation-buffer (current-buffer))))
@@ -1888,14 +1883,14 @@ not end the comment.  Blank lines do not get comments. (Rob F)"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defcustom vm-delete-message-action "vm-next-message"
-  "Command to do after deleting a message. (Rob F)"
+  "Command to do after deleting a message."
   :group 'vm-rfaddons
   :type 'string) ;; FIXME: `command' would be more useful, no?
 
 ;;;###autoload
 (defun vm-delete-message-action (&optional arg)
   "Delete current message and perform some action after it, e.g. move to next.
-Call it with a prefix ARG to change the action. (Rob F)"
+Call it with a prefix ARG to change the action."
   (interactive "P")
   (when (and (listp arg) (not (null arg)))
     (setq vm-delete-message-action
@@ -1918,12 +1913,12 @@ Call it with a prefix ARG to change the action. (Rob F)"
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defvar vm-smtp-server-online-p-cache nil
-  "Alist of cached (server online-status) entries. (Rob F)")
+  "Alist of cached (server online-status) entries.")
 
 (defun vm-smtp-server-online-p (&optional host port)
   "Opens SMTP connection to see if the server HOST on PORT is online.
 Results are cached in `smtp-server-online-p-cache' for non interactive
-calls. (Rob F)"
+calls."
   (interactive)
   (save-excursion 
     (let (online-p server hp)
@@ -1979,7 +1974,7 @@ calls. (Rob F)"
          
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-mail-send-or-feed-it ()
-  "Sends a message if the SMTP server is online, queues it otherwise. (Rob F)"
+  "Sends a message if the SMTP server is online, queues it otherwise."
   (if (not (vm-smtp-server-online-p))
       (feedmail-send-it)
     (if (functionp 'esmtpmail-send-it)

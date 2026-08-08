@@ -75,13 +75,13 @@ Try to assimilate a message which is only in html format.
 When called with a prefix argument then it will replace the message
 with the PLAIN text version otherwise it will create a text/mixed or
 text/alternative message depending on the value of the variable
-@code{vm-assimilate-html-mixed}. (Rob F)
+@code{vm-assimilate-html-mixed}.
 @end deffn
 
 @deffn Command vm-assimilate-outlook-message
 @findex vm-assimilate-outlook-message
 Assimilate a message which has been forwarded by MS Outlook.
-You will need vm-postpone.el in order to get this work. (Rob F)
+You will need vm-postpone.el in order to get this work.
 @end deffn
 
 @deffn Command vm-attach-files-in-directory directory &optional regexp
@@ -91,52 +91,52 @@ The optional argument MATCH might specify a regexp matching all files
 which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
-match. (Rob F)
+match.
 @end deffn
 
 @deffn Command vm-delete-message-action &optional arg
 @findex vm-delete-message-action
 Delete current message and perform some action after it, e.g. move to next.
-Call it with a prefix ARG to change the action. (Rob F)
+Call it with a prefix ARG to change the action.
 @end deffn
 
 @deffn Command vm-delete-quit
 @findex vm-delete-quit
-Delete mails and quit.  Expunge only if it’s not the primary inbox. (Rob F)
+Delete mails and quit.  Expunge only if it’s not the primary inbox.
 @end deffn
 
 @deffn Command vm-get-all-new-mail
 @findex vm-get-all-new-mail
-Get mail for all opened VM folders. (Rob F)
+Get mail for all opened VM folders.
 @end deffn
 
 @deffn Command vm-handle-return-receipt
 @findex vm-handle-return-receipt
 Generate a reply to the current message if it requests a return receipt
 and has not been replied so far.
-See the variable @code{vm-handle-return-receipt-mode} for customization. (Rob F)
+See the variable @code{vm-handle-return-receipt-mode} for customization.
 @end deffn
 
 @deffn Command vm-isearch-presentation
 @findex vm-isearch-presentation
-Switches to the Presentation buffer and starts isearch. (Rob F)
+Switches to the Presentation buffer and starts isearch.
 @end deffn
 
 @deffn Command vm-mail-check-for-empty-subject
 @findex vm-mail-check-for-empty-subject
-Check if the subject line is empty and issue an error if so. (Rob F)
+Check if the subject line is empty and issue an error if so.
 @end deffn
 
 @deffn Command vm-mail-check-recipients
 @findex vm-mail-check-recipients
 Check if the recipients are specified correctly.
 Actually it checks only if there are any missing commas or the like in the
-headers. (Rob F)
+headers.
 @end deffn
 
 @deffn Command vm-mail-mode-citation-clean-up
 @findex vm-mail-mode-citation-clean-up
-Remove doubly-cited text and extra lines in a mail message. (Rob F)
+Remove doubly-cited text and extra lines in a mail message.
 @end deffn
 
 @deffn Command vm-mail-mode-comment-region beg end &optional arg
@@ -146,14 +146,13 @@ With just a non-nil prefix ARG, uncomment each line in region.
 Numeric prefix arg ARG means use ARG comment characters.
 If ARG is negative, delete that many comment characters instead.
 Comments are terminated on each line, even for syntax in which newline does
-not end the comment.  Blank lines do not get comments. (Rob F)
+not end the comment.  Blank lines do not get comments.
 @end deffn
 
 @deffn Command vm-mail-mode-elide-reply-region b e
 @findex vm-mail-mode-elide-reply-region
 Replace marked region or current line with @code{vm-mail-mode-elide-reply-region}.
 B and E are the beginning and end of the marked region or the current line.
-(Rob F)
 @end deffn
 
 @deffn Command vm-mail-subject-cleanup
@@ -163,7 +162,7 @@ Do some subject line clean up.
 - Add a number after replies is @code{vm-mail-subject-number-reply} is t.
 
 You might add this function to @code{vm-mail-mode-hook} in order to clean up the
-Subject header. (Rob F)
+Subject header.
 @end deffn
 
 @deffn Command vm-mime-attach-files-in-directory directory &optional regexp
@@ -173,7 +172,7 @@ The optional argument MATCH might specify a regexp matching all files
 which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
-match. (Rob F)
+match.
 @end deffn
 
 @deffn Command vm-mime-auto-save-all-attachments &optional count
@@ -185,7 +184,6 @@ You might add this to @code{vm-select-new-message-hook} in order to automaticall
 save attachments.
 
     (add-hook 'vm-select-new-message-hook #'vm-mime-auto-save-all-attachments)
- (Rob F)
 @end deffn
 
 @deffn Command vm-mime-auto-save-all-attachments-delete-external msg
@@ -194,19 +192,19 @@ Deletes the external attachments created by @code{vm-save-all-attachments}.
 You may want to use this function in order to get rid of the external files
 when deleting a message.
 
-See the advice in @code{vm-rfaddons-infect-vm}. (Rob F)
+See the advice in @code{vm-rfaddons-infect-vm}.
 @end deffn
 
 @deffn Command vm-mime-set-8bit-composition-charset charset &optional buffer-local
 @findex vm-mime-set-8bit-composition-charset
 Set @code{vm-mime-8bit-composition-charset} to CHARSET.
 With the optional BUFFER-LOCAL prefix arg, this only affects the current
-buffer. (Rob F)
+buffer.
 @end deffn
 
 @deffn Command vm-mime-take-action-on-attachment action
 @findex vm-mime-take-action-on-attachment
-Do something with the MIME attachment at point. (Rob F)
+Do something with the MIME attachment at point.
 @end deffn
 
 @deffn Command vm-rfaddons-infect-vm &optional sit-for option-list exclude-option-list
@@ -237,8 +235,8 @@ The following options are possible.
 Other EXPERIMENTAL options:
  - auto-save-all-attachments: add @code{vm-mime-auto-save-all-attachments} to
 @example
-   @code{vm-select-new-message-hook} for automatic saving of attachments and define
-   an advice for @code{vm-set-deleted-flag-of} in order to automatically delete
+   ‘vm-select-new-message-hook’ for automatic saving of attachments and define
+   an advice for ‘vm-set-deleted-flag-of’ in order to automatically delete
    the files corresponding to MIME objects of type message/external-body when
    deleting the message.
 @end example
@@ -254,7 +252,7 @@ This will enable all @code{general} and @code{vm-mail-mode} options plus the
 @code{shrunken-headers} option, but it will exclude the @code{fake-date} option of the
 @code{vm-mail-mode} options.
 
-or do the binding and advising on your own. (Rob F)
+or do the binding and advising on your own.
 @end deffn
 
 @deffn Command vm-rmail-down
@@ -278,14 +276,13 @@ with @code{vm-rmail-toggle}.
 
 @deffn Command vm-save-everything
 @findex vm-save-everything
-Save all VM folder buffers, BBDB and newsrc if GNUS is started. (Rob F)
+Save all VM folder buffers, BBDB and newsrc if GNUS is started.
 @end deffn
 
 @deffn Command vm-save-message-preview file
 @findex vm-save-message-preview
 Save preview of a message in FILE.
 It saves the decoded message and not the raw message like @code{vm-save-message}
-(Rob F)
 @end deffn
 
 @deffn Command vm-shrunken-headers &optional toggle
@@ -297,34 +294,34 @@ but it is sufficient for me!
 If the optional argument TOGGLE, then hiding is toggled.
 
 The face used for the visible hidden regions is @code{vm-shrunken-headers-face} and
-the keymap used within that region is @code{vm-shrunken-headers-keymap}. (Rob F)
+the keymap used within that region is @code{vm-shrunken-headers-keymap}.
 @end deffn
 
 @deffn Command vm-shrunken-headers-toggle
 @findex vm-shrunken-headers-toggle
-Toggle display of shrunken headers. (Rob F)
+Toggle display of shrunken headers.
 @end deffn
 
 @deffn Command vm-shrunken-headers-toggle-this
 @findex vm-shrunken-headers-toggle-this
-Toggle display of shrunken headers. (Rob F)
+Toggle display of shrunken headers.
 @end deffn
 
 @deffn Command vm-shrunken-headers-toggle-this-mouse &optional event
 @findex vm-shrunken-headers-toggle-this-mouse
-Toggle display of shrunken headers. (Rob F)
+Toggle display of shrunken headers.
 @end deffn
 
 @deffn Command vm-smtp-server-online-p &optional host port
 @findex vm-smtp-server-online-p
 Opens SMTP connection to see if the server HOST on PORT is online.
 Results are cached in @code{smtp-server-online-p-cache} for non interactive
-calls. (Rob F)
+calls.
 @end deffn
 
 @deffn Command vm-strip-spamassassin-report
 @findex vm-strip-spamassassin-report
-Strips spamassassin-reports from a message. (Rob F)
+Strips spamassassin-reports from a message.
 @end deffn
 
 @deffn Command vm-toggle-best-mime
@@ -362,15 +359,13 @@ cat > $tmpfile
 lynx -force_html -dump $tmpfile
 rm $tmpfile
 
-(Rob F)
-
 Default value: @code{"striptags"}
 @end defopt
 
 @defopt vm-assimilate-html-mixed
 @vindex vm-assimilate-html-mixed
 Non-nil values cause messages to be assimilated as text/mixed.
-Otherwise they will be assimilated into a text/alternative message. (Rob F)
+Otherwise they will be assimilated into a text/alternative message.
 
 Default value: @code{t}
 @end defopt
@@ -380,7 +375,7 @@ Default value: @code{t}
 The default charset used for attached files of type @code{text}.
 If set to nil you will be asked for the charset.
 If set to @code{guess} it will be determined by @code{vm-determine-proper-charset}, but
-this may take some time, since the file needs to be visited. (Rob F)
+this may take some time, since the file needs to be visited.
 
 Default value: @code{guess}
 @end defopt
@@ -389,7 +384,7 @@ Default value: @code{guess}
 @vindex vm-attach-files-in-directory-default-type
 The default MIME-type for attached files.
 If set to nil you will be asked for the type if it cannot be guessed.
-For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}. (Rob F)
+For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}.
 @end defopt
 
 @defopt vm-enable-addons
@@ -406,21 +401,21 @@ Default value: @code{(check-for-empty-subject encode-headers)}
 @vindex vm-handle-return-receipt-mode
 Tells @code{vm-handle-return-receipt} how to handle return receipts.
 One can choose between @code{ask}, @code{auto}, @code{edit}, or an expression which should
-return t if the return receipts should be sent. (Rob F)
+return t if the return receipts should be sent.
 
 Default value: @code{edit}
 @end defopt
 
 @defopt vm-handle-return-receipt-peek
 @vindex vm-handle-return-receipt-peek
-Number of characters from the original message body to be returned. (Rob F)
+Number of characters from the original message body to be returned.
 
 Default value: @code{500}
 @end defopt
 
 @defopt vm-mail-mode-citation-kill-regexp-alist
 @vindex vm-mail-mode-citation-kill-regexp-alist
-Regexp replacement pairs for cleaning of replies. (Rob F)
+Regexp replacement pairs for cleaning of replies.
 
 Default value:
 @example
@@ -431,21 +426,21 @@ Default value:
 @defopt vm-mail-mode-fake-date-p
 @vindex vm-mail-mode-fake-date-p
 Non-nil means @code{vm-mail-mode-insert-date-maybe} keeps an existing date header.
-Otherwise, overwrite existing date headers (Rob F)
+Otherwise, overwrite existing date headers
 
 Default value: @code{t}
 @end defopt
 
 @defopt vm-mail-mode-open-line-regexp
 @vindex vm-mail-mode-open-line-regexp
-Regexp matching prefix of quoted text at line start. (Rob F)
+Regexp matching prefix of quoted text at line start.
 
 Default value: @code{"[ \11]*>"}
 @end defopt
 
 @defopt vm-mail-prompt-if-subject-empty
 @vindex vm-mail-prompt-if-subject-empty
-Prompt for a subject when empty. (Rob F)
+Prompt for a subject when empty.
 
 Default value: @code{t}
 @end defopt
@@ -453,13 +448,13 @@ Default value: @code{t}
 @defopt vm-mail-subject-number-reply
 @vindex vm-mail-subject-number-reply
 Non-nil means, add a number [N] after the reply prefix.
-The number reflects the number of references. (Rob F)
+The number reflects the number of references.
 @end defopt
 
 @defopt vm-mail-subject-prefix-replacements
 @vindex vm-mail-subject-prefix-replacements
 List of subject prefixes which should be replaced.
-Matching will be done case insentivily. (Rob F)
+Matching will be done case insentivily.
 
 Default value:
 @example
@@ -472,14 +467,14 @@ Default value:
 The default charset used for attached files of type @code{text}.
 If set to nil you will be asked for the charset.
 If set to @code{guess} it will be determined by @code{vm-determine-proper-charset}, but
-this may take some time, since the file needs to be visited. (Rob F)
+this may take some time, since the file needs to be visited.
 @end defopt
 
 @defopt vm-mime-attach-files-in-directory-default-type
 @vindex vm-mime-attach-files-in-directory-default-type
 The default MIME-type for attached files.
 If set to nil you will be asked for the type if it cannot be guessed.
-For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}. (Rob F)
+For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}.
 @end defopt
 
 @defopt vm-mime-auto-save-all-attachments-subdir
@@ -487,7 +482,7 @@ For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}. (Rob F
 Subdirectory where to save the attachments of a message.
 This variable might be set to a string, a function or anything which evaluates
 to a string.  If set to nil we use a concatenation of the from, subject and
-date header as subdir for the attachments. (Rob F)
+date header as subdir for the attachments.
 @end defopt
 
 @defopt vm-rmail-mode
@@ -495,26 +490,26 @@ date header as subdir for the attachments. (Rob F)
 Non-nil means up/down move to the next/previous message instead.
 Otherwise normal cursor movement is done.  Specifically only modes
 listed in @code{vm-rmail-mode-list} are affected.
-Use @code{vm-rmail-toggle} to switch between normal and this mode. (Rob F)
+Use @code{vm-rmail-toggle} to switch between normal and this mode.
 @end defopt
 
 @defopt vm-rmail-mode-list
 @vindex vm-rmail-mode-list
-Mode to activate @code{vm-rmail-mode} in. (Rob F)
+Mode to activate @code{vm-rmail-mode} in.
 
 Default value: @code{(vm-summary-mode)}
 @end defopt
 
 @defopt vm-spamassassin-strip-report
 @vindex vm-spamassassin-strip-report
-Shell command used to strip spamassassin-reports from a message. (Rob F)
+Shell command used to strip spamassassin-reports from a message.
 
 Default value: @code{"spamassassin -d"}
 @end defopt
 
 @defopt vm-summary-attachment-label
 @vindex vm-summary-attachment-label
-Label added to messages containing an attachments. (Rob F)
+Label added to messages containing an attachments.
 
 Default value: @code{"$"}
 @end defopt
@@ -1271,16 +1266,17 @@ Toggle the mode when ARG is nil, enable it when ARG is a positive number
 and disable it otherwise.  Enabling makes the bindings below and the
 PGP/MIME menu available in the composition buffer.
 
-
+@example
 Key             Binding
 -------------------------------------------------------------------------------
-C-c # C-e	vm-epg-cleartext-encrypt
-C-c # C-s	vm-epg-cleartext-sign
-C-c # E		vm-epg-sign-and-encrypt
-C-c # a		vm-epg-ask-hook
-C-c # e		vm-epg-encrypt
-C-c # k		vm-epg-attach-public-key
-C-c # s		vm-epg-sign
+C-c # C-e       vm-epg-cleartext-encrypt
+C-c # C-s       vm-epg-cleartext-sign
+C-c # E         vm-epg-sign-and-encrypt
+C-c # a         vm-epg-ask-hook
+C-c # e         vm-epg-encrypt
+C-c # k         vm-epg-attach-public-key
+C-c # s         vm-epg-sign
+@end example
 @end deffn
 
 @deffn Command vm-epg-compose-mode-menu arg1
@@ -1360,12 +1356,12 @@ What @code{vm-epg-ask-hook} should do before sending a message.
 The value is either an action symbol or a function:
 
 @example
-  nil               do nothing;
-  @code{sign}            ask whether to sign;
-  @code{encrypt}         ask whether to encrypt;
-  @code{sign-and-encrypt} ask whether to sign and encrypt;
-  a function        called with no arguments, returning one of the action
-                    symbols above, or nil for no action.
+  nil                do nothing;
+  ‘sign’             ask whether to sign;
+  ‘encrypt’          ask whether to encrypt;
+  ‘sign-and-encrypt’ ask whether to sign and encrypt;
+  a function         called with no arguments, returning one of the action
+                     symbols above, or nil for no action.
 
 @end example
 An action symbol ACTION selects the command @code{vm-epg-ACTION}, so any value
@@ -2533,13 +2529,13 @@ SPOOLNAME can also be a POP maildrop.
     The second form is used to speak POP over an SSL connection.
     For this to work you should either have a version of Emacs
     with SSL capability or you have the stunnel program installed
-    and set the variable @code{vm-stunnel-program}.  The SSL version
+    and set the variable ‘vm-stunnel-program’.  The SSL version
     of the POP server will not use the same port as the non-SSL
     version.
 
     The third form is used to speak POP over an SSH connection.
     You must have the ssh program installed and the variable
-    @code{vm-ssh-program} must name it in order for POP over SSH to
+    ‘vm-ssh-program’ must name it in order for POP over SSH to
     work.  SSH must be able to authenticate without a password,
     which means you must be using either .shosts authentication
     or RSA authentication.
@@ -2568,7 +2564,7 @@ SPOOLNAME can also be a POP maildrop.
     authentication is done by other means.  For "apop", an MD5 digest
     of the PASSWORD appended to the server timestamp will be sent to
     the server with the APOP command.  In order to use "apop" you
-    will have to set the value of @code{vm-pop-md5-program} appropriately to
+    will have to set the value of ‘vm-pop-md5-program’ appropriately to
     point at the program that will generate the MD5 digest that VM
     needs.
 
@@ -2587,12 +2583,12 @@ SPOOLNAME can also be an IMAP maildrop.
     The second form is used to speak IMAP over an SSL connection.
     For this to work, you should either be using a version of
     Emacs with SSL capability or you must have the stunnel
-    program installed and the variable @code{vm-stunnel-program}
+    program installed and the variable ‘vm-stunnel-program’
     naming it.
 
     The third form is used to speak IMAP over an SSH connection.
     You must have the ssh program installed and the variable
-    @code{vm-ssh-program} must name it in order for IMAP over SSH to
+    ‘vm-ssh-program’ must name it in order for IMAP over SSH to
     work.  SSH must be able to authenticate without a password,
     which means you must be using .shosts authentication or
     public key user authentication.
@@ -3369,7 +3365,7 @@ may be used in your hook function.
   virtual - true if the current folder is a virtual folder
   no-expunge - true if no expunge was requested as part of quit
   no-change - true if the changes are being discarded
-  @code{vm-expunge-before-quit} - user option controlling auto-expunge
+  ‘vm-expunge-before-quit’ - user option controlling auto-expunge
 
 @end example
 @end defopt
@@ -5520,12 +5516,12 @@ The method by which VM should find the certificates to use in
 encrypting this S/MIME encoded composition. Valid valus are as follows:
 
 @example
-   @code{ask} - Ask the user to specify the files manually each time. The
+   ‘ask’ - Ask the user to specify the files manually each time. The
           user will be prompted for a file name and whether they want
           to specify another thereafter and so on.
 
-   @code{links} - This method assumes that there exist links under
-            @code{smime-certificate-directory} given by the recipient address
+   ‘links’ - This method assumes that there exist links under
+            ‘smime-certificate-directory’ given by the recipient address
             to the appropriate PEM encoded certificate, i.e.
              ~/CERTS/bob@@somewhere.com -> ~/CERTS/bob_johnstons_certificate.pem
             If any recipient in the message does not have such a link
@@ -7242,10 +7238,10 @@ This variable should contain an ELisp expression returning a
 valid @code{ps-left-header}.
 The following variables are available when evaluating the value:
 @example
-  @code{dd-mon-yyyy}  The current date
-  @code{folder-name}  The name of the folder
-  @code{mcount}       The number of messages to print
-  @code{msg}          A pointer to a VM message
+  ‘dd-mon-yyyy’  The current date
+  ‘folder-name’  The name of the folder
+  ‘mcount’       The number of messages to print
+  ‘msg’          A pointer to a VM message
 @end example
 
 Default value:
@@ -7303,10 +7299,10 @@ summary lines between messages.
 
 See: @code{vm-ps-print-message-function}
 @example
-     @code{vm-ps-print-message-font-size}
-     @code{vm-ps-print-each-message-left-header}
-     @code{vm-ps-print-each-message-right-header}
-     @code{vm-ps-print-each-message-summary-format}
+     ‘vm-ps-print-message-font-size’
+     ‘vm-ps-print-each-message-left-header’
+     ‘vm-ps-print-each-message-right-header’
+     ‘vm-ps-print-each-message-summary-format’
 @end example
 for customization of the output.
 @end deffn
@@ -7347,11 +7343,11 @@ giving a t EACH argument.
 
 See: @code{vm-ps-print-message-function}
 @example
-     @code{vm-ps-print-message-font-size}
-     @code{vm-ps-print-message-summary-format}
-     @code{vm-ps-print-message-separater}
-     @code{vm-ps-print-message-left-header}
-     @code{vm-ps-print-message-right-header}
+     ‘vm-ps-print-message-font-size’
+     ‘vm-ps-print-message-summary-format’
+     ‘vm-ps-print-message-separater’
+     ‘vm-ps-print-message-left-header’
+     ‘vm-ps-print-message-right-header’
 @end example
 for customization of the output.
 @end deffn
@@ -7378,10 +7374,10 @@ number, prompt the user for the name of the file to save in.
 
 See: @code{vm-ps-print-message-function}
 @example
-     @code{vm-ps-print-message-font-size}
-     @code{vm-ps-print-each-message-left-header}
-     @code{vm-ps-print-each-message-right-header}
-     @code{vm-ps-print-each-message-summary-format}
+     ‘vm-ps-print-message-font-size’
+     ‘vm-ps-print-each-message-left-header’
+     ‘vm-ps-print-each-message-right-header’
+     ‘vm-ps-print-each-message-summary-format’
 @end example
 for customization of the output.
 @end deffn
@@ -9299,24 +9295,24 @@ substitute information about the message into the final summary line.
 Recognized specifiers are:
 @example
    a - attribute indicators (always four characters wide)
-       The first char is  @code{D}, @code{N}, @code{U}, @code{ } or @code{!} for deleted, new, unread,
+       The first char is  ‘D’, ‘N’, ‘U’, ‘ ’ or ‘!’ for deleted, new, unread,
        read and flagged messages respectively.
-       The second char is @code{F}, @code{W} or @code{ } for filed (saved) or written
+       The second char is ‘F’, ‘W’ or ‘ ’ for filed (saved) or written
        messages.
-       The third char is @code{R}, @code{Z} or @code{ } for messages replied to,
+       The third char is ‘R’, ‘Z’ or ‘ ’ for messages replied to,
        and forwarded messages.
-       The fourth char is @code{E} if the message has been edited, @code{ } otherwise.
+       The fourth char is ‘E’ if the message has been edited, ‘ ’ otherwise.
    A - longer version of attributes indicators (seven characters wide)
-       The first char is  @code{D}, @code{N}, @code{U}, @code{ } or @code{!} for deleted, new, unread
+       The first char is  ‘D’, ‘N’, ‘U’, ‘ ’ or ‘!’ for deleted, new, unread
        read and flagged messages respectively.
-       The second is @code{r} or @code{ }, for message replied to.
-       The third is @code{z} or @code{ }, for messages forwarded.
-       The fourth is @code{b} or @code{ }, for messages redistributed.
-       The fifth is @code{f} or @code{ }, for messages filed.
-       The sixth is @code{w} or @code{ }, for messages written.
-       The seventh is @code{e} or @code{ }, for messages that have been edited.
+       The second is ‘r’ or ‘ ’, for message replied to.
+       The third is ‘z’ or ‘ ’, for messages forwarded.
+       The fourth is ‘b’ or ‘ ’, for messages redistributed.
+       The fifth is ‘f’ or ‘ ’, for messages filed.
+       The sixth is ‘w’ or ‘ ’, for messages written.
+       The seventh is ‘e’ or ‘ ’, for messages that have been edited.
    b - shorter version of attribute indicators (1 character wide)
-       The first char is  @code{D}, @code{N}, @code{U}, @code{ } or @code{!} for deleted, new, unread
+       The first char is  ‘D’, ‘N’, ‘U’, ‘ ’ or ‘!’ for deleted, new, unread
        read and flagged messages respectively.
    c - number of characters in message (ignoring headers)
    d - numeric day of month message sent
@@ -9332,7 +9328,7 @@ Recognized specifiers are:
    M - numeric month message sent (January = 1)
    n - message number
    p - indicator for postponed messages 
-   P - indicator for attachments, see @code{vm-summary-attachment-indicator}
+   P - indicator for attachments, see ‘vm-summary-attachment-indicator’
    r - addresses of the recipients of the message, in a comma-separated list
    R - full names of the recipients of the message, in a comma-separated list
        If a full name cannot be found, the corresponding address is used
@@ -9355,7 +9351,7 @@ Recognized specifiers are:
    w - day of the week message sent
    y - year message sent
    z - timezone of date when the message was sent
-   * - @code{*} if the message is marked, @code{ } otherwise
+   * - ‘*’ if the message is marked, ‘ ’ otherwise
    ( - starts a group, terminated by %).  Useful for specifying
        the field width and precision for the concatentation of
        group of format specifiers.  Example: "%.35(%I%s%)"
@@ -10030,152 +10026,153 @@ This is VM.
 Use M-x vm-submit-bug-report to submit a bug report.
 
 Commands:
-
+@example
 Key             Binding
 -------------------------------------------------------------------------------
-0 .. 9		digit-argument
+0 .. 9          digit-argument
 
-C-d		vm-delete-message-backward
-TAB		vm-goto-message-last-seen
-RET		vm-goto-message
-C-t		vm-toggle-threads-display
-C-_		vm-undo
-SPC		vm-scroll-forward
-!		vm-optional-key
-%		vm-optional-key
-*		vm-optional-key
--		negative-argument
-.		vm-mark-message-read
-=		vm-optional-key
-?		vm-help
-@@		vm-send-digest
-A		vm-auto-archive-messages
-B		vm-resend-message
-C		vm-collapse-all-threads
-D		vm-decode-mime-message
-E		vm-expand-all-threads
-F		vm-followup-include-text
-G		vm-sort-messages
-H		vm-folders-summarize
-K		vm-kill-thread-subtree
-L		vm-optional-key
-N		vm-next-message-no-skip
-O		vm-unload-message
-P		vm-previous-message-no-skip
-R		vm-reply-include-text
-S		vm-save-folder
-T		vm-toggle-thread
-U		vm-mark-message-unread
-Z		vm-forward-message-plain
-[		vm-move-to-previous-button
-]		vm-move-to-next-button
-^		vm-goto-parent-message
-a .. b		vm-optional-key
-c		vm-continue-composing-message
-d		vm-delete-message
-e		vm-optional-key
-f		vm-followup
-g		vm-get-new-mail
-h		vm-summarize
-i		vm-optional-key
-j		vm-discard-cached-data
-k		vm-kill-subject
-m		vm-mail-from-folder
-n		vm-next-message
-o		vm-load-message
-p		vm-previous-message
-q		vm-quit
-r		vm-reply
-s		vm-save-message
-t		vm-expose-hidden-headers
-u		vm-undelete-message
-v		vm-visit-folder
-w		vm-optional-key
-x		vm-quit-no-change
-z		vm-forward-message
-DEL		vm-scroll-backward
-C-/		vm-undo
-<backspace>	vm-scroll-backward
-<delete>	vm-scroll-backward
+C-d             vm-delete-message-backward
+TAB             vm-goto-message-last-seen
+RET             vm-goto-message
+C-t             vm-toggle-threads-display
+C-_             vm-undo
+SPC             vm-scroll-forward
+!               vm-optional-key
+%               vm-optional-key
+*               vm-optional-key
+-               negative-argument
+.               vm-mark-message-read
+=               vm-optional-key
+?               vm-help
+@@               vm-send-digest
+A               vm-auto-archive-messages
+B               vm-resend-message
+C               vm-collapse-all-threads
+D               vm-decode-mime-message
+E               vm-expand-all-threads
+F               vm-followup-include-text
+G               vm-sort-messages
+H               vm-folders-summarize
+K               vm-kill-thread-subtree
+L               vm-optional-key
+N               vm-next-message-no-skip
+O               vm-unload-message
+P               vm-previous-message-no-skip
+R               vm-reply-include-text
+S               vm-save-folder
+T               vm-toggle-thread
+U               vm-mark-message-unread
+Z               vm-forward-message-plain
+[               vm-move-to-previous-button
+]               vm-move-to-next-button
+^               vm-goto-parent-message
+a .. b          vm-optional-key
+c               vm-continue-composing-message
+d               vm-delete-message
+e               vm-optional-key
+f               vm-followup
+g               vm-get-new-mail
+h               vm-summarize
+i               vm-optional-key
+j               vm-discard-cached-data
+k               vm-kill-subject
+m               vm-mail-from-folder
+n               vm-next-message
+o               vm-load-message
+p               vm-previous-message
+q               vm-quit
+r               vm-reply
+s               vm-save-message
+t               vm-expose-hidden-headers
+u               vm-undelete-message
+v               vm-visit-folder
+w               vm-optional-key
+x               vm-quit-no-change
+z               vm-forward-message
+DEL             vm-scroll-backward
+C-/             vm-undo
+<backspace>     vm-scroll-backward
+<delete>        vm-scroll-backward
 
-C-c C-d		vm-delete-all-attachments
-C-c C-e		vm-edit-message
-C-c C-s		vm-save-all-attachments
-C-c b		vm-message-history-browse
-C-c n		vm-message-history-forward
-C-c p		vm-message-history-backward
+C-c C-d         vm-delete-all-attachments
+C-c C-e         vm-edit-message
+C-c C-s         vm-save-all-attachments
+C-c b           vm-message-history-browse
+C-c n           vm-message-history-forward
+C-c p           vm-message-history-backward
 
-C-x C-q		vm-toggle-read-only
-C-x C-s		vm-save-folder
-C-x C-w		vm-write-file
-C-x u		vm-undo
+C-x C-q         vm-toggle-read-only
+C-x C-s         vm-save-folder
+C-x C-w         vm-write-file
+C-x u           vm-undo
 
-C-M-n		vm-move-message-forward
-C-M-p		vm-move-message-backward
-M-C		vm-show-copying-restrictions
-M-W		vm-show-no-warranty
-M-g		vm-optional-key
-M-l		vm-optional-key
-M-n		vm-next-unread-message
-M-p		vm-previous-unread-message
-M-r		vm-resend-bounced-message
-M-s		vm-isearch-forward
+C-M-n           vm-move-message-forward
+C-M-p           vm-move-message-backward
+M-C             vm-show-copying-restrictions
+M-W             vm-show-no-warranty
+M-g             vm-optional-key
+M-l             vm-optional-key
+M-n             vm-next-unread-message
+M-p             vm-previous-unread-message
+M-r             vm-resend-bounced-message
+M-s             vm-isearch-forward
 
-M ?		vm-mark-help
-M A		vm-mark-messages-same-author
-M C		vm-mark-messages-by-selector
-M M		vm-mark-message
-M N		vm-next-command-uses-marks
-M R		vm-mark-summary-region
-M S		vm-mark-messages-same-subject
-M T		vm-mark-thread-subtree
-M U		vm-unmark-message
-M V		vm-toggle-all-marks
-M X		vm-mark-messages-by-virtual-folder
-M a		vm-unmark-messages-same-author
-M c		vm-unmark-messages-by-selector
-M m		vm-mark-all-messages
-M n		vm-next-command-uses-marks
-M r		vm-unmark-summary-region
-M s		vm-unmark-messages-same-subject
-M t		vm-unmark-thread-subtree
-M u		vm-clear-all-marks
-M x		vm-unmark-messages-by-virtual-folder
+M ?             vm-mark-help
+M A             vm-mark-messages-same-author
+M C             vm-mark-messages-by-selector
+M M             vm-mark-message
+M N             vm-next-command-uses-marks
+M R             vm-mark-summary-region
+M S             vm-mark-messages-same-subject
+M T             vm-mark-thread-subtree
+M U             vm-unmark-message
+M V             vm-toggle-all-marks
+M X             vm-mark-messages-by-virtual-folder
+M a             vm-unmark-messages-same-author
+M c             vm-unmark-messages-by-selector
+M m             vm-mark-all-messages
+M n             vm-next-command-uses-marks
+M r             vm-unmark-summary-region
+M s             vm-unmark-messages-same-subject
+M t             vm-unmark-thread-subtree
+M u             vm-clear-all-marks
+M x             vm-unmark-messages-by-virtual-folder
 
-V !		vm-create-flagged-virtual-folder
-V ?		vm-virtual-help
-V A		vm-create-virtual-folder-same-author
-V C		vm-create-virtual-folder
-V M		vm-toggle-virtual-mirror
-V R		vm-create-virtual-folder-same-recipient
-V S		vm-create-virtual-folder-same-subject
-V T		vm-create-virtual-folder-of-threads
-V V		vm-visit-virtual-folder
-V X		vm-apply-virtual-folder
-V a		vm-create-author-virtual-folder
-V d		vm-create-date-virtual-folder
-V l		vm-create-label-virtual-folder
-V n		vm-create-new-virtual-folder
-V r		vm-create-author-or-recipient-virtual-folder
-V s		vm-create-subject-virtual-folder
-V t		vm-create-text-virtual-folder
-V u		vm-create-unseen-virtual-folder
+V !             vm-create-flagged-virtual-folder
+V ?             vm-virtual-help
+V A             vm-create-virtual-folder-same-author
+V C             vm-create-virtual-folder
+V M             vm-toggle-virtual-mirror
+V R             vm-create-virtual-folder-same-recipient
+V S             vm-create-virtual-folder-same-subject
+V T             vm-create-virtual-folder-of-threads
+V V             vm-visit-virtual-folder
+V X             vm-apply-virtual-folder
+V a             vm-create-author-virtual-folder
+V d             vm-create-date-virtual-folder
+V l             vm-create-label-virtual-folder
+V n             vm-create-new-virtual-folder
+V r             vm-create-author-or-recipient-virtual-folder
+V s             vm-create-subject-virtual-folder
+V t             vm-create-text-virtual-folder
+V u             vm-create-unseen-virtual-folder
 
-W ?		vm-window-help
-W D		vm-delete-window-configuration
-W S		vm-save-window-configuration
-W W		vm-apply-window-configuration
+W ?             vm-window-help
+W D             vm-delete-window-configuration
+W S             vm-save-window-configuration
+W W             vm-apply-window-configuration
 
-l a		vm-add-message-labels
-l d		vm-delete-message-labels
-l e		vm-add-existing-message-labels
+l a             vm-add-message-labels
+l d             vm-delete-message-labels
+l e             vm-add-existing-message-labels
 
-| d		vm-pipe-message-to-command-discard-output
-| n		vm-pipe-messages-to-command-discard-output
-| s		vm-pipe-messages-to-command
-| |		vm-pipe-message-to-command
+| d             vm-pipe-message-to-command-discard-output
+| n             vm-pipe-messages-to-command-discard-output
+| s             vm-pipe-messages-to-command
+| |             vm-pipe-message-to-command
 
-# # #		vm-expunge-folder
+# # #           vm-expunge-folder
+@end example
 
 
 Customize VM by setting variables and store them in the @code{vm-init-file}.
@@ -10590,11 +10587,11 @@ applies to, and ACTIONS is a property list of what to do with them:
 
 @example
   :label STRING       attach the labels named in STRING, which is a
-                      space separated list, as @code{vm-add-message-labels}
+                      space separated list, as ‘vm-add-message-labels’
                       takes them
   :attributes STRING  set the attributes named in STRING, a space
-                      separated list of @code{vm-supported-attribute-names},
-                      as @code{vm-set-message-attributes} takes them
+                      separated list of ‘vm-supported-attribute-names’,
+                      as ‘vm-set-message-attributes’ takes them
   :save FOLDER        save a copy in FOLDER.  FOLDER is a string or an
                       expression evaluating to one
   :skip-inbox t       keep the message out of the folder: it is flagged
@@ -11019,7 +11016,7 @@ of frame that the following PARAMLIST applies to.
 @code{‘completion}’ specifies parameters for frames that display lists of
 @example
    choices generated by a mouse-initiated completing read.
-   (See @code{vm-frame-per-completion}.)
+   (See ‘vm-frame-per-completion’.)
 @end example
 @code{‘composition}’ specifies parameters for mail composition frames.
 @code{‘edit}’ specifies parameters for message edit frames
