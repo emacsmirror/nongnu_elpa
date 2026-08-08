@@ -880,6 +880,8 @@ SKIP-PINNED means don't display pinned toots."
              (propertize (concat "@" .acct) 'face 'default)
              (when (eq .locked t)
                (concat " " (mastodon-tl--symbol 'locked)))
+             (when (eq .bot t)
+               (concat " " (mastodon-tl--symbol 'bot)))
              "\n " mastodon-tl--horiz-bar "\n"
              ;; migration:
              (when .moved

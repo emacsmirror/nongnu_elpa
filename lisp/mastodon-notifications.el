@@ -118,7 +118,7 @@
   '("all" "favourite" "reblog" "mention" "poll"
     "follow_request" "follow" "status" "update"
     "severed_relationships" "moderation_warning" "quote"
-    "quoted_update")
+    "quoted_update" "added_to_collection" "collection_update")
   "A list of notification types according to their name on the server, plus \"all\".")
 
 (defvar mastodon-notifications--filter-types-alist
@@ -132,7 +132,9 @@
     ("status"                 . mastodon-notifications-get-statuses)
     ("update"                 . mastodon-notifications-get-edits)
     ("quote"                  . mastodon-notifications-get-quotes)
-    ("quoted_update"          . mastodon-notifications-get-quoted-updates))
+    ("quoted_update"          . mastodon-notifications-get-quoted-updates)
+    ("added_to_collection"    . mastodon-notifications-get-added-to-coll)
+    ("collection_update")     . mastodon-notifications-get-coll-updates)
   "An alist of notification types and their corresponding load functions.
 Notification types are named according to their name on the server.")
 
@@ -168,7 +170,9 @@ Notification types are named according to their name on the server.")
     (severed_relationships . "Relationships severed")
     (moderation_warning    . "Moderation warning")
     (quote                 . "Quoted")
-    (quoted_update         . "Modified"))
+    (quoted_update         . "Modified")
+    (added_to_collection   . "Added you to a collection")
+    (collection_update     . "Updated a collection you are in"))
   "Action strings keyed by notification type.
 Types are those of the Mastodon API.")
 
@@ -176,7 +180,11 @@ Types are those of the Mastodon API.")
   '(("moderation_warning"    . moderation_warning)
     ("severed_relationships" . event)
     ("follow"                . follow)
-    ("follow_request"        . follow_request)))
+    ("follow_request"        . follow_request)
+    ("added_to_collection"   . collection)
+    ("collection_update"     . collection))
+  "Alist of notif types, and the corresponding JSON data object.
+The object is processed rather than a status object.")
 
 ;;; VAR FETCHERS
 
@@ -442,7 +450,29 @@ FILTERS STATUS PROFILE-NOTE FOLLOWER-NAME GROUP NOTE."
      ((member type '(favourite reblog))
       (propertize
        (mastodon-notifications--comment-note-text body)))
+     ((eq type 'added_to_collection)
+      (mastodon-notifications-collection-note-body status))
+     ((eq type 'collection_update)
+      (mastodon-notifications-collection-note-body status))
      (t body))))
+
+(defun mastodon-notifications-collection-note-body (coll)
+  "Format a added to collection notif body, for COLL, json data.
+We format the collection name as link and add description."
+  (if (not coll)
+      ;; if we are added to a collection, then removed/revoked, we don't
+      ;; have the coll data here anymore:
+      ;; the web UI hides such a notif entirely...
+      "[no collection]"
+    (let-alist coll
+      (concat
+       (propertize
+        (mastodon-notifications--propertize-link
+         (format "%s/collections/%s" mastodon-instance-url .id)
+         .name)
+        'display .name)
+       " "
+       .description))))
 
 (defun mastodon-notifications--insert-note
     (toot body action-byline
@@ -485,7 +515,8 @@ TYPE is notification type, used for non-group notifs."
        (when (alist-get 'quote toot)
          (mastodon-tl--insert-quoted (alist-get 'quote toot) toot))
        ;; actual byline:
-       (if (member type '("severed_relationships" "moderation_warning"))
+       (if (member type '("severed_relationships" "moderation_warning"
+                          "added_to_collection" "collection_update"))
            (propertize
             (concat mastodon-tl--horiz-bar "\n")
             'byline t)

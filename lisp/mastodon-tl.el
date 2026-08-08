@@ -186,7 +186,9 @@ nil."
     (quote                 . (,(propertize "“" 'face
                                            '(t :inherit success :weight bold
                                                :height 1.8))))
-    (quoted_update         . ("✍" . "[edited]")))
+    (quoted_update         . ("✍" . "[edited]"))
+    (added_to_collection   . ("⊆"  . "[coll]"))
+    (collection_update     . ("⊆"  . "[coll]")))
   "A set of symbols (and fallback strings) to be used in timeline.
 If a symbol does not look right (tofu), it means your
 font settings do not support it."
@@ -420,7 +422,7 @@ PREVIOUS means move to previous item."
       ;; do nothing, all the action is in the while condition
       )
     (if (null next-range)
-        (user-error "Nothing else here")
+        (message "Nothing else here")
       (goto-char (car next-range))
       (message "%s" (mastodon-tl--property 'help-echo :no-move)))))
 
@@ -2579,7 +2581,10 @@ call this function after it is set or use something else."
            'announcements)
           ;; followed hashtags
           ((mastodon-tl--endpoint-str-= "followed_tags")
-           'followed-hashtags))))
+           'followed-hashtags)
+          ;; collections:
+          ((mastodon-tl--endpoint-str-= "collection" :prefix)
+           'collection))))
 
 (defun mastodon-tl--buffer-type-eq (type)
   "Return t if current buffer type is equal to symbol TYPE."

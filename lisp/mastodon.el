@@ -6,7 +6,7 @@
 ;; Author: Johnson Denen <johnson.denen@gmail.com>
 ;;         Marty Hiatt <martianh@disroot.org>
 ;; Maintainer: Marty Hiatt <martianh@disroot.org>
-;; Version: 2.0.17
+;; Version: 2.1.0
 ;; Package-Requires: ((emacs "29.1") (persist "0.8") (tp "0.8"))
 ;; Homepage: https://codeberg.org/martianh/mastodon.el
 
@@ -76,6 +76,7 @@
 (autoload 'mastodon-tl-jump-to-followed-tag "mastodon-tl")
 (autoload 'mastodon-notifications--update-with-timer "mastodon-notifications")
 (autoload 'mastodon-profile-table-cell-hook-fun "mastodon-profile")
+(autoload 'mastodon-views-view-collection "mastodon-views")
 
 ;; for M-x visibility
 ;; (views.el uses `mastodon-mode-map', so we can't easily require it)
@@ -102,6 +103,20 @@
 (autoload 'mastodon-views-create-filter "mastodon-views"
   nil :interactive)
 (autoload 'mastodon-views-view-list-timeline "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-view-own-collection "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-add-to-collection "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-view-profile-collection "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-collections-user-in "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-create-collection "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-revoke-collection-inclusion "mastodon-views"
+  nil :interactive)
+(autoload 'mastodon-views-update-collection "mastodon-views"
   nil :interactive)
 
 (autoload 'special-mode "simple")
@@ -348,6 +363,7 @@ Also nil `mastodon-auth--token-alist'."
     (define-key map (kbd "SPC")    #'mastodon-tl-scroll-up-command)
     (define-key map (kbd "!")      #'mastodon-tl-fold-post-toggle)
     (define-key map (kbd "z")      #'bury-buffer)
+    (define-key map (kbd "`")      #'mastodon-views-view-own-collection)
     map)
   "Keymap for `mastodon-mode'.")
 
@@ -545,6 +561,10 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
                (let* ((accounts (assoc 'accounts response))
                       (account (seq-first (cdr accounts))))
                  (mastodon-profile--make-author-buffer account)))
+              ((not (seq-empty-p (alist-get 'collections response)))
+               (let* ((colls (assoc 'collections response))
+                      (coll (seq-first (cdr colls))))
+                 (mastodon-views-view-collection coll)))
               (t
                (message "Lookup failed. Using external browser")
                (browse-url query)))))))
@@ -587,7 +607,9 @@ If FORCE, do a lookup regardless of the result of `mastodon--fedi-url-p'."
           (string-match "^/notes/[[:alnum:]]+$" query) ; misskey post
           (string-match "^/w/[[:alnum:]_]+$" query) ; peertube post
           ;; bsky via fed.brid.gy (unsure if this needs narrowing down?):
-          (string-prefix-p "https://fed.brid.gy/r/" url)))))
+          (string-prefix-p "https://fed.brid.gy/r/" url)
+          (string-match "^/collections/[[:digit:]_]+$" query) ;; collection
+          ))))
 
 (defun mastodon-live-buffers ()
   "Return a list of open mastodon buffers.

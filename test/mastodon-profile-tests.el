@@ -269,42 +269,14 @@ content generation in the function under test."
         (with-current-buffer "*mastodon-Gargron-statuses*"
           (buffer-substring-no-properties (point-min) (point-max)))
         (concat
-         "\n"
-         "[img] [img] \n"
-         "Eugen\n"
-         "@Gargron\n"
-         " ――――――――――――\n"
-         "<p>Developer of Mastodon and administrator of mastodon.social. I post service announcements, development updates, and personal stuff.</p>\n"
-         "_ Patreon __ :: <a href=\"https://www.patreon.com/mastodon\" rel=\"me nofollow noopener noreferrer\" target=\"_blank\"><span class=\"invisible\">https://www.</span><span class=\"\">patreon.com/mastodon</span><span class=\"invisible\"></span></a>_ Homepage _ :: <a href=\"https://zeonfederated.com\" rel=\"me nofollow noopener noreferrer\" target=\"_blank\"><span class=\"invisible\">https://</span><span class=\"\">zeonfederated.com</span><span class=\"invisible\"></span></a>"
-         "\n"
-         "Joined March 2016"
-         "\n\n "
-         mastodon-tl--horiz-bar
-         "\n"
-         " TOOTS: 70741 | FOLLOWERS: 470905 | FOLLOWING: 451\n "
-         mastodon-tl--horiz-bar
-         "\n"
-         "\n "
-         mastodon-tl--horiz-bar
-         "\n"
-         "    TOOTS    \n "
-         mastodon-tl--horiz-bar
-         "\n"
-         "\n"
-         "<p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.</p>\n"
-         "  Eugen (@Gargron) 2021-11-11 12:11:11\n  "
-         mastodon-tl--horiz-bar
-         " 0 ⭐ | 0 🔁 | 0 💬\n"
-         "\n"
-         "\n"
-         "<p><span class=\"h-card\"><a href=\"https://social.bau-ha.us/@CCC\" class=\"u-url mention\">@<span>CCC</span></a></span> At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>\n"
-         "  Eugen (@Gargron) 2021-11-11 01:00:00\n  "
-         mastodon-tl--horiz-bar
-         " 0 ⭐ | 2 🔁 | 0 💬\n"
-         "\n"
+         ;; we check for interactive, as the table width is dependent upon the frame width:
+         (if (not noninteractive)
+             "\n[img] [img] \nEugen\n@Gargron\n ――――――――――――\n<p>Developer of Mastodon and administrator of mastodon.social. I post service announcements, development updates, and personal stuff.</p>\n+––––––––––+–––––––––––––––––––+\n| Joined:  | Joined March 2016 |\n+––––––––––+–––––––––––––––––––+\n+––––––––––+––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––+\n| Patreon  |         <a href=\"https://www.patreon.com/mastodon\" rel=\"me nofollow noopener noreferrer\"         |\n|          |                 target=\"_blank\"><span class=\"invisible\">https://www.</span><span                 |\n|          |             class=\"\">patreon.com/mastodon</span><span class=\"invisible\"></span></a>              |\n+––––––––––+––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––+\n| Homepage | <a href=\"https://zeonfederated.com\" rel=\"me nofollow noopener noreferrer\" target=\"_blank\"><span  |\n|          |          class=\"invisible\">https://</span><span class=\"\">zeonfederated.com</span><span           |\n|          |                                  class=\"invisible\"></span></a>                                   |\n+––––––––––+––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––+\n+–––––––––––––––+–––––––––––––––––––+––––––––––––––––+\n| TOOTS: 70741  | FOLLOWERS: 470905 | FOLLOWING: 451 |\n+–––––––––––––––+–––––––––––––––––––+––––––––––––––––+\nView: statuses   \n\n<p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.</p>\n\n  ⁨Eugen⁩ (⁨@Gargron⁩) 2021-11-11 12:11:11\n  ―――――――――――― 0 ⭐ | 0 🔁 | 0 💬 | \n\n\n<p><span class=\"h-card\"><a href=\"https://social.bau-ha.us/@CCC\" class=\"u-url mention\">@<span>CCC</span></a></span> At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>\n\n  ⁨Eugen⁩ (⁨@Gargron⁩) 2021-11-11 01:00:00\n  ―――――――――――― 0 ⭐ | 2 🔁 | 0 💬 | \n\n"
+           ;; batch mode:
+           "\n[img] [img] \nEugen\n@Gargron\n ――――――――――――\n<p>Developer of Mastodon and administrator of mastodon.social. I post service announcements, development updates, and personal stuff.</p>\n+––––––––––+–––––––––––––––––––+\n| Joined:  | Joined March 2016 |\n+––––––––––+–––––––––––––––––––+\n+––––––––––+––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––+\n| Patreon  |  <a href=\"https://www.patreon.com/mastodon\" rel=\"me nofollow   |\n|          |           noopener noreferrer\" target=\"_blank\"><span           |\n|          |           class=\"invisible\">https://www.</span><span           |\n|          |           class=\"\">patreon.com/mastodon</span><span            |\n|          |                 class=\"invisible\"></span></a>                  |\n+––––––––––+––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––+\n| Homepage | <a href=\"https://zeonfederated.com\" rel=\"me nofollow noopener  |\n|          |               noreferrer\" target=\"_blank\"><span                |\n|          |             class=\"invisible\">https://</span><span             |\n|          |             class=\"\">zeonfederated.com</span><span             |\n|          |                 class=\"invisible\"></span></a>                  |\n+––––––––––+––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––––+\n+–––––––––––––––+–––––––––––––––––––+––––––––––––––––+\n| TOOTS: 70741  | FOLLOWERS: 470905 | FOLLOWING: 451 |\n+–––––––––––––––+–––––––––––––––––––+––––––––––––––––+\nView: statuses   \n\n<p>Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt ut labore et dolore magna aliquyam erat, sed diam voluptua.</p>\n\n⁨Eugen⁩ (⁨@Gargron⁩) 2021-11-11 12:11:11\n  ―――――――――――― 0 ⭐ | 0 🔁 | 0 💬 | \n\n\n<p><span class=\"h-card\"><a href=\"https://social.bau-ha.us/@CCC\" class=\"u-url mention\">@<span>CCC</span></a></span> At vero eos et accusam et justo duo dolores et ea rebum. Stet clita kasd gubergren, no sea takimata sanctus est Lorem ipsum dolor sit amet.</p>\n\n⁨Eugen⁩ (⁨@Gargron⁩) 2021-11-11 01:00:00\n  ―――――――――――― 0 ⭐ | 2 🔁 | 0 💬 | \n\n")
          )))
-
       ;; Until the function gets refactored this creates a non-temp
       ;; buffer with Gargron's statuses which we want to delete (if
       ;; the tests succeed).
-      (kill-buffer))))
+      (with-current-buffer "*mastodon-Gargron-statuses*"
+        (kill-buffer)))))

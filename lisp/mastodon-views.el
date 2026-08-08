@@ -41,6 +41,8 @@
 (defvar mastodon-mode-map)
 (defvar mastodon-tl--horiz-bar)
 (defvar mastodon-tl--timeline-posts-count)
+(defvar mastodon-profile-credential-account)
+(defvar mastodon-profile--account)
 
 (autoload 'mastodon-mode "mastodon")
 (autoload 'mastodon-tl--init "mastodon-tl")
@@ -65,6 +67,14 @@
 (autoload 'mastodon-search--insert-users-propertized "mastodon-search")
 (autoload 'mastodon-tl--map-alist "mastodon-tl")
 (autoload 'mastodon-tl--map-alist-vals-to-alist "mastodon-tl")
+(autoload 'mastodon-search--insert-heading "mastodon-search")
+(autoload 'mastodon-profile--profile-json "mastodon-profile")
+(autoload 'mastodon-profile--pretty-table "mastodon-profile")
+(autoload 'mastodon-profile--insert-fields "mastodon-profile")
+(autoload 'mastodon-search-propertize-user-handle "mastodon-search")
+(autoload 'mastodon-tl--render-base-tag "mastodon-tl")
+(autoload 'mastodon-tl--buffer-property "mastodon-tl")
+(autoload 'mastodon-profile--item-json "mastodon-profile")
 
 
 ;;; KEYMAPS
@@ -156,6 +166,15 @@
 
 ;;; GENERAL FUNCTION
 
+(defun mastodon-views-no-data-str (thing)
+  "Return a no-data string for object type THING."
+  (propertize
+   (format "Looks like you have no %s for now." thing)
+   'face 'mastodon-toot-docs-face
+   'byline t
+   'item-type 'no-item ; for nav
+   'item-id "0")) ; so point can move here when no item
+
 (defun mastodon-views--minor-view (view-name insert-fun data)
   "Load a minor view named VIEW-NAME.
 BINDINGS-STRING is a string explaining the view's local bindings.
@@ -169,12 +188,7 @@ provides the JSON data."
   ;; to set up the empty buffer or else call the insert-fun. not sure if we cd
   ;; improve by eg calling init-sync in here, making this a real view function.
   (if (seq-empty-p data)
-      (insert (propertize
-               (format "Looks like you have no %s for now." view-name)
-               'face 'mastodon-toot-docs-face
-               'byline t
-               'item-type 'no-item ; for nav
-               'item-id "0")) ; so point can move here when no item
+      (insert (mastodon-views-no-data-str view-name))
     (funcall insert-fun data)
     (goto-char (point-min)))
   ;; (when data
@@ -635,7 +649,7 @@ JSON is the filters data."
     (mastodon-views--end-of-table)))
 
 (defun mastodon-views--end-of-table ()
-  ""
+  "Go to end of table."
   (while (re-search-forward ;; goto end of table:
           (concat table-cell-horizontal-chars
                   (make-string 1 table-cell-intersection-char)
@@ -778,7 +792,7 @@ When t, whole words means only match whole words."
            (url (mastodon-http--api-v2 (format "filters/keywords/%s" id)))
            (resp (mastodon-http--put url params)))
       (mastodon-views--filters-triage resp
-                                      (format "Keyword %s updated!" updated)))))
+                        (format "Keyword %s updated!" updated)))))
 
 (defun mastodon-views--filters-triage (resp msg-str)
   "Triage filter action response RESP, reload filters, message MSG-STR."
@@ -804,7 +818,7 @@ When t, whole words means only match whole words."
            (url (mastodon-http--api-v2 (format "filters/%s/keywords" id)))
            (resp (mastodon-http--post url params)))
       (mastodon-views--filters-triage resp
-                                      (format "Keyword %s added!" kw)))))
+                        (format "Keyword %s added!" kw)))))
 
 (defun mastodon-views-remove-filter-kw ()
   "Remove keyword from filter at point."
@@ -952,7 +966,7 @@ USER, BRIEF, and INSTANCE are all for
   (mastodon-views-view-instance-description user brief instance :miskey))
 
 (defun mastodon-views--instance-response-fun (response brief instance
-                                                       &optional misskey)
+                                         &optional misskey)
   "Display instance description RESPONSE in a new buffer.
 BRIEF means to show fewer details.
 INSTANCE is the instance were are working with.
@@ -1069,6 +1083,408 @@ IND is the optional indentation level to print at."
              (< 50 (length rend)))
         "\n"
       "")))
+
+;;; COLLECTIONS
+
+;; collections are sortable in the web UI but not via the API.
+;; sort: date added, last active, most followers, alphabetical
+
+(defun mastodon-views-get-collection (id)
+  "Return collection with ID."
+  (let ((url (mastodon-http--api
+              (format "collections/%s" id))))
+    (mastodon-http--get-json url)))
+
+(defun mastodon-views-get-account-collections (id)
+  "Return collections for account with ID."
+  (let ((url (mastodon-http--api
+              (format "accounts/%s/collections" id))))
+    (alist-get 'collections
+               (mastodon-http--get-json url))))
+
+(defun mastodon-views-current-account-collections ()
+  "Return collections featuring `mastodon-active-user'."
+  (let* ((id (alist-get 'id mastodon-profile-credential-account))
+         (url (mastodon-http--api
+               (format "accounts/%s/in_collections" id))))
+    (alist-get 'collections
+               (mastodon-http--get-json url))))
+
+(defun mastodon-views-account-to-collection (account-id coll-id)
+  "Add ACCOUNT-ID to collection with COLL-ID."
+  (let* ((url (mastodon-http--api
+               (format "collections/%s/items" coll-id)))
+         (params `(("account_id" . ,account-id))))
+    (mastodon-http--post url params)))
+
+(defun mastodon-views-account-from-collection (coll-id item-id)
+  "Remove account ITEM-ID from coll COLL-ID.
+Makes a DELETE request."
+  (let ((url (mastodon-http--api
+              (format "collections/%s/items/%s"
+                      coll-id item-id))))
+    (mastodon-http--delete url)))
+
+(defun mastodon-views-post-new-collection (name &optional desc tag sensitive discoverable)
+  ;; TODO: language account_ids
+  "POST a new collection with NAME to the server.
+Optionally specify DESC, a description, and TAG, a hashtag.
+SENSITIVE means mark the collection as sensitive.
+DISCOVERABLE means mark the collection as discoverable.
+If the latter is not given, the collection will not be visible to others
+on the user's profile, or in search results."
+  (let ((url (mastodon-http--api "collections"))
+        (params `(("name" . ,name)
+                  ,@(when desc `(("description" . ,desc)))
+                  ,@(when tag `(("tag_name" . ,tag)))
+                  ("discoverable" . ,(if discoverable "true" "false"))
+                  ("sensitive"    . ,(if sensitive "true" "false")))))
+    (mastodon-http--post url params)))
+
+(defun mastodon-views-patch-collection (id
+                          &optional name desc tag lang sensitive discoverable)
+  "Send a PATCH request for a collection.
+ID is for the collection.
+NAME is the collection name.
+DESC is description.
+TAG is a hashtag, including #.
+LANG is language, two letter code.
+SENSITIVE and DISCOVERABLE are JSON booleans."
+  (let ((url (mastodon-http--api (format "collections/%s" id)))
+        (params `(,@(when name `(("name" . ,name)))
+                  ,@(when desc `(("description" . ,desc)))
+                  ,@(when tag  `(("tag_name" . ,tag)))
+                  ,@(when lang `(("language" . ,lang)))
+                  ,@(when sensitive `(("sensitive" . ,sensitive)))
+                  ,@(when discoverable `(("discoverable" . ,discoverable))))))
+    (mastodon-http--patch url params :json)))
+
+(defun mastodon-views-post-revoke-inclusion (coll-id item-id)
+  "POST request to revoke own inclusion in a collection.
+COLL-ID is of the collection, ITEM-ID is the item to revoke."
+  (let ((url (mastodon-http--api
+              (format "collections/%s/items/%s/revoke" coll-id item-id))))
+    (mastodon-http--post url)))
+
+(defun mastodon-views-del-collection (id)
+  "Send request to DELETE collection with ID to server."
+  (let ((url (mastodon-http--api (format "collections/%s" id))))
+    (mastodon-http--delete url)))
+
+(defun mastodon-views--insert-collection (json)
+  "Insert the collection from JSON."
+  (if (not json)
+      (mastodon-views-no-data-str "collection")
+    (let-alist json
+      ;; add coll data to buffer-spec:
+      (plist-put mastodon-tl--buffer-spec
+                 'collection json)
+      (mastodon-search--insert-heading
+       (concat "collection ".collection.name))
+      ;; (setq test-coll .collection)
+      ;; FIXME: in collection view, web UI:
+      ;; - collection is sharable (ie copy URL, need to store coll JSON somewhere)
+      ;; - coll is editable (edit details, need keymap, & instructions str?)
+      (mastodon-profile--pretty-table
+       #'mastodon-profile--insert-fields
+       nil
+       `(("topic" . ,(mastodon-tl--render-base-tag .collection.tag nil))
+         ("by" . ,(mastodon-search-propertize-user-handle
+                   (alist-get 'username (car .accounts))))
+         ("desc" . ,.collection.description)
+         ("items" . ,(number-to-string .collection.item_count))))
+      (insert "\n")
+      ;; FIXME: confirm if first acct is owner?
+      (mastodon-views--insert-users-propertized-note (cdr .accounts)))))
+
+(defun mastodon-views-read-account-collection (json &optional return-id)
+  "Read a collection by name and return its data.
+JSON is the profile data to get collections for.
+If RETURN-ID, return only the collection's ID."
+  (let* ((id (alist-get 'id json))
+         (colls (mastodon-views-get-account-collections id)))
+    (if (not colls)
+        (user-error "No collections by this user found")
+      (mastodon-views-read-collection colls return-id))))
+
+(defun mastodon-views-read-collection (colls &optional return-id)
+  "Read a collection in COLLS and return its data.
+If RETURN-ID, return only the collection's ID."
+  (let* ((cands (cl-loop for x in colls
+                         collect (cons (alist-get 'name x)
+                                       (alist-get 'id x))))
+         (choice (completing-read "Collection: " cands nil :match)))
+    (if return-id
+        (alist-get choice cands nil nil #'string=)
+      ;; return coll data:
+      (cl-find-if
+       (lambda (x)
+         (string= choice
+                  (alist-get 'name x)))
+       colls))))
+
+(defun mastodon-views-reload-collection ()
+  "Reload current collection view."
+  (interactive)
+  (let* ((coll (mastodon-tl--buffer-property 'collection)))
+    (if (not coll)
+        (user-error "Not in a collection view")
+      (mastodon-views-view-collection (alist-get 'collection coll)))))
+
+(defvar mastodon-views-collection-map
+  (let ((map (make-sparse-keymap)))
+    (set-keymap-parent map mastodon-views-map)
+    (define-key map (kbd "g") #'mastodon-views-reload-collection)
+    map)
+  "Keymap for viewing collections.")
+
+(defun mastodon-views-view-collection* (buf id)
+  "View collection with ID, set map in BUF."
+  (mastodon-tl--init-sync
+   buf (format "collections/%s" id)
+   'mastodon-views--insert-collection)
+  (with-current-buffer (format "*mastodon-%s*" buf)
+    (use-local-map mastodon-views-collection-map)))
+
+;;;###autoload
+(defun mastodon-views-view-profile-collection ()
+  "Prompt for a user profile collection and view it.
+Must be called from a user's profile."
+  (interactive)
+  (if (not mastodon-profile--account)
+      (user-error "Not in a profile view")
+    (let* ((profile (mastodon-profile--profile-json))
+           (coll (mastodon-views-read-account-collection profile))
+           (buf (format "collection-%s" (alist-get 'name coll))))
+      (mastodon-views-view-collection* buf (alist-get 'id coll)))))
+
+(defun mastodon-views-view-collection (coll)
+  "View collection COLL, json data."
+  (let-alist coll
+    (let ((buf (format "collection-%s" .name)))
+      (mastodon-views-view-collection* buf .id))))
+
+;;;###autoload
+(defun mastodon-views-view-own-collection (&optional coll)
+  "Prompt for a collection of yours and view it.
+Optionally, view COLL, collection JSON data."
+  (interactive)
+  (let* ((colls (unless coll
+                  (mastodon-views-get-account-collections
+                   (alist-get 'id mastodon-profile-credential-account))))
+         (coll (or coll (mastodon-views-read-collection colls)))
+         (buf (format "collection-%s" (alist-get 'name coll))))
+    (mastodon-views-view-collection* buf (alist-get 'id coll))))
+
+;;;###autoload
+(defun mastodon-views-collections-user-in ()
+  "Prompt for a collection you are in and view it."
+  (interactive)
+  (let* ((colls (mastodon-views-current-account-collections))
+         (coll (mastodon-views-read-collection colls)))
+    (mastodon-tl--init-sync
+     (format "collection-%s" (alist-get 'name coll))
+     (format "collections/%s" (alist-get 'id coll))
+     'mastodon-views--insert-collection)))
+
+;;;###autoload
+(defun mastodon-views-add-to-collection ()
+  "Add account being viewed to a collection.
+Must be called from a user's profile.
+A Mastodon collection can contain max of 25 accounts, other servers
+may handle up to 150.
+Will error 422 if account already added.
+Will error 403 if permission to add is lacking."
+  ;; FIXME: ideally we could tirage and handle these errors
+  ;; usually masto APIs don't error when trying to add something already
+  ;; in something... sigh
+  ;; FIXME: i was unable to add my own account using the API, but was able
+  ;; to do so in the web UI...
+  (interactive)
+  (let* ((profile (mastodon-profile--profile-json)))
+    (if (member (map-nested-elt profile '(feature_approval current_user))
+                '("denied" "missing"))
+        (user-error "You don't have permission to add this user to a collection")
+      (let* ((colls (mastodon-views-get-account-collections
+                     (alist-get 'id mastodon-profile-credential-account)))
+             (coll (mastodon-views-read-collection colls))
+             (resp (mastodon-views-account-to-collection (alist-get 'id profile)
+                                           (alist-get 'id coll))))
+        (mastodon-http--triage
+         resp
+         (lambda (_)
+           (message "Account %s added to collection %s!"
+                    (alist-get 'acct profile)
+                    (alist-get 'name coll))))))))
+
+(defun mastodon-views-remove-from-collection ()
+  "Remove item at point from collection.
+Must be called from a collection view."
+  (interactive)
+  (if (not (mastodon-tl--buffer-type-eq 'collection))
+      (user-error "Not in a collection view"))
+  (let* ((coll-id (car
+                   (last
+                    (split-string
+                     (mastodon-tl--buffer-property 'endpoint)
+                     "/"))))
+         (account-id (alist-get 'id (mastodon-profile--item-json))))
+    (if (not (eq 'user (mastodon-tl--property 'item-type :no-move)))
+        (user-error "No item at point?")
+      (let* ((data (plist-get mastodon-tl--buffer-spec 'collection))
+             (account-data (cl-find-if
+                            (lambda (x)
+                              (string= account-id (alist-get 'id x)))
+                            (alist-get 'accounts data)))
+             (item-id
+              (alist-get 'id
+                         (cl-find-if
+                          (lambda (x)
+                            (string= account-id
+                                     (alist-get 'account_id x)))
+                          (map-nested-elt data '(collection items))))))
+        (when (y-or-n-p
+               (format "Remove item %s from collection?"
+                       (alist-get 'acct account-data)))
+          (let ((resp (mastodon-views-account-from-collection coll-id item-id)))
+            (mastodon-http--triage
+             resp
+             (lambda (_)
+               (mastodon-views-view-own-collection (alist-get 'collection data))
+               (message "Account %s removed from collection %s!"
+                        (alist-get 'acct account-data)
+                        (map-nested-elt data '(collection name)))))))))))
+
+;;;###autoload
+(defun mastodon-views-create-collection ()
+  "Create a new collection."
+  (interactive)
+  ;; TODO: check collection_limit, default max is 10
+  (let* ((name (read-string "Collection name: "))
+         (desc (read-string "Description [optional]: "))
+         (tag (read-string "Tag [optional]: "))
+         ;; ensure tag is prefixed #:
+         (tag-sane (if (not (string-prefix-p "#" tag))
+                       (format "#%s" tag)
+                     tag))
+         ;; TODO: user specifies sensitive/discoverable args, but default
+         ;; to "true":
+         (resp (mastodon-views-post-new-collection name desc tag-sane :sensitive :disco)))
+    (mastodon-http--triage
+     resp
+     (lambda (resp)
+       (let ((json (with-current-buffer resp
+                     (mastodon-http--process-json))))
+         (mastodon-views-view-own-collection (alist-get 'collection json))
+         (message "Collection %s created!" name))))))
+
+;; TODO: add account to coll from coll view
+;; would need to be a search interface...
+
+(defun mastodon-views-delete-collection ()
+  "Delete the collection currently being viewed.
+Must be called from a collection view buffer."
+  (interactive)
+  (if (not (mastodon-tl--buffer-type-eq 'collection))
+      (user-error "Not in a collection view")
+    (let* ((data (mastodon-tl--buffer-property 'collection))
+           (id (map-nested-elt data '(collection id)))
+           (name (map-nested-elt data '(collection name))))
+      (when (y-or-n-p (format "Delete collection %s?" name))
+        (let ((resp (mastodon-views-del-collection id)))
+          (mastodon-http--triage
+           resp
+           (lambda (_)
+             (message "Collection %s deleted!" name)
+             (kill-current-buffer))))))))
+
+;;;###autoload
+(defun mastodon-views-revoke-collection-inclusion ()
+  "Revoke your inclusion in a collection.
+Must be called from a collection buffer.
+You must be in the collection."
+  (interactive)
+  (if (not (mastodon-tl--buffer-type-eq 'collection))
+      (user-error "Not in a collection view")
+    (let* ((data (mastodon-tl--buffer-property 'collection))
+           (self-item (cl-find-if
+                       (lambda (x)
+                         (string=
+                          (alist-get 'id mastodon-profile-credential-account)
+                          (alist-get 'account_id x)))
+                       (map-nested-elt data '(collection items)))))
+      (if (not self-item)
+          (user-error "Looks like you're not in this collection")
+        (when (y-or-n-p "Remove yourself from this collection?")
+          (let ((resp (mastodon-views-post-revoke-inclusion
+                       (map-nested-elt data '(collection id))
+                       (alist-get 'id self-item))))
+            (mastodon-http--triage
+             resp
+             (lambda (_)
+               (message "Removed you from collection %s!"
+                        (map-nested-elt data '(collection name)))))))))))
+
+(defun mastodon-views-update-current-collection ()
+  "Edit the collection being viewed if permitted."
+  (interactive)
+  (let ((coll (mastodon-tl--buffer-property 'collection)))
+    (cond ((not coll)
+           (user-error "Not in a collection view"))
+          ((not (string= (alist-get 'id mastodon-profile-credential-account)
+                         (map-nested-elt coll '(collection account_id))))
+           (user-error "Not a collection you own"))
+          (t
+           (mastodon-views-update-collection (alist-get 'collection coll))))))
+
+;;;###autoload
+(defun mastodon-views-update-collection (&optional coll)
+  "Prompt for a collection and edit it.
+Optionally edit COLL, json data."
+  (interactive)
+  (let* ((colls (unless coll
+                  (mastodon-views-get-account-collections
+                   (alist-get 'id mastodon-profile-credential-account))))
+         (coll (or coll (mastodon-views-read-collection colls))))
+    (let-alist coll
+      (let* ((name (read-string "Collection name: "
+                                .name))
+             (desc (read-string "Collection description: "
+                                .description))
+             (tag-raw (read-string "Tag [optional]: "
+                                   .tag.name))
+             ;; ensure tag is prefixed #:
+             (tag (if (not (string-prefix-p "#" tag-raw))
+                      (format "#%s" tag-raw)
+                    tag-raw))
+             (lang (alist-get
+                    (completing-read
+                     "Language for this toot [max 100 chars]: "
+                     mastodon-iso-639-1
+                     nil :match .language)
+                    mastodon-iso-639-1 nil nil #'string=))
+             (sensitive (completing-read
+                         "Sensitive: "
+                         '("true" "false")
+                         nil :match nil nil (if (eq t .sensitive)
+                                                "true"
+                                              "false")))
+             (disco (completing-read
+                     "Discoverable [inc. on your profile]: "
+                     '("true" "false")
+                     nil :match
+                     nil nil (if (eq t .discoverable)
+                                 "true"
+                               "false")))
+             (resp (mastodon-views-patch-collection .id name desc tag lang sensitive disco)))
+        (mastodon-http--triage
+         resp
+         (lambda (resp)
+           (let ((json (with-current-buffer resp
+                         (mastodon-http--process-json))))
+             (mastodon-views-view-own-collection (alist-get 'collection json))
+             (message "Collection %s updated!"
+                      (map-nested-elt json '(collection name))))))))))
 
 (provide 'mastodon-views)
 ;;; mastodon-views.el ends here
