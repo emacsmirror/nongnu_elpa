@@ -1041,24 +1041,33 @@ undone exactly.  VM does not write this variant.
 
 @item mboxcl
 The end of a message is found from its @code{Content-Length} header, and
-body lines are @emph{still} quoted as in mboxo.  VM's
-@code{From_-with-Content-Length} is this variant.
+body lines are @emph{still} quoted as in mboxo.  VM does not write this
+variant: quoting a body it has already measured alters the message for no
+gain.
 
 @item mboxcl2
-As mboxcl, but with no quoting at all: the byte count alone says where the
-message ends, so the body is stored exactly as it arrived.  VM does not
-write this variant yet.
+As mboxcl, but with no quoting at all: the count alone says where the
+message ends, so the body is stored exactly as it arrived.  VM's
+@code{From_-with-Content-Length} is this variant.
 @end table
 
 @noindent
-VM reads and writes the first and the third of these.  It has no name of its
-own for mboxrd and does not write mboxcl2 yet.
+VM reads and writes the first and the last of these.  It has no name of its
+own for mboxrd, and does not write mboxcl.
+
+@vindex vm-default-folder-type
+VM wrote mboxcl until 2026: @code{From_-with-Content-Length} folders were
+given a @code{Content-Length} header @emph{and} had their bodies quoted.
+Reading is unaffected either way, since VM has never unquoted a body, so a
+folder written before that change reads exactly as it did; what changed is
+that new messages are no longer altered on the way in.
 
 @cindex archiving mail
 The reason to care is that the first three change the message.  A folder
 kept for its own sake -- an archive, or anything you may want to verify
 later -- is better in a format that does not, and mboxcl2 is the only one of
-the four that does not.  All four are described in the Library of Congress's
+the four that does not.  It is what @code{vm-default-folder-type} should be
+set to for a folder kept as a record.  All four are described in the Library of Congress's
 registry of formats for digital preservation, which exists to record how
 well a format suits keeping things: mboxcl2 is @code{fdd000387}, mboxcl
 @code{fdd000386}, mboxrd @code{fdd000385} and mboxo @code{fdd000384}.  Those

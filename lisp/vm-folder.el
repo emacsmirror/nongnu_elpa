@@ -867,7 +867,14 @@ message."
   "Munge message separators of FOLDER-TYPE found between START and END.
 This function is used to eliminate message separators for a particular
 folder type that happen to occur in a message.  \">\" is prepended to such
-separators."
+separators.
+
+`From_-with-Content-Length' is not one of them, and that is the whole
+difference between the two Content-Length mbox variants.  A folder that
+finds the end of a message by counting its bytes has no need to disfigure a
+body line that begins \"From \", and doing both is mboxcl where doing only
+the counting is mboxcl2 -- the one variant of the four that stores a message
+as it arrived.  Issue #466."
   (save-excursion
     ;; when munging From-type separators it is best to use the
     ;; least forgiving of the folder types, so that we don't
@@ -876,8 +883,7 @@ separators."
     (if (eq folder-type 'From_)
 	(setq folder-type 'BellFrom_))
     (let ((vm-folder-type folder-type))
-      (cond ((memq folder-type '(From_ From_-with-Content-Length mmdf
-				 BellFrom_ babyl))
+      (cond ((memq folder-type '(From_ mmdf BellFrom_ babyl))
 	     (setq end (vm-marker end))
 	     (goto-char start)
 	     (while (and (vm-find-leading-message-separator)

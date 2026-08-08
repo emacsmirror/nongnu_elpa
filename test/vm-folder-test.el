@@ -2161,6 +2161,49 @@ one message rather than the rest of the folder."
     (should (<= 1 (length vm-message-list)))
     (should (equal "subject 1" (vm-su-subject (car vm-message-list))))))
 
+
+;;; A Content-Length folder is not quoted (issue #466)
+
+(ert-deftest vm-folder-test-content-length-type-is-not-munged ()
+  "REGRESSION: writing to a Content-Length folder leaves `From ' lines alone.
+That is the whole difference between the two Content-Length mbox variants.
+A folder that finds the end of a message by counting its bytes has no need
+to disfigure a body line beginning `From ', and doing both is mboxcl where
+doing only the counting is mboxcl2 -- the one variant of the four that
+stores a message as it arrived.  VM used to do both."
+  (with-temp-buffer
+    (insert "From: a@b\nSubject: s\n\nbody\n"
+            "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
+    (vm-munge-message-separators 'From_-with-Content-Length
+                                 (point-min) (point-max))
+    (should (string-match-p "\nFrom nobody@example.com" (buffer-string)))
+    (should-not (string-match-p ">From " (buffer-string)))))
+
+(ert-deftest vm-folder-test-line-based-types-are-still-munged ()
+  "The types whose message boundary is a `From ' line still quote one in a body.
+Only those: for mmdf and babyl a `From ' line is not a separator and means
+nothing, so there is nothing for them to quote."
+  (dolist (type '(From_ BellFrom_))
+    (with-temp-buffer
+      (insert "From: a@b\nSubject: s\n\nbody\n"
+              "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
+      (vm-munge-message-separators type (point-min) (point-max))
+      (should (string-match-p ">From nobody@example.com" (buffer-string)))))
+  (dolist (type '(mmdf babyl))
+    (with-temp-buffer
+      (insert "From: a@b\nSubject: s\n\nbody\n"
+              "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
+      (vm-munge-message-separators type (point-min) (point-max))
+      (should-not (string-match-p ">From " (buffer-string))))))
+
+(ert-deftest vm-folder-test-mmdf-munges-its-own-separator ()
+  "Each type quotes the thing that would end a message in it, and mmdf's is
+its own four control characters rather than a `From ' line."
+  (with-temp-buffer
+    (insert "From: a@b\nSubject: s\n\nbody\n\nmore\n")
+    (vm-munge-message-separators 'mmdf (point-min) (point-max))
+    (should (string-match-p ">" (buffer-string)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

@@ -319,6 +319,15 @@ VM 8.?.?
     text stayed in a file nobody had open.  `vm-quit' is unchanged and remains
     the orderly way to leave a folder: it keeps the virtual folders and takes
     this folder's messages out of them.
+  * A `From_-with-Content-Length' folder is no longer quoted.  VM wrote both
+    a `Content-Length' header and a `>From ' quoting of body lines, which is
+    the mbox variant called mboxcl; writing only the count is mboxcl2, the
+    one variant that stores a message exactly as it arrived, and is what VM
+    writes now.  A folder that finds the end of a message by counting its
+    bytes has no use for the quoting.
+    Reading is unchanged, and so are existing folders: VM has never unquoted
+    a body, so a folder written before this reads exactly as it did.  Only
+    messages written from now on are left unaltered.
   * A copy filed by an `FCC:' header is written in the format of the folder
     it goes into.  VM used to hand this to Emacs's sendmail.el, which writes
     one format whatever the folder is, so filing into a folder delimited by
