@@ -758,6 +758,96 @@ to the recipient, and nothing else in sendmail.el or smtpmail.el does that."
     (should-not (string-match-p "^Fcc:" (buffer-string)))
     (should (string-match-p "^Subject: filed$" (buffer-string)))))
 
+(ert-deftest vm-reply-test-fcc-into-a-visited-folder ()
+  "A folder VM is visiting is appended to in its buffer, not behind its back.
+Writing the file under a live folder buffer would leave the two disagreeing
+until someone reverted.  The branch has its own bookkeeping -- the message
+count and the undo records -- so it is worth exercising rather than assuming."
+  (vm-test-with-real-folder (2)
+    (let ((folder buffer-file-name)
+          (before (length vm-message-list))
+          (folder-buffer (current-buffer)))
+      (with-temp-buffer
+        (insert "To: someone@example.com\nSubject: filed\n"
+                "Fcc: " folder "\n" mail-header-separator "\nbody\n")
+        (vm-do-fcc-in-composition))
+      (with-current-buffer folder-buffer
+        ;; it went into the buffer, and VM counted it
+        (should (= (1+ before) (length vm-message-list)))
+        (should (string-match-p "^Subject: filed$"
+                                (save-restriction (widen) (buffer-string))))
+        ;; and the file on disk was not written behind the buffer's back,
+        ;; which would leave the two disagreeing until someone reverted
+        (should (= 2 (with-temp-buffer
+                       (insert-file-contents folder)
+                       (cl-count-if (lambda (l) (string-prefix-p "From " l))
+                                    (split-string (buffer-string) "\n")))))))))
+
+(ert-deftest vm-reply-test-fcc-refuses-a-folder-it-cannot-read ()
+  "A folder whose type VM does not recognize is not written to.
+Appending to it in some other format is how a folder gets two formats in it."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "junk" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert "this is not a mail folder at all\n")
+            (write-region (point-min) (point-max) folder))
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: filed\n"
+                    "Fcc: " folder "\n" mail-header-separator "\nbody\n")
+            (let ((text-quoting-style 'grave))
+              (should-error (vm-do-fcc-in-composition) :type 'error)))
+          ;; and it was left as it was
+          (should (equal "this is not a mail folder at all\n"
+                         (vm-reply-test--folder-text folder))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-is-filed-once-through-the-send ()
+  "Sending files exactly one copy, and the sent message has no Fcc header.
+This is the wiring rather than the parts: `vm-mail-send' files the copy
+itself and then binds `mail-do-fcc' to something that only strips the
+header, because the real one would file a second copy.  `mail-send' is
+stubbed here with something that does what the send functions do -- copy the
+message and call `mail-do-fcc' on the copy."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir))
+         (sent nil))
+    (unwind-protect
+        (with-temp-buffer
+          (insert "To: someone@example.com\nSubject: filed\n"
+                  "Fcc: " folder "\n" mail-header-separator "\nbody\n")
+          (let ((vm-default-folder-type 'From_)
+                (composition (current-buffer)))
+            (cl-letf (((symbol-function 'mail-send)
+                       (lambda ()
+                         ;; what sendmail-send-it and smtpmail-send-it do
+                         (with-temp-buffer
+                           (insert-buffer-substring composition)
+                           (goto-char (point-min))
+                           (re-search-forward
+                            (concat "^" (regexp-quote mail-header-separator)
+                                    "$"))
+                           (replace-match "")
+                           (mail-do-fcc (point-marker))
+                           (setq sent (buffer-string))))))
+              (vm-do-fcc-in-composition)
+              (cl-letf (((symbol-function 'mail-do-fcc)
+                         #'vm-fcc-strip-headers))
+                (mail-send))))
+          ;; one copy filed, not two
+          (should (= 1 (cl-count-if
+                        (lambda (l) (string-prefix-p "From VM " l))
+                        (split-string (vm-reply-test--folder-text folder)
+                                      "\n"))))
+          ;; the message that went out does not name the folder
+          (should sent)
+          (should-not (string-match-p "^Fcc:" sent))
+          (should (string-match-p "^Subject: filed$" sent))
+          ;; the composition still does
+          (should (string-match-p "^Fcc:" (buffer-string))))
+      (delete-directory dir t))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here

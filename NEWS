@@ -319,6 +319,17 @@ VM 8.?.?
     text stayed in a file nobody had open.  `vm-quit' is unchanged and remains
     the orderly way to leave a folder: it keeps the virtual folders and takes
     this folder's messages out of them.
+  * A copy filed by an `FCC:' header is written in the format of the folder
+    it goes into.  VM used to hand this to Emacs's sendmail.el, which writes
+    one format whatever the folder is, so filing into a folder delimited by
+    `Content-Length' headers appended a message with no such header and the
+    folder stopped reading back the way it was written.
+  * The `FCC:' header now stays in the composition after the message is sent,
+    so the buffer VM leaves behind still says where the copy went, and
+    editing it and sending again files another copy.  It used to be removed,
+    which meant a resent message was filed nowhere and said nothing.  The
+    header is still kept out of the message that goes out and out of the
+    copy that is filed.
   * Three user options whose names were misspelled have been renamed.  **The
     misspellings are gone, not aliased**, so if your configuration sets one it
     now has no effect at all -- silently, since nothing is left to warn about.

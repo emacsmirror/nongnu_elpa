@@ -4052,6 +4052,23 @@ also files a copy of everything you send through its @acronym{SMTP}
 server, so an @samp{@acronym{IMAP}-FCC:} header is only needed if you
 send by some other route.
 
+@cindex folder type of a sent copy
+The copy is written in the format of the folder it goes into, which VM works
+out the same way it does when visiting one.  A copy filed in a folder that
+uses @code{Content-Length} headers is given one; a copy filed where the
+message boundary is a @samp{From } line has its body quoted as that format
+requires.  @xref{Folder types}.  Before VM did this itself the copy was
+always written one way, so filing into a @code{Content-Length} folder left
+it with a message the counts did not describe.
+
+@cindex FCC header after sending
+The @samp{FCC:} header stays in the composition after the message has gone,
+so the buffer VM leaves you with still says where the copy went.  Editing
+that buffer and sending it again therefore files another copy.  The header
+is not in the message that is sent, nor in the copy that is filed: the first
+would tell the recipient a path on your machine, and the second does not
+need to say where it already is.
+
 @vindex vm-do-fcc-before-mime-encode
 The variable @code{vm-do-fcc-before-mime-encode} allows you save the fcc
 copy to the sent folder @i{before} mime-encoding the message.  This is
