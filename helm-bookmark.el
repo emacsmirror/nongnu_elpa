@@ -211,7 +211,7 @@ will be honored."
     (when display-function
       (funcall display-function helm-current-buffer)
       (setq qr (window-parameter (selected-window) 'quit-restore)))
-    (bookmark-jump candidate)
+    (bookmark--jump-via candidate #'pop-to-buffer-same-window)
     (set-window-prev-buffers (selected-window) nil)
     (when qr
       (set-window-parameter (selected-window) 'quit-restore
