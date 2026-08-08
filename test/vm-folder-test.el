@@ -1852,6 +1852,209 @@ The command is an IMAP one; nothing else has a UID to put in it."
       (vm-set-message-access-method-of (car messages) 'pop)
       (should-not (vm-messages-to-fetch-together messages)))))
 
+;;; A From_ line inside a header block is a separator (issue #562)
+
+;; An mbox whose writer left out the blank line between two messages used to be
+;; read as one message with the second one's headers as its body.  A
+;; `From '-looking line inside a header block cannot be a header -- RFC 5322
+;; wants a field name and a colon before the first space -- so it is a
+;; separator, and reading it as one loses nothing that could have been valid.
+;;
+;; The cases that must NOT change are the point of most of these: a `From '
+;; line in a message *body* is body text, and so is a `>From ' one anywhere.
+
+(defun vm-folder-test--run-together-message (n &optional body)
+  "A From_ message numbered N, with BODY and the blank line before it if given."
+  (concat (format "From s%d@example.com Mon Jan  1 00:00:0%d 2024\n" n n)
+          (format "From: s%d@example.com\n" n)
+          (format "Subject: subject %d\n" n)
+          (if body (concat "\n" body) "")))
+
+(defmacro vm-folder-test--with-folder (content &rest body)
+  "Like `vm-test-with-folder', but does not leak the run-together warning.
+`vm-warn' records what it last said in `vm-current-warning' so as not to repeat
+itself, and that is a global the test harness does not restore."
+  (declare (indent 1) (debug t))
+  `(let ((vm-current-warning vm-current-warning))
+     (vm-test-with-folder ,content ,@body)))
+
+(defun vm-folder-test--subjects ()
+  "The subject of every parsed message, in order."
+  (mapcar #'vm-su-subject vm-message-list))
+
+(defun vm-folder-test--body-of (m)
+  "The body region of M as VM's own markers delimit it."
+  (buffer-substring-no-properties (vm-text-of m) (vm-text-end-of m)))
+
+(ert-deftest vm-folder-test-run-together-messages-are-split ()
+  "REGRESSION: two messages with no blank line between them are two messages.
+Issue #562, split out of #538 where Mailutils' movemail produced exactly this.
+The second message's headers used to become the body of the first, with its
+`From ' line From_-quoted on the way out -- which is the `>From ' the reporter
+of #538 saw."
+  (vm-folder-test--with-folder
+      (concat (vm-folder-test--run-together-message 1)
+              (vm-folder-test--run-together-message 2 "body of two\n"))
+    (should (equal '("subject 1" "subject 2") (vm-folder-test--subjects)))
+    ;; The first message's body is empty, not the second message.
+    (should (equal "" (vm-folder-test--body-of (nth 0 vm-message-list))))
+    (should (equal "body of two"
+                   (vm-folder-test--body-of (nth 1 vm-message-list))))))
+
+(ert-deftest vm-folder-test-run-together-three-messages ()
+  "Three messages in a row with no blank lines are three messages.
+One split has to leave the parser able to make the next one, which it only
+does because the loop remembers that point is already on a separator:
+`vm-find-leading-message-separator' would step over it, wanting the blank line
+that is precisely what is missing."
+  (vm-folder-test--with-folder
+      (concat (vm-folder-test--run-together-message 1)
+              (vm-folder-test--run-together-message 2)
+              (vm-folder-test--run-together-message 3 "body of three\n"))
+    (should (equal '("subject 1" "subject 2" "subject 3")
+                   (vm-folder-test--subjects)))
+    (should (equal "body of three"
+                   (vm-folder-test--body-of (nth 2 vm-message-list))))))
+
+(ert-deftest vm-folder-test-run-together-mixed-with-well-formed ()
+  "A folder with one bad join and one good one parses all three messages."
+  (vm-folder-test--with-folder
+      (concat (vm-folder-test--run-together-message 1)
+              (vm-folder-test--run-together-message 2 "body of two\n\n")
+              (vm-folder-test--run-together-message 3 "body of three\n"))
+    (should (equal '("subject 1" "subject 2" "subject 3")
+                   (vm-folder-test--subjects)))))
+
+(ert-deftest vm-folder-test-well-formed-folder-is-unchanged ()
+  "The ordinary case still parses as it did: one blank line, two messages."
+  (vm-test-with-folder
+      (concat (vm-folder-test--run-together-message 1 "body of one\n\n")
+              (vm-folder-test--run-together-message 2 "body of two\n"))
+    (should (equal '("subject 1" "subject 2") (vm-folder-test--subjects)))
+    (should (equal "body of one\n"
+                   (vm-folder-test--body-of (nth 0 vm-message-list))))))
+
+(ert-deftest vm-folder-test-two-blank-lines-are-unchanged ()
+  "An extra blank line between messages still gives two messages."
+  (vm-test-with-folder
+      (concat (vm-folder-test--run-together-message 1 "body of one\n\n\n")
+              (vm-folder-test--run-together-message 2 "body of two\n"))
+    (should (equal '("subject 1" "subject 2") (vm-folder-test--subjects)))))
+
+(ert-deftest vm-folder-test-From_-line-in-a-body-is-not-a-separator ()
+  "A `From ' line in a message body stays body text.
+This is the case the change must not break, and the reason the search stops at
+the end of the header block: a mail quoting another mail unquoted has exactly
+this shape, and splitting there would invent a message."
+  (vm-test-with-folder
+      (concat (vm-folder-test--run-together-message 1
+                                       (concat "I was sent this:\n"
+                                               "From s9@example.com Mon Jan"
+                                               "  1 00:00:09 2024\n"
+                                               "and could not read it.\n")))
+    (should (equal '("subject 1") (vm-folder-test--subjects)))
+    (should (string-match-p "From s9@example.com"
+                            (vm-folder-test--body-of (car vm-message-list))))))
+
+(ert-deftest vm-folder-test-From_-line-after-a-header-like-body-line ()
+  "A body whose lines look like headers still does not split.
+The test is whether a blank line has been seen since the message started, not
+what the previous line looks like: a quoted mail in a body begins with header
+lines and may be followed by a `From ' line."
+  (vm-test-with-folder
+      (concat (vm-folder-test--run-together-message 1
+                                       (concat "From: quoted@example.com\n"
+                                               "Subject: quoted\n"
+                                               "From s9@example.com Mon Jan"
+                                               "  1 00:00:09 2024\n")))
+    (should (equal '("subject 1") (vm-folder-test--subjects)))))
+
+(ert-deftest vm-folder-test-quoted-From_-in-a-header-block-is-not-a-separator ()
+  "A `>From ' line in a header block is not a separator.
+It is what a From_ folder writer produces for body text that began with
+`From ', so treating it as a separator would split a message that was written
+correctly."
+  (vm-test-with-folder
+      (concat (vm-folder-test--run-together-message 1)
+              ">From s9@example.com Mon Jan  1 00:00:09 2024\n"
+              "\nbody\n")
+    (should (equal '("subject 1") (vm-folder-test--subjects)))))
+
+(ert-deftest vm-folder-test-run-together-warns-once-for-the-folder ()
+  "The user is told their mailbox is malformed, once, with a count.
+VM reads it correctly now, but the folder is still wrong and whoever wrote it
+should be told -- said once rather than once a message, since a mail mover
+that drops one blank line drops many."
+  (let ((warnings nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _seconds &rest args)
+                 (push (apply #'format args) warnings))))
+      (vm-test-with-folder
+          (concat (vm-folder-test--run-together-message 1)
+                  (vm-folder-test--run-together-message 2)
+                  (vm-folder-test--run-together-message 3 "body\n"))
+        (should (= 3 (length vm-message-list)))))
+    (let ((said (seq-filter (lambda (w) (string-match-p "ran into the next" w))
+                            warnings)))
+      (should (= 1 (length said)))
+      (should (string-match-p "2 messages" (car said))))))
+
+(ert-deftest vm-folder-test-well-formed-folder-warns-about-nothing ()
+  "A folder with its blank lines in place produces no run-together warning."
+  (let ((warnings nil))
+    (cl-letf (((symbol-function 'vm-warn)
+               (lambda (_level _seconds &rest args)
+                 (push (apply #'format args) warnings))))
+      (vm-test-with-folder
+          (concat (vm-folder-test--run-together-message 1 "body of one\n\n")
+                  (vm-folder-test--run-together-message 2 "body of two\n"))
+        (should (= 2 (length vm-message-list)))))
+    (should-not (seq-filter (lambda (w) (string-match-p "ran into the next" w))
+                            warnings))))
+
+(ert-deftest vm-folder-test-run-together-markers-are-ordered ()
+  "Every message the split produces has its markers in order and linked.
+A parser that puts `text-end-of' before `headers-of' would corrupt the folder
+on the next write, so this is checked rather than assumed."
+  (vm-folder-test--with-folder
+      (concat (vm-folder-test--run-together-message 1)
+              (vm-folder-test--run-together-message 2)
+              (vm-folder-test--run-together-message 3 "body\n"))
+    (dolist (m vm-message-list)
+      (should (<= (vm-start-of m) (vm-headers-of m)))
+      (should (<= (vm-headers-of m) (vm-text-of m)))
+      (should (<= (vm-text-of m) (vm-text-end-of m)))
+      (should (<= (vm-text-end-of m) (vm-end-of m))))
+    (should (vm-test-reverse-links-consistent-p))))
+
+(ert-deftest vm-folder-test-content-length-folder-is-untouched ()
+  "A From_-with-Content-Length folder parses by its own rule, as before.
+`vm-find-trailing-message-separator\=' takes a different branch for it, and the
+header-block search is not on that path: its message boundaries come from the
+byte count, which is the whole point of the format.  Built by hand rather than
+with `vm-test-with-folder\=', which resets `vm-trust-From_-with-Content-Length\='
+to nil while setting the buffer up."
+  (with-temp-buffer
+    (vm-test-init-folder-variables)
+    (setq-local vm-trust-From_-with-Content-Length t)
+    (insert "From s1@example.com Mon Jan  1 00:00:01 2024\n"
+            "From: s1@example.com\n"
+            "Subject: subject 1\n"
+            "Content-Length: 12\n"
+            "\n"
+            "body of one\n"
+            "From s2@example.com Mon Jan  1 00:00:02 2024\n"
+            "From: s2@example.com\n"
+            "Subject: subject 2\n"
+            "Content-Length: 12\n"
+            "\n"
+            "body of two\n")
+    (goto-char (point-min))
+    (vm-build-message-list)
+    (dolist (m vm-message-list) (vm-test-init-message-data m))
+    (should (eq 'From_-with-Content-Length vm-folder-type))
+    (should (equal '("subject 1" "subject 2") (vm-folder-test--subjects)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

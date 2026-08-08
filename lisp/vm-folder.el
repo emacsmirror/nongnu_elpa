@@ -1031,12 +1031,49 @@ Returns non-nil if the separator is found, nil otherwise."
 	    (forward-char 1)))
 	nil )))))
 
-(defun vm-find-trailing-message-separator ()
-  "Find the next trailing message separator in a folder."
+(defun vm-find-From_-in-header-block (headers-start)
+  "Position point before a `From ' line in the header block at HEADERS-START.
+Returns t if there is one, leaving point on the newline that precedes it,
+which is where a From_ trailing message separator goes.  Returns nil, point
+unmoved, if there is none.
+
+A `From '-looking line cannot be a header: RFC 5322 wants a field name and a
+colon before the first space, and `From alice@example.com  Mon Jan  1 ...'
+has neither.  So one inside a header block is a message separator whose
+blank line the writer left out, and reading it as such loses nothing that
+could have been valid.  Without this the second message is read as the body
+of the first and the two are silently merged.  Issue #562.
+
+The search stops at the end of the header block, so a `From ' line in a
+message *body* is not a separator and nothing about a well-formed folder
+changes.  It starts one character in, so the block's own first line cannot
+match and point can never end up before HEADERS-START."
+  (let ((case-fold-search nil)
+	(block-end (save-excursion
+		     (goto-char headers-start)
+		     (if (search-forward "\n\n" nil t) (point) (point-max))))
+	(found nil))
+    (save-excursion
+      (goto-char (1+ headers-start))
+      (when (re-search-forward "^From " block-end t)
+	(setq found (1- (match-beginning 0)))))
+    (when found
+      (goto-char found)
+      t)))
+
+(defun vm-find-trailing-message-separator (&optional headers-start)
+  "Find the next trailing message separator in a folder.
+HEADERS-START, if given, is where the current message's headers begin, and
+allows a From_ folder to notice a separator that has no blank line before it
+-- see `vm-find-From_-in-header-block'.  Callers that do not pass it get the
+behaviour they always had."
   (cond
    ((eq vm-folder-type 'From_)
-    (vm-find-leading-message-separator)
-    (forward-char -1))
+    (if (and headers-start (vm-find-From_-in-header-block headers-start))
+	t
+      (vm-find-leading-message-separator)
+      (forward-char -1)
+      nil))
    ((eq vm-folder-type 'BellFrom_)
     (vm-find-leading-message-separator))
    ((eq vm-folder-type 'From_-with-Content-Length)
@@ -1130,6 +1167,11 @@ vm-folder-type is initialized here."
   (save-excursion
     (let ((tail-cons nil)
 	  (n 0)
+	  ;; How many messages ran into the next one with no blank line
+	  ;; between them, and whether point is on such a separator now.
+	  ;; Issue #562.
+	  (run-together 0)
+	  (at-separator nil)
 	  ;; Just for yucks, make the update interval vary.
 	  (modulus (+ (% (vm-abs (random)) 11) 25))
 	  message last-end)
@@ -1163,14 +1205,22 @@ vm-folder-type is initialized here."
       (setq last-end (point))
       ;; parse the messages, set the markers that specify where
       ;; things are.
-      (while (vm-find-leading-message-separator)
+      ;; `at-separator' says the last message ran into this one, so point is
+      ;; already on its separator and searching for one would step over it:
+      ;; `vm-find-leading-message-separator' wants a blank line before a From_
+      ;; line, which is the very thing missing here.  Issue #562.
+      (while (or at-separator (vm-find-leading-message-separator))
+	(setq at-separator nil)
 	(setq message (vm-make-message))
 	(vm-set-message-type-of message vm-folder-type)
 	(vm-set-message-access-method-of message vm-folder-access-method)
 	(vm-set-start-of message (vm-marker (point)))
 	(vm-skip-past-leading-message-separator)
 	(vm-set-headers-of message (vm-marker (point)))
-	(vm-find-trailing-message-separator)
+	(when (vm-find-trailing-message-separator (point))
+	  (vm-increment run-together)
+	  (setq at-separator t))
+	(vm-assert (>= (point) (marker-position (vm-headers-of message))))
 	(vm-set-text-end-of message (vm-marker (point)))
 	(vm-skip-past-trailing-message-separator)
 	(setq last-end (point))
@@ -1190,10 +1240,19 @@ vm-folder-type is initialized here."
 		       (buffer-name)))
       (if (and (not (= last-end (point-max)))
 	       (not (eq vm-folder-type 'unknown)))
-	  (vm-warn 1 2 
+	  (vm-warn 1 2
 		   "Warning: garbage found at end of folder, %s, starting at %d"
 		   (or buffer-file-name (buffer-name))
-		   last-end)))))
+		   last-end))
+      ;; Said once for the folder rather than once per message: whoever
+      ;; wrote it left out a blank line, and the user should know their
+      ;; mailbox is malformed even though VM has read it correctly.
+      (if (> run-together 0)
+	  (vm-warn 1 2
+		   (concat "Warning: %d message%s in %s ran into the next "
+			   "with no blank line between them")
+		   run-together (if (= run-together 1) "" "s")
+		   (or buffer-file-name (buffer-name)))))))
 
 (defun vm-build-header-order-alist (vheaders)
   (let ((order-alist (cons nil nil))
