@@ -936,7 +936,7 @@ Value must be a symbol, not a string. i.e. write
 in your .emacs or .vm file.
 
 If you set this variable's value to mboxcl2 you
-must set `vm-trust-From_-with-Content-Length' non-nil."
+must set `vm-trust-content-length' non-nil."
   :group 'vm-folders
   :type '(choice (const From_)
                  (const mboxcl2)
@@ -1012,7 +1012,7 @@ consulted."
   :group 'vm-folders
   :type 'boolean)
 
-(defcustom vm-trust-From_-with-Content-Length
+(defcustom vm-trust-content-length
   (eq vm-default-folder-type 'mboxcl2)
   "*Non-nil value means that if the first message in a folder contains
 a Content-Length header and begins with \"From \" VM can safely
@@ -1026,6 +1026,9 @@ If you set `vm-default-folder-type' to mboxcl2 you
 must set this variable non-nil."
   :group 'vm-folders
   :type 'boolean)
+
+(define-obsolete-variable-alias 'vm-trust-From_-with-Content-Length
+  'vm-trust-content-length "8.3.3")
 
 (defvar vm-sync-thunderbird-status t
   "If set to t, VM synchronizes its headers with the headers of

@@ -2196,7 +2196,7 @@ Value must be a symbol, not a string. i.e. write
 in your .emacs or .vm file.
 
 If you set this variable’s value to mboxcl2 you
-must set @code{vm-trust-From_-with-Content-Length} non-nil.
+must set @code{vm-trust-content-length} non-nil.
 
 Default value: @code{From_}
 @end defopt
@@ -2703,8 +2703,8 @@ Note that only Thunderbird’s local folders can be visited in VM,
 not its IMAP folders.
 @end defopt
 
-@defopt vm-trust-From_-with-Content-Length
-@vindex vm-trust-From_-with-Content-Length
+@defopt vm-trust-content-length
+@vindex vm-trust-content-length
 Non-nil value means that if the first message in a folder contains
 a Content-Length header and begins with "From " VM can safely
 assume that all messages in the folder have Content-Length headers

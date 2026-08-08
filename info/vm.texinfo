@@ -1000,7 +1000,7 @@ the command @code{vm-change-folder-type}.
 @cindex System V
 @cindex AIX
 @cindex Content-Length
-@vindex vm-trust-From_-with-Content-Length
+@vindex vm-trust-content-length
 @cindex mboxcl2
 Solaris, System V and AIX operating systems use another variant of the mbox
 format, in which each message carries a @code{Content-Length} header giving
@@ -1009,7 +1009,7 @@ says where the message ends.  VM refers to this format as
 @code{mboxcl2}.  Since the counts may be unreliable --
 nothing stops a message carrying a @code{Content-Length} header that means
 something else -- you must also set the variable
-@code{vm-trust-From_-with-Content-Length} to a non-@code{nil} value in order
+@code{vm-trust-content-length} to a non-@code{nil} value in order
 to convince VM that you really want to use this format.
 
 @cindex mbox variants
@@ -1064,10 +1064,12 @@ messages are no longer altered on the way in.
 
 @cindex From_-with-Content-Length
 The folder type was called @code{From_-with-Content-Length} until then,
-after the mechanism rather than the format.  The old name is still accepted
-wherever a folder type is given -- in @code{vm-default-folder-type}, by
-@code{vm-change-folder-type}, and in an index file written before the
-change -- so nothing has to be altered.
+after the mechanism rather than the format, and the option below was
+@code{vm-trust-From_-with-Content-Length}.  Both old names still work: the
+type wherever one is given -- in @code{vm-default-folder-type}, by
+@code{vm-change-folder-type}, and in an index file written before the change
+-- and the option as an alias.  Nothing has to be altered, and the old names
+are not going to be removed.
 
 @cindex archiving mail
 The reason to care is that the first three change the message.  A folder
@@ -1092,7 +1094,7 @@ Which of the two VM reads a folder as is not something it can tell from the
 file, since nothing in an mbox says which variant it is -- there is no
 extension, media type or magic number for any of them, and the Library of
 Congress descriptions say as much.  VM looks at the first message: if it has
-a @code{Content-Length} header and @code{vm-trust-From_-with-Content-Length}
+a @code{Content-Length} header and @code{vm-trust-content-length}
 is set, the folder is read by its counts, and otherwise by its @samp{From }
 lines.  A folder read the wrong way is not damaged, but it is a different
 folder: a body line beginning @samp{From } starts a new message under one

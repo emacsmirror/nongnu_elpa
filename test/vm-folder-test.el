@@ -23,7 +23,7 @@
 (ert-deftest vm-folder-test-type-from-folder ()
   "Test From_ folder type detection."
   (let ((vm-default-From_-folder-type 'From_)
-        (vm-trust-From_-with-Content-Length nil))
+        (vm-trust-content-length nil))
     (with-temp-buffer
       (insert "From VM Thu Jan  1 00:00:00 2024\n")
       (insert "From: sender@example.com\n")
@@ -199,7 +199,7 @@
   (vm-test-with-temp-dir
     (let* ((test-file (expand-file-name "test-from.mbox" temp-dir))
            (vm-default-From_-folder-type 'From_)
-           (vm-trust-From_-with-Content-Length nil)
+           (vm-trust-content-length nil)
            (vm-folder-type 'From_))
       (with-temp-file test-file
         (insert "From VM Thu Jan  1 00:00:00 2024\n")
@@ -413,7 +413,7 @@
     (insert "From VM Thu Jan  1 00:00:00 2024\n")
     (insert "From: test@example.com\n\nBody\n")
     (let ((vm-default-From_-folder-type 'From_)
-          (vm-trust-From_-with-Content-Length nil))
+          (vm-trust-content-length nil))
       (should (eq (vm-get-folder-type) 'From_))))
   ;; Test MMDF detection
   (with-temp-buffer
@@ -2032,11 +2032,11 @@ on the next write, so this is checked rather than assumed."
 `vm-find-trailing-message-separator\=' takes a different branch for it, and the
 header-block search is not on that path: its message boundaries come from the
 byte count, which is the whole point of the format.  Built by hand rather than
-with `vm-test-with-folder\=', which resets `vm-trust-From_-with-Content-Length\='
+with `vm-test-with-folder\=', which resets `vm-trust-content-length\='
 to nil while setting the buffer up."
   (with-temp-buffer
     (vm-test-init-folder-variables)
-    (setq-local vm-trust-From_-with-Content-Length t)
+    (setq-local vm-trust-content-length t)
     (insert "From s1@example.com Mon Jan  1 00:00:01 2024\n"
             "From: s1@example.com\n"
             "Subject: subject 1\n"
@@ -2102,7 +2102,7 @@ to nil while setting the buffer up."
   `(let ((vm-current-warning vm-current-warning))
      (with-temp-buffer
        (vm-test-init-folder-variables)
-       (setq-local vm-trust-From_-with-Content-Length ,trust)
+       (setq-local vm-trust-content-length ,trust)
        (insert vm-folder-test--counted-folder)
        (goto-char (point-min))
        (vm-build-message-list)
@@ -2124,7 +2124,7 @@ to nil while setting the buffer up."
 
 (ert-deftest vm-folder-test-same-bytes-without-trust-are-mbox ()
   "The same bytes read as From_ split at that line instead, giving three.
-Which is why `vm-trust-From_-with-Content-Length' exists: nothing in the
+Which is why `vm-trust-content-length' exists: nothing in the
 file says which of the two formats it is, so VM has to be told.  Neither
 reading damages the folder; they are simply different folders."
   (vm-folder-test--with-counted-folder nil
@@ -2151,7 +2151,7 @@ message in every such folder ends."
 one message rather than the rest of the folder."
   (with-temp-buffer
     (vm-test-init-folder-variables)
-    (setq-local vm-trust-From_-with-Content-Length t)
+    (setq-local vm-trust-content-length t)
     (insert (replace-regexp-in-string "Content-Length: 62"
                                       "Content-Length: 9999"
                                       vm-folder-test--counted-folder))
@@ -2238,7 +2238,7 @@ refused."
   ;; and a folder whose type arrives that way is read by its counts
   (with-temp-buffer
     (vm-test-init-folder-variables)
-    (setq-local vm-trust-From_-with-Content-Length t)
+    (setq-local vm-trust-content-length t)
     (insert vm-folder-test--counted-folder)
     (setq vm-folder-type (vm-canonical-folder-type 'From_-with-Content-Length))
     (goto-char (point-min))

@@ -656,7 +656,7 @@ further change."
                     "Fcc: " folder "\n" mail-header-separator "\n"
                     "a body line\n"
                     "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
-            (let ((vm-trust-From_-with-Content-Length t))
+            (let ((vm-trust-content-length t))
               (should (eq 'mboxcl2 (vm-get-folder-type folder)))
               (vm-do-fcc-in-composition)))
           ;; A count was written at all -- this is what was missing.
@@ -667,7 +667,7 @@ further change."
           ;; And it is the right count: the folder reads back as two.
           (with-temp-buffer
             (vm-test-init-folder-variables)
-            (setq-local vm-trust-From_-with-Content-Length t)
+            (setq-local vm-trust-content-length t)
             (insert-file-contents folder)
             (goto-char (point-min))
             (vm-build-message-list)
@@ -866,7 +866,7 @@ it in the folder was misplaced."
           (with-temp-buffer
             (insert "To: someone@example.com\nSubject: filed\n"
                     "Fcc: " folder "\n" mail-header-separator "\n" body)
-            (let ((vm-trust-From_-with-Content-Length t)
+            (let ((vm-trust-content-length t)
                   (coding-system-for-write 'utf-8-unix))
               (vm-do-fcc-in-composition)))
           ;; the count is the octet length, which is more than the characters
@@ -879,7 +879,7 @@ it in the folder was misplaced."
           ;; and the folder reads back as two messages with the body intact
           (with-temp-buffer
             (vm-test-init-folder-variables)
-            (setq-local vm-trust-From_-with-Content-Length t)
+            (setq-local vm-trust-content-length t)
             (let ((coding-system-for-read 'utf-8-unix))
               (insert-file-contents folder))
             (goto-char (point-min))
@@ -957,7 +957,7 @@ included the quote would put every later message in the wrong place."
             (insert "To: someone@example.com\nSubject: filed\n"
                     "Fcc: " folder "\n" mail-header-separator "\n"
                     "a body line\n" line)
-            (let ((vm-trust-From_-with-Content-Length t))
+            (let ((vm-trust-content-length t))
               (vm-do-fcc-in-composition)))
           (let ((text (vm-reply-test--folder-text folder)))
             (should (string-match-p (concat "\n" (regexp-quote line)) text))
@@ -965,7 +965,7 @@ included the quote would put every later message in the wrong place."
           ;; and the count still finds the end of it
           (with-temp-buffer
             (vm-test-init-folder-variables)
-            (setq-local vm-trust-From_-with-Content-Length t)
+            (setq-local vm-trust-content-length t)
             (insert-file-contents folder)
             (goto-char (point-min))
             (vm-build-message-list)

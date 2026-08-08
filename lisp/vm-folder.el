@@ -729,7 +729,7 @@ Returns
   mboxcl2
             for new SysV folders that use the Content-Length header
 
-If vm-trust-From_-with-Content-Length is non-nil,
+If vm-trust-content-length is non-nil,
 mboxcl2 is returned if the first message in the
 folder has a Content-Length header and the folder otherwise looks
 like a From_ folder.
@@ -765,7 +765,7 @@ the value of vm-default-From_folder-type will be returned."
 	      (goto-char (point-min))
 	      (cond ((zerop (buffer-size)) nil)
 		    ((looking-at "\n*From ")
-		     (if (not vm-trust-From_-with-Content-Length)
+		     (if (not vm-trust-content-length)
 			 vm-default-From_-folder-type
 		       (let ((case-fold-search t))
 			 (re-search-forward vm-content-length-search-regexp

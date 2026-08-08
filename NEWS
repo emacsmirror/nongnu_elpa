@@ -323,8 +323,10 @@ VM 8.?.?
     name the format is known by.  The old name still works everywhere a
     folder type is given -- in `vm-default-folder-type', in
     `vm-change-folder-type', and in an index file written before the change
-    -- so nothing needs altering.  The option
-    `vm-trust-From_-with-Content-Length' keeps its name.
+    -- so nothing needs altering.  The option that goes with it,
+    `vm-trust-From_-with-Content-Length', is now `vm-trust-content-length',
+    and the old name is an alias that will stay: unlike a misspelling, a
+    name someone chose and typed on purpose keeps working.
   * An mboxcl2 folder is no longer quoted.  VM wrote both
     a `Content-Length' header and a `>From ' quoting of body lines, which is
     the mbox variant called mboxcl; writing only the count is mboxcl2, the
