@@ -597,6 +597,48 @@ behaves."
   (should (memq 'vm-postpone-unfinished-compositions
                 kill-emacs-query-functions)))
 
+(ert-deftest vm-postpone-test-deletes-the-auto-save-file ()
+  "REGRESSION: postponing a composition takes its auto-save file with it.
+A composition buffer visits no file, and VM points its auto-saves at
+`vm-mail-auto-save-directory' or, failing that, `vm-folder-directory'.
+Emacs deletes a fileless buffer's auto-save file when `mail-send' succeeds
+and at no other time -- not when the buffer is killed -- so every postponed
+composition left one `#mail%20to%20...#' file behind, in among the folders."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-postpone" t)))
+         (drafts (expand-file-name "drafts" dir))
+         (auto-save nil))
+    (unwind-protect
+        (let ((buffer (generate-new-buffer "mail to _ on \"a draft\"")))
+          (with-current-buffer buffer
+            (setq default-directory dir)
+            (auto-save-mode 1)
+            (mail-mode)
+            (insert "To: someone@example.com\nSubject: a draft\n"
+                    mail-header-separator "\nbody\n")
+            (do-auto-save)
+            (setq auto-save buffer-auto-save-file-name)
+            (should (file-exists-p auto-save))
+            (let ((vm-folder-directory dir)
+                  (vm-postponed-folder "drafts")
+                  (vm-default-folder-type 'From_)
+                  (vm-postpone-message-hook nil)
+                  (vm-postponed-message-folder-buffer nil)
+                  (vm-confirm-quit nil))
+              (cl-letf (((symbol-function 'vm-display) #'ignore)
+                        ((symbol-function 'vm-delete-postponed-message)
+                         #'ignore))
+                (vm-postpone-message))))
+          ;; the draft is in the folder ...
+          (should (file-exists-p drafts))
+          (should (string-match-p
+                   "^Subject: a draft$"
+                   (with-temp-buffer (insert-file-contents drafts)
+                                     (buffer-string))))
+          ;; ... and nothing was left in the folder directory
+          (should-not (file-exists-p auto-save))
+          (should (null (directory-files dir nil "\\`#"))))
+      (delete-directory dir t))))
+
 (provide 'vm-postpone-test)
 
 ;;; vm-postpone-test.el ends here

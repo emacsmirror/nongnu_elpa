@@ -695,6 +695,13 @@ Optional argument DONT-KILL is positive, then do not kill source message."
     ;; and kill this buffer?
     (if dont-kill
         (insert (concat "FCC: " folder "\n" mail-header-separator))
+      ;; The draft is in the folder now, so the auto-save file has done its
+      ;; job.  Nothing else would delete it: Emacs deletes a fileless
+      ;; buffer's auto-save file when `mail-send' succeeds and at no other
+      ;; time -- not when the buffer is killed -- so every postponed
+      ;; composition left one behind, in `vm-folder-directory', which is
+      ;; where VM points them.
+      (delete-auto-save-file-if-necessary t)
       (kill-this-buffer))
 
     (if (vm-interactive-p)
