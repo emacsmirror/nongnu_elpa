@@ -1022,6 +1022,31 @@ up without a revert; any other folder is appended to on disk."
 	(vm-write-string folder (vm-folder-header type)))
       (vm-write-string folder text))))
 
+(defun vm-fcc-write-imap (spec)
+  "Append the message in the current buffer to the IMAP mailbox SPEC names.
+The manual has always said an Fcc header may name \"the maildrop
+specification of a folder on an IMAP server\", and until this it was taken
+as a file name like any other -- so an Fcc of
+\"imap:mail.example.com:143:inbox:login:user:*\" wrote a file of that name
+in the default directory and put the sent copy in it (issue #605).
+
+The session is opened for this one message and closed again, since a
+composition has no folder whose session it could borrow."
+  (let ((mailbox (nth 3 (vm-imap-parse-spec-to-list spec)))
+	(string (vm-imap-subst-CRLF-for-LF
+		 (buffer-substring-no-properties (point-min) (point-max))))
+	process)
+    (when (or (null mailbox) (equal mailbox ""))
+      (error "Not filing in %s: no mailbox in the maildrop specification" spec))
+    (setq process (vm-imap-make-session spec nil :purpose "FCC"))
+    (unless process
+      (error "Not filing in %s: could not open an IMAP session" spec))
+    (unwind-protect
+	(vm-imap-append-message process mailbox string)
+      (when (and (processp process)
+		 (memq (process-status process) '(open run)))
+	(vm-imap-end-session process)))))
+
 (defun vm-do-fcc (header-end)
   "File a copy of this composition in each folder its Fcc headers name.
 HEADER-END is a marker at the end of the header section.  Each folder is
@@ -1031,7 +1056,9 @@ written in its own format; see `vm-fcc-write'."
   ;; `vm-folder-directory': an Fcc header has never meant that, and making
   ;; it mean that would move where existing configurations file their mail.
   (dolist (folder (vm-fcc-folders header-end))
-    (vm-fcc-write (expand-file-name folder)))
+    (if (vm-imap-folder-spec-p folder)
+	(vm-fcc-write-imap folder)
+      (vm-fcc-write (expand-file-name folder))))
   (setq vm-fcc-filed t))
 
 (defun vm-do-fcc-in-composition ()

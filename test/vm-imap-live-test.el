@@ -393,6 +393,34 @@ session -- which is the situation #335 describes."
            (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" ,mailbox)))
          (vm-imap-live-close conn)))))
 
+(ert-deftest vm-imap-live-test-fcc-to-a-maildrop-reaches-the-server ()
+  "An Fcc naming an IMAP maildrop puts the copy in that mailbox.
+Issue #605: it used to write a file named after the maildrop
+specification.  This drives `vm-do-fcc-in-composition\' against a real
+server and reads the mailbox back with the harness\' own client."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-mailbox (conn mailbox "plain")
+    (let* ((server (vm-imap-live-server "plain"))
+           (account (car (plist-get server :accounts)))
+           (spec (vm-imap-live-spec server account mailbox))
+           (subject (format "vmtest fcc %d" (emacs-pid)))
+           (vm-imap-server-timeout vm-imap-live-timeout)
+           ;; A session asks for a password when it has none cached.
+           (vm-imap-passwords (list (list spec (cdr account)))))
+      (with-temp-buffer
+        (insert "From: " (car account) "@example.com\n"
+                "To: someone@example.com\n"
+                "Subject: " subject "\n"
+                "Fcc: " spec "\n"
+                mail-header-separator "\nfiled by Fcc\n")
+        (vm-do-fcc-in-composition))
+      ;; the copy is in the mailbox, headers and body intact
+      (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)
+      (let ((text (vm-imap-live-cmd-ok conn "FETCH 1 (BODY.PEEK[])")))
+        (should (string-match-p (regexp-quote subject) text))
+        (should (string-match-p "filed by Fcc" text))))))
+
 (ert-deftest vm-imap-live-test-relay-passes-traffic-through ()
   "The relay is transparent when given no rules.
 If this fails, nothing else in tier 3 means anything."
