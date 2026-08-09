@@ -473,9 +473,6 @@ Returns the process or nil if the session could not be created."
        ((equal protocol "pop-ssl")
 	(setq use-ssl t
 	      session-name "POP over SSL")
-	;; (when (null vm-stunnel-program)
-	;; 	(error 
-	;; 	 "vm-stunnel-program must be non-nil to use POP over SSL."))
 	)
        ((equal protocol "pop-ssh")
 	(setq use-ssh t
@@ -899,7 +896,6 @@ killed as well."
 
 (defun vm-pop-ask-about-no-uidl (popdrop)
   (let ((work-buffer nil)
-	;; (pop-buffer (current-buffer))
 	) ;; start end
     (unwind-protect
 	(save-excursion
@@ -1009,7 +1005,6 @@ popdrop
 
 (defun vm-establish-new-folder-pop-session (&optional interactive)
   (let ((process (vm-folder-pop-process))
-	;; (vm-pop-ok-to-ask (eq interactive t))
 	)
     (if (processp process)
 	(vm-pop-end-session process))
@@ -1078,7 +1073,6 @@ LOCAL-EXPUNGE-LIST: A list of message descriptors for messages in the
   ;; messages previously retrieved are ignored.
   (let ((here (obarray-make))
 	(there (vm-pop-get-uidl-data))
-	;; (process (vm-folder-pop-process))
 	retrieve-list local-expunge-list uid 
 	mp)
     (setq mp vm-message-list)

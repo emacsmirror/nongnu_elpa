@@ -31,7 +31,6 @@
 (declare-function vm-make-presentation-copy "vm-mime" (message))
 (declare-function vm-decode-mime-message "vm-mime" (&optional state))
 (declare-function vm-mime-plain-message-p "vm-mime" (message))
-;; (declare-funciton vm-mm-layout "vm-mime" (message))
 
 (declare-function map-extents "vm-xemacs" 
 		  (function &optional object from to maparg 
@@ -66,7 +65,6 @@ Prefix argument N means scroll forward N lines."
     ;; cursor problem in the summary window, reported on May 4, 2008
     ;; in gnu.emacs.vm.info, title "Re: synchronization of vm buffers"
     ;; The original vodoo was:
-    ;; (if mp-changed (sit-for 0))
     (when mp-changed 
       (vm-present-current-message)
       (sit-for 0))
@@ -195,13 +193,6 @@ Prefix argument N means scroll forward N lines."
 ;; window position may no longer be visible but
 ;; pos-visible-in-window-p will still say it is because it was
 ;; visible before some window size change happened.
-;;	(progn
-;;	  (if (and (> direction 0)
-;;		   (pos-visible-in-window-p
-;;		    (vm-text-end-of (car vm-message-pointer))))
-;;	      (signal 'end-of-buffer nil)
-;;	    (scroll-up arg))
-;;	  nil )
       (error
        (if (or (and (< direction 0)
 		    (> (point) (vm-text-of (car vm-message-pointer))))
@@ -251,8 +242,6 @@ Prefix argument N means scroll forward N lines."
 		       ;; scroll-fix.el replaces scroll-up and
 		       ;; doesn't behave properly when it hits
 		       ;; end of buffer.  It does this!
-		       ;; (ding)
-		       ;; (message (get 'beginning-of-buffer 'error-message))
 		       (let ((scroll-in-place-replace-original nil))
 			 (scroll-up nil))))
 		   nil)
@@ -374,8 +363,6 @@ Negative arg means scroll forward."
 			 (when (vm-extent-property e 'vm-url)
 			   (vm-delete-extent e))
 			 nil))
-		      ;; (current-buffer)
-		      ;; (point-min) (point-max)
 		      )
       (if clean-only (vm-inform 1 "Energy from urls removed!")
 	(while search-pairs
@@ -527,7 +514,6 @@ Negative arg means scroll forward."
 	      (setq g (symbol-value g))
 	      ;; XXX broken.  Gives extra pixel lines at the
 	      ;; bottom of the glyph in 19.12
-	      ;;(set-glyph-baseline g 100)
 	      (set-glyph-face g 'vm-xface))
 	    (setq e (vm-make-extent (vm-vheaders-of (car vm-message-pointer))
 				    (vm-vheaders-of (car vm-message-pointer))))
@@ -727,10 +713,6 @@ preview or the full message, governed by the the variables
 		   (or (vm-new-flag (car vm-message-pointer))
 		       (vm-unread-flag (car vm-message-pointer))
 		       vm-preview-read-messages))))
-;;     (when vm-enable-external-messages
-;;       (when (not need-preview)
-;; 	(vm-inform 1 "External messages cannot be previewed")
-;; 	(setq need-preview nil)))
     (save-current-buffer
      (setq vm-system-state 'previewing)
      (setq vm-mime-decoded nil)
@@ -790,14 +772,6 @@ preview or the full message, governed by the the variables
      ;; if we're using one for this message.
      (vm-unbury-buffer (current-buffer))
 
-;;     (let ((real-m (car vm-message-pointer)))
-;;        (if (= (1+ (marker-position (vm-text-of real-m)))
-;; 	      (marker-position (vm-text-end-of real-m)))
-;;            (vm-inform 1 "must fetch the body of %s ..." (vm-imap-uid-of real-m))
-;; 	 (vm-inform 1 "must NOT fetch the body of %s ..." (vm-imap-uid-of real-m))
-;;	 (let ((vm-message-pointer nil))
-;;	   (vm-discard-cached-data)))
-;;	   ))
      
      ;; 4. decode MIME
      (if (and vm-display-using-mime
@@ -825,7 +799,6 @@ preview or the full message, governed by the the variables
 		      (cons "message/external-body"
 			    vm-mime-auto-displayed-content-type-exceptions)
 		    vm-mime-auto-displayed-content-type-exceptions))
-		 ;; (vm-mime-external-content-types-alist nil)
 		 )
 	     (condition-case data
 		 (progn
@@ -947,8 +920,6 @@ is done if necessary.  (USR, 2010-01-14)"
          (vm-update-summary-and-mode-line)
 	 (vm-howl-if-eom))
      (vm-update-summary-and-mode-line)))
-  ;; (if vm-summary-enable-thread-folding
-  ;;     (vm-toggle-thread 1))
   )
 
 (defvar vm-headers-exposed nil

@@ -182,7 +182,6 @@
 	(throw 'done nil))
     (let ((nonexistent " *vm-nonexistent*")
 	  (nonexistent-summary " *vm-nonexistent-summary*")
-	  ;; (selected-frame (vm-selected-frame))
 	  folders-summary summary message composition edit config)
       (while (and tags (null config))
 	(setq config (assq (car tags) vm-window-configurations)
@@ -640,7 +639,6 @@ Run the hooks in vm-iconify-frame-hook before doing so."
 		 ;; doc for set-mouse-position says to do this
 		 ;; but Emacs 22 doesn't say it and unfocus-frame is
 		 ;; obsolete now.  USR, 2010-07-03
-		 ;; (unfocus-frame)
 		 ))))))
 
 (defun vm-selected-frame ()
@@ -663,8 +661,6 @@ Where neither exists there are no frames, and this does nothing."
 (defun vm-iconify-frame-xxx (&optional frame)
   (cond ((fboundp 'iconify-frame)
 	 (iconify-frame frame))
-	;; ((fboundp 'iconify-screen)                     ; XEmacs 19?
-	;;  (iconify-screen (or frame (vm-selected-frame))))
 	))
 
 (defun vm-deiconify-frame (frame)
@@ -702,14 +698,6 @@ XEmacs asks `frame-iconified-p'; Emacs says the same thing by having
 ;; have a working version of this function.
 ;; 2 April 1997, frame-totally-visible-p apparently still broken
 ;; under 19.15.  I give up for now.
-;;(if (and (fboundp 'frame-totally-visible-p)
-;;	 (featurep 'xemacs)
-;;	 (or (>= emacs-major-version 20)
-;;	     (>= emacs-minor-version 15)))
-;;    (fset 'vm-frame-totally-visible-p 'frame-totally-visible-p)
-;;  (fset 'vm-frame-totally-visible-p 'vm-frame-visible-p))
-;; 2 April 1998, frame-visible-p returns 'hidden for tty frames
-;; that are visible but not the topmost frame.  Use that info.
 (defun vm-frame-totally-visible-p (&optional frame)
   (or frame (setq frame (selected-frame)))
   (not (memq (frame-visible-p frame) '(nil hidden))))

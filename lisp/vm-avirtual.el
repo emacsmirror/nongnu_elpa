@@ -125,9 +125,6 @@
 		  (new-messages &optional dont-finalize))
 
 ; group already defined in vm-vars
-;(defgroup vm nil
-;  "VM"
-;  :group 'mail)
 
 (defgroup vm-avirtual nil
   "VM additional virtual folder selectors and functions."
@@ -1121,8 +1118,7 @@ This is not yet the whole story!                    USR, 2013-01-18"
         vfolder selector matching-vfolders auto-folders)
 
     (when t;(and m (aref m 0) (aref (aref m 0) 0)
-            ;   (marker-buffer (aref (aref m 0) 0)))
-      ;; set matching-vfolders in reverse order of priority
+                  ;; set matching-vfolders in reverse order of priority
       (while vfolders
 	(setq vfolder (caar vfolders))
         (setq selector (vm-virtual-get-selector 
@@ -1133,7 +1129,6 @@ This is not yet the whole story!                    USR, 2013-01-18"
               (setq vfolders nil)))
         (setq vfolders (cdr vfolders)))
       
-      ;; (setq matching-vfolders (reverse matching-vfolders))
       
       ;; find auto-folders for matching-vfolders in order of priority
       (vm-mapc

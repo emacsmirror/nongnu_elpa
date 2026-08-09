@@ -185,9 +185,6 @@ youngest or oldest date in its thread.  CRITERION must be one of
 (defsubst vm-th-canonical-message (m)
   (vm-th-message-of (vm-th-thread-symbol m)))
 
-;; (defsubst vm-th-message (id-sym)
-;;   (and (vm-th-messages-of id-sym)
-;;        (vm-last-elem (vm-th-messages-of id-sym))))
 
 (defsubst vm-th-set-messages-of (id-sym ml)
   (put id-sym 'messages ml))
@@ -771,7 +768,6 @@ message with ID-SYM and all its descendants."
     (vm-thread-debug 'vm-th-clear-thread-lists (symbol-name id-sym)))
   (mapc (lambda (d)
 	  ;; This idea still needs more work.  USR, 2012-05-06
-	  ;; (vm-unthread-message-from-subject-thread d)
 	  (vm-set-thread-list-of d nil)
 	  (vm-set-thread-indentation-of d nil))
 	(vm-th-messages-of id-sym))
@@ -781,8 +777,6 @@ message with ID-SYM and all its descendants."
 (defun vm-th-clear-subtree-of (id-sym)
   "Clear the thread-subtrees of the messages with ID-SYM, i.e.,
 set them to nil.  They will get recalculated on demand."
-  ;; (when (vm-th-message-of id-sym)
-  ;;   (vm-set-thread-subtree-of (vm-th-message-of id-sym) nil))
   (mapc (lambda (m) 
   	  (vm-set-thread-subtree-of m nil))
   	(vm-th-messages-of id-sym))
@@ -919,8 +913,6 @@ with other ancestors."
   "Fill in the thread-list fields of the Soft data vector for all
 messages in the folder.  Threads should have been built before this
 function is called."
-  ;; (if vm-thread-debug
-  ;;     (vm-check-thread-integrity vm-message-list))
   (dolist (m vm-message-list)
     (vm-thread-list m))
   (if vm-thread-debug
@@ -953,7 +945,6 @@ whereas dates are updated for both reference and subject-based ancestors."
   (dolist (m mlist)
     (let ((done nil)
 	  (subject-thread nil)
-	  ;; (loop-recovery-point nil)
 	  (date (vm-so-sortable-datestring m))
 	  (subject (vm-so-sortable-subject m))
 	  id-sym subject-sym loop-sym 
@@ -970,7 +961,6 @@ whereas dates are updated for both reference and subject-based ancestors."
 	(while (not done)
 	  ;; save the date of the oldest message in this thread
 	  (setq root-date (vm-th-oldest-date-of id-sym))
-	  ;; (setq root-subject (vm-th-oldest-subject-of id-sym))
 	  (when (or (null root-date) (string< date root-date))
 	    (vm-th-set-oldest-date-of id-sym date)
 	    (unless subject-thread
@@ -1007,7 +997,6 @@ whereas dates are updated for both reference and subject-based ancestors."
 		 (if (boundp loop-sym)
 		     ;; loop detected, bail...
 		     (setq done t)
-		   ;; (setq root (vm-th-message-of id-sym))
 		   (set loop-sym t)
 		   (setq m (vm-th-message-of id-sym))))))
 	))))
@@ -1036,14 +1025,10 @@ symbols interned in vm-thread-obarray."
       ;; if m is a non-canonical message for its message ID, give it
       ;; an artificial thread-list
       ;; But, does this make sense?
-      ;; (unless (eq m (vm-th-message-of id-sym))
-      ;; 	(setq thread-list (list id-sym id-sym))
-      ;; 	(setq done t))
       (set (intern (symbol-name id-sym) vm-thread-loop-obarray) t)
       (while (not done)
 	;; save the date of the oldest message in this thread
 	(setq root-date (vm-th-oldest-date-of id-sym))
-	;; (setq root-subject (vm-th-oldest-subject-of id-sym))
 	(when (or (null root-date)
 		  (string< date root-date))
 	  (vm-th-set-oldest-date-of id-sym date)
@@ -1079,8 +1064,6 @@ symbols interned in vm-thread-obarray."
 	       (setq id-sym (vm-ts-root-of subject-sym))
 	       ;; seems to cause more trouble than it fixes
 	       ;; revisit this later.
-	       ;; (setq loop-recovery-point (or loop-recovery-point
-	       ;;	 		        thread-list))
 	       (setq loop-sym (intern (symbol-name id-sym)
 				      vm-thread-loop-obarray))
 	       (if (boundp loop-sym)
@@ -1159,8 +1142,6 @@ reinserted into an appropriate thread later.       USR, 2011-03-17"
     (vm-unthread-message-from-subject-thread m)
     )
   ;; This doesn't work yet
-  ;; (if vm-thread-debug
-  ;;     (vm-check-thread-integrity))
   )
 
 (defun vm-unthread-message-from-reference-thread (m message-changing)
@@ -1222,7 +1203,6 @@ been already removed from its symbol node."
     (when (and s-sym (boundp s-sym))
       (if (eq (vm-ts-root-of s-sym) id-sym)
 	  ;; handle the subject thread root
-	  ;; (when message-changing
 	  (cond
 	   ;; duplicate copy present, so keep the root id-sym.
 	   ;; FIXME the thread-subtree of the duplicate copy has to be
@@ -1254,11 +1234,8 @@ been already removed from its symbol node."
 		;; subject thread nonempty
 		(let () ;; new-sub new-s-sym
 		  (setq root-sym (vm-th-thread-symbol oldest-msg))
-		  ;; (setq children (vm-th-visible-children-of id-sym))
 		  (setq children (cons id-sym (vm-ts-members-of s-sym)))
-		  ;; (vm-th-clear-cached-data root-sym root-sym)
 		  (vm-th-clear-subtree root-sym)
-		  ;; (vm-th-clear-thread-lists root-sym)
 		  (mapc 'vm-th-clear-thread-lists (vm-ts-members-of s-sym))
 		  (vm-ts-set s-sym :root root-sym
 			     :root-date oldest-date
@@ -1305,7 +1282,6 @@ been already removed from its symbol node."
 	(p-sym (vm-thread-symbol (car vm-last-message-pointer)))
 	(m (car vm-message-pointer))
 	(m-sym (vm-thread-symbol (car vm-message-pointer))))
-    ;; (vm-thread-mark-for-summary-update (list m))
     ;; Check before touching anything.  Unthreading M does not change the new
     ;; parent's ancestors, so the answer is the same either way, and raising
     ;; after the unthreading left the message out of its old thread with
@@ -1351,7 +1327,6 @@ the cache is nil, calculates the parent and caches it.  USR, 2010-03-13"
 	    (setq ids (cdr ids)))
 	  ;; we do not want to hack the References header any more
 	  ;; USR, 2012-02-12
-	  ;; (when id (vm-set-references-of m (list id)))
 	  id )
 	;; Otherwise use the last element of the References header
 	;; But References headers are often buggy
@@ -1397,7 +1372,6 @@ calculates the thread-list and caches it.  USR, 2010-03-13"
       (progn
 	(vm-set-thread-list-of m (vm-build-thread-list m))
 	;; reset the thread-subtrees, forcing them to be rebuilt
-	;; (mapc 'vm-th-clear-subtree-of (vm-thread-list-of m))
 	(vm-thread-list-of m))))
 (defalias 'vm-th-thread-list 'vm-thread-list)
 
@@ -1646,8 +1620,6 @@ to the thread.  Used for testing purposes."
       (vm-warn 0 2 (concat "%s: Problem detected with the threads database; "
 		       "try vm-fix-my-summary")
 	       (buffer-name))
-      ;; (setq vm-thread-obarray 'bonk)
-      ;; (setq vm-thread-subject-obarray 'bonk)
       ))))
 
 (provide 'vm-thread)

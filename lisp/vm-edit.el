@@ -57,7 +57,6 @@ replace the original, use C-c C-] and the edit will be aborted."
 		    (- (point) (vm-headers-of (car vm-message-pointer)))))
 	  (edit-buf (vm-edit-buffer-of (car vm-message-pointer)))
 	  (folder-buffer (current-buffer)))
-      ;; (vm-load-message)
       (vm-retrieve-operable-messages 1 (list (car vm-message-pointer))
 				     :fail t)
       (if (and edit-buf (buffer-name edit-buf))
@@ -184,8 +183,6 @@ thread have their cached data discarded."
 	;; message.  Need to do it in bulk.  USR, 2012-03-08
 	(if (vectorp vm-thread-obarray)
 	    (vm-build-threads (list m)))
-	;; (if vm-thread-debug
-	;;     (vm-check-thread-integrity))
 	(if vm-summary-show-threads
 	    (intern (buffer-name) buffers-needing-thread-sort))
 	(dolist (v-m (vm-virtual-messages-of m))
@@ -214,11 +211,6 @@ thread have their cached data discarded."
         (vm-check-thread-integrity))
     ;; Probably not a good idea to sort messages here.
     ;; Reorders the message summary unnecessarily.  USR, 2012-09-22
-    ;; (save-excursion
-    ;;   (mapatoms (function (lambda (s)
-    ;; 			    (set-buffer (get-buffer (symbol-name s)))
-    ;; 			    (vm-sort-messages (or vm-ml-sort-keys "activity"))))
-    ;; 		buffers-needing-thread-sort))
     ))
 
 ;;;###autoload
@@ -282,7 +274,6 @@ thread have their cached data discarded."
 		  (old-text (buffer-substring-no-properties
 			     (vm-headers-of mm) (vm-text-end-of mm)))
 		  (applied nil))
-	     ;; (setq opoint (point))
 	     (unwind-protect
 		 (progn
 		   (insert-buffer-substring edit-buf)

@@ -152,7 +152,6 @@ messages of the folder are involved in this reply."
   (let ((mlist (vm-select-operable-messages
 		count (vm-interactive-p) "Reply to"))
         (dir default-directory)
-        ;; (message-pointer vm-message-pointer)
         (case-fold-search t)
         to cc subject in-reply-to references
         mp tmp tmp2 newsgroups)
@@ -471,10 +470,10 @@ specified by `vm-included-text-headers' and
       ;; "doesn't conform to RFC 822." -- Brent Goodrick, 2009-01-24
       ;; But this yanks wrongly!  The following line reverted by Uday
       ;; Reddy, 2009-12-07 
-      ;; (goto-char (point-min))
       (cond (mail-citation-hook (run-hooks 'mail-citation-hook))
 	    ;; mail-yank-hooks is obsolete now
-	    ;; (mail-yank-hooks (run-hooks 'mail-yank-hooks))
+	    ;; `mail-yank-hooks' is not consulted: it was obsoleted by
+	    ;; `mail-citation-hook' above.
 	    (t (vm-mail-yank-default message))))))
 
 (defun vm-yank-message-presentation ()
@@ -523,7 +522,6 @@ specified by `vm-included-text-headers' and
 	;; otherwise pick a width of its own -- the window's, in the case of
 	;; emacs-w3m (#369).
 	(vm-html-fill-column vm-html-in-reply-column)
-	;; (vm-use-presentation-minor-modes nil) ; do we need this?
 	)
     (if (eq layout 'none)
 	(vm-insert-region-from-buffer (vm-buffer-of message)
@@ -575,7 +573,6 @@ specified by `vm-included-text-headers' and
 	    (append-to-buffer b (vm-headers-of message)
 			      (vm-text-end-of message))
 	    (set-buffer b)))
-      ;; (setq type (car (vm-mm-layout-type layout)))
       (setq parts (list layout))
       (setq alternatives 0)
 
@@ -597,11 +594,6 @@ specified by `vm-included-text-headers' and
 		      (setq res (vm-mime-display-internal-message/rfc822
 				 layout)))
 		     ;; no text/html for now
-		     ;; ((vm-mime-types-match
-		     ;;   "text/html"
-		     ;;   (car (vm-mm-layout-type layout)))
-		     ;;  (setq res (vm-mime-display-internal-text/html
-		     ;; 	      layout)))
 		     ((member (downcase (car (vm-mm-layout-type layout)))
 			      vm-included-mime-types-list)
 		      (if (and (not (vm-mm-layout-is-converted layout))
@@ -740,7 +732,6 @@ folder, that message is marked as having been replied to."
 			  (abs min))
 ;; localization in Europe and elsewhere can cause %Z to return
 ;; 8-bit chars, which are forbidden in headers.
-;;		  (format-time-string " (%Z)" time)
 		  "\n"))))))
 
 (defun vm-mail-mode-remove-message-id-maybe ()
@@ -751,7 +742,6 @@ folder, that message is marked as having been replied to."
 		(vm-mail-mode-get-header-contents "Resent-Bcc:"))
 	    (progn
 	      (vm-mail-mode-remove-header "Resent-Message-ID:")
-	      ;; (setq resent t)
 	      t)
 	  (vm-mail-mode-remove-header "Message-ID:")))))
 
@@ -763,7 +753,6 @@ folder, that message is marked as having been replied to."
 		(vm-mail-mode-get-header-contents "Resent-Bcc:"))
 	    (progn
 	      (vm-mail-mode-remove-header "Resent-Date:")
-	      ;; (setq resent t)
 	      t)
 	  (vm-mail-mode-remove-header "Date:")))))
 
@@ -1289,15 +1278,8 @@ See `vm-forward-message-plain' for forwarding messages in plain text."
     (if (cdr mlist)
 	;; multiple message forwarding
 	(progn
-	  ;; (unless (or (not plain)
-	  ;; 	      (y-or-n-p 
-	  ;; 	       "Use encapsulated forwarding for multiple messages? "))
-	  ;;     (error "Aborted"))
-	  ;; (setq plain nil)
 	  (let ((vm-digest-send-type (if plain nil
 				       vm-forwarding-digest-type)))
-	    ;; (setq this-command 'vm-next-command-uses-marks)
-	    ;; (command-execute 'vm-send-digest)
 	    (vm-send-digest nil mlist)))
       ;; single message forwarding
       (vm-retrieve-operable-messages 1 mlist :fail t)
@@ -1642,10 +1624,6 @@ included in the digest."
 			   (kill-buffer ,work-buffer))))))
       (when prefix
 	(vm-inform 6 "Building digest preamble...")
-	;; (if miming
-	;;     (progn
-	;;       (set-buffer mail-buffer)
-	;;       (mail-text)))
 	(while mp
 	  (let ((vm-summary-uninteresting-senders nil))
 	    (insert (vm-summary-sprintf vm-digest-preamble-format
@@ -1929,8 +1907,6 @@ Binds the `vm-mail-mode-map' and hooks"
     (and references (insert "References: " references "\n"))
     (insert "X-Mailer: VM " (vm-version) " under "
 	    (vm-emacs-name-and-version))
-    ;; (if (functionp 'emacsw32-version)
-    ;; 	(insert " [" (emacsw32-version) "]"))
     (if (boundp 'system-configuration)
 	(insert " (" system-configuration ")"))
     (insert "\n")

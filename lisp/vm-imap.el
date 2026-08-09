@@ -38,11 +38,6 @@
 		  "vm.el" (&optional pre-hooks post-hooks))
 (declare-function open-network-stream 
 		  "subr.el" (name buffer host service &rest parameters))
-;; (declare-function vm-imap-make-session 
-;; 		  "vm-imap.el" (source interactive &key 
-;; 				     (folder-buffer nil)
-;; 				     (purpose nil)
-;; 				     (retry nil)))
 
 (defvar selectable-only) ;; FIXME: Add `vm-' prefix!
 (defvar auth-sources)  ;; from auth-source.el, used for dynamic binding
@@ -258,7 +253,6 @@ purposes.")
 ;;	validity is preserved by FETCH, STORE and SEARCH operations
 ;; 'inactive - session is inactive
 
-;; (defvar vm-imap-session-type nil)  ; moved to vm-vars.el
 
 (defsubst vm-imap-session-type:set (type)
   (setq vm-imap-session-type type))
@@ -405,9 +399,10 @@ why one cannot be recognised or typed by hand -- see `vm-recover-folder'."
   "Parses the IMAP maildrop specification SPEC and returns a list of
 its components."
   (let ((list (vm-parse spec "\\([^:]+\\):?" 1 6)))
-    ;; (append (butlast list 4)
-    ;;         (cons (utf7-decode (nth 3 list) t)
-    ;;               (last list 3)))
+    ;; The mailbox name is left as it stands.  The modified UTF-7 of RFC
+    ;; 3501 is applied where the name goes on the wire, by
+    ;; `vm-imap-encode-mailbox-name', not in the maildrop spec, which is
+    ;; what the user typed and what the folder history shows back.
     list
     ))
 
@@ -415,11 +410,6 @@ its components."
 (defun vm-imap-encode-list-to-spec (list)
   "Convert a LIST of components into a maildrop specification."
     (mapconcat 'identity list ":")
-  ;; (mapconcat 'identity
-  ;;            (append (butlast list 4)
-  ;;                    (cons (utf7-encode (nth 3 list) t)
-  ;;                          (last list 3)))
-  ;;            ":")
   )
 
 ;;;###autoload
@@ -499,7 +489,6 @@ default, so it blamed a timeout that was not even configured."
        "IMAP server closed the connection unexpectedly"))))
 
 
-;; (defvar vm-imap-connection-mode 'online)  ; moved to vm-vars.el
 
 
 ;; -----------------------------------------------------------------------
@@ -825,7 +814,6 @@ Returns a boolean value."
       ;;-------------------
       (when process 
 	(vm-imap-end-session process)
-	;; (vm-imap-dump-uid-and-flags-data)
 	))))
 
 (defun vm-expunge-imap-messages ()
@@ -873,7 +861,6 @@ on all the relevant IMAP servers and then immediately expunges."
 			  (vm-imap-read-ok-response process)
 			  ;;----------------------------------
 			  (vm-imap-session-type:set 'inactive)
-			  ;; (vm-imap-dump-uid-and-flags-data)
 			  ;;----------------------------------
 			  )
 			(vm-imap-end-session process)
@@ -958,7 +945,6 @@ on all the relevant IMAP servers and then immediately expunges."
 	    (vm-imap-read-ok-response process)
 	    ;;----------------------------------
 	    (vm-imap-session-type:set 'inactive)
-	    ;; (vm-imap-dump-uid-and-flags-data)
 	    ;;----------------------------------
 	    )
 	  (if trouble
@@ -1188,7 +1174,6 @@ whether this call is a retry.
 
 Returns the process or nil if the session could not be created."
   (let ((shutdown nil)		   ; whether process is to be shutdown
-	;; (folder-buffer (current-buffer))
 	(folder-type (if folder-buffer
 			 (with-current-buffer folder-buffer
 			   vm-folder-type)))
@@ -1458,9 +1443,6 @@ inside VM as well in auth-source (if it is being used)."
     (error "No user in IMAP maildrop specification, \"%s\"" source))
   (when (null pass)
     (error "No password in IMAP maildrop specification, \"%s\"" source))
-  ;; (when use-ssl
-  ;;   (if (null vm-stunnel-program)
-  ;; 	(error "vm-stunnel-program must be non-nil to use IMAP over SSL.")))
   (when use-ssh
     (if (null vm-ssh-program)
 	(error "vm-ssh-program must be non-nil to use IMAP over SSH.")))
@@ -1494,7 +1476,6 @@ as well."
 		    ;;-------------------------------------
 		    ;; Don't bother checking because it might fail if
 		    ;; the user typed C-g.
-		    ;; (vm-imap-session-type:assert 'inactive)
 		    ;;-------------------------------------
 		    nil
 		  (vm-inform 6 "%s: Closing IMAP session to %s..."
@@ -1505,7 +1486,6 @@ as well."
 		  (vm-imap-send-command process "LOGOUT")
 		  ;; we don't care about the response.
 		  ;; avoid waiting for it because some servers misbehave.
-		  ;; (vm-imap-read-ok-response process)
 		  )
 	      (vm-imap-protocol-error ; handler
 	       nil)		      ; ignore errors 
@@ -1540,17 +1520,14 @@ as well."
 
 (defun vm-imap-check-connection (process)
   ;;------------------------------
-  ;; (vm-buffer-type:assert 'process)
   ;;------------------------------
   (cond ((or (not (processp process))
 	     (not (memq (process-status process) '(open run))))
 	 ;;-------------------
-	 ;; (vm-buffer-type:exit)
 	 ;;-------------------
 	 (vm-imap-normal-error "not connected"))
 	((not (buffer-live-p (process-buffer process)))
 	 ;;-------------------
-	 ;; (vm-buffer-type:exit)
 	 ;;-------------------
 	 (vm-imap-protocol-error
 	  "IMAP process %s's buffer has been killed" process))))
@@ -1928,7 +1905,6 @@ message goes.  Issue #185."
 	   ;; reenabled.  USR, 2010-09-17
 	   (after-change-functions (cons func after-change-functions))
 	   
-	   ;; (need-ok t)
 	   response)
 
       (condition-case err
@@ -3110,8 +3086,6 @@ server should be issued by UID, not message sequence number."
       ;; Ignore labels that are both in vm and the server
       (vm-delete-common-elements labels copied-flags 'string<)
       ;; Ignore reversible flags that we have locally reversed -- Why?
-      ;; (mapc (lambda (flag) (delete flag copied-flags))
-      ;;  '("\\seen" "\\deleted" "\\flagged"))
       ;; Flags to be added to the server
       (setq flags+ (append (cdr labels) flags+))
       ;; Flags to be deleted from the server
@@ -3266,9 +3240,6 @@ operation of the server to minimize I/O."
 				   " attribute changes the server would not"
 				   " take are not in it.  Save again once"
 				   " `vm-imap-synchronize' stores them."))))
-	  ;; (condition-case nil
-	  ;;   (vm-imap-create-mailbox process mailbox)
-	  ;; (vm-imap-protocol-error nil))
 
 	  (set-buffer (process-buffer process))
 	  ;;-----------------------------------------
@@ -3461,11 +3432,7 @@ messages previously retrieved are ignored."
     (let* ((folder-buffer (current-buffer))
 	   (folder-name (buffer-name folder-buffer))
 	   (process (vm-folder-imap-process))
-	   ;; (imap-buffer (process-buffer process))
 	   (uid-validity (vm-folder-imap-uid-validity))
-	   ;; (imapdrop (vm-folder-imap-maildrop-spec))
-	   ;; (folder (or (vm-imap-folder-for-spec imapdrop)
-	   ;;             (vm-safe-imapdrop-string imapdrop)))
 	   new-messages
 	   (sync-data (vm-imap-get-synchronization-data do-retrieves))
 	   (retrieve-list (nth 0 sync-data))
@@ -3475,7 +3442,6 @@ messages previously retrieved are ignored."
       (when save-attributes
 	(let ((mp vm-message-list)
 	      (errors 0))
-	  ;;  (perm-flags (vm-folder-imap-permanent-flags))
 	  (vm-inform 6 "%s: Updating attributes on the IMAP server... "
 		     folder-name)
 	  (while mp
@@ -3495,7 +3461,6 @@ messages previously retrieved are ignored."
 		       folder-name))))
       (when retrieve-attributes
 	(let ((mp vm-message-list)
-	      ;; (len (length vm-message-list))
 	      (n 0)
 	      uid m mflags)
 	  (vm-inform 6 "%s: Retrieving message attributes and labels... "
@@ -3550,7 +3515,6 @@ messages previously retrieved are ignored."
 	(vm-imap-expunge-remote-messages))
       ;; Not clear that one should end the session right away.  We
       ;; will keep it around for use with headers-only messages.
-      ;; (vm-imap-end-session process)
       (setq vm-imap-connection-mode 'online)
       new-messages)))
 
@@ -3676,7 +3640,6 @@ headers-only form."
 	 (vm-set-stuff-flag-of (car mp) t)
 	 (setq mp (cdr mp)
 	       r-list (cdr r-list)))
-       ;; (vm-update-summary-and-mode-line) ; update message sizes, possibly
        (when vm-arrived-message-hook
 	 (mapc (lambda (m)
 		 (vm-run-hook-on-message 'vm-arrived-message-hook m))
@@ -4083,7 +4046,6 @@ cached tables.  If there is no cached data, return nil.  USR, 2012-10-19"
       (error nil))))
 
 (cl-defun vm-imap-save-attributes (&optional &key
-					   ;; (interactive nil)
 					   (all-flags nil))
   "Save the attributes of changed messages to the IMAP folder.
 ALL-FLAGS, if true says that the attributes of all messages should
@@ -4092,10 +4054,8 @@ be saved to the IMAP folder, not only those of changed messages."
   (vm-buffer-type:set 'folder)
   ;;--------------------------
   (let* ((process (vm-folder-imap-process))
-	 ;; (uid-validity (vm-folder-imap-uid-validity))
 	 (mp vm-message-list)
 	 (errors 0))
-      ;;  (perm-flags (vm-folder-imap-permanent-flags))
       (vm-inform 6 "%s: Updating attributes on the IMAP server... "
 		 (buffer-name))
       ;;-----------------------------------------
@@ -4137,32 +4097,17 @@ This is useful for saving offline work on the cache folder."
     (when (vm-establish-new-folder-imap-session t "general operation" nil)
       (vm-imap-retrieve-uid-and-flags-data)
       (vm-imap-save-attributes :all-flags full)
-      ;; (vm-imap-synchronize-folder :interactive t
-      ;; 			:save-attributes (if full 'all t))
       (vm-imap-synchronize-folder :interactive t 
 				  :do-remote-expunges (if full 'all t) 
 				  :do-local-expunges t 
 				  :do-retrieves t
 				  :retrieve-attributes t)
       ;; stuff the attributes of messages that need it.
-      ;; (vm-inform 7 "%s: Stuffing cached data..." (buffer-name) )
-      ;; (vm-stuff-folder-data :interactive t :abort-if-input-pending nil)
-      ;; (vm-inform 7 "%s: Stuffing cached data... done" (buffer-name))
-      ;; stuff bookmark and header variable values
       (when vm-message-list
 	;; get summary cache up-to-date
 	(vm-inform 6 "Updating summary... ")
 	(vm-update-summary-and-mode-line)
 	(vm-inform 6 "Updating summary... done")
-	;; 	  (vm-stuff-bookmark)
-	;; 	  (vm-stuff-pop-retrieved)
-	;; 	  (vm-stuff-imap-retrieved)
-	;; 	  (vm-stuff-last-modified)
-	;; 	  (vm-stuff-header-variables)
-	;; 	  (vm-stuff-labels)
-	;; 	  (vm-stuff-summary)
-	;; 	  (and vm-message-order-changed
-	;; 	       (vm-stuff-message-order))
 	))))
   
 
@@ -4230,18 +4175,6 @@ is being invoked interactively."
   "Find the IMAP maildrop spec for the folder BUFFER."
   (with-current-buffer buffer
     (vm-folder-imap-maildrop-spec)))
-;;   (let ((list (mapcar 'car vm-imap-account-alist))
-;; 	(done nil)
-;; 	(spec-items nil))
-;;     (while (and (not done) list)
-;;       (setq spec-items (vm-imap-parse-spec-to-list (car list)))
-;;       (setcar (nthcdr 3 spec-items) folder)
-;;       (if (eq buffer (vm-get-file-buffer 
-;; 		      (vm-imap-make-filename-for-spec
-;; 		       (vm-imap-encode-list-to-spec spec-items))))
-;; 	  (setq done t)
-;; 	(setq list (cdr list))))
-;;     (and list (car list)))
 
 (defvar vm-imap-account-folder-cache nil
   "Caches the list of all folders on an IMAP account.")
@@ -4567,8 +4500,6 @@ documentation for `vm-spool-files'."
      (vm-buffer-type:duplicate)
      ;;------------------------
      (vm-session-initialization)
-     ;; (vm-check-for-killed-folder) 	; seems no need for this
-     ;; (vm-select-folder-buffer-if-possible)
      (let ((this-command this-command)
 	   (last-command last-command)
 	   (folder (vm-read-imap-folder-name "Create IMAP folder: " nil t)))
@@ -4623,8 +4554,6 @@ documentation for `vm-spool-files'."
      (vm-buffer-type:duplicate)
      ;;------------------------
      (vm-session-initialization)
-     ;; (vm-check-for-killed-folder)	; seems no need for this
-     ;; (vm-select-folder-buffer-if-possible)
      (let ((this-command this-command)
 	   (last-command last-command))
        (list (vm-read-imap-folder-name "Delete IMAP folder: " nil nil)))))
@@ -4675,8 +4604,6 @@ documentation for `vm-spool-files'."
      (vm-buffer-type:duplicate)
      ;;------------------------
      (vm-session-initialization)
-     ;; (vm-check-for-killed-folder)	; seems no need for this
-     ;; (vm-select-folder-buffer-if-possible)
      (let ((this-command this-command)
 	   (last-command last-command)
 	   source dest)
@@ -4789,9 +4716,6 @@ them."
 
     ;; Display the results
     (setq buffer (get-buffer-create (format "*%s folders*" account)))
-    ;; (with-help-buffer (buffer-name buffer)
-    ;;    (dolist (mailbox mailbox-list)
-    ;; 	     (princ (format "%s\n" mailbox))))
     (with-electric-help
      (lambda ()
        (dolist (mbstat mailbox-status-list)
@@ -4937,7 +4861,6 @@ May throw exceptions."
 	      (vm-imap-protocol-error 	; handler
 	       (vm-buffer-type:set 'process))) ; ignore errors
 	    ;;----------------------------------
-	    ;; (vm-imap-session-type:assert-active)
 	    ;;----------------------------------
 
 	    (vm-inform 7 "Saving outgoing message to IMAP server...")
@@ -4972,12 +4895,10 @@ May throw exceptions."
 		(setq response (vm-imap-read-response process))
 		(cond
 		 ((vm-imap-response-matches response 'VM 'NO)
-		  ;; (vm-imap-protocol-error "server says NO to APPEND data")
 		  (vm-imap-normal-error
 		   "servers says - %s:"
 		   (vm-imap-read-error-message process (cadr (cadr response)))))
 		 ((vm-imap-response-matches response 'VM 'BAD)
-		  ;; (vm-imap-protocol-error "server says BAD to APPEND data")
 		  (vm-imap-normal-error
 		   "server says - %s"
 		   (vm-imap-read-error-message process (cadr (cadr response)))))

@@ -79,9 +79,6 @@
   (defvar horizontal-scrollbar-visible-p nil))
 
 ; group already defined in vm-vars.el
-;(defgroup vm nil
-;  "VM"
-;  :group 'mail)
 
 (defgroup vm-biff nil
   "The VM biff lib"
@@ -231,7 +228,6 @@ folder selectors work."
     (user-position . t)    
     (menubar-visible-p . nil)
     (default-toolbar-visible-p . nil)
-;    (has-modeline-p . nil)
     (top . 1)
     (left . 1)
     ;; Xemacs properties

@@ -65,8 +65,6 @@ thread are deleted."
       ;; vm-update-summary-and-mode-line eventually.
       (when (and vm-summary-enable-thread-folding
 		 vm-summary-show-threads
-		 ;; (not (and vm-enable-thread-operations
-		 ;;	 (eq count 1)))
 		 (> (vm-thread-count (car mlist)) 1))
 	(with-current-buffer vm-summary-buffer
 	  (vm-expand-thread (vm-thread-root (car mlist)))))
@@ -171,8 +169,6 @@ messages in the thread are flagged/unflagged."
 	;; vm-update-summary-and-mode-line eventually.
 	(when (and vm-summary-enable-thread-folding
 		 vm-summary-show-threads
-		 ;; (not (and vm-enable-thread-operations
-		 ;;	 (eq count 1)))
 		 (> (vm-thread-count (car mlist)) 1))
 	(with-current-buffer vm-summary-buffer
 	  (vm-expand-thread (vm-thread-root (car mlist))))))
@@ -314,7 +310,6 @@ unmarked messages are not considered for deletion."
             (t
              (setq mid (vm-su-message-id (car mp)))
 	     (when mid
-	       ;; (or mid (debug (car mp)))
 	       (when (intern-soft mid table)
 		 (if (vm-set-deleted-flag (car mp) t)
 		     (setq n (1+ n))))

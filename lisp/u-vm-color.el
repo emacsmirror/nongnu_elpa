@@ -372,7 +372,6 @@ Optional argument PREFIX the maximal length."
 	(result "\\("))
     (if prefix
 	(setq result (concat result prefix)))
-    ;;(message "input: %s %d %d" regexp m-length length)
     (cond ((and length (> length 0))
 	   (when m-length
 	     (while (and (< i m-length) (< i length))
@@ -383,7 +382,6 @@ Optional argument PREFIX the maximal length."
 	     (setq i (1+ i))))
 	  (t
 	   (setq result (concat result regexp "*"))))
-    ;;(message "result: --%s--" result)
     (concat result "\\)")))
 
 
@@ -430,7 +428,6 @@ subexpressions."
 	(setq rest ""))
       (setq rest (regexp-quote rest))
 
-      ;;(message "--> %s, %s, %s" length m-length value)
       ;; Should use the length and m-length values for things like %5d
       ;; instead of doing [0-9 ]+ for numerics...
       ;; No!
@@ -452,7 +449,6 @@ subexpressions."
 	     (setq m-element (list count (quote 'u-vm-color-date-face)
 				    nil u-vm-color-xemacs-workaround)))
 	    ((string-equal value "f") ;; authors/principal/recipients address
-	     ;;(setq f-element "\\(To: [^ \n]+\\)?\\([^ \n]+\\)?")
 	     (setq f-element (concat
 			      "\\("
 			      (u-vm-color-make-specific-length-regexp
@@ -472,7 +468,6 @@ subexpressions."
 	    ((or (string-equal value "F")
 		 (string-equal value "UA")  ;; IS THIS CORRECT!????????
 		 (string-equal value "UB")) ;; author/principal/recipient full names
-	     ;;(setq f-element "\\(To:.+\\)?\\([^:\n]+\\)?")
 	     (setq f-element (concat
 			      "\\("
 			      (u-vm-color-make-specific-length-regexp
@@ -630,18 +625,15 @@ subexpressions."
 Search starts at START and ends at END.  If REGEXP is found, it
 is fontified according to the argument HOW, which is a list of
 the form ((INDEX FACE)...)."
-;;(message "Searching from %d to %d for %s" start end regexp)
   (let ((inhibit-read-only t))
     (save-excursion
       (goto-char start)
       (while (and start (< start end))
 	(setq start (re-search-forward regexp end t))
 	(when start
-	  ;;(message "match found!")
 	  (mapc (lambda (what)
                   (let ((index (nth 0 what)) (face (nth 1 what)))
                     (when (match-beginning index)
-                      ;;(message "Adding face %s for match %d" face index)
                       (put-text-property (match-beginning index)
                                          (match-end index)
                                          'face face))))
@@ -683,7 +675,6 @@ Search is restricted to the region between START and END."
 (defun u-vm-color-fontify-buffer ()
   "Fontifies mail-buffers."
   (interactive)
-  ;;(message "u-vm-color-fontify-buffer")
   (let ((continued-header-contents "\\(.*\\(\n[ \t]+.*\\)*\\)")
 	(pmin (point-min))
 	(buffer-modified (buffer-modified-p))
@@ -749,7 +740,6 @@ Search is restricted to the region between START and END."
   "Temporarily widen buffer and call `u-vm-color-fontify-buffer'."
   (save-restriction
     (widen)
-    ;;(message "u-vm-color-fontify-even-more: %d %d" (point-min) (point-max))
     (u-vm-color-fontify-buffer)))
 
 (provide 'u-vm-color)

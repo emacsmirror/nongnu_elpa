@@ -210,7 +210,6 @@ deleted messages.  Use `###' to expunge deleted messages."
 	  gobble-headers
 	  ;; whether thunderbird status flags should be processed
 	  ;; this currently a global flag, but it shouldn't be
-	  ;; (read-thunderbird-status nil)
 	  ;; whether the auto-save file should be preserved
 	  preserve-auto-save-file
 	  ;; some local variables
@@ -219,12 +218,10 @@ deleted messages.  Use `###' to expunge deleted messages."
       ;; [3] Infer the folder (disk file) and the folder-name (buffer-name)
 
       (cond ((and full-startup (eq access-method 'pop))
-	     ;; (setq vm-last-visit-pop-folder folder)
 	     (setq remote-spec folder)
 	     (setq folder-name (or (vm-pop-find-name-for-spec folder) "POP"))
 	     (setq folder (vm-pop-find-cache-file-for-spec remote-spec)))
 	    ((and full-startup (eq access-method 'imap))
-	     ;; (setq vm-last-visit-imap-folder folder)
 	     (setq remote-spec folder)
 	     (setq folder-name (or (nth 3 (vm-imap-parse-spec-to-list
 					   remote-spec))
@@ -612,8 +609,7 @@ message-pointer, no retrieval of new mail."
 		 access-method 'pop
 		 vm-last-visit-pop-folder folder))
 	  ((and (vm-imap-folder-spec-p folder)
-		;;(setq foo (vm-imap-find-name-for-spec folder))
-		)
+)
 	   (setq ;; folder foo
 	         access-method 'imap
 		 vm-last-visit-imap-folder folder))
@@ -1391,8 +1387,8 @@ summary buffer to select a folder."
 	    (push-mark (point))
 	    (mail-text)
 	    (cond (mail-citation-hook (run-hooks 'mail-citation-hook))
-		  ;; this is an obsolete variable now
-		  ;; (mail-yank-hooks (run-hooks 'mail-yank-hooks))
+		  ;; `mail-yank-hooks' is not consulted: it was obsoleted by
+		  ;; `mail-citation-hook' above.
 		  (t (vm-mail-yank-default)))))
       (make-local-variable 'mail-send-actions)
       (setq mail-send-actions send-actions)
@@ -1483,12 +1479,6 @@ summary buffer to select a folder."
 	       (vm-maildrop-alist-sans-personal-info
 		vm-pop-folder-alist)
 	     (error (vm-increment errors) vm-pop-folder-alist)))
-	  ;; (vm-imap-server-list 
-	  ;;  (with-no-warnings
-	  ;;    (condition-case nil
-	  ;; 	 (vm-mapcar (function vm-maildrop-sans-personal-info) 
-	  ;; 		    vm-imap-server-list)
-	  ;;      (error (vm-increment errors) vm-imap-server-list))))
 	  (vm-bug-imap-account-alist
 	   (condition-case nil
 	       (vm-maildrop-alist-sans-personal-info

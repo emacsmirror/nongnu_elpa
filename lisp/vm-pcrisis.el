@@ -115,17 +115,6 @@ Checks if the condition and all the actions exist."
     (setq value (cdr value)))
   (set symbol value))
 
-;; (defun vmpc-defcustom-rules-type ()
-;;   "Generate :type for vmpc-*-rules variables."
-;;   (list 'repeat
-;;         (list 'cons
-;;               (append '(choice :tag "Condition")
-;;                       (mapcar (lambda (c) (list 'const (car c))) vmpc-conditions)
-;;                       '((string)))
-;;               (list 'repeat :tag "Actions to run"
-;;                     (append '(choice :tag "Action")
-;;                             (mapcar (lambda (a) (list 'const (car a))) vmpc-actions)
-;;                             '(string))))))
 
 (defun vmpc-defcustom-rules-type ()
   "Generate :type for vmpc-*-rules variables."
@@ -994,7 +983,6 @@ parameter POS means insert the pre-signature at position POS if
       (buffer-disable-undo (current-buffer))
       (erase-buffer)
       (goto-char (point-min))
-;	(prin1 vmpc-auto-profiles (current-buffer))
       (pp vmpc-auto-profiles (current-buffer))
       (write-region (point-min) (point-max)
                     vmpc-auto-profiles-file nil 'quietly)

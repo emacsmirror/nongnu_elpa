@@ -62,14 +62,7 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; group already defined in vm-vars.el
-;; (defgroup vm nil
-;;   "The VM mail reader."
-;;   :group 'mail)
 
-;; (defgroup vm-print nil
-;;   "Options affecting printing of messages in VM."
-;;   :group 'vm)
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defcustom vm-ps-print-message-function  'ps-print-buffer-with-faces
   "This should point to the function which is used for ps-printing.

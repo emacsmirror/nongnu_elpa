@@ -388,14 +388,6 @@ folder in the order in which the messages arrived."
 	     (setq vm-summary-show-threads t)
 	     (setq key-funcs (cons 'vm-sort-compare-activity-r 
 				   key-funcs)))
-	    ;; ((equal key "thread-oldest-date")
-	    ;;  (setq vm-summary-show-threads t)
-	    ;;  (setq key-funcs (cons 'vm-sort-compare-thread-oldest-date
-	    ;; 			   key-funcs)))
-	    ;; ((equal key "reversed-thread-oldest-date")
-	    ;;  (setq vm-summary-show-threads t)
-	    ;;  (setq key-funcs (cons 'vm-sort-compare-thread-oldest-date-r 
-	    ;; 			   key-funcs)))
 	    ((equal key "subject")
 	     (setq key-funcs (cons 'vm-sort-compare-subject key-funcs)))
 	    ((equal key "reversed-subject")
@@ -522,7 +514,6 @@ folder in the order in which the messages arrived."
 	    (progn
 	      (setq vm-message-order-changed t)
 	      ;; only viewing order changed here
-	      ;; (vm-mark-folder-modified-p (current-buffer))
 	      (vm-clear-modification-flag-undos))))
       (setq vm-ml-sort-keys ml-keys)
       (intern (buffer-name) vm-buffers-needing-display-update)
@@ -614,20 +605,9 @@ that, if P1 and P2 are the oldest different ancestors of M1 and M2, then
 	(root2 (vm-thread-root-sym m2))
 	(list1 (vm-thread-list m1))
 	(list2 (vm-thread-list m2))
-	;; (criterion (if vm-sort-threads-by-youngest-date 
-	;; 	       'youngest-date
-	;; 	     'oldest-date))
 	p1 p2) ;; d1 d2
     (catch 'done
       (cond 
-	    ;; ((not (eq (car list1) (car list2)))
-	    ;;  ;; different reference threads
-	    ;;  (let ((date1 (vm-th-thread-date-of (car list1) criterion))
-	    ;; 	   (date2 (vm-th-thread-date-of (car list2) criterion)))
-	    ;;    (cond ((string-lessp date1 date2) t)
-	    ;; 	     ((string-equal date1 date2)
-	    ;; 	      (string-lessp (format "%s" root1) (format "%s" root2)))
-	    ;; 	     (t nil))))
 	    ((eq (car list1) (car list2))
 	     ;; within the same reference thread
 	     (setq list1 (cdr list1) list2 (cdr list2))
@@ -726,19 +706,7 @@ that, if P1 and P2 are the oldest different ancestors of M1 and M2, then
 	  ((string-equal d1 d2) '=)
 	  (t t))))
 
-;; (defun vm-sort-compare-thread-oldest-date (m1 m2)
-;;   (let ((d1 (vm-th-oldest-date-of (vm-thread-symbol m1)))
-;; 	(d2 (vm-th-oldest-date-of (vm-thread-symbol m2))))
-;;     (cond ((string-lessp d1 d2) t)
-;; 	  ((string-equal d1 d2) '=)
-;; 	  (t nil))))
 
-;; (defun vm-sort-compare-thread-oldest-date-r (m1 m2)
-;;   (let ((d1 (vm-th-oldest-date-of (vm-thread-symbol m1)))
-;; 	(d2 (vm-th-oldest-date-of (vm-thread-symbol m2))))
-;;     (cond ((string-lessp d1 d2) nil)
-;; 	  ((string-equal d1 d2) '=)
-;; 	  (t t))))
 
 (defun vm-sort-compare-recipients (m1 m2)
   (let ((s1 (vm-su-to-cc m1))

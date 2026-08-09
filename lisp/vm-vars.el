@@ -33,7 +33,6 @@
 (fset 'xemacs-locate-data-directory 'locate-data-directory)
 ;; Don't use vm-device-type here because it may not be loaded yet.
 (declare-function device-type "vm-xemacs" ())
-;; (fset 'xemacs-device-type 'device-type)
 
 ;; Custom group definitions
 (defgroup vm nil
@@ -1044,16 +1043,6 @@ flags."
 
 (make-variable-buffer-local 'vm-sync-thunderbird-status)
 
-;; (defvar vm-folder-sync-thunderbird-status t
-;;   "If t VM synchronizes its headers with the headers of
-;; Thunderbird so that full interoperation with Thunderbird becomes
-;; possible.  This is not a customization variable.  See
-;; `vm-sync-thunderbird-status' for customization.") 
-
-;; (defvar vm-read-thunderbird-status t
-;;   "* If t VM reads the headers of Thunderbird when visiting
-;; folders, but not write Thunderbird headers.  This variable has
-;; effect only if `vm-folder-sync-thunderbird-status' is nil.")
 
 (defvar vm-folder-read-thunderbird-status t
   "If t VM reads the headers of Thunderbird when visiting
@@ -1134,7 +1123,6 @@ FSF Emacs always uses VM's builtin highlighting code."
 (defface vm-highlighted-header '((t (:inherit bold)))
  "Default face used to highlight headers."
  :group 'vm-faces)
-;; (copy-face 'bold 'vm-highlighted-header)
 
 (defcustom vm-highlighted-header-face 'vm-highlighted-header
   "*Face to be used to highlight headers.
@@ -2032,7 +2020,6 @@ them all at once.  See `vm-mime-use-image-strips'."
 	      file (expand-file-name name vmdir))
 	(if (file-exists-p file)
 	    file
-;	  (vm-warn 0 2 "VM could not find executable %S!" name)
 	  nil))))
 
 (defcustom vm-imagemagick-program
@@ -2104,8 +2091,6 @@ deleting a MIME object with `vm-delete-mime-object'."
    '("application" "x-unknown" "application/x-gzip")
    ;; These are eliminated because they depend on evaluation order.
    ;; USR, 2011-04-28
-   ;; (mapcar (lambda (a) (car a))
-   ;;         vm-mime-external-content-types-alist)
    )
   "List of MIME types which should be saved."
     :group 'vm-mime
@@ -2124,8 +2109,6 @@ deleting a MIME object with `vm-delete-mime-object'."
    '("application" "x-unknown" "application/x-gzip")
    ;; These are eliminated because they depend on evaluation order.
    ;; USR, 2011-04-28
-   ;; (mapcar (lambda (a) (car a))
-   ;;         vm-mime-external-content-types-alist)
    )
   "List of MIME types which should be deleted."
     :group 'vm-mime
@@ -2228,16 +2211,6 @@ deleting a MIME object with `vm-delete-mime-object'."
     ("application" . "%-55.55(%t: %f, %d%) %10.10([%a]%)"))
   ;; old definition
   ;; '(("text" . "%-35.35(%d, %c%) [%k to %a]")
-  ;;   ("multipart/alternative" . "%-35.35(%d%) [%k to %a]")
-  ;;   ("multipart/digest" . "%-35.35(%d, %n message%s%) [%k to %a]")
-  ;;   ("multipart" . "%-35.35(%d, %n part%s%) [%k to %a]")
-  ;;   ("message/partial" . "%-35.35(%d, part %N (of %T)%) [%k to %a]")
-  ;;   ("message/external-body" . "%-35.35(%d%) [%k to %a (%x)]")
-  ;;   ("message" . "%-35.35(%d%) [%k to %a]")
-  ;;   ("audio" . "%-35.35(%d%) [%k to %a]")
-  ;;   ("video" . "%-35.35(%d%) [%k to %a]")
-  ;;   ("image" . "%-35.35(%d%) [%k to %a]")
-  ;;   ("application/octet-stream" . "%-35.35(%d, %f%) [%k to %a]"))
   "*List of types and formats for MIME buttons.
 When VM does not display a MIME object immediately, it displays a
 button or tag line in its place that describes the object and what you
@@ -3946,7 +3919,6 @@ variable's value has no effect on existing summary buffers."
 (defface vm-summary-highlight '((t (:inherit bold)))
  "Default face to use to highlight the summary entry for the current message."
  :group 'vm-faces)
-;; (copy-face 'bold 'vm-summary-highlight)
 
 (defcustom vm-summary-highlight-face 'vm-summary-highlight
   "*Face to use to highlight the summary entry for the current message.
@@ -4033,13 +4005,6 @@ might be useful for very long threads."
 
 ;; This variable is not used any more because threads can be sorted by
 ;; "activity".  USR, 2011-02-09.
-;; (defcustom vm-sort-threads-by-youngest-date t
-;; "*Non-nil values causes VM to sort threads by their youngest date,
-;; i.e., a thread A will appear before B if the youngest message in the
-;; thread A is dated before the youngest message in the thread B.  If the
-;; variable is nil, threads are sorted by their oldest date."
-;;   :group 'vm-summary
-;;   :type 'boolean)
 (make-obsolete 'vm-sort-threads-by-youngest-date
 	       'vm-sort-messages "8.2.0")
 
@@ -4722,7 +4687,6 @@ in messages when you click on them."
 (defface vm-highlight-url '((t (:inherit link)))
  "Default face used to highlight URLs."
  :group 'vm-faces)
-;; (copy-face 'bold-italic 'vm-highlight-url)
 
 (defcustom vm-highlight-url-face 'vm-highlight-url
     "*Non-nil value should be a face to use display URLs found in messages.
@@ -5190,10 +5154,6 @@ decide the face."
      (:foreground "Purple"))
     (((type x w32 mswindows mac) (class color) (background dark))
      (:foreground "Magenta"))
-    ;; (((class color) (min-colors 16) (background light))
-    ;;  (:foreground "Purple"))
-    ;; (((class color) (min-colors 16) (background dark))
-    ;;  (:foreground "Magenta"))
     (((class color) (background light)) ; (min-colors 8)
      (:foreground "Magenta" :weight bold))
     (((class color) (background dark))
@@ -5233,10 +5193,6 @@ decide the face."
        (:foreground "grey50" :strike-through "grey80"))
       (((type x w32 mswindows mac) (class color) (background dark)) 
        (:foreground "grey70" :strike-through "grey50"))
-      ;; (((class color) (min-colors 16) (background light)) 
-      ;;  (:foreground "grey50" :strike-through "grey70"))
-      ;; (((class color) (min-colors 16) (background dark)) 
-      ;;  (:foreground "grey70" :strike-trhough "grey50"))
       (((class color) (background light)) ;  (min-colors 8)
        (:foreground "yellow"))
       (((class color) (background dark)) 
@@ -5280,10 +5236,6 @@ decide the face."
      (:foreground "blue3"))
     (((type x w32 mswindows mac) (class color) (background dark))
      (:foreground "LightSkyBlue"))
-    ;; (((class color) (min-colors 16) (background light))
-    ;;  (:foreground "blue"))
-    ;; (((class color) (min-colors 16) (background dark))
-    ;;  (:foreground "magenta"))
     (((class color) (background light)) ;  (min-colors 8)
      (:foreground "blue"))
     (((class color) (background dark))
@@ -5306,10 +5258,6 @@ decide the face."
      (:foreground "green4"))
     (((type x w32 mswindows mac) (class color) (background dark))
      (:foreground "PaleGreen"))
-    ;; (((class color) (min-colors 16) (background light))
-    ;;  (:foreground "green"))
-    ;; (((class color) (min-colors 16) (background dark))
-    ;;  (:foreground "green"))
     (((class color))
      (:foreground "green")))
   "The face used in VM Summary buffers for saved messages."
@@ -5326,10 +5274,6 @@ decide the face."
      (:foreground "MediumOrchid4"))
     (((type x w32 mswindows mac) (class color) (background dark))
      (:foreground "plum1"))
-    ;; (((class color) (min-colors 16) (background light))
-    ;;  (:foreground "Orchid"))
-    ;; (((class color) (min-colors 16) (background dark))
-    ;;  (:foreground "purple"))
     (((class color))
      (:foreground "magenta"))
     (t 
@@ -5346,10 +5290,6 @@ decide the face."
      (:foreground "MediumOrchid3"))
     (((type x w32 mswindows mac) (class color) (background dark))
      (:foreground "Thistle1"))
-    ;; (((class color) (min-colors 16) (background light))
-    ;;  (:foreground "Orchid"))
-    ;; (((class color) (min-colors 16) (background dark))
-    ;;  (:foreground "Yellow"))
     (((class color))
      (:foreground "Yellow"))
     (((class grayscale) (background light))
@@ -5412,10 +5352,6 @@ collapsed threads."
      (:foreground "Red1"))
     (((type x w32 mswindows mac) (class color) (background dark))
      (:foreground "LightSalmon"))
-    ;; (((class color) (min-colors 16) (background light))
-    ;;  (:foreground "Red"))
-    ;; (((class color) (min-colors 16) (background dark))
-    ;;  (:foreground "Pink"))
     (((class color))		;  (min-colors 8)
      (:foreground "red"))
     (t
@@ -5672,41 +5608,6 @@ FCC processing."
 ;; The following settings are disabled because they are defined in
 ;; mail-mode/sendmail.el. 
 
-;; (defvar mail-yank-hooks nil
-;;   "Hooks called after a message is yanked into a mail composition buffer.
-
-;;    (This hook is deprecated, you should use mail-citation-hook instead.)
-
-;; The value of this hook is a list of functions to be run.
-;; Each hook function can find the newly yanked message between point and mark.
-;; Each hook function should return with point and mark around the yanked message.
-
-;; See the documentation for `vm-yank-message' to see when VM will run
-;; these hooks.")
-
-;; (defcustom mail-citation-hook nil
-;;   "*Hook for modifying a citation just inserted in the mail buffer.
-;; Each hook function can find the citation between (point) and (mark t).
-;; And each hook function should leave point and mark around the citation
-;; text as modified.
-
-;; If this hook is entirely empty (nil), a default action is taken
-;; instead of no action."
-;;   :group 'vm
-;;   :type 'hook)
-
-;; (defcustom mail-default-headers nil
-;;   "*A string containing header lines, to be inserted in outgoing messages.
-;; It is inserted before you edit the message,
-;; so you can edit or delete these lines."
-;;   :group 'vm
-;;   :type '(choice (const nil) string))
-
-;; (defcustom mail-signature nil
-;;   "*Text inserted at end of mail buffer when a message is initialized.
-;; If t, it means to insert the contents of the file `~/.signature'."
-;;   :group 'vm
-;;   :type '(choice (const nil) (const t) string))
 
 (defconst vm-rename-current-buffer-function nil
   "*Non-nil value should be a function to call to rename a buffer.
@@ -6345,8 +6246,8 @@ and up."
   (define-key vm-mode-virtual-map "O" 'vm-virtual-omit-message)
   (define-key vm-mode-virtual-map "U" 'vm-virtual-update-folders)
   (define-key vm-mode-virtual-map "D" 'vm-virtual-auto-delete-message)
-  ;; (define-key vm-mode-virtual-map "S" 'vm-virtual-save-message)
-  ;; (define-key vm-mode-virtual-map "A" 'vm-virtual-auto-archive-messages)
+  ;; `vm-virtual-save-message' and `vm-virtual-auto-archive-messages' are
+  ;; deliberately left without a key here; they are run with M-x.
   (define-key vm-mode-virtual-map "?" 'vm-virtual-check-selector-interactive)
   )
 (defalias 'vm-current-key-bindings 'vm-v8-key-bindings)
@@ -6670,7 +6571,6 @@ folder needs to be updated.")
 ;; used to choose between the default and
 ;; mail-extract-address-components but I don't see the utility of
 ;; it anymore.  It tries to be too smart.
-;;(defvar vm-chop-full-name-function 'vm-choose-chop-full-name-function)
 (defvar vm-chop-full-name-function 'vm-default-chop-full-name)
 (defvar vm-session-beginning t)
 (defvar vm-init-file-loaded nil)
@@ -6949,7 +6849,6 @@ header line in email messages,
   '(("any")
     ("sexp")
     ("eval")
-    ;; ("member") ; - yet to be defined
     ("virtual-folder-member")
     ("header")
     ("label")
@@ -7013,7 +6912,6 @@ individual help on each selector by checking the function
 
 (defconst vm-vs-alist
   '((any . vm-vs-any)
-    ;; (member . vm-vs-member) ; yet to be defined
     (virtual-folder-member . vm-vs-virtual-folder-member)
     (and . vm-vs-and)
     (or . vm-vs-or)
@@ -7203,8 +7101,6 @@ the current folder (internal variable).")
 (defvar vm-ml-labels nil)
 (make-variable-buffer-local 'vm-ml-labels)
 ; unused now
-;(defvar vm-ml-attributes-string nil)
-;(make-variable-buffer-local 'vm-ml-attributes-string)
 (defvar vm-ml-message-new nil)
 (make-variable-buffer-local 'vm-ml-message-new)
 (defvar vm-ml-message-unread nil)
@@ -7280,17 +7176,13 @@ UIDVALIDITY for each message to be expunged.")
 ;; The number of old ('failed') trace buffers to remember for debugging
 ;; purposes 
 ;; These are now subsumed in vm-...-keep-trace-buffer variables.  USR, 2011-11
-;; (defvar vm-pop-keep-failed-trace-buffers 20)
-;; (defvar vm-imap-keep-failed-trace-buffers 20)
 ;; Lists of trace buffers remembered for debugging purposes
 (defvar vm-kept-pop-buffers nil
   "* Variable that holds the old trace buffers of POP sessions for
   debugging purposes.")
-;; (make-variable-buffer-local 'vm-kept-pop-buffers)
 (defvar vm-kept-imap-buffers nil
   "* Variable that holds the old trace buffers of IMAP sessions for
   debugging purposes.")
-;; (make-variable-buffer-local 'vm-kept-imap-buffers)
 ;; Flag to make POP/IMAP code remember old trace buffers
 (defcustom vm-pop-keep-trace-buffer 1
   "* The number of POP session trace buffers that should be
@@ -7406,20 +7298,6 @@ that has a match.")
 (defconst vm-mime-default-action-string-alist
   ;; old definition
   ;; '(("text" . "display text")
-  ;;   ("multipart/alternative" . "display selected part")
-  ;;   ("multipart/digest" . "read digest")
-  ;;   ("multipart/parallel" . "display parts in parallel")
-  ;;   ("multipart" . "display parts")
-  ;;   ("message/partial" . "attempt message assembly")
-  ;;   ("message/external-body" . "retrieve the object")
-  ;;   ("message" . "display message")
-  ;;   ("audio" . "play audio")
-  ;;   ("video" . "display video")
-  ;;   ("image" . "display image")
-  ;;   ("model" . "display model")
-  ;;   ("application/postscript" . "display PostScript")
-  ;;   ("application/msword" . "display Word document")
-  ;;   ("application" . "display attachment"))
 
   '(("text" . "display")
     ("multipart/alternative" . "display selected part")
@@ -7504,28 +7382,6 @@ that has a match.")
     41 42 43 44 45 46 47 48 49 50 51  0  0  0  0  0
   ])
 
-;;(defconst vm-mime-base64-alphabet-decoding-alist
-;;  '(
-;;    ( 65 . 00) ( 66 . 01) ( 67 . 02) ( 68 . 03) ( 69 . 04) ( 70 . 05)
-;;    ( 71 . 06) ( 72 . 07) ( 73 . 08) ( 74 . 09) ( 75 . 10) ( 76 . 11)
-;;    ( 77 . 12) ( 78 . 13) ( 79 . 14) ( 80 . 15) ( 81 . 16) ( 82 . 17)
-;;    ( 83 . 18) ( 84 . 19) ( 85 . 20) ( 86 . 21) ( 87 . 22) ( 88 . 23)
-;;    ( 89 . 24) ( 90 . 25) ( 97 . 26) ( 98 . 27) ( 99 . 28) (100 . 29)
-;;    (101 . 30) (102 . 31) (103 . 32) (104 . 33) (105 . 34) (106 . 35)
-;;    (107 . 36) (108 . 37) (109 . 38) (110 . 39) (111 . 40) (112 . 41)
-;;    (113 . 42) (114 . 43) (115 . 44) (116 . 45) (117 . 46) (118 . 47)
-;;    (119 . 48) (120 . 49) (121 . 50) (122 . 51) ( 48 . 52) ( 49 . 53)
-;;    ( 50 . 54) ( 51 . 55) ( 52 . 56) ( 53 . 57) ( 54 . 58) ( 55 . 59)
-;;    ( 56 . 60) ( 57 . 61) ( 43 . 62) ( 47 . 63)
-;;   ))
-;;
-;;(defvar vm-mime-base64-alphabet-decoding-vector
-;;  (let ((v (make-vector 123 nil))
-;;	(p vm-mime-base64-alphabet-decoding-alist))
-;;    (while p
-;;      (aset v (car (car p)) (cdr (car p)))
-;;      (setq p (cdr p)))
-;;    v ))
 
 (defvar vm-message-garbage-alist nil
   "An association list of files created for this message and the
@@ -7564,7 +7420,7 @@ actions to be taken to destroy them.")
 	   ("iso-8859-3"	iso-8859-3)
 	   ("iso-8859-4"	iso-8859-4)
 	   ("iso-8859-5"	iso-8859-5)
-;	   ("iso-8859-6"	iso-8859-6)
+	   ;; iso-8859-6, Arabic, is deliberately not mapped here.
 	   ("iso-8859-7"	iso-8859-7)
 	   ("iso-8859-8"	iso-8859-8)
 	   ("iso-8859-8-i"	iso-8859-8)
@@ -7737,14 +7593,6 @@ cause trouble (abbrev-mode)."
 			'vm-summary-enable-faces "8.2.0")
 
 ;; Duplicate defintion. See above. TX
-;; (defcustom vm-mail-mode-hidden-headers '("References" "In-Reply-To" "X-Mailer")
-;;   "*A list of headers to hide in a VM composition buffer."
-;;   :group 'vm
-;;   :type '(choice (const :tag "Disabled" nil)
-;;                  (set :tag "Header list"
-;;                       (string "References")
-;;                       (string "In-Reply-To")
-;;                       (string "X-Mailer"))))
 
 ;; define this here so that the user can invoke it right away, if needed.
 

@@ -191,13 +191,6 @@ all the real folder buffers involved."
 	    ;; But why are we doing this?  This is ugly and
 	    ;; error-prone, and breaks things for server folders!
 	    ;; USR, 2010-09-20
-	    ;; (when (bufferp folder)
-	    ;; 	(if virtual
-	    ;; 	    (setcar (car clauses)
-	    ;; 		    (delq nil
-	    ;; 			  (mapcar 'buffer-file-name vm-real-buffers)))
-	    ;; 	  (if buffer-file-name
-	    ;; 	      (setcar (car clauses) (list buffer-file-name)))))
 
 	    ;; if new-messages non-nil use it instead of the
 	    ;; whole message list
@@ -260,8 +253,6 @@ all the real folder buffers involved."
     (if dont-finalize
 	new-message-list
       ;; this doesn't need to work currently, but it might someday
-      ;; (if virtual
-      ;;    (setq real-buffers-used (vm-delete-duplicates real-buffers-used)))
       (vm-increment vm-modification-counter)
       ;; Until this point the user doesn't really have a virtual
       ;; folder, as the virtual messages haven't been linked to the
@@ -1485,7 +1476,6 @@ folder buffer (which should be the virtual folder in which M occurs)."
     (set-marker (vm-end-of m) (+ (vm-start-of m) (- (vm-end-of real-m)
 						    (vm-start-of real-m))))))
 ;; ;; now load vm-avirtual to avoid a loading loop
-;; (require 'vm-avirtual)
 
 (provide 'vm-virtual)
 ;;; vm-virtual.el ends here

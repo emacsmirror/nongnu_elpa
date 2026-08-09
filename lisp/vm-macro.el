@@ -123,8 +123,6 @@ isn't a folder buffer.  USR, 2010-03-08"
   ;; This may be problematic - done in revno 570.
   ;; All kinds of operations call vm-select-folder-buffer, including
   ;; asynchronous things like the toolbar.
-  ;; (vm-buffer-type:set 'folder)
-  ;;--------------------------
   )
 
 (defsubst vm-select-folder-buffer-if-possible ()
@@ -136,15 +134,11 @@ isn't a folder buffer.  USR, 2010-03-08"
 	 (set-buffer vm-mail-buffer)
 	 ;;--------------------------
 	 ;; This may be problematic - done in revno 570.
-	 ;; (vm-buffer-type:set 'folder)
-	 ;;--------------------------
 	 )
 	((or (eq major-mode 'vm-mode)
 	     (eq major-mode 'vm-virtual-mode))
 	 ;;--------------------------
 	 ;; This may be problematic - done in revno 570.
-	 ;; (vm-buffer-type:set 'folder)
-	 ;;--------------------------
 	 )))
 
 (defsubst vm-select-folder-buffer-and-validate (&optional minimum interactive-p)
@@ -168,8 +162,6 @@ current-buffer in `vm-user-interaction-buffer'."
 	 (error "No VM folder buffer associated with this buffer")))
   ;;--------------------------
   ;; This may be problematic - done in revno 570.
-  ;; (vm-buffer-type:set 'folder)
-  ;;--------------------------
 
   (vm-check-for-killed-summary)
   (vm-check-for-killed-presentation)
@@ -236,7 +228,6 @@ current-buffer in `vm-user-interaction-buffer'."
 ;; For verification of the correct buffer protocol
 ;; Possible values are 'folder, 'presentation, 'summary, 'process
 
-;; (defvar vm-buffer-types nil)    ; moved to vm-vars.el
 
 (defvar vm-buffer-type-debug nil
   "*This flag can be set to t for debugging asynchronous buffer change
