@@ -3931,14 +3931,12 @@ with caution.
 
 @cindex FCC
 @cindex file CC
-@findex vm-imap-save-composition
 You can save copies of outgoing mail messages in 'sent' folders by
 adding an @samp{FCC:} header line to the composed message.  The value
 of the header should be either the full path name of a mail folder on
 the file system or the maildrop specification of a folder on an @acronym{IMAP}
-server.  If you use @acronym{IMAP} folders for saving sent mail, you should also
-add the function @code{vm-imap-save-composition} to the mail-mode's
-@code{mail-send-hook} variable.
+server.  Either way VM files the copy itself when you send the message;
+nothing has to be added to a hook.
 
 @cindex @acronym{IMAP}-FCC
 @vindex vm-imap-default-account

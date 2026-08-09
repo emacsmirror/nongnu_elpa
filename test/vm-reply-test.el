@@ -702,6 +702,45 @@ further change."
                                         "\n"))))))
       (delete-directory dir t))))
 
+(ert-deftest vm-reply-test-fcc-imap-maildrop-is-not-a-file-name ()
+  "REGRESSION: an Fcc naming an IMAP maildrop goes to the server, not to disk.
+Issue #605.  The manual has always said an Fcc value may be \"the maildrop
+specification of a folder on an IMAP server\", and `vm-fcc-write' took every
+value as a file name -- so the sent copy went into a file called
+imap:mail.example.com:143:inbox:login:user:* in whatever the default
+directory was, silently."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (spec "imap:mail.example.com:143:inbox:login:user:*")
+         (appended nil))
+    (unwind-protect
+        (cl-letf (((symbol-function 'vm-fcc-write-imap)
+                   (lambda (folder) (push folder appended))))
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: filed\n"
+                    "Fcc: " spec "\n"
+                    mail-header-separator "\nbody\n")
+            (let ((default-directory dir)
+                  (vm-default-folder-type 'From_))
+              (vm-do-fcc-in-composition)))
+          (should (equal appended (list spec)))
+          (should (equal nil (directory-files dir nil "[^.]"))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-tells-a-maildrop-from-a-file ()
+  "A file whose name merely mentions imap is still a file.
+`vm-imap-folder-spec-p' is what VM uses everywhere else to make this
+distinction, and it is the one used here, so the two agree."
+  (should (vm-imap-folder-spec-p "imap:host:143:inbox:login:user:*"))
+  (should (vm-imap-folder-spec-p "imap-ssl:host:993:inbox:login:user:*"))
+  (should-not (vm-imap-folder-spec-p "~/Mail/imap-notes"))
+  (should-not (vm-imap-folder-spec-p "/var/mail/imap")))
+
+(ert-deftest vm-reply-test-fcc-imap-needs-a-mailbox ()
+  "A maildrop specification with no mailbox in it is refused, not guessed at."
+  (with-temp-buffer
+    (insert "To: someone@example.com\nSubject: filed\n\nbody\n")
+    (should-error (vm-fcc-write-imap "imap:host:143::login:user:*"))))
+
 (ert-deftest vm-reply-test-fcc-header-stays-in-the-composition ()
   "The composition keeps its Fcc headers; only the copies lose them.
 The buffer VM leaves you with should still say where the copy went, and

@@ -4774,22 +4774,96 @@ message count and recent message count (a list of two numbers)."
       )
     (list msg-count recent-count)))
 
+(defun vm-imap-append-message (process mailbox string &optional flags)
+  "Append STRING to MAILBOX on the server, over the IMAP session PROCESS.
+Optional FLAGS is the flag list to give the appended message, written as
+the server expects to read it; the default is none.
+
+The session is the caller's: it is neither made nor ended here.  MAILBOX
+is created if the server does not have it, and a server that refuses to
+is ignored, since it usually means the mailbox is there already."
+  (save-excursion			; = save-current-buffer?
+    ;;-----------------------------
+    (vm-buffer-type:enter 'process)
+    ;;-----------------------------
+    (unwind-protect
+	(progn
+	  ;; this can go awry if the process has died...
+	  (unless process
+	    (error "No connection to the IMAP server"))
+	  (set-buffer (process-buffer process))
+	  (condition-case nil
+	      (vm-imap-create-mailbox process mailbox t)
+	    (vm-imap-protocol-error	; handler
+	     (vm-buffer-type:set 'process))) ; ignore errors
+
+	  (vm-inform 7 "Saving outgoing message to IMAP server...")
+	  (vm-imap-send-command
+	   process
+	   (format "APPEND %s %s {%d}"
+		   (vm-imap-quote-mailbox-name mailbox)
+		   (if flags flags "()")
+		   (length string)))
+	  ;; could these be done with vm-imap-read-boolean-response?
+	  (let ((need-plus t) response)
+	    (while need-plus
+	      (setq response (vm-imap-read-response process))
+	      (cond
+	       ((vm-imap-response-matches response 'VM 'NO)
+		(vm-imap-normal-error
+		 "server says - %s"
+		 (vm-imap-read-error-message process (cadr (cadr response)))))
+	       ((vm-imap-response-matches response 'VM 'BAD)
+		(vm-imap-normal-error
+		 "server says - %s"
+		 (vm-imap-read-error-message process (cadr (cadr response)))))
+	       ((vm-imap-response-matches response '* 'BYE)
+		(vm-imap-normal-error "server disconnected"))
+	       ((vm-imap-response-matches response '+)
+		(setq need-plus nil)))))
+
+	  (vm-imap-send-command process string nil t)
+	  (let ((need-ok t) response)
+	    (while need-ok
+	      (setq response (vm-imap-read-response process))
+	      (cond
+	       ((vm-imap-response-matches response 'VM 'NO)
+		(vm-imap-normal-error
+		 "servers says - %s:"
+		 (vm-imap-read-error-message process (cadr (cadr response)))))
+	       ((vm-imap-response-matches response 'VM 'BAD)
+		(vm-imap-normal-error
+		 "server says - %s"
+		 (vm-imap-read-error-message process (cadr (cadr response)))))
+	       ((vm-imap-response-matches response '* 'BYE)
+		(vm-imap-normal-error "server disconnected"))
+	       ((vm-imap-response-matches response 'VM 'OK)
+		(setq need-ok nil)))))
+	  (vm-inform 7 "Saving outgoing message to IMAP server... done"))
+      ;;-------------------
+      (vm-buffer-type:exit)
+      ;;-------------------
+      )))
+
 ;;; Robert Fenk's draft function for saving messages to IMAP folders.
 
 ;;;###autoload
 (defun vm-imap-save-composition ()
   "Saves the current composition in the IMAP folder given by the
-IMAP-FCC header. 
+IMAP-FCC header.
 Add this to your `mail-send-hook' and start composing from an IMAP
 folder.
+
+An `FCC:' header naming an IMAP maildrop is not this function\'s business:
+VM files those itself as it sends (`vm-do-fcc\'), so doing it here as well
+would put two copies on the server (issue #605).
 
 May throw exceptions." 
   ;; FIXME This function should not be throwing exceptions.
   ;; Creates a self-contained IMAP session and destroys it at the end.
   (let ((mailbox (vm-mail-get-header-contents "IMAP-FCC:"))
 	(mailboxes nil)
-	(fcc-string (vm-mail-get-header-contents "FCC:" ","))
-	fcc-list fcc maildrop spec-list 
+	maildrop
 	process (flags nil) string m ;; response
 	(vm-imap-ok-to-ask t))
     (if (null mailbox)
@@ -4824,19 +4898,6 @@ May throw exceptions."
       (setq mailboxes (list (cons mailbox process)))
       (vm-mail-mode-remove-header "IMAP-FCC:"))
 
-    (when fcc-string
-      (setq fcc-list (vm-parse fcc-string "\\([^,]+\\),?"))
-      (while fcc-list
-	(setq fcc (car fcc-list))
-	(setq spec-list (vm-parse fcc "\\([^:]+\\):?"))
-	(when (member (car spec-list) '("imap" "imap-ssl" "imap-ssh"))
-	  (setq process (vm-imap-make-session fcc nil :purpose "IMAP-FCC"))
-	  (if (null process)
-	      (error "Could not connect to the IMAP server for IMAP-FCC"))
-	  (setq mailboxes (cons (cons (nth 3 spec-list) process) 
-				mailboxes)))
-	(setq fcc-list (cdr fcc-list))))
-    
     (goto-char (point-min))
     (re-search-forward (concat "^" (regexp-quote mail-header-separator) "$"))
     (setq string (concat (buffer-substring (point-min) (match-beginning 0))
@@ -4848,74 +4909,11 @@ May throw exceptions."
       (setq mailbox (car (car mailboxes)))
       (setq process (cdr (car mailboxes)))
       (unwind-protect
-	  (save-excursion	       ; = save-current-buffer?
-	    ;;-----------------------------
-	    (vm-buffer-type:enter 'process)
-	    ;;-----------------------------
-	    ;; this can go awry if the process has died...
-	    (unless process
-	      (error "No connection to IMAP server for IMAP-FCC"))
-	    (set-buffer (process-buffer process))
-	    (condition-case nil
-		(vm-imap-create-mailbox process mailbox t)
-	      (vm-imap-protocol-error 	; handler
-	       (vm-buffer-type:set 'process))) ; ignore errors
-	    ;;----------------------------------
-	    ;;----------------------------------
-
-	    (vm-inform 7 "Saving outgoing message to IMAP server...")
-	    (vm-imap-send-command 
-	     process
-	     (format "APPEND %s %s {%d}"
-		     (vm-imap-quote-mailbox-name mailbox)
-		     (if flags flags "()")
-		     (length string)))
-	    ;; could these be done with vm-imap-read-boolean-response?
-	    (let ((need-plus t) response)
-	      (while need-plus
-		(setq response (vm-imap-read-response process))
-		(cond 
-		 ((vm-imap-response-matches response 'VM 'NO)
-		  (vm-imap-normal-error 
-		   "server says - %s"
-		   (vm-imap-read-error-message process (cadr (cadr response)))))
-		 ((vm-imap-response-matches response 'VM 'BAD)
-		  (vm-imap-normal-error
-		   "server says - %s"
-		   (vm-imap-read-error-message process (cadr (cadr response)))))
-		 ((vm-imap-response-matches response '* 'BYE)
-		  (vm-imap-normal-error "server disconnected"))
-		 ((vm-imap-response-matches response '+)
-		  (setq need-plus nil)))))
-
-	    (vm-imap-send-command process string nil t)
-	    (let ((need-ok t) response)
-	      (while need-ok
-
-		(setq response (vm-imap-read-response process))
-		(cond
-		 ((vm-imap-response-matches response 'VM 'NO)
-		  (vm-imap-normal-error
-		   "servers says - %s:"
-		   (vm-imap-read-error-message process (cadr (cadr response)))))
-		 ((vm-imap-response-matches response 'VM 'BAD)
-		  (vm-imap-normal-error
-		   "server says - %s"
-		   (vm-imap-read-error-message process (cadr (cadr response)))))
-		 ((vm-imap-response-matches response '* 'BYE)
-		  (vm-imap-normal-error "server disconnected"))
-		 ((vm-imap-response-matches response 'VM 'OK)
-		  (setq need-ok nil)))))
-	    (vm-inform 7 "Saving outgoing message to IMAP server... done")
-	    )
+	  (vm-imap-append-message process mailbox string flags)
 	;; unwind-protections
 	(when (and (processp process)
 		   (memq (process-status process) '(open run)))
-	  (vm-imap-end-session process))
-	;;-------------------
-	(vm-buffer-type:exit)
-	;;-------------------
-	)
+	  (vm-imap-end-session process)))
       (setq mailboxes (cdr mailboxes)))
     ))
 

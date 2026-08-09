@@ -30,6 +30,10 @@ VM 8.?.?
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
+  * An Fcc header naming an IMAP maildrop now files the copy on the server.
+    It was written to a file named after the maildrop specification unless
+    vm-imap-save-composition had been added to mail-send-hook by hand; that
+    is no longer needed for an Fcc, and the manual no longer asks for it.
   * A line too long to send unencoded is now sent quoted-printable rather
     than BASE64, so it arrives as the one line it was written as and the
     rest of the message stays readable in the raw.  New variable
