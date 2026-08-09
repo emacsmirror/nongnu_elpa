@@ -421,6 +421,35 @@ server and reads the mailbox back with the harness\' own client."
         (should (string-match-p (regexp-quote subject) text))
         (should (string-match-p "filed by Fcc" text))))))
 
+(ert-deftest vm-imap-live-test-fcc-is-not-filed-twice ()
+  "REGRESSION: an Fcc maildrop is filed once, not once per mechanism.
+Issue #605.  `vm-imap-save-composition\' used to handle Fcc entries naming
+an IMAP maildrop as well as the IMAP-FCC header.  Now that VM files those
+itself, a user who followed the manual and put that function on
+`mail-send-hook\' would have had two copies appended: one by VM as it
+sends, one by the hook."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (vm-imap-live-with-mailbox (conn mailbox "plain")
+    (let* ((server (vm-imap-live-server "plain"))
+           (account (car (plist-get server :accounts)))
+           (spec (vm-imap-live-spec server account mailbox))
+           (vm-imap-server-timeout vm-imap-live-timeout)
+           (vm-imap-passwords (list (list spec (cdr account)))))
+      (with-temp-buffer
+        (insert "From: " (car account) "@example.com\n"
+                "To: someone@example.com\n"
+                "Subject: filed once\n"
+                "Fcc: " spec "\n"
+                mail-header-separator "\nbody\n")
+        (vm-do-fcc-in-composition)
+        ;; what the hook would have done, on top of what VM just did
+        (vm-imap-save-composition))
+      (vm-imap-live-cmd-ok conn "SELECT \"%s\"" mailbox)
+      (let ((text (vm-imap-live-cmd-ok conn "STATUS \"%s\" (MESSAGES)" mailbox)))
+        (should (string-match "MESSAGES \\([0-9]+\\)" text))
+        (should (equal "1" (match-string 1 text)))))))
+
 (ert-deftest vm-imap-live-test-relay-passes-traffic-through ()
   "The relay is transparent when given no rules.
 If this fails, nothing else in tier 3 means anything."

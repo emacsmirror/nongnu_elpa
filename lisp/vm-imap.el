@@ -4850,17 +4850,20 @@ is ignored, since it usually means the mailbox is there already."
 ;;;###autoload
 (defun vm-imap-save-composition ()
   "Saves the current composition in the IMAP folder given by the
-IMAP-FCC header. 
+IMAP-FCC header.
 Add this to your `mail-send-hook' and start composing from an IMAP
 folder.
+
+An `FCC:' header naming an IMAP maildrop is not this function\'s business:
+VM files those itself as it sends (`vm-do-fcc\'), so doing it here as well
+would put two copies on the server (issue #605).
 
 May throw exceptions." 
   ;; FIXME This function should not be throwing exceptions.
   ;; Creates a self-contained IMAP session and destroys it at the end.
   (let ((mailbox (vm-mail-get-header-contents "IMAP-FCC:"))
 	(mailboxes nil)
-	(fcc-string (vm-mail-get-header-contents "FCC:" ","))
-	fcc-list fcc maildrop spec-list 
+	maildrop
 	process (flags nil) string m ;; response
 	(vm-imap-ok-to-ask t))
     (if (null mailbox)
@@ -4895,19 +4898,6 @@ May throw exceptions."
       (setq mailboxes (list (cons mailbox process)))
       (vm-mail-mode-remove-header "IMAP-FCC:"))
 
-    (when fcc-string
-      (setq fcc-list (vm-parse fcc-string "\\([^,]+\\),?"))
-      (while fcc-list
-	(setq fcc (car fcc-list))
-	(setq spec-list (vm-parse fcc "\\([^:]+\\):?"))
-	(when (member (car spec-list) '("imap" "imap-ssl" "imap-ssh"))
-	  (setq process (vm-imap-make-session fcc nil :purpose "IMAP-FCC"))
-	  (if (null process)
-	      (error "Could not connect to the IMAP server for IMAP-FCC"))
-	  (setq mailboxes (cons (cons (nth 3 spec-list) process) 
-				mailboxes)))
-	(setq fcc-list (cdr fcc-list))))
-    
     (goto-char (point-min))
     (re-search-forward (concat "^" (regexp-quote mail-header-separator) "$"))
     (setq string (concat (buffer-substring (point-min) (match-beginning 0))
