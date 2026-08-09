@@ -2314,7 +2314,11 @@ this facility is only available for IMAP folders.
 @deffn Command vm-revert-buffer
 @findex vm-revert-buffer
 Revert the current folder to its version on the disk.
-Same as M-x vm-revert-folder.
+The summary and presentation buffers are killed, the file is read again,
+and the folder is visited afresh with the access method it had, so an
+IMAP or POP folder comes back connected rather than as a plain file.
+
+Also available as @code{vm-revert-folder}.
 @end deffn
 
 @end macro
@@ -2323,7 +2327,11 @@ Same as M-x vm-revert-folder.
 @deffn Command vm-revert-folder
 @findex vm-revert-folder
 Revert the current folder to its version on the disk.
-Same as M-x vm-revert-folder.
+The summary and presentation buffers are killed, the file is read again,
+and the folder is visited afresh with the access method it had, so an
+IMAP or POP folder comes back connected rather than as a plain file.
+
+Also available as @code{vm-revert-folder}.
 @end deffn
 
 @end macro
@@ -12333,9 +12341,8 @@ Non-nil value should be a regular expression that matches
 addresses that you don’t consider interesting enough to
 appear in the summary.  When such senders would be displayed by
 the %F or %f summary format specifiers VM will substitute the
-value of @code{vm-summary-uninteresting-senders-arrow} (default "To:
-") followed by what would be shown by the %T and %t specifiers
-respectively.
+value of @code{vm-summary-recipient-marker} (default "To: ") followed
+by what would be shown by the %T and %t specifiers respectively.
 @end defopt
 
 @end macro

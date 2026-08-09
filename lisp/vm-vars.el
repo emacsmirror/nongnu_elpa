@@ -4005,9 +4005,8 @@ might be useful for very long threads."
 addresses that you don't consider interesting enough to
 appear in the summary.  When such senders would be displayed by
 the %F or %f summary format specifiers VM will substitute the
-value of `vm-summary-uninteresting-senders-arrow' (default \"To:
-\") followed by what would be shown by the %T and %t specifiers
-respectively."
+value of `vm-summary-recipient-marker' (default \"To: \") followed
+by what would be shown by the %T and %t specifiers respectively."
   :group 'vm-summary
   :type '(choice (const nil) regexp))
 

@@ -265,7 +265,7 @@ Prefix argument N means scroll forward N lines."
 it is suppressed if the variable `vm-auto-next-message' is nil."
   (interactive)
   (if vm-auto-next-message
-      (let ((vm-summary-uninteresting-senders-arrow "")
+      (let ((vm-summary-recipient-marker "")
 	    (case-fold-search nil))
 	(vm-inform 6 (if (and (stringp vm-summary-uninteresting-senders)
 			  (string-match vm-summary-uninteresting-senders

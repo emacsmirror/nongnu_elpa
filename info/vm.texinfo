@@ -346,15 +346,9 @@ be flagged as old and unread, before saving.  The @kbd{x} command quits
 a folder without changing the status of new messages, saving or
 otherwise modifying the current folder.
 
-@vindex vm-confirm-quit
-If the variable @code{vm-confirm-quit} is set to @code{t}
-VM will always ask for confirmation before ending a VM
-visit of a folder.  A @code{nil} value means VM will ask only
-when messages will be lost unwittingly by quitting, i.e. not
-removed by intentional delete and expunge.  A value that is
-neither @code{nil} nor @code{t} causes VM to ask only when
-there are unsaved changes to message attributes or when messages
-will be lost.
+Whether either of them asks first is up to you:
+
+@vmdocvmconfirmquit
 
 @findex vm-quit-just-bury
 @findex vm-switch-to-folder
@@ -489,15 +483,9 @@ file based on a particular filename suffix.  @code{vm-mode} skips
 some of VM's start-up procedures (e.g. starting up a summary) to make
 non-interactive use easier.
 
-@vindex vm-startup-with-summary
-The variable @code{vm-startup-with-summary} controls whether VM
-automatically displays a summary of the folder's contents at startup.  A
-value of @code{nil} gives no summary; a value of @code{t} always gives a
-summary.  A value that is a positive integer @var{n} means that VM
-should generate a summary if there are @var{n} or more messages in
-the folder.  A negative value @var{-n} means generate a summary only if
-there are @var{n} or fewer messages.  The default value of
-@code{vm-startup-with-summary} is @code{t}.
+Whether a summary of the folder appears at startup is up to you:
+
+@vmdocvmstartupwithsummary
 
 @menu
 * Local Folders::       Working with folders on the local file system
@@ -1854,12 +1842,16 @@ gone for ever.
 
 @unnumberedsubsec Reverting a Folder
 
-@findex vm-revert-folder
-@findex revert-file
+@findex revert-buffer
 If you have made changes to a mail folder which you would like to
-cancel and go back to the version currently on the disk, you can use
-the function @kbd{vm-revert-folder} or the ``Revert Folder'' entry in the
-Folder menu.  (Emacs's built-in @kbd{revert-file} is not recommended.)
+cancel and go back to the version currently on the disk, use the Revert
+Folder entry in the Folder menu, or:
+
+@vmdocvmrevertfolder
+
+Emacs's own @code{revert-buffer} is not recommended: it reads the file back
+without VM's bookkeeping, so the folder buffer and VM's idea of it part
+company.
 
 @node Navigating, Reading Messages, Starting Up, Top
 @chapter Navigating
@@ -4815,11 +4807,7 @@ Runs a shell command using as input the current message or marked
 messages in the mbox format, but will not display the output.
 @end table
 
-@vindex vm-berkeley-mail-compatibility
-A non-@code{nil} value of @code{vm-berkeley-mail-compatibility}
-means to read and write BSD @i{Mail(1)} style Status: headers.
-This makes sense if you plan to use VM to read mail archives
-created by @i{Mail}.
+@vmdocvmberkeleymailcompatibility
 
 
 @node Deleting Messages, Editing Messages, Saving Messages, Top
@@ -5315,13 +5303,10 @@ You can have a summary generated automatically at VM startup
 by setting the variable @code{vm-startup-with-summary} non-nil.
 @xref{Starting Up}.
 
-@vindex vm-follow-summary-cursor
 All VM commands are available in the summary buffer just as they are in
-the folder buffer itself.  If you set @code{vm-follow-summary-cursor}
-non-@code{nil}, VM will select the message under the cursor in the
-summary window before executing commands that operate on the current
-message.  Note that this occurs @emph{only} when executing a command
-from the summary buffer window.
+the folder buffer itself, and the cursor can say which message they act on:
+
+@vmdocvmfollowsummarycursor
 
 @menu
 * Summary Format::     Customizing the summary format
@@ -6693,16 +6678,7 @@ deleted.
 If @code{vm-frame-per-help} is set non-@code{nil}, VM will create a new frame
 to display any help buffer produced by the vm-help command.
 
-@vindex vm-frame-per-completion
-If @code{vm-frame-per-completion} is set non-@code{nil}, VM will create a new
-frame on mouse initiated completing reads.  A mouse initiated
-completing read occurs when you invoke a VM command using the
-mouse, either with a menu or a toolbar button.  That command
-must then prompt you for information, and there must be a
-limited set of valid responses.  If these conditions are met
-and @code{vm-frame-per-completion}'s value is non-@code{nil}, VM will
-create a new frame containing a list of responses that you can
-select with the mouse.
+@vmdocvmframepercompletion
 
 @vindex vm-search-other-frames
 When VM is deciding whether to create a new frame, it checks
@@ -7061,9 +7037,7 @@ If @code{vm-url-search-limit} has a positive numeric value @var{N}, VM
 will search the first @math{@var{N} / 2} characters and the last
 @math{@var{N} / 2} characters in the message for @acronym{URL}s.
 
-@vindex vm-mime-button-face
-The face named by @code{vm-mime-button-face} is used to display the
-textual buttons that trigger the display of @acronym{MIME} objects.
+@vmdocvmmimebuttonface
 
 @xref{Summary Faces}, for the faces support in the Summary buffer.
 
