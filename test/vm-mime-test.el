@@ -2499,6 +2499,74 @@ message was read in, so the same message quoted differently in two frames."
     ;; while display still follows the window
     (should (equal (default-value 'vm-html-fill-column) 'window-width))))
 
+;;; Long lines in outgoing text (issue #593)
+
+(defun vm-mime-test--encoding-of (text)
+  "The transfer encoding VM chooses for TEXT, and TEXT once encoded."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert text)
+    (let ((encoding (vm-determine-proper-content-transfer-encoding
+                     (point-min) (point-max))))
+      (cons (vm-mime-transfer-encode-region encoding (point-min) (point-max) t)
+            (buffer-string)))))
+
+(ert-deftest vm-mime-test-a-long-line-is-sent-quoted-printable ()
+  "A line past the RFC 5322 limit goes out quoted-printable, not base64.
+Both carry the line exactly; quoted-printable leaves the rest of the part
+readable in the message as it was sent, which is why other mail readers
+use it here."
+  (let ((result (vm-mime-test--encoding-of
+                 (concat "a short line\n" (make-string 1200 ?x) "\n"))))
+    (should (equal (car result) "quoted-printable"))
+    (should (string-match-p "^a short line$" (cdr result)))
+    ;; the long line arrives as soft-broken physical lines
+    (should (string-match-p "=\n" (cdr result)))))
+
+(ert-deftest vm-mime-test-the-line-limit-is-measured-without-the-newline ()
+  "998 characters is a legal line; 999 is not.
+RFC 5322 counts a line without its terminator, and the check counted the
+newline too, so a line of exactly 998 was encoded when it needed not be."
+  (should (equal (car (vm-mime-test--encoding-of
+                       (concat (make-string 998 ?x) "\n")))
+                 "7bit"))
+  (should (equal (car (vm-mime-test--encoding-of
+                       (concat (make-string 999 ?x) "\n")))
+                 "quoted-printable")))
+
+(ert-deftest vm-mime-test-the-line-limit-is-settable ()
+  "`vm-mime-max-text-line-length' says when a line is too long to send.
+The default only catches what the RFC forbids; 78 is what the RFC asks for
+and what Gmail encodes to."
+  (let ((text (concat (make-string 300 ?x) "\n")))
+    (should (equal (car (vm-mime-test--encoding-of text)) "7bit"))
+    (let ((vm-mime-max-text-line-length 78))
+      (should (equal (car (vm-mime-test--encoding-of text)) "quoted-printable")))
+    ;; nil does not license a line the RFC forbids
+    (let ((vm-mime-max-text-line-length nil))
+      (should (equal (car (vm-mime-test--encoding-of text)) "7bit"))
+      (should (equal (car (vm-mime-test--encoding-of
+                           (concat (make-string 1200 ?x) "\n")))
+                     "quoted-printable")))))
+
+(ert-deftest vm-mime-test-quoted-printable-folds-its-output ()
+  "No line of a quoted-printable part is longer than the 76 of RFC 2045.
+`quoted-printable-encode-region' folds only when told to, and VM did not
+tell it, so a quoted-printable part carried whatever line lengths the text
+had -- and no soft line break was ever emitted."
+  (with-temp-buffer
+    (set-buffer-multibyte nil)
+    (insert (make-string 300 ?x) "\n")
+    (vm-mime-qp-encode-region (point-min) (point-max))
+    (should (<= (vm-mime-longest-line-length) 76))
+    (vm-mime-qp-decode-region (point-min) (point-max))
+    (should (equal (buffer-string) (concat (make-string 300 ?x) "\n")))))
+
+(ert-deftest vm-mime-test-binary-data-still-goes-out-base64 ()
+  "A NUL or a carriage return is not a long line and is not quoted-printable."
+  (should (equal (car (vm-mime-test--encoding-of "a\0b\n")) "base64"))
+  (should (equal (car (vm-mime-test--encoding-of "a\rb\n")) "base64")))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

@@ -3403,20 +3403,23 @@ readable even if the recipient does not have a @acronym{MIME}-capable mail
 reader.  @dfn{BASE64} is unreadable without a @acronym{MIME}-capable mail
 reader.
 
-@vindex vm-mime-8bit-text-transfer-encoding
-VM's text transfer encoding behavior is controlled by the
-variable @code{vm-mime-8bit-text-transfer-encoding}.  Its value should
-be a symbol that specifies what kind of transfer encoding to do
-for 8-bit text.  A value of @samp{quoted-printable}, means to use
-quoted-printable encoding.  A value of @samp{base64} means to use
-BASE64 encoding.  A value of @samp{8bit} means to send the message as
-is.  Note that this variable usually only applies to textual @acronym{MIME}
-content types.  Images, audio, video, etc. typically will have
-some attribute that makes VM consider them to be ``binary'',
-which moves them outside the scope of this variable.  For
-example, messages with line lengths of 1000 characters or more
-are considered binary, as are messages that contain carriage
-returns (ASCII code 13) or NUL's (ASCII code 0).
+@vmdocvmmime8bittexttransferencoding
+
+@noindent
+It applies to textual content types.  Images, audio and video almost always
+carry a carriage return or a NUL, which makes VM treat the part as binary
+and send it BASE64 whatever this says.
+
+@cindex long lines
+@cindex line length
+A long line is the other thing that cannot go out as it stands.  RFC 5322
+allows 998 characters in a line and asks for 78; past the first of those a
+line has to be encoded, and quoted-printable is how VM does it, carrying
+the line as several physical lines each ending in @samp{=} for the
+recipient's mail reader to join back up.  So the line arrives as the one
+line you wrote.
+
+@vmdocvmmimemaxtextlinelength
 
 @cindex format=flowed
 @vindex fill-column
