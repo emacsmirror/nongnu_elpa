@@ -140,12 +140,6 @@ nil."
   (if vm-mime-delete-after-saving
       (vm-present-current-message)))
 
-(defun vm-rfaddons--mime-auto-save-all-attachments (&optional m flag)
-  (if (and (eq flag 'expunged)
-           (not (vm-filed-flag m)))
-      (vm-mime-auto-save-all-attachments-delete-external m)))
-
-;;;###autoload
 (defun vm-rfaddons-infect-vm (&optional _sit-for
                                         option-list exclude-option-list)
   "This function will setup the key bindings, advices and hooks
@@ -156,9 +150,6 @@ The OPTION-LIST can be use to select individual option.
 The EXCLUDE-OPTION-LIST can be use to exclude individual option.
 
 The following options are possible.
-
-`general' options:
- - rf-faces: change some faces
 
 `vm-mail-mode' options:
  - attach-save-files: bind [C-c C-a] to `vm-attach-files-in-directory' 
@@ -173,17 +164,13 @@ The following options are possible.
 
 Other EXPERIMENTAL options:
  - auto-save-all-attachments: add `vm-mime-auto-save-all-attachments' to
-   `vm-select-new-message-hook' for automatic saving of attachments and define
-   an advice for `vm-set-deleted-flag-of' in order to automatically delete
-   the files corresponding to MIME objects of type message/external-body when
-   deleting the message.
- - return-receipt-to
+   `vm-select-new-message-hook' for automatic saving of attachments.
 
 If you want to use only a subset of the options then call
 `vm-rfaddons-infect-vm' like this:
-        (vm-rfaddons-infect-vm 2 \\='(general vm-mail-mode shrunken-headers)
+        (vm-rfaddons-infect-vm 2 \\='(vm-mail-mode shrunken-headers)
                                  \\='(fake-date))
-This will enable all `general' and `vm-mail-mode' options plus the
+This will enable all `vm-mail-mode' options plus the
 `shrunken-headers' option, but it will exclude the `fake-date' option of the
 `vm-mail-mode' options.
 
@@ -191,16 +178,11 @@ or do the binding and advising on your own."
   (interactive "")
 
   (if (eq option-list 'all)
-      (setq option-list (list 'general 'vm-mail-mode 'vm-mode
-                              'auto-save-all-attachments
-                              'auto-delete-message-external-body))
+      (setq option-list (list 'vm-mail-mode 'vm-mode
+                              'auto-save-all-attachments))
     (if (eq option-list t)
         (setq option-list (list 'vm-mail-mode 'vm-mode))))
   
-  (when (member 'general option-list)
-    (setq option-list (append '(rf-faces)
-                              option-list))
-    (setq option-list (delq 'general option-list)))
   
   (when (member 'vm-mail-mode option-list)
     (setq option-list (append '(attach-save-files
@@ -214,11 +196,7 @@ or do the binding and advising on your own."
     (setq option-list (delq 'vm-mail-mode option-list)))
   
   (when (member 'vm-mode option-list)
-    (setq option-list (append '(
-                                ;; save-all-attachments
-                                shrunken-headers
-                                take-action-on-attachment
-				)
+    (setq option-list (append '(shrunken-headers)
                               option-list))
     (setq option-list (delq 'vm-mode option-list)))
     
@@ -231,12 +209,7 @@ or do the binding and advising on your own."
       (sit-for 3))
     (setq exclude-option-list (cdr exclude-option-list)))
   
-  ;; general ----------------------------------------------------------------
-  ;; install my choice of faces 
-  (vm-rfaddons-check-option
-   'rf-faces option-list
-   (vm-install-rf-faces))
-  
+
   ;; vm-mail-mode -----------------------------------------------------------
   (vm-rfaddons-check-option
    'attach-save-files option-list
@@ -289,15 +262,7 @@ or do the binding and advising on your own."
      ;; this overrides the VM binding of "T" to `vm-toggle-thread'
      (define-key vm-mode-map "T" 'vm-shrunken-headers-toggle)))
 
-;; This is not needed any more because VM has $ commands to take
-;; action on attachments.  But we keep it for compatibility.
 
-  ;; take action on attachment binding
-  (vm-rfaddons-check-option
-   'take-action-on-attachment option-list
-   ;; this overrides the VM binding of "." to `vm-mark-message-as-read'
-   (define-key vm-mode-map "."  'vm-mime-take-action-on-attachment))
-  
 ;; This is not needed any more becaue it is in the core  
 
   ;; other experimental options ---------------------------------------------
@@ -310,13 +275,6 @@ or do the binding and advising on your own."
                :after #'vm-rfaddons--do-preview-again)
    (add-hook 'vm-select-new-message-hook 'vm-mime-auto-save-all-attachments))
    
-   (vm-rfaddons-check-option
-    'auto-delete-message-external-body option-list
-   ;; and their deletion when deleting a unfiled message,
-   ;; this is probably a problem, since actually we should delete it
-   ;; only if there remains no reference to it!!!!
-    (advice-add 'vm-set-deleted-flag-of
-                :before #'vm-rfaddons--mime-auto-save-all-attachments))
 
    (vm-rfaddons-check-option
     'return-receipt-to option-list
@@ -326,26 +284,6 @@ or do the binding and advising on your own."
     (message "VM-RFADDONS: The following options are unknown: %s" option-list)
     (ding)
     (sit-for 3)))
-
-(defun rf-vm-su-labels (m)
-  "This version does some sanity checking."
-  (let ((labels (vm-decoded-label-string-of m)))
-    (if (and labels (stringp labels))
-        labels
-      (setq labels (vm-decoded-labels-of m))
-      (if (and labels (listp labels))
-          (vm-set-decoded-label-string-of
-           m
-           (setq labels (mapconcat 'identity labels ",")))
-        (vm-set-decoded-label-string-of m "")
-        (setq labels "")))
-    labels))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; This add-on is now obsolete because
-;; vm-include-text-from-presentation in core VM enables the same
-;; functionality.   USR, 2011-03-30
 
 (defcustom vm-reply-include-presentation nil
   "*If true a reply will include the presentation of a message.
@@ -393,109 +331,6 @@ This does only work with my modified VM, i.e. a hacked
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; This has been moved to the VM core.  USR, 2010-03-11
 ;;;;;###autoload
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defcustom vm-spamassassin-strip-report "spamassassin -d"
-  "*Shell command used to strip spamassassin-reports from a message."
-  :type 'string
-  :group 'vm-rfaddons)
-
-(defun vm-strip-spamassassin-report ()
-  "Strips spamassassin-reports from a message."
-  (interactive)
-  (save-window-excursion
-    (let ((vm-frame-per-edit nil))
-      (vm-edit-message)
-      (shell-command-on-region (point-min) (point-max)
-                               vm-spamassassin-strip-report
-                               (current-buffer)
-                               t)
-      (vm-edit-message-end))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-;; vm-switch-to-folder moved to vm.el.   USR, 2011-02-28
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defcustom vm-rmail-mode nil
-  "*Non-nil means up/down move to the next/previous message instead.
-Otherwise normal cursor movement is done.  Specifically only modes
-listed in `vm-rmail-mode-list' are affected.
-Use `vm-rmail-toggle' to switch between normal and this mode."
-  :type 'boolean
-  :group 'vm-rfaddons)
-
-(defcustom vm-rmail-mode-list '(vm-summary-mode)
-  "*Mode to activate `vm-rmail-mode' in."
-  :type '(set (const vm-mode)
-              (const vm-presentation-mode)
-              (const vm-virtual-mode)
-              (const vm-summary-mode))
-  :group 'vm-rfaddons)
-  
-(defun vm-rmail-toggle (&optional arg)
-  (interactive)
-  (cond ((eq nil arg)
-         (setq vm-rmail-mode (not vm-rmail-mode)))
-        ((=  1 arg)
-         (setq vm-rmail-mode t))
-        ((= -1 arg)
-         (setq vm-rmail-mode nil))
-        (t
-         (setq vm-rmail-mode (not vm-rmail-mode))))
-  (message (if vm-rmail-mode "Rmail cursor mode" "VM cursor mode")))
-  
-(defun vm-rmail-up ()
-  "Go to the previous message, or up one line, as `vm-rmail-mode\' says.
-In Rmail cursor mode the arrow keys move between messages, as Rmail\'s do;
-otherwise they move point, as they do everywhere else in Emacs.  Toggled
-with `vm-rmail-toggle\'."
-  (interactive)
-  (cond ((and vm-rmail-mode (member major-mode vm-rmail-mode-list))
-         (vm-next-message -1)
-         (vm-display nil nil '(rf-vm-rmail-up vm-previous-message)
-                     (list this-command)))
-        (t 
-         (forward-line -1))))
-
-(defun vm-rmail-down ()
-  "Go to the next message, or down one line, as `vm-rmail-mode\' says.
-See `vm-rmail-up\'."
-  (interactive)
-  (cond ((and vm-rmail-mode (member major-mode vm-rmail-mode-list))
-         (vm-next-message 1)
-         (vm-display nil nil '(rf-vm-rmail-up vm-next-message)
-                     (list this-command)))
-        (t 
-         (forward-line 1))))
-
-(defun vm-do-with-message (count function vm-display)
-  (vm-follow-summary-cursor)
-  (save-excursion
-    (vm-select-folder-buffer)
-    (let ((mlist (vm-select-operable-messages
-		  count (vm-interactive-p) "Operate on")))
-      (while mlist
-        (funcall function (car mlist))
-        (vm-mark-for-summary-update (car mlist) t)
-        (setq mlist (cdr mlist))))
-    (vm-display nil nil (append vm-display '(vm-do-with-message))
-                (list this-command))
-    (vm-update-summary-and-mode-line)))
-  
-(defun vm-toggle-mark (count &optional _m)
-  (interactive "p")
-  (vm-do-with-message
-   count
-   (lambda (m) (vm-set-mark-of m (not (vm-mark-of m))))
-   '(vm-toggle-mark vm-mark-message marking-message)))
-
-(defun vm-toggle-deleted (count &optional _m)
-  (interactive "p")
-  (vm-do-with-message
-   count
-   (lambda (m) (vm-set-deleted-flag m (not (vm-deleted-flag m))))
-   '(vm-toggle-deleted vm-delete-message vm-delete-message-backward)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defcustom vm-mail-subject-prefix-replacements
@@ -995,66 +830,6 @@ save attachments.
         (vm-present-current-message)))))
 
 ;;;###autoload
-(defun vm-mime-auto-save-all-attachments-delete-external (msg)
-  "Deletes the external attachments created by `vm-save-all-attachments'.
-You may want to use this function in order to get rid of the external files
-when deleting a message.
-
-See the advice in `vm-rfaddons-infect-vm'."
-  (interactive "")
-  (vm-check-for-killed-folder)
-  (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
-  (setq msg (or msg (car vm-message-pointer)))
-  (if msg 
-      (let ((o (vm-mm-layout msg))
-            (no 0)
-            parts layout file type)
-
-        (if (eq 'none o)
-            nil;; this is no mime message
-          (setq type (car (vm-mm-layout-type o)))
-      
-          (cond ((or (vm-mime-types-match "multipart/alternative" type)
-                     (vm-mime-types-match "multipart/mixed" type))
-                 (setq parts (copy-sequence (vm-mm-layout-parts o))))
-                (t (setq parts (list o))))
-        
-          (while parts
-            (if (vm-mime-composite-type-p
-                 (car (vm-mm-layout-type (car parts))))
-                (setq parts (nconc (copy-sequence
-                                    (vm-mm-layout-parts
-                                     (car parts)))
-                                   (cdr parts))))
-      
-            (setq layout (car parts))
-            (if layout
-                (setq type (car (vm-mm-layout-type layout))))
-
-            (if (not (string= type "message/external-body"))
-                nil
-              (setq file (vm-mime-get-parameter layout "name"))
-              (if (and file (file-exists-p file))
-                  (progn (delete-file file)
-                         (setq no (+ 1 no)))))
-            (setq parts (cdr parts))))
-
-        (if (> no 0)
-            (message "%s file%s deleted."
-                     (if (= no 1) "One" no)
-                     (if (= no 1) "" "s")))
-
-        (if (and file
-                 (file-name-directory file)
-                 (file-exists-p (file-name-directory file))
-                 ;; is the directory empty?
-                 (let ((files (directory-files (file-name-directory file))))
-                   (and files (= 2 (length files)))))
-            (delete-directory (file-name-directory file))))))
-
- 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;###autoload
 (defun vm-mail-check-recipients-strip (address)
   "Remove from ADDRESS the parts that may legitimately contain an \"@\".
 That is MIME encoded words, quoted strings and RFC 5322 comments, all of
@@ -1274,106 +1049,6 @@ the keymap used within that region is `vm-shrunken-headers-keymap'."
       (goto-char (point-min)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defcustom vm-assimilate-html-command "striptags"
-  "*Command/function which should be called for stripping tags.
-
-When this is a string, then it is a command which is fed with the
-html and which should return the text.
-Otherwise it should be a Lisp function which performs the stripping of
-the tags.
-
-I prefer to use lynx for this job:
-
-#!/bin/tcsh
-
-tmpfile=/tmp/$USER-striptags.html
-cat > $tmpfile
-lynx -force_html -dump $tmpfile
-rm $tmpfile
-"
-  :group 'vm-rfaddons
-  :type '(string))
-
-(defcustom vm-assimilate-html-mixed t
-  "*Non-nil values cause messages to be assimilated as text/mixed.
-Otherwise they will be assimilated into a text/alternative message."
-  :group 'vm-rfaddons
-  :type '(boolean))
-
-;;;###autoload
-(defun vm-assimilate-html-message (&optional plain)
-  "Try to assimilate a message which is only in html format.
-When called with a prefix argument then it will replace the message
-with the PLAIN text version otherwise it will create a text/mixed or
-text/alternative message depending on the value of the variable
-`vm-assimilate-html-mixed'."
-  (interactive "P")
-
-  (let ((vm-frame-per-edit nil)
-        (boundary (concat (vm-mime-make-multipart-boundary)))
-        (case-fold-search t)
-        (qp-encoded nil)
-        body start end charset)
-    
-    (vm-edit-message)
-    (goto-char (point-min))
-    (goto-char (re-search-forward "\n\n"))
-
-    (if (re-search-backward "^Content-Type:\\s-*\\(text/html\\)\\(.*\n?\\(^\\s-.*\\)*\\)$"
-                            (point-min) t)
-        (progn (setq charset (buffer-substring (match-beginning 2)
-                                               (match-end 2)))
-               (if plain
-                   (progn (delete-region (match-beginning 1) (match-end 1))
-                          (goto-char (match-beginning 1))
-                          (insert "text/plain"))
-                 (progn (delete-region (match-beginning 1) (match-end 2))
-                        (goto-char (match-beginning 1))
-                        (insert "multipart/"
-                                (if vm-assimilate-html-mixed "mixed"
-                                  "alternative") ";\n"
-                                  "  boundary=\"" boundary "\""))))
-      (progn
-        (kill-this-buffer)
-        (error "This message seems to be no HTML only message!")))
-
-    (goto-char (point-min))
-    (goto-char (re-search-forward "\n\n"))
-    (setq qp-encoded (re-search-backward "^Content-Transfer-Encoding: quoted-printable"
-                                         (point-min) t))
-    
-    (goto-char (re-search-forward "\n\n"))
-    (if plain
-        (progn (setq body (point)
-                     start (point))
-               (goto-char (point-max))
-               (setq end (point)))
-      (progn (insert "--" boundary "\n"
-                     "Content-Type: text/plain" charset "\n"
-                     "Content-Transfer-Encoding: 8bit\n\n")
-             (setq body (point))
-             
-             (insert "\n--" boundary "\n"
-                     "Content-Type: text/html" charset "\n"
-                     "Content-Transfer-Encoding: 8bit\n\n")
-               (setq start (point-marker))
-               (goto-char (point-max))
-               (setq end (point-marker))
-               (insert "--" boundary "--\n")))
-
-    (if qp-encoded (quoted-printable-decode-region start end))
-    
-    (goto-char body)
-    (if (stringp vm-assimilate-html-command)
-        (call-process-region start end vm-assimilate-html-command
-                             plain t)
-      (funcall vm-assimilate-html-command start end plain))
-    (vm-edit-message-end)
-    ))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Original Authors:  Edwin Huffstutler & John Reynolds
-
 (defcustom vm-mail-mode-citation-kill-regexp-alist
   (list
    ;; empty lines multi quoted 
@@ -1425,58 +1100,6 @@ text/alternative message depending on the value of the variable
         (setq re-alist (cdr re-alist))))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defcustom vm-summary-attachment-label "$"
-  "*Label added to messages containing an attachments."
-  :group 'vm-rfaddons
-  :type '(choice (string) (const :tag "No Label" nil)))
-
-;;;###autoload
-(defun vm-summary-attachment-label (msg)
-  "Indicate if there are attachments in a message.
-The summary displays a `vm-summary-attachment-indicator', which is a '$' by
-default.  In order to get this working, add a \"%1UA\" to your
-`vm-summary-format' and call `vm-fix-my-summary'.
-
-As a sideeffect a label can be added to new messages.  Setting 
-`vm-summary-attachment-label' to a string (the label) enables this.
-If you just want the label, then set `vm-summary-attachment-indicator' to nil
-and add an \"%0UA\" to your `vm-summary-format'." 
-  (let ((attachments 0))
-    (setq msg (vm-real-message-of msg))
-    (vm-mime-action-on-all-attachments
-     nil
-     (lambda (_msg _layout _type _file)
-       (setq attachments (1+ attachments)))
-     vm-summary-attachment-mime-types
-     vm-summary-attachment-mime-type-exceptions
-     (list msg)
-     t)
-                                       
-    (when (and (> attachments 0 )
-               (vm-new-flag msg)
-               (or (not (vm-decoded-labels-of msg))
-                   (not (member vm-summary-attachment-label
-                                (vm-decoded-labels-of msg)))))
-      (vm-set-labels msg (append (list vm-summary-attachment-label)
-                                 (vm-decoded-labels-of msg))))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;###autoload
-(defun vm-delete-quit ()
-  "Delete mails and quit.  Expunge only if it's not the primary inbox."
-  (interactive)
-  (save-excursion
-    (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
-    (if (and buffer-file-name
-             (string-match (regexp-quote vm-primary-inbox) buffer-file-name))
-        (message "No auto-expunge for folder `%s'" buffer-file-name)
-      (condition-case nil
-          (vm-expunge-folder)
-        (error nil)))
-    (vm-quit)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;###autoload
 (defun vm-mail-mode-install-open-line ()
   "Install the open-line hooks for VM composition buffers.
 Add this to `vm-mail-mode-hook'."
@@ -1564,98 +1187,6 @@ B and E are the beginning and end of the marked region or the current line."
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
-(defun vm-save-everything ()
-  "Save all VM folder buffers, BBDB and newsrc if GNUS is started."
-  (interactive)
-  (save-excursion
-    (let ((folders (vm-folder-buffers)))
-      (while folders
-        (set-buffer (car folders))
-        (message "Saving <%S>" (car folders))
-        (vm-save-folder)
-        (setq folders (cdr folders))))
-    (if (fboundp 'bbdb-save)
-        (bbdb-save)))
-  (if (fboundp 'gnus-group-save-newsrc)
-      (gnus-group-save-newsrc)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;###autoload
-(defun vm-get-all-new-mail ()
-  "Get mail for all opened VM folders."
-  (interactive)
-  (save-excursion
-    (let ((buffers (buffer-list)))
-      (while buffers
-        (set-buffer (car buffers))
-        (if (eq major-mode 'vm-mode)
-            (vm-get-new-mail))
-        (setq buffers (cdr buffers))))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;;;###autoload
-(defun vm-save-message-preview (file)
-  "Save preview of a message in FILE.
-It saves the decoded message and not the raw message like `vm-save-message'"
-  (interactive
-   ;; protect value of last-command
-   (let ((last-command last-command)
-         (this-command this-command)
-         filename)
-     (save-current-buffer
-     (vm-follow-summary-cursor)
-     (vm-select-folder-buffer)
-     (setq filename
-      (vm-read-file-name
-       (if vm-last-written-file
-           (format "Write text to file: (default %s) "
-                   vm-last-written-file)
-         "Write text to file: ")
-       nil vm-last-written-file nil))
-     (if (and (file-exists-p filename)
-              (not (yes-or-no-p (format "Overwrite '%s'? " filename))))
-         (error "Aborting `vm-save-message-preview'."))
-     (list filename))))
-    (save-excursion
-      (vm-follow-summary-cursor)
-      (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
-      
-      (if (and (boundp 'vm-mail-buffer) (symbol-value 'vm-mail-buffer))
-          (set-buffer (symbol-value 'vm-mail-buffer))
-        (if vm-presentation-buffer
-            (set-buffer vm-presentation-buffer)))
-      (write-region (point-min) (point-max) file)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; This code is now obsolete.  VM has built-in facilities for taking
-;; actions on attachments.  USR, 2010-01-05
-;; Subject: Re: How to Delete an attachment?
-;; Newsgroups: gnu.emacs.vm.info
-;; Date: 05 Oct 1999 11:09:19 -0400
-;; Organization: Road Runner
-;; From: Dave Bakhash
-(defun vm-mime-take-action-on-attachment (action)
-  "Do something with the MIME attachment at point."
-  (interactive
-   (list (vm-read-string "action: "
-                         '("save-to-file"
-                           "delete"
-                           "display-as-ascii"
-                           "pipe-to-command")
-                         nil)))
-  (vm-mime-run-display-function-at-point
-   (cond ((string= action "save-to-file")
-          'vm-mime-send-body-to-file)
-         ((string= action "display-as-ascii")
-          'vm-mime-display-body-as-text)
-         ((string= action "delete")
-          (vm-delete-mime-object))
-         ((string= action "pipe-to-command")
-          'vm-mime-pipe-body-to-queried-command-discard-output))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; This functionality has now been integrated into VM core.  USR, 2011-01-30
-
 (defvaralias 'vm-mime-display-internal-multipart/mixed-separator
   'vm-mime-parts-display-separator)
 
@@ -1664,137 +1195,6 @@ It saves the decoded message and not the raw message like `vm-save-message'"
 			"8.2.0")
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
-(defun vm-assimilate-outlook-message ()
-  "Assimilate a message which has been forwarded by MS Outlook.
-You will need vm-postpone.el in order to get this work."
-  (interactive)
-  (vm-continue-postponed-message t)
-  (let ((pm (point-max)))
-    (goto-char (point-min))
-    (if (re-search-forward "^.*\\(-----Urspr[u]ngliche Nachricht-----\\|-----Original Message-----\\)\n" pm)
-        (delete-region 1 (match-end 0)))
-    ;; remove the quotes from the forwarded message 
-    (while (re-search-forward "^> ?" pm t)
-      (replace-match ""))
-    (goto-char (point-min))
-    ;; rewrite headers 
-    (while (re-search-forward "^\\(Von\\|From\\):[ \t]*\\(.+\\) *\\[\\(SMTP\\|mailto\\):\\(.+\\)\\].*" pm t)
-      (replace-match "From: \\2 <\\4>"))
-    (while (re-search-forward "^\\(Gesendet[^:]*\\|Sent\\):[ \t]*\\(...\\).*, \\([0-9]+\\)\\. \\(...\\)[a-z]+[ \t]*\\(.*\\)" pm t)
-      (replace-match "Date: \\3 \\4 \\5"))
-    (while (re-search-forward "^\\(An\\|To\\):[ \t]*\\(.*\\)$" pm t)
-      (replace-match "To: \\2"))
-    (while (re-search-forward "^\\(Betreff\\|Subject\\):[ \t]*\\(.*\\)$" pm t)
-      (replace-match "Subject: \\2"))
-    (goto-char (point-min))
-    ;; insert mail header separator 
-    (re-search-forward "^$" pm)
-    (goto-char (match-end 0))
-    (insert mail-header-separator "\n")
-    ;; and put it back into the source folder
-    (vm-postpone-message)))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Highlighting faces
-;;;###autoload
-(defun vm-install-rf-faces ()
-  (make-face 'message-url)
-  
-  (custom-set-faces
-   '(message-url
-     ((t (:foreground "blue" :bold t))))
-   '(message-headers
-     ((t (:foreground "blue" :bold t))))
-   '(message-cited-text
-     ((t (:foreground "red3"))))
-   '(message-header-contents
-     ((((type x)) (:foreground "green3"))))
-   '(message-highlighted-header-contents
-     ((((type x)) (:bold t))
-       (t (:bold t))))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Well I like to have a different comment style a provided as default.
-;; I'd like to have blank lines also prefixed by a comment char.
-;; I overwrite the standard function by a slightly different version.
-;;;###autoload
-(defun vm-mail-mode-comment-region (beg end &optional arg)
-  "Comment or uncomment each line in the region BEG to END.
-With just a non-nil prefix ARG, uncomment each line in region.
-Numeric prefix arg ARG means use ARG comment characters.
-If ARG is negative, delete that many comment characters instead.
-Comments are terminated on each line, even for syntax in which newline does
-not end the comment.  Blank lines do not get comments."
-  ;; if someone wants it to only put a comment-start at the beginning and
-  ;; comment-end at the end then typing it, C-x C-x, closing it, C-x C-x
-  ;; is easy enough.  No option is made here for other than commenting
-  ;; every line.
-  (interactive "r\nP")
-  (or comment-start (error "No comment syntax is defined"))
-  (if (> beg end) (let (mid) (setq mid beg beg end end mid)))
-  (save-excursion
-    (save-restriction
-      (let ((cs comment-start) (ce comment-end)
-            numarg)
-        (if (consp arg) (setq numarg t)
-          (setq numarg (prefix-numeric-value arg))
-          ;; For positive arg > 1, replicate the comment delims now,
-          ;; then insert the replicated strings just once.
-          (while (> numarg 1)
-            (setq cs (concat cs comment-start)
-                  ce (concat ce comment-end))
-            (setq numarg (1- numarg))))
-        ;; Loop over all lines from BEG to END.
-        (narrow-to-region beg end)
-        (goto-char beg)
-        (while (not (eobp))
-          (if (or (eq numarg t) (< numarg 0))
-              (progn
-                ;; Delete comment start from beginning of line.
-                (if (eq numarg t)
-                    (while (looking-at (regexp-quote cs))
-                      (delete-char (length cs)))
-                  (let ((count numarg))
-                    (while (and (> 1 (setq count (1+ count)))
-                                (looking-at (regexp-quote cs)))
-                      (delete-char (length cs)))))
-                ;; Delete comment end from end of line.
-                (if (string= "" ce)
-                    nil
-                  (if (eq numarg t)
-                      (progn
-                        (end-of-line)
-                        ;; This is questionable if comment-end ends in
-                        ;; whitespace.  That is pretty brain-damaged,
-                        ;; though.
-                        (skip-chars-backward " \t")
-                        (if (and (>= (- (point) (point-min)) (length ce))
-                                 (save-excursion
-                                   (backward-char (length ce))
-                                   (looking-at (regexp-quote ce))))
-                            (delete-char (- (length ce)))))
-                    (let ((count numarg))
-                      (while (> 1 (setq count (1+ count)))
-                        (end-of-line)
-                        ;; This is questionable if comment-end ends in
-                        ;; whitespace.  That is pretty brain-damaged though
-                        (skip-chars-backward " \t")
-                        (save-excursion
-                          (backward-char (length ce))
-                          (if (looking-at (regexp-quote ce))
-                              (delete-char (length ce))))))))
-                (forward-line 1))
-            ;; Insert at beginning and at end.
-            (progn
-              (insert cs)
-              (if (string= "" ce) ()
-                (end-of-line)
-                (insert ce)))
-            (search-forward "\n" nil 'move)))))))
-
-
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defun vm-isearch-presentation ()
   "Switches to the Presentation buffer and starts isearch."
   (interactive)
@@ -1806,105 +1206,6 @@ not end the comment.  Blank lines do not get comments."
   (isearch-forward))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defcustom vm-delete-message-action "vm-next-message"
-  "Command to do after deleting a message."
-  :group 'vm-rfaddons
-  :type 'string) ;; FIXME: `command' would be more useful, no?
-
-;;;###autoload
-(defun vm-delete-message-action (&optional arg)
-  "Delete current message and perform some action after it, e.g. move to next.
-Call it with a prefix ARG to change the action."
-  (interactive "P")
-  (when (and (listp arg) (not (null arg)))
-    (setq vm-delete-message-action
-          (completing-read
-	   ;; prompt
-	   "After delete: "
-	   ;; collection
-	   '(("vm-rmail-up")
-	     ("vm-rmail-down")
-	     ("vm-previous-message")
-	     ("vm-previous-unread-message")
-	     ("vm-next-message")
-	     ("vm-next-unread-message")
-	     ("nothing"))))
-    (message "action after delete is %S" vm-delete-message-action))
-  (vm-toggle-deleted (prefix-numeric-value arg))
-  (let ((fun (intern vm-delete-message-action)))
-    (if (functionp fun)
-        (call-interactively fun))))
-
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defvar vm-smtp-server-online-p-cache nil
-  "Alist of cached (server online-status) entries.")
-
-(defun vm-smtp-server-online-p (&optional host port)
-  "Opens SMTP connection to see if the server HOST on PORT is online.
-Results are cached in `smtp-server-online-p-cache' for non interactive
-calls."
-  (interactive)
-  (save-excursion 
-    (let (online-p server hp)
-      (if (null host)
-          (setq server (if (functionp 'esmtpmail-via-smtp-server)
-                           (esmtpmail-via-smtp-server)
-                         (smtpmail-via-smtp-server))
-                host   (car server)
-                port   (cadr server)))
-      (setq port (or port 25)
-            hp (format "%s:%s" host port))
-
-      (if (vm-interactive-p)
-          (setq vm-smtp-server-online-p-cache nil))
-      
-      (if (assoc hp vm-smtp-server-online-p-cache)
-          ;; take cache content
-          (setq online-p (cadr (assoc hp vm-smtp-server-online-p-cache))
-                hp (concat hp " (cached)"))
-        ;; do the check
-        (let* ((n (format " *SMTP server check %s:%s *" host port))
-               (buf (get-buffer n))
-               (stream nil))
-          (if buf (kill-buffer buf))
-        
-          (condition-case err
-              (progn 
-                (setq stream (open-network-stream n n host port))
-                (setq online-p t))
-            (error
-             (message (cadr err))
-             (if (and (get-buffer n)
-                      (< 0 (length (with-current-buffer (get-buffer n)
-				     (buffer-substring (point-min) (point-max))))))
-		 (pop-to-buffer n))))
-	  (if stream (delete-process stream))
-          (when (setq buf (get-buffer n))
-            (set-buffer buf)
-            (message "%S" (buffer-substring (point-min) (point-max)))
-            (goto-char (point-min))
-            (when (re-search-forward
-                   "gethostbyname: Resource temporarily unavailable"
-                   (point-max) t)
-              (setq online-p nil))))
-        
-        ;; add to cache for further lookups 
-        (add-to-list 'vm-smtp-server-online-p-cache (list hp online-p)))
-    
-      (if (vm-interactive-p)
-          (message "SMTP server %s is %s" hp
-                   (if online-p "online" "offline")))
-      online-p)))
-         
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-(defun vm-mail-send-or-feed-it ()
-  "Sends a message if the SMTP server is online, queues it otherwise."
-  (if (not (vm-smtp-server-online-p))
-      (feedmail-send-it)
-    (if (functionp 'esmtpmail-send-it)
-        (esmtpmail-send-it)
-      (smtpmail-send-it))))
-
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;; Contributed by Alley Stoughton
