@@ -7195,9 +7195,9 @@ describes what was deleted."
 	(vm-set-byte-count-of m nil)
 	(vm-set-line-count-of m nil)
 	(vm-set-stuff-flag-of m t)
-	;; For the dreaded From_-with-Content-Length folders recompute
+	;; For the dreaded mboxcl2 folders recompute
 	;; the message length and make a new Content-Length header.
-	(if (eq (vm-message-type-of m) 'From_-with-Content-Length)
+	(if (eq (vm-message-type-of m) 'mboxcl2)
 	    (let (length)
 	      (goto-char (vm-headers-of m))
 	      ;; first delete all copies of Content-Length

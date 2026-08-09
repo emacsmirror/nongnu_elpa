@@ -1999,7 +1999,7 @@ message goes.  Issue #185."
       (vm-convert-folder-type-headers 'baremessage vm-folder-type))
     (goto-char end)
     ;; Some IMAP servers don't understand Sun's stupid
-    ;; From_-with-Content-Length style folder and assume the last
+    ;; mboxcl2 style folder and assume the last
     ;; newline in the message is a separator.  And so the server
     ;; strips it, leaving us with a message that does not end
     ;; with a newline.  Add the newline if needed.
@@ -2007,7 +2007,7 @@ message goes.  Issue #185."
     ;; Added From_ folders among the ones to be repaired.  USR, 2010-05-19
     (if (and (not (eq ?\n (char-after (1- (point)))))
 	     (memq vm-folder-type 
-		   '(From_-with-Content-Length BellFrom_ From_)))
+		   '(mboxcl2 BellFrom_ From_)))
 	(insert-before-markers "\n"))
     (insert-before-markers (vm-trailing-message-separator))
     (if (stringp target)

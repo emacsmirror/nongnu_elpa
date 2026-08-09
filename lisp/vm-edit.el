@@ -237,9 +237,9 @@ thread have their cached data discarded."
     ;; prevent message from being split into several messages.
     (vm-munge-message-separators (vm-message-type-of (car vm-message-pointer))
 				 (point-min) (point-max))
-    ;; for From_-with-Content-Length recompute the Content-Length header
+    ;; for mboxcl2 recompute the Content-Length header
     (if (eq (vm-message-type-of (car vm-message-pointer))
-	    'From_-with-Content-Length)
+	    'mboxcl2)
 	(let ((buffer-read-only nil)
 	      length)
 	  (goto-char (point-min))

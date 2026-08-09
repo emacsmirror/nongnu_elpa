@@ -1634,6 +1634,12 @@ draft messages."
         (add-hook 'kill-emacs-query-functions
                   'vm-postpone-unfinished-compositions)
 	(vm-load-init-file)
+	;; After the init file, because that is where it is set: a
+	;; configuration written before mboxcl2 was renamed still says
+	;; `From_-with-Content-Length', and every test of a folder type is
+	;; against the new name.
+	(setq vm-default-folder-type
+	      (vm-canonical-folder-type vm-default-folder-type))
 	(when vm-enable-addons
 	  (vm-rfaddons-infect-vm 0 vm-enable-addons))
 	(if (not vm-window-configuration-file)

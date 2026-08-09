@@ -583,7 +583,7 @@ more."
 
 ;; `mail-do-fcc' wrote one format whatever the folder was: `\nFrom ' quoted
 ;; to `>From ' always, and never a `Content-Length'.  So an Fcc into a
-;; `From_-with-Content-Length' folder appended a message the byte counts did
+;; mboxcl2 folder appended a message the byte counts did
 ;; not describe, and the folder stopped reading back the way it was written.
 
 (defmacro vm-reply-test--with-composition (fcc &rest body)
@@ -637,10 +637,9 @@ stopped describing the folder from that message on and it no longer read
 back the way it was written.  The test is that it does read back: the folder
 still parses as two messages, with the second one's body intact.
 
-Quoting is not the point here -- `From_-with-Content-Length' is mboxcl, which
-quotes as well as counting -- and the copy is quoted for it.  When #466 adds
-the variant that does not quote, this same code follows the folder type
-without further change."
+Quoting is not the point here; that the count is written is.  The folder type
+no longer quotes at all (#466), and this same code followed it there without
+further change."
   (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
          (folder (expand-file-name "archive" dir)))
     (unwind-protect
@@ -657,9 +656,8 @@ without further change."
                     "Fcc: " folder "\n" mail-header-separator "\n"
                     "a body line\n"
                     "From nobody@example.com Mon Jan  1 00:00:00 2024\n")
-            (let ((vm-trust-From_-with-Content-Length t))
-              (should (eq 'From_-with-Content-Length
-                          (vm-get-folder-type folder)))
+            (let ((vm-trust-content-length t))
+              (should (eq 'mboxcl2 (vm-get-folder-type folder)))
               (vm-do-fcc-in-composition)))
           ;; A count was written at all -- this is what was missing.
           (should (= 2 (cl-count-if
@@ -669,12 +667,12 @@ without further change."
           ;; And it is the right count: the folder reads back as two.
           (with-temp-buffer
             (vm-test-init-folder-variables)
-            (setq-local vm-trust-From_-with-Content-Length t)
+            (setq-local vm-trust-content-length t)
             (insert-file-contents folder)
             (goto-char (point-min))
             (vm-build-message-list)
             (dolist (m vm-message-list) (vm-test-init-message-data m))
-            (should (eq 'From_-with-Content-Length vm-folder-type))
+            (should (eq 'mboxcl2 vm-folder-type))
             (should (= 2 (length vm-message-list)))
             (should (string-match-p
                      "a body line"
@@ -868,7 +866,7 @@ it in the folder was misplaced."
           (with-temp-buffer
             (insert "To: someone@example.com\nSubject: filed\n"
                     "Fcc: " folder "\n" mail-header-separator "\n" body)
-            (let ((vm-trust-From_-with-Content-Length t)
+            (let ((vm-trust-content-length t)
                   (coding-system-for-write 'utf-8-unix))
               (vm-do-fcc-in-composition)))
           ;; the count is the octet length, which is more than the characters
@@ -881,7 +879,7 @@ it in the folder was misplaced."
           ;; and the folder reads back as two messages with the body intact
           (with-temp-buffer
             (vm-test-init-folder-variables)
-            (setq-local vm-trust-From_-with-Content-Length t)
+            (setq-local vm-trust-content-length t)
             (let ((coding-system-for-read 'utf-8-unix))
               (insert-file-contents folder))
             (goto-char (point-min))
@@ -933,6 +931,50 @@ calling `vm-do-fcc-in-composition' directly would pass either way."
           ;; and the second copy is the edited one
           (should (string-match-p "a correction"
                                   (vm-reply-test--folder-text folder))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reply-test-fcc-into-mboxcl2-keeps-the-body-exact ()
+  "REGRESSION: a copy filed in a Content-Length folder is stored unaltered.
+The count says where the message ends, so a body line beginning `From ' is
+left as the author wrote it -- which is mboxcl2, and the reason to keep a
+folder in that format at all.  VM used to quote it as well as counting,
+which is mboxcl and alters the message for no gain.  Issue #466.
+
+Written and then read back, because the two have to agree: quoting changes
+the body's length, so a writer that stopped quoting while the count still
+included the quote would put every later message in the wrong place."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-fcc" t)))
+         (folder (expand-file-name "archive" dir))
+         (line "From nobody@example.com Mon Jan  1 00:00:00 2024\n"))
+    (unwind-protect
+        (progn
+          (with-temp-buffer
+            (insert "From VM Mon Jan  1 00:00:00 2024\n"
+                    "Content-Length: 6\n"
+                    "From: someone@example.com\n\nfirst\n\n")
+            (write-region (point-min) (point-max) folder))
+          (with-temp-buffer
+            (insert "To: someone@example.com\nSubject: filed\n"
+                    "Fcc: " folder "\n" mail-header-separator "\n"
+                    "a body line\n" line)
+            (let ((vm-trust-content-length t))
+              (vm-do-fcc-in-composition)))
+          (let ((text (vm-reply-test--folder-text folder)))
+            (should (string-match-p (concat "\n" (regexp-quote line)) text))
+            (should-not (string-match-p ">From nobody@example.com" text)))
+          ;; and the count still finds the end of it
+          (with-temp-buffer
+            (vm-test-init-folder-variables)
+            (setq-local vm-trust-content-length t)
+            (insert-file-contents folder)
+            (goto-char (point-min))
+            (vm-build-message-list)
+            (dolist (m vm-message-list) (vm-test-init-message-data m))
+            (should (= 2 (length vm-message-list)))
+            (should (string-match-p
+                     (regexp-quote line)
+                     (buffer-substring (vm-text-of (nth 1 vm-message-list))
+                                       (vm-text-end-of (nth 1 vm-message-list)))))))
       (delete-directory dir t))))
 
 (provide 'vm-reply-test)

@@ -467,7 +467,7 @@ Optional MESSAGE explains why the test was skipped."
     (vm-thread-subject-obarray . nil)
     (vm-buffers-needing-display-update . nil)
     (vm-default-From_-folder-type . From_)
-    (vm-trust-From_-with-Content-Length . nil)
+    (vm-trust-content-length . nil)
     (vm-display-using-mime . t)
     (vm-auto-decode-mime-messages . t)
     (vm-mime-charset-converter-alist . nil)

@@ -86,6 +86,22 @@ type says something false about what the code accepts."
   (dolist (pair vm-custom-test--corrected-names)
     (should-not (boundp (car pair)))))
 
+(ert-deftest vm-custom-test-confusing-names-keep-an-alias ()
+  "A name renamed for being confusing keeps its old name for good.
+Unlike the misspellings above, which were dropped: a name someone chose and
+typed on purpose stays working, and there is no plan to remove it.  Issue
+#466 renamed `From_-with-Content-Length' to `mboxcl2' and this option with
+it."
+  (require 'vm-vars)
+  (should (boundp 'vm-trust-From_-with-Content-Length))
+  (should (eq 'vm-trust-content-length
+              (indirect-variable 'vm-trust-From_-with-Content-Length)))
+  (should (get 'vm-trust-From_-with-Content-Length 'byte-obsolete-variable))
+  (let ((vm-trust-content-length nil))
+    (with-no-warnings
+      (setq vm-trust-From_-with-Content-Length t))
+    (should (eq t vm-trust-content-length))))
+
 (ert-deftest vm-custom-test-older-rename-still-aliased ()
   "`vm-mime-delete-all-attachments-types' is a rename, not a typo, and stays.
 It has been an obsolete alias since 8.1.1, and pointed at the misspelling; it

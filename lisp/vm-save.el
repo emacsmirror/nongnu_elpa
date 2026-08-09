@@ -435,7 +435,7 @@ The saved messages are flagged as `filed'."
 				  target-type))
 		       (vm-write-string
 			folder (vm-leading-message-separator target-type m t))
-		       (if (eq target-type 'From_-with-Content-Length)
+		       (if (eq target-type 'mboxcl2)
 			   (vm-write-string
 			    folder (concat vm-content-length-header " "
 					   (vm-su-byte-count m) "\n")))
@@ -469,7 +469,7 @@ The saved messages are flagged as `filed'."
 			    (vm-write-string
 			     (current-buffer)
 			     (vm-leading-message-separator target-type m t))
-			    (when (eq target-type 'From_-with-Content-Length)
+			    (when (eq target-type 'mboxcl2)
 			      (vm-write-string
 			       (current-buffer)
 			       (concat vm-content-length-header " "
