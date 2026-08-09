@@ -452,17 +452,6 @@ do not allow menubar buttons.")
     ;; FSF Emacs does not allow a non-string menu element name.
     ;; This is not working on XEmacs either.  USR, 2011-03-05
     ;; ,@(if (vm-menu-can-eval-item-name)
-    ;; 	    (list [(format "Convert to %s and Display"
-    ;; 			   (or (nth 1 (vm-mime-can-convert
-    ;; 				       (car
-    ;; 					(vm-mm-layout-type
-    ;; 					 (vm-mime-get-button-layout)))))
-    ;; 			       "different type"))
-    ;; 		   (vm-mime-run-display-function-at-point
-    ;; 		    'vm-mime-convert-body-then-display)
-    ;; 		   (vm-mime-can-convert
-    ;; 		    (car (vm-mm-layout-type
-    ;; 			  (vm-mime-get-button-layout))))]))
     "---"
     ["Undo"
      vm-undo]
@@ -519,22 +508,10 @@ do not allow menubar buttons.")
        (vm-mouse-send-url-at-position 
 	(point) 'vm-mouse-send-url-to-konqueror)
        vm-konqueror-client-program]
-      ;; ["Mosaic"
-      ;;  (vm-mouse-send-url-at-position 
-      ;;  (point) 'vm-mouse-send-url-to-mosaic)
-      ;;  vm-mosaic-program]
-      ;; ["mMosaic"
-      ;;  (vm-mouse-send-url-at-position 
-      ;; 	(point) 'vm-mouse-send-url-to-mmosaic)
-      ;;  vm-mmosaic-program]
       ["Mozilla"
        (vm-mouse-send-url-at-position 
 	(point) 'vm-mouse-send-url-to-mozilla)
        vm-mozilla-program]
-;;       ["Netscape"
-;;        (vm-mouse-send-url-at-position 
-;; 	(point) 'vm-mouse-send-url-to-netscape)
-;;        vm-netscape-program]
       ["Opera"
        (vm-mouse-send-url-at-position 
 	(point) 'vm-mouse-send-url-to-opera)
@@ -750,7 +727,6 @@ set to the command name so that window configuration will be done."
 	(and vm-display-using-mime
 	     vm-message-pointer
 	     vm-presentation-buffer
-;;	     (not vm-mime-decoded)
 	     (not (vm-mime-plain-message-p (car vm-message-pointer)))))
     (error nil)))
 
@@ -865,8 +841,6 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 			     vm-menu-send-menu)
 	(easy-menu-define vm-menu-fsfemacs-motion-menu (list dummy) nil
 			     vm-menu-motion-menu)
-;;	(easy-menu-define vm-menu-fsfemacs-folders-menu (list dummy) nil
-;;			     vm-menu-folders-menu)
 	(easy-menu-define vm-menu-fsfemacs-folder-menu (list dummy) nil
 			     vm-menu-folder-menu)
 	(easy-menu-define vm-menu-fsfemacs-vm-menu (list dummy) nil
@@ -1142,7 +1116,6 @@ as the recipient.  Not a reply: no subject, no references, no citation."
 	((not (featurep 'xemacs))
 	 ;; force-mode-line-update seems to have been buggy in Emacs
 	 ;; 21, 22, and 23.  So we do it ourselves.  USR, 2011-02-26
-	 ;; (force-mode-line-update t)
 	 (set-buffer-modified-p (buffer-modified-p))
 	 (when (and vm-user-interaction-buffer
 		    (buffer-live-p vm-user-interaction-buffer))
@@ -1250,8 +1223,6 @@ bar.						     USR, 2011-02-27"
 	 ;; I'd like to do this, but the result is a combination
 	 ;; of the Emacs and VM Mail menus glued together.
 	 ;; Poorly.
-	 ;;(define-key vm-mail-mode-map [menu-bar mail]
-	 ;;  (cons "Mail" vm-menu-fsfemacs-mail-menu))
 	 (defvar mail-mode-map)
 	 (define-key mail-mode-map [menu-bar mail]
 	   (cons "Mail" vm-menu-fsfemacs-mail-menu))
@@ -1606,8 +1577,6 @@ The list looks like: ((dirname1 file1 file2)
     (setq dir (expand-file-name dir))
     (if (not (string= (substring dir -1) "/"))
 	(setq dir (concat dir "/")))
-;;    (while (string-match "/$" dir)
-;;      (setq dir (substring dir 0 -1)))
     (vm-menu-hm-tree-ls-in-temp-buffer dir
 				 (generate-new-buffer-name
 				  vm-menu-hm-tree-temp-buffername))

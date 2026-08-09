@@ -228,7 +228,6 @@ The saved messages are flagged as `filed'."
   (let (default default-is-imap default-imap directory file-name)
     (save-current-buffer
       ;; is this needed?  USR, 2011-11-12
-      ;; (vm-session-initialization)
       (vm-select-folder-buffer)
       (vm-error-if-folder-empty)
       (setq default
@@ -1022,7 +1021,6 @@ The saved messages are flagged as `filed'."
 	    ;; previously and we don't want to save that attribute.
 	    ;; FIXME But stuffing attributes into the IMAP buffer is
 	    ;; not easy.  USR, 2010-03-08
-	    ;; (vm-stuff-message-data m t)
 	    (if server-to-server-p ; economise on upstream data traffic
 		(let ((process 
 		       (vm-re-establish-folder-imap-session nil "save")))

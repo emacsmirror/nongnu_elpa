@@ -299,9 +299,6 @@ or do the binding and advising on your own."
    (define-key vm-mode-map "."  'vm-mime-take-action-on-attachment))
   
 ;; This is not needed any more becaue it is in the core  
-;;   (vm-rfaddons-check-option
-;;    'save-all-attachments option-list
-;;    (define-key vm-mode-map "\C-c\C-s" 'vm-save-all-attachments))
 
   ;; other experimental options ---------------------------------------------
   ;; Now take care of automatic saving of attachments
@@ -392,57 +389,10 @@ This does only work with my modified VM, i.e. a hacked
 ;; This add-on is disabled becaust it has been integrated into the
 ;; core.  USR, 2010-05-01
 
-;; (defadvice vm-mime-encode-composition
-;;   (before do-fcc-before-mime-encode activate)
-;;   "FCC before encoding attachments if `vm-do-fcc-before-mime-encode' is t."
-;;   (if vm-do-fcc-before-mime-encode
-;;       (vm-do-fcc-before-mime-encode)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; This has been moved to the VM core.  USR, 2010-03-11
 ;;;;;###autoload
-;; (defun vm-fill-paragraphs-by-longlines (width start end)
-;;   "Uses longlines.el for filling.
-;; To use it, advice `vm-fill-paragraphs-containing-long-lines' and call this
-;; function instead."
-;;   (if (eq width 'window-width)
-;;       (setq width (- (window-width (get-buffer-window (current-buffer))) 1)))
-;;   ;; prepare for longlines.el in XEmacs
-;;   (require 'overlay)
-;;   (require 'longlines)
-;;   (defvar fill-nobreak-predicate nil)
-;;   (defvar undo-in-progress nil)
-;;   (defvar longlines-mode-hook nil)
-;;   (defvar longlines-mode-on-hook nil)
-;;   (defvar longlines-mode-off-hook nil)
-;;   (unless (functionp 'replace-regexp-in-string)
-;;     (defun replace-regexp-in-string (regexp rep string
-;;                                             &optional fixedcase literal)
-;;       (vm-replace-in-string string regexp rep literal)))
-;;   (unless (functionp 'line-end-position)
-;;     (defun line-end-position ()
-;;       (save-excursion (end-of-line) (point))))
-;;   (unless (functionp 'line-beginning-position)
-;;     (defun line-beginning-position (&optional n)
-;;       (save-excursion
-;;         (if n (forward-line n))
-;;         (beginning-of-line)
-;;         (point)))
-;;     (unless (functionp 'replace-regexp-in-string)
-;;       (defun replace-regexp-in-string (regexp rep string
-;;                                               &optional fixedcase literal)
-;;         (vm-replace-in-string string regexp rep literal))))
-;;   ;; now do the filling
-;;   (let ((buffer-read-only nil)
-;;         (fill-column width))
-;;     (save-excursion
-;;       (save-restriction
-;;        ;; longlines-wrap-region contains a (forward-line -1) which is causing
-;;        ;; wrapping of headers which is wrong, so we restrict it here!
-;;        (narrow-to-region start end)
-;;        (longlines-decode-region start end) ; make linebreaks hard
-;;        (longlines-wrap-region start end)  ; wrap, adding soft linebreaks
-;;        (widen)))))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (defcustom vm-spamassassin-strip-report "spamassassin -d"
@@ -821,12 +771,6 @@ See the variable `vm-handle-return-receipt-mode' for customization."
 	       'vm-mf-external-body-content-type "8.2.0")
 
 ;; This is a hack in order to get the right MIME button 
-;(defadvice vm-mime-set-extent-glyph-for-type
-;  (around vm-message/external-body-glyph activate)
-;  (if (and (boundp 'real-mime-type)
-;          (string= (ad-get-arg 1) "message/external-body"))
-;      (ad-set-arg 1 real-mime-type))
-;  ad-do-it)
       
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -856,39 +800,21 @@ this may take some time, since the file needs to be visited."
   :type '(choice (const :tag "Ask" nil)
                  (const :tag "Guess" guess)))
 
-;; (define-obsolete-variable-alias 'vm-mime-save-all-attachments-types
-;;   'vm-mime-saveable-types
-;;   "8.3.0"
-;;   "*List of MIME types which should be saved.")
 (defvaralias 'vm-mime-save-all-attachments-types
   'vm-mime-saveable-types)
 (make-obsolete-variable 'vm-mime-save-all-attachments-types
 			'vm-mime-saveable-types "8.1.1")
 
-;; (define-obsolete-variable-alias 
-;;   'vm-mime-save-all-attachments-types-exceptions
-;;   'vm-mime-saveable-type-exceptions
-;;   "8.3.0"
-;;   "*List of MIME types which should not be saved.")
 (defvaralias 'vm-mime-save-all-attachments-types-exceptions
   'vm-mime-saveable-type-exceptions)
 (make-obsolete-variable 'vm-mime-save-all-attachments-types-exceptions
 			'vm-mime-saveable-type-exceptions "8.1.1")
 
-;; (define-obsolete-variable-alias 'vm-mime-delete-all-attachments-types
-;;   'vm-mime-deletable-types
-;;   "8.3.0"
-;;   "*List of MIME types which should be deleted.")
 (defvaralias 'vm-mime-delete-all-attachments-types
   'vm-mime-deletable-types)
 (make-obsolete-variable 'vm-mime-delete-all-attachments-types
 			'vm-mime-deletable-types "8.1.1")
 
-;; (define-obsolete-variable-alias 
-;;   'vm-mime-delete-all-attachments-types-exceptions
-;;   'vm-mime-deletable-type-exceptions
-;;   "8.3.0"
-;;   "*List of MIME types which should not be deleted.")
 (defvaralias 'vm-mime-delete-all-attachments-types-exceptions
   'vm-mime-deletable-type-exceptions)
 (make-obsolete-variable 'vm-mime-delete-all-attachments-types-exceptions
@@ -1605,14 +1531,12 @@ of empty lines which have been quoted."
                 (goto-char start-mark)
                 (beginning-of-line)
                 (while (looking-at "^$") (forward-line -1))
-;                (message "1%s<" (buffer-substring (point) (save-excursion (end-of-line) (point))))
                 (while (looking-at iq)
                   (replace-match "")
                   (forward-line -1))
                 (goto-char end-mark)
                 (beginning-of-line)
                 (while (looking-at "^$") (forward-line 1))
-;                (message "3%s<" (buffer-substring (point) (save-excursion (end-of-line) (point))))
                 (while (looking-at iq)
                   (replace-match "")))))
       

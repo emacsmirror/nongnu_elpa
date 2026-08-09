@@ -100,8 +100,6 @@
 (declare-function region-exists-p "vm-xemacs" ())
 (declare-function zmacs-region-buffer "vm-xemacs" ())
 ;; The following function is erroneously called in fsfemacs too
-;; (declare-function read-expression "vm-xemacs" 
-;; 		  (prompt &optional initial-contents history default))
 (vm-load-features-silent-when-compiling '(bbdb bbdb-sc))
 
 (defvar vm-reply-list nil)

@@ -74,8 +74,6 @@ given."
 	  (vm-present-current-message)
 	(vm-record-and-change-message-pointer vm-message-pointer cons
 					      :present t)
-	;;(vm-warn 0 0 "start of message you want is: %s"
-	;; (vm-su-start-of (car vm-message-pointer)))
 	(if (and (vm-summary-operation-p)
 		 vm-summary-show-threads
 		 (get-text-property 
@@ -546,18 +544,6 @@ If a new message is selected then return t, otherwise nil. USR, 2010-03-08"
 		     (get-text-property (- (point) 3) 'vm-message)))))
 		t)
 	       ;; make the position at eob belong to the last message
-	       ;; ((eobp)
-	       ;; 	(while (get-text-property (point) 'invisible)
-	       ;; 	  (goto-char (1- (point)))
-	       ;; 	  setq mp 
-	       ;; 	  ;;(setq mp (vm-last message-pointer))
-	       ;; 	(save-excursion
-	       ;; 	  (set-buffer vm-mail-buffer)
-	       ;; 	  (vm-record-and-change-message-pointer 
-	       ;;		vm-message-pointer mp :present t)
-	       ;; 	  ;; return non-nil so the caller will know that
-	       ;; 	  ;; a new message was selected.
-	       ;; 	  t ))
 	       (t
 		(if (< point (vm-su-start-of (car message-pointer)))
 		    (setq mp message-list)

@@ -96,7 +96,6 @@ previous N-1 messages."
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (let ((direction (if (< count 0) 'backward 'forward))
 	(count (vm-abs count))
-	;; (oldmp vm-message-pointer)
 	(vm-message-pointer vm-message-pointer))
     (while (not (zerop count))
       (if (not (vm-mark-of (car vm-message-pointer)))
@@ -272,26 +271,6 @@ variable `vm-virtual-folder-alist' for more information."
 	(vm-set-mark-of (car list) mark)
 	(vm-mark-for-summary-update (car list)))
       (setq list (cdr list))))
-;;   (let ((list (list (car vm-message-pointer)))
-;; 	(loop-obarray (make-vector 29 0))
-;; 	subject-sym id-sym)
-;;     (while list
-;;       (if (not (eq (vm-mark-of (car list)) mark))
-;; 	  (progn
-;; 	    (vm-set-mark-of (car list) mark)
-;; 	    (vm-mark-for-summary-update (car list))))
-;;       (setq id-sym (vm-last-elem (vm-thread-list (car list))))
-;;       (if (null (intern-soft (symbol-name id-sym) loop-obarray))
-;; 	  (progn
-;; 	    (intern (symbol-name id-sym) loop-obarray)
-;; 	    (nconc list (copy-sequence (vm-th-child-messages-of id-sym)))
-;; 	    (setq subject-sym (intern (vm-so-sortable-subject (car list))
-;; 				      vm-thread-subject-obarray))
-;; 	    (if (and (boundp subject-sym) 
-;; 		     (eq id-sym (aref (symbol-value subject-sym) 0)))
-;; 		(nconc list (copy-sequence
-;; 			     (aref (symbol-value subject-sym) 2))))))
-;;       (setq list (cdr list))))
   (vm-display nil nil
 	      '(vm-mark-thread-subtree vm-unmark-thread-subtree)
 	      (list this-command 'marking-message))

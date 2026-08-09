@@ -117,9 +117,6 @@
       (sit-for 2)))
 
 ; Group already defined in vm-vars.el      
-;; (defgroup vm nil
-;;   "VM"
-;;   :group 'mail)
 
 (defgroup vm-postpone nil
   "Postponed message handling and draft support in VM."
@@ -263,7 +260,6 @@ when continuing a postponed message."
 This is only for internal use of vm-postpone.el.")
 
 ;;-----------------------------------------------------------------------------
-;; (define-key vm-mode-map "C"      'vm-continue-what-message)
 
 ;;-----------------------------------------------------------------------------
 (defun vm-get-persistent-message-ids-for (mlist)

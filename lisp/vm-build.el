@@ -30,9 +30,7 @@ wrong Emacs actually gets chosen."
     minimum))
 
 (vm-build-check-emacs-version)
-;(setq debug-on-error t)
 (setq debug-ignored-errors nil)
-;(message "load-path: %S" load-path)
 
 (defun vm-fix-cygwin-path (path)
   "If PATH does not exist, try the DOS path instead.
@@ -62,7 +60,6 @@ wrong Emacs actually gets chosen."
 	  (setq dir (car otherdirs))
 	  (if (not (file-exists-p dir))
 	      (error "Extra `load-path' directory %S does not exist!" dir))
-	  ;; (print (format "Adding %S" dir))
 	  (setq load-path (cons dir load-path)
 		otherdirs (cdr otherdirs)))))
 
@@ -70,7 +67,6 @@ wrong Emacs actually gets chosen."
   ((invalid-read-syntax)   
    (message "OTHERDIRS=%S rejected by `read': %s"
 	    (getenv "OTHERDIRS")
-	    ;(error-message-string err)
 	    err
 	    )))
   
@@ -84,12 +80,8 @@ wrong Emacs actually gets chosen."
 (require 'bytecomp)
 ;; Current public setting
 ;; Check for undefined functions, ignore save-excursion problems
-;; (setq byte-compile-warnings '(not suspicious))
-;; Ignore undefined functions as well (for Emacs 24.5)
 (setq byte-compile-warnings '(not suspicious unresolved))
 ;; Old permissive setting
-;; (setq byte-compile-warnings '(free-vars))
-;; (put 'inhibit-local-variables 'byte-obsolete-variable nil)
 
 ;; Preload these to get macros right 
 (require 'sendmail)

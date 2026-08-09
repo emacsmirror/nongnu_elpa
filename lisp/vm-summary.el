@@ -142,10 +142,6 @@ marked as modified."
   (when (vm-menu-support-possible-p)
     (vm-menu-install-menus))
 ;; using the 'mouse-face property gives faster highlighting than this.
-;;  (and vm-mouse-track-summary
-;;       (vm-mouse-support-possible-p)
-;;       (featurep 'xemacs)
-;;       (add-hook 'mode-motion-hook 'mode-motion-highlight-line))
   (when (and vm-mutable-frame-configuration 
 	     (or vm-frame-per-folder vm-frame-per-summary))
     (vm-set-hooks-for-frame-deletion))
@@ -175,9 +171,6 @@ mandatory."
 	  (abbrev-mode 0)
 	  (auto-fill-mode 0)
 	  ;; Experimental code to use buffer-face-mode to change font
-	  ;; (when (boundp 'vm-summary-face)
-	  ;;   (setq bufer-face-mode-face vm-summary-face)
-	  ;;   (buffer-face-mode 1))
 	  (vm-fsfemacs-nonmule-display-8bit-chars)
 	  (buffer-disable-undo (current-buffer))
 	  (setq vm-mail-buffer b
@@ -221,7 +214,6 @@ the messages in the current folder."
 	(do-mouse-track (or (and vm-mouse-track-summary
 				 (vm-mouse-support-possible-p))
 			    vm-summary-enable-faces)))
-    ;; (setq mp m-list)
     (with-current-buffer vm-summary-buffer
       (setq line-move-ignore-invisible vm-summary-show-threads)
       (let ((buffer-read-only nil)
@@ -280,9 +272,6 @@ the messages in the current folder."
 			    (when (> (vm-thread-count m) 1)
 			      ;; FIXME this is not working yet.
 			      ;; USR 2012-11-12
-			      ;; (if vm-summary-threads-collapsed
-			      ;; 	  (vm-summary-set-root-collapsed m)
-			      ;; 	(vm-summary-set-root-expanded m))
 			      (if vm-summary-threads-collapsed
 				  (vm-summary-mark-root-collapsed m)
 				(vm-summary-mark-root-expanded m))
@@ -292,7 +281,6 @@ the messages in the current folder."
 			    (unless (vm-visible-message m)
 			      (put-text-property s e 'invisible t))
 			    ;; why mess with the root here?  USR, 2010-07-20
-			    ;; (vm-summary-mark-root-collapsed root)
 			    )))))
 		  (setq mp (cdr mp) n (1+ n))
 		  (when (zerop (% n modulus))
@@ -505,7 +493,6 @@ buffer by a regenerated summary line."
 		 vm-summary-enable-faces))
 	    ) ;; summary
 	(with-current-buffer (marker-buffer (vm-su-start-of m))
-	  ;; (setq summary (vm-su-summary m))
 	  (let ((buffer-read-only nil)
 		s e i
 		(selected nil)
@@ -1018,10 +1005,6 @@ mime.  It is used for writing summary lines to disk.   USR, 2010-05-13."
 					       (match-beginning 4)
 					       (match-end 4)))))))
 	      ;; Why do we reencode decoded strings?  USR, 2010-05-12
-;; 	      (cond ((and (not token) vm-display-using-mime)
-;; 		     (setcar sexp
-;; 			     (list 'vm-reencode-mime-encoded-words-in-string
-;; 				   (car sexp)))))
 	      (setq sexp-fmt
 		    (cons (if token "" "%s")
 			  (cons (substring format
@@ -1403,8 +1386,6 @@ cached-data-vector."
 	vector date)
     (setq date 
 	  (or 
-	   ;; (and vm-sort-messages-by-delivery-date
-	   ;; 	(vm-get-header-contents m "Delivery-Date:"))
 	   (vm-get-header-contents m "Date:")
 	   (vm-grok-From_-date m)))
     (cond
@@ -1488,20 +1469,8 @@ cached-data-vector."
 	    (vm-su-hour m)
 	    (vm-su-year m))))
 
-;; (defun vm-su-delivery-datestring (m)
-;;   "The delivery date of message M in the format \"Sun Jan 01 00:00:00 2000"."
-;;   (when (vm-su-d-weekday m)
-;;     (format "%s %s %s %s %s"
-;; 	    (condition-case error
-;; 		(substring (vm-su-d-weekday m) 0 3)
-;; 	      (error "Sun"))
-;; 	    (substring (vm-su-d-month m) 0 3)
-;; 	    (vm-su-d-monthday m)
-;; 	    (vm-su-d-hour m)
-;; 	    (vm-su-d-year m))))
 
 (defun vm-run-user-summary-function (function message)
-  ;; (condition-case nil
   (let ((m (vm-real-message-of message)))
     (with-current-buffer (vm-buffer-of m)
       (save-restriction
@@ -1509,7 +1478,6 @@ cached-data-vector."
 	(save-excursion
 	  (narrow-to-region (vm-headers-of m) (vm-text-end-of m))
 	  (funcall function m)))))
-  ;; (error " "))
   )
 
 (defun vm-su-decoded-full-name (m)
@@ -1996,10 +1964,6 @@ Call this function if you made changes to `vm-summary-format'."
     (vm-set-numbering-redo-start-point t)
     (vm-set-numbering-redo-end-point t)
     ;; Generate fresh summary data and stuff it
-    ;; (vm-inform 7 "%s: Stuffing cached data..." (buffer-name))
-    ;; (vm-stuff-folder-data :interactive t :abort-if-input-pending nil)
-    ;; (vm-inform 7 "%s: Stuffing cached data... done" (buffer-name))
-    ;; (set-buffer-modified-p t)
     ;; Regenerate the summary
     (vm-sort-messages (or vm-ml-sort-keys "activity"))
     (vm-inform 5 "%s: Recreating summary..." (buffer-name))
@@ -2349,8 +2313,6 @@ Call this function if you made changes to `vm-summary-format'."
 		     (vm-fs-end-of fs)
 		     (vm-fs-mouse-track-overlay-of fs)))
 		  ;; VM Summary Faces may not work for this yet
-		  ;; (when vm-summary-enable-faces
-		  ;;   (vm-summary-faces-add fs))
 		  )
 	      (set-buffer-modified-p modified)))))))
 
@@ -2435,8 +2397,6 @@ Call this function if you made changes to `vm-summary-format'."
 		    (vm-fs-start-of fs)
 		    (vm-fs-end-of fs))))
 		;; VM Summary Faces may not work here yet
-		;; (when vm-summary-enable-faces
-		;;   (vm-summary-faces-add fs))
 		(set (intern key fs-hash) fs))
 	      (setq fp (cdr fp)))
 	    (setq dp (cdr dp)))

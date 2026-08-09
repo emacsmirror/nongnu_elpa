@@ -36,8 +36,6 @@
 (declare-function scroll-bar-mode "scroll-bar" (&optional arg))
 
 ;; Aliases for xemacs/fsfemacs functions with different arguments
-;; (declare-function vm-interactive-p "vm-misc.el"
-;; 		  ())
 (declare-function vm-buffer-substring-no-properties "vm-misc.el"
 		  (start end))
 (declare-function vm-extent-property "vm-misc.el" (overlay prop) t)
@@ -589,10 +587,6 @@ LIST2 satisfying PRED and return the position"
       #'view-file-other-frame
     #'view-file-other-window))
 
-;; (defalias 'vm-interactive-p
-;;       (if (fboundp 'called-interactively-p)	; Gnu Emacs 23.2
-;; 	  (lambda () (called-interactively-p 'any))
-;; 	'interactive-p))
 
 (defalias 'vm-device-type
   (if (featurep 'xemacs) #'device-type
@@ -1180,8 +1174,6 @@ encoding/decoding, conversions, subprocess communication etc."
     (buffer-disable-undo work-buffer)
 ;; probably not worth doing since no one sets buffer-offer-save
 ;; non-nil globally, do they?
-;;    (with-current-buffer work-buffer
-;;      (setq buffer-offer-save nil))
     work-buffer ))
 
 (defun vm-make-multibyte-work-buffer (&optional name)
@@ -1190,8 +1182,6 @@ encoding/decoding, conversions, subprocess communication etc."
     (buffer-disable-undo work-buffer)
 ;; probably not worth doing since no one sets buffer-offer-save
 ;; non-nil globally, do they?
-;;    (with-current-buffer work-buffer
-;;      (setq buffer-offer-save nil))
     work-buffer ))
 
 (defalias 'vm-insert-char
@@ -1414,7 +1404,6 @@ filling of GNU Emacs does not work correctly here."
 	    (adaptive-fill-mode nil)
 	    (abbrev-mode nil)
 	    (fill-prefix nil)
-	    ;; (use-hard-newlines t)
 	    (filled 0)
 	    (_message (if (car vm-message-pointer)
 			  (vm-su-subject (car vm-message-pointer))
@@ -1438,11 +1427,6 @@ filling of GNU Emacs does not work correctly here."
       
 	;; Turning off these messages because they go by too fast and
 	;; are not particularly enlightening.  USR, 2010-01-26
-	;; (if (= filled 0)
-	;;    (vm-inform 7 "Nothing to fill")
-	;;  (vm-inform 7 "Filled %s paragraph%s"
-	;;           (if (> filled 1) (format "%d" filled) "one")
-	;;           (if (> filled 1) "s" "")))
 	))))
 
 (defun vm-fill-paragraphs-by-longlines (start end)
@@ -1701,9 +1685,7 @@ Return the list of loaded features."
                          f
                        (when (not silent)
                          (message "WARNING: Could not load feature %S." f)
-                         ;; (sit-for 1)
                          (message "WARNING: Related functions may not work correctly!")
-                         ;; (sit-for 1)
 			 )
                        nil))))
                 feature-list))

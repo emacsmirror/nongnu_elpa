@@ -113,9 +113,6 @@
 (defvar vm-pgg-cleartext-state)
 
 ; group already defined in vm-vars.el
-;(defgroup vm nil
-;  "VM"
-;  :group 'mail)
 
 (defgroup vm-pgg nil
   "PGP and PGP/MIME support for VM by PGG."
@@ -675,8 +672,6 @@ When the button is pressed ACTION is called."
           (narrow-to-region vm-pgg-part-start (point))
           (vm-pgg-cleartext-automode)
           (widen)
-;          (set-window-start (selected-window) 0)
-          ;(scroll-down 1000)
           )))))
   
 (advice-add 'vm-mime-display-internal-text/plain
@@ -947,8 +942,6 @@ cleanup here after verification and decoding took place."
 
 ;; we must add these in order to force VM to call our handler
 (eval-and-compile
-;; (if (listp vm-mime-auto-displayed-content-types)
-;;       (add-to-list 'vm-mime-auto-displayed-content-types "application/pgp-keys"))
   (if (listp vm-mime-internal-content-types)
       (add-to-list 'vm-mime-internal-content-types "application/pgp-keys"))
   (add-to-list 'vm-mime-button-format-alist
@@ -1069,7 +1062,6 @@ seed and thus creates the same boundery when called twice in a short period."
 (defun vm-pgg-save-work (function &rest args)
   "Call FUNCTION with ARGS without messing up the composition in case of an error."
   (let ((composition-buffer (current-buffer))
-        ;; (undo-list-backup buffer-undo-list)
         (work-buffer (get-buffer-create " *VM-PGG-WORK*")))
     (with-current-buffer work-buffer
       (buffer-disable-undo)
@@ -1139,7 +1131,6 @@ The transfer encoding done by `vm-pgg-sign' can be controlled by the variable
     ;; now create the signature
     (save-excursion
       ;; BUGME do we need the CRLF conversion?
-;      (vm-pgg-make-crlf (point) (point-max))
       (unless (pgg-sign-region body-start (point-max) nil)
         (pop-to-buffer pgg-errors-buffer)
         (error "Signing error"))

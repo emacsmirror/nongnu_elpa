@@ -53,9 +53,6 @@
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ; group already defined in vm-vars.el
-;(defgroup vm nil
-;  "VM"
-;  :group 'mail)
 
 (defgroup vm-grepmail nil
   "The VM grepmail lib"
@@ -200,8 +197,6 @@ FOLDERS should be a list of files/directories to search in."
         (sit-for 0))
     (error nil
            ;; TODO: there are some problems here but we ignore them
-;           (message "%S" err)
-;           (backtrace)
            ))
   )
 

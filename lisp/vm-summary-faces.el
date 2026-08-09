@@ -36,8 +36,6 @@
 (require 'vm-misc)
 (require 'vm-avirtual)
 
-;; (eval-and-compile
-;;   (if (featurep 'xemacs) (require 'overlay)))
 
 (declare-function vm-extent-property "vm-misc.el" (overlay prop) t)
 (declare-function vm-set-extent-property "vm-misc.el" (overlay prop value) t)
@@ -159,14 +157,6 @@ fonts and colors, for easy recogniton of the message status."
 ;; No need for advice because the code has been integrated into 
 ;; VM.  USR, 2010-08-01 
 
-;; (defadvice vm-mouse-set-mouse-track-highlight 
-;;	(after vm-summary-faces activate)
-;;   (when (and vm-summary-enable-faces
-;;              (eq major-mode 'vm-summary-mode)
-;;              (boundp 'm)
-;;              m)
-;;     ;; FIXME there is a warning about a free variable here, sorry!
-;;     (vm-summary-faces-add m)))
 
 (defun vm-summary-faces-fix-pointer ()
   (if vm-summary-overlay

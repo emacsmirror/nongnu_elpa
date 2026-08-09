@@ -1523,20 +1523,14 @@ vm-folder-type is initialized here."
       (vm-set-flagged-flag-of message (not (= 0 (logand status #x0004))))
       ;; deleted flag
       (vm-set-deleted-flag-of message (not (= 0 (logand status #x0008))))
-      ;; (unless (= 0 (logand status #x0010))  ; subject with "Re:" prefix
-      ;; 	nil)
       ;; folded flag
       (vm-set-folded-flag-of message (not (= 0 (logand status #x0020))))
-      ;; (unless (= 0 (logand status #x0080))  ; offline article
-      ;; 	nil)
       ;; watched flag
       (vm-set-watched-flag-of message (not (= 0 (logand status #x0100))))
-      ;; (unless (= 0 (logand status #x0200)) ; authenticated sender
-      ;; 	nil)
-      ;; (unless (= 0 (logand status #x0400)) ; remote POP article
-      ;; 	nil)
-      ;; (unless (= 0 (logand status #x0800)) ; queued
-      ;; 	nil)
+      ;; Read and not acted on: #x0010 subject carries a "Re:" prefix,
+      ;; #x0080 offline article, #x0200 authenticated sender, #x0400 remote
+      ;; POP article, #x0800 queued.  VM has no flag of its own for any of
+      ;; them.
       ;; forwarded
       (vm-set-forwarded-flag-of message (not (= 0 (logand status #x1000)))))
 
@@ -1554,20 +1548,15 @@ vm-folder-type is initialized here."
       (vm-set-new-flag-of message (not (= 0 (logand status #x0001))))
       ;; ignored thread
       (vm-set-ignored-flag-of message (not (= 0 (logand status #x0004))))
-      ;; (unless (= 0 (logand status #x0020)) ; deleted on the server
-      ;; 	nil)
       ;; read-receipt requested
       (vm-set-read-receipt-flag-of message (not (= 0 (logand status #x0040))))
       ;; read-receipt sent
       (vm-set-read-receipt-sent-flag-of message (not (= 0 (logand status #x0080))))
-      ;; (unless (= 0 (logand status #x0100)) ; template
-      ;; 	nil)
       ;; has attachments
       (vm-set-attachments-flag-of message (not (= 0 (logand status #x1000))))
-      ;; 	nil)
-      ;; (unless (= 0 (logand status #x0E00))
-      ;; 	nil)
-      ;; FIXME care for message labels
+      ;; Read and not acted on: #x0020 deleted on the server, #x0100
+      ;; template, #x0E00 the label field -- Thunderbird's five labels have
+      ;; no counterpart among VM's own labels.
       )
 
     (vm-mark-for-summary-update message)
@@ -2287,12 +2276,6 @@ notice and refuse, as it does for any other stale UID."
 
 ;; This is now replaced by vm-mime-encode-words-in-cache-vector
 ;;
-;; (defun vm-encode-words-in-cache-vector (list)
-;;   (vm-mapvector (lambda (e)
-;; 		  (if (stringp e)
-;; 		      (vm-mime-encode-words-in-string e)
-;; 		    e))
-;; 		list))
 
 (defun vm-stuff-message-data (m &optional for-other-folder)
   "Stuff the attributes, labels, soft and cached data of the
@@ -2404,8 +2387,6 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
     ;; message 3, then 234, then 10, then 500, thus causing
     ;; large chunks of memory to be copied repeatedly as
     ;; the gap moves to accomodate the insertions.
-    ;; (vm-inform inform-level "%s: Ordering updates..." (buffer-name)) 
-					; Pointless
     (let ((vm-key-functions '(vm-sort-compare-physical-order-r)))
       (setq mp (sort newlist 'vm-sort-compare-xxxxxx)))
     (save-excursion
@@ -4227,7 +4208,6 @@ be used as the name of the buffer."
 		;; is not clear if it does anything at all.  USR, 2010-07-10.
 		;; The only place this function is called from is vm,
 		;; which takes care of multibyte issues.  TX, 2010-07-03
-		;; (default-enable-multibyte-characters nil)
 
 		;; for XEmacs/Mule
 		(coding-system-for-read
@@ -4743,8 +4723,6 @@ interactive queries to the user.  The possible values are t,
 	((eq vm-folder-access-method 'imap)
 	 (if vm-imap-sync-on-get
 	     (progn
-;;	       (vm-imap-synchronize-folder :interactive interactive
-;;                                         :save-attributes t)
 	       (vm-imap-synchronize-folder :interactive interactive
 					   :do-local-expunges t 
 					   :do-retrieves t 
@@ -4990,8 +4968,6 @@ files."
 	   (error "Can't get mail for a non-VM folder buffer"))
 	  ((null arg)
 	   ;; This is redundant now.  USR, 2011-12-26
-	   ;; (if (not (eq major-mode 'vm-mode))
-	   ;;     (vm-mode))
 	   (vm-inform 5 "%s: Checking for %s..." folder description)
 	   (if (vm-get-spooled-mail t)
 	       (progn
@@ -5498,7 +5474,6 @@ Interactively TYPE will be read from the minibuffer."
        (vm-convert-folder-header old-type type)
        (while mp
 	 (goto-char (vm-start-of (car mp)))
-	 ;; (setq opoint (point))
 	 (insert (vm-leading-message-separator type (car mp)))
 	 (if (> (vm-headers-of (car mp)) (vm-start-of (car mp)))
 	     (delete-region (point) (vm-headers-of (car mp)))
@@ -5714,7 +5689,6 @@ thread are loaded."
   (when (null count) (setq count 1))
   (let ((mlist (vm-select-operable-messages
 		count (vm-interactive-p) "Load"))
-	;; (errors 0)
 	(n 0)
 	;; fetch-method
 	m mm
@@ -5794,12 +5768,9 @@ thread are retrieved."
     (when (null count) (setq count 1))
     (let (;; (used-marks (eq last-command 'vm-next-command-uses-marks))
 	  (vm-external-fetched-message-limit nil)
-	  ;; (errors 0)
 	  (n 0)
 	  ;; fetch-method
 	  m mm)
-      ;;     (if (not used-marks) 
-      ;; 	(setq mlist (list (car vm-message-pointer))))
       (unless mlist
 	(setq mlist (vm-select-operable-messages
 		     count (vm-interactive-p) "Retrieve")))
@@ -5854,7 +5825,6 @@ Gives an error if unable to retrieve message."
        (let ((fetch-method (vm-message-access-method-of mm))
 	     (vm-folder-read-only (and vm-folder-read-only (not fetch)))
 	     (inhibit-read-only t)
-	     ;; (buffer-read-only nil)    ; seems redundant
 	     (buffer-undo-list t)	; why this?  USR, 2010-06-11
 	     (modified (buffer-modified-p))
 	     (fetch-result nil))
@@ -5983,7 +5953,6 @@ the folder is saved."
   (let ((mlist (vm-select-operable-messages
 		count (vm-interactive-p) "Unload"))
 	(buffer-undo-list t)
-	;; (errors 0)
 	m mm)
     (save-excursion
       (setq count 0)
@@ -6022,7 +5991,6 @@ the folder is saved."
       (save-restriction
        (widen)
        (let ((inhibit-read-only t)
-	     ;; (buffer-read-only nil)     ; seems redundant
 	     (modified (buffer-modified-p)))
 	 (goto-char (vm-text-of mm))
 	 ;; Check to see that we are at the right place

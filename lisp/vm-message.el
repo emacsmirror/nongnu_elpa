@@ -533,8 +533,6 @@ unique objects.")
   (aset (aref message 3) 24 val))
 (defsubst vm-set-spam-score-of (message val)
   (aset (aref message 3) 25 val))
-;; (defsubst vm-set-headers-to-be-retrieved-of (message val)
-;;   (aset (aref message 3) 26 val))
 (defsubst vm-set-headers-to-be-discarded-of (message val)
   (aset (aref message 3) 27 val))
 (defsubst vm-set-decoded-summary-subject-of (message val)
@@ -769,8 +767,6 @@ the headers/body of M."
 		;; doesn't make sense. USR, 2011-04-28
 		(vm-unthread-message v-m :message-changing message-changing)
 		(vm-build-threads (list v-m)))
-	      ;; (if vm-summary-show-threads
-	      ;;     (intern (buffer-name) buffers-needing-thread-sort))
 	      ))
 	  (vm-virtual-messages-of m))))
 

@@ -233,22 +233,6 @@ ROOT-WINDOW-EDGES will be used."
 ;; duplicate this by creating a buffer that can be displayed
 ;; fully in the current window and then run
 ;;
-;;    (progn
-;;      (set-window-buffer (selected-window) (current-buffer))
-;;      (scroll-up nil))
-;;;;;;;;;;;
-;;(defun tapestry-set-buffer-map (buffer-map &optional first-window)
-;;  (let ((w-list (tapestry-window-list first-window)) wb)
-;;    (while (and w-list buffer-map)
-;;      (setq wb (car buffer-map))
-;;      (set-window-buffer
-;;       (car w-list)
-;;       (if (car wb)
-;;	   (or (get-file-buffer (car wb))
-;;	       (find-file-noselect (car wb)))
-;;	 (get-buffer-create (nth 1 wb))))
-;;      (setq w-list (cdr w-list)
-;;	    buffer-map (cdr buffer-map)))))
 
 (defun tapestry-set-buffer-map (buffer-map &optional first-window)
   (let ((w-list (tapestry-window-list first-window))
