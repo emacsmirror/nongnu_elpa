@@ -86,12 +86,12 @@ very large Nix files (all-packages.nix)."
   :group 'nix-faces)
 
 (defface nix-store-path-realised-face
-  '((t :inherit 'nix-store-path-face))
+  '((t :inherit nix-store-path-face))
   "Face used to highlight realised Nix store paths."
   :group 'nix-faces)
 
 (defface nix-store-path-unrealised-face
-  '((t :inherit 'nix-store-path-face))
+  '((t :inherit nix-store-path-face))
   "Face used to highlight unrealised Nix store paths."
   :group 'nix-faces)
 
@@ -124,16 +124,16 @@ very large Nix files (all-packages.nix)."
 ;;; Regexps
 
 (defconst nix-re-file-path
-  "[a-zA-Z0-9._\\+-]*\\(/[a-zA-Z0-9._\\+-]+\\)+")
+  "[a-zA-Z0-9._+-]*\\(/[a-zA-Z0-9._+-]+\\)+")
 
 (defconst nix-re-url
-  "[a-zA-Z][a-zA-Z0-9\\+-\\.]*:[a-zA-Z0-9%/\\?:@&=\\+\\$,_\\.!~\\*'-]+")
+  "[a-zA-Z][a-zA-Z0-9+.-]*:[a-zA-Z0-9%/?:@&=+$,_.!~*'-]+")
 
 (defconst nix-re-bracket-path
-  "<[a-zA-Z0-9._\\+-]+\\(/[a-zA-Z0-9._\\+-]+\\)*>")
+  "<[a-zA-Z0-9._+-]+\\(/[a-zA-Z0-9._+-]+\\)*>")
 
 (defconst nix-re-variable-assign
-  "\\<\\([a-zA-Z_][a-zA-Z0-9_'\-\.]*\\)[ \t]*=[^=]")
+  "\\<\\([a-zA-Z_][a-zA-Z0-9_'.-]*\\)[ \t]*=[^=]")
 
 (defconst nix-re-caps
   " =[ \n]\\|\(\\|\{\\|\\[\\|\\bwith\\b\\|\\blet\\b\\|\\binherit\\b")
@@ -164,7 +164,7 @@ KEYWORDS a list of strings to match as Nix keywords."
     (nix--syntax-match-antiquote 0 'nix-antiquote-face t))
   "Font lock keywords for nix.")
 
-(defconst nix--variable-char "[a-zA-Z0-9_'\-]")
+(defconst nix--variable-char "[a-zA-Z0-9_'-]")
 
 (defvar nix-mode-abbrev-table
   (make-abbrev-table)
@@ -845,7 +845,7 @@ not to any other arguments."
     (save-excursion
       (goto-char (point-min))
       (while (not (equal (point) (point-max)))
-        (if (equal (string-match-p "^[\s-]*$" (thing-at-point 'line)) 0)
+        (if (equal (string-match-p "^[[:space:]]*$" (thing-at-point 'line)) 0)
             (delete-horizontal-space)
           (nix-indent-line))
         (forward-line)))))
