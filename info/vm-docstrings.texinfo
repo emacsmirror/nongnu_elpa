@@ -3563,7 +3563,7 @@ This program is needed to support the display of X-Faces under
 Emacs 21 if the uncompface program can’t convert X-Face image
 data to XBM data.
 
-Default value: @code{"/opt/local/bin/icontopbm"}
+Default value: worked out when VM is loaded, from this system.
 @end defopt
 
 @end macro
@@ -3577,7 +3577,7 @@ For ImageMagick 6 or earlier, this can point to @code{convert}.
 VM will automatically use the appropriate subcommand (convert, identify)
 when calling ImageMagick 7’s magick program.
 
-Default value: @code{"/opt/local/lib/ImageMagick7/bin/magick"}
+Default value: worked out when VM is loaded, from this system.
 @end defopt
 
 @end macro
