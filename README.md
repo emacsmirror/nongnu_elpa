@@ -114,8 +114,11 @@ at
 [misc/emacs/nix-mode.el](https://github.com/NixOS/nix/blob/master/misc/emacs/nix-mode.el).
 Please see [the CHANGELOG file](https://github.com/NixOS/nix-mode/blob/master/CHANGELOG.md) for a list of changes.
 
-## Other Emacs packages
+## Other Useful Emacs packages
 
-@shlevy has an excellent package for integrating nix-shell into emacs. It is available at [shlevy/nix-buffer](https://github.com/shlevy/nix-buffer). 
+- @shlevy has an excellent package for integrating nix-shell into emacs. It is available at [shlevy/nix-buffer](https://github.com/shlevy/nix-buffer). 
 
-@travisbhartwell also has some package dealing with Nix. They are available at [travisbhartwell/nix-emacs](https://github.com/travisbhartwell/nix-emacs).
+- @travisbhartwell also has some package dealing with Nix. They are available at [travisbhartwell/nix-emacs](https://github.com/travisbhartwell/nix-emacs).
+
+- @cve has written a helpful nix-doc.el which integrates with the Noogle
+  documentation toolchain. It is available at [cve/nix-doc.el](https://codeberg.org/cve/nix-doc.el).
