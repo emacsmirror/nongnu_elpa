@@ -22,37 +22,15 @@
 
 # Process this file with autoconf to produce a new configure script
 
-# VM_ARG_SUBST(VAR, OPTION, VAL, DESC[, DEFAULT[, ACTION]])
-#
-# Substitute the autoconf variable VAR to a value specified by the user
-# option --with-OPTION[=VAL] (described by DESC), or with a DEFAULT value.
-# If an additional ACTION is given, it is executed at the top of the
-# ACTION-IF-FOUND part of AC_ARG_WITH.
-# #### WARNING: pay attention to the quoting of ACTION if given !!!!!
-#
-# The closing bracket in [--with-$2]m4_ifval(...) is load-bearing.  Written as
-# --with-$2ifelse(...), which is what this was, $2 expands to "other-dirs" and
-# leaves the text "--with-other-dirsifelse(DIRS, , , =DIRS)": m4 reads
-# "dirsifelse" as one word, so the conditional is never a macro call and lands
-# in the help text verbatim.  Ending the quoted string first makes the macro
-# name a token of its own.  The same goes for the DESC and DEFAULT pair.
-AC_DEFUN([VM_ARG_SUBST],
-[
-  AC_SUBST([$1])
-  AC_ARG_WITH([$2],
-    AS_HELP_STRING([--with-$2]m4_ifval([$3], [=$3]),
-                   [$4]m4_ifval([$5], [ [[$5]]])),
-    [
-      m4_ifval([$6], [$6])
-      $1="${withval}"
-    ],
-    m4_ifval([$5], [$1="$5"]))
-])
+AC_PREREQ([2.69])
+AC_INIT([VM],[8.3.3snapshot],[viewmail-info@nongnu.org])
+AC_COPYRIGHT([Copyright (C) 2024-2025 The VM Developers])
+AC_CONFIG_SRCDIR([configure.ac])
 
 # Find a (g)tar program and make sure it is GNU one. A failure is not fatal
 # since tar is needed for non critical targets only.
 AC_DEFUN([VM_PROG_GNU_TAR],
-  [ AC_CHECK_PROGS(TAR, gtar tar)
+  [ AC_CHECK_PROGS([TAR], [gtar tar])
     if test "x${TAR}" = "xtar" ; then
       AC_MSG_CHECKING([that tar is GNU tar])
       ${TAR} --version > /dev/null 2>&1 || TAR=
@@ -67,40 +45,13 @@ AC_DEFUN([VM_PROG_GNU_TAR],
       AC_MSG_WARN([*** Some targets will be unavailable.])
     fi ])
 
-# Find an xargs program. A failure is not fatal, only clean/tarball will not
-# work
-AC_DEFUN([VM_PROG_XARGS],
-  [ AC_CHECK_PROG(XARGS, xargs, xargs)
-    if test "x${XARGS}" = "x" ; then
-      AC_MSG_WARN([*** No xargs program found.])
-      AC_MSG_WARN([*** make clean/tarball will not work.])
-    fi ])
-
-# Find a makeinfo program. A failure is not fatal, only info files won't be
-# built.
-AC_DEFUN([VM_PROG_MAKEINFO],
-  [ AC_CHECK_PROG(MAKEINFO, makeinfo, makeinfo)
-    if test "x${MAKEINFO}" = "x" ; then
-      AC_MSG_WARN([*** No makeinfo program found.])
-      AC_MSG_WARN([*** Info files will not be built.])
-    fi ])
-
-# for install-info program (for updating info dir file)
-AC_DEFUN([VM_PROG_INSTALL_INFO],
-  [ AC_CHECK_PROG(INSTALL_INFO, install-info, install-info)
-    if test "x${INSTALL_INFO}" = "x" ; then
-      AC_MSG_WARN([*** No install-info program found.])
-      AC_MSG_WARN([*** Info dir file will not be updated on install.])
-    fi ])
-
-# Find a texi2dvi program. A failure is not fatal, only dvi and pdf files
-# won't be built.
-AC_DEFUN([VM_PROG_TEXI2DVI],
-  [ AC_CHECK_PROG(TEXI2DVI, texi2dvi, texi2dvi)
-    if test "x${TEXI2DVI}" = "x" ; then
-      AC_MSG_WARN([*** No texi2dvi program found.])
-      AC_MSG_WARN([*** DVI and PDF files will not be built.])
-    fi ])
+# Look for an optional program: warn and carry on when it is missing, saying
+# what will not work without it.
+AC_DEFUN([VM_PROG_OPTIONAL],
+  [ AC_CHECK_PROG([$1], [$2], [$2])
+    AS_IF([test "x${$1}" = x],
+      [ AC_MSG_WARN([*** No $2 program found.])
+        AC_MSG_WARN([*** $3]) ]) ])
 
 # Choose an Emacs flavor according to the --with-emacs user option, or try
 # emacs and xemacs.
@@ -110,7 +61,7 @@ AC_DEFUN([VM_PROG_EMACS],
   [ AC_ARG_WITH([emacs],
      AS_HELP_STRING([--with-emacs=PROG],[choose which flavor of Emacs to use]),
       [ EMACS_PROG="${withval}" ],
-      [ AC_CHECK_PROGS(EMACS_PROG, emacs xemacs) ])
+      [ AC_CHECK_PROGS([EMACS_PROG], [emacs xemacs]) ])
     if test "x${EMACS_PROG}" = "x" ; then
       dnl This is critical enough to generate an error and not a warning...
       AC_MSG_ERROR([*** No Emacs program found.])
@@ -147,7 +98,9 @@ TEST
     AC_MSG_RESULT([${EMACS_VERSION}])
 
     # Copied from gnus aclocal.m4
-    AC_ARG_WITH(lispdir,[  --with-lispdir=DIR      where to install lisp files], lispdir=${withval})
+    AC_ARG_WITH([lispdir],
+      AS_HELP_STRING([--with-lispdir=DIR], [where to install lisp files]),
+      [lispdir=${withval}])
     AC_MSG_CHECKING([where .elc files should go])
     if test -z "$lispdir"; then
       dnl Set default value
@@ -176,38 +129,35 @@ TEST
   	fi
       done
     fi
-    AC_MSG_RESULT($lispdir)
-    AC_SUBST(lispdir)
+    AC_MSG_RESULT([$lispdir])
+    AC_SUBST([lispdir])
 
-    AC_ARG_WITH(etcdir,[  --with-etcdir=DIR    where to install data files], etcdir=${withval})
+    AC_ARG_WITH([etcdir],
+      AS_HELP_STRING([--with-etcdir=DIR], [where to install data files]),
+      [etcdir=${withval}])
     AC_MSG_CHECKING([where data files should go])
     if test -z "$etcdir"; then
       dnl Set default value
       etcdir="${datadir}/vm"
     fi
     pixmapdir="${etcdir}/pixmaps"
-    AC_MSG_RESULT($etcdir)
-    AC_SUBST(etcdir)
-    AC_SUBST(pixmapdir)
+    AC_MSG_RESULT([$etcdir])
+    AC_SUBST([etcdir])
+    AC_SUBST([pixmapdir])
 
-    AC_ARG_WITH(docdir,[  --with-docdir=DIR    where to install doc files],
-      docdir=${withval},
+    AC_ARG_WITH([docdir],
+      AS_HELP_STRING([--with-docdir=DIR], [where to install doc files]),
+      [docdir=${withval}],
       dnl Set default value. Install ancillary documentation in etcdir,
       dnl following Emacs conventions.
-      docdir="${etcdir}")
+      [docdir="${etcdir}"])
     AC_MSG_CHECKING([where doc files should go])
-    AC_MSG_RESULT($docdir)
-    AC_SUBST(docdir)
+    AC_MSG_RESULT([$docdir])
+    AC_SUBST([docdir])
 
-#    if test "x${EMACS_FLAVOR}" = "xemacs" ; then
-#      PACKAGEDIR="${prefix}/share/emacs/site-lisp"
-#    else
-#      PACKAGEDIR="${HOME}/.xemacs/xemacs-packages"
-#    fi
-
-    AC_SUBST(EMACS_PROG)
-    AC_SUBST(EMACS_FLAVOR)
-    AC_SUBST(EMACS_VERSION)
+    AC_SUBST([EMACS_PROG])
+    AC_SUBST([EMACS_FLAVOR])
+    AC_SUBST([EMACS_VERSION])
 ])
 
 # copied from gnus aclocal.m4
@@ -219,11 +169,9 @@ AC_DEFUN([VM_BUILD_FLAGS], [
     else
       FLAGS="-batch -q -no-site-file -no-init-file -l \$(srcdir)/vm-build.el"
     fi
-  else
-    FLAGS=$FLAGS
   fi
-  AC_MSG_RESULT($FLAGS)
-  AC_SUBST(FLAGS)
+  AC_MSG_RESULT([$FLAGS])
+  AC_SUBST([FLAGS])
 ])
 
 
@@ -236,15 +184,16 @@ AC_DEFUN([VM_PATH_INFO_DIR], [
       infodir="\$(prefix)/${thedir}/${EMACS_FLAVOR}/site-packages/info"
     fi
   fi
-  AC_MSG_RESULT($infodir)
-  AC_SUBST(infodir)
+  AC_MSG_RESULT([$infodir])
+  AC_SUBST([infodir])
 ])
 
 # --with-other-dir option
 AC_DEFUN([VM_OTHERDIRS],
-  [ VM_ARG_SUBST([OTHERDIRS], [other-dirs], [DIRS],
-    [set other needed lisp directories (a list of semicolon separated paths)],
-    [],)
+  [ AC_ARG_WITH([other-dirs],
+      AS_HELP_STRING([--with-other-dirs=DIRS],
+        [set other needed lisp directories (a list of semicolon separated paths)]),
+      [OTHERDIRS="${withval}"])
   AC_MSG_CHECKING([otherdirs])
   cat > conftest.el <<TEST
     (let ((otherdirs (delete "" (split-string "${OTHERDIRS}" ";")))
@@ -259,37 +208,27 @@ AC_DEFUN([VM_OTHERDIRS],
       (princ (format "%S" absolutedirs)))
 TEST
   OTHERDIRS=`"${EMACS_PROG}" --no-site-file --batch -l ${srcdir}/lisp/vm-build.el -l conftest.el | tr -d "\r\n"`
-  AC_MSG_RESULT($OTHERDIRS)
-  AC_SUBST(OTHERDIRS)
+  AC_MSG_RESULT([$OTHERDIRS])
+  AC_SUBST([OTHERDIRS])
 ])
-
-##############################################################################
-AC_INIT([VM],[8.3.3snapshot],[viewmail-info@nongnu.org])
-# Name of the application
-# Version (release) number
-# Contact address
-
-AC_COPYRIGHT([Copyright (C) 2024-2025 The VM Developers])
-
-AC_CONFIG_SRCDIR([configure.ac])
-AC_CONFIG_FILES([Makefile lisp/Makefile info/Makefile pixmaps/Makefile test/Makefile vm-load.el])
 
 # Common system utilities checking:
 AC_PROG_MAKE_SET
 AC_PROG_INSTALL
 AC_PROG_LN_S
-AC_PATH_PROG(RM, rm, /bin/rm)
-AC_PATH_PROG(LS, ls, /bin/ls)
-AC_PATH_PROG(MKDIR, mkdir, /bin/mkdir)
-AC_PATH_PROG(RMDIR, rmdir, /bin/rmdir)
-AC_PATH_PROG(GREP, grep, /bin/grep)
+AC_PATH_PROG([RM], [rm], [/bin/rm])
+AC_PATH_PROG([LS], [ls], [/bin/ls])
+AC_PATH_PROG([MKDIR], [mkdir], [/bin/mkdir])
+AC_PATH_PROG([RMDIR], [rmdir], [/bin/rmdir])
+AC_PATH_PROG([GREP], [grep], [/bin/grep])
 
 # External programs checking:
-VM_PROG_XARGS
+VM_PROG_OPTIONAL([XARGS], [xargs], [make clean/tarball will not work.])
 VM_PROG_GNU_TAR
-VM_PROG_MAKEINFO
-VM_PROG_INSTALL_INFO
-VM_PROG_TEXI2DVI
+VM_PROG_OPTIONAL([MAKEINFO], [makeinfo], [Info files will not be built.])
+VM_PROG_OPTIONAL([INSTALL_INFO], [install-info],
+                 [Info dir file will not be updated on install.])
+VM_PROG_OPTIONAL([TEXI2DVI], [texi2dvi], [DVI and PDF files will not be built.])
 
 VM_PROG_EMACS
 VM_BUILD_FLAGS
@@ -297,9 +236,14 @@ VM_PATH_INFO_DIR
 VM_OTHERDIRS
 
 # is there a sane way to set this to a useful default?
-VM_ARG_SUBST([PACKAGEDIR], [package-dir], [DIR],
-  [set the Emacs package directory to DIR],)
+AC_ARG_WITH([package-dir],
+  AS_HELP_STRING([--with-package-dir=DIR],
+    [set the Emacs package directory to DIR]),
+  [PACKAGEDIR="${withval}"])
+AC_SUBST([PACKAGEDIR])
 
+AC_CONFIG_FILES([Makefile lisp/Makefile info/Makefile pixmaps/Makefile
+                 test/Makefile vm-load.el])
 AC_OUTPUT
 
 # configure.ac ends here
