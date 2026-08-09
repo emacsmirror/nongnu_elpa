@@ -931,7 +931,7 @@ END where to end the region."
                                (not line-is-comment-p))
                           (nix-is-comment-p)))))
                  ;; Don't mess with strings.
-                 (nix-is-string-p))
+                 (not (nix-is-string-p)))
             (funcall nix-indent-function)))
       (forward-line 1))))
 
