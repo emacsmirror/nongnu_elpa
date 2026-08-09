@@ -732,6 +732,68 @@ the root, not on the first.")
          (vm-build-threads-if-unbuilt)
          ,@body))))
 
+(defun vm-thread-test--edit-message (n replace with)
+  "Edit message N of the current folder, replacing REPLACE with WITH.
+Drives `vm-edit-message-end', which is what discards the cached data and
+re-threads the message -- the path an edit of a Subject takes."
+  (let* ((m (nth n vm-message-list))
+         (edit-buf (generate-new-buffer " *vm-thread-test-edit*")))
+    (unwind-protect
+        (progn
+          (vm-set-edit-buffer-of m edit-buf)
+          (with-current-buffer edit-buf
+            (insert-buffer-substring (vm-buffer-of m)
+                                     (vm-headers-of m) (vm-text-end-of m))
+            (goto-char (point-min))
+            (should (search-forward replace nil t))
+            (replace-match with)
+            (setq vm-message-pointer (list m)
+                  vm-mail-buffer (vm-buffer-of m))
+            (set-buffer-modified-p t))
+          (cl-letf (((symbol-function 'vm-present-current-message) #'ignore)
+                    ((symbol-function 'vm-update-summary-and-mode-line) #'ignore)
+                    ((symbol-function 'vm-display) (lambda (&rest _) nil)))
+            (with-current-buffer edit-buf (vm-edit-message-end))))
+      (when (buffer-live-p edit-buf) (kill-buffer edit-buf)))))
+
+(ert-deftest vm-thread-test-an-edited-subject-does-not-thread-a-root-under-its-child ()
+  "REGRESSION: editing a Subject leaves the message where it was in its thread.
+Issue #307, the half that was never reproduced.  `vm-unthread-message' is
+called before the cached data is wiped, so that the old message id still
+finds the right node, and it recorded the message's *old* subject on that
+node.  Nothing replaced it afterwards: `vm-build-thread-list' fills the
+field in only when it meets an older date.  `vm-ts-subject-symbol' reads
+exactly that field, so an edited message went on being sorted under the
+subject it used to have -- and joined that subject thread under whichever
+message had taken over as its root.
+
+For the root of a thread that is its own child: message 0 came out
+indented under message 3, which references message 0.  Every message in
+the thread shifted a step to the right with it, and
+`vm-check-thread-integrity' saw nothing wrong, the database being
+self-consistent."
+  (vm-thread-test--with-fork
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))
+    (vm-thread-test--edit-message 0 "Subject: subject 0" "Subject: quite another")
+    (should (equal '(0 1 2 1 0) (vm-thread-test--indentations)))
+    ;; the message is in the subject thread it now names, as its root
+    (let* ((m (car vm-message-list))
+           (s-sym (vm-ts-subject-symbol (vm-th-thread-symbol m))))
+      (should (equal (symbol-name s-sym) "quite another"))
+      (should (eq (vm-ts-root-of s-sym) (vm-th-thread-symbol m))))))
+
+(ert-deftest vm-thread-test-an-edited-subject-is-what-the-thread-node-holds ()
+  "The node's oldest-subject follows the edit rather than keeping the old one.
+That field is what `vm-ts-subject-symbol' is computed from, so a stale one
+is not cosmetic."
+  (vm-thread-test--with-fork
+    (let ((m (car vm-message-list)))
+      (should (equal (vm-th-oldest-subject-of (vm-th-thread-symbol m))
+                     "subject 0"))
+      (vm-thread-test--edit-message 0 "Subject: subject 0" "Subject: quite another")
+      (should (equal (vm-th-oldest-subject-of (vm-th-thread-symbol m))
+                     "quite another")))))
+
 (defun vm-thread-test--indentations ()
   "Return the thread indentation of each message in `vm-message-list'."
   (mapcar #'vm-thread-indentation vm-message-list))
