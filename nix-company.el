@@ -31,11 +31,11 @@ ARG company argument"
 
 (defun nix-grab-attr-path ()
   "Get Nix attribute path at point."
-  (if (looking-at "[^a-zA-Z0-9'\\-_\\.]")
-      (buffer-substring (point) (save-excursion (skip-chars-backward "a-zA-Z0-9'\\-_\\.")
+  (if (looking-at "[^a-zA-Z0-9'_.-]")
+      (buffer-substring (point) (save-excursion (skip-chars-backward "a-zA-Z0-9'_.-")
                                                 (point)))
     (and (char-after)
-         (string-match "[a-zA-Z0-9'\\-_]" (char-to-string (char-after)))
+         (string-match "[a-zA-Z0-9'_-]" (char-to-string (char-after)))
          "")))
 
 (defun nix--get-company-buffer (&optional buffer)
@@ -61,7 +61,7 @@ BUFFER check for Nix-REPL in current buffer"
       (if (and proc
                (process-live-p proc))
           (if (not (string= last-buf (buffer-name)))
-              (progn (quit-process proc)
+              (progn (delete-process proc)
                      (nix--make-repl-in-buffer backend-buf)
                      (nix--send-repl (concat ":l " buf-file "\n")
                                      (get-buffer-process backend-buf) t)
