@@ -2522,9 +2522,13 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 	  (setq status (buffer-substring (match-beginning 1) (match-end 1)))
 	  (delete-region (match-beginning 0) (match-end 0))
 	  (setq status (string-to-number status 16))
-	  ;; clear those bits we are using and keep others ...
-	  ;; #xeff0 is (lognot (logior #x1 #x2 #x4 #x8 #x1000))
-	  (setq status (logand status #xeff0))
+	  ;; Clear every bit VM writes below and keep the rest, so that a
+	  ;; flag turned off here is turned off in the file too, and the
+	  ;; bits VM has no flag for -- #x0010 "Re:" prefix, #x0080 offline,
+	  ;; #x0200 authenticated sender, #x0400 remote POP, #x0800 queued --
+	  ;; survive the round trip.
+	  ;; #xeed0 is (lognot (logior #x1 #x2 #x4 #x8 #x0020 #x0100 #x1000))
+	  (setq status (logand status #xeed0))
 	  )
       (setq status 0))
 
@@ -2542,9 +2546,10 @@ pending input.   So, presumably this is non-interactive.  USR 2012-12-22"
 	    (setq status2 (string-to-number status2 16)
 		  status2-hi (/ status2 #x1000)
 		  status2-lo (mod status2 #x1000)))
-	  ;; clear those bits we are using and keep others ...
-	  ;; #xfffe is (lognot (logior #x1))
-	  (setq status2-hi (logand status2-hi #xfffe)))
+	  ;; As above.  #x0020 deleted on the server, #x0100 template and
+	  ;; the #x0E00 label field are Thunderbird's alone and are kept.
+	  ;; #xef3a is (lognot (logior #x1 #x4 #x0040 #x0080 #x1000))
+	  (setq status2-hi (logand status2-hi #xef3a)))
       (setq status2 0
 	    status2-hi 0
 	    status2-lo 0))
