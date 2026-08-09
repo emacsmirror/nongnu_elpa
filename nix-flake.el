@@ -13,6 +13,7 @@
 
 (require 'nix)
 (require 'transient)
+(require 'subr-x)
 
 (defgroup nix-flake nil
   "Nix flake commands."

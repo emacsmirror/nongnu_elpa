@@ -14,6 +14,7 @@
 
 (require 'comint)
 (require 'nix)
+(require 'subr-x)
 
 (defgroup nix-repl nil
   "Nix-repl customizations."

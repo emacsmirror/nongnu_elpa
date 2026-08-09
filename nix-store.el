@@ -14,8 +14,8 @@
 (require 'nix)
 (require 'nix-log)
 (require 'magit-section)
-(eval-when-compile
-  (require 'cl-lib))
+(require 'cl-lib)
+(require 'subr-x)
 
 (defgroup nix-store nil
   "Nix-store customizations."

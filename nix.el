@@ -18,6 +18,9 @@
 
 (require 'pcomplete)
 (require 'json)
+(require 'cl-lib)
+(require 'seq)
+(require 'subr-x)
 (eval-when-compile
   (require 'let-alist))
 
@@ -221,7 +224,7 @@ OPTIONS a list of options to accept."
           (dolist (val (cdr lines))
             (unless (string= val "")
               (setq completions (cons (car (split-string val "\t")) completions))))
-          (dolist (val (cddr pcomplete-args))
+          (dolist (_val (cddr pcomplete-args))
             (pcomplete-here))
           (pcomplete-here completions nil t)))
     (progn

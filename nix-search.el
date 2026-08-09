@@ -14,6 +14,7 @@
 (require 'nix-instantiate)
 (require 'nix-shell)
 (require 'json)
+(require 'subr-x)
 
 ;;;###autoload
 (defun nix-search--search (search file &optional no-cache use-flakes)
