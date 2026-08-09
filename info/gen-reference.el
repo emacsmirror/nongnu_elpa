@@ -13,7 +13,8 @@
 ;;   emacs -batch -q -no-site-file -L ../lisp -l gen-reference.el \
 ;;         -f vm-reference-batch vm-reference.texinfo
 ;;
-;; The result is @include'd by vm.texinfo and is not committed.
+;; The result is @include'd by vm.texinfo and is committed, so that a build
+;; from a release tarball or from ELPA needs no Emacs of its own to run.
 
 ;;; Code:
 
@@ -78,6 +79,27 @@ titled after itself.")
 
 ;;; Loading VM
 
+(defun vm-reference-module-files (dir)
+  "The VM modules DIR/Makefile.in lists, as file names.
+The list comes from the build rather than from what DIR happens to hold, so
+that a file left lying around beside the sources is not loaded: an old
+vm-pine.el, deleted from the repository when it became vm-postpone.el but
+still in one working tree, defined the `vm-pine' customization group a
+second time and moved fourteen options into a Pine section that no other
+build produced."
+  (let ((file (expand-file-name "Makefile.in" dir))
+        (files nil))
+    (unless (file-readable-p file)
+      (error "No %s: it is where the list of VM modules is read from" file))
+    (with-temp-buffer
+      (insert-file-contents file)
+      (goto-char (point-min))
+      (while (re-search-forward "^SOURCES *\\+?= *\\(vm.*\\.el\\)[ \t]*$" nil t)
+        (push (match-string 1) files)))
+    (unless files
+      (error "No SOURCES lines in %s: has the build changed?" file))
+    (nreverse files)))
+
 (defun vm-reference-load-everything ()
   "Load every VM module, so that every symbol is defined."
   (let ((dir (or (locate-library "vm-vars")
@@ -85,7 +107,7 @@ titled after itself.")
     (setq dir (file-name-directory dir))
     (require 'vm-vars)
     (require 'vm)
-    (dolist (file (directory-files dir nil "\\`vm.*\\.el\\'"))
+    (dolist (file (vm-reference-module-files dir))
       (unless (member file vm-reference-excluded-files)
         (let ((feature (intern (file-name-sans-extension file))))
           (condition-case err
@@ -360,19 +382,33 @@ structure, and a string keeps the newlines it was written with."
   "Evaluate FORM as if on a machine identified by TAG.
 Everything a default is likely to read about its surroundings is given a
 value derived from TAG, so that two different tags agree only for a default
-that reads none of them."
+that reads none of them.
+
+The two searches for a program answer with a path made from TAG rather than
+with nothing.  A search of an invented `exec-path' finds nothing, and a
+default whose program is not installed here finds nothing either, so the two
+agree and the default looks fixed -- while on a machine where the program is
+installed the same default prints a path.  That is `vm-icontopbm-program',
+found here and not on the machine that reported this, and
+`vm-uncompface-program', the other way round."
   (condition-case nil
-      (let ((process-environment
+      (cl-letf (((symbol-function 'executable-find)
+                 (lambda (name &rest _) (format "/nonexistent-%s/bin/%s" tag name)))
+                ((symbol-function 'vm-locate-executable-file)
+                 (lambda (name) (format "/nonexistent-%s/bin/%s" tag name))))
+        (let ((process-environment
              (append (list (format "HOME=/nonexistent-%s" tag)
                            (format "TMPDIR=/nonexistent-%s/tmp" tag)
                            (format "USER=nobody-%s" tag)
-                           (format "LOGNAME=nobody-%s" tag))
+                           (format "LOGNAME=nobody-%s" tag)
+                           (format "PATH=/nonexistent-%s/bin" tag))
                      process-environment))
-            (user-mail-address (format "nobody-%s@example.invalid" tag))
-            (user-full-name (format "Nobody %s" tag))
-            (system-configuration (format "none-none-%s" tag))
-            (temporary-file-directory (format "/nonexistent-%s/tmp/" tag)))
-        (eval form t))
+              (exec-path (list (format "/nonexistent-%s/bin" tag)))
+              (user-mail-address (format "nobody-%s@example.invalid" tag))
+              (user-full-name (format "Nobody %s" tag))
+              (system-configuration (format "none-none-%s" tag))
+              (temporary-file-directory (format "/nonexistent-%s/tmp/" tag)))
+          (eval form t)))
     (error (list :vm-reference-error tag))))
 
 (defun vm-reference-environment-dependent-p (form value)
@@ -386,14 +422,15 @@ for all but the last one.
 Asked rather than guessed from a list of names, so a default added later
 that reads the environment is caught without anyone remembering to add it.
 
-Two invented environments are compared with each other rather than one of
-them with the real one.  Comparing against the real environment misses a
-default whose value happens to equal what the invented one produces -- which
-is not hypothetical: it hid one here, and only showed up when the generated
-file was built twice and the two compared."
-  (ignore value)
-  (not (equal (vm-reference-eval-elsewhere form "one")
-              (vm-reference-eval-elsewhere form "two"))))
+Three values are compared: the two invented ones and VALUE, which is what
+FORM came to here.  Both comparisons are needed.  Two invented environments
+catch a default whose value happens to equal what one invented environment
+produces, which is not hypothetical: it hid one here.  VALUE catches a
+default that searches `exec-path' for a program, since that search comes to
+nil under either invented environment, and two nils agree."
+  (let ((one (vm-reference-eval-elsewhere form "one"))
+        (two (vm-reference-eval-elsewhere form "two")))
+    (not (and (equal one two) (equal one value)))))
 
 (defun vm-reference-insert-default (symbol)
   "Insert the default value of SYMBOL, unless it has none worth printing."
@@ -401,10 +438,13 @@ file was built twice and the two compared."
          (value (and standard (ignore-errors (eval standard t))))
          (short (and value (vm-reference-print-value value t))))
     (cond
-     ((null short))
-     ((vm-reference-environment-dependent-p standard value)
+     ;; Asked before the nil case: a search of `exec-path' finds the program
+     ;; on one machine and nothing on another, and saying nothing there would
+     ;; leave the two builds writing different files again.
+     ((and standard (vm-reference-environment-dependent-p standard value))
       (insert "\nDefault value: worked out when VM is loaded, "
               "from this system.\n"))
+     ((null short))
      ((<= (length short) 60)
       (insert "\nDefault value: @code{" (vm-reference-escape short) "}\n"))
      (t

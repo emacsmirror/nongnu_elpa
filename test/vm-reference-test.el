@@ -102,6 +102,59 @@ what the docstring says already."
                 (buffer-string))))
     (should (equal text ""))))
 
+(ert-deftest vm-reference-test-a-default-found-on-the-path-is-not-printed ()
+  "A default that searches `exec-path' names the machine, not VM.
+`vm-imagemagick-program' came out as /opt/local/lib/ImageMagick7/bin/magick
+on one developer's machine and as a miniforge path on another's.  It
+survived the first version of this check, which evaluated the default under
+two invented environments and compared them: the search comes to nil under
+either, and two nils agree.
+
+The entry is the same whether or not the program is installed.  Otherwise
+the two machines still differ, one printing a path and the other nothing at
+all -- which is what `vm-icontopbm-program' and `vm-uncompface-program' did,
+one each way round."
+  (dolist (symbol '(vm-imagemagick-program vm-icontopbm-program
+                    vm-uncompface-program))
+    (dolist (path (list exec-path (list "/nonexistent/bin")))
+      (let* ((exec-path path)
+             (standard (car (get symbol 'standard-value))))
+        (should (vm-reference-environment-dependent-p standard (eval standard t)))
+        (should (string-match-p
+                 "from this system"
+                 (with-temp-buffer (vm-reference-insert-default symbol)
+                                   (buffer-string))))))))
+
+;;; Which modules are loaded
+
+(ert-deftest vm-reference-test-a-stray-module-is-not-loaded ()
+  "The modules are the ones the build compiles, not what is in the directory.
+An old vm-pine.el, deleted from the repository when it became
+vm-postpone.el, was still in one working tree; loading it defined the
+`vm-pine' group a second time and moved fourteen options into a Pine section
+that no other build produced."
+  (let ((dir (make-temp-file "vm-reference-test" t)))
+    (unwind-protect
+        (progn
+          (with-temp-file (expand-file-name "Makefile.in" dir)
+            (insert "SOURCES = vm.el\n"
+                    "SOURCES += vm-postpone.el\n"
+                    "SOURCES += u-vm-color.el\n"
+                    "OBJECTS = $(SOURCES:.el=.elc)\n"))
+          (with-temp-file (expand-file-name "vm-pine.el" dir) (insert ";; stray\n"))
+          (should (equal (vm-reference-module-files dir)
+                         '("vm.el" "vm-postpone.el"))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-reference-test-the-real-module-list-is-found ()
+  "VM's own lisp directory yields its modules and none of the generated files."
+  (let ((files (vm-reference-module-files
+                (expand-file-name "../lisp" vm-test-dir))))
+    (should (member "vm-postpone.el" files))
+    (should (member "vm-imap.el" files))
+    (should-not (member "vm-pine.el" files))
+    (should-not (member "vm-autoloads.el" files))))
+
 ;;; Collection
 
 (ert-deftest vm-reference-test-collects-commands-with-their-options ()
