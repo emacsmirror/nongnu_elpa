@@ -491,6 +491,44 @@ reached the server."
       (should (member "vmtest-refused" (vm-labels-of m)))
       (should (vm-attribute-modflag-of m)))))
 
+(ert-deftest vm-imap-live-test-a-refused-flush-does-not-copy-stale-flags ()
+  "Saving to another IMAP folder does not file a copy with the old flags.
+Issue #38.  The happy path keeps them -- `vm-imap-copy-message' flushes
+pending flags before UID COPY, and
+`vm-imap-live-test-save-to-imap-keeps-attributes' pins that.  This is the
+path where the flush fails: the call sits in a `condition-case' that
+swallows `vm-imap-protocol-error', so a server that refuses the STORE left
+the COPY to go ahead and file the server's stale flags, with nothing said to
+anyone.  Which is the report, fifteen years on."
+  (vm-imap-live-skip-unless-server "plain")
+  (require 'vm)
+  (let ((label "vmtestflushed") (checked nil))
+    (vm-imap-live-with-relayed-folder (relay mailbox "plain")
+      (let ((dst (vm-imap-live-mailbox-name conn))
+            (m (car vm-message-list)))
+        (unwind-protect
+            (progn
+              (vm-imap-live-cmd-ok conn "CREATE \"%s\"" dst)
+              (vm-add-message-labels label 1)
+              (should (vm-attribute-modflag-of m))
+              ;; From here the server refuses to store any flag.
+              (setf (vm-imap-relay-reject relay) "STORE")
+              (let ((vm-current-warning nil))
+                (vm-save-message-to-imap-folder
+                 (vm-imap-live-spec via account dst) 1)
+                ;; The copy really does carry the server's flags ...
+                (should-not (member label (vm-imap-live-flags-of conn dst 1)))
+                ;; ... the change is still ours and still pending ...
+                (should (member label (vm-labels-of m)))
+                (should (vm-attribute-modflag-of m))
+                ;; ... and the user was told, rather than the save looking
+                ;; like it had done what was asked.
+                (should (string-match-p "flags the server holds"
+                                        (or vm-current-warning ""))))
+              (setq checked t))
+          (ignore-errors (vm-imap-live-cmd conn "DELETE \"%s\"" dst)))))
+    (should checked)))
+
 (ert-deftest vm-imap-live-test-one-refused-flag-does-not-block-the-others ()
   "REGRESSION: a keyword the server will not take does not hold back the rest.
 Issue #391.  VM sent every pending flag in one STORE, so a server that refuses
