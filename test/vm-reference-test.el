@@ -105,18 +105,25 @@ what the docstring says already."
 (ert-deftest vm-reference-test-a-default-found-on-the-path-is-not-printed ()
   "A default that searches `exec-path' names the machine, not VM.
 `vm-imagemagick-program' came out as /opt/local/lib/ImageMagick7/bin/magick
-on one developer's machine and as a miniforge path on another's, and
-`vm-icontopbm-program' was found on one and nil on the other.  Both survived
-the first version of this check, which evaluated the default under two
-invented environments and compared them: the search comes to nil under
-either, and two nils agree."
-  (dolist (symbol '(vm-imagemagick-program vm-icontopbm-program))
-    (let ((standard (car (get symbol 'standard-value))))
-      (should (vm-reference-environment-dependent-p standard (eval standard t)))
-      (should (string-match-p
-               "from this system"
-               (with-temp-buffer (vm-reference-insert-default symbol)
-                                 (buffer-string)))))))
+on one developer's machine and as a miniforge path on another's.  It
+survived the first version of this check, which evaluated the default under
+two invented environments and compared them: the search comes to nil under
+either, and two nils agree.
+
+The entry is the same whether or not the program is installed.  Otherwise
+the two machines still differ, one printing a path and the other nothing at
+all -- which is what `vm-icontopbm-program' and `vm-uncompface-program' did,
+one each way round."
+  (dolist (symbol '(vm-imagemagick-program vm-icontopbm-program
+                    vm-uncompface-program))
+    (dolist (path (list exec-path (list "/nonexistent/bin")))
+      (let* ((exec-path path)
+             (standard (car (get symbol 'standard-value))))
+        (should (vm-reference-environment-dependent-p standard (eval standard t)))
+        (should (string-match-p
+                 "from this system"
+                 (with-temp-buffer (vm-reference-insert-default symbol)
+                                   (buffer-string))))))))
 
 ;;; Which modules are loaded
 

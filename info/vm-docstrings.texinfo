@@ -3891,6 +3891,8 @@ Program used to convert X-Face data to Sun icon format.
 Or if the program version is new enough, it will be called with
 -X to produce XBM data.  This program is needed to support he
 display of X-Faces under Emacs 21.
+
+Default value: worked out when VM is loaded, from this system.
 @end defopt
 
 @end macro

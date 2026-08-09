@@ -382,21 +382,33 @@ structure, and a string keeps the newlines it was written with."
   "Evaluate FORM as if on a machine identified by TAG.
 Everything a default is likely to read about its surroundings is given a
 value derived from TAG, so that two different tags agree only for a default
-that reads none of them."
+that reads none of them.
+
+The two searches for a program answer with a path made from TAG rather than
+with nothing.  A search of an invented `exec-path' finds nothing, and a
+default whose program is not installed here finds nothing either, so the two
+agree and the default looks fixed -- while on a machine where the program is
+installed the same default prints a path.  That is `vm-icontopbm-program',
+found here and not on the machine that reported this, and
+`vm-uncompface-program', the other way round."
   (condition-case nil
-      (let ((process-environment
+      (cl-letf (((symbol-function 'executable-find)
+                 (lambda (name &rest _) (format "/nonexistent-%s/bin/%s" tag name)))
+                ((symbol-function 'vm-locate-executable-file)
+                 (lambda (name) (format "/nonexistent-%s/bin/%s" tag name))))
+        (let ((process-environment
              (append (list (format "HOME=/nonexistent-%s" tag)
                            (format "TMPDIR=/nonexistent-%s/tmp" tag)
                            (format "USER=nobody-%s" tag)
                            (format "LOGNAME=nobody-%s" tag)
                            (format "PATH=/nonexistent-%s/bin" tag))
                      process-environment))
-            (exec-path (list (format "/nonexistent-%s/bin" tag)))
-            (user-mail-address (format "nobody-%s@example.invalid" tag))
-            (user-full-name (format "Nobody %s" tag))
-            (system-configuration (format "none-none-%s" tag))
-            (temporary-file-directory (format "/nonexistent-%s/tmp/" tag)))
-        (eval form t))
+              (exec-path (list (format "/nonexistent-%s/bin" tag)))
+              (user-mail-address (format "nobody-%s@example.invalid" tag))
+              (user-full-name (format "Nobody %s" tag))
+              (system-configuration (format "none-none-%s" tag))
+              (temporary-file-directory (format "/nonexistent-%s/tmp/" tag)))
+          (eval form t)))
     (error (list :vm-reference-error tag))))
 
 (defun vm-reference-environment-dependent-p (form value)
