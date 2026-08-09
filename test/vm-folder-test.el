@@ -2254,6 +2254,113 @@ refused."
                      (> (point) (+ (point-min)
                                    (length vm-folder-test--counted-body-1))))))))
 
+;;; Thunderbird status headers (issues #602)
+
+(defconst vm-folder-test--thunderbird-folder
+  (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: alice@example.com\n"
+          "Subject: hello\n"
+          ;; read + folded + watched, and #x0010, Thunderbird's own note that
+          ;; the subject carries a "Re:" prefix, which VM has no flag for
+          "X-Mozilla-Status: 0131\n"
+          ;; attachments, and #x0100 template, which VM has no flag for
+          "X-Mozilla-Status2: 11000000\n"
+          "\n" "Body.\n\n")
+  "A message as Thunderbird writes one, carrying bits VM does not manage.")
+
+(defun vm-folder-test--mozilla-status (n)
+  "The X-Mozilla-Status (N is 1) or -Status2 (N is 2) of the first message."
+  (save-excursion
+    (goto-char (point-min))
+    (when (re-search-forward
+           (format "^X-Mozilla-Status%s: \\([0-9A-Fa-f]+\\)$" (if (= n 2) "2" ""))
+           nil t)
+      (match-string 1))))
+
+(ert-deftest vm-folder-test-thunderbird-status-is-read-into-flags ()
+  "Each bit VM has a flag for is read out of the Mozilla status headers."
+  (vm-test-with-folder vm-folder-test--thunderbird-folder
+    (let ((m (car vm-message-list)))
+      (vm-read-thunderbird-status m)
+      (should-not (vm-unread-flag m))        ; #x0001 read
+      (should (vm-folded-flag m))            ; #x0020
+      (should (vm-watched-flag m))           ; #x0100
+      (should-not (vm-replied-flag m))       ; #x0002 clear
+      (should-not (vm-deleted-flag m))       ; #x0008 clear
+      (should (vm-attachments-flag m))       ; #x1000 of status2
+      (should-not (vm-new-flag m)))))        ; #x0001 of status2 clear
+
+(ert-deftest vm-folder-test-a-flag-turned-off-is-written-out ()
+  "REGRESSION: a flag turned off in VM is turned off in the file.
+Issue #602.  `vm-stuff-thunderbird-status' set the bits of the flags that
+were on but cleared only five of the eleven it writes, so folded, watched,
+ignored, both read-receipt bits and attachments could be turned off in VM
+and Thunderbird would go on showing them."
+  (vm-test-with-folder vm-folder-test--thunderbird-folder
+    (let ((m (car vm-message-list)))
+      (vm-read-thunderbird-status m)
+      (vm-set-folded-flag-of m nil)
+      (vm-set-watched-flag-of m nil)
+      (vm-set-attachments-flag-of m nil)
+      (save-excursion (vm-stuff-thunderbird-status m))
+      (let ((status (string-to-number (vm-folder-test--mozilla-status 1) 16))
+            (status2 (string-to-number
+                      (substring (vm-folder-test--mozilla-status 2) 0 4) 16)))
+        (should (= 0 (logand status #x0020)))    ; folded, off
+        (should (= 0 (logand status #x0100)))    ; watched, off
+        (should (= 0 (logand status2 #x1000))))))) ; attachments, off
+
+(ert-deftest vm-folder-test-thunderbird-bits-vm-does-not-manage-survive ()
+  "The bits VM has no flag for come back unchanged.
+Thunderbird's own \"Re:\" prefix note and its template flag are not VM's to
+clear, and neither is the #x0E00 label field."
+  (vm-test-with-folder vm-folder-test--thunderbird-folder
+    (let ((m (car vm-message-list)))
+      (vm-read-thunderbird-status m)
+      (save-excursion (vm-stuff-thunderbird-status m))
+      (let ((status (string-to-number (vm-folder-test--mozilla-status 1) 16))
+            (status2 (string-to-number
+                      (substring (vm-folder-test--mozilla-status 2) 0 4) 16)))
+        (should (= #x0010 (logand status #x0010)))     ; "Re:" prefix
+        (should (= #x0100 (logand status2 #x0100)))))))  ; template
+
+(ert-deftest vm-folder-test-thunderbird-status-round-trips ()
+  "Reading the headers and writing them back leaves every flag as it was."
+  (vm-test-with-folder vm-folder-test--thunderbird-folder
+    (let ((m (car vm-message-list)))
+      (vm-read-thunderbird-status m)
+      (let ((before (list (vm-unread-flag m) (vm-replied-flag m)
+                          (vm-flagged-flag m) (vm-deleted-flag m)
+                          (vm-folded-flag m) (vm-watched-flag m)
+                          (vm-forwarded-flag m) (vm-new-flag m)
+                          (vm-ignored-flag m) (vm-read-receipt-flag m)
+                          (vm-read-receipt-sent-flag m)
+                          (vm-attachments-flag m))))
+        (save-excursion (vm-stuff-thunderbird-status m))
+        (vm-read-thunderbird-status m)
+        (should (equal before
+                       (list (vm-unread-flag m) (vm-replied-flag m)
+                             (vm-flagged-flag m) (vm-deleted-flag m)
+                             (vm-folded-flag m) (vm-watched-flag m)
+                             (vm-forwarded-flag m) (vm-new-flag m)
+                             (vm-ignored-flag m) (vm-read-receipt-flag m)
+                             (vm-read-receipt-sent-flag m)
+                             (vm-attachments-flag m))))))))
+
+(ert-deftest vm-folder-test-a-thunderbird-folder-is-known-by-its-index ()
+  "`vm-thunderbird-folder-p' asks whether a .msf index sits beside the folder.
+That is the whole of the detection, and it is what decides whether VM writes
+Mozilla headers into a folder at all."
+  (let* ((dir (make-temp-file "vm-folder-test" t))
+         (folder (expand-file-name "Inbox" dir)))
+    (unwind-protect
+        (progn
+          (with-temp-file folder (insert "From a@b Mon Jan  1 00:00:00 2024\n\n"))
+          (should-not (vm-thunderbird-folder-p folder))
+          (with-temp-file (concat folder ".msf") (insert "// <mdb:mork:z v=\"1.4\"/>\n"))
+          (should (vm-thunderbird-folder-p folder)))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here
