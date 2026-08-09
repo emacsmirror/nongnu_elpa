@@ -640,7 +640,13 @@ out includes base-64, quoted-printable, uuencode and CRLF conversion."
     (declare-function quoted-printable-encode-region "qp")
     (defvar mm-use-ultra-safe-encoding)
     (let ((mm-use-ultra-safe-encoding (if quote-from t nil)))
-      (quoted-printable-encode-region start end))
+      ;; Fold, except when Q-encoding a header word, which has no lines to
+      ;; fold and strips the soft breaks again below.  Without the third
+      ;; argument `quoted-printable-encode-region' encodes the characters
+      ;; and leaves the lines however long they were, so a quoted-printable
+      ;; part could carry a line past the 76 of RFC 2045 -- and no soft line
+      ;; break was ever emitted, whatever the text looked like.
+      (quoted-printable-encode-region start end (not Q-encoding)))
     (when Q-encoding
       (goto-char start)
       (while (search-forward "=\n" end t)
@@ -1906,6 +1912,29 @@ that recipient is outside of East Asia."
 	   ;;    -- 
 	   ))))))
 
+(defun vm-mime-longest-line-length ()
+  "The length of the longest line in the accessible region.
+The line terminator is not counted, RFC 5322 measuring a line without it."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((longest 0))
+      (while (not (eobp))
+	(setq longest (max longest (- (line-end-position) (point))))
+	(forward-line))
+      longest)))
+
+(defun vm-mime-line-length-limit ()
+  "The longest line that may be sent in a text part without encoding it.
+`vm-mime-max-text-line-length' says, but never above the 998 of RFC 5322:
+a longer line cannot be sent as it stands whatever the setting."
+  (min (or vm-mime-max-text-line-length 998) 998))
+
+(defconst vm-mime-long-lines-encoding "long-lines"
+  "What `vm-determine-proper-content-transfer-encoding' says for a long line.
+Not a transfer encoding: `vm-mime-transfer-encode-region' turns it into
+quoted-printable.  It cannot say \"quoted-printable\" itself, since that
+means to that function that the region is encoded already.")
+
 (defun vm-determine-proper-content-transfer-encoding (beg end)
   (save-excursion
     (save-restriction
@@ -1915,15 +1944,9 @@ that recipient is outside of East Asia."
 	(and (re-search-forward "[\000\015]" nil t)
 	     (throw 'done "binary"))
 
-	(let ((toolong nil) bol)
-	  (goto-char (point-min))
-	  (setq bol (point))
-	  (while (and (not (eobp)) (not toolong))
-	    (forward-line)
-	    (setq toolong (> (- (point) bol) 998)
-		  bol (point)))
-	  (and toolong (throw 'done "binary")))
-	 
+	(and (> (vm-mime-longest-line-length) (vm-mime-line-length-limit))
+	     (throw 'done vm-mime-long-lines-encoding))
+
 	(goto-char (point-min))
 	(and (re-search-forward "[^\000-\177]" nil t)
 	     (throw 'done "8bit"))
@@ -6994,6 +7017,12 @@ should be included (?)                               USR, 2011-03-27"
     (cond ((string-match "^binary$" encoding)
 	   (vm-mime-base64-encode-region beg end crlf)
 	   (setq encoding "base64"))
+	  ((equal encoding vm-mime-long-lines-encoding)
+	   ;; Quoted-printable rather than base64: it carries the long line
+	   ;; just as exactly, and leaves the rest of the part readable to
+	   ;; anyone looking at the message as it was sent.
+	   (vm-mime-qp-encode-region beg end nil armor-from)
+	   (setq encoding "quoted-printable"))
 	  ((and (not armor-from) (not armor-dot)
 	        (string-match "^7bit$" encoding))
 	   t)

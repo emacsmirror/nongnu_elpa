@@ -30,6 +30,15 @@ VM 8.?.?
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
+  * A line too long to send unencoded is now sent quoted-printable rather
+    than BASE64, so it arrives as the one line it was written as and the
+    rest of the message stays readable in the raw.  New variable
+    vm-mime-max-text-line-length says how long is too long; it defaults to
+    998, the RFC 5322 limit, and setting it to 78 has VM encode anything
+    longer, which is what several other mail readers do.
+  * Quoted-printable parts are folded at 76 characters, as RFC 2045
+    requires.  VM was encoding the characters and leaving the lines as long
+    as they were.
   * vm-sync-thunderbird-status is a customization variable now rather than a
     plain variable, so M-x customize-group RET vm-folders offers it.  The
     name, the default and what it does are unchanged.

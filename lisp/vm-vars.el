@@ -2558,6 +2558,31 @@ Anything outside US-ASCII, by default.  What VM takes a word to be is
   :group 'vm-mime
   :type '(regexp))
 
+(defcustom vm-mime-max-text-line-length 998
+  "*Longest line VM sends in a text part without encoding it.
+A longer line is sent quoted-printable, which carries it as several
+physical lines each ending in `=' and has the recipient's mail reader put
+it back together, so the line arrives as the one line you wrote.
+
+998 is the default because it is the limit RFC 5322 sets: a longer line
+cannot be sent unencoded whatever anyone would prefer.  The same RFC asks
+for 78, which is what most mail readers wrap to, and setting this to 78
+makes VM encode anything longer -- which is what Gmail does with every
+message it sends.
+
+A nil value means never to encode a line for its length alone.  The 998
+limit still applies, since a line past it cannot go out as it stands.
+
+This is not the same as wrapping the text.  `vm-fill-long-lines-in-reply'
+rewrites long lines before sending, and `vm-send-using-flowed-text' marks
+VM's own wrapping as undoable by the recipient; both change where the line
+breaks are.  This one keeps them exactly where you put them."
+  :group 'vm-mime
+  :type '(choice (const :tag "Only past the RFC 5322 limit of 998" 998)
+		 (const :tag "Anything longer than 78" 78)
+		 (integer :tag "Longest line sent unencoded")
+		 (const :tag "Never encode for length alone" nil)))
+
 (defcustom vm-mime-max-message-size nil
   "*Largest MIME message that VM should send without fragmentation.
 The value should be an integer which specifies the size in bytes.
