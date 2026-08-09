@@ -21,7 +21,10 @@
   (nix--process-json-nocheck "search" "--json"
 			     (unless use-flakes "--file") file
 			     (when no-cache "--no-cache")
-			     (unless (string-empty-p search) search)))
+			     (if (string-empty-p search)
+				 ;; "nix search" requires at least one regex w/ flakes
+				 (when use-flakes "^")
+			       search)))
 
 (defface nix-search-pname
   '((t :height 1.5
@@ -52,12 +55,16 @@
   "Search filter used for current buffer")
 (defvar-local nix-search--file nil
   "File/flake used for current buffer")
+(defvar-local nix-search--use-flakes nil
+  "Whether the current buffer's results came from a flake search")
 
 (defun nix-search--refresh ()
   "Refresh Nix Search buffer"
   (interactive)
-  (let ((results (nix-search--search nix-search--filter nix-search--file nil use-flakes)))
-    (nix-search--display results (current-buffer) use-flakes nix-search--filter nix-search--file)))
+  (let ((results (nix-search--search nix-search--filter nix-search--file nil
+				     nix-search--use-flakes)))
+    (nix-search--display results (current-buffer) nix-search--use-flakes
+			 nix-search--filter nix-search--file)))
 
 (defun nix-search-create-keymap ()
   "Create the keymap associated with the Nix Search mode.")
@@ -86,6 +93,7 @@
   (with-current-buffer display-buffer
     (setq-local nix-search--filter search)
     (setq-local nix-search--file file)
+    (setq-local nix-search--use-flakes use-flakes)
     (unless (derived-mode-p 'nix-search-mode)
       (nix-search-mode))
     (let ((inhibit-read-only t))
@@ -111,9 +119,9 @@
 SEARCH a search term to use.
 FILE a Nix expression to search in."
   (interactive "snix-search> \n")
-  (setq use-flakes (nix-has-flakes))
-  (setq file (or file (if use-flakes (nix-read-flake) (nix-read-file))))
-  (let ((results (nix-search--search search file nil use-flakes)))
+  (let* ((use-flakes (nix-has-flakes))
+	 (file (or file (if use-flakes (nix-read-flake) (nix-read-file))))
+	 (results (nix-search--search search file nil use-flakes)))
     (when (called-interactively-p 'any)
       (nix-search--display results display-buffer use-flakes search file))
     results))
