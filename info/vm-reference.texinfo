@@ -2515,7 +2515,7 @@ Default value:
 @vindex vm-spam-words-file
 A file storing a list of words contained in spam messages.
 
-Default value: @code{"/Users/markd/.spam-words"}
+Default value: worked out when VM is loaded, from this system.
 @end defopt
 
 @defopt vm-spool-file-suffixes
@@ -5117,7 +5117,7 @@ Non-nil value is a default directory for saving MIME attachments.
 When VM prompts you for a target file name when saving a MIME body,
 any relative pathnames will be relative to this directory.
 
-Default value: @code{"/Users/markd/"}
+Default value: worked out when VM is loaded, from this system.
 @end defopt
 
 @defopt vm-mime-attachment-source-directory
@@ -5126,7 +5126,7 @@ Non-nil value is a default source directory for MIME attachments.
 When @code{vm-attach-file} prompts you for the name of a file to
 attach, any relative pathnames will be relative to this directory.
 
-Default value: @code{"/Users/markd/"}
+Default value: worked out when VM is loaded, from this system.
 @end defopt
 
 @defopt vm-mime-auto-displayed-content-type-exceptions
@@ -6927,7 +6927,7 @@ String to display before the recipients when displayed instead of an
 @vindex vm-temp-file-directory
 Name of a directory where VM can put temporary files.
 
-Default value: @code{"/var/folders/_l/88l8rnxd5334cp_j374nwmqr0000z8/T/"}
+Default value: worked out when VM is loaded, from this system.
 @end defopt
 
 @defopt vm-use-lucid-highlighting
@@ -9065,7 +9065,7 @@ FOLDERS should be a list of files/directories to search in.
 @vindex vm-grepmail-arguments
 Arguments for grepmail program.
 
-Default value: @code{("-q" "-m" "-R" "-e" "\"Mark Diekhans\"")}
+Default value: worked out when VM is loaded, from this system.
 @end defopt
 
 @defopt vm-grepmail-command

@@ -116,6 +116,40 @@ follows the corrected name rather than being dropped with it."
     (should (eq (cdr pair) (indirect-variable (car pair))))
     (should (get (car pair) 'byte-obsolete-variable))))
 
+
+;;; The generated manual files must not depend on the machine that built them
+
+;; They are generated *and committed*, so a default worked out from the
+;; environment -- a home directory, a temporary directory, the user's own name
+;; -- puts one developer's machine into the tree, makes the file differ for
+;; everyone else who builds it, and fails `check-reference' for all but the
+;; last.  It also published @diekhans' home directory and full name.
+;; `vm-reference-insert-default' says the value is worked out at load time
+;; instead.  Issue #600.
+
+(defconst vm-custom-test--generated-texinfo
+  (mapcar (lambda (name)
+            (expand-file-name name (expand-file-name "../info" vm-test-dir)))
+          '("vm-reference.texinfo" "vm-docstrings.texinfo"))
+  "The texinfo files generated from the docstrings and committed.")
+
+(ert-deftest vm-custom-test-generated-files-name-no-machine ()
+  "Neither committed file holds anything belonging to the machine it was built on.
+Reads the files rather than regenerating them, so this is fast and so it
+checks what is actually committed."
+  (dolist (file vm-custom-test--generated-texinfo)
+    (should (file-readable-p file))
+    (let ((text (with-temp-buffer (insert-file-contents file) (buffer-string))))
+      (dolist (private (list (expand-file-name "~")
+                             (directory-file-name temporary-file-directory)
+                             (user-login-name)
+                             (and (stringp user-mail-address) user-mail-address)
+                             (and (stringp user-full-name)
+                                  (> (length user-full-name) 3)
+                                  user-full-name)))
+        (when (and (stringp private) (> (length private) 3))
+          (should-not (string-search private text)))))))
+
 (provide 'vm-custom-test)
 
 ;;; vm-custom-test.el ends here
