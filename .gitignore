@@ -49,7 +49,6 @@ commit.msg
 
 .emacs.bak/
 /.claude/
-
 /test/coverage-results.txt
-
 /test/vm-live-config.el
+/notes
