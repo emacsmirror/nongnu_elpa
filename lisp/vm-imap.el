@@ -3247,13 +3247,25 @@ operation of the server to minimize I/O."
 	  ;;------------------------
 	  (vm-buffer-type:duplicate)
 	  ;;------------------------
-	  (if (vm-attribute-modflag-of m)
-	      (condition-case nil
-		  (progn
-		    (if (null (vm-folder-imap-flags-obarray))
-			(vm-imap-retrieve-uid-and-flags-data))
-		    (vm-imap-save-message-flags process m 'by-uid))
-		(vm-imap-protocol-error nil))) ; is this right?
+	  ;; UID COPY copies what the server holds, so anything changed here
+	  ;; and not yet stored has to go up first.  If it will not go up --
+	  ;; the server refuses the keyword, or the command fails outright --
+	  ;; the copy is filed with the server's older flags, and saying
+	  ;; nothing about that is issue #38: the user's changes are simply
+	  ;; not in the saved message.  The modflag is still set in that case,
+	  ;; which is how this tells.
+	  (when (vm-attribute-modflag-of m)
+	    (condition-case nil
+		(progn
+		  (if (null (vm-folder-imap-flags-obarray))
+		      (vm-imap-retrieve-uid-and-flags-data))
+		  (vm-imap-save-message-flags process m 'by-uid))
+	      (vm-imap-protocol-error nil))
+	    (when (vm-attribute-modflag-of m)
+	      (vm-warn 0 2 (concat "Saved copy has the flags the server holds:"
+				   " attribute changes the server would not"
+				   " take are not in it.  Save again once"
+				   " `vm-imap-synchronize' stores them."))))
 	  ;; (condition-case nil
 	  ;;   (vm-imap-create-mailbox process mailbox)
 	  ;; (vm-imap-protocol-error nil))
