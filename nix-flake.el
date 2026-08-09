@@ -573,7 +573,7 @@ See `nix-flake-init-post-action' variable for details."
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist (cons "/flake\\.lock\\'"
-				    (if (and (fboundp 'json-ts-mode) (treesit-ready-p 'json t))
+				    (if (and (fboundp 'treesit-ready-p) (fboundp 'json-ts-mode) (treesit-ready-p 'json t))
 					'json-ts-mode 'js-mode)))
 
 (provide 'nix-flake)
