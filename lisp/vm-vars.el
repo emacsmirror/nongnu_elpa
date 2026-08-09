@@ -1012,6 +1012,9 @@ consulted."
   :group 'vm-folders
   :type 'boolean)
 
+(define-obsolete-variable-alias 'vm-trust-From_-with-Content-Length
+  'vm-trust-content-length "8.3.3")
+
 (defcustom vm-trust-content-length
   (eq vm-default-folder-type 'mboxcl2)
   "*Non-nil value means that if the first message in a folder contains
@@ -1026,9 +1029,6 @@ If you set `vm-default-folder-type' to mboxcl2 you
 must set this variable non-nil."
   :group 'vm-folders
   :type 'boolean)
-
-(define-obsolete-variable-alias 'vm-trust-From_-with-Content-Length
-  'vm-trust-content-length "8.3.3")
 
 (defcustom vm-sync-thunderbird-status t
   "If set to t, VM synchronizes its headers with the headers of
