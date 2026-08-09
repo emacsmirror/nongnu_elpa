@@ -356,17 +356,61 @@ structure, and a string keeps the newlines it was written with."
         (pp-buffer)
         (buffer-string))))))
 
+(defun vm-reference-eval-elsewhere (form tag)
+  "Evaluate FORM as if on a machine identified by TAG.
+Everything a default is likely to read about its surroundings is given a
+value derived from TAG, so that two different tags agree only for a default
+that reads none of them."
+  (condition-case nil
+      (let ((process-environment
+             (append (list (format "HOME=/nonexistent-%s" tag)
+                           (format "TMPDIR=/nonexistent-%s/tmp" tag)
+                           (format "USER=nobody-%s" tag)
+                           (format "LOGNAME=nobody-%s" tag))
+                     process-environment))
+            (user-mail-address (format "nobody-%s@example.invalid" tag))
+            (user-full-name (format "Nobody %s" tag))
+            (system-configuration (format "none-none-%s" tag))
+            (temporary-file-directory (format "/nonexistent-%s/tmp/" tag)))
+        (eval form t))
+    (error (list :vm-reference-error tag))))
+
+(defun vm-reference-environment-dependent-p (form value)
+  "Whether FORM's VALUE follows the machine the manual is built on.
+Decided by evaluating FORM a second time with the environment it might read
+changed: a default that comes out different is one that would put this
+machine's home or temporary directory into the manual, so that the generated
+file differs for every developer who builds it and `check-reference' fails
+for all but the last one.
+
+Asked rather than guessed from a list of names, so a default added later
+that reads the environment is caught without anyone remembering to add it.
+
+Two invented environments are compared with each other rather than one of
+them with the real one.  Comparing against the real environment misses a
+default whose value happens to equal what the invented one produces -- which
+is not hypothetical: it hid one here, and only showed up when the generated
+file was built twice and the two compared."
+  (ignore value)
+  (not (equal (vm-reference-eval-elsewhere form "one")
+              (vm-reference-eval-elsewhere form "two"))))
+
 (defun vm-reference-insert-default (symbol)
   "Insert the default value of SYMBOL, unless it has none worth printing."
   (let* ((standard (car (get symbol 'standard-value)))
          (value (and standard (ignore-errors (eval standard t))))
          (short (and value (vm-reference-print-value value t))))
-    (when short
-      (if (<= (length short) 60)
-          (insert "\nDefault value: @code{" (vm-reference-escape short) "}\n")
-        (insert "\nDefault value:\n@example\n"
-                (vm-reference-escape (vm-reference-print-value value nil))
-                "\n@end example\n")))))
+    (cond
+     ((null short))
+     ((vm-reference-environment-dependent-p standard value)
+      (insert "\nDefault value: worked out when VM is loaded, "
+              "from this system.\n"))
+     ((<= (length short) 60)
+      (insert "\nDefault value: @code{" (vm-reference-escape short) "}\n"))
+     (t
+      (insert "\nDefault value:\n@example\n"
+              (vm-reference-escape (vm-reference-print-value value nil))
+              "\n@end example\n")))))
 
 (defun vm-reference-insert-option (symbol)
   (let ((doc (documentation-property symbol 'variable-documentation t)))
