@@ -475,20 +475,20 @@ Regexp replacement pairs for cleaning of replies.
 
 Default value:
 @example
-(("^\\( > [|@{@}>:;][^
+(("^\\\\( > [|@{@}>:;][^
 ]*
-\\)+"
+\\\\)+"
   . "[...]
 ")
- ("^\\([^|@{@}>:;]+.*\\)
+ ("^\\\\([^|@{@}>:;]+.*\\\\)
  > [|@{@}>:;]*$"
-  . "\\1")
+  . "\\\\1")
  ("^ > [|@{@}>:;]*
-\\([^|@{@}>:;]\\)"
-  . "\\1")
- ("^ > [|@{@}>:;]*\\s-*
-\\( > [|@{@}>:;]*\\s-*
-\\)+"
+\\\\([^|@{@}>:;]\\\\)"
+  . "\\\\1")
+ ("^ > [|@{@}>:;]*\\\\s-*
+\\\\( > [|@{@}>:;]*\\\\s-*
+\\\\)+"
   . " > 
 ")
  ("
@@ -500,16 +500,16 @@ Default value:
 ")
  ("^ > --[^
 ]*
-\\( > [^
+\\\\( > [^
 ]*
-\\)+"
+\\\\)+"
   . "
 ")
  ("^ > ________[^
 ]*
-\\( > [^
+\\\\( > [^
 ]*
-\\)+"
+\\\\)+"
   . "
 "))
 @end example
@@ -533,7 +533,7 @@ Default value: @code{t}
 @vindex vm-mail-mode-open-line-regexp
 Regexp matching prefix of quoted text at line start.
 
-Default value: @code{"[ \11]*>"}
+Default value: @code{"[ \\11]*>"}
 @end defopt
 
 @end macro
@@ -565,9 +565,9 @@ Matching will be done case insensitively.
 
 Default value:
 @example
-(("\\(\\(re\\|aw\\|antw\\)\\(\\[[0-9]+\\]\\)?:[ 	]*\\)+"
+(("\\\\(\\\\(re\\\\|aw\\\\|antw\\\\)\\\\(\\\\[[0-9]+\\\\]\\\\)?:[ 	]*\\\\)+"
   . "Re: ")
- ("\\(\\(fo\\|wg\\)\\(\\[[0-9]+\\]\\)?:[ 	]*\\)+" . "Fo: "))
+ ("\\\\(\\\\(fo\\\\|wg\\\\)\\\\(\\\\[[0-9]+\\\\]\\\\)?:[ 	]*\\\\)+" . "Fo: "))
 @end example
 @end defopt
 
@@ -957,7 +957,7 @@ Value should be a format string of the same type as @code{vm-summary-format}
 that describes a header to be inserted into each message burst from a
 digest.  The format string must end with a newline.
 
-Default value: @code{"X-Digest: %s\n"}
+Default value: @code{"X-Digest: %s\\n"}
 @end defopt
 
 @end macro
@@ -972,7 +972,7 @@ documentation for the variable @code{vm-summary-format} for information
 on what this string may contain.  The format should *not* end
 with nor contain a newline.
 
-Default value: @code{"\"%s\" (%F)"}
+Default value: @code{"\\"%s\\" (%F)"}
 @end defopt
 
 @end macro
@@ -1068,7 +1068,7 @@ appearance in that case, with headers not matching any in the
 @code{vm-rfc1153-digest-headers} list appearing last in the headers of
 the digestified messages.
 
-Default value: @code{"\\(X400-\\)?Received:"}
+Default value: @code{"\\\\(X400-\\\\)?Received:"}
 @end defopt
 
 @end macro
@@ -1226,7 +1226,7 @@ saving.
 When FOLDER is evaluated, the current buffer will contain
 only the contents of the header matched by HEADER-NAME-REGEXP.
 It is safe to modify this buffer.  You can use the match data
-from any \( ... \) grouping constructs in REGEXP along with the
+from any \\( ... \\) grouping constructs in REGEXP along with the
 function buffer-substring to build a folder name based on the
 header information.  If the result of evaluating FOLDER is a
 list, then the list will be treated as another auto-folder-alist
@@ -3011,9 +3011,9 @@ header line in email messages,
 
 Default value:
 @example
-(("X-Spam-Score:" "[-+]?[0-9]*\\.?[0-9]+" string-to-number)
- ("X-Spam-Status:" "[-+]?[0-9]*\\.?[0-9]+" string-to-number)
- ("X-Spam-Level:" "\\*+" length))
+(("X-Spam-Score:" "[-+]?[0-9]*\\\\.?[0-9]+" string-to-number)
+ ("X-Spam-Status:" "[-+]?[0-9]*\\\\.?[0-9]+" string-to-number)
+ ("X-Spam-Level:" "\\\\*+" length))
 @end example
 @end defopt
 
@@ -3211,6 +3211,21 @@ has been specified.
 
 @end macro
 
+@macro vmdocvmsyncthunderbirdstatus
+@defopt vm-sync-thunderbird-status
+@vindex vm-sync-thunderbird-status
+If set to t, VM synchronizes its headers with the headers of
+Thunderbird so that full interoperation with Thunderbird becomes
+possible.  If it is set to @code{read-only} then VM reads the Thunderbird
+status flags, but refrains from updating them.  If it is set to nil
+then VM makes no attempt to read or write the Thunderbird status
+flags.
+
+Default value: @code{t}
+@end defopt
+
+@end macro
+
 @macro vmdocvmthunderbirdfolderdirectory
 @defopt vm-thunderbird-folder-directory
 @vindex vm-thunderbird-folder-directory
@@ -3301,7 +3316,7 @@ Default value:
 @vindex vm-forwarded-message-preamble-format
 String which specifies the preamble for a forwarded message.
 
-Default value: @code{"\n---------- Original Message ----------\n"}
+Default value: @code{"\\n---------- Original Message ----------\\n"}
 @end defopt
 
 @end macro
@@ -3413,7 +3428,7 @@ appearance in that case, with headers not matching any in the
 @code{vm-resend-headers} list appearing last in the headers of
 the message.
 
-Default value: @code{"\\(\\(X400-\\)?Received:\\|Resent-\\)"}
+Default value: @code{"\\\\(\\\\(X400-\\\\)?Received:\\\\|Resent-\\\\)"}
 @end defopt
 
 @end macro
@@ -4378,7 +4393,7 @@ documentation for @code{vm-spool-files}.
 @deffn Command vm-expunge-imap-messages
 @findex vm-expunge-imap-messages
 Deletes all messages from IMAP mailbox that have already been retrieved
-into the current folder.  VM sets the \Deleted flag on all such messages
+into the current folder.  VM sets the \\Deleted flag on all such messages
 on all the relevant IMAP servers and then immediately expunges.
 @end deffn
 
@@ -6047,54 +6062,54 @@ value of @code{vm-infer-mime-types} is non-nil.
 
 Default value:
 @example
-(("\\.jpe?g$" . "image/jpeg") ("\\.gif$" . "image/gif")
- ("\\.png$" . "image/png") ("\\.tiff?$" . "image/tiff")
- ("\\.svg$" . "image/svg+xml") ("\\.pcx$" . "image/x-pcx")
- ("\\.txt$" . "text/plain") ("\\.html?$" . "text/html")
- ("\\.css$" . "text/css") ("\\.csv$" . "text/csv")
- ("\\.xml$" . "text/xml") ("\\.vcf$" . "text/x-vcard")
- ("\\.vcard$" . "text/x-vcard") ("\\.au$" . "audio/basic")
- ("\\.mp4$" . "audio/mp4") ("\\.m4[abpr]$" . "audio/mp4")
- ("\\.wma$" . "audio/x-ms-wma") ("\\.wax$" . "audio/x-ms-wax")
- ("\\.ram?$" . "audio/vnd.ra-realaudio") ("\\.ogg$" . "audio/vorbis")
- ("\\.oga$" . "audio/vorbis") ("\\.wav$" . "audio/vnd.wave")
- ("\\.mpe?g$" . "video/mpeg") ("\\.m4v$" . "video/mp4")
- ("\\.mov$" . "video/quicktime") ("\\.ogc$" . "video/ogg")
- ("\\.wmv$" . "video/x-ms-wmv") ("\\.webm$" . "video/webm")
- ("\\.zip$" . "application/zip") ("\\.gz$" . "application/x-gzip")
- ("\\.tar$" . "application/x-tar")
- ("\\.rar$" . "application/x-rar-compressed")
- ("\\.e?ps$" . "application/postscript")
- ("\\.pdf$" . "application/pdf") ("\\.dvi$" . "application/x-dvi")
- ("\\.tex$" . "application/x-latex")
- ("\\.ttf$" . "application/x-font-ttf")
- ("\\.swf$" . "application/x-shockwave-flash")
- ("\\.tex$" . "application/x-latex")
- ("\\.js$" . "application/javascript")
- ("\\.dtd$" . "application/xml-dtd") ("\\.pdf$" . "application/pdf")
- ("\\.rtf$" . "application/rtf") ("\\.doc$" . "application/msword")
- ("\\.xls$" . "application/vnd.ms-excel")
- ("\\.ppt$" . "application/vnd.ms-powerpoint")
- ("\\.mdb$" . "application/vnd.ms-access")
- ("\\.odt$" . "application/vnd.oasis.opendocument.text")
- ("\\.odp$" . "application/vnd.oasis.opendocument.presentation")
- ("\\.ods$" . "application/vnd.oasis.opendocument.spreadsheet")
- ("\\.odg$" . "application/vnd.oasis.opendocument.graphics")
- ("\\.odf$" . "application/vnd.oasis.opendocument.formulae")
- ("\\.odb$" . "application/vnd.oasis.opendocument.databases")
- ("\\.docx$"
+(("\\\\.jpe?g$" . "image/jpeg") ("\\\\.gif$" . "image/gif")
+ ("\\\\.png$" . "image/png") ("\\\\.tiff?$" . "image/tiff")
+ ("\\\\.svg$" . "image/svg+xml") ("\\\\.pcx$" . "image/x-pcx")
+ ("\\\\.txt$" . "text/plain") ("\\\\.html?$" . "text/html")
+ ("\\\\.css$" . "text/css") ("\\\\.csv$" . "text/csv")
+ ("\\\\.xml$" . "text/xml") ("\\\\.vcf$" . "text/x-vcard")
+ ("\\\\.vcard$" . "text/x-vcard") ("\\\\.au$" . "audio/basic")
+ ("\\\\.mp4$" . "audio/mp4") ("\\\\.m4[abpr]$" . "audio/mp4")
+ ("\\\\.wma$" . "audio/x-ms-wma") ("\\\\.wax$" . "audio/x-ms-wax")
+ ("\\\\.ram?$" . "audio/vnd.ra-realaudio") ("\\\\.ogg$" . "audio/vorbis")
+ ("\\\\.oga$" . "audio/vorbis") ("\\\\.wav$" . "audio/vnd.wave")
+ ("\\\\.mpe?g$" . "video/mpeg") ("\\\\.m4v$" . "video/mp4")
+ ("\\\\.mov$" . "video/quicktime") ("\\\\.ogc$" . "video/ogg")
+ ("\\\\.wmv$" . "video/x-ms-wmv") ("\\\\.webm$" . "video/webm")
+ ("\\\\.zip$" . "application/zip") ("\\\\.gz$" . "application/x-gzip")
+ ("\\\\.tar$" . "application/x-tar")
+ ("\\\\.rar$" . "application/x-rar-compressed")
+ ("\\\\.e?ps$" . "application/postscript")
+ ("\\\\.pdf$" . "application/pdf") ("\\\\.dvi$" . "application/x-dvi")
+ ("\\\\.tex$" . "application/x-latex")
+ ("\\\\.ttf$" . "application/x-font-ttf")
+ ("\\\\.swf$" . "application/x-shockwave-flash")
+ ("\\\\.tex$" . "application/x-latex")
+ ("\\\\.js$" . "application/javascript")
+ ("\\\\.dtd$" . "application/xml-dtd") ("\\\\.pdf$" . "application/pdf")
+ ("\\\\.rtf$" . "application/rtf") ("\\\\.doc$" . "application/msword")
+ ("\\\\.xls$" . "application/vnd.ms-excel")
+ ("\\\\.ppt$" . "application/vnd.ms-powerpoint")
+ ("\\\\.mdb$" . "application/vnd.ms-access")
+ ("\\\\.odt$" . "application/vnd.oasis.opendocument.text")
+ ("\\\\.odp$" . "application/vnd.oasis.opendocument.presentation")
+ ("\\\\.ods$" . "application/vnd.oasis.opendocument.spreadsheet")
+ ("\\\\.odg$" . "application/vnd.oasis.opendocument.graphics")
+ ("\\\\.odf$" . "application/vnd.oasis.opendocument.formulae")
+ ("\\\\.odb$" . "application/vnd.oasis.opendocument.databases")
+ ("\\\\.docx$"
   . "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
- ("\\.docm$"
+ ("\\\\.docm$"
   . "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
- ("\\.pptx$"
+ ("\\\\.pptx$"
   . "application/vnd.openxmlformats-officedocument.presentationml.presentation")
- ("\\.pptm$ "
+ ("\\\\.pptm$ "
   . "application/vnd.openxmlformats-officedocument.presentationml.presentation")
- ("\\.xlsx$"
+ ("\\\\.xlsx$"
   . "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
- ("\\.xlsm$"
+ ("\\\\.xlsm$"
   . "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
- ("\\.hqx$" . "application/mac-binhex40"))
+ ("\\\\.hqx$" . "application/mac-binhex40"))
 @end example
 @end defopt
 
@@ -6545,7 +6560,7 @@ Default value: @code{t}
 The label that will be inserted instead of the original mime object.
 See @code{vm-mime-compile-format-1} for valid format specifiers.
 
-Default value: @code{"[Deleted %f (%t)]\n"}
+Default value: @code{"[Deleted %f (%t)]\\n"}
 @end defopt
 
 @end macro
@@ -6581,11 +6596,15 @@ Default value: @code{t}
 @macro vmdocvmmimeencodeheadersregexp
 @defopt vm-mime-encode-headers-regexp
 @vindex vm-mime-encode-headers-regexp
-A regexp matching the headers which should be encoded.
+A regexp matching the headers whose words should be MIME-encoded.
+A header holding a character outside US-ASCII cannot be sent as it stands;
+the words carrying those characters are encoded as RFC 2047 words instead.
+By default Subject, Organization, From, To, CC, BCC and their Resent- forms
+are encoded.  @code{vm-mime-encode-headers-type} says with which encoding.
 
 Default value:
 @example
-"Subject\\|\\(\\(Resent-\\)?\\(From\\|To\\|CC\\|BCC\\)\\)\\|Organization"
+"Subject\\\\|\\\\(\\\\(Resent-\\\\)?\\\\(From\\\\|To\\\\|CC\\\\|BCC\\\\)\\\\)\\\\|Organization"
 @end example
 @end defopt
 
@@ -6594,7 +6613,11 @@ Default value:
 @macro vmdocvmmimeencodeheaderstype
 @defopt vm-mime-encode-headers-type
 @vindex vm-mime-encode-headers-type
-The encoding type to use for encoding headers.
+The encoding to use for the words of a header, Q or B.
+Q is quoted-printable, which leaves the ASCII part of the word readable to
+someone whose mail reader does not decode it; B is base64, which does not
+but is shorter for a word that is mostly non-ASCII.  A regexp value picks
+base64 for the words it matches and quoted-printable for the rest.
 
 Default value: @code{Q}
 @end defopt
@@ -6604,16 +6627,20 @@ Default value: @code{Q}
 @macro vmdocvmmimeencodeheaderswordsregexp
 @defopt vm-mime-encode-headers-words-regexp
 @vindex vm-mime-encode-headers-words-regexp
-A regexp matching a set of consecutive words which must be encoded.
+A regexp matching the run of words to encode as one RFC 2047 word.
+A word here is delimited by whitespace or a comma, and a run of them is
+encoded together rather than one at a time, which is shorter and is what
+the standard asks for.  What makes a word need encoding at all is
+@code{vm-mime-encode-words-regexp}.
 
 Default value:
 @example
 "[ ,	
-\\15]\\(\\([^ ,	
-\\15]*[^\\0-\\177]+[^ ,	
-\\15]*\\)+\\(\\s-+\\([^ ,	
-\\15]*[^\\0-\\177]+[^ ,	
-\\15]*\\)+\\)*\\)"
+\\\\15]\\\\(\\\\([^ ,	
+\\\\15]*[^\\\\0-\\\\177]+[^ ,	
+\\\\15]*\\\\)+\\\\(\\\\s-+\\\\([^ ,	
+\\\\15]*[^\\\\0-\\\\177]+[^ ,	
+\\\\15]*\\\\)+\\\\)*\\\\)"
 @end example
 @end defopt
 
@@ -6622,9 +6649,11 @@ Default value:
 @macro vmdocvmmimeencodewordsregexp
 @defopt vm-mime-encode-words-regexp
 @vindex vm-mime-encode-words-regexp
-A regexp matching a sequence of 8 bit chars.
+A regexp matching the characters that make a word need encoding.
+Anything outside US-ASCII, by default.  What VM takes a word to be is
+@code{vm-mime-encode-headers-words-regexp}.
 
-Default value: @code{"[^\0-\177]+"}
+Default value: @code{"[^\\0-\\177]+"}
 @end defopt
 
 @end macro
@@ -6963,7 +6992,7 @@ Regexp after which a "blocked:" will be inserted.
 This is done in order to prevent loading of embedded images used to check if
 and when you read an email.
 
-Default value: @code{"<img[^>]*\\s-src=."}
+Default value: @code{"<img[^>]*\\\\s-src=."}
 @end defopt
 
 @end macro
@@ -9190,9 +9219,9 @@ Default value: @code{("To:" "CC:" "BCC:")}
 @defopt vm-mail-to-regexp
 @vindex vm-mail-to-regexp
 A regexp matching the part of an email address to use as FCC-folder.
-The string enclosed in "\\(\\)" is used as folder name.
+The string enclosed in "\\\\(\\\\)" is used as folder name.
 
-Default value: @code{"\\([^<\11\n ]+\\)@@"}
+Default value: @code{"\\\\([^<\\11\\n ]+\\\\)@@"}
 @end defopt
 
 @end macro
@@ -9439,7 +9468,7 @@ Default value: @code{(list "/pagenumberstring load" 'dd-mon-yyyy)}
 @vindex vm-ps-print-message-separator
 The separator between messages when printing multiple messages.
 
-Default value: @code{"\n"}
+Default value: @code{"\\n"}
 @end defopt
 
 @end macro
@@ -9453,7 +9482,7 @@ See @code{vm-summary-format} for a description of the conversion specifiers.
 Default value:
 @example
 "******************************************************************************
-%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\"%s\"
+%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\\"%s\\"
 ******************************************************************************
 "
 @end example
@@ -9780,7 +9809,7 @@ wrapping.
 Value specifies which headers to highlight.
 This is a regular expression that matches the names of headers that should
 be highlighted when a message is first presented.  For example setting
-this variable to "From:\\|Subject:" causes the From and Subject
+this variable to "From:\\\\|Subject:" causes the From and Subject
 headers to be highlighted.
 
 If you’re using XEmacs, you might want to use the builtin
@@ -10414,7 +10443,7 @@ in a subject into "Re_".
 
 This used to be a US-ASCII whitelist, which replaced every accented
 letter as well: a reply to "Ren'e" was named "reply to Ren_".  To
-get that back, set this to "[^ a-zA-Z0-9.,_\"'+-]".
+get that back, set this to "[^ a-zA-Z0-9.,_\\"'+-]".
 
 Default value: @code{"[[:cntrl:]/]"}
 @end defopt
@@ -10530,7 +10559,7 @@ included text from a message in a reply.  See the documentation for the
 variable @code{vm-summary-format} for information on what this string may contain.
 Nil means don’t attribute included text in replies.
 
-Default value: @code{"%F writes:\n"}
+Default value: @code{"%F writes:\\n"}
 @end defopt
 
 @end macro
@@ -11223,12 +11252,12 @@ $inlove $your
 $forward")
  ("german-reply"
   (and vm-reply-list
-       (string-match "\\.\\(de\\|at\\|ch\\)>?$"
+       (string-match "\\\\.\\\\(de\\\\|at\\\\|ch\\\\)>?$"
 		     (vm-mail-mode-get-header-contents "To:")))
   "$reply
 $point
 $ciao$i")
- ("german-default" "\\.\\(de\\|at\\|ch\\)>?$" "$hallo $you,
+ ("german-default" "\\\\.\\\\(de\\\\|at\\\\|ch\\\\)>?$" "$hallo $you,
 
 $point$reply
 
@@ -11236,7 +11265,7 @@ $ciao$i
 
 $forward
 $sig")
- ("german-serious" "\\.\\(de\\|at\\|ch\\)>?$" "$sg $sir,
+ ("german-serious" "\\\\.\\\\(de\\\\|at\\\\|ch\\\\)>?$" "$sg $sir,
 
 $point$reply
 
@@ -11268,12 +11297,12 @@ which matches and inserts this template.  Tokens in the template are
 expanded by the function called `vm-serial-expand-tokens'.
 
 There are default tokens for various things.  Tokens start with the
-string specified in `vm-serial-cookie' which is \"$(eval vm-serial-cookie)\" followed by a
-string matching the regexp \\([a-zA-Z][a-zA-Z0-9_-]*\\) which may be
+string specified in `vm-serial-cookie' which is \\"$(eval vm-serial-cookie)\\" followed by a
+string matching the regexp \\\\([a-zA-Z][a-zA-Z0-9_-]*\\\\) which may be
 enclosed by @{@} or a lisp expressions.  The first type is a named token
 and has to be listed in the variable `vm-serial-token-alist'.  It will be
 expanded and if evaluating to a non nil object then it is inserted.  In
-order to get just the `vm-serial-cookie' \"$(eval vm-serial-cookie)\" simply write it twice.
+order to get just the `vm-serial-cookie' \\"$(eval vm-serial-cookie)\\" simply write it twice.
 
 You may also embed any kind of lisp expression.  If they return a string, it
 will be inserted.
@@ -11282,7 +11311,7 @@ Do [M-x vm-serial-expand-tokens] in order to see how things change ...
 
 Example of a embedded lisp expression:
 
- the current date is $$(format-time-string \"%D %r\").
+ the current date is $$(format-time-string \\"%D %r\\").
 
  $$(center-line) Center this line
 
@@ -11293,10 +11322,10 @@ The following tokens are currently defined:
 Token   Documentation  (the example follows in the next line)
 $(mapconcat
   (function (lambda (tk)
-      (concat (car tk) \"\\t\" (caddr tk) \"
-	$\" (car tk))))
-  vm-serial-token-alist  \"
-\")
+      (concat (car tk) \\"\\\\t\\" (caddr tk) \\"
+	$\\" (car tk))))
+  vm-serial-token-alist  \\"
+\\")
 
 
 If you thing there are other tokens which should be added to this list, please
@@ -11524,7 +11553,7 @@ Default value:
  ((marked) vm-summary-marked)
  ((or (header "Priority: urgent") (header "Importance: high")
       (header "X-Priority: 1") (flagged) (label "!")
-      (label "\\flagged") (header "X-VM-postponed-data:"))
+      (label "\\\\flagged") (header "X-VM-postponed-data:"))
   vm-summary-high-priority)
  ((unread) vm-summary-unread) ((replied) vm-summary-replied)
  ((or (filed) (written)) vm-summary-saved)
@@ -11780,7 +11809,7 @@ the left instead of the right.
 The summary format need not be one line per folder, but it should end with
 a newline.
 
-Default value: @code{"  %12f %4t total, %n new, %u unread, %s spooled\n"}
+Default value: @code{"  %12f %4t total, %n new, %u unread, %s spooled\\n"}
 @end defopt
 
 @end macro
@@ -11978,7 +12007,7 @@ when threading, sorting, marking, and killing messages by subject.
 
 Matches are done case-insensitively.
 
-Default value: @code{"^\\(re: *\\)+"}
+Default value: @code{"^\\\\(re: *\\\\)+"}
 @end defopt
 
 @end macro
@@ -11992,7 +12021,7 @@ when threading, sorting, marking and killing messages by subject.
 
 Matches are done case-insensitively.
 
-Default value: @code{"\\( (fwd)\\| \\)+$"}
+Default value: @code{"\\\\( (fwd)\\\\| \\\\)+$"}
 @end defopt
 
 @end macro
@@ -12191,7 +12220,7 @@ The summary format need not be one line per message but it must end with
 a newline, otherwise the message pointer will not be displayed correctly
 in the summary window.
 
-Default value: @code{"%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\"%s\"\n"}
+Default value: @code{"%n %*%a %-17.17F %-3.3m %2d %4l/%-5c %I\\"%s\\"\\n"}
 @end defopt
 
 @end macro
@@ -12772,10 +12801,10 @@ to the thread.  Used for testing purposes.
 @deffn Command vm-demote-subthread n
 @findex vm-demote-subthread
 Increase the thread indentation of the current message and its
-subthread by $N$ steps (provided as a prefix argument).  
+subthread by N steps, N being the prefix argument.
 
-The case $N$ being 0 is a special case.  It means to reset the
-indentation back to the normal indentation, i.e., no offset is used.
+A prefix argument of 0 puts the indentation back to the one the message’s
+thread level gives it, with no offset.
 @end deffn
 
 @end macro
@@ -12784,10 +12813,10 @@ indentation back to the normal indentation, i.e., no offset is used.
 @deffn Command vm-promote-subthread n
 @findex vm-promote-subthread
 Decrease the thread indentation of the current message and its
-subthread by $N$ steps (provided as a prefix argument).  
+subthread by N steps, N being the prefix argument.
 
-The case $N$ being 0 is a special case.  It means to decrease the
-indentation all the way to 0.
+A prefix argument of 0 decreases the indentation all the way to 0, so the
+message reads as the root of a thread.
 @end deffn
 
 @end macro
@@ -14451,12 +14480,12 @@ It is most likely intended to check whether the ominous spam mail has
 reached your eyes or not, in which case the spammer knows for sure
 that your email address is valid.  It is done by embedding an
 identifier string into a URL that you might automatically retrieve
-when displaying the image.  The default value is "\\‘cid:" which only
+when displaying the image.  The default value is "\\\\‘cid:" which only
 matches parts embedded to the Multipart/Related type MIME contents and
 VM will never connect to the spammer’s site arbitrarily.  You may set
 this variable to nil if you consider all urls to be safe.
 
-Default value: @code{"\\`cid:"}
+Default value: @code{"\\\\`cid:"}
 @end defopt
 
 @end macro

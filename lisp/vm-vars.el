@@ -1030,13 +1030,17 @@ must set this variable non-nil."
 (define-obsolete-variable-alias 'vm-trust-From_-with-Content-Length
   'vm-trust-content-length "8.3.3")
 
-(defvar vm-sync-thunderbird-status t
+(defcustom vm-sync-thunderbird-status t
   "If set to t, VM synchronizes its headers with the headers of
 Thunderbird so that full interoperation with Thunderbird becomes
 possible.  If it is set to `read-only' then VM reads the Thunderbird
 status flags, but refrains from updating them.  If it is set to nil
 then VM makes no attempt to read or write the Thunderbird status
-flags.") 
+flags."
+  :group 'vm-folders
+  :type '(choice (const :tag "Read and write Thunderbird status" t)
+		 (const :tag "Read it, do not write it" read-only)
+		 (const :tag "Leave it alone" nil)))
 
 (make-variable-buffer-local 'vm-sync-thunderbird-status)
 
@@ -2516,19 +2520,31 @@ with the first type that matches will be used."
 
 (defcustom vm-mime-encode-headers-regexp
   "Subject\\|\\(\\(Resent-\\)?\\(From\\|To\\|CC\\|BCC\\)\\)\\|Organization"
-  "*A regexp matching the headers which should be encoded."
+  "*A regexp matching the headers whose words should be MIME-encoded.
+A header holding a character outside US-ASCII cannot be sent as it stands;
+the words carrying those characters are encoded as RFC 2047 words instead.
+By default Subject, Organization, From, To, CC, BCC and their Resent- forms
+are encoded.  `vm-mime-encode-headers-type' says with which encoding."
   :group 'vm-mime
   :type '(regexp))
 
 (defcustom vm-mime-encode-headers-words-regexp
   (let ((8bit-word "\\([^ ,\t\n\r]*[^\x0-\x7f]+[^ ,\t\n\r]*\\)+"))
     (concat "[ ,\t\n\r]\\(" 8bit-word "\\(\\s-+" 8bit-word "\\)*\\)"))
-  "*A regexp matching a set of consecutive words which must be encoded."
+  "*A regexp matching the run of words to encode as one RFC 2047 word.
+A word here is delimited by whitespace or a comma, and a run of them is
+encoded together rather than one at a time, which is shorter and is what
+the standard asks for.  What makes a word need encoding at all is
+`vm-mime-encode-words-regexp'."
   :group 'vm-mime
   :type '(regexp))
 
 (defcustom vm-mime-encode-headers-type 'Q
-  "*The encoding type to use for encoding headers."
+  "*The encoding to use for the words of a header, Q or B.
+Q is quoted-printable, which leaves the ASCII part of the word readable to
+someone whose mail reader does not decode it; B is base64, which does not
+but is shorter for a word that is mostly non-ASCII.  A regexp value picks
+base64 for the words it matches and quoted-printable for the rest."
   :group 'vm-mime
   :type '(choice (const  :tag "Quoted-printable" Q)
                  (const  :tag "Binary" B)
@@ -2536,7 +2552,9 @@ with the first type that matches will be used."
                          "[^- !#-'*+/-9=?A-Z^-~]")))
 
 (defcustom vm-mime-encode-words-regexp "[^\x0-\x7f]+"
-  "*A regexp matching a sequence of 8 bit chars."
+  "*A regexp matching the characters that make a word need encoding.
+Anything outside US-ASCII, by default.  What VM takes a word to be is
+`vm-mime-encode-headers-words-regexp'."
   :group 'vm-mime
   :type '(regexp))
 

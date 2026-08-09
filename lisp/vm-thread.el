@@ -557,10 +557,10 @@ specifier) will be visible."
 ;;;###autoload
 (defun vm-promote-subthread (n)
   "Decrease the thread indentation of the current message and its
-subthread by $N$ steps (provided as a prefix argument).  
+subthread by N steps, N being the prefix argument.
 
-The case $N$ being 0 is a special case.  It means to decrease the
-indentation all the way to 0."
+A prefix argument of 0 decreases the indentation all the way to 0, so the
+message reads as the root of a thread."
   (interactive "p")
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
@@ -583,10 +583,10 @@ indentation all the way to 0."
 ;;;###autoload
 (defun vm-demote-subthread (n)
   "Increase the thread indentation of the current message and its
-subthread by $N$ steps (provided as a prefix argument).  
+subthread by N steps, N being the prefix argument.
 
-The case $N$ being 0 is a special case.  It means to reset the
-indentation back to the normal indentation, i.e., no offset is used."
+A prefix argument of 0 puts the indentation back to the one the message's
+thread level gives it, with no offset."
   (interactive "p")
   (vm-follow-summary-cursor)
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))

@@ -125,6 +125,20 @@ one each way round."
                  (with-temp-buffer (vm-reference-insert-default symbol)
                                    (buffer-string))))))))
 
+(ert-deftest vm-reference-test-a-macro-body-doubles-its-backslashes ()
+  "A backslash inside a `@macro' names a parameter, so it has to be doubled.
+`vm-mime-encode-words-regexp' defaults to \"[^\\x0-\\x7f]+\", and makeinfo
+stopped with \\ followed by `0-' the first time a chapter invoked that macro.
+The error comes when the macro is used, not when it is defined, so every
+macro nobody has invoked yet is carrying the same fault until this holds."
+  (let ((text (with-temp-buffer
+                (vm-reference-insert-macro 'vm-mime-encode-words-regexp
+                                           #'vm-reference-insert-option)
+                (buffer-string))))
+    (should (string-match-p "\\\\" text))
+    ;; every backslash in the body is part of a doubled pair
+    (should-not (string-match-p "\\(\\`\\|[^\\]\\)\\\\\\([^\\]\\|\\'\\)" text))))
+
 ;;; Which modules are loaded
 
 (ert-deftest vm-reference-test-a-stray-module-is-not-loaded ()

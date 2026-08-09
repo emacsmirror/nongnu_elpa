@@ -537,9 +537,19 @@ command and user option VM has -- no two collide once stripped."
                                             (symbol-name symbol))))
 
 (defun vm-reference-insert-macro (symbol kind)
-  "Define the macro for SYMBOL, whose entry is written by KIND."
+  "Define the macro for SYMBOL, whose entry is written by KIND.
+Backslashes in the body are doubled.  Inside a `@macro' a backslash names a
+parameter, so the default of `vm-mime-encode-words-regexp' -- \"[^\\x0-\\x7f]+\"
+-- makes makeinfo stop with \\ followed by `0-' instead of a parameter name.
+The error comes when the macro is *used*, not when it is defined, so a
+macro nobody invokes yet carries the fault silently."
   (insert (format "@macro %s\n" (vm-reference-macro-name symbol)))
-  (funcall kind symbol)
+  (let ((start (point)))
+    (funcall kind symbol)
+    (save-excursion
+      (goto-char start)
+      (while (search-forward "\\" nil t)
+        (replace-match "\\\\" t t))))
   (insert "@end macro\n\n"))
 
 (defun vm-reference-generate-macros (file)
