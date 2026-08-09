@@ -20,8 +20,8 @@
 ;;;###autoload
 (define-derived-mode nix-drv-mode json-ts-mode "Nix-Derivation"
   "Pretty print Nix’s .drv files."
-  (setq-local inhibit-read-only t)
-  (erase-buffer)
+  (let ((inhibit-read-only t))
+    (erase-buffer))
   (let ((err-buf (generate-new-buffer "*nix-drv-mode*")))
     (make-process
      :name "nix-drv-mode"
@@ -29,7 +29,6 @@
      :command (list nix-executable "derivation" "show" (buffer-file-name))
      :stderr err-buf
      :sentinel (lambda (proc event)
-		 (setq inhibit-read-only nil)
 		 (when (string-match "finished" event)
 		   (let ((buf (process-buffer proc)))
                      (when (and buf (buffer-live-p buf))
@@ -47,8 +46,9 @@
                (let ((buf (process-buffer proc)))
 		 (when (and buf (buffer-live-p buf))
 		   (with-current-buffer buf
-                     (goto-char (point-max))
-                     (insert output)))))))
+		     (let ((inhibit-read-only t))
+                       (goto-char (point-max))
+                       (insert output))))))))
   (add-hook 'change-major-mode-hook #'nix-drv-mode-dejsonify-buffer nil t))
 
 (defun nix-drv-mode-dejsonify-buffer ()
@@ -60,7 +60,7 @@
     (erase-buffer)
     (insert-file-contents (buffer-file-name))
     (set-buffer-modified-p nil)
-    (read-only-mode nil)))
+    (read-only-mode -1)))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("^/nix/store/.+\\.drv\\'" . nix-drv-mode))

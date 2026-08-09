@@ -348,7 +348,7 @@ OPTIONS a list of options to accept."
 (defun nix--process-string (&rest args)
   (cl-multiple-value-bind (stdout stderr exitcode) (apply #'nix--process args)
     (if (not (eq exitcode 0))
-      (error stderr))
+      (error "%s" stderr))
     ;; cut-off the trailing newline
     (string-trim-right stdout)))
 

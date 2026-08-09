@@ -18,7 +18,7 @@
 
 (require 'files)
 
-(defvar nix-shebang-interpreter-regexp "#!\s*nix-shell -i \\([^ \t\n]+\\)"
+(defvar nix-shebang-interpreter-regexp "#![ \t]*nix-shell -i \\([^ \t\n]+\\)"
   "Regexp for nix-shell -i header.")
 
 (defun nix-shebang-get-interpreter ()

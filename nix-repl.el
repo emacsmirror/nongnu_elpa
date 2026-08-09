@@ -64,7 +64,10 @@
     (setq-local comint-input-ring-file-name history-path))
   (comint-read-input-ring t)
   (add-hook 'kill-buffer-hook #'comint-write-input-ring nil 'local)
-  (add-hook 'kill-emacs-hook #'nix-repl-save-all-histories nil 'local)
+
+  ;; not local in case we aren’t the current buffer
+  (add-hook 'kill-emacs-hook #'nix-repl-save-all-histories)
+
   (add-hook 'completion-at-point-functions
             #'nix-repl-completion-at-point nil 'local))
 

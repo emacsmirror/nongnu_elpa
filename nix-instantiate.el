@@ -13,6 +13,7 @@
 
 (require 'nix)
 (require 'json)
+(require 'subr-x)
 
 (defun nix-instantiate--parsed (drv)
   "Get the parsed version of the .drv file.

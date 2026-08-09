@@ -1043,13 +1043,10 @@ The hook `nix-mode-hook' is run when Nix mode is started.
   (setq-local paragraph-start "[ \t]*\\(#+[ \t]*\\)?$")
   (setq-local paragraph-separate paragraph-start)
 
-  ;; Menu
-  (easy-menu-add nix-mode-menu nix-mode-map)
-
   ;; Find file at point
-  (push '(nix-mode . nix-mode-ffap-nixpkgs-path) ffap-alist)
-  (push '(nix-mode "--:\\\\$<>+@-Z_[:alpha:]~*?" "@" "@;.,!:")
-        ffap-string-at-point-mode-alist))
+  (add-to-list 'ffap-alist '(nix-mode . nix-mode-ffap-nixpkgs-path))
+  (add-to-list 'ffap-string-at-point-mode-alist
+               '(nix-mode "--:\\\\$<>+@-Z_[:alpha:]~*?" "@" "@;.,!:")))
 
 ;;;###autoload
 (add-to-list 'auto-mode-alist '("\\.nix\\'" . nix-mode))

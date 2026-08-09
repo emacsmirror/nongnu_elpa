@@ -539,7 +539,7 @@ See `nix-flake-init-post-action' variable for details."
 
 ;;;;; The transient interface
 
-;;;###autoload (autoload 'nix-flake-init "nix-flake" nil t)
+;;;###autoload (autoload 'nix-flake-init-dispatch "nix-flake" nil t)
 (transient-define-prefix nix-flake-init-dispatch (&optional flake-ref)
   "Scaffold a project from a template."
   [:description "Initialize a flake"]

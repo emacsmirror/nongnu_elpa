@@ -50,7 +50,7 @@
 
 (defvar-local nix-search--filter nil
   "Search filter used for current buffer")
-(defvar-local nix-search---file nil
+(defvar-local nix-search--file nil
   "File/flake used for current buffer")
 
 (defun nix-search--refresh ()
@@ -77,8 +77,6 @@
 \\{nix-search-mode-map}"
   :interactive nil
   :group 'nix-mode
-
-  (easy-menu-add nix-search-mode-menu)
 
   (read-only-mode 1))
 

@@ -39,7 +39,7 @@
 			      depsBuildTarget
 			      depsBuildTargetPropagated)
   "List of inputs to collect for nix-shell."
-  :type 'list
+  :type '(repeat symbol)
   :group 'nix-shell)
 
 (defcustom nix-shell-clear-environment nil
@@ -56,19 +56,19 @@ Similar to ‘--pure’ argument in command line nix-shell."
 (defcustom nix-file nil
   "Nix file to build expressions from.
 Should only be set in dir-locals.el file."
-  :type 'stringp
+  :type '(choice (const :tag "Not set" nil) string)
   :group 'nix-shell)
 
 (defcustom nix-flake nil
   "Nix flake to build expressions from.
 Should only be set in dir-locals.el file."
-  :type 'stringp
+  :type '(choice (const :tag "Not set" nil) string)
   :group 'nix-shell)
 
 (defcustom nix-attr nil
   "Nix attribute path to use.
 Should only be set in dir-locals.el file."
-  :type 'stringp
+  :type '(choice (const :tag "Not set" nil) string)
   :group 'nix-shell)
 
 ;;;###autoload
