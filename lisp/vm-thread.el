@@ -1172,11 +1172,28 @@ reinserted into an appropriate thread later.       USR, 2011-03-17"
 	;; remove m from its thread node
 	(vm-th-remove-message-from-symbol id-sym m)
 	;; reset the thread dates of m
-	(setq date (vm-so-sortable-datestring m))
-	(setq subject (vm-so-sortable-subject m))
-	(vm-th-set-youngest-date-of id-sym date)
-	(vm-th-set-oldest-date-of id-sym date)
-	(vm-th-set-oldest-subject-of id-sym subject)
+	(if message-changing
+	    ;; The message's cached date and subject are still the old ones:
+	    ;; `vm-discard-cached-data-internal' unthreads before it wipes the
+	    ;; cache, so that the old message id still finds the right node.
+	    ;; Recording them would leave the node describing the message as
+	    ;; it was, and nothing would ever replace them --
+	    ;; `vm-build-thread-list' fills these in only when it meets an
+	    ;; older date.  `vm-ts-subject-symbol' reads the subject field, so
+	    ;; a message whose Subject was edited went on being sorted under
+	    ;; the subject it used to have, joining that subject thread under
+	    ;; whichever message had taken over as its root -- which can be
+	    ;; one of its own children.  Cleared, the rebuild fills them in
+	    ;; from what the message says now.
+	    (progn
+	      (vm-th-set-youngest-date-of id-sym nil)
+	      (vm-th-set-oldest-date-of id-sym nil)
+	      (vm-th-set-oldest-subject-of id-sym nil))
+	  (setq date (vm-so-sortable-datestring m))
+	  (setq subject (vm-so-sortable-subject m))
+	  (vm-th-set-youngest-date-of id-sym date)
+	  (vm-th-set-oldest-date-of id-sym date)
+	  (vm-th-set-oldest-subject-of id-sym subject))
 	;; if message changed, remove it from the thread tree
 	;; not clear what is going on.  USR, 2010-07-24
 	(when (and message-changing (null (vm-th-message-of id-sym)))
