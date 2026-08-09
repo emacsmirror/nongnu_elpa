@@ -74,7 +74,7 @@
 (defvar nix-version nil)
 (defun nix-version ()
   "Get the version of Nix."
-  (or nix-version (nix--process-string "--version")))
+  (or nix-version (setq nix-version (nix--process-string "--version"))))
 
 (defun nix-show-config ()
   "Show nix config."
@@ -193,9 +193,15 @@ OPTIONS a list of options to accept."
   "Whether Nix is a version with Flakes support."
   (let ((version (nix-version)))
     (save-match-data
-      (when (string-match (rx bol "nix (Nix) " (group (+ digit) (?  "." (+ digit))))
-                          version)
-        (version<= "2.4" (match-string 1 version))))))
+      (cond
+       ((string-match (rx bol "nix (Nix) " (group (+ digit) (?  "." (+ digit))))
+                      version)
+	(version<= "2.4" (match-string 1 version)))
+       ((string-match (rx bol "nix (Lix, like Nix) " (group (+ digit) (?  "." (+ digit))))
+                      version)
+	(version<= "2.90" (match-string 1 version))) ;; first lix version, flakes included
+       (t nil)
+       ))))
 
 (defun nix-has-flakes ()
   "Whether Nix is a version with Flakes support."
