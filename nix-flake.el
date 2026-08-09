@@ -571,7 +571,7 @@ See `nix-flake-init-post-action' variable for details."
       (nix-flake-init-dispatch))))
 
 ;;;###autoload
-(add-to-list 'auto-mode-alist '("\\flake.lock\\'" . js-mode))
+(add-to-list 'auto-mode-alist '("\\flake.lock\\'" . json-ts-mode))
 
 (provide 'nix-flake)
 ;;; nix-flake.el ends here
