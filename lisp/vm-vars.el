@@ -38,7 +38,7 @@
 (defgroup vm nil
   "The VM mail reader."
   :link '(custom-manual "(vm)Top")
-  :link '(url-link :tag "VM Homepage" "http://www.nongnu.org/viewmail/")
+  :link '(url-link :tag "VM on GitLab" "https://gitlab.com/emacs-vm/vm")
   :group 'mail)
 
 (defgroup vm-faces nil
