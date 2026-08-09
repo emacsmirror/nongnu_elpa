@@ -20,7 +20,7 @@
 ;;;###autoload
 (define-derived-mode nix-drv-mode json-ts-mode "Nix-Derivation"
   "Pretty print Nix’s .drv files."
-  (setq inhibit-read-only t)
+  (setq-local inhibit-read-only t)
   (erase-buffer)
   (let ((err-buf (generate-new-buffer "*nix-drv-mode*")))
     (make-process
