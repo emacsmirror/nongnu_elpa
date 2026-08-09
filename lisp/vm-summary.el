@@ -1585,7 +1585,7 @@ The result is a mime-encoded string, but this is not certain.
       (vm-su-from m))
      ((not (string-match vm-summary-uninteresting-senders (vm-su-to m)))
       ;; FIXME do we need to match each address separately?  USR, 2012-03-02
-      (concat vm-summary-uninteresting-senders-arrow (vm-su-to m)))
+      (concat vm-summary-recipient-marker (vm-su-to m)))
      ((not (string-match "\\?\\?\\?" (vm-su-reply-to m)))
       (concat vm-summary-principal-marker (vm-su-reply-to m)))
      (t

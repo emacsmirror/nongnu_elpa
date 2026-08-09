@@ -4248,7 +4248,11 @@ be used as the name of the buffer."
 ;;;###autoload
 (defun vm-revert-buffer ()
 "Revert the current folder to its version on the disk.
-Same as \\[vm-revert-folder]."
+The summary and presentation buffers are killed, the file is read again,
+and the folder is visited afresh with the access method it had, so an
+IMAP or POP folder comes back connected rather than as a plain file.
+
+Also available as `vm-revert-folder'."
   (interactive)
   (vm-select-folder-buffer-if-possible)
   (let ((access-method vm-folder-access-method) ; preserve these across

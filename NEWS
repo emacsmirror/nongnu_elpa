@@ -30,6 +30,9 @@ VM 8.?.?
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
+  * vm-sync-thunderbird-status is a customization variable now rather than a
+    plain variable, so M-x customize-group RET vm-folders offers it.  The
+    name, the default and what it does are unchanged.
   * Add vm-folder-cache-file function to get cache file for current VM buffer.
   * Add vm-expunge-label command to completely remove a label from a folder.
     Removes the label from all messages and from the folder's label list so
