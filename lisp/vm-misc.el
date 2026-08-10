@@ -1277,7 +1277,7 @@ encoding/decoding, conversions, subprocess communication etc."
        (/ usecs (if (featurep 'lisp-float-type) 1e6 1000000)))))
 
 (defalias 'vm-char-to-int
-  (if (featurep 'xeamcs) #'char-to-int #'identity))
+  (if (featurep 'xemacs) #'char-to-int #'identity))
 
 (defalias 'vm-charsets-in-region
   (if (featurep 'xemacs) #'charsets-in-region #'find-charset-region))

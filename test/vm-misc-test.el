@@ -645,9 +645,22 @@ interned in it or not.  Testing one with `null' is what #572 was."
 
 ;;; vm-octal tests
 
-(ert-deftest vm-misc-test-octal-exists ()
-  "Test vm-octal function exists."
-  (should (fboundp 'vm-octal)))
+(ert-deftest vm-misc-test-octal-reads-its-argument-as-octal ()
+  "`vm-octal' takes a decimal-looking integer and reads its digits as octal.
+It is how the folder permission defaults are written: (vm-octal 600) is the
+0600 a reader expects, not six hundred."
+  (should (= 384 (vm-octal 600)))            ; 0600
+  (should (= 511 (vm-octal 777)))            ; 0777
+  (should (= 420 (vm-octal 644)))            ; 0644
+  (should (= 0 (vm-octal 0)))
+  (should (= 8 (vm-octal 10)))
+  ;; and it refuses what is not octal rather than returning a wrong number
+  (should-error (vm-octal 8) :type 'error)
+  (should-error (vm-octal 649) :type 'error))
+
+(ert-deftest vm-misc-test-octal-is-what-the-defaults-use ()
+  "The permission defaults come out as the octal they are written as."
+  (should (= 384 (default-value 'vm-default-folder-permission-bits))))
 
 ;;; vm-generate-new-buffer tests
 
@@ -691,9 +704,17 @@ interned in it or not.  Testing one with `null' is what #572 was."
 
 ;;; vm-with-string-as-temp-buffer tests
 
-(ert-deftest vm-misc-test-with-string-as-temp-buffer-exists ()
-  "Test vm-with-string-as-temp-buffer function exists."
-  (should (fboundp 'vm-with-string-as-temp-buffer)))
+(ert-deftest vm-misc-test-with-string-as-temp-buffer-returns-the-result ()
+  "The string is worked on in a buffer of its own and the result returned."
+  (should (equal "HELLO"
+                 (vm-with-string-as-temp-buffer
+                  "hello" (lambda () (upcase-region (point-min) (point-max))))))
+  ;; the work buffer does not outlive the call
+  (let ((before (length (buffer-list))))
+    (vm-with-string-as-temp-buffer "x" #'ignore)
+    (should (= before (length (buffer-list)))))
+  ;; and it is multibyte, so a non-ASCII string is not mangled
+  (should (equal "café" (vm-with-string-as-temp-buffer "café" #'ignore))))
 
 ;;; vm-md5-string tests
 
@@ -708,9 +729,37 @@ interned in it or not.  Testing one with `null' is what #572 was."
 
 ;;; vm-xor-string tests
 
-(ert-deftest vm-misc-test-xor-string-exists ()
-  "Test vm-xor-string function exists."
-  (should (fboundp 'vm-xor-string)))
+(ert-deftest vm-misc-test-xor-string-is-its-own-inverse ()
+  "`vm-xor-string' xored twice with the same key gives the original back.
+It is used on the password VM keeps in memory, so the round trip is the whole
+of its job."
+  (require 'vm-crypto)
+  (let* ((text "hunter2!") (key "abcdefgh"))
+    (should (equal text (vm-xor-string (vm-xor-string text key) key)))
+    ;; and the once-xored form is not the text
+    (should-not (equal text (vm-xor-string text key))))
+  ;; equal lengths are required rather than quietly truncated
+  (should-error (vm-xor-string "abc" "ab") :type 'error))
+
+(ert-deftest vm-misc-test-char-to-int-does-not-name-a-misspelt-feature ()
+  "REGRESSION: `vm-char-to-int' asked for `xeamcs'.
+The XEmacs branch of that alias could therefore never be taken.  Harmless on
+GNU Emacs, which is why it sat there; the point is that a misspelt feature
+name is silent, so this checks every one VM asks about."
+  (let ((known '(xemacs berkeley-db native-sound latin-unity gtk scrollbar
+                 nas-sound xface window-system vm-pgg vm-epg tty-frames
+                 toolbar menubar lisp-float-type itimer))
+        (unknown nil))
+    (dolist (file (directory-files vm-test-lisp-dir t "\\.el\\'"))
+      (unless (string-match-p "vm-autoloads\\|vm-cus-load" file)
+        (with-temp-buffer
+          (insert-file-contents file)
+          (goto-char (point-min))
+          (while (re-search-forward "(featurep '\\([a-z0-9-]+\\)" nil t)
+            (let ((f (intern (match-string 1))))
+              (unless (memq f known)
+                (push (cons (file-name-nondirectory file) f) unknown)))))))
+    (should (equal nil unknown))))
 
 ;;; vm-insert-region-from-buffer tests
 

@@ -62,9 +62,6 @@
 
 ;;; vm-emit-eom-blurb tests
 
-(ert-deftest vm-page-test-emit-eom-blurb-exists ()
-  "Test vm-emit-eom-blurb exists."
-  (should (fboundp 'vm-emit-eom-blurb)))
 
 ;;; vm-howl-if-eom tests
 
@@ -88,9 +85,6 @@
 
 ;;; vm-narrow-for-preview tests
 
-(ert-deftest vm-page-test-narrow-for-preview-exists ()
-  "Test vm-narrow-for-preview exists."
-  (should (fboundp 'vm-narrow-for-preview)))
 
 ;;; Scrolling variables
 
@@ -101,9 +95,6 @@
 
 ;;; vm-url-help tests
 
-(ert-deftest vm-page-test-url-help-exists ()
-  "Test vm-url-help function exists."
-  (should (fboundp 'vm-url-help)))
 
 
 ;;; Exposing headers while reading a later page (#513)
@@ -228,6 +219,111 @@ headers are exposed, and that is what the command reads."
       ;; and the whole message is visible, not a page of it
       (should (string-match-p "page three text"
                               (buffer-substring (point-min) (point-max)))))))
+
+;;; What a preview shows, what the end-of-message blurb says, and what the
+;;; URL help offers.  These three had a test each asserting the function was
+;;; bound, which is true of any file that loads.
+
+(defconst vm-page-test--folder
+  (concat "From alice@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: alice@example.com\nSubject: first\n\n"
+          "Line one\nLine two\nLine three\n\n"
+          "From bob@example.com Mon Jan  1 00:00:00 2024\n"
+          "From: bob@example.com\nSubject: second\n\nOther body.\n\n")
+  "Two messages, the first with three body lines to preview part of.")
+
+(ert-deftest vm-page-test-narrow-for-preview-shows-what-was-asked-for ()
+  "A preview shows the headers and `vm-preview-lines' lines of the body.
+The number is the whole point of the option, and nothing checked it."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((m (car vm-message-list)))
+      (let ((vm-preview-lines 1))
+        (vm-narrow-for-preview)
+        (should (= (point-min) (vm-vheaders-of m)))
+        (should (string-match-p "Subject: first" (buffer-string)))
+        (should (string-match-p "Line one" (buffer-string)))
+        (should-not (string-match-p "Line two" (buffer-string))))
+      (let ((vm-preview-lines 2))
+        (vm-narrow-for-preview)
+        (should (string-match-p "Line two" (buffer-string)))
+        (should-not (string-match-p "Line three" (buffer-string)))))))
+
+(ert-deftest vm-page-test-narrow-for-preview-of-zero-lines-shows-headers ()
+  "Zero preview lines means the headers and no body."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((vm-preview-lines 0))
+      (vm-narrow-for-preview)
+      (should (string-match-p "Subject: first" (buffer-string)))
+      (should-not (string-match-p "Line one" (buffer-string))))))
+
+(ert-deftest vm-page-test-narrow-for-preview-t-shows-the-whole-message ()
+  "`vm-preview-lines' t means the message rather than a preview of it."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((m (car vm-message-list))
+          (vm-preview-lines t))
+      (vm-narrow-for-preview)
+      (should (= (point-max) (vm-text-end-of m)))
+      (should (string-match-p "Line three" (buffer-string))))))
+
+(ert-deftest vm-page-test-narrow-for-preview-does-not-run-past-the-message ()
+  "Asking for more lines than the message has shows the message, not the next.
+The folder is one buffer, so the next message is a few characters away."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((m (car vm-message-list))
+          (vm-preview-lines 500))
+      (vm-narrow-for-preview)
+      (should (= (point-max) (vm-text-end-of m)))
+      (should-not (string-match-p "second" (buffer-string))))))
+
+(ert-deftest vm-page-test-emit-eom-blurb-says-nothing-when-not-wanted ()
+  "With `vm-auto-next-message' nil the end of a message is not announced,
+which is what that option's docstring promises."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (&rest args) (setq said args)))
+                ((symbol-function 'vm-summary-sprintf) (lambda (&rest _) "x")))
+        (let ((vm-auto-next-message nil))
+          (vm-emit-eom-blurb)
+          (should-not said))
+        (let ((vm-auto-next-message t))
+          (vm-emit-eom-blurb)
+          (should said)
+          (should (string-match-p "End of message" (nth 1 said))))))))
+
+(ert-deftest vm-page-test-emit-eom-blurb-names-the-recipient-for-your-own-mail ()
+  "In a folder of sent mail the blurb says who it went to, not who sent it.
+`vm-summary-uninteresting-senders' is what tells VM the sender is you."
+  (vm-test-with-folder vm-page-test--folder
+    (setq vm-message-pointer vm-message-list)
+    (let ((said nil))
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (&rest args) (setq said args)))
+                ((symbol-function 'vm-summary-sprintf) (lambda (&rest _) "x")))
+        (let ((vm-auto-next-message t)
+              (vm-summary-uninteresting-senders "alice"))
+          (vm-emit-eom-blurb)
+          (should (string-match-p "End of message %s to" (nth 1 said))))
+        (let ((vm-auto-next-message t)
+              (vm-summary-uninteresting-senders "nobody-here"))
+          (vm-emit-eom-blurb)
+          (should (string-match-p "End of message %s from" (nth 1 said))))))))
+
+(ert-deftest vm-page-test-url-help-names-the-browser-it-would-use ()
+  "The help text on a URL says where button 2 would send it."
+  (let ((vm-url-browser "/usr/bin/firefox"))
+    (should (string-match-p "/usr/bin/firefox" (vm-url-help nil))))
+  (let ((vm-url-browser 'w3-fetch))
+    (should (string-match-p "Emacs W3" (vm-url-help nil))))
+  (let ((vm-url-browser 'browse-url))
+    (should (string-match-p "browse-url" (vm-url-help nil)))
+    (should (string-match-p "button 2" (vm-url-help nil)))
+    (should (string-match-p "button 3" (vm-url-help nil)))))
 
 ;;; Shrunken headers (issue #606)
 
