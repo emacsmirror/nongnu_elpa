@@ -1016,6 +1016,7 @@ one.  A composition has been through none of that yet."
 A folder VM is visiting is appended to in its buffer, so that the copy shows
 up without a revert; any other folder is appended to on disk."
   (let* ((type (or (vm-get-folder-type folder)
+		   (vm-folder-type-for-name folder)
 		   vm-default-folder-type
 		   'From_))
 	 (folder-buffer (vm-get-file-buffer folder))

@@ -708,6 +708,19 @@ An unknown or already-current name is returned unchanged, so this is safe to
 apply to anything that might be a folder type."
   (or (cdr (assq type vm-folder-type-aliases)) type))
 
+(defun vm-folder-type-for-name (file)
+  "The folder type FILE's name asks for, or nil if no name says anything.
+See `vm-folder-type-by-name-alist'."
+  (when file
+    (let ((alist vm-folder-type-by-name-alist)
+	  (name (file-name-nondirectory file))
+	  (type nil))
+      (while (and alist (null type))
+	(when (string-match (car (car alist)) name)
+	  (setq type (cdr (car alist))))
+	(setq alist (cdr alist)))
+      type)))
+
 (defun vm-get-folder-type (&optional file start end ignore-visited)
   "Return a symbol indicating the folder type of the current buffer.
 This function works by examining the beginning of a folder.
@@ -765,7 +778,10 @@ the value of vm-default-From_folder-type will be returned."
 	      (goto-char (point-min))
 	      (cond ((zerop (buffer-size)) nil)
 		    ((looking-at "\n*From ")
-		     (if (not vm-trust-content-length)
+		     (if (not (or vm-trust-content-length
+				  (eq (vm-folder-type-for-name
+				       (or file (buffer-file-name)))
+				      'mboxcl2)))
 			 vm-default-From_-folder-type
 		       (let ((case-fold-search t))
 			 (re-search-forward vm-content-length-search-regexp

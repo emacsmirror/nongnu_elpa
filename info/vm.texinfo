@@ -949,6 +949,17 @@ folder to determine what format it is stored in and decodes it
 appropriately.  (However, such inference is not fully automatic.  See
 below.)
 
+@vindex vm-folder-type-by-name-alist
+A folder that does not exist yet has no contents to examine, so a name
+can say what it is instead.  @code{vm-folder-type-by-name-alist} matches
+file names against folder types, and out of the box a folder whose name
+ends in @samp{.mboxcl2} is created as one --- which is what a name like
+@file{2026-08.out.mboxcl2} was already trying to say.  The same entry
+makes VM believe a @code{Content-Length} in such a folder without
+@code{vm-trust-content-length} being set, since naming the file says as
+much as that option does.  A folder's own contents always win: a BABYL
+file called @file{old.mboxcl2} is read as BABYL.
+
 @findex vm-change-folder-type
 After a folder is loaded into VM, you can convert it to a different
 format using the command @code{vm-change-folder-type}.  It is a good
