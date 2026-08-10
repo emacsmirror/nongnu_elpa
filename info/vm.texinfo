@@ -2025,8 +2025,8 @@ matches the beginnings of any header that should be presented in inverse
 video when previewing.  For example, a value of
 @samp{"^From\\|^Subject"} causes the From and Subject headers to be
 highlighted.  Highlighted headers will be displayed using the face
-specified by @code{vm-highlighted-header-face}, which defaults to
-'bold.
+specified by @code{vm-highlighted-header-face}, which defaults to the
+face @code{vm-highlighted-header} --- bold, unless you customize it.
 
 @vindex vm-preview-read-messages
 By default, VM will not preview messages that are flagged as read.  To

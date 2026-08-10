@@ -412,6 +412,96 @@ they were autoloaded for emacs-vm/vm#609.  An alias needs the explicit form:
          (push symbol orphans))))
     (should (equal nil (sort orphans #'string<)))))
 
+(defun vm-reference-test--keymaps ()
+  "Every keymap VM defines, found rather than listed.
+A list would go stale: vm-epg-compose-mode-map was the one missing from the
+first version of the check below, and the bindings it holds looked wrong."
+  (let ((maps nil))
+    (mapatoms
+     (lambda (symbol)
+       (when (and (string-prefix-p "vm" (symbol-name symbol))
+                  (string-suffix-p "-map" (symbol-name symbol))
+                  (boundp symbol)
+                  (keymapp (symbol-value symbol)))
+         (push (symbol-value symbol) maps))))
+    maps))
+
+(defun vm-reference-test--documented-bindings ()
+  "The key/command pairs the manual states, as (KEY-STRING . COMMAND).
+The manual writes them as `@kbd{s} (@code{vm-save-message})'."
+  (let ((pairs nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      (while (re-search-forward
+              "@kbd{\\([^}]+\\)}[ \n]*(@code{\\(vm-[^}]+\\)})" nil t)
+        ;; @@ is texinfo for a literal @
+        (push (cons (replace-regexp-in-string "@@" "@" (match-string 1))
+                    (intern (match-string 2)))
+              pairs)))
+    (delete-dups (nreverse pairs))))
+
+(ert-deftest vm-reference-test-the-manual-states-the-bindings-that-exist ()
+  "Every key the manual attributes to a command is bound to it.
+The manual tells the reader to type a key and names the command it runs; if
+the binding moves or goes, the manual is telling them to type something else.
+Half of vm-rfaddons.el was deleted in one release, and with it three
+rebindings, which is the way this breaks.
+
+Only the pairs the manual states as a pair are checked: a key mentioned on its
+own may belong to Emacs, or to a mode VM knows nothing about."
+  (vm-reference-load-everything)
+  (let ((maps (vm-reference-test--keymaps))
+        (wrong nil))
+    (dolist (pair (vm-reference-test--documented-bindings))
+      (let ((keys (ignore-errors (kbd (car pair))))
+            (found nil))
+        (dolist (map maps)
+          (when (and keys (eq (lookup-key map keys) (cdr pair)))
+            (setq found t)))
+        (unless found (push pair wrong))))
+    (should (equal nil (nreverse wrong)))))
+
+(ert-deftest vm-reference-test-the-manual-states-the-defaults-that-hold ()
+  "Where the manual says what an option defaults to, that is its default.
+It said `vm-highlighted-header-face' defaults to \\='bold; the default is the
+face `vm-highlighted-header', which inherits bold.  Close enough to go
+unnoticed, and wrong enough to send someone looking for a name that is not
+there.
+
+The value may be marked up or not -- @samp{nil} and a bare \\='bold both
+count, and the first version of this test matched only the marked-up form,
+which is not how the wording that was wrong had been written.
+
+The generated appendix prints every default from the code, so prose saying it
+again is the only place the two can disagree."
+  (vm-reference-load-everything)
+  (let ((wrong nil))
+    (with-temp-buffer
+      (insert-file-contents vm-reference-test--manual)
+      (goto-char (point-min))
+      (while (re-search-forward
+              (concat "@code{\\(vm-[a-z0-9-]+\\)}[^.]\\{0,120\\}?"
+                      "defaults to[ \n]+\\(?:the face[ \n]+\\)?"
+                      "\\(?:@\\(?:samp\\|code\\){\\([^}]+\\)}"
+                      "\\|\\('?[a-z][a-z0-9-]*\\)\\)")
+              nil t)
+        (let* ((symbol (intern (match-string 1)))
+               (said (or (match-string 2) (match-string 3)))
+               (actual (and (boundp symbol)
+                            (format "%S" (default-value symbol)))))
+          (unless (or (null actual)
+                      (equal said actual)
+                      ;; the manual quotes a string without its quotes, and a
+                      ;; symbol with or without its tick
+                      (equal (format "%S" said) actual)
+                      (equal (concat "'" said) actual)
+                      (equal said (concat "'" actual))
+                      ;; "defaults to the value of ..." is not a value
+                      (member said '("the" "whatever" "a" "an" "what")))
+            (push (list symbol said actual) wrong)))))
+    (should (equal nil (nreverse wrong)))))
+
 (provide 'vm-reference-test)
 
 ;;; vm-reference-test.el ends here
