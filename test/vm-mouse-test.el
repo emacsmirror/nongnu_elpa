@@ -236,6 +236,81 @@ ignored -- font-lock's overlays would otherwise answer for it."
       (should (= 5 (overlay-end overlay)))
       (delete-overlay overlay))))
 
+;;; Running an external program.  `vm-run-command' and its two relatives live
+;;; in this file, and had a test each in vm-misc-test.el asserting only that
+;;; they were bound; the behaviour tests are here, with the code.
+
+(ert-deftest vm-mouse-test-run-command-runs-it-and-keeps-the-output ()
+  "The program runs with the arguments given and its output is kept in a
+buffer named after it, which is where a failed MIME viewer's complaint ends
+up."
+  (let ((buffer (get-buffer " */bin/echo*")))
+    (when buffer (kill-buffer buffer)))
+  (unwind-protect
+      (cl-letf (((symbol-function 'vm-inform) #'ignore))
+        (should (= (vm-run-command "/bin/echo" "hello" "world") 0))
+        (with-current-buffer " */bin/echo*"
+          (should (equal (buffer-string) "hello world\n")))
+        ;; and a program that fails says so in its exit status
+        (should (/= (vm-run-command "/bin/sh" "-c" "exit 3") 0)))
+    (let ((buffer (get-buffer " */bin/echo*")))
+      (when buffer (kill-buffer buffer)))
+    (let ((buffer (get-buffer " */bin/sh*")))
+      (when buffer (kill-buffer buffer)))))
+
+(ert-deftest vm-mouse-test-run-command-on-region-passes-the-region-through ()
+  "The region is the program's input and the output buffer gets its output.
+This is how VM decodes and encodes with external programs."
+  (with-temp-buffer
+    (insert "one\ntwo\n")
+    (let ((output (generate-new-buffer " *vm-mouse-test-output*")))
+      (unwind-protect
+          (progn
+            (should (eq (vm-run-command-on-region
+                         (point-min) (point-max) output "/bin/cat")
+                        t))
+            (with-current-buffer output
+              (should (equal (buffer-string) "one\ntwo\n"))))
+        (kill-buffer output)))))
+
+(ert-deftest vm-mouse-test-run-command-on-region-forgives-a-silent-failure ()
+  "A non-zero exit with nothing on stderr is taken as success.
+Users complained when the exit status alone was believed, so the comment in
+the code says; `vm-report-subprocess-errors' is how to get the status anyway."
+  (with-temp-buffer
+    (insert "input\n")
+    (let ((output (generate-new-buffer " *vm-mouse-test-output*")))
+      (unwind-protect
+          (cl-letf (((symbol-function 'vm-warn) #'ignore))
+            (let ((vm-report-subprocess-errors nil))
+              (should (eq (vm-run-command-on-region
+                           (point-min) (point-max) output
+                           "/bin/sh" "-c" "exit 3")
+                          t)))
+            (let ((vm-report-subprocess-errors t))
+              (should (equal (vm-run-command-on-region
+                              (point-min) (point-max) output
+                              "/bin/sh" "-c" "exit 3")
+                             '(3 . "")))))
+        (kill-buffer output)))))
+
+(ert-deftest vm-mouse-test-run-command-on-region-reports-what-went-wrong ()
+  "A program that says something on stderr has that returned with its status,
+whatever `vm-report-subprocess-errors' says: there is something to report."
+  (with-temp-buffer
+    (insert "input\n")
+    (let ((output (generate-new-buffer " *vm-mouse-test-output*")))
+      (unwind-protect
+          (cl-letf (((symbol-function 'vm-warn) #'ignore))
+            (let* ((vm-report-subprocess-errors nil)
+                   (result (vm-run-command-on-region
+                            (point-min) (point-max) output
+                            "/bin/sh" "-c" "echo it went wrong >&2; exit 4")))
+              (should (consp result))
+              (should (= (car result) 4))
+              (should (string-match-p "it went wrong" (cdr result)))))
+        (kill-buffer output)))))
+
 (provide 'vm-mouse-test)
 
 ;;; vm-mouse-test.el ends here

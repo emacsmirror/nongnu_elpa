@@ -37,14 +37,6 @@
 
 ;;; Header highlighting functions
 
-(ert-deftest vm-page-test-highlight-functions-exist ()
-  "Test that header highlighting functions exist."
-  (should (fboundp 'vm-highlight-headers))
-  (should (fboundp 'vm-highlight-headers-maybe))
-  (should (fboundp 'vm-energize-urls))
-  (should (fboundp 'vm-energize-headers))
-  (should (fboundp 'vm-energize-urls-in-message-region)))
-
 ;;; Presentation functions
 
 (ert-deftest vm-page-test-presentation-functions-exist ()
@@ -400,6 +392,103 @@ The overlays would otherwise make VM think the folder needs saving."
   (should (get 'vm-enable-shrunken-headers 'standard-value))
   ;; the addon list it was a flag in is gone entirely
   (should-not (boundp 'vm-enable-addons)))
+
+;;; What energizing a message's URLs does, in place of a test that the five
+;;; highlight functions were bound.
+
+(defun vm-page-test--url-overlays ()
+  "The overlays in the current buffer that mark URLs, in buffer order."
+  (sort (seq-filter (lambda (o) (overlay-get o 'vm-url))
+                    (overlays-in (point-min) (point-max)))
+        (lambda (a b) (< (overlay-start a) (overlay-start b)))))
+
+(defun vm-page-test--url-strings ()
+  "The text of each URL overlay in the current buffer."
+  (mapcar (lambda (o) (buffer-substring (overlay-start o) (overlay-end o)))
+          (vm-page-test--url-overlays)))
+
+(ert-deftest vm-page-test-energize-urls-marks-each-url ()
+  "Each URL gets an overlay over exactly the URL, and nothing else does.
+The overlay is what button 2 and RET act on, so its bounds are the click
+target."
+  (with-temp-buffer
+    (insert "See http://example.com/a and mailto:someone@example.com now.\n"
+            "Not a url at all.\n")
+    (let ((vm-url-search-limit nil)
+          (vm-highlight-url-face 'vm-highlight-url)
+          (vm-url-browser 'browse-url))
+      (vm-energize-urls)
+      (should (equal (vm-page-test--url-strings)
+                     '("http://example.com/a" "mailto:someone@example.com")))
+      ;; and they are buttons: highlighted under the mouse, with a keymap
+      (let ((o (car (vm-page-test--url-overlays))))
+        (should (eq (overlay-get o 'mouse-face) 'highlight))
+        (should (overlay-get o 'vm-button))
+        (should (keymapp (overlay-get o 'local-map)))
+        (should (eq (overlay-get o 'balloon-help) 'vm-url-help))))))
+
+(ert-deftest vm-page-test-energize-urls-does-not-double-up ()
+  "Energizing twice leaves one overlay per URL: the old ones are removed
+first, which is what makes re-presenting a message safe."
+  (with-temp-buffer
+    (insert "http://example.com/a\n")
+    (let ((vm-url-search-limit nil)
+          (vm-highlight-url-face 'vm-highlight-url)
+          (vm-url-browser 'browse-url))
+      (vm-energize-urls)
+      (vm-energize-urls)
+      (should (= (length (vm-page-test--url-overlays)) 1)))))
+
+(ert-deftest vm-page-test-energize-urls-can-take-the-energy-back ()
+  "With a prefix argument the URLs are stripped and none are marked again."
+  (with-temp-buffer
+    (insert "http://example.com/a and http://example.com/b\n")
+    (cl-letf (((symbol-function 'vm-inform) #'ignore))
+      (let ((vm-url-search-limit nil)
+            (vm-highlight-url-face 'vm-highlight-url)
+            (vm-url-browser 'browse-url))
+        (vm-energize-urls)
+        (should (= (length (vm-page-test--url-overlays)) 2))
+        (vm-energize-urls t)
+        (should-not (vm-page-test--url-overlays))))))
+
+(ert-deftest vm-page-test-energize-urls-searches-only-the-ends-of-a-big-region ()
+  "`vm-url-search-limit' stops VM reading a huge message end to end: it looks
+at the first and last half-limit only, so a URL in the middle is not marked.
+The docstring promises this and nothing checked it."
+  (with-temp-buffer
+    (insert "http://example.com/first\n")
+    (insert (make-string 4000 ?x) "\n")
+    (insert "http://example.com/middle\n")
+    (insert (make-string 4000 ?x) "\n")
+    (insert "http://example.com/last\n")
+    (let ((vm-highlight-url-face 'vm-highlight-url)
+          (vm-url-browser 'browse-url))
+      (let ((vm-url-search-limit 200))
+        (vm-energize-urls)
+        (should (equal (vm-page-test--url-strings)
+                       '("http://example.com/first"
+                         "http://example.com/last"))))
+      ;; without a limit the whole message is searched
+      (let ((vm-url-search-limit nil))
+        (vm-energize-urls)
+        (should (= (length (vm-page-test--url-overlays)) 3))))))
+
+(ert-deftest vm-page-test-energize-urls-in-message-region-needs-a-reason ()
+  "Nothing is marked when there is neither a face to show it nor a browser to
+send it to, since the overlay would do nothing."
+  (with-temp-buffer
+    (insert "http://example.com/a\n")
+    (let ((vm-url-search-limit nil)
+          (vm-highlight-url-face nil)
+          (vm-url-browser nil))
+      (vm-energize-urls-in-message-region (point-min) (point-max))
+      (should-not (vm-page-test--url-overlays)))
+    (let ((vm-url-search-limit nil)
+          (vm-highlight-url-face nil)
+          (vm-url-browser 'browse-url))
+      (vm-energize-urls-in-message-region (point-min) (point-max))
+      (should (= (length (vm-page-test--url-overlays)) 1)))))
 
 (provide 'vm-page-test)
 

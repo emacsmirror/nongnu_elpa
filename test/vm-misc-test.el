@@ -625,23 +625,27 @@ interned in it or not.  Testing one with `null' is what #572 was."
 
 ;;; vm-locate-executable-file tests
 
-(ert-deftest vm-misc-test-locate-executable-file-exists ()
-  "Test vm-locate-executable-file function exists."
-  (should (fboundp 'vm-locate-executable-file)))
+(ert-deftest vm-misc-test-locate-executable-file-searches-exec-path ()
+  "A program is looked for on `exec-path', and nil comes back when there is
+none.  VM asks this before offering an external viewer, so a wrong answer
+either loses a viewer or runs nothing."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-misc-test" t))))
+    (unwind-protect
+        (let ((program (expand-file-name "vm-misc-test-program" dir)))
+          (write-region "#!/bin/sh
+exit 0
+" nil program nil 'quiet)
+          (set-file-modes program #o755)
+          (let ((exec-path (list dir)))
+            (should (equal (vm-locate-executable-file "vm-misc-test-program")
+                           program))
+            (should-not (vm-locate-executable-file "vm-no-such-program-here")))
+          ;; not on the path, not found
+          (let ((exec-path nil))
+            (should-not (vm-locate-executable-file "vm-misc-test-program"))))
+      (delete-directory dir t))))
 
 ;;; vm-run-command tests
-
-(ert-deftest vm-misc-test-run-command-exists ()
-  "Test vm-run-command function exists."
-  (should (fboundp 'vm-run-command)))
-
-(ert-deftest vm-misc-test-run-command-on-region-exists ()
-  "Test vm-run-command-on-region function exists."
-  (should (fboundp 'vm-run-command-on-region)))
-
-(ert-deftest vm-misc-test-run-background-command-exists ()
-  "Test vm-run-background-command function exists."
-  (should (fboundp 'vm-run-background-command)))
 
 ;;; vm-octal tests
 
