@@ -21,7 +21,7 @@ docdir = @docdir@
 SUBDIRS = lisp info pixmaps
 
 # the list of source (documentation) files
-SOURCES = NEWS
+SOURCES = NEWS.md
 SOURCES += CHANGES
 SOURCES += README.md
 SOURCES += example.vm
@@ -62,7 +62,7 @@ install-pkg:
 
 uninstall: uninstall-pkg
 	@for i in $(SUBDIRS) ; do ($(MAKE) -C $$i uninstall) || exit 1; done
-	-$(RMDIR) $(DESTDIR)$(docdir)/ 2> /dev/null
+	-$(RMDIR) $(DESTDIR)$(docdir)/
 
 uninstall-pkg:
 	@for i in $(SOURCES) ; do                                  \
@@ -174,5 +174,5 @@ xemacs-package:
 
 ##############################################################################
 tags::
-	etags lisp/*.el contrib/*.el info/*.texinfo NEWS example.vm INSTALL Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
+	etags lisp/*.el contrib/*.el info/*.texinfo NEWS.md example.vm INSTALL.md Makefile.in lisp/Makefile.in info/Makefile.in test/Makefile.in pixmaps/Makefile.in
 

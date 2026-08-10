@@ -5914,7 +5914,7 @@ View the VM manual.
 
 @deffn Command vm-view-news
 @findex vm-view-news
-View NEWS for the current VM version.
+View NEWS.md for the current VM version.
 @end deffn
 
 @node Reference for Message History, Reference for Minibuf, Reference for Menus, Reference
@@ -6331,7 +6331,7 @@ B and E are the beginning and end of the marked region or the current line.
 Certain VM keys have optional bindings in VM, which differ from
 version to version.  Include "(vm-legacy-key-bindings)" in your
 @code{vm-preferences-file} in order to bind them as in version 7.19.  For
-other possibilities, see the NEWS file of VM.
+other possibilities, see NEWS.md in the VM distribution.
 @end deffn
 
 @deffn Command vm-smime-encrypt-message

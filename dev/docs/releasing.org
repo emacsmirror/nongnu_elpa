@@ -46,7 +46,7 @@ The suite reads no real mailbox and sends no real mail.  Every test stubs
 `mail-send', so nothing automated has ever watched a message leave.  These
 checks are the ones a person has to do, and they are the same every release.
 
-Derive extra items from the NEWS section for the release: anything described
+Derive extra items from the NEWS.md section for the release: anything described
 there as changed behaviour wants trying once by hand.
 
 Sending, none of which any test reaches:
@@ -86,7 +86,7 @@ then merge to make official
 
 * version update in these files:
 - Add note about release to info/vm.texinfo @item Version ..
-- NEWS
+- NEWS.md: the "## VM 8.x.x released" heading takes the version and date
 - version in configure.ac AC_INIT
 - lisp/vm.el Version:
   
