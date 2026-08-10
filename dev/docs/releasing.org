@@ -34,6 +34,53 @@ or
   M-x package-lint-current-buffer
 note lint will not be clean, due to xemacs references
 
+* run the automated suite
+- cd test && make test
+- cd test && make test-leaks
+- cd test && make test-imap   # needs a server in test/vm-live-config.el
+- cd test && make test-assert
+
+* manual testing
+
+The suite reads no real mailbox and sends no real mail.  Every test stubs
+`mail-send', so nothing automated has ever watched a message leave.  These
+checks are the ones a person has to do, and they are the same every release.
+
+Derive extra items from the NEWS section for the release: anything described
+there as changed behaviour wants trying once by hand.
+
+Sending, none of which any test reaches:
+- send to yourself with an Fcc header, and check the copy is filed, is in the
+  folder's own format, and that the composition keeps its Fcc header
+- an Fcc naming an IMAP maildrop, against a real account
+- a line past 998 characters, read back in something that is not VM
+- a non-ASCII Subject, once with `vm-send-using-mime' nil and once with it on
+- an attachment, and a message with no body
+- signed and encrypted, with vm-epg, and with an Fcc alongside
+
+Reading:
+- an HTML part, internally and sent to an external viewer with pictures
+- a message with a long recipient list, for shrunken headers
+- a message whose headers arrive as raw 8-bit bytes
+
+Folders, one of each type VM claims to read:
+- From_, mboxcl2, mmdf, babyl; visit, save, expunge, and read the folder back
+  with something that is not VM.  The folder type is written into the index
+  file, so a type change is not only about parsing
+- a folder reached through a symbolic link
+- a Thunderbird folder, then opened in Thunderbird to see what it makes of it
+
+Servers, against real accounts rather than the test dovecot:
+- IMAP: get mail, save between folders, labels, expunge, disconnected mode
+- Gmail, which is the awkward one: its IMAP does not keep keywords
+- POP
+
+Install, the whole way:
+- package-vc-install from the fork, as below
+- make distclean, autoconf, ./configure, make, make install, then run it
+
+Anything found gets an issue of its own before the release goes out.
+
 * release is built initial in fork
 then merge to make official
 
