@@ -2601,5 +2601,66 @@ B and E are the beginning and end of the marked region or the current line."
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;;###autoload
 
+;;; Return receipts, from vm-rfaddons.el (issue #606)
+
+(defun vm-handle-return-receipt ()
+  "Generate a reply to the current message if it requests a return receipt
+and has not been replied so far.
+See the variable `vm-handle-return-receipt-mode' for customization."
+  (interactive)
+  (save-excursion
+    (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
+    (let* ((msg (car vm-message-pointer))
+           (sender (vm-get-header-contents msg  "Return-Receipt-To:"))
+           (mail-signature nil)
+           (mode (and sender
+                      (cond ((equal 'ask vm-handle-return-receipt-mode)
+                             (y-or-n-p "Send a return receipt? "))
+                            ((symbolp vm-handle-return-receipt-mode)
+                             vm-handle-return-receipt-mode)
+                            (t
+                             (eval vm-handle-return-receipt-mode)))))
+           (vm-mutable-frame-configuration 
+	    (if (eq mode 'edit) vm-mutable-frame-configuration nil))
+           (vm-mail-mode-hook nil)
+           (vm-mode-hook nil)
+           message)
+      (when (and mode (not (vm-replied-flag msg)))
+        (vm-reply 1)
+        (vm-mail-mode-remove-header "Return-Receipt-To:")
+        (vm-mail-mode-remove-header "To:")
+        (goto-char (point-min))
+        (insert "To: " sender "\n")
+        (mail-text)
+        (delete-region (point) (point-max))
+        (insert 
+         (format 
+          "Your mail has been received on %s."
+          (current-time-string)))
+        (save-restriction
+          (with-current-buffer (vm-buffer-of msg)
+            (widen)
+            (setq message
+                  (buffer-substring
+                   (vm-vheaders-of msg)
+                   (let ((tp (+ vm-handle-return-receipt-peek
+                                (marker-position
+                                 (vm-text-of msg))))
+                         (ep (marker-position
+                              (vm-end-of msg))))
+                     (if (< tp ep) tp ep))
+                   ))))
+        (insert "\n-----------------------------------------------------------------------------\n"
+                message)
+        (if (re-search-backward "^\\s-+.*" (point-min) t)
+            (replace-match ""))
+        (insert "[...]\n")
+        (if (not (eq mode 'edit))
+            (vm-mail-send-and-exit nil))
+        )
+      )))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (provide 'vm-reply)
 ;;; vm-reply.el ends here

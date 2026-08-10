@@ -82,7 +82,6 @@ type says something false about what the code accepts."
   "No misspelling is left bound, as an alias or otherwise."
   (require 'vm-vars)
   (require 'vm-ps-print)
-  (require 'vm-rfaddons)
   (dolist (pair vm-custom-test--corrected-names)
     (should-not (boundp (car pair)))))
 
@@ -107,7 +106,6 @@ it."
 It has been an obsolete alias since 8.1.1, and pointed at the misspelling; it
 follows the corrected name rather than being dropped with it."
   (require 'vm-vars)
-  (require 'vm-rfaddons)
   (dolist (pair '((vm-mime-delete-all-attachments-types
                    . vm-mime-deletable-types)
                   (vm-mime-delete-all-attachments-types-exceptions

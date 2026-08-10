@@ -7356,6 +7356,21 @@ message, and is worth a key of your own if you use it often.
 
 Written by Robert Fenk, as part of vm-rfaddons.
 
+@unnumberedsubsec Return receipts
+
+@cindex return receipt
+@cindex read receipt
+@cindex @acronym{MDN}
+A sender can ask to be told when you read their message.  VM does not
+answer such a request unless you say so:
+
+@vmdocvmhandlereturnreceipts
+
+@vmdocvmhandlereturnreceiptmode
+
+@noindent
+Written by Robert Fenk, as part of vm-rfaddons.
+
 @unnumberedsubsubsec @acronym{MIME} alternatives
 @cindex @acronym{MIME} alternatives
 The default setting of VM for handling @acronym{MIME} alternatives is

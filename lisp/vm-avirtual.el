@@ -1339,5 +1339,127 @@ with the same name."
 
 ;;----------------------------------------------------------------------------
 
+;;; Virtual folders from BBDB, from vm-rfaddons.el (issue #606)
+
+(declare-function bbdb-record-xfields "ext:bbdb" (record))
+(declare-function bbdb-record-mail "ext:bbdb" (record))
+(declare-function bbdb-split "ext:bbdb" (separator string))
+(declare-function bbdb-records "ext:bbdb" ())
+(declare-function bbdb-save "ext:bbdb" (&optional prompt noisy))
+
+(defun bbdb/vm-set-virtual-folder-alist ()
+  "Create a `vm-virtual-folder-alist' according to the records in the bbdb.
+For each record that has a `vm-virtual' attribute, add or modify the
+corresponding BBDB-VM-VIRTUAL element of the `vm-virtual-folder-alist'.
+
+  (BBDB-VM-VIRTUAL ((vm-primary-inbox)
+                    (author-or-recipient BBDB-RECORD-NET-REGEXP)))
+
+The element gets added to the `element-name' sublist of the
+`vm-virtual-folder-alist'."
+  (interactive)
+  (let (notes-field  email-regexp folder selector)
+    (dolist (record (bbdb-records))
+      (setq notes-field (bbdb-record-xfields record))
+      (when (and (listp notes-field)
+                 (setq folder (cdr (assq 'vm-virtual notes-field))))
+        (setq email-regexp (mapconcat (lambda (addr)
+					(regexp-quote addr))
+                                      (bbdb-record-mail record) "\\|"))
+        (unless (zerop (length email-regexp))
+          (setq folder (or (assoc folder vm-virtual-folder-alist)
+                           (car
+                            (setq vm-virtual-folder-alist
+                                  (nconc (list (list folder
+                                                     (list (list vm-primary-inbox)
+                                                           (list 'author-or-recipient))))
+                                               vm-virtual-folder-alist))))
+                folder (cadr folder)
+                selector (assoc 'author-or-recipient folder))
+
+          (if (cdr selector)
+              (if (not (string-match (regexp-quote email-regexp)
+                                     (cadr selector)))
+                  (setcdr selector (list (concat (cadr selector) "\\|"
+                                                 email-regexp))))
+            (nconc selector (list email-regexp)))))
+      )
+    ))
+
+(defun vm-virtual-find-selector (selector-spec type)
+  "Return the first selector of TYPE in SELECTOR-SPEC."
+  (let ((s (assoc type selector-spec)))
+    (unless s
+      (while (and (not s) selector-spec)
+        (setq s (and (listp (car selector-spec))
+                     (vm-virtual-find-selector (car selector-spec) type))
+              selector-spec (cdr selector-spec))))
+    s))
+
+(defcustom bbdb/vm-virtual-folder-alist-by-mail-alias-alist nil
+  "*A list of (ALIAS . FOLDER-NAME) pairs, which map an alias to a folder."
+  :group 'vm-avirtual
+  :type '(repeat (cons :tag "Mapping Definition"
+                       (regexp :tag "Alias")
+                       (string :tag "Folder Name"))))
+
+(defun bbdb/vm-set-virtual-folder-alist-by-mail-alias ()
+  "Create a `vm-virtual-folder-alist' according to the records in the bbdb.
+For each record check wheather its alias is in the variable 
+`bbdb/vm-virtual-folder-alist-by-mail-alias-alist' and then
+add/modify the corresponding VM-VIRTUAL element of the
+`vm-virtual-folder-alist'. 
+
+  (BBDB-VM-VIRTUAL ((vm-primary-inbox)
+                    (author-or-recipient BBDB-RECORD-NET-REGEXP)))
+
+The element gets added to the `element-name' sublist of the
+`vm-virtual-folder-alist'."
+  (interactive)
+  (let (notes-field email-regexp mail-aliases folder selector)
+    (dolist (record (bbdb-records))
+      (setq notes-field (bbdb-record-xfields record))
+      (when (and (listp notes-field)
+                 (setq mail-aliases (cdr (assq 'mail-alias notes-field)))
+                 (setq mail-aliases (bbdb-split "," mail-aliases)))
+        (setq folder nil)
+        (while mail-aliases
+          (setq folder
+                (assoc (car mail-aliases)
+                       bbdb/vm-virtual-folder-alist-by-mail-alias-alist))
+          
+          (when (and folder
+                     (setq folder (cdr folder)
+                           email-regexp (mapconcat (lambda (addr)
+						     (regexp-quote addr))
+                                                   (bbdb-record-mail record)
+                                                   "\\|"))
+                     (> (length email-regexp) 0))
+            (setq folder (or (assoc folder vm-virtual-folder-alist)
+                             (car
+                              (setq vm-virtual-folder-alist
+                                    (nconc
+                                     (list
+                                      (list folder
+                                            (list (list vm-primary-inbox)
+                                                  (list 'author-or-recipient))
+                                            ))
+                                     vm-virtual-folder-alist))))
+                  folder (cadr folder)
+                  selector (vm-virtual-find-selector folder
+                                                     'author-or-recipient))
+            (unless selector
+              (nconc (cdr folder) (list (list 'author-or-recipient))))
+            (if (cdr selector)
+                (if (not (string-match (regexp-quote email-regexp)
+                                       (cadr selector)))
+                    (setcdr selector (list (concat (cadr selector) "\\|"
+                                                   email-regexp))))
+              (nconc selector (list email-regexp))))
+          (setq mail-aliases (cdr mail-aliases)))
+        ))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 (provide 'vm-avirtual)
 ;;; vm-avirtual.el ends here

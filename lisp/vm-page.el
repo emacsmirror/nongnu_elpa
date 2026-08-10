@@ -850,6 +850,8 @@ preview or the full message, governed by the the variables
      (when vm-enable-shrunken-headers
        (vm-shrunken-headers))))
 
+  (when vm-handle-return-receipts
+    (vm-handle-return-receipt))
   (vm-run-hook-on-message 'vm-select-message-hook (car vm-message-pointer)))
 
 (defalias 'vm-preview-current-message 'vm-present-current-message)
@@ -1295,6 +1297,22 @@ exposed and marked as read."
 	(goto-char (vm-extent-start-position e))
       (goto-char old-point)
       (error "No more buttons"))))
+
+(defun vm-isearch-presentation ()
+  "Switches to the Presentation buffer and starts isearch."
+  (interactive)
+  (vm-select-folder-buffer-and-validate 0 (vm-interactive-p))
+  (let ((target (or vm-presentation-buffer (current-buffer))))
+    (if (get-buffer-window-list target)
+        (select-window (car (get-buffer-window-list target)))
+      (switch-to-buffer target)))
+  (isearch-forward))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Contributed by Alley Stoughton
+;; gnu.emacs.vm.info, 2011-02-26
 
 (provide 'vm-page)
 ;;; vm-page.el ends here

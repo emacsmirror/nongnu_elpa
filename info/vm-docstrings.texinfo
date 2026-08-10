@@ -3,92 +3,6 @@
 @c with the hyphens taken out.  Invoke one in a chapter to say
 @c what the code says about that symbol.
 
-@macro vmdocvmhandlereturnreceipt
-@deffn Command vm-handle-return-receipt
-@findex vm-handle-return-receipt
-Generate a reply to the current message if it requests a return receipt
-and has not been replied so far.
-See the variable @code{vm-handle-return-receipt-mode} for customization.
-@end deffn
-
-@end macro
-
-@macro vmdocvmisearchpresentation
-@deffn Command vm-isearch-presentation
-@findex vm-isearch-presentation
-Switches to the Presentation buffer and starts isearch.
-@end deffn
-
-@end macro
-
-@macro vmdocvmrfaddonsinfectvm
-@deffn Command vm-rfaddons-infect-vm &optional sit-for option-list exclude-option-list
-@findex vm-rfaddons-infect-vm
-This function will setup the key bindings, advices and hooks
-necessary to use all the function of vm-rfaddons.el.
-
-SIT-FOR specifies the number of seconds to display the infection message.
-The OPTION-LIST can be use to select individual option.
-The EXCLUDE-OPTION-LIST can be use to exclude individual option.
-
-The following options are possible.
-
-@code{vm-mail-mode} options:
- - attach-save-files: bind [C-c C-a] to @code{vm-attach-files-in-directory} 
-
-Other EXPERIMENTAL options:
- - auto-save-all-attachments: add @code{vm-mime-auto-save-all-attachments} to
-   @code{vm-select-new-message-hook} for automatic saving of attachments.
-
-If you want to use only a subset of the options then call
-@code{vm-rfaddons-infect-vm} like this:
-@example
-        (vm-rfaddons-infect-vm 2 '(vm-mail-mode shrunken-headers)
-                                 '(fake-date))
-@end example
-This will enable all @code{vm-mail-mode} options plus the
-@code{shrunken-headers} option, but it will exclude the @code{fake-date} option of the
-@code{vm-mail-mode} options.
-
-or do the binding and advising on your own.
-@end deffn
-
-@end macro
-
-@macro vmdocvmenableaddons
-@defopt vm-enable-addons
-@vindex vm-enable-addons
-A list of addons to enable, t for all and nil to disable all.
-The addons are what is left of @code{vm-rfaddons-infect-vm}; the rest of what
-was there is part of VM proper now, with an ordinary option each.
-
-You must restart VM after a change to cause any effects.
-@end defopt
-
-@end macro
-
-@macro vmdocvmhandlereturnreceiptmode
-@defopt vm-handle-return-receipt-mode
-@vindex vm-handle-return-receipt-mode
-Tells @code{vm-handle-return-receipt} how to handle return receipts.
-One can choose between @code{ask}, @code{auto}, @code{edit}, or an expression which should
-return t if the return receipts should be sent.
-
-Default value: @code{edit}
-@end defopt
-
-@end macro
-
-@macro vmdocvmhandlereturnreceiptpeek
-@defopt vm-handle-return-receipt-peek
-@vindex vm-handle-return-receipt-peek
-Number of characters from the original message body to be returned.
-
-Default value: @code{500}
-@end defopt
-
-@end macro
-
 @macro vmdocvmcompactfolder
 @deffn Command vm-compact-folder &rest rest
 @findex vm-compact-folder
@@ -7825,6 +7739,41 @@ fetched on demand, or nil to signify no limit.
 
 @end macro
 
+@macro vmdocvmhandlereturnreceiptmode
+@defopt vm-handle-return-receipt-mode
+@vindex vm-handle-return-receipt-mode
+Tells @code{vm-handle-return-receipt} how to handle return receipts.
+One can choose between @code{ask}, @code{auto}, @code{edit}, or an expression which should
+return t if the return receipts should be sent.
+
+Default value: @code{edit}
+@end defopt
+
+@end macro
+
+@macro vmdocvmhandlereturnreceiptpeek
+@defopt vm-handle-return-receipt-peek
+@vindex vm-handle-return-receipt-peek
+Number of characters from the original message body to be returned.
+
+Default value: @code{500}
+@end defopt
+
+@end macro
+
+@macro vmdocvmhandlereturnreceipts
+@defopt vm-handle-return-receipts
+@vindex vm-handle-return-receipts
+Non-nil means answer a message asking for a return receipt.
+@code{vm-handle-return-receipt-mode} says whether the answer is sent as it
+stands, asked about first, or left in a composition buffer for you.
+
+A return receipt is a request, not an instruction: a sender cannot make
+your mail reader tell them you read something, and VM does not by default.
+@end defopt
+
+@end macro
+
 @macro vmdocvmhonormimecontentdisposition
 @defopt vm-honor-mime-content-disposition
 @vindex vm-honor-mime-content-disposition
@@ -9230,6 +9179,14 @@ Toggle exposing and hiding message headers that are normally not visible.
 
 @end macro
 
+@macro vmdocvmisearchpresentation
+@deffn Command vm-isearch-presentation
+@findex vm-isearch-presentation
+Switches to the Presentation buffer and starts isearch.
+@end deffn
+
+@end macro
+
 @macro vmdocvmmovetonextbutton
 @deffn Command vm-move-to-next-button count
 @findex vm-move-to-next-button
@@ -9716,6 +9673,16 @@ Like vm-forward-message-plain, but run in a newly created frame.
 
 @end macro
 
+@macro vmdocvmhandlereturnreceipt
+@deffn Command vm-handle-return-receipt
+@findex vm-handle-return-receipt
+Generate a reply to the current message if it requests a return receipt
+and has not been replied so far.
+See the variable @code{vm-handle-return-receipt-mode} for customization.
+@end deffn
+
+@end macro
+
 @macro vmdocvmmailcheckforemptysubject
 @deffn Command vm-mail-check-for-empty-subject
 @findex vm-mail-check-for-empty-subject
@@ -9809,6 +9776,32 @@ in a MIME-aware mail reader.  VM copies and encodes the current
 mail composition buffer and displays it as a mail folder.
 Type @code{q} to quit this temp folder and return to composing your
 message.
+@end deffn
+
+@end macro
+
+@macro vmdocvmreply
+@deffn Command vm-reply count
+@findex vm-reply
+Reply to the sender of the current message.
+Numeric prefix argument N means to reply to the current message plus the
+next N-1 messages.  A negative N means reply to the current message and
+the previous N-1 messages.
+
+If invoked on marked messages (via @code{vm-next-command-uses-marks}),
+all marked messages will be replied to.
+
+You will be placed into a standard Emacs Mail mode buffer to compose and
+send your message.  See the documentation for the function @code{mail} for
+more info.
+
+Note that the normal binding of C-c C-y in the reply buffer is
+automatically changed to @code{vm-yank-message} during a reply.  This
+allows you to yank any message from the current folder into a
+reply.
+
+Normal VM commands may be accessed in the reply buffer by prefixing them
+with C-c C-v.
 @end deffn
 
 @end macro

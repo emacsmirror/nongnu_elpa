@@ -85,8 +85,6 @@
 (declare-function get-coding-system "vm-xemacs.el" (name))
 (declare-function facep "vm-xemacs.el" (face-or-name))
 
-(declare-function vm-rfaddons-infect-vm "vm-rfaddons.el" 
-		  (&optional sit-for option-list exclude-option-list))
 (declare-function vm-summary-faces-mode "vm-summary-faces.el" 
 		  (&optional arg))
 
@@ -1615,7 +1613,6 @@ draft messages."
         (require 'vm-toolbar)
         (require 'vm-window)
         (require 'vm-menu)
-        (require 'vm-rfaddons)
         (add-hook 'kill-emacs-hook 'vm-garbage-collect-global)
         ;; Offers unfinished compositions to the postponed folder as Emacs
         ;; is left, rather than leaving them to be written to files one at a
@@ -1630,8 +1627,6 @@ draft messages."
 	;; against the new name.
 	(setq vm-default-folder-type
 	      (vm-canonical-folder-type vm-default-folder-type))
-	(when vm-enable-addons
-	  (vm-rfaddons-infect-vm 0 vm-enable-addons))
 	(if (not vm-window-configuration-file)
 	    (setq vm-window-configurations vm-default-window-configuration)
 	  (or (vm-load-window-configurations vm-window-configuration-file)

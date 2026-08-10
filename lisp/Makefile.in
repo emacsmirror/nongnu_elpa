@@ -40,7 +40,6 @@ SOURCES += vm-pop.el
 SOURCES += vm-ps-print.el
 SOURCES += vm-reply.el
 SOURCES += vm-dired.el
-SOURCES += vm-rfaddons.el
 SOURCES += vm-save.el
 SOURCES += vm-search.el
 SOURCES += vm-serial.el

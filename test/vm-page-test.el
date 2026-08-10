@@ -299,8 +299,8 @@ The overlays would otherwise make VM think the folder needs saving."
   "`vm-enable-shrunken-headers' replaces the vm-enable-addons flag it had."
   (should-not (default-value 'vm-enable-shrunken-headers))
   (should (get 'vm-enable-shrunken-headers 'standard-value))
-  ;; and the old flag is gone from the addon list
-  (should-not (memq 'shrunken-headers (default-value 'vm-enable-addons))))
+  ;; the addon list it was a flag in is gone entirely
+  (should-not (boundp 'vm-enable-addons)))
 
 (provide 'vm-page-test)
 
