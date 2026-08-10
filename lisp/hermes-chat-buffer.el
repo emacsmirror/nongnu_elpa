@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -846,6 +847,10 @@ noise, not a thinking process.  Reasoning that genuinely differs is kept."
 
 (defvar hermes-chat-state-change-hook nil
   "Hook run in a Hermes chat buffer when dashboard-visible state changes.")
+
+(defun hermes-chat-register-state-change-function (function)
+  "Add FUNCTION to `hermes-chat-state-change-hook'."
+  (add-hook 'hermes-chat-state-change-hook function))
 
 (defvar-local hermes-chat--status-state nil
   "Plist describing the live status shown in the chat header.")

@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -897,15 +898,8 @@ Return non-nil when the transport request starts."
        (hermes-chat--submit-signal-error context err)
        nil))))
 
-;; Register the submit pipeline with `hermes-chat-buffer''s queue/drain flow
-;; and the dashboard's event routing; the registries keep the lower layers
-;; free of upward references (see the require-order note above).
-(setq hermes-chat--submit-function #'hermes-chat--submit-content)
-(setq hermes-chat--turn-event-function #'hermes-chat--run-turn-reducer)
-(setq hermes-chat--busy-submit-event-function
-      #'hermes-chat--hold-busy-submit-event)
-(setq hermes-chat--busy-submit-abandon-function
-      #'hermes-chat--abandon-busy-submit)
+;; The registry installation near the end of this file wires this submit
+;; pipeline into lower chat layers without upward references.
 
 
 (defun hermes-chat-queue-message (&optional message)
@@ -1673,33 +1667,43 @@ titled, after that title -- so chats stay filterable with
   (hermes-chat--new-buffer profile))
 
 
-;; Native slash commands are wired here, where the commands live; the
-;; registry variable and dispatch stay in `hermes-chat-slash' so the
-;; lower layer needs no declare-function back into this file.
-(setq hermes-chat--native-slash-commands
-  (list
-   (cons '("commands") (lambda (_arg) (hermes-chat-show-commands)))
-   (cons '("queue" "q")
-         (lambda (arg) (hermes-chat--dashboard-dispatch-command "queue" arg)))
-   (cons '("background" "bg" "btw")
-         (lambda (arg) (hermes-chat-background arg)))
-   (cons '("steer") (lambda (arg) (hermes-chat-steer-message arg)))
-   (cons '("stop") (lambda (_arg) (hermes-chat-stop-processes)))
-   (cons '("interrupt" "int") (lambda (_arg) (hermes-chat-interrupt)))
-   (cons '("clear" "reset") (lambda (_arg) (hermes-chat-clear)))
-   (cons '("new") (lambda (arg) (hermes-chat--new-buffer nil arg)))
-   (cons '("model") (lambda (_arg) (hermes-chat-switch-model)))
-   (cons '("title" "rename")
-         (lambda (arg)
-           (if (string-empty-p arg)
-               (call-interactively #'hermes-chat-rename)
-             (hermes-chat-rename arg))))
-   (cons '("handoff")
-         (lambda (arg)
-           (if (string-empty-p arg)
-               (call-interactively #'hermes-chat-handoff)
-             (hermes-chat-handoff arg))))
-   (cons '("sessions") (lambda (_arg) (hermes-list-sessions)))))
+;; Registries keep lower chat layers free of upward references.
+(defun hermes-chat--install-registries ()
+  "Install chat-owned callbacks into lower-layer registries."
+  (setq hermes-chat--submit-function #'hermes-chat--submit-content
+        hermes-chat--turn-event-function #'hermes-chat--run-turn-reducer
+        hermes-chat--busy-submit-event-function
+        #'hermes-chat--hold-busy-submit-event
+        hermes-chat--busy-submit-abandon-function
+        #'hermes-chat--abandon-busy-submit
+        hermes-chat--native-slash-commands
+        (list
+         (cons '("commands") (lambda (_arg) (hermes-chat-show-commands)))
+         (cons '("queue" "q")
+               (lambda (arg)
+                 (hermes-chat--dashboard-dispatch-command "queue" arg)))
+         (cons '("background" "bg" "btw")
+               (lambda (arg) (hermes-chat-background arg)))
+         (cons '("steer") (lambda (arg) (hermes-chat-steer-message arg)))
+         (cons '("stop") (lambda (_arg) (hermes-chat-stop-processes)))
+         (cons '("interrupt" "int")
+               (lambda (_arg) (hermes-chat-interrupt)))
+         (cons '("clear" "reset") (lambda (_arg) (hermes-chat-clear)))
+         (cons '("new") (lambda (arg) (hermes-chat--new-buffer nil arg)))
+         (cons '("model") (lambda (_arg) (hermes-chat-switch-model)))
+         (cons '("title" "rename")
+               (lambda (arg)
+                 (if (string-empty-p arg)
+                     (call-interactively #'hermes-chat-rename)
+                   (hermes-chat-rename arg))))
+         (cons '("handoff")
+               (lambda (arg)
+                 (if (string-empty-p arg)
+                     (call-interactively #'hermes-chat-handoff)
+                   (hermes-chat-handoff arg))))
+         (cons '("sessions") (lambda (_arg) (hermes-list-sessions))))))
+
+(hermes-chat--install-registries)
 
 (provide 'hermes-chat)
 ;;; hermes-chat.el ends here

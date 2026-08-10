@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -461,6 +462,7 @@ command `hermes-list-NAME'.  BODY is a plist:
   :command-doc     list-command docstring, optional
   :on-result       function (RESULT) called in the buffer after each render,
                    for side effects only (e.g. failure notifications)
+  :on-mode         function called when the generated major mode initializes
 
 `:rows' must be a pure result-to-entry transform.  `:fetch' starts the async
 dashboard operation; this macro owns its client lifecycle and buffer effects."
@@ -482,7 +484,8 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
         (keys (plist-get body :keys))
         (doc (plist-get body :doc))
         (command-doc (plist-get body :command-doc))
-        (on-result (plist-get body :on-result)))
+        (on-result (plist-get body :on-result))
+        (on-mode (plist-get body :on-mode)))
     `(progn
        (defvar-keymap ,map
          :doc ,(format "Keymap for `%s'." mode)
@@ -509,6 +512,7 @@ dashboard operation; this macro owns its client lifecycle and buffer effects."
          (setq-local revert-buffer-function #',revert)
          ,@(and dynamic
                 `((add-hook 'window-size-change-functions #',size-change nil t)))
+         ,@(and on-mode `((funcall ,on-mode)))
          (tabulated-list-init-header))
        (defun ,render (result)
          ,(format "Render dashboard RESULT into the %s buffer in place." title)

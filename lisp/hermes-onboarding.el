@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -44,6 +45,10 @@
 (defvar hermes-onboarding-auth-changed-function #'ignore
   "Function called after provider authentication changes successfully.")
 
+(defun hermes-onboarding-set-auth-changed-function (function)
+  "Set FUNCTION to run after a provider authentication change."
+  (setq hermes-onboarding-auth-changed-function function))
+
 (defun hermes-onboarding--auth-changed ()
   "Invalidate provider data and report a successful authentication change."
   (hermes-dashboard-transport-invalidate-model-options)
@@ -72,7 +77,7 @@ the gateway accepts a pasted key or returns its own error on save."
 
 (defun hermes-onboarding--choose-provider (result)
   "Return an API-key provider chosen with completion from RESULT.
-The candidate is the provider name; an `:annotation-function' tags each `API'.
+The candidate is the provider name; an `:annotation-function' tags each API.
 Signal a `user-error' when none are connectable."
   (let ((providers (hermes-onboarding--unauthed-providers result)))
     (unless providers

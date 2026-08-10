@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -101,7 +102,7 @@ on a failed GET come from the shared dashboard transport, which talks only to
 (defun hermes-kanban--format-time (value)
   "Return VALUE (a Unix timestamp) formatted, or an empty string."
   (if (numberp value)
-      (format-time-string "%Y-%m-%d %H:%M" value)
+      (format-time-string "%F %R" value)
     ""))
 
 ;;; Shared status display helpers

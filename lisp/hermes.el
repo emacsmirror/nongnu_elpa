@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Version: 0.2.0
 ;; URL: https://git.thanosapollo.org/emacs-hermes
 ;; Keywords: tools, convenience
@@ -161,8 +162,12 @@ Set by `hermes-dashboard--check-auth' to surface a provider-onboarding card.")
   "P" ("Command palette" hermes-command-palette)
   "?" ("Help" hermes-dashboard-popup))
 
-(keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
-(keymap-set hermes-dashboard-mode-map "C-c C-p" #'hermes-command-palette)
+(defun hermes-dashboard--install-key-aliases ()
+  "Install dashboard key aliases omitted from popup metadata."
+  (keymap-set hermes-dashboard-mode-map "h" #'hermes-dashboard-popup)
+  (keymap-set hermes-dashboard-mode-map "C-c C-p" #'hermes-command-palette))
+
+(hermes-dashboard--install-key-aliases)
 
 (defun hermes-dashboard--header-line ()
   "Return the dashboard header line."
@@ -725,9 +730,10 @@ dashboard URL, so it re-fetches automatically after the configured URL changes."
   (when-let* ((node (ewoc-nth hermes-dashboard--ewoc 0)))
     (ewoc-goto-node hermes-dashboard--ewoc node)))
 
-(add-hook 'hermes-chat-state-change-hook #'hermes-dashboard--schedule-refresh)
-(setq hermes-onboarding-auth-changed-function
-      #'hermes-dashboard--provider-auth-changed)
+(hermes-chat-register-state-change-function
+ #'hermes-dashboard--schedule-refresh)
+(hermes-onboarding-set-auth-changed-function
+ #'hermes-dashboard--provider-auth-changed)
 
 (defun hermes--managed-buffer-p (buffer)
   "Return whether BUFFER has a Hermes major mode."

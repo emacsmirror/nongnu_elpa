@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -468,15 +469,15 @@ Return the next pending prompt."
           (hermes-chat--advance-prompt-response
            context prompt (or resolved-count
                               (plist-get context :response-count)))))
-    (let ((message (format "%s %s"
-                           (hermes-chat--prompt-display-name prompt)
-                           (if canceled "canceled" "response sent"))))
+    (let ((status (concat (hermes-chat--prompt-display-name prompt)
+                          " "
+                          (if canceled "canceled" "response sent"))))
       (hermes-chat--insert-prompt-status
-       prompt message (if canceled 'error 'done))
+       prompt status (if canceled 'error 'done))
       (unless (hermes-chat--show-pending-prompt-state next-prompt)
         (hermes-chat--set-header-state
          :status (if (hermes-chat--active-turn-p) 'running 'ready)
-         :activity message))
+         :activity status))
       (when next-prompt
         (hermes-chat--schedule-auto-prompt next-prompt)))))
 
@@ -487,16 +488,16 @@ Return the next pending prompt."
 
 (defun hermes-chat--prompt-response-stale (context prompt)
   "Clear stale PROMPT owned by CONTEXT without claiming a response was sent."
-  (let ((message (format "%s request no longer pending"
-                         (hermes-chat--prompt-display-name prompt)))
+  (let ((status (concat (hermes-chat--prompt-display-name prompt)
+                        " request no longer pending"))
         (next-prompt
          (hermes-chat--advance-prompt-response
           context prompt (plist-get context :response-count))))
-    (hermes-chat--insert-local-status message 'error)
+    (hermes-chat--insert-local-status status 'error)
     (unless (hermes-chat--show-pending-prompt-state next-prompt)
       (hermes-chat--set-header-state
        :status (if (hermes-chat--active-turn-p) 'running 'ready)
-       :activity message))
+       :activity status))
     (when next-prompt
       (hermes-chat--schedule-auto-prompt next-prompt))))
 

@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -233,7 +234,7 @@ attached, idle session; the gateway transfers it to the platform's home channel.
         (hermes-chat--handoff-begin buffer given)
       (hermes-chat--handoff-prompt-platform buffer))))
 
-(add-hook 'hermes-chat-cleanup-functions #'hermes-chat--handoff-stop)
+(hermes-chat-register-cleanup-function #'hermes-chat--handoff-stop)
 
 (provide 'hermes-chat-handoff)
 ;;; hermes-chat-handoff.el ends here

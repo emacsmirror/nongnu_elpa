@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -30,6 +31,9 @@
 (require 'subr-x)
 
 (declare-function dbus-unregister-object "dbus.el")
+
+(defvar notifications-on-action-map)
+(defvar notifications-on-action-object)
 
 (defcustom hermes-notifications-events
   '(chat-reply chat-error prompt background kanban-attention cron-failure)
@@ -72,17 +76,14 @@ WIDTH defaults to 160 columns."
 
 (defun hermes-notifications--remove-action-callback (callback)
   "Remove CALLBACK from pending desktop notification actions."
-  (with-suppressed-warnings
-      ((free-vars notifications-on-action-map
-                  notifications-on-action-object))
-    (setq notifications-on-action-map
-          (cl-delete callback notifications-on-action-map
-                     :key #'cadr :test #'eq))
-    (when (and (null notifications-on-action-map)
-               notifications-on-action-object
-               (fboundp 'dbus-unregister-object))
-      (dbus-unregister-object notifications-on-action-object)
-      (setq notifications-on-action-object nil))))
+  (setq notifications-on-action-map
+        (cl-delete callback notifications-on-action-map
+                   :key #'cadr :test #'eq))
+  (when (and (null notifications-on-action-map)
+             notifications-on-action-object
+             (fboundp 'dbus-unregister-object))
+    (dbus-unregister-object notifications-on-action-object)
+    (setq notifications-on-action-object nil)))
 
 (defun hermes-notifications--fallback (title body)
   "Show notification TITLE and BODY in the echo area and return nil."

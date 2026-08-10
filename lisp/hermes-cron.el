@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -20,8 +21,8 @@
 
 ;;; Commentary:
 
-;; A `tabulated-list' browser over Hermes dashboard cron APIs.  `t' pauses or
-;; resumes the job at point, `D' removes it, `c' creates one, `e' edits it, `!'
+;; A `tabulated-list' browser over Hermes dashboard cron APIs.  The t key pauses
+;; or resumes the job at point, D removes it, c creates one, e edits it, !
 ;; triggers it immediately, and RET opens job details with recent run history.
 
 ;;; Code:
@@ -221,7 +222,7 @@ token when present, otherwise the configured dashboard URL."
 (defun hermes-cron--time (value)
   "Return VALUE as a display timestamp."
   (cond
-   ((numberp value) (format-time-string "%Y-%m-%d %H:%M" value))
+   ((numberp value) (format-time-string "%F %R" value))
    (t (or (hermes-transport--scalar-string value) ""))))
 
 (defun hermes-cron--format-job (job)
@@ -616,14 +617,13 @@ The first render only records a baseline so pre-existing failures do not alert."
             #'hermes-cron--jobs-result))
   :rows #'hermes-cron--rows
   :on-result #'hermes-cron--note-failures
+  :on-mode #'hermes-cron--maybe-start-auto-refresh
   :keys ("RET" #'hermes-cron-show
          "e" #'hermes-cron-edit
          "!" #'hermes-cron-trigger
          "t" #'hermes-cron-toggle
          "D" #'hermes-cron-remove
          "c" #'hermes-cron-create))
-
-(add-hook 'hermes-cron-mode-hook #'hermes-cron--maybe-start-auto-refresh)
 
 (provide 'hermes-cron)
 ;;; hermes-cron.el ends here

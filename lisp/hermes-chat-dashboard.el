@@ -3,6 +3,7 @@
 ;; Copyright (C) 2026  Thanos Apollo
 
 ;; Author: Thanos Apollo <public@thanosapollo.org>
+;; Assisted-by: Hermes:MoA
 ;; Keywords: tools, convenience
 
 ;; This program is free software; you can redistribute it and/or modify
@@ -112,6 +113,10 @@ the reducer defined in `hermes-chat'.")
   "Abnormal-free hook run when a chat buffer releases its resources.
 Modules add their per-buffer teardown here (e.g. `hermes-chat-handoff'
 stops its poll) instead of being called by name from this file.")
+
+(defun hermes-chat-register-cleanup-function (function)
+  "Register FUNCTION to release per-buffer chat resources."
+  (add-hook 'hermes-chat-cleanup-functions function))
 
 (defun hermes-chat--closed-status-event-p (event)
   "Return non-nil when EVENT reports a closed live transport."
