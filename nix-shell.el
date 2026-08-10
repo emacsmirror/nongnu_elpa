@@ -126,9 +126,11 @@ PHASE phase to run.
 FILE used for base of Nix expresions.
 ATTR from NIX-FILE to get Nix expressions from."
   (shell-command
-   (format "%s '%s' -A '%s' --run 'if [ -z \"$%sPhase\" ]; then eval %sPhase; else eval \"$%sPhase\"; fi' &"
+   (format "%s %s -A %s --run 'if [ -z \"$%sPhase\" ]; then eval %sPhase; else eval \"$%sPhase\"; fi' &"
 	   nix-shell-executable
-	   file attr phase phase phase)))
+	   (shell-quote-argument file)
+	   (shell-quote-argument attr)
+	   phase phase phase)))
 
 (declare-function flycheck-buffer "flycheck")
 
@@ -142,7 +144,9 @@ The DRV file to use."
 	 (inputs (remove nil
 			 (apply 'append
 				(mapcar (lambda (prop)
-					  (split-string (alist-get prop env)))
+					  (let ((value (alist-get prop env)))
+					    (when value
+					      (split-string value))))
 					nix-shell-inputs))))
 	 ;; This attribute is in `mkShell' — ideally, we'd only check this variable in those cases.
 	 (ld-library-path (alist-get 'LD_LIBRARY_PATH env)))
