@@ -40,6 +40,11 @@ INFO_FILE = vm.info
 INFO_SPLIT_GLOB = vm.info vm.info-[0-9]
 INFO_INSTALLED = $(INFO_FILE:%=$(infodestdir)/%)
 
+# Info files older releases installed and this one does not.  vm-pcrisis had a
+# manual of its own until Personality Crisis became part of VM; an install over
+# one of those leaves it behind, and its uninstall no longer knows about it.
+STALE_INFO_GLOB = vm-pcrisis.info vm-pcrisis.info-[0-9]
+
 # The reference appendix, generated from the docstrings in lisp/ so that the
 # manual does not carry a second copy of them.  Generated, but committed:
 # vm.texinfo @includes it, and makeinfo writes no manual at all when it is
@@ -137,6 +142,7 @@ install-pkg: info
 		test -f "$$f" && $(INSTALL) "$$f" $(infodestdir) || true; \
 	done
 	$(INSTALL_INFO) --dir-file=$(infodestdir)/dir $(INFO_INSTALLED)
+	@$(MAKE) remove-stale-info
 	@echo VM INFO files successfully installed
 
 uninstall-pkg:
@@ -150,8 +156,21 @@ uninstall-pkg:
 	for f in $(INFO_SPLIT_GLOB); do \
 		$(RM) -f "$(infodestdir)/$$f"; \
 	done
+	@$(MAKE) remove-stale-info
 	@# Empty or not there: either way there is nothing to report.
 	@$(RMDIR) $(infodestdir)/ 2> /dev/null || true
+
+.PHONY: remove-stale-info
+remove-stale-info:
+	@# The dir entry goes first: install-info wants the file it names.
+	@for f in $(STALE_INFO_GLOB); do \
+		if test -f "$(infodestdir)/$$f"; then \
+			echo "removing outdated $(infodestdir)/$$f"; \
+			$(INSTALL_INFO) --delete --dir-file=$(infodestdir)/dir \
+				"$(infodestdir)/$$f" 2> /dev/null || true; \
+			$(RM) -f "$(infodestdir)/$$f"; \
+		fi; \
+	done
 
 ##############################################################################
 clean:
