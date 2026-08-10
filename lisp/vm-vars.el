@@ -7547,12 +7547,8 @@ You must restart VM after a change to cause any effects."
 		     clean-subject)
 	      (const :tag "Do not replace Date: header when sending a message"
 		     fake-date)
-	      (const :tag "Bind '.' on attachment buttons to 'vm-mime-take-action-on-attachment'"
-		     take-action-on-attachment)
 	      (const :tag "Automatically save attachments of new messages" 
 		     auto-save-all-attachments)
-	      (const :tag "Delete external attachments of a message when expunging it." 
-		     auto-delete-message-external-body)
 	      (const :tag "Enable all addons" t)))
 
 (defcustom vm-summary-enable-faces nil

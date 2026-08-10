@@ -30,6 +30,22 @@ VM 8.?.?
   * vm-pine has been converted to from an add-on to a standard part of VM.
     It has been renamed vm-postpone, with compatibility aliases for vm-pine
     names.
+  * vm-rfaddons.el has lost the features VM does elsewhere or that were of
+    marginal use.  Gone: the `.' and `T' rebindings and
+    vm-mime-take-action-on-attachment (VM has the `$' attachment commands),
+    vm-toggle-mark and vm-toggle-deleted (vm-mark-message,
+    vm-toggle-flag-message), vm-get-all-new-mail (vm-get-new-mail with a
+    prefix argument), the summary attachment label (%P and
+    vm-summary-attachment-indicator), the rf-faces option, vm-save-everything,
+    vm-smtp-server-online-p, the rmail-style keys, vm-assimilate-html-message
+    and vm-assimilate-outlook-message, vm-save-message-preview,
+    vm-mail-mode-comment-region, vm-strip-spamassassin-report, vm-delete-quit,
+    vm-delete-message-action, and vm-mail-send-or-feed-it, which queued mail
+    with feedmail when the SMTP server did not answer a probe.
+  * The auto-delete-message-external-body option is gone with them.  It
+    deleted files from disk when a message was flagged deleted, from advice
+    on vm-set-deleted-flag-of, and its own comment said it should have been
+    counting references first.
   * An Fcc header naming an IMAP maildrop now files the copy on the server.
     It was written to a file named after the maildrop specification unless
     vm-imap-save-composition had been added to mail-send-hook by hand; that

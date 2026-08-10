@@ -69,21 +69,6 @@ what to do with it.
 
 @appendixsubsec Commands
 
-@deffn Command vm-assimilate-html-message &optional plain
-@findex vm-assimilate-html-message
-Try to assimilate a message which is only in html format.
-When called with a prefix argument then it will replace the message
-with the PLAIN text version otherwise it will create a text/mixed or
-text/alternative message depending on the value of the variable
-@code{vm-assimilate-html-mixed}.
-@end deffn
-
-@deffn Command vm-assimilate-outlook-message
-@findex vm-assimilate-outlook-message
-Assimilate a message which has been forwarded by MS Outlook.
-You will need vm-postpone.el in order to get this work.
-@end deffn
-
 @deffn Command vm-attach-files-in-directory directory &optional regexp
 @findex vm-attach-files-in-directory
 Attach all files in DIRECTORY matching REGEXP.
@@ -92,22 +77,6 @@ which should be attached, when empty all files will be attached.
 
 When called with a prefix arg it will do a literal match instead of a regexp
 match.
-@end deffn
-
-@deffn Command vm-delete-message-action &optional arg
-@findex vm-delete-message-action
-Delete current message and perform some action after it, e.g. move to next.
-Call it with a prefix ARG to change the action.
-@end deffn
-
-@deffn Command vm-delete-quit
-@findex vm-delete-quit
-Delete mails and quit.  Expunge only if it’s not the primary inbox.
-@end deffn
-
-@deffn Command vm-get-all-new-mail
-@findex vm-get-all-new-mail
-Get mail for all opened VM folders.
 @end deffn
 
 @deffn Command vm-handle-return-receipt
@@ -137,16 +106,6 @@ headers.
 @deffn Command vm-mail-mode-citation-clean-up
 @findex vm-mail-mode-citation-clean-up
 Remove doubly-cited text and extra lines in a mail message.
-@end deffn
-
-@deffn Command vm-mail-mode-comment-region beg end &optional arg
-@findex vm-mail-mode-comment-region
-Comment or uncomment each line in the region BEG to END.
-With just a non-nil prefix ARG, uncomment each line in region.
-Numeric prefix arg ARG means use ARG comment characters.
-If ARG is negative, delete that many comment characters instead.
-Comments are terminated on each line, even for syntax in which newline does
-not end the comment.  Blank lines do not get comments.
 @end deffn
 
 @deffn Command vm-mail-mode-elide-reply-region b e
@@ -186,25 +145,11 @@ save attachments.
     (add-hook 'vm-select-new-message-hook #'vm-mime-auto-save-all-attachments)
 @end deffn
 
-@deffn Command vm-mime-auto-save-all-attachments-delete-external msg
-@findex vm-mime-auto-save-all-attachments-delete-external
-Deletes the external attachments created by @code{vm-save-all-attachments}.
-You may want to use this function in order to get rid of the external files
-when deleting a message.
-
-See the advice in @code{vm-rfaddons-infect-vm}.
-@end deffn
-
 @deffn Command vm-mime-set-8bit-composition-charset charset &optional buffer-local
 @findex vm-mime-set-8bit-composition-charset
 Set @code{vm-mime-8bit-composition-charset} to CHARSET.
 With the optional BUFFER-LOCAL prefix arg, this only affects the current
 buffer.
-@end deffn
-
-@deffn Command vm-mime-take-action-on-attachment action
-@findex vm-mime-take-action-on-attachment
-Do something with the MIME attachment at point.
 @end deffn
 
 @deffn Command vm-rfaddons-infect-vm &optional sit-for option-list exclude-option-list
@@ -217,9 +162,6 @@ The OPTION-LIST can be use to select individual option.
 The EXCLUDE-OPTION-LIST can be use to exclude individual option.
 
 The following options are possible.
-
-@code{general} options:
- - rf-faces: change some faces
 
 @code{vm-mail-mode} options:
  - attach-save-files: bind [C-c C-a] to @code{vm-attach-files-in-directory} 
@@ -234,55 +176,19 @@ The following options are possible.
 
 Other EXPERIMENTAL options:
  - auto-save-all-attachments: add @code{vm-mime-auto-save-all-attachments} to
-@example
-   ‘vm-select-new-message-hook’ for automatic saving of attachments and define
-   an advice for ‘vm-set-deleted-flag-of’ in order to automatically delete
-   the files corresponding to MIME objects of type message/external-body when
-   deleting the message.
-@end example
- - return-receipt-to
+   @code{vm-select-new-message-hook} for automatic saving of attachments.
 
 If you want to use only a subset of the options then call
 @code{vm-rfaddons-infect-vm} like this:
 @example
-        (vm-rfaddons-infect-vm 2 '(general vm-mail-mode shrunken-headers)
+        (vm-rfaddons-infect-vm 2 '(vm-mail-mode shrunken-headers)
                                  '(fake-date))
 @end example
-This will enable all @code{general} and @code{vm-mail-mode} options plus the
+This will enable all @code{vm-mail-mode} options plus the
 @code{shrunken-headers} option, but it will exclude the @code{fake-date} option of the
 @code{vm-mail-mode} options.
 
 or do the binding and advising on your own.
-@end deffn
-
-@deffn Command vm-rmail-down
-@findex vm-rmail-down
-Go to the next message, or down one line, as @code{vm-rmail-mode} says.
-See @code{vm-rmail-up}.
-@end deffn
-
-@deffn Command vm-rmail-toggle &optional arg
-@findex vm-rmail-toggle
-
-@end deffn
-
-@deffn Command vm-rmail-up
-@findex vm-rmail-up
-Go to the previous message, or up one line, as @code{vm-rmail-mode} says.
-In Rmail cursor mode the arrow keys move between messages, as Rmail’s do;
-otherwise they move point, as they do everywhere else in Emacs.  Toggled
-with @code{vm-rmail-toggle}.
-@end deffn
-
-@deffn Command vm-save-everything
-@findex vm-save-everything
-Save all VM folder buffers, BBDB and newsrc if GNUS is started.
-@end deffn
-
-@deffn Command vm-save-message-preview file
-@findex vm-save-message-preview
-Save preview of a message in FILE.
-It saves the decoded message and not the raw message like @code{vm-save-message}
 @end deffn
 
 @deffn Command vm-shrunken-headers &optional toggle
@@ -312,63 +218,12 @@ Toggle display of shrunken headers.
 Toggle display of shrunken headers.
 @end deffn
 
-@deffn Command vm-smtp-server-online-p &optional host port
-@findex vm-smtp-server-online-p
-Opens SMTP connection to see if the server HOST on PORT is online.
-Results are cached in @code{smtp-server-online-p-cache} for non interactive
-calls.
-@end deffn
-
-@deffn Command vm-strip-spamassassin-report
-@findex vm-strip-spamassassin-report
-Strips spamassassin-reports from a message.
-@end deffn
-
 @deffn Command vm-toggle-best-mime
 @findex vm-toggle-best-mime
 Toggle between best-internal and best mime decoding modes. (Alley Soughton)
 @end deffn
 
-@deffn Command vm-toggle-deleted count &optional m
-@findex vm-toggle-deleted
-
-@end deffn
-
-@deffn Command vm-toggle-mark count &optional m
-@findex vm-toggle-mark
-
-@end deffn
-
 @appendixsubsec User options
-
-@defopt vm-assimilate-html-command
-@vindex vm-assimilate-html-command
-Command/function which should be called for stripping tags.
-
-When this is a string, then it is a command which is fed with the
-html and which should return the text.
-Otherwise it should be a Lisp function which performs the stripping of
-the tags.
-
-I prefer to use lynx for this job:
-
-#!/bin/tcsh
-
-tmpfile=/tmp/$USER-striptags.html
-cat > $tmpfile
-lynx -force_html -dump $tmpfile
-rm $tmpfile
-
-Default value: @code{"striptags"}
-@end defopt
-
-@defopt vm-assimilate-html-mixed
-@vindex vm-assimilate-html-mixed
-Non-nil values cause messages to be assimilated as text/mixed.
-Otherwise they will be assimilated into a text/alternative message.
-
-Default value: @code{t}
-@end defopt
 
 @defopt vm-attach-files-in-directory-default-charset
 @vindex vm-attach-files-in-directory-default-charset
@@ -521,35 +376,6 @@ Subdirectory where to save the attachments of a message.
 This variable might be set to a string, a function or anything which evaluates
 to a string.  If set to nil we use a concatenation of the from, subject and
 date header as subdir for the attachments.
-@end defopt
-
-@defopt vm-rmail-mode
-@vindex vm-rmail-mode
-Non-nil means up/down move to the next/previous message instead.
-Otherwise normal cursor movement is done.  Specifically only modes
-listed in @code{vm-rmail-mode-list} are affected.
-Use @code{vm-rmail-toggle} to switch between normal and this mode.
-@end defopt
-
-@defopt vm-rmail-mode-list
-@vindex vm-rmail-mode-list
-Mode to activate @code{vm-rmail-mode} in.
-
-Default value: @code{(vm-summary-mode)}
-@end defopt
-
-@defopt vm-spamassassin-strip-report
-@vindex vm-spamassassin-strip-report
-Shell command used to strip spamassassin-reports from a message.
-
-Default value: @code{"spamassassin -d"}
-@end defopt
-
-@defopt vm-summary-attachment-label
-@vindex vm-summary-attachment-label
-Label added to messages containing an attachments.
-
-Default value: @code{"$"}
 @end defopt
 
 @node Reference for Deleting and expunging, Reference for Digests, Reference for Additions, Reference
