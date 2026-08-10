@@ -143,7 +143,9 @@
 		    (if (nth 2 record)
 			(nth 1 cell)
 		      (nth 2 cell))))
-	  ((eq (car cell) 'vm-set-labels)
+	  ;; cell is what the alist above had, and it never has vm-set-labels
+	  ;; in it -- so this said (car cell) and never ran.
+	  ((eq (car record) 'vm-set-labels)
 	   (setq labels (nth 2 record))
 	   (vm-inform 1 "VM Undo! %s/%s %s%s"
 		    (buffer-name (vm-buffer-of m))

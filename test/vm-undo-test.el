@@ -276,11 +276,6 @@ non-boundary records had message structs."
 ;; Note: vm-undo-describe requires real message structures for full testing.
 ;; Here we test that the function recognizes different record types.
 
-(ert-deftest vm-undo-test-describe-recognizes-operations ()
-  "Test that vm-undo-describe can be called."
-  ;; Just verify the function is callable - it needs real messages for output
-  (should (fboundp 'vm-undo-describe)))
-
 ;;; vm-squeeze-consecutive-undo-boundaries tests
 
 (ert-deftest vm-undo-test-squeeze-removes-consecutive-nils ()
@@ -763,6 +758,62 @@ would make one undo command do nothing.  Squeezing them is what stops that."
     (let ((vm-undo-record-list '((a) nil (b))))
       (vm-squeeze-consecutive-undo-boundaries)
       (should (equal vm-undo-record-list '((a) nil (b)))))))
+
+;;; What an undo says it is undoing
+
+(ert-deftest vm-undo-test-describe-names-the-flag-and-its-two-states ()
+  "Undoing a flag change says which flag, and which way the undo goes.
+A record is (FUNCTION MESSAGE VALUE) where VALUE is what undoing will set --
+`vm-set-xxxx-flag\=' records `(not flag)\=' -- so a record carrying t reads
+undeleted -> deleted: the state it is in now, and the state it goes to."
+  (vm-test-with-folder
+      (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+              "From: alice@example.com\nSubject: one\n\nBody.\n\n")
+    (let ((m (car vm-message-list))
+          said)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level fmt &rest args)
+                   (setq said (apply #'format fmt args)))))
+        (vm-undo-describe (list 'vm-set-deleted-flag m t))
+        (should (string-match-p "undeleted -> deleted" said))
+        (vm-undo-describe (list 'vm-set-deleted-flag m nil))
+        (should (string-match-p "deleted -> undeleted" said))
+        (vm-undo-describe (list 'vm-set-replied-flag m t))
+        (should (string-match-p "unanswered -> answered" said))
+        ;; and it names the folder the message is in
+        (should (string-match-p (regexp-quote (buffer-name)) said))))))
+
+(ert-deftest vm-undo-test-describe-names-the-labels ()
+  "Undoing a label change says what the labels go back to.
+It never said anything: the clause tested `(car cell)', which is what the
+alist of flag names gave -- and that alist has no `vm-set-labels' in it, so
+`cell' was nil and the test could not be true."
+  (vm-test-with-folder
+      (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+              "From: alice@example.com\nSubject: one\n\nBody.\n\n")
+    (let ((m (car vm-message-list))
+          said)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (_level fmt &rest args)
+                   (setq said (apply #'format fmt args)))))
+        (vm-undo-describe (list 'vm-set-labels m '("work" "urgent")))
+        (should (string-match-p "labels set to work, urgent" said))
+        (setq said nil)
+        (vm-undo-describe (list 'vm-set-labels m nil))
+        (should (string-match-p "lost all its labels" said))))))
+
+(ert-deftest vm-undo-test-describe-says-nothing-about-what-it-does-not-know ()
+  "A record of a kind the message does not cover is not announced.
+`vm-set-buffer-modified-p' records are in the list too, and there is nothing
+to tell the user about them."
+  (vm-test-with-folder
+      (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+              "From: alice@example.com\nSubject: one\n\nBody.\n\n")
+    (let (said)
+      (cl-letf (((symbol-function 'vm-inform)
+                 (lambda (&rest args) (setq said args))))
+        (vm-undo-describe (list 'vm-set-buffer-modified-p nil))
+        (should-not said)))))
 
 (provide 'vm-undo-test)
 

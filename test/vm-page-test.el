@@ -28,13 +28,6 @@
 
 ;;; Button navigation functions
 
-(ert-deftest vm-page-test-button-functions-exist ()
-  "Test that button navigation functions exist."
-  (should (fboundp 'vm-next-button))
-  (should (fboundp 'vm-previous-button))
-  (should (fboundp 'vm-move-to-next-button))
-  (should (fboundp 'vm-move-to-previous-button)))
-
 ;;; Header highlighting functions
 
 ;;; Presentation functions
@@ -489,6 +482,73 @@ send it to, since the overlay would do nothing."
           (vm-url-browser 'browse-url))
       (vm-energize-urls-in-message-region (point-min) (point-max))
       (should (= (length (vm-page-test--url-overlays)) 1)))))
+
+;;; Moving between the buttons in a message.  `vm-next-button' and its three
+;;; relatives had one test between them, that they were bound.
+
+(defun vm-page-test--button (start end)
+  "Make the text from START to END a VM button, and return its overlay."
+  (let ((o (make-overlay start end)))
+    (overlay-put o 'vm-button t)
+    (overlay-put o 'mouse-face 'highlight)
+    o))
+
+(ert-deftest vm-page-test-move-to-button-goes-to-the-next-one ()
+  "Moving forward lands on the start of the next button, one per count."
+  (with-temp-buffer
+    (insert "see http://one.example/ and http://two.example/ and end")
+    (let ((first (progn (goto-char (point-min))
+                        (search-forward "http://one.example/")
+                        (vm-page-test--button (match-beginning 0) (point))))
+          (second (progn (search-forward "http://two.example/")
+                         (vm-page-test--button (match-beginning 0) (point)))))
+      (goto-char (point-min))
+      (vm-move-to-xxxx-button 1 t)
+      (should (= (point) (overlay-start first)))
+      (goto-char (point-min))
+      (vm-move-to-xxxx-button 2 t)
+      (should (= (point) (overlay-start second))))))
+
+(ert-deftest vm-page-test-move-to-button-goes-back-as-well ()
+  "Moving backward lands on the start of the previous button."
+  (with-temp-buffer
+    (insert "see http://one.example/ and http://two.example/ and end")
+    (let ((first (progn (goto-char (point-min))
+                        (search-forward "http://one.example/")
+                        (vm-page-test--button (match-beginning 0) (point)))))
+      (goto-char (point-min))
+      (search-forward "http://two.example/")
+      (vm-page-test--button (match-beginning 0) (point))
+      (goto-char (point-max))
+      (vm-move-to-xxxx-button 2 nil)
+      (should (= (point) (overlay-start first))))))
+
+(ert-deftest vm-page-test-move-to-button-leaves-point-alone-when-there-is-none ()
+  "With no button to go to, point does not move and the error says so.
+The docstrings promise both, and a command that moved point and then failed
+would lose the reader's place."
+  (with-temp-buffer
+    (insert "no buttons here at all\n")
+    (goto-char 5)
+    (let ((text-quoting-style 'grave))
+      (should (equal (cadr (should-error (vm-move-to-xxxx-button 1 t)))
+                     "No more buttons"))
+      (should (= (point) 5)))))
+
+(ert-deftest vm-page-test-move-to-button-ignores-what-is-not-a-button ()
+  "An overlay without `vm-button' is not one: font-lock's overlays, and the
+mouse-face VM puts on a URL it will not act on, are both passed over."
+  (with-temp-buffer
+    (insert "see http://one.example/ and http://two.example/ end")
+    (goto-char (point-min))
+    (search-forward "http://one.example/")
+    (let ((decoration (make-overlay (match-beginning 0) (point))))
+      (overlay-put decoration 'mouse-face 'highlight))
+    (search-forward "http://two.example/")
+    (let ((button (vm-page-test--button (match-beginning 0) (point))))
+      (goto-char (point-min))
+      (vm-move-to-xxxx-button 1 t)
+      (should (= (point) (overlay-start button))))))
 
 (provide 'vm-page-test)
 
