@@ -153,10 +153,20 @@ KEYWORDS a list of strings to match as Nix keywords."
    "\\(?:[[:space:];:{}()]\\|$\\)"
    ))
 
+(defun nix--keyword-matcher (regexp)
+  "Return a font-lock matcher searching for REGEXP.
+Leaves point at the end of the keyword (group 1) instead of after
+the trailing delimiter, so the delimiter can still serve as the
+leading delimiter of an adjacent keyword, as in \"else if\"."
+  (lambda (limit)
+    (when (re-search-forward regexp limit t)
+      (goto-char (match-end 1))
+      t)))
+
 (defconst nix-font-lock-keywords
-  `((,(nix-re-keywords nix-keywords) 1 'nix-keyword-face)
-    (,(nix-re-keywords nix-warning-keywords) 1 'nix-keyword-warning-face)
-    (,(nix-re-keywords nix-builtins) 1 'nix-builtin-face)
+  `((,(nix--keyword-matcher (nix-re-keywords nix-keywords)) 1 'nix-keyword-face)
+    (,(nix--keyword-matcher (nix-re-keywords nix-warning-keywords)) 1 'nix-keyword-warning-face)
+    (,(nix--keyword-matcher (nix-re-keywords nix-builtins)) 1 'nix-builtin-face)
     (,nix-re-url 0 'nix-constant-face)
     (,nix-re-file-path 0 'nix-constant-face)
     (,nix-re-variable-assign 1 'nix-attribute-face)
