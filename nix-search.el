@@ -58,7 +58,7 @@
 (defvar-local nix-search--use-flakes nil
   "Whether the current buffer's results came from a flake search")
 
-(defun nix-search--refresh ()
+(defun nix-search--refresh (&rest ignore)
   "Refresh Nix Search buffer"
   (interactive)
   (let ((results (nix-search--search nix-search--filter nix-search--file nil
@@ -78,24 +78,25 @@
 (nix-search-create-keymap)
 (nix-search-create-menu)
 
-(define-derived-mode nix-search-mode view-mode "Nix Search"
+(define-derived-mode nix-search-mode special-mode "Nix Search"
   "Major mode for showing Nix search results.
 
 \\{nix-search-mode-map}"
   :interactive nil
   :group 'nix-mode
+  (setq-local revert-buffer-function #'nix-search--refresh)
 
   (read-only-mode 1))
 
 ;;;###autoload
-(defun nix-search--display (results &optional display-buffer use-flakes search file)
-  (unless display-buffer (setq display-buffer (generate-new-buffer "*nix search*")))
-  (with-current-buffer display-buffer
+(defun nix-search--display (results &optional buffer use-flakes search file)
+  (unless buffer (setq buffer (generate-new-buffer "*nix search*")))
+  (with-current-buffer buffer
+    (unless (derived-mode-p 'nix-search-mode)
+      (nix-search-mode))
     (setq-local nix-search--filter search)
     (setq-local nix-search--file file)
     (setq-local nix-search--use-flakes use-flakes)
-    (unless (derived-mode-p 'nix-search-mode)
-      (nix-search-mode))
     (let ((inhibit-read-only t))
       (erase-buffer)
       (insert "-------------------------------------------------------------------------------\n")
@@ -111,10 +112,10 @@
 	  (insert (format "* %s (%s)\n%s\n" pname version description))
 	  (insert "-------------------------------------------------------------------------------\n")
 	  ))))
-  (display-buffer display-buffer))
+  (display-buffer buffer))
 
 ;;;###autoload
-(defun nix-search (search &optional file display-buffer)
+(defun nix-search (search &optional file buffer)
   "Run nix search.
 SEARCH a search term to use.
 FILE a Nix expression to search in."
@@ -123,7 +124,7 @@ FILE a Nix expression to search in."
 	 (file (or file (if use-flakes (nix-read-flake) (nix-read-file))))
 	 (results (nix-search--search search file nil use-flakes)))
     (when (called-interactively-p 'any)
-      (nix-search--display results display-buffer use-flakes search file))
+      (nix-search--display results buffer use-flakes search file))
     results))
 
 (defun nix-search-read-attr (file)
