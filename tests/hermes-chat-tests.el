@@ -158,6 +158,8 @@
          (funcall callback '(:type delta :content "Finished\ncleanly"))
          (funcall callback '(:type done))
          (should (eq (car notice) 'chat-reply))
+         (should (equal (nth 1 notice)
+                        (format "%s: Finished cleanly" (buffer-name buffer))))
          (should (equal (nth 2 notice) "Finished cleanly"))
          (should (eq (plist-get (nthcdr 3 notice) :buffer) buffer)))))))
 

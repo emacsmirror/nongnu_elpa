@@ -447,12 +447,12 @@ When INTERRUPTED-P is non-nil, also clear the interrupt request state."
   "Notify for terminal EVENT belonging to ASSISTANT-ID."
   (pcase (plist-get event :type)
     ('done
-     (hermes-notifications-notify
-      'chat-reply "Hermes reply ready"
-      (let ((preview (hermes-notifications-preview
-                      (hermes-chat--entry-content-by-id assistant-id))))
-        (if (string-empty-p preview) "Reply completed" preview))
-      :buffer (current-buffer) :category "hermes.chat" :urgency 'normal))
+     (let* ((preview (hermes-notifications-preview
+                      (hermes-chat--entry-content-by-id assistant-id)))
+            (message (if (string-empty-p preview) "Reply completed" preview)))
+       (hermes-notifications-notify
+        'chat-reply (format "%s: %s" (buffer-name) message) message
+        :buffer (current-buffer) :category "hermes.chat" :urgency 'normal)))
     ('error
      (unless (hermes-chat--interrupted-error-event-p event)
        (hermes-notifications-notify
