@@ -69,16 +69,6 @@ what to do with it.
 
 @appendixsubsec Commands
 
-@deffn Command vm-attach-files-in-directory directory &optional regexp
-@findex vm-attach-files-in-directory
-Attach all files in DIRECTORY matching REGEXP.
-The optional argument MATCH might specify a regexp matching all files
-which should be attached, when empty all files will be attached.
-
-When called with a prefix arg it will do a literal match instead of a regexp
-match.
-@end deffn
-
 @deffn Command vm-handle-return-receipt
 @findex vm-handle-return-receipt
 Generate a reply to the current message if it requests a return receipt
@@ -89,34 +79,6 @@ See the variable @code{vm-handle-return-receipt-mode} for customization.
 @deffn Command vm-isearch-presentation
 @findex vm-isearch-presentation
 Switches to the Presentation buffer and starts isearch.
-@end deffn
-
-@deffn Command vm-mime-attach-files-in-directory directory &optional regexp
-@findex vm-mime-attach-files-in-directory
-Attach all files in DIRECTORY matching REGEXP.
-The optional argument MATCH might specify a regexp matching all files
-which should be attached, when empty all files will be attached.
-
-When called with a prefix arg it will do a literal match instead of a regexp
-match.
-@end deffn
-
-@deffn Command vm-mime-auto-save-all-attachments &optional count
-@findex vm-mime-auto-save-all-attachments
-Save all attachments to a subdirectory.
-Root directory for saving is @code{vm-mime-attachment-save-directory}.
-
-You might add this to @code{vm-select-new-message-hook} in order to automatically
-save attachments.
-
-    (add-hook 'vm-select-new-message-hook #'vm-mime-auto-save-all-attachments)
-@end deffn
-
-@deffn Command vm-mime-set-8bit-composition-charset charset &optional buffer-local
-@findex vm-mime-set-8bit-composition-charset
-Set @code{vm-mime-8bit-composition-charset} to CHARSET.
-With the optional BUFFER-LOCAL prefix arg, this only affects the current
-buffer.
 @end deffn
 
 @deffn Command vm-rfaddons-infect-vm &optional sit-for option-list exclude-option-list
@@ -150,29 +112,7 @@ This will enable all @code{vm-mail-mode} options plus the
 or do the binding and advising on your own.
 @end deffn
 
-@deffn Command vm-toggle-best-mime
-@findex vm-toggle-best-mime
-Toggle between best-internal and best mime decoding modes. (Alley Soughton)
-@end deffn
-
 @appendixsubsec User options
-
-@defopt vm-attach-files-in-directory-default-charset
-@vindex vm-attach-files-in-directory-default-charset
-The default charset used for attached files of type @code{text}.
-If set to nil you will be asked for the charset.
-If set to @code{guess} it will be determined by @code{vm-determine-proper-charset}, but
-this may take some time, since the file needs to be visited.
-
-Default value: @code{guess}
-@end defopt
-
-@defopt vm-attach-files-in-directory-default-type
-@vindex vm-attach-files-in-directory-default-type
-The default MIME-type for attached files.
-If set to nil you will be asked for the type if it cannot be guessed.
-For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}.
-@end defopt
 
 @defopt vm-enable-addons
 @vindex vm-enable-addons
@@ -197,29 +137,6 @@ Default value: @code{edit}
 Number of characters from the original message body to be returned.
 
 Default value: @code{500}
-@end defopt
-
-@defopt vm-mime-attach-files-in-directory-default-charset
-@vindex vm-mime-attach-files-in-directory-default-charset
-The default charset used for attached files of type @code{text}.
-If set to nil you will be asked for the charset.
-If set to @code{guess} it will be determined by @code{vm-determine-proper-charset}, but
-this may take some time, since the file needs to be visited.
-@end defopt
-
-@defopt vm-mime-attach-files-in-directory-default-type
-@vindex vm-mime-attach-files-in-directory-default-type
-The default MIME-type for attached files.
-If set to nil you will be asked for the type if it cannot be guessed.
-For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}.
-@end defopt
-
-@defopt vm-mime-auto-save-all-attachments-subdir
-@vindex vm-mime-auto-save-all-attachments-subdir
-Subdirectory where to save the attachments of a message.
-This variable might be set to a string, a function or anything which evaluates
-to a string.  If set to nil we use a concatenation of the from, subject and
-date header as subdir for the attachments.
 @end defopt
 
 @node Reference for Deleting and expunging, Reference for Digests, Reference for Additions, Reference
@@ -3674,6 +3591,16 @@ will extract the content type information from the headers in
 this case and not prompt you for it in the minibuffer.
 @end deffn
 
+@deffn Command vm-attach-files-in-directory directory &optional regexp
+@findex vm-attach-files-in-directory
+Attach all files in DIRECTORY matching REGEXP.
+The optional argument MATCH might specify a regexp matching all files
+which should be attached, when empty all files will be attached.
+
+When called with a prefix arg it will do a literal match instead of a regexp
+match.
+@end deffn
+
 @deffn Command vm-attach-message message &optional description
 @findex vm-attach-message
 Attach a message from a VM folder to the current VM
@@ -4129,6 +4056,17 @@ header section at the top.  For files without MIME headers, you
 should use @code{vm-attach-file} to attach the file.
 @end deffn
 
+@deffn Command vm-mime-auto-save-all-attachments &optional count
+@findex vm-mime-auto-save-all-attachments
+Save all attachments to a subdirectory.
+Root directory for saving is @code{vm-mime-attachment-save-directory}.
+
+You might add this to @code{vm-select-new-message-hook} in order to automatically
+save attachments.
+
+    (add-hook 'vm-select-new-message-hook #'vm-mime-auto-save-all-attachments)
+@end deffn
+
 @deffn Command vm-mime-change-content-disposition
 @findex vm-mime-change-content-disposition
 Change the disposition of the attachment at point in this composition.
@@ -4257,6 +4195,13 @@ touched.
 Run the @code{vm-mime-function} for the MIME button at point.
 If optional argument FUNCTION is given, run it instead.
 					          USR, 2011-03-07
+@end deffn
+
+@deffn Command vm-mime-set-8bit-composition-charset charset &optional buffer-local
+@findex vm-mime-set-8bit-composition-charset
+Set @code{vm-mime-8bit-composition-charset} to CHARSET.
+With the optional BUFFER-LOCAL prefix arg, this only affects the current
+buffer.
 @end deffn
 
 @deffn Command vm-nuke-alternative-text/html &optional count mlist
@@ -4462,7 +4407,29 @@ default location.  When directory does not exist it will be
 confirmed before creating a new directory.
 @end deffn
 
+@deffn Command vm-toggle-best-mime
+@findex vm-toggle-best-mime
+Toggle between best-internal and best mime decoding modes. (Alley Soughton)
+@end deffn
+
 @appendixsubsec User options
+
+@defopt vm-attach-files-in-directory-default-charset
+@vindex vm-attach-files-in-directory-default-charset
+The default charset used for attached files of type @code{text}.
+If set to nil you will be asked for the charset.
+If set to @code{guess} it will be determined by @code{vm-determine-proper-charset}, but
+this may take some time, since the file needs to be visited.
+
+Default value: @code{guess}
+@end defopt
+
+@defopt vm-attach-files-in-directory-default-type
+@vindex vm-attach-files-in-directory-default-type
+The default MIME-type for attached files.
+If set to nil you will be asked for the type if it cannot be guessed.
+For guessing mime-types we use @code{vm-mime-attachment-auto-type-alist}.
+@end defopt
 
 @defopt vm-auto-decode-mime-messages
 @vindex vm-auto-decode-mime-messages
@@ -4473,6 +4440,14 @@ command (normally bound to @code{D}) manually to decode and display
 MIME objects.
 
 Default value: @code{t}
+@end defopt
+
+@defopt vm-auto-save-all-attachments
+@vindex vm-auto-save-all-attachments
+Non-nil means save the attachments of a message as it arrives.
+@code{vm-mime-auto-save-all-attachments} does the saving, under
+@code{vm-mime-attachment-save-directory} in a subdirectory named by
+@code{vm-mime-auto-save-all-attachments-subdir}.
 @end defopt
 
 @defopt vm-display-using-mime
@@ -4874,6 +4849,14 @@ be displayed as a button that allows you to save the body of the MIME
 object to a file.
 
 Default value: @code{("text" "image" "message/rfc822")}
+@end defopt
+
+@defopt vm-mime-auto-save-all-attachments-subdir
+@vindex vm-mime-auto-save-all-attachments-subdir
+Subdirectory where to save the attachments of a message.
+This variable might be set to a string, a function or anything which evaluates
+to a string.  If set to nil we use a concatenation of the from, subject and
+date header as subdir for the attachments.
 @end defopt
 
 @defopt vm-mime-avoid-folding-content-type

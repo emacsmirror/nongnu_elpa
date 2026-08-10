@@ -2567,6 +2567,37 @@ had -- and no soft line break was ever emitted."
   (should (equal (car (vm-mime-test--encoding-of "a\0b\n")) "base64"))
   (should (equal (car (vm-mime-test--encoding-of "a\rb\n")) "base64")))
 
+;;; Attachment commands moved out of vm-rfaddons (issue #606)
+
+(ert-deftest vm-mime-test-attachment-commands-are-in-vm-mime ()
+  "The commands are defined here now, not in an add-on file."
+  (dolist (cmd '(vm-attach-files-in-directory
+                 vm-mime-auto-save-all-attachments
+                 vm-mime-set-8bit-composition-charset
+                 vm-toggle-best-mime))
+    (should (fboundp cmd))
+    (should (string-match-p "vm-mime\\.el" (or (symbol-file cmd) "")))))
+
+(ert-deftest vm-mime-test-the-vm-mime-attach-aliases-are-gone ()
+  "The `vm-mime-' spellings of the directory-attach command and its
+variables were plain aliases, never marked obsolete, and are dropped."
+  (should-not (fboundp 'vm-mime-attach-files-in-directory))
+  (dolist (v '(vm-mime-attach-files-in-directory-regexps-history
+               vm-mime-attach-files-in-directory-default-type
+               vm-mime-attach-files-in-directory-default-charset))
+    (should-not (boundp v)))
+  ;; the four that were marked obsolete in 8.1.1 stay until the next major
+  ;; release, which is #594's business rather than this one's
+  (should (boundp 'vm-mime-save-all-attachments-types))
+  (should (boundp 'vm-mime-delete-all-attachments-types)))
+
+(ert-deftest vm-mime-test-auto-save-attachments-is-an-option ()
+  "`vm-auto-save-all-attachments' replaces the vm-enable-addons flag."
+  (should (get 'vm-auto-save-all-attachments 'standard-value))
+  (should-not (default-value 'vm-auto-save-all-attachments))
+  (should-not (memq 'auto-save-all-attachments (default-value 'vm-enable-addons)))
+  (should-not (memq 'attach-save-files (default-value 'vm-enable-addons))))
+
 (provide 'vm-mime-test)
 
 ;;; vm-mime-test.el ends here

@@ -730,6 +730,9 @@ preview or the full message, governed by the the variables
      ;; 2. run the message select hooks.
      (save-excursion
        (vm-select-folder-buffer)
+       (when (and vm-auto-save-all-attachments
+		  (vm-new-flag (car vm-message-pointer)))
+	 (vm-mime-auto-save-all-attachments))
        (when (and vm-select-new-message-hook 
 		  (vm-new-flag (car vm-message-pointer)))
 	    (vm-run-hook-on-message 'vm-select-new-message-hook

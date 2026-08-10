@@ -7369,8 +7369,8 @@ has to be viewed externally.
 
 @cindex @acronym{MIME} alternative, best
 @cindex @acronym{MIME} alternative, best-internal
-@code{vm-rfaddons} includes a command for changing the selection method for
-as long as you need it:
+VM has a command for changing the selection method for as long as you need
+it:
 
 @vmdocvmtogglebestmime
 
@@ -7386,17 +7386,18 @@ folders, slowing down VM.  The functions
 ways to save attachments of messages on the file system and deleting
 them from the mail folders.
 
-@code{vm-rfaddons} includes a command that files them for you:
+A command files them for you, without being asked each time:
 
 @vmdocvmmimeautosaveallattachments
 
 @vmdocvmmimeautosaveallattachmentssubdir
 
-You can save the attachments of all new messages automatically by
-putting @code{vm-mime-auto-save-all-attachments} in
-@code{vm-select-new-message-hook}.
+To have it happen to every message as it arrives:
 
-(This add-on was provided by Robert Fenk.)
+@vmdocvmautosaveallattachments
+
+@noindent
+Written by Robert Fenk, as part of vm-rfaddons.
 
 @section How much VM says
 
