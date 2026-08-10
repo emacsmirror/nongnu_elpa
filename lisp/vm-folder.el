@@ -796,6 +796,32 @@ the value of vm-default-From_folder-type will be returned."
 		    (t 'unknown)))))
       (and temp-buffer (kill-buffer temp-buffer)))))
 
+(defun vm-message-body-octets (start end)
+  "The number of octets the text between START and END occupies on disk.
+A `Content-Length' counts octets, and so does the reader: `vm-visit-folder'
+makes a folder buffer unibyte, so the `forward-char' in
+`vm-find-trailing-message-separator' moves over bytes.  A composition buffer
+is multibyte, and so is a temporary one a copy is built in, so a character
+count would be short by however much of the body is not ASCII."
+  (length (encode-coding-string (buffer-substring-no-properties start end)
+				(or buffer-file-coding-system
+				    (vm-binary-coding-system)))))
+
+(defun vm-content-length-header-line (type)
+  "The `Content-Length' line a folder of TYPE wants for this buffer's message,
+or nil for a type that carries no such header.  The buffer holds one message:
+headers, a blank line, the body.
+
+Every writer of an mboxcl2 folder goes through this, because a message written
+into one without a Content-Length cannot be read back -- see
+`vm-find-trailing-message-separator', which says so now rather than guessing."
+  (when (eq type 'mboxcl2)
+    (let ((body (save-excursion
+		  (goto-char (point-min))
+		  (if (re-search-forward "\n\n" nil t) (point) (point-max)))))
+      (format "%s %d\n" vm-content-length-header
+	      (vm-message-body-octets body (point-max))))))
+
 (defun vm-convert-folder-type (old-type new-type)
   "Convert buffer from OLD-TYPE to NEW-TYPE.
 OLD-TYPE and NEW-TYPE should be symbols returned from vm-get-folder-type.
@@ -1147,6 +1173,20 @@ match and point can never end up before HEADERS-START."
       (goto-char found)
       t)))
 
+(defun vm-mboxcl2-length-missing (line)
+  "Complain about the mboxcl2 message at LINE having no `Content-Length'.
+An error unless `vm-mboxcl2-strict' is nil, in which case a warning: the
+caller then falls back on looking for the next line beginning \"From \",
+which is how to get such a folder open in order to repair it."
+  (let ((what (format "Message at line %d has no %s, which this mboxcl2 folder needs"
+		      line (string-remove-suffix ":" vm-content-length-header))))
+    (if vm-mboxcl2-strict
+	(error (concat what ".  To open the folder anyway, set"
+		       " vm-mboxcl2-strict to nil; then"
+		       " M-x vm-change-folder-type mboxcl2 gives every message"
+		       " a length and the folder is sound again"))
+      (vm-warn 0 2 "%s; looking for the next From_ line instead" what))))
+
 (defun vm-find-trailing-message-separator (&optional headers-start)
   "Find the next trailing message separator in a folder.
 HEADERS-START, if given, is where the current message's headers begin, and
@@ -1184,7 +1224,12 @@ behaviour they always had."
 	    ;; Some systems seem to add a trailing newline that's
 	    ;; not counted in the Content-Length header.  Allow
 	    ;; any number of them to avoid trouble.
-	    (skip-chars-forward "\n")))
+	    (skip-chars-forward "\n"))
+	;; The folder says mboxcl2 and this message does not carry the header
+	;; that makes it one.  Falling back on the next From_ line, which is
+	;; what VM did, reads the folder as something other than what it says
+	;; it is and says nothing about a message written wrongly.
+	(vm-mboxcl2-length-missing (line-number-at-pos start-point)))
       (if (or (eobp) (looking-at reg1))
 	  nil
 	(goto-char start-point)

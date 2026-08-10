@@ -2484,6 +2484,98 @@ That is the Fcc of a composition, which has no envelope line yet."
     (should (string-prefix-p "From VM " line))
     (should (string-suffix-p "\n" line))))
 
+;;; mboxcl2 needs a length on every message (emacs-vm/vm#612)
+
+(defconst vm-folder-test--mboxcl2-with-a-length
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: alice@example.com\nSubject: one\nContent-Length: 10\n\n"
+          "Body one.\n")
+  "One mboxcl2 message, correctly written.")
+
+(defconst vm-folder-test--mboxcl2-without-one
+  (concat "From bob@example.com Sun Aug  9 09:00:00 2026\n"
+          "From: bob@example.com\nSubject: two\n\nBody two.\n\n")
+  "A message with no Content-Length, as another mailer may leave it.")
+
+(ert-deftest vm-folder-test-a-length-is-computed-for-the-body ()
+  "`vm-content-length-header-line' counts the body, and only for mboxcl2."
+  (with-temp-buffer
+    (insert "To: someone@example.com\nSubject: one\n\nA body line.\n")
+    (should (equal (vm-content-length-header-line 'mboxcl2)
+                   "Content-Length: 13\n"))
+    (should-not (vm-content-length-header-line 'From_))
+    (should-not (vm-content-length-header-line 'mmdf)))
+  ;; octets, not characters: a Content-Length is a byte count
+  (with-temp-buffer
+    (set-buffer-file-coding-system 'utf-8-unix)
+    (insert "Subject: café\n\ncafé\n")
+    (should (equal (vm-content-length-header-line 'mboxcl2)
+                   "Content-Length: 6\n")))
+  ;; a message with no body at all has a length of zero, not an error
+  (with-temp-buffer
+    (insert "To: someone@example.com\n\n")
+    (should (equal (vm-content-length-header-line 'mboxcl2)
+                   "Content-Length: 0\n"))))
+
+(ert-deftest vm-folder-test-a-missing-length-is-refused ()
+  "Reading an mboxcl2 folder whose message has no Content-Length is an error.
+VM used to look for the next From_ line instead, which reads the folder as
+something other than what it says it is and says nothing at all."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-folder-strict" t))))
+    (unwind-protect
+        (let ((file (expand-file-name "mixed.mboxcl2" dir))
+              (text-quoting-style 'grave))
+          (write-region (concat vm-folder-test--mboxcl2-with-a-length
+                                vm-folder-test--mboxcl2-without-one)
+                        nil file nil 'quiet)
+          (should (eq (vm-get-folder-type file) 'mboxcl2))
+          (let* ((vm-mboxcl2-strict t)
+                 (message (cadr (should-error (vm-visit-folder file)))))
+            (should (string-match-p "has no Content-Length" message))
+            ;; the message says which one, and how to get in anyway
+            (should (string-match-p "line [0-9]+" message))
+            (should (string-match-p "vm-mboxcl2-strict" message))
+            (should (string-match-p "vm-change-folder-type" message))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-a-missing-length-can-be-repaired ()
+  "With `vm-mboxcl2-strict' nil the folder opens, and changing its type back
+to mboxcl2 gives every message a length -- which is the repair the error
+describes, so it had better work."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-folder-strict" t))))
+    (unwind-protect
+        (let ((file (expand-file-name "mixed.mboxcl2" dir)))
+          (write-region (concat vm-folder-test--mboxcl2-with-a-length
+                                vm-folder-test--mboxcl2-without-one)
+                        nil file nil 'quiet)
+          (let ((vm-mboxcl2-strict nil))
+            (cl-letf (((symbol-function 'vm-warn) #'ignore))
+              (vm-visit-folder file)
+              (should (= (length vm-message-list) 2))
+              (vm-change-folder-type 'mboxcl2)
+              (vm-save-folder)))
+          ;; and now it reads with the strict reader
+          (let ((vm-mboxcl2-strict t))
+            (vm-visit-folder file)
+            (should (= (length vm-message-list) 2))
+            (should (eq vm-folder-type 'mboxcl2))))
+      (delete-directory dir t))))
+
+(ert-deftest vm-folder-test-a-From_-folder-needs-no-length ()
+  "None of this touches a folder that does not claim to be mboxcl2."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-folder-strict" t))))
+    (unwind-protect
+        (let ((file (expand-file-name "plain.mbox" dir))
+              (vm-mboxcl2-strict t))
+          (write-region (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                "From: alice@example.com\nSubject: one\n\nBody.\n\n"
+                                vm-folder-test--mboxcl2-without-one)
+                        nil file nil 'quiet)
+          (vm-visit-folder file)
+          (should (= (length vm-message-list) 2))
+          (should (eq vm-folder-type vm-default-From_-folder-type)))
+      (delete-directory dir t))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

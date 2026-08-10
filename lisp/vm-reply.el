@@ -975,20 +975,6 @@ sending again files it again."
 	      folders)))
     (nreverse folders)))
 
-(defun vm-fcc-body-octets (start end)
-  "The number of octets the text between START and END will occupy on disk.
-A `Content-Length' counts octets, and so does the reader: `vm-visit-folder'
-makes a folder buffer unibyte, so the `forward-char' in
-`vm-find-trailing-message-separator' moves over bytes.  A composition buffer
-is multibyte, though, and so is the temporary one this is counted in, so a
-character count would be short by however much of the body is not ASCII.
-
-Counted through the coding system the copy will be written with, which
-`vm-mail-send' binds around the whole of sending for this reason."
-  (length (encode-coding-string (buffer-substring-no-properties start end)
-                                (or coding-system-for-write
-                                    (vm-line-ending-coding-system)))))
-
 (defun vm-fcc-leading-separator (type)
   "The envelope line to file a copy of the message in this buffer under.
 Named after the address the message is from, and dated from its own Date
@@ -1032,12 +1018,9 @@ one.  A composition has been through none of that yet."
       (vm-fcc-strip-headers (point-max))
       (vm-munge-message-separators type (point-min) (point-max))
       (goto-char (point-min))
-      (let ((body (if (re-search-forward "\n\n" nil t) (point) (point-max))))
+      (progn
 	(concat (vm-fcc-leading-separator type)
-		(if (eq type 'mboxcl2)
-		    (format "%s %d\n" vm-content-length-header
-			    (vm-fcc-body-octets body (point-max)))
-		  "")
+		(or (vm-content-length-header-line type) "")
 		(buffer-substring-no-properties (point-min) (point-max))
 		(vm-trailing-message-separator type))))))
 

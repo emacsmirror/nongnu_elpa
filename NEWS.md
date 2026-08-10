@@ -12,6 +12,12 @@ since that version to see how you might be affected.
     rather than `vm-trust-From_-with-Content-Length`.  The old names still
     work.
 
+  * An mboxcl2 folder is kept sound.  Every message VM writes into one carries
+    a `Content-Length`, which is how the end of a message is found there, and
+    a message that has none is refused rather than guessed at;
+    `vm-mboxcl2-strict` nil opens such a folder so that
+    `vm-change-folder-type` can repair it (emacs-vm/vm#612).
+
   * A folder's name can say what format it is.  A new folder whose name ends
     in `.mboxcl2` is created as one, rather than as whatever
     `vm-default-folder-type` says, and a `Content-Length` in it is believed;
