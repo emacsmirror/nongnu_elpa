@@ -3079,7 +3079,6 @@ set this variable directly, rather you should use the command
 
 (make-variable-buffer-local 'vm-folder-read-only)
 
-;;;###autoload
 (defcustom vm-included-text-prefix " > "
   "*String used to prefix included text in replies."
   :group 'vm-reply
@@ -7571,8 +7570,6 @@ The number reflects the number of references."
   :group 'vm-compose
   :type '(boolean))
 
-;;;###autoload
-
 (defcustom vm-handle-return-receipts nil
   "*Non-nil means answer a message asking for a return receipt.
 `vm-handle-return-receipt-mode' says whether the answer is sent as it
@@ -7669,7 +7666,6 @@ Otherwise, overwrite existing date headers"
   :group 'vm-compose
   :type '(boolean))
 
-;;;###autoload
 (defcustom vm-mail-mode-citation-kill-regexp-alist
   (list
    ;; empty lines multi quoted 
@@ -7714,8 +7710,6 @@ Otherwise, overwrite existing date headers"
   "*String which is used as replacement for elided text."
   :group 'vm-compose
   :type '(string))
-
-;;;###autoload
 
 (defcustom vm-enable-shrunken-headers nil
   "*Non-nil means fold a header that runs onto more than one line.
