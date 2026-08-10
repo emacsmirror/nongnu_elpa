@@ -990,26 +990,34 @@ Counted through the coding system the copy will be written with, which
                                     (vm-line-ending-coding-system)))))
 
 (defun vm-fcc-leading-separator (type)
-  "The separator to file a copy of the message in this buffer under.
-An mbox envelope line carries a date, and for a filed copy that date should
-be the message's own: filing the same message twice then records when it was
-sent, not when each copy happened to be written.  The sender stays VM, since
-nothing delivered this copy.
+  "The envelope line to file a copy of the message in this buffer under.
+Named after the address the message is from, and dated from its own Date
+header, so that filing the same message twice records when it was sent both
+times -- which matters for a composition postponed and sent days later.
 
-The message struct the other separator callers have does not exist here --
-the composition is not in a folder -- so the Date header is read from the
-buffer."
+The message struct the other separator callers have does not exist here: the
+composition is not in a folder, so the headers are read from the buffer.  A
+composition may not carry a From header at all, since the MTA will add one,
+and then the copy is filed under `user-mail-address' -- it is a copy of your
+own outgoing mail, and you are its sender."
   (if (not (memq type '(From_ mboxcl2 BellFrom_)))
       (vm-leading-message-separator type)
-    (let* ((end (save-excursion (goto-char (point-min))
-				(if (re-search-forward "\n\n" nil t)
-				    (point) (point-max))))
-	   (date (save-excursion
-		   (goto-char (point-min))
-		   (when (re-search-forward "^Date: *\\(.*\\)$" end t)
-		     (match-string 1)))))
-      (concat "From VM " (or (vm-From_-date date) (current-time-string))
-	      "\n"))))
+    (let ((end (save-excursion (goto-char (point-min))
+			       (if (re-search-forward "\n\n" nil t)
+				   (point) (point-max)))))
+      (vm-From_-separator
+       (or (vm-From_-address (vm-fcc-header-contents "From" end))
+	   (vm-From_-address user-mail-address))
+       (vm-fcc-header-contents "Date" end)))))
+
+(defun vm-fcc-header-contents (name end)
+  "The contents of header NAME in the headers before END, or nil."
+  (save-excursion
+    (goto-char (point-min))
+    (let ((case-fold-search t))
+      (when (re-search-forward (concat "^" (regexp-quote name) ": *\\(.*\\)$")
+			       end t)
+	(match-string 1)))))
 
 (defun vm-fcc-message-text (type)
   "The message in the current buffer, ready to append to a folder of TYPE.

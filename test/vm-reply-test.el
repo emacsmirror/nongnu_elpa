@@ -611,7 +611,8 @@ these is about."
           (should (string-match-p (regexp-quote mail-header-separator)
                                   (buffer-string))))
       (let ((text (vm-reply-test--folder-text (expand-file-name "archive" dir))))
-        (should (string-match-p "^From VM " text))
+        ;; the envelope line names the sender, not VM (emacs-vm/vm#611)
+        (should (string-match-p "^From [^ ]+@[^ ]+ " text))
         (should (string-match-p "^>From nobody@example.com" text))
         (should-not (string-match-p "^Content-Length:" text)))
       (delete-directory dir t))))
@@ -683,7 +684,7 @@ further change."
           (dolist (file (list one two))
             (should (file-exists-p file))
             (should (= 1 (cl-count-if
-                          (lambda (l) (string-prefix-p "From VM " l))
+                          (lambda (l) (string-prefix-p "From " l))
                           (split-string (vm-reply-test--folder-text file)
                                         "\n"))))))
       (delete-directory dir t))))
@@ -759,7 +760,7 @@ was filed."
           (let ((vm-default-folder-type 'From_))
             (vm-do-fcc-in-composition))
           (should (= 2 (cl-count-if
-                        (lambda (l) (string-prefix-p "From VM " l))
+                        (lambda (l) (string-prefix-p "From " l))
                         (split-string (vm-reply-test--folder-text folder)
                                       "\n")))))
       (delete-directory dir t))))
@@ -860,7 +861,7 @@ message and call `mail-do-fcc' on the copy."
                 (mail-send))))
           ;; one copy filed, not two
           (should (= 1 (cl-count-if
-                        (lambda (l) (string-prefix-p "From VM " l))
+                        (lambda (l) (string-prefix-p "From " l))
                         (split-string (vm-reply-test--folder-text folder)
                                       "\n"))))
           ;; the message that went out does not name the folder
@@ -950,7 +951,7 @@ calling `vm-do-fcc-in-composition' directly would pass either way."
               (insert "a correction\n")
               (vm-mail-send)))
           (should (= 2 (cl-count-if
-                        (lambda (l) (string-prefix-p "From VM " l))
+                        (lambda (l) (string-prefix-p "From " l))
                         (split-string (vm-reply-test--folder-text folder)
                                       "\n"))))
           ;; and the second copy is the edited one
@@ -1333,52 +1334,80 @@ never came true."
             (should-not (string-match-p "Content-Length:" (buffer-string)))))
       (delete-directory dir t))))
 
-(ert-deftest vm-reply-test-fcc-dates-the-envelope-line-from-the-message ()
-  "A filed copy's envelope line carries the message's own Date.
-Filing the same message twice then records when it was sent rather than when
-each copy happened to be written -- which matters for a composition that was
-postponed and sent days later (emacs-vm/vm#611)."
-  (with-temp-buffer
-    (insert "To: someone@example.com\n"
-            "Date: Sat, 8 Aug 2026 14:24:13 -0700\n"
-            "Subject: dated\n\nBody.\n")
-    (should (equal (vm-fcc-leading-separator 'From_)
-                   "From VM Sat Aug  8 14:24:13 2026\n"))
-    (should (equal (vm-fcc-leading-separator 'mboxcl2)
-                   "From VM Sat Aug  8 14:24:13 2026\n")))
-  ;; no Date header, or one that cannot be read: the time of filing, as before
-  (with-temp-buffer
-    (insert "To: someone@example.com\nSubject: undated\n\nBody.\n")
-    (should (string-prefix-p "From VM " (vm-fcc-leading-separator 'From_))))
-  (with-temp-buffer
-    (insert "To: someone@example.com\nDate: whenever\n\nBody.\n")
-    (should (string-prefix-p "From VM " (vm-fcc-leading-separator 'From_))))
-  ;; a Date in the body is not the message's date
-  (with-temp-buffer
-    (insert "To: someone@example.com\n\nDate: Sat, 8 Aug 2026 14:24:13 -0700\n")
-    (should-not (string-match-p "Aug  8" (vm-fcc-leading-separator 'From_))))
-  ;; and a format with no From_ line is untouched
-  (with-temp-buffer
-    (insert "To: someone@example.com\nDate: Sat, 8 Aug 2026 14:24:13 -0700\n\nB\n")
-    (should (equal (vm-fcc-leading-separator 'mmdf) "\001\001\001\001\n"))))
+(ert-deftest vm-reply-test-fcc-envelope-line-names-the-sender-and-the-date ()
+  "A filed copy's envelope line names the address the message is from and
+carries the message's own Date.  RFC 4155 wants an addr-spec there, which is
+what every other writer of an mbox puts; VM used to write its own name and the
+moment of filing, so the line recorded neither fact (emacs-vm/vm#611)."
+  (let ((user-mail-address "me@example.com"))
+    (with-temp-buffer
+      (insert "To: someone@example.com\n"
+              "From: Alice Adams <alice@example.com>\n"
+              "Date: Sat, 8 Aug 2026 14:24:13 -0700\n"
+              "Subject: dated\n\nBody.\n")
+      (should (equal (vm-fcc-leading-separator 'From_)
+                     "From alice@example.com Sat Aug  8 14:24:13 2026\n"))
+      (should (equal (vm-fcc-leading-separator 'mboxcl2)
+                     "From alice@example.com Sat Aug  8 14:24:13 2026\n")))
+    ;; a composition often has no From header -- the MTA adds one -- and the
+    ;; copy is of your own outgoing mail, so you are its sender
+    (with-temp-buffer
+      (insert "To: someone@example.com\n"
+              "Date: Sat, 8 Aug 2026 14:24:13 -0700\n\nBody.\n")
+      (should (equal (vm-fcc-leading-separator 'From_)
+                     "From me@example.com Sat Aug  8 14:24:13 2026\n")))
+    ;; a From with a name and no address cannot be an envelope sender
+    (with-temp-buffer
+      (insert "To: someone@example.com\nFrom: Alice Adams\n\nBody.\n")
+      (should (string-prefix-p "From me@example.com "
+                               (vm-fcc-leading-separator 'From_))))
+    ;; and with nothing to go on, VM names itself as it always did
+    (let ((user-mail-address nil))
+      (with-temp-buffer
+        (insert "To: someone@example.com\n\nBody.\n")
+        (should (string-prefix-p "From VM "
+                                 (vm-fcc-leading-separator 'From_)))))
+    ;; no Date header, or one that cannot be read: the time of filing
+    (with-temp-buffer
+      (insert "To: someone@example.com\nFrom: alice@example.com\n\nBody.\n")
+      (should (string-prefix-p "From alice@example.com "
+                               (vm-fcc-leading-separator 'From_))))
+    (with-temp-buffer
+      (insert "To: someone@example.com\nDate: whenever\n\nBody.\n")
+      (should (string-prefix-p "From me@example.com "
+                               (vm-fcc-leading-separator 'From_))))
+    ;; headers are headers: a Date or From in the body is not the message's
+    (with-temp-buffer
+      (insert "To: someone@example.com\n\nFrom: bob@example.com\n"
+              "Date: Sat, 8 Aug 2026 14:24:13 -0700\n")
+      (let ((line (vm-fcc-leading-separator 'From_)))
+        (should (string-prefix-p "From me@example.com " line))
+        (should-not (string-match-p "Aug  8" line))))
+    ;; a format with no From_ line is untouched
+    (with-temp-buffer
+      (insert "To: someone@example.com\nFrom: alice@example.com\n\nB\n")
+      (should (equal (vm-fcc-leading-separator 'mmdf) "\001\001\001\001\n")))))
 
-(ert-deftest vm-reply-test-fcc-writes-the-dated-envelope-line ()
-  "The filed copy on disk carries that envelope line, not the time of filing.
+(ert-deftest vm-reply-test-fcc-writes-that-envelope-line ()
+  "The filed copy on disk carries that line, not the time of filing.
 The test above checks what the function returns; this one checks that the
 write path is the caller, which is the part a wiring mistake breaks."
   (let ((dir (file-name-as-directory (make-temp-file "vm-reply-fcc-date" t))))
     (unwind-protect
         (let ((folder (expand-file-name "sent.mbox" dir))
+              (user-mail-address "me@example.com")
               (vm-default-folder-type 'From_))
           (with-temp-buffer
             (insert "To: someone@example.com\n"
+                    "From: Alice Adams <alice@example.com>\n"
                     "Date: Sat, 8 Aug 2026 14:24:13 -0700\n"
                     "Subject: dated\n\nBody.\n")
             (vm-fcc-write folder))
           (with-temp-buffer
             (insert-file-contents folder)
             (goto-char (point-min))
-            (should (looking-at "From VM Sat Aug  8 14:24:13 2026$"))))
+            (should (looking-at
+                     "From alice@example.com Sat Aug  8 14:24:13 2026$"))))
       (delete-directory dir t))))
 
 (provide 'vm-reply-test)

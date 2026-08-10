@@ -953,21 +953,29 @@ Nil when it cannot be read, which is what a Date header written by hand
 often cannot be."
   (and date (ignore-errors (current-time-string (date-to-time date)))))
 
+(defun vm-From_-address (from)
+  "The bare address in FROM, a From header, if it can be an envelope sender.
+Nil when there is none, or when it has a space in it: an envelope line is
+delimited by spaces, so an address containing one cannot go in it."
+  (let ((address (and from (nth 1 (mail-extract-address-components from)))))
+    (and address (string-match "\\`[^ \t\n]+\\'" address) address)))
+
+(defun vm-From_-separator (address date)
+  "An mbox envelope line naming ADDRESS, dated from DATE, a Date header.
+RFC 4155 wants an addr-spec there, which is what every other writer of an
+mbox puts.  VM names itself when there is no address to give, which is what
+it used to do always."
+  (concat "From " (or address "VM") " "
+	  (or (vm-From_-date date) (current-time-string))
+	  "\n"))
+
 (defun vm-make-From_-separator (message)
-  "A From_ envelope line built from MESSAGE's From and Date headers.
+  "An envelope line built from MESSAGE's From and Date headers.
 For a message that has no envelope line of its own -- one coming out of an
-MMDF or BABYL folder, say.  An address with a space in it is not usable as
-an envelope sender, so VM names itself instead, as it always did."
-  (let* ((from (vm-get-header-contents message "From:"))
-	 (address (and from (nth 1 (mail-extract-address-components from))))
-	 (date (vm-get-header-contents message "Date:")))
-    (concat "From "
-	    (if (and address (string-match "\\`[^ \t\n]+\\'" address))
-		address
-	      "VM")
-	    " "
-	    (or (vm-From_-date date) (current-time-string))
-	    "\n")))
+MMDF or BABYL folder, say."
+  (vm-From_-separator
+   (vm-From_-address (vm-get-header-contents message "From:"))
+   (vm-get-header-contents message "Date:")))
 
 (defun vm-leading-message-separator (&optional folder-type message
 				     for-other-folder)
