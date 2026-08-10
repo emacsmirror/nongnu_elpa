@@ -553,16 +553,17 @@ of its own."
      :status 'pending :activity "Waiting for Hermes"
      :assistant-id assistant-id)))
 
-(defun hermes-chat--busy-submit-resolved (content result)
-  "Apply backend busy-input RESULT for CONTENT."
+(defun hermes-chat--busy-submit-resolved (content result &optional before-node)
+  "Apply backend busy-input RESULT for CONTENT before BEFORE-NODE."
   (pcase (hermes-chat--status-name
           (hermes-chat--result-string result 'status))
     ("queued" (hermes-chat--record-server-queued-content content))
-    ("steered"
+    ((and status (or "steered" "redirected"))
      (hermes-chat--insert-entry
       (hermes-chat--make-entry
-       'status (format "Steered: %s" (hermes-chat--preview content)) 'done)
-      (hermes-chat--pending-assistant-node)))
+       'status (format "%s: %s" (capitalize status)
+                       (hermes-chat--preview content)) 'done)
+      (or before-node (hermes-chat--pending-assistant-node))))
     (_ (hermes-chat--activate-backend-turn content))))
 
 (defun hermes-chat--message-start-event-p (event)
@@ -595,6 +596,10 @@ of its own."
   "Settle busy submission CONTEXT from backend RESULT and replay held events."
   (let ((content (plist-get context :content))
         (events (hermes-chat--busy-submit-events context))
+        (assistant-node
+         (and hermes-chat--nodes
+              (gethash (plist-get context :assistant-id)
+                       hermes-chat--nodes)))
         (status (hermes-chat--status-name
                  (hermes-chat--result-string result 'status))))
     (setq hermes-chat--busy-submit-context nil)
@@ -602,9 +607,9 @@ of its own."
       ("queued"
        (hermes-chat--record-server-queued-content content)
        (hermes-chat--replay-busy-submit-events context events))
-      ("steered"
+      ((or "steered" "redirected")
        (hermes-chat--replay-busy-submit-events context events)
-       (hermes-chat--busy-submit-resolved content result))
+       (hermes-chat--busy-submit-resolved content result assistant-node))
       (_ (hermes-chat--resolve-streaming-busy-submit context content events)))))
 
 (defun hermes-chat--hold-busy-submit-event (event)

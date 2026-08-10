@@ -1784,9 +1784,10 @@
          (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
                         "second answer")))))))
 
-(ert-deftest hermes-chat-dashboard-busy-steered-result-removes-user-turn ()
-  "A busy steer response keeps the current assistant without a fake user turn."
-  (let ((client (hermes-test--dashboard-client)) submits interrupts)
+(ert-deftest hermes-chat-dashboard-busy-redirected-result-keeps-current-turn ()
+  "A busy redirect keeps the current assistant without a fake user turn."
+  (let ((client (hermes-test--dashboard-client))
+        submits interrupts redirect-resolve assistant-id)
     (cl-letf (((symbol-function 'hermes-transport-send)
                (lambda (&rest _args) (error "CLI fallback should not run")))
               ((symbol-function 'hermes-dashboard-transport-start)
@@ -1802,28 +1803,42 @@
                (lambda (_client text &rest args)
                  (push text submits)
                  (when-let* ((resolve (plist-get args :resolve)))
-                   (funcall resolve
-                            `((status . ,(if (= (length submits) 2)
-                                             "steered"
-                                           "streaming")))))))
+                   (if (= (length submits) 2)
+                       (setq redirect-resolve resolve)
+                     (funcall resolve '((status . "streaming")))))))
               ((symbol-function 'hermes-dashboard-transport-session-interrupt)
                (lambda (&rest _args) (setq interrupts t))))
       (let ((hermes-transport-send-function #'hermes-transport-send))
         (hermes-test-with-chat-buffer
          (insert "first")
          (hermes-chat-send)
+         (setq assistant-id hermes-chat--pending-assistant-id)
          (insert "second")
          (hermes-chat-send)
          (hermes-test--emit-dashboard-event
           client "message.delta" '((text . "continued run")))
+         (hermes-test--emit-dashboard-event
+          client "message.complete" '((status . "done")))
+         (funcall redirect-resolve '((status . "redirected")))
          (should (equal submits '("second" "first")))
          (should-not interrupts)
          (should-not (hermes-test--queued-contents))
          (should (= (cl-count 'user (hermes-chat--entries)
                               :key (lambda (entry) (plist-get entry :role)))
                     1))
+         (should (= (cl-count 'assistant (hermes-chat--entries)
+                              :key (lambda (entry) (plist-get entry :role)))
+                    1))
+         (should (cl-find-if
+                  (lambda (entry)
+                    (and (eq (plist-get entry :role) 'status)
+                         (equal (plist-get entry :content)
+                                "Redirected: second")))
+                  (hermes-chat--entries)))
          (should (eq (plist-get (car (last (hermes-chat--entries))) :role)
                      'assistant))
+         (should (equal (plist-get (hermes-test--last-assistant-entry) :id)
+                        assistant-id))
          (should (equal (plist-get (hermes-test--last-assistant-entry) :content)
                         "continued run")))))))
 
