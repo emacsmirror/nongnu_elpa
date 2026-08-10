@@ -1673,9 +1673,13 @@ draft messages."
 
 ;;;###autoload
 (if (fboundp 'define-mail-user-agent)
+    ;; The two functions are named, not referenced: this form is copied into
+    ;; vm-autoloads.el, where nothing defines them yet, and a #' reference
+    ;; there is a compiler warning about the generated file.  Emacs' own
+    ;; define-mail-user-agent calls quote them plainly for the same reason.
     (define-mail-user-agent 'vm-user-agent
-      (function vm-compose-mail)	; compose function
-      (function vm-mail-send-and-exit)	; send function
+      'vm-compose-mail			; compose function
+      'vm-mail-send-and-exit		; send function
       nil				; abort function (kill-buffer)
       nil)				; hook variable (mail-send-hook)
 )

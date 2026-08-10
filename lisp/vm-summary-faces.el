@@ -36,6 +36,9 @@
 (require 'vm-misc)
 (require 'vm-avirtual)
 
+;; vm-virtual.el requires this file, so it cannot be required back.
+(declare-function vm-vs-or "vm-virtual" (m &rest selectors))
+
 
 (declare-function vm-extent-property "vm-misc.el" (overlay prop) t)
 (declare-function vm-set-extent-property "vm-misc.el" (overlay prop value) t)
