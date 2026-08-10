@@ -36,8 +36,7 @@ install: $(ELCS) nix-mode.info nix-mode.html AUTHORS.md
 
 AUTHORS.md:
 	@test -e .git \
-	&& (printf "$$AUTHORS_HEADER\n" > $@ \
-	&& git log --pretty=format:'- %aN <%aE>' | sort -u >> $@ \
+	&& (git log --pretty=format:'- %aN <%aE>' | sort -u >> $@ \
 	&& printf "done\n" ; ) \
 	|| printf "FAILED (non-fatal)\n"
 

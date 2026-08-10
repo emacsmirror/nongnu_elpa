@@ -14,7 +14,7 @@
 
 ;;; Code:
 
-(require 'js)
+(require 'json-ts-mode)
 (require 'nix)
 
 ;;;###autoload
