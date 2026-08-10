@@ -202,6 +202,11 @@ read without opening every one.
   `In Progress`. Nor the same as `Kick can`, which records a decision already
   taken — to defer. An issue can be both: deferred, and now wanting a second
   look.
+- `Close by hand` — `Pending`, but the commit trailer is `Re #NNN` or names
+  another issue, so merging `develop` into `main` will not close it. The work
+  is done; someone has to close it at that point. Derivable the same way
+  `Pending` is: an issue whose only trailers in
+  `git log central/main..central/develop` are `Re`, or none at all.
 - `irreproducible` — as above.
 
 ### Attributing comments written by Claude
