@@ -3079,6 +3079,7 @@ set this variable directly, rather you should use the command
 
 (make-variable-buffer-local 'vm-folder-read-only)
 
+;;;###autoload
 (defcustom vm-included-text-prefix " > "
   "*String used to prefix included text in replies."
   :group 'vm-reply
