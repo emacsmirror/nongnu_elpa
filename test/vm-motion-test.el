@@ -546,6 +546,87 @@ another summary line, nothing else."
             (kill-buffer buffer))))
       (delete-directory dir t))))
 
+;;; What the movement checks do, in place of a test that they were bound.
+
+(defconst vm-motion-test--three
+  (concat "From a@example.com Mon Jan  1 00:00:00 2024\nFrom: a@example.com\n"
+          "Subject: one\n\nBody.\n\n"
+          "From b@example.com Mon Jan  1 00:00:00 2024\nFrom: b@example.com\n"
+          "Subject: two\n\nBody.\n\n"
+          "From c@example.com Mon Jan  1 00:00:00 2024\nFrom: c@example.com\n"
+          "Subject: three\n\nBody.\n\n")
+  "Three messages, so that there is somewhere to move from and to.")
+
+(ert-deftest vm-motion-test-check-count-signals-at-the-ends ()
+  "Asking to move further than the folder goes signals which end was hit.
+The two conditions are caught separately by callers, so a plain error would
+not do."
+  (vm-test-with-folder vm-motion-test--three
+    (setq vm-message-pointer vm-message-list)
+    ;; The current message counts as one of the messages there is room for,
+    ;; so at the first of three, 3 forward and -1 back are both in range.
+    (should-not (vm-check-count 3))
+    (should-not (vm-check-count -1))
+    (should (eq (car (should-error (vm-check-count 4))) 'end-of-folder))
+    (should (eq (car (should-error (vm-check-count -2)))
+                'beginning-of-folder))
+    ;; and at the last, the other way round
+    (setq vm-message-pointer (cdr (cdr vm-message-list)))
+    (should-not (vm-check-count 1))
+    (should-not (vm-check-count -3))
+    (should (eq (car (should-error (vm-check-count 2))) 'end-of-folder))
+    (should (eq (car (should-error (vm-check-count -4)))
+                'beginning-of-folder))))
+
+(ert-deftest vm-motion-test-should-skip-deleted-only-when-asked ()
+  "A deleted message is skipped when `vm-skip-deleted-messages' is t.
+Any other non-nil value means skip only when the caller insists, which is
+what the third state of that option is for."
+  (vm-test-with-folder vm-motion-test--three
+    (let ((mp vm-message-list)
+          (vm-skip-read-messages nil)
+          (last-command nil))
+      (vm-set-deleted-flag (car mp) t)
+      (let ((vm-skip-deleted-messages t))
+        (should (vm-should-skip-message mp))
+        (should (vm-should-skip-message mp t)))
+      (let ((vm-skip-deleted-messages 'sometimes))
+        (should-not (vm-should-skip-message mp))
+        (should (vm-should-skip-message mp t)))
+      (let ((vm-skip-deleted-messages nil))
+        (should-not (vm-should-skip-message mp))
+        (should-not (vm-should-skip-message mp t))))))
+
+(ert-deftest vm-motion-test-should-skip-read-messages ()
+  "A message that is neither new nor unread is a read one, and is skipped
+when `vm-skip-read-messages' says so."
+  (vm-test-with-folder vm-motion-test--three
+    (let ((mp vm-message-list)
+          (vm-skip-deleted-messages nil)
+          (last-command nil))
+      (vm-set-new-flag (car mp) nil)
+      (vm-set-unread-flag (car mp) nil)
+      (let ((vm-skip-read-messages t))
+        (should (vm-should-skip-message mp)))
+      (vm-set-unread-flag (car mp) t)
+      (let ((vm-skip-read-messages t))
+        (should-not (vm-should-skip-message mp))))))
+
+(ert-deftest vm-motion-test-should-skip-unmarked-after-a-mark-command ()
+  "After `vm-next-command-uses-marks' only the marked messages are visited."
+  (vm-test-with-folder vm-motion-test--three
+    (let ((mp vm-message-list)
+          (vm-skip-deleted-messages nil)
+          (vm-skip-read-messages nil))
+      (let ((last-command 'vm-next-command-uses-marks))
+        (should (vm-should-skip-message mp))
+        (vm-set-mark-of (car mp) t)
+        (should-not (vm-should-skip-message mp)))
+      ;; and without that command, marks make no difference
+      (let ((last-command nil))
+        (vm-set-mark-of (car mp) nil)
+        (should-not (vm-should-skip-message mp))))))
+
 (provide 'vm-motion-test)
 
 ;;; vm-motion-test.el ends here

@@ -731,6 +731,39 @@ from the user, and one typo should not abandon the rest of it."
       (should (vm-new-flag m))
       (should (null (vm-deleted-flag m))))))
 
+;;; What a boundary is and when there is one, in place of a test that the
+;;; functions were bound.
+
+(ert-deftest vm-undo-test-boundary-is-not-added-to-nothing ()
+  "A boundary marks the end of a group of records, so an empty list gets none
+and two in a row are not made."
+  (with-temp-buffer
+    (let ((vm-undo-record-list nil))
+      (vm-undo-boundary)
+      (should-not vm-undo-record-list)
+      (vm-undo-record '(vm-set-deleted-flag a-message nil))
+      (vm-undo-boundary)
+      (should (= (length vm-undo-record-list) 2))
+      (should-not (car vm-undo-record-list))
+      (vm-undo-boundary)
+      (should (= (length vm-undo-record-list) 2)))))
+
+(ert-deftest vm-undo-test-squeeze-removes-the-boundaries-with-nothing-between ()
+  "Records removed by an expunge can leave two boundaries together, which
+would make one undo command do nothing.  Squeezing them is what stops that."
+  (with-temp-buffer
+    (let ((vm-undo-record-list '(nil nil (a) nil nil nil (b) nil)))
+      (vm-squeeze-consecutive-undo-boundaries)
+      (should (equal vm-undo-record-list '(nil (a) nil (b) nil))))
+    ;; a list of nothing but a boundary is an empty list
+    (let ((vm-undo-record-list '(nil)))
+      (vm-squeeze-consecutive-undo-boundaries)
+      (should-not vm-undo-record-list))
+    ;; and one with records is left as it is
+    (let ((vm-undo-record-list '((a) nil (b))))
+      (vm-squeeze-consecutive-undo-boundaries)
+      (should (equal vm-undo-record-list '((a) nil (b)))))))
+
 (provide 'vm-undo-test)
 
 ;;; vm-undo-test.el ends here
