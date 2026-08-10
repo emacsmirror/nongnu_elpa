@@ -249,5 +249,19 @@ Related issue: https://github.com/NixOS/nix-mode/issues/94"
   "Proper indentation of let expressions."
   (with-nix-mode-test ("issue-128.nix" :indent 'nix-indent-line)))
 
+(ert-deftest nix-mode-test-indent-expression-start ()
+  "A line indents relative to its enclosing bracket, not the previous line."
+  (with-temp-buffer
+    (insert "{\n      foo = 1;\nbar = 2;\n}\n")
+    (nix-mode)
+    (let ((nix-indent-function 'nix-indent-line)
+          (inhibit-message t))
+      (goto-char (point-min))
+      (forward-line 2)
+      (funcall nix-indent-function)
+      (should (equal (buffer-substring-no-properties
+                      (line-beginning-position) (line-end-position))
+                     "  bar = 2;")))))
+
 (provide 'nix-mode-tests)
 ;;; nix-mode-tests.el ends here

@@ -135,14 +135,7 @@ very large Nix files (all-packages.nix)."
 (defconst nix-re-variable-assign
   "\\<\\([a-zA-Z_][a-zA-Z0-9_'.-]*\\)[ \t]*=[^=]")
 
-(defconst nix-re-caps
-  " =[ \n]\\|\(\\|\{\\|\\[\\|\\bwith\\b\\|\\blet\\b\\|\\binherit\\b")
-
-(defconst nix-re-ends ";\\|\)\\|\\]\\|\}\\|\\bin\\b")
-
 (defconst nix-re-quotes "''\\|\"")
-
-(defconst nix-re-comments "#\\|/*\\|*/")
 
 (defun nix-re-keywords (keywords)
   "Produce a regexp matching some keywords of Nix.
@@ -785,60 +778,20 @@ not to any other arguments."
                                       (+ 2 (current-indentation)))))))
     (when matching-indentation (indent-line-to matching-indentation) t)))
 
-(defun nix-mode-search-backward ()
-  "Search backward for items of interest regarding indentation."
-  (re-search-backward nix-re-ends nil t)
-  (re-search-backward nix-re-quotes nil t)
-  (re-search-backward nix-re-caps nil t))
-
 (defun nix-indent-expression-start ()
-  "Indent the start of a nix expression."
-  (let* ((ends 0)
-         (once nil)
-         (done nil)
-         (indent (current-indentation)))
-    (save-excursion
-      ;; we want to indent this line, so we don't care what it
-      ;; contains skip to the beginning so reverse searching doesn't
-      ;; find any matches within
-      (beginning-of-line)
-      ;; search backward until an unbalanced cap is found or no cap or
-      ;; end is found
-      (while (and (not done) (nix-mode-search-backward))
-        (cond
-         ((looking-at nix-re-quotes)
-          ;; skip over strings entirely
-          (re-search-backward nix-re-quotes nil t))
-         ((looking-at nix-re-comments)
-          ;; skip over comments entirely
-          (re-search-backward nix-re-comments nil t))
-         ((looking-at nix-re-ends)
-          ;; count the matched end
-          ;; this means we expect to find at least one more cap
-          (setq ends (+ ends 1)))
-         ((looking-at nix-re-caps)
-          ;; we found at least one cap
-          ;; this means our function will return true
-          ;; this signals to the caller we handled the indentation
-          (setq once t)
-          (if (> ends 0)
-              ;; this cap corresponds to a previously matched end
-              ;; reduce the number of unbalanced ends
-              (setq ends (- ends 1))
-            ;; no unbalanced ends correspond to this cap
-            ;; this means we have found the expression that contains our line
-            ;; we want to indent relative to this line
-            (setq indent (current-indentation))
-            ;; signal that the search loop should exit
-            (setq done t))))))
-    ;; done is t when we found an unbalanced expression cap
-    (when done
-      ;; indent relative to the indentation of the expression
-      ;; containing our line
-      (indent-line-to (+ tab-width indent)))
-    ;; return t to the caller if we found at least one cap
-    ;; this signals that we handled the indentation
-    once))
+  "Indent the line as a continuation of the enclosing expression.
+Indent `tab-width' past the indentation of the line containing
+the innermost unclosed bracket.  Return non-nil when such a
+bracket exists and indentation was applied."
+  (let ((open (save-excursion
+                (beginning-of-line)
+                (nth 1 (nix--get-parse-state (point))))))
+    (when open
+      (indent-line-to (+ tab-width
+                         (save-excursion
+                           (goto-char open)
+                           (current-indentation))))
+      t)))
 
 (defun nix-indent-prev-level ()
   "Get the indent level of the previous line."
