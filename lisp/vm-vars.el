@@ -7533,9 +7533,7 @@ Most addons are from `vm-rfaddons-infect-vm'.
 
 You must restart VM after a change to cause any effects."
   :group 'vm-rfaddons
-  :type '(set (const :tag "Enable shrinking of multi-line headers to one line."
-		     shrunken-headers)
-	      (const :tag "Open a line when typing in quoted text"
+  :type '(set (const :tag "Open a line when typing in quoted text"
 		     open-line)
 	      (const :tag "Check the recipients before sending a message"
 		     check-recipients)
@@ -7550,6 +7548,36 @@ You must restart VM after a change to cause any effects."
 	      (const :tag "Automatically save attachments of new messages" 
 		     auto-save-all-attachments)
 	      (const :tag "Enable all addons" t)))
+
+(defcustom vm-enable-shrunken-headers nil
+  "*Non-nil means fold a header that runs onto more than one line.
+A message with fifty recipients puts the subject a page down; with this set
+VM shows the first line of such a header and hides the rest behind a widget
+you can click, or `vm-shrunken-headers-toggle' on the lot.
+
+This needs a presentation buffer, that is `vm-always-use-presentation'
+non-nil: the overlays it uses would otherwise land in the folder buffer,
+which is the file on disk."
+  :group 'vm-presentation
+  :type 'boolean)
+
+(defface vm-shrunken-headers-face 
+  '((((class color) (background light))
+     (:background "grey"))
+    (((class color) (background dark))
+     (:background "DimGrey"))
+    (t (:dim t)))
+  "Used for marking shrunken headers."
+  :group 'vm-presentation)
+
+(defconst vm-shrunken-headers-keymap
+  (let ((map (if (featurep 'xemacs) (make-keymap) (copy-keymap vm-mode-map))))
+    (define-key map [(return)]   'vm-shrunken-headers-toggle-this)
+    (if (featurep 'xemacs)
+        (define-key map [(button2)]  'vm-shrunken-headers-toggle-this-mouse)
+      (define-key map [(mouse-2)]  'vm-shrunken-headers-toggle-this-mouse))
+    map)
+  "Keymap used for shrunken-headers glyphs.")
 
 (defcustom vm-summary-enable-faces nil
   "A non-NIL value enables the use of faces in the summary buffer.

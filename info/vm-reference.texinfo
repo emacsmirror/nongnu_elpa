@@ -171,9 +171,6 @@ The following options are possible.
    order to encode the headers before sending.
  - fake-date: if enabled allows you to fake the date of an outgoing message.
 
-@code{vm-mode} options:
- - shrunken-headers: enable shrunken-headers by advising several functions 
-
 Other EXPERIMENTAL options:
  - auto-save-all-attachments: add @code{vm-mime-auto-save-all-attachments} to
    @code{vm-select-new-message-hook} for automatic saving of attachments.
@@ -189,33 +186,6 @@ This will enable all @code{vm-mail-mode} options plus the
 @code{vm-mail-mode} options.
 
 or do the binding and advising on your own.
-@end deffn
-
-@deffn Command vm-shrunken-headers &optional toggle
-@findex vm-shrunken-headers
-Hide or show headers which occupy more than one line.
-Well, one might do it more precisely with only some headers,
-but it is sufficient for me!
-
-If the optional argument TOGGLE, then hiding is toggled.
-
-The face used for the visible hidden regions is @code{vm-shrunken-headers-face} and
-the keymap used within that region is @code{vm-shrunken-headers-keymap}.
-@end deffn
-
-@deffn Command vm-shrunken-headers-toggle
-@findex vm-shrunken-headers-toggle
-Toggle display of shrunken headers.
-@end deffn
-
-@deffn Command vm-shrunken-headers-toggle-this
-@findex vm-shrunken-headers-toggle-this
-Toggle display of shrunken headers.
-@end deffn
-
-@deffn Command vm-shrunken-headers-toggle-this-mouse &optional event
-@findex vm-shrunken-headers-toggle-this-mouse
-Toggle display of shrunken headers.
 @end deffn
 
 @deffn Command vm-toggle-best-mime
@@ -7880,6 +7850,33 @@ Prefix arg N means scroll forward N lines.
 Negative arg means scroll backward.
 @end deffn
 
+@deffn Command vm-shrunken-headers &optional toggle
+@findex vm-shrunken-headers
+Hide or show headers which occupy more than one line.
+Well, one might do it more precisely with only some headers,
+but it is sufficient for me!
+
+If the optional argument TOGGLE, then hiding is toggled.
+
+The face used for the visible hidden regions is @code{vm-shrunken-headers-face} and
+the keymap used within that region is @code{vm-shrunken-headers-keymap}.
+@end deffn
+
+@deffn Command vm-shrunken-headers-toggle
+@findex vm-shrunken-headers-toggle
+Toggle display of shrunken headers.
+@end deffn
+
+@deffn Command vm-shrunken-headers-toggle-this
+@findex vm-shrunken-headers-toggle-this
+Toggle display of shrunken headers.
+@end deffn
+
+@deffn Command vm-shrunken-headers-toggle-this-mouse &optional event
+@findex vm-shrunken-headers-toggle-this-mouse
+Toggle display of shrunken headers.
+@end deffn
+
 @appendixsubsec User options
 
 @defopt vm-assimilate-new-messages-sorted
@@ -7892,6 +7889,18 @@ Otherwise they are appended to the folder, which is VM default.
 @vindex vm-display-xfaces
 Non-nil means display images as specified in X-Face headers.
 This requires XEmacs with native xface support compiled in.
+@end defopt
+
+@defopt vm-enable-shrunken-headers
+@vindex vm-enable-shrunken-headers
+Non-nil means fold a header that runs onto more than one line.
+A message with fifty recipients puts the subject a page down; with this set
+VM shows the first line of such a header and hides the rest behind a widget
+you can click, or @code{vm-shrunken-headers-toggle} on the lot.
+
+This needs a presentation buffer, that is @code{vm-always-use-presentation}
+non-nil: the overlays it uses would otherwise land in the folder buffer,
+which is the file on disk.
 @end defopt
 
 @defopt vm-fill-paragraphs-containing-long-lines

@@ -22,6 +22,7 @@
 
 ;;; Code:
 
+(require 'wid-edit)		; the shrunken-header widget
 (require 'vm-macro)
 (require 'vm-window)
 (require 'vm-motion)
@@ -840,11 +841,135 @@ preview or the full message, governed by the the variables
      ;; 8. Show the full message if necessary
      (if need-preview
 	 (vm-update-summary-and-mode-line)
-       (vm-show-current-message))))
+       (vm-show-current-message))
+
+     ;; 9. Fold the headers that run long, if asked
+     (when vm-enable-shrunken-headers
+       (vm-shrunken-headers))))
 
   (vm-run-hook-on-message 'vm-select-message-hook (car vm-message-pointer)))
 
 (defalias 'vm-preview-current-message 'vm-present-current-message)
+
+;;; Shrunken headers
+
+;;;###autoload
+(defun vm-shrunken-headers-toggle ()
+  "Toggle display of shrunken headers."
+  (interactive)
+  (vm-shrunken-headers 'toggle))
+
+;;;###autoload
+(defun vm-shrunken-headers-toggle-this-mouse (&optional event)
+  "Toggle display of shrunken headers."
+  (interactive "e")
+  (mouse-set-point event)
+  (end-of-line)
+  (vm-shrunken-headers-toggle-this))
+
+;;;###autoload
+(defun vm-shrunken-headers-toggle-this-widget (widget &rest _event)
+  (goto-char (widget-get widget :to))
+  (end-of-line)
+  (vm-shrunken-headers-toggle-this))
+
+;;;###autoload
+(defun vm-shrunken-headers-toggle-this ()
+  "Toggle display of shrunken headers."
+  (interactive)
+  
+  (save-excursion
+    (if (and (boundp 'vm-mail-buffer) (symbol-value 'vm-mail-buffer))
+        (set-buffer (symbol-value 'vm-mail-buffer)))
+    (if vm-presentation-buffer
+        (set-buffer vm-presentation-buffer))
+    (let ((o (or (car (vm-shrunken-headers-get-overlays (point)))
+                 (car (vm-shrunken-headers-get-overlays
+                       (save-excursion (end-of-line)
+                                       (forward-char 1)
+                                       (point)))))))
+      (save-restriction
+        (narrow-to-region (- (overlay-start o) 7) (overlay-end o))
+        (vm-shrunken-headers 'toggle)
+        (widen)))))
+
+(defun vm-shrunken-headers-get-overlays (start &optional end)
+  (let ((o-list (if end
+                    (overlays-in start end)
+                  (overlays-at start))))
+    (setq o-list (mapcar (lambda (o)
+                           (if (overlay-get o 'vm-shrunken-headers)
+                               o
+                             nil))
+                         o-list)
+          o-list (delete nil o-list))))
+
+;;;###autoload
+(defun vm-shrunken-headers (&optional toggle)
+  "Hide or show headers which occupy more than one line.
+Well, one might do it more precisely with only some headers,
+but it is sufficient for me!
+
+If the optional argument TOGGLE, then hiding is toggled.
+
+The face used for the visible hidden regions is `vm-shrunken-headers-face' and
+the keymap used within that region is `vm-shrunken-headers-keymap'."
+  (interactive "P")
+  
+  (save-excursion 
+    (let (headers-start headers-end start end o shrunken modified)
+      (if (equal major-mode 'vm-summary-mode)
+          (if (and (boundp 'vm-mail-buffer) (symbol-value 'vm-mail-buffer))
+              (set-buffer (symbol-value 'vm-mail-buffer))))
+      (if (equal major-mode 'vm-mode)
+          (if vm-presentation-buffer
+              (set-buffer vm-presentation-buffer)))
+
+      ;; We cannot use the default functions (vm-headers-of, ...) since
+      ;; we might also work within a presentation buffer.
+      (setq modified (buffer-modified-p))
+      (goto-char (point-min))
+      (setq headers-start (point-min)
+            headers-end (or (re-search-forward "\n\n" (point-max) t)
+                            (point-max)))
+
+      (cond (toggle
+             (setq shrunken (vm-shrunken-headers-get-overlays
+                             headers-start headers-end))
+             (while shrunken
+               (setq o (car shrunken))
+               (let ((w (overlay-get o 'vm-shrunken-headers-widget)))
+                 (widget-toggle-action w))
+	       (overlay-put o 'invisible (not (overlay-get o 'invisible)))
+	       (setq shrunken (cdr shrunken))))
+            (t
+             (goto-char headers-start)
+             (while (re-search-forward "^\\(\\s-+.*\n\\)+" headers-end t)
+               (setq start (match-beginning 0) end (match-end 0))
+               (setq o (vm-shrunken-headers-get-overlays start end))
+               (if o
+                   (setq o (car o))
+                 (setq o (make-overlay (1- start) end))
+                 (overlay-put o 'face 'vm-shrunken-headers-face)
+                 (overlay-put o 'mouse-face 'highlight)
+                 (overlay-put o 'local-map vm-shrunken-headers-keymap)
+                 (overlay-put o 'priority 10000)
+                 ;; make a new overlay for the invisibility, the other one we
+                 ;; made before is just for highlighting and key-bindings ...
+                 (setq o (make-overlay start end))
+                 (overlay-put o 'vm-shrunken-headers t)
+		 (goto-char (1- start))
+		 (overlay-put o 'start-closed nil)
+		 (overlay-put o 'vm-shrunken-headers-widget
+			      (widget-create 'visibility
+					     :action
+                                      'vm-shrunken-headers-toggle-this-widget))
+		 (overlay-put o 'invisible t)))))
+      (set-buffer-modified-p modified)
+      (goto-char (point-min)))))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
 
 (defun vm-show-current-message ()
   "Show the current message in the Presentation Buffer.  MIME decoding
@@ -980,7 +1105,8 @@ nothing about the headers, so the state is kept here instead.  Issue #513.")
 	;; not being moved.
 	(vm-restore-reading-position reading)
 	(vm-narrow-to-page))))
-  )
+  (when vm-enable-shrunken-headers
+    (vm-shrunken-headers)))
 
 (defun vm-restore-reading-position (position)
   "Put point back at POSITION, and the window with it.
