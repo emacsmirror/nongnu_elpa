@@ -954,10 +954,13 @@ Every message in an mboxcl2 folder must carry a @code{Content-Length}:
 that header is how the end of a message is found, so a message written
 without one cannot be read back.  VM writes one on every message it puts
 in such a folder, and refuses to read a message that has none, naming it.
-Another mailer that does not may leave a folder VM will not open; set
-@code{vm-mboxcl2-strict} to @samp{nil} to open it anyway, then
-@code{vm-change-folder-type} to mboxcl2 gives every message a length and
-the folder is sound again.
+Another mailer that does not may leave a folder VM will not open.  To
+repair one, give @code{vm-change-folder-type} a prefix argument: it asks
+for a file and converts it on disk, without visiting it, which is the only
+way in when the folder cannot be read.  Converting a folder to the type it
+already claims is the repair --- every length is recomputed --- and the
+folder as it was is kept in a backup file, named as Emacs names one when
+saving a buffer.  Changing a visited folder's type keeps a backup too.
 
 @vindex vm-folder-type-by-name-alist
 A folder that does not exist yet has no contents to examine, so a name
@@ -972,7 +975,8 @@ file called @file{old.mboxcl2} is read as BABYL.
 
 @findex vm-change-folder-type
 After a folder is loaded into VM, you can convert it to a different
-format using the command @code{vm-change-folder-type}.  It is a good
+format using the command @code{vm-change-folder-type}.  With a prefix
+argument it converts a folder on disk instead, one VM is not visiting.  It is a good
 idea to keep all your mail folders in a single format in order to avoid
 incompatibilities.
 

@@ -822,6 +822,21 @@ into one without a Content-Length cannot be read back -- see
       (format "%s %d\n" vm-content-length-header
 	      (vm-message-body-octets body (point-max))))))
 
+(defun vm-count-messages-in-buffer ()
+  "How many messages the current buffer holds, read as `vm-folder-type'.
+Used to check that a conversion kept them all; it walks the separators the
+same way the reader does, so a folder it cannot parse signals here."
+  (save-excursion
+    (goto-char (point-min))
+    (vm-skip-past-folder-header)
+    (let ((n 0))
+      (while (vm-find-leading-message-separator)
+	(setq n (1+ n))
+	(vm-skip-past-leading-message-separator)
+	(vm-find-trailing-message-separator)
+	(vm-skip-past-trailing-message-separator))
+      n)))
+
 (defun vm-convert-folder-type (old-type new-type)
   "Convert buffer from OLD-TYPE to NEW-TYPE.
 OLD-TYPE and NEW-TYPE should be symbols returned from vm-get-folder-type.
@@ -846,7 +861,16 @@ This will confuse VM if called on a folder buffer in vm-mode."
     (while pos-list
       (setq beg (car pos-list))
       (goto-char (car pos-list))
-      (insert-before-markers (vm-leading-message-separator new-type))
+      ;; Keep the envelope line when both types have one: it says who sent the
+      ;; message and when it arrived, and generating a new one puts VM's name
+      ;; and the time of the conversion there instead.  This function has no
+      ;; message structs to ask -- it works on text -- so the line is taken
+      ;; from the folder.
+      (insert-before-markers
+       (or (and (memq old-type '(From_ mboxcl2 BellFrom_))
+		(memq new-type '(From_ mboxcl2 BellFrom_))
+		(buffer-substring (car pos-list) (car (cdr pos-list))))
+	   (vm-leading-message-separator new-type)))
       (delete-region (car pos-list) (car (cdr pos-list)))
       (vm-convert-folder-type-headers old-type new-type)
       (setq pos-list (cdr (cdr pos-list)))
@@ -1181,10 +1205,10 @@ which is how to get such a folder open in order to repair it."
   (let ((what (format "Message at line %d has no %s, which this mboxcl2 folder needs"
 		      line (string-remove-suffix ":" vm-content-length-header))))
     (if vm-mboxcl2-strict
-	(error (concat what ".  To open the folder anyway, set"
-		       " vm-mboxcl2-strict to nil; then"
-		       " M-x vm-change-folder-type mboxcl2 gives every message"
-		       " a length and the folder is sound again"))
+	(error (concat what ".  To repair it: C-u M-x vm-change-folder-type"
+		       " mboxcl2, which converts the folder on disk without"
+		       " visiting it, gives every message a length, and keeps"
+		       " the folder as it was in a backup file"))
       (vm-warn 0 2 "%s; looking for the next From_ line instead" what))))
 
 (defun vm-find-trailing-message-separator (&optional headers-start)
@@ -5543,8 +5567,95 @@ contents."
 	(setq b-list (cdr b-list)))
       vbuffers )))
 
+(defun vm-folder-backup-name (file)
+  "The name Emacs would back FILE up as, were it saving a buffer.
+`make-backup-file-name' honours `backup-directory-alist', and
+`find-backup-file-name' the numbered-backup settings, so a user who keeps
+backups somewhere else, or keeps several, gets this one where the others are.
+
+The copy is made whatever `make-backup-files' says: this is not an ordinary
+save but a rewrite of every message in a folder, and VM promises the copy in
+the message it prints and in the error that recommends the conversion."
+  (if version-control
+      (car (find-backup-file-name file))
+    (make-backup-file-name file)))
+
+(defun vm-backup-folder-file ()
+  "Copy this folder's file to its backup name, if it has one and it exists.
+For a change about to rewrite every message: Emacs backs a file up on the
+first save of its buffer, so a folder already saved this session would have
+none."
+  (when (and buffer-file-name (file-exists-p buffer-file-name))
+    (let ((backup (vm-folder-backup-name buffer-file-name)))
+      (copy-file buffer-file-name backup t)
+      (vm-inform 5 "Kept the folder as it was in %s"
+		 (abbreviate-file-name backup)))))
+
+(defun vm-change-folder-type-of-file (file type)
+  "Convert the folder FILE on disk to TYPE, without visiting it.
+This is how to repair a folder VM will not read: a folder saying it is mboxcl2
+with a message that has no `Content-Length' cannot be visited, so its type
+cannot be changed in a buffer.  `vm-mboxcl2-strict' is bound to nil while the
+folder is read here, since repairing it is the whole point -- nothing global
+is left switched off afterwards, which is the trouble with doing it by hand.
+
+TYPE may be the type the folder already claims: converting mboxcl2 to mboxcl2
+recomputes every length, and that is the repair.
+
+The file is written only if the result reads back as TYPE, strictly, and holds
+the same number of messages; a folder already sound is not rewritten at all.
+The previous contents are kept in a backup file, named as Emacs would name
+one when saving a buffer."
+  (let ((buffer (vm-get-file-buffer file)))
+    (when buffer
+      (when (buffer-modified-p buffer)
+	(error (concat "%s is visited and has unsaved changes; save it, or"
+		       " change its type in its buffer with"
+		       " M-x vm-change-folder-type")
+	       (file-name-nondirectory file)))
+      ;; Nothing is lost: the buffer has no changes.  A folder that failed to
+      ;; open leaves one of these behind, holding however many messages were
+      ;; read before the error -- five of seven, in the case this was written
+      ;; for -- so it is not a buffer to keep, let alone to convert from.
+      (vm-inform 5 "Killing the buffer visiting %s, which has no changes"
+		 (file-name-nondirectory file))
+      (kill-buffer buffer)))
+  (let ((old (vm-get-folder-type file))
+	(coding-system-for-read (vm-binary-coding-system))
+	(coding-system-for-write (vm-binary-coding-system))
+	before after original)
+    (when (memq old '(nil unknown))
+      (error "%s has no folder type VM recognizes, so there is nothing to convert"
+	     (file-name-nondirectory file)))
+    (with-temp-buffer
+      (set-buffer-multibyte nil)
+      (insert-file-contents-literally file)
+      (setq original (buffer-string))
+      (let ((vm-folder-type old)
+	    (vm-mboxcl2-strict nil))
+	(setq before (vm-count-messages-in-buffer))
+	(vm-convert-folder-type old type))
+      ;; strict this time: what would be written has to read back as what it
+      ;; now says it is, or the file is left as it was
+      (let ((vm-folder-type type))
+	(setq after (vm-count-messages-in-buffer)))
+      (cond ((/= before after)
+	     (error (concat "Not writing %s: it holds %d messages and the"
+			    " conversion produced %d")
+		    (file-name-nondirectory file) before after))
+	    ((equal original (buffer-string))
+	     (vm-inform 5 "%s is already a sound %s folder, %d messages"
+			(file-name-nondirectory file) type after))
+	    (t
+	     (let ((backup (vm-folder-backup-name file)))
+	       (copy-file file backup t)
+	       (write-region (point-min) (point-max) file nil 'quiet)
+	       (vm-inform 5 "%s converted from %s to %s, %d messages; was %s"
+			  (file-name-nondirectory file) old type after
+			  (abbreviate-file-name backup))))))))
+
 ;;;###autoload
-(defun vm-change-folder-type (type)
+(defun vm-change-folder-type (type &optional file)
   "Change folder type to TYPE.
 The old name `From_-with-Content-Length' is accepted for `mboxcl2'.
 TYPE may be one of the following symbol values:
@@ -5555,18 +5666,32 @@ TYPE may be one of the following symbol values:
     mmdf
     babyl
 
-Interactively TYPE will be read from the minibuffer."
+Interactively TYPE will be read from the minibuffer.
+
+With a prefix argument, or with FILE given, convert a folder on disk that VM
+is not visiting.  That is how to repair a folder VM will not read -- see
+`vm-change-folder-type-of-file'."
   (interactive
    (let ((this-command this-command)
 	 (last-command last-command)
-	 (types vm-supported-folder-types))
+	 (types vm-supported-folder-types)
+	 (file nil))
+     (when current-prefix-arg
+       (setq file (vm-read-file-name "Change folder type of file: "
+				     (or vm-folder-directory default-directory)
+				     nil t nil 'vm-folder-history)))
      (save-current-buffer
-       (vm-select-folder-buffer)
-       (vm-error-if-virtual-folder)
-       (setq types (vm-delqual (symbol-name vm-folder-type)
-			       (copy-sequence types)))
+       (unless file
+	 (vm-select-folder-buffer)
+	 (vm-error-if-virtual-folder)
+	 (setq types (vm-delqual (symbol-name vm-folder-type)
+				 (copy-sequence types))))
        (list (vm-canonical-folder-type
-	      (intern (vm-read-string "Change folder to type: " types)))))))
+	      (intern (vm-read-string "Change folder to type: " types)))
+	     file))))
+  (when file
+    (vm-change-folder-type-of-file (expand-file-name file) type))
+  (unless file
   (vm-select-folder-buffer-and-validate 1 (vm-interactive-p))
   (vm-error-if-virtual-folder)
   (if (not (memq type '(From_ BellFrom_ mboxcl2 mmdf babyl)))
@@ -5574,6 +5699,10 @@ Interactively TYPE will be read from the minibuffer."
   (if (or (null vm-folder-type)
 	  (eq vm-folder-type 'unknown))
       (error "Current folder's type is unknown, can't change it."))
+  ;; Changing the type rewrites every message in the folder, so keep what is
+  ;; on disk now.  Emacs' own backup happens on the first save of a buffer,
+  ;; which for a folder saved earlier in the session has been and gone.
+  (vm-backup-folder-file)
   (let ((mp vm-message-list)
 	(buffer-read-only nil)
 	(old-type vm-folder-type)
@@ -5626,7 +5755,7 @@ Interactively TYPE will be read from the minibuffer."
   ;; message separator strings may have leaked into view
   (if (> (point-max) (vm-text-end-of (car vm-message-pointer)))
       (narrow-to-region (point-min) (vm-text-end-of (car vm-message-pointer))))
-  (vm-display nil nil '(vm-change-folder-type) '(vm-change-folder-type)))
+  (vm-display nil nil '(vm-change-folder-type) '(vm-change-folder-type))))
 
 (defun vm-register-global-garbage-files (files)
   "Add global garbage collection actions to delete all of FILES."

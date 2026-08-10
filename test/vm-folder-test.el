@@ -2532,10 +2532,13 @@ something other than what it says it is and says nothing at all."
           (let* ((vm-mboxcl2-strict t)
                  (message (cadr (should-error (vm-visit-folder file)))))
             (should (string-match-p "has no Content-Length" message))
-            ;; the message says which one, and how to get in anyway
+            ;; the message says which one, and how to repair it -- naming the
+            ;; command, not the variable: turning strictness off by hand is
+            ;; easy to forget to turn back on (emacs-vm/vm#613)
             (should (string-match-p "line [0-9]+" message))
-            (should (string-match-p "vm-mboxcl2-strict" message))
-            (should (string-match-p "vm-change-folder-type" message))))
+            (should (string-match-p "vm-change-folder-type" message))
+            (should (string-match-p "backup file" message))
+            (should-not (string-match-p "set vm-mboxcl2-strict" message))))
       (delete-directory dir t))))
 
 (ert-deftest vm-folder-test-a-missing-length-can-be-repaired ()
@@ -2575,6 +2578,167 @@ describes, so it had better work."
           (should (= (length vm-message-list) 2))
           (should (eq vm-folder-type vm-default-From_-folder-type)))
       (delete-directory dir t))))
+
+;;; Changing a folder's type on disk (emacs-vm/vm#613)
+
+(defconst vm-folder-test--seven-and-two-short
+  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+          "From: alice@example.com\nSubject: one\nContent-Length: 10\n\n"
+          "Body one.\n"
+          "From bob@example.com Sun Aug  9 09:00:00 2026\n"
+          "From: bob@example.com\nSubject: two\n\nBody two.\n\n"
+          "From carol@example.com Mon Aug 10 10:00:00 2026\n"
+          "From: carol@example.com\nSubject: three\n\nBody three.\n\n")
+  "A folder claiming mboxcl2 whose second and third messages have no length.")
+
+(defmacro vm-folder-test-with-file (spec &rest body)
+  "Run BODY with the file SPEC names written in a directory of its own.
+SPEC is (VAR NAME CONTENT)."
+  (declare (indent 1) (debug t))
+  (let ((var (nth 0 spec)) (name (nth 1 spec)) (content (nth 2 spec)))
+    `(let ((dir (file-name-as-directory (make-temp-file "vm-folder-disk" t))))
+       (unwind-protect
+           (let ((,var (expand-file-name ,name dir)))
+             (write-region ,content nil ,var nil 'quiet)
+             ,@body)
+         (delete-directory dir t)))))
+
+(ert-deftest vm-folder-test-on-disk-conversion-repairs-a-folder-vm-cannot-read ()
+  "A folder VM refuses to read is converted on disk and then reads.
+Its type cannot be changed in a buffer, because it cannot be visited; that is
+what this is for, and turning `vm-mboxcl2-strict' off by hand -- and having to
+remember to turn it back on -- is what it replaces."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (let ((vm-mboxcl2-strict t))
+      (should-error (vm-visit-folder file))
+      (vm-change-folder-type-of-file file 'mboxcl2)
+      (vm-visit-folder file)
+      (should (= (length vm-message-list) 3))
+      (should (eq vm-folder-type 'mboxcl2)))))
+
+(ert-deftest vm-folder-test-on-disk-conversion-keeps-the-envelope-lines ()
+  "Every envelope line is the one it was: the folder is repaired, not rewritten.
+`vm-convert-folder-type' works on text and has no message structs to ask, so
+it used to generate \"From VM <now>\" for each one."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (vm-change-folder-type-of-file file 'mboxcl2)
+    (with-temp-buffer
+      (insert-file-contents file)
+      (let ((lines nil))
+        (goto-char (point-min))
+        (while (re-search-forward "^From [^\n]*" nil t)
+          (push (match-string 0) lines))
+        (should (equal (nreverse lines)
+                       '("From alice@example.com Sat Aug  8 14:24:13 2026"
+                         "From bob@example.com Sun Aug  9 09:00:00 2026"
+                         "From carol@example.com Mon Aug 10 10:00:00 2026")))))))
+
+(ert-deftest vm-folder-test-on-disk-conversion-keeps-a-backup ()
+  "The folder as it was is kept in a backup file, since this rewrites it all.
+The name is the one Emacs would use saving a buffer, so someone who keeps
+backups in a directory of their own gets this one there too."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (vm-change-folder-type-of-file file 'mboxcl2)
+    (should (file-exists-p (vm-folder-backup-name file)))
+    (with-temp-buffer
+      (insert-file-contents (vm-folder-backup-name file))
+      (should (equal (buffer-string) vm-folder-test--seven-and-two-short))))
+  ;; and it lands where backup-directory-alist says
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (let* ((elsewhere (file-name-as-directory
+                       (make-temp-file "vm-folder-backups" t)))
+           (backup-directory-alist (list (cons "." elsewhere))))
+      (unwind-protect
+          (progn
+            (vm-change-folder-type-of-file file 'mboxcl2)
+            (should (file-exists-p (vm-folder-backup-name file)))
+            (should (equal (file-name-directory (vm-folder-backup-name file))
+                           elsewhere))
+            (should-not (file-exists-p (concat file "~"))))
+        (delete-directory elsewhere t)))))
+
+(ert-deftest vm-folder-test-on-disk-conversion-leaves-a-sound-folder-alone ()
+  "Run twice, the second run finds nothing to do and does not rewrite the file.
+A conversion that is not idempotent cannot say that, and this one was not
+until it stopped regenerating the envelope lines."
+  (vm-folder-test-with-file (file "broken.mboxcl2"
+                                  vm-folder-test--seven-and-two-short)
+    (vm-change-folder-type-of-file file 'mboxcl2)
+    (let ((repaired (with-temp-buffer (insert-file-contents file)
+                                      (buffer-string)))
+          (stamp (file-attribute-modification-time (file-attributes file))))
+      (delete-file (vm-folder-backup-name file))
+      (vm-change-folder-type-of-file file 'mboxcl2)
+      (should-not (file-exists-p (vm-folder-backup-name file)))
+      (should (equal repaired (with-temp-buffer (insert-file-contents file)
+                                               (buffer-string))))
+      (should (equal stamp (file-attribute-modification-time
+                            (file-attributes file)))))))
+
+(ert-deftest vm-folder-test-on-disk-conversion-will-not-touch-unsaved-changes ()
+  "A visited folder with changes is refused, and named, rather than converted
+behind the buffer's back.  An unmodified one is killed: a folder that failed
+to open leaves a buffer holding only the messages read before the error."
+  (vm-folder-test-with-file (file "folder.mbox"
+                                  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                          "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
+    (let ((text-quoting-style 'grave))
+      (vm-visit-folder file)
+      (with-current-buffer (vm-get-file-buffer file)
+        (let ((buffer-read-only nil)) (insert "x")))
+      (should (string-match-p "unsaved changes"
+                              (cadr (should-error
+                                     (vm-change-folder-type-of-file file 'mboxcl2)))))
+      (with-current-buffer (vm-get-file-buffer file) (set-buffer-modified-p nil))
+      (vm-change-folder-type-of-file file 'mboxcl2)
+      (should-not (vm-get-file-buffer file))
+      ;; the file is mboxcl2 now; whether VM *reads* it as one is a separate
+      ;; question, since this one is named .mbox and the default settings do
+      ;; not trust a Content-Length
+      (with-temp-buffer
+        (insert-file-contents file)
+        (should (string-match-p "^Content-Length: [0-9]+$" (buffer-string)))))))
+
+(ert-deftest vm-folder-test-on-disk-conversion-needs-a-folder ()
+  "A file that is not a folder VM knows is refused, not guessed at."
+  (vm-folder-test-with-file (file "notes.txt" "just some text\n")
+    (let ((text-quoting-style 'grave))
+      (should (string-match-p "no folder type"
+                              (cadr (should-error
+                                     (vm-change-folder-type-of-file file 'mboxcl2))))))))
+
+(ert-deftest vm-folder-test-count-messages-walks-the-separators ()
+  "`vm-count-messages-in-buffer' counts what the reader would read."
+  (with-temp-buffer
+    (insert vm-folder-test--seven-and-two-short)
+    (let ((vm-folder-type 'mboxcl2)
+          (vm-mboxcl2-strict nil))
+      (cl-letf (((symbol-function 'vm-warn) #'ignore))
+        (should (= (vm-count-messages-in-buffer) 3)))))
+  (with-temp-buffer
+    (let ((vm-folder-type 'From_))
+      (should (= (vm-count-messages-in-buffer) 0)))))
+
+(ert-deftest vm-folder-test-in-buffer-conversion-keeps-a-backup-too ()
+  "Changing a visited folder's type keeps the file as it was in FILE~.
+Emacs backs a file up on the first save of its buffer, so a folder saved
+earlier in the session would have had none, and this rewrites every message."
+  (vm-folder-test-with-file (file "folder.mbox"
+                                  (concat "From alice@example.com Sat Aug  8 14:24:13 2026\n"
+                                          "From: alice@example.com\nSubject: one\n\nBody.\n\n"))
+    (let ((before (with-temp-buffer (insert-file-contents file) (buffer-string))))
+      (when (file-exists-p (vm-folder-backup-name file))
+        (delete-file (vm-folder-backup-name file)))
+      (vm-visit-folder file)
+      (vm-change-folder-type 'mboxcl2)
+      (should (file-exists-p (vm-folder-backup-name file)))
+      (with-temp-buffer
+        (insert-file-contents (vm-folder-backup-name file))
+        (should (equal (buffer-string) before))))))
 
 (provide 'vm-folder-test)
 
