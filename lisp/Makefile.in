@@ -202,8 +202,12 @@ custom-load.el: $(SOURCES:%=@srcdir@/%)
 ##############################################################################
 install-pkg: all $(INSTALL_FILES)
 	@mkdir -p -m 0755 $(DESTDIR)$(lispdir)
-	@# Remove obsolete vm-pine.el (renamed to vm-postpone.el in 8.4.0)
+	@# Files an earlier VM installed that this one does not, which Emacs
+	@# would otherwise go on loading in preference to nothing.  `uninstall'
+	@# only knows the current SOURCES, so a dropped file has to be named.
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-rfaddons.el \
+		  $(DESTDIR)$(lispdir)/vm-rfaddons.elc
 	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
 	  echo "Installing $$i in $(DESTDIR)$(lispdir)" ;    \
 	  $(INSTALL_DATA) $$i $(DESTDIR)$(lispdir) ;         \
@@ -211,8 +215,12 @@ install-pkg: all $(INSTALL_FILES)
 	@echo VM ELISP files successfully installed
 
 uninstall-pkg: $(INSTALL_FILES)
-	@# Remove obsolete vm-pine.el (renamed to vm-postpone.el in 8.4.0)
+	@# Files an earlier VM installed that this one does not, which Emacs
+	@# would otherwise go on loading in preference to nothing.  `uninstall'
+	@# only knows the current SOURCES, so a dropped file has to be named.
 	@$(RM) -f $(DESTDIR)$(lispdir)/vm-pine.el $(DESTDIR)$(lispdir)/vm-pine.elc
+	@$(RM) -f $(DESTDIR)$(lispdir)/vm-rfaddons.el \
+		  $(DESTDIR)$(lispdir)/vm-rfaddons.elc
 	@for i in $(SOURCES:%=@srcdir@/%) $(INSTALL_FILES) ; do  \
 	  echo "Uninstalling $$i from $(DESTDIR)$(lispdir)" ; \
 	  $(RM) -f $(DESTDIR)$(lispdir)/$$i ;                  \

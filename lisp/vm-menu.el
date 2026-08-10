@@ -1343,7 +1343,7 @@ separate dedicated menu bar, depending on the value of
   (customize-group 'vm))
 
 (defun vm-view-news ()
-  "View NEWS for the current VM version."
+  "View NEWS.md for the current VM version."
   (interactive)
   (let* ((vm-dir (file-name-directory (locate-library "vm")))
 	 (doc-dirs (list (and vm-configure-docdir
@@ -1353,10 +1353,10 @@ separate dedicated menu bar, depending on the value of
     (while doc-dirs
       (setq doc-dir (car doc-dirs))
       (if (and doc-dir
-               (file-exists-p (expand-file-name "NEWS" doc-dir)))
+               (file-exists-p (expand-file-name "NEWS.md" doc-dir)))
           (setq doc-dirs nil)
 	(setq doc-dirs (cdr doc-dirs))))
-    (vm-view-file-other-frame (expand-file-name "NEWS" doc-dir))))
+    (vm-view-file-other-frame (expand-file-name "NEWS.md" doc-dir))))
 
 (defun vm-view-manual ()
   "View the VM manual."

@@ -27,7 +27,7 @@ VM releases are avaliable through a non-gnu ELPA package:
    M-x package-install <ret> vm <ret>
 ```
 
-If you wish to build from source, see [INSTALL](INSTALL)
+If you wish to build from source, see [INSTALL](INSTALL.md)
 for instructions.
 
 If you are new to VM, see example.vm for example configuration
@@ -75,6 +75,12 @@ after all):
 - [viewmail-maintainers](https://lists.nongnu.org/mailman/listinfo/viewmail-maintainers)
   aimed at at VM maintainers and packagers. The list is public but of
   limited interest outside its target audience.
+
+## Maintainers
+
+VM is maintained by a VM development team: Göran Uddeborg, John Stoffel, Mark
+Diekhans, Stefan Monnier and Ulrich Müller. More volunteers to help with
+development are needed; see [CONTRIBUTING](CONTRIBUTING.md).
 
 ## See also
 
