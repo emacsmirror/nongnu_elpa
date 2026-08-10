@@ -47,7 +47,7 @@ already registered in either the user or the global registry."
 
 (defclass nix-flake-ref-variable (transient-variable)
   ((constant-value :initarg :constant-value :initform nil)
-   (on-change :initarg :on-change)
+   (on-change :initarg :on-change :initform nil)
    (reader :initarg :reader :initform nil)))
 
 (cl-defmethod transient-init-value ((_obj nix-flake-ref-variable))
@@ -66,6 +66,9 @@ already registered in either the user or the global registry."
 (cl-defmethod transient-infix-set ((obj nix-flake-ref-variable) value)
   "Set the value of infix object OBJ to VALUE."
   (oset obj value value)
+  (when-let (variable (and (slot-boundp obj 'variable)
+			   (oref obj variable)))
+    (set variable value))
   (when-let (func (oref obj on-change))
     (funcall func value)))
 
@@ -273,6 +276,26 @@ command after the flake reference."
 		       ,@options)
                      " ")))
 
+(defun nix-flake--command-with-flake-argument (subcommand options flake-ref)
+  (concat nix-executable
+          " "
+          (mapconcat #'shell-quote-argument
+                     `(,@(nix-flake--to-list subcommand)
+		       "--flake"
+                       ,flake-ref
+		       ,@options)
+                     " ")))
+
+(defun nix-flake--command-with-flake-argument (subcommand options flake-ref)
+  (concat nix-executable
+          " "
+          (mapconcat #'shell-quote-argument
+                     `(,@(nix-flake--to-list subcommand)
+		       "--flake"
+                       ,flake-ref
+		       ,@options)
+                     " ")))
+
 (defun nix-flake--installable-command (subcommand options flake-ref attribute
 						  &optional extra-arguments)
   "Build a command line for a Nix subcommand.
@@ -374,7 +397,7 @@ For OPTIONS and FLAKE-REF, see the documentation of
 For OPTIONS and FLAKE-REF, see the documentation of
 `nix-flake-run-attribute'."
   (interactive (list (nix-flake--options) nix-flake-ref))
-  (compile (nix-flake--command '("flake" "update") options flake-ref)))
+  (compile (nix-flake--command-with-flake-argument '("flake" "update") options flake-ref)))
 
 ;;;###autoload (autoload 'nix-flake-dispatch "nix-flake" nil t)
 (transient-define-prefix nix-flake-dispatch (flake-ref &optional remote)
@@ -447,8 +470,8 @@ whatever supported by Nix."
    ((file-exists-p (expand-file-name "flake.nix" dir))
     (message "You have not created flake.lock yet, so creating it...")
     (let ((default-directory dir))
-      (nix-flake--command '("flake" "lock") nil
-                          (nix-flake--directory-ref dir))))
+      (compile (nix-flake--command '("flake" "lock") nil
+                                   (nix-flake--directory-ref dir)))))
    (t
     (nix-flake-init-dispatch))))
 
@@ -539,7 +562,7 @@ See `nix-flake-init-post-action' variable for details."
 
 ;;;;; The transient interface
 
-;;;###autoload (autoload 'nix-flake-init-dispatch "nix-flake" nil t)
+;;;###autoload (autoload 'nix-flake-init "nix-flake" nil t)
 (transient-define-prefix nix-flake-init-dispatch (&optional flake-ref)
   "Scaffold a project from a template."
   [:description "Initialize a flake"]
@@ -560,13 +583,13 @@ See `nix-flake-init-post-action' variable for details."
   (interactive)
   (let* ((root (locate-dominating-file default-directory ".git"))
          (default-directory
-           (if (and root
-                    (not (file-equal-p root default-directory))
-                    (yes-or-no-p (format-message
-                                  "The directory %s is not the repository root. Change to %s?"
-                                  default-directory root)))
-               root
-             default-directory)))
+          (if (and root
+                   (not (file-equal-p root default-directory))
+                   (yes-or-no-p (format-message
+                                 "The directory %s is not the repository root. Change to %s?"
+                                 default-directory root)))
+              root
+            default-directory)))
     (if (file-exists-p "flake.nix")
         (user-error "The directory already contains a flake")
       (nix-flake-init-dispatch))))
