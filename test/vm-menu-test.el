@@ -38,11 +38,6 @@
   (should (fboundp 'vm-menu-install-visited-folders-menu))
   (should (fboundp 'vm-menu-install-known-virtual-folders-menu)))
 
-(ert-deftest vm-menu-test-folder-functions-exist ()
-  "Test that folder menu functions exist."
-  (should (fboundp 'vm-menu-hm-make-folder-menu))
-  (should (fboundp 'vm-menu-hm-tree-make-menu)))
-
 ;;; Variable existence tests
 
 (ert-deftest vm-menu-test-variables-exist ()
@@ -256,6 +251,59 @@ the messages live on the server and `vm-expunge-folder' is the command."
     (with-current-buffer folder (setq vm-folder-access-method 'imap))
     (should (vm-menu-can-expunge-pop-messages-p))
     (should-not (vm-menu-can-expunge-imap-messages-p))))
+
+;;; The folder menu built from a directory tree.  Two functions had one test
+;;; between them, that they were bound.
+
+(ert-deftest vm-menu-test-tree-menu-makes-an-item-per-file ()
+  "Each file becomes [NAME (FUNCTION FULL-NAME) SELECTABLE].
+The menu shows the base name and acts on the whole path, which is the point
+of the exercise: a folder menu you can read, that visits the right file."
+  (should (equal (vm-menu-hm-tree-make-menu
+                  '("/mail/inbox" "/mail/archive") 'vm-visit-folder t)
+                 (list (vector "inbox" '(vm-visit-folder "/mail/inbox") t)
+                       (vector "archive" '(vm-visit-folder "/mail/archive") t))))
+  ;; and the selectable flag is passed through as it stands
+  (should (equal (vm-menu-hm-tree-make-menu '("/mail/inbox") 'vm-visit-folder nil)
+                 (list (vector "inbox" '(vm-visit-folder "/mail/inbox") nil)))))
+
+(ert-deftest vm-menu-test-tree-menu-nests-a-directory ()
+  "A directory becomes a submenu named after itself.
+A directory is a list whose first element is its own name."
+  (should (equal (vm-menu-hm-tree-make-menu
+                  '("/mail/inbox" ("/mail/lists" "/mail/lists/emacs"))
+                  'vm-visit-folder t)
+                 (list (vector "inbox" '(vm-visit-folder "/mail/inbox") t)
+                       (cons "lists"
+                             (list (vector "emacs"
+                                           '(vm-visit-folder "/mail/lists/emacs")
+                                           t)))))))
+
+(ert-deftest vm-menu-test-tree-menu-can-leave-out-hidden-directories ()
+  "With NO-HIDDEN-DIRS, a directory whose name begins with a dot is left out.
+Without it, it is kept: the argument is what decides, not the dot."
+  (let ((tree '(("/mail/.old" "/mail/.old/1996") ("/mail/lists" "/mail/lists/emacs"))))
+    (should (= 1 (length (vm-menu-hm-tree-make-menu tree 'vm-visit-folder t t))))
+    (should (= 2 (length (vm-menu-hm-tree-make-menu tree 'vm-visit-folder t nil))))))
+
+(ert-deftest vm-menu-test-tree-menu-leaves-out-what-the-regexps-match ()
+  "A file matching one of RE-HIDDEN-FILE-LIST is left out.
+That is how the auto-save and index files beside a folder stay off the menu."
+  (should (equal (vm-menu-hm-tree-make-menu
+                  '("/mail/inbox" "/mail/inbox.crash" "/mail/#inbox#")
+                  'vm-visit-folder t nil '("\\.crash\\'" "/#[^/]*#\\'"))
+                 (list (vector "inbox" '(vm-visit-folder "/mail/inbox") t)))))
+
+(ert-deftest vm-menu-test-tree-menu-can-offer-the-directory-itself ()
+  "With INCLUDE-CURRENT-DIR a submenu gets a `.' item for the directory.
+Visiting a directory is how VM asks for a folder inside it."
+  (let ((menu (vm-menu-hm-tree-make-menu
+               '(("/mail/lists" "/mail/lists/emacs"))
+               'vm-visit-folder t nil nil t)))
+    (should (equal (car (car menu)) "lists"))
+    (should (equal (car (cdr (car menu)))
+                   (vector "." '(vm-visit-folder "/mail/lists") t)))
+    (should (= (length (cdr (car menu))) 2))))
 
 (provide 'vm-menu-test)
 
