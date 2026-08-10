@@ -133,6 +133,16 @@
         (should (string-match-p "disconnected" (plist-get result :error))))))
   (should (null hermes-exec-test--canary)))
 
+(ert-deftest hermes-exec-test-start-is-idempotent-when-running ()
+  "Starting an already-live endpoint returns it without rebinding."
+  (let ((hermes-exec-enabled t)
+        (hermes-exec--process 'server))
+    (cl-letf (((symbol-function 'process-live-p)
+               (lambda (process) (eq process 'server)))
+              ((symbol-function 'hermes-exec--start-server)
+               (lambda (&rest _) (error "must not rebind a live endpoint"))))
+      (should (eq (hermes-exec-start) 'server)))))
+
 (ert-deftest hermes-exec-test-start-refuses-when-disabled ()
   "`hermes-exec-start' refuses to bind while `hermes-exec-enabled' is nil."
   (let ((hermes-exec-enabled nil)

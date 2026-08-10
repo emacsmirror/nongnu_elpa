@@ -868,26 +868,27 @@ the filter it inherits from the server."
 ;;;###autoload
 (defun hermes-exec-start ()
   "Start the Hermes eval endpoint.
-Refuse to start while `hermes-exec-enabled' is nil or the host would bind a
-public interface, and store the listening process for `hermes-exec-stop'."
+Return the existing listener when already running.  Otherwise refuse to start
+while `hermes-exec-enabled' is nil or the host would bind a public interface,
+and store the listening process for `hermes-exec-stop'."
   (interactive)
-  (unless hermes-exec-enabled
-    (user-error "Set `hermes-exec-enabled' to enable the Hermes eval endpoint"))
-  (when (process-live-p hermes-exec--process)
-    (user-error "Hermes eval endpoint already running"))
-  (let ((host (hermes-exec--resolve-host)))
-    (unless host
-      (user-error
-       "Set `hermes-exec-host' to your Tailscale IP; refusing to bind a public interface for a remote dashboard"))
-    (unless (hermes-exec--allowed-bind-host-p host)
-      (user-error "Refusing to bind eval endpoint to unsafe host %s" host))
-    (when (and (not (hermes-exec--loopback-host-p host))
-               (not (hermes-exec--expected-token)))
-      (user-error
-       "Refusing to bind non-loopback host %s without a token; set `hermes-exec-token' or EMACS_EXEC_TOKEN"
-       host))
-    (setq hermes-exec--process (hermes-exec--start-server host))
-    (message "Hermes eval endpoint listening on %s:%d" host hermes-exec-port)))
+  (if (process-live-p hermes-exec--process)
+      hermes-exec--process
+    (unless hermes-exec-enabled
+      (user-error "Set `hermes-exec-enabled' to enable the Hermes eval endpoint"))
+    (let ((host (hermes-exec--resolve-host)))
+      (unless host
+        (user-error
+         "Set `hermes-exec-host' to your Tailscale IP; refusing to bind a public interface for a remote dashboard"))
+      (unless (hermes-exec--allowed-bind-host-p host)
+        (user-error "Refusing to bind eval endpoint to unsafe host %s" host))
+      (when (and (not (hermes-exec--loopback-host-p host))
+                 (not (hermes-exec--expected-token)))
+        (user-error
+         "Refusing to bind non-loopback host %s without a token; set `hermes-exec-token' or EMACS_EXEC_TOKEN"
+         host))
+      (setq hermes-exec--process (hermes-exec--start-server host))
+      (message "Hermes eval endpoint listening on %s:%d" host hermes-exec-port))))
 
 (defun hermes-exec--live-connections (server)
   "Return live connection processes accepted by SERVER.
