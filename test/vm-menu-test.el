@@ -38,15 +38,6 @@
   (should (fboundp 'vm-menu-install-visited-folders-menu))
   (should (fboundp 'vm-menu-install-known-virtual-folders-menu)))
 
-(ert-deftest vm-menu-test-helper-functions-exist ()
-  "Test that helper functions exist."
-  (should (fboundp 'vm-menu-can-get-new-mail-p))
-  (should (fboundp 'vm-menu-can-save-p))
-  (should (fboundp 'vm-menu-can-revert-p))
-  (should (fboundp 'vm-menu-can-recover-p))
-  (should (fboundp 'vm-menu-can-expunge-pop-messages-p))
-  (should (fboundp 'vm-menu-can-expunge-imap-messages-p)))
-
 (ert-deftest vm-menu-test-folder-functions-exist ()
   "Test that folder menu functions exist."
   (should (fboundp 'vm-menu-hm-make-folder-menu))
@@ -155,6 +146,116 @@ is the branch that decides whether `vm-menu-fsfemacs-add-vm-menu' makes a button
 or a menu."
   (should (null window-system))
   (should (vm-menubar-buttons-possible-p)))
+
+;;; What the menu predicates say.  Each of the six had only a test that it
+;;; was bound.  They all answer for the folder buffer, from whatever buffer
+;;; the menu was raised in, and they all answer nil rather than signalling
+;;; when there is no folder -- a menu cannot show a backtrace.
+
+(defmacro vm-menu-test-with-folder-buffer (spec &rest body)
+  "Run BODY in a buffer whose folder buffer is the one SPEC names.
+SPEC is (FOLDER-VAR): it is bound to a buffer in `vm-mode', and BODY runs in
+a second buffer pointing at it, as a summary or presentation buffer does."
+  (declare (indent 1) (debug t))
+  (let ((folder (nth 0 spec)))
+    `(let ((,folder (generate-new-buffer " *vm-menu-test-folder*"))
+           (other (generate-new-buffer " *vm-menu-test-other*")))
+       (unwind-protect
+           (with-current-buffer other
+             (with-current-buffer ,folder (setq major-mode 'vm-mode))
+             (setq vm-mail-buffer ,folder)
+             ,@body)
+         (with-current-buffer ,folder (set-buffer-modified-p nil))
+         (kill-buffer ,folder)
+         (kill-buffer other)))))
+
+(ert-deftest vm-menu-test-predicates-are-nil-without-a-folder ()
+  "Outside a folder every one of them is nil, not an error."
+  (with-temp-buffer
+    (setq major-mode 'fundamental-mode)
+    (dolist (predicate '(vm-menu-can-get-new-mail-p vm-menu-can-save-p
+                         vm-menu-can-revert-p vm-menu-can-recover-p
+                         vm-menu-can-expunge-pop-messages-p
+                         vm-menu-can-expunge-imap-messages-p))
+      (should-not (funcall predicate)))))
+
+(ert-deftest vm-menu-test-can-get-new-mail-p-reads-the-folder ()
+  "New mail can be got unless the folder is read-only or blocked.
+The answer comes from the folder buffer even though the menu was raised in
+the summary."
+  (vm-menu-test-with-folder-buffer (folder)
+    (with-current-buffer folder
+      (setq vm-block-new-mail nil vm-folder-read-only nil))
+    (should (vm-menu-can-get-new-mail-p))
+    (with-current-buffer folder (setq vm-folder-read-only t))
+    (should-not (vm-menu-can-get-new-mail-p))
+    (with-current-buffer folder
+      (setq vm-folder-read-only nil vm-block-new-mail t))
+    (should-not (vm-menu-can-get-new-mail-p))
+    ;; a virtual folder has none of its own, and says yes anyway: the
+    ;; command gets mail for the folders it is made of
+    (with-current-buffer folder (setq major-mode 'vm-virtual-mode))
+    (should (vm-menu-can-get-new-mail-p))))
+
+(ert-deftest vm-menu-test-can-save-p-is-about-changes ()
+  "Saving is offered when the folder has changes, or is virtual."
+  (vm-menu-test-with-folder-buffer (folder)
+    (should-not (vm-menu-can-save-p))
+    (with-current-buffer folder (insert "changed"))
+    (should (vm-menu-can-save-p))
+    (with-current-buffer folder
+      (set-buffer-modified-p nil)
+      (setq major-mode 'vm-virtual-mode))
+    (should (vm-menu-can-save-p))))
+
+(ert-deftest vm-menu-test-can-revert-p-wants-a-file-to-revert-to ()
+  "Reverting needs both changes and a file: an unsaved folder has nothing
+to revert to."
+  (vm-menu-test-with-folder-buffer (folder)
+    (with-current-buffer folder (insert "changed"))
+    (should-not (vm-menu-can-revert-p))
+    (with-current-buffer folder
+      (setq buffer-file-name "/nonexistent/vm-menu-test/INBOX"))
+    (should (vm-menu-can-revert-p))
+    (with-current-buffer folder (set-buffer-modified-p nil))
+    (should-not (vm-menu-can-revert-p))))
+
+(ert-deftest vm-menu-test-can-recover-p-compares-the-auto-save-file ()
+  "Recovery is offered when the auto-save file is newer than the folder."
+  (let* ((dir (file-name-as-directory (make-temp-file "vm-menu-test" t)))
+         (file (expand-file-name "INBOX" dir))
+         (auto (expand-file-name "#INBOX#" dir)))
+    (unwind-protect
+        (vm-menu-test-with-folder-buffer (folder)
+          (write-region "folder\n" nil file nil 'quiet)
+          (with-current-buffer folder
+            (setq buffer-file-name file
+                  buffer-auto-save-file-name nil))
+          (should-not (vm-menu-can-recover-p))
+          (with-current-buffer folder
+            (setq buffer-auto-save-file-name auto))
+          ;; no auto-save file yet
+          (should-not (vm-menu-can-recover-p))
+          (write-region "newer\n" nil auto nil 'quiet)
+          (set-file-times auto (time-add (current-time) 60))
+          (should (vm-menu-can-recover-p)))
+      (delete-directory dir t))))
+
+(ert-deftest vm-menu-test-can-expunge-maildrop-messages-is-for-local-folders ()
+  "Expunging the maildrop is offered in a local folder, not in a POP or IMAP
+one.  It reads inverted, and is not: `vm-expunge-pop-messages' deletes from
+the server the messages a *local* folder retrieved, while in a POP folder
+the messages live on the server and `vm-expunge-folder' is the command."
+  (vm-menu-test-with-folder-buffer (folder)
+    (with-current-buffer folder (setq vm-folder-access-method nil))
+    (should (vm-menu-can-expunge-pop-messages-p))
+    (should (vm-menu-can-expunge-imap-messages-p))
+    (with-current-buffer folder (setq vm-folder-access-method 'pop))
+    (should-not (vm-menu-can-expunge-pop-messages-p))
+    (should (vm-menu-can-expunge-imap-messages-p))
+    (with-current-buffer folder (setq vm-folder-access-method 'imap))
+    (should (vm-menu-can-expunge-pop-messages-p))
+    (should-not (vm-menu-can-expunge-imap-messages-p))))
 
 (provide 'vm-menu-test)
 

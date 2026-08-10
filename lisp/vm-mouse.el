@@ -212,7 +212,13 @@ Mouse'."
       (vm-mail-to-mailto-url url)
     (let ((browser (or browser vm-url-browser))
 	  (switches (or switches vm-url-browser-switches)))
-      (cond ((symbolp browser)
+      (cond ((null browser)
+	     ;; nil means URL passing is turned off; see `vm-url-browser'.
+	     nil)
+	    ;; a symbol may name a function that is not loaded yet, so it is
+	    ;; called without asking whether it is one; a lambda is what
+	    ;; customize's function type gives, and used to be dropped here.
+	    ((or (symbolp browser) (functionp browser))
 	     (funcall browser url))
 	    ((stringp browser)
 	     (vm-inform 5 "Sending URL to %s..." browser)

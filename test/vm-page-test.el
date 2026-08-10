@@ -323,7 +323,10 @@ which is what that option's docstring promises."
   (let ((vm-url-browser 'browse-url))
     (should (string-match-p "browse-url" (vm-url-help nil)))
     (should (string-match-p "button 2" (vm-url-help nil)))
-    (should (string-match-p "button 3" (vm-url-help nil)))))
+    (should (string-match-p "button 3" (vm-url-help nil))))
+  ;; customize's function type allows a lambda, which has no name to print
+  (let ((vm-url-browser (lambda (url) url)))
+    (should (stringp (vm-url-help nil)))))
 
 ;;; Shrunken headers (issue #606)
 

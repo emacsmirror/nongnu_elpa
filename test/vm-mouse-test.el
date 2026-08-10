@@ -123,16 +123,70 @@
   (should (boundp 'vm-url-browser)))
 
 ;;; vm-mouse-send-url tests
+;;; What these two do, in place of a test each that they were bound.
 
-(ert-deftest vm-mouse-test-send-url-function-exists ()
-  "Test that vm-mouse-send-url function exists."
-  (should (fboundp 'vm-mouse-send-url)))
+(ert-deftest vm-mouse-test-send-url-mails-a-bare-address ()
+  "A URL that is only an address is sent as mail, not to the browser.
+This is what makes clicking a From line compose to it."
+  (let ((mailed nil))
+    (cl-letf (((symbol-function 'vm-mail-to-mailto-url)
+               (lambda (url) (setq mailed url))))
+      (vm-mouse-send-url "someone@example.com")
+      (should (equal mailed "mailto:someone@example.com"))
+      (setq mailed nil)
+      (vm-mouse-send-url "mailto:someone@example.com")
+      (should (equal mailed "mailto:someone@example.com")))))
+
+(ert-deftest vm-mouse-test-send-url-uses-the-browser-it-is-given ()
+  "A function browser is called with the URL; a program is run with switches.
+The argument wins over `vm-url-browser', which is how the button-3 menu
+offers a choice of browser."
+  (let ((got nil) (ran nil))
+    (cl-letf (((symbol-function 'vm-run-background-command)
+               (lambda (&rest args) (setq ran args)))
+              ((symbol-function 'vm-inform) #'ignore))
+      (let ((vm-url-browser (lambda (url) (setq got (cons 'default url)))))
+        (vm-mouse-send-url "http://example.com/")
+        (should (equal got '(default . "http://example.com/"))))
+      (vm-mouse-send-url "http://example.com/"
+                         (lambda (url) (setq got (cons 'given url))))
+      (should (equal got '(given . "http://example.com/")))
+      (let ((vm-url-browser-switches '("--new-window")))
+        (vm-mouse-send-url "http://example.com/" "/usr/bin/firefox")
+        (should (equal ran '("/usr/bin/firefox" "--new-window"
+                             "http://example.com/"))))
+      (vm-mouse-send-url "http://example.com/" "/usr/bin/firefox" '("-P"))
+      (should (equal ran '("/usr/bin/firefox" "-P" "http://example.com/"))))))
+
+(ert-deftest vm-mouse-test-send-url-with-no-browser-does-nothing ()
+  "A nil `vm-url-browser' means URL passing is off, as its docstring says.
+It used to reach `(funcall nil url)'."
+  (let ((vm-url-browser nil))
+    (should-not (vm-mouse-send-url "http://example.com/"))))
+
+(ert-deftest vm-mouse-test-get-mouse-track-string-reads-the-highlighted-text ()
+  "The text under the mouse is the text of the overlay that highlights it.
+An overlay without a `mouse-face' is not one of VM's buttons, so it is
+ignored -- font-lock's overlays would otherwise answer for it."
+  (with-temp-buffer
+    (insert "see http://example.com/ for more")
+    (let* ((end (progn (goto-char (point-min))
+                       (search-forward "http://example.com/") (point)))
+           (start (match-beginning 0))
+           (o (make-overlay start end))
+           (window (selected-window)))
+      (set-window-buffer window (current-buffer))
+      (overlay-put o 'mouse-face 'highlight)
+      (should (equal (vm-mouse-get-mouse-track-string
+                      (list 'mouse-1 (list window (+ start 2) '(0 . 0) 0)))
+                     "http://example.com/"))
+      ;; and not an overlay that is not a button
+      (overlay-put o 'mouse-face nil)
+      (should-not (vm-mouse-get-mouse-track-string
+                   (list 'mouse-1 (list window (+ start 2) '(0 . 0) 0)))))))
+
 
 ;;; Overlay text retrieval tests
-
-(ert-deftest vm-mouse-test-get-mouse-track-string-function-exists ()
-  "Test that vm-mouse-get-mouse-track-string function exists."
-  (should (fboundp 'vm-mouse-get-mouse-track-string)))
 
 ;;; Multiple overlays tests
 

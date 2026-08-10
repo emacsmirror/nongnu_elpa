@@ -180,10 +180,6 @@ The MS-Windows set has to include `:', which would otherwise turn every
 ;; Note: This function adds text attribution prefix to quoted text in a
 ;; composition buffer, NOT "Re:" to the subject line.
 
-(ert-deftest vm-reply-test-add-reply-subject-prefix-function-exists ()
-  "Test vm-add-reply-subject-prefix function exists."
-  (should (fboundp 'vm-add-reply-subject-prefix)))
-
 (ert-deftest vm-reply-test-add-reply-subject-prefix-prefixes-lines ()
   "Test vm-add-reply-subject-prefix adds prefix to lines."
   (let ((vm-included-text-prefix "> ")
@@ -250,17 +246,7 @@ The MS-Windows set has to include `:', which would otherwise turn every
 
 ;;; Composition buffer functions
 
-(ert-deftest vm-reply-test-composition-buffer-functions-exist ()
-  "Test composition buffer management functions exist."
-  (should (fboundp 'vm-update-composition-buffer-name))
-  (should (fboundp 'vm-forget-composition-buffer))
-  (should (fboundp 'vm-new-composition-buffer)))
-
 ;;; vm-mail-to-mailto-url tests
-
-(ert-deftest vm-reply-test-mail-to-mailto-url-exists ()
-  "Test vm-mail-to-mailto-url function exists."
-  (should (fboundp 'vm-mail-to-mailto-url)))
 
 ;;; Digest functions
 
@@ -1176,6 +1162,150 @@ string\" instead of the missing-separator complaint."
                  " <c@d.example>"))
   (should (equal (vm-mail-check-recipients-strip "c@d.example")
                  "c@d.example")))
+
+;;; What these do, in place of tests that they were bound.
+
+(ert-deftest vm-reply-test-add-reply-subject-prefix-prefixes-the-body ()
+  "Every line of the included text is prefixed, after the attribution line.
+The name says subject, but the function is what quotes a reply."
+  (with-temp-buffer
+    (insert "To: someone@example.com\n" mail-header-separator "\n"
+            "First line.\nSecond line.\n")
+    (let ((vm-included-text-prefix "> ")
+          (vm-included-text-attribution-format nil))
+      (vm-add-reply-subject-prefix nil)
+      (should (string-match-p "^> First line\\.$" (buffer-string)))
+      (should (string-match-p "^> Second line\\.$" (buffer-string)))
+      ;; and the headers are left alone
+      (should (string-match-p "^To: someone@example.com$" (buffer-string))))))
+
+(ert-deftest vm-reply-test-add-reply-subject-prefix-writes-the-attribution ()
+  "With a message and an attribution format, the attribution goes in first
+and is not itself quoted: it is the reply's own line, not included text."
+  (with-temp-buffer
+    (insert "To: someone@example.com\n" mail-header-separator "\nBody.\n")
+    (cl-letf (((symbol-function 'vm-summary-sprintf)
+               (lambda (_fmt _m) "Alice wrote:\n")))
+      (let ((vm-included-text-prefix "> ")
+            (vm-included-text-attribution-format "%F wrote:\n"))
+        (vm-add-reply-subject-prefix 'a-message)
+        (should (string-match-p "^Alice wrote:$" (buffer-string)))
+        (should (string-match-p "^> Body\\.$" (buffer-string)))))))
+
+(ert-deftest vm-reply-test-mailto-url-becomes-the-composition-it-names ()
+  "A mailto URL is parsed into the fields it names, decoding %-escapes.
+This is the entry point emacsclient hands a clicked link to."
+  (let (args)
+    (cl-letf (((symbol-function 'vm-session-initialization) #'ignore)
+              ((symbol-function 'vm-check-for-killed-folder) #'ignore)
+              ((symbol-function 'vm-select-folder-buffer-if-possible) #'ignore)
+              ((symbol-function 'vm-check-for-killed-summary) #'ignore)
+              ((symbol-function 'vm-mail-mode-apply-options) #'ignore)
+              ((symbol-function 'vm-mail-internal)
+               (lambda (&rest a)
+                 (setq args a)
+                 (set-buffer (generate-new-buffer " *vm-reply-test-mailto*"))
+                 (insert mail-header-separator "\n"))))
+      (let ((vm-mail-hook nil) (vm-mail-mode-hook nil)
+            (buffer nil))
+        (unwind-protect
+            (save-current-buffer
+              (vm-mail-to-mailto-url
+               "mailto:someone@example.com?subject=A%20subject&cc=other@example.com&body=Hello%20there")
+              (setq buffer (current-buffer))
+              (should (equal (plist-get args :to) "someone@example.com"))
+              (should (equal (plist-get args :subject) "A subject"))
+              (should (equal (plist-get args :cc) "other@example.com"))
+              (should (string-match-p "Hello there" (buffer-string))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest vm-reply-test-mailto-url-inserts-a-header-it-does-not-know ()
+  "A field that is not one of the known ones is inserted as a header."
+  (let (buffer)
+    (cl-letf (((symbol-function 'vm-session-initialization) #'ignore)
+              ((symbol-function 'vm-check-for-killed-folder) #'ignore)
+              ((symbol-function 'vm-select-folder-buffer-if-possible) #'ignore)
+              ((symbol-function 'vm-check-for-killed-summary) #'ignore)
+              ((symbol-function 'vm-mail-mode-apply-options) #'ignore)
+              ((symbol-function 'vm-mail-internal)
+               (lambda (&rest _)
+                 (set-buffer (generate-new-buffer " *vm-reply-test-mailto*"))
+                 (insert mail-header-separator "\n"))))
+      (let ((vm-mail-hook nil) (vm-mail-mode-hook nil))
+        (unwind-protect
+            (save-current-buffer
+              (vm-mail-to-mailto-url
+               "mailto:someone@example.com?reply-to=third@example.com")
+              (setq buffer (current-buffer))
+              (should (string-match-p "^Reply-to: third@example.com$"
+                                      (buffer-string))))
+          (when (buffer-live-p buffer) (kill-buffer buffer)))))))
+
+(ert-deftest vm-reply-test-composition-buffers-are-counted ()
+  "The mode line count goes up with a new composition and down when it goes.
+`vm-compositions-exist' is what the folder's mode line reads."
+  (let ((vm-composition-buffer-count 0)
+        (vm-compositions-exist nil))
+    (cl-letf (((symbol-function 'vm-update-ml-composition-buffer-count)
+               #'ignore))
+      (with-temp-buffer
+        (vm-new-composition-buffer)
+        (should (= vm-composition-buffer-count 1))
+        (should vm-compositions-exist)
+        ;; the buffer takes itself off the count when it is killed or sent
+        (should (memq 'vm-forget-composition-buffer kill-buffer-hook))
+        (should (memq 'vm-forget-composition-buffer vm-mail-send-hook))
+        (vm-new-composition-buffer)
+        (should (= vm-composition-buffer-count 2))
+        (vm-forget-composition-buffer)
+        (should (= vm-composition-buffer-count 1))
+        (should vm-compositions-exist)
+        (vm-forget-composition-buffer)
+        (should (= vm-composition-buffer-count 0))
+        (should-not vm-compositions-exist)))))
+
+(ert-deftest vm-reply-test-composition-buffer-is-renamed-for-its-recipient ()
+  "A composition is named after who it is to and what it is about.
+Several recipients get an ellipsis, and a reply is named differently from
+fresh mail."
+  (cl-letf (((symbol-function 'vm-sanitize-buffer-name) #'identity))
+    (with-temp-buffer
+      (rename-buffer "mail to nobody" t)
+      (setq major-mode 'mail-mode)
+      (insert "To: Alice Adams <alice@example.com>\n"
+              "Subject: the subject\n" mail-header-separator "\n")
+      (let ((vm-reply-list nil))
+        (vm-update-composition-buffer-name)
+        (should (equal (buffer-name) "mail to Alice Adams on \"the subject\"")))
+      ;; a second recipient is shown as an ellipsis rather than a list
+      (goto-char (point-min))
+      (insert "Cc: Bob <bob@example.com>\n")
+      (let ((vm-reply-list nil))
+        (vm-update-composition-buffer-name)
+        (should (equal (buffer-name)
+                       "mail to Alice Adams, ... on \"the subject\"")))
+      ;; a reply is named without the subject
+      (let ((vm-reply-list '(a-message)))
+        (vm-update-composition-buffer-name)
+        (should (equal (buffer-name) "reply to Alice Adams, ..."))))))
+
+(ert-deftest vm-reply-test-composition-buffer-name-left-alone-elsewhere ()
+  "Only VM's own composition buffers are renamed: the name is the marker.
+A user's own buffer called something else keeps its name, and so does any
+buffer that is not in mail mode."
+  (with-temp-buffer
+    (rename-buffer "notes on mail" t)
+    (setq major-mode 'mail-mode)
+    (insert "To: alice@example.com\n" mail-header-separator "\n")
+    (let ((name (buffer-name)))
+      (vm-update-composition-buffer-name)
+      (should (equal (buffer-name) name))))
+  (with-temp-buffer
+    (rename-buffer "mail to nobody" t)
+    (setq major-mode 'text-mode)
+    (let ((name (buffer-name)))
+      (vm-update-composition-buffer-name)
+      (should (equal (buffer-name) name)))))
 
 (provide 'vm-reply-test)
 
