@@ -660,6 +660,7 @@ Optional argument DONT-KILL is positive, then do not kill source message."
              (vm-update-summary-and-mode-line))))
       ;; well the folder is not visited, so we write to the file
       (setq target-type (or (vm-get-folder-type folder)
+                            (vm-folder-type-for-name folder)
                             vm-default-folder-type))
       
       (if (eq target-type 'unknown)

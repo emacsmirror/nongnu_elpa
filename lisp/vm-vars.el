@@ -1029,6 +1029,30 @@ must set this variable non-nil."
   :group 'vm-folders
   :type 'boolean)
 
+(defcustom vm-folder-type-by-name-alist
+  '(("\\.mboxcl2\\'" . mboxcl2))
+  "*Alist of (REGEXP . TYPE): the folder type a folder's name asks for.
+REGEXP is matched against the file name, TYPE is one of the types
+`vm-default-folder-type' accepts.  The first match wins.
+
+This is consulted in the two places where a folder cannot say for itself
+what it is:
+
+  - a folder that does not exist yet, or is empty, is created in the type
+    its name asks for rather than in `vm-default-folder-type';
+  - a folder whose first message carries a `Content-Length' is read as
+    mboxcl2 even when `vm-trust-content-length' is nil, since naming a
+    file mboxcl2 says as plainly as that option does that the header is
+    to be believed.
+
+What a folder's own contents say is never overridden: a name matching
+mboxcl2 does not make VM read a BABYL file as one.
+
+Set it to nil to have names mean nothing, which is what VM did before."
+  :group 'vm-folders
+  :type '(alist :key-type (regexp :tag "Name matching")
+		:value-type (symbol :tag "Folder type")))
+
 (defcustom vm-sync-thunderbird-status t
   "If set to t, VM synchronizes its headers with the headers of
 Thunderbird so that full interoperation with Thunderbird becomes

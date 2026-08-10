@@ -12,6 +12,11 @@ since that version to see how you might be affected.
     rather than `vm-trust-From_-with-Content-Length`.  The old names still
     work.
 
+  * A folder's name can say what format it is.  A new folder whose name ends
+    in `.mboxcl2` is created as one, rather than as whatever
+    `vm-default-folder-type` says, and a `Content-Length` in it is believed;
+    `vm-folder-type-by-name-alist` is the option (emacs-vm/vm#610).
+
   * Sent copies work with IMAP.  An `FCC:` header naming an IMAP maildrop
     files the copy on the server instead of writing a file named after the
     maildrop (emacs-vm/vm#605), and VM files every copy itself, in the format

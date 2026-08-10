@@ -386,6 +386,7 @@ The saved messages are flagged as `filed'."
       (when (and mlist vm-check-folder-types)
 	(setq target-type 
 	      (or (vm-get-folder-type folder)
+		  (vm-folder-type-for-name folder)
 		  vm-default-folder-type
 		  (and mlist (vm-message-type-of (car mlist)))))
 	(when (eq target-type 'unknown)

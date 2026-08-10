@@ -2361,6 +2361,74 @@ Mozilla headers into a folder at all."
           (should (vm-thunderbird-folder-p folder)))
       (delete-directory dir t))))
 
+;;; The folder type a name asks for (emacs-vm/vm#610)
+
+(defmacro vm-folder-test-with-directory (var &rest body)
+  "Run BODY with VAR bound to a fresh directory, removed afterwards."
+  (declare (indent 1) (debug t))
+  `(let ((,var (file-name-as-directory (make-temp-file "vm-folder-test" t))))
+     (unwind-protect (progn ,@body)
+       (delete-directory ,var t))))
+
+(ert-deftest vm-folder-test-type-for-name-reads-the-alist ()
+  "`vm-folder-type-for-name' answers from `vm-folder-type-by-name-alist'."
+  (should (eq (vm-folder-type-for-name "/mail/2026-08.out.mboxcl2") 'mboxcl2))
+  (should-not (vm-folder-type-for-name "/mail/2026-08.out.mbox"))
+  (should-not (vm-folder-type-for-name "/mail/INBOX"))
+  ;; the suffix has to end the name, so a backup file is not a folder type
+  (should-not (vm-folder-type-for-name "/mail/sent.mboxcl2~"))
+  (should-not (vm-folder-type-for-name nil))
+  ;; and nothing is claimed when the option is empty
+  (let ((vm-folder-type-by-name-alist nil))
+    (should-not (vm-folder-type-for-name "/mail/sent.mboxcl2")))
+  ;; the first match wins, and any type may be named
+  (let ((vm-folder-type-by-name-alist '(("\\.babyl\\'" . babyl)
+                                        ("\\.b" . mmdf))))
+    (should (eq (vm-folder-type-for-name "/mail/old.babyl") 'babyl))))
+
+(ert-deftest vm-folder-test-a-name-does-not-override-what-a-folder-says ()
+  "A folder's own contents decide its type; the name is consulted only when
+they cannot.  A BABYL file called .mboxcl2 is still BABYL."
+  (vm-folder-test-with-directory dir
+    (let ((file (expand-file-name "misnamed.mboxcl2" dir)))
+      (write-region "BABYL OPTIONS:\nVersion: 5\n\n" nil file nil 'quiet)
+      (should (eq (vm-get-folder-type file) 'babyl)))))
+
+(ert-deftest vm-folder-test-a-name-makes-content-length-believable ()
+  "A folder named mboxcl2 is read as mboxcl2 even with
+`vm-trust-content-length' nil: naming the file says as plainly as the option
+does that the header is to be believed.  Without a Content-Length in it the
+name changes nothing -- the folder is a From_ folder whatever it is called."
+  (vm-folder-test-with-directory dir
+    (let ((with-length (expand-file-name "sent.mboxcl2" dir))
+          (without (expand-file-name "other.mboxcl2" dir))
+          (vm-trust-content-length nil))
+      (write-region (concat "From VM Mon Aug 10 00:00:00 2026\n"
+                            "To: someone@example.com\nContent-Length: 5\n\n"
+                            "body\n")
+                    nil with-length nil 'quiet)
+      (should (eq (vm-get-folder-type with-length) 'mboxcl2))
+      (write-region (concat "From VM Mon Aug 10 00:00:00 2026\n"
+                            "To: someone@example.com\n\nbody\n")
+                    nil without nil 'quiet)
+      (should (eq (vm-get-folder-type without) vm-default-From_-folder-type))
+      ;; and with the option off, the name is not consulted at all
+      (let ((vm-folder-type-by-name-alist nil))
+        (should (eq (vm-get-folder-type with-length)
+                    vm-default-From_-folder-type))))))
+
+(ert-deftest vm-folder-test-an-empty-folder-still-has-no-type ()
+  "A folder that does not exist, or is empty, has no type whatever it is
+called.  Callers read nil as \"nothing here yet\": `vm-save-message' asks
+before appending to a file that is already a folder, and would ask about
+every new one if a name were enough to make it one."
+  (vm-folder-test-with-directory dir
+    (let ((missing (expand-file-name "new.mboxcl2" dir))
+          (empty (expand-file-name "empty.mboxcl2" dir)))
+      (should-not (vm-get-folder-type missing))
+      (write-region "" nil empty nil 'quiet)
+      (should-not (vm-get-folder-type empty)))))
+
 (provide 'vm-folder-test)
 
 ;;; vm-folder-test.el ends here

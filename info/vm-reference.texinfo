@@ -1796,6 +1796,32 @@ Symbolic links are not affected; VM keeps those either way.
 Default value: @code{t}
 @end defopt
 
+@defopt vm-folder-type-by-name-alist
+@vindex vm-folder-type-by-name-alist
+Alist of (REGEXP . TYPE): the folder type a folder’s name asks for.
+REGEXP is matched against the file name, TYPE is one of the types
+@code{vm-default-folder-type} accepts.  The first match wins.
+
+This is consulted in the two places where a folder cannot say for itself
+what it is:
+
+@example
+  - a folder that does not exist yet, or is empty, is created in the type
+    its name asks for rather than in ‘vm-default-folder-type’;
+  - a folder whose first message carries a ‘Content-Length’ is read as
+    mboxcl2 even when ‘vm-trust-content-length’ is nil, since naming a
+    file mboxcl2 says as plainly as that option does that the header is
+    to be believed.
+
+@end example
+What a folder’s own contents say is never overridden: a name matching
+mboxcl2 does not make VM read a BABYL file as one.
+
+Set it to nil to have names mean nothing, which is what VM did before.
+
+Default value: @code{(("\\.mboxcl2\\'" . mboxcl2))}
+@end defopt
+
 @defopt vm-imap-auto-expunge-alist
 @vindex vm-imap-auto-expunge-alist
 List of IMAP mailboxes and values specifying whether messages

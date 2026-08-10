@@ -1307,6 +1307,32 @@ buffer that is not in mail mode."
       (vm-update-composition-buffer-name)
       (should (equal (buffer-name) name)))))
 
+(ert-deftest vm-reply-test-fcc-makes-a-new-folder-in-the-type-its-name-asks-for ()
+  "An Fcc to a file that does not exist yet is written in the type its name
+asks for, so a folder called .mboxcl2 gets a Content-Length from the first
+message on (emacs-vm/vm#610).  It used to be written as a From_ folder
+whatever it was called, and then read back as one, so the name was a lie that
+never came true."
+  (let ((dir (file-name-as-directory (make-temp-file "vm-reply-fcc" t))))
+    (unwind-protect
+        (let ((named (expand-file-name "sent.mboxcl2" dir))
+              (plain (expand-file-name "sent.mbox" dir))
+              (vm-default-folder-type 'From_)
+              (vm-trust-content-length nil))
+          (dolist (folder (list named plain))
+            (with-temp-buffer
+              (insert "To: someone@example.com\nSubject: one\n\nA body line.\n")
+              (vm-fcc-write folder)))
+          (with-temp-buffer
+            (insert-file-contents named)
+            (should (string-match-p "^Content-Length: 13$" (buffer-string))))
+          (should (eq (vm-get-folder-type named) 'mboxcl2))
+          ;; a name that asks for nothing still follows vm-default-folder-type
+          (with-temp-buffer
+            (insert-file-contents plain)
+            (should-not (string-match-p "Content-Length:" (buffer-string)))))
+      (delete-directory dir t))))
+
 (provide 'vm-reply-test)
 
 ;;; vm-reply-test.el ends here
