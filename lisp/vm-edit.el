@@ -339,6 +339,7 @@ thread have their cached data discarded."
       (set-buffer-modified-p nil)	; edit-buf
       (kill-buffer edit-buf))))
 
+;;;###autoload
 (defun vm-edit-message-abort ()
   "Abort the edit of a message, forgetting changes to the message."
   (interactive)

@@ -191,6 +191,7 @@ mandatory."
     (vm-display nil nil '(vm-summarize vm-summarize-other-frame)
 		(list this-command)))
   (vm-update-summary-and-mode-line))
+;;;###autoload
 (defalias 'vm-headers-summary 'vm-summarize)
 
 ;;;###autoload
@@ -316,6 +317,7 @@ the messages in the current folder."
 	  (vm-inform 7 "%s: Generating summary... done" 
 		     (buffer-name vm-mail-buffer))))))
 
+;;;###autoload
 (defun vm-expand-thread (&optional root)
   "Expand the thread associated with the message at point. This
 will make visible all invisible elements of the thread tree and
@@ -347,6 +349,7 @@ is the root of the thread you want expanded."
       (when (vm-interactive-p)
 	(vm-update-summary-and-mode-line)))))
 
+;;;###autoload
 (defun vm-collapse-thread (&optional nomove root)
   "Collapse the thread associated with the message at point. This
 will make invisible all read and non-new elements of the thread
@@ -389,6 +392,7 @@ ROOT, which is the root of the thread you want collapsed."
 	    (goto-char (vm-su-start-of root))))
 	(vm-update-summary-and-mode-line)))))
 	
+;;;###autoload
 (defun vm-expand-all-threads ()
   "Expand all threads in the folder, which might have been collapsed
  (folded) earlier."
@@ -410,6 +414,7 @@ ROOT, which is the root of the thread you want collapsed."
   (when (vm-interactive-p)
     (vm-update-summary-and-mode-line)))
 
+;;;###autoload
 (defun vm-collapse-all-threads ()
   "Collapse (fold) all threads in the folder so that only the roots of
 the threads are shown in the Summary window."
@@ -437,6 +442,7 @@ the threads are shown in the Summary window."
   (when (vm-interactive-p)
     (vm-update-summary-and-mode-line)))
       
+;;;###autoload
 (defun vm-toggle-thread ()
   "Toggle collapse/expand thread associated with message at point.
 see `vm-expand-thread' and `vm-collapse-thread' for a description

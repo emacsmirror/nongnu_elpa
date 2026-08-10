@@ -516,6 +516,7 @@ ignored."
     )
   (when vm-debug
     (vm-check-thread-integrity)))
+;;;###autoload
 (defalias 'vm-compact-folder 'vm-expunge-folder)
 
 (defun vm-expunge-message (m)

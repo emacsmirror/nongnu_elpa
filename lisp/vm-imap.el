@@ -816,6 +816,7 @@ Returns a boolean value."
 	(vm-imap-end-session process)
 	))))
 
+;;;###autoload
 (defun vm-expunge-imap-messages ()
   "Deletes all messages from IMAP mailbox that have already been retrieved
 into the current folder.  VM sets the \\Deleted flag on all such messages
@@ -979,6 +980,7 @@ on all the relevant IMAP servers and then immediately expunges."
       (when (> delete-count 0)
 	(vm-mark-folder-modified-p (current-buffer))))))
 
+;;;###autoload
 (defun vm-prune-imap-retrieved-list (source)
   "Prune the X-VM-IMAP-Retrieved header of the current folder by
 examining which messages are still present in SOURCE.  SOURCE
